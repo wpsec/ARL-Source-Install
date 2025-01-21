@@ -1,0 +1,112 @@
+# system env
+curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
+yum makecache
+yum install net-tools
+yum install vim
+
+mkdir -p /opt/
+cd /opt/
+
+# system env
+1.sh
+tee /etc/yum.repos.d/mongodb-org-4.0.repo <<"EOF"
+[mongodb-org-4.0]
+name=MongoDB Repository
+baseurl=https://repo.mongodb.org/yum/redhat/$releasever/mongodb-org/4.0/x86_64/
+gpgcheck=1
+enabled=1
+gpgkey=https://www.mongodb.org/static/pgp/server-4.0.asc
+EOF
+
+
+# system env
+yum install epel-release -y
+yum install python36 mongodb-org-server mongodb-org-shell rabbitmq-server python36-devel gcc-c++ git nginx  fontconfig wqy-microhei-fonts unzip wget -y
+
+# python env
+python3.6 -m ensurepip --default-pip
+pip3.6 install pip --upgrade -i https://pypi.mirrors.ustc.edu.cn/simple
+
+# nmap
+rpm -vhU https://nmap.org/dist/nmap-7.80-1.x86_64.rpm
+
+# nuclei
+export https_proxy=http://192.168.188.64:7899
+wget https://github.com/projectdiscovery/nuclei/releases/download/v2.9.15/nuclei_2.9.15_linux_amd64.zip
+unzip nuclei_2.9.15_linux_amd64.zip && mv nuclei /usr/bin/
+
+
+# wih
+cp wih /usr/bin/wih
+chmod +x /usr/bin/wih 
+wih --version
+
+# 服务
+systemctl enable mongod
+systemctl start mongod
+systemctl enable rabbitmq-server
+systemctl start rabbitmq-server
+
+
+# NPoC
+pip3.6 install -r requirements.txt -i https://pypi.mirrors.ustc.edu.cn/simple
+pip3.6 install -e .
+
+
+# ncrack
+cp ncrack /usr/local/bin/ncrack && chmod +x /usr/local/bin/ncrack
+
+# ncrack-services
+mkdir -p /usr/local/share/ncrack
+cp ncrack-services /usr/local/share/ncrack/ncrack-services
+
+
+# GeoLite2
+mkdir -p /data/GeoLite2
+cp GeoLite2-City.mmdb /data/GeoLite2/GeoLite2-City.mmdb
+cp GeoLite2-ASN.mmdb /data/GeoLite2/GeoLite2-ASN.mmdb
+
+# 初始化rabbitmq mongodb
+rabbitmqctl add_user xzdl xzdlNet123.
+rabbitmqctl add_vhost xzdlvhost
+rabbitmqctl set_user_tags xzdl xzdltag
+rabbitmqctl set_permissions -p xzdlvhost xzdl ".*" ".*" ".*"
+mongo 127.0.0.1:27017/xzdl ./mongo-init.js
+touch rabbitmq_user
+
+
+pip3.6 install -r requirements.txt -i https://pypi.mirrors.ustc.edu.cn/simple
+
+# phantomjs
+rm /usr/bin/phantomjs
+cp phantomjs /usr/bin/phantomjs
+
+# 配置nginx
+cp conf.d /etc/nginx/conf.d
+# 证书
+cp dhparam.pem /etc/ssl/certs/dhparam.pem
+
+# 生成证书
+chmod +x gen_crt.sh
+./gen_crt.sh
+
+# 配置服务
+cp misc/arl-web.service /etc/systemd/system/
+cp misc/arl-worker.service /etc/systemd/system/
+cp misc/arl-worker-github.service /etc/systemd/system/
+cp misc/arl-scheduler.service /etc/systemd/system/
+
+systemctl enable arl-web
+systemctl start arl-web
+systemctl enable arl-worker
+systemctl start arl-worker
+systemctl enable arl-worker-github
+systemctl start arl-worker-github
+systemctl enable arl-scheduler
+systemctl start arl-scheduler
+systemctl enable nginx
+systemctl start nginx
+systemctl status arl-web
+systemctl status arl-worker
+systemctl status arl-worker-github
+systemctl status arl-scheduler
