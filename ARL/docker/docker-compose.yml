@@ -46,7 +46,11 @@ services:
       [
         "sh",
         "-c",
+<<<<<<< HEAD
         'gen_crt.sh; nginx; wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; gunicorn -b 0.0.0.0:5003 app.main:arl_app -w 3 --access-logfile arl_web.log --access-logformat ''%({x-real-ip}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"''',
+=======
+        'gen_crt.sh; nginx; wait-for-it.sh mongodb:27017; wait-for-it.sh rabbitmq:5672; wait-for-it.sh redis:6379; gunicorn -b 0.0.0.0:5003 app.main:arl_app -w 3 --access-logfile arl_web.log --access-logformat ''%({x-real-ip}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"''',
+>>>>>>> 50ae9f4a082417b23b35e919047564a8222ef554
       ]
     environment:
       - LANG=en_US.UTF-8
@@ -69,7 +73,11 @@ services:
       [
         "sh",
         "-c",
+<<<<<<< HEAD
         "wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; celery -A app.celerytask.celery worker -l info -Q arlgithub -n arlgithub -c 2 -O fair -f arl_worker.log & celery -A app.celerytask.celery worker -l info -Q arltask -n arltask -c 2 -O fair -f arl_worker.log",
+=======
+        "wait-for-it.sh mongodb:27017; wait-for-it.sh rabbitmq:5672; wait-for-it.sh redis:6379; celery -A app.celerytask.celery worker -l info -Q arlgithub -n arlgithub -c 2 -O fair -f arl_worker.log & celery -A app.celerytask.celery worker -l info -Q arltask -n arltask -c 2 -O fair -f arl_worker.log",
+>>>>>>> 50ae9f4a082417b23b35e919047564a8222ef554
       ]
 
     environment:
@@ -90,7 +98,11 @@ services:
       [
         "sh",
         "-c",
+<<<<<<< HEAD
         "wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; python3.6 -m app.scheduler",
+=======
+        "wait-for-it.sh mongodb:27017; wait-for-it.sh rabbitmq:5672; wait-for-it.sh redis:6379; python3.6 -m app.scheduler",
+>>>>>>> 50ae9f4a082417b23b35e919047564a8222ef554
       ]
     environment:
       - LANG=en_US.UTF-8
