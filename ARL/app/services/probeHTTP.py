@@ -1,3 +1,6 @@
+"""
+HTTP协议探测
+"""
 import time
 from app import utils
 from .baseThread import BaseThread

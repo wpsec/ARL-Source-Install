@@ -1,3 +1,25 @@
+"""
+指纹识别管理模块
+
+功能说明：
+- Web应用指纹识别规则管理
+- 指纹规则的增删改查
+- 支持自定义指纹规则编写
+- 支持人类可读规则格式（YAML/HURL）
+
+说明：
+- 指纹规则用于识别Web应用类型、框架、版本等
+- 支持正则表达式、CSS选择器等多种匹配方式
+- 可通过人类可读语言编写复杂规则
+- 规则持久化存储在数据库
+- 支持规则的版本管理和更新
+
+指纹识别场景：
+- CMS识别（WordPress、Joomla等）
+- 框架识别（ThinkPHP、Django等）
+- 服务器识别（Nginx、Apache等）
+- 组件识别（jQuery版本等）
+"""
 import json
 import time
 import yaml
@@ -11,6 +33,7 @@ from app import utils
 from app.modules import ErrorMsg
 from app.services import check_expression_with_error, have_human_rule_from_db
 from app.services import check_expression
+from app.services import finger_db_cache
 from . import base_query_fields, ARLResource, get_arl_parser
 
 ns = Namespace('fingerprint', description="指纹信息")
@@ -72,6 +95,8 @@ class ARLFingerprint(ARLResource):
         }
 
         utils.conn_db('fingerprint').insert_one(data)
+        # 指纹规则新增后立即刷新缓存，保证识别链路读取到最新规则
+        finger_db_cache.update_cache(force_db=True)
 
         finger_id = str(data.pop('_id'))
 
@@ -98,6 +123,8 @@ class DeleteARLFinger(ARLResource):
         for _id in id_list:
             query = {'_id': ObjectId(_id)}
             utils.conn_db('fingerprint').delete_one(query)
+        # 指纹规则删除后刷新缓存，避免 Redis/内存中残留旧规则
+        finger_db_cache.update_cache(force_db=True)
 
         return utils.build_ret(ErrorMsg.Success, {'_id': id_list})
 
@@ -179,9 +206,11 @@ class UploadARLFinger(ARLResource):
 
                 utils.conn_db('fingerprint').insert_one(data)
 
+            # 批量导入后刷新缓存，确保新导入规则可立即生效
+            finger_db_cache.update_cache(force_db=True)
+
             return utils.build_ret(ErrorMsg.Success, {'error_cnt': error_cnt,
                                                       'repeat_cnt': repeat_cnt,'success_cnt': success_cnt})
         except Exception as e:
             return utils.build_ret(ErrorMsg.Error, {'msg': str(e)})
-
 

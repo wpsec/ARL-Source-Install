@@ -1,3 +1,6 @@
+"""
+资产同步处理
+"""
 import copy
 import re
 from app.utils import conn_db as conn

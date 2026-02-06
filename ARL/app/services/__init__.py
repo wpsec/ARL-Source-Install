@@ -1,3 +1,6 @@
+"""
+业务服务模块初始化
+"""
 from .altDNS import alt_dns
 from .massdns import mass_dns
 from .portScan import port_scan

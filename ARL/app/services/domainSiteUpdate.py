@@ -1,3 +1,6 @@
+"""
+域名站点更新同步
+"""
 import time
 from app.services import build_domain_info,\
     probe_http, fetch_site, BaseUpdateTask

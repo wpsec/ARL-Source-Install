@@ -1,3 +1,26 @@
+"""
+DNS变异和智能生成模块
+
+功能说明：
+- 生成域名变异
+- DNS智能猜测和补全
+- 基于已知子域名生成新的候选子域名
+- 提高子域名爆破的覆盖率
+
+主要类：
+- DnsGen: DNS生成和变异类
+
+算法说明：
+- 基于DomainName部分的字符替换和组合
+- 支持数字变异（001->002等）
+- 支持词语插入和组合
+- 生成合理的候选域名列表
+
+应用场景：
+- 子域名爆破前的预处理
+- 从已知子域名推导新子域名
+- 提高爆破的效率和覆盖率
+"""
 import os
 import re
 import tld
@@ -15,6 +38,7 @@ NUM_COUNT = 4
 #  FROM: https://github.com/ProjectAnte/dnsgen/blob/master/dnsgen/dnsgen.py
 
 class DnsGen(object):
+    """DNS变异生成类"""
     def __init__(self, subdomains, words, base_domain=None):
         self.subdomains = subdomains
         self.base_domain = base_domain

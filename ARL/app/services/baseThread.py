@@ -1,3 +1,6 @@
+"""
+多线程执行基类
+"""
 import threading
 import collections
 import time

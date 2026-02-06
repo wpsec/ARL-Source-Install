@@ -1,3 +1,6 @@
+"""
+资产站点变化监控
+"""
 import threading
 from app.helpers import asset_site, asset_domain
 from app import utils

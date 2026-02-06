@@ -1,3 +1,6 @@
+"""
+页面数据模型
+"""
 from .baseInfo import BaseInfo
 
 class PageInfo(BaseInfo):

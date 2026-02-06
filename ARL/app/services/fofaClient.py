@@ -1,3 +1,6 @@
+"""
+FOFA搜索引擎客户端
+"""
 #  -*- coding:UTF-8 -*-
 import base64
 from app.config import Config

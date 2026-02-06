@@ -1,3 +1,6 @@
+"""
+自动资产标签识别
+"""
 import time
 import json
 from app import utils

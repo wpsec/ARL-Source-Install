@@ -1,3 +1,6 @@
+"""
+用户认证和授权工具
+"""
 from flask import  request
 from app import modules
 from app.config import Config

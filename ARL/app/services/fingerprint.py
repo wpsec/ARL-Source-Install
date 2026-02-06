@@ -1,3 +1,6 @@
+"""
+Web应用指纹识别
+"""
 import hashlib
 from .expr import parse_expression, evaluate_expression
 

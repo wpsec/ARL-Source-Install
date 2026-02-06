@@ -1,3 +1,6 @@
+"""
+CDN识别
+"""
 import json
 from .IPy import IP
 from app.config import Config

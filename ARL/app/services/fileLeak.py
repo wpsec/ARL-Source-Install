@@ -1,3 +1,6 @@
+"""
+敏感文件泄露扫描
+"""
 import time
 import difflib
 from urllib.parse import urlparse, urljoin

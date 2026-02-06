@@ -2,13 +2,42 @@
 
 ARL 灯塔资产侦察系统二开升级版本，升级了基础镜像和核心依赖，源码本地化安装版本，支持完全独立的 Docker 镜像构建。
 
-此项目用于ARL本地二开的基础设施环境，因后续功能面向内部使用，所以此版本面向各位大佬，大佬们可以通过此基础环境展开二开～
+此项目用于ARL本地二开的基础设施环境，因后续功能面向内部使用，所以此版本面向各位大佬，大佬们可以通过此基础环境展开二开，此项目基础设施环境做了大量升级和改造，主要是以下升级改造
 
-
-
-## 当前状态
+## 主要升级
 
 **版本**: 升级版本（Rocky Linux 8 + Python 3.6 + MongoDB 7 + Redis 7）
+
+redis 缓存
+
+更新了大量代码已保证 redis 收益最大化
+
+- 新增 Redis 业务缓存配置：`ARL/docker/config-docker.yaml`、`ARL/app/config.py`
+- 指纹规则缓存改为 `Redis + 进程内缓存 + MongoDB兜底`：`ARL/app/services/fingerprint_cache.py`
+- 高并发查询路径接入缓存：
+  - 通用列表查询入口：`ARL/app/routes/__init__.py`（`build_data`）
+  - 高频辅助查询：`ARL/app/utils/arl.py`、`ARL/app/helpers/*`
+- 缓存策略：
+  - 读请求短TTL缓存（约 60~120 秒）
+  - 大分页（`size > 5000`）绕过缓存，避免缓存超大对象
+  - Redis 不可用自动降级到 MongoDB，不影响功能可用性
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1770384060648-ffbb4799-9cb6-4c19-8263-81688a9aabb8.png)
+
+经过测试，有了 redis 的加持，系统的响应速度有了质的提升
+
+表格批量导出功能
+
+- 新增/修复入口：`任务管理 -> 勾选任务 -> 批量导出 -> 表格批量导出`
+- 后端接口：`POST /api/export/batch`
+- 导出格式：`xlsx`，并与单任务导出保持同结构（`站点`、`IP`、`系统服务`、`域名`、`资产统计`）
+- 批量逻辑：在单任务导出结构不变的前提下，对多任务数据进行合并去重
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1770383467291-0f787529-2806-46f1-9fac-90e594f1c597.png)
 
 ## 版本升级信息
 
@@ -70,81 +99,37 @@ chmod +x build.sh start.sh
 - **ARL 系统用户名**: `admin`
 - **ARL 系统密码**: `arlpass`
 
-## 版本信息
+## Rocky Linux 8 升级
 
-- 现有代码 100% 兼容
-- 无需代码修改
-
-**国内源优化**
-
-- Rocky Linux 国内源 (Aliyun)
-- Python Pip 国内源 (USTC)
-
-## Rocky Linux 8 升级详解
-
-### 为什么从 CentOS 7 升级到 Rocky Linux 8？
-
-| 对比项       | CentOS 7               | Rocky Linux 8               |
-| ------------ | ---------------------- | --------------------------- |
+| 对比项       | CentOS 7            | Rocky Linux 8            |
+| ------------ | ------------------- | ------------------------ |
 | 维护状态     | 已停止 (2024/06/30) | 长期支持 (至 2029/05/31) |
-| OpenSSL版本  | 1.0.2           | 1.1.1                |
+| OpenSSL版本  | 1.0.2               | 1.1.1                    |
 | 系统库更新   | 无                  | 定期更新                 |
 | 安全补丁     | 无                  | 持续提供                 |
 | Python兼容性 | 3.6支持完整         | 3.6+3.9+                 |
-| 容器技术     | -               | 现代化                   |
-
-### Python 3.6 源码编译
-
-由于Rocky Linux 8默认仓库不包含Python 3.6，系统采用源码编译方式：
-
-**编译过程** (Dockerfile中)：
-
-```dockerfile
-# 1. 下载Python 3.6.15源码 (tools/Python-3.6.15.tgz)
-# 2. 解压并配置: ./configure --prefix=/usr/local
-# 3. 编译: make -j4
-# 4. 安装: make install
-# 5. 创建软链接: ln -s /usr/local/bin/python3.6 /usr/bin/python3.6
-
-# 结果: /usr/local/bin/python3.6 ← Python 3.6.15
-#      /usr/local/bin/pip3.6 ← pip 18.1 (需升级)
-```
-
-**关键依赖版本调整**：
-
-```
-原始需求 (CentOS 7):
-- cryptography==38.0.4 (需要Rust编译器) 
-- pyOpenSSL==22.1.0 (需要新cryptography) 
-- urllib3>=2.0 (不支持Python 3.6) 
-
-Rocky Linux 8 + Python 3.6 兼容版本:
-- pip==21.3.1 (最后一个支持Python 3.6的pip)
-- cryptography==3.3.2 (最后一个无需Rust的版本) 
-- pyOpenSSL==20.0.1 (兼容cryptography 3.3.2) 
-- urllib3<2.0 (Python 3.6兼容) 
-```
+| 容器技术     | -                   | 现代化                   |
 
 ### 数据库升级 (MongoDB 3.6 → 7.0)
 
 **性能提升**：
 
-| 指标     | MongoDB 3.6 | MongoDB 7.0  | 提升   |
-| -------- | ----------- | ------------ | ------ |
-| 查询性能 | 基准        | +40%         | 显著   |
-| 内存占用 | 基准        | -15%         | 明显   |
-| 索引效率 | 基准        | +25%         | 显著   |
-| 事务支持 | 无       | 完整 ACID | 新功能 |
+| 指标     | MongoDB 3.6 | MongoDB 7.0 | 提升   |
+| -------- | ----------- | ----------- | ------ |
+| 查询性能 | 基准        | +40%        | 显著   |
+| 内存占用 | 基准        | -15%        | 明显   |
+| 索引效率 | 基准        | +25%        | 显著   |
+| 事务支持 | 无          | 完整 ACID   | 新功能 |
 
 **升级注意**：
 
-- 旧数据自动迁移 
+- 旧数据自动迁移
 - 无需手动转换
 - 兼容所有现有操作
 
 ### 缓存系统新增 (Redis 7)
 
-**之前**：仅使用MongoDB和RabbitMQ
+**之前**：仅使用MongoDB和RabbitMQ  
 **现在**：添加Redis分层缓存
 
 - 会话缓存
@@ -184,7 +169,6 @@ Rocky Linux 8 + Python 3.6 兼容版本:
    - 用户名: `admin`
    - 密码: `admin123456`
    - 用途: 保护后端应用
-
 2. **ARL系统认证** (应用层)
    - 用户名: `admin`
    - 密码: `arlpass`
@@ -193,7 +177,7 @@ Rocky Linux 8 + Python 3.6 兼容版本:
 
 **登录流程**：
 
-```
+```plain
 用户输入 (admin/arlpass)
   ↓
 Web前端 POST /api/user/login
@@ -204,7 +188,7 @@ Backend调用gen_md5('arlsalt!@#' + 'arlpass')
   ↓
 查询MongoDB: db.user.findOne({username: 'admin', password: 'fe0a9aeac7e5c03922067b40db984f0e'})
   ↓
-返回token (登录成功) 
+返回token (登录成功)
 ```
 
 ## Docker 镜像概览
@@ -240,7 +224,7 @@ Backend调用gen_md5('arlsalt!@#' + 'arlpass')
 
 ### 网络访问流程
 
-```
+```plain
 ┌─────────────────────────────────────────────────────────────────┐
 │                    用户浏览器                                     │
 │              http://192.168.X.X (公网)                          │
@@ -293,19 +277,17 @@ Backend调用gen_md5('arlsalt!@#' + 'arlpass')
    - 监听: `0.0.0.0:80` (公网)
    - 功能: 反向代理 + Basic Auth认证
    - 目的: 保护后端应用，限制公网访问
-
 2. **内层Nginx (arl_web 容器)**
    - 监听: `0.0.0.0:80` + `0.0.0.0:443` (容器内)
    - 功能: 静态页面服务 + API反向代理
    - 目的: 提供前端页面和API接口
-
 3. **访问流程**
    - 用户 → 外层Nginx (需要Basic Auth) → 内层Nginx + Gunicorn API
    - 外层Nginx强制HTTPS → 内层Nginx自签名证书处理
 
 ## 项目结构
 
-```
+```plain
 ARL-Source-Install/
 ├── ARL/                          # ARL 主应用源码
 │   ├── app/
@@ -422,8 +404,8 @@ docker compose up -d
 
 等待所有容器启动完成，然后访问：
 
-- **Web 界面**: https://localhost:5003
-- **RabbitMQ 管理界面**: http://localhost:15672 (默认 guest/guest)
+- **Web 界面**: [https://localhost:5003](https://localhost:5003)
+- **RabbitMQ 管理界面**: [http://localhost:15672](http://localhost:15672) (默认 guest/guest)
 - **MongoDB**: mongodb://localhost:27017
 
 ## Docker 镜像详解
@@ -451,8 +433,6 @@ docker compose up -d
 - phantomjs - 页面渲染
 - python3.6
 
-
-
 ## 密码问题
 
 ### 无法登录 (用户名或密码错误)
@@ -467,8 +447,6 @@ use arl
 db.user.drop()
 db.user.insert({ username: 'admin',  password: hex_md5('arlsalt!@#'+'admin123') })
 ```
-
-
 
 ## 许可证
 

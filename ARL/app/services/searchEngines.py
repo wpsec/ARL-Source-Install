@@ -1,3 +1,6 @@
+"""
+搜索引擎整合查询
+"""
 import re
 from pyquery import PyQuery as pq
 import time

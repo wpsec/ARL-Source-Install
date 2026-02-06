@@ -1,3 +1,6 @@
+"""
+指纹识别工具函数
+"""
 import json
 from app.config import Config
 from app.utils import get_logger, conn_db, load_file

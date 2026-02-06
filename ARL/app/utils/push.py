@@ -1,3 +1,6 @@
+"""
+消息推送
+"""
 import time
 import base64
 import hmac

@@ -1,3 +1,6 @@
+"""
+网站截图获取
+"""
 import os
 import re
 import time

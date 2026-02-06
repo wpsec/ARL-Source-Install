@@ -1,3 +1,6 @@
+"""
+Web站点获取和探测
+"""
 import time
 from pyquery import PyQuery as pq
 import binascii
@@ -143,9 +146,9 @@ def fetch_favicon(url):
 
 
 def fetch_site(sites, concurrency=15, http_timeout=None):
-    # 更新数据库缓存
+    # 预热指纹缓存（优先命中进程内/Redis，减少重复查询 MongoDB）
     from app.services import finger_db_cache
-    finger_db_cache.update_cache()
+    finger_db_cache.update_cache(force_db=False)
 
     f = FetchSite(sites, concurrency=concurrency, http_timeout=http_timeout)
     return f.run()

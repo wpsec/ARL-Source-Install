@@ -1,3 +1,6 @@
+"""
+域名信息构建与保存
+"""
 import time
 from app import  modules
 from app import  utils
