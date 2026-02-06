@@ -1,3 +1,6 @@
+"""
+表达式解析和验证
+"""
 from app.utils import get_logger
 from pyparsing import CaselessLiteral, Word, alphas,\
     nums, QuotedString, Group,ParserElement, infixNotation, opAssoc, ParseException

@@ -1,3 +1,6 @@
+"""
+通用工具模块初始化
+"""
 import subprocess
 import shlex
 import random

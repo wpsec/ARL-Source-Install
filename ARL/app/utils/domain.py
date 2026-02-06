@@ -1,3 +1,6 @@
+"""
+域名处理和验证工具
+"""
 import tld
 from app.config import Config
 

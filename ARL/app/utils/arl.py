@@ -1,25 +1,37 @@
+"""
+ARL系统工具函数
+"""
 from bson import ObjectId
 from .conn import conn_db
 from .IPy import IP
+from .cache import build_cache_key, cached_call
 import re
 
 
 def get_task_ids(domain):
-    query = {"target": domain}
-    task_ids = []
-    for item in conn_db('task').find(query):
-        task_ids.append(str(item["_id"]))
+    key = build_cache_key("arl:get_task_ids", domain)
 
-    return task_ids
+    def _loader():
+        query = {"target": domain}
+        task_ids = []
+        for item in conn_db('task').find(query):
+            task_ids.append(str(item["_id"]))
+        return task_ids
+
+    return cached_call(key, _loader, expire=120)
 
 
 def get_domain_by_id(task_id):
-    query = {"task_id": task_id}
-    domains = []
-    for item in conn_db('domain').find(query):
-        domains.append(item["domain"])
+    key = build_cache_key("arl:get_domain_by_id", task_id)
 
-    return domains
+    def _loader():
+        query = {"task_id": task_id}
+        domains = []
+        for item in conn_db('domain').find(query):
+            domains.append(item["domain"])
+        return domains
+
+    return cached_call(key, _loader, expire=120)
 
 
 def arl_domain(domain):
@@ -45,21 +57,30 @@ def arl_domain(domain):
 
 
 def get_asset_domain_by_id(scope_id):
-    query = {"scope_id": scope_id}
-    domains = []
-    for item in conn_db('asset_domain').find(query):
-        domains.append(item["domain"])
+    key = build_cache_key("arl:get_asset_domain_by_id", scope_id)
 
-    return domains
+    def _loader():
+        query = {"scope_id": scope_id}
+        domains = []
+        for item in conn_db('asset_domain').find(query):
+            domains.append(item["domain"])
+        return domains
+
+    return cached_call(key, _loader, expire=120)
 
 
 def get_monitor_domain_by_id(scope_id):
-    query = {"scope_id": scope_id}
-    items = conn_db('scheduler').find(query)
-    domains = []
-    for item in items:
-        domains.append(item["domain"])
-    return domains
+    key = build_cache_key("arl:get_monitor_domain_by_id", scope_id)
+
+    def _loader():
+        query = {"scope_id": scope_id}
+        items = conn_db('scheduler').find(query)
+        domains = []
+        for item in items:
+            domains.append(item["domain"])
+        return domains
+
+    return cached_call(key, _loader, expire=120)
 
 
 def scope_data_by_id(scope_id):
@@ -70,12 +91,16 @@ def scope_data_by_id(scope_id):
 
 
 def get_scope_ids(domain):
-    query = {"scope_array": domain}
-    scope_ids = []
-    for item in conn_db('asset_scope').find(query):
-        scope_ids.append(str(item["_id"]))
+    key = build_cache_key("arl:get_scope_ids", domain)
 
-    return scope_ids
+    def _loader():
+        query = {"scope_array": domain}
+        scope_ids = []
+        for item in conn_db('asset_scope').find(query):
+            scope_ids.append(str(item["_id"]))
+        return scope_ids
+
+    return cached_call(key, _loader, expire=120)
 
 
 def task_statistic(task_id=None):
@@ -84,16 +109,20 @@ def task_statistic(task_id=None):
     if isinstance(task_id, str) and len(task_id) == 24:
         query["task_id"] = task_id
 
-    ret = dict()
-    table_list = ['site', 'domain', 'ip', 'cert', 'service', 'fileleak']
-    table_list.extend(['url', 'vuln', 'npoc_service', 'cip'])
-    table_list.extend(["nuclei_result", "stat_finger", "wih"])
-    for table in table_list:
-        cnt = conn_db(table).count_documents(query)
-        stat_key = table + "_cnt"
-        ret[stat_key] = cnt
+    key = build_cache_key("arl:task_statistic", task_id if task_id else "all")
 
-    return ret
+    def _loader():
+        ret = dict()
+        table_list = ['site', 'domain', 'ip', 'cert', 'service', 'fileleak']
+        table_list.extend(['url', 'vuln', 'npoc_service', 'cip'])
+        table_list.extend(["nuclei_result", "stat_finger", "wih"])
+        for table in table_list:
+            cnt = conn_db(table).count_documents(query)
+            stat_key = table + "_cnt"
+            ret[stat_key] = cnt
+        return ret
+
+    return cached_call(key, _loader, expire=90)
 
 
 def gen_cip_map(task_id=None):
@@ -135,24 +164,28 @@ def gen_stat_finger_map(task_id=None):
     if isinstance(task_id, str) and len(task_id) == 24:
         query["task_id"] = task_id
 
-    results = list(conn_db('site').find(query, {"finger": 1}))
-    finger_map = dict()
-    for result in results:
-        if not isinstance(result.get("finger"), list):
-            continue
+    key = build_cache_key("arl:gen_stat_finger_map", task_id if task_id else "all")
 
-        for finger in result["finger"]:
-            key = finger["name"].lower()
+    def _loader():
+        results = list(conn_db('site').find(query, {"finger": 1}))
+        finger_map = dict()
+        for result in results:
+            if not isinstance(result.get("finger"), list):
+                continue
 
-            if key not in finger_map:
-                finger_map[key] = {
-                    "name": finger["name"],
-                    "cnt": 1
-                }
-            else:
-                finger_map[key]["cnt"] += 1
+            for finger in result["finger"]:
+                finger_key = finger["name"].lower()
 
-    return finger_map
+                if finger_key not in finger_map:
+                    finger_map[finger_key] = {
+                        "name": finger["name"],
+                        "cnt": 1
+                    }
+                else:
+                    finger_map[finger_key]["cnt"] += 1
+        return finger_map
+
+    return cached_call(key, _loader, expire=90)
 
 
 def build_port_custom(port_custom):
@@ -168,5 +201,4 @@ def build_port_custom(port_custom):
             return item
 
     return port_list
-
 

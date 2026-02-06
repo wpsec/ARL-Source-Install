@@ -1,3 +1,6 @@
+"""
+高速DNS爆破工具
+"""
 from app import utils
 from app.config import Config
 import os

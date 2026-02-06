@@ -1,3 +1,6 @@
+"""
+GitHub代码泄露搜索
+"""
 import base64
 from collections import deque
 from app.utils import http_req, get_logger, gen_md5

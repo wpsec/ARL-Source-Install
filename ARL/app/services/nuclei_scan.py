@@ -1,3 +1,6 @@
+"""
+Nuclei漏洞扫描
+"""
 import json
 import os.path
 import subprocess

@@ -1,3 +1,6 @@
+"""
+通用任务执行框架
+"""
 import time
 from urllib.parse import urlparse
 from bson import ObjectId

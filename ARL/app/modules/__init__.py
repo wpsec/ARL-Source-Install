@@ -1,3 +1,6 @@
+"""
+数据模型模块初始化
+"""
 from .ipInfo import PortInfo, IPInfo
 from .baseInfo import BaseInfo
 from .domainInfo import DomainInfo

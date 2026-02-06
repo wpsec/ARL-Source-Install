@@ -1,3 +1,6 @@
+"""
+Cron表达式解析和验证
+"""
 from crontab import CronTab
 import time
 

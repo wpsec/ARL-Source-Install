@@ -1,6 +1,15 @@
 CELERY:
   BROKER_URL: "amqp://arl:arlpassword@rabbitmq:5672/arlv2host"
 
+# Redis 配置（用于业务缓存，当前接入指纹规则缓存）
+REDIS:
+  ENABLE: true
+  HOST: "redis"
+  PORT: 6379
+  DB: 0
+  PASSWORD: ""
+  CACHE_EXPIRE: 1800
+
 MONGO:
   URI: "mongodb://admin:admin@mongodb:27017/"
   DB: "arl"

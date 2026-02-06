@@ -1,3 +1,24 @@
+"""
+GitHub任务管理模块
+
+功能说明：
+- GitHub代码泄露搜索任务管理
+- 支持多关键字检索
+- 定期监控GitHub上的敏感信息
+- 检测代码仓库中的泄露数据
+
+说明：
+- 通过GitHub API搜索特定关键字
+- 可发现代码中的密钥、API密钥、配置等敏感信息
+- 支持任务的增删改查
+- 任务状态包括待处理、运行中、已完成等
+
+任务场景：
+- 搜索企业相关的API密钥泄露
+- 发现配置文件泄露
+- 检测源代码泄露
+- 监控敏感信息暴露
+"""
 from bson import ObjectId
 from flask_restx import fields, Namespace
 from app.utils import get_logger, auth

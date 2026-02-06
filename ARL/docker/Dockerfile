@@ -14,11 +14,7 @@ RUN mkdir -p /root/.pip && \
 # 3. 安装依赖：Rocky 8 的 openssl-devel 是 1.1.1 版本，支持 Python 3.6
 RUN dnf install -y epel-release fontconfig && \
     dnf install -y gcc gcc-c++ make zlib-devel bzip2-devel openssl-devel sqlite-devel \
-<<<<<<< HEAD
     readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap && \
-=======
-    readline-devel libffi-devel xz-devel nginx unzip wget findutils && \
->>>>>>> 50ae9f4a082417b23b35e919047564a8222ef554
     dnf clean all
 
 # 3.5. 编译安装 Python 3.6
@@ -91,7 +87,6 @@ RUN echo "===== 检查关键模块 =====" && \
     python3.6 -c "import pymongo; print('✓ pymongo 已安装')" && \
     python3.6 -c "import celery; print('✓ celery 已安装')" && \
     cp app/config.yaml.example app/config.yaml && \
-<<<<<<< HEAD
     echo "===== 所有关键模块检查通过 =====" && \
     echo "===== 检查关键工具 =====" && \
     nmap --version | head -2 && echo "✓ nmap 已安装" && \
@@ -100,6 +95,3 @@ RUN echo "===== 检查关键模块 =====" && \
     /usr/bin/wih -h | head -1 && echo "✓ wih 已安装" && \
     phantomjs --version && echo "✓ phantomjs 已安装" && \
     echo "===== 所有工具检查通过 ====="
-=======
-    echo "===== 所有关键模块检查通过 ====="
->>>>>>> 50ae9f4a082417b23b35e919047564a8222ef554

@@ -1,3 +1,6 @@
+"""
+域名数据模型
+"""
 from .baseInfo import BaseInfo
 
 

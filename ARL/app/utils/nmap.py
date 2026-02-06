@@ -1,3 +1,6 @@
+"""
+Nmap扫描工具封装
+"""
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 

@@ -1,3 +1,30 @@
+"""
+GitHub监控调度模块
+
+功能说明：
+- 定时GitHub泄露监控任务管理
+- 支持Cron表达式配置定时规则
+- 定期执行GitHub搜索任务
+- 支持任务的启停和删除
+
+任务功能：
+- 按Cron表达式定期执行
+- 搜索指定关键字的最新泄露
+- 记录监控结果到github_monitor_result
+- 支持邮件/消息通知告警
+
+说明：
+- 基于Celery Beat定时调度
+- 监控间隔可配置（Cron）
+- 结果实时保存和分析
+- 支持监控历史查询
+
+监控场景：
+- 企业关键字泄露监控
+- API密钥、账号密码监控
+- 源代码版本控制泄露监控
+- 敏感信息持续监控
+"""
 import time
 from bson import ObjectId
 from flask_restx import fields, Namespace
@@ -28,6 +55,7 @@ add_github_scheduler_fields = ns.model('AddGithubScheduler', {
 
 @ns.route('/')
 class ARLGithubScheduler(ARLResource):
+    """GitHub监控调度查询接口"""
     parser = get_arl_parser(base_search_fields, location='args')
 
     @auth

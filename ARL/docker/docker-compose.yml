@@ -26,6 +26,7 @@ services:
         max-file: "10"
 
   web:
+    # 与 build.sh 保持一致，统一使用本地构建镜像标签，避免因拉取/找不到 latest 导致 web 未启动进而触发 502
     image: arl:local
     container_name: arl_web
     restart: unless-stopped
@@ -38,7 +39,6 @@ services:
       #- "5003:80"
       - "127.0.0.1:5003:443"
     volumes:
-      - ./arl_web.log:/code/arl_web.log
       - ./config-docker.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
@@ -46,17 +46,14 @@ services:
       [
         "sh",
         "-c",
-<<<<<<< HEAD
-        'gen_crt.sh; nginx; wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; gunicorn -b 0.0.0.0:5003 app.main:arl_app -w 3 --access-logfile arl_web.log --access-logformat ''%({x-real-ip}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"''',
-=======
-        'gen_crt.sh; nginx; wait-for-it.sh mongodb:27017; wait-for-it.sh rabbitmq:5672; wait-for-it.sh redis:6379; gunicorn -b 0.0.0.0:5003 app.main:arl_app -w 3 --access-logfile arl_web.log --access-logformat ''%({x-real-ip}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"''',
->>>>>>> 50ae9f4a082417b23b35e919047564a8222ef554
+        'echo "Starting gen_crt.sh..."; gen_crt.sh && echo "gen_crt.sh completed"; echo "Starting nginx..."; nginx && echo "nginx started successfully" || echo "nginx failed to start"; echo "Waiting for services..."; wait-for-it.sh -t 60 mongodb:27017 && wait-for-it.sh -t 60 rabbitmq:5672 && wait-for-it.sh -t 60 redis:6379 && echo "Starting gunicorn..."; gunicorn -b 0.0.0.0:5003 app.main:arl_app -w 3 --access-logfile arl_web.log --access-logformat ''%({x-real-ip}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"''',
       ]
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
 
   worker:
+    # 与 web/scheduler 使用同一镜像标签，确保任务进程和 API 运行环境一致
     image: arl:local
     container_name: arl_worker
     restart: unless-stopped
@@ -65,7 +62,6 @@ services:
       - rabbitmq
       - redis
     volumes:
-      - ./arl_worker.log:/code/arl_worker.log
       - ./config-docker.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
@@ -73,11 +69,7 @@ services:
       [
         "sh",
         "-c",
-<<<<<<< HEAD
         "wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; celery -A app.celerytask.celery worker -l info -Q arlgithub -n arlgithub -c 2 -O fair -f arl_worker.log & celery -A app.celerytask.celery worker -l info -Q arltask -n arltask -c 2 -O fair -f arl_worker.log",
-=======
-        "wait-for-it.sh mongodb:27017; wait-for-it.sh rabbitmq:5672; wait-for-it.sh redis:6379; celery -A app.celerytask.celery worker -l info -Q arlgithub -n arlgithub -c 2 -O fair -f arl_worker.log & celery -A app.celerytask.celery worker -l info -Q arltask -n arltask -c 2 -O fair -f arl_worker.log",
->>>>>>> 50ae9f4a082417b23b35e919047564a8222ef554
       ]
 
     environment:
@@ -85,6 +77,7 @@ services:
       - TZ=Asia/Shanghai
 
   scheduler:
+    # 与 build.sh 保持一致，统一使用本地构建镜像标签
     image: arl:local
     container_name: arl_scheduler
     restart: unless-stopped
@@ -98,11 +91,7 @@ services:
       [
         "sh",
         "-c",
-<<<<<<< HEAD
         "wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; python3.6 -m app.scheduler",
-=======
-        "wait-for-it.sh mongodb:27017; wait-for-it.sh rabbitmq:5672; wait-for-it.sh redis:6379; python3.6 -m app.scheduler",
->>>>>>> 50ae9f4a082417b23b35e919047564a8222ef554
       ]
     environment:
       - LANG=en_US.UTF-8

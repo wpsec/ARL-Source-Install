@@ -1,3 +1,6 @@
+"""
+虚拟主机碰撞检测
+"""
 import json
 from app.utils import get_title, http_req, get_logger
 from .baseThread import BaseThread, thread_map

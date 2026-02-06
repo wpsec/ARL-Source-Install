@@ -1,3 +1,28 @@
+"""
+域名扫描任务执行模块
+
+功能说明：
+- 域名扫描任务的核心执行逻辑
+- 负责域名资产的发现、识别和探测
+
+主要功能：
+1. 域名爆破：使用字典进行子域名爆破
+2. 域名解析：解析域名对应的IP地址
+3. 站点探测：探测域名对应的Web服务
+4. 证书获取：获取SSL证书信息
+5. DNS查询：查询DNS记录（A、CNAME等）
+6. 搜索引擎：通过搜索引擎发现子域名
+7. 虚拟主机：发现同IP下的其他域名
+8. 风险巡航：针对站点进行安全检测
+
+主要类：
+- DomainBrute: 域名爆破类
+- DomainTask: 域名扫描任务主类
+- DomainExecutor: 域名任务执行器
+
+执行流程：
+1. 域名爆破 -> 2. DNS解析 -> 3. IP端口扫描 -> 4. 站点探测 -> 5. 数据保存
+"""
 import time
 import random
 import copy
@@ -18,41 +43,89 @@ from app.services import domain_site_update
 
 logger = utils.get_logger()
 
-'''
-域名爆破
-'''
-
 
 class DomainBrute(object):
+    """
+    域名爆破类
+    
+    功能说明：
+    - 使用字典对目标域名进行子域名爆破
+    - 支持泛解析检测和过滤
+    - 支持CNAME记录追踪
+    
+    主要方法：
+    - _brute_domain(): 使用massdns进行爆破
+    - _resolver(): 解析爆破结果的IP地址
+    - run(): 执行完整的爆破流程
+    
+    属性：
+    - base_domain: 目标主域名
+    - dicts: 爆破字典
+    - brute_out: 爆破原始结果
+    - resolver_map: 解析后的域名IP映射
+    - wildcard_domain_ip: 泛解析IP列表
+    """
+    
     def __init__(self, base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_ip=None):
+        """
+        初始化域名爆破
+        
+        参数：
+            base_domain: 目标主域名（如example.com）
+            word_file: 字典文件路径（默认2万字典）
+            wildcard_domain_ip: 泛解析IP列表（用于过滤）
+        """
         if wildcard_domain_ip is None:
             wildcard_domain_ip = []
         self.base_domain = base_domain
         self.base_domain_scope = "." + base_domain.strip(".")
         self.dicts = utils.load_file(word_file)
 
-        self.brute_out = []
-        self.resolver_map = {}
-        self.domain_info_list = []
-        self.domain_cnames = []
-        self.brute_domain_map = {}  # 保存了通过massdns获取的结果
-        self.wildcard_domain_ip = wildcard_domain_ip  # 保存获取的泛解析IP
+        self.brute_out = []  # massdns原始输出
+        self.resolver_map = {}  # 域名->IP映射
+        self.domain_info_list = []  # 域名信息列表
+        self.domain_cnames = []  # CNAME记录列表
+        self.brute_domain_map = {}  # 域名->DNS记录映射
+        self.wildcard_domain_ip = wildcard_domain_ip  # 泛解析IP
 
     def _brute_domain(self):
+        """
+        使用massdns进行域名爆破
+        
+        说明：
+        - 调用services.mass_dns执行爆破
+        - 自动过滤泛解析结果
+        - 支持大批量字典（十万级）
+        """
         self.brute_out = services.mass_dns(self.base_domain, self.dicts, self.wildcard_domain_ip)
 
     def _resolver(self):
+        """
+        解析爆破结果的域名IP地址
+        
+        说明：
+        - 过滤非法域名
+        - 过滤黑名单域名
+        - 过滤过长的域名
+        - 处理CNAME记录
+        - 批量解析域名IP
+        """
         domains = []
         domain_cname_record = []
+        
+        # 第一轮：收集所有有效域名
         for x in self.brute_out:
             current_domain = x["domain"].lower()
+            
+            # 验证域名格式
             if not utils.domain_parsed(current_domain):
                 continue
 
-            # 删除掉过长的域名
+            # 删除过长的域名（防止恶意字典）
             if len(current_domain) - len(self.base_domain) >= Config.DOMAIN_MAX_LEN:
                 continue
 
+            # 检查域名黑名单
             if utils.check_domain_black(current_domain):
                 continue
 
@@ -61,6 +134,7 @@ class DomainBrute(object):
 
             self.brute_domain_map[current_domain] = x["record"]
 
+            # 处理CNAME记录
             if x["type"] == 'CNAME':
                 self.domain_cnames.append(current_domain)
                 current_record_domain = x['record']
@@ -70,15 +144,19 @@ class DomainBrute(object):
 
                 if utils.check_domain_black(current_record_domain):
                     continue
+                    
                 if current_record_domain not in domain_cname_record:
                     domain_cname_record.append(current_record_domain)
 
+        # 第二轮：处理CNAME指向的域名
         for domain in domain_cname_record:
+            # 只处理同一主域名下的CNAME
             if not domain.endswith(self.base_domain_scope):
                 continue
             if domain not in domains:
                 domains.append(domain)
 
+        # 批量解析所有域名
         start_time = time.time()
         logger.info("start resolver {} {}".format(self.base_domain, len(domains)))
         self.resolver_map = services.resolver_domain(domains)
@@ -86,17 +164,28 @@ class DomainBrute(object):
         logger.info("end resolver {} result {}, elapse {}".format(self.base_domain,
                                                                   len(self.resolver_map), elapse))
 
-    '''
-    DomainInfo
-    '''
-
     def run(self):
+        """
+        执行完整的域名爆破流程
+        
+        流程：
+        1. 使用massdns爆破子域名
+        2. 解析爆破结果的IP地址
+        
+        返回：
+        - brute_out: 爆破原始结果
+        - resolver_map: 域名->IP映射
+        """
         start_time = time.time()
         logger.info("start brute {} with dict {}".format(self.base_domain, len(self.dicts)))
+        
+        # 执行爆破
         self._brute_domain()
+        
         elapse = time.time() - start_time
         logger.info("end brute {}, result {}, elapse {}".format(self.base_domain,
                                                                 len(self.brute_out), elapse))
+
 
         self._resolver()
 

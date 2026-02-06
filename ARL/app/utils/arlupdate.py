@@ -1,3 +1,6 @@
+"""
+系统更新检查
+"""
 import sys
 import os
 import threading

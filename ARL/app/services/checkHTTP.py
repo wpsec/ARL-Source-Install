@@ -1,3 +1,6 @@
+"""
+HTTP连接状态检查
+"""
 import time
 
 from app import utils

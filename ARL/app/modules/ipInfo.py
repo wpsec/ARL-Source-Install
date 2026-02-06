@@ -1,3 +1,6 @@
+"""
+IP数据模型
+"""
 from .baseInfo import BaseInfo
 from app import utils
 

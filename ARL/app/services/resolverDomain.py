@@ -1,3 +1,6 @@
+"""
+域名解析和转换
+"""
 from app import utils
 import threading
 import collections

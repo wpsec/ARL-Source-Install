@@ -1,3 +1,6 @@
+"""
+DNS查询和解析
+"""
 import logging
 import time
 

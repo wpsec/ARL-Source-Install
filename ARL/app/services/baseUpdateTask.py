@@ -1,3 +1,6 @@
+"""
+任务更新处理基类
+"""
 from bson import ObjectId
 from app import utils
 
