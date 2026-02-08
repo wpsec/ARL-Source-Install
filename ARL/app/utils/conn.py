@@ -86,10 +86,67 @@ class ConnMongo(object):
         return self.instance
 
 
-def conn_db(collection, db_name = None):
+class CachedCollectionProxy(object):
+    """
+    MongoDB Collection 代理
+
+    说明：
+    - 统一拦截写操作，在写成功后清理对应列表缓存
+    - 保证新增/编辑/删除后，列表页刷新立即看到最新数据
+    """
+    WRITE_METHODS = {
+        # 新版写接口
+        "insert_one",
+        "insert_many",
+        "update_one",
+        "update_many",
+        "replace_one",
+        "find_one_and_replace",
+        "find_one_and_update",
+        "find_one_and_delete",
+        "delete_one",
+        "delete_many",
+        "bulk_write",
+        # 兼容旧版 PyMongo 写接口（项目中仍有存量调用）
+        "insert",
+        "update",
+        "remove",
+        "save",
+        "find_and_modify",
+    }
+
+    def __init__(self, collection_name, collection_obj):
+        self.collection_name = collection_name
+        self.collection_obj = collection_obj
+
+    def _invalidate_collection_list_cache(self):
+        """
+        失效该集合对应的列表缓存
+        """
+        try:
+            from app.utils.cache import cache_delete_by_prefix
+            cache_delete_by_prefix("route:build_data:{}:".format(self.collection_name))
+        except Exception:
+            # 缓存失效异常不影响主流程
+            pass
+
+    def __getattr__(self, item):
+        target = getattr(self.collection_obj, item)
+        if item in self.WRITE_METHODS and callable(target):
+            def _wrapped(*args, **kwargs):
+                result = target(*args, **kwargs)
+                self._invalidate_collection_list_cache()
+                return result
+            return _wrapped
+
+        return target
+
+
+def conn_db(collection, db_name=None):
     conn = ConnMongo().conn
     if db_name:
-        return conn[db_name][collection]
-
+        collection_obj = conn[db_name][collection]
     else:
-        return conn[Config.MONGO_DB][collection]
+        collection_obj = conn[Config.MONGO_DB][collection]
+
+    return CachedCollectionProxy(collection, collection_obj)

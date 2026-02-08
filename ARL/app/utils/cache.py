@@ -115,6 +115,36 @@ def cache_delete_obj(key):
         return False
 
 
+def cache_delete_by_prefix(prefix, batch_size=200):
+    """
+    按前缀批量删除缓存 key
+
+    说明：
+    - 用于列表类缓存的主动失效
+    - Redis 不可用时返回 0，保持主流程可用
+    """
+    client = get_redis_client()
+    if client is None:
+        return 0
+
+    deleted = 0
+    pattern = "{}*".format(prefix)
+    keys = []
+    try:
+        for key in client.scan_iter(match=pattern, count=batch_size):
+            keys.append(key)
+            if len(keys) >= batch_size:
+                deleted += client.delete(*keys)
+                keys = []
+
+        if keys:
+            deleted += client.delete(*keys)
+        return int(deleted)
+    except Exception as e:
+        logger.warning("cache delete by prefix error prefix:{} err:{}".format(prefix, e))
+        return 0
+
+
 def cached_call(key, loader, expire=None):
     """
     读取缓存，不命中时执行 loader 并回写缓存

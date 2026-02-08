@@ -580,4 +580,3 @@ def gen_model_policy_keys(model):
         return gen_model_policy_keys(model.model)
     else:
         return []
-

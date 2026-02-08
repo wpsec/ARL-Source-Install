@@ -287,7 +287,7 @@ class ARLResource(Resource):
             "args": raw_args,
         }
         cache_key = build_cache_key(
-            "route:build_data",
+            "route:build_data:{}".format(collection),
             json.dumps(cache_raw, ensure_ascii=False, sort_keys=True, default=str)
         )
         return cached_call(cache_key, _loader, expire=60)
