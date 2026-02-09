@@ -395,10 +395,7 @@ class RiskCruising(CommonTask):
         - 记录开始和结束时间
         - 正常完成标记为DONE，异常标记为ERROR
         """
-<<<<<<< HEAD
         success = False
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         try:
             self.update_task_field("start_time", utils.curr_date())
             self.work()
@@ -409,9 +406,5 @@ class RiskCruising(CommonTask):
             logger.exception(e)
 
         self.update_task_field("end_time", utils.curr_date())
-<<<<<<< HEAD
         if success:
             push_task_finish_notify(self.task_id)
-=======
-
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b

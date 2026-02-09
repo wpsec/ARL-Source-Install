@@ -449,12 +449,7 @@ class GithubTaskMonitor(GithubTaskTask):
         推送消息通知
         
         说明：
-<<<<<<< HEAD
         - 仅在有新增结果时推送（钉钉/邮件）
-=======
-        - 只有发现新结果才推送
-        - 同时推送钉钉和邮件
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         - 失败不影响任务执行
         """
         if not self.new_results:
@@ -628,4 +623,3 @@ def github_task_monitor(task_id, keyword, scheduler_id):
 
         task.update_status(TaskStatus.ERROR)
         task.set_end_time()
-

@@ -6,10 +6,7 @@
 - 支持钉钉推送
 - 用于任务结果通知和监控告警
 """
-<<<<<<< HEAD
 from bson import ObjectId
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
 from app.config import Config
 from app.utils import get_logger, push
 from app import utils
@@ -80,7 +77,6 @@ def push_dingding(markdown_report):
         logger.warning(e)
 
 
-<<<<<<< HEAD
 def build_task_finish_markdown(task_data):
     """
     构建普通任务完成后的钉钉摘要
@@ -193,6 +189,3 @@ def push_task_finish_notify(task_id):
     except Exception as e:
         logger.warning("push task finish notify error {}".format(task_id))
         logger.warning(e)
-=======
-
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b

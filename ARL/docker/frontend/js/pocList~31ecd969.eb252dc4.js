@@ -121,7 +121,6 @@
           { label: "任务名", key: "name", type: "input" },
           { label: "关键字", key: "keyword", type: "input" },
           { label: "cron表达式", key: "cron", type: "input" },
-<<<<<<< HEAD
           {
             label: "钉钉通知",
             key: "dingding_notify",
@@ -129,8 +128,6 @@
             required: !1,
             default: !0,
           },
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         ],
         y = {
           components: { AddPlanning: r.a, PageTemplate: u.a },
@@ -488,7 +485,6 @@
               { id: "risk_cruising", name: "风险巡航任务" },
             ],
           },
-<<<<<<< HEAD
           {
             label: "钉钉通知",
             key: "notify_enable",
@@ -496,8 +492,6 @@
             required: !1,
             default: !0,
           },
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         ],
         y = {
           components: { PageTemplate: r.a, AddPlanning: i.a },
@@ -681,11 +675,8 @@
               var t = {};
               return (
                 this.formItems.forEach(function (e) {
-<<<<<<< HEAD
                   if (!1 === e.required || "switch" === e.type || "checkbox" === e.type)
                     return void (t[e.key] = []);
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                   var a = {
                     required: !0,
                     message: "请输入".concat(e.label, "!"),
@@ -702,7 +693,6 @@
             },
           },
           methods: {
-<<<<<<< HEAD
             initForm: function () {
               var t = {};
               this.formItems.forEach(function (e) {
@@ -710,8 +700,6 @@
               });
               this.form = Object(n.a)(Object(n.a)({}, t), this.params || {});
             },
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
             scheduleChange: function (t) {
               this.schedule_type = t;
             },
@@ -721,14 +709,11 @@
                 if (e) {
                   t.confirmLoading = !0;
                   var a = Object(n.a)({}, t.form);
-<<<<<<< HEAD
                   t.formItems.forEach(function (t) {
                     void 0 === a[t.key] &&
                       void 0 !== t.default &&
                       (a[t.key] = t.default);
                   });
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                   t.submitApi(Object(n.a)(Object(n.a)({}, t.params), a))
                     .then(function (e) {
                       (t.$message.success("提交成功"),
@@ -743,17 +728,13 @@
             },
             handleCancel: function () {
               (this.$refs.form.resetFields(),
-<<<<<<< HEAD
                 (this.form = {}),
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                 (this.schedule_type = ""),
                 this.$emit("closeModal", !1));
             },
           },
           watch: {
             params: function (t, e) {
-<<<<<<< HEAD
               this.modalVisible && this.initForm();
             },
             modalVisible: function (t) {
@@ -766,9 +747,6 @@
                       e.$refs.form.clearValidate());
                   }))
                 : (this.form = {});
-=======
-              Object.keys(t).length && (this.form = Object(n.a)({}, t));
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
             },
           },
         },
@@ -809,7 +787,6 @@
                               "a-form-model-item",
                               {
                                 key: e.key,
-<<<<<<< HEAD
                                 attrs: {
                                   prop: e.key,
                                   label:
@@ -817,19 +794,13 @@
                                       ? ""
                                       : e.label,
                                 },
-=======
-                                attrs: { prop: e.key, label: e.label },
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                               },
                               [
                                 "input" === e.type
                                   ? a("a-input", {
                                       attrs: {
-<<<<<<< HEAD
                                         id: e.key,
                                         name: e.key,
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                                         placeholder: "请输入" + e.label,
                                       },
                                       model: {
@@ -846,11 +817,8 @@
                                       "a-select",
                                       {
                                         attrs: {
-<<<<<<< HEAD
                                           id: e.key,
                                           name: e.key,
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                                           "show-search": "",
                                           optionFilterProp: "label",
                                           allowClear: "",
@@ -886,15 +854,11 @@
                                       "a-date-picker",
                                       t._b(
                                         {
-<<<<<<< HEAD
                                           attrs: {
                                             id: e.key,
                                             name: e.key,
                                             "show-time": "",
                                           },
-=======
-                                          attrs: { "show-time": "" },
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                                           model: {
                                             value: t.form[e.key],
                                             callback: function (a) {
@@ -912,11 +876,8 @@
                                 "textarea" === e.type
                                   ? a("a-textarea", {
                                       attrs: {
-<<<<<<< HEAD
                                         id: e.key,
                                         name: e.key,
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                                         placeholder: "请输入" + e.label,
                                       },
                                       model: {
@@ -928,7 +889,6 @@
                                       },
                                     })
                                   : t._e(),
-<<<<<<< HEAD
                                 "switch" === e.type
                                   ? a(
                                       "div",
@@ -987,8 +947,6 @@
                                       1,
                                     )
                                   : t._e(),
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                               ],
                               1,
                             )

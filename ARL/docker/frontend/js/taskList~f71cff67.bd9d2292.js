@@ -178,13 +178,8 @@
                 { value: "site_capture", name: "站点截图" },
                 { value: "file_leak", name: "文件泄露" },
                 { value: "findvhost", name: "Host 碰撞" },
-<<<<<<< HEAD
                 { value: "web_info_hunter", name: "WIH 调用" },
                 { value: "dingding_notify", name: "钉钉通知" },
-=======
-                { value: "nuclei_scan", name: "nuclei 调用" },
-                { value: "web_info_hunter", name: "WIH 调用" },
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
               ],
             };
           },
@@ -238,7 +233,6 @@
             handleCancel: function () {
               this.$emit("closeModal");
             },
-<<<<<<< HEAD
             getAllOptionValues: function () {
               return []
                 .concat(this.checkboxListOne, this.checkboxListTwo, this.checkboxListThree)
@@ -260,8 +254,6 @@
                 return t.indexOf(e) > -1;
               });
             },
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
           },
         },
         i = (a("fb34"), a("2877")),
@@ -448,7 +440,6 @@
                     a(
                       "a-form-item",
                       {
-<<<<<<< HEAD
                         staticClass: "checkgroup-wrap checkgroup-wrap_option",
                         staticStyle: { "margin-left": "83px", "padding-bottom": "8px" },
                         attrs: { label: "" },
@@ -485,8 +476,6 @@
                     a(
                       "a-form-item",
                       {
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                         staticClass: "checkgroup-wrap checkbox-list_wrap",
                         attrs: { label: "" },
                       },
@@ -1724,10 +1713,7 @@
           },
           { title: "Host 碰撞", name: "Host 碰撞", param: "findvhost" },
           { title: "WIH 调用", name: "WIH 调用", param: "web_info_hunter" },
-<<<<<<< HEAD
           { title: "钉钉通知", name: "钉钉通知", param: "dingding_notify" },
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         ],
         o = [
           {
@@ -3446,7 +3432,6 @@
                 a(
                   "template",
                   { slot: "title" },
-<<<<<<< HEAD
                   [
                     e.props.record.stop_reason
                       ? a("p", [
@@ -3459,13 +3444,6 @@
                       ]);
                     }),
                   ],
-=======
-                  e._l(e.props.record.service, function (t, n) {
-                    return a("p", { key: n }, [
-                      e._v(e._s(t.name) + ": " + e._s(t.elapsed)),
-                    ]);
-                  }),
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
                   0,
                 ),
                 a("a-tag", { attrs: { color: e.props.record.tag_color } }, [

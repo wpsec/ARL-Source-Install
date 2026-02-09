@@ -852,10 +852,7 @@
           },
           { title: "Host 碰撞", name: "Host 碰撞", param: "findvhost" },
           { title: "WIH 调用", name: "WIH 调用", param: "web_info_hunter" },
-<<<<<<< HEAD
           { title: "钉钉通知", name: "钉钉通知", param: "dingding_notify" },
-=======
->>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         ],
         o = [
           {
