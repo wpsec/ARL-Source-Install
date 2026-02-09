@@ -40,6 +40,7 @@ from app.services.findVhost import find_vhost
 from app.services.dns_query import run_query_plugin
 from app.services.searchEngines import search_engines
 from app.services import domain_site_update
+from app.helpers.message_notify import push_task_finish_notify
 
 logger = utils.get_logger()
 
@@ -1165,6 +1166,7 @@ class DomainTask(CommonTask):
 
         self.update_task_field("status", TaskStatus.DONE)
         self.update_task_field("end_time", utils.curr_date())
+        push_task_finish_notify(self.task_id)
 
 
 def domain_task(base_domain, task_id, options):

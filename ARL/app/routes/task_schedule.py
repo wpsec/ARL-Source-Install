@@ -56,7 +56,10 @@ add_task_schedule_fields = ns.model('addTaskScheduleSite',  {
     'policy_id': fields.String(required=True, description="策略 ID"),
     'cron': fields.String(required=False, description="Cron"),
     'start_date': fields.String(required=False, description="开始时间"),
-    'task_tag': fields.String(required=True, description="任务类别 （task|risk_cruising）")
+    'task_tag': fields.String(required=True, description="任务类别 （task|risk_cruising）"),
+    'notify_enable': fields.Boolean(required=False, description="是否启用计划任务结果通知", default=True),
+    'notify_channel': fields.String(required=False, description="通知渠道（目前支持 dingding）", default="dingding"),
+    'notify_on': fields.String(required=False, description="通知触发条件（finished|failed|always）", default="finished")
 })
 
 
@@ -90,6 +93,17 @@ class ARLTaskScheduleResult(ARLResource):
         start_date = args.pop('start_date')
         policy_id = args.pop('policy_id')
         task_tag = args.pop("task_tag")
+        notify_enable_value = args.pop("notify_enable", None)
+        if notify_enable_value is None:
+            notify_enable = True
+        else:
+            notify_enable = bool(notify_enable_value)
+
+        notify_channel = args.pop("notify_channel", None)
+        notify_channel = str(notify_channel or "dingding").lower()
+
+        notify_on = args.pop("notify_on", None)
+        notify_on = str(notify_on or "finished").lower()
 
         avail_schedule_type = ["future_scan", "recurrent_scan"]
         if schedule_type not in avail_schedule_type:
@@ -98,6 +112,12 @@ class ARLTaskScheduleResult(ARLResource):
         avail_task_tag = [TaskTag.TASK, TaskTag.RISK_CRUISING]
         if task_tag not in avail_task_tag:
             return utils.build_ret(ErrorMsg.TaskTagInvalid, {"task_tag": task_tag})
+
+        if notify_channel not in ["dingding"]:
+            return utils.build_ret(ErrorMsg.Error, {"notify_channel": notify_channel})
+
+        if notify_on not in ["finished", "failed", "always"]:
+            return utils.build_ret(ErrorMsg.Error, {"notify_on": notify_on})
 
         try:
             # 资产发现任务
@@ -129,7 +149,10 @@ class ARLTaskScheduleResult(ARLResource):
             "status": TaskScheduleStatus.SCHEDULED,
             "run_number": 0,
             "last_run_time": 0,
-            "last_run_date": "-"
+            "last_run_date": "-",
+            "notify_enable": notify_enable,
+            "notify_channel": notify_channel,
+            "notify_on": notify_on
         }
 
         # 定时扫描处理
@@ -262,4 +285,3 @@ class RecoverARLTaskScheduler(ARLResource):
                 return utils.build_ret(ErrorMsg.Error, {"error": item})
 
         return utils.build_ret(ErrorMsg.Success, ret_data)
-

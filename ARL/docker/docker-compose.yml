@@ -34,10 +34,9 @@ services:
       - mongodb
       - rabbitmq
       - redis
-    ports:
-      #http 服务，默认不映射出来
-      #- "5003:80"
-      - "127.0.0.1:5003:443"
+    # 仅通过 nginx 容器反向代理访问，避免宿主机额外暴露端口
+    expose:
+      - "443"
     volumes:
       - ./config-docker.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
@@ -127,8 +126,7 @@ services:
     image: redis:7-alpine
     container_name: arl_redis
     restart: always
-    ports:
-      - "6379:6379"
+    # 仅容器内通信，避免宿主机暴露 Redis 端口
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes

@@ -121,6 +121,13 @@
           { label: "任务名", key: "name", type: "input" },
           { label: "关键字", key: "keyword", type: "input" },
           { label: "cron表达式", key: "cron", type: "input" },
+          {
+            label: "钉钉通知",
+            key: "dingding_notify",
+            type: "checkbox",
+            required: !1,
+            default: !0,
+          },
         ],
         y = {
           components: { AddPlanning: r.a, PageTemplate: u.a },
@@ -478,6 +485,13 @@
               { id: "risk_cruising", name: "风险巡航任务" },
             ],
           },
+          {
+            label: "钉钉通知",
+            key: "notify_enable",
+            type: "checkbox",
+            required: !1,
+            default: !0,
+          },
         ],
         y = {
           components: { PageTemplate: r.a, AddPlanning: i.a },
@@ -661,6 +675,8 @@
               var t = {};
               return (
                 this.formItems.forEach(function (e) {
+                  if (!1 === e.required || "switch" === e.type || "checkbox" === e.type)
+                    return void (t[e.key] = []);
                   var a = {
                     required: !0,
                     message: "请输入".concat(e.label, "!"),
@@ -677,6 +693,13 @@
             },
           },
           methods: {
+            initForm: function () {
+              var t = {};
+              this.formItems.forEach(function (e) {
+                void 0 !== e.default && (t[e.key] = e.default);
+              });
+              this.form = Object(n.a)(Object(n.a)({}, t), this.params || {});
+            },
             scheduleChange: function (t) {
               this.schedule_type = t;
             },
@@ -686,6 +709,11 @@
                 if (e) {
                   t.confirmLoading = !0;
                   var a = Object(n.a)({}, t.form);
+                  t.formItems.forEach(function (t) {
+                    void 0 === a[t.key] &&
+                      void 0 !== t.default &&
+                      (a[t.key] = t.default);
+                  });
                   t.submitApi(Object(n.a)(Object(n.a)({}, t.params), a))
                     .then(function (e) {
                       (t.$message.success("提交成功"),
@@ -700,13 +728,25 @@
             },
             handleCancel: function () {
               (this.$refs.form.resetFields(),
+                (this.form = {}),
                 (this.schedule_type = ""),
                 this.$emit("closeModal", !1));
             },
           },
           watch: {
             params: function (t, e) {
-              Object.keys(t).length && (this.form = Object(n.a)({}, t));
+              this.modalVisible && this.initForm();
+            },
+            modalVisible: function (t) {
+              var e = this;
+              t
+                ? (this.initForm(),
+                  this.$nextTick(function () {
+                    (e.$refs.form &&
+                      e.$refs.form.clearValidate &&
+                      e.$refs.form.clearValidate());
+                  }))
+                : (this.form = {});
             },
           },
         },
@@ -747,12 +787,20 @@
                               "a-form-model-item",
                               {
                                 key: e.key,
-                                attrs: { prop: e.key, label: e.label },
+                                attrs: {
+                                  prop: e.key,
+                                  label:
+                                    "switch" === e.type
+                                      ? ""
+                                      : e.label,
+                                },
                               },
                               [
                                 "input" === e.type
                                   ? a("a-input", {
                                       attrs: {
+                                        id: e.key,
+                                        name: e.key,
                                         placeholder: "请输入" + e.label,
                                       },
                                       model: {
@@ -769,6 +817,8 @@
                                       "a-select",
                                       {
                                         attrs: {
+                                          id: e.key,
+                                          name: e.key,
                                           "show-search": "",
                                           optionFilterProp: "label",
                                           allowClear: "",
@@ -804,7 +854,11 @@
                                       "a-date-picker",
                                       t._b(
                                         {
-                                          attrs: { "show-time": "" },
+                                          attrs: {
+                                            id: e.key,
+                                            name: e.key,
+                                            "show-time": "",
+                                          },
                                           model: {
                                             value: t.form[e.key],
                                             callback: function (a) {
@@ -822,6 +876,8 @@
                                 "textarea" === e.type
                                   ? a("a-textarea", {
                                       attrs: {
+                                        id: e.key,
+                                        name: e.key,
                                         placeholder: "请输入" + e.label,
                                       },
                                       model: {
@@ -832,6 +888,64 @@
                                         expression: "form[item.key]",
                                       },
                                     })
+                                  : t._e(),
+                                "switch" === e.type
+                                  ? a(
+                                      "div",
+                                      [
+                                        a("a-switch", {
+                                          attrs: {
+                                            id: e.key,
+                                            "aria-label": e.label,
+                                            checked:
+                                              void 0 === t.form[e.key]
+                                                ? !!e.default
+                                                : t.form[e.key],
+                                          },
+                                          on: {
+                                            change: function (a) {
+                                              t.$set(t.form, e.key, a);
+                                            },
+                                          },
+                                        }),
+                                        a(
+                                          "span",
+                                          { staticStyle: { "margin-left": "8px" } },
+                                          [t._v(t._s(e.label))],
+                                        ),
+                                      ],
+                                      1,
+                                    )
+                                  : t._e(),
+                                "checkbox" === e.type
+                                  ? a(
+                                      "a-checkbox",
+                                      {
+                                        attrs: {
+                                          id: e.key,
+                                          name: e.key,
+                                          checked:
+                                            void 0 === t.form[e.key]
+                                              ? !!e.default
+                                              : !!t.form[e.key],
+                                        },
+                                        on: {
+                                          change: function (a) {
+                                            var n =
+                                              "boolean" == typeof a
+                                                ? a
+                                                : !!(
+                                                    a &&
+                                                    a.target &&
+                                                    a.target.checked
+                                                  );
+                                            t.$set(t.form, e.key, n);
+                                          },
+                                        },
+                                      },
+                                      [],
+                                      1,
+                                    )
                                   : t._e(),
                               ],
                               1,

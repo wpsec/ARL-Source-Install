@@ -32,6 +32,7 @@ import time
 from bson import ObjectId
 from urllib.parse import urlparse
 from app.services.commonTask import CommonTask, WebSiteFetch
+from app.helpers.message_notify import push_task_finish_notify
 
 logger = utils.get_logger()
 
@@ -394,13 +395,16 @@ class RiskCruising(CommonTask):
         - 记录开始和结束时间
         - 正常完成标记为DONE，异常标记为ERROR
         """
+        success = False
         try:
             self.update_task_field("start_time", utils.curr_date())
             self.work()
             self.update_task_field("status", TaskStatus.DONE)
+            success = True
         except Exception as e:
             self.update_task_field("status", TaskStatus.ERROR)
             logger.exception(e)
 
         self.update_task_field("end_time", utils.curr_date())
-
+        if success:
+            push_task_finish_notify(self.task_id)

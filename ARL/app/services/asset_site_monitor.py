@@ -280,16 +280,18 @@ class AssetSiteMonitor(object):
         return markdown
 
     def build_markdown_report(self):
-        markdown = "\n站点监控-{} 灯塔消息推送\n\n".format(self.scope_name)
-
-        markdown += "\n 新发现标题变化 {}， 状态码变化 {} \n\n".format(
-            len(self.title_change_list), len(self.status_change_list))
+        markdown = "### 站点监控结果\n\n"
+        markdown += "- 范围：`{}`\n".format(self.scope_name)
+        markdown += "- 标题变化：`{}`\n".format(len(self.title_change_list))
+        markdown += "- 状态码变化：`{}`\n\n".format(len(self.status_change_list))
 
         if self.title_change_list:
+            markdown += "#### 标题变化\n\n"
             markdown += self.build_title_markdown_report()
             markdown += "\n"
 
         if self.status_change_list:
+            markdown += "#### 状态码变化\n\n"
             markdown += self.build_status_markdown_report()
 
         return markdown
@@ -395,8 +397,8 @@ class Domain2SiteMonitor(object):
 
         html += dict2table(info_list)
 
-        mark = "  新发现站点 {}  ".format(len(self.site_info_list))
-
+        mark = "#### 新发现站点\n\n"
+        mark += "- 数量：`{}`\n\n".format(len(self.site_info_list))
         mark += dict2dingding_mark(info_list)
 
         self.html_report = html
@@ -406,4 +408,3 @@ class Domain2SiteMonitor(object):
 def asset_site_monitor(scope_id):
     monitor = AssetSiteMonitor(scope_id=scope_id)
     monitor.run()
-

@@ -178,8 +178,8 @@
                 { value: "site_capture", name: "站点截图" },
                 { value: "file_leak", name: "文件泄露" },
                 { value: "findvhost", name: "Host 碰撞" },
-                { value: "nuclei_scan", name: "nuclei 调用" },
                 { value: "web_info_hunter", name: "WIH 调用" },
+                { value: "dingding_notify", name: "钉钉通知" },
               ],
             };
           },
@@ -232,6 +232,27 @@
             },
             handleCancel: function () {
               this.$emit("closeModal");
+            },
+            getAllOptionValues: function () {
+              return []
+                .concat(this.checkboxListOne, this.checkboxListTwo, this.checkboxListThree)
+                .map(function (t) {
+                  return t.value;
+                });
+            },
+            checkAllOptions: function () {
+              var t = this.getAllOptionValues();
+              this.form.setFieldsValue({ checkGroup: t });
+            },
+            uncheckAllOptions: function () {
+              this.form.setFieldsValue({ checkGroup: [] });
+            },
+            isAllOptionsChecked: function () {
+              var t = this.form.getFieldValue("checkGroup") || [],
+                e = this.getAllOptionValues();
+              return e.every(function (e) {
+                return t.indexOf(e) > -1;
+              });
             },
           },
         },
@@ -412,6 +433,42 @@
                             ]),
                           ],
                           1,
+                        ),
+                      ],
+                      1,
+                    ),
+                    a(
+                      "a-form-item",
+                      {
+                        staticClass: "checkgroup-wrap checkgroup-wrap_option",
+                        staticStyle: { "margin-left": "83px", "padding-bottom": "8px" },
+                        attrs: { label: "" },
+                      },
+                      [
+                        a(
+                          "a-checkbox",
+                          {
+                            staticClass: "check-all",
+                            attrs: { checked: t.isAllOptionsChecked() },
+                            on: {
+                              click: function (e) {
+                                return e.preventDefault(), t.checkAllOptions();
+                              },
+                            },
+                          },
+                          [t._v("全选")],
+                        ),
+                        a(
+                          "a",
+                          {
+                            staticStyle: { "margin-left": "12px" },
+                            on: {
+                              click: function (e) {
+                                return e.preventDefault(), t.uncheckAllOptions();
+                              },
+                            },
+                          },
+                          [t._v("全部取消勾选")],
                         ),
                       ],
                       1,
@@ -1656,6 +1713,7 @@
           },
           { title: "Host 碰撞", name: "Host 碰撞", param: "findvhost" },
           { title: "WIH 调用", name: "WIH 调用", param: "web_info_hunter" },
+          { title: "钉钉通知", name: "钉钉通知", param: "dingding_notify" },
         ],
         o = [
           {
@@ -3374,11 +3432,18 @@
                 a(
                   "template",
                   { slot: "title" },
-                  e._l(e.props.record.service, function (t, n) {
-                    return a("p", { key: n }, [
-                      e._v(e._s(t.name) + ": " + e._s(t.elapsed)),
-                    ]);
-                  }),
+                  [
+                    e.props.record.stop_reason
+                      ? a("p", [
+                          e._v("中断原因: " + e._s(e.props.record.stop_reason)),
+                        ])
+                      : e._e(),
+                    e._l(e.props.record.service, function (t, n) {
+                      return a("p", { key: n }, [
+                        e._v(e._s(t.name) + ": " + e._s(t.elapsed)),
+                      ]);
+                    }),
+                  ],
                   0,
                 ),
                 a("a-tag", { attrs: { color: e.props.record.tag_color } }, [

@@ -11,6 +11,7 @@ import re
 import sys
 import hashlib
 from celery.utils.log import get_task_logger
+from celery import current_task
 import colorlog
 import logging
 import dns.resolver
@@ -197,11 +198,49 @@ def kill_child_process(pid):
 def exit_gracefully(signum, frame):
     logger = get_logger()
     logger.info('Receive signal {} frame {}'.format(signum, frame))
+    mark_task_interrupted(signum=signum)
     pid = os.getpid()
     kill_child_process(pid)
     parent = psutil.Process(pid)
     logger.info("kill self {}".format(parent))
     parent.kill()
+
+
+def mark_task_interrupted(signum):
+    """
+    在 worker 收到终止信号时，尽量把运行中的任务标记为 error，并写入 stop_reason。
+    说明：
+    - 手动 stop 已提前写入 stop 状态，这里不会覆盖终态。
+    - 优先按当前 celery_id 反查任务，避免依赖进程内变量。
+    """
+    logger = get_logger()
+    reason = "worker interrupted by signal {}".format(signum)
+
+    try:
+        request = getattr(current_task, "request", None)
+        celery_id = getattr(request, "id", None)
+        if not celery_id:
+            return
+
+        update = {
+            "$set": {
+                "status": "error",
+                "end_time": curr_date(),
+                "stop_reason": reason,
+                "interrupted": True,
+            }
+        }
+
+        query = {"celery_id": celery_id, "status": {"$nin": ["done", "stop", "error"]}}
+        task_result = conn_db("task").update_one(query, update)
+        github_result = conn_db("github_task").update_one(query, update)
+
+        if task_result.modified_count or github_result.modified_count:
+            logger.warning(
+                "mark interrupted task by celery_id:{} reason:{}".format(celery_id, reason)
+            )
+    except Exception as e:
+        logger.warning("mark_task_interrupted error {}".format(e))
 
 
 def truncate_string(s):
@@ -215,4 +254,3 @@ def truncate_string(s):
 from .user import user_login, user_login_header, auth, user_logout, change_pass
 from .push import message_push
 from .fingerprint import parse_human_rule, transform_rule_map
-

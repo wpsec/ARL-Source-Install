@@ -29,6 +29,7 @@ from app.services import fetchCert, run_risk_cruising, run_sniffer
 from app import utils
 from app.services.commonTask import CommonTask, BaseUpdateTask, WebSiteFetch
 from app.config import Config
+from app.helpers.message_notify import push_task_finish_notify
 
 
 logger = utils.get_logger()
@@ -492,6 +493,7 @@ class IPTask(CommonTask):
 
         base_update.update_task_field("status", TaskStatus.DONE)
         base_update.update_task_field("end_time", utils.curr_date())
+        push_task_finish_notify(self.task_id)
 
 
 def ip_task(ip_target, task_id, options):
@@ -514,4 +516,3 @@ def ip_task(ip_target, task_id, options):
     except Exception as e:
         logger.exception(e)
         d.base_update_task.update_task_field("status", "error")
-
