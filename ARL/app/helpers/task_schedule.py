@@ -554,3 +554,4 @@ def change_task_schedule_status(_id, status):
     utils.conn_db('task_schedule').find_one_and_replace(query, item)
 
     return item
+

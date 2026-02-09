@@ -2082,7 +2082,10 @@
           { value: "file_leak", name: "文件泄露" },
           { value: "nuclei_scan", name: "nuclei 调用" },
           { value: "web_info_hunter", name: "WIH 调用" },
+<<<<<<< HEAD
           { value: "dingding_notify", name: "钉钉通知" },
+=======
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         ],
         a = { big: "大字典", test: "测试" },
         o = {
@@ -2106,7 +2109,10 @@
           skip_scan_cdn_ip: "跳过CDN",
           npoc_service_detection: "服务(python)识别",
           web_info_hunter: "WIH 调用",
+<<<<<<< HEAD
           dingding_notify: "钉钉通知",
+=======
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         },
         c = {
           site_identify: "站点识别",
@@ -2115,7 +2121,10 @@
           site_capture: "站点截图",
           file_leak: "文件泄露",
           nuclei_scan: "nuclei 调用",
+<<<<<<< HEAD
           dingding_notify: "钉钉通知",
+=======
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
         },
         u = [{ name: "策略名称", key: "name" }];
     },

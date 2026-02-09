@@ -2,6 +2,7 @@
 
 ## 二开更新说明
 
+<<<<<<< HEAD
 ### 批量表格导出（任务管理）
 
 - 新增/修复入口：`任务管理 -> 勾选任务 -> 批量导出 -> 表格批量导出`
@@ -13,6 +14,11 @@
 
 - 修复前端下载流程中“返回200但提示导出失败/文件内容为undefined”的问题
 - 修复批量导出过程中异常字段导致的导出失败问题（非法字符、字段类型兼容等）
+=======
+此项目用于ARL本地二开的基础设施环境，因后续功能面向内部使用，所以此版本面向各位大佬，大佬们可以通过此基础环境展开二开，此项目基础设施环境做了大量升级和改造，主要是以下升级改造
+
+## 主要升级
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
 
 ### 开发规范文档位置
 
@@ -40,6 +46,37 @@ docker exec -it arl_redis redis-cli --scan --pattern 'route:build_data*' | head
 docker exec -it arl_redis redis-cli --scan --pattern 'helper:*' | head
 docker exec -it arl_redis redis-cli --scan --pattern 'arl:*' | head
 ```
+
+redis 缓存
+
+更新了大量代码已保证 redis 收益最大化
+
+- 新增 Redis 业务缓存配置：`ARL/docker/config-docker.yaml`、`ARL/app/config.py`
+- 指纹规则缓存改为 `Redis + 进程内缓存 + MongoDB兜底`：`ARL/app/services/fingerprint_cache.py`
+- 高并发查询路径接入缓存：
+  - 通用列表查询入口：`ARL/app/routes/__init__.py`（`build_data`）
+  - 高频辅助查询：`ARL/app/utils/arl.py`、`ARL/app/helpers/*`
+- 缓存策略：
+  - 读请求短TTL缓存（约 60~120 秒）
+  - 大分页（`size > 5000`）绕过缓存，避免缓存超大对象
+  - Redis 不可用自动降级到 MongoDB，不影响功能可用性
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1770384060648-ffbb4799-9cb6-4c19-8263-81688a9aabb8.png)
+
+经过测试，有了 redis 的加持，系统的响应速度有了质的提升
+
+表格批量导出功能
+
+- 新增/修复入口：`任务管理 -> 勾选任务 -> 批量导出 -> 表格批量导出`
+- 后端接口：`POST /api/export/batch`
+- 导出格式：`xlsx`，并与单任务导出保持同结构（`站点`、`IP`、`系统服务`、`域名`、`资产统计`）
+- 批量逻辑：在单任务导出结构不变的前提下，对多任务数据进行合并去重
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1770383467291-0f787529-2806-46f1-9fac-90e594f1c597.png)
 
 ## 版本升级信息
 
@@ -114,8 +151,9 @@ docker compose up -d
 - **ARL 系统用户名**: `admin`
 - **ARL 系统密码**: `arlpass`
 
-## 版本信息
+## Rocky Linux 8 升级
 
+<<<<<<< HEAD
 - 现有代码 100% 兼容
 - 无需代码修改
 
@@ -126,6 +164,8 @@ docker compose up -d
 
 ## Rocky Linux 8 升级
 
+=======
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
 | 对比项       | CentOS 7            | Rocky Linux 8            |
 | ------------ | ------------------- | ------------------------ |
 | 维护状态     | 已停止 (2024/06/30) | 长期支持 (至 2029/05/31) |
@@ -145,10 +185,19 @@ docker compose up -d
 | 内存占用 | 基准        | -15%        | 明显   |
 | 索引效率 | 基准        | +25%        | 显著   |
 | 事务支持 | 无          | 完整 ACID   | 新功能 |
+<<<<<<< HEAD
+=======
+
+**升级注意**：
+
+- 旧数据自动迁移
+- 无需手动转换
+- 兼容所有现有操作
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
 
 ### 缓存系统新增 (Redis 7)
 
-**之前**：仅使用MongoDB和RabbitMQ
+**之前**：仅使用MongoDB和RabbitMQ  
 **现在**：添加Redis分层缓存
 
 - 会话缓存
@@ -188,13 +237,31 @@ docker compose up -d
    - 用户名: `admin`
    - 默认密码: `admin123456`
    - 用途: 保护后端应用
-
 2. **ARL系统认证** (应用层)
    - 用户名: `admin`
    - 默认密码: `arlpass`
    - 用途: 应用内用户认证
    - 存储: MongoDB中的密码哈希
 
+<<<<<<< HEAD
+=======
+**登录流程**：
+
+```plain
+用户输入 (admin/arlpass)
+  ↓
+Web前端 POST /api/user/login
+  ↓
+Backend调用gen_md5('arlsalt!@#' + 'arlpass')
+  ↓
+计算结果: fe0a9aeac7e5c03922067b40db984f0e
+  ↓
+查询MongoDB: db.user.findOne({username: 'admin', password: 'fe0a9aeac7e5c03922067b40db984f0e'})
+  ↓
+返回token (登录成功)
+```
+
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
 ## Docker 镜像概览
 
 ### 基础镜像
@@ -228,7 +295,7 @@ docker compose up -d
 
 ### 网络访问流程
 
-```
+```plain
 ┌─────────────────────────────────────────────────────────────────┐
 │                    用户浏览器                                     │
 │              http://192.168.X.X                                 │
@@ -281,21 +348,25 @@ docker compose up -d
    - 监听: `0.0.0.0:80`
    - 功能: 反向代理 + Basic Auth认证
    - 目的: 保护后端应用，限制公网访问
-
 2. **内层Nginx (arl_web 容器)**
    - 监听: `0.0.0.0:80` + `0.0.0.0:443` (容器内)
    - 功能: 静态页面服务 + API反向代理
    - 目的: 提供前端页面和API接口
-
 3. **访问流程**
    - 用户 → 外层Nginx (需要Basic Auth) → 内层Nginx + Gunicorn API
    - 外层Nginx强制HTTPS → 内层Nginx自签名证书处理
 
 ## 项目结构
 
+<<<<<<< HEAD
 ```text
 ARL-TI/
 ├── ARL/                              # 主应用源码
+=======
+```plain
+ARL-Source-Install/
+├── ARL/                          # ARL 主应用源码
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
 │   ├── app/
 │   │   ├── routes/                   # API 路由层（任务、资产、导出、调度等）
 │   │   ├── services/                 # 核心业务服务（扫描、指纹、同步、监控等）
@@ -326,6 +397,105 @@ ARL-TI/
 └── README.md
 ```
 
+<<<<<<< HEAD
+=======
+## 快速开始
+
+### 前置需求
+
+- Docker >= 20.10
+- docker-compose >= 1.29
+- 至少 10GB 磁盘空间
+- 至少 4GB 内存
+
+### 安装步骤
+
+#### 1. 准备离线工具
+
+确保 `tools/` 目录包含所有必需文件：
+
+- `GeoLite2-ASN.mmdb` - GeoIP ASN 数据库
+- `GeoLite2-City.mmdb` - GeoIP 城市数据库
+- `nuclei` - 漏洞扫描工具 (ZIP 或二进制)
+- `wih_linux_amd64` - 网站识别工具
+- `ncrack` - 网络爆破工具
+- `ncrack-services` - ncrack 服务配置
+
+#### 2. 构建 Docker 镜像
+
+```bash
+cd ARL-Source-Install
+chmod +x build.sh start.sh
+./build.sh
+```
+
+脚本会自动：
+
+- 检查 Docker 和 docker-compose
+- 验证所有必需文件
+- 构建 `arl:local` 镜像
+
+#### 3. 启动系统
+
+```bash
+./start.sh
+```
+
+脚本会自动：
+
+- 创建 MongoDB 数据卷 (`arl_db`) - **必需**
+- 创建导出目录
+- 启动所有容器
+
+**重要**：如果数据卷不存在，`docker compose up -d` 会失败。`start.sh` 会自动创建。
+
+**或者手动启动：**
+
+```bash
+# 手动创建数据卷
+docker volume create arl_db
+
+# 进入 Docker 目录
+cd ARL/docker
+
+# 启动服务
+docker compose up -d
+```
+
+#### 4. 验证安装
+
+等待所有容器启动完成，然后访问：
+
+- **Web 界面**: [https://localhost:5003](https://localhost:5003)
+- **RabbitMQ 管理界面**: [http://localhost:15672](http://localhost:15672) (默认 guest/guest)
+- **MongoDB**: mongodb://localhost:27017
+
+## Docker 镜像详解
+
+### arl:local 镜像组成
+
+**基础**
+
+- FROM `rockylinux:8`
+- Python 3.6 + pip
+- 必要的系统工具
+
+**ARL 应用**
+
+- ARL 源码
+- arl-report 源码
+- ARL-NPoC 漏洞库
+
+**离线工具** (从 tools/ 目录复制)
+
+- nuclei v3.1.3+ - 漏洞扫描
+- WIH - 网站识别
+- ncrack - 网络爆破
+- GeoLite2 数据库 - IP 地理位置
+- phantomjs - 页面渲染
+- python3.6
+
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
 ## 密码问题
 
 ### 无法登录 (用户名或密码错误)
@@ -340,3 +510,10 @@ use arl
 db.user.drop()
 db.user.insert({ username: 'admin',  password: hex_md5('arlsalt!@#'+'admin123') })
 ```
+<<<<<<< HEAD
+=======
+
+## 许可证
+
+本项目基于原 ARL 项目，遵循原项目的许可证。详见 [ARL/LICENSE.md](./ARL/LICENSE.md)
+>>>>>>> 2206ccf2c4fd7a50bd4600ba24497329f627c06b
