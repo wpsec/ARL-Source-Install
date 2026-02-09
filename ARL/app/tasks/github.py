@@ -419,8 +419,11 @@ class GithubTaskMonitor(GithubTaskTask):
         """
         repo_map = self.build_repo_map()
 
-        markdown = "[监控-Github-{}] \n 仓库数:{}  结果数:{} \n --- \n".format(self.keyword,
-                                                                        len(repo_map.keys()), len(self.new_results))
+        markdown = "### GitHub 监控结果\n\n"
+        markdown += "- 关键词：`{}`\n".format(self.keyword)
+        markdown += "- 仓库数：`{}`\n".format(len(repo_map.keys()))
+        markdown += "- 新增结果：`{}`\n\n".format(len(self.new_results))
+        markdown += "#### 结果列表\n\n"
 
         global_cnt = 0
         repo_cnt = 0
@@ -435,7 +438,7 @@ class GithubTaskMonitor(GithubTaskTask):
                 tr_cnt += 1
                 global_cnt += 1
                 url_text = item.repo_full_name + " " + item.path
-                markdown += "{}. [{}]({})  \n".format(global_cnt, url_text, item.html_url)
+                markdown += "{}. [{}]({})\n".format(global_cnt, url_text, item.html_url)
                 if tr_cnt > 5:
                     break
 
@@ -446,17 +449,41 @@ class GithubTaskMonitor(GithubTaskTask):
         推送消息通知
         
         说明：
-        - 只有发现新结果才推送
-        - 同时推送钉钉和邮件
+        - 仅在有新增结果时推送（钉钉/邮件）
         - 失败不影响任务执行
         """
         if not self.new_results:
             return
 
         logger.info("found new result {} {}".format(self.keyword, len(self.new_results)))
-
-        self.push_dingding()
+        if self.enable_dingding_notify():
+            self.push_dingding()
         self.push_email()
+
+    def enable_dingding_notify(self):
+        """
+        是否启用 GitHub 监控钉钉通知
+
+        说明：
+        - 读取 github_scheduler 配置项 dingding_notify
+        - 兼容历史数据：字段缺失时默认启用
+        """
+        try:
+            if not self.scheduler_id or len(self.scheduler_id) != 24:
+                return True
+
+            query = {"_id": ObjectId(self.scheduler_id)}
+            item = utils.conn_db("github_scheduler").find_one(query, {"dingding_notify": 1})
+            if not item:
+                return True
+
+            dingding_notify_value = item.get("dingding_notify", None)
+            if dingding_notify_value is None:
+                return True
+
+            return bool(dingding_notify_value)
+        except Exception:
+            return True
 
     def push_dingding(self):
         """
@@ -596,4 +623,3 @@ def github_task_monitor(task_id, keyword, scheduler_id):
 
         task.update_status(TaskStatus.ERROR)
         task.set_end_time()
-

@@ -13,6 +13,7 @@ from app.utils import http_req, get_logger
 from app.config import Config
 
 logger = get_logger()
+NOTIFY_THEME_TITLE = "互联网资产自动化收集"
 
 
 class Push(object):
@@ -96,17 +97,29 @@ class Push(object):
         return site_info_list
 
     def _push_dingding(self):
-        tpl = ""
+        parts = []
+        parts.append("### 资产监控结果")
+        parts.append("- 任务：`{}`".format(self.task_name or "-"))
+        parts.append("- 新域名：`{}`".format(self.domain_len))
+        parts.append("- 新IP：`{}`".format(self.ip_len))
+        parts.append("- 新站点：`{}`".format(self.site_len))
+        parts.append("")
+
         if self.domain_len > 0:
-            tpl = "[{}]新发现域名 `{}` , 站点 `{}`\n***\n".format(self.task_name, self.domain_len, self.site_len)
-            tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.domain_info_list))
+            parts.append("#### 新发现域名")
+            parts.append(dict2dingding_mark(self.domain_info_list))
+            parts.append("")
 
         if self.ip_len > 0:
-            tpl = "[{}]新发现 IP `{}` , 站点 `{}`\n***\n".format(self.task_name, self.ip_len, self.site_len)
-            tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.ip_info_list))
+            parts.append("#### 新发现IP")
+            parts.append(dict2dingding_mark(self.ip_info_list))
+            parts.append("")
 
-        tpl += "\n***\n"
-        tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.site_info_list))
+        if self.site_len > 0:
+            parts.append("#### 新发现站点")
+            parts.append(dict2dingding_mark(self.site_info_list))
+
+        tpl = "\n".join(parts).strip()
         ding_out = dingding_send(msg=tpl, access_token=Config.DINGDING_ACCESS_TOKEN,
                                  secret=Config.DINGDING_SECRET, msgtype="markdown")
         if ding_out["errcode"] != 0:
@@ -224,15 +237,23 @@ def dict2dingding_mark(info_list):
     if not info_list:
         return ""
 
-    title_tpl = '  \t\t  '.join(map(str, info_list[0].keys()))
-    items_tpl = ""
-    cnt = 0
-    for row in info_list:
-        cnt += 1
-        row = ' \t '.join(map(str, row.values()))
-        items_tpl += "{}. {}\n".format(cnt, row)
+    items_tpl = []
+    for idx, row in enumerate(info_list, 1):
+        row_text = " | ".join(["{}: {}".format(str(k), str(v)) for k, v in row.items()])
+        items_tpl.append("{}. {}".format(idx, row_text))
 
-    return "{}\n{}".format(title_tpl, items_tpl)
+    return "\n".join(items_tpl)
+
+
+def with_notify_theme(msg):
+    msg = (msg or "").strip()
+    if not msg:
+        msg = "无内容"
+
+    if NOTIFY_THEME_TITLE in msg[:40]:
+        return msg
+
+    return "### {}\n\n{}\n".format(NOTIFY_THEME_TITLE, msg)
 
 
 def dingding_send(msg, access_token, secret, msgtype="text", title="灯塔消息推送"):
@@ -245,14 +266,16 @@ def dingding_send(msg, access_token, secret, msgtype="text", title="灯塔消息
     sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
     param = "&timestamp={}&sign={}".format(timestamp, sign)
     ding_url = ding_url + param
+    themed_msg = with_notify_theme(msg)
+    themed_title = "{} - {}".format(NOTIFY_THEME_TITLE, title)
     send_json = {
         "msgtype": msgtype,
         "text": {
-            "content": msg
+            "content": themed_msg
         },
         "markdown": {
-            "title": title,
-            "text": msg
+            "title": themed_title,
+            "text": themed_msg
         }
     }
     conn = http_req(ding_url, method='post', json=send_json)

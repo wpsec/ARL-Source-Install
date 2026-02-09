@@ -49,7 +49,8 @@ base_search_fields.update(base_query_fields)
 add_github_scheduler_fields = ns.model('AddGithubScheduler', {
     'name': fields.String(required=True, description="任务名"),
     'keyword': fields.String(required=True, description="关键字"),
-    "cron": fields.String(required=True, description="Cron 表达式")
+    "cron": fields.String(required=True, description="Cron 表达式"),
+    "dingding_notify": fields.Boolean(required=False, description="是否启用钉钉通知", default=True)
 })
 
 
@@ -80,6 +81,11 @@ class ARLGithubScheduler(ARLResource):
         keyword = args.pop('keyword')
         keyword = keyword.strip()
         cron = args.pop('cron')
+        dingding_notify_value = args.pop("dingding_notify", None)
+        if dingding_notify_value is None:
+            dingding_notify = True
+        else:
+            dingding_notify = bool(dingding_notify_value)
 
         if not keyword:
             return utils.build_ret(ErrorMsg.GithubKeywordEmpty, data={})
@@ -98,7 +104,8 @@ class ARLGithubScheduler(ARLResource):
             "last_run_date": "-",
             "last_run_time": 0,
             "next_run_date": utils.time2date(time.time() + next_sec),
-            "status": SchedulerStatus.RUNNING
+            "status": SchedulerStatus.RUNNING,
+            "dingding_notify": dingding_notify
         }
 
         utils.conn_db('github_scheduler').insert_one(scheduler_data)
@@ -143,7 +150,8 @@ update_github_scheduler_fields = ns.model('updateGithubScheduler',  {
     "_id": fields.String(required=True, description="Github 监控任务ID"),
     'name': fields.String(required=False, description="任务名"),
     'keyword': fields.String(required=False, description="关键字"),
-    "cron": fields.String(required=False, description="Cron 表达式")
+    "cron": fields.String(required=False, description="Cron 表达式"),
+    "dingding_notify": fields.Boolean(required=False, description="是否启用钉钉通知")
 })
 
 
@@ -162,6 +170,7 @@ class UpdateGithubScheduler(ARLResource):
         name = args.pop('name')
         keyword = args.pop('keyword')
         cron = args.pop('cron')
+        dingding_notify_value = args.pop("dingding_notify")
 
         item = github_task.find_github_scheduler(job_id)
         if not item:
@@ -183,6 +192,9 @@ class UpdateGithubScheduler(ARLResource):
 
             item["next_run_date"] = utils.time2date(time.time() + next_sec)
             item["cron"] = cron
+
+        if dingding_notify_value is not None:
+            item["dingding_notify"] = bool(dingding_notify_value)
 
         query = {
             "_id": ObjectId(job_id)

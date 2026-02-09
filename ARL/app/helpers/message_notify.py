@@ -6,8 +6,11 @@
 - 支持钉钉推送
 - 用于任务结果通知和监控告警
 """
+from bson import ObjectId
 from app.config import Config
 from app.utils import get_logger, push
+from app import utils
+from app.modules import TaskTag, TaskStatus
 
 logger = get_logger()
 
@@ -74,4 +77,115 @@ def push_dingding(markdown_report):
         logger.warning(e)
 
 
+def build_task_finish_markdown(task_data):
+    """
+    构建普通任务完成后的钉钉摘要
+    """
+    task_id = str(task_data.get("_id", ""))
+    name = str(task_data.get("name", ""))
+    task_type = str(task_data.get("type", ""))
+    task_tag = str(task_data.get("task_tag", ""))
+    status = str(task_data.get("status", ""))
+    target = str(task_data.get("target", ""))
+    start_time = str(task_data.get("start_time", "-"))
+    end_time = str(task_data.get("end_time", "-"))
+    statistic = task_data.get("statistic", {})
 
+    task_type_map = {
+        "domain": "域名资产扫描",
+        "ip": "IP资产扫描",
+        "risk_cruising": "风险巡航",
+        "fofa": "FOFA资产扫描",
+        "asset_site_update": "站点监控更新",
+        "asset_wih_update": "WIH监控更新",
+    }
+    task_tag_map = {
+        "task": "资产发现任务",
+        "monitor": "资产监控任务",
+        "risk_cruising": "风险巡航任务",
+    }
+    status_map = {
+        "done": "已完成",
+        "error": "执行异常",
+        "stop": "已停止",
+        "waiting": "等待中",
+    }
+
+    task_type_text = task_type_map.get(task_type, task_type)
+    task_tag_text = task_tag_map.get(task_tag, task_tag)
+    status_text = status_map.get(status, status)
+
+    site_cnt = 0
+    domain_cnt = 0
+    ip_cnt = 0
+    url_cnt = 0
+    vuln_cnt = 0
+    if isinstance(statistic, dict) and statistic:
+        site_cnt = statistic.get("site_cnt", 0)
+        domain_cnt = statistic.get("domain_cnt", 0)
+        ip_cnt = statistic.get("ip_cnt", 0)
+        url_cnt = statistic.get("url_cnt", 0)
+        vuln_cnt = statistic.get("vuln_cnt", 0)
+
+    markdown = "### 任务执行完成通知\n\n"
+    markdown += "本次任务`{}`，共发现：站点 `{}` / 域名 `{}` / IP `{}`。\n\n".format(
+        status_text, site_cnt, domain_cnt, ip_cnt
+    )
+    markdown += "#### 基础信息\n\n"
+    markdown += "- 任务ID：`{}`\n".format(task_id)
+    markdown += "- 任务名称：`{}`\n".format(name)
+    markdown += "- 任务类型：`{}`\n".format(task_type_text)
+    markdown += "- 任务类别：`{}`\n".format(task_tag_text)
+    markdown += "- 执行状态：`{}`\n".format(status_text)
+    markdown += "- 开始时间：`{}`\n".format(start_time)
+    markdown += "- 结束时间：`{}`\n".format(end_time)
+    markdown += "- 扫描目标：`{}`\n\n".format(target[:180])
+
+    if isinstance(statistic, dict) and statistic:
+        markdown += "\n#### 结果统计\n\n"
+        markdown += "- 站点数（可访问地址）：`{}`\n".format(site_cnt)
+        markdown += "- 域名数：`{}`\n".format(domain_cnt)
+        markdown += "- IP数：`{}`\n".format(ip_cnt)
+        markdown += "- URL数：`{}`\n".format(url_cnt)
+        markdown += "- 漏洞数：`{}`\n".format(vuln_cnt)
+
+    return markdown
+
+
+def push_task_finish_notify(task_id):
+    """
+    普通任务完成后的钉钉推送
+
+    说明：
+    - 仅对普通任务和风险巡航任务生效
+    - 计划任务子任务会标记 from_task_schedule，避免和计划任务推送重复
+    """
+    try:
+        if not task_id or len(task_id) != 24:
+            return
+
+        query = {"_id": ObjectId(task_id)}
+        task_data = utils.conn_db("task").find_one(query)
+        if not task_data:
+            return
+
+        if task_data.get("status") != TaskStatus.DONE:
+            return
+
+        task_tag = task_data.get("task_tag", "")
+        if task_tag not in [TaskTag.TASK, TaskTag.RISK_CRUISING]:
+            return
+
+        options = task_data.get("options", {})
+        if not (isinstance(options, dict) and options.get("dingding_notify")):
+            return
+
+        if isinstance(options, dict) and options.get("from_task_schedule"):
+            return
+
+        markdown_report = build_task_finish_markdown(task_data)
+        push_dingding(markdown_report=markdown_report)
+
+    except Exception as e:
+        logger.warning("push task finish notify error {}".format(task_id))
+        logger.warning(e)

@@ -78,6 +78,7 @@ base_search_task_fields = {
     'options.nuclei_scan': fields.Boolean(description="是否开启Nuclei漏洞扫描"),
     'options.findvhost': fields.Boolean(description="是否开启虚拟主机碰撞检测"),
     'options.web_info_hunter': fields.Boolean(description="是否开启WebInfoHunter（JS信息收集）"),
+    'options.dingding_notify': fields.Boolean(description="任务完成后是否钉钉通知"),
 }
 
 # 合并基础查询字段
@@ -110,6 +111,7 @@ add_task_fields = ns.model('AddTask', {
     "nuclei_scan": fields.Boolean(description="Nuclei漏洞扫描", example=False, default=False),
     "findvhost": fields.Boolean(example=False, default=False, description="虚拟主机碰撞"),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="WebInfoHunter JS信息收集"),
+    "dingding_notify": fields.Boolean(example=False, default=False, description="任务完成后是否推送钉钉通知"),
 })
 
 
@@ -715,5 +717,3 @@ class TaskRestart(ARLResource):
             return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
 
         return utils.build_ret(ErrorMsg.Success, {"task_id": task_id_list})
-
-
