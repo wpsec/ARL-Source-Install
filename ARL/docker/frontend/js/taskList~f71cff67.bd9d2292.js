@@ -1120,7 +1120,7 @@
                                 }
                               : null));
                         }),
-                        (t.dataList = Object.freeze(e.items)),
+                        (t.dataList = e.items),
                         (t.total = e.total),
                         document.querySelector("#contentWrap") &&
                           (document.querySelector("#contentWrap").scrollTop =

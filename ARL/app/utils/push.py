@@ -188,7 +188,7 @@ class Push(object):
 
     def push_dingding(self):
         try:
-            if Config.DINGDING_ACCESS_TOKEN and Config.DINGDING_SECRET:
+            if Config.DINGDING_ACCESS_TOKEN:
                 if self._push_dingding():
                     logger.info("push dingding succ")
                     return True
@@ -256,16 +256,17 @@ def with_notify_theme(msg):
     return "### {}\n\n{}\n".format(NOTIFY_THEME_TITLE, msg)
 
 
-def dingding_send(msg, access_token, secret, msgtype="text", title="灯塔消息推送"):
+def dingding_send(msg, access_token, secret="", msgtype="text", title="灯塔消息推送"):
     ding_url = "https://oapi.dingtalk.com/robot/send?access_token={}".format(access_token)
-    timestamp = str(round(time.time() * 1000))
-    secret_enc = secret.encode('utf-8')
-    string_to_sign = '{}\n{}'.format(timestamp, secret)
-    string_to_sign_enc = string_to_sign.encode('utf-8')
-    hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
-    sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
-    param = "&timestamp={}&sign={}".format(timestamp, sign)
-    ding_url = ding_url + param
+    if secret:
+        timestamp = str(round(time.time() * 1000))
+        secret_enc = secret.encode('utf-8')
+        string_to_sign = '{}\n{}'.format(timestamp, secret)
+        string_to_sign_enc = string_to_sign.encode('utf-8')
+        hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
+        sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+        param = "&timestamp={}&sign={}".format(timestamp, sign)
+        ding_url = ding_url + param
     themed_msg = with_notify_theme(msg)
     themed_title = "{} - {}".format(NOTIFY_THEME_TITLE, title)
     send_json = {

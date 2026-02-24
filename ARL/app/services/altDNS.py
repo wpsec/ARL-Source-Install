@@ -227,7 +227,8 @@ class AltDNS(object):
 
         mass = MassDNS(domains, mass_dns_bin=Config.MASSDNS_BIN,
                        dns_server=Config.DNS_SERVER, tmp_dir=Config.TMP_PATH,
-                       wildcard_domain_ip=self.wildcard_domain_ip, concurrent=Config.ALT_DNS_CONCURRENT)
+                       wildcard_domain_ip=self.wildcard_domain_ip, concurrent=Config.ALT_DNS_CONCURRENT,
+                       dns_resolvers=Config.DNS_RESOLVERS)
 
         return mass.run()
 

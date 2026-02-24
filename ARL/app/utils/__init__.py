@@ -30,6 +30,9 @@ from .device import device_info
 from .cron import check_cron, check_cron_interval
 from .query_loader import load_query_plugins
 
+_dns_resolver_cache = None
+_dns_resolver_cache_key = None
+
 
 def load_file(path):
     with open(path, "r+", encoding="utf-8") as f:
@@ -97,12 +100,47 @@ def get_logger():
     return logging.getLogger('arlv2')
 
 
+def get_dns_resolver():
+    """
+    获取 DNS 解析器
+    - 默认使用系统解析器
+    - 配置 ARL.DNS_RESOLVERS 后，优先使用指定解析器
+    """
+    global _dns_resolver_cache
+    global _dns_resolver_cache_key
+
+    from app.config import Config
+    dns_resolvers = tuple([x.strip() for x in Config.DNS_RESOLVERS if isinstance(x, str) and x.strip()])
+
+    if _dns_resolver_cache is not None and _dns_resolver_cache_key == dns_resolvers:
+        return _dns_resolver_cache
+
+    try:
+        if dns_resolvers:
+            resolver = dns.resolver.Resolver(configure=False)
+            resolver.nameservers = list(dns_resolvers)
+            # 限制单次解析总超时时间，避免任务长时间阻塞
+            resolver.lifetime = 6
+            resolver.timeout = 3
+        else:
+            resolver = dns.resolver.Resolver()
+    except Exception as e:
+        logger = get_logger()
+        logger.warning("init dns resolver error {} fallback system resolver".format(e))
+        resolver = dns.resolver.Resolver()
+
+    _dns_resolver_cache = resolver
+    _dns_resolver_cache_key = dns_resolvers
+    return resolver
+
+
 def get_ip(domain, log_flag=True):
     domain = domain.strip()
     logger = get_logger()
     ips = []
     try:
-        answers = dns.resolver.resolve(domain, 'A')
+        resolver = get_dns_resolver()
+        answers = resolver.resolve(domain, 'A')
         for rdata in answers:
             if rdata.address == '0.0.0.1':
                 continue
@@ -122,7 +160,8 @@ def get_cname(domain, log_flag=True):
     logger = get_logger()
     cnames = []
     try:
-        answers = dns.resolver.resolve(domain, 'CNAME')
+        resolver = get_dns_resolver()
+        answers = resolver.resolve(domain, 'CNAME')
         for rdata in answers:
             cnames.append(str(rdata.target).strip(".").lower())
     except dns.resolver.NoAnswer as e:

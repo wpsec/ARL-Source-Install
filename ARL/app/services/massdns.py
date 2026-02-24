@@ -10,7 +10,8 @@ logger = utils.get_logger()
 
 class MassDNS:
     def __init__(self, domains=None, mass_dns_bin=None,
-                 dns_server=None, tmp_dir=None, wildcard_domain_ip=None, concurrent=0):
+                 dns_server=None, tmp_dir=None, wildcard_domain_ip=None, concurrent=0,
+                 dns_resolvers=None):
 
         if wildcard_domain_ip is None:
             wildcard_domain_ip = []
@@ -28,6 +29,8 @@ class MassDNS:
         self.mass_dns_bin = mass_dns_bin
         self.wildcard_domain_ip = wildcard_domain_ip
         self.concurrent = concurrent
+        self.custom_dns_server_path = ""
+        self.dns_resolvers = dns_resolvers or []
 
     def domain_write(self):
         """将域名写到文件"""
@@ -55,6 +58,30 @@ class MassDNS:
 
         logger.info(" ".join(command))
         utils.exec_system(command, timeout=5*24*60*60)
+
+    def build_custom_dns_server_file(self):
+        if not self.dns_resolvers:
+            return
+
+        clean_resolvers = []
+        for resolver in self.dns_resolvers:
+            if not isinstance(resolver, str):
+                continue
+            resolver = resolver.strip()
+            if resolver:
+                clean_resolvers.append(resolver)
+
+        if not clean_resolvers:
+            return
+
+        custom_path = os.path.join(self.tmp_dir, "dns_server_{}".format(utils.random_choices()))
+        with open(custom_path, "w", encoding="utf-8") as f:
+            for resolver in clean_resolvers:
+                f.write(resolver + "\n")
+
+        self.custom_dns_server_path = custom_path
+        self.dns_server = custom_path
+        logger.info("MassDNS use custom dns_resolvers {}".format(",".join(clean_resolvers)))
 
     def parse_mass_dns_output(self):
         output = []
@@ -85,11 +112,14 @@ class MassDNS:
         try:
             os.unlink(self.domain_gen_output_path)
             os.unlink(self.mass_dns_output_path)
+            if self.custom_dns_server_path:
+                os.unlink(self.custom_dns_server_path)
         except Exception as e:
             logger.warning(e)
 
     def run(self):
         self.domain_write()
+        self.build_custom_dns_server_file()
         self.mass_dns()
         output = self.parse_mass_dns_output()
         return output
@@ -117,6 +147,7 @@ def mass_dns(based_domain, words, wildcard_domain_ip=None):
 
     mass = MassDNS(domains, mass_dns_bin=Config.MASSDNS_BIN,
                    dns_server=Config.DNS_SERVER, tmp_dir=Config.TMP_PATH,
-                   wildcard_domain_ip=wildcard_domain_ip, concurrent=Config.DOMAIN_BRUTE_CONCURRENT)
+                   wildcard_domain_ip=wildcard_domain_ip, concurrent=Config.DOMAIN_BRUTE_CONCURRENT,
+                   dns_resolvers=Config.DNS_RESOLVERS)
 
     return mass.run()

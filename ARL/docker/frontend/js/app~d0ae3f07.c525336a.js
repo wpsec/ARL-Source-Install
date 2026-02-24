@@ -562,12 +562,13 @@
       (i.a.add(l), (e.default = l));
     },
     7191: function (t, e, n) {
-      var a = {
-        "./assetsMonitor.js": "baa8",
-        "./gitHubMonitor.js": "f635",
-        "./gitHubTasks.js": "31e2",
-        "./groupAssetsManagement.js": "9c47",
-        "./planningTasks.js": "c5a6",
+	      var a = {
+	        "./assetsMonitor.js": "baa8",
+	        "./dingtalkApiConfig.js": "d91a",
+	        "./gitHubMonitor.js": "f635",
+	        "./gitHubTasks.js": "31e2",
+	        "./groupAssetsManagement.js": "9c47",
+	        "./planningTasks.js": "c5a6",
         "./pocList.js": "6da2",
         "./policy.js": "e5b6",
         "./require.js": "1aab",
@@ -807,7 +808,6 @@
                     loading: t.isLoading,
                     dataSource: t.tableData,
                     pagination: !1,
-                    "row-selection": null,
                     scroll: t.scroll ? t.scroll : {},
                     rowSelection: t.isSelect
                       ? {
@@ -997,14 +997,19 @@
                   { key: "pocList", icon: "planning", title: "PoC信息" },
                   { key: "planningTasks", icon: "poc", title: "计划任务" },
                   { key: "GitHubTasks", icon: "git", title: "GitHub管理" },
-                  {
-                    key: "GitHubMonitor",
-                    icon: "gitMonitor",
-                    title: "GitHub监控",
-                  },
-                ],
-              };
-            },
+	                  {
+	                    key: "GitHubMonitor",
+	                    icon: "gitMonitor",
+	                    title: "GitHub监控",
+	                  },
+	                  {
+	                    key: "dingtalkApiConfig",
+	                    icon: "gitMonitor",
+	                    title: "钉钉集成",
+	                  },
+	                ],
+	              };
+	            },
             watch: {
               $route: function () {
                 this.selectedKeys = [this.$route.path.split("/")[1]];
@@ -1564,11 +1569,11 @@
         });
       (i.a.add(l), (e.default = l));
     },
-    c5a6: function (t, e, n) {
-      "use strict";
-      (n.r(e),
-        n("d3b7"),
-        (e.default = [
+	    c5a6: function (t, e, n) {
+	      "use strict";
+	      (n.r(e),
+	        n("d3b7"),
+	        (e.default = [
           {
             path: "/planningTasks",
             name: "planningTasks",
@@ -1579,11 +1584,29 @@
                 n.e("pocList~31ecd969"),
               ]).then(n.bind(null, "2325"));
             },
-          },
-        ]));
-    },
-    cb1d: function (t, e, n) {
-      "use strict";
+	          },
+	        ]));
+	    },
+	    d91a: function (t, e, n) {
+	      "use strict";
+	      (n.r(e),
+	        n("d3b7"),
+	        (e.default = [
+	          {
+	            path: "/dingtalkApiConfig",
+	            name: "dingtalkApiConfig",
+	            meta: { title: "钉钉API配置" },
+	            component: function () {
+	              return Promise.all([
+	                n.e("npm.core-js~987e6011"),
+	                n.e("pocList~31ecd969"),
+	              ]).then(n.bind(null, "0f43"));
+	            },
+	          },
+	        ]));
+	    },
+	    cb1d: function (t, e, n) {
+	      "use strict";
       n.r(e);
       var a = n("e017"),
         s = n.n(a),

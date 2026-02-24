@@ -58,6 +58,7 @@ add_task_schedule_fields = ns.model('addTaskScheduleSite',  {
     'start_date': fields.String(required=False, description="开始时间"),
     'task_tag': fields.String(required=True, description="任务类别 （task|risk_cruising）"),
     'notify_enable': fields.Boolean(required=False, description="是否启用计划任务结果通知", default=True),
+    'notify_kb_enable': fields.Boolean(required=False, description="是否推送到钉钉知识库", default=False),
     'notify_channel': fields.String(required=False, description="通知渠道（目前支持 dingding）", default="dingding"),
     'notify_on': fields.String(required=False, description="通知触发条件（finished|failed|always）", default="finished")
 })
@@ -98,6 +99,12 @@ class ARLTaskScheduleResult(ARLResource):
             notify_enable = True
         else:
             notify_enable = bool(notify_enable_value)
+
+        notify_kb_enable_value = args.pop("notify_kb_enable", None)
+        if notify_kb_enable_value is None:
+            notify_kb_enable = False
+        else:
+            notify_kb_enable = bool(notify_kb_enable_value)
 
         notify_channel = args.pop("notify_channel", None)
         notify_channel = str(notify_channel or "dingding").lower()
@@ -151,6 +158,7 @@ class ARLTaskScheduleResult(ARLResource):
             "last_run_time": 0,
             "last_run_date": "-",
             "notify_enable": notify_enable,
+            "notify_kb_enable": notify_kb_enable,
             "notify_channel": notify_channel,
             "notify_on": notify_on
         }
@@ -245,14 +253,32 @@ class StopARLTaskScheduler(ARLResource):
         job_id_list = args.get("_id", [])
 
         ret_data = {"_id": job_id_list}
+        stopped_id_list = []
+        skipped_id_list = []
 
         for job_id in job_id_list:
+            current_item = task_schedule.find_task_schedule(job_id)
+            if not current_item:
+                return utils.build_ret(ErrorMsg.TaskScheduleNotFound, ret_data)
+
+            # 批量停止做幂等处理：已停止任务跳过，不影响其它任务
+            if current_item.get("status") == TaskScheduleStatus.STOP:
+                skipped_id_list.append(job_id)
+                continue
+
             item = task_schedule.change_task_schedule_status(job_id, status=TaskScheduleStatus.STOP)
             if not item:
                 return utils.build_ret(ErrorMsg.TaskScheduleNotFound, ret_data)
 
             if isinstance(item, str):
                 return utils.build_ret(ErrorMsg.Error, {"error": item})
+
+            stopped_id_list.append(job_id)
+
+        ret_data.update({
+            "stopped": stopped_id_list,
+            "skipped": skipped_id_list
+        })
 
         return utils.build_ret(ErrorMsg.Success, ret_data)
 

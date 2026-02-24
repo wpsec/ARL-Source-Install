@@ -25,6 +25,39 @@ import sys
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 
+def env_bool(name, default=False):
+    """
+    从环境变量读取布尔值
+    """
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in ["1", "true", "yes", "on"]
+
+
+def env_str(name, default=""):
+    """
+    从环境变量读取字符串
+    """
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value
+
+
+def env_int(name, default=0):
+    """
+    从环境变量读取整数
+    """
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
 class Config(object):
     """系统配置类，包含所有配置项的默认值"""
     
@@ -122,6 +155,8 @@ class Config(object):
     # IP地址黑名单，这些IP段不会被扫描
     # 完整版本: ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "0.0.0.0/8"]
     BLACK_IPS = ["127.0.0.0/8", "0.0.0.0/8"]
+    # DNS解析器列表（为空时使用系统默认解析器）
+    DNS_RESOLVERS = []
 
     # ==================== GeoIP配置 ====================
     # GeoIP ASN数据库路径（用于IP归属查询）
@@ -143,6 +178,21 @@ class Config(object):
     # 钉钉机器人配置
     DINGDING_SECRET = ""  # 钉钉加签密钥
     DINGDING_ACCESS_TOKEN = ""  # 钉钉访问令牌
+
+    # 钉钉开放平台（知识库）配置
+    DINGTALK_KB_ENABLE = False
+    DINGTALK_API_BASE_URL = "https://api.dingtalk.com"
+    DINGTALK_CORP_ID = ""
+    DINGTALK_APP_KEY = ""
+    DINGTALK_APP_SECRET = ""
+    DINGTALK_OPERATOR_ID = ""
+    DINGTALK_WORKSPACE_ID = ""
+    DINGTALK_PARENT_NODE_ID = ""
+    DINGTALK_KB_CREATE_NODE_PATH = "/v1.0/doc/workspaces/{workspace_id}/docs"
+    DINGTALK_KB_TIMEOUT = 20
+    DINGTALK_KB_TITLE_PREFIX = "互联网资产自动化收集"
+    DINGTALK_KB_DRY_RUN = False
+    DINGTALK_REPORT_BASE_URL = ""
 
     # 飞书机器人配置
     FEISHU_WEBHOOK = ""  # 飞书Webhook地址
@@ -226,6 +276,26 @@ try:
     Config.AUTH = y["ARL"]["AUTH"]
     Config.API_KEY = y["ARL"]["API_KEY"]
     Config.BLACK_IPS = y["ARL"]["BLACK_IPS"]
+    dns_resolvers = y["ARL"].get("DNS_RESOLVERS")
+    if dns_resolvers is not None:
+        if not isinstance(dns_resolvers, list):
+            print("arl.dns_resolvers is not list")
+            sys.exit(-1)
+
+        config_dns_resolvers = []
+        for resolver in dns_resolvers:
+            if not resolver:
+                continue
+
+            if not isinstance(resolver, str):
+                print("arl.dns_resolvers item is not string")
+                sys.exit(-1)
+
+            resolver = resolver.strip()
+            if resolver:
+                config_dns_resolvers.append(resolver)
+
+        Config.DNS_RESOLVERS = config_dns_resolvers
 
     # --- TOP 10端口自定义配置 ---
     if y["ARL"].get("PORT_TOP_10"):
@@ -266,6 +336,36 @@ try:
 
         if y["DINGDING"].get("ACCESS_TOKEN"):
             Config.DINGDING_ACCESS_TOKEN = y["DINGDING"]["ACCESS_TOKEN"]
+
+    # --- 钉钉开放平台（知识库）配置 ---
+    if y.get("DINGTALK_API"):
+        dingtalk_api_conf = y["DINGTALK_API"]
+        if dingtalk_api_conf.get("ENABLE") is not None:
+            Config.DINGTALK_KB_ENABLE = bool(dingtalk_api_conf["ENABLE"])
+        if dingtalk_api_conf.get("BASE_URL"):
+            Config.DINGTALK_API_BASE_URL = dingtalk_api_conf["BASE_URL"]
+        if dingtalk_api_conf.get("CORP_ID"):
+            Config.DINGTALK_CORP_ID = dingtalk_api_conf["CORP_ID"]
+        if dingtalk_api_conf.get("APP_KEY"):
+            Config.DINGTALK_APP_KEY = dingtalk_api_conf["APP_KEY"]
+        if dingtalk_api_conf.get("APP_SECRET"):
+            Config.DINGTALK_APP_SECRET = dingtalk_api_conf["APP_SECRET"]
+        if dingtalk_api_conf.get("OPERATOR_ID"):
+            Config.DINGTALK_OPERATOR_ID = dingtalk_api_conf["OPERATOR_ID"]
+        if dingtalk_api_conf.get("WORKSPACE_ID"):
+            Config.DINGTALK_WORKSPACE_ID = dingtalk_api_conf["WORKSPACE_ID"]
+        if dingtalk_api_conf.get("PARENT_NODE_ID"):
+            Config.DINGTALK_PARENT_NODE_ID = dingtalk_api_conf["PARENT_NODE_ID"]
+        if dingtalk_api_conf.get("CREATE_NODE_PATH"):
+            Config.DINGTALK_KB_CREATE_NODE_PATH = dingtalk_api_conf["CREATE_NODE_PATH"]
+        if dingtalk_api_conf.get("KB_TIMEOUT"):
+            Config.DINGTALK_KB_TIMEOUT = int(dingtalk_api_conf["KB_TIMEOUT"])
+        if dingtalk_api_conf.get("TITLE_PREFIX"):
+            Config.DINGTALK_KB_TITLE_PREFIX = dingtalk_api_conf["TITLE_PREFIX"]
+        if dingtalk_api_conf.get("DRY_RUN") is not None:
+            Config.DINGTALK_KB_DRY_RUN = bool(dingtalk_api_conf["DRY_RUN"])
+        if dingtalk_api_conf.get("REPORT_BASE_URL"):
+            Config.DINGTALK_REPORT_BASE_URL = dingtalk_api_conf["REPORT_BASE_URL"]
 
     # --- 邮件推送配置 ---
     if y.get("EMAIL"):
@@ -330,6 +430,24 @@ try:
     if y.get("WXWORK"):
         if y["WXWORK"].get("WEBHOOK_URL"):
             Config.WX_WORK_WEBHOOK = y["WXWORK"]["WEBHOOK_URL"]
+
+    # --- 环境变量覆盖（便于 K8s Secret/ConfigMap 注入） ---
+    Config.DINGTALK_KB_ENABLE = env_bool("ARL_DINGTALK_KB_ENABLE", Config.DINGTALK_KB_ENABLE)
+    Config.DINGTALK_API_BASE_URL = env_str("ARL_DINGTALK_API_BASE_URL", Config.DINGTALK_API_BASE_URL)
+    Config.DINGTALK_CORP_ID = env_str("ARL_DINGTALK_CORP_ID", Config.DINGTALK_CORP_ID)
+    Config.DINGTALK_APP_KEY = env_str("ARL_DINGTALK_APP_KEY", Config.DINGTALK_APP_KEY)
+    Config.DINGTALK_APP_SECRET = env_str("ARL_DINGTALK_APP_SECRET", Config.DINGTALK_APP_SECRET)
+    Config.DINGTALK_OPERATOR_ID = env_str("ARL_DINGTALK_OPERATOR_ID", Config.DINGTALK_OPERATOR_ID)
+    Config.DINGTALK_WORKSPACE_ID = env_str("ARL_DINGTALK_WORKSPACE_ID", Config.DINGTALK_WORKSPACE_ID)
+    Config.DINGTALK_PARENT_NODE_ID = env_str("ARL_DINGTALK_PARENT_NODE_ID", Config.DINGTALK_PARENT_NODE_ID)
+    Config.DINGTALK_KB_CREATE_NODE_PATH = env_str("ARL_DINGTALK_KB_CREATE_NODE_PATH", Config.DINGTALK_KB_CREATE_NODE_PATH)
+    Config.DINGTALK_KB_TIMEOUT = env_int("ARL_DINGTALK_KB_TIMEOUT", Config.DINGTALK_KB_TIMEOUT)
+    Config.DINGTALK_KB_TITLE_PREFIX = env_str("ARL_DINGTALK_KB_TITLE_PREFIX", Config.DINGTALK_KB_TITLE_PREFIX)
+    Config.DINGTALK_KB_DRY_RUN = env_bool("ARL_DINGTALK_KB_DRY_RUN", Config.DINGTALK_KB_DRY_RUN)
+    Config.DINGTALK_REPORT_BASE_URL = env_str("ARL_DINGTALK_REPORT_BASE_URL", Config.DINGTALK_REPORT_BASE_URL)
+    dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
+    if dns_resolvers_env:
+        Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]
 
 except Exception as e:
     print("Parse config.yaml error {}".format(e))

@@ -50,7 +50,8 @@ add_github_scheduler_fields = ns.model('AddGithubScheduler', {
     'name': fields.String(required=True, description="任务名"),
     'keyword': fields.String(required=True, description="关键字"),
     "cron": fields.String(required=True, description="Cron 表达式"),
-    "dingding_notify": fields.Boolean(required=False, description="是否启用钉钉通知", default=True)
+    "dingding_notify": fields.Boolean(required=False, description="是否启用钉钉通知", default=True),
+    "kb_notify_enable": fields.Boolean(required=False, description="是否推送到钉钉知识库", default=False)
 })
 
 
@@ -82,10 +83,15 @@ class ARLGithubScheduler(ARLResource):
         keyword = keyword.strip()
         cron = args.pop('cron')
         dingding_notify_value = args.pop("dingding_notify", None)
+        kb_notify_enable_value = args.pop("kb_notify_enable", None)
         if dingding_notify_value is None:
             dingding_notify = True
         else:
             dingding_notify = bool(dingding_notify_value)
+        if kb_notify_enable_value is None:
+            kb_notify_enable = False
+        else:
+            kb_notify_enable = bool(kb_notify_enable_value)
 
         if not keyword:
             return utils.build_ret(ErrorMsg.GithubKeywordEmpty, data={})
@@ -105,7 +111,8 @@ class ARLGithubScheduler(ARLResource):
             "last_run_time": 0,
             "next_run_date": utils.time2date(time.time() + next_sec),
             "status": SchedulerStatus.RUNNING,
-            "dingding_notify": dingding_notify
+            "dingding_notify": dingding_notify,
+            "kb_notify_enable": kb_notify_enable
         }
 
         utils.conn_db('github_scheduler').insert_one(scheduler_data)
@@ -151,7 +158,8 @@ update_github_scheduler_fields = ns.model('updateGithubScheduler',  {
     'name': fields.String(required=False, description="任务名"),
     'keyword': fields.String(required=False, description="关键字"),
     "cron": fields.String(required=False, description="Cron 表达式"),
-    "dingding_notify": fields.Boolean(required=False, description="是否启用钉钉通知")
+    "dingding_notify": fields.Boolean(required=False, description="是否启用钉钉通知"),
+    "kb_notify_enable": fields.Boolean(required=False, description="是否推送到钉钉知识库")
 })
 
 
@@ -171,6 +179,7 @@ class UpdateGithubScheduler(ARLResource):
         keyword = args.pop('keyword')
         cron = args.pop('cron')
         dingding_notify_value = args.pop("dingding_notify")
+        kb_notify_enable_value = args.pop("kb_notify_enable")
 
         item = github_task.find_github_scheduler(job_id)
         if not item:
@@ -195,6 +204,8 @@ class UpdateGithubScheduler(ARLResource):
 
         if dingding_notify_value is not None:
             item["dingding_notify"] = bool(dingding_notify_value)
+        if kb_notify_enable_value is not None:
+            item["kb_notify_enable"] = bool(kb_notify_enable_value)
 
         query = {
             "_id": ObjectId(job_id)

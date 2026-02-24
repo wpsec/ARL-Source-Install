@@ -113,10 +113,11 @@ def run_query_plugin(target, sources=None):
 
             # ***　查看是否有配置
             if query_key.get(source_name):
-                source_kwargs = query_key[source_name]
-                if not isinstance(source_kwargs, dict):
-                    logger.warning("{} config {} is not dict".format(source_name, source_kwargs))
+                source_conf = query_key[source_name]
+                if not isinstance(source_conf, dict):
+                    logger.warning("{} config {} is not dict".format(source_name, source_conf))
                     continue
+                source_kwargs = source_conf.copy()
 
                 # 插件是否启用， 没有配置 enable 这个字段默认启用
                 plugin_enable_flag = source_kwargs.pop("enable", None)

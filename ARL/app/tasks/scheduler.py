@@ -120,7 +120,7 @@ def wrap_domain_executors(base_domain=None, job_id=None, scope_id=None, options=
             'search_engines': False,
             'ssl_cert': False,
             'fofa_search': False,
-            'dns_query_plugin': False,
+            'dns_query_plugin': True,
             'web_info_hunter': False,
             'scope_id': scope_id
         },
@@ -297,8 +297,8 @@ class DomainExecutor(DomainTask):
         # 删除前面步骤插入的域名
         conn('domain').delete_many({"task_id": self.task_id})
 
-        # 重新保存新发现的域名
-        self.save_domain_info_list(new, CollectSource.MONITOR)
+        # 重新保存新发现的域名，尽量保留真实来源（如 fofa/hunter_qax）
+        self.save_domain_info_list_by_source_map(new, default_source=CollectSource.MONITOR)
         self.domain_info_list = new
 
     def set_wildcard_ip_set(self):

@@ -32,6 +32,7 @@ from app.modules import TaskStatus
 from app import utils
 from app.config import Config
 from app.utils import push
+from app.helpers.message_notify import push_dingtalk_kb
 
 logger = utils.get_logger()
 
@@ -404,7 +405,7 @@ class GithubTaskMonitor(GithubTaskTask):
 
         return html
 
-    def build_markdown_report(self):
+    def build_markdown_report(self, report_url=""):
         """
         构建Markdown格式报告
         
@@ -413,8 +414,8 @@ class GithubTaskMonitor(GithubTaskTask):
         
         说明：
         - 用于钉钉推送
-        - 包含仓库统计和文件链接列表
-        - 最多显示5个仓库，每个仓库最多5个结果
+        - 包含仓库统计摘要
+        - 可附带知识库报告链接
         - 简洁格式，适合移动端查看
         """
         repo_map = self.build_repo_map()
@@ -422,25 +423,10 @@ class GithubTaskMonitor(GithubTaskTask):
         markdown = "### GitHub 监控结果\n\n"
         markdown += "- 关键词：`{}`\n".format(self.keyword)
         markdown += "- 仓库数：`{}`\n".format(len(repo_map.keys()))
-        markdown += "- 新增结果：`{}`\n\n".format(len(self.new_results))
-        markdown += "#### 结果列表\n\n"
-
-        global_cnt = 0
-        repo_cnt = 0
-        for repo_name in repo_map:
-            repo_cnt += 1
-            # 为了减少长度，超过5个仓库就跳过
-            if repo_cnt > 5:
-                break
-
-            tr_cnt = 0
-            for item in repo_map[repo_name]:
-                tr_cnt += 1
-                global_cnt += 1
-                url_text = item.repo_full_name + " " + item.path
-                markdown += "{}. [{}]({})\n".format(global_cnt, url_text, item.html_url)
-                if tr_cnt > 5:
-                    break
+        markdown += "- 新增结果：`{}`\n".format(len(self.new_results))
+        if report_url:
+            markdown += "- 报告链接：[点击查看]({})\n".format(report_url)
+        markdown += "\n"
 
         return markdown
 
@@ -449,15 +435,28 @@ class GithubTaskMonitor(GithubTaskTask):
         推送消息通知
         
         说明：
-        - 仅在有新增结果时推送（钉钉/邮件）
+        - 仅在有新增结果时推送（钉钉机器人/钉钉知识库/邮件）
         - 失败不影响任务执行
         """
         if not self.new_results:
+            logger.info("github monitor no new result, skip notify keyword:{}".format(self.keyword))
             return
 
         logger.info("found new result {} {}".format(self.keyword, len(self.new_results)))
-        if self.enable_dingding_notify():
-            self.push_dingding()
+        kb_notify_enabled = self.enable_kb_notify()
+        dingding_notify_enabled = self.enable_dingding_notify()
+        logger.info(
+            "github monitor notify switch scheduler_id:{} kb:{} dingding:{}".format(
+                self.scheduler_id, kb_notify_enabled, dingding_notify_enabled
+            )
+        )
+        report_url = ""
+        if kb_notify_enabled:
+            kb_success, kb_result = self.push_kb()
+            if kb_success and isinstance(kb_result, dict):
+                report_url = str(kb_result.get("node_url", "") or "")
+        if dingding_notify_enabled:
+            self.push_dingding(report_url=report_url)
         self.push_email()
 
     def enable_dingding_notify(self):
@@ -485,7 +484,86 @@ class GithubTaskMonitor(GithubTaskTask):
         except Exception:
             return True
 
-    def push_dingding(self):
+    def enable_kb_notify(self):
+        """
+        是否启用 GitHub 监控知识库推送
+        """
+        try:
+            if not self.scheduler_id or len(self.scheduler_id) != 24:
+                return False
+
+            query = {"_id": ObjectId(self.scheduler_id)}
+            item = utils.conn_db("github_scheduler").find_one(
+                query, {"kb_notify_enable": 1, "dingding_notify": 1}
+            )
+            if not item:
+                return False
+
+            kb_notify_enable = item.get("kb_notify_enable", None)
+            if kb_notify_enable is not None:
+                return bool(kb_notify_enable)
+
+            # 兼容历史任务：老数据没有 kb_notify_enable 时，回退到 dingding_notify 配置
+            fallback_value = item.get("dingding_notify", True)
+            logger.info(
+                "github scheduler {} kb_notify_enable missing, fallback dingding_notify={}".format(
+                    self.scheduler_id, fallback_value
+                )
+            )
+            return bool(fallback_value)
+        except Exception:
+            return False
+
+    def build_kb_title(self):
+        """
+        构建知识库报告标题
+        """
+        title_prefix = (Config.DINGTALK_KB_TITLE_PREFIX or "互联网资产自动化收集").strip()
+        curr_time = utils.curr_date().replace(" ", "_").replace(":", "-")
+        return "{}-GitHub监控-{}-{}".format(title_prefix, self.keyword[:40], curr_time)
+
+    def build_kb_result_items(self):
+        """
+        构建知识库写入所需的结果列表（结构化）
+        """
+        items = []
+        for result in self.new_results:
+            if not isinstance(result, GithubResult):
+                continue
+            items.append(
+                {
+                    "repo_full_name": str(getattr(result, "repo_full_name", "") or ""),
+                    "path": str(getattr(result, "path", "") or ""),
+                    "commit_date": str(getattr(result, "commit_date", "") or ""),
+                    "html_url": str(getattr(result, "html_url", "") or ""),
+                }
+            )
+        return items
+
+    def push_kb(self):
+        """
+        推送到钉钉知识库
+        """
+        try:
+            report_title = self.build_kb_title()
+            markdown_report = self.build_markdown_report()
+            return push_dingtalk_kb(
+                report_title=report_title,
+                markdown_report=markdown_report,
+                source_type="github_scheduler",
+                source_id=self.scheduler_id,
+                extra_data={
+                    "keyword": self.keyword,
+                    "new_result_count": len(self.new_results),
+                },
+                github_result_items=self.build_kb_result_items(),
+            )
+        except Exception as e:
+            logger.warning("push github kb error {}".format(e))
+            return False, {"error": str(e)}
+        return False, {"error": "push github kb unknown error"}
+
+    def push_dingding(self, report_url=""):
         """
         推送钉钉通知
         
@@ -493,21 +571,25 @@ class GithubTaskMonitor(GithubTaskTask):
             bool: 推送是否成功
         
         说明：
-        - 需要配置DINGDING_ACCESS_TOKEN和DINGDING_SECRET
+        - 需要配置 DINGDING_ACCESS_TOKEN
+        - DINGDING_SECRET 仅在机器人开启加签时需要
         - 使用Markdown格式
         - 推送失败不抛异常
         """
         try:
-            if Config.DINGDING_ACCESS_TOKEN and Config.DINGDING_SECRET:
+            if Config.DINGDING_ACCESS_TOKEN:
                 data = push.dingding_send(access_token=Config.DINGDING_ACCESS_TOKEN,
                                       secret=Config.DINGDING_SECRET, msgtype="markdown",
-                                      msg=self.build_markdown_report())
+                                      msg=self.build_markdown_report(report_url=report_url))
                 if data.get("errcode", -1) == 0:
                     logger.info("push dingding succ")
-                return True
+                    return True
+                logger.info("push dingding fail {}".format(data))
+                return False
 
         except Exception as e:
             logger.warning(self.keyword, e)
+        return False
 
     def push_email(self):
         """

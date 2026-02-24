@@ -75,6 +75,25 @@ DINGDING:
   SECRET: ""
   ACCESS_TOKEN: ""
 
+# 钉钉开放平台（知识库推送）配置（非群机器人）
+# 用途：将任务结果发布到钉钉知识库
+# 必填（仅当 ENABLE=true 时）：CORP_ID、APP_KEY、APP_SECRET、OPERATOR_ID、WORKSPACE_ID、PARENT_NODE_ID
+# 建议：生产环境通过 ARL_DINGTALK_* 环境变量注入敏感字段（适配 K8s Secret）
+DINGTALK_API:
+  ENABLE: false # 是否启用知识库推送
+  BASE_URL: "https://api.dingtalk.com" # 钉钉 OpenAPI 地址，通常不需要修改
+  CORP_ID: "" # 必填：企业组织 ID（corpId）
+  APP_KEY: "" # 必填：应用 AppKey（client_id）
+  APP_SECRET: "" # 必填：应用 AppSecret（client_secret，敏感）
+  OPERATOR_ID: "" # 必填：操作者 unionId（需具备目标知识库权限）
+  WORKSPACE_ID: "" # 必填：知识库空间 ID
+  PARENT_NODE_ID: "" # 必填：父节点 ID（可填 rootNodeId 或指定目录 nodeId）
+  CREATE_NODE_PATH: "/v1.0/doc/workspaces/{workspace_id}/docs" # 创建知识库表格 API 路径，支持 {workspace_id}
+  KB_TIMEOUT: 20 # 调用钉钉 API 的超时时间（秒）
+  TITLE_PREFIX: "互联网资产自动化收集" # 文档标题前缀
+  DRY_RUN: false # 演练模式：true 时只走流程不真正创建文档
+  REPORT_BASE_URL: "" # 可选：报告访问基础地址，用于拼接外链
+
 
 #飞书消息推送配置, 需要设置签名校验
 #https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot
@@ -124,6 +143,10 @@ ARL:
     - 100.64.0.0/10
     #- 10.0.0.0/8
     #- 192.168.0.0/16
+  # 指定域名解析器（为空时使用系统默认DNS）
+  DNS_RESOLVERS:
+    - 114.114.114.114
+    - 8.8.8.8
   ## 禁止域名，不可为空数组
   FORBIDDEN_DOMAINS:
     - edu.cn
@@ -140,6 +163,3 @@ ARL:
   DOMAIN_BRUTE_CONCURRENT: 300
   #组合生成的域名爆破并发数
   ALT_DNS_CONCURRENT: 1500
-
-
-

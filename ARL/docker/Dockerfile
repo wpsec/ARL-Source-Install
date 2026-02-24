@@ -43,6 +43,11 @@ RUN pip3.6 install --upgrade 'pip==21.3.1' && \
     pip3.6 install --no-cache-dir -r /code/requirements.txt
 # 尝试安装 NPoC，失败不中断
 RUN pip3.6 install --no-cache-dir -e /opt/ARL-NPoC/ || true
+# NPoC 的 setup.py 未声明 install_requires，显式安装插件运行时依赖
+RUN pip3.6 install --no-cache-dir \
+    dnslib==0.9.16 \
+    pycryptodomex==3.16.0 \
+    requests_ntlm==1.1.0
 # 确保关键包已安装
 RUN pip3.6 install --no-cache-dir psutil==5.7.2 flask pymongo celery || true
 # 显示已安装的包
@@ -86,6 +91,9 @@ RUN echo "===== 检查关键模块 =====" && \
     python3.6 -c "import flask; print('✓ flask 已安装')" && \
     python3.6 -c "import pymongo; print('✓ pymongo 已安装')" && \
     python3.6 -c "import celery; print('✓ celery 已安装')" && \
+    python3.6 -c "import dnslib; print('✓ dnslib 已安装')" && \
+    python3.6 -c "from Cryptodome.Cipher import AES; print('✓ pycryptodomex 已安装')" && \
+    python3.6 -c "from requests_ntlm import HttpNtlmAuth; print('✓ requests_ntlm 已安装')" && \
     cp app/config.yaml.example app/config.yaml && \
     echo "===== 所有关键模块检查通过 =====" && \
     echo "===== 检查关键工具 =====" && \

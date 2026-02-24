@@ -19,6 +19,27 @@
         l = function (t) {
           return i.a.post("/github_scheduler/update/", t);
         },
+        v = function () {
+          return i.a.get("/dingtalk_api/config/");
+        },
+        k = function (t) {
+          return i.a.post("/dingtalk_api/test/", t);
+        },
+        w = function (t) {
+          return i.a.post("/dingtalk_api/workspaces/", t);
+        },
+        S = function (t) {
+          return i.a.post("/dingtalk_api/nodes/", t);
+        },
+        C = function (t) {
+          return i.a.post("/dingtalk_api/create_workbook/", t);
+        },
+        L = function (t) {
+          return i.a.post("/dingtalk_api/sheets/", t);
+        },
+        P = function (t) {
+          return i.a.post("/dingtalk_api/write_markdown/", t);
+        },
         u = a("e8c9"),
         d =
           (a("caad"),
@@ -128,6 +149,13 @@
             required: !1,
             default: !0,
           },
+          {
+            label: "推送到钉钉知识库",
+            key: "kb_notify_enable",
+            type: "checkbox",
+            required: !1,
+            default: !1,
+          },
         ],
         y = {
           components: { AddPlanning: r.a, PageTemplate: u.a },
@@ -142,22 +170,348 @@
               batchBtns: h,
               modalVisible: !1,
               addFormItems: f,
+              dingtalkModalVisible: !1,
+              dingtalkLoading: !1,
+              dingtalkRuntime: {},
+              workspaceOptions: [],
+              nodeOptions: [],
+              dingtalkResultText: "",
+              dingtalkForm: {
+                operator_id: "",
+                workspace_id: "",
+                parent_node_id: "",
+                title: "",
+                workbook_id: "",
+                sheet_name: "Sheet1",
+                markdown_content: "",
+              },
             };
           },
-          methods: {
-            updateBtn: function (t) {
-              ((this.modalTitle = "修改任务"),
-                (this.modalParams = Object(n.a)({}, t)),
-                (this.submitApi = l),
-                (this.modalVisible = !0));
+	          methods: {
+	            updateBtn: function (t) {
+	              ((this.modalTitle = "修改任务"),
+	                (this.modalParams = Object(n.a)({}, t)),
+	                (this.submitApi = l),
+	                (this.modalVisible = !0));
+	            },
+	            isDingtalkConfigPage: function () {
+	              return "dingtalkApiConfig" === this.$route.name;
+	            },
+	            freshTable: function () {
+	              this.$refs.temRef.freshTable();
+	            },
+            appendDingtalkLog: function (t, e, n) {
+              var a = "";
+              try {
+                a = "string" == typeof e ? e : JSON.stringify(e, null, 2);
+              } catch (n) {
+                a = "".concat(e);
+              }
+              var r =
+                "[" +
+                new Date().toLocaleString() +
+                "] " +
+                t +
+                "\n" +
+                a;
+              this.dingtalkResultText = n
+                ? r
+                : r + "\n\n" + this.dingtalkResultText;
             },
-            freshTable: function () {
-              this.$refs.temRef.freshTable();
+            openDingtalkConfig: function () {
+              ((this.dingtalkModalVisible = !0),
+                this.loadDingtalkConfig());
+            },
+            loadDingtalkConfig: function () {
+              var t = this;
+              return (
+                (this.dingtalkLoading = !0),
+                v()
+                  .then(function (e) {
+                    var a = (e && e.data) || {};
+                    if (!1 === a.success)
+                      throw new Error(a.error_message || "加载钉钉配置失败");
+                    ((t.dingtalkRuntime = a),
+                      t.dingtalkForm.operator_id ||
+                        (t.dingtalkForm.operator_id = a.operator_id || ""),
+                      t.dingtalkForm.workspace_id ||
+                        (t.dingtalkForm.workspace_id = a.workspace_id || ""),
+                      t.dingtalkForm.parent_node_id ||
+                        (t.dingtalkForm.parent_node_id = a.parent_node_id || ""),
+                      t.dingtalkForm.title ||
+                        (t.dingtalkForm.title = "".concat(
+                          (a.title_prefix || "互联网资产自动化收集") +
+                            "-" +
+                            new Date()
+                              .toISOString()
+                              .slice(0, 19)
+                              .replace("T", "_")
+                              .replace(/:/g, "-"),
+                        )),
+                      t.appendDingtalkLog("加载当前配置", a, !0));
+                  })
+                  .catch(function (e) {
+                    (t.$message.error("加载钉钉配置失败"),
+                      t.appendDingtalkLog(
+                        "加载配置失败",
+                        (e && e.message) || e,
+                        !0,
+                      ));
+                  })
+                  .finally(function () {
+                    t.dingtalkLoading = !1;
+                  })
+              );
+            },
+            testDingtalkConnection: function () {
+              var t = this;
+              return (
+                (this.dingtalkLoading = !0),
+                k({ force_refresh_token: !0 })
+                  .then(function (e) {
+                    var a = (e && e.data) || {};
+                    if (!1 === a.success)
+                      throw new Error(a.error_message || "钉钉连接测试失败");
+                    (t.$message.success("钉钉连接测试成功"),
+                      t.appendDingtalkLog("测试连接成功", a, !0));
+                  })
+                  .catch(function (e) {
+                    (t.$message.error("钉钉连接测试失败"),
+                      t.appendDingtalkLog(
+                        "测试连接失败",
+                        (e && e.message) || e,
+                        !0,
+                      ));
+                  })
+                  .finally(function () {
+                    t.dingtalkLoading = !1;
+                  })
+              );
+            },
+            loadDingtalkWorkspaces: function () {
+              var t = this,
+                e = {};
+              this.dingtalkForm.operator_id &&
+                (e.operator_id = this.dingtalkForm.operator_id);
+              return (
+                (this.dingtalkLoading = !0),
+                w(e)
+                  .then(function (e) {
+                    var a = (e && e.data) || {};
+                    if (!1 === a.success)
+                      throw new Error(a.error_message || "获取知识库列表失败");
+                    var n = a.items || [];
+                    ((t.workspaceOptions = n),
+                      !t.dingtalkForm.workspace_id &&
+                        n.length > 0 &&
+                        (t.dingtalkForm.workspace_id = n[0].workspace_id || ""),
+                      !t.dingtalkForm.parent_node_id &&
+                        n.length > 0 &&
+                        (t.dingtalkForm.parent_node_id = n[0].root_node_id || ""),
+                      t.appendDingtalkLog("获取知识库列表成功", a, !0),
+                      t.$message.success("已获取知识库列表"));
+                  })
+                  .catch(function (e) {
+                    (t.$message.error("获取知识库列表失败"),
+                      t.appendDingtalkLog(
+                        "获取知识库列表失败",
+                        (e && e.message) || e,
+                        !0,
+                      ));
+                  })
+                  .finally(function () {
+                    t.dingtalkLoading = !1;
+                  })
+              );
+            },
+            workspaceChange: function (t) {
+              var e = this.workspaceOptions.find(function (e) {
+                return e.workspace_id === t;
+              });
+              e &&
+                e.root_node_id &&
+                (this.dingtalkForm.parent_node_id = e.root_node_id);
+            },
+            loadDingtalkNodes: function () {
+              var t = this,
+                e = {};
+              (this.dingtalkForm.operator_id &&
+                (e.operator_id = this.dingtalkForm.operator_id),
+                this.dingtalkForm.parent_node_id &&
+                  (e.parent_node_id = this.dingtalkForm.parent_node_id));
+              return (
+                (this.dingtalkLoading = !0),
+                S(e)
+                  .then(function (e) {
+                    var a = (e && e.data) || {};
+                    if (!1 === a.success)
+                      throw new Error(a.error_message || "获取节点列表失败");
+                    ((t.nodeOptions = a.items || []),
+                      t.appendDingtalkLog("获取目录节点成功", a, !0),
+                      t.$message.success("已获取目录节点列表"));
+                  })
+                  .catch(function (e) {
+                    (t.$message.error("获取节点列表失败"),
+                      t.appendDingtalkLog(
+                        "获取目录节点失败",
+                        (e && e.message) || e,
+                        !0,
+                      ));
+                  })
+                  .finally(function () {
+                    t.dingtalkLoading = !1;
+                  })
+              );
+            },
+            createTestWorkbook: function () {
+              var t = this,
+                e = {};
+              (this.dingtalkForm.operator_id &&
+                (e.operator_id = this.dingtalkForm.operator_id),
+                this.dingtalkForm.workspace_id &&
+                  (e.workspace_id = this.dingtalkForm.workspace_id),
+                this.dingtalkForm.parent_node_id &&
+                  (e.parent_node_id = this.dingtalkForm.parent_node_id),
+                this.dingtalkForm.title && (e.title = this.dingtalkForm.title));
+              return (
+                (this.dingtalkLoading = !0),
+                C(e)
+                  .then(function (e) {
+                    var a = (e && e.data) || {};
+                    if (!1 === a.success)
+                      throw new Error(a.error_message || "创建测试表格失败");
+                    var n = a.workbook_id;
+                    n || !a.data || (n = a.data.dentryUuid || "");
+                    n && (t.dingtalkForm.workbook_id = n);
+                    (t.appendDingtalkLog("创建测试表格成功", a, !0),
+                      t.$message.success("创建测试表格成功"));
+                  })
+                  .catch(function (e) {
+                    (t.$message.error("创建测试表格失败"),
+                      t.appendDingtalkLog(
+                        "创建测试表格失败",
+                        (e && e.message) || e,
+                        !0,
+                      ));
+                  })
+                  .finally(function () {
+                    t.dingtalkLoading = !1;
+                  })
+              );
+            },
+            loadDingtalkSheets: function () {
+              var t = this,
+                e = {};
+              (this.dingtalkForm.operator_id &&
+                (e.operator_id = this.dingtalkForm.operator_id),
+                this.dingtalkForm.workbook_id &&
+                  (e.workbook_id = this.dingtalkForm.workbook_id));
+              if (!e.workbook_id)
+                return (
+                  this.$message.warning("请先填写 workbook_id"),
+                  void this.appendDingtalkLog(
+                    "获取工作表失败",
+                    "workbook_id is empty",
+                    !0,
+                  )
+                );
+              return (
+                (this.dingtalkLoading = !0),
+                L(e)
+                  .then(function (e) {
+                    var a = (e && e.data) || {};
+                    if (!1 === a.success) {
+                      var n =
+                        (a.detail &&
+                          (a.detail.error_text ||
+                            a.detail.error ||
+                            (a.detail.sheet_result &&
+                              a.detail.sheet_result.error_text))) ||
+                        a.error_message ||
+                        "获取工作表失败";
+                      return (
+                        t.$message.error(n),
+                        void t.appendDingtalkLog("获取工作表失败", a, !0)
+                      );
+                    }
+                    (t.appendDingtalkLog("获取工作表成功", a, !0),
+                      t.$message.success("已获取工作表列表"));
+                  })
+                  .catch(function (e) {
+                    (t.$message.error("获取工作表失败"),
+                      t.appendDingtalkLog(
+                        "获取工作表失败",
+                        (e && e.message) || e,
+                        !0,
+                      ));
+                  })
+                  .finally(function () {
+                    t.dingtalkLoading = !1;
+                  })
+              );
+            },
+            writeWorkbookMarkdown: function () {
+              var t = this,
+                e = {};
+              this.dingtalkForm.operator_id &&
+                (e.operator_id = this.dingtalkForm.operator_id);
+              this.dingtalkForm.workbook_id &&
+                (e.workbook_id = this.dingtalkForm.workbook_id);
+              this.dingtalkForm.sheet_name &&
+                (e.sheet_name = this.dingtalkForm.sheet_name);
+              e.markdown_content =
+                this.dingtalkForm.markdown_content ||
+                "### 钉钉 API 联调测试\n\n- 时间：`" +
+                  new Date().toLocaleString() +
+                  "`\n- 来源：`ARL 调试面板`\n";
+              if (!e.workbook_id)
+                return (
+                  this.$message.warning("请先填写 workbook_id"),
+                  void this.appendDingtalkLog(
+                    "写入工作表失败",
+                    "workbook_id is empty",
+                    !0,
+                  )
+                );
+              return (
+                (this.dingtalkLoading = !0),
+                P(e)
+                  .then(function (e) {
+                    var a = (e && e.data) || {};
+                    if (!1 === a.success) {
+                      var n =
+                        (a.detail &&
+                          (a.detail.error_text ||
+                            a.detail.error ||
+                            (a.detail.write_result &&
+                              a.detail.write_result.error_text))) ||
+                        a.error_message ||
+                        "写入表格失败";
+                      return (
+                        t.$message.error(n),
+                        void t.appendDingtalkLog("写入工作表失败", a, !0)
+                      );
+                    }
+                    (t.appendDingtalkLog("写入工作表成功", a, !0),
+                      t.$message.success("写入表格成功"));
+                  })
+                  .catch(function (e) {
+                    (t.$message.error("写入表格失败"),
+                      t.appendDingtalkLog(
+                        "写入工作表失败",
+                        (e && e.message) || e,
+                        !0,
+                      ));
+                  })
+                  .finally(function () {
+                    t.dingtalkLoading = !1;
+                  })
+              );
             },
             tableLoad: function (t) {
               return (function (t) {
                 return i.a.get("/github_scheduler/", { params: t });
-              })(Object(n.a)({}, t)).then(function (t) {
+	              })(Object(n.a)({}, t)).then(function (t) {
                 var e = t.items;
                 return {
                   current: t.page,
@@ -174,11 +528,14 @@
                       { key: e, to: a },
                     );
                   }),
-                };
-              });
-            },
-          },
-        },
+	                };
+	              });
+	            },
+	          },
+	          mounted: function () {
+	            this.isDingtalkConfigPage() && this.openDingtalkConfig();
+	          },
+	        },
         b = a("2877"),
         g = Object(b.a)(
           y,
@@ -190,51 +547,423 @@
               "div",
               { staticClass: "card_right_body" },
               [
+	                a(
+	                  "div",
+	                  [
+	                    t.isDingtalkConfigPage()
+	                      ? t._e()
+	                      : a(
+	                          "a-button",
+	                          {
+	                            attrs: { type: "primary" },
+	                            on: {
+	                              click: function (e) {
+	                                t.modalVisible = !0;
+	                              },
+	                            },
+	                          },
+	                          [t._v("添加任务")],
+	                        ),
+	                    t.isDingtalkConfigPage()
+	                      ? a(
+	                          "a-button",
+	                          {
+	                            staticStyle: { "margin-left": "8px" },
+	                            on: { click: t.openDingtalkConfig },
+	                          },
+	                          [t._v("刷新钉钉配置")],
+	                        )
+	                      : t._e(),
+	                  ],
+	                  1,
+	                ),
+	                a(
+	                  "AddPlanning",
+	                  {
+	                    style: t.isDingtalkConfigPage()
+	                      ? { display: "none" }
+	                      : {},
+	                    attrs: {
+	                      formItems: t.addFormItems,
+	                      title: t.modalTitle,
+	                      params: t.modalParams,
+	                      submitApi: t.submitApi,
+	                    },
+	                    on: { freshTable: t.freshTable },
+	                    model: {
+	                      value: t.modalVisible,
+	                      callback: function (e) {
+	                        t.modalVisible = e;
+	                      },
+	                      expression: "modalVisible",
+	                    },
+	                  },
+	                ),
                 a(
-                  "div",
+                  "a-modal",
+                  {
+                    attrs: {
+                      title: "钉钉API配置",
+                      visible: t.dingtalkModalVisible,
+                      width: 860,
+                      footer: null,
+                    },
+                    on: {
+                      cancel: function (e) {
+                        t.dingtalkModalVisible = !1;
+                      },
+                    },
+                  },
                   [
                     a(
-                      "a-button",
-                      {
-                        attrs: { type: "primary" },
-                        on: {
-                          click: function (e) {
-                            t.modalVisible = !0;
+                      "a-spin",
+                      { attrs: { spinning: t.dingtalkLoading } },
+                      [
+                        a(
+                          "div",
+                          {
+                            staticStyle: {
+                              "margin-bottom": "12px",
+                              color: "#8c8c8c",
+                            },
                           },
-                        },
-                      },
-                      [t._v("添加任务")],
+                          [
+                            t._v(
+                              "可先测试连接，再获取知识库与目录；此页面用于调试配置与接口连通性。",
+                            ),
+                          ],
+                        ),
+                        a(
+                          "a-form-model",
+                          {
+                            attrs: {
+                              model: t.dingtalkForm,
+                              "label-col": { span: 6 },
+                              "wrapper-col": { span: 17 },
+                            },
+                          },
+                          [
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "操作者ID" } },
+                              [
+                                a("a-input", {
+                                  attrs: {
+                                    placeholder:
+                                      "可选，不填则使用后端配置里的 OPERATOR_ID",
+                                  },
+                                  model: {
+                                    value: t.dingtalkForm.operator_id,
+                                    callback: function (e) {
+                                      t.$set(t.dingtalkForm, "operator_id", e);
+                                    },
+                                    expression: "dingtalkForm.operator_id",
+                                  },
+                                }),
+                              ],
+                              1,
+                            ),
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "知识库空间" } },
+                              [
+                                a(
+                                  "a-select",
+                                  {
+                                    attrs: {
+                                      "show-search": "",
+                                      optionFilterProp: "label",
+                                      allowClear: "",
+                                      placeholder: "请先获取知识库列表再选择",
+                                    },
+                                    on: { change: t.workspaceChange },
+                                    model: {
+                                      value: t.dingtalkForm.workspace_id,
+                                      callback: function (e) {
+                                        t.$set(
+                                          t.dingtalkForm,
+                                          "workspace_id",
+                                          e,
+                                        );
+                                      },
+                                      expression: "dingtalkForm.workspace_id",
+                                    },
+                                  },
+                                  t._l(t.workspaceOptions, function (e, n) {
+                                    return a(
+                                      "a-select-option",
+                                      {
+                                        key: n,
+                                        attrs: {
+                                          value: e.workspace_id,
+                                          label: "".concat(
+                                            e.name || e.workspace_id,
+                                          ),
+                                        },
+                                      },
+                                      [
+                                        t._v(
+                                          t._s(e.name || e.workspace_id) +
+                                            " (" +
+                                            t._s(e.workspace_id) +
+                                            ")",
+                                        ),
+                                      ],
+                                    );
+                                  }),
+                                  1,
+                                ),
+                              ],
+                              1,
+                            ),
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "父节点ID" } },
+                              [
+                                a(
+                                  "a-select",
+                                  {
+                                    attrs: {
+                                      "show-search": "",
+                                      optionFilterProp: "label",
+                                      allowClear: "",
+                                      placeholder: "可先获取目录节点再选择",
+                                    },
+                                    model: {
+                                      value: t.dingtalkForm.parent_node_id,
+                                      callback: function (e) {
+                                        t.$set(
+                                          t.dingtalkForm,
+                                          "parent_node_id",
+                                          e,
+                                        );
+                                      },
+                                      expression: "dingtalkForm.parent_node_id",
+                                    },
+                                  },
+                                  t._l(t.nodeOptions, function (e, n) {
+                                    return a(
+                                      "a-select-option",
+                                      {
+                                        key: n,
+                                        attrs: {
+                                          value: e.node_id,
+                                          label: "".concat(e.name || e.node_id),
+                                        },
+                                      },
+                                      [
+                                        t._v(
+                                          t._s(e.name || e.node_id) +
+                                            " (" +
+                                            t._s(e.node_id) +
+                                            ")",
+                                        ),
+                                      ],
+                                    );
+                                  }),
+                                  1,
+                                ),
+                              ],
+                              1,
+                            ),
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "测试表格标题" } },
+                              [
+                                a("a-input", {
+                                  attrs: {
+                                    placeholder:
+                                      "可选，默认使用 互联网资产自动化收集+时间戳",
+                                  },
+                                  model: {
+                                    value: t.dingtalkForm.title,
+                                    callback: function (e) {
+                                      t.$set(t.dingtalkForm, "title", e);
+                                    },
+                                    expression: "dingtalkForm.title",
+                                  },
+                                }),
+                              ],
+                              1,
+                            ),
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "Workbook ID" } },
+                              [
+                                a("a-input", {
+                                  attrs: {
+                                    placeholder:
+                                      "创建测试表格后自动回填，也可手动输入 dentry_uuid",
+                                  },
+                                  model: {
+                                    value: t.dingtalkForm.workbook_id,
+                                    callback: function (e) {
+                                      t.$set(t.dingtalkForm, "workbook_id", e);
+                                    },
+                                    expression: "dingtalkForm.workbook_id",
+                                  },
+                                }),
+                              ],
+                              1,
+                            ),
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "工作表名称" } },
+                              [
+                                a("a-input", {
+                                  attrs: {
+                                    placeholder: "默认 Sheet1",
+                                  },
+                                  model: {
+                                    value: t.dingtalkForm.sheet_name,
+                                    callback: function (e) {
+                                      t.$set(t.dingtalkForm, "sheet_name", e);
+                                    },
+                                    expression: "dingtalkForm.sheet_name",
+                                  },
+                                }),
+                              ],
+                              1,
+                            ),
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "写入内容" } },
+                              [
+                                a("a-textarea", {
+                                  attrs: {
+                                    rows: 5,
+                                    placeholder:
+                                      "可选：写入表格的 markdown 文本；留空则使用默认测试内容",
+                                  },
+                                  model: {
+                                    value: t.dingtalkForm.markdown_content,
+                                    callback: function (e) {
+                                      t.$set(
+                                        t.dingtalkForm,
+                                        "markdown_content",
+                                        e,
+                                      );
+                                    },
+                                    expression: "dingtalkForm.markdown_content",
+                                  },
+                                }),
+                              ],
+                              1,
+                            ),
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "调试操作" } },
+                              [
+                                a(
+                                  "div",
+                                  [
+                                    a(
+                                      "a-button",
+                                      {
+                                        attrs: { type: "primary", size: "small" },
+                                        on: { click: t.testDingtalkConnection },
+                                      },
+                                      [t._v("测试连接")],
+                                    ),
+                                    a(
+                                      "a-button",
+                                      {
+                                        staticStyle: { "margin-left": "8px" },
+                                        attrs: { size: "small" },
+                                        on: { click: t.loadDingtalkWorkspaces },
+                                      },
+                                      [t._v("获取知识库")],
+                                    ),
+                                    a(
+                                      "a-button",
+                                      {
+                                        staticStyle: { "margin-left": "8px" },
+                                        attrs: { size: "small" },
+                                        on: { click: t.loadDingtalkNodes },
+                                      },
+                                      [t._v("获取目录")],
+                                    ),
+                                    a(
+                                      "a-button",
+                                      {
+                                        staticStyle: { "margin-left": "8px" },
+                                        attrs: { type: "dashed", size: "small" },
+                                        on: { click: t.createTestWorkbook },
+                                      },
+                                      [t._v("创建测试表格")],
+                                    ),
+                                    a(
+                                      "a-button",
+                                      {
+                                        staticStyle: { "margin-left": "8px" },
+                                        attrs: { size: "small" },
+                                        on: { click: t.loadDingtalkSheets },
+                                      },
+                                      [t._v("获取工作表")],
+                                    ),
+                                    a(
+                                      "a-button",
+                                      {
+                                        staticStyle: { "margin-left": "8px" },
+                                        attrs: { type: "primary", size: "small" },
+                                        on: { click: t.writeWorkbookMarkdown },
+                                      },
+                                      [t._v("写入测试内容")],
+                                    ),
+                                  ],
+                                  1,
+                                ),
+                              ],
+                              1,
+                            ),
+                            a(
+                              "a-form-model-item",
+                              { attrs: { label: "接口返回" } },
+                              [
+                                a("a-textarea", {
+                                  attrs: {
+                                    rows: 10,
+                                    readOnly: "",
+                                    placeholder:
+                                      "这里会显示接口返回，便于排查配置问题",
+                                  },
+                                  model: {
+                                    value: t.dingtalkResultText,
+                                    callback: function (e) {
+                                      t.dingtalkResultText = e;
+                                    },
+                                    expression: "dingtalkResultText",
+                                  },
+                                }),
+                              ],
+                              1,
+                            ),
+                          ],
+                          1,
+                        ),
+                      ],
+                      1,
                     ),
                   ],
                   1,
                 ),
-                a("AddPlanning", {
-                  attrs: {
-                    formItems: t.addFormItems,
-                    title: t.modalTitle,
-                    params: t.modalParams,
-                    submitApi: t.submitApi,
-                  },
-                  on: { freshTable: t.freshTable },
-                  model: {
-                    value: t.modalVisible,
-                    callback: function (e) {
-                      t.modalVisible = e;
-                    },
-                    expression: "modalVisible",
-                  },
-                }),
-                a("PageTemplate", {
-                  ref: "temRef",
-                  attrs: {
-                    searchList: t.searchConfig,
-                    columns: t.columns,
-                    rowBtns: t.rowBtns,
-                    load: t.tableLoad,
-                    batchBtns: t.batchBtns,
-                  },
-                  on: { update: t.updateBtn },
-                }),
+	                a(
+	                  "PageTemplate",
+	                  {
+	                    ref: "temRef",
+	                    style: t.isDingtalkConfigPage()
+	                      ? { display: "none" }
+	                      : {},
+	                    attrs: {
+	                      searchList: t.searchConfig,
+	                      columns: t.columns,
+	                      rowBtns: t.rowBtns,
+	                      load: t.tableLoad,
+	                      batchBtns: t.batchBtns,
+	                    },
+	                    on: { update: t.updateBtn },
+	                  },
+	                ),
               ],
               1,
             );
@@ -491,6 +1220,13 @@
             type: "checkbox",
             required: !1,
             default: !0,
+          },
+          {
+            label: "推送到钉钉知识库",
+            key: "notify_kb_enable",
+            type: "checkbox",
+            required: !1,
+            default: !1,
           },
         ],
         y = {

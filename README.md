@@ -1,342 +1,452 @@
-# ARL-TI
+基于 ARL 的互联网资产自动化收集二开版本。  
+这套平台利用成熟的平台ARL作为基础：支持批量导出、钉钉机器人通知、钉钉知识库结构化写入、计划任务聚合通知与对比统计、前后端稳定性修复，基础设施的升级维护。
 
-## 二开更新说明
+> 站在外部的角度，如果不知道自己拥有什么，就无法保护什么
+>
+> 帮助团队收集暴露的资产，一是让团队有哪些资产暴露在互联网上，避免因不小心的配置错误或者其它原因造成暴露在互联网上的遗留、边缘资产问题，二是尽可能避免项目代码不小心被推送到github上，出现泄漏问题。利用主流三方API做网络空间搜索引擎和传统的域名爆破、前端暴露的url拼接、端口扫描、host碰撞等方法进行资产信息的收集，自动化定时执行推送到知识库、群机器人。
 
-### 批量表格导出（任务管理）
+---
 
-- 新增/修复入口：`任务管理 -> 勾选任务 -> 批量导出 -> 表格批量导出`
-- 后端接口：`POST /api/export/batch`
-- 导出格式：`xlsx`，并与单任务导出保持同结构（`站点`、`IP`、`系统服务`、`域名`、`资产统计`）
-- 批量逻辑：在单任务导出结构不变的前提下，对多任务数据进行合并去重
+## 1. 项目简介
 
-### 导出稳定性修复
+ARL-Source-Install 用于互联网资产自动化收集与持续监控，支持：
 
-- 修复前端下载流程中“返回200但提示导出失败/文件内容为undefined”的问题
-- 修复批量导出过程中异常字段导致的导出失败问题（非法字符、字段类型兼容等）
+- 资产扫描（域名/IP/站点/端口/URL/漏洞等）
+- 计划任务（周期执行、聚合通知）
+- GitHub 监控（关键词泄露监控）
+- 批量导出（任务多选合并导出）
+- 钉钉通知（群机器人）
+- 钉钉知识库报告（WORKBOOK 工作表）
 
-### 开发规范文档位置
+该仓库默认采用 Docker 方式部署。
 
-- 开发规范已统一到：`docs/开发规范.md`
+---
 
-### Redis 性能优化
+## 2. 二开功能总览
 
-- 新增 Redis 业务缓存配置：`ARL/docker/config-docker.yaml`、`ARL/app/config.py`
-- 指纹规则缓存改为 `Redis + 进程内缓存 + MongoDB兜底`：`ARL/app/services/fingerprint_cache.py`
-- 高并发查询路径接入缓存：
-  - 通用列表查询入口：`ARL/app/routes/__init__.py`（`build_data`）
-  - 高频辅助查询：`ARL/app/utils/arl.py`、`ARL/app/helpers/*`
-- 缓存策略：
-  - 读请求短TTL缓存（约 60~120 秒）
-  - 大分页（`size > 5000`）绕过缓存，避免缓存超大对象
-  - Redis 不可用自动降级到 MongoDB，不影响功能可用性
+升级基础设施版本
+升级：MongoDB
+升级：RabbitMQ
+新增：Redis
 
-#### Redis 生效验证
+批量导出表格功能
 
-```bash
-# 触发任务/资产列表查询后执行
-docker exec -it arl_redis redis-cli INFO keyspace
-docker exec -it arl_redis redis-cli INFO commandstats | egrep 'cmdstat_get|cmdstat_set|cmdstat_setex|cmdstat_del'
-docker exec -it arl_redis redis-cli --scan --pattern 'route:build_data*' | head
-docker exec -it arl_redis redis-cli --scan --pattern 'helper:*' | head
-docker exec -it arl_redis redis-cli --scan --pattern 'arl:*' | head
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771928255293-e8c0e961-193f-469c-ae47-2596bded18f2.png)
+
+钉钉群通知、汇总、对比
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771926597402-de72ed7e-631d-46ba-9a19-18a6d99520bf.png)
+
+钉钉在线知识库文档，报告自动化写入功能
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771928088655-9cb7123e-2531-4366-bad1-4a0c08455692.png)
+
+### 2.1 批量表格导出
+
+- 功能：任务多选后一次性导出 `xlsx`
+- 特性：与单任务导出结构保持一致，支持合并与去重
+- 输出工作表：`站点`、`IP`、`系统服务`、`域名`、`资产统计`
+
+### 2.2 钉钉通知体系
+
+- 保留原群机器人通知能力（Webhook）
+- 新增钉钉开放平台知识库写入（WORKBOOK）
+- 支持按任务类型开关：普通任务 / 计划任务 / GitHub 监控
+- GitHub 监控机器人消息已优化为摘要，并可附知识库报告链接
+
+### 2.3 计划任务通知增强
+
+- 通知聚合后发送，避免多目标触发重复刷屏
+- 支持知识库报告链接回传
+- 增加与上次执行结果的对比统计
+
+### 2.4 稳定性与一致性修复
+
+- 批量停止计划任务改为幂等处理（已停止项跳过，不阻断整体）
+- 钉钉工作表写入增强（字符串规范化、失败诊断信息）
+- 列表缓存一致性优化（新增/删除后延迟显示问题已修复）
+- 监控任务重建域名数据时保留真实来源（如 `fofa`、`hunter_qax`、`quake_360`、`virustotal`）
+
+### 2.5 容器安全基线优化
+
+- 仅 `arl_nginx` 对外暴露端口
+- `web/worker/scheduler/mongodb/redis/rabbitmq` 走容器内通信
+
+### 2.6 基础设施版本升级
+
+当前核心基础设施镜像如下（已纳入二开维护范围）：
+
+- `redis:7-alpine`
+- `rabbitmq:3.13-management-alpine`
+- `mongo:7.0`
+- `rockylinux:8`（`arl:local` 基础镜像）
+- `nginx:1.24-alpine`
+
+版本清单：
+
+| 组件         | 当前版本                          | 说明                                          |
+| ------------ | --------------------------------- | --------------------------------------------- |
+| 基础系统镜像 | `rockylinux:8`                    | ARL 主应用镜像基座（`ARL/docker/Dockerfile`） |
+| MongoDB      | `mongo:7.0`                       | 资产数据存储                                  |
+| RabbitMQ     | `rabbitmq:3.13-management-alpine` | Celery 消息队列                               |
+| Redis        | `redis:7-alpine`                  | 业务缓存与性能优化                            |
+
+---
+
+## 3. 系统架构
+
+```latex
+Browser
+  -> arl_nginx (80, Basic Auth)
+    -> arl_web (Flask + Gunicorn)
+      -> MongoDB / Redis / RabbitMQ
+      -> arl_worker (Celery)
+      -> arl_scheduler (周期调度)
 ```
 
-## 版本升级信息
+容器编排文件：`ARL/docker/docker-compose.yml`
 
-### 主要升级
+默认服务名：
 
-| 组件     | 旧版本   | 新版本                      | 升级日期   | 支持期限 |
-| -------- | -------- | --------------------------- | ---------- | -------- |
-| 基础镜像 | CentOS 7 | Rocky Linux 8               | 2026-02-02 | 2027 年  |
-| MongoDB  | 3.6      | 7.0 LTS                     | 2026-02-02 | 2027 年  |
-| Redis    | -        | 7.0                         | 2026-02-02 | 长期维护 |
-| RabbitMQ | 3.8.19   | 3.13                        | 2026-02-02 | 长期维护 |
-| Python   | 3.6      | 3.6（兼容性问题，暂不修改） | 2026-02-02 | 2021+    |
+- `arl_nginx`
+- `arl_web`
+- `arl_worker`
+- `arl_scheduler`
+- `arl_mongodb`
+- `arl_redis`
+- `arl_rabbitmq`
 
-### 升级优势
+---
 
-**安全性提升**
+## 4. 快速开始
 
-- CentOS 7 已停止维护 (2024/6/30) → Rocky Linux 8
-- MongoDB 3.6 已停止支持 (2021) → MongoDB 7.0
+### 4.1 前置条件
 
-**性能提升**
+- Docker
+- Docker Compose
+- 可用内存建议 >= 2GB
+- 可用磁盘建议 >= 8GB
 
-- MongoDB 查询性能提升 40%+
-- Redis 缓存性能提升 30%
-- 内存占用优化 10-20%
+钉钉自动化推送
 
-**新功能**
+通过钉钉开发者平台，需要提前获取以下信息，以配置钉钉自动化推送（因为我只用得到钉钉，所以飞书的各位大佬可以自行完善）
 
-- Redis 缓存支持
-- 改进的数据库索引
-- 更好的集群支持
+参考：
 
-## 快速开始
+[https://open.dingtalk.com/](https://open.dingtalk.com/)
 
-### 前置条件
+[https://open.dingtalk.com/document/development/get-knowledge-base-list](https://open.dingtalk.com/document/development/get-knowledge-base-list)
 
-- Docker 和 Docker Compose 已安装
-- 至少 8GB 空闲磁盘空间
-- 至少 4GB 可用内存
+[https://open.dingtalk.com/document/api/explore/explorer-page?api=wiki_2.0%23ListWorkspaces&devType=org](https://open.dingtalk.com/document/api/explore/explorer-page?api=wiki_2.0%23ListWorkspaces&devType=org)
 
-### 一键启动
+新建应用
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771926828978-1bb612e4-b903-4ef4-9e24-1e4c74f8c794.png)
+
+应用凭证后面会用到
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771926856658-23022d41-6b44-43a3-9c45-aae8add80fdf.png)
+
+在应用中创建机器人
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771927318881-d81da6e1-eeb3-430c-9560-be3e8c1de1bb.png)
+
+至少需要以下权限以保证资产收集的报告可以正常写入
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771927394442-b72f85d0-af75-42ea-abdf-7013e456aa82.png)
+
+操作者的unionId 自行在钉钉开发者平台上去调试获取
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771927566292-215eae01-b0ea-4bf0-ae91-3b9455fa1a96.png)
+
+知识库空间 id 需要创建后获取，也是在钉钉开发者平台
+
+获取并调试好权限后配置到这里
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771927115516-a0827ff4-76d0-4280-af46-585153752536.png)
+
+自行补充网络空间搜索引擎 APIkey，并开启
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771927044180-9ed803a5-d242-47c9-a66e-d87b50175945.png)
+
+github 监控
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771927712491-e03e3203-9ae0-44b7-b042-e90d6ecae53d.png)
+
+配置域名服务器地址
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771927735789-dcb7fefc-6f98-46bb-98d3-03a7be539d9e.png)
+
+### 4.2 一键构建与启动
+
+在项目根目录执行：
 
 ```bash
-# 1. 进入项目目录
-cd ARL-Source-Install
-
-# 2. 设置脚本执行权限
-chmod +x build.sh start.sh
-
-# 3. 构建镜像（首次或代码修改后）
+chmod +x build.sh start.sh scripts/quick-build.sh
 ./build.sh
-
-# 4. 启动系统
 ./start.sh
 ```
 
-首次启动可能需要初始化volume
+`start.sh` 会自动检查并创建 `arl_db` volume（不存在时）。
+
+### 4.3 访问方式
+
+- 访问地址：`http://<服务器IP>`
+- Basic Auth：
+  - 用户名：`admin`
+  - 密码：`admin123456`
+- ARL 应用默认账号：
+  - 用户名：`admin`
+  - 密码：`arlpass`
+
+---
+
+## 5. 日常升级与重建
+
+### 5.1 常规更新
 
 ```bash
-# 手动创建数据卷
-docker volume create arl_db
+git pull
+./scripts/quick-build.sh quick
+```
 
-# 进入 Docker 目录
+### 5.2 常用构建命令
+
+```bash
+./scripts/quick-build.sh           # 默认 quick
+./scripts/quick-build.sh full      # 完整构建
+./scripts/quick-build.sh clean     # 清缓存重建
+./scripts/quick-build.sh frontend  # 仅更新前端静态资源
+```
+
+### 5.3 查看日志
+
+```bash
 cd ARL/docker
-
-# 启动服务
-docker compose up -d
+docker compose logs -f web
+docker compose logs -f worker
+docker compose logs -f scheduler
 ```
 
-- **Basic Auth 用户名**: `admin`
-- **Basic Auth 密码**: `admin123456`
-- **ARL 系统用户名**: `admin`
-- **ARL 系统密码**: `arlpass`
+---
 
-## 版本信息
+## 6. 核心配置说明
 
-- 现有代码 100% 兼容
-- 无需代码修改
+主配置文件：`ARL/docker/config-docker.yaml`
 
-**国内源优化**
+可参考模板：`ARL/app/config.yaml.example`
 
-- Rocky Linux 国内源 (Aliyun)
-- Python Pip 国内源 (USTC)
+### 6.1 Redis（业务缓存）
 
-## Rocky Linux 8 升级
-
-| 对比项       | CentOS 7            | Rocky Linux 8            |
-| ------------ | ------------------- | ------------------------ |
-| 维护状态     | 已停止 (2024/06/30) | 长期支持 (至 2029/05/31) |
-| OpenSSL版本  | 1.0.2               | 1.1.1                    |
-| 系统库更新   | 无                  | 定期更新                 |
-| 安全补丁     | 无                  | 持续提供                 |
-| Python兼容性 | 3.6支持完整         | 3.6+3.9+                 |
-| 容器技术     | -                   | 现代化                   |
-
-### 数据库升级 (MongoDB 3.6 → 7.0)
-
-**性能提升**：
-
-| 指标     | MongoDB 3.6 | MongoDB 7.0 | 提升   |
-| -------- | ----------- | ----------- | ------ |
-| 查询性能 | 基准        | +40%        | 显著   |
-| 内存占用 | 基准        | -15%        | 明显   |
-| 索引效率 | 基准        | +25%        | 显著   |
-| 事务支持 | 无          | 完整 ACID   | 新功能 |
-
-### 缓存系统新增 (Redis 7)
-
-**之前**：仅使用MongoDB和RabbitMQ
-**现在**：添加Redis分层缓存
-
-- 会话缓存
-- 任务结果缓存
-- 频繁查询缓存
-- 性能提升 30-50%
-
-## 系统初始化
-
-### MongoDB 用户初始化
-
-首次启动时，MongoDB会自动执行初始化脚本 (`mongo-init.js`)：
-
-**初始化流程**：
-
-```javascript
-// 1. 连接到admin数据库进行认证
-// 2. 切换到arl数据库
-// 3. 计算密码哈希: MD5('arlsalt!@#' + 'arlpass')
-// 4. 删除已有用户数据
-// 5. 插入admin用户
-
-// 结果: 用户名 = admin, 密码哈希 = fe0a9aeac7e5c03922067b40db984f0e
+```yaml
+REDIS:
+  ENABLE: true
+  HOST: "redis"
+  PORT: 6379
+  DB: 0
+  PASSWORD: ""
+  CACHE_EXPIRE: 1800
 ```
 
-**重要**：初始化脚本仅在容器**首次创建**时执行
+### 6.2 钉钉机器人（群通知）
 
-- 如果数据卷已存在，脚本不会再次运行
-- 重新初始化：需删除数据卷 `docker volume rm arl_db`
-- 建议首次部署后不要删除数据卷
-
-### 密码认证机制
-
-**两层认证**：
-
-1. **Nginx Basic Auth** (网络层)
-   - 用户名: `admin`
-   - 默认密码: `admin123456`
-   - 用途: 保护后端应用
-
-2. **ARL系统认证** (应用层)
-   - 用户名: `admin`
-   - 默认密码: `arlpass`
-   - 用途: 应用内用户认证
-   - 存储: MongoDB中的密码哈希
-
-## Docker 镜像概览
-
-### 基础镜像
-
-| 名称                              | 版本    | 说明                                             |
-| --------------------------------- | ------- | ------------------------------------------------ |
-| `rockylinux:8`                    | 8       | ARL 主应用容器基础镜像 - 兼容至 2027 年          |
-| `mongo:7.0`                       | 7.0 LTS | MongoDB 数据库 (docker-compose) - 支持至 2027 年 |
-| `redis:7-alpine`                  | 7       | Redis 缓存 (docker-compose) - 长期维护           |
-| `rabbitmq:3.13-management-alpine` | 3.13    | RabbitMQ 消息队列 (docker-compose) - 最新稳定版  |
-
-### 构建镜像
-
-| 镜像名      | 构建文件                | 说明                                 |
-| ----------- | ----------------------- | ------------------------------------ |
-| `arl:local` | `ARL/docker/Dockerfile` | **主应用镜像** - 包含 ARL 和所有工具 |
-
-### 服务容器映射
-
-| 服务名          | 镜像                              | 端口                   | 功能                                   |
-| --------------- | --------------------------------- | ---------------------- | -------------------------------------- |
-| `arl_nginx`     | `nginx:1.24-alpine`               | 80                     | **Nginx反向代理** - 提供Basic Auth保护 |
-| `arl_web`       | `arl:local`                       | 127.0.0.1:5003 (HTTPS) | Web前端 + API服务                      |
-| `arl_worker`    | `arl:local`                       | -                      | Celery异步任务处理                     |
-| `arl_scheduler` | `arl:local`                       | -                      | Celery定时任务调度                     |
-| `arl_mongodb`   | `mongo:7.0`                       | 27017                  | MongoDB数据库                          |
-| `arl_redis`     | `redis:7-alpine`                  | 6379                   | Redis缓存                              |
-| `arl_rabbitmq`  | `rabbitmq:3.13-management-alpine` | 5672, 15672            | RabbitMQ消息队列                       |
-
-## 系统架构
-
-### 网络访问流程
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    用户浏览器                                     │
-│              http://192.168.X.X                                 │
-└────────────────────┬────────────────────────────────────────────┘
-                     │
-                     ▼
-          ┌──────────────────────┐
-          │  Nginx反向代理容器   │
-          │   (arl_nginx)        │
-          │   端口: 80           │
-          │   Basic Auth:        │
-          │   admin/admin123456  │
-          └──────────┬───────────┘
-                     │ (HTTPS转发)
-                     ▼
-          ┌──────────────────────────────────────────┐
-          │   arl_web 容器 (arl:local)               │
-          ├──────────────────────────────────────────┤
-          │  内部Nginx (端口80/443)                  │
-          │  ├─ 前端页面: /code/frontend/           │
-          │  ├─ API代理: /api/* → :5003/api/*       │
-          │  └─ SSL证书: /etc/ssl/certs/arl_web.*   │
-          │                                          │
-          │  Gunicorn (端口5003)                    │
-          │  └─ Flask应用: app.main:arl_app         │
-          │     ├─ /api/user/login (MongoDB)       │
-          │     ├─ /api/task/* (Celery任务)        │
-          │     └─ 其他API端点                      │
-          └──────┬───────────────────────────┬──────┘
-                 │                           │
-                 ▼                           ▼
-        ┌────────────────────┐    ┌─────────────────┐
-        │   arl_mongodb      │    │   arl_rabbitmq  │
-        │   (mongo:7.0)      │    │   (rabbit:3.13) │
-        │   端口: 27017      │    │   端口: 5672    │
-        └────────────────────┘    └─────────────────┘
-                 ▲
-                 │ (工作任务)
-        ┌────────┴─────────┐
-        │                  │
-    ┌───▼──────┐      ┌───▼──────┐
-    │ arl_worker│      │arl_scheduler
-    │(celery)  │      │(celery)   │
-    └──────────┘      └───────────┘
+```yaml
+DINGDING:
+  ACCESS_TOKEN: ""
+  SECRET: ""
 ```
 
-### 双层Nginx架构说明
+说明：
 
-1. **外层Nginx (arl_nginx 容器)**
-   - 监听: `0.0.0.0:80`
-   - 功能: 反向代理 + Basic Auth认证
-   - 目的: 保护后端应用，限制公网访问
+- 仅 Access Token 也可工作（不加签机器人、适配钉钉应用不加签格式）
+- 若机器人开启签名校验，需同时配置 `SECRET`
 
-2. **内层Nginx (arl_web 容器)**
-   - 监听: `0.0.0.0:80` + `0.0.0.0:443` (容器内)
-   - 功能: 静态页面服务 + API反向代理
-   - 目的: 提供前端页面和API接口
+### 6.3 钉钉知识库（开放平台）
 
-3. **访问流程**
-   - 用户 → 外层Nginx (需要Basic Auth) → 内层Nginx + Gunicorn API
-   - 外层Nginx强制HTTPS → 内层Nginx自签名证书处理
+```yaml
+DINGTALK_API:
+  ENABLE: false
+  BASE_URL: "https://api.dingtalk.com"
+  CORP_ID: ""
+  APP_KEY: ""
+  APP_SECRET: ""
+  OPERATOR_ID: ""
+  WORKSPACE_ID: ""
+  PARENT_NODE_ID: ""
+  CREATE_NODE_PATH: "/v1.0/doc/workspaces/{workspace_id}/docs"
+  KB_TIMEOUT: 20
+  TITLE_PREFIX: "互联网资产自动化收集"
+  DRY_RUN: false
+  REPORT_BASE_URL: ""
+```
 
-## 项目结构
+当 `ENABLE=true` 时，以下字段必填：
 
-```text
-ARL-TI/
-├── ARL/                              # 主应用源码
+- `CORP_ID`
+- `APP_KEY`
+- `APP_SECRET`
+- `OPERATOR_ID`
+- `WORKSPACE_ID`
+- `PARENT_NODE_ID`
+
+### 6.4 K8s / 环境部署
+
+`config.py` 已支持钉钉配置通过环境变量覆盖，在k8s环境中用 Secret 注入敏感项，例如：
+
+- `ARL_DINGTALK_APP_KEY`
+- `ARL_DINGTALK_APP_SECRET`
+- `ARL_DINGTALK_WORKSPACE_ID`
+- `ARL_DINGTALK_PARENT_NODE_ID`
+
+### 6.5 三方域名插件采集
+
+修复了三方api不调用问题
+
+### 6.6 公网 DNS 解析器（内网环境部署问题解决）
+
+在集群环境中建议显式配置公网 DNS 解析器，避免优先使用内网 DNS 导致资产混入：
+
+```yaml
+ARL:
+  DNS_RESOLVERS:
+    - 223.5.5.5
+    - 119.29.29.29
+    - 114.114.114.114
+    - 8.8.8.8
+```
+
+说明：
+
+- 为空时使用系统默认 DNS
+- 配置后由 `web/worker/scheduler` 进程统一生效
+- 建议配合 `BLACK_IPS` 对私网网段做过滤
+
+---
+
+## 7. 钉钉推送链路
+
+### 7.1 机器人通知
+
+- 任务结束后按开关触发
+- 推送摘要 Markdown
+- 计划任务支持聚合后推送
+- GitHub 监控支持附加知识库报告链接
+
+### 7.2 知识库写入
+
+- 创建 WORKBOOK 文档
+- 写入执行概览和资产明细工作表
+- 常见工作表：`执行概览`、`域名`、`IP`、`系统服务`、`站点`、`资产统计`
+- 计划任务报告可包含与上次执行的对比统计
+
+### 7.3 联调接口
+
+后端提供钉钉 API 调试接口：`ARL/app/routes/dingtalk_api.py`
+
+- `/api/dingtalk_api/config/`
+- `/api/dingtalk_api/test/`
+- `/api/dingtalk_api/workspaces/`
+- `/api/dingtalk_api/nodes/`
+- `/api/dingtalk_api/create_workbook/`
+- `/api/dingtalk_api/sheets/`
+- `/api/dingtalk_api/write_markdown/`
+
+---
+
+## 8. 前端功能入口
+
+- 任务批量导出：`任务管理 -> 批量导出 -> 表格批量导出`
+- 添加任务：支持钉钉通知开关
+- 添加计划任务：支持钉钉通知/知识库推送相关开关
+- GitHub 监控：支持钉钉通知与知识库推送开关
+- 钉钉 API 配置：提供运行时配置与联调能力
+
+---
+
+## 9. 常见问题排查
+
+### 9.1 知识库写入失败：`dingtalk kb config incomplete or disabled`
+
+排查：
+
+1. `DINGTALK_API.ENABLE` 是否为 `true`
+2. 必填字段是否完整
+3. `OPERATOR_ID` 是否有目标知识库权限
+
+### 9.2 知识库写表失败：`MissingString`
+
+当前版本已做字符串规范化。若仍出现，优先检查：
+
+- 是否部署了最新镜像
+- 是否有自定义改动绕过了写入规范化流程
+
+### 9.3 计划任务批量停止报错
+
+当前版本为幂等逻辑：已停止任务会跳过，不应影响其他任务停止。
+
+### 9.4 日志查询建议
+
+```bash
+cd ARL/docker
+docker compose logs --since 30m scheduler | grep -E "kb push|notify|task schedule"
+docker compose logs --since 30m worker | grep -E "dingtalk|write workbook|sheet_write_result"
+```
+
+说明：部分系统没有 `rg`，请用 `grep`。
+
+---
+
+## 10. 项目目录
+
+```latex
+ARL-Source-Install/
+├── ARL/
 │   ├── app/
-│   │   ├── routes/                   # API 路由层（任务、资产、导出、调度等）
-│   │   ├── services/                 # 核心业务服务（扫描、指纹、同步、监控等）
-│   │   ├── tasks/                    # Celery 异步任务
-│   │   ├── helpers/                  # 辅助查询/校验函数
-│   │   ├── utils/                    # 通用工具（DB连接、缓存、HTTP、认证等）
-│   │   ├── modules/                  # 数据模型/常量定义
-│   │   ├── config.py                 # 应用配置（含 Redis 开关与参数）
-│   │   ├── main.py                   # Flask 应用入口
-│   │   ├── celerytask.py             # Celery worker 入口
-│   │   └── scheduler.py              # 调度入口
-│   ├── docker/
-│   │   ├── docker-compose.yml        # 容器编排（含 mongodb/rabbitmq/redis）
-│   │   ├── config-docker.yaml        # Docker 环境配置（含 REDIS 配置）
-│   │   ├── nginx.conf                # 内层 Nginx 配置
-│   │   ├── nginx-reverse-proxy/      # 外层反向代理（Basic Auth）
-│   │   ├── frontend/                 # 前端静态资源（已编译）
-│   │   └── Dockerfile                # 主应用镜像构建
-│   └── requirements.txt              # Python 依赖
-├── ARL-NPoC/                         # NPoC 漏洞脚本库
+│   │   ├── routes/                  # API 路由
+│   │   ├── services/                # 业务服务
+│   │   ├── helpers/                 # 通知、调度辅助
+│   │   ├── tasks/                   # 异步任务（含 github 监控）
+│   │   ├── utils/                   # 通用工具（含钉钉 OpenAPI）
+│   │   └── config.py
+│   └── docker/
+│       ├── docker-compose.yml
+│       ├── config-docker.yaml
+│       ├── Dockerfile
+│       ├── frontend/                # 已编译前端
+│       └── nginx-reverse-proxy/
+├── ARL-NPoC/
 ├── docs/
-│   └── 开发规范.md                    # 项目开发规范
-├── tools/                            # 离线工具和字典资源
+│   ├── 开发规范.md
+│   └── 钉钉推送功能开发与修改日志.md
 ├── scripts/
-│   └── quick-build.sh                # 快速构建与重启脚本
-├── build.sh                          # 完整构建脚本
-├── start.sh                          # 一键启动脚本
+│   └── quick-build.sh
+├── build.sh
+├── start.sh
 └── README.md
 ```
 
-## 密码问题
-
-### 无法登录 (用户名或密码错误)
-
-**症状**: 用 `admin/arlpass` 无法登录
-
-**解决**:
-
-```bash
-docker exec -ti arl_mongodb mongo -u admin -p admin
-use arl
-db.user.drop()
-db.user.insert({ username: 'admin',  password: hex_md5('arlsalt!@#'+'admin123') })
-```
+---

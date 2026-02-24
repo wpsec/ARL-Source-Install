@@ -557,6 +557,7 @@ from .github_result import ns as github_result_ns            # GitHub 结果
 from .github_monitor_result import ns as github_monitor_result_ns  # GitHub 监控结果
 from .github_scheduler import ns as github_scheduler_ns      # GitHub 调度器
 from .task_schedule import ns as task_schedule_ns            # 任务调度
+from .dingtalk_api import ns as dingtalk_api_ns              # 钉钉开放平台调试
 from .nuclei_result import ns as nuclei_result_ns            # Nuclei 扫描结果
 from .wih import ns as wih_ns                                # WIH
 from .assetWih import ns as asset_wih_ns                     # 资产 WIH

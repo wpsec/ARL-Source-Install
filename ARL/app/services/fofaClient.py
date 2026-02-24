@@ -71,7 +71,7 @@ def fetch_ip_bycert(cert, size=9999):
 
 def fofa_query(query, page_size=9999):
     try:
-        if not Config.FOFA_KEY or not Config.FOFA_KEY:
+        if not Config.FOFA_EMAIL or not Config.FOFA_KEY:
             return "please set fofa key in config-docker.yaml"
 
         client = FofaClient(Config.FOFA_EMAIL, Config.FOFA_KEY, page_size=page_size)

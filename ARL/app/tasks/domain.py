@@ -537,6 +537,8 @@ class DomainTask(CommonTask):
         self.service_info_list = []
         # 用来区分是正常任务还是监控任务
         self.task_tag = "task"
+        # 记录域名来源，避免监控任务重建数据时丢失真实来源
+        self.domain_source_map = {}
 
         # 用来存放泛解析域名映射的IP
         self._not_found_domain_ips = None
@@ -620,6 +622,35 @@ class DomainTask(CommonTask):
                 domain_info["fld"] = domain_parsed["fld"]
             utils.conn_db('domain').insert_one(domain_info)
 
+    def save_domain_info_list_by_source_map(self, domain_info_list, default_source=CollectSource.DOMAIN_BRUTE):
+        """
+        按域名来源映射进行保存（一个域名可对应多个来源）
+        """
+        for domain_info_obj in domain_info_list:
+            domain = getattr(domain_info_obj, "domain", "")
+            source_set = self.domain_source_map.get(domain, set())
+            if not source_set:
+                source_set = {default_source}
+
+            for source in source_set:
+                self.save_domain_info_list([domain_info_obj], source=source)
+
+    def add_domain_source_map(self, domain_info_list, source):
+        """
+        记录域名与来源的关系，便于监控任务重建时保留来源
+        """
+        if not source:
+            return
+
+        for domain_info_obj in domain_info_list:
+            domain = getattr(domain_info_obj, "domain", "")
+            if not domain:
+                continue
+
+            source_set = self.domain_source_map.get(domain, set())
+            source_set.add(source)
+            self.domain_source_map[domain] = source_set
+
     def domain_brute(self):
         # 调用工具去进行域名爆破，如果存在泛解析，会把包含泛解析的IP的域名给删除
         domain_info_list = domain_brute(self.base_domain, word_file=self.domain_word_file,
@@ -628,6 +659,7 @@ class DomainTask(CommonTask):
         domain_info_list = self.clear_domain_info_by_record(domain_info_list)
         if self.task_tag == "task":
             self.save_domain_info_list(domain_info_list, source=CollectSource.DOMAIN_BRUTE)
+        self.add_domain_source_map(domain_info_list, CollectSource.DOMAIN_BRUTE)
         self.domain_info_list.extend(domain_info_list)
 
     def clear_domain_info_by_record(self, domain_info_list):
@@ -663,6 +695,7 @@ class DomainTask(CommonTask):
             domain_info_list = self.clear_domain_info_by_record(domain_info_list)
             self.save_domain_info_list(domain_info_list, source=CollectSource.ARL)
 
+        self.add_domain_source_map(domain_info_list, CollectSource.ARL)
         self.domain_info_list.extend(domain_info_list)
         elapse = time.time() - arl_t1
         logger.info("end arl fetch {} {} elapse {}".format(
@@ -750,6 +783,7 @@ class DomainTask(CommonTask):
                 self.save_domain_info_list(alt_domain_info_list,
                                            source=CollectSource.ALTDNS)
 
+        self.add_domain_source_map(alt_domain_info_list, CollectSource.ALTDNS)
         self.domain_info_list.extend(alt_domain_info_list)
 
     def port_scan(self):
@@ -902,6 +936,7 @@ class DomainTask(CommonTask):
                 domain_info_list = self.clear_domain_info_by_record(domain_info_list)
                 self.save_domain_info_list(domain_info_list, source=source)
 
+            self.add_domain_source_map(domain_info_list, source)
             cnt += len(domain_info_list)
             self.domain_info_list.extend(domain_info_list)
 
@@ -921,6 +956,7 @@ class DomainTask(CommonTask):
             if domain_info:
                 self.domain_info_list.append(domain_info)
                 self.save_domain_info_list([domain_info])
+                self.add_domain_source_map([domain_info], CollectSource.DOMAIN_BRUTE)
 
         if "{fuzz}" in self.base_domain:
             return
@@ -1122,6 +1158,7 @@ class DomainTask(CommonTask):
             if self.task_tag == "task":
                 domain_info_list = self.clear_domain_info_by_record(domain_info_list)
                 self.save_domain_info_list(domain_info_list, source=CollectSource.SEARCHENGINE)
+            self.add_domain_source_map(domain_info_list, CollectSource.SEARCHENGINE)
             self.domain_info_list.extend(domain_info_list)
 
         elapse = time.time() - t1

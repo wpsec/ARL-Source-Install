@@ -9,12 +9,13 @@
 """
 import bson
 from app import utils
+from app.config import Config
 from app.modules import TaskScheduleStatus, TaskTag, TaskStatus
 from crontab import CronTab
 import time
 
 from .policy import get_options_by_policy_id
-from .message_notify import push_dingding
+from .message_notify import push_dingding, push_dingtalk_kb
 
 
 logger = utils.get_logger()
@@ -26,6 +27,8 @@ RUN_PUSH_PENDING = "pending"
 RUN_PUSH_SUCCESS = "success"
 RUN_PUSH_ERROR = "error"
 RUN_PUSH_SKIP = "skip"
+RUN_MISSING_RETRY_MAX = 8
+RUN_FINALIZE_GRACE_SEC = 300
 
 
 def task_scheduler():
@@ -108,6 +111,8 @@ def submit_task_schedule(item):
 
     # 标记来源为计划任务，避免普通任务完成通知重复推送
     options["from_task_schedule"] = True
+    # 计划任务统一由 run 级别发送聚合通知，子任务不再单独推送钉钉
+    options["dingding_notify"] = False
 
     name = "定时任务-{}".format(task_schedule_name[:15])
 
@@ -146,6 +151,12 @@ def create_task_schedule_run(item, task_data_list):
     else:
         notify_enable = bool(notify_enable_value)
 
+    notify_kb_enable_value = item.get("notify_kb_enable", None)
+    if notify_kb_enable_value is None:
+        notify_kb_enable = False
+    else:
+        notify_kb_enable = bool(notify_kb_enable_value)
+
     run_item = {
         "schedule_id": str(item["_id"]),
         "schedule_name": item.get("name", ""),
@@ -155,11 +166,14 @@ def create_task_schedule_run(item, task_data_list):
         "task_ids": task_ids,
         "status": RUN_STATUS_RUNNING,
         "summary": {},
+        "missing_retry_count": 0,
         # 兼容历史计划任务记录（无 notify_enable 字段时默认开启）
         "notify_enable": notify_enable,
+        "notify_kb_enable": notify_kb_enable,
         "notify_channel": str(item.get("notify_channel", "dingding") or "dingding").lower(),
         "notify_on": str(item.get("notify_on", "finished") or "finished").lower(),
         "push_status": RUN_PUSH_PENDING,
+        "kb_push_status": RUN_PUSH_PENDING if notify_kb_enable else RUN_PUSH_SKIP,
         "start_time": int(time.time()),
         "start_date": utils.curr_date(),
         "end_time": 0,
@@ -248,6 +262,107 @@ def build_schedule_run_summary(task_ids):
     return summary
 
 
+def _safe_int(value, default=0):
+    """
+    安全转换整数，避免统计字段异常导致通知流程中断
+    """
+    try:
+        return int(value or 0)
+    except Exception:
+        return int(default)
+
+
+def _format_ratio_text(delta, previous):
+    """
+    生成变化比例文本
+    """
+    previous = _safe_int(previous, 0)
+    delta = _safe_int(delta, 0)
+    if previous <= 0:
+        if delta == 0:
+            return "0.00%"
+        return "首次基线"
+    ratio = (float(delta) / float(previous)) * 100.0
+    return "{:+.2f}%".format(ratio)
+
+
+def _find_previous_finished_run(schedule_id, current_run_id=None):
+    """
+    查找同一计划任务的上一轮已结束执行记录
+    """
+    schedule_id = str(schedule_id or "").strip()
+    if not schedule_id:
+        return None
+
+    query = {
+        "schedule_id": schedule_id,
+        "status": {"$in": [RUN_STATUS_FINISHED, RUN_STATUS_ERROR]},
+        "end_time": {"$gt": 0},
+    }
+
+    if current_run_id:
+        query["_id"] = {"$ne": current_run_id}
+
+    return utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one(
+        query,
+        sort=[("end_time", -1), ("_id", -1)],
+    )
+
+
+def build_schedule_run_compare_summary(run_item):
+    """
+    基于上一轮执行生成对比统计
+    """
+    summary = run_item.get("summary", {})
+    if not isinstance(summary, dict):
+        summary = {}
+
+    previous_run = _find_previous_finished_run(
+        schedule_id=run_item.get("schedule_id", ""),
+        current_run_id=run_item.get("_id", None),
+    )
+    if not previous_run:
+        return {
+            "has_baseline": False,
+            "baseline_end_date": "",
+            "baseline_run_id": "",
+            "metrics": {},
+        }
+
+    previous_summary = previous_run.get("summary", {})
+    if not isinstance(previous_summary, dict):
+        previous_summary = {}
+
+    metric_defs = [
+        ("site_cnt", "站点"),
+        ("domain_cnt", "域名"),
+        ("ip_cnt", "IP"),
+        ("url_cnt", "URL"),
+        ("vuln_cnt", "漏洞"),
+    ]
+    metrics = {}
+    for metric_key, metric_label in metric_defs:
+        current_val = _safe_int(summary.get(metric_key, 0), 0)
+        previous_val = _safe_int(previous_summary.get(metric_key, 0), 0)
+        delta_val = current_val - previous_val
+        ratio_text = _format_ratio_text(delta_val, previous_val)
+
+        metrics[metric_key] = {
+            "label": metric_label,
+            "current": current_val,
+            "previous": previous_val,
+            "delta": delta_val,
+            "ratio_text": ratio_text,
+        }
+
+    return {
+        "has_baseline": True,
+        "baseline_end_date": str(previous_run.get("end_date", "") or ""),
+        "baseline_run_id": str(previous_run.get("_id", "") or ""),
+        "metrics": metrics,
+    }
+
+
 def should_push_schedule_run(notify_on, run_status):
     """
     判断当前执行实例是否需要触发推送
@@ -265,23 +380,17 @@ def build_schedule_run_markdown(run_item):
     构建计划任务执行结果的钉钉 Markdown 摘要
     """
     summary = run_item.get("summary", {})
-    total = summary.get("total", 0)
     done = summary.get("done", 0)
     error = summary.get("error", 0)
     stop = summary.get("stop", 0)
-    waiting = summary.get("waiting", 0)
-    running = summary.get("running", 0)
-    missing = summary.get("missing", 0)
     site_cnt = summary.get("site_cnt", 0)
     domain_cnt = summary.get("domain_cnt", 0)
     ip_cnt = summary.get("ip_cnt", 0)
     url_cnt = summary.get("url_cnt", 0)
     vuln_cnt = summary.get("vuln_cnt", 0)
-    task_details = summary.get("task_details", [])
     start_date = run_item.get("start_date", "-")
     end_date = run_item.get("end_date", "-")
     schedule_name = run_item.get("schedule_name", "")
-    schedule_id = run_item.get("schedule_id", "")
     run_number = run_item.get("run_number", 0)
     run_status = run_item.get("status", "")
     status_map = {
@@ -290,27 +399,18 @@ def build_schedule_run_markdown(run_item):
         RUN_STATUS_RUNNING: "运行中",
     }
     run_status_text = status_map.get(run_status, run_status)
+    task_ids = run_item.get("task_ids", [])
 
-    markdown = "### 计划任务执行结果\n\n"
+    markdown = "### 计划任务执行结果通知\n\n"
     markdown += "本轮计划任务`{}`，子任务：完成 `{}` / 失败 `{}` / 停止 `{}`。\n\n".format(
         run_status_text, done, error, stop
     )
     markdown += "#### 执行信息\n\n"
     markdown += "- 名称：`{}`\n".format(schedule_name)
-    markdown += "- 计划ID：`{}`\n".format(schedule_id)
     markdown += "- 执行轮次：`{}`\n".format(run_number)
     markdown += "- 执行状态：`{}`\n".format(run_status_text)
     markdown += "- 开始时间：`{}`\n".format(start_date)
     markdown += "- 结束时间：`{}`\n\n".format(end_date)
-
-    markdown += "#### 子任务统计\n\n"
-    markdown += "- 总任务数：`{}`\n".format(total)
-    markdown += "- 已完成：`{}`\n".format(done)
-    markdown += "- 执行异常：`{}`\n".format(error)
-    markdown += "- 已停止：`{}`\n".format(stop)
-    markdown += "- 等待：`{}`\n".format(waiting)
-    markdown += "- 运行中：`{}`\n".format(running)
-    markdown += "- 状态丢失：`{}`\n".format(missing)
 
     markdown += "\n#### 资产结果汇总\n\n"
     markdown += "- 站点总数：`{}`\n".format(site_cnt)
@@ -319,31 +419,73 @@ def build_schedule_run_markdown(run_item):
     markdown += "- URL总数：`{}`\n".format(url_cnt)
     markdown += "- 漏洞总数：`{}`\n".format(vuln_cnt)
 
-    if isinstance(task_details, list) and task_details:
-        status_text_map = {
-            TaskStatus.DONE: "已完成",
-            TaskStatus.ERROR: "执行异常",
-            TaskStatus.STOP: "已停止",
-            TaskStatus.WAITING: "等待中",
-        }
-        markdown += "\n#### 子任务明细（最多5条）\n\n"
-        for idx, detail in enumerate(task_details[:5], 1):
-            detail_status = status_text_map.get(detail.get("status", ""), detail.get("status", "运行中"))
-            detail_name = detail.get("name", "") or "-"
-            detail_target = (detail.get("target", "") or "-")[:100]
-            detail_type = detail.get("type", "") or "-"
-            markdown += "{}. `{}`（{}）\n".format(idx, detail_name, detail_status)
-            markdown += "   - 类型：`{}`\n".format(detail_type)
-            markdown += "   - 目标：`{}`\n".format(detail_target)
-            markdown += "   - 结果：站点 `{}` / 域名 `{}` / IP `{}` / URL `{}` / 漏洞 `{}`\n".format(
-                detail.get("site_cnt", 0),
-                detail.get("domain_cnt", 0),
-                detail.get("ip_cnt", 0),
-                detail.get("url_cnt", 0),
-                detail.get("vuln_cnt", 0),
-            )
+    compare_summary = run_item.get("compare_summary", {})
+    if isinstance(compare_summary, dict):
+        markdown += "\n#### 与上次对比\n\n"
+        if not compare_summary.get("has_baseline", False):
+            markdown += "- 首次执行：暂无历史基线，本次结果将作为后续对比基准。\n"
+        else:
+            baseline_end_date = str(compare_summary.get("baseline_end_date", "") or "-")
+            markdown += "- 对比基线时间：`{}`\n".format(baseline_end_date)
+            metric_order = ["site_cnt", "domain_cnt", "ip_cnt", "url_cnt", "vuln_cnt"]
+            for metric_key in metric_order:
+                metric_item = compare_summary.get("metrics", {}).get(metric_key, {})
+                if not isinstance(metric_item, dict):
+                    continue
+                label = str(metric_item.get("label", metric_key))
+                delta_val = _safe_int(metric_item.get("delta", 0), 0)
+                previous_val = _safe_int(metric_item.get("previous", 0), 0)
+                ratio_text = str(metric_item.get("ratio_text", "0.00%"))
+                trend_text = "持平"
+                if delta_val > 0:
+                    trend_text = "新增"
+                elif delta_val < 0:
+                    trend_text = "减少"
+                markdown += "- {}：`{}` `{}`（较上次 `{}`，变化 `{}`）\n".format(
+                    label,
+                    trend_text,
+                    "{:+d}".format(delta_val),
+                    previous_val,
+                    ratio_text,
+                )
+
+    kb_node_url = str(run_item.get("kb_node_url", "") or "").strip()
+    kb_push_status = str(run_item.get("kb_push_status", "") or "").lower()
+    if kb_node_url:
+        markdown += "\n#### 报告链接\n\n"
+        markdown += "- 钉钉知识库报告：[点击查看]({})\n".format(kb_node_url)
+    elif kb_push_status == RUN_PUSH_ERROR:
+        kb_push_error = str(run_item.get("kb_push_error", "") or "")
+        if len(kb_push_error) > 180:
+            kb_push_error = kb_push_error[:180] + "..."
+        markdown += "\n#### 报告链接\n\n"
+        markdown += "- 钉钉知识库报告：`写入失败`{}\n".format(
+            "（{}）".format(kb_push_error) if kb_push_error else ""
+        )
+
+    report_base_url = (Config.DINGTALK_REPORT_BASE_URL or "").strip()
+    if report_base_url and isinstance(task_ids, list) and task_ids:
+        markdown += "\n#### 导出报告链接\n\n"
+        base_url = report_base_url.rstrip("/")
+        for idx, task_id in enumerate(task_ids[:5], 1):
+            export_url = "{}/api/export/{}".format(base_url, task_id)
+            markdown += "{}. [任务报告-{}]({})\n".format(idx, task_id[:8], export_url)
 
     return markdown
+
+
+def build_schedule_run_kb_title(run_item):
+    """
+    构建知识库报告标题
+    """
+    schedule_name = str(run_item.get("schedule_name", "") or "")
+    run_number = int(run_item.get("run_number", 0) or 0)
+    end_date = str(run_item.get("end_date", "") or "").replace(" ", "_").replace(":", "-")
+    title_prefix = (Config.DINGTALK_KB_TITLE_PREFIX or "互联网资产自动化收集").strip()
+    clean_name = schedule_name[:40] if schedule_name else "计划任务"
+    if run_number > 0:
+        return "{}-计划任务-{}-第{}次-{}".format(title_prefix, clean_name, run_number, end_date or "report")
+    return "{}-计划任务-{}-{}".format(title_prefix, clean_name, end_date or "report")
 
 
 def process_task_schedule_runs():
@@ -367,19 +509,86 @@ def process_task_schedule_runs():
             utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one_and_replace({"_id": run_item["_id"]}, run_item)
             continue
 
+        # 子任务都非运行态但有 missing，可能是任务结果落库存在短暂延迟，先缓冲重试几轮
+        missing_count = int(summary.get("missing", 0) or 0)
+        if missing_count > 0:
+            retry_count = int(run_item.get("missing_retry_count", 0) or 0) + 1
+            run_item["missing_retry_count"] = retry_count
+            start_time = int(run_item.get("start_time", 0) or 0)
+            elapsed_sec = max(int(time.time()) - start_time, 0)
+            if retry_count <= RUN_MISSING_RETRY_MAX and elapsed_sec <= RUN_FINALIZE_GRACE_SEC:
+                logger.info(
+                    "task schedule run {} has missing task result, defer finalize retry:{}/{} missing:{} elapsed:{}s".format(
+                        str(run_item.get("_id", "")),
+                        retry_count,
+                        RUN_MISSING_RETRY_MAX,
+                        missing_count,
+                        elapsed_sec,
+                    )
+                )
+                utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one_and_replace({"_id": run_item["_id"]}, run_item)
+                continue
+
         # 所有子任务已结束，判定执行实例状态
         failed_count = summary.get("error", 0) + summary.get("stop", 0) + summary.get("missing", 0)
         run_item["status"] = RUN_STATUS_FINISHED if failed_count == 0 else RUN_STATUS_ERROR
         run_item["end_time"] = int(time.time())
         run_item["end_date"] = utils.curr_date()
+        run_item["compare_summary"] = build_schedule_run_compare_summary(run_item)
 
-        # 默认不推送或推送条件不满足时，标记为 skip
-        run_item["push_status"] = RUN_PUSH_SKIP
         notify_enable = bool(run_item.get("notify_enable", False))
         notify_channel = str(run_item.get("notify_channel", "dingding") or "dingding").lower()
         notify_on = run_item.get("notify_on", "finished")
+        should_push = should_push_schedule_run(notify_on, run_item["status"])
 
-        if notify_enable and should_push_schedule_run(notify_on, run_item["status"]):
+        # 钉钉知识库推送（优先执行，便于在群通知中附带知识库链接）
+        run_item["kb_push_status"] = RUN_PUSH_SKIP
+        notify_kb_enable = bool(run_item.get("notify_kb_enable", False))
+        if notify_kb_enable and should_push:
+            run_item["kb_push_status"] = RUN_PUSH_ERROR
+            report_title = build_schedule_run_kb_title(run_item)
+            markdown_report = build_schedule_run_markdown(run_item)
+            kb_success, kb_result = push_dingtalk_kb(
+                report_title=report_title,
+                markdown_report=markdown_report,
+                source_type="task_schedule_run",
+                source_id=str(run_item.get("_id", "")),
+                task_ids=run_item.get("task_ids", []),
+                extra_data={
+                    "schedule_id": run_item.get("schedule_id", ""),
+                    "schedule_name": run_item.get("schedule_name", ""),
+                    "run_number": run_item.get("run_number", 0),
+                    "status": run_item.get("status", ""),
+                    "start_date": run_item.get("start_date", "-"),
+                    "end_date": run_item.get("end_date", "-"),
+                    "compare_summary": run_item.get("compare_summary", {}),
+                },
+            )
+            if kb_success:
+                run_item["kb_push_status"] = RUN_PUSH_SUCCESS
+                run_item["kb_push_date"] = utils.curr_date()
+                run_item["kb_node_id"] = kb_result.get("node_id", "")
+                run_item["kb_node_url"] = kb_result.get("node_url", "")
+                logger.info(
+                    "task schedule kb push succ schedule_id:{} run_id:{} node_url:{}".format(
+                        run_item.get("schedule_id", ""),
+                        str(run_item.get("_id", "")),
+                        run_item.get("kb_node_url", ""),
+                    )
+                )
+            else:
+                run_item["kb_push_error"] = str(kb_result.get("api_result", ""))[:800]
+                logger.warning(
+                    "task schedule kb push failed schedule_id:{} run_id:{} error:{}".format(
+                        run_item.get("schedule_id", ""),
+                        str(run_item.get("_id", "")),
+                        run_item.get("kb_push_error", ""),
+                    )
+                )
+
+        # 聚合通知：每轮计划任务仅推送一次
+        run_item["push_status"] = RUN_PUSH_SKIP
+        if notify_enable and should_push:
             run_item["push_status"] = RUN_PUSH_ERROR
             if notify_channel == "dingding":
                 markdown_report = build_schedule_run_markdown(run_item)
@@ -388,6 +597,12 @@ def process_task_schedule_runs():
             else:
                 logger.warning("unsupported notify channel {} on run {}".format(notify_channel, str(run_item["_id"])))
             run_item["push_date"] = utils.curr_date()
+        elif notify_enable and not should_push:
+            logger.info(
+                "task schedule run {} skip notify by notify_on:{} run_status:{}".format(
+                    str(run_item.get("_id", "")), notify_on, run_item.get("status", "")
+                )
+            )
 
         utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one_and_replace({"_id": run_item["_id"]}, run_item)
 

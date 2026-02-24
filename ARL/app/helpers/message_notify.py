@@ -9,6 +9,7 @@
 from bson import ObjectId
 from app.config import Config
 from app.utils import get_logger, push
+from app.utils import dingtalk_openapi
 from app import utils
 from app.modules import TaskTag, TaskStatus
 
@@ -55,14 +56,15 @@ def push_dingding(markdown_report):
         bool: True-发送成功，None-发送失败
     
     说明：
-    - 需要在配置中设置DINGDING_ACCESS_TOKEN和DINGDING_SECRET
+    - 需要设置 DINGDING_ACCESS_TOKEN
+    - DINGDING_SECRET 仅在机器人开启加签时需要
     - 使用钉钉机器人Webhook推送
     - 支持Markdown格式的消息
     - 返回errcode为0表示成功
     - 适合移动端查看
     """
     try:
-        if Config.DINGDING_ACCESS_TOKEN and Config.DINGDING_SECRET:
+        if Config.DINGDING_ACCESS_TOKEN:
             data = push.dingding_send(access_token=Config.DINGDING_ACCESS_TOKEN,
                                       secret=Config.DINGDING_SECRET, msgtype="markdown",
                                       msg=markdown_report)
@@ -75,6 +77,94 @@ def push_dingding(markdown_report):
     except Exception as e:
         logger.info("error on send dingding {}".format(markdown_report[:15]))
         logger.warning(e)
+
+
+def push_dingtalk_kb(
+    report_title,
+    markdown_report,
+    source_type="",
+    source_id="",
+    extra_data=None,
+    task_ids=None,
+    github_result_items=None,
+):
+    """
+    推送 Markdown 报告到钉钉知识库（开放平台 API）
+
+    返回：
+        (success: bool, result: dict)
+    """
+    result = {
+        "title": report_title,
+        "source_type": source_type,
+        "source_id": source_id,
+        "status": "error",
+        "push_date": utils.curr_date(),
+        "markdown_len": len(markdown_report or ""),
+    }
+
+    if isinstance(extra_data, dict):
+        result["extra_data"] = extra_data
+
+    normalized_task_ids = []
+    if isinstance(task_ids, list):
+        for item in task_ids:
+            task_id = str(item or "").strip()
+            if not task_id:
+                continue
+            normalized_task_ids.append(task_id)
+
+    if normalized_task_ids:
+        overview_context = extra_data if isinstance(extra_data, dict) else {}
+        result["task_count"] = len(normalized_task_ids)
+        success, api_result = dingtalk_openapi.publish_task_export_to_kb(
+            title=report_title,
+            task_ids=normalized_task_ids,
+            overview_context=overview_context,
+        )
+    elif source_type == "github_scheduler" and isinstance(github_result_items, list):
+        keyword = ""
+        overview_context = {}
+        if isinstance(extra_data, dict):
+            keyword = str(extra_data.get("keyword", "") or "")
+            overview_context.update(extra_data)
+        if source_id and "source_id" not in overview_context:
+            overview_context["source_id"] = str(source_id)
+        success, api_result = dingtalk_openapi.publish_github_monitor_to_kb(
+            title=report_title,
+            keyword=keyword,
+            result_items=github_result_items,
+            overview_context=overview_context,
+        )
+    else:
+        success, api_result = dingtalk_openapi.publish_markdown_to_kb(
+            title=report_title,
+            markdown_content=markdown_report,
+        )
+    result["api_result"] = api_result
+    result["status"] = "success" if success else "error"
+    result["node_id"] = api_result.get("node_id", "") if isinstance(api_result, dict) else ""
+    result["node_url"] = api_result.get("node_url", "") if isinstance(api_result, dict) else ""
+    result["workbook_id"] = api_result.get("workbook_id", "") if isinstance(api_result, dict) else ""
+    result["sheet_count"] = api_result.get("sheet_count", 0) if isinstance(api_result, dict) else 0
+    if isinstance(api_result, dict) and isinstance(api_result.get("write_result"), dict):
+        result["sheet_name"] = api_result["write_result"].get("sheet_name", "")
+        result["sheet_range"] = api_result["write_result"].get("range", "")
+    if isinstance(api_result, dict) and isinstance(api_result.get("sheet_write_result"), dict):
+        result["sheet_success_count"] = api_result["sheet_write_result"].get("sheet_success_count", 0)
+        result["sheet_failed_count"] = api_result["sheet_write_result"].get("sheet_failed_count", 0)
+
+    try:
+        utils.conn_db("dingtalk_kb_push_log").insert_one(result)
+    except Exception as e:
+        logger.warning("save dingtalk kb push log error {}".format(e))
+
+    if success:
+        logger.info("push dingtalk knowledge base succ title:{}".format(report_title))
+        return True, result
+
+    logger.warning("push dingtalk knowledge base fail title:{} result:{}".format(report_title, api_result))
+    return False, result
 
 
 def build_task_finish_markdown(task_data):
