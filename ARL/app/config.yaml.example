@@ -147,6 +147,9 @@ ARL:
   DNS_RESOLVERS:
     - 114.114.114.114
     - 8.8.8.8
+  # PhantomJS 可执行文件路径（可选）
+  # 默认使用项目内置 app/tools/phantomjs。若需覆盖可取消注释并指定绝对路径
+  # PHANTOMJS_BIN: "/opt/ARL/app/tools/phantomjs"
   ## 禁止域名，不可为空数组
   FORBIDDEN_DOMAINS:
     - edu.cn

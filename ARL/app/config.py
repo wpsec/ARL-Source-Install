@@ -90,6 +90,8 @@ class Config(object):
     
     # massdns工具路径，用于高速DNS查询
     MASSDNS_BIN = os.path.join(basedir, 'tools/massdns')
+    # PhantomJS 可执行文件路径，默认使用项目内置二进制
+    PHANTOMJS_BIN = os.path.join(basedir, 'tools/phantomjs')
     # 网页截图JS脚本路径（PhantomJS）
     SCREENSHOT_JS = os.path.join(basedir, 'tools/screenshot.js')
     # 截图文件存储目录
@@ -301,6 +303,10 @@ try:
     if y["ARL"].get("PORT_TOP_10"):
         Config.TOP_10 = y["ARL"]["PORT_TOP_10"]
 
+    # --- PhantomJS 路径配置 ---
+    if y["ARL"].get("PHANTOMJS_BIN"):
+        Config.PHANTOMJS_BIN = y["ARL"]["PHANTOMJS_BIN"]
+
     # --- 文件泄露字典自定义配置 ---
     if y["ARL"].get("FILE_LEAK_DICT"):
         file_leak_dict = y["ARL"]["FILE_LEAK_DICT"]
@@ -445,6 +451,7 @@ try:
     Config.DINGTALK_KB_TITLE_PREFIX = env_str("ARL_DINGTALK_KB_TITLE_PREFIX", Config.DINGTALK_KB_TITLE_PREFIX)
     Config.DINGTALK_KB_DRY_RUN = env_bool("ARL_DINGTALK_KB_DRY_RUN", Config.DINGTALK_KB_DRY_RUN)
     Config.DINGTALK_REPORT_BASE_URL = env_str("ARL_DINGTALK_REPORT_BASE_URL", Config.DINGTALK_REPORT_BASE_URL)
+    Config.PHANTOMJS_BIN = env_str("ARL_PHANTOMJS_BIN", Config.PHANTOMJS_BIN)
     dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
     if dns_resolvers_env:
         Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]

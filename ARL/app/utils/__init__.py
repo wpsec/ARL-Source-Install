@@ -3,6 +3,7 @@
 """
 import subprocess
 import shlex
+import shutil
 import random
 import string
 import psutil
@@ -65,6 +66,59 @@ def check_output(cmd, **kwargs):
     output = subprocess.run(shlex.split(cmd), stdout=subprocess.PIPE, timeout=timeout, check=False,
                **kwargs).stdout
     return output
+
+
+def resolve_executable(command):
+    """
+    解析可执行文件路径
+    """
+    if command is None:
+        return ""
+
+    command = str(command).strip()
+    if not command:
+        return ""
+
+    has_path_sep = os.path.sep in command
+    if os.path.altsep:
+        has_path_sep = has_path_sep or os.path.altsep in command
+
+    if has_path_sep:
+        if os.path.isfile(command) and os.access(command, os.X_OK):
+            return command
+        return ""
+
+    return shutil.which(command) or ""
+
+
+def get_phantomjs_bin(logger=None):
+    """
+    获取并校验 phantomjs 可执行文件
+    """
+    from app.config import Config
+
+    command = resolve_executable(Config.PHANTOMJS_BIN)
+    if not command:
+        if logger:
+            logger.error(
+                "phantomjs not found, set ARL.PHANTOMJS_BIN in config.yaml or ARL_PHANTOMJS_BIN env."
+            )
+        return ""
+
+    try:
+        completed = exec_system([command, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=8)
+    except OSError as e:
+        if logger:
+            logger.error("phantomjs exec failed {} error: {}".format(command, e))
+        return ""
+
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
+        if logger:
+            logger.error("phantomjs check failed {} rc={} {}".format(command, completed.returncode, stderr))
+        return ""
+
+    return command
 
 
 def random_choices(k=6):

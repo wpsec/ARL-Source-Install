@@ -15,13 +15,17 @@ class SiteScreenshot(BaseThread):
         super().__init__(sites, concurrency = concurrency)
         self.capture_dir = capture_dir
         self.screenshot_map = {}
+        self.phantomjs_bin = utils.get_phantomjs_bin(logger=logger)
 
         os.makedirs(self.capture_dir, 0o777, True)
 
     def work(self, site):
+        if not self.phantomjs_bin:
+            return
+
         file_name = '{}/{}.jpg'.format(self.capture_dir, self.gen_filename(site))
 
-        cmd_parameters = ['phantomjs',
+        cmd_parameters = [self.phantomjs_bin,
                           '--ignore-ssl-errors true',
                           '--ssl-protocol any',
                           '--ssl-ciphers ALL',
@@ -31,7 +35,19 @@ class SiteScreenshot(BaseThread):
                           ]
         logger.debug("screenshot {}".format(" ".join(cmd_parameters)))
 
-        utils.exec_system(cmd_parameters)
+        try:
+            completed = utils.exec_system(cmd_parameters)
+        except OSError as e:
+            logger.warning("screenshot run error {} {}".format(site, e))
+            return
+
+        if completed.returncode != 0:
+            logger.warning("screenshot failed {} rc={}".format(site, completed.returncode))
+            return
+
+        if not os.path.exists(file_name):
+            logger.warning("screenshot file not created {} {}".format(site, file_name))
+            return
 
         self.screenshot_map[site] = file_name
 
