@@ -70,8 +70,8 @@ RUN wget "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI
     && mv nuclei /usr/bin/ \
     && rm -f "nuclei_${NUCLEI_VERSION}_linux_arm64.zip"
 
-# 运行nuclei
-RUN nuclei -ut
+# 校验 nuclei 二进制可用，不在构建阶段自动下载模板
+RUN nuclei -version
 
 ## 安装 WIH
 RUN wget https://github.com/1c3z/arl_files/raw/master/wih/wih_linux_arm64 -O /usr/bin/wih && chmod +x /usr/bin/wih

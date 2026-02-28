@@ -65,7 +65,9 @@ RUN mkdir -p /data/GeoLite2 /usr/local/share/ncrack
 
 COPY tools/ncrack /usr/local/bin/ncrack
 COPY tools/ncrack-services /usr/local/share/ncrack/ncrack-services
-COPY tools/nuclei_2.9.15_linux_amd64.zip /tmp/nuclei.zip
+COPY tools/nuclei_*_linux_amd64.zip /tmp/
+COPY tools/nuclei-templates/ /code/tools/nuclei-templates/
+COPY tools/finger.json /code/tools/finger.json
 COPY tools/wih_linux_amd64 /usr/bin/wih
 COPY tools/GeoLite2-* /data/GeoLite2/
 COPY tools/dhparam.pem /etc/ssl/certs/dhparam.pem
@@ -77,10 +79,10 @@ ENV LANG=en_US.UTF-8
 
 # 7. 离线工具配置与清理
 RUN ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs && \
-    cd /tmp && \
-    unzip -q nuclei.zip nuclei && \
+    NUCLEI_ZIP=$(ls -1 /tmp/nuclei_*_linux_amd64.zip | head -n 1) && \
+    unzip -q "${NUCLEI_ZIP}" nuclei && \
     mv nuclei /usr/bin/ && \
-    rm -f nuclei.zip && \
+    rm -f /tmp/nuclei_*_linux_amd64.zip && \
     chmod +x /usr/bin/*.sh /usr/bin/nuclei
 
 WORKDIR /code

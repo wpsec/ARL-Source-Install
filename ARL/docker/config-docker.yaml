@@ -27,6 +27,7 @@ FOFA:
 RISKIQ:
   EMAIL: ""
   KEY: ""
+
 # 利用三方API进行域名收集
 # 测试命令 python3.6 -m test.test_query_plugin [source1] [source2]
 # 域名查询插件配置, enable 字段可以单独控制是否启用该插件，如果没有这个字段也会默认启用
@@ -45,7 +46,7 @@ QUERY_PLUGIN:
     api_key: ""
     page_size: 100
     max_page: 5
-    enable: false
+    enable: true
   passivetotal: # 请前往 https://community.riskiq.com/ 注册自己的key并替换
     auth_email: ""
     auth_key: ""
@@ -53,7 +54,7 @@ QUERY_PLUGIN:
   quake_360: # 网站 https://quake.360.cn/
     quake_token: ""
     max_size: 500
-    enable: false
+    enable: true
   rapiddns:
     enable: true
   securitytrails: # 网站 https://securitytrails.com/
@@ -61,11 +62,11 @@ QUERY_PLUGIN:
     enable: false
   virustotal: # 网站 https://www.virustotal.com/gui/
     api_key: ""
-    enable: false
+    enable: true
   zoomeye:
     api_key: ""
     max_page: 20
-    enable: false
+    enable: true
   chaos:
     api_key: ""
     enable: false
@@ -153,6 +154,22 @@ ARL:
     - 119.29.29.29
     - 114.114.114.114
     - 8.8.8.8
+  # worker -> web 截图回传（默认开启，未配置地址时自动降级）
+  SCREENSHOT_SYNC_ENABLE: true
+  # K8s 内部服务地址（示例：https://arl-web）
+  SCREENSHOT_SYNC_WEB_URL: "https://arl-web"
+  # 回传请求超时（秒）
+  SCREENSHOT_SYNC_TIMEOUT: 10
+  # 单张截图最大大小（字节）
+  SCREENSHOT_SYNC_MAX_SIZE: 2097152
+  # Nuclei 可执行文件路径（可选），默认使用系统 PATH 中的 nuclei
+  # NUCLEI_BIN: "/usr/bin/nuclei"
+  # Nuclei 模板目录（建议固定为内部维护模板库）
+  NUCLEI_TEMPLATE_DIR: "/code/tools/nuclei-templates"
+  # 指纹未命中标签时是否启用 nuclei 自动扫描（-as）
+  NUCLEI_AUTO_SCAN: true
+  # 指纹未命中标签时的兜底标签（逗号分隔）
+  NUCLEI_DEFAULT_TAGS: "cve"
   ## 禁止域名，不可为空数组
   FORBIDDEN_DOMAINS:
     - test.com.cn

@@ -177,6 +177,7 @@
                 { value: "site_spider", name: "站点爬虫" },
                 { value: "site_capture", name: "站点截图" },
                 { value: "file_leak", name: "文件泄露" },
+                { value: "nuclei_scan", name: "nuclei 调用" },
                 { value: "findvhost", name: "Host 碰撞" },
                 { value: "web_info_hunter", name: "WIH 调用" },
                 { value: "dingding_notify", name: "钉钉通知" },
@@ -1705,6 +1706,7 @@
           { name: "ARL 历史查询", title: "ARL 历史查询", param: "arl_search" },
           { name: "crt.sh 调用", title: "crt.sh 调用", param: "crtsh_search" },
           { name: "PoC扫描", title: "PoC扫描", param: "PoC扫描" },
+          { name: "nuclei 调用", title: "nuclei 调用", param: "nuclei_scan" },
           { name: "弱口令爆破", title: "弱口令爆破", param: "brute_config" },
           {
             name: "服务(python)识别",

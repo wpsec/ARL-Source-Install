@@ -238,11 +238,13 @@ def build_schedule_run_summary(task_ids):
 
         statistic = item.get("statistic", {})
         if isinstance(statistic, dict):
+            vuln_cnt = int(statistic.get("vuln_cnt", 0) or 0)
+            nuclei_vuln_cnt = int(statistic.get("nuclei_result_cnt", 0) or 0)
             summary["site_cnt"] += int(statistic.get("site_cnt", 0) or 0)
             summary["domain_cnt"] += int(statistic.get("domain_cnt", 0) or 0)
             summary["ip_cnt"] += int(statistic.get("ip_cnt", 0) or 0)
             summary["url_cnt"] += int(statistic.get("url_cnt", 0) or 0)
-            summary["vuln_cnt"] += int(statistic.get("vuln_cnt", 0) or 0)
+            summary["vuln_cnt"] += vuln_cnt + nuclei_vuln_cnt
 
         summary["task_details"].append(
             {
@@ -255,7 +257,10 @@ def build_schedule_run_summary(task_ids):
                 "domain_cnt": int(statistic.get("domain_cnt", 0) or 0) if isinstance(statistic, dict) else 0,
                 "ip_cnt": int(statistic.get("ip_cnt", 0) or 0) if isinstance(statistic, dict) else 0,
                 "url_cnt": int(statistic.get("url_cnt", 0) or 0) if isinstance(statistic, dict) else 0,
-                "vuln_cnt": int(statistic.get("vuln_cnt", 0) or 0) if isinstance(statistic, dict) else 0,
+                "vuln_cnt": (
+                    int(statistic.get("vuln_cnt", 0) or 0)
+                    + int(statistic.get("nuclei_result_cnt", 0) or 0)
+                ) if isinstance(statistic, dict) else 0,
             }
         )
 

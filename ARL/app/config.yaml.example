@@ -150,6 +150,31 @@ ARL:
   # PhantomJS 可执行文件路径（可选）
   # 默认使用项目内置 app/tools/phantomjs。若需覆盖可取消注释并指定绝对路径
   # PHANTOMJS_BIN: "/opt/ARL/app/tools/phantomjs"
+  # worker 截图回传 web（默认开启，未配置地址时自动降级）
+  SCREENSHOT_SYNC_ENABLE: true
+  # web 内部上传接口地址（K8s 示例：https://arl-web）
+  SCREENSHOT_SYNC_WEB_URL: ""
+  # 单次回传超时（秒）
+  SCREENSHOT_SYNC_TIMEOUT: 10
+  # 单张截图最大字节数（默认 2MB）
+  SCREENSHOT_SYNC_MAX_SIZE: 2097152
+  # Nuclei 可执行文件路径（可选），默认使用系统 PATH 中的 nuclei
+  # NUCLEI_BIN: "/usr/bin/nuclei"
+  # Nuclei 模板目录（建议指定为内部维护模板库）
+  # 默认优先使用项目根目录 tools/nuclei-templates（Docker 常见路径：/code/tools/nuclei-templates）
+  # NUCLEI_TEMPLATE_DIR: "/code/tools/nuclei-templates"
+  # 指纹未命中标签时是否启用 nuclei 自动扫描（-as）
+  NUCLEI_AUTO_SCAN: true
+  # 指纹未命中标签时的兜底标签（逗号分隔）
+  NUCLEI_DEFAULT_TAGS: "cve"
+  # 指纹到 nuclei 标签映射（可按内部资产特征扩充）
+  NUCLEI_FINGER_TAG_MAP:
+    wordpress:
+      - wordpress
+    drupal:
+      - drupal
+    jenkins:
+      - jenkins
   ## 禁止域名，不可为空数组
   FORBIDDEN_DOMAINS:
     - edu.cn

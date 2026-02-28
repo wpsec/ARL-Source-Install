@@ -25,6 +25,24 @@ import sys
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 
+def resolve_project_root():
+    """
+    解析项目根目录，兼容源码运行与 Docker 运行目录结构
+    """
+    candidates = [
+        os.path.abspath(os.path.join(basedir, os.pardir, os.pardir)),  # 源码目录：<repo>/ARL/app
+        os.path.abspath(os.path.join(basedir, os.pardir)),             # Docker目录：/code/app
+    ]
+    for candidate in candidates:
+        if os.path.isdir(os.path.join(candidate, "tools")):
+            return candidate
+    return candidates[0]
+
+
+# 项目根目录（用于定位根目录 tools 下的自定义工具和模板）
+project_root = resolve_project_root()
+
+
 def env_bool(name, default=False):
     """
     从环境变量读取布尔值
@@ -85,11 +103,21 @@ class Config(object):
     # ==================== 临时文件和工具路径配置 ====================
     # 临时文件存储目录
     TMP_PATH = os.path.join(basedir, 'tmp')
-    if not os.path.exists(TMP_PATH):
-        os.mkdir(TMP_PATH)
+    # 幂等创建，避免多进程/多线程并发导入时触发 FileExistsError
+    os.makedirs(TMP_PATH, exist_ok=True)
     
     # massdns工具路径，用于高速DNS查询
     MASSDNS_BIN = os.path.join(basedir, 'tools/massdns')
+    # Nuclei 可执行文件路径，默认从系统 PATH 查找
+    NUCLEI_BIN = "nuclei"
+    # Nuclei 模板目录，默认使用项目根目录下的自定义模板库
+    NUCLEI_TEMPLATE_DIR = os.path.join(project_root, 'tools/nuclei-templates')
+    # 是否启用 nuclei 自动扫描（-as），在无指纹标签时用于兜底
+    NUCLEI_AUTO_SCAN = True
+    # 无指纹标签时使用的默认标签
+    NUCLEI_DEFAULT_TAGS = "cve"
+    # 指纹与 nuclei tags 的映射关系，可通过 config.yaml 覆盖
+    NUCLEI_FINGER_TAG_MAP = {}
     # PhantomJS 可执行文件路径，默认使用项目内置二进制
     PHANTOMJS_BIN = os.path.join(basedir, 'tools/phantomjs')
     # 网页截图JS脚本路径（PhantomJS）
@@ -98,6 +126,14 @@ class Config(object):
     SCREENSHOT_DIR = os.path.join(basedir, 'tmp_screenshot')
     # 截图失败时的默认图片
     SCREENSHOT_FAIL_IMG = os.path.join(basedir, 'dicts/noscreenshot.jpg')
+    # 是否启用 worker->web 截图回传（默认开启，未配置地址时自动降级）
+    SCREENSHOT_SYNC_ENABLE = True
+    # web 内部截图回传接口地址（示例：http://arl-web:5003）
+    SCREENSHOT_SYNC_WEB_URL = ""
+    # 回传请求超时时间（秒）
+    SCREENSHOT_SYNC_TIMEOUT = 10
+    # 单张截图允许的最大大小（字节）
+    SCREENSHOT_SYNC_MAX_SIZE = 2 * 1024 * 1024
     # 浏览器驱动JS脚本路径
     DRIVER_JS = os.path.join(basedir, 'tools/driver.js')
 
@@ -307,6 +343,36 @@ try:
     if y["ARL"].get("PHANTOMJS_BIN"):
         Config.PHANTOMJS_BIN = y["ARL"]["PHANTOMJS_BIN"]
 
+    # --- 截图回传配置 ---
+    if y["ARL"].get("SCREENSHOT_SYNC_ENABLE") is not None:
+        Config.SCREENSHOT_SYNC_ENABLE = bool(y["ARL"]["SCREENSHOT_SYNC_ENABLE"])
+
+    if y["ARL"].get("SCREENSHOT_SYNC_WEB_URL"):
+        Config.SCREENSHOT_SYNC_WEB_URL = y["ARL"]["SCREENSHOT_SYNC_WEB_URL"]
+
+    if y["ARL"].get("SCREENSHOT_SYNC_TIMEOUT"):
+        Config.SCREENSHOT_SYNC_TIMEOUT = int(y["ARL"]["SCREENSHOT_SYNC_TIMEOUT"])
+
+    if y["ARL"].get("SCREENSHOT_SYNC_MAX_SIZE"):
+        Config.SCREENSHOT_SYNC_MAX_SIZE = int(y["ARL"]["SCREENSHOT_SYNC_MAX_SIZE"])
+
+    # --- Nuclei 相关配置 ---
+    if y["ARL"].get("NUCLEI_BIN"):
+        Config.NUCLEI_BIN = y["ARL"]["NUCLEI_BIN"]
+
+    if y["ARL"].get("NUCLEI_TEMPLATE_DIR") is not None:
+        Config.NUCLEI_TEMPLATE_DIR = y["ARL"]["NUCLEI_TEMPLATE_DIR"]
+
+    if y["ARL"].get("NUCLEI_AUTO_SCAN") is not None:
+        Config.NUCLEI_AUTO_SCAN = bool(y["ARL"]["NUCLEI_AUTO_SCAN"])
+
+    if y["ARL"].get("NUCLEI_DEFAULT_TAGS"):
+        Config.NUCLEI_DEFAULT_TAGS = y["ARL"]["NUCLEI_DEFAULT_TAGS"]
+
+    nuclei_finger_tag_map = y["ARL"].get("NUCLEI_FINGER_TAG_MAP")
+    if isinstance(nuclei_finger_tag_map, dict):
+        Config.NUCLEI_FINGER_TAG_MAP = nuclei_finger_tag_map
+
     # --- 文件泄露字典自定义配置 ---
     if y["ARL"].get("FILE_LEAK_DICT"):
         file_leak_dict = y["ARL"]["FILE_LEAK_DICT"]
@@ -452,6 +518,14 @@ try:
     Config.DINGTALK_KB_DRY_RUN = env_bool("ARL_DINGTALK_KB_DRY_RUN", Config.DINGTALK_KB_DRY_RUN)
     Config.DINGTALK_REPORT_BASE_URL = env_str("ARL_DINGTALK_REPORT_BASE_URL", Config.DINGTALK_REPORT_BASE_URL)
     Config.PHANTOMJS_BIN = env_str("ARL_PHANTOMJS_BIN", Config.PHANTOMJS_BIN)
+    Config.SCREENSHOT_SYNC_ENABLE = env_bool("ARL_SCREENSHOT_SYNC_ENABLE", Config.SCREENSHOT_SYNC_ENABLE)
+    Config.SCREENSHOT_SYNC_WEB_URL = env_str("ARL_SCREENSHOT_SYNC_WEB_URL", Config.SCREENSHOT_SYNC_WEB_URL)
+    Config.SCREENSHOT_SYNC_TIMEOUT = env_int("ARL_SCREENSHOT_SYNC_TIMEOUT", Config.SCREENSHOT_SYNC_TIMEOUT)
+    Config.SCREENSHOT_SYNC_MAX_SIZE = env_int("ARL_SCREENSHOT_SYNC_MAX_SIZE", Config.SCREENSHOT_SYNC_MAX_SIZE)
+    Config.NUCLEI_BIN = env_str("ARL_NUCLEI_BIN", Config.NUCLEI_BIN)
+    Config.NUCLEI_TEMPLATE_DIR = env_str("ARL_NUCLEI_TEMPLATE_DIR", Config.NUCLEI_TEMPLATE_DIR)
+    Config.NUCLEI_AUTO_SCAN = env_bool("ARL_NUCLEI_AUTO_SCAN", Config.NUCLEI_AUTO_SCAN)
+    Config.NUCLEI_DEFAULT_TAGS = env_str("ARL_NUCLEI_DEFAULT_TAGS", Config.NUCLEI_DEFAULT_TAGS)
     dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
     if dns_resolvers_env:
         Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]

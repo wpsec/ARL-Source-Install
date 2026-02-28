@@ -922,13 +922,12 @@
         "headers": [],
         "html": [
             "kindeditor.js",
-            "KindEditor.ready",
-            "K.create"
+            "KindEditor.ready"
         ],
         "title": [],
         "icon": "default.png",
         "website": "https://www.riskivy.com/",
-        "fofa_rule": "body=\"kindeditor.js\" || body=\"KindEditor.ready\" || body=\"K.create\""
+        "fofa_rule": "body=\"kindeditor.js\" || body=\"KindEditor.ready\""
     },
     "百度在线web编辑器": {
         "cats": [
@@ -1512,12 +1511,16 @@
         ],
         "headers": [],
         "html": [
-            "jquery"
+            "jquery.min.js",
+            "jquery.js",
+            "jquery-1.",
+            "jquery-2.",
+            "jquery-3."
         ],
         "title": [],
         "icon": "default.png",
         "website": "https://www.riskivy.com/",
-        "fofa_rule": "body=\"jquery\""
+        "fofa_rule": "body=\"jquery.min.js\" || body=\"jquery.js\" || body=\"jquery-1.\" || body=\"jquery-2.\" || body=\"jquery-3.\""
     },
     "d3": {
         "cats": [
@@ -1609,12 +1612,15 @@
         ],
         "headers": [],
         "html": [
-            "vue.js"
+            "vue.min.js",
+            "vue.js",
+            "cdn.jsdelivr.net/npm/vue",
+            "unpkg.com/vue"
         ],
         "title": [],
         "icon": "default.png",
         "website": "https://www.riskivy.com/",
-        "fofa_rule": "body=\"vue.js\""
+        "fofa_rule": "body=\"vue.min.js\" || body=\"vue.js\" || body=\"cdn.jsdelivr.net/npm/vue\" || body=\"unpkg.com/vue\""
     },
     "ExtJS": {
         "cats": [
@@ -2433,12 +2439,13 @@
         "headers": [],
         "html": [
             "<h1>BEA WebLogic Server",
-            "WebLogic"
+            "WebLogic Server Administration Console",
+            "/console/login/LoginForm.jsp"
         ],
         "title": [],
         "icon": "default.png",
         "website": "https://www.riskivy.com/",
-        "fofa_rule": "body=\"<h1>BEA WebLogic Server\" || body=\"WebLogic\""
+        "fofa_rule": "body=\"<h1>BEA WebLogic Server\" || body=\"WebLogic Server Administration Console\" || body=\"/console/login/LoginForm.jsp\""
     },
     "BlueDragon": {
         "cats": [
@@ -25961,5 +25968,224 @@
         "icon": "default.png",
         "website": "https://www.riskivy.com/",
         "fofa_rule": ""
+    },
+    "MinIO Console": {
+        "cats": [
+            1111
+        ],
+        "headers": [],
+        "html": [
+            "MinIO Console",
+            "console.min.io"
+        ],
+        "title": [
+            "MinIO Console"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"MinIO Console\" || body=\"console.min.io\""
+    },
+    "SonarQube": {
+        "cats": [
+            1111
+        ],
+        "headers": [
+            "SonarQube"
+        ],
+        "html": [
+            "sonar.applicationName",
+            "sonar-app"
+        ],
+        "title": [
+            "SonarQube"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "header=\"SonarQube\" || title=\"SonarQube\" || body=\"sonar.applicationName\""
+    },
+    "Prometheus": {
+        "cats": [
+            1111
+        ],
+        "headers": [],
+        "html": [
+            "Prometheus Time Series Collection and Processing Server",
+            "prometheus_build_info"
+        ],
+        "title": [
+            "Prometheus Time Series Collection and Processing Server"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"Prometheus Time Series Collection and Processing Server\" || body=\"prometheus_build_info\""
+    },
+    "RabbitMQ Management": {
+        "cats": [
+            1111
+        ],
+        "headers": [
+            "rabbitmq=",
+            "rabbitmq_session"
+        ],
+        "html": [
+            "RabbitMQ Management"
+        ],
+        "title": [
+            "RabbitMQ Management"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"RabbitMQ Management\" || header=\"rabbitmq=\" || header=\"rabbitmq_session\""
+    },
+    "Gitea": {
+        "cats": [
+            1111
+        ],
+        "headers": [
+            "i_like_gitea"
+        ],
+        "html": [
+            "Gitea"
+        ],
+        "title": [
+            "Gitea: Git with a cup of tea",
+            "Gitea"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "header=\"i_like_gitea\" || title=\"Gitea: Git with a cup of tea\""
+    },
+    "Nexus Repository Manager": {
+        "cats": [
+            1111
+        ],
+        "headers": [
+            "NX-ANTI-CSRF-TOKEN",
+            "NXSESSIONID"
+        ],
+        "html": [
+            "Nexus Repository Manager"
+        ],
+        "title": [
+            "Nexus Repository Manager"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"Nexus Repository Manager\" || header=\"NX-ANTI-CSRF-TOKEN\" || header=\"NXSESSIONID\""
+    },
+    "Portainer": {
+        "cats": [
+            1111
+        ],
+        "headers": [],
+        "html": [
+            "portainer"
+        ],
+        "title": [
+            "Portainer"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"Portainer\" || body=\"portainer\""
+    },
+    "Argo CD": {
+        "cats": [
+            1111
+        ],
+        "headers": [
+            "argocd.token"
+        ],
+        "html": [
+            "Argo CD",
+            "argocd"
+        ],
+        "title": [
+            "Argo CD"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"Argo CD\" || header=\"argocd.token\""
+    },
+    "Nacos": {
+        "cats": [
+            1111
+        ],
+        "headers": [],
+        "html": [
+            "nacos-ui",
+            "/nacos/"
+        ],
+        "title": [
+            "Nacos"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"Nacos\" || body=\"nacos-ui\" || body=\"/nacos/\""
+    },
+    "OpenSearch Dashboards": {
+        "cats": [
+            1111
+        ],
+        "headers": [],
+        "html": [
+            "OpenSearch Dashboards",
+            "opensearchDashboards"
+        ],
+        "title": [
+            "OpenSearch Dashboards"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"OpenSearch Dashboards\" || body=\"opensearchDashboards\""
+    },
+    "Harbor": {
+        "cats": [
+            1111
+        ],
+        "headers": [
+            "harbor-lang",
+            "sid=harbor"
+        ],
+        "html": [
+            "harbor-core"
+        ],
+        "title": [
+            "Harbor"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"Harbor\" || header=\"harbor-lang\" || body=\"harbor-core\""
+    },
+    "XXL-JOB": {
+        "cats": [
+            1111
+        ],
+        "headers": [],
+        "html": [
+            "xxl-job",
+            "XxlJob"
+        ],
+        "title": [
+            "XXL-JOB"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"XXL-JOB\" || body=\"xxl-job\""
+    },
+    "RuoYi": {
+        "cats": [
+            1111
+        ],
+        "headers": [],
+        "html": [
+            "ruoyi",
+            "若依"
+        ],
+        "title": [
+            "若依"
+        ],
+        "icon": "default.png",
+        "website": "https://www.riskivy.com/",
+        "fofa_rule": "title=\"若依\" || body=\"ruoyi\""
     }
 }

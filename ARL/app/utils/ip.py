@@ -119,3 +119,4 @@ def ip_in_scope(ip, scope_list):
         except Exception as e:
             logger.warning("{} {} {}".format(e, ip, item))
 
+    return False

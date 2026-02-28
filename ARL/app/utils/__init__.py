@@ -154,6 +154,23 @@ def get_logger():
     return logging.getLogger('arlv2')
 
 
+def split_dns_resolver_item(resolver_item):
+    """
+    解析 DNS 解析器配置项，支持 ip 或 ip:port
+    """
+    value = str(resolver_item).strip()
+    if not value:
+        return "", 53
+
+    if value.count(":") == 1:
+        host, port = value.rsplit(":", 1)
+        host = host.strip()
+        if host and port.isdigit():
+            return host, int(port)
+
+    return value, 53
+
+
 def get_dns_resolver():
     """
     获取 DNS 解析器
@@ -171,17 +188,49 @@ def get_dns_resolver():
 
     try:
         if dns_resolvers:
-            resolver = dns.resolver.Resolver(configure=False)
-            resolver.nameservers = list(dns_resolvers)
-            # 限制单次解析总超时时间，避免任务长时间阻塞
-            resolver.lifetime = 6
-            resolver.timeout = 3
+            nameservers = []
+            nameserver_ports = {}
+            for item in dns_resolvers:
+                host, port = split_dns_resolver_item(item)
+                if not host:
+                    continue
+                nameservers.append(host)
+                if port != 53:
+                    nameserver_ports[host] = port
+
+            if nameservers:
+                resolver = dns.resolver.Resolver(configure=False)
+                resolver.nameservers = nameservers
+                if nameserver_ports:
+                    resolver.nameserver_ports = nameserver_ports
+                # 限制单次解析总超时时间，避免任务长时间阻塞
+                resolver.lifetime = 6
+                resolver.timeout = 3
+                logger = get_logger()
+                logger.info("dns resolver use custom {}".format(",".join(dns_resolvers)))
+            else:
+                resolver = dns.resolver.Resolver(configure=False)
+                resolver.nameservers = []
+                resolver.timeout = 3
+                resolver.lifetime = 6
+                logger = get_logger()
+                logger.error("dns resolver config is empty after parse and custom resolver required")
         else:
             resolver = dns.resolver.Resolver()
+            logger = get_logger()
+            logger.info("dns resolver use system default")
     except Exception as e:
         logger = get_logger()
-        logger.warning("init dns resolver error {} fallback system resolver".format(e))
-        resolver = dns.resolver.Resolver()
+        if dns_resolvers:
+            # 配置了自定义解析器时，不回退系统DNS，避免解析漂移到集群/宿主默认DNS
+            logger.error("init dns resolver error {} and custom resolver required".format(e))
+            resolver = dns.resolver.Resolver(configure=False)
+            resolver.nameservers = []
+            resolver.timeout = 3
+            resolver.lifetime = 6
+        else:
+            logger.warning("init dns resolver error {} fallback system resolver".format(e))
+            resolver = dns.resolver.Resolver()
 
     _dns_resolver_cache = resolver
     _dns_resolver_cache_key = dns_resolvers

@@ -103,12 +103,18 @@ def run_query_plugin(target, sources=None):
     query_key = Config.QUERY_PLUGIN_CONFIG
     logger = utils.get_logger()
     ret = []
+    # 全局去重：同一域名只保留一条记录（来源保留首次命中插件）
     subdomains = set()
     t1 = time.time()
+    run_count = 0
+    skip_count = 0
+    error_count = 0
     for p in plugins:
         try:
             source_name = p.source_name
             if sources and source_name not in sources:
+                skip_count += 1
+                logger.info("skip query plugin {} by source filter".format(source_name))
                 continue
 
             # ***　查看是否有配置
@@ -116,6 +122,7 @@ def run_query_plugin(target, sources=None):
                 source_conf = query_key[source_name]
                 if not isinstance(source_conf, dict):
                     logger.warning("{} config {} is not dict".format(source_name, source_conf))
+                    skip_count += 1
                     continue
                 source_kwargs = source_conf.copy()
 
@@ -123,7 +130,8 @@ def run_query_plugin(target, sources=None):
                 plugin_enable_flag = source_kwargs.pop("enable", None)
                 if plugin_enable_flag is not None:
                     if not plugin_enable_flag:
-                        logger.debug("skip {}, enable is set false".format(source_name))
+                        skip_count += 1
+                        logger.info("skip query plugin {} because enable=false".format(source_name))
                         continue
 
                 # 判断是否为空，为空就跳过 init_key 调用
@@ -131,11 +139,19 @@ def run_query_plugin(target, sources=None):
                     if all(source_kwargs.values()):
                         p.init_key(**source_kwargs)
                     else:
-                        logger.debug("skip {}, config is not set".format(source_name))
+                        skip_count += 1
+                        miss_keys = [k for k, v in source_kwargs.items() if not v]
+                        logger.warning(
+                            "skip query plugin {} because required config missing: {}".format(
+                                source_name, ",".join(miss_keys)
+                            )
+                        )
                         continue
 
-            logger.debug("run {} target:{}".format(source_name, target))
+            run_count += 1
+            logger.info("start query plugin {} target:{}".format(source_name, target))
             results = p.query(target)
+            source_new_cnt = 0
             for result in results:
                 if result in subdomains:
                     continue
@@ -145,6 +161,13 @@ def run_query_plugin(target, sources=None):
                 }
                 ret.append(item)
                 subdomains.add(result)
+                source_new_cnt += 1
+
+            logger.info(
+                "end query plugin {} source_result:{} new_result:{}".format(
+                    source_name, len(results), source_new_cnt
+                )
+            )
 
         except Exception as e:
             error_str = str(e)
@@ -152,7 +175,12 @@ def run_query_plugin(target, sources=None):
                 logger.debug(error_str)
             else:
                 logger.error("{} error {} {}".format(p.source_name, type(e), str(e)))
+            error_count += 1
 
     t2 = time.time()
-    logger.info("{} subdomains result {} ({:.2f}s)".format(target, len(subdomains), t2 - t1))
+    logger.info(
+        "{} subdomains result {} run:{} skip:{} error:{} ({:.2f}s)".format(
+            target, len(subdomains), run_count, skip_count, error_count, t2 - t1
+        )
+    )
     return ret

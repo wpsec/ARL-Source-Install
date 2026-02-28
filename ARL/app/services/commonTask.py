@@ -149,7 +149,12 @@ class WebSiteFetch(object):
     def site_screenshot(self):
         # ***站点截图***
         capture_save_dir = Config.SCREENSHOT_DIR + "/" + self.task_id
-        services.site_screenshot(self.available_sites, concurrency=6, capture_dir=capture_save_dir)
+        services.site_screenshot(
+            self.available_sites,
+            concurrency=6,
+            capture_dir=capture_save_dir,
+            task_id=self.task_id
+        )
 
     def site_spider(self):
         # *** 执行静态爬虫
@@ -235,9 +240,61 @@ class WebSiteFetch(object):
             item["save_date"] = utils.curr_date()
             utils.conn_db('vuln').insert_one(item)
 
+    def build_nuclei_targets(self):
+        """
+        组装 nuclei 扫描目标，附带站点指纹信息
+        """
+        poc_sites = sorted(self.poc_sites)
+        if not poc_sites:
+            return []
+
+        site_finger_map = {}
+        query = {
+            "task_id": self.task_id,
+            "site": {"$in": poc_sites},
+        }
+        fields = {"site": 1, "finger": 1}
+        for item in utils.conn_db('site').find(query, fields):
+            site = str(item.get("site", "")).strip()
+            if not site:
+                continue
+
+            finger_names = []
+            finger_list = item.get("finger", [])
+            if isinstance(finger_list, list):
+                for finger in finger_list:
+                    if not isinstance(finger, dict):
+                        continue
+                    finger_name = str(finger.get("name", "")).strip().lower()
+                    if finger_name:
+                        finger_names.append(finger_name)
+
+            site_finger_map[site] = sorted(set(finger_names))
+
+        nuclei_targets = []
+        for site in poc_sites:
+            nuclei_targets.append(
+                {
+                    "target": site,
+                    "finger": site_finger_map.get(site, []),
+                }
+            )
+
+        return nuclei_targets
+
     def nuclei_scan(self):
-        logger.info("start nuclei_scan， poc_sites:{}".format(len(self.poc_sites)))
-        scan_results = nuclei_scan(list(self.poc_sites))
+        nuclei_targets = self.build_nuclei_targets()
+        finger_hit_count = 0
+        for item in nuclei_targets:
+            if item.get("finger"):
+                finger_hit_count += 1
+
+        logger.info(
+            "start nuclei_scan, poc_sites:{} finger_hit:{}".format(
+                len(nuclei_targets), finger_hit_count
+            )
+        )
+        scan_results = nuclei_scan(nuclei_targets)
         for item in scan_results:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()

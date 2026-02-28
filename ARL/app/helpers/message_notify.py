@@ -215,7 +215,7 @@ def build_task_finish_markdown(task_data):
         domain_cnt = statistic.get("domain_cnt", 0)
         ip_cnt = statistic.get("ip_cnt", 0)
         url_cnt = statistic.get("url_cnt", 0)
-        vuln_cnt = statistic.get("vuln_cnt", 0)
+        vuln_cnt = int(statistic.get("vuln_cnt", 0) or 0) + int(statistic.get("nuclei_result_cnt", 0) or 0)
 
     markdown = "### 任务执行完成通知\n\n"
     markdown += "本次任务`{}`，共发现：站点 `{}` / 域名 `{}` / IP `{}`。\n\n".format(

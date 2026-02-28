@@ -295,9 +295,9 @@ def _normalize_sheet_name_key(sheet_name):
 def _build_ordered_export_sheet_items(raw_sheet_items):
     """
     按固定顺序重排导出工作表
-    期望顺序：域名、IP、系统服务、站点、资产统计
+    期望顺序：域名、IP、系统服务、站点、漏洞、资产统计
     """
-    preferred_order = ["域名", "IP", "系统服务", "站点", "资产统计"]
+    preferred_order = ["域名", "IP", "系统服务", "站点", "漏洞", "资产统计"]
     preferred_keys = [_normalize_sheet_name_key(name) for name in preferred_order]
     sheet_map = {}
     ignored_sheet_names = []
@@ -617,12 +617,14 @@ def _build_task_overview_sheet_values(title, task_ids, overview_meta=None):
         ip_cnt = int(statistic.get("ip_cnt", 0) or 0)
         url_cnt = int(statistic.get("url_cnt", 0) or 0)
         vuln_cnt = int(statistic.get("vuln_cnt", 0) or 0)
+        nuclei_vuln_cnt = int(statistic.get("nuclei_result_cnt", 0) or 0)
+        total_vuln_cnt = vuln_cnt + nuclei_vuln_cnt
 
         total_site += site_cnt
         total_domain += domain_cnt
         total_ip += ip_cnt
         total_url += url_cnt
-        total_vuln += vuln_cnt
+        total_vuln += total_vuln_cnt
 
         rows.append(
             [
@@ -637,7 +639,7 @@ def _build_task_overview_sheet_values(title, task_ids, overview_meta=None):
                 str(domain_cnt),
                 str(ip_cnt),
                 str(url_cnt),
-                str(vuln_cnt),
+                str(total_vuln_cnt),
             ]
         )
 

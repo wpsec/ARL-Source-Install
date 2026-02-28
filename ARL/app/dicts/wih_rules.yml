@@ -104,7 +104,8 @@ rules:
   # 密码
   - id: password
     enabled: true
-    pattern: (?i)(?:admin_?pass|password|[a-z]{3,15}_?password|user_?pass|user_?pwd|admin_?pwd)\\?['"]*\s*[:=]\s*\\?['"][a-z0-9!@#$%&*]{5,20}\\?['"]
+    # 仅匹配明显的键值赋值场景，降低普通文本误报
+    pattern: '(?i)(?:admin_?pass|password|passwd|pwd|db_?password|redis_?password|mongo_?password|user_?pass|user_?pwd|admin_?pwd)\s*[:=]\s*["'']([^"''\s`]{6,64})["'']'
   # 企业微信 webhook
   - id: wechat_webhookurl
     enabled: true
@@ -135,7 +136,79 @@ rules:
     pattern: \bglsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}\b
   - id: app_key
     enabled: true
-    pattern: \b(?:VUE|APP|REACT)_[A-Z_0-9]{1,15}_(?:KEY|PASS|PASSWORD|TOKEN|APIKEY)['"]*[:=]"(?:[A-Za-z0-9_\-]{15,50}|[a-z0-9/+]{50,100}==?)"
+    pattern: \b(?:VUE|APP|REACT|NEXT_PUBLIC|NUXT_PUBLIC)_[A-Z_0-9]{1,25}_(?:KEY|PASS|PASSWORD|TOKEN|APIKEY|SECRET)['"]*\s*[:=]\s*['"](?:[A-Za-z0-9_\-]{16,80}|[A-Za-z0-9/+_=.\-]{32,160})['"]
+  # Stripe Secret Key
+  - id: stripe_secret_key
+    enabled: true
+    pattern: \bsk_(?:live|test)_[0-9A-Za-z]{16,64}\b
+  # Stripe Webhook Secret
+  - id: stripe_webhook_secret
+    enabled: true
+    pattern: \bwhsec_[0-9A-Za-z]{32,128}\b
+  # SendGrid API Key
+  - id: sendgrid_api_key
+    enabled: true
+    pattern: \bSG\.[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{16,}\b
+  # Slack Bot/User Token
+  - id: slack_token
+    enabled: true
+    pattern: \bxox(?:b|p|a|r|s)-[A-Za-z0-9\-]{10,100}\b
+  # Telegram Bot Token
+  - id: telegram_bot_token
+    enabled: true
+    pattern: \b[0-9]{8,12}:[A-Za-z0-9_\-]{35}\b
+  # NPM Token
+  - id: npm_token
+    enabled: true
+    pattern: \bnpm_[A-Za-z0-9]{36}\b
+  # 数据库连接串（包含明文用户名密码）
+  - id: db_url_with_password
+    enabled: true
+    pattern: \b(?:mongodb(?:\+srv)?|mysql|postgres(?:ql)?|mssql):\/\/[^\/\s'"]+:[^@\/\s'"]+@[^\/\s'"]+[^\s'"]*
+  # Redis 连接串（包含明文密码）
+  - id: redis_url_with_password
+    enabled: true
+    pattern: \bredis:\/\/:[^@\s'"]{4,128}@[^\/\s'"]+[^\s'"]*
+  # JDBC 配置中显式密码参数
+  - id: jdbc_password_param
+    enabled: true
+    pattern: (?i)\bjdbc:[^\s"'`]{1,220}(?:password|passwd|pwd)=[^\s"'`;]{4,128}
+  # OpenAI API Key（新格式）
+  - id: openai_api_key
+    enabled: true
+    pattern: \bsk-proj-[A-Za-z0-9_\-]{20,200}\b
+  # Anthropic API Key
+  - id: anthropic_api_key
+    enabled: true
+    pattern: \bsk-ant-(?:api03-)?[A-Za-z0-9_\-]{20,200}\b
+  # Google OAuth Client Secret
+  - id: google_oauth_client_secret
+    enabled: true
+    pattern: \bGOCSPX-[A-Za-z0-9_\-]{20,40}\b
+  # GitLab Runner Token
+  - id: gitlab_runner_token
+    enabled: true
+    pattern: \bglrt-[A-Za-z0-9_\-]{20,120}\b
+  # .npmrc Auth Token
+  - id: npmrc_auth_token
+    enabled: true
+    pattern: (?i)(?:\/\/registry\.npmjs\.org\/:_authToken|_authToken)\s*[:=]\s*["'']?[A-Za-z0-9_\-]{20,120}["'']?
+  # Azure Storage Connection String
+  - id: azure_storage_connection_string
+    enabled: true
+    pattern: (?i)DefaultEndpointsProtocol=https;AccountName=[A-Za-z0-9\-]{3,64};AccountKey=[A-Za-z0-9+/=]{40,220};EndpointSuffix=core\.windows\.net
+  # Datadog API/App Key（上下文约束）
+  - id: datadog_api_key
+    enabled: true
+    pattern: (?i)(?:datadog|dd)[\w\-.]{0,20}(?:api[_-]?key|app[_-]?key)\s*[:=]\s*["'']?[a-f0-9]{32}["'']?
+  # AWS Secret Access Key（上下文约束）
+  - id: aws_secret_access_key
+    enabled: true
+    pattern: (?i)aws[\w\-.]{0,20}(?:secret|secret_access|access)[\w\-.]{0,20}(?:key)?\s*[:=]\s*["'']?[A-Za-z0-9/+=]{40}["'']?
+  # 云厂商 SecretKey（上下文约束）
+  - id: cloud_secret_key_context
+    enabled: true
+    pattern: (?i)(?:aliyun|qcloud|tencent|volcengine|ksyun|huaweicloud|aws|gcp|azure)[\w\-.]{0,30}(?:secret|sk)[\w\-.]{0,10}\s*[:=]\s*["'']?[A-Za-z0-9/_+=\-]{24,80}["'']?
 
 # 排除规则， 支持字段 id, content, target , source 逻辑为 and ，如果是正则匹配，需要使用 regex: 开头
 exclude_rules:
@@ -149,6 +222,57 @@ exclude_rules:
     id: bearer_token
     target: https://open.work.weixin.qq.com
     content: regex:Bearer\s+
+    enabled: true
+
+  - name: "过滤 password 规则中的占位符值"
+    id: password
+    content: regex:(?i)(?:password|passwd|pwd)\s*[:=]\s*["''](?:123456|12345678|123456789|admin|password|test|default|changeme|null|undefined|your[_-]?password|example)["'']
+    enabled: true
+
+  - name: "过滤 password 中变量占位符"
+    id: password
+    content: regex:(?i)(?:\$\{[^}]{1,64}\}|<[^>]{1,64}>|{{[^}]{1,64}}|to[_-]?be[_-]?filled|example[_-]?(?:password|passwd|pwd))
+    enabled: true
+
+  - name: "过滤 bearer_token 示例值"
+    id: bearer_token
+    content: regex:(?i)\bBearer\s+(?:token|your[_-]?token|your[_-]?api[_-]?token|example|sample|test)\b
+    enabled: true
+
+  - name: "过滤 jwt.io 示例 token"
+    id: jwt_token
+    content: regex:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.
+    enabled: true
+
+  - name: "过滤 app_key 中常见示例值"
+    id: app_key
+    content: regex:(?i)(?:demo|example|test|sample|your[_-]?(?:token|key|secret))
+    enabled: true
+
+  - name: "过滤 app_key 中环境变量引用"
+    id: app_key
+    content: regex:(?:\$\{[^}]{1,80}\}|process\.env\.[A-Z0-9_]{2,50}|import\.meta\.env\.[A-Z0-9_]{2,50})
+    enabled: true
+
+  - name: "过滤 db_url_with_password 示例连接串"
+    id: db_url_with_password
+    content: regex:(?i)(?:example\.com|localhost|127\.0\.0\.1|user:pass@|username:password@|<[^>]{1,80}>|\$\{[^}]{1,80}\})
+    enabled: true
+
+  - name: "过滤 redis_url_with_password 示例连接串"
+    id: redis_url_with_password
+    content: regex:(?i)(?:localhost|127\.0\.0\.1|:<password>@|<[^>]{1,80}>|\$\{[^}]{1,80}\})
+    enabled: true
+
+  - name: "过滤 jdbc_password_param 占位符"
+    id: jdbc_password_param
+    content: regex:(?i)(?:password=(?:<[^>]{1,64}>|\$\{[^}]{1,64}\}|your[_-]?password|example|changeme))
+    enabled: true
+
+  - name: "过滤 swagger/openapi 页面中的示例 bearer_token"
+    id: bearer_token
+    target: regex:(?:swagger|openapi|api-docs)
+    content: regex:(?i)\bBearer\s+
     enabled: true
 
   - name: "过滤来自首页的内容"

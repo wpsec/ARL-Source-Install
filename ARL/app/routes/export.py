@@ -336,6 +336,118 @@ def get_domain_data(task_id):
     return data
 
 
+def get_vuln_data(task_id):
+    """
+    获取任务的漏洞数据（nPoc/风险巡航等）
+    """
+    return utils.conn_db('vuln').find({'task_id': task_id})
+
+
+def get_nuclei_result_data(task_id):
+    """
+    获取任务的 nuclei 漏洞结果
+    """
+    return utils.conn_db('nuclei_result').find({'task_id': task_id})
+
+
+def _extract_vuln_rows(task_ids):
+    """
+    汇总漏洞明细（合并 vuln 与 nuclei_result），并按关键字段去重
+    """
+    rows = []
+    dedup_keys = set()
+
+    for task_id in task_ids:
+        task_id = str(task_id or "").strip()
+        if not task_id:
+            continue
+
+        for item in get_vuln_data(task_id):
+            vuln_name = sanitize_excel_value(item.get("vul_name", ""))
+            severity = sanitize_excel_value(item.get("severity", ""))
+            target = sanitize_excel_value(item.get("target", ""))
+            vuln_url = target if str(target).startswith("http") else ""
+            plugin = sanitize_excel_value(item.get("plg_name", ""))
+            vuln_type = sanitize_excel_value(item.get("plg_type", ""))
+            detail = sanitize_excel_value(
+                item.get("description", "")
+                or item.get("detail", "")
+                or item.get("verify_data", "")
+            )
+
+            dedup_key = (
+                task_id, "npoc", vuln_name, severity, target, vuln_url, plugin, vuln_type
+            )
+            if dedup_key in dedup_keys:
+                continue
+            dedup_keys.add(dedup_key)
+            rows.append(
+                [
+                    task_id,
+                    "npoc",
+                    vuln_name,
+                    severity,
+                    target,
+                    vuln_url,
+                    plugin,
+                    vuln_type,
+                    detail,
+                ]
+            )
+
+        for item in get_nuclei_result_data(task_id):
+            vuln_name = sanitize_excel_value(item.get("vuln_name", ""))
+            severity = sanitize_excel_value(item.get("vuln_severity", ""))
+            target = sanitize_excel_value(item.get("target", ""))
+            vuln_url = sanitize_excel_value(item.get("vuln_url", ""))
+            template_id = sanitize_excel_value(item.get("template_id", ""))
+            template_url = sanitize_excel_value(item.get("template_url", ""))
+
+            dedup_key = (
+                task_id, "nuclei", vuln_name, severity, target, vuln_url, template_id
+            )
+            if dedup_key in dedup_keys:
+                continue
+            dedup_keys.add(dedup_key)
+            rows.append(
+                [
+                    task_id,
+                    "nuclei",
+                    vuln_name,
+                    severity,
+                    target,
+                    vuln_url,
+                    template_id,
+                    "nuclei",
+                    template_url,
+                ]
+            )
+
+    return rows
+
+
+def _build_vuln_sheet(wb, task_ids):
+    """
+    在导出工作簿中新增漏洞明细工作表
+    """
+    ws = wb.create_sheet(title="漏洞")
+    ws.column_dimensions['A'].width = 28.0
+    ws.column_dimensions['B'].width = 12.0
+    ws.column_dimensions['C'].width = 36.0
+    ws.column_dimensions['D'].width = 14.0
+    ws.column_dimensions['E'].width = 36.0
+    ws.column_dimensions['F'].width = 60.0
+    ws.column_dimensions['G'].width = 28.0
+    ws.column_dimensions['H'].width = 20.0
+    ws.column_dimensions['I'].width = 80.0
+
+    ws.append(["任务ID", "来源", "漏洞名称", "严重级别", "目标", "漏洞URL", "模板/插件", "漏洞类型", "详情"])
+    for row in _extract_vuln_rows(task_ids):
+        ws.append(row)
+
+    set_sheet_style(ws)
+
+
 def port_service_product_statist(task_id):
     """
     端口和服务统计分析
@@ -652,6 +764,9 @@ class SaveTask(object):
 
         self.set_style(ws)
 
+    def build_vuln_xl(self):
+        _build_vuln_sheet(self.wb, [self.task_id])
+
     def run(self):
         task_data = get_task_data(self.task_id)
         if not task_data:
@@ -672,6 +787,7 @@ class SaveTask(object):
         if not self.is_ip_task:
             self.build_domain_xl()
 
+        self.build_vuln_xl()
         self.build_statist()
 
         return save_virtual_workbook(self.wb)
@@ -703,12 +819,14 @@ def export_merge_tasks(task_id_list):
         wb.remove(wb['Sheet'])
 
     valid_tasks = []
+    valid_task_ids = []
     for task_id in task_id_list:
         if not task_id:
             continue
         task_data = get_task_data(task_id)
         if task_data:
             valid_tasks.append(task_data)
+            valid_task_ids.append(str(task_data.get("_id", "")))
 
     if not valid_tasks:
         raise ValueError("未找到可导出的任务数据")
@@ -959,6 +1077,8 @@ def export_merge_tasks(task_id_list):
                 sanitize_excel_value(" \r\n".join(as_list(item.get("ips", [])))),
             ])
         set_sheet_style(ws)
+
+    _build_vuln_sheet(wb, valid_task_ids)
 
     # 资产统计（与单任务导出同结构）
     statist = calc_port_service_product_statist_from_ip_items(merged_ip_items)
