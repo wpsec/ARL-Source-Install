@@ -2,6 +2,7 @@
 通用任务执行框架
 """
 import time
+import re
 from urllib.parse import urlparse
 from bson import ObjectId
 from app import utils
@@ -248,12 +249,19 @@ class WebSiteFetch(object):
         if not poc_sites:
             return []
 
+        # 标题关键词提示，用于补足指纹命名差异。
+        title_hint_keywords = (
+            "jenkins", "grafana", "kibana", "gitlab", "jira", "confluence",
+            "harbor", "nacos", "rabbitmq", "minio", "tomcat", "weblogic",
+            "kong", "apisix", "zabbix", "prometheus",
+        )
+
         site_finger_map = {}
         query = {
             "task_id": self.task_id,
             "site": {"$in": poc_sites},
         }
-        fields = {"site": 1, "finger": 1}
+        fields = {"site": 1, "finger": 1, "http_server": 1, "title": 1}
         for item in utils.conn_db('site').find(query, fields):
             site = str(item.get("site", "")).strip()
             if not site:
@@ -268,6 +276,22 @@ class WebSiteFetch(object):
                     finger_name = str(finger.get("name", "")).strip().lower()
                     if finger_name:
                         finger_names.append(finger_name)
+
+            # 将 HTTP Server 头拆分成关键词并作为 hint。
+            http_server = str(item.get("http_server", "")).strip().lower()
+            if http_server:
+                finger_names.append(http_server)
+                for token in re.split(r"[^a-z0-9]+", http_server):
+                    token = token.strip()
+                    if len(token) >= 3:
+                        finger_names.append(token)
+
+            # 将 title 中的高价值技术关键词加入 hint。
+            title_text = str(item.get("title", "")).strip().lower()
+            if title_text:
+                for keyword in title_hint_keywords:
+                    if keyword in title_text:
+                        finger_names.append(keyword)
 
             site_finger_map[site] = sorted(set(finger_names))
 

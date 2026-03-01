@@ -37,7 +37,7 @@ from app.services import fetchCert, run_risk_cruising, run_sniffer, BaseUpdateTa
 from app.services.commonTask import CommonTask, WebSiteFetch, build_url_item
 from app.helpers.domain import find_private_domain_by_task_id, find_public_ip_by_task_id
 from app.services.findVhost import find_vhost
-from app.services.dns_query import run_query_plugin
+from app.services.dns_query import run_query_plugin, run_query_plugin_by_ip, run_query_plugin_by_cert
 from app.services.searchEngines import search_engines
 from app.services import domain_site_update
 from app.helpers.message_notify import push_task_finish_notify
@@ -244,19 +244,14 @@ class ScanPort(object):
         if cdn_name:
             return cdn_name
 
-        if domain_info.type != "CNAME":
-            return ""
+        cname = ""
+        if domain_info.type == "CNAME" and domain_info.record_list:
+            cname = domain_info.record_list[0]
 
-        if not domain_info.record_list:
-            return ""
-
-        cname = domain_info.record_list[0]
-        cdn_name = utils.get_cdn_name_by_cname(cname)
+        # 吸收 kscan 启发式能力：CNAME 关键词 + 多IP跨网段
+        cdn_name = utils.infer_cdn_by_dns(cname=cname, ip_list=domain_info.ip_list)
         if cdn_name:
             return cdn_name
-
-        if len(domain_info.ip_list) >= 4:
-            return "CDN"
 
         return ""
 
@@ -561,7 +556,8 @@ class DomainTask(CommonTask):
         option_scan_port_type = self.options.get("port_scan_type", "test")
         scan_port_option = {
             "ports": scan_port_map.get(option_scan_port_type, ScanPortType.TEST),
-            "service_detect": self.options.get("service_detection", False),
+            # nmap 仅负责端口发现，协议/服务识别统一由 npoc(sniffer) 负责
+            "service_detect": False,
             "os_detect": self.options.get("os_detection", False),
             "skip_scan_cdn_ip": self.options.get("skip_scan_cdn_ip", False),  # 跳过扫描CDN IP
             "port_parallelism": self.options.get("port_parallelism", 32),  # 探测报文并行度
@@ -576,6 +572,152 @@ class DomainTask(CommonTask):
         self.scan_port_option = scan_port_option
 
         self.base_update_task = BaseUpdateTask(self.task_id)
+
+    @staticmethod
+    def _is_low_conf_service(port_info):
+        """
+        判断端口服务识别是否低置信度。
+        低置信度端口优先走协议识别（sniffer）。
+        """
+        service_name = str(getattr(port_info, "service_name", "")).strip().lower()
+        if not service_name:
+            return True
+
+        low_conf_names = {
+            "unknown",
+            "tcpwrapped",
+            "wrapped",
+            "ssl/unknown",
+            "unrecognized",
+        }
+        return service_name in low_conf_names
+
+    @staticmethod
+    def _normalize_scheme(value):
+        value = str(value or "").strip().lower()
+        if not value:
+            return ""
+        alias_map = {
+            "ssl/http": "https",
+            "http/ssl": "https",
+            "www": "http",
+        }
+        return alias_map.get(value, value)
+
+    @staticmethod
+    def _extract_detected_service(service_name, product=""):
+        """
+        仅从已有识别结果提取服务名，不做端口号猜测。
+        """
+        name = str(service_name or "").strip().lower()
+        if name:
+            return name
+
+        product_name = str(product or "").strip().lower()
+        # 仅处理明确协议别名，避免把产品名/端口映射当成服务名
+        if product_name in {"https-alt", "ssl/http", "http/ssl", "www"}:
+            return product_name
+
+        return ""
+
+    def _enable_protocol_detection(self):
+        """
+        兼容历史选项：
+        - service_detection：当前语义为启用协议/服务识别（sniffer）
+        - npoc_service_detection：历史开关，继续兼容
+        """
+        return bool(self.options.get("service_detection") or self.options.get("npoc_service_detection"))
+
+    def _build_sniffer_targets(self, full_port=False):
+        """
+        构建协议识别目标。
+        - full_port=True: 全端口识别（更慢、更全面）
+        - full_port=False: 智能模式，仅识别低置信度端口（更快）
+        """
+        all_targets = []
+        low_conf_targets = []
+        target_set = set()
+
+        for ip_info in self.ip_info_list:
+            ip = str(getattr(ip_info, "ip", "")).strip()
+            if not ip:
+                continue
+
+            for port_info in getattr(ip_info, "port_info_list", []):
+                port_id = getattr(port_info, "port_id", None)
+                if port_id is None:
+                    continue
+
+                target = "{}:{}".format(ip, port_id)
+                if target in target_set:
+                    continue
+                target_set.add(target)
+                all_targets.append(target)
+
+                if self._is_low_conf_service(port_info):
+                    low_conf_targets.append(target)
+
+        if full_port:
+            return all_targets, len(all_targets), len(low_conf_targets), "full"
+
+        # 智能模式：优先低置信度端口
+        selected = list(low_conf_targets)
+
+        # 若低置信度目标为空，补充少量非80/443端口，避免完全不执行识别
+        if not selected and all_targets:
+            for target in all_targets:
+                port = target.rsplit(":", 1)[-1]
+                if port in {"80", "443"}:
+                    continue
+                selected.append(target)
+                if len(selected) >= 300:
+                    break
+
+        if not selected and all_targets:
+            selected = all_targets[:100]
+
+        return selected, len(all_targets), len(low_conf_targets), "smart"
+
+    def _apply_npoc_service_result(self, sniffer_items):
+        """
+        将 NPoC 协议识别结果回填到端口信息，提升 service 结果质量。
+        """
+        if not sniffer_items:
+            return 0
+
+        scheme_map = {}
+        for item in sniffer_items:
+            host = str(item.get("host", "")).strip()
+            port = str(item.get("port", "")).strip()
+            scheme = self._normalize_scheme(item.get("scheme"))
+            if not host or not port or not scheme:
+                continue
+            scheme_map["{}:{}".format(host, port)] = scheme
+
+        if not scheme_map:
+            return 0
+
+        updated = 0
+        for ip_info in self.ip_info_list:
+            ip = str(ip_info.ip).strip()
+            if not ip:
+                continue
+
+            for port_info in ip_info.port_info_list:
+                key = "{}:{}".format(ip, port_info.port_id)
+                if key not in scheme_map:
+                    continue
+
+                scheme = scheme_map[key]
+                curr_service = str(port_info.service_name or "").strip().lower()
+                # 服务识别以 sniffer 为准，nmap 结果作为回退
+                if curr_service != scheme:
+                    updated += 1
+                port_info.service_name = scheme
+                if not str(port_info.product or "").strip() or self._is_low_conf_service(port_info):
+                    port_info.product = scheme
+
+        return updated
 
     @property
     def domain_word_file(self) -> str:
@@ -845,31 +987,92 @@ class DomainTask(CommonTask):
 
     def save_service_info(self):
         self.service_info_list = []
-        services_list = set()
-        for _data in self.ip_info_list:
-            port_info_list = _data.port_info_list
-            for _info in port_info_list:
-                if _info.service_name:
-                    if _info.service_name not in services_list:
-                        _result = {}
-                        _result["service_name"] = _info.service_name
-                        _result["service_info"] = []
-                        _result["service_info"].append({'ip': _data.ip,
-                                                        'port_id': _info.port_id,
-                                                        'product': _info.product,
-                                                        'version': _info.version})
-                        _result["task_id"] = self.task_id
-                        self.service_info_list.append(_result)
-                        services_list.add(_info.service_name)
-                    else:
-                        for service_info in self.service_info_list:
-                            if service_info.get("service_name") == _info.service_name:
-                                service_info['service_info'].append({'ip': _data.ip,
-                                                                     'port_id': _info.port_id,
-                                                                     'product': _info.product,
-                                                                     'version': _info.version})
+        service_map = {}
+        service_seen = set()
+        port_total = 0
+        merged_total = 0
+        nmap_merged = 0
+        npoc_merged = 0
+
+        def _append_item(service_name, ip, port_id, product="", version="", source=""):
+            nonlocal merged_total, nmap_merged, npoc_merged
+            raw_name = self._extract_detected_service(
+                service_name=service_name,
+                product=product,
+            )
+            service = self._normalize_scheme(raw_name)
+            if not service:
+                return
+
+            ip = str(ip or "").strip()
+            if not ip:
+                return
+
+            try:
+                port_id = int(port_id)
+            except Exception:
+                return
+
+            uniq_key = (service, ip, port_id)
+            if uniq_key in service_seen:
+                return
+            service_seen.add(uniq_key)
+
+            service_map.setdefault(service, [])
+            service_map[service].append({
+                "ip": ip,
+                "port_id": port_id,
+                "product": str(product or "").strip(),
+                "version": str(version or "").strip(),
+            })
+            merged_total += 1
+            if source == "nmap":
+                nmap_merged += 1
+            elif source == "npoc":
+                npoc_merged += 1
+
+        # 1) nmap 结果（已被 npoc 回填增强）
+        for ip_item in self.ip_info_list:
+            port_info_list = getattr(ip_item, "port_info_list", [])
+            for port_item in port_info_list:
+                port_total += 1
+                _append_item(
+                    service_name=getattr(port_item, "service_name", ""),
+                    ip=getattr(ip_item, "ip", ""),
+                    port_id=getattr(port_item, "port_id", None),
+                    product=getattr(port_item, "product", ""),
+                    version=getattr(port_item, "version", ""),
+                    source="nmap",
+                )
+
+        # 2) npoc 明细补充（用于兜底合并来源）
+        for item in utils.conn_db('npoc_service').find({"task_id": self.task_id}):
+            _append_item(
+                service_name=item.get("scheme", ""),
+                ip=item.get("host", ""),
+                port_id=item.get("port", None),
+                product=item.get("scheme", ""),
+                version=item.get("version", ""),
+                source="npoc",
+            )
+
+        for service_name, info_list in service_map.items():
+            self.service_info_list.append({
+                "service_name": service_name,
+                "service_info": info_list,
+                "task_id": self.task_id
+            })
+
+        # 同任务重跑时先清理旧数据，避免重复堆积
+        utils.conn_db('service').delete_many({"task_id": self.task_id})
         if self.service_info_list:
-            utils.conn_db('service').insert(self.service_info_list)
+            utils.conn_db('service').insert_many(self.service_info_list)
+
+        logger.info(
+            "save_service_info task_id:{} ports:{} merged:{} nmap:{} npoc:{} service_group:{}".format(
+                self.task_id, port_total, merged_total, nmap_merged, npoc_merged, len(self.service_info_list)
+            )
+        )
 
     def ssl_cert(self):
         if self.options.get("port_scan"):
@@ -943,6 +1146,456 @@ class DomainTask(CommonTask):
         logger.info("end run dns_query_plugin {}, result {}, real result:{}".format(
             self.base_domain, len(results), cnt))
 
+    def get_ip_pivot_candidates(self):
+        """
+        从已发现域名中提取公网A记录IP，作为三方IP反查候选
+        """
+        ip_map = {}
+        skip_non_a = 0
+        skip_non_public = 0
+        skip_black = 0
+        skip_cdn = 0
+        for domain_info in self.domain_info_list:
+            if domain_info.type != "A":
+                skip_non_a += 1
+                continue
+
+            for ip in domain_info.ip_list:
+                ip = str(ip or "").strip()
+                if not ip or not utils.is_vaild_ip_target(ip):
+                    continue
+
+                if utils.get_ip_type(ip) != "PUBLIC":
+                    skip_non_public += 1
+                    continue
+
+                if not utils.not_in_black_ips(ip):
+                    skip_black += 1
+                    continue
+
+                if Config.IP_PIVOT_QUERY_SKIP_CDN and utils.get_cdn_name_by_ip(ip):
+                    skip_cdn += 1
+                    continue
+
+                old_set = ip_map.get(ip, set())
+                old_set.add(domain_info.domain)
+                ip_map[ip] = old_set
+
+        all_ips = sorted(ip_map.keys())
+        max_ips = max(int(Config.IP_PIVOT_QUERY_MAX_IPS or 0), 0)
+        if max_ips > 0 and len(all_ips) > max_ips:
+            all_ips = all_ips[:max_ips]
+
+        logger.info(
+            "ip pivot candidate total:{} selected:{} skip_non_a:{} skip_non_public:{} skip_black:{} skip_cdn:{}".format(
+                len(ip_map), len(all_ips), skip_non_a, skip_non_public, skip_black, skip_cdn
+            )
+        )
+        return all_ips
+
+    def ip_query_plugin_enhance(self):
+        """
+        公网A记录IP反查增强：通过三方API补充同域资产
+        """
+        if not Config.IP_PIVOT_QUERY_ENABLE:
+            return
+
+        # 与域名插件开关保持一致，避免用户关闭插件后仍触发三方调用
+        if not self.options.get("dns_query_plugin"):
+            logger.info("skip ip_query_plugin_enhance because dns_query_plugin=false")
+            return
+
+        if "{fuzz}" in self.base_domain:
+            return
+
+        candidate_ips = self.get_ip_pivot_candidates()
+        if not candidate_ips:
+            logger.info("skip ip_query_plugin_enhance because no candidate ip")
+            return
+
+        target_domain = self.base_domain if Config.IP_PIVOT_QUERY_REQUIRE_SCOPE else ""
+        max_domains = int(Config.IP_PIVOT_QUERY_MAX_DOMAINS or 0)
+        logger.info(
+            "start run ip_query_plugin_enhance base_domain:{} ip:{} source_mode:auto-enabled require_scope:{} max_domains:{}".format(
+                self.base_domain, len(candidate_ips),
+                bool(Config.IP_PIVOT_QUERY_REQUIRE_SCOPE), max_domains
+            )
+        )
+
+        results = run_query_plugin_by_ip(
+            ip_list=candidate_ips,
+            target_domain=target_domain,
+            max_domains=max_domains,
+        )
+        if not results:
+            logger.info("end run ip_query_plugin_enhance {} result 0".format(self.base_domain))
+            return
+
+        sources_map = dict()
+        for result in results:
+            domain = result["domain"]
+            source = result["source"]
+            source_domains = sources_map.get(source, set())
+            source_domains.add(domain)
+            sources_map[source] = source_domains
+
+        cnt = 0
+        for source in sources_map:
+            source_domains = list(sources_map[source])
+            if not source_domains:
+                continue
+
+            # 与常规来源区分，便于排查“域名来源”
+            source_name = "{}_ip_pivot".format(source)
+            logger.info("start build domain info, source:{}".format(source_name))
+            domain_info_list = self.build_domain_info(source_domains)
+            if self.task_tag == "task":
+                domain_info_list = self.clear_domain_info_by_record(domain_info_list)
+                if domain_info_list:
+                    self.save_domain_info_list(domain_info_list, source=source_name)
+
+            self.add_domain_source_map(domain_info_list, source_name)
+            cnt += len(domain_info_list)
+            self.domain_info_list.extend(domain_info_list)
+
+        logger.info(
+            "end run ip_query_plugin_enhance {}, source_result:{}, real_result:{}".format(
+                self.base_domain, len(results), cnt
+            )
+        )
+
+    def get_scope_domain_list(self):
+        """
+        获取当前任务的域名范围：目标域名 + 目标主域名（去重）
+        """
+        scope_domains = [self.base_domain]
+        primary_domain = utils.get_fld(self.base_domain)
+        if primary_domain and primary_domain not in scope_domains:
+            scope_domains.append(primary_domain)
+
+        return scope_domains
+
+    def normalize_cert_domain(self, value):
+        """
+        标准化证书中提取到的域名（支持去掉通配符、协议和端口）
+        """
+        domain = str(value or "").strip().lower().rstrip(".")
+        if not domain:
+            return ""
+
+        if "://" in domain:
+            try:
+                domain = (urlparse(domain).hostname or "").strip().lower().rstrip(".")
+            except Exception:
+                domain = ""
+
+        if domain.startswith("*."):
+            domain = domain[2:]
+
+        if ":" in domain and domain.count(":") == 1:
+            domain = domain.split(":")[0].strip()
+
+        if not domain:
+            return ""
+
+        if not utils.is_valid_domain(domain):
+            return ""
+
+        return domain
+
+    def extract_cert_domain_candidates(self, cert_obj):
+        """
+        提取证书中的域名候选（subject CN / issuer CN / SAN）
+        """
+        domains = set()
+        if not isinstance(cert_obj, dict):
+            return []
+
+        subject = cert_obj.get("subject") or {}
+        issuer = cert_obj.get("issuer") or {}
+
+        subject_cn = self.normalize_cert_domain(subject.get("common_name"))
+        if subject_cn:
+            domains.add(subject_cn)
+
+        issuer_cn = self.normalize_cert_domain(issuer.get("common_name"))
+        if issuer_cn:
+            domains.add(issuer_cn)
+
+        extensions = cert_obj.get("extensions") or {}
+        san_text = str(extensions.get("subjectAltName") or "").strip()
+        if san_text:
+            for raw_item in san_text.split(","):
+                raw_item = raw_item.strip()
+                if not raw_item:
+                    continue
+
+                if ":" in raw_item:
+                    prefix, value = raw_item.split(":", 1)
+                    if prefix.strip().lower() != "dns":
+                        continue
+                    domain = self.normalize_cert_domain(value)
+                else:
+                    domain = self.normalize_cert_domain(raw_item)
+
+                if domain:
+                    domains.add(domain)
+
+        return sorted(list(domains))
+
+    def match_cert_scope_domains(self, cert_obj):
+        """
+        仅保留命中目标域或目标主域范围的证书域名候选
+        """
+        cert_domains = self.extract_cert_domain_candidates(cert_obj)
+        if not cert_domains:
+            return []
+
+        scope_domains = self.get_scope_domain_list()
+        matched = []
+        for cert_domain in cert_domains:
+            for scope_domain in scope_domains:
+                if utils.is_in_scope(cert_domain, scope_domain):
+                    matched.append(cert_domain)
+                    break
+
+        return sorted(list(set(matched)))
+
+    def build_cert_pivot_key(self, cert_obj):
+        """
+        构建证书反查唯一标识，优先 serial + sha1
+        """
+        if not isinstance(cert_obj, dict):
+            return ""
+
+        serial_number = str(cert_obj.get("serial_number") or "").strip()
+        fingerprint = cert_obj.get("fingerprint") or {}
+        cert_sha1 = ""
+        if isinstance(fingerprint, dict):
+            cert_sha1 = str(fingerprint.get("sha1") or "").strip().lower()
+
+        if serial_number and cert_sha1:
+            return "{}|{}".format(serial_number, cert_sha1)
+        if serial_number:
+            return "sn:{}".format(serial_number)
+        if cert_sha1:
+            return "sha1:{}".format(cert_sha1)
+
+        return ""
+
+    def get_cert_pivot_candidates(self):
+        """
+        生成证书反查候选：必须命中目标范围，且满足去重/配额/CDN过滤
+        """
+        cert_map = self.cert_map if isinstance(self.cert_map, dict) else {}
+        if not cert_map:
+            return []
+
+        ip_cdn_map = {}
+        for ip_info_obj in self.ip_info_list:
+            if ip_info_obj.cdn_name:
+                ip_cdn_map[ip_info_obj.ip] = ip_info_obj.cdn_name
+
+        skip_cdn = 0
+        skip_scope = 0
+        skip_no_key = 0
+        skip_dup = 0
+
+        seen_cert_key = set()
+        candidates = []
+        for endpoint in sorted(cert_map.keys()):
+            cert_obj = cert_map.get(endpoint)
+            if not isinstance(cert_obj, dict):
+                continue
+
+            endpoint = str(endpoint)
+            curr_ip = endpoint.split(":")[0] if ":" in endpoint else endpoint
+
+            if Config.CERT_PIVOT_QUERY_SKIP_CDN:
+                cdn_name = ip_cdn_map.get(curr_ip) or utils.get_cdn_name_by_ip(curr_ip)
+                if cdn_name:
+                    skip_cdn += 1
+                    continue
+
+            matched_domains = self.match_cert_scope_domains(cert_obj)
+            if not matched_domains:
+                skip_scope += 1
+                continue
+
+            cert_key = self.build_cert_pivot_key(cert_obj)
+            if not cert_key:
+                skip_no_key += 1
+                continue
+
+            if cert_key in seen_cert_key:
+                skip_dup += 1
+                continue
+
+            seen_cert_key.add(cert_key)
+            candidates.append({
+                "cert": cert_obj,
+                "cert_key": cert_key,
+                "endpoint": endpoint,
+                "match_domains": matched_domains
+            })
+
+        max_certs = max(int(Config.CERT_PIVOT_QUERY_MAX_CERTS or 0), 0)
+        if max_certs > 0 and len(candidates) > max_certs:
+            candidates = candidates[:max_certs]
+
+        logger.info(
+            "cert pivot candidate total:{} selected:{} skip_cdn:{} skip_scope:{} skip_no_key:{} skip_dup:{}".format(
+                len(seen_cert_key), len(candidates), skip_cdn, skip_scope, skip_no_key, skip_dup
+            )
+        )
+        return candidates
+
+    def incremental_port_scan_for_new_ips(self):
+        """
+        对证书反查新增域名产生的新增IP执行增量端口扫描
+        """
+        scanned_ip_set = set()
+        for ip_info_obj in self.ip_info_list:
+            scanned_ip_set.add(ip_info_obj.ip)
+
+        new_ips = []
+        for ip in sorted(self.ipv4_map.keys()):
+            if ip not in scanned_ip_set:
+                new_ips.append(ip)
+
+        if not new_ips:
+            return 0
+
+        domain_ip_map = {}
+        for ip in new_ips:
+            domains = self.ipv4_map.get(ip, set())
+            for domain in domains:
+                ip_set = domain_ip_map.get(domain, set())
+                ip_set.add(ip)
+                domain_ip_map[domain] = ip_set
+
+        new_domain_info_list = []
+        for domain, ip_set in domain_ip_map.items():
+            ips = sorted(list(ip_set))
+            if not ips:
+                continue
+            item = {
+                "domain": domain,
+                "type": "A",
+                "record": ips,
+                "ips": ips
+            }
+            new_domain_info_list.append(modules.DomainInfo(**item))
+
+        if not new_domain_info_list:
+            return 0
+
+        ip_info_list = scan_port(new_domain_info_list, self.scan_port_option)
+        for ip_info_obj in ip_info_list:
+            ip_info = ip_info_obj.dump_json(flag=False)
+            ip_info["task_id"] = self.task_id
+            utils.conn_db('ip').insert_one(ip_info)
+
+        self.ip_info_list.extend(ip_info_list)
+        logger.info(
+            "cert pivot incremental port_scan new_ip:{} result:{}".format(len(new_ips), len(ip_info_list))
+        )
+        return len(ip_info_list)
+
+    def sync_ip_domain_from_ipv4_map(self):
+        """
+        将最新域名映射同步到已扫描IP对象和数据库记录
+        """
+        for ip_info_obj in self.ip_info_list:
+            domain_set = self.ipv4_map.get(ip_info_obj.ip, set())
+            if not domain_set:
+                continue
+
+            merged_domain = sorted(list(set(ip_info_obj.domain) | set(domain_set)))
+            if merged_domain == ip_info_obj.domain:
+                continue
+
+            ip_info_obj.domain = merged_domain
+            query = {
+                "task_id": self.task_id,
+                "ip": ip_info_obj.ip
+            }
+            utils.conn_db('ip').update_one(query, {"$set": {"domain": merged_domain}})
+
+    def cert_query_plugin_enhance(self):
+        """
+        证书反查增强：证书命中目标范围后，调用三方API补充同域资产
+        """
+        if not Config.CERT_PIVOT_QUERY_ENABLE:
+            return 0
+
+        if not self.options.get("ssl_cert"):
+            logger.info("skip cert_query_plugin_enhance because ssl_cert=false")
+            return 0
+
+        # 与域名插件开关保持一致，避免用户关闭插件后仍触发三方调用
+        if not self.options.get("dns_query_plugin"):
+            logger.info("skip cert_query_plugin_enhance because dns_query_plugin=false")
+            return 0
+
+        if "{fuzz}" in self.base_domain:
+            return 0
+
+        cert_candidates = self.get_cert_pivot_candidates()
+        if not cert_candidates:
+            logger.info("skip cert_query_plugin_enhance because no candidate cert")
+            return 0
+
+        target_domain = self.base_domain if Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE else ""
+        max_domains = int(Config.CERT_PIVOT_QUERY_MAX_DOMAINS or 0)
+        logger.info(
+            "start run cert_query_plugin_enhance base_domain:{} cert:{} source_mode:auto-enabled require_scope:{} max_domains:{}".format(
+                self.base_domain, len(cert_candidates), bool(Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE), max_domains
+            )
+        )
+
+        results = run_query_plugin_by_cert(
+            cert_list=cert_candidates,
+            target_domain=target_domain,
+            max_domains=max_domains
+        )
+        if not results:
+            logger.info("end run cert_query_plugin_enhance {} result 0".format(self.base_domain))
+            return 0
+
+        sources_map = dict()
+        for result in results:
+            domain = result["domain"]
+            source = result["source"]
+            source_domains = sources_map.get(source, set())
+            source_domains.add(domain)
+            sources_map[source] = source_domains
+
+        cnt = 0
+        for source in sources_map:
+            source_domains = list(sources_map[source])
+            if not source_domains:
+                continue
+
+            source_name = "{}_cert_pivot".format(source)
+            logger.info("start build domain info, source:{}".format(source_name))
+            domain_info_list = self.build_domain_info(source_domains)
+            if self.task_tag == "task":
+                domain_info_list = self.clear_domain_info_by_record(domain_info_list)
+                if domain_info_list:
+                    self.save_domain_info_list(domain_info_list, source=source_name)
+
+            self.add_domain_source_map(domain_info_list, source_name)
+            cnt += len(domain_info_list)
+            self.domain_info_list.extend(domain_info_list)
+
+        logger.info(
+            "end run cert_query_plugin_enhance {}, source_result:{}, real_result:{}".format(
+                self.base_domain, len(results), cnt
+            )
+        )
+        return cnt
+
     def domain_fetch(self):
         '''****域名爆破开始****'''
         if self.options.get("domain_brute"):
@@ -1003,9 +1656,18 @@ class DomainTask(CommonTask):
             elapse = time.time() - t1
             self.update_services("ssl_cert", elapse)
 
-        # 服务信息存储
-        if self.options.get("service_detection"):
-            self.save_service_info()
+        if Config.CERT_PIVOT_QUERY_ENABLE and self.options.get("ssl_cert"):
+            self.update_task_field("status", "cert_query_plugin")
+            t1 = time.time()
+            cert_new_domain_count = self.cert_query_plugin_enhance()
+            if cert_new_domain_count > 0:
+                self.gen_ipv4_map()
+                if self.options.get("port_scan"):
+                    self.incremental_port_scan_for_new_ips()
+                self.sync_ip_domain_from_ipv4_map()
+            elapse = time.time() - t1
+            self.update_services("cert_query_plugin", elapse)
+
         self.save_ip_info()
 
     def start_site_fetch(self):
@@ -1027,32 +1689,54 @@ class DomainTask(CommonTask):
 
         self.web_site_fetch = web_site_fetch
 
-    def npoc_service_detection(self):
-        targets = []
-        for ip_info in self.ip_info_list:
-            for port_info in ip_info.port_info_list:
-                skip_port_list = [80, 443, 843]
-                if port_info.port_id in skip_port_list:
-                    continue
+    def npoc_service_detection(self, full_port=False):
+        targets, total_targets, low_conf_targets, mode = self._build_sniffer_targets(
+            full_port=full_port
+        )
+        skip_common_http_ports = not full_port
 
-                targets.append("{}:{}".format(ip_info.ip, port_info.port_id))
+        logger.info(
+            "npoc_service_detection mode:{} selected:{} total:{} low_conf:{} skip_common_http_ports:{}".format(
+                mode, len(targets), total_targets, low_conf_targets, skip_common_http_ports
+            )
+        )
 
-        result = run_sniffer(targets)
+        if not targets:
+            return
+
+        result = run_sniffer(targets, skip_common_http_ports=skip_common_http_ports)
+        enriched_count = self._apply_npoc_service_result(result)
+        logger.info(
+            "npoc_service_detection result:{} enriched_port:{}".format(
+                len(result), enriched_count
+            )
+        )
         for item in result:
             self.npoc_service_target_set.add(item["target"])
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
+            item["source"] = "npoc_sniffer"
             utils.conn_db('npoc_service').insert_one(item)
 
     def start_poc_run(self):
         """poc run"""
         """服务识别（python）实现"""
-        if self.options.get("npoc_service_detection"):
+        if self._enable_protocol_detection():
             self.update_task_field("status", "npoc_service_detection")
             t1 = time.time()
-            self.npoc_service_detection()
+            # 兼容历史开关：
+            # - npoc_service_detection=True: 全端口模式
+            # - service_detection=True: 智能模式（只扫低置信度端口）
+            self.npoc_service_detection(
+                full_port=bool(self.options.get("npoc_service_detection"))
+            )
             elapse = time.time() - t1
             self.update_services("npoc_service_detection", elapse)
+
+        # 存储服务信息（放到协议识别之后，优先保留更高质量的服务名）
+        # 端口扫描已包含基础服务名（nmap service map），即使未开启 -sV / npoc 也应落库。
+        if self.options.get("port_scan") or self.options.get("service_detection") or self.options.get("npoc_service_detection"):
+            self.save_service_info()
 
         """ *** npoc 调用 """
         if self.options.get("poc_config"):
@@ -1187,6 +1871,14 @@ class DomainTask(CommonTask):
 
         # 搜索引擎调用
         self.search_engines()
+
+        # 公网A记录IP反查增强（可选）
+        if Config.IP_PIVOT_QUERY_ENABLE:
+            self.update_task_field("status", "ip_query_plugin")
+            t1 = time.time()
+            self.ip_query_plugin_enhance()
+            elapse = time.time() - t1
+            self.update_services("ip_query_plugin", elapse)
 
         self.start_ip_fetch()
 

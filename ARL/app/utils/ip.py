@@ -6,6 +6,23 @@ import geoip2.database
 from app.config import Config
 from .IPy import IP
 
+_ASN_READER = None
+_CITY_READER = None
+
+
+def _get_asn_reader():
+    global _ASN_READER
+    if _ASN_READER is None:
+        _ASN_READER = geoip2.database.Reader(Config.GEOIP_ASN)
+    return _ASN_READER
+
+
+def _get_city_reader():
+    global _CITY_READER
+    if _CITY_READER is None:
+        _CITY_READER = geoip2.database.Reader(Config.GEOIP_CITY)
+    return _CITY_READER
+
 
 def is_vaild_ip_target(ip):
     if re.match(
@@ -53,11 +70,10 @@ def get_ip_asn(ip):
     logger = get_logger()
     item = {}
     try:
-        reader = geoip2.database.Reader(Config.GEOIP_ASN)
+        reader = _get_asn_reader()
         response = reader.asn(ip)
         item["number"] = response.autonomous_system_number
         item["organization"] = response.autonomous_system_organization
-        reader.close()
     except Exception as e:
         logger.warning("{} {}".format(e, ip))
 
@@ -68,7 +84,7 @@ def get_ip_city(ip):
     from . import get_logger
     logger = get_logger()
     try:
-        reader = geoip2.database.Reader(Config.GEOIP_CITY)
+        reader = _get_city_reader()
         response = reader.city(ip)
         item = {
             "city": response.city.name,
@@ -79,7 +95,6 @@ def get_ip_city(ip):
             "region_name": response.subdivisions.most_specific.name,
             "region_code": response.subdivisions.most_specific.iso_code,
         }
-        reader.close()
         return item
 
     except Exception as e:

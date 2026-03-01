@@ -5,8 +5,11 @@ import copy
 import json
 import os
 import os.path
+import re
+import shutil
 import subprocess
-from collections import defaultdict
+import tempfile
+from collections import Counter, defaultdict
 
 from app.config import Config
 from app import utils
@@ -48,6 +51,72 @@ class NucleiScan(object):
         "docker": ["docker"],
         "kubernetes": ["kubernetes"],
     }
+    # 常见产品别名到 nuclei tags 的映射，用于补足指纹命名差异。
+    FINGER_ALIAS_TAG_MAP = {
+        "esa": ["esafenet"],
+        "aliyunoss": ["alibaba", "bucket", "oss", "exposure", "misconfig"],
+        "apache tomcat": ["tomcat", "apache", "java"],
+        "tomcat": ["tomcat", "java"],
+        "spring boot": ["spring", "springboot", "java", "actuator"],
+        "springcloud": ["spring", "java"],
+        "weblogic": ["weblogic", "oracle", "java"],
+        "websphere": ["websphere", "ibm", "java"],
+        "jboss": ["jboss", "java"],
+        "jetty": ["jetty", "java"],
+        "struts": ["struts", "java", "apache"],
+        "nginx": ["nginx"],
+        "openresty": ["nginx", "lua"],
+        "tengine": ["nginx"],
+        "apache http server": ["apache"],
+        "iis": ["iis", "microsoft"],
+        "microsoft iis": ["iis", "microsoft"],
+        "jenkins": ["jenkins"],
+        "gitlab": ["gitlab"],
+        "jira": ["jira", "atlassian"],
+        "confluence": ["confluence", "atlassian"],
+        "grafana": ["grafana"],
+        "kibana": ["kibana", "elasticsearch"],
+        "elasticsearch": ["elasticsearch"],
+        "rabbitmq": ["rabbitmq", "default-login", "panel"],
+        "nacos": ["nacos", "default-login", "unauth"],
+        "harbor": ["harbor", "default-login", "panel"],
+        "minio": ["minio", "default-login"],
+        "redis": ["redis", "unauth"],
+        "mysql": ["mysql", "default-login"],
+        "mongodb": ["mongodb", "unauth"],
+        "kubernetes dashboard": ["kubernetes", "dashboard", "unauth"],
+        "consul": ["consul", "unauth"],
+    }
+    # tag 家族扩展，低权重补全，不会走全模板。
+    TAG_FAMILY_EXPANSION = {
+        "tomcat": ["java"],
+        "spring": ["java", "actuator"],
+        "springboot": ["spring", "java", "actuator"],
+        "weblogic": ["java", "oracle"],
+        "jboss": ["java"],
+        "jetty": ["java"],
+        "apache": ["http"],
+        "nginx": ["http"],
+        "iis": ["http", "microsoft"],
+        "jenkins": ["default-login"],
+        "grafana": ["default-login"],
+        "gitlab": ["default-login"],
+        "harbor": ["default-login"],
+        "rabbitmq": ["default-login", "panel"],
+        "nacos": ["default-login", "unauth"],
+        "kubernetes": ["dashboard"],
+    }
+    # 默认兜底标签过于单薄时，补一组高价值“通用漏洞”标签。
+    SMART_BASELINE_TAGS = ["cve", "exposure", "misconfig", "default-login", "unauth", "panel"]
+    MAX_TAGS_PER_TARGET = 18
+    _TEMPLATE_TAG_INDEX_CACHE = {}
+    # 通用噪声词，避免从指纹文本中推导出过于泛化的 tag。
+    FINGER_TOKEN_STOPWORDS = {
+        "www", "web", "http", "https", "server", "service", "system", "platform",
+        "application", "app", "cloud", "default", "admin", "login", "portal",
+        "console", "dashboard", "test", "dev", "uat", "prod", "beta", "alpha",
+        "version", "community", "enterprise", "open", "source", "edition",
+    }
 
     def __init__(self, targets: list):
         self.targets = self._normalize_targets(targets)
@@ -58,6 +127,11 @@ class NucleiScan(object):
         self.tmp_path = tmp_path
         self.tmp_target_files = []
         self.tmp_result_files = []
+        # 为每次扫描创建独立的 nuclei 运行时目录，避免共享 ~/.config/nuclei 产生并发污染
+        self.nuclei_runtime_root = os.path.join(self.tmp_path, "nuclei_runtime_{}".format(rand_str))
+        self.nuclei_runtime_config_dir = os.path.join(self.nuclei_runtime_root, "nuclei")
+        self.nuclei_runtime_ignore_file = os.path.join(self.nuclei_runtime_config_dir, ".nuclei-ignore")
+        self.dns_policy_cache = {}
 
         self.nuclei_bin_path = Config.NUCLEI_BIN
         self.nuclei_template_dir = Config.NUCLEI_TEMPLATE_DIR
@@ -66,6 +140,7 @@ class NucleiScan(object):
 
         self.nuclei_finger_tag_map = copy.deepcopy(self.DEFAULT_FINGER_TAG_MAP)
         self._load_custom_finger_tag_map()
+        self.template_tag_set = set()
 
         # 在nuclei 2.9.1 中 将-json 参数改成了 -jsonl 参数。
         self.nuclei_json_flag = None
@@ -171,6 +246,12 @@ class NucleiScan(object):
             except Exception as e:
                 logger.warning(e)
 
+        try:
+            if os.path.isdir(self.nuclei_runtime_root):
+                shutil.rmtree(self.nuclei_runtime_root)
+        except Exception as e:
+            logger.warning("delete nuclei runtime dir failed {}".format(e))
+
     def _resolve_template_dir(self):
         """
         校验模板目录，目录不可用时降级为 nuclei 默认模板目录
@@ -233,36 +314,85 @@ class NucleiScan(object):
             "files: []\n"
         )
 
+    @staticmethod
+    def _is_nuclei_ignore_valid(file_path):
+        """
+        检查 .nuclei-ignore 是否为可用内容
+        """
+        try:
+            if not os.path.exists(file_path):
+                return False
+
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+
+            if not content or not content.strip():
+                return False
+
+            # 过滤空行和注释后至少包含 tags/files 关键节点
+            lines = []
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                lines.append(line.lower())
+
+            if not lines:
+                return False
+
+            content_low = "\n".join(lines)
+            if "tags:" in content_low or "files:" in content_low:
+                return True
+        except Exception:
+            return False
+
+        return False
+
+    @staticmethod
+    def _write_file_atomic(file_path, content):
+        """
+        原子写文件，避免并发读写下出现空文件/半文件
+        """
+        parent_dir = os.path.dirname(file_path)
+        fd, temp_file = tempfile.mkstemp(prefix=".nuclei-ignore.", dir=parent_dir)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_file, file_path)
+            os.chmod(file_path, 0o644)
+        finally:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
     def _prepare_nuclei_runtime(self, force_rewrite=False):
         """
         准备 nuclei 运行时目录，避免首次运行因缺失/空 .nuclei-ignore 直接失败
         """
-        config_root = os.environ.get("XDG_CONFIG_HOME")
-        if not config_root:
-            config_root = os.path.join(os.path.expanduser("~"), ".config")
-
-        nuclei_config_dir = os.path.join(config_root, "nuclei")
-        ignore_file = os.path.join(nuclei_config_dir, ".nuclei-ignore")
+        config_root = self.nuclei_runtime_root
+        nuclei_config_dir = self.nuclei_runtime_config_dir
+        ignore_file = self.nuclei_runtime_ignore_file
         try:
             os.makedirs(nuclei_config_dir, mode=0o755, exist_ok=True)
-
-            should_write = force_rewrite
-            if not should_write:
-                if not os.path.exists(ignore_file):
-                    should_write = True
-                else:
-                    try:
-                        should_write = os.path.getsize(ignore_file) <= 0
-                    except Exception:
-                        should_write = True
+            rewrite_reason = ""
+            should_write = bool(force_rewrite)
+            if should_write:
+                rewrite_reason = "force"
+            elif not self._is_nuclei_ignore_valid(ignore_file):
+                should_write = True
+                rewrite_reason = "invalid_or_empty"
 
             if should_write:
-                with open(ignore_file, "w", encoding="utf-8") as f:
-                    f.write(self._default_nuclei_ignore_content())
+                self._write_file_atomic(ignore_file, self._default_nuclei_ignore_content())
 
             logger.info(
-                "nuclei runtime prepared config_dir={} ignore_file={} rewrite={}".format(
-                    nuclei_config_dir, ignore_file, str(should_write).lower()
+                "nuclei runtime prepared xdg_config_home={} config_dir={} ignore_file={} rewrite={} reason={}".format(
+                    config_root,
+                    nuclei_config_dir,
+                    ignore_file,
+                    str(should_write).lower(),
+                    rewrite_reason or "keep",
                 )
             )
         except Exception as e:
@@ -299,24 +429,267 @@ class NucleiScan(object):
             "{}_{}_{}.{}".format(prefix, self.file_rand_str, index, suffix),
         )
 
+    @staticmethod
+    def _normalize_text(value):
+        """
+        统一文本格式，便于指纹与 tag 的鲁棒匹配。
+        """
+        text = str(value or "").strip().lower()
+        if not text:
+            return ""
+
+        text = re.sub(r"[\[\]\(\)\{\}/\\|,:;=_+]+", " ", text)
+        text = re.sub(r"[^a-z0-9.\-\s]", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    @classmethod
+    def _tokenize_text(cls, value):
+        """
+        从文本中提取可用于匹配的 token。
+        """
+        text = cls._normalize_text(value)
+        if not text:
+            return []
+
+        tokens = []
+        for token in text.split():
+            token = token.strip(".-")
+            if len(token) < 3:
+                continue
+            if token.isdigit():
+                continue
+            if token in cls.FINGER_TOKEN_STOPWORDS:
+                continue
+            tokens.append(token)
+
+        return tokens
+
+    @staticmethod
+    def _split_tag_text(tag_text):
+        """
+        拆分 tags 字符串，兼容 `a,b`、`[a,b]`、`- a` 等写法。
+        """
+        raw = str(tag_text or "").strip()
+        if not raw:
+            return []
+
+        raw = raw.strip("[]").replace('"', "").replace("'", "")
+        items = []
+        for token in re.split(r"[,\s]+", raw):
+            token = re.sub(r"[^a-z0-9._-]", "", token.strip().lower())
+            if not token:
+                continue
+            if token in {"true", "false", "null", "none"}:
+                continue
+            items.append(token)
+        return items
+
+    def _match_mapping_key(self, finger_name, map_key):
+        """
+        指纹键匹配规则：支持子串、双向包含、token 子集匹配。
+        """
+        f_raw = str(finger_name or "").strip().lower()
+        k_raw = str(map_key or "").strip().lower()
+        if not f_raw or not k_raw:
+            return False
+
+        if k_raw in f_raw or f_raw in k_raw:
+            return True
+
+        f_norm = self._normalize_text(f_raw)
+        k_norm = self._normalize_text(k_raw)
+        if not f_norm or not k_norm:
+            return False
+
+        if k_norm in f_norm or f_norm in k_norm:
+            return True
+
+        f_tokens = set(self._tokenize_text(f_norm))
+        k_tokens = set(self._tokenize_text(k_norm))
+        if k_tokens and k_tokens.issubset(f_tokens):
+            return True
+
+        return False
+
+    def _load_template_tag_index(self):
+        """
+        从模板目录抽取 tags 索引，用于指纹 token 的自动补全。
+        """
+        self.template_tag_set = set()
+        template_dir = str(self.nuclei_template_dir or "").strip()
+        if not template_dir or not os.path.isdir(template_dir):
+            return
+
+        cache_tags = self._TEMPLATE_TAG_INDEX_CACHE.get(template_dir)
+        if isinstance(cache_tags, set):
+            self.template_tag_set = cache_tags.copy()
+            return
+
+        tag_set = set()
+        try:
+            for root, _, files in os.walk(template_dir):
+                for file_name in files:
+                    if not (file_name.endswith(".yaml") or file_name.endswith(".yml")):
+                        continue
+
+                    file_path = os.path.join(root, file_name)
+                    try:
+                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            content = f.read(8192)
+                    except Exception:
+                        continue
+
+                    in_tags_block = False
+                    tags_indent = 0
+                    for line in content.splitlines():
+                        stripped = line.strip()
+                        if not stripped:
+                            continue
+
+                        indent = len(line) - len(line.lstrip())
+                        line_low = stripped.lower()
+
+                        if in_tags_block:
+                            if indent <= tags_indent:
+                                in_tags_block = False
+                            elif stripped.startswith("-"):
+                                for tag in self._split_tag_text(stripped[1:]):
+                                    tag_set.add(tag)
+                                continue
+                            else:
+                                continue
+
+                        if line_low.startswith("tags:"):
+                            for tag in self._split_tag_text(stripped[5:]):
+                                tag_set.add(tag)
+                            in_tags_block = True
+                            tags_indent = indent
+
+            self._TEMPLATE_TAG_INDEX_CACHE[template_dir] = tag_set.copy()
+            self.template_tag_set = tag_set
+            logger.info(
+                "nuclei template tags indexed dir:{} tags:{}".format(template_dir, len(tag_set))
+            )
+        except Exception as e:
+            logger.warning("build nuclei template tag index failed: {}".format(e))
+
+    def _infer_tags_by_template_tokens(self, finger_name):
+        """
+        当显式映射未命中时，基于模板 tag 索引做轻量推断。
+        """
+        if not self.template_tag_set:
+            return []
+
+        inferred = set()
+        for token in self._tokenize_text(finger_name):
+            if token in self.template_tag_set:
+                inferred.add(token)
+
+        return sorted(inferred)
+
+    def _match_alias_tags(self, finger_name):
+        """
+        通过别名映射补齐 tags。
+        """
+        out_tags = set()
+        for alias_key, alias_tags in self.FINGER_ALIAS_TAG_MAP.items():
+            if self._match_mapping_key(finger_name, alias_key):
+                for tag in alias_tags:
+                    tag_name = str(tag).strip().lower()
+                    if tag_name:
+                        out_tags.add(tag_name)
+        return sorted(out_tags)
+
+    def _add_tag_scores(self, score_map, tags, score):
+        """
+        给 tags 打分，后续按分数截断，保证“尽量多命中”且不盲扫。
+        """
+        if not isinstance(tags, (list, tuple, set)):
+            return
+
+        for tag in tags:
+            tag_name = str(tag).strip().lower()
+            if not tag_name:
+                continue
+
+            # 若已建立模板 tag 索引，仅保留真实存在的 tag，减少无效参数。
+            if self.template_tag_set and tag_name not in self.template_tag_set:
+                continue
+            score_map[tag_name] += int(score)
+
+    def _expand_family_tags(self, tags):
+        """
+        按标签家族做低权重扩展，提升覆盖率。
+        """
+        expanded = set()
+        for tag in tags:
+            for extra in self.TAG_FAMILY_EXPANSION.get(tag, []):
+                extra_name = str(extra).strip().lower()
+                if not extra_name:
+                    continue
+                if self.template_tag_set and extra_name not in self.template_tag_set:
+                    continue
+                expanded.add(extra_name)
+        return sorted(expanded)
+
+    def _build_fallback_tags(self):
+        """
+        构建兜底标签：
+        - 保留用户默认配置
+        - 当默认仅为 cve（或空）时，补充高价值通用标签
+        """
+        tags = set(self._split_tag_text(self.nuclei_default_tags))
+        if not tags:
+            tags = set(self.SMART_BASELINE_TAGS)
+        elif tags == {"cve"}:
+            tags.update(self.SMART_BASELINE_TAGS)
+
+        if self.template_tag_set:
+            tags = {x for x in tags if x in self.template_tag_set}
+
+        if not tags:
+            tags = {"cve"}
+
+        return ",".join(sorted(tags))
+
     def _build_finger_tags(self, finger_list: list):
         """
         根据指纹名称映射 nuclei tags
         """
-        finger_tags = set()
+        tag_score_map = Counter()
         for finger in finger_list:
             finger_name = str(finger).strip().lower()
             if not finger_name:
                 continue
 
+            match_flag = False
             for map_key, tags in self.nuclei_finger_tag_map.items():
-                if map_key in finger_name:
-                    for tag in tags:
-                        tag_name = str(tag).strip().lower()
-                        if tag_name:
-                            finger_tags.add(tag_name)
+                if self._match_mapping_key(finger_name, map_key):
+                    match_flag = True
+                    self._add_tag_scores(tag_score_map, tags, score=8)
 
-        return sorted(finger_tags)
+            alias_tags = self._match_alias_tags(finger_name)
+            if alias_tags:
+                match_flag = True
+                self._add_tag_scores(tag_score_map, alias_tags, score=7)
+
+            # 显式映射未命中时，尝试依据模板 tag 做自动补全。
+            if not match_flag:
+                self._add_tag_scores(
+                    tag_score_map,
+                    self._infer_tags_by_template_tokens(finger_name),
+                    score=4,
+                )
+
+        # 对已命中的核心 tag 做家族扩展（低权重）。
+        core_tags = list(tag_score_map.keys())
+        self._add_tag_scores(tag_score_map, self._expand_family_tags(core_tags), score=2)
+
+        # 按分数和字典序排序并截断，避免无边界增长。
+        sorted_tags = sorted(tag_score_map.items(), key=lambda x: (-x[1], x[0]))
+        out_tags = [x[0] for x in sorted_tags[: self.MAX_TAGS_PER_TARGET]]
+        return out_tags
 
     def _build_target_batches(self):
         """
@@ -324,8 +697,10 @@ class NucleiScan(object):
         - 命中指纹映射：按 tags 分组，使用 -tags 定向扫描
         - 未命中映射：走自动扫描(-as)或默认标签兜底
         """
+        fallback_tags = self._build_fallback_tags()
         tags_target_map = defaultdict(set)
         fallback_targets = set()
+        unmatched_finger_counter = Counter()
 
         for item in self.targets:
             target = item["target"]
@@ -337,6 +712,10 @@ class NucleiScan(object):
                 tags_target_map[key].add(target)
             else:
                 fallback_targets.add(target)
+                for finger in finger_list:
+                    finger_key = self._normalize_text(finger)
+                    if finger_key:
+                        unmatched_finger_counter[finger_key] += 1
 
         target_batches = []
         for tags in sorted(tags_target_map.keys()):
@@ -353,7 +732,7 @@ class NucleiScan(object):
             target_batches.append(
                 {
                     "targets": sorted(fallback_targets),
-                    "tags": str(self.nuclei_default_tags).strip(),
+                    "tags": fallback_tags,
                     "auto_scan": self.nuclei_auto_scan,
                     "batch_type": "fallback",
                 }
@@ -364,13 +743,55 @@ class NucleiScan(object):
             target_batches.append(
                 {
                     "targets": [item["target"] for item in self.targets],
-                    "tags": str(self.nuclei_default_tags).strip(),
+                    "tags": fallback_tags,
                     "auto_scan": self.nuclei_auto_scan,
                     "batch_type": "default",
                 }
             )
 
+        if unmatched_finger_counter:
+            top_items = unmatched_finger_counter.most_common(12)
+            top_text = "; ".join(["{}({})".format(name, count) for name, count in top_items])
+            logger.info(
+                "nuclei unmatched finger top:{} total_unique:{}".format(
+                    top_text, len(unmatched_finger_counter)
+                )
+            )
+
         return target_batches
+
+    def _filter_targets_by_dns_policy(self):
+        """
+        扫描前进行 DNS 漂移校验，避免请求被系统 DNS 解析到非预期地址
+        """
+        if not self.targets:
+            return
+
+        keep_targets = []
+        skip_count = 0
+        for item in self.targets:
+            target = item.get("target", "")
+            allow_scan, policy_detail = utils.check_dns_policy_for_url(target, cache_map=self.dns_policy_cache)
+            if not allow_scan:
+                skip_count += 1
+                logger.info(
+                    "skip nuclei target by dns policy target:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                        target,
+                        policy_detail.get("reason", ""),
+                        policy_detail.get("resolver_ips", []),
+                        policy_detail.get("system_ips", []),
+                    )
+                )
+                continue
+
+            keep_targets.append(item)
+
+        if skip_count > 0:
+            logger.info(
+                "nuclei dns policy filter skip:{} keep:{}".format(skip_count, len(keep_targets))
+            )
+
+        self.targets = keep_targets
 
     def dump_result(self) -> list:
         results = []
@@ -442,11 +863,14 @@ class NucleiScan(object):
         执行 nuclei 命令并输出统一日志
         """
         logger.info("nuclei command stage={} batch={} cmd={}".format(stage, batch_type, " ".join(command)))
+        env = os.environ.copy()
+        env["XDG_CONFIG_HOME"] = self.nuclei_runtime_root
         completed = utils.exec_system(
             command,
             timeout=96 * 60 * 60,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            env=env
         )
 
         stdout_text = self._decode_output(completed.stdout)
@@ -503,7 +927,10 @@ class NucleiScan(object):
                 result_file=result_file,
             )
             auto_output_lower = "{}\n{}".format(auto_result.get("stderr", ""), auto_result.get("stdout", "")).lower()
-            if auto_result["returncode"] != 0 and "could not parse nuclei-ignore file" in auto_output_lower:
+            if auto_result["returncode"] != 0 and (
+                "could not parse nuclei-ignore file" in auto_output_lower
+                or "could not read nuclei-ignore file" in auto_output_lower
+            ):
                 logger.warning(
                     "nuclei auto-scan detected invalid .nuclei-ignore, try rewrite and retry once"
                 )
@@ -566,12 +993,18 @@ class NucleiScan(object):
         if not self.targets:
             return []
 
+        self._filter_targets_by_dns_policy()
+        if not self.targets:
+            logger.info("nuclei targets all skipped by dns policy")
+            return []
+
         if not self.check_have_nuclei():
             logger.warning("not found nuclei")
             return []
 
         self._resolve_template_dir()
         self._log_template_summary()
+        self._load_template_tag_index()
         self._prepare_nuclei_runtime()
 
         if not self._check_json_flag():

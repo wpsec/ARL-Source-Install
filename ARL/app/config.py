@@ -118,6 +118,20 @@ class Config(object):
     NUCLEI_DEFAULT_TAGS = "cve"
     # 指纹与 nuclei tags 的映射关系，可通过 config.yaml 覆盖
     NUCLEI_FINGER_TAG_MAP = {}
+    # 是否启用内建 kscan 指纹解析
+    KSCAN_FINGERPRINT_ENABLE = True
+    # kscan 指纹文件路径（默认使用 ARL 内置字典）
+    KSCAN_FINGERPRINT_FILE = os.path.join(basedir, 'dicts/kscan_fingerprint.json')
+    # 导入前缀（空表示保留 kscan 原始名称）
+    KSCAN_FINGERPRINT_NAME_PREFIX = ""
+    # 正则(~=)回退策略：none / literal
+    KSCAN_FINGERPRINT_REGEX_FALLBACK = "literal"
+    # regex literal 最短长度
+    KSCAN_FINGERPRINT_MIN_LITERAL_LEN = 5
+    # 单应用最多保留规则数
+    KSCAN_FINGERPRINT_MAX_RULES_PER_NAME = 30
+    # 最多接收规则总数（0=不限制）
+    KSCAN_FINGERPRINT_MAX_TOTAL_RULES = 12000
     # PhantomJS 可执行文件路径，默认使用项目内置二进制
     PHANTOMJS_BIN = os.path.join(basedir, 'tools/phantomjs')
     # 网页截图JS脚本路径（PhantomJS）
@@ -270,6 +284,26 @@ class Config(object):
     # ==================== 插件配置 ====================
     # DNS查询插件配置字典
     QUERY_PLUGIN_CONFIG = dict()
+    # 是否启用“域名A记录IP -> 三方API反查域名”增强链路
+    IP_PIVOT_QUERY_ENABLE = True
+    # 单任务最多参与IP反查的IP数量（防止配额和时延失控）
+    IP_PIVOT_QUERY_MAX_IPS = 20
+    # 单任务最多接收IP反查新增域名数量
+    IP_PIVOT_QUERY_MAX_DOMAINS = 200
+    # IP反查命中域名是否必须限制在当前任务主域范围内
+    IP_PIVOT_QUERY_REQUIRE_SCOPE = True
+    # IP反查前是否跳过已识别为CDN/WAF的IP
+    IP_PIVOT_QUERY_SKIP_CDN = True
+    # 是否启用“证书 -> 三方API反查域名”增强链路
+    CERT_PIVOT_QUERY_ENABLE = True
+    # 单任务最多参与证书反查的证书数量
+    CERT_PIVOT_QUERY_MAX_CERTS = 20
+    # 单任务最多接收证书反查新增域名数量
+    CERT_PIVOT_QUERY_MAX_DOMAINS = 200
+    # 证书反查命中域名是否必须限制在当前任务主域范围内
+    CERT_PIVOT_QUERY_REQUIRE_SCOPE = True
+    # 证书反查前是否跳过已识别为CDN/WAF的证书来源IP
+    CERT_PIVOT_QUERY_SKIP_CDN = True
 
     # ==================== WebHook配置 ====================
     # 自定义WebHook推送地址
@@ -372,6 +406,59 @@ try:
     nuclei_finger_tag_map = y["ARL"].get("NUCLEI_FINGER_TAG_MAP")
     if isinstance(nuclei_finger_tag_map, dict):
         Config.NUCLEI_FINGER_TAG_MAP = nuclei_finger_tag_map
+
+    if y["ARL"].get("KSCAN_FINGERPRINT_ENABLE") is not None:
+        Config.KSCAN_FINGERPRINT_ENABLE = bool(y["ARL"]["KSCAN_FINGERPRINT_ENABLE"])
+
+    if y["ARL"].get("KSCAN_FINGERPRINT_FILE"):
+        Config.KSCAN_FINGERPRINT_FILE = y["ARL"]["KSCAN_FINGERPRINT_FILE"]
+
+    if y["ARL"].get("KSCAN_FINGERPRINT_NAME_PREFIX") is not None:
+        Config.KSCAN_FINGERPRINT_NAME_PREFIX = str(y["ARL"]["KSCAN_FINGERPRINT_NAME_PREFIX"])
+
+    if y["ARL"].get("KSCAN_FINGERPRINT_REGEX_FALLBACK"):
+        Config.KSCAN_FINGERPRINT_REGEX_FALLBACK = y["ARL"]["KSCAN_FINGERPRINT_REGEX_FALLBACK"]
+
+    if y["ARL"].get("KSCAN_FINGERPRINT_MIN_LITERAL_LEN") is not None:
+        Config.KSCAN_FINGERPRINT_MIN_LITERAL_LEN = int(y["ARL"]["KSCAN_FINGERPRINT_MIN_LITERAL_LEN"])
+
+    if y["ARL"].get("KSCAN_FINGERPRINT_MAX_RULES_PER_NAME") is not None:
+        Config.KSCAN_FINGERPRINT_MAX_RULES_PER_NAME = int(y["ARL"]["KSCAN_FINGERPRINT_MAX_RULES_PER_NAME"])
+
+    if y["ARL"].get("KSCAN_FINGERPRINT_MAX_TOTAL_RULES") is not None:
+        Config.KSCAN_FINGERPRINT_MAX_TOTAL_RULES = int(y["ARL"]["KSCAN_FINGERPRINT_MAX_TOTAL_RULES"])
+
+    # --- 公网A记录IP三方反查增强配置 ---
+    if y["ARL"].get("IP_PIVOT_QUERY_ENABLE") is not None:
+        Config.IP_PIVOT_QUERY_ENABLE = bool(y["ARL"]["IP_PIVOT_QUERY_ENABLE"])
+
+    if y["ARL"].get("IP_PIVOT_QUERY_MAX_IPS") is not None:
+        Config.IP_PIVOT_QUERY_MAX_IPS = int(y["ARL"]["IP_PIVOT_QUERY_MAX_IPS"])
+
+    if y["ARL"].get("IP_PIVOT_QUERY_MAX_DOMAINS") is not None:
+        Config.IP_PIVOT_QUERY_MAX_DOMAINS = int(y["ARL"]["IP_PIVOT_QUERY_MAX_DOMAINS"])
+
+    if y["ARL"].get("IP_PIVOT_QUERY_REQUIRE_SCOPE") is not None:
+        Config.IP_PIVOT_QUERY_REQUIRE_SCOPE = bool(y["ARL"]["IP_PIVOT_QUERY_REQUIRE_SCOPE"])
+
+    if y["ARL"].get("IP_PIVOT_QUERY_SKIP_CDN") is not None:
+        Config.IP_PIVOT_QUERY_SKIP_CDN = bool(y["ARL"]["IP_PIVOT_QUERY_SKIP_CDN"])
+
+    if y["ARL"].get("CERT_PIVOT_QUERY_ENABLE") is not None:
+        Config.CERT_PIVOT_QUERY_ENABLE = bool(y["ARL"]["CERT_PIVOT_QUERY_ENABLE"])
+
+    if y["ARL"].get("CERT_PIVOT_QUERY_MAX_CERTS") is not None:
+        Config.CERT_PIVOT_QUERY_MAX_CERTS = int(y["ARL"]["CERT_PIVOT_QUERY_MAX_CERTS"])
+
+    if y["ARL"].get("CERT_PIVOT_QUERY_MAX_DOMAINS") is not None:
+        Config.CERT_PIVOT_QUERY_MAX_DOMAINS = int(y["ARL"]["CERT_PIVOT_QUERY_MAX_DOMAINS"])
+
+    if y["ARL"].get("CERT_PIVOT_QUERY_REQUIRE_SCOPE") is not None:
+        Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE = bool(y["ARL"]["CERT_PIVOT_QUERY_REQUIRE_SCOPE"])
+
+    if y["ARL"].get("CERT_PIVOT_QUERY_SKIP_CDN") is not None:
+        Config.CERT_PIVOT_QUERY_SKIP_CDN = bool(y["ARL"]["CERT_PIVOT_QUERY_SKIP_CDN"])
+
 
     # --- 文件泄露字典自定义配置 ---
     if y["ARL"].get("FILE_LEAK_DICT"):
@@ -526,6 +613,43 @@ try:
     Config.NUCLEI_TEMPLATE_DIR = env_str("ARL_NUCLEI_TEMPLATE_DIR", Config.NUCLEI_TEMPLATE_DIR)
     Config.NUCLEI_AUTO_SCAN = env_bool("ARL_NUCLEI_AUTO_SCAN", Config.NUCLEI_AUTO_SCAN)
     Config.NUCLEI_DEFAULT_TAGS = env_str("ARL_NUCLEI_DEFAULT_TAGS", Config.NUCLEI_DEFAULT_TAGS)
+    Config.KSCAN_FINGERPRINT_ENABLE = env_bool(
+        "ARL_KSCAN_FINGERPRINT_ENABLE", Config.KSCAN_FINGERPRINT_ENABLE
+    )
+    Config.KSCAN_FINGERPRINT_FILE = env_str(
+        "ARL_KSCAN_FINGERPRINT_FILE", Config.KSCAN_FINGERPRINT_FILE
+    )
+    Config.KSCAN_FINGERPRINT_NAME_PREFIX = env_str(
+        "ARL_KSCAN_FINGERPRINT_NAME_PREFIX", Config.KSCAN_FINGERPRINT_NAME_PREFIX
+    )
+    Config.KSCAN_FINGERPRINT_REGEX_FALLBACK = env_str(
+        "ARL_KSCAN_FINGERPRINT_REGEX_FALLBACK", Config.KSCAN_FINGERPRINT_REGEX_FALLBACK
+    )
+    Config.KSCAN_FINGERPRINT_MIN_LITERAL_LEN = env_int(
+        "ARL_KSCAN_FINGERPRINT_MIN_LITERAL_LEN", Config.KSCAN_FINGERPRINT_MIN_LITERAL_LEN
+    )
+    Config.KSCAN_FINGERPRINT_MAX_RULES_PER_NAME = env_int(
+        "ARL_KSCAN_FINGERPRINT_MAX_RULES_PER_NAME", Config.KSCAN_FINGERPRINT_MAX_RULES_PER_NAME
+    )
+    Config.KSCAN_FINGERPRINT_MAX_TOTAL_RULES = env_int(
+        "ARL_KSCAN_FINGERPRINT_MAX_TOTAL_RULES", Config.KSCAN_FINGERPRINT_MAX_TOTAL_RULES
+    )
+    Config.IP_PIVOT_QUERY_ENABLE = env_bool("ARL_IP_PIVOT_QUERY_ENABLE", Config.IP_PIVOT_QUERY_ENABLE)
+    Config.IP_PIVOT_QUERY_MAX_IPS = env_int("ARL_IP_PIVOT_QUERY_MAX_IPS", Config.IP_PIVOT_QUERY_MAX_IPS)
+    Config.IP_PIVOT_QUERY_MAX_DOMAINS = env_int("ARL_IP_PIVOT_QUERY_MAX_DOMAINS", Config.IP_PIVOT_QUERY_MAX_DOMAINS)
+    Config.IP_PIVOT_QUERY_REQUIRE_SCOPE = env_bool(
+        "ARL_IP_PIVOT_QUERY_REQUIRE_SCOPE", Config.IP_PIVOT_QUERY_REQUIRE_SCOPE
+    )
+    Config.IP_PIVOT_QUERY_SKIP_CDN = env_bool("ARL_IP_PIVOT_QUERY_SKIP_CDN", Config.IP_PIVOT_QUERY_SKIP_CDN)
+    Config.CERT_PIVOT_QUERY_ENABLE = env_bool("ARL_CERT_PIVOT_QUERY_ENABLE", Config.CERT_PIVOT_QUERY_ENABLE)
+    Config.CERT_PIVOT_QUERY_MAX_CERTS = env_int("ARL_CERT_PIVOT_QUERY_MAX_CERTS", Config.CERT_PIVOT_QUERY_MAX_CERTS)
+    Config.CERT_PIVOT_QUERY_MAX_DOMAINS = env_int(
+        "ARL_CERT_PIVOT_QUERY_MAX_DOMAINS", Config.CERT_PIVOT_QUERY_MAX_DOMAINS
+    )
+    Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE = env_bool(
+        "ARL_CERT_PIVOT_QUERY_REQUIRE_SCOPE", Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE
+    )
+    Config.CERT_PIVOT_QUERY_SKIP_CDN = env_bool("ARL_CERT_PIVOT_QUERY_SKIP_CDN", Config.CERT_PIVOT_QUERY_SKIP_CDN)
     dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
     if dns_resolvers_env:
         Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]

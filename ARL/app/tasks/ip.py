@@ -121,6 +121,156 @@ class IPTask(CommonTask):
         self.asset_ip_info_map = dict()  # 资产IP信息映射
         self.base_update_task = BaseUpdateTask(self.task_id)
 
+    @staticmethod
+    def _is_low_conf_service(port_info):
+        """
+        判断端口服务识别是否低置信度。
+        低置信度端口优先走协议识别（sniffer）。
+        """
+        service_name = str(port_info.get("service_name", "")).strip().lower()
+        if not service_name:
+            return True
+
+        low_conf_names = {
+            "unknown",
+            "tcpwrapped",
+            "wrapped",
+            "ssl/unknown",
+            "unrecognized",
+        }
+        return service_name in low_conf_names
+
+    @staticmethod
+    def _normalize_scheme(value):
+        value = str(value or "").strip().lower()
+        if not value:
+            return ""
+        alias_map = {
+            "ssl/http": "https",
+            "http/ssl": "https",
+            "www": "http",
+        }
+        return alias_map.get(value, value)
+
+    @staticmethod
+    def _extract_detected_service(service_name, product=""):
+        """
+        仅从已有识别结果提取服务名，不做端口号猜测。
+        """
+        name = str(service_name or "").strip().lower()
+        if name:
+            return name
+
+        product_name = str(product or "").strip().lower()
+        # 仅处理明确协议别名，避免把产品名/端口映射当成服务名
+        if product_name in {"https-alt", "ssl/http", "http/ssl", "www"}:
+            return product_name
+
+        return ""
+
+    def _enable_protocol_detection(self):
+        """
+        兼容历史选项：
+        - service_detection：当前语义为启用协议/服务识别（sniffer）
+        - npoc_service_detection：历史开关，继续兼容
+        """
+        return bool(self.options.get("service_detection") or self.options.get("npoc_service_detection"))
+
+    def _build_sniffer_targets(self, full_port=False):
+        """
+        构建协议识别目标。
+        - full_port=True: 全端口识别（更慢、更全面）
+        - full_port=False: 智能模式，仅识别低置信度端口（更快）
+        """
+        all_targets = []
+        low_conf_targets = []
+        target_set = set()
+
+        for ip_info in self.ip_info_list:
+            ip = str(ip_info.get("ip", "")).strip()
+            if not ip:
+                continue
+
+            for port_info in ip_info.get("port_info", []):
+                port_id = port_info.get("port_id")
+                if port_id is None:
+                    continue
+
+                target = "{}:{}".format(ip, port_id)
+                if target in target_set:
+                    continue
+                target_set.add(target)
+                all_targets.append(target)
+
+                if self._is_low_conf_service(port_info):
+                    low_conf_targets.append(target)
+
+        if full_port:
+            return all_targets, len(all_targets), len(low_conf_targets), "full"
+
+        # 智能模式：优先低置信度端口
+        selected = list(low_conf_targets)
+
+        # 若低置信度目标为空，补充少量非80/443端口，避免完全不执行识别
+        if not selected and all_targets:
+            for target in all_targets:
+                port = target.rsplit(":", 1)[-1]
+                if port in {"80", "443"}:
+                    continue
+                selected.append(target)
+                if len(selected) >= 300:
+                    break
+
+        if not selected and all_targets:
+            selected = all_targets[:100]
+
+        return selected, len(all_targets), len(low_conf_targets), "smart"
+
+    def _apply_npoc_service_result(self, sniffer_items):
+        """
+        将 NPoC 协议识别结果回填到端口信息，提升 service 结果质量。
+        """
+        if not sniffer_items:
+            return 0
+
+        scheme_map = {}
+        for item in sniffer_items:
+            host = str(item.get("host", "")).strip()
+            port = str(item.get("port", "")).strip()
+            scheme = self._normalize_scheme(item.get("scheme"))
+            if not host or not port or not scheme:
+                continue
+            scheme_map["{}:{}".format(host, port)] = scheme
+
+        if not scheme_map:
+            return 0
+
+        updated = 0
+        for ip_info in self.ip_info_list:
+            ip = str(ip_info.get("ip", "")).strip()
+            if not ip:
+                continue
+
+            for port_info in ip_info.get("port_info", []):
+                port_id = port_info.get("port_id")
+                if port_id is None:
+                    continue
+
+                key = "{}:{}".format(ip, port_id)
+                if key not in scheme_map:
+                    continue
+
+                scheme = scheme_map[key]
+                curr_service = str(port_info.get("service_name", "")).strip().lower()
+                # 服务识别以 sniffer 为准，nmap 结果作为回退
+                if curr_service != scheme:
+                    updated += 1
+                port_info["service_name"] = scheme
+                if not str(port_info.get("product", "")).strip() or self._is_low_conf_service(port_info):
+                    port_info["product"] = scheme
+
+        return updated
+
     def set_asset_ip(self):
         """
         获取资产组中的IP信息
@@ -173,7 +323,8 @@ class IPTask(CommonTask):
         # 构建扫描选项
         scan_port_option = {
             "ports": scan_port_map.get(option_scan_port_type, ScanPortType.TEST),
-            "service_detect": self.options.get("service_detection", False),  # 服务识别
+            # nmap 仅负责端口发现，协议/服务识别统一由 npoc(sniffer) 负责
+            "service_detect": False,
             "os_detect": self.options.get("os_detection", False),  # 操作系统识别
             "port_parallelism": self.options.get("port_parallelism", 32),  # 探测报文并行度
             "port_min_rate": self.options.get("port_min_rate", 64),  # 最少发包速率
@@ -312,36 +463,93 @@ class IPTask(CommonTask):
         - 保存到service表
         """
         self.service_info_list = []
-        services_list = set()
-        for _data in self.ip_info_list:
-            port_info_lsit = _data.get("port_info")
-            for _info in port_info_lsit:
-                if _info.get("service_name"):
-                    # 新服务：创建记录
-                    if _info.get("service_name") not in services_list:
-                        _result = {}
-                        _result["service_name"] = _info.get("service_name")
-                        _result["service_info"] = []
-                        _result["service_info"].append({'ip': _data.get("ip"),
-                                                        'port_id': _info.get("port_id"),
-                                                        'product': _info.get("product"),
-                                                        'version': _info.get("version")})
-                        _result["task_id"] = self.task_id
-                        self.service_info_list.append(_result)
-                        services_list.add(_info.get("service_name"))
-                    else:
-                        # 已有服务：追加信息
-                        for service_info in self.service_info_list:
-                            if service_info.get("service_name") == _info.get("service_name"):
-                                service_info['service_info'].append({'ip': _data.get("ip"),
-                                                                    'port_id': _info.get("port_id"),
-                                                                    'product': _info.get("product"),
-                                                                    'version': _info.get("version")})
-        # 批量保存服务信息
-        if self.service_info_list:
-            utils.conn_db('service').insert(self.service_info_list)
+        service_map = {}
+        service_seen = set()
+        port_total = 0
+        merged_total = 0
+        nmap_merged = 0
+        npoc_merged = 0
 
-    def npoc_service_detection(self):
+        def _append_item(service_name, ip, port_id, product="", version="", source=""):
+            nonlocal merged_total, nmap_merged, npoc_merged
+            raw_name = self._extract_detected_service(
+                service_name=service_name,
+                product=product,
+            )
+            service = self._normalize_scheme(raw_name)
+            if not service:
+                return
+
+            ip = str(ip or "").strip()
+            if not ip:
+                return
+
+            try:
+                port_id = int(port_id)
+            except Exception:
+                return
+
+            uniq_key = (service, ip, port_id)
+            if uniq_key in service_seen:
+                return
+            service_seen.add(uniq_key)
+
+            service_map.setdefault(service, [])
+            service_map[service].append({
+                "ip": ip,
+                "port_id": port_id,
+                "product": str(product or "").strip(),
+                "version": str(version or "").strip(),
+            })
+            merged_total += 1
+            if source == "nmap":
+                nmap_merged += 1
+            elif source == "npoc":
+                npoc_merged += 1
+
+        # 1) nmap 结果（已被 npoc 回填增强）
+        for ip_item in self.ip_info_list:
+            for port_item in ip_item.get("port_info", []):
+                port_total += 1
+                _append_item(
+                    service_name=port_item.get("service_name", ""),
+                    ip=ip_item.get("ip", ""),
+                    port_id=port_item.get("port_id", None),
+                    product=port_item.get("product", ""),
+                    version=port_item.get("version", ""),
+                    source="nmap",
+                )
+
+        # 2) npoc 明细补充（用于兜底合并来源）
+        for item in utils.conn_db('npoc_service').find({"task_id": self.task_id}):
+            _append_item(
+                service_name=item.get("scheme", ""),
+                ip=item.get("host", ""),
+                port_id=item.get("port", None),
+                product=item.get("scheme", ""),
+                version=item.get("version", ""),
+                source="npoc",
+            )
+
+        for service_name, info_list in service_map.items():
+            self.service_info_list.append({
+                "service_name": service_name,
+                "service_info": info_list,
+                "task_id": self.task_id
+            })
+
+        # 同任务重跑时先清理旧数据，避免重复堆积
+        utils.conn_db('service').delete_many({"task_id": self.task_id})
+        if self.service_info_list:
+            utils.conn_db('service').insert_many(self.service_info_list)
+
+        logger.info(
+            "save_service_info task_id:{} ports:{} merged:{} nmap:{} npoc:{} service_group:{}".format(
+                self.task_id, port_total, merged_total, nmap_merged, npoc_merged, len(self.service_info_list)
+            )
+        )
+
+    def npoc_service_detection(self, full_port=False):
         """
         NPoc服务识别
         
@@ -352,21 +560,33 @@ class IPTask(CommonTask):
         - 识别结果保存到npoc_service表
         - 识别出的服务可用于后续PoC扫描
         """
-        targets = []
-        for ip_info in self.ip_info_list:
-            for port_info in ip_info["port_info"]:
-                skip_port_list = [80, 443, 843]
-                if port_info["port_id"] in skip_port_list:
-                    continue
+        targets, total_targets, low_conf_targets, mode = self._build_sniffer_targets(
+            full_port=full_port
+        )
+        skip_common_http_ports = not full_port
 
-                targets.append("{}:{}".format(ip_info["ip"], port_info["port_id"]))
+        logger.info(
+            "npoc_service_detection mode:{} selected:{} total:{} low_conf:{} skip_common_http_ports:{}".format(
+                mode, len(targets), total_targets, low_conf_targets, skip_common_http_ports
+            )
+        )
+
+        if not targets:
+            return
 
         # 运行服务识别
-        result = run_sniffer(targets)
+        result = run_sniffer(targets, skip_common_http_ports=skip_common_http_ports)
+        enriched_count = self._apply_npoc_service_result(result)
+        logger.info(
+            "npoc_service_detection result:{} enriched_port:{}".format(
+                len(result), enriched_count
+            )
+        )
         for item in result:
             self.npoc_service_target_set.add(item["target"])
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
+            item["source"] = "npoc_sniffer"
             utils.conn_db('npoc_service').insert_one(item)
 
     def brute_config(self):
@@ -433,10 +653,6 @@ class IPTask(CommonTask):
             elapse = time.time() - t1
             base_update.update_services("port_scan", elapse)
 
-        # 存储服务信息
-        if self.options.get("service_detection"):
-            self.save_service_info()
-
         '''***证书获取开始***'''
         if self.options.get("ssl_cert"):
             base_update.update_task_field("status", "ssl_cert")
@@ -459,12 +675,22 @@ class IPTask(CommonTask):
         web_site_fetch.run()
 
         """服务识别（Python实现）"""
-        if self.options.get("npoc_service_detection"):
+        if self._enable_protocol_detection():
             base_update.update_task_field("status", "npoc_service_detection")
             t1 = time.time()
-            self.npoc_service_detection()
+            # 兼容历史开关：
+            # - npoc_service_detection=True: 全端口模式
+            # - service_detection=True: 智能模式（只扫低置信度端口）
+            self.npoc_service_detection(
+                full_port=bool(self.options.get("npoc_service_detection"))
+            )
             elapse = time.time() - t1
             base_update.update_services("npoc_service_detection", elapse)
+
+        # 存储服务信息（放到协议识别之后，优先保留更高质量的服务名）
+        # 端口扫描已包含基础服务名（nmap service map），即使未开启 -sV / npoc 也应落库。
+        if self.options.get("port_scan") or self.options.get("service_detection") or self.options.get("npoc_service_detection"):
+            self.save_service_info()
 
         """ *** NPoc 调用（PoC扫描） """
         if self.options.get("poc_config"):

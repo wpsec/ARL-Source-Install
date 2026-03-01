@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import hashlib
+from urllib.parse import urlparse
 from celery.utils.log import get_task_logger
 from celery import current_task
 import colorlog
@@ -26,7 +27,7 @@ from .time import curr_date, time2date, curr_date_obj
 from .url import rm_similar_url, get_hostname, normal_url, same_netloc, verify_cert, url_ext
 from .cert import get_cert
 from .arlupdate import arl_update
-from .cdn import get_cdn_name_by_cname, get_cdn_name_by_ip
+from .cdn import get_cdn_name_by_cname, get_cdn_name_by_ip, infer_cdn_by_dns
 from .device import device_info
 from .cron import check_cron, check_cron_interval
 from .query_loader import load_query_plugins
@@ -257,6 +258,125 @@ def get_ip(domain, log_flag=True):
             logger.warning("{} {}".format(domain, e))
 
     return ips
+
+
+def get_ip_system(domain, log_flag=True):
+    """
+    使用系统默认 DNS 解析器获取 A 记录
+    """
+    domain = domain.strip()
+    logger = get_logger()
+    ips = []
+    try:
+        resolver = dns.resolver.Resolver()
+        resolver.lifetime = 6
+        resolver.timeout = 3
+        answers = resolver.resolve(domain, 'A')
+        for rdata in answers:
+            if rdata.address == '0.0.0.1':
+                continue
+            ips.append(rdata.address)
+    except dns.resolver.NXDOMAIN as e:
+        if log_flag:
+            logger.info("{} {}".format(domain, e))
+    except Exception as e:
+        if log_flag:
+            logger.warning("{} {}".format(domain, e))
+
+    return ips
+
+
+def check_dns_policy_for_host(hostname):
+    """
+    校验扫描目标域名在“自定义解析器”和“系统解析器”之间是否发生解析漂移。
+
+    返回:
+        (allow: bool, detail: dict)
+    """
+    # 函数内导入，避免在模块初始化早期引入配置导致的循环依赖问题。
+    from app.config import Config
+
+    host = str(hostname or "").strip().lower().rstrip(".")
+    detail = {
+        "host": host,
+        "reason": "",
+        "resolver_ips": [],
+        "system_ips": [],
+        "matched_ips": [],
+    }
+
+    if not host:
+        detail["reason"] = "empty_host"
+        return True, detail
+
+    if is_vaild_ip_target(host):
+        detail["reason"] = "ip_target"
+        return True, detail
+
+    # 未配置自定义解析器时保持历史行为
+    dns_resolvers = [x.strip() for x in Config.DNS_RESOLVERS if isinstance(x, str) and x.strip()]
+    if not dns_resolvers:
+        detail["reason"] = "no_custom_resolver"
+        return True, detail
+
+    resolver_ips = sorted(set(get_ip(host, log_flag=False)))
+    system_ips = sorted(set(get_ip_system(host, log_flag=False)))
+    detail["resolver_ips"] = resolver_ips
+    detail["system_ips"] = system_ips
+
+    if not resolver_ips:
+        detail["reason"] = "resolver_no_a_record"
+        return False, detail
+
+    if not system_ips:
+        detail["reason"] = "system_no_a_record"
+        return False, detail
+
+    resolver_set = set(resolver_ips)
+    system_set = set(system_ips)
+    matched_ips = sorted(list(resolver_set & system_set))
+    detail["matched_ips"] = matched_ips
+
+    # 完全无交集：高风险漂移，拒绝扫描
+    if not matched_ips:
+        detail["reason"] = "dns_drift_no_overlap"
+        return False, detail
+
+    # 系统解析出了自定义解析器未返回的内网/保留IP，也视为漂移风险
+    extra_system_ips = sorted(list(system_set - resolver_set))
+    for ip in extra_system_ips:
+        if get_ip_type(ip) == "PRIVATE":
+            detail["reason"] = "dns_drift_private_extra"
+            detail["extra_system_ips"] = extra_system_ips
+            return False, detail
+
+    detail["reason"] = "pass"
+    return True, detail
+
+
+def check_dns_policy_for_url(url, cache_map=None):
+    """
+    基于 URL 进行 DNS 漂移校验，支持可选缓存。
+
+    参数:
+        url: 待校验 URL
+        cache_map: 可选缓存字典，键为 hostname
+    """
+    try:
+        host = urlparse(str(url)).hostname or ""
+    except Exception:
+        host = ""
+
+    cache_key = str(host).strip().lower().rstrip(".")
+    if isinstance(cache_map, dict) and cache_key:
+        if cache_key in cache_map:
+            return cache_map[cache_key]
+
+    result = check_dns_policy_for_host(cache_key)
+    if isinstance(cache_map, dict) and cache_key:
+        cache_map[cache_key] = result
+
+    return result
 
 
 def get_cname(domain, log_flag=True):

@@ -104,7 +104,8 @@ def _check_expression(expression):
         'body': "",
         'header': "",
         'title': "",
-        'icon_hash': ""
+        'icon_hash': "",
+        'response': "",
     }
     try:
         return evaluate(expression, variables)
@@ -131,4 +132,3 @@ def check_expression_with_error(expression):
         return True, None,
     except ValueError as e:
         return False, e
-

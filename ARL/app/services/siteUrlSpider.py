@@ -155,6 +155,9 @@ class SiteURLSpider(object):
             html = conn.content
             if "html" not in conn.headers.get("Content-Type", "").lower():
                 return URLSimilarList()
+            if not html or not html.strip():
+                logger.info("skip site spider empty html {}".format(entry_url))
+                return URLSimilarList()
 
             dom = pq(html)
             ret_url = URLSimilarList()
@@ -176,7 +179,7 @@ class SiteURLSpider(object):
                         self.all_url_list.add(url_info)
             return ret_url
         except Exception as e:
-            logger.error("error on {} {}".format(entry_url, e))
+            logger.warning("skip site spider parse {} {}".format(entry_url, e))
             return URLSimilarList()
 
     def run(self):
@@ -242,7 +245,6 @@ def site_spider(entry_url, deep_num=3):
             ret.append(x.crawl_url)
 
     return ret
-
 
 
 

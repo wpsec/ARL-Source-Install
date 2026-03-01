@@ -13,6 +13,7 @@ class PortScan:
                  port_parallelism=None, port_min_rate=None, custom_host_timeout=None):
         self.targets = " ".join(targets)
         self.ports = ports
+        self.requested_port_count = self._estimate_port_count(ports)
         self.max_host_group = 32
         self.alive_port = "22,80,443,843,3389,8007-8011,8443,9090,8080-8091,8093,8099,5000-5004,2222,3306,1433,21,25"
         self.nmap_arguments = "-sT -n --open"
@@ -20,6 +21,8 @@ class PortScan:
         self.host_timeout = 60*5
         self.parallelism = port_parallelism  # 默认 32
         self.min_rate = port_min_rate  # 默认64
+        # 全端口扫描遇到“伪全开”设备时，限制最大开放端口返回数量，避免扫描时间失控
+        self.max_open_guard = None
 
         if service_detect:
             self.host_timeout += 60 * 5
@@ -40,10 +43,12 @@ class PortScan:
             self.max_host_group = 2
             self.min_rate = max(self.min_rate, 800)
             self.parallelism = max(self.parallelism, 128)
+            self.max_open_guard = 1200
 
             self.nmap_arguments += " -PE -PS{}".format(self.alive_port)
             self.host_timeout += 60 * 5
             self.max_retries = 2
+            self.nmap_arguments += " --max-open {}".format(self.max_open_guard)
 
         self.nmap_arguments += " --max-rtt-timeout 800ms"
         self.nmap_arguments += " --min-rate {}".format(self.min_rate)
@@ -57,6 +62,74 @@ class PortScan:
         self.nmap_arguments += " --host-timeout {}s".format(self.host_timeout)
         self.nmap_arguments += " --min-parallelism {}".format(self.parallelism)
         self.nmap_arguments += " --max-retries {}".format(self.max_retries)
+
+    @staticmethod
+    def _estimate_port_count(ports):
+        ports = str(ports or "").strip()
+        if not ports:
+            return 0
+        if ports == "0-65535":
+            return 65535
+
+        total = 0
+        for token in ports.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if "-" in token:
+                start, end = token.split("-", 1)
+                try:
+                    start_i = int(start)
+                    end_i = int(end)
+                    if end_i >= start_i:
+                        total += (end_i - start_i + 1)
+                except Exception:
+                    continue
+            else:
+                try:
+                    int(token)
+                    total += 1
+                except Exception:
+                    continue
+
+        return total
+
+    def _is_suspected_all_open(self, open_port_count):
+        """
+        识别疑似“伪全开端口”主机：
+        - 全端口扫描时，开放端口数量非常大
+        - 或在大范围端口扫描中开放率异常高
+        """
+        if open_port_count <= 0:
+            return False
+
+        if open_port_count >= 800:
+            return True
+
+        if self.requested_port_count <= 0:
+            return False
+
+        open_ratio = float(open_port_count) / float(self.requested_port_count)
+        if self.requested_port_count >= 1000 and open_port_count >= 500 and open_ratio >= 0.80:
+            return True
+
+        if self.requested_port_count >= 100 and open_port_count >= 90 and open_ratio >= 0.95:
+            return True
+
+        return False
+
+    @staticmethod
+    def _filter_suspected_ports(port_info_list):
+        """
+        疑似伪全开端口时，保留少量高价值端口继续后续流程。
+        """
+        keep_ports = {80, 443, 8080, 8443, 22, 3389}
+        filtered = []
+        for item in port_info_list:
+            port_id = item.get("port_id")
+            if port_id in keep_ports:
+                filtered.append(item)
+        return filtered
 
     def run(self):
         logger.info("nmap target {}  ports {}  arguments {}".format(
@@ -84,6 +157,16 @@ class PortScan:
                     }
 
                     port_info_list.append(item)
+
+            total_open_count = len(port_info_list)
+            if self._is_suspected_all_open(total_open_count):
+                old_count = total_open_count
+                port_info_list = self._filter_suspected_ports(port_info_list)
+                logger.warning(
+                    "suspected fake all-open host:{} open_ports:{} requested_ports:{} kept_ports:{}".format(
+                        host, old_count, self.requested_port_count, len(port_info_list)
+                    )
+                )
 
             osmatch_list = nm[host].get("osmatch", [])
             os_info = self.os_match_by_accuracy(osmatch_list)

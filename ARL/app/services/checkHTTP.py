@@ -15,8 +15,21 @@ class CheckHTTP(BaseThread):
         super().__init__(urls, concurrency=concurrency)
         self.timeout = (5, 3)
         self.checkout_map = {}
+        self.dns_policy_cache = {}
 
     def check(self, url):
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(url, cache_map=self.dns_policy_cache)
+        if not allow_scan:
+            logger.info(
+                "skip check_http by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    url,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            return None
+
         conn = utils.http_req(url, method="get", timeout=self.timeout, stream=True)
         conn.close()
 

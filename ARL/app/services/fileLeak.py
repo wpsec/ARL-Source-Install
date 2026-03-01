@@ -13,12 +13,18 @@ from app import utils
 from .baseThread import BaseThread
 
 logger = utils.get_logger()
+DNS_POLICY_CACHE = {}
 
 min_length = 100
 max_length = 50*1024
 read_timeout = 60
 bool_ratio = 0.8
 concurrency_count = 6
+
+
+class FileLeakPolicySkip(Exception):
+    """File leak request is skipped by DNS policy."""
+
 
 class URL():
     def __init__(self, url, payload):
@@ -80,6 +86,16 @@ class HTTPReq():
 
     def req(self):
         content = b''
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(self.url.url, cache_map=DNS_POLICY_CACHE)
+        if not allow_scan:
+            raise FileLeakPolicySkip(
+                "skip file_leak by dns policy reason:{} resolver_ips:{} system_ips:{}".format(
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+
         conn = utils.http_req(self.url.url, 'get', timeout=(3, 6), stream=True)
         self.conn = conn
         start_time = time.time()
@@ -261,11 +277,14 @@ class FileLeak(BaseThread):
         self.record_page = False
         self.skip_302 = False
         self.location_404_url = set()
+        self.skip_by_policy = False
 
     def work(self, url):
         if self.error_times >= 20:
             return
         req = self.http_req(url)
+        if req is None:
+            return
         page = Page(req)
 
 
@@ -283,7 +302,10 @@ class FileLeak(BaseThread):
     def build_404_page(self):
         url_404 = URL(self.target + self.path_404, self.path_404)
         logger.info("req => {}".format(url_404))
-        page_404 = Page(self.http_req(url_404))
+        req = self.http_req(url_404)
+        if req is None:
+            return
+        page_404 = Page(req)
         self.page404_set.add(page_404)
         if self.record_page:
             self.page_all.append(page_404)
@@ -299,6 +321,13 @@ class FileLeak(BaseThread):
         logger.info("start fileleak {}".format(len(self.targets)))
 
         self.build_404_page()
+        if self.skip_by_policy:
+            logger.info("skip fileleak target by dns policy target:{}".format(self.target))
+            return set()
+
+        if not self.page404_set:
+            logger.warning("fileleak build_404_page failed target:{}".format(self.target))
+            return set()
 
         self._run()
 
@@ -314,6 +343,10 @@ class FileLeak(BaseThread):
             req = HTTPReq(url)
             req.req()
             return req
+        except FileLeakPolicySkip as e:
+            self.skip_by_policy = True
+            logger.info(str(e))
+            return None
         except Exception as e:
             logger.warning("error on {}".format(e))
             self.error_times += 1
@@ -364,7 +397,10 @@ class FileLeak(BaseThread):
             url_404_list = self.gen_check_url(page.url)
 
             for url_404 in url_404_list:
-                page_404 = Page(self.http_req(url_404))
+                req = self.http_req(url_404)
+                if req is None:
+                    continue
+                page_404 = Page(req)
                 self.page404_set.add(page_404)
 
                 if page_404.is_302() and page_404.location_url.endswith(page_404.url.payload + "/"):
@@ -543,4 +579,3 @@ def file_leak(targets, dicts, gen_dict = True) -> List[Page]:
             logger.exception(e)
 
     return ret
-

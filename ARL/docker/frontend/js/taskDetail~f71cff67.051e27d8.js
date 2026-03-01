@@ -311,7 +311,7 @@
               page: 1,
               size: 10,
             }),
-            9 === this.currentIndex &&
+            8 === this.currentIndex &&
               (this.currentComponent.params.order = ""),
             (this.tableConfig[this.currentIndex].params = {
               page: 1,
@@ -1126,27 +1126,6 @@
             params: { page: 1, size: 10 },
           },
           {
-            name: "服务信息（python）",
-            componentName: "servePython",
-            columns: [
-              { width: 88, title: "序号", dataIndex: "index" },
-              { title: "协议", dataIndex: "scheme" },
-              { title: "主机", dataIndex: "host" },
-              { title: "端口", dataIndex: "port" },
-              { title: "目标", dataIndex: "target" },
-              { title: "保存时间", dataIndex: "save_date" },
-            ],
-            api: r.t,
-            total: 0,
-            searchGroup: [
-              { label: "协议", value: "scheme" },
-              { label: "主机", value: "host" },
-              { label: "端口", value: "port" },
-              { label: "目标", value: "target" },
-            ],
-            params: { page: 1, size: 10 },
-          },
-          {
             name: "C段",
             componentName: "C section",
             columns: [
@@ -1804,7 +1783,6 @@
                 "文件泄露",
                 "URL信息",
                 "风险",
-                "服务（python）",
                 "C段",
                 "nuclei",
                 "指纹统计",
@@ -1819,7 +1797,6 @@
                 "",
                 "",
                 "url",
-                "",
                 "",
                 "c",
               ],
@@ -1863,11 +1840,10 @@
                 { key: "fileleak_cnt", num: 5 },
                 { key: "url_cnt", num: 6 },
                 { key: "vuln_cnt", num: 7 },
-                { key: "npoc_service_cnt", num: 8 },
-                { key: "cip_cnt", num: 9 },
-                { key: "nuclei_result_cnt", num: 10 },
-                { key: "stat_finger_cnt", num: 11 },
-                { key: "wih_cnt", num: 12 },
+                { key: "cip_cnt", num: 8 },
+                { key: "nuclei_result_cnt", num: 9 },
+                { key: "stat_finger_cnt", num: 10 },
+                { key: "wih_cnt", num: 11 },
               ];
               this.tabList = JSON.parse(JSON.stringify(this.originList));
               var e = this.$route.query;
@@ -1989,7 +1965,7 @@
                           key: a,
                           staticClass: "item",
                           class: [
-                            12 == t.currentIndex ? "active-item-box" : "",
+                            11 == t.currentIndex ? "active-item-box" : "",
                           ],
                         },
                         [

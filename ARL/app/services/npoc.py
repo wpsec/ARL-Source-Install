@@ -3,6 +3,7 @@
 """
 import os
 import json
+from urllib.parse import urlparse
 from xing.core import PluginType, PluginRunner
 from xing.utils import load_plugins
 from xing.conf import Conf as npoc_conf
@@ -185,37 +186,54 @@ def run_risk_cruising(plugins, targets):
     return n.run_poc(plugins, targets)
 
 
-def run_sniffer(targets):
+def run_sniffer(targets, skip_common_http_ports=True):
     n = NPoC(concurrency=15, tmp_dir=Config.TMP_PATH)
-    x = n.plugin_name_list
     new_targets = []
+    target_set = set()
+    skip_port_set = set()
+    if skip_common_http_ports:
+        skip_port_set = {"80", "443"}
 
-    #  跳过80 和 443 的识别
+    # 兼容旧逻辑：默认跳过80/443；需要全端口识别时可关闭该开关
     for t in targets:
-        t = t.strip()
-        if t.endswith(":80"):
+        t = str(t).strip()
+        if not t:
             continue
-        if t.endswith(":443"):
+
+        if ":" not in t:
             continue
+
+        host, port = t.rsplit(":", 1)
+        if not host or not port:
+            continue
+
+        if port in skip_port_set:
+            continue
+
+        if t in target_set:
+            continue
+        target_set.add(t)
         new_targets.append(t)
 
     items = n.run_poc(n.sniffer_plugin_name_set, new_targets)
     ret = []
-    for x in items:
-        target = x["verify_data"]
+    for result in items:
+        target = str(result.get("verify_data", "")).strip()
         if "://" not in target:
             continue
 
-        split = target.split("://")
-        scheme = split[0]
-        split = split[1].split(":")
+        parsed = urlparse(target)
+        scheme = str(parsed.scheme or "").strip().lower()
+        host = str(parsed.hostname or "").strip()
+        port = parsed.port
 
-        host = split[0]
-        port = split[1]
+        if not scheme or not host or port is None:
+            continue
+
         item = {
             "scheme": scheme,
             "host": host,
-            "port": port,
+            "port": str(port),
             "target": target
         }
         ret.append(item)

@@ -13,6 +13,7 @@ class ProbeHTTP(BaseThread):
 
         self.sites = []
         self.domains = domains
+        self.dns_policy_cache = {}
 
     def _build_targets(self, domains):
         _targets = []
@@ -27,6 +28,18 @@ class ProbeHTTP(BaseThread):
         return _targets
 
     def work(self, target):
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(target, cache_map=self.dns_policy_cache)
+        if not allow_scan:
+            logger.info(
+                "skip probe_http by dns policy target:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    target,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            return
+
         conn = utils.http_req(target, 'get', timeout=(3, 2), stream=True)
         conn.close()
 

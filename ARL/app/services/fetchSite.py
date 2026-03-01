@@ -21,6 +21,7 @@ class FetchSite(BaseThread):
         super().__init__(sites, concurrency)
         self.site_info_list = []
         self.fingerprint_list = load_fingerprint()
+        self.dns_policy_cache = {}
         self.http_timeout = http_timeout
         if http_timeout is None:
             self.http_timeout = (10.1, 30.1)
@@ -53,6 +54,18 @@ class FetchSite(BaseThread):
 
     def work(self, site, max_redirect=5):
         if max_redirect <= 0:
+            return
+
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(site, cache_map=self.dns_policy_cache)
+        if not allow_scan:
+            logger.info(
+                "skip fetch_site by dns policy site:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    site,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
             return
 
         _, hostname, _ = get_host(site)
@@ -122,7 +135,9 @@ def finger_identify(content: bytes, header: str, title: str, favicon_hash: str):
         "body": content,
         "header": header,
         "title": title,
-        "icon_hash": favicon_hash
+        "icon_hash": favicon_hash,
+        # 兼容规则中的 response 字段（头+体）
+        "response": "{}\n{}".format(header, content),
     }
 
     return finger_db_identify(variables)

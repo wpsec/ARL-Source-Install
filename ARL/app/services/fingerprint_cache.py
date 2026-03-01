@@ -2,6 +2,7 @@
 指纹缓存管理
 """
 import json
+from collections import defaultdict
 
 try:
     import redis
@@ -10,6 +11,7 @@ except Exception:
 
 from app.config import Config
 from .fingerprint import FingerPrint
+from .kscan_fingerprint import load_kscan_fingerprint_rules
 from app.utils import get_logger, conn_db
 
 logger = get_logger()
@@ -17,7 +19,7 @@ logger = get_logger()
 
 # 用于缓存指纹数据，避免每次请求都从MongoDB中获取数据
 class FingerPrintCache:
-    REDIS_KEY = "arl:fingerprint:rules:v1"
+    REDIS_KEY = "arl:fingerprint:rules:v2"
 
     def __init__(self):
         self.cache = None
@@ -128,12 +130,42 @@ class FingerPrintCache:
 
     def fetch_data_from_mongodb(self) -> [FingerPrint]:
         items = list(conn_db('fingerprint').find({}, {"name": 1, "human_rule": 1}))
-        rules = []
+        merged = defaultdict(list)
+        seen_rules = defaultdict(set)
+
+        def merge_rule(name, human_rule):
+            name = str(name or "").strip()
+            human_rule = str(human_rule or "").strip()
+            if not name or not human_rule:
+                return
+            if human_rule in seen_rules[name]:
+                return
+            seen_rules[name].add(human_rule)
+            merged[name].append(human_rule)
+
         for item in items:
+            merge_rule(item.get("name", ""), item.get("human_rule", ""))
+
+        # 直接吸收 kscan 指纹能力，不要求额外导入命令
+        kscan_rules = load_kscan_fingerprint_rules()
+        for item in kscan_rules:
+            merge_rule(item.get("name", ""), item.get("human_rule", ""))
+
+        rules = []
+        for name in sorted(merged.keys()):
+            rule_list = merged[name]
+            if not rule_list:
+                continue
             rules.append({
-                "name": item.get("name", ""),
-                "human_rule": item.get("human_rule", "")
+                "name": name,
+                "human_rule": " || ".join(rule_list),
             })
+
+        logger.info(
+            "fingerprint cache build db_rules:{} kscan_rules:{} final_apps:{}".format(
+                len(items), len(kscan_rules), len(rules)
+            )
+        )
 
         # MongoDB 为事实来源，回填 Redis 提升后续命中率
         self.save_cache_to_redis(rules)
