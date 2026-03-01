@@ -21,8 +21,6 @@ class PortScan:
         self.host_timeout = 60*5
         self.parallelism = port_parallelism  # 默认 32
         self.min_rate = port_min_rate  # 默认64
-        # 全端口扫描遇到“伪全开”设备时，限制最大开放端口返回数量，避免扫描时间失控
-        self.max_open_guard = None
 
         if service_detect:
             self.host_timeout += 60 * 5
@@ -43,12 +41,10 @@ class PortScan:
             self.max_host_group = 2
             self.min_rate = max(self.min_rate, 800)
             self.parallelism = max(self.parallelism, 128)
-            self.max_open_guard = 1200
 
             self.nmap_arguments += " -PE -PS{}".format(self.alive_port)
             self.host_timeout += 60 * 5
             self.max_retries = 2
-            self.nmap_arguments += " --max-open {}".format(self.max_open_guard)
 
         self.nmap_arguments += " --max-rtt-timeout 800ms"
         self.nmap_arguments += " --min-rate {}".format(self.min_rate)
