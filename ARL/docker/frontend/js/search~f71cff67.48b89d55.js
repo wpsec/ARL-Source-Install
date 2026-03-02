@@ -230,7 +230,10 @@
           },
           initData: function (t) {
             var e = this,
-              n = {};
+              n = {},
+              a = t,
+              s = (this._dataFetchSeq || 0) + 1;
+            this._dataFetchSeq = s;
             (Object.keys(this.tableConfig[t].params).forEach(function (r) {
               void 0 !== e.tableConfig[t].params[r] &&
                 e.tableConfig[t].params[r] &&
@@ -278,6 +281,7 @@
               this.tableConfig[t]
                 .api(Object(r.a)({}, n))
                 .then(function (t) {
+                  if (s !== e._dataFetchSeq || a !== e.currentIndex) return;
                   (t.items.forEach(function (t, n) {
                     ((t.key = t._id),
                       (t.index =
@@ -294,6 +298,11 @@
                     (e.currentComponent.tableList = t.items),
                     (e.currentComponent.total = t.total),
                     (document.querySelector("#contentWrap").scrollTop = 0));
+                })
+                .catch(function () {
+                  if (s !== e._dataFetchSeq || a !== e.currentIndex) return;
+                  ((e.currentComponent.tableList = []),
+                    (e.currentComponent.total = 0));
                 })
                 .finally(function () {
                   setTimeout(function () {
