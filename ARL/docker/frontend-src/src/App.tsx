@@ -16,7 +16,6 @@ import {
   LayoutDashboard,
   Link,
   Lock,
-  Monitor,
   Network,
   Play,
   Plus,
@@ -94,7 +93,7 @@ const themes: { id: ThemeType; label: string; color: string }[] = [
 const modules: ModuleConfig[] = [
   {
     id: 'dashboard',
-    label: '系统概览',
+    label: '我的仪表盘',
     description: '实时总览任务、资产、漏洞与系统状态',
     group: '核心功能',
     icon: LayoutDashboard,
@@ -1326,38 +1325,6 @@ const modules: ModuleConfig[] = [
     ],
   },
   {
-    id: 'image',
-    label: '截图管理',
-    description: '截图下载与内部回传接口',
-    group: '系统集成',
-    icon: Monitor,
-    actions: [
-      {
-        id: 'image_download',
-        label: '下载截图',
-        method: 'GET',
-        path: '/image/{task_id}/{file_name}',
-        payloadTemplate: {
-          task_id: '',
-          file_name: 'example.jpg',
-        },
-        download: true,
-      },
-      {
-        id: 'image_upload_internal',
-        label: '回传截图',
-        method: 'POST',
-        path: '/image/internal/upload',
-        payloadTemplate: {
-          task_id: '',
-          file_name: 'example.jpg',
-        },
-        fileFieldName: 'file',
-        fileAccept: '.jpg,.jpeg,.png',
-      },
-    ],
-  },
-  {
     id: 'api_console',
     label: 'API控制台',
     description: '任意 API 调试，覆盖全部后端功能',
@@ -1534,6 +1501,46 @@ function normalizeValue(value: any): string {
   if (Array.isArray(value)) return truncateText(JSON.stringify(value));
   if (typeof value === 'object') return truncateText(JSON.stringify(value));
   return truncateText(String(value));
+}
+
+function parseNumericValue(value: any): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const raw = value.trim().replace(/%$/, '');
+    if (!raw) return null;
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function formatPercent(value: any): string {
+  const numeric = parseNumericValue(value);
+  if (numeric === null) return '-';
+  return `${numeric.toFixed(1)}%`;
+}
+
+function formatCpuSummary(deviceInfo: any): string {
+  const cpu = deviceInfo?.cpu;
+  if (!cpu || typeof cpu !== 'object' || Array.isArray(cpu)) return normalizeValue(cpu);
+  const count = parseNumericValue(cpu.count);
+  const percent = formatPercent(cpu.percent);
+
+  if (count !== null && percent !== '-') return `${Math.round(count)}核 / ${percent}`;
+  if (count !== null) return `${Math.round(count)}核`;
+  return percent;
+}
+
+function formatUsageSummary(value: any): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return normalizeValue(value);
+  const used = normalizeValue(value.used);
+  const total = normalizeValue(value.total);
+  const percent = formatPercent(value.percent);
+  const usedTotal = used !== '-' || total !== '-' ? `${used}/${total}` : '-';
+
+  if (usedTotal !== '-' && percent !== '-') return `${usedTotal} (${percent})`;
+  if (usedTotal !== '-') return usedTotal;
+  return percent;
 }
 
 function parseJsonObject(text: string): JsonValue {
@@ -1808,12 +1815,15 @@ function DashboardView({ token }: { token: string }) {
     { title: '漏洞总数', value: stats.vuln, icon: AlertTriangle, color: 'text-brand-danger' },
     { title: 'GitHub任务', value: stats.github_task, icon: GitBranch, color: 'text-brand-accent' },
   ];
+  // 兼容后端不同版本的字段命名
+  const memoryInfo = deviceInfo?.memory || deviceInfo?.virtual_memory;
+  const diskInfo = deviceInfo?.disk || deviceInfo?.disk_usage;
 
   return (
     <div className="p-8 space-y-8">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <h2 className="text-5xl font-black tracking-tight">系统概览</h2>
+          <h2 className="text-5xl font-black tracking-tight">我的仪表盘</h2>
           <p className="text-brand-text-muted font-medium mt-2">全模块 API 已接入，可直接在左侧各页执行真实操作。</p>
         </div>
         <button
@@ -1857,15 +1867,15 @@ function DashboardView({ token }: { token: string }) {
           <div className="space-y-4 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-brand-text-muted">CPU</span>
-              <span className="font-semibold">{normalizeValue(deviceInfo?.cpu)}</span>
+              <span className="font-semibold">{formatCpuSummary(deviceInfo)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-brand-text-muted">内存</span>
-              <span className="font-semibold">{normalizeValue(deviceInfo?.memory)}</span>
+              <span className="font-semibold">{formatUsageSummary(memoryInfo)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-brand-text-muted">磁盘</span>
-              <span className="font-semibold">{normalizeValue(deviceInfo?.disk)}</span>
+              <span className="font-semibold">{formatUsageSummary(diskInfo)}</span>
             </div>
           </div>
         </div>
@@ -2656,6 +2666,29 @@ function MainShell() {
       setPasswdLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!token) return;
+
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      if (passwdDialogOpen) {
+        event.preventDefault();
+        setPasswdDialogOpen(false);
+        setPasswdError('');
+        return;
+      }
+
+      if (activeModuleId !== 'dashboard') {
+        event.preventDefault();
+        setActiveModuleId('dashboard');
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [token, passwdDialogOpen, activeModuleId]);
 
   if (!token) {
     return <LoginView onLogin={doLogin} loading={loginLoading} error={loginError} />;

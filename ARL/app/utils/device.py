@@ -12,18 +12,24 @@ def device_info():
     }
 
     v_mem = psutil.virtual_memory()
-    ret["virtual_memory"] = {
+    memory_info = {
         "total": human_size(v_mem.total),
         "used": human_size(v_mem.total - v_mem.available),
         "percent": v_mem.percent
     }
+    # 兼容新旧前端字段命名
+    ret["virtual_memory"] = memory_info
+    ret["memory"] = memory_info
 
     disk = psutil.disk_usage("/")
-    ret["disk_usage"] = {
+    disk_info = {
         "total": human_size(disk.total),
         "used": human_size(disk.used),
-        "percent": human_size(disk.percent)
+        "percent": disk.percent
     }
+    # 兼容新旧前端字段命名
+    ret["disk_usage"] = disk_info
+    ret["disk"] = disk_info
     return ret
 
 
@@ -32,4 +38,3 @@ def human_size(byte):
         if byte < 1024:
             return f"{byte:.2f}{x}"
         byte = byte/1024
-
