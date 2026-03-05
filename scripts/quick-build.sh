@@ -137,6 +137,9 @@ frontend_update() {
     fi
     
     echo "正在更新前端文件..."
+
+    echo "初始化前端目录..."
+    docker exec arl_web mkdir -p /code/frontend/js /code/frontend/css /code/frontend/assets
     
     # 复制前端文件到容器
     echo "复制 JS 文件..."
@@ -144,6 +147,9 @@ frontend_update() {
     
     echo "复制 CSS 文件..."
     docker cp "ARL/docker/frontend/css/." arl_web:/code/frontend/css/ 2>/dev/null || true
+
+    echo "复制 Assets 文件..."
+    docker cp "ARL/docker/frontend/assets/." arl_web:/code/frontend/assets/ 2>/dev/null || true
     
     echo "复制 HTML 文件..."
     docker cp "ARL/docker/frontend/index.html" arl_web:/code/frontend/ 2>/dev/null || true
