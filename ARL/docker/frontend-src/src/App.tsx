@@ -1848,7 +1848,7 @@ function DashboardView({ token }: { token: string }) {
             <p>1. 先在“策略配置”页维护标准策略，再通过“任务管理 → 策略下发”统一执行。</p>
             <p>2. 定时能力分为“资产监控(scheduler)”和“计划任务(task_schedule)”两套，按场景分别使用。</p>
             <p>3. 导出报告支持单任务、批量任务、批量资产组，均已在各模块操作面板接入。</p>
-            <p>4. 所有操作默认使用可视化表单，复杂场景可切换到 JSON 高级模式。</p>
+            <p>4. 所有操作统一使用可视化表单，减少参数输入错误。</p>
           </div>
         </div>
 
@@ -1886,8 +1886,6 @@ function ActionDialog({
   onSubmit: (payload: JsonValue, file?: File | null) => Promise<void>;
 }) {
   const [formPayload, setFormPayload] = useState<JsonValue>(deepClone(initialPayload));
-  const [payloadText, setPayloadText] = useState(JSON.stringify(initialPayload, null, 2));
-  const [advancedMode, setAdvancedMode] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -1898,27 +1896,8 @@ function ActionDialog({
   useEffect(() => {
     const nextPayload = deepClone(initialPayload);
     setFormPayload(nextPayload);
-    setPayloadText(JSON.stringify(nextPayload, null, 2));
-    setAdvancedMode(false);
     setError('');
   }, [initialPayload]);
-
-  const switchToJsonMode = () => {
-    setPayloadText(JSON.stringify(formPayload, null, 2));
-    setAdvancedMode(true);
-    setError('');
-  };
-
-  const switchToFormMode = () => {
-    try {
-      const parsed = parseJsonObject(payloadText);
-      setFormPayload(parsed);
-      setAdvancedMode(false);
-      setError('');
-    } catch (err: any) {
-      setError(err?.message || 'JSON 格式错误，无法切回表单模式');
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1953,112 +1932,79 @@ function ActionDialog({
             </div>
           ) : null}
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => switchToFormMode()}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
-                !advancedMode ? 'bg-brand-accent/15 border-brand-accent text-brand-accent' : 'border-brand-border text-brand-text-muted'
-              }`}
-            >
-              表单模式
-            </button>
-            <button
-              onClick={() => switchToJsonMode()}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
-                advancedMode ? 'bg-brand-accent/15 border-brand-accent text-brand-accent' : 'border-brand-border text-brand-text-muted'
-              }`}
-            >
-              JSON高级模式
-            </button>
+          <div className="space-y-3 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">
+            {fields.map((field) => {
+              const value = field.value;
+              const disabled = !editable;
+              const isBoolean = typeof value === 'boolean';
+              const isNumber = typeof value === 'number';
+              const isComplex = Array.isArray(value) || (value && typeof value === 'object');
+
+              return (
+                <div key={field.path} className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">
+                    {humanizeField(field.path)}
+                    <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span>
+                  </label>
+                  {isBoolean ? (
+                    <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={value}
+                        disabled={disabled}
+                        onChange={(event) => {
+                          setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
+                        }}
+                      />
+                      <span>{value ? '启用' : '关闭'}</span>
+                    </label>
+                  ) : isNumber ? (
+                    <input
+                      type="number"
+                      value={value}
+                      disabled={disabled}
+                      onChange={(event) => {
+                        const next = Number(event.target.value || '0');
+                        setFormPayload((prev) => updatePayloadValue(prev, field.path, next));
+                      }}
+                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    />
+                  ) : isComplex ? (
+                    <textarea
+                      value={JSON.stringify(value, null, 2)}
+                      disabled={disabled}
+                      onChange={(event) => {
+                        try {
+                          const parsed = JSON.parse(event.target.value || 'null');
+                          setFormPayload((prev) => updatePayloadValue(prev, field.path, parsed));
+                          setError('');
+                        } catch {
+                          setError(`字段 ${field.path} 的 JSON 格式错误`);
+                        }
+                      }}
+                      className="w-full min-h-[88px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-xs font-mono"
+                    />
+                  ) : (
+                    <input
+                      value={String(value ?? '')}
+                      disabled={disabled}
+                      onChange={(event) => {
+                        setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.value));
+                      }}
+                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
 
-          {!advancedMode ? (
-            <div className="space-y-3 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">
-              {fields.map((field) => {
-                const value = field.value;
-                const disabled = !editable;
-                const isBoolean = typeof value === 'boolean';
-                const isNumber = typeof value === 'number';
-                const isComplex = Array.isArray(value) || (value && typeof value === 'object');
-
-                return (
-                  <div key={field.path} className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted">
-                      {humanizeField(field.path)}
-                      <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span>
-                    </label>
-                    {isBoolean ? (
-                      <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={value}
-                          disabled={disabled}
-                          onChange={(event) => {
-                            setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
-                          }}
-                        />
-                        <span>{value ? '启用' : '关闭'}</span>
-                      </label>
-                    ) : isNumber ? (
-                      <input
-                        type="number"
-                        value={value}
-                        disabled={disabled}
-                        onChange={(event) => {
-                          const next = Number(event.target.value || '0');
-                          setFormPayload((prev) => updatePayloadValue(prev, field.path, next));
-                        }}
-                        className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                      />
-                    ) : isComplex ? (
-                      <textarea
-                        value={JSON.stringify(value, null, 2)}
-                        disabled={disabled}
-                        onChange={(event) => {
-                          try {
-                            const parsed = JSON.parse(event.target.value || 'null');
-                            setFormPayload((prev) => updatePayloadValue(prev, field.path, parsed));
-                            setError('');
-                          } catch {
-                            setError(`字段 ${field.path} 的 JSON 格式错误`);
-                          }
-                        }}
-                        className="w-full min-h-[88px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-xs font-mono"
-                      />
-                    ) : (
-                      <input
-                        value={String(value ?? '')}
-                        disabled={disabled}
-                        onChange={(event) => {
-                          setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.value));
-                        }}
-                        className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wider font-bold text-brand-text-muted">JSON 入参</label>
-              <textarea
-                value={payloadText}
-                onChange={(event) => setPayloadText(event.target.value)}
-                disabled={!editable}
-                className="w-full h-72 bg-brand-bg border border-brand-border rounded-xl p-3 font-mono text-xs resize-y disabled:opacity-60"
-              />
-            </div>
-          )}
-
-          {!advancedMode ? (
-            <details>
-              <summary className="cursor-pointer text-xs font-semibold text-brand-text-muted">预览 JSON</summary>
-              <pre className="mt-2 bg-brand-bg border border-brand-border rounded-xl p-3 text-xs font-mono overflow-auto max-h-48">
-                {JSON.stringify(formPayload, null, 2)}
-              </pre>
-            </details>
-          ) : null}
+          <details>
+            <summary className="cursor-pointer text-xs font-semibold text-brand-text-muted">预览 JSON</summary>
+            <pre className="mt-2 bg-brand-bg border border-brand-border rounded-xl p-3 text-xs font-mono overflow-auto max-h-48">
+              {JSON.stringify(formPayload, null, 2)}
+            </pre>
+          </details>
 
           {!editable ? (
             <div className="text-xs text-brand-text-muted bg-brand-bg/60 border border-brand-border rounded-lg px-3 py-2">
@@ -2072,9 +2018,7 @@ function ActionDialog({
             </div>
           ) : null}
 
-          <div className="text-xs text-brand-text-muted">
-            提示：表单模式适合日常操作，JSON 高级模式用于复杂参数联调。
-          </div>
+          <div className="text-xs text-brand-text-muted">提示：当前仅保留表单模式，减少误操作和配置成本。</div>
 
           {error ? (
             <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div>
@@ -2092,14 +2036,7 @@ function ActionDialog({
                 try {
                   setLoading(true);
                   setError('');
-                  let payload: JsonValue;
-                  if (!editable) {
-                    payload = initialPayload;
-                  } else if (advancedMode) {
-                    payload = parseJsonObject(payloadText);
-                  } else {
-                    payload = formPayload;
-                  }
+                  const payload: JsonValue = !editable ? initialPayload : formPayload;
                   await onSubmit(payload, file);
                   onClose();
                 } catch (err: any) {
