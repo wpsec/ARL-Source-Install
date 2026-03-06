@@ -6,9 +6,15 @@
 - 提供仪表盘聚合数据
 - 用于系统监控和健康检查
 """
+from collections import deque
 from datetime import datetime, timedelta
+import threading
+import time
+
+import psutil
 from flask_restx import Namespace
 from app.utils import get_logger, auth
+from app.utils.device import human_size
 from app import utils
 from app.modules import ErrorMsg
 from . import ARLResource, conn
@@ -16,6 +22,13 @@ from . import ARLResource, conn
 ns = Namespace('console', description="控制台信息")
 
 logger = get_logger()
+SYSTEM_MONITOR_LOCK = threading.Lock()
+SYSTEM_MONITOR_HISTORY = deque(maxlen=360)
+LAST_NET_IO_SAMPLE = {
+    "timestamp": 0.0,
+    "bytes_sent": 0,
+    "bytes_recv": 0,
+}
 
 
 def _count_documents(collection: str, query=None) -> int:
@@ -27,6 +40,18 @@ def _count_documents(collection: str, query=None) -> int:
     except Exception as e:
         logger.debug("count %s failed: %s", collection, e)
         return 0
+
+
+def _safe_float(value, default=0.0) -> float:
+    """
+    安全转 float，避免异常中断监控聚合。
+    """
+    try:
+        if value is None:
+            return float(default)
+        return float(value)
+    except Exception:
+        return float(default)
 
 
 def _build_risk_distribution():
@@ -195,6 +220,94 @@ def _build_engine_status(device_info, running_tasks: int, waiting_tasks: int):
     }
 
 
+def _collect_system_monitor_snapshot():
+    """
+    采集系统监控实时快照，并维护历史趋势缓存。
+    """
+    device_info = utils.device_info()
+    cpu_info = device_info.get("cpu", {})
+    memory_info = device_info.get("memory") or device_info.get("virtual_memory") or {}
+    disk_info = device_info.get("disk") or device_info.get("disk_usage") or {}
+
+    cpu_percent = _safe_float(cpu_info.get("percent", 0), 0.0)
+    memory_percent = _safe_float(memory_info.get("percent", 0), 0.0)
+    disk_percent = _safe_float(disk_info.get("percent", 0), 0.0)
+
+    net_io = psutil.net_io_counters()
+    now_ts = time.time()
+    now_label = datetime.now().strftime("%H:%M")
+
+    with SYSTEM_MONITOR_LOCK:
+        last_ts = _safe_float(LAST_NET_IO_SAMPLE.get("timestamp", 0), 0.0)
+        last_sent = int(LAST_NET_IO_SAMPLE.get("bytes_sent", 0) or 0)
+        last_recv = int(LAST_NET_IO_SAMPLE.get("bytes_recv", 0) or 0)
+
+        interval = max(0.0, now_ts - last_ts)
+        sent_delta = max(0, int(net_io.bytes_sent) - last_sent)
+        recv_delta = max(0, int(net_io.bytes_recv) - last_recv)
+
+        if interval > 0:
+            net_out_bps = sent_delta / interval
+            net_in_bps = recv_delta / interval
+        else:
+            net_out_bps = 0.0
+            net_in_bps = 0.0
+
+        LAST_NET_IO_SAMPLE["timestamp"] = now_ts
+        LAST_NET_IO_SAMPLE["bytes_sent"] = int(net_io.bytes_sent)
+        LAST_NET_IO_SAMPLE["bytes_recv"] = int(net_io.bytes_recv)
+
+        sample = {
+            "time": now_label,
+            "cpu": round(cpu_percent, 2),
+            "ram": round(memory_percent, 2),
+            "disk": round(disk_percent, 2),
+            "net_in": round(net_in_bps / 1024.0, 2),      # KB/s
+            "net_out": round(net_out_bps / 1024.0, 2),    # KB/s
+            "net": round((net_in_bps + net_out_bps) / 1024.0, 2),
+        }
+        SYSTEM_MONITOR_HISTORY.append(sample)
+
+        history = list(SYSTEM_MONITOR_HISTORY)
+        if not history:
+            history = [sample]
+
+        # 对历史点位降采样，前端最多展示 24 个点，避免图表拥挤
+        step = max(1, len(history) // 24)
+        history_24h = history[::step][-24:]
+
+    boot_time = "-"
+    try:
+        boot_time = datetime.fromtimestamp(psutil.boot_time()).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception as e:
+        logger.debug("parse boot time failed: %s", e)
+
+    process_count = 0
+    try:
+        process_count = len(psutil.pids())
+    except Exception as e:
+        logger.debug("count process failed: %s", e)
+
+    resource = {
+        "cpu_percent": round(cpu_percent, 2),
+        "cpu_count": int(cpu_info.get("count", 0) or 0),
+        "memory_percent": round(memory_percent, 2),
+        "memory_used": memory_info.get("used", "-"),
+        "memory_total": memory_info.get("total", "-"),
+        "disk_percent": round(disk_percent, 2),
+        "disk_used": disk_info.get("used", "-"),
+        "disk_total": disk_info.get("total", "-"),
+        "network_total_sent": human_size(net_io.bytes_sent),
+        "network_total_recv": human_size(net_io.bytes_recv),
+        "network_rate_in_kbps": round(history_24h[-1]["net_in"], 2),
+        "network_rate_out_kbps": round(history_24h[-1]["net_out"], 2),
+        "network_rate_total_kbps": round(history_24h[-1]["net"], 2),
+        "process_count": process_count,
+        "boot_time": boot_time,
+    }
+    return resource, history_24h
+
+
 @ns.route('/info')
 class ARLConsole(ARLResource):
     """系统信息查询接口"""
@@ -255,3 +368,32 @@ class ARLConsoleDashboard(ARLResource):
             "last_updated": str(datetime.now())
         }
         return utils.build_ret(ErrorMsg.Success, data)
+
+
+@ns.route('/system_monitor/')
+class ARLConsoleSystemMonitor(ARLResource):
+    """
+    系统监控接口
+    """
+
+    @auth
+    def get(self):
+        """
+        获取系统监控实时数据与历史趋势
+        """
+        try:
+            resource, history_24h = _collect_system_monitor_snapshot()
+            data = {
+                "resource": resource,
+                "history_24h": history_24h,
+                "updated_at": str(datetime.now()),
+            }
+            return utils.build_ret(ErrorMsg.Success, data)
+        except Exception as e:
+            logger.exception("load system monitor failed: %s", e)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    "error": str(e),
+                },
+            )
