@@ -12,8 +12,13 @@
 set -e
 
 BUILD_MODE="${1:-quick}"
-DOCKERFILE_PATH="ARL/docker"
-BUILD_CONTEXT="."
+# 统一使用脚本绝对路径，避免在非项目根目录执行时找不到文件
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
+
+DOCKERFILE_PATH="$ROOT_DIR/ARL/docker"
+BUILD_CONTEXT="$ROOT_DIR"
 # 与 docker-compose.yml 保持一致的默认镜像标签，避免 latest/local 不一致导致容器未加载新镜像
 DEFAULT_IMAGE_TAG="arl:local"
 
@@ -61,7 +66,8 @@ quick_build() {
     
     if [ "$COMPOSE_CMD" = "docker compose" ]; then
         # 从项目根目录直接构建统一镜像标签
-        docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" . --build-arg BUILDKIT_INLINE_CACHE=1
+        # quick 模式尽量复用本地基础镜像，降低外网拉取失败概率
+        docker build --pull=false -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1
     else
         cd "$DOCKERFILE_PATH"
         docker-compose build --force-rm arl_web
@@ -180,7 +186,8 @@ tag_build() {
     
     # 执行快速构建
     if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" . --build-arg BUILDKIT_INLINE_CACHE=1
+        # tag 模式同样优先复用本地基础镜像，减少网络不稳定导致的失败
+        docker build --pull=false -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1
     else
         cd "$DOCKERFILE_PATH"
         docker-compose build --force-rm arl_web
