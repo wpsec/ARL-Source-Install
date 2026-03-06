@@ -4,6 +4,7 @@
 import subprocess
 import shlex
 import shutil
+import platform
 import random
 import string
 import psutil
@@ -34,6 +35,7 @@ from .query_loader import load_query_plugins
 
 _dns_resolver_cache = None
 _dns_resolver_cache_key = None
+_runtime_arch_cache = None
 
 
 def load_file(path):
@@ -90,6 +92,36 @@ def resolve_executable(command):
         return ""
 
     return shutil.which(command) or ""
+
+
+def get_runtime_arch():
+    """
+    获取当前运行时架构，并做常见别名归一化
+    """
+    global _runtime_arch_cache
+    if _runtime_arch_cache:
+        return _runtime_arch_cache
+
+    arch = ""
+    try:
+        arch = str(platform.machine() or "").strip().lower()
+    except Exception:
+        arch = ""
+
+    alias_map = {
+        "amd64": "x86_64",
+        "arm64": "aarch64",
+    }
+    arch = alias_map.get(arch, arch)
+    if not arch:
+        arch = "unknown"
+
+    _runtime_arch_cache = arch
+    return arch
+
+
+def is_x86_64_arch():
+    return get_runtime_arch() == "x86_64"
 
 
 def get_phantomjs_bin(logger=None):

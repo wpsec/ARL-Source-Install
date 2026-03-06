@@ -27,6 +27,45 @@ from app import celerytask
 logger = utils.get_logger()
 
 
+def apply_arch_compat_options(options):
+    """
+    非 x86_64 环境下，自动关闭当前仓库内仅提供 x86_64 二进制支持的功能开关。
+    """
+    options_cp = options.copy()
+    notices = []
+
+    if utils.is_x86_64_arch():
+        return options_cp, notices
+
+    arch = utils.get_runtime_arch()
+    disable_reason_map = {
+        "domain_brute": "massdns 当前仅提供 x86_64 二进制",
+        "alt_dns": "massdns 当前仅提供 x86_64 二进制",
+        "site_capture": "phantomjs 当前仅提供 x86_64 二进制",
+        "web_info_hunter": "wih 当前仅提供 x86_64 二进制",
+    }
+
+    for option_key, reason in disable_reason_map.items():
+        if not options_cp.get(option_key):
+            continue
+
+        options_cp[option_key] = False
+        notices.append({
+            "option": option_key,
+            "reason": reason
+        })
+
+    if notices:
+        detail = ["{}={}".format(item["option"], "false") for item in notices]
+        logger.warning(
+            "arch compatibility mode enabled arch:{} auto disable options: {}".format(
+                arch, ", ".join(detail)
+            )
+        )
+
+    return options_cp, notices
+
+
 def target2list(target):
     """
     解析目标字符串为列表
@@ -141,6 +180,10 @@ def build_task_data(task_name, task_target, task_type, task_tag, options):
         raise Exception("{} 不是 dict".format(options))
 
     options_cp = options.copy()
+    arch_compat_notices = []
+
+    if task_type in [TaskType.IP, TaskType.DOMAIN]:
+        options_cp, arch_compat_notices = apply_arch_compat_options(options_cp)
 
     # 针对IP任务关闭域名相关选项
     if task_type == TaskType.IP:
@@ -164,6 +207,13 @@ def build_task_data(task_name, task_target, task_type, task_tag, options):
         "service": [],
         "celery_id": ""
     }
+
+    if arch_compat_notices:
+        task_data["compat_notice"] = {
+            "arch": utils.get_runtime_arch(),
+            "message": "当前为非 x86_64 环境，已自动关闭部分 x86_64 专有功能",
+            "disabled_options": arch_compat_notices
+        }
 
     # 单独对风险巡航任务处理
     if task_tag == TaskType.RISK_CRUISING:

@@ -4,6 +4,7 @@
 from app import utils
 from app.config import Config
 import os
+import subprocess
 
 logger = utils.get_logger()
 
@@ -57,7 +58,28 @@ class MassDNS:
                    ]
 
         logger.info(" ".join(command))
-        utils.exec_system(command, timeout=5*24*60*60)
+        try:
+            completed = utils.exec_system(
+                command,
+                timeout=5 * 24 * 60 * 60,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+        except OSError as e:
+            logger.warning("massdns exec failed {} error: {}".format(self.mass_dns_bin, e))
+            return False
+
+        if completed.returncode != 0:
+            stderr = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
+            stdout = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
+            logger.warning(
+                "massdns run failed rc={} stderr={} stdout={}".format(
+                    completed.returncode, stderr[:500], stdout[:500]
+                )
+            )
+            return False
+
+        return True
 
     def build_custom_dns_server_file(self):
         if not self.dns_resolvers:
@@ -120,7 +142,15 @@ class MassDNS:
     def run(self):
         self.domain_write()
         self.build_custom_dns_server_file()
-        self.mass_dns()
+        if not self.mass_dns():
+            self._delete_file()
+            return []
+
+        if not os.path.exists(self.mass_dns_output_path):
+            logger.warning("massdns output not found {}".format(self.mass_dns_output_path))
+            self._delete_file()
+            return []
+
         output = self.parse_mass_dns_output()
         return output
 

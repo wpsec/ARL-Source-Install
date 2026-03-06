@@ -28,6 +28,22 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# 主机架构识别（用于 ARM 兼容提示）
+HOST_ARCH="$(uname -m 2>/dev/null || echo unknown)"
+NORMALIZED_HOST_ARCH="$HOST_ARCH"
+case "$NORMALIZED_HOST_ARCH" in
+    amd64)
+        NORMALIZED_HOST_ARCH="x86_64"
+        ;;
+    arm64)
+        NORMALIZED_HOST_ARCH="aarch64"
+        ;;
+esac
+NON_X86_BUILD=0
+if [ "$NORMALIZED_HOST_ARCH" != "x86_64" ]; then
+    NON_X86_BUILD=1
+fi
+
 # 检测 Docker Compose 版本
 detect_compose_version() {
     if docker compose version &>/dev/null 2>&1; then
@@ -52,8 +68,26 @@ show_build_info() {
     echo "互联网资产自动化收集系统 Docker 开发构建工具"
     echo -e "${GREEN}========================================${NC}"
     echo "构建模式: $1"
+    echo "主机架构: $NORMALIZED_HOST_ARCH"
     echo "上下文: $BUILD_CONTEXT"
     echo "Compose: $COMPOSE_CMD"
+    echo ""
+
+    if [ "$NON_X86_BUILD" -eq 1 ]; then
+        echo -e "${YELLOW}[WARN] 检测到非 x86_64 环境，已启用 ARM 兼容模式${NC}"
+        echo -e "${YELLOW}[WARN] 构建阶段会跳过 x86_64 专有工具检查(massdns/ncrack/wih/phantomjs)，不会阻塞构建${NC}"
+        echo ""
+    fi
+}
+
+show_arch_runtime_notice() {
+    if [ "$NON_X86_BUILD" -ne 1 ]; then
+        return
+    fi
+
+    echo -e "${YELLOW}[WARN] ARM 兼容模式提示:${NC}"
+    echo "  - 已跳过 x86_64 专有组件自检，系统可继续启动"
+    echo "  - 涉及 massdns/ncrack/wih/phantomjs 的功能会自动降级并记录告警"
     echo ""
 }
 
@@ -142,6 +176,7 @@ quick_build() {
     $COMPOSE_CMD up -d --force-recreate nginx web worker scheduler
     echo -e "${GREEN}✓ 容器重启完成!${NC}"
     echo ""
+    show_arch_runtime_notice
     echo "构建和部署已完成，请在浏览器中强制刷新(Ctrl+Shift+R)查看效果"
 }
 
@@ -160,6 +195,8 @@ full_build() {
     
     echo -e "${GREEN}✓ 完整构建完成!${NC}"
     echo "构建的镜像: ${DEFAULT_IMAGE_TAG}"
+    echo ""
+    show_arch_runtime_notice
 }
 
 # 清空缓存构建
@@ -179,6 +216,8 @@ clean_build() {
     fi
     
     echo -e "${GREEN}✓ 清空缓存构建完成!${NC}"
+    echo ""
+    show_arch_runtime_notice
 }
 
 # 前端文件更新
@@ -253,6 +292,8 @@ tag_build() {
     echo "可用镜像:"
     echo "  - ${DEFAULT_IMAGE_TAG} (开发默认标签)"
     echo "  - arl:$VERSION (版本标签)"
+    echo ""
+    show_arch_runtime_notice
 }
 
 # 显示帮助

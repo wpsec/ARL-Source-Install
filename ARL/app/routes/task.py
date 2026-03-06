@@ -52,6 +52,31 @@ ns = Namespace('task', description="资产发现任务信息")
 
 logger = get_logger()
 
+
+def collect_task_compat_warnings(task_data_list):
+    warnings = []
+    for task_item in task_data_list:
+        if not isinstance(task_item, dict):
+            continue
+
+        notice = task_item.get("compat_notice")
+        if not isinstance(notice, dict):
+            continue
+
+        arch = notice.get("arch", "unknown")
+        disabled_options = notice.get("disabled_options", [])
+        for item in disabled_options:
+            if not isinstance(item, dict):
+                continue
+            option = item.get("option")
+            reason = item.get("reason")
+            if not option:
+                continue
+            warnings.append("arch:{} {} -> false ({})".format(arch, option, reason))
+
+    return warnings
+
+
 # 任务查询字段定义
 # 支持按任务的各种属性和选项进行查询
 base_search_task_fields = {
@@ -201,6 +226,10 @@ class ARLTask(ARLResource):
             "message": "success",
             "items": task_data_list
         }
+        compat_warnings = collect_task_compat_warnings(task_data_list)
+        if compat_warnings:
+            ret["warnings"] = compat_warnings
+
         return ret
 
 
@@ -652,7 +681,12 @@ class TaskByPolicy(ARLResource):
             logger.exception(e)
             return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
 
-        return utils.build_ret(ErrorMsg.Success, {"items": task_data_list})
+        response_data = {"items": task_data_list}
+        compat_warnings = collect_task_compat_warnings(task_data_list)
+        if compat_warnings:
+            response_data["warnings"] = compat_warnings
+
+        return utils.build_ret(ErrorMsg.Success, response_data)
 
 
 
