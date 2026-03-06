@@ -32,7 +32,8 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { ThemeProvider, ThemeType, useTheme } from './context/ThemeContext';
+import Sidebar from './components/Sidebar';
+import { ThemeProvider } from './context/ThemeContext';
 
 type HttpMethod = 'GET' | 'POST';
 type JsonValue = Record<string, any>;
@@ -79,19 +80,6 @@ type ApiRequestOptions = {
 const API_BASE = '/api';
 const TOKEN_KEY = 'arl-token';
 const USERNAME_KEY = 'arl-username';
-
-const themes: { id: ThemeType; label: string; color: string }[] = [
-  { id: 'midnight', label: '午夜科技', color: 'bg-[#6366f1]' },
-  { id: 'titanium', label: '钛金黑', color: 'bg-[#3b82f6]' },
-  { id: 'slate', label: '专业灰蓝', color: 'bg-[#38bdf8]' },
-  { id: 'nord', label: '北欧极光', color: 'bg-[#88c0d0]' },
-  { id: 'sandstone', label: '砂岩白', color: 'bg-[#44403c]' },
-  { id: 'deepsea', label: '深海探测', color: 'bg-[#00b4d8]' },
-  { id: 'forest', label: '森林卫士', color: 'bg-[#10b981]' },
-  { id: 'crimson', label: '绯红之刃', color: 'bg-[#e11d48]' },
-  { id: 'cyberpunk', label: '赛博朋克', color: 'bg-[#ff00ff]' },
-  { id: 'minimalist', label: '极简白昼', color: 'bg-[#0f172a]' },
-];
 
 const modules: ModuleConfig[] = [
   {
@@ -2703,7 +2691,6 @@ function ApiConsoleView({ token }: { token: string }) {
 }
 
 function MainShell() {
-  const { theme, setTheme } = useTheme();
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
   const [activeModuleId, setActiveModuleId] = useState('dashboard');
@@ -2718,23 +2705,32 @@ function MainShell() {
   const [passwdLoading, setPasswdLoading] = useState(false);
 
   const activeModule = getModuleById(activeModuleId);
-
-  const groupedModules = useMemo(() => {
-    const map = new Map<string, ModuleConfig[]>();
-    modules.forEach((module) => {
-      const list = map.get(module.group) || [];
-      list.push(module);
-      map.set(module.group, list);
+  const viewToModuleMap: Record<string, string> = {
+    dashboard: 'dashboard',
+    tasks: 'task',
+    assets: 'asset_site',
+    groups: 'asset_scope',
+    monitoring: 'scheduler',
+    policies: 'policy',
+    fingerprints: 'fingerprint',
+    pocs: 'poc',
+    schedules: 'task_schedule',
+    github_mgmt: 'github_task',
+    github_monitor: 'github_scheduler',
+    api_mgmt: 'api_console',
+    dingtalk: 'dingtalk_api',
+  };
+  const moduleToViewMap = useMemo(() => {
+    const reversed: Record<string, string> = {};
+    Object.entries(viewToModuleMap).forEach(([view, moduleId]) => {
+      reversed[moduleId] = view;
     });
-    return Array.from(map.entries());
+    return reversed;
   }, []);
-  // 侧栏分组颜色映射，便于按业务域快速识别模块分区
-  const groupToneMap: Record<string, string> = {
-    核心功能: 'text-brand-accent',
-    资产数据: 'text-brand-secondary',
-    漏洞与规则: 'text-brand-warning',
-    GitHub监控: 'text-emerald-400',
-    系统集成: 'text-brand-text-muted',
+  const activeViewId = moduleToViewMap[activeModuleId] || activeModuleId;
+  const onSidebarViewChange = (viewId: string) => {
+    const mappedModuleId = viewToModuleMap[viewId] || viewId;
+    setActiveModuleId(mappedModuleId);
   };
 
   const doLogin = async (name: string, pass: string) => {
@@ -2899,97 +2895,29 @@ function MainShell() {
         <div className="absolute -bottom-[20%] left-[30%] w-[40%] h-[40%] bg-brand-warning/10 rounded-full blur-[120px]" />
       </div>
 
-      <aside className="relative z-10 w-72 border-r border-brand-border bg-brand-bg/70 backdrop-blur-xl flex flex-col overflow-y-auto custom-scrollbar">
-        <div className="p-6 space-y-5 border-b border-brand-border/80">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-brand-accent flex items-center justify-center shadow-xl shadow-black/30">
-              <Shield className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight">ARL</h1>
-              <p className="text-[10px] uppercase tracking-[0.28em] text-brand-accent font-black">Lighthouse UI</p>
-            </div>
-          </div>
-          <p className="text-xs text-brand-text-muted leading-relaxed">已按新 UI 风格统一侧栏视觉，底层 API 与功能保持不变。</p>
-          <button
-            onClick={openQuickCreateTask}
-            className="w-full bg-brand-accent text-white font-black py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-black/20 hover:opacity-90 transition text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            新建任务
-          </button>
-          {globalNotice ? <p className="text-xs text-brand-text-muted">{globalNotice}</p> : null}
-        </div>
-
-        <div className="flex-1 px-3 py-4 space-y-6">
-          {groupedModules.map(([groupName, groupModules]) => (
-            <div key={groupName} className="space-y-2">
-              <h3 className={`text-[11px] px-3 uppercase tracking-[0.15em] font-black opacity-70 ${groupToneMap[groupName] || 'text-brand-text-muted'}`}>
-                {groupName}
-              </h3>
-              <div className="space-y-1">
-                {groupModules.map((module) => (
-                  <button
-                    key={module.id}
-                    onClick={() => setActiveModuleId(module.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
-                      activeModuleId === module.id
-                        ? 'bg-brand-accent/12 text-brand-accent border border-brand-accent/30'
-                        : 'text-brand-text-muted hover:text-white hover:bg-brand-card/55 border border-transparent'
-                    }`}
-                  >
-                    <module.icon className="w-4 h-4" />
-                    <span className="truncate">{module.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="p-4 border-t border-brand-border space-y-4">
-          <div className="space-y-2">
-            <p className="text-[10px] uppercase tracking-widest font-black text-brand-text-muted">主题定制</p>
-            <div className="flex flex-wrap gap-2">
-              {themes.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setTheme(item.id)}
-                  title={item.label}
-                  className={`w-6 h-6 rounded-lg border-2 ${item.color} ${
-                    theme === item.id ? 'border-white scale-110' : 'border-transparent opacity-60 hover:opacity-100'
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-brand-card/40 border border-brand-border rounded-xl p-3 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-bold">{username}</p>
-              <p className="text-[10px] uppercase tracking-wider text-brand-text-muted">管理员会话</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPasswdDialogOpen(true)}
-                className="p-2 rounded-lg border border-brand-border hover:bg-brand-bg/60"
-                title="修改密码"
-              >
-                <Lock className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => void doLogout()}
-                className="p-2 rounded-lg border border-brand-border hover:bg-brand-bg/60"
-                title="退出"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </aside>
+      <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
 
       <main className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
+        <div className="sticky top-0 z-20 px-6 py-4 backdrop-blur-xl bg-brand-bg/45 border-b border-brand-border/60 flex items-center justify-between gap-4">
+          <div className="text-xs text-brand-text-muted min-h-[20px]">{globalNotice || ' '}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-brand-text-muted px-3 py-1.5 border border-brand-border rounded-lg">{username}</span>
+            <button
+              onClick={() => setPasswdDialogOpen(true)}
+              className="p-2 rounded-lg border border-brand-border hover:bg-brand-bg/60"
+              title="修改密码"
+            >
+              <Lock className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => void doLogout()}
+              className="p-2 rounded-lg border border-brand-border hover:bg-brand-bg/60"
+              title="退出"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
         {activeModule.id === 'dashboard' ? (
           <DashboardView token={token} onOpenModule={setActiveModuleId} onQuickCreateTask={openQuickCreateTask} />
         ) : null}
