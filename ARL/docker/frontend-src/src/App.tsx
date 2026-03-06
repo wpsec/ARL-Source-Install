@@ -1760,9 +1760,18 @@ function StatusPill({ text, type }: { text: string; type: 'success' | 'error' | 
   return <span className={`text-xs px-3 py-1 rounded-full border font-semibold ${className}`}>{text}</span>;
 }
 
-function DashboardView({ token }: { token: string }) {
+function DashboardView({
+  token,
+  onOpenModule,
+  onQuickCreateTask,
+}: {
+  token: string;
+  onOpenModule: (moduleId: string) => void;
+  onQuickCreateTask: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [stats, setStats] = useState({
     task: 0,
     scheduler: 0,
@@ -1771,12 +1780,14 @@ function DashboardView({ token }: { token: string }) {
     vuln: 0,
     github_task: 0,
   });
+  const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const [deviceInfo, setDeviceInfo] = useState<any>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
+      // 仪表盘聚合请求：统计总量 + 主机资源 + 最近任务
       const targets = [
         { key: 'task', path: '/task/' },
         { key: 'scheduler', path: '/scheduler/' },
@@ -1786,9 +1797,11 @@ function DashboardView({ token }: { token: string }) {
         { key: 'github_task', path: '/github_task/' },
       ] as const;
 
-      const responses = await Promise.all(
-        targets.map((target) => requestApi(token, target.path, { method: 'GET', query: { page: 1, size: 1 } }))
-      );
+      const [responses, consoleInfo, recentTaskResponse] = await Promise.all([
+        Promise.all(targets.map((target) => requestApi(token, target.path, { method: 'GET', query: { page: 1, size: 1 } }))),
+        requestApi(token, '/console/info', { method: 'GET' }),
+        requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } }),
+      ]);
 
       const nextStats: any = {};
       responses.forEach((response, index) => {
@@ -1796,9 +1809,9 @@ function DashboardView({ token }: { token: string }) {
         nextStats[targets[index].key] = normalized.total;
       });
       setStats(nextStats);
-
-      const consoleInfo = await requestApi(token, '/console/info', { method: 'GET' });
       setDeviceInfo(consoleInfo?.data?.device_info || {});
+      setRecentTasks(normalizeListData(recentTaskResponse).items.slice(0, 6));
+      setLastUpdatedAt(new Date().toLocaleString('zh-CN', { hour12: false }));
     } catch (err: any) {
       setError(err?.message || '加载仪表盘失败');
     } finally {
@@ -1811,75 +1824,182 @@ function DashboardView({ token }: { token: string }) {
   }, [load]);
 
   const cards = [
-    { title: '扫描任务', value: stats.task, icon: Activity, color: 'text-brand-accent' },
-    { title: '监控任务', value: stats.scheduler, icon: RefreshCw, color: 'text-brand-secondary' },
-    { title: '资产分组', value: stats.asset_scope, icon: Shield, color: 'text-emerald-400' },
-    { title: '资产站点', value: stats.asset_site, icon: Globe, color: 'text-brand-warning' },
-    { title: '漏洞总数', value: stats.vuln, icon: AlertTriangle, color: 'text-brand-danger' },
-    { title: 'GitHub任务', value: stats.github_task, icon: GitBranch, color: 'text-brand-accent' },
+    { title: '扫描任务', value: stats.task, helper: `监控任务 ${stats.scheduler}`, icon: Activity, color: 'text-brand-accent' },
+    { title: '资产站点', value: stats.asset_site, helper: `资产分组 ${stats.asset_scope}`, icon: Globe, color: 'text-brand-secondary' },
+    { title: '漏洞总数', value: stats.vuln, helper: '来自 vuln 实时统计', icon: AlertTriangle, color: 'text-brand-danger' },
+    { title: 'GitHub任务', value: stats.github_task, helper: '泄露监控任务总量', icon: GitBranch, color: 'text-emerald-400' },
   ];
   // 兼容后端不同版本的字段命名
   const memoryInfo = deviceInfo?.memory || deviceInfo?.virtual_memory;
   const diskInfo = deviceInfo?.disk || deviceInfo?.disk_usage;
+  const cpuPercent = parseNumericValue(deviceInfo?.cpu?.percent) || 0;
+  const memoryPercent = parseNumericValue(memoryInfo?.percent) || 0;
+  const diskPercent = parseNumericValue(diskInfo?.percent) || 0;
+  const quickModules = [
+    { id: 'task', label: '任务管理', desc: '下发、停止、导出扫描任务' },
+    { id: 'policy', label: '策略配置', desc: '维护标准化扫描策略模板' },
+    { id: 'scheduler', label: '资产监控', desc: '周期监控资产组与站点变化' },
+    { id: 'asset_scope', label: '资产分组', desc: '维护范围并执行批量导出' },
+  ];
+
+  const resolveTaskStatus = (rawStatus: any): { text: string; type: 'success' | 'error' | 'info' } => {
+    const normalized = String(rawStatus ?? '').toLowerCase();
+    if (normalized.includes('done') || normalized.includes('finish') || normalized.includes('success')) return { text: '已完成', type: 'success' };
+    if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('stop') || normalized.includes('cancel')) {
+      return { text: '异常/停止', type: 'error' };
+    }
+    if (normalized.includes('run') || normalized.includes('start') || normalized.includes('queue') || normalized.includes('wait')) {
+      return { text: '进行中', type: 'info' };
+    }
+    return { text: normalized || '未知', type: 'info' };
+  };
+
+  const formatTime = (value: any): string => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return normalizeValue(value);
+    return parsed.toLocaleString('zh-CN', { hour12: false });
+  };
+
+  const renderUsageBar = (title: string, percent: number, detail: string) => (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-xs font-bold">
+        <span className="text-brand-text-muted uppercase tracking-widest">{title}</span>
+        <span>{formatPercent(percent)}</span>
+      </div>
+      <div className="h-2 bg-brand-bg/60 rounded-full border border-brand-border overflow-hidden">
+        <div className="h-full bg-brand-accent rounded-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
+      </div>
+      <p className="text-xs text-brand-text-muted">{detail}</p>
+    </div>
+  );
 
   return (
     <div className="p-8 space-y-8">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
           <h2 className="text-5xl font-black tracking-tight">我的仪表盘</h2>
-          <p className="text-brand-text-muted font-medium mt-2">全模块 API 已接入，可直接在左侧各页执行真实操作。</p>
+          <p className="text-brand-text-muted font-medium mt-2">核心模块状态、主机资源与最近任务统一可视化。</p>
         </div>
-        <button
-          onClick={() => void load()}
-          className="px-4 py-2 border border-brand-border rounded-xl text-sm font-semibold hover:bg-brand-card/60 transition flex items-center gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          刷新数据
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-brand-text-muted border border-brand-border rounded-xl px-3 py-2">最近更新: {lastUpdatedAt || '-'}</span>
+          <button
+            onClick={onQuickCreateTask}
+            className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black tracking-wide hover:opacity-90 transition flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            新建任务
+          </button>
+          <button
+            onClick={() => void load()}
+            className="px-4 py-2 border border-brand-border rounded-xl text-sm font-semibold hover:bg-brand-card/60 transition flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
       </div>
 
       {error ? (
         <div className="text-sm text-brand-danger border border-brand-danger/30 bg-brand-danger/10 rounded-xl px-4 py-3">{error}</div>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
         {cards.map((card) => (
-          <div key={card.title} className="bg-brand-card/40 border border-brand-border rounded-2xl p-5 backdrop-blur-lg shadow-xl shadow-black/10">
+          <div
+            key={card.title}
+            className="bg-brand-card/35 border border-brand-border rounded-3xl p-5 backdrop-blur-lg shadow-xl shadow-black/15 hover:border-brand-accent/40 transition"
+          >
             <div className="flex items-center justify-between mb-4">
               <p className="text-xs uppercase tracking-widest font-bold text-brand-text-muted">{card.title}</p>
               <card.icon className={`w-5 h-5 ${card.color}`} />
             </div>
             <p className="text-3xl font-black tracking-tight">{card.value.toLocaleString()}</p>
+            <p className="text-xs text-brand-text-muted mt-2">{card.helper}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <div className="xl:col-span-2 bg-brand-card/40 border border-brand-border rounded-2xl p-6">
+        <div className="xl:col-span-2 bg-brand-card/35 border border-brand-border rounded-3xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-black tracking-tight">最近任务</h3>
+            <button
+              onClick={() => onOpenModule('task')}
+              className="text-xs font-black text-brand-accent border border-brand-accent/30 px-3 py-1.5 rounded-lg hover:bg-brand-accent/10 transition"
+            >
+              查看全部
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-brand-border">
+                  <th className="py-2 pr-4 uppercase tracking-widest text-brand-text-muted">名称</th>
+                  <th className="py-2 pr-4 uppercase tracking-widest text-brand-text-muted">状态</th>
+                  <th className="py-2 pr-4 uppercase tracking-widest text-brand-text-muted">目标</th>
+                  <th className="py-2 uppercase tracking-widest text-brand-text-muted">时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-brand-text-muted">
+                      暂无任务数据
+                    </td>
+                  </tr>
+                ) : (
+                  recentTasks.map((task) => {
+                    const statusInfo = resolveTaskStatus(task?.status);
+                    return (
+                      <tr key={String(task?._id || task?.task_id || task?.id || Math.random())} className="border-b border-brand-border/60 last:border-b-0">
+                        <td className="py-3 pr-4 font-semibold">{normalizeValue(task?.name)}</td>
+                        <td className="py-3 pr-4">
+                          <StatusPill text={statusInfo.text} type={statusInfo.type} />
+                        </td>
+                        <td className="py-3 pr-4 font-mono">{normalizeValue(task?.target)}</td>
+                        <td className="py-3 text-brand-text-muted">{formatTime(task?.create_time || task?.update_time || task?.start_time)}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="bg-brand-card/35 border border-brand-border rounded-3xl p-6 space-y-5">
+          <h3 className="text-xl font-black tracking-tight">主机资源</h3>
+          {renderUsageBar('CPU', cpuPercent, formatCpuSummary(deviceInfo))}
+          {renderUsageBar('内存', memoryPercent, formatUsageSummary(memoryInfo))}
+          {renderUsageBar('磁盘', diskPercent, formatUsageSummary(diskInfo))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+        <div className="xl:col-span-2 bg-brand-card/35 border border-brand-border rounded-3xl p-6">
+          <h3 className="text-lg font-black mb-4">快捷入口</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {quickModules.map((entry) => (
+              <button
+                key={entry.id}
+                onClick={() => onOpenModule(entry.id)}
+                className="text-left bg-brand-bg/40 border border-brand-border rounded-2xl p-4 hover:border-brand-accent/45 hover:bg-brand-card/55 transition"
+              >
+                <p className="font-black text-sm">{entry.label}</p>
+                <p className="text-xs text-brand-text-muted mt-1">{entry.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-brand-card/35 border border-brand-border rounded-3xl p-6">
           <h3 className="text-lg font-black mb-4">运行建议</h3>
           <div className="space-y-3 text-sm text-brand-text-muted leading-relaxed">
             <p>1. 先在“策略配置”页维护标准策略，再通过“任务管理 → 策略下发”统一执行。</p>
             <p>2. 定时能力分为“资产监控(scheduler)”和“计划任务(task_schedule)”两套，按场景分别使用。</p>
             <p>3. 导出报告支持单任务、批量任务、批量资产组，均已在各模块操作面板接入。</p>
             <p>4. 所有操作统一使用可视化表单，减少参数输入错误。</p>
-          </div>
-        </div>
-
-        <div className="bg-brand-card/40 border border-brand-border rounded-2xl p-6">
-          <h3 className="text-lg font-black mb-4">主机资源</h3>
-          <div className="space-y-4 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-brand-text-muted">CPU</span>
-              <span className="font-semibold">{formatCpuSummary(deviceInfo)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-brand-text-muted">内存</span>
-              <span className="font-semibold">{formatUsageSummary(memoryInfo)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-brand-text-muted">磁盘</span>
-              <span className="font-semibold">{formatUsageSummary(diskInfo)}</span>
-            </div>
           </div>
         </div>
       </div>
@@ -2587,6 +2707,9 @@ function MainShell() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
   const [activeModuleId, setActiveModuleId] = useState('dashboard');
+  const [globalAction, setGlobalAction] = useState<ModuleAction | null>(null);
+  const [globalActionPayload, setGlobalActionPayload] = useState<JsonValue>({});
+  const [globalNotice, setGlobalNotice] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [passwdDialogOpen, setPasswdDialogOpen] = useState(false);
@@ -2678,11 +2801,74 @@ function MainShell() {
     }
   };
 
+  const openQuickCreateTask = () => {
+    // 全局入口复用任务模块的“新建任务”动作模板
+    const taskModule = getModuleById('task');
+    const createTaskAction = taskModule.actions?.find((action) => action.id === 'create_task');
+    if (!createTaskAction) {
+      setGlobalNotice('任务模块未配置创建动作，已跳转任务管理');
+      setActiveModuleId('task');
+      return;
+    }
+
+    setGlobalAction(createTaskAction);
+    setGlobalActionPayload(deepClone(createTaskAction.payloadTemplate || {}));
+  };
+
+  const executeGlobalAction = async (action: ModuleAction, payload: JsonValue, file?: File | null) => {
+    // 与列表动作保持一致的请求封装，避免重复实现各类动作参数处理
+    const resolvedPath = applyPathTemplate(action.path, payload);
+    if (/\{\w+\}/.test(resolvedPath)) {
+      throw new Error('存在未填写的路径参数，请补全后再执行');
+    }
+
+    let body: JsonValue | FormData | undefined;
+    let query: JsonValue | undefined;
+    if (action.method === 'GET') {
+      if (action.sendPayloadAsQuery) query = payload;
+    } else if (action.fileFieldName) {
+      if (!file) throw new Error('请先选择文件');
+      const formData = new FormData();
+      formData.append(action.fileFieldName, file);
+      Object.entries(payload || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        formData.append(key, typeof value === 'string' ? value : JSON.stringify(value));
+      });
+      body = formData;
+    } else {
+      body = payload;
+    }
+
+    const result = await requestApi(token, resolvedPath, {
+      method: action.method,
+      body,
+      query,
+      download: !!action.download,
+    });
+
+    setGlobalNotice(result?.message ? `执行成功: ${result.message}` : '操作执行成功');
+    if (action.id === 'create_task') {
+      setActiveModuleId('task');
+    }
+  };
+
+  useEffect(() => {
+    if (!globalNotice) return;
+    const timer = window.setTimeout(() => setGlobalNotice(''), 3200);
+    return () => window.clearTimeout(timer);
+  }, [globalNotice]);
+
   useEffect(() => {
     if (!token) return;
 
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+
+      if (globalAction) {
+        event.preventDefault();
+        setGlobalAction(null);
+        return;
+      }
 
       if (passwdDialogOpen) {
         event.preventDefault();
@@ -2699,7 +2885,7 @@ function MainShell() {
 
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [token, passwdDialogOpen, activeModuleId]);
+  }, [token, globalAction, passwdDialogOpen, activeModuleId]);
 
   if (!token) {
     return <LoginView onLogin={doLogin} loading={loginLoading} error={loginError} />;
@@ -2726,12 +2912,13 @@ function MainShell() {
           </div>
           <p className="text-xs text-brand-text-muted leading-relaxed">已按新 UI 风格统一侧栏视觉，底层 API 与功能保持不变。</p>
           <button
-            onClick={() => setActiveModuleId('task')}
+            onClick={openQuickCreateTask}
             className="w-full bg-brand-accent text-white font-black py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-black/20 hover:opacity-90 transition text-sm"
           >
             <Plus className="w-4 h-4" />
             新建任务
           </button>
+          {globalNotice ? <p className="text-xs text-brand-text-muted">{globalNotice}</p> : null}
         </div>
 
         <div className="flex-1 px-3 py-4 space-y-6">
@@ -2803,10 +2990,23 @@ function MainShell() {
       </aside>
 
       <main className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
-        {activeModule.id === 'dashboard' ? <DashboardView token={token} /> : null}
+        {activeModule.id === 'dashboard' ? (
+          <DashboardView token={token} onOpenModule={setActiveModuleId} onQuickCreateTask={openQuickCreateTask} />
+        ) : null}
         {activeModule.id === 'api_console' ? <ApiConsoleView token={token} /> : null}
         {activeModule.id !== 'dashboard' && activeModule.id !== 'api_console' ? <TableModuleView module={activeModule} token={token} /> : null}
       </main>
+
+      {globalAction ? (
+        <ActionDialog
+          action={globalAction}
+          initialPayload={globalActionPayload}
+          onClose={() => setGlobalAction(null)}
+          onSubmit={async (payload, file) => {
+            await executeGlobalAction(globalAction, payload, file);
+          }}
+        />
+      ) : null}
 
       {passwdDialogOpen ? (
         <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
