@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   Link,
   Lock,
+  Monitor,
   Network,
   Play,
   Plus,
@@ -81,8 +82,10 @@ const USERNAME_KEY = 'arl-username';
 
 const themes: { id: ThemeType; label: string; color: string }[] = [
   { id: 'midnight', label: '午夜科技', color: 'bg-[#6366f1]' },
+  { id: 'titanium', label: '钛金黑', color: 'bg-[#3b82f6]' },
   { id: 'slate', label: '专业灰蓝', color: 'bg-[#38bdf8]' },
   { id: 'nord', label: '北欧极光', color: 'bg-[#88c0d0]' },
+  { id: 'sandstone', label: '砂岩白', color: 'bg-[#44403c]' },
   { id: 'deepsea', label: '深海探测', color: 'bg-[#00b4d8]' },
   { id: 'forest', label: '森林卫士', color: 'bg-[#10b981]' },
   { id: 'crimson', label: '绯红之刃', color: 'bg-[#e11d48]' },
@@ -2602,6 +2605,14 @@ function MainShell() {
     });
     return Array.from(map.entries());
   }, []);
+  // 侧栏分组颜色映射，便于按业务域快速识别模块分区
+  const groupToneMap: Record<string, string> = {
+    核心功能: 'text-brand-accent',
+    资产数据: 'text-brand-secondary',
+    漏洞与规则: 'text-brand-warning',
+    GitHub监控: 'text-emerald-400',
+    系统集成: 'text-brand-text-muted',
+  };
 
   const doLogin = async (name: string, pass: string) => {
     setLoginLoading(true);
@@ -2702,24 +2713,33 @@ function MainShell() {
         <div className="absolute -bottom-[20%] left-[30%] w-[40%] h-[40%] bg-brand-warning/10 rounded-full blur-[120px]" />
       </div>
 
-      <aside className="relative z-10 w-72 border-r border-brand-border bg-brand-bg/60 backdrop-blur-xl flex flex-col">
-        <div className="p-6 border-b border-brand-border">
+      <aside className="relative z-10 w-72 border-r border-brand-border bg-brand-bg/70 backdrop-blur-xl flex flex-col overflow-y-auto custom-scrollbar">
+        <div className="p-6 space-y-5 border-b border-brand-border/80">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-brand-accent flex items-center justify-center shadow-lg">
-              <Shield className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl bg-brand-accent flex items-center justify-center shadow-xl shadow-black/30">
+              <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight">ARL</h1>
-              <p className="text-[10px] uppercase tracking-[0.25em] text-brand-accent font-bold">Unified UI</p>
+              <p className="text-[10px] uppercase tracking-[0.28em] text-brand-accent font-black">Lighthouse UI</p>
             </div>
           </div>
-          <p className="text-xs text-brand-text-muted mt-4">所有后端功能已映射到可执行操作面板。</p>
+          <p className="text-xs text-brand-text-muted leading-relaxed">已按新 UI 风格统一侧栏视觉，底层 API 与功能保持不变。</p>
+          <button
+            onClick={() => setActiveModuleId('task')}
+            className="w-full bg-brand-accent text-white font-black py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-black/20 hover:opacity-90 transition text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            新建任务
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-3 py-4 space-y-6">
+        <div className="flex-1 px-3 py-4 space-y-6">
           {groupedModules.map(([groupName, groupModules]) => (
             <div key={groupName} className="space-y-2">
-              <h3 className="text-[11px] px-3 uppercase tracking-[0.15em] font-black text-brand-text-muted opacity-60">{groupName}</h3>
+              <h3 className={`text-[11px] px-3 uppercase tracking-[0.15em] font-black opacity-70 ${groupToneMap[groupName] || 'text-brand-text-muted'}`}>
+                {groupName}
+              </h3>
               <div className="space-y-1">
                 {groupModules.map((module) => (
                   <button
@@ -2727,8 +2747,8 @@ function MainShell() {
                     onClick={() => setActiveModuleId(module.id)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
                       activeModuleId === module.id
-                        ? 'bg-brand-accent/10 text-brand-accent'
-                        : 'text-brand-text-muted hover:text-white hover:bg-brand-card/50'
+                        ? 'bg-brand-accent/12 text-brand-accent border border-brand-accent/30'
+                        : 'text-brand-text-muted hover:text-white hover:bg-brand-card/55 border border-transparent'
                     }`}
                   >
                     <module.icon className="w-4 h-4" />
@@ -2742,15 +2762,15 @@ function MainShell() {
 
         <div className="p-4 border-t border-brand-border space-y-4">
           <div className="space-y-2">
-            <p className="text-[10px] uppercase tracking-widest font-black text-brand-text-muted">主题</p>
+            <p className="text-[10px] uppercase tracking-widest font-black text-brand-text-muted">主题定制</p>
             <div className="flex flex-wrap gap-2">
               {themes.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setTheme(item.id)}
                   title={item.label}
-                  className={`w-6 h-6 rounded-md border-2 ${item.color} ${
-                    theme === item.id ? 'border-white' : 'border-transparent opacity-60 hover:opacity-100'
+                  className={`w-6 h-6 rounded-lg border-2 ${item.color} ${
+                    theme === item.id ? 'border-white scale-110' : 'border-transparent opacity-60 hover:opacity-100'
                   }`}
                 />
               ))}
@@ -2785,9 +2805,7 @@ function MainShell() {
       <main className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
         {activeModule.id === 'dashboard' ? <DashboardView token={token} /> : null}
         {activeModule.id === 'api_console' ? <ApiConsoleView token={token} /> : null}
-        {activeModule.id !== 'dashboard' && activeModule.id !== 'api_console' ? (
-          <TableModuleView key={activeModule.id} module={activeModule} token={token} />
-        ) : null}
+        {activeModule.id !== 'dashboard' && activeModule.id !== 'api_console' ? <TableModuleView module={activeModule} token={token} /> : null}
       </main>
 
       {passwdDialogOpen ? (

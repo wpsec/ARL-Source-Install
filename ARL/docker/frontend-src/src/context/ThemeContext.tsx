@@ -1,6 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type ThemeType = 'midnight' | 'cyberpunk' | 'minimalist' | 'deepsea' | 'forest' | 'slate' | 'nord' | 'crimson';
+export type ThemeType =
+  | 'midnight'
+  | 'slate'
+  | 'nord'
+  | 'titanium'
+  | 'sandstone'
+  | 'deepsea'
+  | 'forest'
+  | 'crimson'
+  | 'cyberpunk'
+  | 'minimalist';
 
 interface ThemeContextType {
   theme: ThemeType;
@@ -10,9 +20,10 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // 默认主题与参考 UI 保持一致，减少首次加载视觉跳变
   const [theme, setThemeState] = useState<ThemeType>(() => {
     const saved = localStorage.getItem('arl-theme');
-    return (saved as ThemeType) || 'midnight';
+    return (saved as ThemeType) || 'nord';
   });
 
   const setTheme = (newTheme: ThemeType) => {

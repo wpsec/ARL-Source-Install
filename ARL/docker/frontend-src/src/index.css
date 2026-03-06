@@ -33,6 +33,30 @@
   --brand-text-muted: #d8dee9;
 }
 
+[data-theme='titanium'] {
+  /* 参考 UI 的钛金深色主题 */
+  --brand-bg: #09090b;
+  --brand-card: #18181b;
+  --brand-border: #27272a;
+  --brand-accent: #3b82f6;
+  --brand-secondary: #a855f7;
+  --brand-warning: #f59e0b;
+  --brand-danger: #ef4444;
+  --brand-text-muted: #d4d4d8;
+}
+
+[data-theme='sandstone'] {
+  /* 参考 UI 的浅色砂岩主题 */
+  --brand-bg: #f5f5f4;
+  --brand-card: #ffffff;
+  --brand-border: #d6d3d1;
+  --brand-accent: #292524;
+  --brand-secondary: #57534e;
+  --brand-warning: #d97706;
+  --brand-danger: #dc2626;
+  --brand-text-muted: #78716c;
+}
+
 [data-theme='crimson'] {
   --brand-bg: #0a0505;
   --brand-card: #140a0a;
@@ -101,6 +125,14 @@
 }
 
 @layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
   .custom-scrollbar::-webkit-scrollbar {
     width: 4px;
   }
@@ -132,5 +164,23 @@
 
   [data-theme='minimalist'] .bg-brand-bg {
     @apply bg-slate-50;
+  }
+
+  [data-theme='sandstone'] body {
+    @apply text-stone-900;
+  }
+
+  [data-theme='sandstone'] .text-white {
+    @apply text-stone-900;
+  }
+
+  [data-theme='sandstone'] .bg-brand-bg {
+    background-color: #f5f5f4 !important;
+  }
+
+  [data-theme='sandstone'] .bg-brand-card\/35,
+  [data-theme='sandstone'] .bg-brand-card\/40,
+  [data-theme='sandstone'] .bg-brand-card\/50 {
+    background-color: rgba(255, 255, 255, 0.78) !important;
   }
 }
