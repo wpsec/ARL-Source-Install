@@ -8,10 +8,13 @@
 """
 from collections import deque
 from datetime import datetime, timedelta
+import os
+import re
 import threading
 import time
 
 import psutil
+from flask import request
 from flask_restx import Namespace
 from app.utils import get_logger, auth
 from app.utils.device import human_size
@@ -29,6 +32,15 @@ LAST_NET_IO_SAMPLE = {
     "bytes_sent": 0,
     "bytes_recv": 0,
 }
+LOG_FILE_CANDIDATES = [
+    {"source": "WEB", "path": "/code/arl_web.log"},
+    {"source": "WORKER", "path": "/code/arl_worker.log"},
+    {"source": "SCHED", "path": "/code/arl_scheduler.log"},
+]
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+LOG_LINE_MAX_LENGTH = 320
+DEFAULT_RECENT_LOG_LIMIT = 24
+MAX_RECENT_LOG_LIMIT = 100
 
 
 def _count_documents(collection: str, query=None) -> int:
@@ -167,13 +179,84 @@ def _build_network_trend_6h():
     return trend
 
 
-def _build_recent_logs():
+def _tail_log_lines(file_path, max_lines=80, max_bytes=256 * 1024):
     """
-    构建实时日志摘要（来源：最近任务）
+    读取日志文件尾部，避免整文件载入内存。
+    """
+    if not os.path.isfile(file_path):
+        return []
+
+    try:
+        with open(file_path, "rb") as log_fp:
+            log_fp.seek(0, os.SEEK_END)
+            file_size = log_fp.tell()
+            if file_size <= 0:
+                return []
+
+            block_size = 8192
+            data = b""
+            cursor = file_size
+            while cursor > 0 and data.count(b"\n") <= max_lines and len(data) < max_bytes:
+                read_size = min(block_size, cursor)
+                cursor -= read_size
+                log_fp.seek(cursor, os.SEEK_SET)
+                data = log_fp.read(read_size) + data
+
+        text = data.decode("utf-8", errors="ignore")
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return lines[-max_lines:]
+    except Exception as e:
+        logger.debug("tail log lines failed path=%s err=%s", file_path, e)
+        return []
+
+
+def _normalize_log_level(line):
+    upper = line.upper()
+    if "CRITICAL" in upper or "CRIT" in upper or "FATAL" in upper:
+        return "CRIT"
+    if "ERROR" in upper or "EXCEPTION" in upper:
+        return "ERROR"
+    if "WARN" in upper:
+        return "WARN"
+    if "DEBUG" in upper:
+        return "DEBUG"
+    return "INFO"
+
+
+def _parse_log_time(line):
+    """
+    从常见日志格式提取时间戳。
+    """
+    clean_line = ANSI_ESCAPE_RE.sub("", line)
+    patterns = [
+        (r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3,6})", "%Y-%m-%d %H:%M:%S,%f"),
+        (r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]", "%Y-%m-%d %H:%M:%S"),
+        (r"\[(\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2} [+\-]\d{4})\]", "%d/%b/%Y:%H:%M:%S %z"),
+    ]
+
+    for pattern, fmt in patterns:
+        matched = re.search(pattern, clean_line)
+        if not matched:
+            continue
+        raw_time = matched.group(1)
+        try:
+            parsed = datetime.strptime(raw_time, fmt)
+            display_time = parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S") if parsed.tzinfo else parsed.strftime("%Y-%m-%d %H:%M:%S")
+            return display_time, parsed.timestamp()
+        except Exception:
+            continue
+
+    now = datetime.now()
+    return now.strftime("%Y-%m-%d %H:%M:%S"), now.timestamp()
+
+
+def _build_recent_task_summary_logs(limit=6):
+    """
+    回退日志：从任务状态构建摘要。
     """
     logs = []
     try:
-        for task in conn("task").find({}, {"name": 1, "status": 1, "target": 1, "save_date": 1}).sort("_id", -1).limit(6):
+        for task in conn("task").find({}, {"name": 1, "status": 1, "target": 1, "save_date": 1}).sort("_id", -1).limit(limit):
             status = str(task.get("status", "")).lower()
             if status in ["done", "success", "finished"]:
                 level = "INFO"
@@ -188,18 +271,68 @@ def _build_recent_logs():
                     str(task.get("status", "unknown")),
                     str(task.get("target", "-"))[:24]
                 ),
-                "time": str(task.get("save_date", ""))
+                "time": str(task.get("save_date", "")),
+                "source": "TASK"
             })
     except Exception as e:
-        logger.debug("build recent logs failed: %s", e)
+        logger.debug("build recent task summary logs failed: %s", e)
 
     if not logs:
         logs = [{
             "level": "INFO",
             "msg": "系统运行正常，暂未生成任务日志",
-            "time": str(datetime.now())
+            "time": str(datetime.now()),
+            "source": "SYSTEM"
         }]
     return logs
+
+
+def _build_recent_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
+    """
+    构建实时日志（优先读取运行日志文件，失败后回退任务摘要）。
+    """
+    safe_limit = max(1, min(int(limit or DEFAULT_RECENT_LOG_LIMIT), MAX_RECENT_LOG_LIMIT))
+    per_file_lines = max(80, safe_limit * 4)
+    records = []
+    seq = 0
+
+    for candidate in LOG_FILE_CANDIDATES:
+        source = candidate.get("source", "SYSTEM")
+        file_path = candidate.get("path", "")
+        if not file_path:
+            continue
+
+        for raw_line in _tail_log_lines(file_path, max_lines=per_file_lines):
+            clean_line = ANSI_ESCAPE_RE.sub("", raw_line).strip()
+            if not clean_line:
+                continue
+
+            msg = re.sub(r"\s+", " ", clean_line)
+            if len(msg) > LOG_LINE_MAX_LENGTH:
+                msg = msg[:LOG_LINE_MAX_LENGTH - 3] + "..."
+
+            display_time, ts_value = _parse_log_time(clean_line)
+            records.append({
+                "_seq": seq,
+                "_ts": ts_value,
+                "time": display_time,
+                "level": _normalize_log_level(clean_line),
+                "source": source,
+                "msg": msg,
+            })
+            seq += 1
+
+    if records:
+        records.sort(key=lambda item: (item.get("_ts", 0), item.get("_seq", 0)), reverse=True)
+        return [{
+            "time": item.get("time", ""),
+            "level": item.get("level", "INFO"),
+            "source": item.get("source", "SYSTEM"),
+            "msg": item.get("msg", ""),
+        } for item in records[:safe_limit]]
+
+    # 运行日志不可用时回退任务摘要，避免前端空白
+    return _build_recent_task_summary_logs(limit=min(safe_limit, 12))
 
 
 def _build_engine_status(device_info, running_tasks: int, waiting_tasks: int):
@@ -338,7 +471,7 @@ class ARLConsoleDashboard(ARLResource):
             - risk_distribution: 风险分布
             - asset_trend_7d: 最近 7 天趋势
             - network_trend: 最近 6 小时流量趋势
-            - recent_logs: 最近任务日志摘要
+            - recent_logs: 最近运行日志
             - engine: 引擎状态
         """
         device_info = utils.device_info()
@@ -363,8 +496,28 @@ class ARLConsoleDashboard(ARLResource):
             "risk_distribution": _build_risk_distribution(),
             "asset_trend_7d": _build_asset_trend_7d(),
             "network_trend": _build_network_trend_6h(),
-            "recent_logs": _build_recent_logs(),
+            "recent_logs": _build_recent_logs(limit=DEFAULT_RECENT_LOG_LIMIT),
             "engine": _build_engine_status(device_info, running_tasks, waiting_tasks),
+            "last_updated": str(datetime.now())
+        }
+        return utils.build_ret(ErrorMsg.Success, data)
+
+
+@ns.route('/recent_logs')
+class ARLConsoleRecentLogs(ARLResource):
+    """仪表盘实时日志接口"""
+
+    @auth
+    def get(self):
+        """
+        获取最近日志
+        Query:
+            - limit: 条数，默认 24，最大 100
+        """
+        limit = request.args.get("limit", DEFAULT_RECENT_LOG_LIMIT, type=int)
+        logs = _build_recent_logs(limit=limit)
+        data = {
+            "recent_logs": logs,
             "last_updated": str(datetime.now())
         }
         return utils.build_ret(ErrorMsg.Success, data)

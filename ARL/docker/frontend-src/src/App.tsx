@@ -1844,7 +1844,20 @@ function DashboardView({
     }));
     setDeviceInfo(consoleInfo?.data?.device_info || {});
     setRecentTasks(normalizeListData(recentTaskResponse).items.slice(0, 6));
+    setRecentLogs((prev) => (prev.length > 0 ? prev : [{ level: 'INFO', source: 'SYSTEM', msg: '当前为兼容模式，日志接口不可用', time: '' }]));
     setLastUpdatedAt(new Date().toLocaleString('zh-CN', { hour12: false }));
+  }, [token]);
+
+  const loadRecentLogs = useCallback(async () => {
+    try {
+      const response = await requestApi(token, '/console/recent_logs', { method: 'GET', query: { limit: 24 } });
+      const logs = Array.isArray(response?.data?.recent_logs) ? response.data.recent_logs : [];
+      if (logs.length > 0) {
+        setRecentLogs(logs);
+      }
+    } catch {
+      // 日志轮询失败时不打断仪表盘其他内容
+    }
   }, [token]);
 
   const load = useCallback(async () => {
@@ -1893,6 +1906,14 @@ function DashboardView({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    void loadRecentLogs();
+    const timer = window.setInterval(() => {
+      void loadRecentLogs();
+    }, 10000);
+    return () => window.clearInterval(timer);
+  }, [loadRecentLogs]);
+
   // 兼容后端不同版本的字段命名
   const memoryInfo = deviceInfo?.memory || deviceInfo?.virtual_memory;
   const diskInfo = deviceInfo?.disk || deviceInfo?.disk_usage;
@@ -1909,14 +1930,28 @@ function DashboardView({
   const trendData = assetTrend.length > 0 ? assetTrend : [{ name: '周一', assets: stats.asset_site, vulns: stats.vuln }];
   const riskData = riskDistribution.length > 0 ? riskDistribution : [{ name: '高危', value: highRisk, color: '#ef4444' }];
   const netData = networkTrend.length > 0 ? networkTrend : [{ time: '13:40', in: 120, out: 80 }];
-  const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', msg: '暂无日志数据', time: '' }];
+  const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', source: 'SYSTEM', msg: '暂无日志数据', time: '' }];
   const quickModules = [
     { id: 'task', label: '任务管理', desc: '下发、停止、导出扫描任务', icon: Activity, color: 'text-brand-accent' },
     { id: 'policy', label: '策略配置', desc: '维护标准化扫描策略模板', icon: FileCode, color: 'text-brand-secondary' },
     { id: 'scheduler', label: '资产监控', desc: '周期监控资产组与站点变化', icon: Monitor, color: 'text-brand-warning' },
     { id: 'asset_scope', label: '资产分组', desc: '维护范围并执行批量导出', icon: Globe, color: 'text-brand-danger' },
   ];
-  const levelClassMap: Record<string, string> = { INFO: 'text-emerald-400', WARN: 'text-brand-warning', CRIT: 'text-brand-danger' };
+  const levelClassMap: Record<string, string> = {
+    INFO: 'text-emerald-400',
+    WARN: 'text-brand-warning',
+    WARNING: 'text-brand-warning',
+    ERROR: 'text-brand-danger',
+    CRIT: 'text-brand-danger',
+    DEBUG: 'text-sky-400',
+  };
+
+  const formatLogTime = (value: any): string => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return normalizeValue(value);
+    return parsed.toLocaleString('zh-CN', { hour12: false });
+  };
 
   const formatTime = (value: any): string => {
     if (!value) return '-';
@@ -2097,13 +2132,18 @@ function DashboardView({
               查看任务
             </button>
           </div>
-          <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[10px] space-y-3 overflow-hidden">
+          <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[10px] overflow-y-auto max-h-[320px]">
             {logsData.map((log, index) => {
               const level = String(log?.level || 'INFO').toUpperCase();
+              const source = String(log?.source || 'SYSTEM').toUpperCase();
               return (
-                <div key={`${level}-${index}`} className="flex gap-2 border-b border-white/5 pb-2 last:border-0">
-                  <span className={`font-black shrink-0 w-8 ${levelClassMap[level] || 'text-brand-text-muted'}`}>{level}</span>
-                  <span className="text-white/70 truncate">{normalizeValue(log?.msg)}</span>
+                <div key={`${source}-${level}-${index}`} className="py-2 border-b border-white/5 last:border-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-brand-text-muted'}`}>{level}</span>
+                    <span className="text-brand-text-muted">{source}</span>
+                    <span className="ml-auto text-brand-text-muted">{formatLogTime(log?.time)}</span>
+                  </div>
+                  <p className="text-white/80 break-all leading-relaxed">{normalizeValue(log?.msg)}</p>
                 </div>
               );
             })}
