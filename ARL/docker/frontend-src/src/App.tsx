@@ -2114,17 +2114,18 @@ function DashboardView({
             <div className="text-center space-y-1 mb-6">
               <p className="text-sm font-black">{normalizeValue(engineInfo?.version || 'ARL Engine')}</p>
               <p className="text-[10px] text-brand-text-muted font-bold uppercase tracking-widest">
-                集群状态: {normalizeValue(engineInfo?.cluster_online || 3)}/{normalizeValue(engineInfo?.cluster_total || 3)} 节点在线
+                部署模式: {normalizeValue(engineInfo?.deploy_mode_text || '单机部署')}
               </p>
             </div>
+            <p className="text-[11px] text-brand-text-muted mb-3">运行中任务: {normalizeValue(engineInfo?.running_tasks ?? stats.running_task ?? 0)}</p>
             <div className="w-full grid grid-cols-2 gap-2">
               <div className="p-3 bg-brand-bg/50 rounded-2xl border border-brand-border text-center">
-                <p className="text-[10px] font-black text-brand-text-muted uppercase mb-1">队列积压</p>
-                <p className="text-lg font-black">{normalizeValue(engineInfo?.queue_pending || 0)}</p>
+                <p className="text-[10px] font-black text-brand-text-muted uppercase mb-1">待执行任务</p>
+                <p className="text-lg font-black">{normalizeValue(engineInfo?.pending_tasks ?? engineInfo?.queue_pending ?? 0)}</p>
               </div>
               <div className="p-3 bg-brand-bg/50 rounded-2xl border border-brand-border text-center">
-                <p className="text-[10px] font-black text-brand-text-muted uppercase mb-1">健康度</p>
-                <p className="text-lg font-black text-emerald-400">{formatPercent(engineInfo?.health_score || 100)}</p>
+                <p className="text-[10px] font-black text-brand-text-muted uppercase mb-1">资源评分(估算)</p>
+                <p className="text-lg font-black text-emerald-400">{formatPercent(engineInfo?.resource_score ?? engineInfo?.health_score ?? 100)}</p>
               </div>
             </div>
           </div>

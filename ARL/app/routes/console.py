@@ -337,19 +337,33 @@ def _build_recent_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
 
 def _build_engine_status(device_info, running_tasks: int, waiting_tasks: int):
     """
-    构建引擎状态摘要
+    构建单机引擎状态摘要
     """
-    cpu_percent = float(device_info.get("cpu", {}).get("percent", 0) or 0)
-    memory_percent = float(device_info.get("memory", {}).get("percent", 0) or 0)
-    disk_percent = float(device_info.get("disk", {}).get("percent", 0) or 0)
-    health_score = max(0.0, min(100.0, 100.0 - (cpu_percent * 0.35 + memory_percent * 0.35 + disk_percent * 0.30)))
+    cpu_percent = _safe_float((device_info.get("cpu") or {}).get("percent", 0), 0.0)
+    memory_info = device_info.get("memory") or device_info.get("virtual_memory") or {}
+    disk_info = device_info.get("disk") or device_info.get("disk_usage") or {}
+    memory_percent = _safe_float(memory_info.get("percent", 0), 0.0)
+    disk_percent = _safe_float(disk_info.get("percent", 0), 0.0)
+
+    # 资源评分仅用于趋势观察，不代表精确容量评估
+    resource_score = max(
+        0.0,
+        min(100.0, 100.0 - (cpu_percent * 0.35 + memory_percent * 0.35 + disk_percent * 0.30))
+    )
 
     return {
         "version": "ARL Engine",
-        "cluster_online": 3,
-        "cluster_total": 3,
-        "queue_pending": int(running_tasks) + int(waiting_tasks),
-        "health_score": round(health_score, 1)
+        "deploy_mode": "single",
+        "deploy_mode_text": "单机部署",
+        "pending_tasks": int(waiting_tasks),
+        "running_tasks": int(running_tasks),
+        "resource_score": round(resource_score, 1),
+        "resource_score_desc": "估算值，仅供参考",
+        # 兼容旧前端字段
+        "cluster_online": 1,
+        "cluster_total": 1,
+        "queue_pending": int(waiting_tasks),
+        "health_score": round(resource_score, 1),
     }
 
 
@@ -475,13 +489,14 @@ class ARLConsoleDashboard(ARLResource):
             - engine: 引擎状态
         """
         device_info = utils.device_info()
-        running_tasks = _count_documents("task", {"status": {"$in": ["running", "waiting"]}})
+        running_tasks = _count_documents("task", {"status": "running"})
         waiting_tasks = _count_documents("task", {"status": "waiting"})
 
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         stats = {
             "task_total": _count_documents("task"),
             "running_tasks": running_tasks,
+            "waiting_tasks": waiting_tasks,
             "scheduler_total": _count_documents("scheduler"),
             "asset_scope_total": _count_documents("asset_scope"),
             "asset_site_total": _count_documents("asset_site"),
