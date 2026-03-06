@@ -57,6 +57,59 @@ show_build_info() {
     echo ""
 }
 
+# 构建镜像（含离线回退）
+# 功能说明：先按常规 quick 方式构建；若因网络/鉴权失败，再尝试使用本地基础镜像 ID 构建
+build_image_with_offline_fallback() {
+    local image_tag="$1"
+    local dockerfile="$DOCKERFILE_PATH/Dockerfile"
+
+    # 第一轮：常规快速构建（优先复用本地缓存）
+    if docker build --pull=false -f "$dockerfile" -t "$image_tag" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}常规构建失败，尝试离线回退模式...${NC}"
+
+    local base_image
+    base_image=$(awk '/^[[:space:]]*FROM[[:space:]]+/ {print $2; exit}' "$dockerfile")
+    if [ -z "$base_image" ]; then
+        echo -e "${RED}错误: 无法解析 Dockerfile 的基础镜像${NC}"
+        return 1
+    fi
+
+    if ! docker image inspect "$base_image" >/dev/null 2>&1; then
+        echo -e "${RED}错误: 本地不存在基础镜像 $base_image${NC}"
+        echo "请先执行: docker pull $base_image"
+        return 1
+    fi
+
+    local base_image_id
+    base_image_id=$(docker image inspect "$base_image" --format '{{.Id}}')
+    local temp_dockerfile
+    temp_dockerfile=$(mktemp)
+
+    # 用本地镜像 ID 替换第一条 FROM，尽量避免访问 Docker Hub 鉴权服务
+    awk -v base="$base_image_id" '
+      BEGIN { done=0 }
+      {
+        if (!done && $1=="FROM") {
+          sub(/^FROM[[:space:]]+[^[:space:]]+/, "FROM " base)
+          done=1
+        }
+        print
+      }
+    ' "$dockerfile" > "$temp_dockerfile"
+
+    echo -e "${YELLOW}离线回退: 使用本地基础镜像 $base_image_id${NC}"
+    if ! DOCKER_BUILDKIT=0 docker build --pull=false -f "$temp_dockerfile" -t "$image_tag" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1; then
+        rm -f "$temp_dockerfile"
+        return 1
+    fi
+
+    rm -f "$temp_dockerfile"
+    return 0
+}
+
 # 快速构建
 # 功能说明：快速重建代码层，复用系统包缓存，构建统一镜像标签并强制重建容器
 quick_build() {
@@ -65,9 +118,8 @@ quick_build() {
     echo ""
     
     if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        # 从项目根目录直接构建统一镜像标签
-        # quick 模式尽量复用本地基础镜像，降低外网拉取失败概率
-        docker build --pull=false -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1
+        # 从项目根目录直接构建统一镜像标签（含离线回退模式）
+        build_image_with_offline_fallback "${DEFAULT_IMAGE_TAG}"
     else
         cd "$DOCKERFILE_PATH"
         docker-compose build --force-rm arl_web
@@ -100,7 +152,7 @@ full_build() {
     echo ""
     
     if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" . --no-cache
+        docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
     else
         cd "$DOCKERFILE_PATH"
         docker-compose build --force-rm --no-cache
@@ -120,7 +172,7 @@ clean_build() {
     docker builder prune -a -f
     
     if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" . --no-cache
+        docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
     else
         cd "$DOCKERFILE_PATH"
         docker-compose build --force-rm --no-cache
@@ -186,8 +238,8 @@ tag_build() {
     
     # 执行快速构建
     if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        # tag 模式同样优先复用本地基础镜像，减少网络不稳定导致的失败
-        docker build --pull=false -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1
+        # tag 模式复用 quick 的离线回退逻辑，降低网络不稳定导致的失败
+        build_image_with_offline_fallback "${DEFAULT_IMAGE_TAG}"
     else
         cd "$DOCKERFILE_PATH"
         docker-compose build --force-rm arl_web
