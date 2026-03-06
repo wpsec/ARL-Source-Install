@@ -135,6 +135,54 @@
   body {
     @apply bg-brand-bg text-white font-sans antialiased transition-colors duration-300;
   }
+
+  /* 统一交互控件：平滑描边 + 更大点击面积 */
+  button,
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+    backface-visibility: hidden;
+    border-radius: 0.75rem;
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      background-color 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  button {
+    min-height: 2.625rem;
+  }
+
+  input:not([type='checkbox']):not([type='radio']),
+  select {
+    min-height: 2.625rem;
+  }
+
+  textarea {
+    min-height: 6.5rem;
+    resize: vertical;
+  }
+
+  button:focus-visible,
+  input:not([type='checkbox']):not([type='radio']):focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    border-color: var(--brand-accent);
+    box-shadow:
+      0 0 0 2px rgba(var(--brand-accent-rgb), 0.24),
+      0 8px 24px rgba(2, 6, 23, 0.16);
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--brand-accent);
+    width: 1.05rem;
+    height: 1.05rem;
+  }
   
   /* Light theme text color override */
   [data-theme='sandstone'] body {

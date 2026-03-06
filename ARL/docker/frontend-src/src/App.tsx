@@ -1332,10 +1332,10 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'api_console',
-    label: 'API控制台',
-    description: '任意 API 调试，覆盖全部后端功能',
+    label: 'API管理',
+    description: '图形化管理系统配置并同步到 config-docker.yaml',
     group: '系统集成',
-    icon: Terminal,
+    icon: Settings,
   },
 ];
 
@@ -1547,16 +1547,6 @@ function formatUsageSummary(value: any): string {
   if (usedTotal !== '-' && percent !== '-') return `${usedTotal} (${percent})`;
   if (usedTotal !== '-') return usedTotal;
   return percent;
-}
-
-function parseJsonObject(text: string): JsonValue {
-  const trimmed = text.trim();
-  if (!trimmed) return {};
-  const parsed = JSON.parse(trimmed);
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    return parsed;
-  }
-  throw new Error('请输入 JSON 对象，例如 {"name":"demo"}');
 }
 
 function deepClone<T>(value: T): T {
@@ -1945,16 +1935,16 @@ function DashboardView({
           <div className="flex gap-2 justify-end">
             <button
               onClick={onQuickCreateTask}
-              className="px-4 py-2 rounded-xl bg-brand-accent text-white text-xs font-black uppercase tracking-widest hover:opacity-90 transition flex items-center gap-2"
+              className="px-5 py-2.5 rounded-xl bg-brand-accent text-white text-sm font-black uppercase tracking-wider hover:opacity-90 transition flex items-center gap-2"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-[18px] h-[18px]" />
               新建任务
             </button>
             <button
               onClick={() => void load()}
-              className="px-4 py-2 border border-brand-border rounded-xl text-xs font-semibold hover:bg-brand-card/60 transition flex items-center gap-2"
+              className="px-5 py-2.5 border border-brand-border rounded-xl text-sm font-semibold hover:bg-brand-card/60 transition flex items-center gap-2"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-[18px] h-[18px] ${loading ? 'animate-spin' : ''}`} />
               刷新
             </button>
           </div>
@@ -2087,7 +2077,7 @@ function DashboardView({
               </div>
               <h3 className="text-xl font-black tracking-tight">实时日志</h3>
             </div>
-            <button onClick={() => onOpenModule('task')} className="text-[10px] font-black text-brand-accent uppercase tracking-widest hover:underline">
+            <button onClick={() => onOpenModule('task')} className="text-xs font-black text-brand-accent uppercase tracking-wider hover:underline px-2">
               查看任务
             </button>
           </div>
@@ -2111,7 +2101,7 @@ function DashboardView({
             <h3 className="text-xl font-black tracking-tight">最近任务</h3>
             <button
               onClick={() => onOpenModule('task')}
-              className="text-xs font-black text-brand-accent border border-brand-accent/30 px-3 py-1.5 rounded-lg hover:bg-brand-accent/10 transition"
+              className="text-sm font-black text-brand-accent border border-brand-accent/30 px-4 py-2 rounded-xl hover:bg-brand-accent/10 transition"
             >
               查看全部
             </button>
@@ -2254,16 +2244,17 @@ function ActionDialog({
                     {!isTaskCreate ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
                   </label>
                   {isBoolean ? (
-                    <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                    <label className="flex items-center justify-between rounded-xl border border-brand-border bg-brand-bg px-3 py-2.5 text-sm">
+                      <span className="font-semibold">{value ? '启用' : '关闭'}</span>
                       <input
                         type="checkbox"
                         checked={value}
                         disabled={disabled}
+                        className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
                         onChange={(event) => {
                           setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
                         }}
                       />
-                      <span>{value ? '启用' : '关闭'}</span>
                     </label>
                   ) : isNumber ? (
                     <input
@@ -2327,7 +2318,7 @@ function ActionDialog({
           <div className="flex justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
             >
               取消
             </button>
@@ -2345,7 +2336,7 @@ function ActionDialog({
                   setLoading(false);
                 }
               }}
-              className="px-4 py-2 rounded-lg bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider uppercase"
+              className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider uppercase"
               disabled={loading}
             >
               {loading ? '执行中...' : '执行'}
@@ -2612,7 +2603,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
                   key={action.id}
                   onClick={() => openActionDialog(action)}
                   disabled={disabled}
-                  className="px-3 py-2 rounded-lg text-xs font-bold tracking-wider uppercase border border-brand-border hover:bg-brand-bg/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
                   {action.label}
                 </button>
@@ -2632,6 +2623,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
                     <input
                       type="checkbox"
                       checked={selectAllChecked}
+                      className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
                       onChange={(event) => {
                         if (event.target.checked) {
                           const ids = rows
@@ -2662,6 +2654,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
                         <input
                           type="checkbox"
                           checked={checked}
+                          className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
                           onChange={(event) => {
                             if (!id) return;
                             if (event.target.checked) {
@@ -2699,7 +2692,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
               <button
                 onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 disabled={page <= 1}
-                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs disabled:opacity-40"
+                className="px-3.5 py-2 rounded-xl border border-brand-border text-sm disabled:opacity-40"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -2709,7 +2702,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
                   setSize(Number(event.target.value));
                   setPage(1);
                 }}
-                className="bg-brand-bg border border-brand-border rounded-lg px-2 py-1.5 text-xs"
+                className="bg-brand-bg border border-brand-border rounded-xl px-3 py-2 text-sm"
               >
                 {[10, 20, 50, 100].map((option) => (
                   <option key={option} value={option}>
@@ -2720,7 +2713,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
               <button
                 onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 disabled={page >= totalPages}
-                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs disabled:opacity-40"
+                className="px-3.5 py-2 rounded-xl border border-brand-border text-sm disabled:opacity-40"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -2748,96 +2741,261 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
 }
 
 function ApiConsoleView({ token }: { token: string }) {
-  const [method, setMethod] = useState<HttpMethod>('GET');
-  const [path, setPath] = useState('/task/');
-  const [queryText, setQueryText] = useState('{"page":1,"size":10}');
-  const [bodyText, setBodyText] = useState('{}');
-  const [resultText, setResultText] = useState('');
+  type ConfigFieldItem = {
+    path: string;
+    key: string;
+    section: string;
+    value: any;
+    type: 'string' | 'number' | 'boolean' | 'array';
+  };
+
+  const [configData, setConfigData] = useState<JsonValue>({});
+  const [configPath, setConfigPath] = useState('');
+  const [updatedAt, setUpdatedAt] = useState('');
+  const [searchKey, setSearchKey] = useState('');
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/api_console/config/', { method: 'GET' });
+      const data = result?.data || {};
+      if (!data?.config || typeof data.config !== 'object' || Array.isArray(data.config)) {
+        throw new Error('配置数据格式错误');
+      }
+      setConfigData(data.config);
+      setConfigPath(String(data.config_path || ''));
+      setUpdatedAt(String(data.updated_at || ''));
+    } catch (err: any) {
+      setError(err?.message || '加载配置失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void loadConfig();
+  }, [loadConfig]);
+
+  const updateConfigByPath = (path: string, value: any) => {
+    setConfigData((prev) => {
+      const next = deepClone(prev || {});
+      const parts = path.split('.');
+      let cursor: any = next;
+      for (let i = 0; i < parts.length - 1; i += 1) {
+        const key = parts[i];
+        if (!cursor[key] || typeof cursor[key] !== 'object' || Array.isArray(cursor[key])) {
+          cursor[key] = {};
+        }
+        cursor = cursor[key];
+      }
+      cursor[parts[parts.length - 1]] = value;
+      return next;
+    });
+  };
+
+  const configFields = useMemo<ConfigFieldItem[]>(() => {
+    const fields: ConfigFieldItem[] = [];
+
+    const walk = (node: any, parent = '') => {
+      if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+      Object.entries(node).forEach(([key, value]) => {
+        const path = parent ? `${parent}.${key}` : key;
+        if (Array.isArray(value)) {
+          fields.push({ path, key, section: parent.split('.')[0] || key, value, type: 'array' });
+          return;
+        }
+        if (value && typeof value === 'object') {
+          walk(value, path);
+          return;
+        }
+        if (typeof value === 'boolean') {
+          fields.push({ path, key, section: parent.split('.')[0] || key, value, type: 'boolean' });
+          return;
+        }
+        if (typeof value === 'number') {
+          fields.push({ path, key, section: parent.split('.')[0] || key, value, type: 'number' });
+          return;
+        }
+        fields.push({ path, key, section: parent.split('.')[0] || key, value: value ?? '', type: 'string' });
+      });
+    };
+
+    walk(configData);
+
+    const keyword = searchKey.trim().toLowerCase();
+    if (!keyword) return fields;
+
+    return fields.filter((item) => item.path.toLowerCase().includes(keyword) || humanizeField(item.path).toLowerCase().includes(keyword));
+  }, [configData, searchKey]);
+
+  const groupedFields = useMemo<Record<string, ConfigFieldItem[]>>(() => {
+    const grouped: Record<string, ConfigFieldItem[]> = {};
+    configFields.forEach((field) => {
+      const section = field.section || '其他';
+      if (!grouped[section]) grouped[section] = [];
+      grouped[section].push(field);
+    });
+    return grouped;
+  }, [configFields]);
+
+  const saveConfig = async () => {
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/api_console/config/', {
+        method: 'POST',
+        body: {
+          config: configData,
+        },
+      });
+      const data = result?.data || {};
+      const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
+      setSuccess(`配置已保存${backupPath}`);
+      setUpdatedAt(String(data.saved_at || updatedAt));
+    } catch (err: any) {
+      setError(err?.message || '保存配置失败');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="p-8 space-y-6">
       <div>
-        <h2 className="text-4xl font-black tracking-tight">API 控制台</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">用于覆盖所有后端接口。支持 GET/POST、Query、JSON Body 和实时返回。</p>
+        <h2 className="text-4xl font-black tracking-tight">API 管理</h2>
+        <p className="text-brand-text-muted mt-2 text-sm">在浏览器中管理系统配置，保存后自动同步到 `config-docker.yaml` 挂载文件。</p>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <select
-              value={method}
-              onChange={(event) => setMethod(event.target.value as HttpMethod)}
-              className="col-span-1 bg-brand-bg border border-brand-border rounded-xl px-3 py-2 text-sm"
-            >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-            </select>
-            <input
-              value={path}
-              onChange={(event) => setPath(event.target.value)}
-              className="col-span-2 bg-brand-bg border border-brand-border rounded-xl px-3 py-2 text-sm font-mono"
-              placeholder="/task/"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-brand-text-muted">Query JSON</label>
-            <textarea
-              value={queryText}
-              onChange={(event) => setQueryText(event.target.value)}
-              className="w-full h-32 bg-brand-bg border border-brand-border rounded-xl p-3 text-xs font-mono"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-brand-text-muted">Body JSON</label>
-            <textarea
-              value={bodyText}
-              onChange={(event) => setBodyText(event.target.value)}
-              className="w-full h-44 bg-brand-bg border border-brand-border rounded-xl p-3 text-xs font-mono"
-              disabled={method === 'GET'}
-            />
-          </div>
-
-          <div className="flex gap-3">
+      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+        <div className="flex flex-col xl:flex-row xl:items-center gap-3">
+          <input
+            value={searchKey}
+            onChange={(event) => setSearchKey(event.target.value)}
+            placeholder="按配置路径搜索，例如 DINGTALK_API 或 ARL.API_KEY"
+            className="flex-1 bg-brand-bg border border-brand-border rounded-xl px-3 py-2 text-sm"
+          />
+          <div className="flex items-center gap-2">
             <button
-              onClick={async () => {
-                try {
-                  setLoading(true);
-                  setError('');
-                  const query = parseJsonObject(queryText);
-                  const body = method === 'GET' ? undefined : parseJsonObject(bodyText);
-                  const result = await requestApi(token, path, {
-                    method,
-                    query,
-                    body,
-                  });
-                  setResultText(JSON.stringify(result, null, 2));
-                } catch (err: any) {
-                  setError(err?.message || '请求失败');
-                  setResultText('');
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              className="px-4 py-2 rounded-xl bg-brand-accent text-white font-black text-xs uppercase tracking-wider"
+              onClick={() => void loadConfig()}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
               disabled={loading}
             >
-              {loading ? '请求中...' : '执行请求'}
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              重新加载
+            </button>
+            <button
+              onClick={() => void saveConfig()}
+              className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={saving || loading}
+            >
+              <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
+              {saving ? '保存中...' : '保存配置'}
             </button>
           </div>
-
-          {error ? <div className="text-xs text-brand-danger">{error}</div> : null}
         </div>
 
-        <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-brand-text-muted">返回结果</label>
-          <pre className="w-full h-[580px] bg-brand-bg border border-brand-border rounded-xl p-3 text-xs font-mono overflow-auto whitespace-pre-wrap break-all">
-            {resultText || '// 等待执行'}
-          </pre>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
+          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
+            <span className="text-brand-text-muted">配置文件:</span>
+            <span className="font-mono ml-2">{configPath || '-'}</span>
+          </div>
+          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
+            <span className="text-brand-text-muted">最近更新时间:</span>
+            <span className="font-mono ml-2">{updatedAt || '-'}</span>
+          </div>
         </div>
+
+        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+          提示：保存后将写入运行配置文件，涉及扫描/消息等核心参数时建议重启 `web` 与 `worker` 容器使其完全生效。
+        </div>
+
+        {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
+        {success ? <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">{success}</div> : null}
+      </div>
+
+      <div className="space-y-4">
+        {Object.keys(groupedFields).length === 0 ? (
+          <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-6 text-sm text-brand-text-muted">未匹配到配置项</div>
+        ) : null}
+
+        {(Object.entries(groupedFields) as [string, ConfigFieldItem[]][]).map(([section, fields]) => (
+          <div key={section} className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black tracking-wide">{section}</h3>
+              <span className="text-xs text-brand-text-muted">{fields.length} 项</span>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {fields.map((field) => (
+                <div key={field.path} className="space-y-2">
+                  <label className="text-xs font-bold text-brand-text-muted block">
+                    {humanizeField(field.path)}
+                    <span className="ml-2 font-mono opacity-70">{field.path}</span>
+                  </label>
+
+                  {field.type === 'boolean' ? (
+                    <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(field.value)}
+                        className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
+                        onChange={(event) => updateConfigByPath(field.path, event.target.checked)}
+                      />
+                      <span>{field.value ? '启用' : '关闭'}</span>
+                    </label>
+                  ) : null}
+
+                  {field.type === 'number' ? (
+                    <input
+                      type="number"
+                      value={String(field.value ?? 0)}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        if (raw === '') {
+                          updateConfigByPath(field.path, 0);
+                          return;
+                        }
+                        const parsed = Number(raw);
+                        updateConfigByPath(field.path, Number.isFinite(parsed) ? parsed : 0);
+                      }}
+                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    />
+                  ) : null}
+
+                  {field.type === 'string' ? (
+                    <input
+                      value={String(field.value ?? '')}
+                      onChange={(event) => updateConfigByPath(field.path, event.target.value)}
+                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    />
+                  ) : null}
+
+                  {field.type === 'array' ? (
+                    <textarea
+                      value={(Array.isArray(field.value) ? field.value : []).join('\n')}
+                      onChange={(event) => {
+                        const lines = event.target.value
+                          .split('\n')
+                          .map((item) => item.trim())
+                          .filter((item) => item !== '');
+                        updateConfigByPath(field.path, lines);
+                      }}
+                      className="w-full min-h-[96px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                      placeholder="每行一个值"
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -3057,14 +3215,14 @@ function MainShell() {
             <span className="text-xs font-semibold text-brand-text-muted px-3 py-1.5 border border-brand-border rounded-lg">{username}</span>
             <button
               onClick={() => setPasswdDialogOpen(true)}
-              className="p-2 rounded-lg border border-brand-border hover:bg-brand-bg/60"
+              className="p-2.5 rounded-xl border border-brand-border hover:bg-brand-bg/60"
               title="修改密码"
             >
               <Lock className="w-4 h-4" />
             </button>
             <button
               onClick={() => void doLogout()}
-              className="p-2 rounded-lg border border-brand-border hover:bg-brand-bg/60"
+              className="p-2.5 rounded-xl border border-brand-border hover:bg-brand-bg/60"
               title="退出"
             >
               <X className="w-4 h-4" />
@@ -3094,7 +3252,7 @@ function MainShell() {
           <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between">
               <h4 className="font-black">修改密码</h4>
-              <button onClick={() => setPasswdDialogOpen(false)} className="p-1.5 hover:bg-brand-bg/60 rounded-lg">
+              <button onClick={() => setPasswdDialogOpen(false)} className="p-2 hover:bg-brand-bg/60 rounded-xl">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3126,7 +3284,7 @@ function MainShell() {
               <button
                 onClick={() => void changePassword()}
                 disabled={passwdLoading}
-                className="w-full bg-brand-accent py-2.5 rounded-xl font-black text-xs uppercase tracking-wider"
+                className="w-full bg-brand-accent py-3 rounded-xl font-black text-sm uppercase tracking-wider"
               >
                 {passwdLoading ? '提交中...' : '提交并重新登录'}
               </button>
