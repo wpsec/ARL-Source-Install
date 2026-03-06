@@ -105,6 +105,7 @@ api.add_namespace(routes.dingtalk_api_ns)      # 钉钉开放平台调试
 api.add_namespace(routes.nuclei_result_ns)     # Nuclei 扫描结果
 api.add_namespace(routes.wih_ns)               # WIH (Web Information Hunter) 
 api.add_namespace(routes.asset_wih_ns)         # 资产 WIH
+api.add_namespace(routes.api_console_ns)       # 配置中心
 
 # 执行系统更新检查
 arl_update()
