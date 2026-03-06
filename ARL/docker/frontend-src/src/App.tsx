@@ -2128,8 +2128,11 @@ function DashboardView({
               </div>
               <h3 className="text-xl font-black tracking-tight">实时日志</h3>
             </div>
-            <button onClick={() => onOpenModule('task')} className="text-xs font-black text-brand-accent uppercase tracking-wider hover:underline px-2">
-              查看任务
+            <button
+              onClick={() => void loadRecentLogs()}
+              className="text-xs font-black text-brand-accent uppercase tracking-wider hover:underline px-2"
+            >
+              刷新日志
             </button>
           </div>
           <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[10px] overflow-y-auto max-h-[320px]">
