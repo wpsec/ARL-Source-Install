@@ -3,6 +3,8 @@ import {
   Activity,
   AlertTriangle,
   ArrowDownToLine,
+  ArrowDownRight,
+  ArrowUpRight,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -31,9 +33,22 @@ import {
   User,
   Wrench,
   X,
+  Zap,
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import { ThemeProvider } from './context/ThemeContext';
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from 'recharts';
 
 type HttpMethod = 'GET' | 'POST';
 type JsonValue = Record<string, any>;
@@ -1767,68 +1782,16 @@ function DashboardView({
     asset_site: 0,
     vuln: 0,
     github_task: 0,
+    running_task: 0,
+    new_assets_today: 0,
   });
-  const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const [deviceInfo, setDeviceInfo] = useState<any>({});
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      // 仪表盘聚合请求：统计总量 + 主机资源 + 最近任务
-      const targets = [
-        { key: 'task', path: '/task/' },
-        { key: 'scheduler', path: '/scheduler/' },
-        { key: 'asset_scope', path: '/asset_scope/' },
-        { key: 'asset_site', path: '/asset_site/' },
-        { key: 'vuln', path: '/vuln/' },
-        { key: 'github_task', path: '/github_task/' },
-      ] as const;
-
-      const [responses, consoleInfo, recentTaskResponse] = await Promise.all([
-        Promise.all(targets.map((target) => requestApi(token, target.path, { method: 'GET', query: { page: 1, size: 1 } }))),
-        requestApi(token, '/console/info', { method: 'GET' }),
-        requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } }),
-      ]);
-
-      const nextStats: any = {};
-      responses.forEach((response, index) => {
-        const normalized = normalizeListData(response);
-        nextStats[targets[index].key] = normalized.total;
-      });
-      setStats(nextStats);
-      setDeviceInfo(consoleInfo?.data?.device_info || {});
-      setRecentTasks(normalizeListData(recentTaskResponse).items.slice(0, 6));
-      setLastUpdatedAt(new Date().toLocaleString('zh-CN', { hour12: false }));
-    } catch (err: any) {
-      setError(err?.message || '加载仪表盘失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const cards = [
-    { title: '扫描任务', value: stats.task, helper: `监控任务 ${stats.scheduler}`, icon: Activity, color: 'text-brand-accent' },
-    { title: '资产站点', value: stats.asset_site, helper: `资产分组 ${stats.asset_scope}`, icon: Globe, color: 'text-brand-secondary' },
-    { title: '漏洞总数', value: stats.vuln, helper: '来自 vuln 实时统计', icon: AlertTriangle, color: 'text-brand-danger' },
-    { title: 'GitHub任务', value: stats.github_task, helper: '泄露监控任务总量', icon: GitBranch, color: 'text-emerald-400' },
-  ];
-  // 兼容后端不同版本的字段命名
-  const memoryInfo = deviceInfo?.memory || deviceInfo?.virtual_memory;
-  const diskInfo = deviceInfo?.disk || deviceInfo?.disk_usage;
-  const cpuPercent = parseNumericValue(deviceInfo?.cpu?.percent) || 0;
-  const memoryPercent = parseNumericValue(memoryInfo?.percent) || 0;
-  const diskPercent = parseNumericValue(diskInfo?.percent) || 0;
-  const quickModules = [
-    { id: 'task', label: '任务管理', desc: '下发、停止、导出扫描任务' },
-    { id: 'policy', label: '策略配置', desc: '维护标准化扫描策略模板' },
-    { id: 'scheduler', label: '资产监控', desc: '周期监控资产组与站点变化' },
-    { id: 'asset_scope', label: '资产分组', desc: '维护范围并执行批量导出' },
-  ];
+  const [recentTasks, setRecentTasks] = useState<any[]>([]);
+  const [assetTrend, setAssetTrend] = useState<any[]>([]);
+  const [riskDistribution, setRiskDistribution] = useState<any[]>([]);
+  const [networkTrend, setNetworkTrend] = useState<any[]>([]);
+  const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  const [engineInfo, setEngineInfo] = useState<any>({});
 
   const resolveTaskStatus = (rawStatus: any): { text: string; type: 'success' | 'error' | 'info' } => {
     const normalized = String(rawStatus ?? '').toLowerCase();
@@ -1842,6 +1805,113 @@ function DashboardView({
     return { text: normalized || '未知', type: 'info' };
   };
 
+  const loadFallback = useCallback(async () => {
+    const targets = [
+      { key: 'task', path: '/task/' },
+      { key: 'scheduler', path: '/scheduler/' },
+      { key: 'asset_scope', path: '/asset_scope/' },
+      { key: 'asset_site', path: '/asset_site/' },
+      { key: 'vuln', path: '/vuln/' },
+      { key: 'github_task', path: '/github_task/' },
+    ] as const;
+
+    const [responses, consoleInfo, recentTaskResponse] = await Promise.all([
+      Promise.all(targets.map((target) => requestApi(token, target.path, { method: 'GET', query: { page: 1, size: 1 } }))),
+      requestApi(token, '/console/info', { method: 'GET' }),
+      requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } }),
+    ]);
+
+    const nextStats: any = {};
+    responses.forEach((response, index) => {
+      const normalized = normalizeListData(response);
+      nextStats[targets[index].key] = normalized.total;
+    });
+
+    setStats((prev) => ({
+      ...prev,
+      task: Number(nextStats.task || 0),
+      scheduler: Number(nextStats.scheduler || 0),
+      asset_scope: Number(nextStats.asset_scope || 0),
+      asset_site: Number(nextStats.asset_site || 0),
+      vuln: Number(nextStats.vuln || 0),
+      github_task: Number(nextStats.github_task || 0),
+    }));
+    setDeviceInfo(consoleInfo?.data?.device_info || {});
+    setRecentTasks(normalizeListData(recentTaskResponse).items.slice(0, 6));
+    setLastUpdatedAt(new Date().toLocaleString('zh-CN', { hour12: false }));
+  }, [token]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const dashboardInfo = await requestApi(token, '/console/dashboard', { method: 'GET' });
+      const dashboardData = dashboardInfo?.data || {};
+      if (!dashboardData?.stats) {
+        throw new Error('仪表盘聚合数据为空');
+      }
+
+      const nextStats = dashboardData.stats || {};
+      setStats({
+        task: Number(nextStats.task_total || 0),
+        scheduler: Number(nextStats.scheduler_total || 0),
+        asset_scope: Number(nextStats.asset_scope_total || 0),
+        asset_site: Number(nextStats.asset_site_total || 0),
+        vuln: Number(nextStats.vuln_total || 0),
+        github_task: Number(nextStats.github_task_total || 0),
+        running_task: Number(nextStats.running_tasks || 0),
+        new_assets_today: Number(nextStats.new_assets_today || 0),
+      });
+      setDeviceInfo(dashboardData.device_info || {});
+      setAssetTrend(Array.isArray(dashboardData.asset_trend_7d) ? dashboardData.asset_trend_7d : []);
+      setRiskDistribution(Array.isArray(dashboardData.risk_distribution) ? dashboardData.risk_distribution : []);
+      setNetworkTrend(Array.isArray(dashboardData.network_trend) ? dashboardData.network_trend : []);
+      setRecentLogs(Array.isArray(dashboardData.recent_logs) ? dashboardData.recent_logs : []);
+      setEngineInfo(dashboardData.engine || {});
+      setLastUpdatedAt(dashboardData.last_updated ? normalizeValue(dashboardData.last_updated) : new Date().toLocaleString('zh-CN', { hour12: false }));
+
+      const recentTaskResponse = await requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } });
+      setRecentTasks(normalizeListData(recentTaskResponse).items.slice(0, 6));
+    } catch (err: any) {
+      try {
+        await loadFallback();
+      } catch (fallbackErr: any) {
+        setError(fallbackErr?.message || err?.message || '加载仪表盘失败');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [token, loadFallback]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // 兼容后端不同版本的字段命名
+  const memoryInfo = deviceInfo?.memory || deviceInfo?.virtual_memory;
+  const diskInfo = deviceInfo?.disk || deviceInfo?.disk_usage;
+  const cpuPercent = parseNumericValue(deviceInfo?.cpu?.percent) || 0;
+  const memoryPercent = parseNumericValue(memoryInfo?.percent) || 0;
+  const diskPercent = parseNumericValue(diskInfo?.percent) || 0;
+  const highRisk = Number((riskDistribution.find((item) => item?.name === '高危') || {}).value || 0);
+  const cards = [
+    { title: '总资产数', value: stats.asset_site, change: `+${stats.new_assets_today}`, isUp: true, icon: Globe, color: 'text-brand-accent' },
+    { title: '活跃任务', value: stats.running_task, change: `总计 ${stats.task}`, isUp: true, icon: Activity, color: 'text-brand-secondary' },
+    { title: '高危漏洞', value: highRisk, change: `总计 ${stats.vuln}`, isUp: highRisk === 0, icon: AlertTriangle, color: 'text-brand-danger' },
+    { title: '今日新增', value: stats.new_assets_today, change: `分组 ${stats.asset_scope}`, isUp: true, icon: Shield, color: 'text-brand-warning' },
+  ];
+  const trendData = assetTrend.length > 0 ? assetTrend : [{ name: '周一', assets: stats.asset_site, vulns: stats.vuln }];
+  const riskData = riskDistribution.length > 0 ? riskDistribution : [{ name: '高危', value: highRisk, color: '#ef4444' }];
+  const netData = networkTrend.length > 0 ? networkTrend : [{ time: '13:40', in: 120, out: 80 }];
+  const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', msg: '暂无日志数据', time: '' }];
+  const quickModules = [
+    { id: 'task', label: '任务管理', desc: '下发、停止、导出扫描任务', icon: Activity, color: 'text-brand-accent' },
+    { id: 'policy', label: '策略配置', desc: '维护标准化扫描策略模板', icon: FileCode, color: 'text-brand-secondary' },
+    { id: 'scheduler', label: '资产监控', desc: '周期监控资产组与站点变化', icon: Monitor, color: 'text-brand-warning' },
+    { id: 'asset_scope', label: '资产分组', desc: '维护范围并执行批量导出', icon: Globe, color: 'text-brand-danger' },
+  ];
+  const levelClassMap: Record<string, string> = { INFO: 'text-emerald-400', WARN: 'text-brand-warning', CRIT: 'text-brand-danger' };
+
   const formatTime = (value: any): string => {
     if (!value) return '-';
     const parsed = new Date(value);
@@ -1851,61 +1921,188 @@ function DashboardView({
 
   const renderUsageBar = (title: string, percent: number, detail: string) => (
     <div className="space-y-2">
-      <div className="flex items-center justify-between text-xs font-bold">
-        <span className="text-brand-text-muted uppercase tracking-widest">{title}</span>
-        <span>{formatPercent(percent)}</span>
+      <div className="flex items-center justify-between text-[10px] font-black text-brand-text-muted uppercase tracking-widest">
+        <span>{title}</span>
+        <span className="text-white">{formatPercent(percent)}</span>
       </div>
-      <div className="h-2 bg-brand-bg/60 rounded-full border border-brand-border overflow-hidden">
+      <div className="h-1.5 bg-brand-bg rounded-full overflow-hidden border border-brand-border">
         <div className="h-full bg-brand-accent rounded-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
       </div>
-      <p className="text-xs text-brand-text-muted">{detail}</p>
+      <p className="text-[10px] text-brand-text-muted">{detail}</p>
     </div>
   );
 
   return (
-    <div className="p-8 space-y-8">
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+    <div className="p-8 space-y-10">
+      <div className="flex justify-between items-end gap-4 flex-wrap">
         <div>
-          <h2 className="text-5xl font-black tracking-tight">我的仪表盘</h2>
-          <p className="text-brand-text-muted font-medium mt-2">核心模块状态、主机资源与最近任务统一可视化。</p>
+          <h2 className="text-6xl font-black tracking-tighter leading-none mb-2">我的仪表盘</h2>
+          <p className="text-brand-text-muted font-medium">ARL 互联网资产自动化收集系统 · 实时监控中</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-brand-text-muted border border-brand-border rounded-xl px-3 py-2">最近更新: {lastUpdatedAt || '-'}</span>
-          <button
-            onClick={onQuickCreateTask}
-            className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black tracking-wide hover:opacity-90 transition flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            新建任务
-          </button>
-          <button
-            onClick={() => void load()}
-            className="px-4 py-2 border border-brand-border rounded-xl text-sm font-semibold hover:bg-brand-card/60 transition flex items-center gap-2"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            刷新
-          </button>
+        <div className="text-right space-y-2">
+          <p className="text-xs font-black text-brand-accent uppercase tracking-widest">最后更新</p>
+          <p className="text-sm font-mono">{lastUpdatedAt || '-'}</p>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={onQuickCreateTask}
+              className="px-4 py-2 rounded-xl bg-brand-accent text-white text-xs font-black uppercase tracking-widest hover:opacity-90 transition flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              新建任务
+            </button>
+            <button
+              onClick={() => void load()}
+              className="px-4 py-2 border border-brand-border rounded-xl text-xs font-semibold hover:bg-brand-card/60 transition flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              刷新
+            </button>
+          </div>
         </div>
       </div>
 
-      {error ? (
-        <div className="text-sm text-brand-danger border border-brand-danger/30 bg-brand-danger/10 rounded-xl px-4 py-3">{error}</div>
-      ) : null}
+      {error ? <div className="text-sm text-brand-danger border border-brand-danger/30 bg-brand-danger/10 rounded-xl px-4 py-3">{error}</div> : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {cards.map((card) => (
-          <div
-            key={card.title}
-            className="bg-brand-card/35 border border-brand-border rounded-3xl p-5 backdrop-blur-lg shadow-xl shadow-black/15 hover:border-brand-accent/40 transition"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs uppercase tracking-widest font-bold text-brand-text-muted">{card.title}</p>
-              <card.icon className={`w-5 h-5 ${card.color}`} />
+          <div key={card.title} className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl hover:border-brand-accent/50 transition-all group shadow-xl shadow-black/20">
+            <div className="flex justify-between items-start mb-4">
+              <div className={`p-3 rounded-2xl bg-brand-bg border border-brand-border group-hover:scale-110 transition-transform ${card.color}`}>
+                <card.icon className="w-6 h-6" />
+              </div>
+              <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${card.isUp ? 'text-emerald-400 bg-emerald-400/10' : 'text-brand-danger bg-brand-danger/10'}`}>
+                {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                {card.change}
+              </div>
             </div>
-            <p className="text-3xl font-black tracking-tight">{card.value.toLocaleString()}</p>
-            <p className="text-xs text-brand-text-muted mt-2">{card.helper}</p>
+            <h3 className="text-brand-text-muted text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
+            <p className="text-3xl font-black tracking-tighter">{card.value.toLocaleString()}</p>
           </div>
         ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-brand-card/30 backdrop-blur-md border border-brand-border p-8 rounded-3xl shadow-xl shadow-black/20">
+          <h3 className="text-xl font-black tracking-tight mb-8">资产增长趋势 (7日)</h3>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trendData}>
+                <defs>
+                  <linearGradient id="colorAssetsTrend" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--brand-accent)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--brand-accent)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" vertical={false} />
+                <XAxis dataKey="name" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} dy={10} />
+                <YAxis stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--brand-card)', border: '1px solid var(--brand-border)', borderRadius: '16px' }} />
+                <Area type="monotone" dataKey="assets" stroke="var(--brand-accent)" strokeWidth={3} fillOpacity={1} fill="url(#colorAssetsTrend)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-8 rounded-3xl shadow-xl shadow-black/20">
+          <h3 className="text-xl font-black tracking-tight mb-8">风险等级分布</h3>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={riskData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" horizontal={false} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: 'var(--brand-card)', border: '1px solid var(--brand-border)', borderRadius: '16px' }} />
+                <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={32}>
+                  {riskData.map((entry, index) => (
+                    <Cell key={`risk-${index}`} fill={entry?.color || '#64748b'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-brand-secondary/10 rounded-xl">
+              <Activity className="w-5 h-5 text-brand-secondary" />
+            </div>
+            <h3 className="text-xl font-black tracking-tight">系统监控</h3>
+          </div>
+          <div className="space-y-6 flex-1">
+            {renderUsageBar('CPU 负载', cpuPercent, formatCpuSummary(deviceInfo))}
+            {renderUsageBar('内存占用', memoryPercent, formatUsageSummary(memoryInfo))}
+            {renderUsageBar('磁盘占用', diskPercent, formatUsageSummary(diskInfo))}
+            <div className="h-28 mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={netData}>
+                  <Area type="monotone" dataKey="in" stroke="var(--brand-accent)" fill="var(--brand-accent)" fillOpacity={0.1} strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-brand-warning/10 rounded-xl">
+              <Zap className="w-5 h-5 text-brand-warning" />
+            </div>
+            <h3 className="text-xl font-black tracking-tight">ARL 引擎</h3>
+          </div>
+          <div className="flex-1 flex flex-col justify-center items-center">
+            <div className="relative mb-6">
+              <div className="w-20 h-20 rounded-full border-4 border-brand-warning/20" />
+              <div className="absolute inset-0 w-20 h-20 rounded-full border-4 border-brand-warning border-t-transparent animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Zap className="w-8 h-8 text-brand-warning fill-brand-warning/20" />
+              </div>
+            </div>
+            <div className="text-center space-y-1 mb-6">
+              <p className="text-sm font-black">{normalizeValue(engineInfo?.version || 'ARL Engine')}</p>
+              <p className="text-[10px] text-brand-text-muted font-bold uppercase tracking-widest">
+                集群状态: {normalizeValue(engineInfo?.cluster_online || 3)}/{normalizeValue(engineInfo?.cluster_total || 3)} 节点在线
+              </p>
+            </div>
+            <div className="w-full grid grid-cols-2 gap-2">
+              <div className="p-3 bg-brand-bg/50 rounded-2xl border border-brand-border text-center">
+                <p className="text-[10px] font-black text-brand-text-muted uppercase mb-1">队列积压</p>
+                <p className="text-lg font-black">{normalizeValue(engineInfo?.queue_pending || 0)}</p>
+              </div>
+              <div className="p-3 bg-brand-bg/50 rounded-2xl border border-brand-border text-center">
+                <p className="text-[10px] font-black text-brand-text-muted uppercase mb-1">健康度</p>
+                <p className="text-lg font-black text-emerald-400">{formatPercent(engineInfo?.health_score || 100)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-brand-accent/10 rounded-xl">
+                <Terminal className="w-5 h-5 text-brand-accent" />
+              </div>
+              <h3 className="text-xl font-black tracking-tight">实时日志</h3>
+            </div>
+            <button onClick={() => onOpenModule('task')} className="text-[10px] font-black text-brand-accent uppercase tracking-widest hover:underline">
+              查看任务
+            </button>
+          </div>
+          <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[10px] space-y-3 overflow-hidden">
+            {logsData.map((log, index) => {
+              const level = String(log?.level || 'INFO').toUpperCase();
+              return (
+                <div key={`${level}-${index}`} className="flex gap-2 border-b border-white/5 pb-2 last:border-0">
+                  <span className={`font-black shrink-0 w-8 ${levelClassMap[level] || 'text-brand-text-muted'}`}>{level}</span>
+                  <span className="text-white/70 truncate">{normalizeValue(log?.msg)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
@@ -1956,38 +2153,26 @@ function DashboardView({
           </div>
         </div>
 
-        <div className="bg-brand-card/35 border border-brand-border rounded-3xl p-6 space-y-5">
-          <h3 className="text-xl font-black tracking-tight">主机资源</h3>
-          {renderUsageBar('CPU', cpuPercent, formatCpuSummary(deviceInfo))}
-          {renderUsageBar('内存', memoryPercent, formatUsageSummary(memoryInfo))}
-          {renderUsageBar('磁盘', diskPercent, formatUsageSummary(diskInfo))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <div className="xl:col-span-2 bg-brand-card/35 border border-brand-border rounded-3xl p-6">
+        <div className="bg-brand-card/35 border border-brand-border rounded-3xl p-6">
           <h3 className="text-lg font-black mb-4">快捷入口</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3">
             {quickModules.map((entry) => (
               <button
                 key={entry.id}
                 onClick={() => onOpenModule(entry.id)}
                 className="text-left bg-brand-bg/40 border border-brand-border rounded-2xl p-4 hover:border-brand-accent/45 hover:bg-brand-card/55 transition"
               >
-                <p className="font-black text-sm">{entry.label}</p>
-                <p className="text-xs text-brand-text-muted mt-1">{entry.desc}</p>
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg bg-brand-card/60 border border-brand-border ${entry.color}`}>
+                    <entry.icon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-black text-sm">{entry.label}</p>
+                    <p className="text-xs text-brand-text-muted mt-1">{entry.desc}</p>
+                  </div>
+                </div>
               </button>
             ))}
-          </div>
-        </div>
-
-        <div className="bg-brand-card/35 border border-brand-border rounded-3xl p-6">
-          <h3 className="text-lg font-black mb-4">运行建议</h3>
-          <div className="space-y-3 text-sm text-brand-text-muted leading-relaxed">
-            <p>1. 先在“策略配置”页维护标准策略，再通过“任务管理 → 策略下发”统一执行。</p>
-            <p>2. 定时能力分为“资产监控(scheduler)”和“计划任务(task_schedule)”两套，按场景分别使用。</p>
-            <p>3. 导出报告支持单任务、批量任务、批量资产组，均已在各模块操作面板接入。</p>
-            <p>4. 所有操作统一使用可视化表单，减少参数输入错误。</p>
           </div>
         </div>
       </div>
@@ -2012,6 +2197,7 @@ function ActionDialog({
   const [file, setFile] = useState<File | null>(null);
 
   const editable = action.allowPayloadEdit !== false;
+  const isTaskCreate = action.id === 'create_task';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
 
   useEffect(() => {
@@ -2065,7 +2251,7 @@ function ActionDialog({
                 <div key={field.path} className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted">
                     {humanizeField(field.path)}
-                    <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span>
+                    {!isTaskCreate ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
                   </label>
                   {isBoolean ? (
                     <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
@@ -2091,19 +2277,19 @@ function ActionDialog({
                       className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
                     />
                   ) : isComplex ? (
-                    <textarea
-                      value={JSON.stringify(value, null, 2)}
+                    <input
+                      value={Array.isArray(value) ? value.join(',') : String(value ?? '')}
                       disabled={disabled}
                       onChange={(event) => {
-                        try {
-                          const parsed = JSON.parse(event.target.value || 'null');
-                          setFormPayload((prev) => updatePayloadValue(prev, field.path, parsed));
-                          setError('');
-                        } catch {
-                          setError(`字段 ${field.path} 的 JSON 格式错误`);
-                        }
+                        const nextValues = event.target.value
+                          .split(',')
+                          .map((item) => item.trim())
+                          .filter((item) => item);
+                        setFormPayload((prev) => updatePayloadValue(prev, field.path, nextValues));
+                        setError('');
                       }}
-                      className="w-full min-h-[88px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-xs font-mono"
+                      placeholder="多个值请用逗号分隔"
+                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
                     />
                   ) : (
                     <input
@@ -2119,13 +2305,6 @@ function ActionDialog({
               );
             })}
           </div>
-
-          <details>
-            <summary className="cursor-pointer text-xs font-semibold text-brand-text-muted">预览 JSON</summary>
-            <pre className="mt-2 bg-brand-bg border border-brand-border rounded-xl p-3 text-xs font-mono overflow-auto max-h-48">
-              {JSON.stringify(formPayload, null, 2)}
-            </pre>
-          </details>
 
           {!editable ? (
             <div className="text-xs text-brand-text-muted bg-brand-bg/60 border border-brand-border rounded-lg px-3 py-2">
@@ -2187,7 +2366,6 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
   const [size, setSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [quickFilter, setQuickFilter] = useState('');
-  const [filterJson, setFilterJson] = useState('{}');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dialogAction, setDialogAction] = useState<ModuleAction | null>(null);
   const [dialogPayload, setDialogPayload] = useState<JsonValue>({});
@@ -2200,13 +2378,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
     setError('');
     setSuccess('');
     try {
-      let filters: JsonValue = {};
-      try {
-        filters = parseJsonObject(filterJson);
-      } catch (parseErr: any) {
-        setError(parseErr?.message || '高级过滤 JSON 格式错误');
-        return;
-      }
+      const filters: JsonValue = {};
       if (module.quickFilterKey && quickFilter.trim()) {
         filters[module.quickFilterKey] = quickFilter.trim();
       }
@@ -2233,7 +2405,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
     } finally {
       setLoading(false);
     }
-  }, [filterJson, module.defaultOrder, module.listPath, module.quickFilterKey, page, quickFilter, size, token]);
+  }, [module.defaultOrder, module.listPath, module.quickFilterKey, page, quickFilter, size, token]);
 
   useEffect(() => {
     void loadRows();
@@ -2358,13 +2530,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
     const resolved = applyPathTemplate(module.exportPath, payload);
     try {
       setError('');
-      let filters: JsonValue = {};
-      try {
-        filters = parseJsonObject(filterJson);
-      } catch (parseErr: any) {
-        setError(parseErr?.message || '高级过滤 JSON 格式错误');
-        return;
-      }
+      const filters: JsonValue = {};
       if (module.quickFilterKey && quickFilter.trim()) {
         filters[module.quickFilterKey] = quickFilter.trim();
       }
@@ -2431,19 +2597,6 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
             </button>
           ) : null}
         </div>
-
-        <details>
-          <summary className="cursor-pointer text-sm font-semibold text-brand-text-muted">高级过滤 JSON</summary>
-          <textarea
-            value={filterJson}
-            onChange={(event) => {
-              setFilterJson(event.target.value);
-              setPage(1);
-            }}
-            className="mt-3 w-full h-28 bg-brand-bg border border-brand-border rounded-xl p-3 font-mono text-xs"
-            placeholder='{"status":"running","task_id":"xxx"}'
-          />
-        </details>
 
         {visibleActions.length > 0 ? (
           <div className="flex flex-wrap gap-2 pt-1">
