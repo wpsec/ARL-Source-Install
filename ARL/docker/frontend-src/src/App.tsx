@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -97,6 +97,7 @@ type ApiRequestOptions = {
 const API_BASE = '/api';
 const TOKEN_KEY = 'arl-token';
 const USERNAME_KEY = 'arl-username';
+const ACTIVE_MODULE_KEY = 'arl-active-module';
 
 const modules: ModuleConfig[] = [
   {
@@ -1670,6 +1671,12 @@ function getModuleById(id: string): ModuleConfig {
   return modules.find((module) => module.id === id) || modules[0];
 }
 
+function resolveStoredModuleId(moduleId: string | null | undefined): string {
+  const normalized = String(moduleId || '').trim();
+  if (!normalized) return 'dashboard';
+  return modules.some((module) => module.id === normalized) ? normalized : 'dashboard';
+}
+
 function LoginView({
   onLogin,
   loading,
@@ -3002,128 +3009,166 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
 }
 
 function ApiConsoleView({ token }: { token: string }) {
-  type ConfigFieldItem = {
+  type DomainDictOption = {
+    label: string;
     path: string;
-    key: string;
-    section: string;
-    value: any;
-    type: 'string' | 'number' | 'boolean' | 'array';
+    source: string;
+    exists: boolean;
+    size: number;
+    selected?: boolean;
   };
 
-  const [configData, setConfigData] = useState<JsonValue>({});
   const [configPath, setConfigPath] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
-  const [searchKey, setSearchKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [dictOptions, setDictOptions] = useState<DomainDictOption[]>([]);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
-  const loadConfig = useCallback(async () => {
+  const [domainDict, setDomainDict] = useState('');
+  const [domainBruteConcurrent, setDomainBruteConcurrent] = useState(300);
+  const [altDnsConcurrent, setAltDnsConcurrent] = useState(1500);
+  const [blackIpsText, setBlackIpsText] = useState('');
+  const [dnsResolversText, setDnsResolversText] = useState('');
+
+  const splitTextList = (rawText: string) =>
+    rawText
+      .replace(/,/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+
+  const loadScanConfig = useCallback(async () => {
     setLoading(true);
     setError('');
     setSuccess('');
     try {
-      const result = await requestApi(token, '/api_console/config/', { method: 'GET' });
+      const result = await requestApi(token, '/api_console/scan_config/', { method: 'GET' });
       const data = result?.data || {};
-      if (!data?.config || typeof data.config !== 'object' || Array.isArray(data.config)) {
-        throw new Error('配置数据格式错误');
-      }
-      setConfigData(data.config);
+      const scanConfig = data?.scan_config || {};
+      const nextOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+
+      setDomainDict(String(scanConfig.domain_dict || ''));
+      setDomainBruteConcurrent(Number(scanConfig.domain_brute_concurrent || 300));
+      setAltDnsConcurrent(Number(scanConfig.alt_dns_concurrent || 1500));
+      setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
+      setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
+
+      setDictOptions(nextOptions);
       setConfigPath(String(data.config_path || ''));
       setUpdatedAt(String(data.updated_at || ''));
     } catch (err: any) {
-      setError(err?.message || '加载配置失败');
+      setError(err?.message || '加载扫描配置失败');
     } finally {
       setLoading(false);
     }
   }, [token]);
 
   useEffect(() => {
-    void loadConfig();
-  }, [loadConfig]);
+    void loadScanConfig();
+  }, [loadScanConfig]);
 
-  const updateConfigByPath = (path: string, value: any) => {
-    setConfigData((prev) => {
-      const next = deepClone(prev || {});
-      const parts = path.split('.');
-      let cursor: any = next;
-      for (let i = 0; i < parts.length - 1; i += 1) {
-        const key = parts[i];
-        if (!cursor[key] || typeof cursor[key] !== 'object' || Array.isArray(cursor[key])) {
-          cursor[key] = {};
-        }
-        cursor = cursor[key];
-      }
-      cursor[parts[parts.length - 1]] = value;
-      return next;
-    });
-  };
+  const saveScanConfig = async () => {
+    const normalizedDict = domainDict.trim();
+    if (!normalizedDict) {
+      setError('请先选择域名爆破字典');
+      return;
+    }
 
-  const configFields = useMemo<ConfigFieldItem[]>(() => {
-    const fields: ConfigFieldItem[] = [];
+    if (!Number.isFinite(domainBruteConcurrent) || domainBruteConcurrent <= 0) {
+      setError('域名爆破并发数必须大于 0');
+      return;
+    }
 
-    const walk = (node: any, parent = '') => {
-      if (!node || typeof node !== 'object' || Array.isArray(node)) return;
-      Object.entries(node).forEach(([key, value]) => {
-        const path = parent ? `${parent}.${key}` : key;
-        if (Array.isArray(value)) {
-          fields.push({ path, key, section: parent.split('.')[0] || key, value, type: 'array' });
-          return;
-        }
-        if (value && typeof value === 'object') {
-          walk(value, path);
-          return;
-        }
-        if (typeof value === 'boolean') {
-          fields.push({ path, key, section: parent.split('.')[0] || key, value, type: 'boolean' });
-          return;
-        }
-        if (typeof value === 'number') {
-          fields.push({ path, key, section: parent.split('.')[0] || key, value, type: 'number' });
-          return;
-        }
-        fields.push({ path, key, section: parent.split('.')[0] || key, value: value ?? '', type: 'string' });
-      });
-    };
+    if (!Number.isFinite(altDnsConcurrent) || altDnsConcurrent <= 0) {
+      setError('组合生成域名爆破并发数必须大于 0');
+      return;
+    }
 
-    walk(configData);
+    const blackIps = splitTextList(blackIpsText);
+    if (blackIps.length === 0) {
+      setError('黑名单IP配置不能为空');
+      return;
+    }
 
-    const keyword = searchKey.trim().toLowerCase();
-    if (!keyword) return fields;
-
-    return fields.filter((item) => item.path.toLowerCase().includes(keyword) || humanizeField(item.path).toLowerCase().includes(keyword));
-  }, [configData, searchKey]);
-
-  const groupedFields = useMemo<Record<string, ConfigFieldItem[]>>(() => {
-    const grouped: Record<string, ConfigFieldItem[]> = {};
-    configFields.forEach((field) => {
-      const section = field.section || '其他';
-      if (!grouped[section]) grouped[section] = [];
-      grouped[section].push(field);
-    });
-    return grouped;
-  }, [configFields]);
-
-  const saveConfig = async () => {
     setSaving(true);
     setError('');
     setSuccess('');
     try {
-      const result = await requestApi(token, '/api_console/config/', {
+      const result = await requestApi(token, '/api_console/scan_config/', {
         method: 'POST',
         body: {
-          config: configData,
+          scan_config: {
+            domain_dict: normalizedDict,
+            domain_brute_concurrent: Math.floor(domainBruteConcurrent),
+            alt_dns_concurrent: Math.floor(altDnsConcurrent),
+            black_ips: blackIps,
+            dns_resolvers: splitTextList(dnsResolversText),
+          },
         },
       });
+
       const data = result?.data || {};
+      const savedConfig = data?.scan_config || {};
+      const nextOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
-      setSuccess(`配置已保存${backupPath}`);
+
+      setDomainDict(String(savedConfig.domain_dict || normalizedDict));
+      setDomainBruteConcurrent(Number(savedConfig.domain_brute_concurrent || domainBruteConcurrent));
+      setAltDnsConcurrent(Number(savedConfig.alt_dns_concurrent || altDnsConcurrent));
+      setBlackIpsText(Array.isArray(savedConfig.black_ips) ? savedConfig.black_ips.join('\n') : blackIpsText);
+      setDnsResolversText(Array.isArray(savedConfig.dns_resolvers) ? savedConfig.dns_resolvers.join('\n') : dnsResolversText);
+
+      setDictOptions(nextOptions);
+      setConfigPath(String(data.config_path || configPath));
       setUpdatedAt(String(data.saved_at || updatedAt));
+      setSuccess(`扫描配置已保存${backupPath}`);
     } catch (err: any) {
-      setError(err?.message || '保存配置失败');
+      setError(err?.message || '保存扫描配置失败');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const uploadDomainDict = async () => {
+    if (!uploadFile) {
+      setError('请先选择要上传的字典文件');
+      return;
+    }
+
+    setUploading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      const result = await requestApi(token, '/api_console/scan_config/domain_dict/upload/', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = result?.data || {};
+      const uploadedPath = String(data?.domain_dict_path || '');
+      const nextOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+
+      if (uploadedPath) {
+        setDomainDict(uploadedPath);
+      }
+      setDictOptions(nextOptions);
+      setUpdatedAt(String(data.saved_at || updatedAt));
+      setSuccess(`字典上传成功: ${uploadFile.name}`);
+
+      setUploadFile(null);
+      if (uploadInputRef.current) {
+        uploadInputRef.current.value = '';
+      }
+    } catch (err: any) {
+      setError(err?.message || '字典上传失败');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -3131,20 +3176,15 @@ function ApiConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">API 管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">在浏览器中管理系统配置，保存后自动同步到 `config-docker.yaml` 挂载文件。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">扫描配置仅保留域名爆破字典、并发参数、黑名单IP与域名解析器配置。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
-        <div className="flex flex-col xl:flex-row xl:items-center gap-3">
-          <input
-            value={searchKey}
-            onChange={(event) => setSearchKey(event.target.value)}
-            placeholder="按配置路径搜索，例如 DINGTALK_API 或 ARL.API_KEY"
-            className="flex-1 bg-brand-bg border border-brand-border rounded-xl px-3 py-2 text-sm"
-          />
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+          <div className="text-sm font-bold tracking-wide">扫描配置</div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => void loadConfig()}
+              onClick={() => void loadScanConfig()}
               className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
               disabled={loading}
             >
@@ -3152,9 +3192,9 @@ function ApiConsoleView({ token }: { token: string }) {
               重新加载
             </button>
             <button
-              onClick={() => void saveConfig()}
+              onClick={() => void saveScanConfig()}
               className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
-              disabled={saving || loading}
+              disabled={saving || loading || uploading}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
               {saving ? '保存中...' : '保存配置'}
@@ -3174,89 +3214,114 @@ function ApiConsoleView({ token }: { token: string }) {
         </div>
 
         <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
-          提示：保存后将写入运行配置文件，涉及扫描/消息等核心参数时建议重启 `web` 与 `worker` 容器使其完全生效。
+          提示：保存后会写入配置文件，建议重启 `web` 与 `worker` 容器让扫描参数完全生效。
         </div>
 
         {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
         {success ? <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">{success}</div> : null}
       </div>
 
-      <div className="space-y-4">
-        {Object.keys(groupedFields).length === 0 ? (
-          <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-6 text-sm text-brand-text-muted">未匹配到配置项</div>
-        ) : null}
+      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-brand-text-muted block">
+            域名爆破字典
+            <span className="ml-2 font-mono opacity-70">ARL.DOMAIN_DICT</span>
+          </label>
+          <select
+            value={domainDict}
+            onChange={(event) => setDomainDict(event.target.value)}
+            className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+          >
+            <option value="">请选择字典文件</option>
+            {dictOptions.map((item) => (
+              <option key={item.path} value={item.path}>
+                {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        {(Object.entries(groupedFields) as [string, ConfigFieldItem[]][]).map(([section, fields]) => (
-          <div key={section} className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-black tracking-wide">{section}</h3>
-              <span className="text-xs text-brand-text-muted">{fields.length} 项</span>
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {fields.map((field) => (
-                <div key={field.path} className="space-y-2">
-                  <label className="text-xs font-bold text-brand-text-muted block">
-                    {humanizeField(field.path)}
-                    <span className="ml-2 font-mono opacity-70">{field.path}</span>
-                  </label>
-
-                  {field.type === 'boolean' ? (
-                    <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(field.value)}
-                        className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
-                        onChange={(event) => updateConfigByPath(field.path, event.target.checked)}
-                      />
-                      <span>{field.value ? '启用' : '关闭'}</span>
-                    </label>
-                  ) : null}
-
-                  {field.type === 'number' ? (
-                    <input
-                      type="number"
-                      value={String(field.value ?? 0)}
-                      onChange={(event) => {
-                        const raw = event.target.value;
-                        if (raw === '') {
-                          updateConfigByPath(field.path, 0);
-                          return;
-                        }
-                        const parsed = Number(raw);
-                        updateConfigByPath(field.path, Number.isFinite(parsed) ? parsed : 0);
-                      }}
-                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                    />
-                  ) : null}
-
-                  {field.type === 'string' ? (
-                    <input
-                      value={String(field.value ?? '')}
-                      onChange={(event) => updateConfigByPath(field.path, event.target.value)}
-                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                    />
-                  ) : null}
-
-                  {field.type === 'array' ? (
-                    <textarea
-                      value={(Array.isArray(field.value) ? field.value : []).join('\n')}
-                      onChange={(event) => {
-                        const lines = event.target.value
-                          .split('\n')
-                          .map((item) => item.trim())
-                          .filter((item) => item !== '');
-                        updateConfigByPath(field.path, lines);
-                      }}
-                      className="w-full min-h-[96px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
-                      placeholder="每行一个值"
-                    />
-                  ) : null}
-                </div>
-              ))}
-            </div>
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-brand-text-muted block">上传新字典（.txt）</label>
+          <div className="flex flex-col lg:flex-row gap-2">
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".txt"
+              className="flex-1 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                setUploadFile(file || null);
+              }}
+            />
+            <button
+              onClick={() => void uploadDomainDict()}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              disabled={uploading || loading || saving}
+            >
+              <Upload className={`w-4 h-4 ${uploading ? 'animate-spin' : ''}`} />
+              {uploading ? '上传中...' : '上传字典'}
+            </button>
           </div>
-        ))}
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              域名爆破并发数
+              <span className="ml-2 font-mono opacity-70">ARL.DOMAIN_BRUTE_CONCURRENT</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(domainBruteConcurrent)}
+              onChange={(event) => setDomainBruteConcurrent(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              组合生成域名爆破并发数
+              <span className="ml-2 font-mono opacity-70">ARL.ALT_DNS_CONCURRENT</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(altDnsConcurrent)}
+              onChange={(event) => setAltDnsConcurrent(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              黑名单IP配置
+              <span className="ml-2 font-mono opacity-70">ARL.BLACK_IPS</span>
+            </label>
+            <textarea
+              value={blackIpsText}
+              onChange={(event) => setBlackIpsText(event.target.value)}
+              className="w-full min-h-[120px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              placeholder="每行一个IP段，例如 127.0.0.0/8"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              域名解析器配置
+              <span className="ml-2 font-mono opacity-70">ARL.DNS_RESOLVERS</span>
+            </label>
+            <textarea
+              value={dnsResolversText}
+              onChange={(event) => setDnsResolversText(event.target.value)}
+              className="w-full min-h-[120px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              placeholder="每行一个DNS解析器，例如 223.5.5.5 或 1.1.1.1:53"
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -3265,7 +3330,7 @@ function ApiConsoleView({ token }: { token: string }) {
 function MainShell() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
-  const [activeModuleId, setActiveModuleId] = useState('dashboard');
+  const [activeModuleId, setActiveModuleId] = useState(() => resolveStoredModuleId(localStorage.getItem(ACTIVE_MODULE_KEY)));
   const [globalAction, setGlobalAction] = useState<ModuleAction | null>(null);
   const [globalActionPayload, setGlobalActionPayload] = useState<JsonValue>({});
   const [globalNotice, setGlobalNotice] = useState('');
@@ -3343,7 +3408,9 @@ function MainShell() {
     }
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USERNAME_KEY);
+    localStorage.removeItem(ACTIVE_MODULE_KEY);
     setToken('');
+    setActiveModuleId('dashboard');
   };
 
   const changePassword = async () => {
@@ -3428,6 +3495,11 @@ function MainShell() {
 
   useEffect(() => {
     if (!token) return;
+    localStorage.setItem(ACTIVE_MODULE_KEY, activeModuleId);
+  }, [token, activeModuleId]);
+
+  useEffect(() => {
+    if (!token) return;
 
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -3444,16 +3516,11 @@ function MainShell() {
         setPasswdError('');
         return;
       }
-
-      if (activeModuleId !== 'dashboard') {
-        event.preventDefault();
-        setActiveModuleId('dashboard');
-      }
     };
 
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [token, globalAction, passwdDialogOpen, activeModuleId]);
+  }, [token, globalAction, passwdDialogOpen]);
 
   if (!token) {
     return <LoginView onLogin={doLogin} loading={loginLoading} error={loginError} />;

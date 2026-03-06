@@ -15,8 +15,10 @@ import threading
 import yaml
 from flask import request
 from flask_restx import Namespace, fields
+from werkzeug.utils import secure_filename
 
 from app import utils
+from app.config import Config
 from app.modules import ErrorMsg
 from app.utils import auth, get_logger
 from . import ARLResource
@@ -30,6 +32,13 @@ save_config_fields = ns.model(
     'SaveDockerConfig',
     {
         'config': fields.Raw(required=True, description='完整配置对象'),
+    },
+)
+
+save_scan_config_fields = ns.model(
+    'SaveScanConfig',
+    {
+        'scan_config': fields.Raw(required=True, description='扫描配置对象'),
     },
 )
 
@@ -122,6 +131,184 @@ def _backup_config_file(config_path: Path) -> str:
     return str(backup_path)
 
 
+def _safe_int(value, default_value, min_value=1):
+    try:
+        parsed = int(value)
+    except Exception:
+        return int(default_value)
+
+    if parsed < min_value:
+        return int(default_value)
+
+    return parsed
+
+
+def _normalize_string_list(raw_value):
+    """
+    兼容 list / str / 其他可迭代输入，输出清洗后的字符串列表。
+    """
+    if raw_value is None:
+        return []
+
+    values = []
+    if isinstance(raw_value, list):
+        values = raw_value
+    elif isinstance(raw_value, str):
+        values = raw_value.replace(',', '\n').split('\n')
+    else:
+        try:
+            values = list(raw_value)
+        except Exception:
+            values = [raw_value]
+
+    cleaned = []
+    for item in values:
+        item_str = str(item or '').strip()
+        if not item_str:
+            continue
+        cleaned.append(item_str)
+
+    # 去重并保留顺序
+    uniq = []
+    seen = set()
+    for item in cleaned:
+        if item in seen:
+            continue
+        seen.add(item)
+        uniq.append(item)
+
+    return uniq
+
+
+def _resolve_domain_dict_upload_dir() -> Path:
+    """
+    解析扫描字典上传目录。
+    默认使用 app/dicts/uploaded，可通过环境变量覆盖。
+    """
+    custom_path = os.environ.get('ARL_DOMAIN_DICT_UPLOAD_DIR', '').strip()
+    if custom_path:
+        return Path(custom_path)
+
+    return Path(Config.DOMAIN_DICT_TEST).resolve().parent / 'uploaded'
+
+
+def _collect_domain_dict_options(current_path=''):
+    """
+    收集可选域名爆破字典列表：
+    - 内置字典
+    - 上传目录字典
+    - 当前配置引用但未收录的字典
+    """
+    current_path = str(current_path or '').strip()
+    options = []
+    seen = set()
+
+    def add_option(path_obj: Path, source='custom', label=''):
+        path_str = str(path_obj)
+        if path_str in seen:
+            return
+        seen.add(path_str)
+
+        exists = path_obj.exists() and path_obj.is_file()
+        file_size = 0
+        if exists:
+            try:
+                file_size = int(path_obj.stat().st_size)
+            except Exception:
+                file_size = 0
+
+        option = {
+            'label': label or path_obj.name or path_str,
+            'path': path_str,
+            'source': source,
+            'exists': exists,
+            'size': file_size,
+            'selected': bool(current_path and current_path == path_str),
+        }
+        options.append(option)
+
+    add_option(Path(Config.DOMAIN_DICT_TEST), source='builtin', label='测试字典 (domain_dict_test.txt)')
+    add_option(Path(Config.DOMAIN_DICT_2W), source='builtin', label='大字典 (domain_2w.txt)')
+
+    upload_dir = _resolve_domain_dict_upload_dir()
+    if upload_dir.exists() and upload_dir.is_dir():
+        for dict_file in sorted(upload_dir.glob('*.txt')):
+            add_option(dict_file, source='uploaded')
+
+    if current_path and current_path not in seen:
+        add_option(Path(current_path), source='custom')
+
+    return options
+
+
+def _extract_scan_config(config_obj):
+    """
+    从完整配置中提取扫描配置子集。
+    """
+    arl_config = config_obj.get('ARL', {})
+    if not isinstance(arl_config, dict):
+        arl_config = {}
+
+    domain_dict = str(arl_config.get('DOMAIN_DICT') or Config.DOMAIN_DICT_2W)
+    domain_brute_concurrent = _safe_int(
+        arl_config.get('DOMAIN_BRUTE_CONCURRENT'),
+        Config.DOMAIN_BRUTE_CONCURRENT
+    )
+    alt_dns_concurrent = _safe_int(
+        arl_config.get('ALT_DNS_CONCURRENT'),
+        Config.ALT_DNS_CONCURRENT
+    )
+    black_ips = _normalize_string_list(arl_config.get('BLACK_IPS', Config.BLACK_IPS))
+    if not black_ips:
+        black_ips = _normalize_string_list(Config.BLACK_IPS)
+    dns_resolvers = _normalize_string_list(arl_config.get('DNS_RESOLVERS', Config.DNS_RESOLVERS))
+
+    return {
+        'domain_dict': domain_dict,
+        'domain_brute_concurrent': domain_brute_concurrent,
+        'alt_dns_concurrent': alt_dns_concurrent,
+        'black_ips': black_ips,
+        'dns_resolvers': dns_resolvers,
+    }
+
+
+def _merge_scan_config(config_obj, scan_config):
+    """
+    将扫描配置写回完整配置对象（仅修改 ARL 下指定字段）。
+    """
+    if not isinstance(scan_config, dict):
+        raise ValueError('scan_config 必须为对象')
+
+    domain_dict = str(scan_config.get('domain_dict', '')).strip()
+    if not domain_dict:
+        raise ValueError('请先选择域名爆破字典')
+
+    domain_brute_concurrent = _safe_int(
+        scan_config.get('domain_brute_concurrent'),
+        Config.DOMAIN_BRUTE_CONCURRENT
+    )
+    alt_dns_concurrent = _safe_int(
+        scan_config.get('alt_dns_concurrent'),
+        Config.ALT_DNS_CONCURRENT
+    )
+    black_ips = _normalize_string_list(scan_config.get('black_ips'))
+    dns_resolvers = _normalize_string_list(scan_config.get('dns_resolvers'))
+
+    if not black_ips:
+        raise ValueError('黑名单IP配置不能为空')
+
+    if not isinstance(config_obj.get('ARL'), dict):
+        config_obj['ARL'] = {}
+
+    config_obj['ARL']['DOMAIN_DICT'] = domain_dict
+    config_obj['ARL']['DOMAIN_BRUTE_CONCURRENT'] = domain_brute_concurrent
+    config_obj['ARL']['ALT_DNS_CONCURRENT'] = alt_dns_concurrent
+    config_obj['ARL']['BLACK_IPS'] = black_ips
+    config_obj['ARL']['DNS_RESOLVERS'] = dns_resolvers
+
+    return config_obj
+
+
 @ns.route('/config/')
 class ApiConsoleConfig(ARLResource):
     """
@@ -187,6 +374,132 @@ class ApiConsoleConfig(ARLResource):
                 'saved': True,
                 'config_path': str(config_path),
                 'backup_path': backup_path,
+                'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+        )
+
+
+@ns.route('/scan_config/')
+class ApiConsoleScanConfig(ARLResource):
+    """
+    扫描配置读取与保存接口
+    """
+
+    @auth
+    def get(self):
+        config_path = _resolve_config_path()
+        try:
+            config_obj = _load_config_from_file(config_path)
+            scan_config = _extract_scan_config(config_obj)
+            options = _collect_domain_dict_options(scan_config.get('domain_dict'))
+            return utils.build_ret(
+                ErrorMsg.Success,
+                {
+                    'scan_config': scan_config,
+                    'available_domain_dicts': options,
+                    'config_path': str(config_path),
+                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                }
+            )
+        except Exception as exc:
+            logger.exception('load scan_config failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
+
+    @auth
+    @ns.expect(save_scan_config_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        scan_config = payload.get('scan_config')
+        config_path = _resolve_config_path()
+
+        with CONFIG_LOCK:
+            try:
+                config_obj = _load_config_from_file(config_path)
+                config_obj = _merge_scan_config(config_obj, scan_config)
+                _ensure_json_like_config(config_obj)
+                backup_path = _backup_config_file(config_path)
+                _atomic_write_yaml(config_path, config_obj)
+                saved_scan_config = _extract_scan_config(config_obj)
+                options = _collect_domain_dict_options(saved_scan_config.get('domain_dict'))
+            except Exception as exc:
+                logger.exception('save scan_config failed: %s', exc)
+                return utils.build_ret(
+                    ErrorMsg.Error,
+                    {
+                        'error': str(exc),
+                        'config_path': str(config_path),
+                    }
+                )
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'saved': True,
+                'scan_config': saved_scan_config,
+                'available_domain_dicts': options,
+                'config_path': str(config_path),
+                'backup_path': backup_path,
+                'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+        )
+
+
+@ns.route('/scan_config/domain_dict/upload/')
+class ApiConsoleDomainDictUpload(ARLResource):
+    """
+    域名爆破字典上传接口
+    """
+
+    @auth
+    def post(self):
+        upload_file = request.files.get('file')
+        if upload_file is None:
+            return utils.build_ret(ErrorMsg.Error, {'error': '请上传字典文件（file）'})
+
+        filename = secure_filename(upload_file.filename or '')
+        if not filename:
+            return utils.build_ret(ErrorMsg.Error, {'error': '字典文件名不能为空'})
+
+        lower_name = filename.lower()
+        if not lower_name.endswith('.txt'):
+            return utils.build_ret(ErrorMsg.Error, {'error': '仅支持 .txt 字典文件'})
+
+        file_bytes = upload_file.read()
+        if not file_bytes:
+            return utils.build_ret(ErrorMsg.Error, {'error': '上传文件为空'})
+
+        # 单文件限制 5MB，避免误上传超大文件拖慢 worker
+        if len(file_bytes) > 5 * 1024 * 1024:
+            return utils.build_ret(ErrorMsg.Error, {'error': '字典文件过大（最大 5MB）'})
+
+        upload_dir = _resolve_domain_dict_upload_dir()
+        upload_dir.mkdir(parents=True, exist_ok=True)
+
+        save_path = upload_dir / filename
+        if save_path.exists():
+            stamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            save_path = upload_dir / f'{save_path.stem}_{stamp}{save_path.suffix}'
+
+        try:
+            with save_path.open('wb') as file_obj:
+                file_obj.write(file_bytes)
+        except Exception as exc:
+            logger.exception('save domain dict upload failed: %s', exc)
+            return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
+
+        options = _collect_domain_dict_options(str(save_path))
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'uploaded': True,
+                'domain_dict_path': str(save_path),
+                'available_domain_dicts': options,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
         )
