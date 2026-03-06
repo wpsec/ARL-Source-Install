@@ -1797,6 +1797,7 @@ function DashboardView({
   const [riskDistribution, setRiskDistribution] = useState<any[]>([]);
   const [networkTrend, setNetworkTrend] = useState<any[]>([]);
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
+  const [isLogPaused, setIsLogPaused] = useState(false);
   const [engineInfo, setEngineInfo] = useState<any>({});
 
   const resolveTaskStatus = (rawStatus: any): { text: string; type: 'success' | 'error' | 'info' } => {
@@ -1848,7 +1849,10 @@ function DashboardView({
     setLastUpdatedAt(new Date().toLocaleString('zh-CN', { hour12: false }));
   }, [token]);
 
-  const loadRecentLogs = useCallback(async () => {
+  const loadRecentLogs = useCallback(async (force = false) => {
+    if (isLogPaused && !force) {
+      return;
+    }
     try {
       const response = await requestApi(token, '/console/recent_logs', { method: 'GET', query: { limit: 24 } });
       const logs = Array.isArray(response?.data?.recent_logs) ? response.data.recent_logs : [];
@@ -1858,7 +1862,7 @@ function DashboardView({
     } catch {
       // 日志轮询失败时不打断仪表盘其他内容
     }
-  }, [token]);
+  }, [token, isLogPaused]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1885,7 +1889,10 @@ function DashboardView({
       setAssetTrend(Array.isArray(dashboardData.asset_trend_7d) ? dashboardData.asset_trend_7d : []);
       setRiskDistribution(Array.isArray(dashboardData.risk_distribution) ? dashboardData.risk_distribution : []);
       setNetworkTrend(Array.isArray(dashboardData.network_trend) ? dashboardData.network_trend : []);
-      setRecentLogs(Array.isArray(dashboardData.recent_logs) ? dashboardData.recent_logs : []);
+      const dashboardRecentLogs = Array.isArray(dashboardData.recent_logs) ? dashboardData.recent_logs : [];
+      if (!isLogPaused) {
+        setRecentLogs(dashboardRecentLogs);
+      }
       setEngineInfo(dashboardData.engine || {});
       setLastUpdatedAt(dashboardData.last_updated ? normalizeValue(dashboardData.last_updated) : new Date().toLocaleString('zh-CN', { hour12: false }));
 
@@ -1900,19 +1907,22 @@ function DashboardView({
     } finally {
       setLoading(false);
     }
-  }, [token, loadFallback]);
+  }, [token, loadFallback, isLogPaused]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
+    if (isLogPaused) {
+      return;
+    }
     void loadRecentLogs();
     const timer = window.setInterval(() => {
       void loadRecentLogs();
     }, 10000);
     return () => window.clearInterval(timer);
-  }, [loadRecentLogs]);
+  }, [loadRecentLogs, isLogPaused]);
 
   // 兼容后端不同版本的字段命名
   const memoryInfo = deviceInfo?.memory || deviceInfo?.virtual_memory;
@@ -2128,14 +2138,25 @@ function DashboardView({
               </div>
               <h3 className="text-xl font-black tracking-tight">实时日志</h3>
             </div>
-            <button
-              onClick={() => void loadRecentLogs()}
-              className="text-xs font-black text-brand-accent uppercase tracking-wider hover:underline px-2"
-            >
-              刷新日志
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsLogPaused((prev) => !prev)}
+                className={`text-xs font-black uppercase tracking-wider px-2 hover:underline ${isLogPaused ? 'text-brand-warning' : 'text-brand-secondary'}`}
+              >
+                {isLogPaused ? '继续' : '暂停'}
+              </button>
+              <button
+                onClick={() => void loadRecentLogs(true)}
+                className="text-xs font-black text-brand-accent uppercase tracking-wider hover:underline px-2"
+              >
+                刷新日志
+              </button>
+            </div>
           </div>
           <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[10px] overflow-y-auto max-h-[320px]">
+            {isLogPaused ? (
+              <div className="mb-2 text-brand-warning border border-brand-warning/30 bg-brand-warning/10 rounded-lg px-2 py-1">日志已暂停自动刷新</div>
+            ) : null}
             {logsData.map((log, index) => {
               const level = String(log?.level || 'INFO').toUpperCase();
               const source = String(log?.source || 'SYSTEM').toUpperCase();
