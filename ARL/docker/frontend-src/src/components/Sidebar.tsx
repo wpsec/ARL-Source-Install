@@ -161,9 +161,16 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
 
         <div className="flex items-center gap-3 p-2 bg-brand-card/30 rounded-2xl border border-brand-border">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-accent to-blue-500 shadow-lg shadow-brand-accent/20" />
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold text-white">admin</span>
-            <span className="text-[10px] text-brand-text-muted uppercase tracking-wider">ARL互联网资产自动化收集系统加强版</span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-semibold text-white">ARL互联网资产自动化收集系统加强版</span>
+            <a
+              href="https://github.com/wpsec/ARL-Source-Install"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[10px] text-brand-text-muted tracking-wide truncate hover:text-brand-accent transition-colors"
+            >
+              github.com/wpsec/ARL-Source-Install
+            </a>
           </div>
         </div>
       </div>
