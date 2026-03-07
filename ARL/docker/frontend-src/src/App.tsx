@@ -1620,6 +1620,26 @@ function getValueByPath(source: any, path: string): any {
   return cursor;
 }
 
+function formatModuleCellValue(moduleId: string, column: string, row: any): string {
+  const value = getValueByPath(row, column);
+
+  if (moduleId === 'asset_site' && column === 'finger' && Array.isArray(value)) {
+    const fingerNames = value
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object') {
+          if (typeof item.name === 'string' && item.name.trim()) return item.name;
+          if (typeof item.cms === 'string' && item.cms.trim()) return item.cms;
+        }
+        return '';
+      })
+      .filter((item) => item);
+    if (fingerNames.length > 0) return truncateText(fingerNames.join(', '));
+  }
+
+  return normalizeValue(value);
+}
+
 function parseNumericValue(value: any): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -3419,7 +3439,7 @@ function TableModuleView({
                       ) : null}
                       {columns.map((column) => (
                         <td key={column} className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
-                          {normalizeValue(getValueByPath(row, column))}
+                          {formatModuleCellValue(module.id, column, row)}
                         </td>
                       ))}
                     </tr>
