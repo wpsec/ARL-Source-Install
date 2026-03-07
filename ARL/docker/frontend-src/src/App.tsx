@@ -3351,6 +3351,16 @@ function TableModuleView({
 
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
+  const isAssetSearchModule = ['asset_site', 'asset_domain', 'asset_ip'].includes(module.id);
+  const exportButtonLabel =
+    module.id === 'asset_site'
+      ? '导出站点'
+      : module.id === 'asset_domain'
+      ? '导出域名'
+      : module.id === 'asset_ip'
+      ? '导出 IP 端口'
+      : '导出';
+  const resetButtonLabel = module.id === 'asset_site' ? '清除' : '重置';
 
   return (
     <div className="p-8 space-y-6">
@@ -3367,106 +3377,183 @@ function TableModuleView({
         </div>
       </div>
 
-      {['asset_site', 'asset_domain', 'asset_ip'].includes(module.id) ? (
-        <div className="flex items-center gap-2">
-          {[
-            { id: 'asset_site', label: '站点' },
-            { id: 'asset_domain', label: '子域名' },
-            { id: 'asset_ip', label: 'IP' },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => onOpenModule(item.id)}
-              className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
-                module.id === item.id
-                  ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                  : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+      {isAssetSearchModule ? (
+        <div className="border-b border-[#d9d9d9]">
+          <div className="flex items-end">
+            {[
+              { id: 'asset_site', label: '站点' },
+              { id: 'asset_domain', label: '子域名' },
+              { id: 'asset_ip', label: 'IP' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => onOpenModule(item.id)}
+                className={`px-8 py-4 text-lg font-semibold border border-[#d9d9d9] border-b-0 transition ${
+                  module.id === item.id
+                    ? 'bg-white text-[#18b9d6]'
+                    : 'bg-[#f7f7f8] text-[#303133] hover:text-[#18b9d6]'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+      <div
+        className={
+          isAssetSearchModule
+            ? 'bg-[#f5f5f5] border border-[#d9d9d9] rounded-none p-6 space-y-5'
+            : 'bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4'
+        }
+      >
         {hasAdvancedSearch ? (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {(module.searchFields || []).map((field) => (
-                <div key={field.key} className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">{field.label}：</label>
-                  <input
-                    type={field.inputType === 'number' ? 'number' : 'text'}
-                    value={String(searchForm?.[field.key] ?? '')}
-                    placeholder={field.placeholder}
-                    className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-accent"
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setSearchForm((prev) => ({ ...prev, [field.key]: value }));
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        setPage(1);
-                        void loadRows();
-                      }
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
+          isAssetSearchModule ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-x-8 gap-y-5">
+                {(module.searchFields || []).map((field) => (
+                  <div key={field.key} className="flex items-center gap-3">
+                    <label className="shrink-0 min-w-[86px] text-lg font-semibold text-[#303133]">{field.label}：</label>
+                    <div className="relative flex-1">
+                      <input
+                        type={field.inputType === 'number' ? 'number' : 'text'}
+                        value={String(searchForm?.[field.key] ?? '')}
+                        placeholder={field.placeholder}
+                        className="w-full h-12 bg-white border border-[#dcdfe6] rounded-md py-2 px-4 pr-10 text-base text-[#303133] placeholder:text-[#c0c4cc] focus:outline-none focus:border-[#18b9d6] focus:ring-2 focus:ring-[#18b9d6]/10"
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setSearchForm((prev) => ({ ...prev, [field.key]: value }));
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            setPage(1);
+                            void loadRows();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPage(1);
+                          void loadRows();
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#a8abb2] hover:text-[#18b9d6] transition"
+                      >
+                        <Search className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-            <div className="flex flex-wrap gap-2">
-              {module.id === 'asset_site' && addAssetSiteAction ? (
+              <div className="flex flex-wrap gap-3 pt-1">
                 <button
-                  onClick={() => openActionDialog(addAssetSiteAction)}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  onClick={clearSearchFilters}
+                  className="px-6 py-2.5 rounded-lg border border-[#dcdfe6] bg-white text-[#303133] text-base font-semibold hover:border-[#c0c4cc] transition"
+                  disabled={loading || !hasList}
                 >
-                  <Plus className="w-4 h-4" />
-                  添加站点
+                  {resetButtonLabel}
                 </button>
-              ) : null}
-              <button
-                onClick={() => {
-                  setPage(1);
-                  void loadRows();
-                }}
-                className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-                disabled={loading || !hasList}
-              >
-                <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                搜索
-              </button>
-              <button
-                onClick={clearSearchFilters}
-                className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-                disabled={loading || !hasList}
-              >
-                <RefreshCw className="w-4 h-4" />
-                {module.id === 'asset_site' ? '清除' : '重置'}
-              </button>
-              {module.exportPath ? (
-                <button
-                  onClick={() => void runExport()}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  {module.id === 'asset_site' ? '导出站点' : '导出'}
-                </button>
-              ) : null}
-              {module.id === 'asset_site' ? (
-                <button
-                  onClick={() => void openAssetSiteRiskDialog()}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-                  disabled={riskDialogLoading}
-                >
-                  <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
-                  风险任务下发
-                </button>
-              ) : null}
+                {module.exportPath ? (
+                  <button
+                    onClick={() => void runExport()}
+                    className="px-6 py-2.5 rounded-lg bg-[#18b9d6] text-white text-base font-semibold hover:opacity-90 transition"
+                  >
+                    {exportButtonLabel}
+                  </button>
+                ) : null}
+                {module.id === 'asset_site' ? (
+                  <button
+                    onClick={() => void openAssetSiteRiskDialog()}
+                    className="px-6 py-2.5 rounded-lg bg-[#18b9d6] text-white text-base font-semibold hover:opacity-90 transition flex items-center gap-2"
+                    disabled={riskDialogLoading}
+                  >
+                    <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
+                    风险任务下发
+                  </button>
+                ) : null}
+                {module.id === 'asset_site' && addAssetSiteAction ? (
+                  <button
+                    onClick={() => openActionDialog(addAssetSiteAction)}
+                    className="px-6 py-2.5 rounded-lg border border-[#dcdfe6] bg-white text-[#303133] text-base font-semibold hover:border-[#18b9d6] transition flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    添加站点
+                  </button>
+                ) : null}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {(module.searchFields || []).map((field) => (
+                  <div key={field.key} className="space-y-1">
+                    <label className="text-xs font-bold text-brand-text-muted">{field.label}：</label>
+                    <input
+                      type={field.inputType === 'number' ? 'number' : 'text'}
+                      value={String(searchForm?.[field.key] ?? '')}
+                      placeholder={field.placeholder}
+                      className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-accent"
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setSearchForm((prev) => ({ ...prev, [field.key]: value }));
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          setPage(1);
+                          void loadRows();
+                        }
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setPage(1);
+                    void loadRows();
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  disabled={loading || !hasList}
+                >
+                  <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  搜索
+                </button>
+                <button
+                  onClick={clearSearchFilters}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  disabled={loading || !hasList}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  {resetButtonLabel}
+                </button>
+                {module.exportPath ? (
+                  <button
+                    onClick={() => void runExport()}
+                    className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    {exportButtonLabel}
+                  </button>
+                ) : null}
+                {module.id === 'asset_site' ? (
+                  <button
+                    onClick={() => void openAssetSiteRiskDialog()}
+                    className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                    disabled={riskDialogLoading}
+                  >
+                    <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
+                    风险任务下发
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          )
         ) : (
           <div className="flex flex-col lg:flex-row gap-3">
             <div className="relative flex-1">
@@ -3528,12 +3615,18 @@ function TableModuleView({
       </div>
 
       {hasList ? (
-        <div className="bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
+        <div
+          className={
+            isAssetSearchModule
+              ? 'bg-white border border-[#d9d9d9] rounded-none overflow-hidden'
+              : 'bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden'
+          }
+        >
           <div className="overflow-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead className="bg-brand-bg/40 border-b border-brand-border">
+            <table className={`w-full text-left border-collapse ${isAssetSearchModule ? 'text-base' : 'text-sm'}`}>
+              <thead className={isAssetSearchModule ? 'bg-[#fafafa] border-b border-[#ebeef5]' : 'bg-brand-bg/40 border-b border-brand-border'}>
                 <tr>
-                  <th className="px-4 py-3 w-12">
+                  <th className={isAssetSearchModule ? 'px-4 py-4 w-12' : 'px-4 py-3 w-12'}>
                     <input
                       type="checkbox"
                       checked={selectAllChecked}
@@ -3551,10 +3644,25 @@ function TableModuleView({
                     />
                   </th>
                   {showIndexColumn ? (
-                    <th className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">序号</th>
+                    <th
+                      className={
+                        isAssetSearchModule
+                          ? 'px-6 py-4 text-lg font-bold text-[#303133] whitespace-nowrap'
+                          : 'px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap'
+                      }
+                    >
+                      序号
+                    </th>
                   ) : null}
                   {columns.map((column) => (
-                    <th key={column} className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">
+                    <th
+                      key={column}
+                      className={
+                        isAssetSearchModule
+                          ? 'px-6 py-4 text-lg font-bold text-[#303133] whitespace-nowrap'
+                          : 'px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap'
+                      }
+                    >
                       {getColumnLabel(column)}
                     </th>
                   ))}
@@ -3566,8 +3674,15 @@ function TableModuleView({
                   const checked = selectedIds.includes(id);
 
                   return (
-                    <tr key={id || Math.random()} className="border-b border-brand-border/60 hover:bg-white/5 transition">
-                      <td className="px-4 py-3">
+                    <tr
+                      key={id || Math.random()}
+                      className={
+                        isAssetSearchModule
+                          ? 'border-b border-[#ebeef5] hover:bg-[#f8fbfd] transition'
+                          : 'border-b border-brand-border/60 hover:bg-white/5 transition'
+                      }
+                    >
+                      <td className={isAssetSearchModule ? 'px-4 py-4' : 'px-4 py-3'}>
                         <input
                           type="checkbox"
                           checked={checked}
@@ -3583,12 +3698,25 @@ function TableModuleView({
                         />
                       </td>
                       {showIndexColumn ? (
-                        <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
+                        <td
+                          className={
+                            isAssetSearchModule
+                              ? 'px-6 py-4 align-top text-base text-[#606266] whitespace-nowrap'
+                              : 'px-4 py-3 align-top font-mono text-xs whitespace-nowrap'
+                          }
+                        >
                           {(page - 1) * size + rowIndex + 1}
                         </td>
                       ) : null}
                       {columns.map((column) => (
-                        <td key={column} className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
+                        <td
+                          key={column}
+                          className={
+                            isAssetSearchModule
+                              ? 'px-6 py-4 align-top text-base text-[#303133] whitespace-nowrap'
+                              : 'px-4 py-3 align-top font-mono text-xs whitespace-nowrap'
+                          }
+                        >
                           {formatModuleCellValue(module.id, column, row)}
                         </td>
                       ))}
@@ -3597,7 +3725,10 @@ function TableModuleView({
                 })}
                 {rows.length === 0 && !loading ? (
                   <tr>
-                    <td colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0), 2)} className="px-4 py-10 text-center text-brand-text-muted">
+                    <td
+                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0), 2)}
+                      className={isAssetSearchModule ? 'px-4 py-10 text-center text-[#909399]' : 'px-4 py-10 text-center text-brand-text-muted'}
+                    >
                       暂无数据
                     </td>
                   </tr>
