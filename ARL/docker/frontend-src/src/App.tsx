@@ -2522,6 +2522,38 @@ function ActionDialog({
   const editable = action.allowPayloadEdit !== false;
   const isTaskCreate = action.id === 'create_task';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
+  const taskBooleanOrder = [
+    'domain_brute',
+    'port_scan',
+    'service_detection',
+    'service_brute',
+    'os_detection',
+    'site_identify',
+    'site_capture',
+    'file_leak',
+    'search_engines',
+    'site_spider',
+    'arl_search',
+    'alt_dns',
+    'ssl_cert',
+    'dns_query_plugin',
+    'skip_scan_cdn_ip',
+    'nuclei_scan',
+    'findvhost',
+    'web_info_hunter',
+    'dingding_notify',
+  ];
+  const taskBooleanFields = useMemo(() => {
+    if (!isTaskCreate) return [];
+    const keys = Object.keys(formPayload || {}).filter((key) => typeof formPayload?.[key] === 'boolean');
+    const ordered = taskBooleanOrder.filter((key) => keys.includes(key));
+    const rest = keys.filter((key) => !taskBooleanOrder.includes(key)).sort();
+    return [...ordered, ...rest];
+  }, [formPayload, isTaskCreate]);
+  const taskName = String(formPayload?.name ?? '');
+  const taskTarget = String(formPayload?.target ?? '');
+  const taskDomainBruteType = String(formPayload?.domain_brute_type ?? 'test');
+  const taskPortScanType = String(formPayload?.port_scan_type ?? 'test');
 
   useEffect(() => {
     const nextPayload = deepClone(initialPayload);
@@ -2541,7 +2573,7 @@ function ActionDialog({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-3xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+      <div className={`w-full ${isTaskCreate ? 'max-w-5xl' : 'max-w-3xl'} bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden`}>
         <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between">
           <div>
             <h4 className="text-lg font-black">{action.label}</h4>
@@ -2572,73 +2604,154 @@ function ActionDialog({
             </div>
           ) : null}
 
-          <div className="space-y-3 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">
-            {fields.map((field) => {
-              const value = field.value;
-              const disabled = !editable;
-              const isBoolean = typeof value === 'boolean';
-              const isNumber = typeof value === 'number';
-              const isComplex = Array.isArray(value) || (value && typeof value === 'object');
+          {isTaskCreate ? (
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                  <input
+                    value={taskName}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    placeholder="例如：生产资产扫描-03"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">域名爆破字典</label>
+                  <select
+                    value={taskDomainBruteType}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain_brute_type', event.target.value))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  >
+                    <option value="test">test（小字典）</option>
+                    <option value="big">big（大字典）</option>
+                  </select>
+                </div>
+              </div>
 
-              return (
-                <div key={field.path} className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">
-                    {humanizeField(field.path)}
-                    {!isTaskCreate ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
-                  </label>
-                  {isBoolean ? (
-                    <label className="flex items-center justify-between rounded-xl border border-brand-border bg-brand-bg px-3 py-2.5 text-sm">
-                      <span className="font-semibold">{value ? '启用' : '关闭'}</span>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">目标（支持一行一个）</label>
+                  <textarea
+                    value={taskTarget}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'target', event.target.value))}
+                    className="w-full min-h-[132px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    placeholder={'example.com\napi.example.com\n1.2.3.4'}
+                  />
+                  <p className="text-[11px] text-brand-text-muted">可输入多个目标，支持换行、空格或逗号分隔，提交时会自动归一化。</p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">端口扫描范围</label>
+                  <select
+                    value={taskPortScanType}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'port_scan_type', event.target.value))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  >
+                    <option value="test">test（常见端口）</option>
+                    <option value="top100">top100</option>
+                    <option value="top1000">top1000</option>
+                    <option value="all">all（全端口）</option>
+                  </select>
+                  <div className="mt-3 p-3 rounded-xl border border-brand-border bg-brand-bg/40 text-[11px] text-brand-text-muted leading-relaxed">
+                    建议仅勾选需要的扫描项。目标多时优先开启核心能力（端口扫描、服务识别、站点识别），可提升效率。
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-brand-text-muted">扫描功能</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {taskBooleanFields.map((fieldKey) => (
+                    <label
+                      key={fieldKey}
+                      className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition"
+                    >
                       <input
                         type="checkbox"
-                        checked={value}
-                        disabled={disabled}
-                        className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
-                        onChange={(event) => {
-                          setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
-                        }}
+                        checked={Boolean(formPayload?.[fieldKey])}
+                        disabled={!editable}
+                        className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                        onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, fieldKey, event.target.checked))}
                       />
+                      <span className="font-medium truncate">{humanizeField(fieldKey)}</span>
                     </label>
-                  ) : isNumber ? (
-                    <input
-                      type="number"
-                      value={value}
-                      disabled={disabled}
-                      onChange={(event) => {
-                        const next = Number(event.target.value || '0');
-                        setFormPayload((prev) => updatePayloadValue(prev, field.path, next));
-                      }}
-                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                    />
-                  ) : isComplex ? (
-                    <input
-                      value={Array.isArray(value) ? value.join(',') : String(value ?? '')}
-                      disabled={disabled}
-                      onChange={(event) => {
-                        const nextValues = event.target.value
-                          .split(',')
-                          .map((item) => item.trim())
-                          .filter((item) => item);
-                        setFormPayload((prev) => updatePayloadValue(prev, field.path, nextValues));
-                        setError('');
-                      }}
-                      placeholder="多个值请用逗号分隔"
-                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                    />
-                  ) : (
-                    <input
-                      value={String(value ?? '')}
-                      disabled={disabled}
-                      onChange={(event) => {
-                        setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.value));
-                      }}
-                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                    />
-                  )}
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">
+              {fields.map((field) => {
+                const value = field.value;
+                const disabled = !editable;
+                const isBoolean = typeof value === 'boolean';
+                const isNumber = typeof value === 'number';
+                const isComplex = Array.isArray(value) || (value && typeof value === 'object');
+
+                return (
+                  <div key={field.path} className="space-y-1">
+                    <label className="text-xs font-bold text-brand-text-muted">
+                      {humanizeField(field.path)}
+                      {!isTaskCreate ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
+                    </label>
+                    {isBoolean ? (
+                      <label className="flex items-center justify-between rounded-xl border border-brand-border bg-brand-bg px-3 py-2.5 text-sm">
+                        <span className="font-semibold">{value ? '启用' : '关闭'}</span>
+                        <input
+                          type="checkbox"
+                          checked={value}
+                          disabled={disabled}
+                          className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
+                          onChange={(event) => {
+                            setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
+                          }}
+                        />
+                      </label>
+                    ) : isNumber ? (
+                      <input
+                        type="number"
+                        value={value}
+                        disabled={disabled}
+                        onChange={(event) => {
+                          const next = Number(event.target.value || '0');
+                          setFormPayload((prev) => updatePayloadValue(prev, field.path, next));
+                        }}
+                        className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                      />
+                    ) : isComplex ? (
+                      <input
+                        value={Array.isArray(value) ? value.join(',') : String(value ?? '')}
+                        disabled={disabled}
+                        onChange={(event) => {
+                          const nextValues = event.target.value
+                            .split(',')
+                            .map((item) => item.trim())
+                            .filter((item) => item);
+                          setFormPayload((prev) => updatePayloadValue(prev, field.path, nextValues));
+                          setError('');
+                        }}
+                        placeholder="多个值请用逗号分隔"
+                        className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                      />
+                    ) : (
+                      <input
+                        value={String(value ?? '')}
+                        disabled={disabled}
+                        onChange={(event) => {
+                          setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.value));
+                        }}
+                        className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {!editable ? (
             <div className="text-xs text-brand-text-muted bg-brand-bg/60 border border-brand-border rounded-lg px-3 py-2">
@@ -2670,7 +2783,25 @@ function ActionDialog({
                 try {
                   setLoading(true);
                   setError('');
-                  const payload: JsonValue = !editable ? initialPayload : formPayload;
+                  const payload: JsonValue = deepClone(!editable ? initialPayload : formPayload);
+                  if (isTaskCreate && editable) {
+                    const normalizedName = String(payload.name || '').trim();
+                    const normalizedTargets = String(payload.target || '')
+                      .replace(/,/g, '\n')
+                      .split(/\r?\n/)
+                      .map((item) => item.trim())
+                      .filter((item) => item);
+
+                    if (!normalizedName) {
+                      throw new Error('请填写任务名称');
+                    }
+                    if (normalizedTargets.length === 0) {
+                      throw new Error('请填写目标，支持一行一个');
+                    }
+
+                    payload.name = normalizedName;
+                    payload.target = normalizedTargets.join('\n');
+                  }
                   await onSubmit(payload, file);
                   onClose();
                 } catch (err: any) {
