@@ -73,6 +73,13 @@ type ModuleAction = {
   fileAccept?: string;
 };
 
+type ModuleSearchField = {
+  key: string;
+  label: string;
+  placeholder: string;
+  inputType?: 'text' | 'number';
+};
+
 type ModuleConfig = {
   id: string;
   label: string;
@@ -84,6 +91,9 @@ type ModuleConfig = {
   defaultOrder?: string;
   quickFilterKey?: string;
   columns?: string[];
+  columnLabels?: Record<string, string>;
+  searchFields?: ModuleSearchField[];
+  showIndex?: boolean;
   exportPath?: string;
   actions?: ModuleAction[];
 };
@@ -645,6 +655,22 @@ const modules: ModuleConfig[] = [
     listPath: '/asset_domain/',
     rowIdKey: '_id',
     quickFilterKey: 'domain',
+    showIndex: true,
+    columns: ['domain', 'type', 'record', 'ips', 'source'],
+    columnLabels: {
+      domain: '域名',
+      type: '解析类型',
+      record: '记录值',
+      ips: '关联IP',
+      source: '来源',
+    },
+    searchFields: [
+      { key: 'domain', label: '域名', placeholder: '请输入域名进行搜索' },
+      { key: 'record', label: '记录值', placeholder: '请输入记录值进行搜索' },
+      { key: 'type', label: '类型', placeholder: '请输入类型进行搜索' },
+      { key: 'ips', label: 'IP', placeholder: '请输入IP进行搜索' },
+      { key: 'source', label: '来源', placeholder: '请输入来源进行搜索' },
+    ],
     exportPath: '/asset_domain/export/',
     actions: [
       {
@@ -678,6 +704,25 @@ const modules: ModuleConfig[] = [
     listPath: '/asset_site/',
     rowIdKey: '_id',
     quickFilterKey: 'site',
+    showIndex: true,
+    columns: ['site', 'title', 'headers', 'finger'],
+    columnLabels: {
+      site: '站点',
+      title: '标题',
+      headers: 'headers',
+      finger: 'finger',
+    },
+    searchFields: [
+      { key: 'site', label: '站点', placeholder: '请输入站点进行搜索' },
+      { key: 'hostname', label: '主机名', placeholder: '请输入主机名进行搜索' },
+      { key: 'title', label: '标题', placeholder: '请输入标题进行搜索' },
+      { key: 'http_server', label: 'Web Server', placeholder: '请输入Web Server进行搜索' },
+      { key: 'status', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
+      { key: 'headers', label: '标头', placeholder: '请输入标头进行搜索' },
+      { key: 'finger.name', label: '指 纹', placeholder: '请输入指 纹进行搜索' },
+      { key: 'favicon.hash', label: 'favicon hash', placeholder: '请输入favicon hash进行搜索', inputType: 'number' },
+      { key: 'tag', label: '标签', placeholder: '请输入标签进行搜索' },
+    ],
     exportPath: '/asset_site/export/',
     actions: [
       {
@@ -743,6 +788,22 @@ const modules: ModuleConfig[] = [
     listPath: '/asset_ip/',
     rowIdKey: '_id',
     quickFilterKey: 'ip',
+    showIndex: true,
+    columns: ['ip', 'os_info.name', 'port_info.port_id', 'domain', 'cdn_name'],
+    columnLabels: {
+      ip: 'IP',
+      'os_info.name': '操作系统',
+      'port_info.port_id': '开放端口',
+      domain: '关联域名',
+      cdn_name: 'CDN',
+    },
+    searchFields: [
+      { key: 'ip', label: 'IP', placeholder: '请输入IP进行搜索' },
+      { key: 'port_info.port_id', label: '端口', placeholder: '请输入端口进行搜索', inputType: 'number' },
+      { key: 'os_info.name', label: '操作系统', placeholder: '请输入操作系统进行搜索' },
+      { key: 'domain', label: '域名', placeholder: '请输入域名进行搜索' },
+      { key: 'cdn_name', label: 'CDN', placeholder: '请输入CDN进行搜索' },
+    ],
     exportPath: '/asset_ip/export/',
     actions: [
       {
@@ -1518,9 +1579,45 @@ function normalizeValue(value: any): string {
   if (value === null || value === undefined) return '-';
   if (typeof value === 'string') return truncateText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return truncateText(JSON.stringify(value));
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '-';
+    const normalized = value
+      .map((item) => {
+        if (item === null || item === undefined) return '';
+        if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
+          return String(item);
+        }
+        return JSON.stringify(item);
+      })
+      .filter((item) => item)
+      .join(', ');
+    return truncateText(normalized || '-');
+  }
   if (typeof value === 'object') return truncateText(JSON.stringify(value));
   return truncateText(String(value));
+}
+
+function getValueByPath(source: any, path: string): any {
+  if (!path || source === null || source === undefined) return undefined;
+  if (!path.includes('.')) return source?.[path];
+  const segments = path.split('.');
+  let cursor: any = source;
+  for (const segment of segments) {
+    if (cursor === null || cursor === undefined) return undefined;
+    if (Array.isArray(cursor)) {
+      cursor = cursor
+        .map((item) => {
+          if (item && typeof item === 'object') return item[segment];
+          return undefined;
+        })
+        .flatMap((item) => (Array.isArray(item) ? item : [item]))
+        .filter((item) => item !== undefined && item !== null);
+      continue;
+    }
+    if (typeof cursor !== 'object') return undefined;
+    cursor = cursor[segment];
+  }
+  return cursor;
 }
 
 function parseNumericValue(value: any): number | null {
@@ -2852,7 +2949,15 @@ function ActionDialog({
   );
 }
 
-function TableModuleView({ module, token }: { module: ModuleConfig; token: string }) {
+function TableModuleView({
+  module,
+  token,
+  onOpenModule,
+}: {
+  module: ModuleConfig;
+  token: string;
+  onOpenModule: (moduleId: string) => void;
+}) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -2861,11 +2966,25 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
   const [size, setSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [quickFilter, setQuickFilter] = useState('');
+  const [searchForm, setSearchForm] = useState<JsonValue>({});
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dialogAction, setDialogAction] = useState<ModuleAction | null>(null);
   const [dialogPayload, setDialogPayload] = useState<JsonValue>({});
 
   const hasList = Boolean(module.listPath);
+  const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
+
+  useEffect(() => {
+    if (!hasAdvancedSearch) {
+      setSearchForm({});
+      return;
+    }
+    const next: JsonValue = {};
+    (module.searchFields || []).forEach((field) => {
+      next[field.key] = '';
+    });
+    setSearchForm(next);
+  }, [module.id, hasAdvancedSearch, module.searchFields]);
 
   const loadRows = useCallback(async () => {
     if (!module.listPath) return;
@@ -2874,7 +2993,22 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
     setSuccess('');
     try {
       const filters: JsonValue = {};
-      if (module.quickFilterKey && quickFilter.trim()) {
+      if (hasAdvancedSearch) {
+        (module.searchFields || []).forEach((field) => {
+          const raw = searchForm?.[field.key];
+          if (raw === undefined || raw === null) return;
+          const text = String(raw).trim();
+          if (!text) return;
+          if (field.inputType === 'number') {
+            const parsed = Number(text);
+            if (Number.isFinite(parsed)) {
+              filters[field.key] = parsed;
+            }
+            return;
+          }
+          filters[field.key] = text;
+        });
+      } else if (module.quickFilterKey && quickFilter.trim()) {
         filters[module.quickFilterKey] = quickFilter.trim();
       }
 
@@ -2900,7 +3034,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
     } finally {
       setLoading(false);
     }
-  }, [module.defaultOrder, module.listPath, module.quickFilterKey, page, quickFilter, size, token]);
+  }, [hasAdvancedSearch, module.defaultOrder, module.listPath, module.quickFilterKey, module.searchFields, page, quickFilter, searchForm, size, token]);
 
   useEffect(() => {
     void loadRows();
@@ -2924,6 +3058,8 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
   }, [module.columns, module.rowIdKey, rows]);
 
   const rowIdKey = module.rowIdKey || '_id';
+  const showIndexColumn = Boolean(module.showIndex);
+  const getColumnLabel = (column: string) => module.columnLabels?.[column] || humanizeField(column);
 
   const visibleActions = module.actions || [];
 
@@ -3026,7 +3162,22 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
     try {
       setError('');
       const filters: JsonValue = {};
-      if (module.quickFilterKey && quickFilter.trim()) {
+      if (hasAdvancedSearch) {
+        (module.searchFields || []).forEach((field) => {
+          const raw = searchForm?.[field.key];
+          if (raw === undefined || raw === null) return;
+          const text = String(raw).trim();
+          if (!text) return;
+          if (field.inputType === 'number') {
+            const parsed = Number(text);
+            if (Number.isFinite(parsed)) {
+              filters[field.key] = parsed;
+            }
+            return;
+          }
+          filters[field.key] = text;
+        });
+      } else if (module.quickFilterKey && quickFilter.trim()) {
         filters[module.quickFilterKey] = quickFilter.trim();
       }
       await requestApi(token, resolved, {
@@ -3058,40 +3209,129 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
         </div>
       </div>
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-brand-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              value={quickFilter}
-              onChange={(event) => {
-                setQuickFilter(event.target.value);
-                setPage(1);
-              }}
-              placeholder={module.quickFilterKey ? `快速筛选字段: ${module.quickFilterKey}` : '快速筛选'}
-              className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 pl-9 pr-3 text-sm"
-            />
-          </div>
-
-          <button
-            onClick={() => void loadRows()}
-            className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-            disabled={loading || !hasList}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            刷新
-          </button>
-
-          {module.exportPath ? (
+      {['asset_site', 'asset_domain', 'asset_ip'].includes(module.id) ? (
+        <div className="flex items-center gap-2">
+          {[
+            { id: 'asset_site', label: '站点' },
+            { id: 'asset_domain', label: '子域名' },
+            { id: 'asset_ip', label: 'IP' },
+          ].map((item) => (
             <button
-              onClick={() => void runExport()}
-              className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              key={item.id}
+              onClick={() => onOpenModule(item.id)}
+              className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
+                module.id === item.id
+                  ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                  : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
+              }`}
             >
-              <Download className="w-4 h-4" />
-              导出
+              {item.label}
             </button>
-          ) : null}
+          ))}
         </div>
+      ) : null}
+
+      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+        {hasAdvancedSearch ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {(module.searchFields || []).map((field) => (
+                <div key={field.key} className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">{field.label}：</label>
+                  <input
+                    type={field.inputType === 'number' ? 'number' : 'text'}
+                    value={String(searchForm?.[field.key] ?? '')}
+                    placeholder={field.placeholder}
+                    className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-accent"
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSearchForm((prev) => ({ ...prev, [field.key]: value }));
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        setPage(1);
+                        void loadRows();
+                      }
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setPage(1);
+                  void loadRows();
+                }}
+                className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                disabled={loading || !hasList}
+              >
+                <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                搜索
+              </button>
+              <button
+                onClick={() => {
+                  const resetForm: JsonValue = {};
+                  (module.searchFields || []).forEach((field) => {
+                    resetForm[field.key] = '';
+                  });
+                  setSearchForm(resetForm);
+                  setPage(1);
+                }}
+                className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                disabled={loading || !hasList}
+              >
+                <RefreshCw className="w-4 h-4" />
+                重置
+              </button>
+              {module.exportPath ? (
+                <button
+                  onClick={() => void runExport()}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  导出
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col lg:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-brand-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={quickFilter}
+                onChange={(event) => {
+                  setQuickFilter(event.target.value);
+                  setPage(1);
+                }}
+                placeholder={module.quickFilterKey ? `快速筛选字段: ${module.quickFilterKey}` : '快速筛选'}
+                className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 pl-9 pr-3 text-sm"
+              />
+            </div>
+
+            <button
+              onClick={() => void loadRows()}
+              className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              disabled={loading || !hasList}
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              刷新
+            </button>
+
+            {module.exportPath ? (
+              <button
+                onClick={() => void runExport()}
+                className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                导出
+              </button>
+            ) : null}
+          </div>
+        )}
 
         {visibleActions.length > 0 ? (
           <div className="flex flex-wrap gap-2 pt-1">
@@ -3140,15 +3380,18 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
                       }}
                     />
                   </th>
+                  {showIndexColumn ? (
+                    <th className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">序号</th>
+                  ) : null}
                   {columns.map((column) => (
                     <th key={column} className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">
-                      {column}
+                      {getColumnLabel(column)}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
+                {rows.map((row, rowIndex) => {
                   const id = String(row?.[rowIdKey] ?? '');
                   const checked = selectedIds.includes(id);
 
@@ -3169,9 +3412,14 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
                           }}
                         />
                       </td>
+                      {showIndexColumn ? (
+                        <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
+                          {(page - 1) * size + rowIndex + 1}
+                        </td>
+                      ) : null}
                       {columns.map((column) => (
                         <td key={column} className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
-                          {normalizeValue(row?.[column])}
+                          {normalizeValue(getValueByPath(row, column))}
                         </td>
                       ))}
                     </tr>
@@ -3179,7 +3427,7 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
                 })}
                 {rows.length === 0 && !loading ? (
                   <tr>
-                    <td colSpan={Math.max(columns.length + 1, 2)} className="px-4 py-10 text-center text-brand-text-muted">
+                    <td colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0), 2)} className="px-4 py-10 text-center text-brand-text-muted">
                       暂无数据
                     </td>
                   </tr>
@@ -3805,7 +4053,7 @@ function MainShell() {
         {activeModule.id === 'system_monitor' ? <SystemMonitorView token={token} /> : null}
         {activeModule.id === 'api_console' ? <ApiConsoleView token={token} /> : null}
         {activeModule.id !== 'dashboard' && activeModule.id !== 'system_monitor' && activeModule.id !== 'api_console' ? (
-          <TableModuleView module={activeModule} token={token} />
+          <TableModuleView module={activeModule} token={token} onOpenModule={setActiveModuleId} />
         ) : null}
       </main>
 
