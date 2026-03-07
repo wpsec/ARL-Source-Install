@@ -2529,6 +2529,16 @@ function ActionDialog({
     setError('');
   }, [initialPayload]);
 
+  useEffect(() => {
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-3xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">

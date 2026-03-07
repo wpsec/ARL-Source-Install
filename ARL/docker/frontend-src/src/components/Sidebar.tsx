@@ -166,7 +166,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
           <div className="flex flex-col min-w-0 gap-1">
             <span className="text-xs font-semibold text-white">ARL互联网资产自动化收集系统加强版</span>
             <div className="flex items-center gap-1 min-w-0">
-              <span className="text-[10px] text-brand-text-muted shrink-0">Github地址：</span>
+              <span className="text-[10px] text-brand-text-muted shrink-0">开源地址：</span>
               <a
                 href="https://github.com/wpsec/ARL-Source-Install"
                 target="_blank"
