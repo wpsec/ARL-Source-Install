@@ -6,6 +6,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Cpu,
@@ -98,6 +99,9 @@ const API_BASE = '/api';
 const TOKEN_KEY = 'arl-token';
 const USERNAME_KEY = 'arl-username';
 const ACTIVE_MODULE_KEY = 'arl-active-module';
+const UNIFIED_SELECT_CLASS =
+  'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm appearance-none pr-9 ' +
+  'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
 
 const modules: ModuleConfig[] = [
   {
@@ -2546,6 +2550,21 @@ function ActionDialog({
       }))
       .filter((section) => section.keys.length > 0);
   }, [formPayload, isTaskCreate]);
+  const taskFeatureKeys = useMemo(
+    () => taskFeatureSections.flatMap((section) => section.keys),
+    [taskFeatureSections]
+  );
+  const allTaskFeaturesEnabled =
+    taskFeatureKeys.length > 0 && taskFeatureKeys.every((key) => Boolean(formPayload?.[key]));
+  const setAllTaskFeatures = (enabled: boolean) => {
+    setFormPayload((prev) => {
+      const next = deepClone(prev || {});
+      taskFeatureKeys.forEach((key) => {
+        next[key] = enabled;
+      });
+      return next;
+    });
+  };
   const taskName = String(formPayload?.name ?? '');
   const taskTarget = String(formPayload?.target ?? '');
   const taskDomainBruteType = String(formPayload?.domain_brute_type ?? 'test');
@@ -2615,15 +2634,18 @@ function ActionDialog({
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted">域名爆破字典</label>
-                  <select
-                    value={taskDomainBruteType}
-                    disabled={!editable}
-                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain_brute_type', event.target.value))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                  >
-                    <option value="test">test（小字典）</option>
-                    <option value="big">big（大字典）</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={taskDomainBruteType}
+                      disabled={!editable}
+                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain_brute_type', event.target.value))}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="test">test（小字典）</option>
+                      <option value="big">big（大字典）</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
                 </div>
               </div>
 
@@ -2641,17 +2663,20 @@ function ActionDialog({
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted">端口扫描范围</label>
-                  <select
-                    value={taskPortScanType}
-                    disabled={!editable}
-                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'port_scan_type', event.target.value))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                  >
-                    <option value="test">test（常见端口）</option>
-                    <option value="top100">top100</option>
-                    <option value="top1000">top1000</option>
-                    <option value="all">all（全端口）</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={taskPortScanType}
+                      disabled={!editable}
+                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'port_scan_type', event.target.value))}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="test">test（常见端口）</option>
+                      <option value="top100">top100</option>
+                      <option value="top1000">top1000</option>
+                      <option value="all">all（全端口）</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
                   <div className="mt-3 p-3 rounded-xl border border-brand-border bg-brand-bg/40 text-[11px] text-brand-text-muted leading-relaxed">
                     建议仅勾选需要的扫描项。目标多时优先开启核心能力（端口扫描、服务识别、站点识别），可提升效率。
                   </div>
@@ -2659,7 +2684,17 @@ function ActionDialog({
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-bold text-brand-text-muted">扫描功能</label>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs font-bold text-brand-text-muted">扫描功能</label>
+                  <button
+                    type="button"
+                    onClick={() => setAllTaskFeatures(!allTaskFeaturesEnabled)}
+                    className="text-xs font-bold text-brand-accent hover:underline"
+                    disabled={!editable || taskFeatureKeys.length === 0}
+                  >
+                    {allTaskFeaturesEnabled ? '取消全选' : '全选'}
+                  </button>
+                </div>
                 <div className="space-y-3">
                   {taskFeatureSections.map((section) => (
                     <div key={section.title} className="space-y-2">
@@ -3165,20 +3200,23 @@ function TableModuleView({ module, token }: { module: ModuleConfig; token: strin
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <select
-                value={size}
-                onChange={(event) => {
-                  setSize(Number(event.target.value));
-                  setPage(1);
-                }}
-                className="bg-brand-bg border border-brand-border rounded-xl px-3 py-2 text-sm"
-              >
-                {[10, 20, 50, 100].map((option) => (
-                  <option key={option} value={option}>
-                    {option} / 页
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={size}
+                  onChange={(event) => {
+                    setSize(Number(event.target.value));
+                    setPage(1);
+                  }}
+                  className={`${UNIFIED_SELECT_CLASS} w-auto min-w-[108px] py-2`}
+                >
+                  {[10, 20, 50, 100].map((option) => (
+                    <option key={option} value={option}>
+                      {option} / 页
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              </div>
               <button
                 onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 disabled={page >= totalPages}
@@ -3428,18 +3466,21 @@ function ApiConsoleView({ token }: { token: string }) {
             域名爆破字典
             <span className="ml-2 font-mono opacity-70">ARL.DOMAIN_DICT</span>
           </label>
-          <select
-            value={domainDict}
-            onChange={(event) => setDomainDict(event.target.value)}
-            className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-          >
-            <option value="">请选择字典文件</option>
-            {dictOptions.map((item) => (
-              <option key={item.path} value={item.path}>
-                {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              value={domainDict}
+              onChange={(event) => setDomainDict(event.target.value)}
+              className={UNIFIED_SELECT_CLASS}
+            >
+              <option value="">请选择字典文件</option>
+              {dictOptions.map((item) => (
+                <option key={item.path} value={item.path}>
+                  {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+          </div>
         </div>
 
         <div className="space-y-2">
