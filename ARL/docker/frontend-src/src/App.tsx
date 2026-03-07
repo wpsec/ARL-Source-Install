@@ -1602,16 +1602,16 @@ const fieldLabelMap: Record<string, string> = {
   site_identify: '站点识别',
   site_capture: '站点截图',
   file_leak: '文件泄露',
-  search_engines: '搜索引擎',
+  search_engines: '搜索引擎调用',
   site_spider: '站点爬虫',
-  arl_search: 'ARL历史查询',
-  alt_dns: 'AltDNS',
-  ssl_cert: 'SSL证书收集',
-  dns_query_plugin: 'DNS插件查询',
-  skip_scan_cdn_ip: '跳过CDN IP扫描',
-  nuclei_scan: 'Nuclei扫描',
-  findvhost: '虚拟主机探测',
-  web_info_hunter: 'Web信息猎取',
+  arl_search: 'ARL 历史查询',
+  alt_dns: 'DNS字典智能生成',
+  ssl_cert: 'SSL 证书获取',
+  dns_query_plugin: '域名查询插件',
+  skip_scan_cdn_ip: '跳过CDN',
+  nuclei_scan: 'nuclei 调用',
+  findvhost: 'Host 碰撞',
+  web_info_hunter: 'WIH 调用',
 };
 
 type FlatPayloadField = {
@@ -2522,33 +2522,29 @@ function ActionDialog({
   const editable = action.allowPayloadEdit !== false;
   const isTaskCreate = action.id === 'create_task';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
-  const taskBooleanOrder = [
-    'domain_brute',
-    'port_scan',
-    'service_detection',
-    'service_brute',
-    'os_detection',
-    'site_identify',
-    'site_capture',
-    'file_leak',
-    'search_engines',
-    'site_spider',
-    'arl_search',
-    'alt_dns',
-    'ssl_cert',
-    'dns_query_plugin',
-    'skip_scan_cdn_ip',
-    'nuclei_scan',
-    'findvhost',
-    'web_info_hunter',
-    'dingding_notify',
-  ];
-  const taskBooleanFields = useMemo(() => {
+  const taskFeatureSections = useMemo(() => {
     if (!isTaskCreate) return [];
-    const keys = Object.keys(formPayload || {}).filter((key) => typeof formPayload?.[key] === 'boolean');
-    const ordered = taskBooleanOrder.filter((key) => keys.includes(key));
-    const rest = keys.filter((key) => !taskBooleanOrder.includes(key)).sort();
-    return [...ordered, ...rest];
+    const isBooleanField = (key: string) => typeof formPayload?.[key] === 'boolean';
+    const sections = [
+      {
+        title: '域名探测',
+        keys: ['domain_brute', 'alt_dns', 'dns_query_plugin', 'arl_search'],
+      },
+      {
+        title: '网络探测',
+        keys: ['port_scan', 'service_detection', 'os_detection', 'ssl_cert', 'skip_scan_cdn_ip'],
+      },
+      {
+        title: 'Web与漏洞',
+        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'findvhost', 'web_info_hunter', 'dingding_notify'],
+      },
+    ];
+    return sections
+      .map((section) => ({
+        title: section.title,
+        keys: section.keys.filter(isBooleanField),
+      }))
+      .filter((section) => section.keys.length > 0);
   }, [formPayload, isTaskCreate]);
   const taskName = String(formPayload?.name ?? '');
   const taskTarget = String(formPayload?.target ?? '');
@@ -2664,21 +2660,28 @@ function ActionDialog({
 
               <div className="space-y-2">
                 <label className="text-xs font-bold text-brand-text-muted">扫描功能</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                  {taskBooleanFields.map((fieldKey) => (
-                    <label
-                      key={fieldKey}
-                      className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={Boolean(formPayload?.[fieldKey])}
-                        disabled={!editable}
-                        className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-                        onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, fieldKey, event.target.checked))}
-                      />
-                      <span className="font-medium truncate">{humanizeField(fieldKey)}</span>
-                    </label>
+                <div className="space-y-3">
+                  {taskFeatureSections.map((section) => (
+                    <div key={section.title} className="space-y-2">
+                      <p className="text-[11px] font-bold text-brand-text-muted tracking-wide">{section.title}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                        {section.keys.map((fieldKey) => (
+                          <label
+                            key={fieldKey}
+                            className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(formPayload?.[fieldKey])}
+                              disabled={!editable}
+                              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                              onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, fieldKey, event.target.checked))}
+                            />
+                            <span className="font-medium truncate">{humanizeField(fieldKey)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -2758,14 +2761,6 @@ function ActionDialog({
               当前动作使用固定参数，已禁用编辑。
             </div>
           ) : null}
-
-          {action.id === 'create_task' ? (
-            <div className="text-xs text-brand-text-muted bg-brand-accent/10 border border-brand-accent/30 rounded-lg px-3 py-2">
-              建议先填写任务名称与目标，再按需勾选扫描选项。此处已是完整任务参数，不需要手写 JSON。
-            </div>
-          ) : null}
-
-          <div className="text-xs text-brand-text-muted">提示：当前仅保留表单模式，减少误操作和配置成本。</div>
 
           {error ? (
             <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div>
