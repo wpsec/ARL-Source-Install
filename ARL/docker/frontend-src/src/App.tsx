@@ -2990,6 +2990,15 @@ function TableModuleView({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dialogAction, setDialogAction] = useState<ModuleAction | null>(null);
   const [dialogPayload, setDialogPayload] = useState<JsonValue>({});
+  const [riskDialogOpen, setRiskDialogOpen] = useState(false);
+  const [riskDialogLoading, setRiskDialogLoading] = useState(false);
+  const [riskDialogSubmitting, setRiskDialogSubmitting] = useState(false);
+  const [riskDialogError, setRiskDialogError] = useState('');
+  const [riskPolicies, setRiskPolicies] = useState<Array<{ policyId: string; policyName: string; pocCount: number }>>([]);
+  const [riskPolicyId, setRiskPolicyId] = useState('');
+  const [riskTaskName, setRiskTaskName] = useState('');
+  const [riskResultSetId, setRiskResultSetId] = useState('');
+  const [riskResultTotal, setRiskResultTotal] = useState(0);
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
@@ -3006,31 +3015,58 @@ function TableModuleView({
     setSearchForm(next);
   }, [module.id, hasAdvancedSearch, module.searchFields]);
 
+  useEffect(() => {
+    setRiskDialogOpen(false);
+    setRiskDialogError('');
+    setRiskDialogLoading(false);
+    setRiskDialogSubmitting(false);
+  }, [module.id]);
+
+  const buildFilters = useCallback((): JsonValue => {
+    const filters: JsonValue = {};
+    if (hasAdvancedSearch) {
+      (module.searchFields || []).forEach((field) => {
+        const raw = searchForm?.[field.key];
+        if (raw === undefined || raw === null) return;
+        const text = String(raw).trim();
+        if (!text) return;
+        if (field.inputType === 'number') {
+          const parsed = Number(text);
+          if (Number.isFinite(parsed)) {
+            filters[field.key] = parsed;
+          }
+          return;
+        }
+        filters[field.key] = text;
+      });
+      return filters;
+    }
+    if (module.quickFilterKey && quickFilter.trim()) {
+      filters[module.quickFilterKey] = quickFilter.trim();
+    }
+    return filters;
+  }, [hasAdvancedSearch, module.quickFilterKey, module.searchFields, quickFilter, searchForm]);
+
+  const clearSearchFilters = useCallback(() => {
+    if (hasAdvancedSearch) {
+      const resetForm: JsonValue = {};
+      (module.searchFields || []).forEach((field) => {
+        resetForm[field.key] = '';
+      });
+      setSearchForm(resetForm);
+    } else {
+      setQuickFilter('');
+    }
+    setPage(1);
+  }, [hasAdvancedSearch, module.searchFields]);
+
   const loadRows = useCallback(async () => {
     if (!module.listPath) return;
     setLoading(true);
     setError('');
     setSuccess('');
     try {
-      const filters: JsonValue = {};
-      if (hasAdvancedSearch) {
-        (module.searchFields || []).forEach((field) => {
-          const raw = searchForm?.[field.key];
-          if (raw === undefined || raw === null) return;
-          const text = String(raw).trim();
-          if (!text) return;
-          if (field.inputType === 'number') {
-            const parsed = Number(text);
-            if (Number.isFinite(parsed)) {
-              filters[field.key] = parsed;
-            }
-            return;
-          }
-          filters[field.key] = text;
-        });
-      } else if (module.quickFilterKey && quickFilter.trim()) {
-        filters[module.quickFilterKey] = quickFilter.trim();
-      }
+      const filters = buildFilters();
 
       const query: JsonValue = {
         page,
@@ -3054,7 +3090,7 @@ function TableModuleView({
     } finally {
       setLoading(false);
     }
-  }, [hasAdvancedSearch, module.defaultOrder, module.listPath, module.quickFilterKey, module.searchFields, page, quickFilter, searchForm, size, token]);
+  }, [buildFilters, module.defaultOrder, module.listPath, page, size, token]);
 
   useEffect(() => {
     void loadRows();
@@ -3081,7 +3117,14 @@ function TableModuleView({
   const showIndexColumn = Boolean(module.showIndex);
   const getColumnLabel = (column: string) => module.columnLabels?.[column] || humanizeField(column);
 
-  const visibleActions = module.actions || [];
+  const moduleActions = module.actions || [];
+  const visibleActions = useMemo(() => {
+    if (module.id !== 'asset_site') return moduleActions;
+    return moduleActions.filter((action) => !['asset_site_add', 'asset_site_save_result_set'].includes(action.id));
+  }, [module.id, moduleActions]);
+  const addAssetSiteAction = module.id === 'asset_site'
+    ? moduleActions.find((action) => action.id === 'asset_site_add') || null
+    : null;
 
   const selectAllChecked = rows.length > 0 && selectedIds.length === rows.length;
 
@@ -3181,25 +3224,7 @@ function TableModuleView({
     const resolved = applyPathTemplate(module.exportPath, payload);
     try {
       setError('');
-      const filters: JsonValue = {};
-      if (hasAdvancedSearch) {
-        (module.searchFields || []).forEach((field) => {
-          const raw = searchForm?.[field.key];
-          if (raw === undefined || raw === null) return;
-          const text = String(raw).trim();
-          if (!text) return;
-          if (field.inputType === 'number') {
-            const parsed = Number(text);
-            if (Number.isFinite(parsed)) {
-              filters[field.key] = parsed;
-            }
-            return;
-          }
-          filters[field.key] = text;
-        });
-      } else if (module.quickFilterKey && quickFilter.trim()) {
-        filters[module.quickFilterKey] = quickFilter.trim();
-      }
+      const filters = buildFilters();
       await requestApi(token, resolved, {
         method: 'GET',
         query: module.exportPath.includes('{task_id}') ? undefined : filters,
@@ -3208,6 +3233,119 @@ function TableModuleView({
       setSuccess('导出完成，文件已开始下载');
     } catch (err: any) {
       setError(err?.message || '导出失败');
+    }
+  };
+
+  const closeRiskDialog = useCallback(() => {
+    if (riskDialogSubmitting) return;
+    setRiskDialogOpen(false);
+    setRiskDialogError('');
+  }, [riskDialogSubmitting]);
+
+  useEffect(() => {
+    if (!riskDialogOpen) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeRiskDialog();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [closeRiskDialog, riskDialogOpen]);
+
+  const openAssetSiteRiskDialog = async () => {
+    if (module.id !== 'asset_site') return;
+    setRiskDialogLoading(true);
+    setRiskDialogError('');
+    setError('');
+    setSuccess('');
+    try {
+      const filters = buildFilters();
+      const saveResult = await requestApi(token, '/asset_site/save_result_set/', {
+        method: 'GET',
+        query: filters,
+      });
+      const resultData = saveResult?.data || {};
+      const resultSetId = String(resultData.result_set_id || '').trim();
+      const resultTotal = Number(resultData.result_total || 0);
+      if (!resultSetId) {
+        throw new Error('生成结果集失败，请调整筛选条件后重试');
+      }
+
+      const policyResponse = await requestApi(token, '/policy/', {
+        method: 'GET',
+        query: { page: 1, size: 1000, order: '-_id' },
+      });
+      const policyItems = normalizeListData(policyResponse).items;
+      const options = policyItems
+        .map((item) => {
+          const policyId = String(item?._id || item?.policy_id || '').trim();
+          const policyName = String(item?.name || '').trim() || '未命名策略';
+          const pocConfig = Array.isArray(item?.policy?.poc_config) ? item.policy.poc_config : [];
+          if (!policyId || pocConfig.length === 0) return null;
+          return {
+            policyId,
+            policyName,
+            pocCount: pocConfig.length,
+          };
+        })
+        .filter((item): item is { policyId: string; policyName: string; pocCount: number } => Boolean(item));
+
+      if (options.length === 0) {
+        throw new Error('未找到可用策略，请先在策略配置中启用 PoC 插件');
+      }
+
+      const first = options[0];
+      setRiskPolicies(options);
+      setRiskPolicyId(first.policyId);
+      setRiskTaskName(`风险巡航任务-${first.policyName}`);
+      setRiskResultSetId(resultSetId);
+      setRiskResultTotal(resultTotal);
+      setRiskDialogOpen(true);
+    } catch (err: any) {
+      setError(err?.message || '风险任务下发准备失败');
+    } finally {
+      setRiskDialogLoading(false);
+    }
+  };
+
+  const submitAssetSiteRiskTask = async () => {
+    if (module.id !== 'asset_site') return;
+    const taskName = riskTaskName.trim();
+    if (!riskPolicyId) {
+      setRiskDialogError('请选择策略');
+      return;
+    }
+    if (!taskName) {
+      setRiskDialogError('请填写任务名称');
+      return;
+    }
+    if (!riskResultSetId) {
+      setRiskDialogError('结果集 ID 无效，请重新生成');
+      return;
+    }
+
+    setRiskDialogSubmitting(true);
+    setRiskDialogError('');
+    setError('');
+    setSuccess('');
+    try {
+      await requestApi(token, '/task/policy/', {
+        method: 'POST',
+        body: {
+          name: taskName,
+          task_tag: 'risk_cruising',
+          target: '',
+          policy_id: riskPolicyId,
+          result_set_id: riskResultSetId,
+        },
+      });
+      setRiskDialogOpen(false);
+      setSuccess(`风险任务下发成功，目标站点 ${riskResultTotal} 条`);
+    } catch (err: any) {
+      setRiskDialogError(err?.message || '风险任务下发失败');
+    } finally {
+      setRiskDialogSubmitting(false);
     }
   };
 
@@ -3280,6 +3418,15 @@ function TableModuleView({
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {module.id === 'asset_site' && addAssetSiteAction ? (
+                <button
+                  onClick={() => openActionDialog(addAssetSiteAction)}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  添加站点
+                </button>
+              ) : null}
               <button
                 onClick={() => {
                   setPage(1);
@@ -3292,19 +3439,12 @@ function TableModuleView({
                 搜索
               </button>
               <button
-                onClick={() => {
-                  const resetForm: JsonValue = {};
-                  (module.searchFields || []).forEach((field) => {
-                    resetForm[field.key] = '';
-                  });
-                  setSearchForm(resetForm);
-                  setPage(1);
-                }}
+                onClick={clearSearchFilters}
                 className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
                 disabled={loading || !hasList}
               >
                 <RefreshCw className="w-4 h-4" />
-                重置
+                {module.id === 'asset_site' ? '清除' : '重置'}
               </button>
               {module.exportPath ? (
                 <button
@@ -3312,7 +3452,17 @@ function TableModuleView({
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  导出
+                  {module.id === 'asset_site' ? '导出站点' : '导出'}
+                </button>
+              ) : null}
+              {module.id === 'asset_site' ? (
+                <button
+                  onClick={() => void openAssetSiteRiskDialog()}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  disabled={riskDialogLoading}
+                >
+                  <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
+                  风险任务下发
                 </button>
               ) : null}
             </div>
@@ -3510,6 +3660,91 @@ function TableModuleView({
             await runAction(dialogAction, payload, file);
           }}
         />
+      ) : null}
+
+      {riskDialogOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between">
+              <div>
+                <h4 className="text-lg font-black">添加风险巡航任务</h4>
+                <p className="text-xs text-brand-text-muted mt-1">
+                  已匹配站点 {riskResultTotal} 条，结果集 ID: {riskResultSetId}
+                </p>
+              </div>
+              <button
+                onClick={closeRiskDialog}
+                disabled={riskDialogSubmitting}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition disabled:opacity-40"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">策略</label>
+                <div className="relative">
+                  <select
+                    value={riskPolicyId}
+                    onChange={(event) => {
+                      const nextPolicyId = event.target.value;
+                      setRiskPolicyId(nextPolicyId);
+                      const selectedPolicy = riskPolicies.find((item) => item.policyId === nextPolicyId);
+                      if (!selectedPolicy) return;
+                      if (!riskTaskName.trim() || riskTaskName.startsWith('风险巡航任务-')) {
+                        setRiskTaskName(`风险巡航任务-${selectedPolicy.policyName}`);
+                      }
+                    }}
+                    className={UNIFIED_SELECT_CLASS}
+                    disabled={riskDialogSubmitting}
+                  >
+                    {riskPolicies.map((option) => (
+                      <option key={option.policyId} value={option.policyId}>
+                        {option.policyName} (PoC: {option.pocCount})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                <input
+                  value={riskTaskName}
+                  onChange={(event) => setRiskTaskName(event.target.value)}
+                  disabled={riskDialogSubmitting}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  placeholder="风险巡航任务-策略名"
+                />
+              </div>
+
+              {riskDialogError ? (
+                <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+                  {riskDialogError}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={closeRiskDialog}
+                  disabled={riskDialogSubmitting}
+                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => void submitAssetSiteRiskTask()}
+                  disabled={riskDialogSubmitting}
+                  className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider"
+                >
+                  {riskDialogSubmitting ? '下发中...' : '确认下发'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );
