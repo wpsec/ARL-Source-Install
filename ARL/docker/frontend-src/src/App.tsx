@@ -3573,6 +3573,26 @@ function TableModuleView({
           ))}
         </div>
       ) : null}
+      {['scheduler', 'asset_scope'].includes(module.id) ? (
+        <div className="flex items-center gap-2">
+          {[
+            { id: 'scheduler', label: '资产监控' },
+            { id: 'asset_scope', label: '资产分组' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => onOpenModule(item.id)}
+              className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
+                module.id === item.id
+                  ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                  : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
         {hasAdvancedSearch ? (
@@ -4793,6 +4813,7 @@ function MainShell() {
     dashboard: 'dashboard',
     tasks: 'task',
     assets: 'asset_site',
+    asset_monitor: 'scheduler',
     groups: 'asset_scope',
     monitoring: 'system_monitor',
     policies: 'policy',

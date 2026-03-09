@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Globe, ShieldAlert, Settings, Activity, Search, Plus, Terminal, Palette, Zap, Heart, Cpu, Layers, FileText, Shield, Github, MessageSquare, Key } from 'lucide-react';
+import { LayoutDashboard, Globe, ShieldAlert, Settings, Activity, Search, Plus, Terminal, Palette, Zap, Heart, Cpu, Layers, FileText, Shield, Github, MessageSquare, Key, Monitor } from 'lucide-react';
 import { motion } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -34,6 +34,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
         { id: 'tasks', label: '任务管理', icon: Activity },
         { id: 'assets', label: '资产搜索', icon: Search },
+        { id: 'asset_monitor', label: '资产监控', icon: Monitor },
         { id: 'groups', label: '资产分组', icon: Layers },
         { id: 'monitoring', label: '系统监控', icon: Cpu },
       ]
