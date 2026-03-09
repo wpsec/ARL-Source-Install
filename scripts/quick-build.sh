@@ -128,6 +128,14 @@ check_tools_layout() {
         echo "请确认你调整后的 tools 目录结构与 Dockerfile 保持一致后再构建。"
         return 1
     fi
+
+    # Playwright 离线包（可选）
+    if [ -d "$ROOT_DIR/tools/playwright/ms-playwright" ] || \
+       compgen -G "$ROOT_DIR/tools/playwright/ms-playwright*.tar.gz" >/dev/null; then
+        echo -e "${GREEN}✓ 检测到 Playwright 离线包，将优先离线安装${NC}"
+    else
+        echo -e "${YELLOW}[WARN] 未检测到 Playwright 离线包，将尝试在线下载 Chromium${NC}"
+    fi
 }
 
 # 构建镜像（含离线回退）

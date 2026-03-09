@@ -85,6 +85,14 @@ else
     echo "⚠ 警告: 未找到 tools/Python-*.tgz (Python 编译阶段可能需联网下载源码)"
 fi
 
+# 检查 Playwright 离线包（可选）
+if [ -d "$PROJECT_ROOT/tools/playwright/ms-playwright" ] || \
+   compgen -G "$PROJECT_ROOT/tools/playwright/ms-playwright*.tar.gz" > /dev/null; then
+    echo "✓ 检测到 Playwright 离线包，构建将优先离线安装 Chromium"
+else
+    echo "⚠ 警告: 未找到 Playwright 离线包，构建将尝试联网下载 Chromium"
+fi
+
 # 询问是否构建
 echo ""
 echo "准备构建镜像..."

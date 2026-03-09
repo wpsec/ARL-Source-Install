@@ -58,6 +58,7 @@ RUN set -e; \
 # 4. 环境依赖安装 (利用缓存：先装依赖，再拷源码)
 COPY ARL-NPoC/ /opt/ARL-NPoC/
 COPY ARL/requirements.txt /code/requirements.txt
+COPY tools/playwright/ /tmp/playwright-offline/
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN pip3 install --upgrade "pip<24.1" setuptools wheel && \
     pip3 --version && \
@@ -71,9 +72,46 @@ RUN pip3 install --no-cache-dir \
     requests_ntlm==1.1.0
 # 确保关键包已安装
 RUN pip3 install --no-cache-dir psutil flask pymongo celery || true
-# Playwright 浏览器（下载失败不阻塞构建，运行时可按需回退）
-RUN python3 -m playwright install chromium || \
-    echo "[WARN] playwright browser install failed, screenshot will fallback when unavailable"
+# Playwright 浏览器（离线包优先，其次在线安装；失败不阻塞构建）
+RUN set -e; \
+    OFFLINE_DIR="/tmp/playwright-offline"; \
+    ARCH="${TARGETARCH:-$(uname -m)}"; \
+    case "$ARCH" in \
+      amd64|x86_64) PW_ARCH="amd64" ;; \
+      arm64|aarch64) PW_ARCH="arm64" ;; \
+      *) PW_ARCH="$ARCH" ;; \
+    esac; \
+    mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"; \
+    OFFLINE_TAR=""; \
+    if [ -f "${OFFLINE_DIR}/ms-playwright-${PW_ARCH}.tar.gz" ]; then \
+      OFFLINE_TAR="${OFFLINE_DIR}/ms-playwright-${PW_ARCH}.tar.gz"; \
+    elif [ -f "${OFFLINE_DIR}/ms-playwright.tar.gz" ]; then \
+      OFFLINE_TAR="${OFFLINE_DIR}/ms-playwright.tar.gz"; \
+    fi; \
+    if [ -d "${OFFLINE_DIR}/ms-playwright" ] && [ -n "$(ls -A "${OFFLINE_DIR}/ms-playwright" 2>/dev/null)" ]; then \
+      echo "use offline playwright directory: ${OFFLINE_DIR}/ms-playwright"; \
+      cp -a "${OFFLINE_DIR}/ms-playwright/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
+    elif [ -n "${OFFLINE_TAR}" ]; then \
+      echo "use offline playwright tar: ${OFFLINE_TAR}"; \
+      TMP_PW_DIR="/tmp/ms-playwright-extract"; \
+      rm -rf "${TMP_PW_DIR}" && mkdir -p "${TMP_PW_DIR}"; \
+      tar -xzf "${OFFLINE_TAR}" -C "${TMP_PW_DIR}"; \
+      if [ -d "${TMP_PW_DIR}/ms-playwright" ]; then \
+        cp -a "${TMP_PW_DIR}/ms-playwright/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
+      else \
+        cp -a "${TMP_PW_DIR}/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
+      fi; \
+      rm -rf "${TMP_PW_DIR}"; \
+    else \
+      echo "offline playwright package not found, fallback online install"; \
+      python3 -m playwright install chromium || \
+      echo "[WARN] playwright browser install failed, screenshot will fallback when unavailable"; \
+    fi; \
+    if [ -z "$(ls -A "${PLAYWRIGHT_BROWSERS_PATH}" 2>/dev/null)" ]; then \
+      echo "[WARN] playwright browser directory is empty: ${PLAYWRIGHT_BROWSERS_PATH}"; \
+    else \
+      ls -1 "${PLAYWRIGHT_BROWSERS_PATH}" | head -5; \
+    fi
 # 显示已安装的包
 RUN echo "===== 已安装的关键包 =====" && pip3 list | grep -E "psutil|flask|pymongo|celery|urllib3|playwright" && echo "===== 包安装检查完毕 ====="
 
