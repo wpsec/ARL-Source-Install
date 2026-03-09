@@ -59,7 +59,8 @@ RUN set -e; \
 COPY ARL-NPoC/ /opt/ARL-NPoC/
 COPY ARL/requirements.txt /code/requirements.txt
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN pip3 install --upgrade pip setuptools wheel && \
+RUN pip3 install --upgrade "pip<24.1" setuptools wheel && \
+    pip3 --version && \
     pip3 install --no-cache-dir -r /code/requirements.txt
 # 尝试安装 NPoC，失败不中断
 RUN pip3 install --no-cache-dir -e /opt/ARL-NPoC/ || true
