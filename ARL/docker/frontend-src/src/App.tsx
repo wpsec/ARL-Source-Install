@@ -469,6 +469,14 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     defaultOrder: '-_id',
     quickFilterKey: 'name',
+    showIndex: true,
+    columns: ['name', 'desc', 'update_date'],
+    columnLabels: {
+      name: '名称',
+      desc: '描述',
+      update_date: '更新时间',
+    },
+    searchFields: [{ key: 'name', label: '策略名称', placeholder: '请输入策略名称进行搜索' }],
     actions: [
       {
         id: 'policy_add',
@@ -2918,6 +2926,14 @@ function TableModuleView({
   const [riskTaskName, setRiskTaskName] = useState('');
   const [riskResultSetId, setRiskResultSetId] = useState('');
   const [riskResultTotal, setRiskResultTotal] = useState(0);
+  const [policyTaskDialogOpen, setPolicyTaskDialogOpen] = useState(false);
+  const [policyTaskSubmitting, setPolicyTaskSubmitting] = useState(false);
+  const [policyTaskError, setPolicyTaskError] = useState('');
+  const [policyTaskPolicyId, setPolicyTaskPolicyId] = useState('');
+  const [policyTaskPolicyName, setPolicyTaskPolicyName] = useState('');
+  const [policyTaskTag, setPolicyTaskTag] = useState<'task' | 'risk_cruising'>('task');
+  const [policyTaskName, setPolicyTaskName] = useState('');
+  const [policyTaskTarget, setPolicyTaskTarget] = useState('');
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
@@ -2939,6 +2955,9 @@ function TableModuleView({
     setRiskDialogError('');
     setRiskDialogLoading(false);
     setRiskDialogSubmitting(false);
+    setPolicyTaskDialogOpen(false);
+    setPolicyTaskSubmitting(false);
+    setPolicyTaskError('');
   }, [module.id]);
 
   const buildFilters = useCallback((): JsonValue => {
@@ -3038,13 +3057,22 @@ function TableModuleView({
 
   const moduleActions = module.actions || [];
   const visibleActions = useMemo(() => {
-    if (module.id !== 'asset_site') return moduleActions;
-    return moduleActions.filter((action) => !['asset_site_save_result_set'].includes(action.id));
+    if (module.id === 'asset_site') {
+      return moduleActions.filter((action) => !['asset_site_save_result_set'].includes(action.id));
+    }
+    if (module.id === 'policy') {
+      return moduleActions.filter((action) => action.id === 'policy_add');
+    }
+    return moduleActions;
   }, [module.id, moduleActions]);
+
+  const policyEditAction = module.id === 'policy'
+    ? moduleActions.find((action) => action.id === 'policy_edit') || null
+    : null;
 
   const selectAllChecked = rows.length > 0 && selectedIds.length === rows.length;
 
-  const openActionDialog = (action: ModuleAction) => {
+  const openActionDialog = (action: ModuleAction, payloadOverrides?: JsonValue) => {
     const basePayload = deepClone(action.payloadTemplate || {});
 
     if (action.selectedField) {
@@ -3055,7 +3083,8 @@ function TableModuleView({
       }
     }
 
-    setDialogPayload(basePayload);
+    const mergedPayload = payloadOverrides ? { ...basePayload, ...payloadOverrides } : basePayload;
+    setDialogPayload(mergedPayload);
     setDialogAction(action);
   };
 
@@ -3285,9 +3314,106 @@ function TableModuleView({
     }
   };
 
+  const openPolicyTaskDialog = (row: any) => {
+    if (module.id !== 'policy') return;
+    const policyId = String(row?._id || row?.policy_id || '').trim();
+    const policyName = String(row?.name || '').trim();
+    if (!policyId) return;
+    setPolicyTaskPolicyId(policyId);
+    setPolicyTaskPolicyName(policyName || '策略');
+    setPolicyTaskTag('task');
+    setPolicyTaskName(`资产侦查任务-${policyName || '策略'}`);
+    setPolicyTaskTarget('');
+    setPolicyTaskError('');
+    setPolicyTaskDialogOpen(true);
+  };
+
+  const closePolicyTaskDialog = useCallback(() => {
+    if (policyTaskSubmitting) return;
+    setPolicyTaskDialogOpen(false);
+    setPolicyTaskError('');
+  }, [policyTaskSubmitting]);
+
+  useEffect(() => {
+    if (!policyTaskDialogOpen) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closePolicyTaskDialog();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [closePolicyTaskDialog, policyTaskDialogOpen]);
+
+  const submitPolicyTask = async () => {
+    if (module.id !== 'policy') return;
+    const name = policyTaskName.trim();
+    const normalizedTargets = policyTaskTarget
+      .replace(/,/g, '\n')
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter((item) => item);
+
+    if (!policyTaskPolicyId) {
+      setPolicyTaskError('策略ID无效，请重新打开任务下发');
+      return;
+    }
+    if (!name) {
+      setPolicyTaskError('请填写任务名称');
+      return;
+    }
+    if (normalizedTargets.length === 0) {
+      setPolicyTaskError('请填写目标，支持一行一个');
+      return;
+    }
+
+    setPolicyTaskSubmitting(true);
+    setPolicyTaskError('');
+    setError('');
+    setSuccess('');
+    try {
+      await requestApi(token, '/task/policy/', {
+        method: 'POST',
+        body: {
+          name,
+          task_tag: policyTaskTag,
+          target: normalizedTargets.join('\n'),
+          policy_id: policyTaskPolicyId,
+        },
+      });
+      setPolicyTaskDialogOpen(false);
+      setSuccess('任务下发成功');
+    } catch (err: any) {
+      setPolicyTaskError(err?.message || '任务下发失败');
+    } finally {
+      setPolicyTaskSubmitting(false);
+    }
+  };
+
+  const deletePolicyRow = async (policyId: string) => {
+    if (module.id !== 'policy') return;
+    if (!policyId) return;
+    if (!window.confirm('确认删除该策略吗？')) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/policy/delete/', {
+        method: 'POST',
+        body: {
+          policy_id: [policyId],
+        },
+      });
+      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '删除失败');
+    }
+  };
+
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
   const showAssetScopeRowOperate = module.id === 'asset_scope';
+  const showPolicyRowOperate = module.id === 'policy';
 
   return (
     <div className="p-8 space-y-6">
@@ -3486,7 +3612,7 @@ function TableModuleView({
                       {getColumnLabel(column)}
                     </th>
                   ))}
-                  {showAssetScopeRowOperate ? (
+                  {showAssetScopeRowOperate || showPolicyRowOperate ? (
                     <th className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">操作</th>
                   ) : null}
                 </tr>
@@ -3523,14 +3649,49 @@ function TableModuleView({
                           {formatModuleCellValue(module.id, column, row)}
                         </td>
                       ))}
-                      {showAssetScopeRowOperate ? (
+                      {showAssetScopeRowOperate || showPolicyRowOperate ? (
                         <td className="px-4 py-3 align-top whitespace-nowrap">
-                          <button
-                            onClick={() => void deleteAssetScopeRow(id)}
-                            className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
-                          >
-                            删除
-                          </button>
+                          {showAssetScopeRowOperate ? (
+                            <button
+                              onClick={() => void deleteAssetScopeRow(id)}
+                              className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                            >
+                              删除
+                            </button>
+                          ) : null}
+                          {showPolicyRowOperate ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => openPolicyTaskDialog(row)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                任务下发
+                              </button>
+                              {policyEditAction ? (
+                                <button
+                                  onClick={() =>
+                                    openActionDialog(policyEditAction, {
+                                      policy_id: id,
+                                      policy_data: {
+                                        name: row?.name || '',
+                                        desc: row?.desc || '',
+                                        policy: row?.policy || {},
+                                      },
+                                    })
+                                  }
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  编辑
+                                </button>
+                              ) : null}
+                              <button
+                                onClick={() => void deletePolicyRow(id)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ) : null}
                         </td>
                       ) : null}
                     </tr>
@@ -3539,7 +3700,7 @@ function TableModuleView({
                 {rows.length === 0 && !loading ? (
                   <tr>
                     <td
-                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showAssetScopeRowOperate ? 1 : 0), 2)}
+                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showAssetScopeRowOperate || showPolicyRowOperate ? 1 : 0), 2)}
                       className="px-4 py-10 text-center text-brand-text-muted"
                     >
                       暂无数据
@@ -3684,6 +3845,108 @@ function TableModuleView({
                   className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider"
                 >
                   {riskDialogSubmitting ? '下发中...' : '确认下发'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {policyTaskDialogOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between">
+              <div>
+                <h4 className="text-lg font-black">任务下发</h4>
+                <p className="text-xs text-brand-text-muted mt-1">策略：{policyTaskPolicyName || '-'}</p>
+              </div>
+              <button
+                onClick={closePolicyTaskDialog}
+                disabled={policyTaskSubmitting}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition disabled:opacity-40"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">任务类型</label>
+                <div className="relative">
+                  <select
+                    value={policyTaskTag}
+                    onChange={(event) => {
+                      const nextTag = event.target.value === 'risk_cruising' ? 'risk_cruising' : 'task';
+                      setPolicyTaskTag(nextTag);
+                      if (!policyTaskName.trim() || policyTaskName.includes('任务-')) {
+                        setPolicyTaskName(
+                          nextTag === 'risk_cruising'
+                            ? `风险巡航任务-${policyTaskPolicyName || '策略'}`
+                            : `资产侦查任务-${policyTaskPolicyName || '策略'}`
+                        );
+                      }
+                    }}
+                    className={UNIFIED_SELECT_CLASS}
+                    disabled={policyTaskSubmitting}
+                  >
+                    <option value="task">资产侦查任务</option>
+                    <option value="risk_cruising">风险巡航任务</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                <input
+                  value={policyTaskName}
+                  onChange={(event) => setPolicyTaskName(event.target.value)}
+                  disabled={policyTaskSubmitting}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  placeholder="请输入任务名称"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">目标</label>
+                <textarea
+                  value={policyTaskTarget}
+                  onChange={(event) => setPolicyTaskTarget(event.target.value)}
+                  disabled={policyTaskSubmitting}
+                  className="w-full min-h-[180px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  placeholder={
+                    policyTaskTag === 'risk_cruising'
+                      ? '请输入确定的目标，不会进行端口扫描,如: http://10.0.1.1:8081/ 10.0.1.1:2222'
+                      : '请输入目标，支持IP、IP段、域名'
+                  }
+                />
+                <p className="text-xs text-brand-text-muted">
+                  {policyTaskTag === 'risk_cruising'
+                    ? '请输入确定的目标，不会进行端口扫描,如: http://10.0.1.1:8081/ 10.0.1.1:2222'
+                    : '请输入目标，支持IP、IP段、域名。支持一行一个。'}
+                </p>
+              </div>
+
+              {policyTaskError ? (
+                <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+                  {policyTaskError}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={closePolicyTaskDialog}
+                  disabled={policyTaskSubmitting}
+                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => void submitPolicyTask()}
+                  disabled={policyTaskSubmitting}
+                  className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider"
+                >
+                  {policyTaskSubmitting ? '下发中...' : '确认下发'}
                 </button>
               </div>
             </div>
