@@ -3,9 +3,12 @@
 """
 import sys
 import os
+import logging
 import threading
 from . import conn_db
 from app.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 def update_task_tag():
@@ -21,6 +24,7 @@ def update_task_tag():
 
 
 def create_index():
+    # ========== 单字段索引 ==========
     index_map = {
         "cert": "task_id",
         "domain": ["task_id", "domain"],
@@ -44,6 +48,48 @@ def create_index():
                 conn_db(table).create_index(index)
         else:
             conn_db(table).create_index(index_map[table])
+
+    # ========== 复合索引（覆盖高频联合查询） ==========
+    compound_indexes = {
+        "domain": [
+            [("task_id", 1), ("domain", 1)],
+        ],
+        "site": [
+            [("task_id", 1), ("status", 1)],
+            [("task_id", 1), ("hostname", 1)],
+        ],
+        "ip": [
+            [("task_id", 1), ("ip", 1)],
+        ],
+        "url": [
+            [("task_id", 1), ("url", 1)],
+        ],
+        "asset_domain": [
+            [("scope_id", 1), ("domain", 1)],
+        ],
+        "asset_site": [
+            [("scope_id", 1), ("site", 1)],
+        ],
+        "asset_ip": [
+            [("scope_id", 1), ("ip", 1)],
+        ],
+        "wih": [
+            [("task_id", 1), ("record_type", 1)],
+        ],
+        "vuln": [
+            [("task_id", 1), ("target", 1)],
+        ],
+        "task": [
+            [("status", 1), ("task_tag", 1)],
+        ],
+    }
+    for table, indexes in compound_indexes.items():
+        for index_keys in indexes:
+            try:
+                conn_db(table).create_index(index_keys)
+            except Exception as e:
+                logger.warning("create compound index failed: table=%s, keys=%s, error=%s",
+                               table, index_keys, e)
 
 
 def arl_update():

@@ -30,6 +30,7 @@ import time
 
 from app.utils import conn_db as conn
 from app.utils.cache import build_cache_key, cached_call
+from app.config import Config
 
 # 基础查询字段定义
 # 这些字段用于分页、排序等通用查询功能
@@ -246,7 +247,13 @@ class ARLResource(Resource):
 
             # 执行分页查询
             result = conn(collection).find(query).sort(orderby_list).skip(size * (page - 1)).limit(size)
-            count = conn(collection).count(query)
+            # 无过滤条件时允许切换为估算总数，避免全量 count 开销
+            if query:
+                count = conn(collection).count_documents(query)
+            elif Config.API_USE_ESTIMATED_COUNT:
+                count = conn(collection).estimated_document_count()
+            else:
+                count = conn(collection).count_documents({})
             items = self.build_return_items(result)
 
             # 处理查询条件中的特殊字段（用于返回）
@@ -315,16 +322,21 @@ class ARLResource(Resource):
         }
 
         ret = default_field_map.copy()
+        # 导出场景通过内部标记放宽分页上限，且该标记必须提前移除避免进入查询条件
+        _is_export = bool(args.pop("_export", False))
+        _max_size = 100000 if _is_export else Config.API_PAGE_SIZE_MAX
+        if _is_export:
+            # 导出默认拉取最大记录数，避免未传 size 时只导出默认 10 条
+            ret["size"] = _max_size
 
         for x in default_field_map:
             if x in args and args[x]:
                 ret[x] = args.pop(x)
                 if x == "size":
-                    # 限制页面大小范围 [1, 100000]
                     if ret[x] <= 0:
                         ret[x] = 10
-                    if ret[x] >= 100000:
-                        ret[x] = 100000
+                    if ret[x] >= _max_size:
+                        ret[x] = _max_size
 
                 if x == "page":
                     # 页码最小为 1
@@ -374,6 +386,8 @@ class ARLResource(Resource):
             "wih": "content",
         }
         
+        # 导出场景：注入 _export 标记，绕过 API_PAGE_SIZE_MAX 限制
+        args["_export"] = True
         # 查询数据
         data = self.build_data(args=args, collection=_type)["items"]
         items_set = set()
@@ -404,6 +418,8 @@ class ARLResource(Resource):
         返回：
             文件下载响应
         """
+        # 导出场景：注入 _export 标记，绕过 API_PAGE_SIZE_MAX 限制
+        args["_export"] = True
         data = self.build_data(args=args, collection=collection)["items"]
         items_set = set()
         

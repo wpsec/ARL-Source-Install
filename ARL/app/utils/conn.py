@@ -17,14 +17,6 @@ CONTENT_CHUNK_SIZE = 10 * 1024
 UA = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
 
 
-proxies = {
-    'https': "http://127.0.0.1:8080",
-    'http': "http://127.0.0.1:8080"
-}
-
-SET_PROXY = False
-
-
 # requests/models.py:824
 def patch_content(response, timeout=None):
     """Content of the response, in bytes."""
@@ -63,9 +55,11 @@ def http_req(url, method='get', **kwargs):
     kwargs["stream"] = True
 
     if Config.PROXY_URL:
-        proxies['https'] = Config.PROXY_URL
-        proxies['http'] = Config.PROXY_URL
-        kwargs["proxies"] = proxies
+        _proxies = {
+            'https': Config.PROXY_URL,
+            'http': Config.PROXY_URL,
+        }
+        kwargs["proxies"] = _proxies
 
     conn = getattr(requests, method)(url, **kwargs)
 
@@ -79,11 +73,21 @@ def http_req(url, method='get', **kwargs):
 
 
 class ConnMongo(object):
-    def __new__(self):
-        if not hasattr(self, 'instance'):
-            self.instance = super(ConnMongo, self).__new__(self)
-            self.instance.conn = MongoClient(Config.MONGO_URL)
-        return self.instance
+    def __new__(cls):
+        if not hasattr(cls, 'instance'):
+            cls.instance = super(ConnMongo, cls).__new__(cls)
+            cls.instance.conn = MongoClient(
+                Config.MONGO_URL,
+                maxPoolSize=Config.MONGO_MAX_POOL_SIZE,
+                minPoolSize=Config.MONGO_MIN_POOL_SIZE,
+                maxIdleTimeMS=Config.MONGO_MAX_IDLE_TIME_MS,
+                serverSelectionTimeoutMS=Config.MONGO_SERVER_SELECTION_TIMEOUT_MS,
+                connectTimeoutMS=Config.MONGO_CONNECT_TIMEOUT_MS,
+                socketTimeoutMS=Config.MONGO_SOCKET_TIMEOUT_MS,
+                retryWrites=True,
+                retryReads=True,
+            )
+        return cls.instance
 
 
 class CachedCollectionProxy(object):

