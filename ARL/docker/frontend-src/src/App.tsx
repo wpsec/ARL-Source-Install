@@ -420,7 +420,7 @@ const modules: ModuleConfig[] = [
           schedule_type: 'future_scan',
           policy_id: '',
           cron: '0 2 * * *',
-          start_date: '2026-12-31 10:00:00',
+          start_date: '',
           task_tag: 'task',
           notify_enable: true,
           notify_kb_enable: false,
@@ -1670,6 +1670,30 @@ function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
 }
 
+function toDatetimeLocalValue(value: any): string {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const directMatch = text.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?$/);
+  if (directMatch) {
+    return `${directMatch[1]}T${directMatch[2]}`;
+  }
+  return '';
+}
+
+function fromDatetimeLocalValue(value: string): string {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const localMatch = text.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?$/);
+  if (localMatch) {
+    return `${localMatch[1]} ${localMatch[2]}:${localMatch[3] || '00'}`;
+  }
+  const spaceMatch = text.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?::(\d{2}))?$/);
+  if (spaceMatch) {
+    return `${spaceMatch[1]} ${spaceMatch[2]}:${spaceMatch[3] || '00'}`;
+  }
+  return text;
+}
+
 const fieldLabelMap: Record<string, string> = {
   name: '名称',
   target: '目标',
@@ -2644,6 +2668,7 @@ function ActionDialog({
   const editable = action.allowPayloadEdit !== false;
   const isTaskCreate = action.id === 'create_task';
   const isAssetScopeCreate = action.id === 'asset_scope_add';
+  const isTaskScheduleCreate = action.id === 'task_schedule_add';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
   const displayFields = useMemo(() => fields, [fields]);
@@ -2693,6 +2718,15 @@ function ActionDialog({
   const taskTarget = String(formPayload?.target ?? '');
   const taskDomainBruteType = String(formPayload?.domain_brute_type ?? 'test');
   const taskPortScanType = String(formPayload?.port_scan_type ?? 'test');
+  const taskScheduleName = String(formPayload?.name ?? '');
+  const taskScheduleTarget = String(formPayload?.target ?? '');
+  const taskScheduleType = String(formPayload?.schedule_type ?? 'future_scan') === 'recurrent_scan' ? 'recurrent_scan' : 'future_scan';
+  const taskSchedulePolicyId = String(formPayload?.policy_id ?? '');
+  const taskScheduleCron = String(formPayload?.cron ?? '');
+  const taskScheduleStartDate = toDatetimeLocalValue(formPayload?.start_date);
+  const taskScheduleTag = String(formPayload?.task_tag ?? 'task') === 'risk_cruising' ? 'risk_cruising' : 'task';
+  const taskScheduleNotifyEnable = Boolean(formPayload?.notify_enable);
+  const taskScheduleNotifyKbEnable = Boolean(formPayload?.notify_kb_enable);
   const scopeGroupName = String(formPayload?.name ?? '');
   const scopeType = String(formPayload?.scope_type ?? 'domain') === 'ip' ? 'ip' : 'domain';
   const scopeText = String(formPayload?.scope ?? '');
@@ -2712,6 +2746,9 @@ function ActionDialog({
   const [policyPluginError, setPolicyPluginError] = useState('');
   const [policyPocOptions, setPolicyPocOptions] = useState<Array<{ plugin_name: string; vul_name: string }>>([]);
   const [policyBruteOptions, setPolicyBruteOptions] = useState<Array<{ plugin_name: string; vul_name: string }>>([]);
+  const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [taskSchedulePolicyLoading, setTaskSchedulePolicyLoading] = useState(false);
+  const [taskSchedulePolicyError, setTaskSchedulePolicyError] = useState('');
 
   const getPolicyPath = (suffix: string) => `${policyRootPath}.${suffix}`;
   const updatePolicyValue = (suffix: string, value: any) => {
@@ -2797,6 +2834,61 @@ function ActionDialog({
   }, [initialPayload]);
 
   useEffect(() => {
+    if (!isTaskScheduleCreate) {
+      setTaskSchedulePolicyOptions([]);
+      setTaskSchedulePolicyLoading(false);
+      setTaskSchedulePolicyError('');
+      return;
+    }
+    let cancelled = false;
+
+    const loadTaskSchedulePolicies = async () => {
+      setTaskSchedulePolicyLoading(true);
+      setTaskSchedulePolicyError('');
+      try {
+        const response = await requestApi(token, '/policy/', {
+          method: 'GET',
+          query: { page: 1, size: 1000, order: 'name' },
+        });
+        const items = normalizeListData(response).items || [];
+        const options = items
+          .map((item: any) => {
+            const policyId = String(item?._id || item?.policy_id || '').trim();
+            const policyName = String(item?.name || '').trim() || '未命名策略';
+            if (!policyId) return null;
+            return { label: policyName, value: policyId };
+          })
+          .filter((item): item is { label: string; value: string } => Boolean(item));
+        if (cancelled) return;
+
+        setTaskSchedulePolicyOptions(options);
+        if (options.length === 0) {
+          setTaskSchedulePolicyError('未找到可用策略，请先在策略配置中创建策略');
+        } else {
+          setFormPayload((prev) => {
+            const currentPolicyId = String(prev?.policy_id || '').trim();
+            if (currentPolicyId) return prev;
+            return updatePayloadValue(prev, 'policy_id', options[0].value);
+          });
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setTaskSchedulePolicyOptions([]);
+        setTaskSchedulePolicyError(err?.message || '加载策略列表失败');
+      } finally {
+        if (!cancelled) {
+          setTaskSchedulePolicyLoading(false);
+        }
+      }
+    };
+
+    void loadTaskSchedulePolicies();
+    return () => {
+      cancelled = true;
+    };
+  }, [isTaskScheduleCreate, token]);
+
+  useEffect(() => {
     if (!isPolicyAction) return;
     let cancelled = false;
 
@@ -2855,7 +2947,7 @@ function ActionDialog({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full ${isTaskCreate || isPolicyAction ? 'max-w-5xl' : 'max-w-3xl'} bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden`}>
+      <div className={`w-full ${isTaskCreate || isPolicyAction || isTaskScheduleCreate ? 'max-w-5xl' : 'max-w-3xl'} bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden`}>
         <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between">
           <div>
             <h4 className="text-lg font-black">{action.label}</h4>
@@ -2987,6 +3079,150 @@ function ActionDialog({
                   ))}
                 </div>
               </div>
+            </div>
+          ) : isTaskScheduleCreate ? (
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">名称</label>
+                  <input
+                    value={taskScheduleName}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    placeholder="请输入计划任务名称"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">策略</label>
+                  <div className="relative">
+                    <select
+                      value={taskSchedulePolicyId}
+                      disabled={!editable || taskSchedulePolicyLoading}
+                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'policy_id', event.target.value))}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="">{taskSchedulePolicyLoading ? '策略加载中...' : '请选择策略'}</option>
+                      {taskSchedulePolicyOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">计划类型</label>
+                  <div className="relative">
+                    <select
+                      value={taskScheduleType}
+                      disabled={!editable}
+                      onChange={(event) => {
+                        const nextType = event.target.value === 'recurrent_scan' ? 'recurrent_scan' : 'future_scan';
+                        setFormPayload((prev) => {
+                          let next = updatePayloadValue(prev, 'schedule_type', nextType);
+                          if (nextType === 'recurrent_scan' && !String(getPayloadValue(next, 'cron') || '').trim()) {
+                            next = updatePayloadValue(next, 'cron', '0 2 * * *');
+                          }
+                          return next;
+                        });
+                      }}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="future_scan">定时任务</option>
+                      <option value="recurrent_scan">周期任务</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">任务类别</label>
+                  <div className="relative">
+                    <select
+                      value={taskScheduleTag}
+                      disabled={!editable}
+                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'task_tag', event.target.value))}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="task">资产发现任务</option>
+                      <option value="risk_cruising">风险巡航任务</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+              </div>
+
+              {taskScheduleType === 'future_scan' ? (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">开始时间</label>
+                  <input
+                    type="datetime-local"
+                    value={taskScheduleStartDate}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'start_date', fromDatetimeLocalValue(event.target.value)))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">CRON</label>
+                  <input
+                    value={taskScheduleCron}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'cron', event.target.value))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    placeholder="例如：0 */6 * * *"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">目标（支持多行，一行一个目标资产）</label>
+                <textarea
+                  value={taskScheduleTarget}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'target', event.target.value))}
+                  className="w-full min-h-[148px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  placeholder={
+                    taskScheduleTag === 'risk_cruising'
+                      ? 'http://10.0.1.1:8081/\n10.0.1.1:2222'
+                      : 'example.com\n10.0.0.1\n10.0.0.0/24'
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition">
+                  <input
+                    type="checkbox"
+                    checked={taskScheduleNotifyEnable}
+                    disabled={!editable}
+                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'notify_enable', event.target.checked))}
+                  />
+                  <span className="font-medium">钉钉通知</span>
+                </label>
+                <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition">
+                  <input
+                    type="checkbox"
+                    checked={taskScheduleNotifyKbEnable}
+                    disabled={!editable}
+                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'notify_kb_enable', event.target.checked))}
+                  />
+                  <span className="font-medium">推送钉钉知识库</span>
+                </label>
+              </div>
+
+              {taskSchedulePolicyError ? (
+                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                  {taskSchedulePolicyError}
+                </div>
+              ) : null}
             </div>
           ) : isAssetScopeCreate ? (
             <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
@@ -3407,6 +3643,59 @@ function ActionDialog({
                     payload.name = normalizedName;
                     payload.target = normalizedTargets.join('\n');
                   }
+                  if (isTaskScheduleCreate && editable) {
+                    const normalizedName = String(payload.name || '').trim();
+                    const normalizedTargets = String(payload.target || '')
+                      .replace(/,/g, '\n')
+                      .split(/\r?\n/)
+                      .flatMap((line) => line.split(/\s+/))
+                      .map((item) => item.trim())
+                      .filter((item) => item);
+                    const scheduleType = String(payload.schedule_type || 'future_scan').trim().toLowerCase();
+                    const taskTag = String(payload.task_tag || 'task').trim().toLowerCase();
+                    const policyId = String(payload.policy_id || '').trim();
+                    const cron = String(payload.cron || '').trim();
+                    const startDate = fromDatetimeLocalValue(String(payload.start_date || '').trim());
+
+                    if (!normalizedName) {
+                      throw new Error('请填写名称');
+                    }
+                    if (normalizedTargets.length === 0) {
+                      throw new Error('请填写目标，支持一行一个目标资产');
+                    }
+                    if (!policyId) {
+                      throw new Error('请选择策略');
+                    }
+                    if (!['future_scan', 'recurrent_scan'].includes(scheduleType)) {
+                      throw new Error('计划类型无效');
+                    }
+                    if (!['task', 'risk_cruising'].includes(taskTag)) {
+                      throw new Error('任务类别无效');
+                    }
+                    if (scheduleType === 'future_scan' && !startDate) {
+                      throw new Error('请选择开始时间');
+                    }
+                    if (scheduleType === 'recurrent_scan' && !cron) {
+                      throw new Error('请填写 CRON 表达式');
+                    }
+
+                    payload.name = normalizedName;
+                    payload.target = normalizedTargets.join('\n');
+                    payload.schedule_type = scheduleType;
+                    payload.task_tag = taskTag;
+                    payload.policy_id = policyId;
+                    payload.notify_enable = Boolean(payload.notify_enable);
+                    payload.notify_kb_enable = Boolean(payload.notify_kb_enable);
+                    payload.notify_channel = 'dingding';
+                    payload.notify_on = 'finished';
+                    if (scheduleType === 'future_scan') {
+                      payload.start_date = startDate;
+                      payload.cron = '';
+                    } else {
+                      payload.cron = cron;
+                      payload.start_date = '';
+                    }
+                  }
                   if (isAssetScopeCreate && editable) {
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedScopes = String(payload.scope || '')
@@ -3472,7 +3761,7 @@ function ActionDialog({
               className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider uppercase"
               disabled={loading}
             >
-              {loading ? '执行中...' : isPolicyAction ? '确定' : '执行'}
+              {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate) ? '确定' : '执行'}
             </button>
           </div>
         </div>
