@@ -612,17 +612,6 @@ const modules: ModuleConfig[] = [
     exportPath: '/asset_domain/export/',
     actions: [
       {
-        id: 'asset_domain_add',
-        label: '添加域名',
-        method: 'POST',
-        path: '/asset_domain/',
-        payloadTemplate: {
-          domain: 'www.example.com',
-          scope_id: '',
-          policy_id: '',
-        },
-      },
-      {
         id: 'asset_domain_delete',
         label: '删除所选',
         method: 'POST',
@@ -663,26 +652,6 @@ const modules: ModuleConfig[] = [
     ],
     exportPath: '/asset_site/export/',
     actions: [
-      {
-        id: 'asset_site_add_tag',
-        label: '添加标签',
-        method: 'POST',
-        path: '/asset_site/add_tag/',
-        payloadTemplate: {
-          _id: '',
-          tag: '重点',
-        },
-      },
-      {
-        id: 'asset_site_delete_tag',
-        label: '删除标签',
-        method: 'POST',
-        path: '/asset_site/delete_tag/',
-        payloadTemplate: {
-          _id: '',
-          tag: '重点',
-        },
-      },
       {
         id: 'asset_site_delete',
         label: '删除所选',
@@ -733,20 +702,6 @@ const modules: ModuleConfig[] = [
     ],
     exportPath: '/asset_ip/export/',
     actions: [
-      {
-        id: 'asset_ip_export_only_ip',
-        label: '导出IP列表',
-        method: 'GET',
-        path: '/asset_ip/export_ip/',
-        download: true,
-      },
-      {
-        id: 'asset_ip_export_domain',
-        label: '导出关联域名',
-        method: 'GET',
-        path: '/asset_ip/export_domain/',
-        download: true,
-      },
       {
         id: 'asset_ip_delete',
         label: '删除所选',
@@ -3181,6 +3136,23 @@ function TableModuleView({
     }
   };
 
+  const runAssetIpExtraExport = async (kind: 'ip' | 'domain') => {
+    if (module.id !== 'asset_ip') return;
+    const path = kind === 'ip' ? '/asset_ip/export_ip/' : '/asset_ip/export_domain/';
+    const label = kind === 'ip' ? 'IP列表' : '关联域名';
+    try {
+      setError('');
+      await requestApi(token, path, {
+        method: 'GET',
+        query: buildFilters(),
+        download: true,
+      });
+      setSuccess(`导出${label}完成，文件已开始下载`);
+    } catch (err: any) {
+      setError(err?.message || `导出${label}失败`);
+    }
+  };
+
   const closeRiskDialog = useCallback(() => {
     if (riskDialogSubmitting) return;
     setRiskDialogOpen(false);
@@ -3517,6 +3489,24 @@ function TableModuleView({
                 >
                   <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
                   风险任务下发
+                </button>
+              ) : null}
+              {module.id === 'asset_ip' ? (
+                <button
+                  onClick={() => void runAssetIpExtraExport('ip')}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  导出IP列表
+                </button>
+              ) : null}
+              {module.id === 'asset_ip' ? (
+                <button
+                  onClick={() => void runAssetIpExtraExport('domain')}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  导出关联域名
                 </button>
               ) : null}
             </div>

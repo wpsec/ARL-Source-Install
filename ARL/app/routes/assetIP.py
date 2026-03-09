@@ -170,7 +170,7 @@ class ARLIPExportIp(ARLResource):
 
 
 @ns.route('/export_domain/')
-class ARLIPExportIp(ARLResource):
+class ARLIPExportDomain(ARLResource):
     """域名单独导出接口"""
     
     parser = get_arl_parser(base_search_fields, location='args')
