@@ -16,6 +16,7 @@ import {
   FlaskConical,
   GitBranch,
   Globe,
+  Key,
   LayoutDashboard,
   Link,
   Lock,
@@ -578,7 +579,6 @@ const modules: ModuleConfig[] = [
         payloadTemplate: {
           name: '新资产组',
           scope: 'example.com',
-          black_scope: '',
           scope_type: 'domain',
         },
       },
@@ -1290,7 +1290,14 @@ const modules: ModuleConfig[] = [
   {
     id: 'api_console',
     label: 'API管理',
-    description: '图形化管理系统配置并同步到 config-docker.yaml',
+    description: '管理 FOFA / Hunter / Quake / Zoomeye 等三方 API 凭据',
+    group: '系统集成',
+    icon: Key,
+  },
+  {
+    id: 'config_console',
+    label: '配置管理',
+    description: '管理扫描字典、并发参数、黑名单IP与域名解析器配置',
     group: '系统集成',
     icon: Settings,
   },
@@ -2524,7 +2531,50 @@ function ActionDialog({
 
   const editable = action.allowPayloadEdit !== false;
   const isTaskCreate = action.id === 'create_task';
+  const isAssetScopeCreate = action.id === 'asset_scope_add';
+  const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
+  const policyBoolLayout = useMemo(() => {
+    if (!isPolicyAction) {
+      return {
+        sections: [] as Array<{ title: string; fields: FlatPayloadField[] }>,
+        boolPathSet: new Set<string>(),
+      };
+    }
+    const root = action.id === 'policy_edit' ? 'policy_data.policy' : 'policy';
+    const sectionDefs = [
+      { title: '域名配置', prefix: `${root}.domain_config.` },
+      { title: 'IP配置', prefix: `${root}.ip_config.` },
+      { title: '站点配置', prefix: `${root}.site_config.` },
+    ];
+    const boolPathSet = new Set<string>();
+    const sections: Array<{ title: string; fields: FlatPayloadField[] }> = [];
+
+    sectionDefs.forEach((section) => {
+      const sectionFields = fields.filter(
+        (field) => typeof field.value === 'boolean' && field.path.startsWith(section.prefix)
+      );
+      if (sectionFields.length > 0) {
+        sectionFields.forEach((field) => boolPathSet.add(field.path));
+        sections.push({ title: section.title, fields: sectionFields });
+      }
+    });
+
+    const extraBoolPaths = [`${root}.file_leak`, `${root}.npoc_service_detection`];
+    const extraFields = fields.filter(
+      (field) => typeof field.value === 'boolean' && extraBoolPaths.includes(field.path)
+    );
+    if (extraFields.length > 0) {
+      extraFields.forEach((field) => boolPathSet.add(field.path));
+      sections.push({ title: '扩展配置', fields: extraFields });
+    }
+
+    return { sections, boolPathSet };
+  }, [action.id, fields, isPolicyAction]);
+  const displayFields = useMemo(() => {
+    if (!isPolicyAction) return fields;
+    return fields.filter((field) => !policyBoolLayout.boolPathSet.has(field.path));
+  }, [fields, isPolicyAction, policyBoolLayout.boolPathSet]);
   const taskFeatureSections = useMemo(() => {
     if (!isTaskCreate) return [];
     const isBooleanField = (key: string) => typeof formPayload?.[key] === 'boolean';
@@ -2568,6 +2618,9 @@ function ActionDialog({
   const taskTarget = String(formPayload?.target ?? '');
   const taskDomainBruteType = String(formPayload?.domain_brute_type ?? 'test');
   const taskPortScanType = String(formPayload?.port_scan_type ?? 'test');
+  const scopeGroupName = String(formPayload?.name ?? '');
+  const scopeType = String(formPayload?.scope_type ?? 'domain') === 'ip' ? 'ip' : 'domain';
+  const scopeText = String(formPayload?.scope ?? '');
 
   useEffect(() => {
     const nextPayload = deepClone(initialPayload);
@@ -2720,9 +2773,56 @@ function ActionDialog({
                 </div>
               </div>
             </div>
+          ) : isAssetScopeCreate ? (
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">资产类别</label>
+                <div className="relative">
+                  <select
+                    value={scopeType}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'scope_type', event.target.value))}
+                    className={UNIFIED_SELECT_CLASS}
+                  >
+                    <option value="domain">域名资产</option>
+                    <option value="ip">IP资产</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">资产组名称</label>
+                <input
+                  value={scopeGroupName}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  placeholder="例如：生产外网资产"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">资产范围（支持一行一个）</label>
+                <textarea
+                  value={scopeText}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'scope', event.target.value))}
+                  className="w-full min-h-[168px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  placeholder={
+                    scopeType === 'ip'
+                      ? '1.1.1.1\n1.1.1.0/24\n1.1.1.1-1.1.1.100'
+                      : 'example.com\napi.example.com'
+                  }
+                />
+                <p className="text-[11px] text-brand-text-muted">
+                  支持换行、空格或逗号分隔，提交时会自动归一化为多条资产范围。
+                </p>
+              </div>
+            </div>
           ) : (
             <div className="space-y-3 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">
-              {fields.map((field) => {
+              {displayFields.map((field) => {
                 const value = field.value;
                 const disabled = !editable;
                 const isBoolean = typeof value === 'boolean';
@@ -2733,7 +2833,7 @@ function ActionDialog({
                   <div key={field.path} className="space-y-1">
                     <label className="text-xs font-bold text-brand-text-muted">
                       {humanizeField(field.path)}
-                      {!isTaskCreate ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
+                      {!isTaskCreate && !isPolicyAction ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
                     </label>
                     {isBoolean ? (
                       <label className="flex items-center justify-between rounded-xl border border-brand-border bg-brand-bg px-3 py-2.5 text-sm">
@@ -2787,6 +2887,35 @@ function ActionDialog({
                   </div>
                 );
               })}
+
+              {isPolicyAction && policyBoolLayout.sections.length > 0 ? (
+                <div className="space-y-3">
+                  {policyBoolLayout.sections.map((section) => (
+                    <div key={section.title} className="space-y-2">
+                      <p className="text-[11px] font-bold text-brand-text-muted tracking-wide">{section.title}</p>
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+                        {section.fields.map((field) => (
+                          <label
+                            key={field.path}
+                            className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(field.value)}
+                              disabled={!editable}
+                              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                              onChange={(event) => {
+                                setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
+                              }}
+                            />
+                            <span className="font-medium truncate">{humanizeField(field.path)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -2830,6 +2959,27 @@ function ActionDialog({
 
                     payload.name = normalizedName;
                     payload.target = normalizedTargets.join('\n');
+                  }
+                  if (isAssetScopeCreate && editable) {
+                    const normalizedName = String(payload.name || '').trim();
+                    const normalizedScopes = String(payload.scope || '')
+                      .replace(/,/g, '\n')
+                      .split(/\r?\n/)
+                      .flatMap((line) => line.split(/\s+/))
+                      .map((item) => item.trim())
+                      .filter((item) => item);
+
+                    if (!normalizedName) {
+                      throw new Error('请填写资产组名称');
+                    }
+                    if (normalizedScopes.length === 0) {
+                      throw new Error('请填写资产范围，支持一行一个');
+                    }
+
+                    payload.name = normalizedName;
+                    payload.scope_type = String(payload.scope_type || 'domain') === 'ip' ? 'ip' : 'domain';
+                    payload.scope = normalizedScopes.join('\n');
+                    payload.black_scope = '';
                   }
                   await onSubmit(payload, file);
                   onClose();
@@ -3948,6 +4098,361 @@ function TableModuleView({
 }
 
 function ApiConsoleView({ token }: { token: string }) {
+  type ServiceApiForm = {
+    fofa_url: string;
+    fofa_email: string;
+    fofa_key: string;
+    fofa_enable: boolean;
+    hunter_api_key: string;
+    hunter_enable: boolean;
+    quake_token: string;
+    quake_enable: boolean;
+    zoomeye_api_key: string;
+    zoomeye_enable: boolean;
+    securitytrails_api_key: string;
+    securitytrails_enable: boolean;
+    virustotal_api_key: string;
+    virustotal_enable: boolean;
+    chaos_api_key: string;
+    chaos_enable: boolean;
+    passivetotal_email: string;
+    passivetotal_key: string;
+    passivetotal_enable: boolean;
+  };
+
+  type ServiceApiBoolKey =
+    | 'fofa_enable'
+    | 'hunter_enable'
+    | 'quake_enable'
+    | 'zoomeye_enable'
+    | 'securitytrails_enable'
+    | 'virustotal_enable'
+    | 'chaos_enable'
+    | 'passivetotal_enable';
+
+  type ServiceApiStringKey = Exclude<keyof ServiceApiForm, ServiceApiBoolKey>;
+
+  const defaultForm: ServiceApiForm = {
+    fofa_url: 'https://fofa.info',
+    fofa_email: '',
+    fofa_key: '',
+    fofa_enable: true,
+    hunter_api_key: '',
+    hunter_enable: true,
+    quake_token: '',
+    quake_enable: true,
+    zoomeye_api_key: '',
+    zoomeye_enable: true,
+    securitytrails_api_key: '',
+    securitytrails_enable: false,
+    virustotal_api_key: '',
+    virustotal_enable: true,
+    chaos_api_key: '',
+    chaos_enable: false,
+    passivetotal_email: '',
+    passivetotal_key: '',
+    passivetotal_enable: false,
+  };
+
+  const [configPath, setConfigPath] = useState('');
+  const [updatedAt, setUpdatedAt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [form, setForm] = useState<ServiceApiForm>(defaultForm);
+
+  const normalizeForm = useCallback((rawValue: any): ServiceApiForm => {
+    const raw = rawValue || {};
+    return {
+      fofa_url: String(raw.fofa_url || defaultForm.fofa_url),
+      fofa_email: String(raw.fofa_email || ''),
+      fofa_key: String(raw.fofa_key || ''),
+      fofa_enable: raw.fofa_enable === undefined ? true : Boolean(raw.fofa_enable),
+      hunter_api_key: String(raw.hunter_api_key || ''),
+      hunter_enable: raw.hunter_enable === undefined ? true : Boolean(raw.hunter_enable),
+      quake_token: String(raw.quake_token || ''),
+      quake_enable: raw.quake_enable === undefined ? true : Boolean(raw.quake_enable),
+      zoomeye_api_key: String(raw.zoomeye_api_key || ''),
+      zoomeye_enable: raw.zoomeye_enable === undefined ? true : Boolean(raw.zoomeye_enable),
+      securitytrails_api_key: String(raw.securitytrails_api_key || ''),
+      securitytrails_enable: raw.securitytrails_enable === undefined ? false : Boolean(raw.securitytrails_enable),
+      virustotal_api_key: String(raw.virustotal_api_key || ''),
+      virustotal_enable: raw.virustotal_enable === undefined ? true : Boolean(raw.virustotal_enable),
+      chaos_api_key: String(raw.chaos_api_key || ''),
+      chaos_enable: raw.chaos_enable === undefined ? false : Boolean(raw.chaos_enable),
+      passivetotal_email: String(raw.passivetotal_email || ''),
+      passivetotal_key: String(raw.passivetotal_key || ''),
+      passivetotal_enable: raw.passivetotal_enable === undefined ? false : Boolean(raw.passivetotal_enable),
+    };
+  }, []);
+
+  const updateTextField = (key: ServiceApiStringKey, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateBoolField = (key: ServiceApiBoolKey, value: boolean) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const loadServiceApiConfig = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/api_console/service_api/', { method: 'GET' });
+      const data = result?.data || {};
+      setForm(normalizeForm(data?.service_api));
+      setConfigPath(String(data.config_path || ''));
+      setUpdatedAt(String(data.updated_at || ''));
+    } catch (err: any) {
+      setError(err?.message || '加载 API 配置失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, normalizeForm]);
+
+  useEffect(() => {
+    void loadServiceApiConfig();
+  }, [loadServiceApiConfig]);
+
+  const saveServiceApiConfig = async () => {
+    const normalizedUrl = form.fofa_url.trim();
+    if (!normalizedUrl) {
+      setError('FOFA URL 不能为空');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/api_console/service_api/', {
+        method: 'POST',
+        body: {
+          service_api: {
+            ...form,
+            fofa_url: normalizedUrl,
+            fofa_email: form.fofa_email.trim(),
+            fofa_key: form.fofa_key.trim(),
+            hunter_api_key: form.hunter_api_key.trim(),
+            quake_token: form.quake_token.trim(),
+            zoomeye_api_key: form.zoomeye_api_key.trim(),
+            securitytrails_api_key: form.securitytrails_api_key.trim(),
+            virustotal_api_key: form.virustotal_api_key.trim(),
+            chaos_api_key: form.chaos_api_key.trim(),
+            passivetotal_email: form.passivetotal_email.trim(),
+            passivetotal_key: form.passivetotal_key.trim(),
+          },
+        },
+      });
+
+      const data = result?.data || {};
+      setForm(normalizeForm(data?.service_api));
+      setConfigPath(String(data.config_path || configPath));
+      setUpdatedAt(String(data.saved_at || updatedAt));
+      const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
+      setSuccess(`API 配置已保存${backupPath}`);
+    } catch (err: any) {
+      setError(err?.message || '保存 API 配置失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const providers: Array<{
+    id: string;
+    title: string;
+    enableKey: ServiceApiBoolKey;
+    enableLabel: string;
+    fields: Array<{
+      key: ServiceApiStringKey;
+      label: string;
+      placeholder: string;
+      hint?: string;
+    }>;
+  }> = [
+    {
+      id: 'fofa',
+      title: 'FOFA',
+      enableKey: 'fofa_enable',
+      enableLabel: '启用 FOFA 插件',
+      fields: [
+        { key: 'fofa_url', label: 'URL', placeholder: 'https://fofa.info', hint: 'FOFA.URL' },
+        { key: 'fofa_email', label: '邮箱', placeholder: '请输入 FOFA 邮箱', hint: 'FOFA.EMAIL' },
+        { key: 'fofa_key', label: 'KEY', placeholder: '请输入 FOFA KEY', hint: 'FOFA.KEY' },
+      ],
+    },
+    {
+      id: 'hunter',
+      title: 'Hunter',
+      enableKey: 'hunter_enable',
+      enableLabel: '启用 Hunter 插件',
+      fields: [
+        { key: 'hunter_api_key', label: 'API KEY', placeholder: '请输入 Hunter API KEY', hint: 'QUERY_PLUGIN.hunter_qax.api_key' },
+      ],
+    },
+    {
+      id: 'quake',
+      title: 'Quake360',
+      enableKey: 'quake_enable',
+      enableLabel: '启用 Quake 插件',
+      fields: [
+        { key: 'quake_token', label: 'Token', placeholder: '请输入 Quake Token', hint: 'QUERY_PLUGIN.quake_360.quake_token' },
+      ],
+    },
+    {
+      id: 'zoomeye',
+      title: 'Zoomeye',
+      enableKey: 'zoomeye_enable',
+      enableLabel: '启用 Zoomeye 插件',
+      fields: [
+        { key: 'zoomeye_api_key', label: 'API KEY', placeholder: '请输入 Zoomeye API KEY', hint: 'QUERY_PLUGIN.zoomeye.api_key' },
+      ],
+    },
+    {
+      id: 'securitytrails',
+      title: 'SecurityTrails',
+      enableKey: 'securitytrails_enable',
+      enableLabel: '启用 SecurityTrails 插件',
+      fields: [
+        {
+          key: 'securitytrails_api_key',
+          label: 'API KEY',
+          placeholder: '请输入 SecurityTrails API KEY',
+          hint: 'QUERY_PLUGIN.securitytrails.api_key',
+        },
+      ],
+    },
+    {
+      id: 'virustotal',
+      title: 'VirusTotal',
+      enableKey: 'virustotal_enable',
+      enableLabel: '启用 VirusTotal 插件',
+      fields: [
+        { key: 'virustotal_api_key', label: 'API KEY', placeholder: '请输入 VirusTotal API KEY', hint: 'QUERY_PLUGIN.virustotal.api_key' },
+      ],
+    },
+    {
+      id: 'chaos',
+      title: 'Chaos',
+      enableKey: 'chaos_enable',
+      enableLabel: '启用 Chaos 插件',
+      fields: [
+        { key: 'chaos_api_key', label: 'API KEY', placeholder: '请输入 Chaos API KEY', hint: 'QUERY_PLUGIN.chaos.api_key' },
+      ],
+    },
+    {
+      id: 'passivetotal',
+      title: 'PassiveTotal',
+      enableKey: 'passivetotal_enable',
+      enableLabel: '启用 PassiveTotal 插件',
+      fields: [
+        {
+          key: 'passivetotal_email',
+          label: '邮箱',
+          placeholder: '请输入 PassiveTotal 邮箱',
+          hint: 'QUERY_PLUGIN.passivetotal.auth_email',
+        },
+        {
+          key: 'passivetotal_key',
+          label: 'KEY',
+          placeholder: '请输入 PassiveTotal KEY',
+          hint: 'QUERY_PLUGIN.passivetotal.auth_key',
+        },
+      ],
+    },
+  ];
+
+  return (
+    <div className="p-8 space-y-6">
+      <div>
+        <h2 className="text-4xl font-black tracking-tight">API 管理</h2>
+        <p className="text-brand-text-muted mt-2 text-sm">统一维护 FOFA、Hunter、Quake、Zoomeye 等第三方 API 配置并同步保存。</p>
+      </div>
+
+      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+          <div className="text-sm font-bold tracking-wide">API 凭据配置</div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void loadServiceApiConfig()}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              disabled={loading}
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              重新加载
+            </button>
+            <button
+              onClick={() => void saveServiceApiConfig()}
+              className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={saving || loading}
+            >
+              <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
+              {saving ? '保存中...' : '保存配置'}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
+          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
+            <span className="text-brand-text-muted">配置文件:</span>
+            <span className="font-mono ml-2">{configPath || '-'}</span>
+          </div>
+          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
+            <span className="text-brand-text-muted">最近更新时间:</span>
+            <span className="font-mono ml-2">{updatedAt || '-'}</span>
+          </div>
+        </div>
+
+        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+          提示：保存后会写入配置文件，建议重启 `web` 与 `worker` 容器让 API 插件配置立即生效。
+        </div>
+
+        {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
+        {success ? <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">{success}</div> : null}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {providers.map((provider) => (
+          <div key={provider.id} className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-black tracking-wide">{provider.title}</h3>
+              <label className="flex items-center gap-2 text-xs text-brand-text-muted">
+                <input
+                  type="checkbox"
+                  checked={Boolean(form[provider.enableKey])}
+                  onChange={(event) => updateBoolField(provider.enableKey, event.target.checked)}
+                  className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                />
+                <span>{provider.enableLabel}</span>
+              </label>
+            </div>
+
+            <div className="space-y-3">
+              {provider.fields.map((field) => (
+                <div key={field.key} className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted block">
+                    {field.label}
+                    {field.hint ? <span className="ml-2 font-mono opacity-70">{field.hint}</span> : null}
+                  </label>
+                  <input
+                    value={String(form[field.key] || '')}
+                    onChange={(event) => updateTextField(field.key, event.target.value)}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    placeholder={field.placeholder}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ConfigConsoleView({ token }: { token: string }) {
   type DomainDictOption = {
     label: string;
     path: string;
@@ -4114,7 +4619,7 @@ function ApiConsoleView({ token }: { token: string }) {
   return (
     <div className="p-8 space-y-6">
       <div>
-        <h2 className="text-4xl font-black tracking-tight">API 管理</h2>
+        <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
         <p className="text-brand-text-muted mt-2 text-sm">扫描配置仅保留域名爆破字典、并发参数、黑名单IP与域名解析器配置。</p>
       </div>
 
@@ -4297,6 +4802,7 @@ function MainShell() {
     github_mgmt: 'github_task',
     github_monitor: 'github_scheduler',
     api_mgmt: 'api_console',
+    config_mgmt: 'config_console',
     dingtalk: 'dingtalk_api',
   };
   const moduleToViewMap = useMemo(() => {
@@ -4304,6 +4810,8 @@ function MainShell() {
     Object.entries(viewToModuleMap).forEach(([view, moduleId]) => {
       reversed[moduleId] = view;
     });
+    reversed.asset_domain = 'assets';
+    reversed.asset_ip = 'assets';
     return reversed;
   }, []);
   const activeViewId = moduleToViewMap[activeModuleId] || activeModuleId;
@@ -4504,7 +5012,11 @@ function MainShell() {
         ) : null}
         {activeModule.id === 'system_monitor' ? <SystemMonitorView token={token} /> : null}
         {activeModule.id === 'api_console' ? <ApiConsoleView token={token} /> : null}
-        {activeModule.id !== 'dashboard' && activeModule.id !== 'system_monitor' && activeModule.id !== 'api_console' ? (
+        {activeModule.id === 'config_console' ? <ConfigConsoleView token={token} /> : null}
+        {activeModule.id !== 'dashboard' &&
+        activeModule.id !== 'system_monitor' &&
+        activeModule.id !== 'api_console' &&
+        activeModule.id !== 'config_console' ? (
           <TableModuleView module={activeModule} token={token} onOpenModule={setActiveModuleId} />
         ) : null}
       </main>

@@ -42,6 +42,13 @@ save_scan_config_fields = ns.model(
     },
 )
 
+save_service_api_fields = ns.model(
+    'SaveServiceApiConfig',
+    {
+        'service_api': fields.Raw(required=True, description='三方 API 配置对象'),
+    },
+)
+
 
 def _resolve_config_path() -> Path:
     """
@@ -143,6 +150,16 @@ def _safe_int(value, default_value, min_value=1):
     return parsed
 
 
+def _safe_bool(value, default_value=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes', 'y', 'on')
+    return bool(default_value)
+
+
 def _normalize_string_list(raw_value):
     """
     兼容 list / str / 其他可迭代输入，输出清洗后的字符串列表。
@@ -239,6 +256,149 @@ def _collect_domain_dict_options(current_path=''):
         add_option(Path(current_path), source='custom')
 
     return options
+
+
+def _extract_service_api_config(config_obj):
+    """
+    从完整配置中提取 FOFA / Hunter / Zoomeye 等 API 配置。
+    """
+    fofa_conf = config_obj.get('FOFA', {})
+    if not isinstance(fofa_conf, dict):
+        fofa_conf = {}
+
+    riskiq_conf = config_obj.get('RISKIQ', {})
+    if not isinstance(riskiq_conf, dict):
+        riskiq_conf = {}
+
+    query_plugin = config_obj.get('QUERY_PLUGIN', {})
+    if not isinstance(query_plugin, dict):
+        query_plugin = {}
+
+    def plugin_config(name):
+        plugin = query_plugin.get(name, {})
+        if not isinstance(plugin, dict):
+            return {}
+        return plugin
+
+    fofa_plugin = plugin_config('fofa')
+    hunter_plugin = plugin_config('hunter_qax')
+    quake_plugin = plugin_config('quake_360')
+    zoomeye_plugin = plugin_config('zoomeye')
+    securitytrails_plugin = plugin_config('securitytrails')
+    virustotal_plugin = plugin_config('virustotal')
+    chaos_plugin = plugin_config('chaos')
+    passivetotal_plugin = plugin_config('passivetotal')
+
+    passivetotal_email = str(
+        passivetotal_plugin.get('auth_email') or
+        riskiq_conf.get('EMAIL') or
+        ''
+    )
+    passivetotal_key = str(
+        passivetotal_plugin.get('auth_key') or
+        riskiq_conf.get('KEY') or
+        ''
+    )
+
+    return {
+        'fofa_url': str(fofa_conf.get('URL') or Config.FOFA_URL or 'https://fofa.info'),
+        'fofa_email': str(fofa_conf.get('EMAIL') or Config.FOFA_EMAIL or ''),
+        'fofa_key': str(fofa_conf.get('KEY') or Config.FOFA_KEY or ''),
+        'fofa_enable': _safe_bool(fofa_plugin.get('enable'), True),
+        'hunter_api_key': str(hunter_plugin.get('api_key') or ''),
+        'hunter_enable': _safe_bool(hunter_plugin.get('enable'), True),
+        'quake_token': str(quake_plugin.get('quake_token') or ''),
+        'quake_enable': _safe_bool(quake_plugin.get('enable'), True),
+        'zoomeye_api_key': str(zoomeye_plugin.get('api_key') or ''),
+        'zoomeye_enable': _safe_bool(zoomeye_plugin.get('enable'), True),
+        'securitytrails_api_key': str(securitytrails_plugin.get('api_key') or ''),
+        'securitytrails_enable': _safe_bool(securitytrails_plugin.get('enable'), False),
+        'virustotal_api_key': str(virustotal_plugin.get('api_key') or ''),
+        'virustotal_enable': _safe_bool(virustotal_plugin.get('enable'), True),
+        'chaos_api_key': str(chaos_plugin.get('api_key') or ''),
+        'chaos_enable': _safe_bool(chaos_plugin.get('enable'), False),
+        'passivetotal_email': passivetotal_email,
+        'passivetotal_key': passivetotal_key,
+        'passivetotal_enable': _safe_bool(passivetotal_plugin.get('enable'), False),
+    }
+
+
+def _merge_service_api_config(config_obj, service_api):
+    """
+    将三方 API 配置写回完整配置对象。
+    """
+    if not isinstance(service_api, dict):
+        raise ValueError('service_api 必须为对象')
+
+    if not isinstance(config_obj.get('FOFA'), dict):
+        config_obj['FOFA'] = {}
+    if not isinstance(config_obj.get('QUERY_PLUGIN'), dict):
+        config_obj['QUERY_PLUGIN'] = {}
+    if not isinstance(config_obj.get('RISKIQ'), dict):
+        config_obj['RISKIQ'] = {}
+
+    query_plugin = config_obj['QUERY_PLUGIN']
+
+    def ensure_plugin(name):
+        plugin = query_plugin.get(name)
+        if not isinstance(plugin, dict):
+            plugin = {}
+        query_plugin[name] = plugin
+        return plugin
+
+    fofa_url = str(service_api.get('fofa_url', '')).strip() or 'https://fofa.info'
+    fofa_email = str(service_api.get('fofa_email', '')).strip()
+    fofa_key = str(service_api.get('fofa_key', '')).strip()
+
+    config_obj['FOFA']['URL'] = fofa_url
+    config_obj['FOFA']['EMAIL'] = fofa_email
+    config_obj['FOFA']['KEY'] = fofa_key
+
+    fofa_plugin = ensure_plugin('fofa')
+    fofa_plugin['enable'] = _safe_bool(service_api.get('fofa_enable'), fofa_plugin.get('enable', True))
+
+    hunter_plugin = ensure_plugin('hunter_qax')
+    hunter_plugin['api_key'] = str(service_api.get('hunter_api_key', '')).strip()
+    hunter_plugin['enable'] = _safe_bool(service_api.get('hunter_enable'), hunter_plugin.get('enable', True))
+
+    quake_plugin = ensure_plugin('quake_360')
+    quake_plugin['quake_token'] = str(service_api.get('quake_token', '')).strip()
+    quake_plugin['enable'] = _safe_bool(service_api.get('quake_enable'), quake_plugin.get('enable', True))
+
+    zoomeye_plugin = ensure_plugin('zoomeye')
+    zoomeye_plugin['api_key'] = str(service_api.get('zoomeye_api_key', '')).strip()
+    zoomeye_plugin['enable'] = _safe_bool(service_api.get('zoomeye_enable'), zoomeye_plugin.get('enable', True))
+
+    securitytrails_plugin = ensure_plugin('securitytrails')
+    securitytrails_plugin['api_key'] = str(service_api.get('securitytrails_api_key', '')).strip()
+    securitytrails_plugin['enable'] = _safe_bool(
+        service_api.get('securitytrails_enable'),
+        securitytrails_plugin.get('enable', False)
+    )
+
+    virustotal_plugin = ensure_plugin('virustotal')
+    virustotal_plugin['api_key'] = str(service_api.get('virustotal_api_key', '')).strip()
+    virustotal_plugin['enable'] = _safe_bool(service_api.get('virustotal_enable'), virustotal_plugin.get('enable', True))
+
+    chaos_plugin = ensure_plugin('chaos')
+    chaos_plugin['api_key'] = str(service_api.get('chaos_api_key', '')).strip()
+    chaos_plugin['enable'] = _safe_bool(service_api.get('chaos_enable'), chaos_plugin.get('enable', False))
+
+    passivetotal_email = str(service_api.get('passivetotal_email', '')).strip()
+    passivetotal_key = str(service_api.get('passivetotal_key', '')).strip()
+    passivetotal_plugin = ensure_plugin('passivetotal')
+    passivetotal_plugin['auth_email'] = passivetotal_email
+    passivetotal_plugin['auth_key'] = passivetotal_key
+    passivetotal_plugin['enable'] = _safe_bool(
+        service_api.get('passivetotal_enable'),
+        passivetotal_plugin.get('enable', False)
+    )
+
+    # 保留对旧字段的兼容（某些部署仍沿用 RISKIQ）
+    config_obj['RISKIQ']['EMAIL'] = passivetotal_email
+    config_obj['RISKIQ']['KEY'] = passivetotal_key
+
+    return config_obj
 
 
 def _extract_scan_config(config_obj):
@@ -372,6 +532,73 @@ class ApiConsoleConfig(ARLResource):
             ErrorMsg.Success,
             {
                 'saved': True,
+                'config_path': str(config_path),
+                'backup_path': backup_path,
+                'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+        )
+
+
+@ns.route('/service_api/')
+class ApiConsoleServiceApi(ARLResource):
+    """
+    三方 API 配置读取与保存接口
+    """
+
+    @auth
+    def get(self):
+        config_path = _resolve_config_path()
+        try:
+            config_obj = _load_config_from_file(config_path)
+            service_api = _extract_service_api_config(config_obj)
+            return utils.build_ret(
+                ErrorMsg.Success,
+                {
+                    'service_api': service_api,
+                    'config_path': str(config_path),
+                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                }
+            )
+        except Exception as exc:
+            logger.exception('load service_api failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
+
+    @auth
+    @ns.expect(save_service_api_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        service_api = payload.get('service_api')
+        config_path = _resolve_config_path()
+
+        with CONFIG_LOCK:
+            try:
+                config_obj = _load_config_from_file(config_path)
+                config_obj = _merge_service_api_config(config_obj, service_api)
+                _ensure_json_like_config(config_obj)
+                backup_path = _backup_config_file(config_path)
+                _atomic_write_yaml(config_path, config_obj)
+                saved_service_api = _extract_service_api_config(config_obj)
+            except Exception as exc:
+                logger.exception('save service_api failed: %s', exc)
+                return utils.build_ret(
+                    ErrorMsg.Error,
+                    {
+                        'error': str(exc),
+                        'config_path': str(config_path),
+                    }
+                )
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'saved': True,
+                'service_api': saved_service_api,
                 'config_path': str(config_path),
                 'backup_path': backup_path,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),

@@ -54,14 +54,15 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
       items: [
         { id: 'github_monitor', label: 'GitHub 监控', icon: Github },
         { id: 'github_mgmt', label: 'GitHub 管理', icon: Settings },
-        { id: 'api_mgmt', label: 'API 管理', icon: Key },
       ]
     },
     {
       label: '集成与通知',
       color: 'text-brand-warning',
       items: [
+        { id: 'api_mgmt', label: 'API 管理', icon: Key },
         { id: 'dingtalk', label: '钉钉集成', icon: MessageSquare },
+        { id: 'config_mgmt', label: '配置管理', icon: Settings },
       ]
     }
   ];
