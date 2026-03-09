@@ -78,7 +78,9 @@ type ModuleSearchField = {
   key: string;
   label: string;
   placeholder: string;
-  inputType?: 'text' | 'number';
+  inputType?: 'text' | 'number' | 'select';
+  options?: Array<{ label: string; value: string }>;
+  dynamicOptionsKey?: 'policy_name';
 };
 
 type ModuleConfig = {
@@ -358,10 +360,58 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     defaultOrder: '-_id',
     quickFilterKey: 'name',
+    showIndex: true,
+    columns: ['name', 'target', 'schedule_type', 'status', 'policy_name', 'time_config', 'last_run_date', 'next_run_date', 'run_number'],
+    columnLabels: {
+      name: '任务名',
+      target: '目标',
+      schedule_type: '类型',
+      status: '状态',
+      policy_name: '策略',
+      time_config: '时间配置',
+      last_run_date: '上次运行时间',
+      next_run_date: '下次运行时间',
+      run_number: '运行次数',
+    },
+    searchFields: [
+      { key: 'name', label: '任务名称', placeholder: '请输入任务名称进行搜索' },
+      { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+      {
+        key: 'policy_name',
+        label: '策略名称',
+        placeholder: '请选择策略名称',
+        inputType: 'select',
+        dynamicOptionsKey: 'policy_name',
+      },
+      {
+        key: 'schedule_type',
+        label: '计划类型',
+        placeholder: '请选择计划类型',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '定时下发', value: 'future_scan' },
+          { label: '周期下发', value: 'recurrent_scan' },
+        ],
+      },
+      {
+        key: 'schedule_status',
+        label: '状态',
+        placeholder: '请选择状态',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '待调度', value: 'scheduled' },
+          { label: '已停止', value: 'stop' },
+          { label: '已完成', value: 'done' },
+          { label: '异常', value: 'error' },
+        ],
+      },
+    ],
     actions: [
       {
         id: 'task_schedule_add',
-        label: '新增计划任务',
+        label: '添加计划任务',
         method: 'POST',
         path: '/task_schedule/',
         payloadTemplate: {
@@ -380,7 +430,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_schedule_stop',
-        label: '停止所选',
+        label: '批量停止',
         method: 'POST',
         path: '/task_schedule/stop/',
         selectedField: '_id',
@@ -389,7 +439,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_schedule_recover',
-        label: '恢复所选',
+        label: '批量恢复',
         method: 'POST',
         path: '/task_schedule/recover/',
         selectedField: '_id',
@@ -398,7 +448,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_schedule_delete',
-        label: '删除所选',
+        label: '批量删除',
         method: 'POST',
         path: '/task_schedule/delete/',
         selectedField: '_id',
@@ -993,6 +1043,17 @@ const modules: ModuleConfig[] = [
     listPath: '/poc/',
     rowIdKey: '_id',
     quickFilterKey: 'plugin_name',
+    showIndex: true,
+    columns: ['plugin_name', 'plugin_type', 'category', 'app_name', 'vul_name', 'scheme', 'update_date'],
+    columnLabels: {
+      plugin_name: '插件名称',
+      plugin_type: '类型',
+      category: '分类',
+      app_name: '应用',
+      vul_name: '漏洞名称',
+      scheme: '协议',
+      update_date: '更新时间',
+    },
     actions: [
       {
         id: 'poc_sync',
@@ -1017,6 +1078,13 @@ const modules: ModuleConfig[] = [
     listPath: '/fingerprint/',
     rowIdKey: '_id',
     quickFilterKey: 'name',
+    showIndex: true,
+    columns: ['name', 'human_rule', 'update_date'],
+    columnLabels: {
+      name: '名称',
+      human_rule: '规则',
+      update_date: '更新时间',
+    },
     actions: [
       {
         id: 'fingerprint_add',
@@ -1511,6 +1579,35 @@ function getValueByPath(source: any, path: string): any {
 
 function formatModuleCellValue(moduleId: string, column: string, row: any): string {
   const value = getValueByPath(row, column);
+
+  if (moduleId === 'task_schedule') {
+    if (column === 'schedule_type') {
+      const mapping: Record<string, string> = {
+        future_scan: '定时下发',
+        recurrent_scan: '周期下发',
+      };
+      return mapping[String(value || '').toLowerCase()] || normalizeValue(value);
+    }
+    if (column === 'status') {
+      const mapping: Record<string, string> = {
+        scheduled: '待调度',
+        stop: '已停止',
+        done: '已完成',
+        error: '异常',
+      };
+      return mapping[String(value || '').toLowerCase()] || normalizeValue(value);
+    }
+    if (column === 'time_config') {
+      const scheduleType = String(row?.schedule_type || '').toLowerCase();
+      if (scheduleType === 'future_scan') {
+        return normalizeValue(row?.start_date || '-');
+      }
+      if (scheduleType === 'recurrent_scan') {
+        return normalizeValue(row?.cron || '-');
+      }
+      return normalizeValue(row?.cron || row?.start_date || '-');
+    }
+  }
 
   if (moduleId === 'asset_site' && column === 'finger' && Array.isArray(value)) {
     const fingerNames = value
@@ -3422,6 +3519,7 @@ function TableModuleView({
   const [policyTaskTag, setPolicyTaskTag] = useState<'task' | 'risk_cruising'>('task');
   const [policyTaskName, setPolicyTaskName] = useState('');
   const [policyTaskTarget, setPolicyTaskTarget] = useState('');
+  const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
@@ -3447,6 +3545,51 @@ function TableModuleView({
     setPolicyTaskSubmitting(false);
     setPolicyTaskError('');
   }, [module.id]);
+
+  useEffect(() => {
+    if (module.id !== 'task_schedule') {
+      setTaskSchedulePolicyOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadPolicyOptions = async () => {
+      try {
+        const response = await requestApi(token, '/policy/', {
+          method: 'GET',
+          query: { page: 1, size: 1000, order: 'name' },
+        });
+        const items = normalizeListData(response).items || [];
+        const uniqueNames = Array.from(
+          new Set(
+            items
+              .map((item: any) => String(item?.name || '').trim())
+              .filter((name: string) => name)
+          )
+        );
+        if (cancelled) return;
+        setTaskSchedulePolicyOptions(uniqueNames.map((name) => ({ label: name, value: name })));
+      } catch {
+        if (cancelled) return;
+        setTaskSchedulePolicyOptions([]);
+      }
+    };
+
+    void loadPolicyOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [module.id, token]);
+
+  const getSearchFieldOptions = (field: ModuleSearchField): Array<{ label: string; value: string }> => {
+    if (field.dynamicOptionsKey === 'policy_name') {
+      return [{ label: '全部策略', value: '' }, ...taskSchedulePolicyOptions];
+    }
+    if (Array.isArray(field.options)) {
+      return field.options;
+    }
+    return [{ label: '全部', value: '' }];
+  };
 
   const buildFilters = useCallback((): JsonValue => {
     const filters: JsonValue = {};
@@ -3550,6 +3693,9 @@ function TableModuleView({
     }
     if (module.id === 'policy') {
       return moduleActions.filter((action) => action.id === 'policy_add');
+    }
+    if (module.id === 'task_schedule') {
+      return moduleActions.filter((action) => ['task_schedule_add', 'task_schedule_stop', 'task_schedule_delete'].includes(action.id));
     }
     return moduleActions;
   }, [module.id, moduleActions]);
@@ -3915,10 +4061,69 @@ function TableModuleView({
     }
   };
 
+  const stopTaskScheduleRow = async (jobId: string) => {
+    if (module.id !== 'task_schedule') return;
+    if (!jobId) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/task_schedule/stop/', {
+        method: 'POST',
+        body: {
+          _id: [jobId],
+        },
+      });
+      setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '操作失败');
+    }
+  };
+
+  const recoverTaskScheduleRow = async (jobId: string) => {
+    if (module.id !== 'task_schedule') return;
+    if (!jobId) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/task_schedule/recover/', {
+        method: 'POST',
+        body: {
+          _id: [jobId],
+        },
+      });
+      setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '操作失败');
+    }
+  };
+
+  const deleteTaskScheduleRow = async (jobId: string) => {
+    if (module.id !== 'task_schedule') return;
+    if (!jobId) return;
+    if (!window.confirm('确认删除该计划任务吗？')) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/task_schedule/delete/', {
+        method: 'POST',
+        body: {
+          _id: [jobId],
+        },
+      });
+      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '删除失败');
+    }
+  };
+
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
   const showAssetScopeRowOperate = module.id === 'asset_scope';
   const showPolicyRowOperate = module.id === 'policy';
+  const showTaskScheduleRowOperate = module.id === 'task_schedule';
 
   return (
     <div className="p-8 space-y-6">
@@ -3984,23 +4189,43 @@ function TableModuleView({
               {(module.searchFields || []).map((field) => (
                 <div key={field.key} className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted">{field.label}：</label>
-                  <input
-                    type={field.inputType === 'number' ? 'number' : 'text'}
-                    value={String(searchForm?.[field.key] ?? '')}
-                    placeholder={field.placeholder}
-                    className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-accent"
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setSearchForm((prev) => ({ ...prev, [field.key]: value }));
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        setPage(1);
-                        void loadRows();
-                      }
-                    }}
-                  />
+                  {field.inputType === 'select' ? (
+                    <div className="relative">
+                      <select
+                        value={String(searchForm?.[field.key] ?? '')}
+                        className={UNIFIED_SELECT_CLASS}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setSearchForm((prev) => ({ ...prev, [field.key]: value }));
+                        }}
+                      >
+                        {getSearchFieldOptions(field).map((option) => (
+                          <option key={`${field.key}-${option.value}`} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    </div>
+                  ) : (
+                    <input
+                      type={field.inputType === 'number' ? 'number' : 'text'}
+                      value={String(searchForm?.[field.key] ?? '')}
+                      placeholder={field.placeholder}
+                      className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-accent"
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setSearchForm((prev) => ({ ...prev, [field.key]: value }));
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          setPage(1);
+                          void loadRows();
+                        }
+                      }}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -4155,7 +4380,7 @@ function TableModuleView({
                       {getColumnLabel(column)}
                     </th>
                   ))}
-                  {showAssetScopeRowOperate || showPolicyRowOperate ? (
+                  {showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate ? (
                     <th className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">操作</th>
                   ) : null}
                 </tr>
@@ -4192,7 +4417,7 @@ function TableModuleView({
                           {formatModuleCellValue(module.id, column, row)}
                         </td>
                       ))}
-                      {showAssetScopeRowOperate || showPolicyRowOperate ? (
+                      {showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate ? (
                         <td className="px-4 py-3 align-top whitespace-nowrap">
                           {showAssetScopeRowOperate ? (
                             <button
@@ -4235,6 +4460,31 @@ function TableModuleView({
                               </button>
                             </div>
                           ) : null}
+                          {showTaskScheduleRowOperate ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {String(row?.status || '').toLowerCase() === 'stop' ? (
+                                <button
+                                  onClick={() => void recoverTaskScheduleRow(id)}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  恢复
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => void stopTaskScheduleRow(id)}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  停止
+                                </button>
+                              )}
+                              <button
+                                onClick={() => void deleteTaskScheduleRow(id)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ) : null}
                         </td>
                       ) : null}
                     </tr>
@@ -4243,7 +4493,7 @@ function TableModuleView({
                 {rows.length === 0 && !loading ? (
                   <tr>
                     <td
-                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showAssetScopeRowOperate || showPolicyRowOperate ? 1 : 0), 2)}
+                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate ? 1 : 0), 2)}
                       className="px-4 py-10 text-center text-brand-text-muted"
                     >
                       暂无数据
