@@ -3,6 +3,7 @@ HTTP协议探测
 """
 import time
 from app import utils
+from app.config import Config
 from .baseThread import BaseThread
 logger = utils.get_logger()
 
@@ -70,6 +71,8 @@ class ProbeHTTP(BaseThread):
         return alive_site
 
 
-def probe_http(domain, concurrency=10):
+def probe_http(domain, concurrency=None):
+    if concurrency is None:
+        concurrency = Config.PROBE_HTTP_CONCURRENCY
     p = ProbeHTTP(domain, concurrency=concurrency)
     return p.run()

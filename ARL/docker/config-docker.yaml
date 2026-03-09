@@ -215,7 +215,42 @@ ARL:
   #文件泄漏字典
   FILE_LEAK_DICT: "/code/app/dicts/file_top_2000.txt"
 
-  #域名爆破并发数
-  DOMAIN_BRUTE_CONCURRENT: 300
-  #组合生成的域名爆破并发数
-  ALT_DNS_CONCURRENT: 1500
+  # Web Gunicorn worker 数（默认2，低内存环境建议 1~2）
+  WEB_GUNICORN_WORKERS: 2
+  # Celery 主任务队列并发
+  CELERY_TASK_WORKER_CONCURRENCY: 2
+  # Celery GitHub 队列并发
+  CELERY_GITHUB_WORKER_CONCURRENCY: 1
+  # Celery 预取倍率（建议保持 1，减少任务堆积占用）
+  CELERY_PREFETCH_MULTIPLIER: 1
+  # Celery 子进程处理多少任务后回收（防止内存膨胀）
+  CELERY_MAX_TASKS_PER_CHILD: 20
+  # Celery 子进程内存上限（KB），超过后自动回收
+  CELERY_MAX_MEMORY_PER_CHILD: 280000
+
+  # 域名爆破并发数
+  DOMAIN_BRUTE_CONCURRENT: 180
+  # 组合生成的域名爆破并发数
+  ALT_DNS_CONCURRENT: 800
+  # 域名解析并发
+  DOMAIN_RESOLVE_CONCURRENCY: 10
+  # 域名信息构建并发
+  DOMAIN_INFO_CONCURRENCY: 10
+  # HTTP可用性检查并发
+  HTTP_CHECK_CONCURRENCY: 10
+  # 站点抓取并发
+  HTTP_FETCH_SITE_CONCURRENCY: 8
+  # 站点探测并发
+  PROBE_HTTP_CONCURRENCY: 8
+  # 站点截图并发
+  SITE_SCREENSHOT_CONCURRENCY: 4
+  # NPoC 服务识别并发
+  NPOC_SNIFFER_CONCURRENCY: 8
+  # NPoC PoC 扫描并发
+  NPOC_POC_CONCURRENCY: 6
+  # NPoC 弱口令并发
+  NPOC_BRUTE_CONCURRENCY: 4
+  # 资产站点监控并发
+  ASSET_SITE_MONITOR_CONCURRENCY: 8
+  # 资产站点发现并发
+  ASSET_SITE_DISCOVERY_CONCURRENCY: 10

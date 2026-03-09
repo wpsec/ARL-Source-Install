@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 from urllib3.util.url import parse_url, get_host
 import mmh3
 from app import utils
+from app.config import Config
 from .baseThread import BaseThread
 
 logger = utils.get_logger()
@@ -160,7 +161,9 @@ def fetch_favicon(url):
     return f.run()
 
 
-def fetch_site(sites, concurrency=15, http_timeout=None):
+def fetch_site(sites, concurrency=None, http_timeout=None):
+    if concurrency is None:
+        concurrency = Config.HTTP_FETCH_SITE_CONCURRENCY
     # 预热指纹缓存（优先命中进程内/Redis，减少重复查询 MongoDB）
     from app.services import finger_db_cache
     finger_db_cache.update_cache(force_db=False)

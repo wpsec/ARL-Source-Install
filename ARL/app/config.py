@@ -76,6 +76,21 @@ def env_int(name, default=0):
         return default
 
 
+def safe_positive_int(value, default, min_value=1):
+    """
+    安全转换为正整数，非法值回退默认值
+    """
+    try:
+        num = int(value)
+    except Exception:
+        return default
+
+    if num < min_value:
+        return default
+
+    return num
+
+
 class Config(object):
     """系统配置类，包含所有配置项的默认值"""
     
@@ -83,6 +98,18 @@ class Config(object):
     # Celery消息队列连接地址，用于分布式任务调度
     # 格式：amqp://用户名:密码@主机:端口/虚拟主机
     CELERY_BROKER_URL = "amqp://arl:arlpassword@localhost:5672/arlv2host"
+    # Gunicorn worker 数，降低默认值以减少常驻内存
+    WEB_GUNICORN_WORKERS = 2
+    # Celery 主任务队列并发
+    CELERY_TASK_WORKER_CONCURRENCY = 2
+    # Celery GitHub 队列并发
+    CELERY_GITHUB_WORKER_CONCURRENCY = 1
+    # Celery 预取倍率（1 表示每 worker 仅预取 1 个任务）
+    CELERY_PREFETCH_MULTIPLIER = 1
+    # Celery 子进程处理多少任务后重启，防止内存膨胀
+    CELERY_MAX_TASKS_PER_CHILD = 20
+    # Celery 子进程最大内存（KB），超过后重启，0 表示不限制
+    CELERY_MAX_MEMORY_PER_CHILD = 280000
 
     # ==================== Redis 缓存配置 ====================
     # 默认关闭，按 config.yaml 中 REDIS.ENABLE 决定是否启用
@@ -273,9 +300,31 @@ class Config(object):
 
     # ==================== 并发控制配置 ====================
     # 域名爆破并发数（普通域名字典爆破）
-    DOMAIN_BRUTE_CONCURRENT = 300
+    DOMAIN_BRUTE_CONCURRENT = 180
     # 组合生成的域名爆破并发数（altdns变异域名爆破）
-    ALT_DNS_CONCURRENT = 1500
+    ALT_DNS_CONCURRENT = 800
+    # 域名解析并发
+    DOMAIN_RESOLVE_CONCURRENCY = 10
+    # 域名信息构建并发
+    DOMAIN_INFO_CONCURRENCY = 10
+    # HTTP可用性检查并发
+    HTTP_CHECK_CONCURRENCY = 10
+    # 站点抓取并发
+    HTTP_FETCH_SITE_CONCURRENCY = 8
+    # 站点探测并发
+    PROBE_HTTP_CONCURRENCY = 8
+    # 截图并发
+    SITE_SCREENSHOT_CONCURRENCY = 4
+    # NPoC 服务识别并发
+    NPOC_SNIFFER_CONCURRENCY = 8
+    # NPoC POC 扫描并发
+    NPOC_POC_CONCURRENCY = 6
+    # NPoC 弱口令并发
+    NPOC_BRUTE_CONCURRENCY = 4
+    # 资产站点监控并发
+    ASSET_SITE_MONITOR_CONCURRENCY = 8
+    # 资产站点发现并发
+    ASSET_SITE_DISCOVERY_CONCURRENCY = 10
 
     # ==================== 代理配置 ====================
     # HTTP代理地址（用于需要代理的网络请求）
@@ -324,6 +373,41 @@ try:
 
     # --- Celery配置 ---
     Config.CELERY_BROKER_URL = y["CELERY"]["BROKER_URL"]
+    web_gunicorn_workers = y["ARL"].get("WEB_GUNICORN_WORKERS")
+    if web_gunicorn_workers is not None:
+        Config.WEB_GUNICORN_WORKERS = safe_positive_int(
+            web_gunicorn_workers, Config.WEB_GUNICORN_WORKERS
+        )
+
+    celery_task_worker_concurrency = y["ARL"].get("CELERY_TASK_WORKER_CONCURRENCY")
+    if celery_task_worker_concurrency is not None:
+        Config.CELERY_TASK_WORKER_CONCURRENCY = safe_positive_int(
+            celery_task_worker_concurrency, Config.CELERY_TASK_WORKER_CONCURRENCY
+        )
+
+    celery_github_worker_concurrency = y["ARL"].get("CELERY_GITHUB_WORKER_CONCURRENCY")
+    if celery_github_worker_concurrency is not None:
+        Config.CELERY_GITHUB_WORKER_CONCURRENCY = safe_positive_int(
+            celery_github_worker_concurrency, Config.CELERY_GITHUB_WORKER_CONCURRENCY
+        )
+
+    celery_prefetch_multiplier = y["ARL"].get("CELERY_PREFETCH_MULTIPLIER")
+    if celery_prefetch_multiplier is not None:
+        Config.CELERY_PREFETCH_MULTIPLIER = safe_positive_int(
+            celery_prefetch_multiplier, Config.CELERY_PREFETCH_MULTIPLIER
+        )
+
+    celery_max_tasks_per_child = y["ARL"].get("CELERY_MAX_TASKS_PER_CHILD")
+    if celery_max_tasks_per_child is not None:
+        Config.CELERY_MAX_TASKS_PER_CHILD = safe_positive_int(
+            celery_max_tasks_per_child, Config.CELERY_MAX_TASKS_PER_CHILD
+        )
+
+    celery_max_memory_per_child = y["ARL"].get("CELERY_MAX_MEMORY_PER_CHILD")
+    if celery_max_memory_per_child is not None:
+        Config.CELERY_MAX_MEMORY_PER_CHILD = safe_positive_int(
+            celery_max_memory_per_child, Config.CELERY_MAX_MEMORY_PER_CHILD
+        )
 
     # --- Redis配置 ---
     if y.get("REDIS"):
@@ -550,15 +634,84 @@ try:
 
     # --- 域名爆破并发数配置 ---
     domain_concurrent = y["ARL"].get("DOMAIN_BRUTE_CONCURRENT")
-    if domain_concurrent:
-        int(domain_concurrent)  # 验证是否为整数
-        Config.DOMAIN_BRUTE_CONCURRENT = domain_concurrent
+    if domain_concurrent is not None:
+        Config.DOMAIN_BRUTE_CONCURRENT = safe_positive_int(
+            domain_concurrent, Config.DOMAIN_BRUTE_CONCURRENT
+        )
 
     # --- 组合域名爆破并发数配置 ---
     alt_dns_concurrent = y["ARL"].get("ALT_DNS_CONCURRENT")
-    if alt_dns_concurrent:
-        int(alt_dns_concurrent)  # 验证是否为整数
-        Config.ALT_DNS_CONCURRENT = alt_dns_concurrent
+    if alt_dns_concurrent is not None:
+        Config.ALT_DNS_CONCURRENT = safe_positive_int(
+            alt_dns_concurrent, Config.ALT_DNS_CONCURRENT
+        )
+
+    # --- 扫描链路并发配置 ---
+    domain_resolve_concurrency = y["ARL"].get("DOMAIN_RESOLVE_CONCURRENCY")
+    if domain_resolve_concurrency is not None:
+        Config.DOMAIN_RESOLVE_CONCURRENCY = safe_positive_int(
+            domain_resolve_concurrency, Config.DOMAIN_RESOLVE_CONCURRENCY
+        )
+
+    domain_info_concurrency = y["ARL"].get("DOMAIN_INFO_CONCURRENCY")
+    if domain_info_concurrency is not None:
+        Config.DOMAIN_INFO_CONCURRENCY = safe_positive_int(
+            domain_info_concurrency, Config.DOMAIN_INFO_CONCURRENCY
+        )
+
+    http_check_concurrency = y["ARL"].get("HTTP_CHECK_CONCURRENCY")
+    if http_check_concurrency is not None:
+        Config.HTTP_CHECK_CONCURRENCY = safe_positive_int(
+            http_check_concurrency, Config.HTTP_CHECK_CONCURRENCY
+        )
+
+    http_fetch_site_concurrency = y["ARL"].get("HTTP_FETCH_SITE_CONCURRENCY")
+    if http_fetch_site_concurrency is not None:
+        Config.HTTP_FETCH_SITE_CONCURRENCY = safe_positive_int(
+            http_fetch_site_concurrency, Config.HTTP_FETCH_SITE_CONCURRENCY
+        )
+
+    probe_http_concurrency = y["ARL"].get("PROBE_HTTP_CONCURRENCY")
+    if probe_http_concurrency is not None:
+        Config.PROBE_HTTP_CONCURRENCY = safe_positive_int(
+            probe_http_concurrency, Config.PROBE_HTTP_CONCURRENCY
+        )
+
+    site_screenshot_concurrency = y["ARL"].get("SITE_SCREENSHOT_CONCURRENCY")
+    if site_screenshot_concurrency is not None:
+        Config.SITE_SCREENSHOT_CONCURRENCY = safe_positive_int(
+            site_screenshot_concurrency, Config.SITE_SCREENSHOT_CONCURRENCY
+        )
+
+    npoc_sniffer_concurrency = y["ARL"].get("NPOC_SNIFFER_CONCURRENCY")
+    if npoc_sniffer_concurrency is not None:
+        Config.NPOC_SNIFFER_CONCURRENCY = safe_positive_int(
+            npoc_sniffer_concurrency, Config.NPOC_SNIFFER_CONCURRENCY
+        )
+
+    npoc_poc_concurrency = y["ARL"].get("NPOC_POC_CONCURRENCY")
+    if npoc_poc_concurrency is not None:
+        Config.NPOC_POC_CONCURRENCY = safe_positive_int(
+            npoc_poc_concurrency, Config.NPOC_POC_CONCURRENCY
+        )
+
+    npoc_brute_concurrency = y["ARL"].get("NPOC_BRUTE_CONCURRENCY")
+    if npoc_brute_concurrency is not None:
+        Config.NPOC_BRUTE_CONCURRENCY = safe_positive_int(
+            npoc_brute_concurrency, Config.NPOC_BRUTE_CONCURRENCY
+        )
+
+    asset_site_monitor_concurrency = y["ARL"].get("ASSET_SITE_MONITOR_CONCURRENCY")
+    if asset_site_monitor_concurrency is not None:
+        Config.ASSET_SITE_MONITOR_CONCURRENCY = safe_positive_int(
+            asset_site_monitor_concurrency, Config.ASSET_SITE_MONITOR_CONCURRENCY
+        )
+
+    asset_site_discovery_concurrency = y["ARL"].get("ASSET_SITE_DISCOVERY_CONCURRENCY")
+    if asset_site_discovery_concurrency is not None:
+        Config.ASSET_SITE_DISCOVERY_CONCURRENCY = safe_positive_int(
+            asset_site_discovery_concurrency, Config.ASSET_SITE_DISCOVERY_CONCURRENCY
+        )
 
     # --- 代理配置 ---
     if y.get("PROXY"):
@@ -650,6 +803,82 @@ try:
         "ARL_CERT_PIVOT_QUERY_REQUIRE_SCOPE", Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE
     )
     Config.CERT_PIVOT_QUERY_SKIP_CDN = env_bool("ARL_CERT_PIVOT_QUERY_SKIP_CDN", Config.CERT_PIVOT_QUERY_SKIP_CDN)
+    Config.WEB_GUNICORN_WORKERS = safe_positive_int(
+        env_int("ARL_WEB_GUNICORN_WORKERS", Config.WEB_GUNICORN_WORKERS),
+        Config.WEB_GUNICORN_WORKERS
+    )
+    Config.CELERY_TASK_WORKER_CONCURRENCY = safe_positive_int(
+        env_int("ARL_CELERY_TASK_WORKER_CONCURRENCY", Config.CELERY_TASK_WORKER_CONCURRENCY),
+        Config.CELERY_TASK_WORKER_CONCURRENCY
+    )
+    Config.CELERY_GITHUB_WORKER_CONCURRENCY = safe_positive_int(
+        env_int("ARL_CELERY_GITHUB_WORKER_CONCURRENCY", Config.CELERY_GITHUB_WORKER_CONCURRENCY),
+        Config.CELERY_GITHUB_WORKER_CONCURRENCY
+    )
+    Config.CELERY_PREFETCH_MULTIPLIER = safe_positive_int(
+        env_int("ARL_CELERY_PREFETCH_MULTIPLIER", Config.CELERY_PREFETCH_MULTIPLIER),
+        Config.CELERY_PREFETCH_MULTIPLIER
+    )
+    Config.CELERY_MAX_TASKS_PER_CHILD = safe_positive_int(
+        env_int("ARL_CELERY_MAX_TASKS_PER_CHILD", Config.CELERY_MAX_TASKS_PER_CHILD),
+        Config.CELERY_MAX_TASKS_PER_CHILD
+    )
+    Config.CELERY_MAX_MEMORY_PER_CHILD = safe_positive_int(
+        env_int("ARL_CELERY_MAX_MEMORY_PER_CHILD", Config.CELERY_MAX_MEMORY_PER_CHILD),
+        Config.CELERY_MAX_MEMORY_PER_CHILD
+    )
+    Config.DOMAIN_BRUTE_CONCURRENT = safe_positive_int(
+        env_int("ARL_DOMAIN_BRUTE_CONCURRENT", Config.DOMAIN_BRUTE_CONCURRENT),
+        Config.DOMAIN_BRUTE_CONCURRENT
+    )
+    Config.ALT_DNS_CONCURRENT = safe_positive_int(
+        env_int("ARL_ALT_DNS_CONCURRENT", Config.ALT_DNS_CONCURRENT),
+        Config.ALT_DNS_CONCURRENT
+    )
+    Config.DOMAIN_RESOLVE_CONCURRENCY = safe_positive_int(
+        env_int("ARL_DOMAIN_RESOLVE_CONCURRENCY", Config.DOMAIN_RESOLVE_CONCURRENCY),
+        Config.DOMAIN_RESOLVE_CONCURRENCY
+    )
+    Config.DOMAIN_INFO_CONCURRENCY = safe_positive_int(
+        env_int("ARL_DOMAIN_INFO_CONCURRENCY", Config.DOMAIN_INFO_CONCURRENCY),
+        Config.DOMAIN_INFO_CONCURRENCY
+    )
+    Config.HTTP_CHECK_CONCURRENCY = safe_positive_int(
+        env_int("ARL_HTTP_CHECK_CONCURRENCY", Config.HTTP_CHECK_CONCURRENCY),
+        Config.HTTP_CHECK_CONCURRENCY
+    )
+    Config.HTTP_FETCH_SITE_CONCURRENCY = safe_positive_int(
+        env_int("ARL_HTTP_FETCH_SITE_CONCURRENCY", Config.HTTP_FETCH_SITE_CONCURRENCY),
+        Config.HTTP_FETCH_SITE_CONCURRENCY
+    )
+    Config.PROBE_HTTP_CONCURRENCY = safe_positive_int(
+        env_int("ARL_PROBE_HTTP_CONCURRENCY", Config.PROBE_HTTP_CONCURRENCY),
+        Config.PROBE_HTTP_CONCURRENCY
+    )
+    Config.SITE_SCREENSHOT_CONCURRENCY = safe_positive_int(
+        env_int("ARL_SITE_SCREENSHOT_CONCURRENCY", Config.SITE_SCREENSHOT_CONCURRENCY),
+        Config.SITE_SCREENSHOT_CONCURRENCY
+    )
+    Config.NPOC_SNIFFER_CONCURRENCY = safe_positive_int(
+        env_int("ARL_NPOC_SNIFFER_CONCURRENCY", Config.NPOC_SNIFFER_CONCURRENCY),
+        Config.NPOC_SNIFFER_CONCURRENCY
+    )
+    Config.NPOC_POC_CONCURRENCY = safe_positive_int(
+        env_int("ARL_NPOC_POC_CONCURRENCY", Config.NPOC_POC_CONCURRENCY),
+        Config.NPOC_POC_CONCURRENCY
+    )
+    Config.NPOC_BRUTE_CONCURRENCY = safe_positive_int(
+        env_int("ARL_NPOC_BRUTE_CONCURRENCY", Config.NPOC_BRUTE_CONCURRENCY),
+        Config.NPOC_BRUTE_CONCURRENCY
+    )
+    Config.ASSET_SITE_MONITOR_CONCURRENCY = safe_positive_int(
+        env_int("ARL_ASSET_SITE_MONITOR_CONCURRENCY", Config.ASSET_SITE_MONITOR_CONCURRENCY),
+        Config.ASSET_SITE_MONITOR_CONCURRENCY
+    )
+    Config.ASSET_SITE_DISCOVERY_CONCURRENCY = safe_positive_int(
+        env_int("ARL_ASSET_SITE_DISCOVERY_CONCURRENCY", Config.ASSET_SITE_DISCOVERY_CONCURRENCY),
+        Config.ASSET_SITE_DISCOVERY_CONCURRENCY
+    )
     dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
     if dns_resolvers_env:
         Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]

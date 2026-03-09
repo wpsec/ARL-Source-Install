@@ -30,7 +30,10 @@ celery = Celery('task', broker=Config.CELERY_BROKER_URL)
 # Celery 配置
 celery.conf.update(
     task_acks_late=False,  # 任务开始执行时就确认，而不是执行完成后确认
-    worker_prefetch_multiplier=1,  # Worker 每次只预取一个任务
+    worker_prefetch_multiplier=Config.CELERY_PREFETCH_MULTIPLIER,  # Worker 每次只预取较少任务
+    # 定期回收 worker 子进程，减少长时间运行导致的内存膨胀
+    worker_max_tasks_per_child=Config.CELERY_MAX_TASKS_PER_CHILD,
+    worker_max_memory_per_child=Config.CELERY_MAX_MEMORY_PER_CHILD,
     # Broker 连接重试配置
     broker_transport_options={
         "max_retries": 3,  # 最大重试次数

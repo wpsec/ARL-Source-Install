@@ -182,12 +182,12 @@ def sync_to_db(del_flag=False):
 
 
 def run_risk_cruising(plugins, targets):
-    n = NPoC(tmp_dir=Config.TMP_PATH, concurrency=8)
+    n = NPoC(tmp_dir=Config.TMP_PATH, concurrency=Config.NPOC_POC_CONCURRENCY)
     return n.run_poc(plugins, targets)
 
 
 def run_sniffer(targets, skip_common_http_ports=True):
-    n = NPoC(concurrency=15, tmp_dir=Config.TMP_PATH)
+    n = NPoC(concurrency=Config.NPOC_SNIFFER_CONCURRENCY, tmp_dir=Config.TMP_PATH)
     new_targets = []
     target_set = set()
     skip_port_set = set()

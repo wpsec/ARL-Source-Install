@@ -40,7 +40,7 @@ class DomainSiteUpdate(object):
         for domain_info_obj in self.domain_info_list:
             available_domains.append(domain_info_obj.domain)
 
-        self.available_sites = probe_http(available_domains, 15)
+        self.available_sites = probe_http(available_domains)
 
     def save_site_info(self):
         site_info_list = fetch_site(self.available_sites)

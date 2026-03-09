@@ -46,7 +46,7 @@ services:
       [
         "sh",
         "-c",
-        'set -e; echo "Starting gen_crt.sh..."; gen_crt.sh && echo "gen_crt.sh completed"; echo "Starting nginx..."; nginx && echo "nginx started successfully" || echo "nginx failed to start"; echo "Waiting for services..."; wait-for-it.sh -t 60 mongodb:27017 && wait-for-it.sh -t 60 rabbitmq:5672 && wait-for-it.sh -t 60 redis:6379; if [ -f /code/tools/finger.json ]; then echo "Importing custom fingerprint rules..."; if ! PYTHONPATH=/code python3.6 -m app.tools.import_fingerprint --file /code/tools/finger.json; then echo "Custom fingerprint import failed, continue startup"; fi; else echo "Custom fingerprint file not found, skip import"; fi; echo "Starting gunicorn..."; gunicorn -b 0.0.0.0:5003 app.main:arl_app -w 3 --access-logfile arl_web.log --access-logformat ''%({x-real-ip}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"''',
+        'set -e; WEB_GUNICORN_WORKERS=$(PYTHONPATH=/code python3.6 -c "from app.config import Config; print(Config.WEB_GUNICORN_WORKERS)"); echo "Starting gen_crt.sh..."; gen_crt.sh && echo "gen_crt.sh completed"; echo "Starting nginx..."; nginx && echo "nginx started successfully" || echo "nginx failed to start"; echo "Waiting for services..."; wait-for-it.sh -t 60 mongodb:27017 && wait-for-it.sh -t 60 rabbitmq:5672 && wait-for-it.sh -t 60 redis:6379; if [ -f /code/tools/finger.json ]; then echo "Importing custom fingerprint rules..."; if ! PYTHONPATH=/code python3.6 -m app.tools.import_fingerprint --file /code/tools/finger.json; then echo "Custom fingerprint import failed, continue startup"; fi; else echo "Custom fingerprint file not found, skip import"; fi; echo "Starting gunicorn workers=${WEB_GUNICORN_WORKERS}..."; gunicorn -b 0.0.0.0:5003 app.main:arl_app -w "${WEB_GUNICORN_WORKERS}" --access-logfile arl_web.log --access-logformat ''%({x-real-ip}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"''',
       ]
     environment:
       - LANG=en_US.UTF-8
@@ -70,7 +70,7 @@ services:
       [
         "sh",
         "-c",
-        "wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; mkdir -p /code/app/tmp; celery -A app.celerytask.celery worker -l info -Q arlgithub -n arlgithub -c 2 -O fair -f arl_worker.log & celery -A app.celerytask.celery worker -l info -Q arltask -n arltask -c 2 -O fair -f arl_worker.log",
+        "wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; mkdir -p /code/app/tmp; GITHUB_CONCURRENCY=$(PYTHONPATH=/code python3.6 -c \"from app.config import Config; print(Config.CELERY_GITHUB_WORKER_CONCURRENCY)\"); TASK_CONCURRENCY=$(PYTHONPATH=/code python3.6 -c \"from app.config import Config; print(Config.CELERY_TASK_WORKER_CONCURRENCY)\"); echo \"start celery github=${GITHUB_CONCURRENCY} task=${TASK_CONCURRENCY}\"; celery -A app.celerytask.celery worker -l info -Q arlgithub -n arlgithub -c \"${GITHUB_CONCURRENCY}\" -O fair -f arl_worker.log & celery -A app.celerytask.celery worker -l info -Q arltask -n arltask -c \"${TASK_CONCURRENCY}\" -O fair -f arl_worker.log",
       ]
 
     environment:

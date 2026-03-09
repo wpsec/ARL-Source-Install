@@ -7,6 +7,7 @@ from app import utils
 from app.helpers.scope import get_scope_by_scope_id
 from app.helpers.message_notify import push_email, push_dingding
 from app.helpers.asset_site_monitor import is_black_asset_site
+from app.config import Config
 from .baseThread import BaseThread
 from .fetchSite import fetch_site
 
@@ -19,7 +20,7 @@ class AssetSiteCompare(BaseThread):
         self._scope_id = scope_id
         sites = asset_site.find_site_by_scope_id(scope_id)
         logger.info("load {}  site from {}".format(len(sites), self._scope_id))
-        super(AssetSiteCompare, self).__init__(targets=sites, concurrency=15)
+        super(AssetSiteCompare, self).__init__(targets=sites, concurrency=Config.ASSET_SITE_MONITOR_CONCURRENCY)
         self.new_site_info_map = {}
         self.mutex = threading.Lock()
         self.site_change_map = {}
@@ -345,7 +346,11 @@ class Domain2SiteMonitor(object):
         if not sites:
             return []
 
-        site_info_list = fetch_site(sites, concurrency=20, http_timeout=(5, 6))
+        site_info_list = fetch_site(
+            sites,
+            concurrency=Config.ASSET_SITE_DISCOVERY_CONCURRENCY,
+            http_timeout=(5, 6)
+        )
 
         # 过滤 502, 504
         for site_info in site_info_list:

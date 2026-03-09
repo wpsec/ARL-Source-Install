@@ -4,6 +4,7 @@
 import time
 from app import  modules
 from app import  utils
+from app.config import Config
 from .baseThread import BaseThread
 logger = utils.get_logger()
 
@@ -48,6 +49,8 @@ class BuildDomainInfo(BaseThread):
         return self.domain_info_list
 
 
-def build_domain_info(domains, concurrency=15):
+def build_domain_info(domains, concurrency=None):
+    if concurrency is None:
+        concurrency = Config.DOMAIN_INFO_CONCURRENCY
     p = BuildDomainInfo(domains, concurrency=concurrency)
     return p.run()

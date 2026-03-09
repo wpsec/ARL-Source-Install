@@ -4,6 +4,7 @@
 from app import utils
 import threading
 import collections
+from app.config import Config
 from app.modules import  DomainInfo
 from .baseThread import BaseThread
 logger = utils.get_logger()
@@ -50,6 +51,8 @@ class ResolverDomain(BaseThread):
         return self.resolver_map
 
 
-def resolver_domain(domains, concurrency=15):
+def resolver_domain(domains, concurrency=None):
+    if concurrency is None:
+        concurrency = Config.DOMAIN_RESOLVE_CONCURRENCY
     r = ResolverDomain(domains, concurrency)
     return r.run()

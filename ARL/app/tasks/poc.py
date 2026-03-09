@@ -221,7 +221,7 @@ class RiskCruising(CommonTask):
         logger.info("start run poc {}*{}".format(len(self.poc_plugin_name), len(targets)))
 
         run_total = len(self.poc_plugin_name) * len(targets)
-        npoc_instance = npoc.NPoC(tmp_dir=Config.TMP_PATH, concurrency=10)
+        npoc_instance = npoc.NPoC(tmp_dir=Config.TMP_PATH, concurrency=Config.NPOC_POC_CONCURRENCY)
         run_thread = Thread(target=npoc_instance.run_poc, args=(self.poc_plugin_name, targets))
         run_thread.start()
         
@@ -260,7 +260,7 @@ class RiskCruising(CommonTask):
         logger.info("start run brute {}*{}".format(len(plugin_name), len(target)))
         run_total = len(plugin_name) * len(target)
 
-        npoc_instance = npoc.NPoC(tmp_dir=Config.TMP_PATH, concurrency=10)
+        npoc_instance = npoc.NPoC(tmp_dir=Config.TMP_PATH, concurrency=Config.NPOC_BRUTE_CONCURRENCY)
         run_thread = Thread(target=npoc_instance.run_poc, args=(plugin_name, target))
         run_thread.start()
         

@@ -4,6 +4,7 @@ HTTP连接状态检查
 import time
 
 from app import utils
+from app.config import Config
 from .baseThread import BaseThread
 
 import requests.exceptions
@@ -81,6 +82,8 @@ class CheckHTTP(BaseThread):
         return self.checkout_map
 
 
-def check_http(urls, concurrency=15):
+def check_http(urls, concurrency=None):
+    if concurrency is None:
+        concurrency = Config.HTTP_CHECK_CONCURRENCY
     c = CheckHTTP(urls, concurrency)
     return c.run()

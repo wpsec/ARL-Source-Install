@@ -152,7 +152,7 @@ class WebSiteFetch(object):
         capture_save_dir = Config.SCREENSHOT_DIR + "/" + self.task_id
         services.site_screenshot(
             self.available_sites,
-            concurrency=6,
+            concurrency=Config.SITE_SCREENSHOT_CONCURRENCY,
             capture_dir=capture_save_dir,
             task_id=self.task_id
         )

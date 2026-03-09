@@ -50,7 +50,10 @@ class FingerPrintCache:
                 password=Config.REDIS_PASSWORD or None,
                 decode_responses=True,
                 socket_connect_timeout=2,
-                socket_timeout=2
+                socket_timeout=2,
+                socket_keepalive=True,
+                health_check_interval=30,
+                retry_on_timeout=True
             )
             self.redis_client.ping()
             logger.info("redis cache enabled host:{} port:{} db:{}".format(

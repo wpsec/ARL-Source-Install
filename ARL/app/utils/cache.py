@@ -41,7 +41,10 @@ def get_redis_client():
             password=Config.REDIS_PASSWORD or None,
             decode_responses=False,
             socket_connect_timeout=2,
-            socket_timeout=2
+            socket_timeout=2,
+            socket_keepalive=True,
+            health_check_interval=30,
+            retry_on_timeout=True
         )
         _redis_client.ping()
         return _redis_client
