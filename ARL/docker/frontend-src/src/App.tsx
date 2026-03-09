@@ -409,52 +409,39 @@ const modules: ModuleConfig[] = [
   {
     id: 'scheduler',
     label: '资产监控',
-    description: '资产组周期监控、站点监控、WIH监控',
+    description: '资产监控任务查询与批量启停管理',
     group: '核心功能',
     icon: Monitor,
     listPath: '/scheduler/',
     rowIdKey: '_id',
     defaultOrder: '-_id',
     quickFilterKey: 'name',
+    columns: ['name', 'domain', 'scope_id', 'interval', 'status'],
+    columnLabels: {
+      name: '名称',
+      domain: '域名',
+      scope_id: '资产范围ID',
+      interval: '间隔(秒)',
+      status: '状态',
+    },
+    searchFields: [
+      { key: 'name', label: '名称', placeholder: '请输入名称进行搜索' },
+      { key: 'domain', label: '域名', placeholder: '请输入域名进行搜索' },
+      { key: 'scope_id', label: '资产范围ID', placeholder: '请输入资产范围ID进行搜索' },
+    ],
     actions: [
       {
-        id: 'scheduler_add',
-        label: '新增监控任务',
+        id: 'scheduler_delete',
+        label: '批量删除',
         method: 'POST',
-        path: '/scheduler/add/',
-        payloadTemplate: {
-          scope_id: '',
-          domain: 'example.com',
-          interval: 21600,
-          name: '资产监控',
-          policy_id: '',
-        },
-      },
-      {
-        id: 'scheduler_add_site_monitor',
-        label: '新增站点监控',
-        method: 'POST',
-        path: '/scheduler/add/site_monitor/',
-        payloadTemplate: {
-          scope_id: '',
-          interval: 21600,
-          name: '站点监控',
-        },
-      },
-      {
-        id: 'scheduler_add_wih_monitor',
-        label: '新增WIH监控',
-        method: 'POST',
-        path: '/scheduler/add/wih_monitor/',
-        payloadTemplate: {
-          scope_id: '',
-          interval: 21600,
-          name: 'WIH监控',
-        },
+        path: '/scheduler/delete/',
+        selectedField: 'job_id',
+        selectionMode: 'multiple',
+        payloadTemplate: { job_id: [] },
       },
       {
         id: 'scheduler_stop',
-        label: '停止所选',
+        label: '批量停止',
         method: 'POST',
         path: '/scheduler/stop/batch',
         selectedField: 'job_id',
@@ -463,18 +450,9 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'scheduler_recover',
-        label: '恢复所选',
+        label: '批量恢复',
         method: 'POST',
         path: '/scheduler/recover/batch',
-        selectedField: 'job_id',
-        selectionMode: 'multiple',
-        payloadTemplate: { job_id: [] },
-      },
-      {
-        id: 'scheduler_delete',
-        label: '删除所选',
-        method: 'POST',
-        path: '/scheduler/delete/',
         selectedField: 'job_id',
         selectionMode: 'multiple',
         payloadTemplate: { job_id: [] },
@@ -565,17 +543,28 @@ const modules: ModuleConfig[] = [
   {
     id: 'asset_scope',
     label: '资产分组',
-    description: '资产组和范围管理',
+    description: '资产分组查询与维护',
     group: '核心功能',
     icon: Shield,
     listPath: '/asset_scope/',
     rowIdKey: '_id',
     defaultOrder: '-_id',
     quickFilterKey: 'name',
+    columns: ['name', 'scope', '_id'],
+    columnLabels: {
+      name: '资产分组名称',
+      scope: '资产范围',
+      _id: '资产范围ID',
+    },
+    searchFields: [
+      { key: 'name', label: '资产组名称', placeholder: '请输入资产组名称进行搜索' },
+      { key: 'scope', label: '资产范围', placeholder: '请输入资产范围进行搜索' },
+      { key: '_id', label: '资产范围ID', placeholder: '请输入资产范围ID进行搜索' },
+    ],
     actions: [
       {
         id: 'asset_scope_add',
-        label: '新增资产组',
+        label: '新建资产分组',
         method: 'POST',
         path: '/asset_scope/',
         payloadTemplate: {
@@ -584,65 +573,6 @@ const modules: ModuleConfig[] = [
           black_scope: '',
           scope_type: 'domain',
         },
-      },
-      {
-        id: 'asset_scope_add_scope',
-        label: '扩展范围',
-        method: 'POST',
-        path: '/asset_scope/add/',
-        payloadTemplate: {
-          scope_id: '',
-          scope: 'sub.example.com',
-        },
-      },
-      {
-        id: 'asset_scope_delete',
-        label: '删除所选分组',
-        method: 'POST',
-        path: '/asset_scope/delete/',
-        selectedField: 'scope_id',
-        selectionMode: 'multiple',
-        payloadTemplate: { scope_id: [] },
-      },
-      {
-        id: 'asset_scope_batch_export_ip',
-        label: '批量导出资产IP',
-        method: 'POST',
-        path: '/batch_export/asset_ip/',
-        selectedField: 'scope_id',
-        selectionMode: 'multiple',
-        payloadTemplate: { scope_id: [] },
-        download: true,
-      },
-      {
-        id: 'asset_scope_batch_export_domain',
-        label: '批量导出资产域名',
-        method: 'POST',
-        path: '/batch_export/asset_domain/',
-        selectedField: 'scope_id',
-        selectionMode: 'multiple',
-        payloadTemplate: { scope_id: [] },
-        download: true,
-      },
-      {
-        id: 'asset_scope_batch_export_site',
-        label: '批量导出资产站点',
-        method: 'POST',
-        path: '/batch_export/asset_site/',
-        selectedField: 'scope_id',
-        selectionMode: 'multiple',
-        payloadTemplate: { scope_id: [] },
-        download: true,
-      },
-      {
-        id: 'asset_scope_batch_export_wih',
-        label: '批量导出资产WIH',
-        method: 'POST',
-        path: '/batch_export/asset_wih/',
-        selectedField: 'scope_id',
-        selectionMode: 'multiple',
-        payloadTemplate: { scope_id: [] },
-        download: true,
       },
     ],
   },
@@ -725,17 +655,6 @@ const modules: ModuleConfig[] = [
     ],
     exportPath: '/asset_site/export/',
     actions: [
-      {
-        id: 'asset_site_add',
-        label: '添加站点',
-        method: 'POST',
-        path: '/asset_site/',
-        payloadTemplate: {
-          site: 'https://example.com',
-          scope_id: '',
-          policy_id: '',
-        },
-      },
       {
         id: 'asset_site_add_tag',
         label: '添加标签',
@@ -3120,11 +3039,8 @@ function TableModuleView({
   const moduleActions = module.actions || [];
   const visibleActions = useMemo(() => {
     if (module.id !== 'asset_site') return moduleActions;
-    return moduleActions.filter((action) => !['asset_site_add', 'asset_site_save_result_set'].includes(action.id));
+    return moduleActions.filter((action) => !['asset_site_save_result_set'].includes(action.id));
   }, [module.id, moduleActions]);
-  const addAssetSiteAction = module.id === 'asset_site'
-    ? moduleActions.find((action) => action.id === 'asset_site_add') || null
-    : null;
 
   const selectAllChecked = rows.length > 0 && selectedIds.length === rows.length;
 
@@ -3349,8 +3265,29 @@ function TableModuleView({
     }
   };
 
+  const deleteAssetScopeRow = async (scopeId: string) => {
+    if (module.id !== 'asset_scope') return;
+    if (!scopeId) return;
+    if (!window.confirm('确认删除该资产分组吗？')) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/asset_scope/delete/', {
+        method: 'POST',
+        body: {
+          scope_id: [scopeId],
+        },
+      });
+      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '删除失败');
+    }
+  };
+
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
+  const showAssetScopeRowOperate = module.id === 'asset_scope';
 
   return (
     <div className="p-8 space-y-6">
@@ -3418,15 +3355,6 @@ function TableModuleView({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {module.id === 'asset_site' && addAssetSiteAction ? (
-                <button
-                  onClick={() => openActionDialog(addAssetSiteAction)}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  添加站点
-                </button>
-              ) : null}
               <button
                 onClick={() => {
                   setPage(1);
@@ -3558,6 +3486,9 @@ function TableModuleView({
                       {getColumnLabel(column)}
                     </th>
                   ))}
+                  {showAssetScopeRowOperate ? (
+                    <th className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">操作</th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -3592,12 +3523,25 @@ function TableModuleView({
                           {formatModuleCellValue(module.id, column, row)}
                         </td>
                       ))}
+                      {showAssetScopeRowOperate ? (
+                        <td className="px-4 py-3 align-top whitespace-nowrap">
+                          <button
+                            onClick={() => void deleteAssetScopeRow(id)}
+                            className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                          >
+                            删除
+                          </button>
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
                 {rows.length === 0 && !loading ? (
                   <tr>
-                    <td colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0), 2)} className="px-4 py-10 text-center text-brand-text-muted">
+                    <td
+                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showAssetScopeRowOperate ? 1 : 0), 2)}
+                      className="px-4 py-10 text-center text-brand-text-muted"
+                    >
                       暂无数据
                     </td>
                   </tr>
