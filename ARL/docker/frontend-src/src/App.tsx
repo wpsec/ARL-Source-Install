@@ -374,7 +374,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_excel_report',
-        label: '批量导出',
+        label: '表格批量导出',
         method: 'POST',
         path: '/export/batch',
         selectedField: 'task_ids',
@@ -1711,6 +1711,21 @@ const modules: ModuleConfig[] = [
     group: '系统集成',
     icon: Settings,
   },
+];
+
+const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
+  { id: 'site', label: '站点' },
+  { id: 'domain', label: '子域名' },
+  { id: 'ip', label: 'IP' },
+  { id: 'cert', label: 'SSL证书' },
+  { id: 'service', label: '服务' },
+  { id: 'fileleak', label: '文件泄露' },
+  { id: 'url', label: 'URL信息' },
+  { id: 'vuln', label: '风险' },
+  { id: 'npoc_service', label: 'C段' },
+  { id: 'nuclei_result', label: 'nuclei' },
+  { id: 'stat_finger', label: '指纹统计' },
+  { id: 'wih', label: 'WIH' },
 ];
 
 function buildUrl(path: string, query?: JsonValue): string {
@@ -4555,6 +4570,8 @@ function TableModuleView({
   const [policyTaskName, setPolicyTaskName] = useState('');
   const [policyTaskTarget, setPolicyTaskTarget] = useState('');
   const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [taskDetailCounts, setTaskDetailCounts] = useState<Record<string, number>>({});
+  const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -4620,6 +4637,58 @@ function TableModuleView({
       cancelled = true;
     };
   }, [module.id, token]);
+
+  const isTaskDetailModule = useMemo(
+    () => TASK_DETAIL_TABS.some((tab) => tab.id === module.id),
+    [module.id]
+  );
+
+  useEffect(() => {
+    if (!isTaskDetailModule) {
+      setTaskDetailCounts({});
+      setTaskDetailCountLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadTaskDetailCounts = async () => {
+      setTaskDetailCountLoading(true);
+      try {
+        const requests = TASK_DETAIL_TABS.map(async (tab) => {
+          const tabModule = getModuleById(tab.id);
+          if (!tabModule.listPath) return [tab.id, 0] as const;
+          const response = await requestApi(token, tabModule.listPath, {
+            method: 'GET',
+            query: {
+              page: 1,
+              size: 1,
+              ...activeExternalFilters,
+            },
+          });
+          const normalized = normalizeListData(response);
+          return [tab.id, Number(normalized.total || 0)] as const;
+        });
+
+        const entries = await Promise.all(requests);
+        if (cancelled) return;
+        const nextCounts: Record<string, number> = {};
+        entries.forEach(([id, count]) => {
+          nextCounts[id] = count;
+        });
+        setTaskDetailCounts(nextCounts);
+      } catch {
+        if (cancelled) return;
+        setTaskDetailCounts({});
+      } finally {
+        if (!cancelled) setTaskDetailCountLoading(false);
+      }
+    };
+
+    void loadTaskDetailCounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [isTaskDetailModule, token, activeExternalFilters]);
 
   const getSearchFieldOptions = (field: ModuleSearchField): Array<{ label: string; value: string }> => {
     if (field.dynamicOptionsKey === 'policy_name') {
@@ -4767,7 +4836,21 @@ function TableModuleView({
       return moduleActions.filter((action) => ['task_schedule_add', 'task_schedule_stop', 'task_schedule_delete'].includes(action.id));
     }
     if (module.id === 'task') {
-      return moduleActions.filter((action) => ['create_task', 'task_stop_batch', 'task_delete_batch', 'task_batch_excel_report'].includes(action.id));
+      const taskVisibleActionIds = [
+        'create_task',
+        'task_stop_batch',
+        'task_delete_batch',
+        'task_batch_export_cip',
+        'task_batch_export_domain',
+        'task_batch_export_ip',
+        'task_batch_export_port',
+        'task_batch_export_site',
+        'task_batch_export_url',
+        'task_batch_excel_report',
+      ];
+      return taskVisibleActionIds
+        .map((id) => moduleActions.find((action) => action.id === id))
+        .filter((action): action is ModuleAction => Boolean(action));
     }
     if (module.id === 'github_task') {
       return moduleActions.filter((action) => action.id === 'github_task_add');
@@ -4795,6 +4878,9 @@ function TableModuleView({
     : null;
   const githubSchedulerUpdateAction = module.id === 'github_scheduler'
     ? moduleActions.find((action) => action.id === 'github_scheduler_update') || null
+    : null;
+  const taskSyncAction = module.id === 'task'
+    ? moduleActions.find((action) => action.id === 'task_sync') || null
     : null;
 
   const selectAllChecked = rows.length > 0 && selectedIds.length === rows.length;
@@ -5403,6 +5489,54 @@ function TableModuleView({
     }
   };
 
+  const restartTaskRow = async (taskId: string) => {
+    if (module.id !== 'task') return;
+    if (!taskId) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/task/restart/', {
+        method: 'POST',
+        body: {
+          task_id: [taskId],
+        },
+      });
+      setSuccess(result?.message ? `重启成功: ${result.message}` : '重启成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '重启失败');
+    }
+  };
+
+  const exportTaskRow = async (taskId: string) => {
+    if (module.id !== 'task') return;
+    if (!taskId) return;
+    setError('');
+    setSuccess('');
+    try {
+      await requestApi(token, `/export/${taskId}`, {
+        method: 'GET',
+        download: true,
+      });
+      setSuccess('导出成功');
+    } catch (err: any) {
+      setError(err?.message || '导出失败');
+    }
+  };
+
+  const syncTaskRow = (taskId: string, row: any) => {
+    if (module.id !== 'task') return;
+    if (!taskId) return;
+    if (!taskSyncAction) {
+      setError('未找到任务同步动作配置');
+      return;
+    }
+    openActionDialog(taskSyncAction, {
+      task_id: taskId,
+      scope_id: String(row?.scope_id || '').trim(),
+    });
+  };
+
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
   const showTaskRowOperate = module.id === 'task';
@@ -5470,20 +5604,7 @@ function TableModuleView({
       ) : null}
       {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'npoc_service', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
         <div className="flex items-center gap-2">
-          {[
-            { id: 'site', label: '站点' },
-            { id: 'domain', label: '子域名' },
-            { id: 'ip', label: 'IP' },
-            { id: 'cert', label: 'SSL证书' },
-            { id: 'service', label: '服务' },
-            { id: 'fileleak', label: '文件泄露' },
-            { id: 'url', label: 'URL信息' },
-            { id: 'vuln', label: '风险' },
-            { id: 'npoc_service', label: 'C段' },
-            { id: 'nuclei_result', label: 'nuclei' },
-            { id: 'stat_finger', label: '指纹统计' },
-            { id: 'wih', label: 'WIH' },
-          ].map((item) => (
+          {TASK_DETAIL_TABS.map((item) => (
             <button
               key={item.id}
               onClick={() => onOpenModule(item.id, hasExternalFilters ? activeExternalFilters : undefined)}
@@ -5493,7 +5614,13 @@ function TableModuleView({
                   : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
               }`}
             >
-              {item.label}
+              {`${item.label} - ${
+                typeof taskDetailCounts[item.id] === 'number'
+                  ? taskDetailCounts[item.id]
+                  : taskDetailCountLoading
+                    ? '...'
+                    : 0
+              }`}
             </button>
           ))}
         </div>
@@ -5566,25 +5693,29 @@ function TableModuleView({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => {
-                  setPage(1);
-                  void loadRows();
-                }}
-                className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-                disabled={loading || !hasList}
-              >
-                <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                搜索
-              </button>
-              <button
-                onClick={clearSearchFilters}
-                className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-                disabled={loading || !hasList}
-              >
-                <RefreshCw className="w-4 h-4" />
-                {module.id === 'asset_site' ? '清除' : '重置'}
-              </button>
+              {module.id !== 'task' ? (
+                <button
+                  onClick={() => {
+                    setPage(1);
+                    void loadRows();
+                  }}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  disabled={loading || !hasList}
+                >
+                  <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  搜索
+                </button>
+              ) : null}
+              {module.id !== 'task' ? (
+                <button
+                  onClick={clearSearchFilters}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  disabled={loading || !hasList}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  {module.id === 'asset_site' ? '清除' : '重置'}
+                </button>
+              ) : null}
               {module.exportPath && module.id !== 'task' ? (
                 <button
                   onClick={() => void runExport()}
@@ -5890,22 +6021,38 @@ function TableModuleView({
                         <td className="px-4 py-3 align-middle whitespace-nowrap text-center">
                           {showTaskRowOperate ? (
                             <div className="flex flex-wrap items-center justify-center gap-2">
-                              {!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
-                                <button
-                                  onClick={() => void stopTaskRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-                                >
-                                  停止
-                                </button>
-                              ) : null}
-                              {['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
-                                <button
-                                  onClick={() => void deleteTaskRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-                                >
-                                  删除
-                                </button>
-                              ) : null}
+                              <button
+                                onClick={() => syncTaskRow(id, row)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                同步
+                              </button>
+                              <button
+                                onClick={() => void exportTaskRow(id)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                导出
+                              </button>
+                              <button
+                                onClick={() => void stopTaskRow(id)}
+                                disabled={['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                停止
+                              </button>
+                              <button
+                                onClick={() => void deleteTaskRow(id)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                删除
+                              </button>
+                              <button
+                                onClick={() => void restartTaskRow(id)}
+                                disabled={!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                重启
+                              </button>
                             </div>
                           ) : null}
                           {showAssetScopeRowOperate ? (
