@@ -1662,6 +1662,19 @@ function updatePayloadValue(payload: JsonValue, path: string, value: any): JsonV
   return next;
 }
 
+function getPayloadValue(payload: JsonValue, path: string): any {
+  if (!payload || !path) return undefined;
+  const parts = path.split('.');
+  let cursor: any = payload;
+  for (const key of parts) {
+    if (cursor === null || cursor === undefined || typeof cursor !== 'object') {
+      return undefined;
+    }
+    cursor = cursor[key];
+  }
+  return cursor;
+}
+
 function humanizeField(path: string): string {
   const direct = fieldLabelMap[path];
   if (direct) return direct;
@@ -2514,11 +2527,13 @@ function SystemMonitorView({ token }: { token: string }) {
 }
 
 function ActionDialog({
+  token,
   action,
   initialPayload,
   onClose,
   onSubmit,
 }: {
+  token: string;
   action: ModuleAction;
   initialPayload: JsonValue;
   onClose: () => void;
@@ -2534,47 +2549,10 @@ function ActionDialog({
   const isAssetScopeCreate = action.id === 'asset_scope_add';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
-  const policyBoolLayout = useMemo(() => {
-    if (!isPolicyAction) {
-      return {
-        sections: [] as Array<{ title: string; fields: FlatPayloadField[] }>,
-        boolPathSet: new Set<string>(),
-      };
-    }
-    const root = action.id === 'policy_edit' ? 'policy_data.policy' : 'policy';
-    const sectionDefs = [
-      { title: '域名配置', prefix: `${root}.domain_config.` },
-      { title: 'IP配置', prefix: `${root}.ip_config.` },
-      { title: '站点配置', prefix: `${root}.site_config.` },
-    ];
-    const boolPathSet = new Set<string>();
-    const sections: Array<{ title: string; fields: FlatPayloadField[] }> = [];
-
-    sectionDefs.forEach((section) => {
-      const sectionFields = fields.filter(
-        (field) => typeof field.value === 'boolean' && field.path.startsWith(section.prefix)
-      );
-      if (sectionFields.length > 0) {
-        sectionFields.forEach((field) => boolPathSet.add(field.path));
-        sections.push({ title: section.title, fields: sectionFields });
-      }
-    });
-
-    const extraBoolPaths = [`${root}.file_leak`, `${root}.npoc_service_detection`];
-    const extraFields = fields.filter(
-      (field) => typeof field.value === 'boolean' && extraBoolPaths.includes(field.path)
-    );
-    if (extraFields.length > 0) {
-      extraFields.forEach((field) => boolPathSet.add(field.path));
-      sections.push({ title: '扩展配置', fields: extraFields });
-    }
-
-    return { sections, boolPathSet };
-  }, [action.id, fields, isPolicyAction]);
-  const displayFields = useMemo(() => {
-    if (!isPolicyAction) return fields;
-    return fields.filter((field) => !policyBoolLayout.boolPathSet.has(field.path));
-  }, [fields, isPolicyAction, policyBoolLayout.boolPathSet]);
+  const displayFields = useMemo(() => fields, [fields]);
+  const policyRootPath = action.id === 'policy_edit' ? 'policy_data.policy' : 'policy';
+  const policyNamePath = action.id === 'policy_edit' ? 'policy_data.name' : 'name';
+  const policyDescPath = action.id === 'policy_edit' ? 'policy_data.desc' : 'desc';
   const taskFeatureSections = useMemo(() => {
     if (!isTaskCreate) return [];
     const isBooleanField = (key: string) => typeof formPayload?.[key] === 'boolean';
@@ -2621,12 +2599,152 @@ function ActionDialog({
   const scopeGroupName = String(formPayload?.name ?? '');
   const scopeType = String(formPayload?.scope_type ?? 'domain') === 'ip' ? 'ip' : 'domain';
   const scopeText = String(formPayload?.scope ?? '');
+  const policyName = String(getPayloadValue(formPayload, policyNamePath) ?? '');
+  const policyDesc = String(getPayloadValue(formPayload, policyDescPath) ?? '');
+  const policyDomainBruteType = String(getPayloadValue(formPayload, `${policyRootPath}.domain_config.domain_brute_type`) ?? 'test');
+  const policyPortScanType = String(getPayloadValue(formPayload, `${policyRootPath}.ip_config.port_scan_type`) ?? 'test');
+  const policyPortCustom = String(getPayloadValue(formPayload, `${policyRootPath}.ip_config.port_custom`) ?? '80,443');
+  const policyHostTimeoutType = String(getPayloadValue(formPayload, `${policyRootPath}.ip_config.host_timeout_type`) ?? 'default');
+  const policyHostTimeout = Number(getPayloadValue(formPayload, `${policyRootPath}.ip_config.host_timeout`) ?? 900);
+  const policyPortParallelism = Number(getPayloadValue(formPayload, `${policyRootPath}.ip_config.port_parallelism`) ?? 32);
+  const policyPortMinRate = Number(getPayloadValue(formPayload, `${policyRootPath}.ip_config.port_min_rate`) ?? 60);
+  const [policySearchKeyword, setPolicySearchKeyword] = useState('');
+  const [policyPocKeyword, setPolicyPocKeyword] = useState('');
+  const [policyBruteKeyword, setPolicyBruteKeyword] = useState('');
+  const [policyPluginLoading, setPolicyPluginLoading] = useState(false);
+  const [policyPluginError, setPolicyPluginError] = useState('');
+  const [policyPocOptions, setPolicyPocOptions] = useState<Array<{ plugin_name: string; vul_name: string }>>([]);
+  const [policyBruteOptions, setPolicyBruteOptions] = useState<Array<{ plugin_name: string; vul_name: string }>>([]);
+
+  const getPolicyPath = (suffix: string) => `${policyRootPath}.${suffix}`;
+  const updatePolicyValue = (suffix: string, value: any) => {
+    setFormPayload((prev) => updatePayloadValue(prev, getPolicyPath(suffix), value));
+  };
+
+  const extractPluginNames = (value: any): string[] => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => String(item?.plugin_name || '').trim())
+      .filter((item) => item);
+  };
+
+  const selectedPolicyPocNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('poc_config')));
+  const selectedPolicyBruteNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('brute_config')));
+  const policySiteOptionDefs = [
+    { key: 'site_config.site_identify', label: '1. 站点识别' },
+    { key: 'site_config.search_engines', label: '2. 搜索引擎调用' },
+    { key: 'site_config.site_spider', label: '3. 站点爬虫' },
+    { key: 'site_config.site_capture', label: '4. 站点截图' },
+    { key: 'file_leak', label: '5. 文件泄露' },
+    { key: 'site_config.nuclei_scan', label: '6. nuclei 调用' },
+    { key: 'site_config.web_info_hunter', label: '7. WIH 调用' },
+  ];
+  const filteredPolicySiteOptions = policySiteOptionDefs.filter((item) => {
+    const keyword = policySearchKeyword.trim().toLowerCase();
+    if (!keyword) return true;
+    return item.label.toLowerCase().includes(keyword);
+  });
+  const policySiteOptionAllEnabled =
+    policySiteOptionDefs.length > 0 &&
+    policySiteOptionDefs.every((item) => Boolean(getPayloadValue(formPayload, getPolicyPath(item.key))));
+  const setPolicySiteOptionAll = (enabled: boolean) => {
+    setFormPayload((prev) => {
+      let next = deepClone(prev || {});
+      policySiteOptionDefs.forEach((item) => {
+        next = updatePayloadValue(next, getPolicyPath(item.key), enabled);
+      });
+      return next;
+    });
+  };
+  const filteredPolicyPocOptions = policyPocOptions.filter((item) => {
+    const keyword = policyPocKeyword.trim().toLowerCase();
+    if (!keyword) return true;
+    return item.plugin_name.toLowerCase().includes(keyword) || item.vul_name.toLowerCase().includes(keyword);
+  });
+  const filteredPolicyBruteOptions = policyBruteOptions.filter((item) => {
+    const keyword = policyBruteKeyword.trim().toLowerCase();
+    if (!keyword) return true;
+    return item.plugin_name.toLowerCase().includes(keyword) || item.vul_name.toLowerCase().includes(keyword);
+  });
+  const policyPocAllSelected =
+    policyPocOptions.length > 0 && policyPocOptions.every((item) => selectedPolicyPocNames.includes(item.plugin_name));
+  const policyBruteAllSelected =
+    policyBruteOptions.length > 0 && policyBruteOptions.every((item) => selectedPolicyBruteNames.includes(item.plugin_name));
+
+  const setPolicyPluginConfig = (field: 'poc_config' | 'brute_config', pluginNames: string[]) => {
+    const payloadList = pluginNames.map((pluginName) => ({
+      plugin_name: pluginName,
+      enable: true,
+    }));
+    updatePolicyValue(field, payloadList);
+  };
+
+  const togglePolicyPluginSelection = (field: 'poc_config' | 'brute_config', pluginName: string, enabled: boolean) => {
+    const currentList = field === 'poc_config' ? selectedPolicyPocNames : selectedPolicyBruteNames;
+    const nextSet = new Set(currentList);
+    if (enabled) {
+      nextSet.add(pluginName);
+    } else {
+      nextSet.delete(pluginName);
+    }
+    setPolicyPluginConfig(field, Array.from(nextSet));
+  };
 
   useEffect(() => {
     const nextPayload = deepClone(initialPayload);
     setFormPayload(nextPayload);
     setError('');
+    setPolicySearchKeyword('');
+    setPolicyPocKeyword('');
+    setPolicyBruteKeyword('');
   }, [initialPayload]);
+
+  useEffect(() => {
+    if (!isPolicyAction) return;
+    let cancelled = false;
+
+    const loadPolicyPlugins = async () => {
+      setPolicyPluginLoading(true);
+      setPolicyPluginError('');
+      try {
+        const response = await requestApi(token, '/poc/', {
+          method: 'GET',
+          query: { page: 1, size: 5000 },
+        });
+        const items = normalizeListData(response).items || [];
+        const normalized = items
+          .map((item: any) => ({
+            plugin_name: String(item?.plugin_name || '').trim(),
+            vul_name: String(item?.vul_name || '').trim(),
+            plugin_type: String(item?.plugin_type || '').trim().toLowerCase(),
+          }))
+          .filter((item: any) => item.plugin_name);
+        if (cancelled) return;
+        setPolicyPocOptions(
+          normalized
+            .filter((item: any) => item.plugin_type === 'poc')
+            .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name }))
+        );
+        setPolicyBruteOptions(
+          normalized
+            .filter((item: any) => item.plugin_type === 'brute')
+            .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name }))
+        );
+      } catch (err: any) {
+        if (cancelled) return;
+        setPolicyPluginError(err?.message || '加载 PoC 列表失败');
+      } finally {
+        if (!cancelled) {
+          setPolicyPluginLoading(false);
+        }
+      }
+    };
+
+    void loadPolicyPlugins();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPolicyAction, token]);
 
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
@@ -2640,7 +2758,7 @@ function ActionDialog({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full ${isTaskCreate ? 'max-w-5xl' : 'max-w-3xl'} bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden`}>
+      <div className={`w-full ${isTaskCreate || isPolicyAction ? 'max-w-5xl' : 'max-w-3xl'} bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden`}>
         <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between">
           <div>
             <h4 className="text-lg font-black">{action.label}</h4>
@@ -2820,6 +2938,266 @@ function ActionDialog({
                 </p>
               </div>
             </div>
+          ) : isPolicyAction ? (
+            <div className="space-y-5 max-h-[62vh] overflow-y-auto custom-scrollbar pr-1">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">策略名称</label>
+                  <input
+                    value={policyName}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, policyNamePath, event.target.value))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    placeholder="请输入策略名称"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">策略描述</label>
+                  <input
+                    value={policyDesc}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, policyDescPath, event.target.value))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    placeholder="请输入策略描述"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">域名爆破类型</label>
+                  <div className="relative">
+                    <select
+                      value={policyDomainBruteType}
+                      disabled={!editable}
+                      onChange={(event) => updatePolicyValue('domain_config.domain_brute_type', event.target.value)}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="test">测试字典</option>
+                      <option value="big">大字典</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">端口扫描类型</label>
+                  <div className="relative">
+                    <select
+                      value={policyPortScanType}
+                      disabled={!editable}
+                      onChange={(event) => updatePolicyValue('ip_config.port_scan_type', event.target.value)}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="test">测试</option>
+                      <option value="top100">TOP100</option>
+                      <option value="top1000">TOP1000</option>
+                      <option value="all">全端口</option>
+                      <option value="custom">自定义</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+              </div>
+
+              {policyPortScanType === 'custom' ? (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">自定义端口</label>
+                  <input
+                    value={policyPortCustom}
+                    disabled={!editable}
+                    onChange={(event) => updatePolicyValue('ip_config.port_custom', event.target.value)}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    placeholder="80,443,8080"
+                  />
+                </div>
+              ) : null}
+
+              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+                <h5 className="text-sm font-black">扫描配置</h5>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-brand-text-muted">主机超时时间</label>
+                    <div className="relative">
+                      <select
+                        value={policyHostTimeoutType}
+                        disabled={!editable}
+                        onChange={(event) => updatePolicyValue('ip_config.host_timeout_type', event.target.value)}
+                        className={UNIFIED_SELECT_CLASS}
+                      >
+                        <option value="default">默认(900s)</option>
+                        <option value="custom">自定义</option>
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-brand-text-muted">探测报文并行度</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={String(Number.isFinite(policyPortParallelism) ? policyPortParallelism : 32)}
+                      disabled={!editable}
+                      onChange={(event) => updatePolicyValue('ip_config.port_parallelism', Number(event.target.value || 0))}
+                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+
+                {policyHostTimeoutType === 'custom' ? (
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-brand-text-muted">主机超时时间(s)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={String(Number.isFinite(policyHostTimeout) ? policyHostTimeout : 900)}
+                      disabled={!editable}
+                      onChange={(event) => updatePolicyValue('ip_config.host_timeout', Number(event.target.value || 0))}
+                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    />
+                  </div>
+                ) : null}
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">最少发包速率</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={String(Number.isFinite(policyPortMinRate) ? policyPortMinRate : 60)}
+                    disabled={!editable}
+                    onChange={(event) => updatePolicyValue('ip_config.port_min_rate', Number(event.target.value || 0))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h5 className="text-sm font-black">站点和风险配置</h5>
+                  <button
+                    type="button"
+                    className="text-xs font-bold text-brand-accent hover:underline"
+                    onClick={() => setPolicySiteOptionAll(!policySiteOptionAllEnabled)}
+                    disabled={!editable}
+                  >
+                    {policySiteOptionAllEnabled ? '取消全选' : '全选'}
+                  </button>
+                </div>
+                <input
+                  value={policySearchKeyword}
+                  onChange={(event) => setPolicySearchKeyword(event.target.value)}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  placeholder="请输入关键字进行查询"
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {filteredPolicySiteOptions.map((item) => (
+                    <label key={item.key} className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(getPayloadValue(formPayload, getPolicyPath(item.key)))}
+                        disabled={!editable}
+                        onChange={(event) => updatePolicyValue(item.key, event.target.checked)}
+                        className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h5 className="text-sm font-black">PoC 配置</h5>
+                  <button
+                    type="button"
+                    className="text-xs font-bold text-brand-accent hover:underline"
+                    onClick={() =>
+                      setPolicyPluginConfig(
+                        'poc_config',
+                        policyPocAllSelected ? [] : policyPocOptions.map((item) => item.plugin_name)
+                      )
+                    }
+                    disabled={!editable || policyPocOptions.length === 0}
+                  >
+                    {policyPocAllSelected ? '取消全选' : '全选'}
+                  </button>
+                </div>
+                <input
+                  value={policyPocKeyword}
+                  onChange={(event) => setPolicyPocKeyword(event.target.value)}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  placeholder="请输入关键字筛选 PoC"
+                />
+                <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
+                  {filteredPolicyPocOptions.map((item) => (
+                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedPolicyPocNames.includes(item.plugin_name)}
+                        disabled={!editable}
+                        onChange={(event) => togglePolicyPluginSelection('poc_config', item.plugin_name, event.target.checked)}
+                        className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                      />
+                      <span className="truncate">{item.vul_name || item.plugin_name}</span>
+                    </label>
+                  ))}
+                  {!policyPluginLoading && filteredPolicyPocOptions.length === 0 ? (
+                    <p className="text-xs text-brand-text-muted">暂无匹配的 PoC 项</p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h5 className="text-sm font-black">弱口令爆破配置</h5>
+                  <button
+                    type="button"
+                    className="text-xs font-bold text-brand-accent hover:underline"
+                    onClick={() =>
+                      setPolicyPluginConfig(
+                        'brute_config',
+                        policyBruteAllSelected ? [] : policyBruteOptions.map((item) => item.plugin_name)
+                      )
+                    }
+                    disabled={!editable || policyBruteOptions.length === 0}
+                  >
+                    {policyBruteAllSelected ? '取消全选' : '全选'}
+                  </button>
+                </div>
+                <input
+                  value={policyBruteKeyword}
+                  onChange={(event) => setPolicyBruteKeyword(event.target.value)}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  placeholder="请输入关键字筛选弱口令插件"
+                />
+                <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
+                  {filteredPolicyBruteOptions.map((item) => (
+                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedPolicyBruteNames.includes(item.plugin_name)}
+                        disabled={!editable}
+                        onChange={(event) => togglePolicyPluginSelection('brute_config', item.plugin_name, event.target.checked)}
+                        className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                      />
+                      <span className="truncate">{item.vul_name || item.plugin_name}</span>
+                    </label>
+                  ))}
+                  {!policyPluginLoading && filteredPolicyBruteOptions.length === 0 ? (
+                    <p className="text-xs text-brand-text-muted">暂无匹配的弱口令插件</p>
+                  ) : null}
+                </div>
+              </div>
+
+              {policyPluginLoading ? (
+                <div className="text-xs text-brand-text-muted">PoC 列表加载中...</div>
+              ) : null}
+              {policyPluginError ? (
+                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                  {policyPluginError}
+                </div>
+              ) : null}
+            </div>
           ) : (
             <div className="space-y-3 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">
               {displayFields.map((field) => {
@@ -2888,34 +3266,6 @@ function ActionDialog({
                 );
               })}
 
-              {isPolicyAction && policyBoolLayout.sections.length > 0 ? (
-                <div className="space-y-3">
-                  {policyBoolLayout.sections.map((section) => (
-                    <div key={section.title} className="space-y-2">
-                      <p className="text-[11px] font-bold text-brand-text-muted tracking-wide">{section.title}</p>
-                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-                        {section.fields.map((field) => (
-                          <label
-                            key={field.path}
-                            className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={Boolean(field.value)}
-                              disabled={!editable}
-                              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-                              onChange={(event) => {
-                                setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
-                              }}
-                            />
-                            <span className="font-medium truncate">{humanizeField(field.path)}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
             </div>
           )}
 
@@ -2941,7 +3291,7 @@ function ActionDialog({
                 try {
                   setLoading(true);
                   setError('');
-                  const payload: JsonValue = deepClone(!editable ? initialPayload : formPayload);
+                  let payload: JsonValue = deepClone(!editable ? initialPayload : formPayload);
                   if (isTaskCreate && editable) {
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedTargets = String(payload.target || '')
@@ -2981,6 +3331,39 @@ function ActionDialog({
                     payload.scope = normalizedScopes.join('\n');
                     payload.black_scope = '';
                   }
+                  if (isPolicyAction && editable) {
+                    const normalizedPolicyName = String(getPayloadValue(payload, policyNamePath) || '').trim();
+                    if (!normalizedPolicyName) {
+                      throw new Error('请填写策略名称');
+                    }
+
+                    const normalizedHostTimeout = Number(getPayloadValue(payload, getPolicyPath('ip_config.host_timeout')) || 900);
+                    const normalizedParallelism = Number(getPayloadValue(payload, getPolicyPath('ip_config.port_parallelism')) || 32);
+                    const normalizedMinRate = Number(getPayloadValue(payload, getPolicyPath('ip_config.port_min_rate')) || 60);
+                    const normalizedPortScanType = String(getPayloadValue(payload, getPolicyPath('ip_config.port_scan_type')) || 'test');
+                    const normalizedPortCustom = String(getPayloadValue(payload, getPolicyPath('ip_config.port_custom')) || '').trim();
+
+                    if (normalizedPortScanType === 'custom' && !normalizedPortCustom) {
+                      throw new Error('端口扫描类型为自定义时，请填写自定义端口');
+                    }
+                    if (!Number.isFinite(normalizedHostTimeout) || normalizedHostTimeout <= 0) {
+                      throw new Error('主机超时时间(s) 必须大于 0');
+                    }
+                    if (!Number.isFinite(normalizedParallelism) || normalizedParallelism <= 0) {
+                      throw new Error('探测报文并行度必须大于 0');
+                    }
+                    if (!Number.isFinite(normalizedMinRate) || normalizedMinRate <= 0) {
+                      throw new Error('最少发包速率必须大于 0');
+                    }
+
+                    payload = updatePayloadValue(payload, policyNamePath, normalizedPolicyName);
+                    payload = updatePayloadValue(payload, getPolicyPath('ip_config.host_timeout'), Math.floor(normalizedHostTimeout));
+                    payload = updatePayloadValue(payload, getPolicyPath('ip_config.port_parallelism'), Math.floor(normalizedParallelism));
+                    payload = updatePayloadValue(payload, getPolicyPath('ip_config.port_min_rate'), Math.floor(normalizedMinRate));
+                    if (normalizedPortScanType === 'custom') {
+                      payload = updatePayloadValue(payload, getPolicyPath('ip_config.port_custom'), normalizedPortCustom);
+                    }
+                  }
                   await onSubmit(payload, file);
                   onClose();
                 } catch (err: any) {
@@ -2992,7 +3375,7 @@ function ActionDialog({
               className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider uppercase"
               disabled={loading}
             >
-              {loading ? '执行中...' : '执行'}
+              {loading ? '执行中...' : isPolicyAction ? '确定' : '执行'}
             </button>
           </div>
         </div>
@@ -3918,6 +4301,7 @@ function TableModuleView({
 
       {dialogAction ? (
         <ActionDialog
+          token={token}
           action={dialogAction}
           initialPayload={dialogPayload}
           onClose={() => setDialogAction(null)}
@@ -5044,6 +5428,7 @@ function MainShell() {
 
       {globalAction ? (
         <ActionDialog
+          token={token}
           action={globalAction}
           initialPayload={globalActionPayload}
           onClose={() => setGlobalAction(null)}
