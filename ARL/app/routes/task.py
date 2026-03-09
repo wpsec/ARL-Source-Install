@@ -83,6 +83,7 @@ base_search_task_fields = {
     'name': fields.String(required=False, description="任务名称"),
     'target': fields.String(description="任务目标（域名或IP）"),
     'status': fields.String(description="任务状态（waiting/running/done/stop/error）"),
+    'type': fields.String(description="任务类型（domain/ip/risk_cruising/fofa/asset_site_add）"),
     '_id': fields.String(description="任务ID"),
     'task_tag': fields.String(description="任务标签（task/monitor/risk_cruising）"),
     'options.domain_brute': fields.Boolean(description="是否开启域名爆破"),

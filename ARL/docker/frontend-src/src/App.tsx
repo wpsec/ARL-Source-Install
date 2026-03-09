@@ -54,6 +54,8 @@ import {
   Cell,
 } from 'recharts';
 
+declare const __ARL_VERSION__: string;
+
 type HttpMethod = 'GET' | 'POST';
 type JsonValue = Record<string, any>;
 
@@ -134,18 +136,64 @@ const modules: ModuleConfig[] = [
   {
     id: 'task',
     label: '任务管理',
-    description: '任务下发、停止、重启、删除、导出',
+    description: '任务下发、全局查看、批量停止/删除/导出',
     group: '核心功能',
     icon: Activity,
     listPath: '/task/',
     rowIdKey: '_id',
     defaultOrder: '-_id',
     quickFilterKey: 'name',
+    showIndex: false,
+    columns: ['name', 'target', 'statistic_summary', 'options_summary', 'progress', 'status', 'start_time', 'end_time', '_id'],
+    columnLabels: {
+      name: '任务名',
+      target: '目标',
+      statistic_summary: '统计',
+      options_summary: '配置项',
+      progress: '扫描进度',
+      status: '状态',
+      start_time: '开始时间',
+      end_time: '结束时间',
+      _id: 'Task_Id',
+    },
+    searchFields: [
+      { key: 'name', label: '任务名', placeholder: '请输入任务名进行搜索' },
+      { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+      { key: '_id', label: 'Task_Id', placeholder: '请输入Task_Id进行搜索' },
+      {
+        key: 'status',
+        label: '状态',
+        placeholder: '请选择状态',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '等待中', value: 'waiting' },
+          { label: '运行中', value: 'running' },
+          { label: '已完成', value: 'done' },
+          { label: '已停止', value: 'stop' },
+          { label: '异常', value: 'error' },
+        ],
+      },
+      {
+        key: 'type',
+        label: '任务类型',
+        placeholder: '请选择任务类型',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '域名任务', value: 'domain' },
+          { label: 'IP任务', value: 'ip' },
+          { label: '风险巡航任务', value: 'risk_cruising' },
+          { label: 'FOFA任务', value: 'fofa' },
+          { label: '添加站点任务', value: 'asset_site_add' },
+        ],
+      },
+    ],
     exportPath: '/export/{task_id}',
     actions: [
       {
         id: 'create_task',
-        label: '新建任务',
+        label: '添加任务',
         method: 'POST',
         path: '/task/',
         payloadTemplate: {
@@ -187,7 +235,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_stop_batch',
-        label: '停止所选',
+        label: '批量停止',
         method: 'POST',
         path: '/task/batch_stop/',
         selectedField: 'task_id',
@@ -209,7 +257,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_delete_batch',
-        label: '删除所选',
+        label: '批量删除',
         method: 'POST',
         path: '/task/delete/',
         selectedField: 'task_id',
@@ -326,7 +374,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_excel_report',
-        label: '批量合并报告',
+        label: '批量导出',
         method: 'POST',
         path: '/export/batch',
         selectedField: 'task_ids',
@@ -1182,15 +1230,40 @@ const modules: ModuleConfig[] = [
     listPath: '/github_scheduler/',
     rowIdKey: '_id',
     quickFilterKey: 'name',
+    columns: ['name', 'keyword', 'cron', 'status', 'run_number', 'last_run_date', 'next_run_date'],
+    columnLabels: {
+      name: '任务名',
+      keyword: '关键字',
+      cron: 'cron表达式',
+      status: '状态',
+      run_number: '运行次数',
+      last_run_date: '上次运行时间',
+      next_run_date: '下次运行时间',
+    },
+    searchFields: [
+      { key: 'name', label: '任务名称', placeholder: '请输入任务名称进行搜索' },
+      { key: 'keyword', label: '关键字', placeholder: '请输入关键字进行搜索' },
+      {
+        key: 'status',
+        label: '状态',
+        placeholder: '请选择状态',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '运行中', value: 'running' },
+          { label: '停止', value: 'stop' },
+        ],
+      },
+    ],
     actions: [
       {
         id: 'github_scheduler_add',
-        label: '新增监控任务',
+        label: '添加任务',
         method: 'POST',
         path: '/github_scheduler/',
         payloadTemplate: {
-          name: 'GitHub监控',
-          keyword: 'sk_live_',
+          name: 'GitHub监控任务',
+          keyword: 'AKIA',
           cron: '0 */6 * * *',
           dingding_notify: true,
           kb_notify_enable: false,
@@ -1577,8 +1650,105 @@ function getValueByPath(source: any, path: string): any {
   return cursor;
 }
 
+function getTaskStatusLabel(rawStatus: any): string {
+  const normalized = String(rawStatus ?? '').toLowerCase();
+  if (!normalized) return '未知';
+  if (normalized === 'waiting') return '等待中';
+  if (normalized === 'running') return '运行中';
+  if (normalized === 'done') return '已完成';
+  if (normalized === 'stop') return '已停止';
+  if (normalized === 'error') return '异常';
+  if (/^\w+\s+\d+\/\d+$/i.test(normalized)) return normalized;
+  if (normalized.includes('run') || normalized.includes('wait') || normalized.includes('queue') || normalized.includes('start')) return '运行中';
+  if (normalized.includes('done') || normalized.includes('finish') || normalized.includes('success')) return '已完成';
+  if (normalized.includes('stop') || normalized.includes('cancel')) return '已停止';
+  if (normalized.includes('error') || normalized.includes('fail')) return '异常';
+  return normalized;
+}
+
+function getTaskTypeLabel(rawType: any): string {
+  const mapping: Record<string, string> = {
+    domain: '域名任务',
+    ip: 'IP任务',
+    risk_cruising: '风险巡航任务',
+    fofa: 'FOFA任务',
+    asset_site_add: '添加站点任务',
+    asset_site_update: '站点更新任务',
+    asset_wih_update: 'WIH更新任务',
+  };
+  const normalized = String(rawType ?? '').toLowerCase();
+  return mapping[normalized] || normalizeValue(rawType);
+}
+
+function buildTaskStatisticSummary(row: any): string {
+  const stat = row?.statistic;
+  if (!stat || typeof stat !== 'object' || Array.isArray(stat)) return '-';
+  const siteCnt = Number(stat.site_cnt || 0);
+  const domainCnt = Number(stat.domain_cnt || 0);
+  const ipCnt = Number(stat.ip_cnt || 0);
+  const vulnCnt = Number(stat.vuln_cnt || 0);
+  return `站点:${siteCnt} 域名:${domainCnt} IP:${ipCnt} 漏洞:${vulnCnt}`;
+}
+
+function buildTaskOptionsSummary(row: any): string {
+  const options = row?.options;
+  if (!options || typeof options !== 'object' || Array.isArray(options)) return '-';
+  const enabled = Object.entries(options)
+    .filter(([, value]) => value === true)
+    .map(([key]) => fieldLabelMap[key] || humanizeField(key));
+  if (enabled.length === 0) return '未开启可选项';
+  const preview = enabled.slice(0, 4).join('、');
+  if (enabled.length <= 4) return `${enabled.length}项: ${preview}`;
+  return `${enabled.length}项: ${preview}...`;
+}
+
+function getTaskProgressPercent(row: any): number {
+  const status = String(row?.status || '').toLowerCase();
+  if (status === 'done') return 100;
+  if (status === 'waiting') return 0;
+  if (status === 'error' || status === 'stop') return 100;
+
+  const ratioMatch = status.match(/(\d+)\s*\/\s*(\d+)/);
+  if (ratioMatch) {
+    const current = Number(ratioMatch[1]);
+    const total = Number(ratioMatch[2]);
+    if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
+      const ratio = Math.round((current / total) * 100);
+      return Math.min(99, Math.max(1, ratio));
+    }
+  }
+
+  const options = row?.options && typeof row.options === 'object' ? row.options : {};
+  const enabledOptionCount = Object.values(options).filter((value) => value === true).length;
+  const serviceDoneCount = Array.isArray(row?.service) ? row.service.length : 0;
+  const estimatedTotal = Math.max(enabledOptionCount + 2, 4);
+  const estimated = Math.round((serviceDoneCount / estimatedTotal) * 100);
+  if (status.includes('run') || status.includes('wait') || status.includes('queue') || status.includes('start')) {
+    return Math.min(99, Math.max(5, estimated));
+  }
+  return Math.min(99, Math.max(0, estimated));
+}
+
 function formatModuleCellValue(moduleId: string, column: string, row: any): string {
   const value = getValueByPath(row, column);
+
+  if (moduleId === 'task') {
+    if (column === 'status') {
+      return getTaskStatusLabel(value);
+    }
+    if (column === 'type') {
+      return getTaskTypeLabel(value);
+    }
+    if (column === 'statistic_summary') {
+      return buildTaskStatisticSummary(row);
+    }
+    if (column === 'options_summary') {
+      return buildTaskOptionsSummary(row);
+    }
+    if (column === 'progress') {
+      return `${getTaskProgressPercent(row)}%`;
+    }
+  }
 
   if (moduleId === 'task_schedule') {
     if (column === 'schedule_type') {
@@ -1606,6 +1776,16 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
         return normalizeValue(row?.cron || '-');
       }
       return normalizeValue(row?.cron || row?.start_date || '-');
+    }
+  }
+
+  if (moduleId === 'github_scheduler') {
+    if (column === 'status') {
+      const mapping: Record<string, string> = {
+        running: '运行中',
+        stop: '停止',
+      };
+      return mapping[String(value || '').toLowerCase()] || normalizeValue(value);
     }
   }
 
@@ -1844,8 +2024,10 @@ function LoginView({
             <Shield className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-black tracking-tight">ARL 管理台</h1>
-            <p className="text-xs text-brand-text-muted font-semibold uppercase tracking-widest">UI 重构版</p>
+            <h1 className="text-2xl font-black tracking-tight">ARL互联网资产自动化收集系统</h1>
+            <p className="text-xs text-brand-text-muted font-semibold mt-1">
+              版本：{__ARL_VERSION__}
+            </p>
           </div>
         </div>
 
@@ -1919,7 +2101,7 @@ function DashboardView({
   onQuickCreateTask,
 }: {
   token: string;
-  onOpenModule: (moduleId: string) => void;
+  onOpenModule: (moduleId: string, nextFilters?: JsonValue) => void;
   onQuickCreateTask: () => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -2669,6 +2851,7 @@ function ActionDialog({
   const isTaskCreate = action.id === 'create_task';
   const isAssetScopeCreate = action.id === 'asset_scope_add';
   const isTaskScheduleCreate = action.id === 'task_schedule_add';
+  const isGithubSchedulerCreate = action.id === 'github_scheduler_add';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
   const displayFields = useMemo(() => fields, [fields]);
@@ -2727,6 +2910,11 @@ function ActionDialog({
   const taskScheduleTag = String(formPayload?.task_tag ?? 'task') === 'risk_cruising' ? 'risk_cruising' : 'task';
   const taskScheduleNotifyEnable = Boolean(formPayload?.notify_enable);
   const taskScheduleNotifyKbEnable = Boolean(formPayload?.notify_kb_enable);
+  const githubSchedulerName = String(formPayload?.name ?? '');
+  const githubSchedulerKeyword = String(formPayload?.keyword ?? '');
+  const githubSchedulerCron = String(formPayload?.cron ?? '');
+  const githubSchedulerDingdingNotify = Boolean(formPayload?.dingding_notify);
+  const githubSchedulerKbNotifyEnable = Boolean(formPayload?.kb_notify_enable);
   const scopeGroupName = String(formPayload?.name ?? '');
   const scopeType = String(formPayload?.scope_type ?? 'domain') === 'ip' ? 'ip' : 'domain';
   const scopeText = String(formPayload?.scope ?? '');
@@ -3084,7 +3272,7 @@ function ActionDialog({
             <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">名称</label>
+                  <label className="text-sm font-semibold text-brand-text-muted">名称</label>
                   <input
                     value={taskScheduleName}
                     disabled={!editable}
@@ -3094,7 +3282,7 @@ function ActionDialog({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">策略</label>
+                  <label className="text-sm font-semibold text-brand-text-muted">策略</label>
                   <div className="relative">
                     <select
                       value={taskSchedulePolicyId}
@@ -3116,7 +3304,7 @@ function ActionDialog({
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">计划类型</label>
+                  <label className="text-sm font-semibold text-brand-text-muted">计划类型</label>
                   <div className="relative">
                     <select
                       value={taskScheduleType}
@@ -3140,7 +3328,7 @@ function ActionDialog({
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">任务类别</label>
+                  <label className="text-sm font-semibold text-brand-text-muted">任务类别</label>
                   <div className="relative">
                     <select
                       value={taskScheduleTag}
@@ -3158,7 +3346,7 @@ function ActionDialog({
 
               {taskScheduleType === 'future_scan' ? (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">开始时间</label>
+                  <label className="text-sm font-semibold text-brand-text-muted">开始时间</label>
                   <input
                     type="datetime-local"
                     value={taskScheduleStartDate}
@@ -3169,7 +3357,7 @@ function ActionDialog({
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">CRON</label>
+                  <label className="text-sm font-semibold text-brand-text-muted">CRON</label>
                   <input
                     value={taskScheduleCron}
                     disabled={!editable}
@@ -3181,7 +3369,7 @@ function ActionDialog({
               )}
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">目标（支持多行，一行一个目标资产）</label>
+                <label className="text-sm font-semibold text-brand-text-muted">目标（支持多行，一行一个目标资产）</label>
                 <textarea
                   value={taskScheduleTarget}
                   disabled={!editable}
@@ -3223,6 +3411,64 @@ function ActionDialog({
                   {taskSchedulePolicyError}
                 </div>
               ) : null}
+            </div>
+          ) : isGithubSchedulerCreate ? (
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-brand-text-muted">任务名</label>
+                <input
+                  value={githubSchedulerName}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  placeholder="请输入任务名"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-brand-text-muted">关键字</label>
+                <input
+                  value={githubSchedulerKeyword}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'keyword', event.target.value))}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  placeholder="例如：AKIA"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-brand-text-muted">cron表达式</label>
+                <input
+                  value={githubSchedulerCron}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'cron', event.target.value))}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  placeholder="例如：0 */6 * * *"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition">
+                  <input
+                    type="checkbox"
+                    checked={githubSchedulerDingdingNotify}
+                    disabled={!editable}
+                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'dingding_notify', event.target.checked))}
+                  />
+                  <span className="font-medium">钉钉通知</span>
+                </label>
+                <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition">
+                  <input
+                    type="checkbox"
+                    checked={githubSchedulerKbNotifyEnable}
+                    disabled={!editable}
+                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'kb_notify_enable', event.target.checked))}
+                  />
+                  <span className="font-medium">推送钉钉知识库</span>
+                </label>
+              </div>
             </div>
           ) : isAssetScopeCreate ? (
             <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
@@ -3696,6 +3942,27 @@ function ActionDialog({
                       payload.start_date = '';
                     }
                   }
+                  if (isGithubSchedulerCreate && editable) {
+                    const normalizedName = String(payload.name || '').trim();
+                    const normalizedKeyword = String(payload.keyword || '').trim();
+                    const normalizedCron = String(payload.cron || '').trim();
+
+                    if (!normalizedName) {
+                      throw new Error('请填写任务名');
+                    }
+                    if (!normalizedKeyword) {
+                      throw new Error('请填写关键字');
+                    }
+                    if (!normalizedCron) {
+                      throw new Error('请填写 cron 表达式');
+                    }
+
+                    payload.name = normalizedName;
+                    payload.keyword = normalizedKeyword;
+                    payload.cron = normalizedCron;
+                    payload.dingding_notify = Boolean(payload.dingding_notify);
+                    payload.kb_notify_enable = Boolean(payload.kb_notify_enable);
+                  }
                   if (isAssetScopeCreate && editable) {
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedScopes = String(payload.scope || '')
@@ -3761,7 +4028,7 @@ function ActionDialog({
               className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider uppercase"
               disabled={loading}
             >
-              {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate) ? '确定' : '执行'}
+              {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerCreate) ? '确定' : '执行'}
             </button>
           </div>
         </div>
@@ -3774,10 +4041,14 @@ function TableModuleView({
   module,
   token,
   onOpenModule,
+  externalFilters,
+  onClearExternalFilters,
 }: {
   module: ModuleConfig;
   token: string;
-  onOpenModule: (moduleId: string) => void;
+  onOpenModule: (moduleId: string, nextFilters?: JsonValue) => void;
+  externalFilters?: JsonValue;
+  onClearExternalFilters?: () => void;
 }) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3809,6 +4080,11 @@ function TableModuleView({
   const [policyTaskName, setPolicyTaskName] = useState('');
   const [policyTaskTarget, setPolicyTaskTarget] = useState('');
   const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const activeExternalFilters = useMemo(
+    () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
+    [externalFilters]
+  );
+  const hasExternalFilters = useMemo(() => Object.keys(activeExternalFilters).length > 0, [activeExternalFilters]);
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
@@ -3897,13 +4173,13 @@ function TableModuleView({
         }
         filters[field.key] = text;
       });
-      return filters;
+      return { ...activeExternalFilters, ...filters };
     }
     if (module.quickFilterKey && quickFilter.trim()) {
       filters[module.quickFilterKey] = quickFilter.trim();
     }
-    return filters;
-  }, [hasAdvancedSearch, module.quickFilterKey, module.searchFields, quickFilter, searchForm]);
+    return { ...activeExternalFilters, ...filters };
+  }, [activeExternalFilters, hasAdvancedSearch, module.quickFilterKey, module.searchFields, quickFilter, searchForm]);
 
   const clearSearchFilters = useCallback(() => {
     if (hasAdvancedSearch) {
@@ -3985,6 +4261,12 @@ function TableModuleView({
     }
     if (module.id === 'task_schedule') {
       return moduleActions.filter((action) => ['task_schedule_add', 'task_schedule_stop', 'task_schedule_delete'].includes(action.id));
+    }
+    if (module.id === 'task') {
+      return moduleActions.filter((action) => ['create_task', 'task_stop_batch', 'task_delete_batch', 'task_batch_excel_report'].includes(action.id));
+    }
+    if (module.id === 'github_scheduler') {
+      return moduleActions.filter((action) => action.id === 'github_scheduler_add');
     }
     return moduleActions;
   }, [module.id, moduleActions]);
@@ -4408,11 +4690,122 @@ function TableModuleView({
     }
   };
 
+  const stopGithubSchedulerRow = async (jobId: string) => {
+    if (module.id !== 'github_scheduler') return;
+    if (!jobId) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/github_scheduler/stop/', {
+        method: 'POST',
+        body: {
+          _id: [jobId],
+        },
+      });
+      setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '操作失败');
+    }
+  };
+
+  const recoverGithubSchedulerRow = async (jobId: string) => {
+    if (module.id !== 'github_scheduler') return;
+    if (!jobId) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/github_scheduler/recover/', {
+        method: 'POST',
+        body: {
+          _id: [jobId],
+        },
+      });
+      setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '操作失败');
+    }
+  };
+
+  const deleteGithubSchedulerRow = async (jobId: string) => {
+    if (module.id !== 'github_scheduler') return;
+    if (!jobId) return;
+    if (!window.confirm('确认删除该 GitHub 监控任务吗？')) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/github_scheduler/delete/', {
+        method: 'POST',
+        body: {
+          _id: [jobId],
+        },
+      });
+      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '删除失败');
+    }
+  };
+
+  const openTaskGlobalView = () => {
+    if (module.id !== 'task') return;
+    onOpenModule('site');
+  };
+
+  const openTaskLocalView = (taskId: string) => {
+    if (module.id !== 'task') return;
+    if (!taskId) return;
+    onOpenModule('site', { task_id: taskId });
+  };
+
+  const stopTaskRow = async (taskId: string) => {
+    if (module.id !== 'task') return;
+    if (!taskId) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/task/batch_stop/', {
+        method: 'POST',
+        body: {
+          task_id: [taskId],
+        },
+      });
+      setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '操作失败');
+    }
+  };
+
+  const deleteTaskRow = async (taskId: string) => {
+    if (module.id !== 'task') return;
+    if (!taskId) return;
+    if (!window.confirm('确认删除该任务吗？')) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/task/delete/', {
+        method: 'POST',
+        body: {
+          task_id: [taskId],
+          del_task_data: false,
+        },
+      });
+      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '删除失败');
+    }
+  };
+
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
+  const showTaskRowOperate = module.id === 'task';
   const showAssetScopeRowOperate = module.id === 'asset_scope';
   const showPolicyRowOperate = module.id === 'policy';
   const showTaskScheduleRowOperate = module.id === 'task_schedule';
+  const showGithubSchedulerRowOperate = module.id === 'github_scheduler';
 
   return (
     <div className="p-8 space-y-6">
@@ -4470,8 +4863,47 @@ function TableModuleView({
           ))}
         </div>
       ) : null}
+      {['site', 'domain', 'ip'].includes(module.id) ? (
+        <div className="flex items-center gap-2">
+          {[
+            { id: 'site', label: '站点' },
+            { id: 'domain', label: '域名' },
+            { id: 'ip', label: 'IP' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => onOpenModule(item.id, hasExternalFilters ? activeExternalFilters : undefined)}
+              className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
+                module.id === item.id
+                  ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                  : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+        {hasExternalFilters ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-brand-text-muted">局部查看筛选:</span>
+            {Object.entries(activeExternalFilters).map(([key, value]) => (
+              <span key={key} className="text-xs px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/60 font-mono">
+                {key}={String(value)}
+              </span>
+            ))}
+            {onClearExternalFilters ? (
+              <button
+                onClick={onClearExternalFilters}
+                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+              >
+                清除局部查看
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {hasAdvancedSearch ? (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -4539,7 +4971,7 @@ function TableModuleView({
                 <RefreshCw className="w-4 h-4" />
                 {module.id === 'asset_site' ? '清除' : '重置'}
               </button>
-              {module.exportPath ? (
+              {module.exportPath && module.id !== 'task' ? (
                 <button
                   onClick={() => void runExport()}
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
@@ -4556,6 +4988,15 @@ function TableModuleView({
                 >
                   <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
                   风险任务下发
+                </button>
+              ) : null}
+              {module.id === 'task' ? (
+                <button
+                  onClick={openTaskGlobalView}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                >
+                  <ArrowDownToLine className="w-4 h-4" />
+                  全局查看
                 </button>
               ) : null}
               {module.id === 'asset_ip' ? (
@@ -4669,7 +5110,7 @@ function TableModuleView({
                       {getColumnLabel(column)}
                     </th>
                   ))}
-                  {showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate ? (
+                  {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubSchedulerRowOperate ? (
                     <th className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">操作</th>
                   ) : null}
                 </tr>
@@ -4703,11 +5144,52 @@ function TableModuleView({
                       ) : null}
                       {columns.map((column) => (
                         <td key={column} className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
-                          {formatModuleCellValue(module.id, column, row)}
+                          {module.id === 'task' && column === 'progress' ? (
+                            <div className="min-w-[160px] space-y-1">
+                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="font-semibold text-brand-text-muted">进度</span>
+                                <span className="font-black text-white">{formatModuleCellValue(module.id, column, row)}</span>
+                              </div>
+                              <div className="h-2 bg-brand-bg rounded-full border border-brand-border overflow-hidden">
+                                <div
+                                  className="h-full bg-brand-accent rounded-full transition-all duration-300"
+                                  style={{ width: `${getTaskProgressPercent(row)}%` }}
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            formatModuleCellValue(module.id, column, row)
+                          )}
                         </td>
                       ))}
-                      {showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate ? (
+                      {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubSchedulerRowOperate ? (
                         <td className="px-4 py-3 align-top whitespace-nowrap">
+                          {showTaskRowOperate ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => openTaskLocalView(id)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                局部查看
+                              </button>
+                              {!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
+                                <button
+                                  onClick={() => void stopTaskRow(id)}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  停止
+                                </button>
+                              ) : null}
+                              {['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
+                                <button
+                                  onClick={() => void deleteTaskRow(id)}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  删除
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
                           {showAssetScopeRowOperate ? (
                             <button
                               onClick={() => void deleteAssetScopeRow(id)}
@@ -4774,6 +5256,31 @@ function TableModuleView({
                               </button>
                             </div>
                           ) : null}
+                          {showGithubSchedulerRowOperate ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {String(row?.status || '').toLowerCase() === 'stop' ? (
+                                <button
+                                  onClick={() => void recoverGithubSchedulerRow(id)}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  恢复
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => void stopGithubSchedulerRow(id)}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  停止
+                                </button>
+                              )}
+                              <button
+                                onClick={() => void deleteGithubSchedulerRow(id)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ) : null}
                         </td>
                       ) : null}
                     </tr>
@@ -4782,7 +5289,7 @@ function TableModuleView({
                 {rows.length === 0 && !loading ? (
                   <tr>
                     <td
-                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate ? 1 : 0), 2)}
+                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubSchedulerRowOperate ? 1 : 0), 2)}
                       className="px-4 py-10 text-center text-brand-text-muted"
                     >
                       暂无数据
@@ -5721,6 +6228,7 @@ function MainShell() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
   const [activeModuleId, setActiveModuleId] = useState(() => resolveStoredModuleId(localStorage.getItem(ACTIVE_MODULE_KEY)));
+  const [moduleExternalFilters, setModuleExternalFilters] = useState<Record<string, JsonValue>>({});
   const [globalAction, setGlobalAction] = useState<ModuleAction | null>(null);
   const [globalActionPayload, setGlobalActionPayload] = useState<JsonValue>({});
   const [globalNotice, setGlobalNotice] = useState('');
@@ -5758,10 +6266,34 @@ function MainShell() {
     reversed.asset_ip = 'assets';
     return reversed;
   }, []);
+  const openModule = useCallback((moduleId: string, nextFilters?: JsonValue) => {
+    setActiveModuleId(moduleId);
+    setModuleExternalFilters((prev) => {
+      const next = { ...prev };
+      if (nextFilters && Object.keys(nextFilters).length > 0) {
+        next[moduleId] = deepClone(nextFilters);
+      } else {
+        delete next[moduleId];
+      }
+      return next;
+    });
+  }, []);
+  const activeExternalFilters = useMemo(
+    () => moduleExternalFilters[activeModuleId] || {},
+    [moduleExternalFilters, activeModuleId]
+  );
+  const clearActiveExternalFilters = useCallback(() => {
+    setModuleExternalFilters((prev) => {
+      if (!prev[activeModuleId]) return prev;
+      const next = { ...prev };
+      delete next[activeModuleId];
+      return next;
+    });
+  }, [activeModuleId]);
   const activeViewId = moduleToViewMap[activeModuleId] || activeModuleId;
   const onSidebarViewChange = (viewId: string) => {
     const mappedModuleId = viewToModuleMap[viewId] || viewId;
-    setActiveModuleId(mappedModuleId);
+    openModule(mappedModuleId);
   };
 
   const doLogin = async (name: string, pass: string) => {
@@ -5786,7 +6318,7 @@ function MainShell() {
       localStorage.setItem(USERNAME_KEY, userName);
       setToken(newToken);
       setUsername(userName);
-      setActiveModuleId('dashboard');
+      openModule('dashboard');
     } catch (err: any) {
       setLoginError(err?.message || '登录失败');
     } finally {
@@ -5804,6 +6336,7 @@ function MainShell() {
     localStorage.removeItem(USERNAME_KEY);
     localStorage.removeItem(ACTIVE_MODULE_KEY);
     setToken('');
+    setModuleExternalFilters({});
     setActiveModuleId('dashboard');
   };
 
@@ -5836,7 +6369,7 @@ function MainShell() {
     const createTaskAction = taskModule.actions?.find((action) => action.id === 'create_task');
     if (!createTaskAction) {
       setGlobalNotice('任务模块未配置创建动作，已跳转任务管理');
-      setActiveModuleId('task');
+      openModule('task');
       return;
     }
 
@@ -5877,7 +6410,7 @@ function MainShell() {
 
     setGlobalNotice(result?.message ? `执行成功: ${result.message}` : '操作执行成功');
     if (action.id === 'create_task') {
-      setActiveModuleId('task');
+      openModule('task');
     }
   };
 
@@ -5952,7 +6485,7 @@ function MainShell() {
           </div>
         </div>
         {activeModule.id === 'dashboard' ? (
-          <DashboardView token={token} onOpenModule={setActiveModuleId} onQuickCreateTask={openQuickCreateTask} />
+          <DashboardView token={token} onOpenModule={openModule} onQuickCreateTask={openQuickCreateTask} />
         ) : null}
         {activeModule.id === 'system_monitor' ? <SystemMonitorView token={token} /> : null}
         {activeModule.id === 'api_console' ? <ApiConsoleView token={token} /> : null}
@@ -5961,7 +6494,13 @@ function MainShell() {
         activeModule.id !== 'system_monitor' &&
         activeModule.id !== 'api_console' &&
         activeModule.id !== 'config_console' ? (
-          <TableModuleView module={activeModule} token={token} onOpenModule={setActiveModuleId} />
+          <TableModuleView
+            module={activeModule}
+            token={token}
+            onOpenModule={openModule}
+            externalFilters={activeExternalFilters}
+            onClearExternalFilters={clearActiveExternalFilters}
+          />
         ) : null}
       </main>
 
