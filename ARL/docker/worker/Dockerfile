@@ -6,7 +6,8 @@ RUN yum install epel-release python36  fontconfig wqy-microhei-fonts -y
 
 RUN python3 -m ensurepip --default-pip
 
-RUN pip3 install --upgrade "pip<24.1"
+RUN pip3 install --upgrade "pip<24.1" "setuptools<81" && \
+    python3 -c "import pkg_resources; print('pkg_resources ok')"
 
 RUN rpm -vhU https://nmap.org/dist/nmap-7.80-1.x86_64.rpm
 

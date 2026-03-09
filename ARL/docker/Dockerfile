@@ -60,8 +60,9 @@ COPY ARL-NPoC/ /opt/ARL-NPoC/
 COPY ARL/requirements.txt /code/requirements.txt
 COPY tools/playwright/ /tmp/playwright-offline/
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN pip3 install --upgrade "pip<24.1" setuptools wheel && \
+RUN pip3 install --upgrade "pip<24.1" "setuptools<81" wheel && \
     pip3 --version && \
+    python3 -c "import pkg_resources; print('pkg_resources ok')" && \
     pip3 install --no-cache-dir -r /code/requirements.txt
 # 尝试安装 NPoC，失败不中断
 RUN pip3 install --no-cache-dir -e /opt/ARL-NPoC/ || true
