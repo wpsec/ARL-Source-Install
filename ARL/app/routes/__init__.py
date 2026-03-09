@@ -167,8 +167,19 @@ class ARLResource(Resource):
             # 字符串查询（模糊或精确）
             elif isinstance(args[key], str):
                 if key in EQUAL_FIELDS:
-                    # 精确匹配
-                    query_args[key] = args[key]
+                    # 支持多值精确匹配：task_id/scope_id 可传入逗号或空白分隔值，自动转换为 $in 查询
+                    raw_text = args[key].strip()
+                    if key in ["task_id", "scope_id"]:
+                        values = [item for item in re.split(r"[,\s]+", raw_text) if item]
+                        if len(values) > 1:
+                            query_args[key] = {"$in": values}
+                        elif len(values) == 1:
+                            query_args[key] = values[0]
+                        else:
+                            query_args[key] = raw_text
+                    else:
+                        # 其它等值字段保持单值精确匹配
+                        query_args[key] = raw_text
                 else:
                     # 模糊匹配（不区分大小写）
                     query_args[key] = {

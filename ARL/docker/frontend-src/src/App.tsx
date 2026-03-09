@@ -144,7 +144,7 @@ const modules: ModuleConfig[] = [
     defaultOrder: '-_id',
     quickFilterKey: 'name',
     showIndex: false,
-    columns: ['name', 'target', 'statistic_summary', 'options_summary', 'progress', 'status', 'start_time', 'end_time', '_id'],
+    columns: ['name', 'target', 'statistic_summary', 'progress', 'options_summary', 'status', 'start_time', 'end_time', '_id'],
     columnLabels: {
       name: '任务名',
       target: '目标',
@@ -680,6 +680,51 @@ const modules: ModuleConfig[] = [
           scope_type: 'domain',
         },
       },
+      {
+        id: 'asset_scope_add_scope',
+        label: '添加资产分组范围',
+        method: 'POST',
+        path: '/asset_scope/add/',
+        payloadTemplate: {
+          scope_id: '',
+          scope: 'example.com',
+        },
+      },
+      {
+        id: 'asset_scope_add_scheduler',
+        label: '添加监控任务',
+        method: 'POST',
+        path: '/scheduler/add/',
+        payloadTemplate: {
+          scope_id: '',
+          domain: 'example.com',
+          interval: 86400,
+          name: '资产监控任务',
+          policy_id: '',
+        },
+      },
+      {
+        id: 'asset_scope_add_site_monitor',
+        label: '添加站点监控任务',
+        method: 'POST',
+        path: '/scheduler/add/site_monitor/',
+        payloadTemplate: {
+          scope_id: '',
+          interval: 86400,
+          name: '站点监控任务',
+        },
+      },
+      {
+        id: 'asset_scope_add_wih_monitor',
+        label: '添加WIH监控任务',
+        method: 'POST',
+        path: '/scheduler/add/wih_monitor/',
+        payloadTemplate: {
+          scope_id: '',
+          interval: 86400,
+          name: 'WIH监控任务',
+        },
+      },
     ],
   },
   {
@@ -824,35 +869,35 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'site',
-    label: '站点信息',
+    label: '站点',
     description: '任务扫描站点数据',
     group: '资产数据',
     icon: Globe,
     listPath: '/site/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'site',
+    columns: ['site', 'title', 'headers', 'finger', 'screenshot'],
+    columnLabels: {
+      site: '站点',
+      title: '标题',
+      headers: 'headers',
+      finger: 'finger',
+      screenshot: '截图',
+    },
+    searchFields: [
+      { key: 'site', label: '站点', placeholder: '请输入站点进行搜索' },
+      { key: 'hostname', label: '主机名', placeholder: '请输入主机名进行搜索' },
+      { key: 'title', label: '标题', placeholder: '请输入标题进行搜索' },
+      { key: 'http_server', label: 'Web Server', placeholder: '请输入Web Server进行搜索' },
+      { key: 'status', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
+      { key: 'headers', label: '标头', placeholder: '请输入标头进行搜索' },
+      { key: 'finger.name', label: '指 纹', placeholder: '请输入指 纹进行搜索' },
+      { key: 'favicon.hash', label: 'favicon hash', placeholder: '请输入favicon hash进行搜索', inputType: 'number' },
+      { key: 'tag', label: '标签', placeholder: '请输入标签进行搜索' },
+    ],
     exportPath: '/site/export/',
     actions: [
-      {
-        id: 'site_add_tag',
-        label: '添加标签',
-        method: 'POST',
-        path: '/site/add_tag/',
-        payloadTemplate: {
-          _id: '',
-          tag: '关注',
-        },
-      },
-      {
-        id: 'site_del_tag',
-        label: '删除标签',
-        method: 'POST',
-        path: '/site/delete_tag/',
-        payloadTemplate: {
-          _id: '',
-          tag: '关注',
-        },
-      },
       {
         id: 'site_delete',
         label: '删除所选',
@@ -879,13 +924,29 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'domain',
-    label: '域名信息',
+    label: '子域名',
     description: '任务扫描域名数据',
     group: '资产数据',
     icon: Globe,
     listPath: '/domain/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'domain',
+    columns: ['domain', 'type', 'record', 'ips', 'source'],
+    columnLabels: {
+      domain: '域名',
+      type: '解析类型',
+      record: '记录值',
+      ips: '关联IP',
+      source: '来源',
+    },
+    searchFields: [
+      { key: 'domain', label: '域名', placeholder: '请输入域名进行搜索' },
+      { key: 'record', label: '记录值', placeholder: '请输入记录值进行搜索' },
+      { key: 'type', label: '类型', placeholder: '请输入类型进行搜索' },
+      { key: 'ips', label: 'IP', placeholder: '请输入IP进行搜索' },
+      { key: 'source', label: '来源', placeholder: '请输入来源进行搜索' },
+    ],
     exportPath: '/domain/export/',
     actions: [
       {
@@ -901,13 +962,42 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'ip',
-    label: 'IP信息',
+    label: 'IP',
     description: '任务扫描IP和端口数据',
     group: '资产数据',
     icon: Network,
     listPath: '/ip/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'ip',
+    columns: ['ip', 'os_info.name', 'port_info.port_id', 'domain', 'cdn_name', 'geo_summary', 'asn_summary'],
+    columnLabels: {
+      ip: 'IP',
+      'os_info.name': '操作系统',
+      'port_info.port_id': '开放端口',
+      domain: '关联域名',
+      cdn_name: 'CDN',
+      geo_summary: 'Geo',
+      asn_summary: 'AS',
+    },
+    searchFields: [
+      { key: 'ip', label: 'IP', placeholder: '请输入IP进行搜索' },
+      { key: 'port_info.port_id', label: '端口', placeholder: '请输入端口进行搜索', inputType: 'number' },
+      { key: 'os_info.name', label: '操作系统', placeholder: '请输入操作系统进行搜索' },
+      { key: 'domain', label: '域名', placeholder: '请输入域名进行搜索' },
+      { key: 'cdn_name', label: 'CDN', placeholder: '请输入CDN进行搜索' },
+      {
+        key: 'ip_type',
+        label: 'IP类别',
+        placeholder: '请选择IP类别',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '内网', value: 'PRIVATE' },
+          { label: '公网', value: 'PUBLIC' },
+        ],
+      },
+    ],
     exportPath: '/ip/export/',
     actions: [
       {
@@ -943,18 +1033,51 @@ const modules: ModuleConfig[] = [
     icon: Link,
     listPath: '/url/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'url',
+    columns: ['url', 'title', 'status_code', 'content_length', 'source'],
+    columnLabels: {
+      url: 'URL',
+      title: '标题',
+      status_code: '状态码',
+      content_length: 'body 长度',
+      source: '来源',
+    },
+    searchFields: [
+      { key: 'url', label: 'URL', placeholder: '请输入URL进行搜索' },
+      { key: 'title', label: '标题', placeholder: '请输入标题进行搜索' },
+      { key: 'status_code', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
+      { key: 'content_length', label: 'body 长度', placeholder: '请输入body 长度进行搜索', inputType: 'number' },
+      { key: 'source', label: '来源', placeholder: '请输入来源进行搜索' },
+    ],
     exportPath: '/url/export/',
   },
   {
     id: 'cert',
-    label: '证书信息',
+    label: 'SSL证书',
     description: 'TLS证书资产',
     group: '资产数据',
     icon: Shield,
     listPath: '/cert/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'ip',
+    columns: ['host', 'cert_summary'],
+    columnLabels: {
+      host: 'HOST',
+      cert_summary: 'CERT',
+    },
+    searchFields: [
+      { key: 'ip', label: 'IP字段', placeholder: '请输入IP字段进行搜索' },
+      { key: 'cert.issuer_dn', label: '签发者名称', placeholder: '请输入签发者名称进行搜索' },
+      { key: 'cert.subject_dn', label: '主题名称', placeholder: '请输入主题名称进行搜索' },
+      { key: 'cert.fingerprint.sha1', label: 'SHA-1', placeholder: '请输入SHA-1进行搜索' },
+      {
+        key: 'cert.extensions.subjectAltName',
+        label: '使用者备用名称',
+        placeholder: '请输入使用者备用名称进行搜索',
+      },
+    ],
     actions: [
       {
         id: 'cert_delete',
@@ -969,23 +1092,50 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'service',
-    label: '服务识别',
+    label: '服务',
     description: '端口服务识别结果',
     group: '资产数据',
     icon: Server,
     listPath: '/service/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'service_name',
+    columns: ['service_name', 'ip_port', 'service_info.product'],
+    columnLabels: {
+      service_name: '服务',
+      ip_port: 'IP端口',
+      'service_info.product': 'Product',
+    },
+    searchFields: [
+      { key: 'service_name', label: '服务', placeholder: '请输入服务进行搜索' },
+      { key: 'service_info.ip', label: 'IP', placeholder: '请输入IP进行搜索' },
+      { key: 'service_info.port_id', label: '端口', placeholder: '请输入端口进行搜索', inputType: 'number' },
+      { key: 'service_info.product', label: '产品', placeholder: '请输入产品进行搜索' },
+    ],
   },
   {
     id: 'npoc_service',
-    label: 'NPoC服务',
-    description: 'Python实现服务识别结果',
+    label: 'C段',
+    description: '协议探测与目标结果',
     group: '资产数据',
     icon: Terminal,
     listPath: '/npoc_service/',
     rowIdKey: '_id',
-    quickFilterKey: 'host',
+    showIndex: true,
+    quickFilterKey: 'target',
+    columns: ['scheme', 'host', 'port', 'target'],
+    columnLabels: {
+      scheme: '协议',
+      host: '主机',
+      port: '端口',
+      target: '目标',
+    },
+    searchFields: [
+      { key: 'scheme', label: '协议', placeholder: '请输入协议进行搜索' },
+      { key: 'host', label: '主机', placeholder: '请输入主机进行搜索' },
+      { key: 'port', label: '端口', placeholder: '请输入端口进行搜索' },
+      { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+    ],
   },
   {
     id: 'cip',
@@ -1006,17 +1156,42 @@ const modules: ModuleConfig[] = [
     icon: Activity,
     listPath: '/stat_finger/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'name',
+    columns: ['name', 'cnt'],
+    columnLabels: {
+      name: 'finger',
+      cnt: '数量',
+    },
+    searchFields: [
+      { key: 'name', label: 'finger', placeholder: '请输入finger进行搜索' },
+    ],
   },
   {
     id: 'vuln',
-    label: '漏洞信息',
+    label: '风险',
     description: '漏洞结果查询和处置',
     group: '漏洞与规则',
     icon: AlertTriangle,
     listPath: '/vuln/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'vul_name',
+    columns: ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date'],
+    columnLabels: {
+      vul_name: '漏洞名称',
+      plg_type: '类别',
+      app_name: '应用名',
+      target: '目标',
+      credential: '凭证',
+      save_date: '发现时间',
+    },
+    searchFields: [
+      { key: 'vul_name', label: '漏洞名称', placeholder: '请输入漏洞名称进行搜索' },
+      { key: 'plg_type', label: '类别', placeholder: '请输入类别进行搜索' },
+      { key: 'app_name', label: '应用名', placeholder: '请输入应用名进行搜索' },
+      { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+    ],
     actions: [
       {
         id: 'vuln_delete',
@@ -1031,13 +1206,30 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'nuclei_result',
-    label: 'Nuclei结果',
+    label: 'nuclei',
     description: 'Nuclei 模板扫描结果',
     group: '漏洞与规则',
     icon: FlaskConical,
     listPath: '/nuclei_result/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'vuln_name',
+    columns: ['template_id', 'target', 'vuln_url', 'vuln_name', 'vuln_severity', 'save_date', 'curl_command'],
+    columnLabels: {
+      template_id: '模板ID',
+      target: '目标',
+      vuln_url: '漏洞URL',
+      vuln_name: '漏洞名称',
+      vuln_severity: '漏洞等级',
+      save_date: '保存时间',
+      curl_command: '验证命令',
+    },
+    searchFields: [
+      { key: 'template_id', label: '模版ID', placeholder: '请输入模版ID进行搜索' },
+      { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+      { key: 'vuln_url', label: '漏洞URL', placeholder: '请输入漏洞URL进行搜索' },
+      { key: 'vuln_name', label: '漏洞名称', placeholder: '请输入漏洞名称进行搜索' },
+    ],
     actions: [
       {
         id: 'nuclei_result_delete',
@@ -1058,7 +1250,21 @@ const modules: ModuleConfig[] = [
     icon: ShieldAlert,
     listPath: '/fileleak/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'url',
+    columns: ['url', 'title', 'status_code', 'content_length'],
+    columnLabels: {
+      url: 'URL',
+      title: '标题',
+      status_code: '状态码',
+      content_length: 'body 长度',
+    },
+    searchFields: [
+      { key: 'url', label: 'URL', placeholder: '请输入URL进行搜索' },
+      { key: 'title', label: '标题', placeholder: '请输入标题进行搜索' },
+      { key: 'status_code', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
+      { key: 'content_length', label: 'body 长度', placeholder: '请输入body 长度进行搜索', inputType: 'number' },
+    ],
     actions: [
       {
         id: 'fileleak_delete',
@@ -1073,13 +1279,22 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'wih',
-    label: '任务WIH',
+    label: 'WIH',
     description: '任务中提取的JS信息',
     group: '漏洞与规则',
     icon: FileCode,
-    listPath: '/wih/',
-    rowIdKey: '_id',
+    listPath: '/wih/stat/',
+    rowIdKey: 'content',
+    showIndex: true,
     quickFilterKey: 'content',
+    columns: ['content', 'cnt'],
+    columnLabels: {
+      content: 'finger',
+      cnt: '数量',
+    },
+    searchFields: [
+      { key: 'content', label: 'finger', placeholder: '请输入finger进行搜索' },
+    ],
     exportPath: '/wih/export/',
   },
   {
@@ -1180,6 +1395,34 @@ const modules: ModuleConfig[] = [
     listPath: '/github_task/',
     rowIdKey: '_id',
     quickFilterKey: 'name',
+    columns: ['name', 'keyword', 'result_count', 'status', 'start_time', 'end_time', '_id'],
+    columnLabels: {
+      name: '任务名',
+      keyword: '关键字',
+      result_count: '结果数目',
+      status: '状态',
+      start_time: '开始时间',
+      end_time: '结束时间',
+      _id: '任务id',
+    },
+    searchFields: [
+      { key: 'name', label: '任务名称', placeholder: '请输入任务名称进行搜索' },
+      { key: 'keyword', label: '关键字', placeholder: '请输入关键字进行搜索' },
+      {
+        key: 'status',
+        label: '状态',
+        placeholder: '请选择状态',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '等待中', value: 'waiting' },
+          { label: '运行中', value: 'running' },
+          { label: '已完成', value: 'done' },
+          { label: '已停止', value: 'stop' },
+          { label: '异常', value: 'error' },
+        ],
+      },
+    ],
     actions: [
       {
         id: 'github_task_add',
@@ -1220,6 +1463,19 @@ const modules: ModuleConfig[] = [
     listPath: '/github_result/',
     rowIdKey: '_id',
     quickFilterKey: 'human_content',
+    columns: ['repo_full_name', 'path', 'human_content', 'commit_date', 'keyword'],
+    columnLabels: {
+      repo_full_name: '仓库名',
+      path: '路径',
+      human_content: '内容',
+      commit_date: '提交时间',
+      keyword: '关键字',
+    },
+    searchFields: [
+      { key: 'path', label: '路径名', placeholder: '请输入路径名进行搜索' },
+      { key: 'repo_full_name', label: '仓库名', placeholder: '请输入仓库名进行搜索' },
+      { key: 'human_content', label: '内容', placeholder: '请输入内容进行搜索' },
+    ],
   },
   {
     id: 'github_scheduler',
@@ -1321,6 +1577,20 @@ const modules: ModuleConfig[] = [
     listPath: '/github_monitor_result/',
     rowIdKey: '_id',
     quickFilterKey: 'human_content',
+    columns: ['repo_full_name', 'path', 'human_content', 'commit_date', 'keyword'],
+    columnLabels: {
+      repo_full_name: '仓库名',
+      path: '路径',
+      human_content: '内容',
+      commit_date: '提交时间',
+      keyword: '关键字',
+    },
+    searchFields: [
+      { key: 'path', label: '路径名', placeholder: '请输入路径名进行搜索' },
+      { key: 'repo_full_name', label: '仓库名', placeholder: '请输入仓库名进行搜索' },
+      { key: 'human_content', label: '内容', placeholder: '请输入内容进行搜索' },
+      { key: 'keyword', label: '关键字', placeholder: '请输入关键字进行搜索' },
+    ],
   },
   {
     id: 'task_fofa',
@@ -1702,6 +1972,127 @@ function buildTaskOptionsSummary(row: any): string {
   return `${enabled.length}项: ${preview}...`;
 }
 
+function formatTokenListText(value: any): string {
+  if (value === null || value === undefined) return '-';
+  if (Array.isArray(value)) {
+    const tokens = value
+      .map((item) => String(item || '').trim())
+      .filter((item) => item);
+    return tokens.length > 0 ? tokens.join('\n') : '-';
+  }
+  const text = String(value).trim();
+  if (!text) return '-';
+  if (text.includes('\n')) {
+    return text
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter((item) => item)
+      .join('\n') || '-';
+  }
+  const splitReg = text.includes(',') ? /[,\s]+/ : /\s+/;
+  const tokens = text
+    .split(splitReg)
+    .map((item) => item.trim())
+    .filter((item) => item);
+  if (tokens.length > 1) return tokens.join('\n');
+  return text;
+}
+
+function formatHeaderLines(value: any): string {
+  if (value === null || value === undefined) return '-';
+
+  let source = value;
+  if (typeof source === 'string') {
+    const text = source.trim();
+    if (!text) return '-';
+    try {
+      source = JSON.parse(text);
+    } catch {
+      if (text.includes('\n')) {
+        return text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line)
+          .slice(0, 12)
+          .join('\n');
+      }
+      return truncateText(text, 360);
+    }
+  }
+
+  const lines: string[] = [];
+  const appendLine = (key: string, item: any) => {
+    let itemText = '';
+    if (item === null || item === undefined) {
+      itemText = '';
+    } else if (Array.isArray(item)) {
+      itemText = item.map((part) => String(part ?? '')).filter((part) => part).join(', ');
+    } else if (typeof item === 'object') {
+      itemText = JSON.stringify(item);
+    } else {
+      itemText = String(item);
+    }
+    const normalizedValue = truncateText(itemText, 240);
+    lines.push(key ? `${key}: ${normalizedValue}` : normalizedValue);
+  };
+
+  if (Array.isArray(source)) {
+    source.forEach((item) => {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        Object.entries(item).forEach(([key, subItem]) => appendLine(key, subItem));
+      } else {
+        appendLine('', item);
+      }
+    });
+  } else if (source && typeof source === 'object') {
+    Object.entries(source).forEach(([key, item]) => appendLine(key, item));
+  } else {
+    return truncateText(String(source), 360);
+  }
+
+  if (lines.length === 0) return '-';
+  if (lines.length > 12) {
+    return `${lines.slice(0, 12).join('\n')}\n...`;
+  }
+  return lines.join('\n');
+}
+
+function formatCertSummary(row: any): string {
+  const cert = row?.cert && typeof row.cert === 'object' ? row.cert : {};
+  const toText = (value: any, max = 420): string => {
+    if (value === null || value === undefined) return '-';
+    if (Array.isArray(value)) {
+      const text = value.map((item) => String(item ?? '')).filter((item) => item).join(', ');
+      return truncateText(text || '-', max);
+    }
+    if (typeof value === 'object') {
+      return truncateText(JSON.stringify(value), max);
+    }
+    return truncateText(String(value), max);
+  };
+  const subjectDn = toText(cert?.subject_dn);
+  const issuerDn = toText(cert?.issuer_dn);
+  const san = toText(cert?.extensions?.subjectAltName, 720);
+  const serialNumber = toText(cert?.serial_number);
+  const validityStart = toText(cert?.validity?.start);
+  const validityEnd = toText(cert?.validity?.end);
+  const sha256 = toText(cert?.fingerprint?.sha256);
+  const sha1 = toText(cert?.fingerprint?.sha1);
+  const md5 = toText(cert?.fingerprint?.md5);
+  return [
+    '基本信息',
+    `主题名称: ${subjectDn}`,
+    `签发者名称: ${issuerDn}`,
+    `使用者备用名称: ${san}`,
+    `序列号: ${serialNumber}`,
+    `时间: ${validityStart} 至 ${validityEnd}`,
+    '指纹',
+    `SHA-256: ${sha256}`,
+    `SHA-1: ${sha1}`,
+    `MD5: ${md5}`,
+  ].join('\n');
+}
+
 function getTaskProgressPercent(row: any): number {
   const status = String(row?.status || '').toLowerCase();
   if (status === 'done') return 100;
@@ -1733,6 +2124,9 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
   const value = getValueByPath(row, column);
 
   if (moduleId === 'task') {
+    if (column === 'target') {
+      return formatTokenListText(value);
+    }
     if (column === 'status') {
       return getTaskStatusLabel(value);
     }
@@ -1751,6 +2145,9 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
   }
 
   if (moduleId === 'task_schedule') {
+    if (column === 'target') {
+      return formatTokenListText(value);
+    }
     if (column === 'schedule_type') {
       const mapping: Record<string, string> = {
         future_scan: '定时下发',
@@ -1787,6 +2184,72 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
       };
       return mapping[String(value || '').toLowerCase()] || normalizeValue(value);
     }
+  }
+
+  if (moduleId === 'github_task') {
+    if (column === 'status') {
+      return getTaskStatusLabel(value);
+    }
+    if (column === 'result_count') {
+      const count = Number(row?.statistic?.github_result_cnt || 0);
+      return String(Number.isFinite(count) ? count : 0);
+    }
+  }
+
+  if ((moduleId === 'github_result' || moduleId === 'github_monitor_result') && column === 'commit_date') {
+    return normalizeValue(value ?? row?.commit_time ?? row?.found_time);
+  }
+
+  if (moduleId === 'ip') {
+    if (column === 'geo_summary') {
+      const country = normalizeValue(row?.geo_city?.country_name);
+      const region = normalizeValue(row?.geo_city?.region_name);
+      const city = normalizeValue(row?.geo_city?.city_name);
+      const composed = [country, region, city].filter((item) => item && item !== '-').join(' / ');
+      return composed || '-';
+    }
+    if (column === 'asn_summary') {
+      const asn = normalizeValue(row?.geo_asn?.number);
+      const organization = normalizeValue(row?.geo_asn?.organization);
+      if (asn !== '-' && organization !== '-') return `${asn} ${organization}`;
+      if (asn !== '-') return asn;
+      return organization;
+    }
+  }
+
+  if (moduleId === 'cert') {
+    if (column === 'host') {
+      const ip = normalizeValue(row?.ip);
+      const port = normalizeValue(row?.port);
+      if (ip === '-' && port === '-') return '-';
+      if (port === '-') return ip;
+      return `${ip}:${port}`;
+    }
+    if (column === 'cert_summary') {
+      return formatCertSummary(row);
+    }
+  }
+
+  if (moduleId === 'service' && column === 'ip_port') {
+    const ip = normalizeValue(row?.service_info?.ip);
+    const port = normalizeValue(row?.service_info?.port_id);
+    if (ip === '-' && port === '-') return '-';
+    if (port === '-') return ip;
+    return `${ip}:${port}`;
+  }
+
+  if (moduleId === 'vuln' && column === 'credential') {
+    const verifyData = normalizeValue(row?.verify_data);
+    if (verifyData !== '-') return verifyData;
+    return normalizeValue(row?.verify_obj);
+  }
+
+  if (moduleId === 'asset_scope' && column === 'scope') {
+    return formatTokenListText(value);
+  }
+
+  if (moduleId === 'asset_site' && column === 'headers') {
+    return formatHeaderLines(value);
   }
 
   if (moduleId === 'asset_site' && column === 'finger' && Array.isArray(value)) {
@@ -2851,7 +3314,7 @@ function ActionDialog({
   const isTaskCreate = action.id === 'create_task';
   const isAssetScopeCreate = action.id === 'asset_scope_add';
   const isTaskScheduleCreate = action.id === 'task_schedule_add';
-  const isGithubSchedulerCreate = action.id === 'github_scheduler_add';
+  const isGithubSchedulerAction = action.id === 'github_scheduler_add' || action.id === 'github_scheduler_update';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
   const displayFields = useMemo(() => fields, [fields]);
@@ -3412,7 +3875,7 @@ function ActionDialog({
                 </div>
               ) : null}
             </div>
-          ) : isGithubSchedulerCreate ? (
+          ) : isGithubSchedulerAction ? (
             <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-brand-text-muted">任务名</label>
@@ -3942,7 +4405,7 @@ function ActionDialog({
                       payload.start_date = '';
                     }
                   }
-                  if (isGithubSchedulerCreate && editable) {
+                  if (isGithubSchedulerAction && editable) {
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedKeyword = String(payload.keyword || '').trim();
                     const normalizedCron = String(payload.cron || '').trim();
@@ -4028,7 +4491,7 @@ function ActionDialog({
               className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider uppercase"
               disabled={loading}
             >
-              {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerCreate) ? '确定' : '执行'}
+              {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerAction) ? '确定' : '执行'}
             </button>
           </div>
         </div>
@@ -4250,11 +4713,28 @@ function TableModuleView({
   const rowIdKey = module.rowIdKey || '_id';
   const showIndexColumn = Boolean(module.showIndex);
   const getColumnLabel = (column: string) => module.columnLabels?.[column] || humanizeField(column);
+  const shouldWrapCell = useCallback((moduleId: string, column: string) => {
+    if (moduleId === 'task' && ['target', 'options_summary'].includes(column)) return true;
+    if (moduleId === 'task_schedule' && column === 'target') return true;
+    if (moduleId === 'asset_site' && ['headers', 'finger'].includes(column)) return true;
+    if (moduleId === 'site' && ['headers', 'finger'].includes(column)) return true;
+    if (moduleId === 'asset_scope' && column === 'scope') return true;
+    if (moduleId === 'cert' && column === 'cert_summary') return true;
+    if (moduleId === 'vuln' && column === 'credential') return true;
+    if (moduleId === 'nuclei_result' && ['vuln_url', 'curl_command'].includes(column)) return true;
+    if (moduleId === 'wih' && column === 'content') return true;
+    if (moduleId === 'github_result' && ['path', 'human_content'].includes(column)) return true;
+    if (moduleId === 'github_monitor_result' && ['path', 'human_content'].includes(column)) return true;
+    return false;
+  }, []);
 
   const moduleActions = module.actions || [];
   const visibleActions = useMemo(() => {
-    if (module.id === 'asset_site') {
-      return moduleActions.filter((action) => !['asset_site_save_result_set'].includes(action.id));
+    if (module.id === 'asset_site' || module.id === 'site') {
+      return moduleActions.filter((action) => !['asset_site_save_result_set', 'site_save_result_set'].includes(action.id));
+    }
+    if (module.id === 'asset_scope') {
+      return moduleActions.filter((action) => action.id === 'asset_scope_add');
     }
     if (module.id === 'policy') {
       return moduleActions.filter((action) => action.id === 'policy_add');
@@ -4265,6 +4745,9 @@ function TableModuleView({
     if (module.id === 'task') {
       return moduleActions.filter((action) => ['create_task', 'task_stop_batch', 'task_delete_batch', 'task_batch_excel_report'].includes(action.id));
     }
+    if (module.id === 'github_task') {
+      return moduleActions.filter((action) => action.id === 'github_task_add');
+    }
     if (module.id === 'github_scheduler') {
       return moduleActions.filter((action) => action.id === 'github_scheduler_add');
     }
@@ -4273,6 +4756,21 @@ function TableModuleView({
 
   const policyEditAction = module.id === 'policy'
     ? moduleActions.find((action) => action.id === 'policy_edit') || null
+    : null;
+  const assetScopeAddScopeAction = module.id === 'asset_scope'
+    ? moduleActions.find((action) => action.id === 'asset_scope_add_scope') || null
+    : null;
+  const assetScopeAddSchedulerAction = module.id === 'asset_scope'
+    ? moduleActions.find((action) => action.id === 'asset_scope_add_scheduler') || null
+    : null;
+  const assetScopeAddSiteMonitorAction = module.id === 'asset_scope'
+    ? moduleActions.find((action) => action.id === 'asset_scope_add_site_monitor') || null
+    : null;
+  const assetScopeAddWihMonitorAction = module.id === 'asset_scope'
+    ? moduleActions.find((action) => action.id === 'asset_scope_add_wih_monitor') || null
+    : null;
+  const githubSchedulerUpdateAction = module.id === 'github_scheduler'
+    ? moduleActions.find((action) => action.id === 'github_scheduler_update') || null
     : null;
 
   const selectAllChecked = rows.length > 0 && selectedIds.length === rows.length;
@@ -4387,8 +4885,10 @@ function TableModuleView({
   };
 
   const runAssetIpExtraExport = async (kind: 'ip' | 'domain') => {
-    if (module.id !== 'asset_ip') return;
-    const path = kind === 'ip' ? '/asset_ip/export_ip/' : '/asset_ip/export_domain/';
+    if (module.id !== 'asset_ip' && module.id !== 'ip') return;
+    const path = module.id === 'asset_ip'
+      ? (kind === 'ip' ? '/asset_ip/export_ip/' : '/asset_ip/export_domain/')
+      : (kind === 'ip' ? '/ip/export_ip/' : '/ip/export_domain/');
     const label = kind === 'ip' ? 'IP列表' : '关联域名';
     try {
       setError('');
@@ -4534,6 +5034,25 @@ function TableModuleView({
     } catch (err: any) {
       setError(err?.message || '删除失败');
     }
+  };
+
+  // 资产分组的行内动作复用统一 ActionDialog，避免出现无后端能力的空壳按钮。
+  const openAssetScopeRowActionDialog = (
+    action: ModuleAction | null,
+    scopeId: string,
+    row: any,
+    overrides?: JsonValue,
+  ) => {
+    if (module.id !== 'asset_scope') return;
+    if (!action || !scopeId) return;
+    const defaultName = String(row?.name || '').trim();
+    const defaultScope = String(row?.scope || row?.scope_array || '').trim();
+    openActionDialog(action, {
+      scope_id: scopeId,
+      name: defaultName || undefined,
+      scope: defaultScope || undefined,
+      ...overrides,
+    });
   };
 
   const openPolicyTaskDialog = (row: any) => {
@@ -4748,6 +5267,45 @@ function TableModuleView({
     }
   };
 
+  const stopGithubTaskRow = async (taskId: string) => {
+    if (module.id !== 'github_task') return;
+    if (!taskId) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/github_task/stop/', {
+        method: 'POST',
+        body: {
+          _id: [taskId],
+        },
+      });
+      setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '操作失败');
+    }
+  };
+
+  const deleteGithubTaskRow = async (taskId: string) => {
+    if (module.id !== 'github_task') return;
+    if (!taskId) return;
+    if (!window.confirm('确认删除该 GitHub 任务吗？')) return;
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/github_task/delete/', {
+        method: 'POST',
+        body: {
+          _id: [taskId],
+        },
+      });
+      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
+      await loadRows();
+    } catch (err: any) {
+      setError(err?.message || '删除失败');
+    }
+  };
+
   const openTaskGlobalView = () => {
     if (module.id !== 'task') return;
     onOpenModule('site');
@@ -4757,6 +5315,28 @@ function TableModuleView({
     if (module.id !== 'task') return;
     if (!taskId) return;
     onOpenModule('site', { task_id: taskId });
+  };
+
+  const openTaskLocalViewBySelection = () => {
+    if (module.id !== 'task') return;
+    if (selectedIds.length === 0) {
+      setError('请先勾选至少一条任务记录后再进行局部查看');
+      return;
+    }
+    // 使用逗号拼接 task_id，后端会转换为 $in 查询，局部查看只展示勾选任务的数据。
+    onOpenModule('site', { task_id: selectedIds.join(',') });
+  };
+
+  const openGithubSchedulerDetail = (jobId: string) => {
+    if (module.id !== 'github_scheduler') return;
+    if (!jobId) return;
+    onOpenModule('github_monitor_result', { github_scheduler_id: jobId });
+  };
+
+  const openGithubTaskDetail = (taskId: string) => {
+    if (module.id !== 'github_task') return;
+    if (!taskId) return;
+    onOpenModule('github_result', { github_task_id: taskId });
   };
 
   const stopTaskRow = async (taskId: string) => {
@@ -4805,6 +5385,7 @@ function TableModuleView({
   const showAssetScopeRowOperate = module.id === 'asset_scope';
   const showPolicyRowOperate = module.id === 'policy';
   const showTaskScheduleRowOperate = module.id === 'task_schedule';
+  const showGithubTaskRowOperate = module.id === 'github_task';
   const showGithubSchedulerRowOperate = module.id === 'github_scheduler';
 
   return (
@@ -4863,12 +5444,21 @@ function TableModuleView({
           ))}
         </div>
       ) : null}
-      {['site', 'domain', 'ip'].includes(module.id) ? (
+      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'npoc_service', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
         <div className="flex items-center gap-2">
           {[
             { id: 'site', label: '站点' },
-            { id: 'domain', label: '域名' },
+            { id: 'domain', label: '子域名' },
             { id: 'ip', label: 'IP' },
+            { id: 'cert', label: 'SSL证书' },
+            { id: 'service', label: '服务' },
+            { id: 'fileleak', label: '文件泄露' },
+            { id: 'url', label: 'URL信息' },
+            { id: 'vuln', label: '风险' },
+            { id: 'npoc_service', label: 'C段' },
+            { id: 'nuclei_result', label: 'nuclei' },
+            { id: 'stat_finger', label: '指纹统计' },
+            { id: 'wih', label: 'WIH' },
           ].map((item) => (
             <button
               key={item.id}
@@ -4977,7 +5567,7 @@ function TableModuleView({
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  {module.id === 'asset_site' ? '导出站点' : '导出'}
+                  {module.id === 'asset_site' || module.id === 'site' ? '导出站点' : module.id === 'domain' ? '导出子域名' : '导出'}
                 </button>
               ) : null}
               {module.id === 'asset_site' ? (
@@ -4999,7 +5589,17 @@ function TableModuleView({
                   全局查看
                 </button>
               ) : null}
-              {module.id === 'asset_ip' ? (
+              {module.id === 'task' ? (
+                <button
+                  onClick={openTaskLocalViewBySelection}
+                  disabled={selectedIds.length === 0}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Eye className="w-4 h-4" />
+                  局部查看
+                </button>
+              ) : null}
+              {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('ip')}
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
@@ -5008,7 +5608,7 @@ function TableModuleView({
                   导出IP列表
                 </button>
               ) : null}
-              {module.id === 'asset_ip' ? (
+              {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('domain')}
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
@@ -5110,7 +5710,7 @@ function TableModuleView({
                       {getColumnLabel(column)}
                     </th>
                   ))}
-                  {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubSchedulerRowOperate ? (
+                  {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubTaskRowOperate || showGithubSchedulerRowOperate ? (
                     <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">操作</th>
                   ) : null}
                 </tr>
@@ -5142,36 +5742,130 @@ function TableModuleView({
                           {(page - 1) * size + rowIndex + 1}
                         </td>
                       ) : null}
-                      {columns.map((column) => (
-                        <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
-                          {module.id === 'task' && column === 'progress' ? (
-                            <div className="mx-auto w-[170px] space-y-1 text-left">
-                              <div className="flex items-center justify-between gap-2 text-xs">
-                                <span className="font-semibold text-brand-text-muted">进度</span>
-                                <span className="font-black text-white">{formatModuleCellValue(module.id, column, row)}</span>
+                      {columns.map((column) => {
+                        const wrapCell = shouldWrapCell(module.id, column);
+                        const baseClassName = wrapCell
+                          ? 'px-4 py-3 align-top text-sm whitespace-pre-line break-all text-left min-w-[220px] max-w-[560px]'
+                          : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-center';
+
+                        if (module.id === 'task' && column === 'progress') {
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <div className="mx-auto w-[170px] space-y-1 text-left">
+                                <div className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="font-semibold text-brand-text-muted">进度</span>
+                                  <span className="font-black text-white">{formatModuleCellValue(module.id, column, row)}</span>
+                                </div>
+                                <div className="h-2 bg-brand-bg rounded-full border border-brand-border overflow-hidden">
+                                  <div
+                                    className="h-full bg-brand-accent rounded-full transition-all duration-300"
+                                    style={{ width: `${getTaskProgressPercent(row)}%` }}
+                                  />
+                                </div>
                               </div>
-                              <div className="h-2 bg-brand-bg rounded-full border border-brand-border overflow-hidden">
-                                <div
-                                  className="h-full bg-brand-accent rounded-full transition-all duration-300"
-                                  style={{ width: `${getTaskProgressPercent(row)}%` }}
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'task' && column === 'target') {
+                          return (
+                            <td key={column} className={baseClassName}>
+                              <button
+                                onClick={() => openTaskLocalView(id)}
+                                className="text-brand-accent hover:underline text-left font-mono whitespace-pre-line break-all"
+                                title="点击查看该任务详情"
+                              >
+                                {formatModuleCellValue(module.id, column, row)}
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'task' && column === 'name') {
+                          return (
+                            <td key={column} className={baseClassName}>
+                              <button
+                                onClick={() => openTaskLocalView(id)}
+                                className="text-brand-accent hover:underline text-left"
+                                title="点击查看该任务详情"
+                              >
+                                {formatModuleCellValue(module.id, column, row)}
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'site' && column === 'screenshot') {
+                          const screenshot = String(row?.screenshot || '').trim();
+                          if (!screenshot) {
+                            return (
+                              <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                                -
+                              </td>
+                            );
+                          }
+                          let screenshotUrl = screenshot;
+                          if (screenshot.startsWith('/image/')) {
+                            screenshotUrl = `/api${screenshot}`;
+                          } else if (!/^https?:\/\//i.test(screenshot)) {
+                            const taskId = String(row?.task_id || '').trim();
+                            if (taskId) {
+                              screenshotUrl = `/api/image/${taskId}/${screenshot.replace(/^\/+/, '')}`;
+                            }
+                          }
+
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <a href={screenshotUrl} target="_blank" rel="noreferrer" className="inline-flex justify-center">
+                                <img
+                                  src={screenshotUrl}
+                                  alt="screenshot"
+                                  className="w-20 h-12 rounded-lg border border-brand-border object-cover bg-brand-bg"
+                                  loading="lazy"
                                 />
-                              </div>
-                            </div>
-                          ) : (
-                            formatModuleCellValue(module.id, column, row)
-                          )}
-                        </td>
-                      ))}
-                      {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubSchedulerRowOperate ? (
+                              </a>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'github_scheduler' && column === 'name') {
+                          return (
+                            <td key={column} className={baseClassName}>
+                              <button
+                                onClick={() => openGithubSchedulerDetail(id)}
+                                className="text-brand-accent hover:underline text-left"
+                                title="查看该监控任务结果"
+                              >
+                                {formatModuleCellValue(module.id, column, row)}
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'github_task' && column === 'name') {
+                          return (
+                            <td key={column} className={baseClassName}>
+                              <button
+                                onClick={() => openGithubTaskDetail(id)}
+                                className="text-brand-accent hover:underline text-left"
+                                title="查看该任务结果"
+                              >
+                                {formatModuleCellValue(module.id, column, row)}
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        return (
+                          <td key={column} className={baseClassName}>
+                            {formatModuleCellValue(module.id, column, row)}
+                          </td>
+                        );
+                      })}
+                      {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubTaskRowOperate || showGithubSchedulerRowOperate ? (
                         <td className="px-4 py-3 align-middle whitespace-nowrap text-center">
                           {showTaskRowOperate ? (
                             <div className="flex flex-wrap items-center justify-center gap-2">
-                              <button
-                                onClick={() => openTaskLocalView(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-                              >
-                                局部查看
-                              </button>
                               {!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
                                 <button
                                   onClick={() => void stopTaskRow(id)}
@@ -5191,12 +5885,59 @@ function TableModuleView({
                             </div>
                           ) : null}
                           {showAssetScopeRowOperate ? (
-                            <button
-                              onClick={() => void deleteAssetScopeRow(id)}
-                              className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-                            >
-                              删除
-                            </button>
+                            <div className="flex flex-wrap items-center justify-center gap-2">
+                              {assetScopeAddScopeAction ? (
+                                <button
+                                  onClick={() => openAssetScopeRowActionDialog(assetScopeAddScopeAction, id, row, { scope: '' })}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  添加资产分组范围
+                                </button>
+                              ) : null}
+                              {assetScopeAddSchedulerAction ? (
+                                <button
+                                  onClick={() =>
+                                    openAssetScopeRowActionDialog(assetScopeAddSchedulerAction, id, row, {
+                                      domain: String(row?.scope || '').replace(/,/g, '\n'),
+                                      name: `监控-${String(row?.name || '').trim() || id.slice(-6)}`,
+                                    })
+                                  }
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  添加监控任务
+                                </button>
+                              ) : null}
+                              {assetScopeAddSiteMonitorAction ? (
+                                <button
+                                  onClick={() =>
+                                    openAssetScopeRowActionDialog(assetScopeAddSiteMonitorAction, id, row, {
+                                      name: `站点监控-${String(row?.name || '').trim() || id.slice(-6)}`,
+                                    })
+                                  }
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  添加站点监控任务
+                                </button>
+                              ) : null}
+                              {assetScopeAddWihMonitorAction ? (
+                                <button
+                                  onClick={() =>
+                                    openAssetScopeRowActionDialog(assetScopeAddWihMonitorAction, id, row, {
+                                      name: `WIH监控-${String(row?.name || '').trim() || id.slice(-6)}`,
+                                    })
+                                  }
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  添加WIH监控任务
+                                </button>
+                              ) : null}
+                              <button
+                                onClick={() => void deleteAssetScopeRow(id)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                删除
+                              </button>
+                            </div>
                           ) : null}
                           {showPolicyRowOperate ? (
                             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -5256,8 +5997,45 @@ function TableModuleView({
                               </button>
                             </div>
                           ) : null}
+                          {showGithubTaskRowOperate ? (
+                            <div className="flex flex-wrap items-center justify-center gap-2">
+                              {!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
+                                <button
+                                  onClick={() => void stopGithubTaskRow(id)}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  停止
+                                </button>
+                              ) : null}
+                              {['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
+                                <button
+                                  onClick={() => void deleteGithubTaskRow(id)}
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  删除
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
                           {showGithubSchedulerRowOperate ? (
                             <div className="flex flex-wrap items-center justify-center gap-2">
+                              {githubSchedulerUpdateAction ? (
+                                <button
+                                  onClick={() =>
+                                    openActionDialog(githubSchedulerUpdateAction, {
+                                      _id: id,
+                                      name: row?.name || '',
+                                      keyword: row?.keyword || '',
+                                      cron: row?.cron || '',
+                                      dingding_notify: row?.dingding_notify !== false,
+                                      kb_notify_enable: Boolean(row?.kb_notify_enable),
+                                    })
+                                  }
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                >
+                                  修改
+                                </button>
+                              ) : null}
                               {String(row?.status || '').toLowerCase() === 'stop' ? (
                                 <button
                                   onClick={() => void recoverGithubSchedulerRow(id)}
@@ -5289,7 +6067,7 @@ function TableModuleView({
                 {rows.length === 0 && !loading ? (
                   <tr>
                     <td
-                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubSchedulerRowOperate ? 1 : 0), 2)}
+                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubTaskRowOperate || showGithubSchedulerRowOperate ? 1 : 0), 2)}
                       className="px-4 py-10 text-center text-brand-text-muted"
                     >
                       暂无数据
@@ -6899,6 +7677,20 @@ function MainShell() {
     });
     reversed.asset_domain = 'assets';
     reversed.asset_ip = 'assets';
+    reversed.site = 'tasks';
+    reversed.domain = 'tasks';
+    reversed.ip = 'tasks';
+    reversed.cert = 'tasks';
+    reversed.service = 'tasks';
+    reversed.fileleak = 'tasks';
+    reversed.url = 'tasks';
+    reversed.vuln = 'tasks';
+    reversed.npoc_service = 'tasks';
+    reversed.nuclei_result = 'tasks';
+    reversed.stat_finger = 'tasks';
+    reversed.wih = 'tasks';
+    reversed.github_result = 'github_mgmt';
+    reversed.github_monitor_result = 'github_monitor';
     return reversed;
   }, []);
   const openModule = useCallback((moduleId: string, nextFilters?: JsonValue) => {

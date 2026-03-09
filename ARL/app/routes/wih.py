@@ -26,6 +26,7 @@ WIH（Web Info Hunter）任务结果管理模块
 from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
+from app import utils
 
 
 ns = Namespace('wih', description="WEB Info Hunter 信息")
@@ -45,6 +46,12 @@ base_search_fields = {
 
 
 base_search_fields.update(base_query_fields)
+
+stat_search_fields = {
+    'content': fields.String(required=False, description="finger"),
+    'task_id': fields.String(description="任务ID"),
+}
+stat_search_fields.update(base_query_fields)
 
 
 @ns.route('/')
@@ -104,6 +111,77 @@ class ARLWebInfoHunter(ARLResource):
         return data
 
 
+@ns.route('/stat/')
+class ARLWebInfoHunterStat(ARLResource):
+    """WIH聚合统计接口（finger -> 数量）"""
+    parser = get_arl_parser(stat_search_fields, location='args')
+
+    @auth
+    @ns.expect(parser)
+    def get(self):
+        """
+        查询WIH聚合统计
+
+        参数：
+            - content: finger 关键字（模糊匹配）
+            - task_id: 任务ID（支持单值或逗号/空白分隔多值）
+            - page: 页码
+            - size: 每页数量
+            - order: 排序（支持 cnt / -cnt / content / -content）
+        """
+        args = self.parser.parse_args()
+        page = int(args.get("page") or 1)
+        size = int(args.get("size") or 10)
+        order = str(args.get("order") or "-cnt").strip()
+        task_id_raw = str(args.get("task_id") or "").strip()
+        content = str(args.get("content") or "").strip()
+
+        match_stage = {}
+        if task_id_raw:
+            task_ids = [item for item in task_id_raw.replace(",", " ").split() if item]
+            if len(task_ids) > 1:
+                match_stage["task_id"] = {"$in": task_ids}
+            elif len(task_ids) == 1:
+                match_stage["task_id"] = task_ids[0]
+        if content:
+            match_stage["content"] = {"$regex": content, "$options": "i"}
+
+        pipeline = []
+        if match_stage:
+            pipeline.append({"$match": match_stage})
+        pipeline.extend([
+            {"$group": {"_id": "$content", "cnt": {"$sum": 1}}},
+            {"$project": {"_id": 0, "content": "$_id", "cnt": 1}},
+        ])
+
+        if order == "cnt":
+            pipeline.append({"$sort": {"cnt": 1, "content": 1}})
+        elif order == "content":
+            pipeline.append({"$sort": {"content": 1}})
+        elif order == "-content":
+            pipeline.append({"$sort": {"content": -1}})
+        else:
+            pipeline.append({"$sort": {"cnt": -1, "content": 1}})
+
+        total_pipeline = list(pipeline) + [{"$count": "total"}]
+        total_result = list(utils.conn_db("wih").aggregate(total_pipeline))
+        total = int(total_result[0]["total"]) if total_result else 0
+
+        pipeline.extend([
+            {"$skip": max(0, size * (page - 1))},
+            {"$limit": max(1, size)},
+        ])
+        items = list(utils.conn_db("wih").aggregate(pipeline))
+
+        return {
+            "code": 200,
+            "page": page,
+            "size": size,
+            "total": total,
+            "items": items,
+        }
+
+
 @ns.route('/export/')
 class ARLWihExport(ARLResource):
     """WIH导出接口"""
@@ -132,4 +210,3 @@ class ARLWihExport(ARLResource):
         response = self.send_export_file(args=args, _type="wih")
 
         return response
-
