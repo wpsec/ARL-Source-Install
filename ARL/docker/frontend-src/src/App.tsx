@@ -2018,14 +2018,14 @@ function LoginView({
       <div className="absolute -top-16 -left-16 w-72 h-72 rounded-full bg-brand-accent/20 blur-[120px] pointer-events-none" />
       <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full bg-brand-secondary/20 blur-[120px] pointer-events-none" />
 
-      <div className="relative z-10 w-full max-w-md bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-8 shadow-2xl">
+      <div className="relative z-10 w-full max-w-lg bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-8 shadow-2xl">
         <div className="flex items-center gap-3 mb-8">
           <div className="w-12 h-12 rounded-2xl bg-brand-accent flex items-center justify-center shadow-lg">
             <Shield className="w-6 h-6 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-black tracking-tight">ARL互联网资产自动化收集系统</h1>
-            <p className="text-xs text-brand-text-muted font-semibold mt-1">
+          <div className="min-w-0">
+            <h1 className="text-xl md:text-2xl font-black tracking-tight leading-tight whitespace-nowrap overflow-hidden text-ellipsis">ARL互联网资产自动化收集系统</h1>
+            <p className="text-sm text-brand-text-muted font-semibold mt-1">
               版本：{__ARL_VERSION__}
             </p>
           </div>
@@ -5082,10 +5082,10 @@ function TableModuleView({
       {hasList ? (
         <div className="bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
           <div className="overflow-auto">
-            <table className="w-full text-left border-collapse text-sm">
+            <table className="w-full border-collapse text-sm md:text-[15px]">
               <thead className="bg-brand-bg/40 border-b border-brand-border">
                 <tr>
-                  <th className="px-4 py-3 w-12">
+                  <th className="px-4 py-3 w-12 text-center">
                     <input
                       type="checkbox"
                       checked={selectAllChecked}
@@ -5103,15 +5103,15 @@ function TableModuleView({
                     />
                   </th>
                   {showIndexColumn ? (
-                    <th className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">序号</th>
+                    <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">序号</th>
                   ) : null}
                   {columns.map((column) => (
-                    <th key={column} className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">
+                    <th key={column} className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">
                       {getColumnLabel(column)}
                     </th>
                   ))}
                   {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubSchedulerRowOperate ? (
-                    <th className="px-4 py-3 text-xs uppercase tracking-wider font-black text-brand-text-muted whitespace-nowrap">操作</th>
+                    <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">操作</th>
                   ) : null}
                 </tr>
               </thead>
@@ -5122,7 +5122,7 @@ function TableModuleView({
 
                   return (
                     <tr key={id || Math.random()} className="border-b border-brand-border/60 hover:bg-white/5 transition">
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-center align-middle">
                         <input
                           type="checkbox"
                           checked={checked}
@@ -5138,15 +5138,15 @@ function TableModuleView({
                         />
                       </td>
                       {showIndexColumn ? (
-                        <td className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
+                        <td className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
                           {(page - 1) * size + rowIndex + 1}
                         </td>
                       ) : null}
                       {columns.map((column) => (
-                        <td key={column} className="px-4 py-3 align-top font-mono text-xs whitespace-nowrap">
+                        <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
                           {module.id === 'task' && column === 'progress' ? (
-                            <div className="min-w-[160px] space-y-1">
-                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                            <div className="mx-auto w-[170px] space-y-1 text-left">
+                              <div className="flex items-center justify-between gap-2 text-xs">
                                 <span className="font-semibold text-brand-text-muted">进度</span>
                                 <span className="font-black text-white">{formatModuleCellValue(module.id, column, row)}</span>
                               </div>
@@ -5163,19 +5163,19 @@ function TableModuleView({
                         </td>
                       ))}
                       {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubSchedulerRowOperate ? (
-                        <td className="px-4 py-3 align-top whitespace-nowrap">
+                        <td className="px-4 py-3 align-middle whitespace-nowrap text-center">
                           {showTaskRowOperate ? (
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-center gap-2">
                               <button
                                 onClick={() => openTaskLocalView(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                               >
                                 局部查看
                               </button>
                               {!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
                                 <button
                                   onClick={() => void stopTaskRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                                 >
                                   停止
                                 </button>
@@ -5183,7 +5183,7 @@ function TableModuleView({
                               {['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
                                 <button
                                   onClick={() => void deleteTaskRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                                 >
                                   删除
                                 </button>
@@ -5193,16 +5193,16 @@ function TableModuleView({
                           {showAssetScopeRowOperate ? (
                             <button
                               onClick={() => void deleteAssetScopeRow(id)}
-                              className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                              className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                             >
                               删除
                             </button>
                           ) : null}
                           {showPolicyRowOperate ? (
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-center gap-2">
                               <button
                                 onClick={() => openPolicyTaskDialog(row)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                               >
                                 任务下发
                               </button>
@@ -5218,64 +5218,64 @@ function TableModuleView({
                                       },
                                     })
                                   }
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                                 >
                                   编辑
                                 </button>
                               ) : null}
                               <button
                                 onClick={() => void deletePolicyRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                               >
                                 删除
                               </button>
                             </div>
                           ) : null}
                           {showTaskScheduleRowOperate ? (
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-center gap-2">
                               {String(row?.status || '').toLowerCase() === 'stop' ? (
                                 <button
                                   onClick={() => void recoverTaskScheduleRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                                 >
                                   恢复
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => void stopTaskScheduleRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                                 >
                                   停止
                                 </button>
                               )}
                               <button
                                 onClick={() => void deleteTaskScheduleRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                               >
                                 删除
                               </button>
                             </div>
                           ) : null}
                           {showGithubSchedulerRowOperate ? (
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-center gap-2">
                               {String(row?.status || '').toLowerCase() === 'stop' ? (
                                 <button
                                   onClick={() => void recoverGithubSchedulerRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                                 >
                                   恢复
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => void stopGithubSchedulerRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                                 >
                                   停止
                                 </button>
                               )}
                               <button
                                 onClick={() => void deleteGithubSchedulerRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
                               >
                                 删除
                               </button>
