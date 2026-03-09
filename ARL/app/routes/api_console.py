@@ -7,6 +7,7 @@
 """
 from datetime import datetime
 from pathlib import Path
+import errno
 import json
 import os
 import tempfile
@@ -110,19 +111,36 @@ def _atomic_write_yaml(config_path: Path, config_obj: dict):
     原子写入 YAML 文件，避免中途失败导致配置损坏。
     """
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    yaml_text = yaml.safe_dump(
+        config_obj,
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+    )
 
-    # 先写临时文件，再 replace
-    with tempfile.NamedTemporaryFile('w', delete=False, dir=str(config_path.parent), suffix='.tmp', encoding='utf-8') as tmp_file:
-        yaml.safe_dump(
-            config_obj,
-            tmp_file,
-            allow_unicode=True,
-            sort_keys=False,
-            default_flow_style=False,
-        )
-        tmp_path = Path(tmp_file.name)
+    tmp_path = None
+    try:
+        # 优先使用临时文件 + replace 的原子写入路径
+        with tempfile.NamedTemporaryFile('w', delete=False, dir=str(config_path.parent), suffix='.tmp', encoding='utf-8') as tmp_file:
+            tmp_file.write(yaml_text)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+            tmp_path = Path(tmp_file.name)
 
-    tmp_path.replace(config_path)
+        tmp_path.replace(config_path)
+    except OSError as exc:
+        # 某些部署里 /code/app/config.yaml 是容器挂载文件，rename 到挂载点会返回 EBUSY
+        if exc.errno in (errno.EBUSY, errno.EXDEV, errno.EPERM):
+            logger.warning('atomic replace failed on mounted config, fallback to direct write: %s', exc)
+            with config_path.open('w', encoding='utf-8') as file_obj:
+                file_obj.write(yaml_text)
+                file_obj.flush()
+                os.fsync(file_obj.fileno())
+            return
+        raise
+    finally:
+        if tmp_path and tmp_path.exists():
+            tmp_path.unlink()
 
 
 def _backup_config_file(config_path: Path) -> str:
