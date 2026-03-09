@@ -418,6 +418,30 @@ def _extract_scan_config(config_obj):
         arl_config.get('ALT_DNS_CONCURRENT'),
         Config.ALT_DNS_CONCURRENT
     )
+    web_gunicorn_workers = _safe_int(
+        arl_config.get('WEB_GUNICORN_WORKERS'),
+        Config.WEB_GUNICORN_WORKERS
+    )
+    celery_task_worker_concurrency = _safe_int(
+        arl_config.get('CELERY_TASK_WORKER_CONCURRENCY'),
+        Config.CELERY_TASK_WORKER_CONCURRENCY
+    )
+    celery_github_worker_concurrency = _safe_int(
+        arl_config.get('CELERY_GITHUB_WORKER_CONCURRENCY'),
+        Config.CELERY_GITHUB_WORKER_CONCURRENCY
+    )
+    celery_prefetch_multiplier = _safe_int(
+        arl_config.get('CELERY_PREFETCH_MULTIPLIER'),
+        Config.CELERY_PREFETCH_MULTIPLIER
+    )
+    celery_max_tasks_per_child = _safe_int(
+        arl_config.get('CELERY_MAX_TASKS_PER_CHILD'),
+        Config.CELERY_MAX_TASKS_PER_CHILD
+    )
+    celery_max_memory_per_child = _safe_int(
+        arl_config.get('CELERY_MAX_MEMORY_PER_CHILD'),
+        Config.CELERY_MAX_MEMORY_PER_CHILD
+    )
     black_ips = _normalize_string_list(arl_config.get('BLACK_IPS', Config.BLACK_IPS))
     if not black_ips:
         black_ips = _normalize_string_list(Config.BLACK_IPS)
@@ -427,6 +451,12 @@ def _extract_scan_config(config_obj):
         'domain_dict': domain_dict,
         'domain_brute_concurrent': domain_brute_concurrent,
         'alt_dns_concurrent': alt_dns_concurrent,
+        'web_gunicorn_workers': web_gunicorn_workers,
+        'celery_task_worker_concurrency': celery_task_worker_concurrency,
+        'celery_github_worker_concurrency': celery_github_worker_concurrency,
+        'celery_prefetch_multiplier': celery_prefetch_multiplier,
+        'celery_max_tasks_per_child': celery_max_tasks_per_child,
+        'celery_max_memory_per_child': celery_max_memory_per_child,
         'black_ips': black_ips,
         'dns_resolvers': dns_resolvers,
     }
@@ -451,6 +481,30 @@ def _merge_scan_config(config_obj, scan_config):
         scan_config.get('alt_dns_concurrent'),
         Config.ALT_DNS_CONCURRENT
     )
+    web_gunicorn_workers = _safe_int(
+        scan_config.get('web_gunicorn_workers'),
+        Config.WEB_GUNICORN_WORKERS
+    )
+    celery_task_worker_concurrency = _safe_int(
+        scan_config.get('celery_task_worker_concurrency'),
+        Config.CELERY_TASK_WORKER_CONCURRENCY
+    )
+    celery_github_worker_concurrency = _safe_int(
+        scan_config.get('celery_github_worker_concurrency'),
+        Config.CELERY_GITHUB_WORKER_CONCURRENCY
+    )
+    celery_prefetch_multiplier = _safe_int(
+        scan_config.get('celery_prefetch_multiplier'),
+        Config.CELERY_PREFETCH_MULTIPLIER
+    )
+    celery_max_tasks_per_child = _safe_int(
+        scan_config.get('celery_max_tasks_per_child'),
+        Config.CELERY_MAX_TASKS_PER_CHILD
+    )
+    celery_max_memory_per_child = _safe_int(
+        scan_config.get('celery_max_memory_per_child'),
+        Config.CELERY_MAX_MEMORY_PER_CHILD
+    )
     black_ips = _normalize_string_list(scan_config.get('black_ips'))
     dns_resolvers = _normalize_string_list(scan_config.get('dns_resolvers'))
 
@@ -463,6 +517,12 @@ def _merge_scan_config(config_obj, scan_config):
     config_obj['ARL']['DOMAIN_DICT'] = domain_dict
     config_obj['ARL']['DOMAIN_BRUTE_CONCURRENT'] = domain_brute_concurrent
     config_obj['ARL']['ALT_DNS_CONCURRENT'] = alt_dns_concurrent
+    config_obj['ARL']['WEB_GUNICORN_WORKERS'] = web_gunicorn_workers
+    config_obj['ARL']['CELERY_TASK_WORKER_CONCURRENCY'] = celery_task_worker_concurrency
+    config_obj['ARL']['CELERY_GITHUB_WORKER_CONCURRENCY'] = celery_github_worker_concurrency
+    config_obj['ARL']['CELERY_PREFETCH_MULTIPLIER'] = celery_prefetch_multiplier
+    config_obj['ARL']['CELERY_MAX_TASKS_PER_CHILD'] = celery_max_tasks_per_child
+    config_obj['ARL']['CELERY_MAX_MEMORY_PER_CHILD'] = celery_max_memory_per_child
     config_obj['ARL']['BLACK_IPS'] = black_ips
     config_obj['ARL']['DNS_RESOLVERS'] = dns_resolvers
 

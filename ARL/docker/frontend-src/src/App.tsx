@@ -5924,8 +5924,14 @@ function ConfigConsoleView({ token }: { token: string }) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const [domainDict, setDomainDict] = useState('');
-  const [domainBruteConcurrent, setDomainBruteConcurrent] = useState(300);
-  const [altDnsConcurrent, setAltDnsConcurrent] = useState(1500);
+  const [domainBruteConcurrent, setDomainBruteConcurrent] = useState(180);
+  const [altDnsConcurrent, setAltDnsConcurrent] = useState(800);
+  const [webGunicornWorkers, setWebGunicornWorkers] = useState(2);
+  const [celeryTaskWorkerConcurrency, setCeleryTaskWorkerConcurrency] = useState(2);
+  const [celeryGithubWorkerConcurrency, setCeleryGithubWorkerConcurrency] = useState(1);
+  const [celeryPrefetchMultiplier, setCeleryPrefetchMultiplier] = useState(1);
+  const [celeryMaxTasksPerChild, setCeleryMaxTasksPerChild] = useState(20);
+  const [celeryMaxMemoryPerChild, setCeleryMaxMemoryPerChild] = useState(280000);
   const [blackIpsText, setBlackIpsText] = useState('');
   const [dnsResolversText, setDnsResolversText] = useState('');
 
@@ -5947,8 +5953,14 @@ function ConfigConsoleView({ token }: { token: string }) {
       const nextOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
 
       setDomainDict(String(scanConfig.domain_dict || ''));
-      setDomainBruteConcurrent(Number(scanConfig.domain_brute_concurrent || 300));
-      setAltDnsConcurrent(Number(scanConfig.alt_dns_concurrent || 1500));
+      setDomainBruteConcurrent(Number(scanConfig.domain_brute_concurrent || 180));
+      setAltDnsConcurrent(Number(scanConfig.alt_dns_concurrent || 800));
+      setWebGunicornWorkers(Number(scanConfig.web_gunicorn_workers || 2));
+      setCeleryTaskWorkerConcurrency(Number(scanConfig.celery_task_worker_concurrency || 2));
+      setCeleryGithubWorkerConcurrency(Number(scanConfig.celery_github_worker_concurrency || 1));
+      setCeleryPrefetchMultiplier(Number(scanConfig.celery_prefetch_multiplier || 1));
+      setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 20));
+      setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 280000));
       setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
       setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
 
@@ -5982,6 +5994,30 @@ function ConfigConsoleView({ token }: { token: string }) {
       setError('组合生成域名爆破并发数必须大于 0');
       return;
     }
+    if (!Number.isFinite(webGunicornWorkers) || webGunicornWorkers <= 0) {
+      setError('Web 进程并发必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(celeryTaskWorkerConcurrency) || celeryTaskWorkerConcurrency <= 0) {
+      setError('Celery 主队列并发必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(celeryGithubWorkerConcurrency) || celeryGithubWorkerConcurrency <= 0) {
+      setError('Celery GitHub 队列并发必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(celeryPrefetchMultiplier) || celeryPrefetchMultiplier <= 0) {
+      setError('Celery 预取倍率必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(celeryMaxTasksPerChild) || celeryMaxTasksPerChild <= 0) {
+      setError('Celery 子进程任务上限必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(celeryMaxMemoryPerChild) || celeryMaxMemoryPerChild <= 0) {
+      setError('Celery 子进程内存上限必须大于 0');
+      return;
+    }
 
     const blackIps = splitTextList(blackIpsText);
     if (blackIps.length === 0) {
@@ -6000,6 +6036,12 @@ function ConfigConsoleView({ token }: { token: string }) {
             domain_dict: normalizedDict,
             domain_brute_concurrent: Math.floor(domainBruteConcurrent),
             alt_dns_concurrent: Math.floor(altDnsConcurrent),
+            web_gunicorn_workers: Math.floor(webGunicornWorkers),
+            celery_task_worker_concurrency: Math.floor(celeryTaskWorkerConcurrency),
+            celery_github_worker_concurrency: Math.floor(celeryGithubWorkerConcurrency),
+            celery_prefetch_multiplier: Math.floor(celeryPrefetchMultiplier),
+            celery_max_tasks_per_child: Math.floor(celeryMaxTasksPerChild),
+            celery_max_memory_per_child: Math.floor(celeryMaxMemoryPerChild),
             black_ips: blackIps,
             dns_resolvers: splitTextList(dnsResolversText),
           },
@@ -6014,6 +6056,12 @@ function ConfigConsoleView({ token }: { token: string }) {
       setDomainDict(String(savedConfig.domain_dict || normalizedDict));
       setDomainBruteConcurrent(Number(savedConfig.domain_brute_concurrent || domainBruteConcurrent));
       setAltDnsConcurrent(Number(savedConfig.alt_dns_concurrent || altDnsConcurrent));
+      setWebGunicornWorkers(Number(savedConfig.web_gunicorn_workers || webGunicornWorkers));
+      setCeleryTaskWorkerConcurrency(Number(savedConfig.celery_task_worker_concurrency || celeryTaskWorkerConcurrency));
+      setCeleryGithubWorkerConcurrency(Number(savedConfig.celery_github_worker_concurrency || celeryGithubWorkerConcurrency));
+      setCeleryPrefetchMultiplier(Number(savedConfig.celery_prefetch_multiplier || celeryPrefetchMultiplier));
+      setCeleryMaxTasksPerChild(Number(savedConfig.celery_max_tasks_per_child || celeryMaxTasksPerChild));
+      setCeleryMaxMemoryPerChild(Number(savedConfig.celery_max_memory_per_child || celeryMaxMemoryPerChild));
       setBlackIpsText(Array.isArray(savedConfig.black_ips) ? savedConfig.black_ips.join('\n') : blackIpsText);
       setDnsResolversText(Array.isArray(savedConfig.dns_resolvers) ? savedConfig.dns_resolvers.join('\n') : dnsResolversText);
 
@@ -6070,7 +6118,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">扫描配置仅保留域名爆破字典、并发参数、黑名单IP与域名解析器配置。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置扫描并发、Web/Celery 运行并发、黑名单IP与域名解析器，写入 config-docker.yaml 并可在重启后生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -6187,6 +6235,94 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(altDnsConcurrent)}
               onChange={(event) => setAltDnsConcurrent(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              Web 进程并发
+              <span className="ml-2 font-mono opacity-70">ARL.WEB_GUNICORN_WORKERS</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(webGunicornWorkers)}
+              onChange={(event) => setWebGunicornWorkers(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              Celery 主队列并发
+              <span className="ml-2 font-mono opacity-70">ARL.CELERY_TASK_WORKER_CONCURRENCY</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(celeryTaskWorkerConcurrency)}
+              onChange={(event) => setCeleryTaskWorkerConcurrency(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              Celery GitHub 队列并发
+              <span className="ml-2 font-mono opacity-70">ARL.CELERY_GITHUB_WORKER_CONCURRENCY</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(celeryGithubWorkerConcurrency)}
+              onChange={(event) => setCeleryGithubWorkerConcurrency(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              Celery 预取倍率
+              <span className="ml-2 font-mono opacity-70">ARL.CELERY_PREFETCH_MULTIPLIER</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(celeryPrefetchMultiplier)}
+              onChange={(event) => setCeleryPrefetchMultiplier(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              Celery 子进程任务上限
+              <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_TASKS_PER_CHILD</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(celeryMaxTasksPerChild)}
+              onChange={(event) => setCeleryMaxTasksPerChild(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              Celery 子进程内存上限(KB)
+              <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_MEMORY_PER_CHILD</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(celeryMaxMemoryPerChild)}
+              onChange={(event) => setCeleryMaxMemoryPerChild(Number(event.target.value || 0))}
               className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
             />
           </div>
