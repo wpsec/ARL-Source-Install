@@ -1589,7 +1589,6 @@ const modules: ModuleConfig[] = [
       { key: 'path', label: '路径名', placeholder: '请输入路径名进行搜索' },
       { key: 'repo_full_name', label: '仓库名', placeholder: '请输入仓库名进行搜索' },
       { key: 'human_content', label: '内容', placeholder: '请输入内容进行搜索' },
-      { key: 'keyword', label: '关键字', placeholder: '请输入关键字进行搜索' },
     ],
   },
   {
@@ -2248,11 +2247,11 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
     return formatTokenListText(value);
   }
 
-  if (moduleId === 'asset_site' && column === 'headers') {
+  if ((moduleId === 'asset_site' || moduleId === 'site') && column === 'headers') {
     return formatHeaderLines(value);
   }
 
-  if (moduleId === 'asset_site' && column === 'finger' && Array.isArray(value)) {
+  if ((moduleId === 'asset_site' || moduleId === 'site') && column === 'finger' && Array.isArray(value)) {
     const fingerNames = value
       .map((item) => {
         if (typeof item === 'string') return item;
@@ -2996,9 +2995,22 @@ function DashboardView({
                 ) : (
                   recentTasks.map((task) => {
                     const statusInfo = resolveTaskStatus(task?.status);
+                    const taskId = String(task?._id || task?.task_id || task?.id || '').trim();
                     return (
                       <tr key={String(task?._id || task?.task_id || task?.id || Math.random())} className="border-b border-brand-border/60 last:border-b-0">
-                        <td className="py-3 pr-4 font-semibold">{normalizeValue(task?.name)}</td>
+                        <td className="py-3 pr-4 font-semibold">
+                          {taskId ? (
+                            <button
+                              onClick={() => onOpenModule('site', { task_id: taskId })}
+                              className="text-brand-accent hover:underline text-left"
+                              title="点击查看该任务详情"
+                            >
+                              {normalizeValue(task?.name)}
+                            </button>
+                          ) : (
+                            normalizeValue(task?.name)
+                          )}
+                        </td>
                         <td className="py-3 pr-4">
                           <StatusPill text={statusInfo.text} type={statusInfo.type} />
                         </td>
@@ -4696,7 +4708,19 @@ function TableModuleView({
   const totalPages = Math.max(1, Math.ceil(total / size));
 
   const columns = useMemo(() => {
-    if (module.columns && module.columns.length > 0) return module.columns;
+    if (module.columns && module.columns.length > 0) {
+      if (module.id === 'task') {
+        const nextColumns = [...module.columns];
+        const progressIndex = nextColumns.indexOf('progress');
+        const optionsIndex = nextColumns.indexOf('options_summary');
+        if (progressIndex >= 0 && optionsIndex >= 0 && progressIndex > optionsIndex) {
+          nextColumns.splice(progressIndex, 1);
+          nextColumns.splice(optionsIndex, 0, 'progress');
+        }
+        return nextColumns;
+      }
+      return module.columns;
+    }
     const first = rows[0];
     if (!first || typeof first !== 'object') return [];
     const keys = Object.keys(first);
@@ -5999,22 +6023,19 @@ function TableModuleView({
                           ) : null}
                           {showGithubTaskRowOperate ? (
                             <div className="flex flex-wrap items-center justify-center gap-2">
-                              {!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
-                                <button
-                                  onClick={() => void stopGithubTaskRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-                                >
-                                  停止
-                                </button>
-                              ) : null}
-                              {['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase()) ? (
-                                <button
-                                  onClick={() => void deleteGithubTaskRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-                                >
-                                  删除
-                                </button>
-                              ) : null}
+                              <button
+                                onClick={() => void stopGithubTaskRow(id)}
+                                disabled={['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                停止
+                              </button>
+                              <button
+                                onClick={() => void deleteGithubTaskRow(id)}
+                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                              >
+                                删除
+                              </button>
                             </div>
                           ) : null}
                           {showGithubSchedulerRowOperate ? (
