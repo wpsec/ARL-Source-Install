@@ -8,21 +8,31 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const THEME_STORAGE_KEY = 'arl-theme';
+const THEME_DEFAULT_MIGRATION_KEY = 'arl-theme-default-migrated-v1';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // 默认主题与参考 UI 保持一致，减少首次加载视觉跳变
+  // 默认主题改为钛金黑，并将历史主题值一次性迁移到 titanium
   const [theme, setThemeState] = useState<ThemeType>(() => {
-    const saved = localStorage.getItem('arl-theme');
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
     const validThemes: ThemeType[] = ['midnight', 'slate', 'nord', 'titanium', 'sandstone'];
     if (saved && validThemes.includes(saved as ThemeType)) {
+      const migrated = localStorage.getItem(THEME_DEFAULT_MIGRATION_KEY) === '1';
+      if (!migrated && saved !== 'titanium') {
+        localStorage.setItem(THEME_STORAGE_KEY, 'titanium');
+        localStorage.setItem(THEME_DEFAULT_MIGRATION_KEY, '1');
+        return 'titanium';
+      }
       return saved as ThemeType;
     }
-    return 'nord';
+    localStorage.setItem(THEME_DEFAULT_MIGRATION_KEY, '1');
+    return 'titanium';
   });
 
   const setTheme = (newTheme: ThemeType) => {
     setThemeState(newTheme);
-    localStorage.setItem('arl-theme', newTheme);
+    localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+    localStorage.setItem(THEME_DEFAULT_MIGRATION_KEY, '1');
   };
 
   useEffect(() => {

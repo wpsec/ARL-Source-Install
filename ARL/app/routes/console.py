@@ -8,8 +8,6 @@
 """
 from collections import deque
 from datetime import datetime, timedelta
-import os
-import re
 import threading
 import time
 
@@ -32,15 +30,47 @@ LAST_NET_IO_SAMPLE = {
     "bytes_sent": 0,
     "bytes_recv": 0,
 }
-LOG_FILE_CANDIDATES = [
-    {"source": "WEB", "path": "/code/arl_web.log"},
-    {"source": "WORKER", "path": "/code/arl_worker.log"},
-    {"source": "SCHED", "path": "/code/arl_scheduler.log"},
-]
-ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 LOG_LINE_MAX_LENGTH = 320
 DEFAULT_RECENT_LOG_LIMIT = 24
 MAX_RECENT_LOG_LIMIT = 100
+
+TASK_STATUS_TEXT_MAP = {
+    "waiting": "等待中",
+    "running": "运行中",
+    "done": "已完成",
+    "stop": "已停止",
+    "error": "执行异常",
+}
+
+TASK_TYPE_TEXT_MAP = {
+    "domain": "域名任务",
+    "ip": "IP任务",
+    "risk_cruising": "风险巡航任务",
+    "fofa": "FOFA任务",
+    "asset_site_add": "站点添加任务",
+    "asset_site_update": "站点更新任务",
+    "asset_wih_update": "WIH更新任务",
+}
+
+TASK_STAGE_TEXT_MAP = {
+    "domain_brute": "域名爆破",
+    "dns_query_plugin": "域名查询插件",
+    "arl_search": "ARL历史查询",
+    "alt_dns": "DNS字典智能生成",
+    "port_scan": "端口扫描",
+    "ssl_cert": "SSL证书获取",
+    "cert_query_plugin": "证书查询插件",
+    "find_site": "站点识别",
+    "npoc_service_detection": "服务识别",
+    "poc_run": "PoC扫描",
+    "weak_brute": "弱口令爆破",
+    "findvhost": "Host碰撞",
+    "search_engines": "搜索引擎调用",
+    "ip_query_plugin": "IP查询插件",
+    "fetch site": "站点采集",
+    "domain site monitor": "站点监控",
+    "send notify": "发送通知",
+}
 
 
 def _count_documents(collection: str, query=None) -> int:
@@ -179,160 +209,201 @@ def _build_network_trend_6h():
     return trend
 
 
-def _tail_log_lines(file_path, max_lines=80, max_bytes=256 * 1024):
-    """
-    读取日志文件尾部，避免整文件载入内存。
-    """
-    if not os.path.isfile(file_path):
-        return []
-
-    try:
-        with open(file_path, "rb") as log_fp:
-            log_fp.seek(0, os.SEEK_END)
-            file_size = log_fp.tell()
-            if file_size <= 0:
-                return []
-
-            block_size = 8192
-            data = b""
-            cursor = file_size
-            while cursor > 0 and data.count(b"\n") <= max_lines and len(data) < max_bytes:
-                read_size = min(block_size, cursor)
-                cursor -= read_size
-                log_fp.seek(cursor, os.SEEK_SET)
-                data = log_fp.read(read_size) + data
-
-        text = data.decode("utf-8", errors="ignore")
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        return lines[-max_lines:]
-    except Exception as e:
-        logger.debug("tail log lines failed path=%s err=%s", file_path, e)
-        return []
+def _truncate_text(value, max_len=LOG_LINE_MAX_LENGTH):
+    text = str(value or "").strip()
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
 
 
-def _normalize_log_level(line):
-    upper = line.upper()
-    if "CRITICAL" in upper or "CRIT" in upper or "FATAL" in upper:
-        return "CRIT"
-    if "ERROR" in upper or "EXCEPTION" in upper:
-        return "ERROR"
-    if "WARN" in upper:
-        return "WARN"
-    if "DEBUG" in upper:
-        return "DEBUG"
-    return "INFO"
+def _parse_time_value(value):
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S"), value.timestamp()
 
+    text = str(value or "").strip()
+    if not text or text == "-":
+        now = datetime.now()
+        return now.strftime("%Y-%m-%d %H:%M:%S"), now.timestamp()
 
-def _parse_log_time(line):
-    """
-    从常见日志格式提取时间戳。
-    """
-    clean_line = ANSI_ESCAPE_RE.sub("", line)
-    patterns = [
-        (r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3,6})", "%Y-%m-%d %H:%M:%S,%f"),
-        (r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]", "%Y-%m-%d %H:%M:%S"),
-        (r"\[(\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2} [+\-]\d{4})\]", "%d/%b/%Y:%H:%M:%S %z"),
+    formats = [
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%fZ",
+        "%Y-%m-%dT%H:%M:%SZ",
     ]
-
-    for pattern, fmt in patterns:
-        matched = re.search(pattern, clean_line)
-        if not matched:
-            continue
-        raw_time = matched.group(1)
+    for fmt in formats:
         try:
-            parsed = datetime.strptime(raw_time, fmt)
-            display_time = parsed.astimezone().strftime("%Y-%m-%d %H:%M:%S") if parsed.tzinfo else parsed.strftime("%Y-%m-%d %H:%M:%S")
-            return display_time, parsed.timestamp()
+            parsed = datetime.strptime(text, fmt)
+            return parsed.strftime("%Y-%m-%d %H:%M:%S"), parsed.timestamp()
         except Exception:
             continue
 
     now = datetime.now()
-    return now.strftime("%Y-%m-%d %H:%M:%S"), now.timestamp()
+    return text, now.timestamp()
 
 
-def _build_recent_task_summary_logs(limit=6):
+def _get_task_log_level(status):
+    value = str(status or "").strip().lower()
+    if value in ["error", "fail", "failed"]:
+        return "ERROR"
+    if value in ["stop", "stopped"]:
+        return "WARN"
+    if value in ["done", "success", "finished"]:
+        return "INFO"
+    if value in ["waiting"]:
+        return "WARN"
+    return "INFO"
+
+
+def _human_task_type(task_type):
+    key = str(task_type or "").strip().lower()
+    return TASK_TYPE_TEXT_MAP.get(key, key or "任务")
+
+
+def _human_task_status(status):
+    key = str(status or "").strip().lower()
+    return TASK_STATUS_TEXT_MAP.get(key, key or "未知")
+
+
+def _human_task_stage(stage):
+    text = str(stage or "").strip()
+    if not text:
+        return "-"
+    normalized = text.lower()
+    if normalized in TASK_STATUS_TEXT_MAP:
+        return TASK_STATUS_TEXT_MAP[normalized]
+    if normalized in TASK_STAGE_TEXT_MAP:
+        return TASK_STAGE_TEXT_MAP[normalized]
+    return text
+
+
+def _build_recent_task_summary_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
     """
-    回退日志：从任务状态构建摘要。
-    """
-    logs = []
-    try:
-        for task in conn("task").find({}, {"name": 1, "status": 1, "target": 1, "save_date": 1}).sort("_id", -1).limit(limit):
-            status = str(task.get("status", "")).lower()
-            if status in ["done", "success", "finished"]:
-                level = "INFO"
-            elif status in ["error", "fail", "failed", "stop", "stopped"]:
-                level = "CRIT"
-            else:
-                level = "WARN"
-            logs.append({
-                "level": level,
-                "msg": "任务[{}] 状态:{} 目标:{}".format(
-                    str(task.get("name", "未命名任务"))[:28],
-                    str(task.get("status", "unknown")),
-                    str(task.get("target", "-"))[:24]
-                ),
-                "time": str(task.get("save_date", "")),
-                "source": "TASK"
-            })
-    except Exception as e:
-        logger.debug("build recent task summary logs failed: %s", e)
-
-    if not logs:
-        logs = [{
-            "level": "INFO",
-            "msg": "系统运行正常，暂未生成任务日志",
-            "time": str(datetime.now()),
-            "source": "SYSTEM"
-        }]
-    return logs
-
-
-def _build_recent_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
-    """
-    构建实时日志（优先读取运行日志文件，失败后回退任务摘要）。
+    构建最近扫描日志：展示扫描中阶段、最近完成情况与步骤耗时。
     """
     safe_limit = max(1, min(int(limit or DEFAULT_RECENT_LOG_LIMIT), MAX_RECENT_LOG_LIMIT))
-    per_file_lines = max(80, safe_limit * 4)
     records = []
     seq = 0
 
-    for candidate in LOG_FILE_CANDIDATES:
-        source = candidate.get("source", "SYSTEM")
-        file_path = candidate.get("path", "")
-        if not file_path:
-            continue
+    projection = {
+        "_id": 1,
+        "name": 1,
+        "target": 1,
+        "status": 1,
+        "type": 1,
+        "start_time": 1,
+        "end_time": 1,
+        "save_date": 1,
+        "service": 1,
+        "statistic": 1,
+    }
 
-        for raw_line in _tail_log_lines(file_path, max_lines=per_file_lines):
-            clean_line = ANSI_ESCAPE_RE.sub("", raw_line).strip()
-            if not clean_line:
-                continue
+    try:
+        task_limit = max(24, safe_limit * 3)
+        for task in conn("task").find({}, projection).sort("_id", -1).limit(task_limit):
+            task_name = _truncate_text(task.get("name", "未命名任务"), max_len=36)
+            task_type_text = _human_task_type(task.get("type", ""))
+            task_status = str(task.get("status", "")).strip()
+            task_status_lower = task_status.lower()
+            status_text = _human_task_status(task_status)
+            stage_text = _human_task_stage(task_status)
+            target_preview = _truncate_text(task.get("target", "-"), max_len=56)
 
-            msg = re.sub(r"\s+", " ", clean_line)
-            if len(msg) > LOG_LINE_MAX_LENGTH:
-                msg = msg[:LOG_LINE_MAX_LENGTH - 3] + "..."
+            if task_status_lower in ["done", "stop", "error"]:
+                time_value = task.get("end_time") or task.get("save_date") or task.get("start_time")
+            else:
+                time_value = task.get("start_time") or task.get("save_date") or task.get("end_time")
+            if str(time_value or "").strip() in ["", "-"]:
+                try:
+                    time_value = task.get("_id").generation_time
+                except Exception:
+                    pass
 
-            display_time, ts_value = _parse_log_time(clean_line)
+            display_time, ts_value = _parse_time_value(time_value)
+            level = _get_task_log_level(task_status)
+
+            if task_status_lower == "done":
+                stat = task.get("statistic") or {}
+                msg = "任务[{}]({}) 扫描完成，站点:{} 域名:{} IP:{} 漏洞:{}".format(
+                    task_name,
+                    task_type_text,
+                    int(stat.get("site_cnt", 0) or 0),
+                    int(stat.get("domain_cnt", 0) or 0),
+                    int(stat.get("ip_cnt", 0) or 0),
+                    int(stat.get("vuln_cnt", 0) or 0),
+                )
+            elif task_status_lower in ["error", "stop"]:
+                msg = "任务[{}]({}) {}，最后阶段:{}，目标:{}".format(
+                    task_name,
+                    task_type_text,
+                    status_text,
+                    stage_text,
+                    target_preview,
+                )
+            elif task_status_lower == "waiting":
+                msg = "任务[{}]({}) 等待调度，目标:{}".format(task_name, task_type_text, target_preview)
+            else:
+                msg = "任务[{}]({}) 扫描中，当前阶段:{}，目标:{}".format(
+                    task_name,
+                    task_type_text,
+                    stage_text,
+                    target_preview,
+                )
+
             records.append({
                 "_seq": seq,
                 "_ts": ts_value,
                 "time": display_time,
-                "level": _normalize_log_level(clean_line),
-                "source": source,
-                "msg": msg,
+                "level": level,
+                "source": "SCAN",
+                "msg": _truncate_text(msg),
             })
             seq += 1
 
-    if records:
-        records.sort(key=lambda item: (item.get("_ts", 0), item.get("_seq", 0)), reverse=True)
-        return [{
-            "time": item.get("time", ""),
-            "level": item.get("level", "INFO"),
-            "source": item.get("source", "SYSTEM"),
-            "msg": item.get("msg", ""),
-        } for item in records[:safe_limit]]
+            service_items = task.get("service", [])
+            if isinstance(service_items, list) and service_items:
+                for service_item in service_items[-2:]:
+                    service_name = _human_task_stage(service_item.get("name"))
+                    elapsed = _safe_float(service_item.get("elapsed", 0), 0.0)
+                    if elapsed > 0:
+                        msg = "任务[{}] 阶段完成: {} (耗时 {:.2f}s)".format(task_name, service_name, elapsed)
+                    else:
+                        msg = "任务[{}] 阶段完成: {}".format(task_name, service_name)
+                    records.append({
+                        "_seq": seq,
+                        "_ts": ts_value,
+                        "time": display_time,
+                        "level": "INFO",
+                        "source": "STEP",
+                        "msg": _truncate_text(msg),
+                    })
+                    seq += 1
+    except Exception as e:
+        logger.debug("build recent scan logs failed: %s", e)
 
-    # 运行日志不可用时回退任务摘要，避免前端空白
-    return _build_recent_task_summary_logs(limit=min(safe_limit, 12))
+    if not records:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return [{
+            "time": now,
+            "level": "INFO",
+            "source": "SCAN",
+            "msg": "暂无扫描日志，创建任务后会在此实时展示扫描阶段",
+        }]
+
+    records.sort(key=lambda item: (item.get("_ts", 0), item.get("_seq", 0)), reverse=True)
+    return [{
+        "time": item.get("time", ""),
+        "level": item.get("level", "INFO"),
+        "source": item.get("source", "SCAN"),
+        "msg": item.get("msg", ""),
+    } for item in records[:safe_limit]]
+
+
+def _build_recent_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
+    """
+    构建实时扫描日志（仅任务扫描过程，不读取系统运行日志）。
+    """
+    return _build_recent_task_summary_logs(limit=limit)
 
 
 def _build_engine_status(device_info, running_tasks: int, waiting_tasks: int):
@@ -485,7 +556,7 @@ class ARLConsoleDashboard(ARLResource):
             - risk_distribution: 风险分布
             - asset_trend_7d: 最近 7 天趋势
             - network_trend: 最近 6 小时流量趋势
-            - recent_logs: 最近运行日志
+            - recent_logs: 最近扫描日志
             - engine: 引擎状态
         """
         device_info = utils.device_info()
@@ -520,12 +591,12 @@ class ARLConsoleDashboard(ARLResource):
 
 @ns.route('/recent_logs')
 class ARLConsoleRecentLogs(ARLResource):
-    """仪表盘实时日志接口"""
+    """仪表盘实时扫描日志接口"""
 
     @auth
     def get(self):
         """
-        获取最近日志
+        获取最近扫描日志
         Query:
             - limit: 条数，默认 24，最大 100
         """

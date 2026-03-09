@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
-  ArrowDownToLine,
   ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
@@ -12,6 +11,7 @@ import {
   Cpu,
   Database,
   Download,
+  Eye,
   FileCode,
   FlaskConical,
   GitBranch,
@@ -2171,7 +2171,7 @@ function DashboardView({
     }));
     setDeviceInfo(consoleInfo?.data?.device_info || {});
     setRecentTasks(normalizeListData(recentTaskResponse).items.slice(0, 6));
-    setRecentLogs((prev) => (prev.length > 0 ? prev : [{ level: 'INFO', source: 'SYSTEM', msg: '当前为兼容模式，日志接口不可用', time: '' }]));
+    setRecentLogs((prev) => (prev.length > 0 ? prev : [{ level: 'INFO', source: 'SCAN', msg: '当前为兼容模式，扫描日志接口不可用', time: '' }]));
     setLastUpdatedAt(new Date().toLocaleString('zh-CN', { hour12: false }));
   }, [token]);
 
@@ -2266,7 +2266,7 @@ function DashboardView({
   const trendData = assetTrend.length > 0 ? assetTrend : [{ name: '周一', assets: stats.asset_site, vulns: stats.vuln }];
   const riskData = riskDistribution.length > 0 ? riskDistribution : [{ name: '高危', value: highRisk, color: '#ef4444' }];
   const netData = networkTrend.length > 0 ? networkTrend : [{ time: '13:40', in: 120, out: 80 }];
-  const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', source: 'SYSTEM', msg: '暂无日志数据', time: '' }];
+  const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', source: 'SCAN', msg: '暂无扫描日志数据', time: '' }];
   const quickModules = [
     { id: 'task', label: '任务管理', desc: '下发、停止、导出扫描任务', icon: Activity, color: 'text-brand-accent' },
     { id: 'policy', label: '策略配置', desc: '维护标准化扫描策略模板', icon: FileCode, color: 'text-brand-secondary' },
@@ -2463,7 +2463,7 @@ function DashboardView({
               <div className="p-2 bg-brand-accent/10 rounded-xl">
                 <Terminal className="w-5 h-5 text-brand-accent" />
               </div>
-              <h3 className="text-xl font-black tracking-tight">实时日志</h3>
+              <h3 className="text-xl font-black tracking-tight">实时扫描日志</h3>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -2482,7 +2482,7 @@ function DashboardView({
           </div>
           <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[10px] overflow-y-auto max-h-[320px]">
             {isLogPaused ? (
-              <div className="mb-2 text-brand-warning border border-brand-warning/30 bg-brand-warning/10 rounded-lg px-2 py-1">日志已暂停自动刷新</div>
+              <div className="mb-2 text-brand-warning border border-brand-warning/30 bg-brand-warning/10 rounded-lg px-2 py-1">扫描日志已暂停自动刷新</div>
             ) : null}
             {logsData.map((log, index) => {
               const level = String(log?.level || 'INFO').toUpperCase();
@@ -4995,7 +4995,7 @@ function TableModuleView({
                   onClick={openTaskGlobalView}
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
                 >
-                  <ArrowDownToLine className="w-4 h-4" />
+                  <Eye className="w-4 h-4" />
                   全局查看
                 </button>
               ) : null}
