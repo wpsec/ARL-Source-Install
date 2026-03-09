@@ -4,9 +4,9 @@ WORKDIR /code
 
 RUN yum install epel-release python36  fontconfig wqy-microhei-fonts -y
 
-RUN python3.6 -m ensurepip --default-pip
+RUN python3 -m ensurepip --default-pip
 
-RUN pip3.6 install pip --upgrade
+RUN pip3 install pip --upgrade
 
 RUN rpm -vhU https://nmap.org/dist/nmap-7.80-1.x86_64.rpm
 
@@ -36,7 +36,7 @@ COPY docker/ncrack-services /usr/local/share/ncrack/ncrack-services
 COPY docker/ARL-NPoC/ /opt/ARL-NPoC/
 WORKDIR /opt/ARL-NPoC/
 ENV LANG en_US.UTF-8
-RUN pip3.6 install -e .
+RUN pip3 install -e .
 
 WORKDIR /code
 
@@ -44,16 +44,16 @@ RUN curl https://ssl-config.mozilla.org/ffdhe2048.txt -o /etc/ssl/certs/dhparam.
 
 COPY requirements.txt requirements.txt
 
-#RUN pip3.6 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+#RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY docker/GeoLite2/ /data/GeoLite2/
 
-RUN pip3.6 install -r requirements.txt
+RUN pip3 install -r requirements.txt
 
 
 ## 安装 NPoC 的依赖
 WORKDIR /opt/ARL-NPoC/
-RUN pip3.6 install -r requirements.txt
+RUN pip3 install -r requirements.txt
 
 
 # 定义nuclei版本
@@ -77,5 +77,5 @@ WORKDIR /code
 
 ## 自测一下
 RUN cp app/config.yaml.example app/config.yaml
-RUN env FLASK_APP=app.main:arl_app python3.6 -m flask routes
+RUN env FLASK_APP=app.main:arl_app python3 -m flask routes
 RUN python3 -m app.celerytask

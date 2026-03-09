@@ -82,7 +82,7 @@ services:
       [
         "sh",
         "-c",
-        "wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; python3.6 -m app.scheduler",
+        "wait-for-it.sh -t 60 mongodb:27017; wait-for-it.sh -t 60 rabbitmq:5672; wait-for-it.sh -t 60 redis:6379; python3 -m app.scheduler",
       ]
     environment:
       - LANG=en_US.UTF-8

@@ -126,6 +126,13 @@ class Config(object):
     MONGO_DB = 'ARLV2'
     # MongoDB连接URL
     MONGO_URL = 'mongodb://127.0.0.1:27017/'
+    # MongoDB 连接池参数（可通过环境变量 ARL_MONGO_* 覆盖）
+    MONGO_MAX_POOL_SIZE = 50
+    MONGO_MIN_POOL_SIZE = 0
+    MONGO_MAX_IDLE_TIME_MS = 60000
+    MONGO_SERVER_SELECTION_TIMEOUT_MS = 5000
+    MONGO_CONNECT_TIMEOUT_MS = 5000
+    MONGO_SOCKET_TIMEOUT_MS = 30000
 
     # ==================== 临时文件和工具路径配置 ====================
     # 临时文件存储目录
@@ -159,8 +166,16 @@ class Config(object):
     KSCAN_FINGERPRINT_MAX_RULES_PER_NAME = 30
     # 最多接收规则总数（0=不限制）
     KSCAN_FINGERPRINT_MAX_TOTAL_RULES = 12000
-    # PhantomJS 可执行文件路径，默认使用项目内置二进制
+    # 截图引擎：playwright / phantomjs / auto
+    SCREENSHOT_ENGINE = "playwright"
+    # PhantomJS 可执行文件路径（legacy 兼容路径）
     PHANTOMJS_BIN = os.path.join(basedir, 'tools/phantomjs')
+    # Playwright 启动超时（毫秒）
+    PLAYWRIGHT_TIMEOUT_MS = 15000
+    # Playwright 截图前等待（毫秒）
+    PLAYWRIGHT_WAIT_MS = 1000
+    # Playwright Chromium 可执行路径（为空时使用内置浏览器）
+    PLAYWRIGHT_CHROMIUM_BIN = ""
     # 网页截图JS脚本路径（PhantomJS）
     SCREENSHOT_JS = os.path.join(basedir, 'tools/screenshot.js')
     # 截图文件存储目录
@@ -229,6 +244,10 @@ class Config(object):
     AUTH = False
     # API访问密钥
     API_KEY = ""
+    # API 分页查询最大 size（导出接口不受此限制）
+    API_PAGE_SIZE_MAX = 10000
+    # 无查询条件时是否使用 estimated_document_count 作为总数统计
+    API_USE_ESTIMATED_COUNT = False
 
     # ==================== IP黑名单配置 ====================
     # IP地址黑名单，这些IP段不会被扫描
@@ -460,6 +479,18 @@ try:
     # --- PhantomJS 路径配置 ---
     if y["ARL"].get("PHANTOMJS_BIN"):
         Config.PHANTOMJS_BIN = y["ARL"]["PHANTOMJS_BIN"]
+    if y["ARL"].get("SCREENSHOT_ENGINE"):
+        Config.SCREENSHOT_ENGINE = str(y["ARL"]["SCREENSHOT_ENGINE"]).strip().lower()
+    if y["ARL"].get("PLAYWRIGHT_TIMEOUT_MS") is not None:
+        Config.PLAYWRIGHT_TIMEOUT_MS = safe_positive_int(
+            int(y["ARL"]["PLAYWRIGHT_TIMEOUT_MS"]), Config.PLAYWRIGHT_TIMEOUT_MS
+        )
+    if y["ARL"].get("PLAYWRIGHT_WAIT_MS") is not None:
+        Config.PLAYWRIGHT_WAIT_MS = safe_positive_int(
+            int(y["ARL"]["PLAYWRIGHT_WAIT_MS"]), Config.PLAYWRIGHT_WAIT_MS
+        )
+    if y["ARL"].get("PLAYWRIGHT_CHROMIUM_BIN"):
+        Config.PLAYWRIGHT_CHROMIUM_BIN = str(y["ARL"]["PLAYWRIGHT_CHROMIUM_BIN"]).strip()
 
     # --- 截图回传配置 ---
     if y["ARL"].get("SCREENSHOT_SYNC_ENABLE") is not None:
@@ -632,86 +663,26 @@ try:
         if y["GITHUB"].get("TOKEN"):
             Config.GITHUB_TOKEN = y["GITHUB"]["TOKEN"]
 
-    # --- 域名爆破并发数配置 ---
-    domain_concurrent = y["ARL"].get("DOMAIN_BRUTE_CONCURRENT")
-    if domain_concurrent is not None:
-        Config.DOMAIN_BRUTE_CONCURRENT = safe_positive_int(
-            domain_concurrent, Config.DOMAIN_BRUTE_CONCURRENT
-        )
-
-    # --- 组合域名爆破并发数配置 ---
-    alt_dns_concurrent = y["ARL"].get("ALT_DNS_CONCURRENT")
-    if alt_dns_concurrent is not None:
-        Config.ALT_DNS_CONCURRENT = safe_positive_int(
-            alt_dns_concurrent, Config.ALT_DNS_CONCURRENT
-        )
-
-    # --- 扫描链路并发配置 ---
-    domain_resolve_concurrency = y["ARL"].get("DOMAIN_RESOLVE_CONCURRENCY")
-    if domain_resolve_concurrency is not None:
-        Config.DOMAIN_RESOLVE_CONCURRENCY = safe_positive_int(
-            domain_resolve_concurrency, Config.DOMAIN_RESOLVE_CONCURRENCY
-        )
-
-    domain_info_concurrency = y["ARL"].get("DOMAIN_INFO_CONCURRENCY")
-    if domain_info_concurrency is not None:
-        Config.DOMAIN_INFO_CONCURRENCY = safe_positive_int(
-            domain_info_concurrency, Config.DOMAIN_INFO_CONCURRENCY
-        )
-
-    http_check_concurrency = y["ARL"].get("HTTP_CHECK_CONCURRENCY")
-    if http_check_concurrency is not None:
-        Config.HTTP_CHECK_CONCURRENCY = safe_positive_int(
-            http_check_concurrency, Config.HTTP_CHECK_CONCURRENCY
-        )
-
-    http_fetch_site_concurrency = y["ARL"].get("HTTP_FETCH_SITE_CONCURRENCY")
-    if http_fetch_site_concurrency is not None:
-        Config.HTTP_FETCH_SITE_CONCURRENCY = safe_positive_int(
-            http_fetch_site_concurrency, Config.HTTP_FETCH_SITE_CONCURRENCY
-        )
-
-    probe_http_concurrency = y["ARL"].get("PROBE_HTTP_CONCURRENCY")
-    if probe_http_concurrency is not None:
-        Config.PROBE_HTTP_CONCURRENCY = safe_positive_int(
-            probe_http_concurrency, Config.PROBE_HTTP_CONCURRENCY
-        )
-
-    site_screenshot_concurrency = y["ARL"].get("SITE_SCREENSHOT_CONCURRENCY")
-    if site_screenshot_concurrency is not None:
-        Config.SITE_SCREENSHOT_CONCURRENCY = safe_positive_int(
-            site_screenshot_concurrency, Config.SITE_SCREENSHOT_CONCURRENCY
-        )
-
-    npoc_sniffer_concurrency = y["ARL"].get("NPOC_SNIFFER_CONCURRENCY")
-    if npoc_sniffer_concurrency is not None:
-        Config.NPOC_SNIFFER_CONCURRENCY = safe_positive_int(
-            npoc_sniffer_concurrency, Config.NPOC_SNIFFER_CONCURRENCY
-        )
-
-    npoc_poc_concurrency = y["ARL"].get("NPOC_POC_CONCURRENCY")
-    if npoc_poc_concurrency is not None:
-        Config.NPOC_POC_CONCURRENCY = safe_positive_int(
-            npoc_poc_concurrency, Config.NPOC_POC_CONCURRENCY
-        )
-
-    npoc_brute_concurrency = y["ARL"].get("NPOC_BRUTE_CONCURRENCY")
-    if npoc_brute_concurrency is not None:
-        Config.NPOC_BRUTE_CONCURRENCY = safe_positive_int(
-            npoc_brute_concurrency, Config.NPOC_BRUTE_CONCURRENCY
-        )
-
-    asset_site_monitor_concurrency = y["ARL"].get("ASSET_SITE_MONITOR_CONCURRENCY")
-    if asset_site_monitor_concurrency is not None:
-        Config.ASSET_SITE_MONITOR_CONCURRENCY = safe_positive_int(
-            asset_site_monitor_concurrency, Config.ASSET_SITE_MONITOR_CONCURRENCY
-        )
-
-    asset_site_discovery_concurrency = y["ARL"].get("ASSET_SITE_DISCOVERY_CONCURRENCY")
-    if asset_site_discovery_concurrency is not None:
-        Config.ASSET_SITE_DISCOVERY_CONCURRENCY = safe_positive_int(
-            asset_site_discovery_concurrency, Config.ASSET_SITE_DISCOVERY_CONCURRENCY
-        )
+    # --- 并发与资源配置（声明式批量加载） ---
+    _ARL_POSITIVE_INT_KEYS = [
+        "DOMAIN_BRUTE_CONCURRENT",
+        "ALT_DNS_CONCURRENT",
+        "DOMAIN_RESOLVE_CONCURRENCY",
+        "DOMAIN_INFO_CONCURRENCY",
+        "HTTP_CHECK_CONCURRENCY",
+        "HTTP_FETCH_SITE_CONCURRENCY",
+        "PROBE_HTTP_CONCURRENCY",
+        "SITE_SCREENSHOT_CONCURRENCY",
+        "NPOC_SNIFFER_CONCURRENCY",
+        "NPOC_POC_CONCURRENCY",
+        "NPOC_BRUTE_CONCURRENCY",
+        "ASSET_SITE_MONITOR_CONCURRENCY",
+        "ASSET_SITE_DISCOVERY_CONCURRENCY",
+    ]
+    for _key in _ARL_POSITIVE_INT_KEYS:
+        _val = y["ARL"].get(_key)
+        if _val is not None:
+            setattr(Config, _key, safe_positive_int(_val, getattr(Config, _key)))
 
     # --- 代理配置 ---
     if y.get("PROXY"):
@@ -758,6 +729,20 @@ try:
     Config.DINGTALK_KB_DRY_RUN = env_bool("ARL_DINGTALK_KB_DRY_RUN", Config.DINGTALK_KB_DRY_RUN)
     Config.DINGTALK_REPORT_BASE_URL = env_str("ARL_DINGTALK_REPORT_BASE_URL", Config.DINGTALK_REPORT_BASE_URL)
     Config.PHANTOMJS_BIN = env_str("ARL_PHANTOMJS_BIN", Config.PHANTOMJS_BIN)
+    Config.SCREENSHOT_ENGINE = env_str("ARL_SCREENSHOT_ENGINE", Config.SCREENSHOT_ENGINE).strip().lower()
+    Config.PLAYWRIGHT_TIMEOUT_MS = safe_positive_int(
+        env_int("ARL_PLAYWRIGHT_TIMEOUT_MS", Config.PLAYWRIGHT_TIMEOUT_MS),
+        Config.PLAYWRIGHT_TIMEOUT_MS
+    )
+    Config.PLAYWRIGHT_WAIT_MS = safe_positive_int(
+        env_int("ARL_PLAYWRIGHT_WAIT_MS", Config.PLAYWRIGHT_WAIT_MS),
+        Config.PLAYWRIGHT_WAIT_MS
+    )
+    Config.PLAYWRIGHT_CHROMIUM_BIN = env_str(
+        "ARL_PLAYWRIGHT_CHROMIUM_BIN", Config.PLAYWRIGHT_CHROMIUM_BIN
+    ).strip()
+    if Config.SCREENSHOT_ENGINE not in ["playwright", "phantomjs", "auto"]:
+        Config.SCREENSHOT_ENGINE = "playwright"
     Config.SCREENSHOT_SYNC_ENABLE = env_bool("ARL_SCREENSHOT_SYNC_ENABLE", Config.SCREENSHOT_SYNC_ENABLE)
     Config.SCREENSHOT_SYNC_WEB_URL = env_str("ARL_SCREENSHOT_SYNC_WEB_URL", Config.SCREENSHOT_SYNC_WEB_URL)
     Config.SCREENSHOT_SYNC_TIMEOUT = env_int("ARL_SCREENSHOT_SYNC_TIMEOUT", Config.SCREENSHOT_SYNC_TIMEOUT)
@@ -827,58 +812,50 @@ try:
         env_int("ARL_CELERY_MAX_MEMORY_PER_CHILD", Config.CELERY_MAX_MEMORY_PER_CHILD),
         Config.CELERY_MAX_MEMORY_PER_CHILD
     )
-    Config.DOMAIN_BRUTE_CONCURRENT = safe_positive_int(
-        env_int("ARL_DOMAIN_BRUTE_CONCURRENT", Config.DOMAIN_BRUTE_CONCURRENT),
-        Config.DOMAIN_BRUTE_CONCURRENT
+    # --- 环境变量覆盖：并发数配置（声明式） ---
+    for _key in _ARL_POSITIVE_INT_KEYS:
+        _env_name = "ARL_{}".format(_key)
+        setattr(Config, _key, safe_positive_int(
+            env_int(_env_name, getattr(Config, _key)),
+            getattr(Config, _key)
+        ))
+
+    # --- 环境变量覆盖：MongoDB 连接池参数 ---
+    Config.MONGO_MAX_POOL_SIZE = safe_positive_int(
+        env_int("ARL_MONGO_MAX_POOL_SIZE", Config.MONGO_MAX_POOL_SIZE),
+        Config.MONGO_MAX_POOL_SIZE
     )
-    Config.ALT_DNS_CONCURRENT = safe_positive_int(
-        env_int("ARL_ALT_DNS_CONCURRENT", Config.ALT_DNS_CONCURRENT),
-        Config.ALT_DNS_CONCURRENT
+    Config.MONGO_MIN_POOL_SIZE = env_int("ARL_MONGO_MIN_POOL_SIZE", Config.MONGO_MIN_POOL_SIZE)
+    if Config.MONGO_MIN_POOL_SIZE < 0:
+        Config.MONGO_MIN_POOL_SIZE = 0
+    if Config.MONGO_MIN_POOL_SIZE > Config.MONGO_MAX_POOL_SIZE:
+        Config.MONGO_MIN_POOL_SIZE = Config.MONGO_MAX_POOL_SIZE
+    Config.MONGO_MAX_IDLE_TIME_MS = safe_positive_int(
+        env_int("ARL_MONGO_MAX_IDLE_TIME_MS", Config.MONGO_MAX_IDLE_TIME_MS),
+        Config.MONGO_MAX_IDLE_TIME_MS
     )
-    Config.DOMAIN_RESOLVE_CONCURRENCY = safe_positive_int(
-        env_int("ARL_DOMAIN_RESOLVE_CONCURRENCY", Config.DOMAIN_RESOLVE_CONCURRENCY),
-        Config.DOMAIN_RESOLVE_CONCURRENCY
+    Config.MONGO_SERVER_SELECTION_TIMEOUT_MS = safe_positive_int(
+        env_int("ARL_MONGO_SERVER_SELECTION_TIMEOUT_MS", Config.MONGO_SERVER_SELECTION_TIMEOUT_MS),
+        Config.MONGO_SERVER_SELECTION_TIMEOUT_MS
     )
-    Config.DOMAIN_INFO_CONCURRENCY = safe_positive_int(
-        env_int("ARL_DOMAIN_INFO_CONCURRENCY", Config.DOMAIN_INFO_CONCURRENCY),
-        Config.DOMAIN_INFO_CONCURRENCY
+    Config.MONGO_CONNECT_TIMEOUT_MS = safe_positive_int(
+        env_int("ARL_MONGO_CONNECT_TIMEOUT_MS", Config.MONGO_CONNECT_TIMEOUT_MS),
+        Config.MONGO_CONNECT_TIMEOUT_MS
     )
-    Config.HTTP_CHECK_CONCURRENCY = safe_positive_int(
-        env_int("ARL_HTTP_CHECK_CONCURRENCY", Config.HTTP_CHECK_CONCURRENCY),
-        Config.HTTP_CHECK_CONCURRENCY
+    Config.MONGO_SOCKET_TIMEOUT_MS = safe_positive_int(
+        env_int("ARL_MONGO_SOCKET_TIMEOUT_MS", Config.MONGO_SOCKET_TIMEOUT_MS),
+        Config.MONGO_SOCKET_TIMEOUT_MS
     )
-    Config.HTTP_FETCH_SITE_CONCURRENCY = safe_positive_int(
-        env_int("ARL_HTTP_FETCH_SITE_CONCURRENCY", Config.HTTP_FETCH_SITE_CONCURRENCY),
-        Config.HTTP_FETCH_SITE_CONCURRENCY
+
+    # --- 环境变量覆盖：API 分页上限 ---
+    Config.API_PAGE_SIZE_MAX = safe_positive_int(
+        env_int("ARL_API_PAGE_SIZE_MAX", Config.API_PAGE_SIZE_MAX),
+        Config.API_PAGE_SIZE_MAX
     )
-    Config.PROBE_HTTP_CONCURRENCY = safe_positive_int(
-        env_int("ARL_PROBE_HTTP_CONCURRENCY", Config.PROBE_HTTP_CONCURRENCY),
-        Config.PROBE_HTTP_CONCURRENCY
+    Config.API_USE_ESTIMATED_COUNT = env_bool(
+        "ARL_API_USE_ESTIMATED_COUNT", Config.API_USE_ESTIMATED_COUNT
     )
-    Config.SITE_SCREENSHOT_CONCURRENCY = safe_positive_int(
-        env_int("ARL_SITE_SCREENSHOT_CONCURRENCY", Config.SITE_SCREENSHOT_CONCURRENCY),
-        Config.SITE_SCREENSHOT_CONCURRENCY
-    )
-    Config.NPOC_SNIFFER_CONCURRENCY = safe_positive_int(
-        env_int("ARL_NPOC_SNIFFER_CONCURRENCY", Config.NPOC_SNIFFER_CONCURRENCY),
-        Config.NPOC_SNIFFER_CONCURRENCY
-    )
-    Config.NPOC_POC_CONCURRENCY = safe_positive_int(
-        env_int("ARL_NPOC_POC_CONCURRENCY", Config.NPOC_POC_CONCURRENCY),
-        Config.NPOC_POC_CONCURRENCY
-    )
-    Config.NPOC_BRUTE_CONCURRENCY = safe_positive_int(
-        env_int("ARL_NPOC_BRUTE_CONCURRENCY", Config.NPOC_BRUTE_CONCURRENCY),
-        Config.NPOC_BRUTE_CONCURRENCY
-    )
-    Config.ASSET_SITE_MONITOR_CONCURRENCY = safe_positive_int(
-        env_int("ARL_ASSET_SITE_MONITOR_CONCURRENCY", Config.ASSET_SITE_MONITOR_CONCURRENCY),
-        Config.ASSET_SITE_MONITOR_CONCURRENCY
-    )
-    Config.ASSET_SITE_DISCOVERY_CONCURRENCY = safe_positive_int(
-        env_int("ARL_ASSET_SITE_DISCOVERY_CONCURRENCY", Config.ASSET_SITE_DISCOVERY_CONCURRENCY),
-        Config.ASSET_SITE_DISCOVERY_CONCURRENCY
-    )
+
     dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
     if dns_resolvers_env:
         Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]

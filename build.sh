@@ -61,12 +61,13 @@ echo ""
 echo "检查离线工具文件..."
 
 REQUIRED_TOOLS=(
-    "tools/GeoLite2-ASN.mmdb"
-    "tools/GeoLite2-City.mmdb"
-    "tools/ncrack"
-    "tools/ncrack-services"
+    "tools/GeoLite2/GeoLite2-ASN.mmdb"
+    "tools/GeoLite2/GeoLite2-City.mmdb"
+    "tools/ncrack/ncrack"
+    "tools/ncrack/ncrack-services"
     "tools/dhparam.pem"
-    "tools/wih_linux_amd64"
+    "tools/wih/wih_linux_amd64"
+    "tools/wih/wih_linux_arm64"
 )
 
 for tool in "${REQUIRED_TOOLS[@]}"; do
@@ -76,6 +77,13 @@ for tool in "${REQUIRED_TOOLS[@]}"; do
         echo "✓ $(basename $tool) 存在"
     fi
 done
+
+# 检查 Python 源码包（Dockerfile 使用本地 Python-*.tgz 进行离线编译）
+if compgen -G "$PROJECT_ROOT/tools/Python-*.tgz" > /dev/null; then
+    echo "✓ $(basename "$(ls "$PROJECT_ROOT"/tools/Python-*.tgz | head -n 1)") 存在"
+else
+    echo "⚠ 警告: 未找到 tools/Python-*.tgz (Python 编译阶段可能需联网下载源码)"
+fi
 
 # 询问是否构建
 echo ""

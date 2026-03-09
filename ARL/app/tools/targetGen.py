@@ -1,4 +1,4 @@
-#!/usr/bin/python3.6
+#!/usr/bin/python3
 
 from urllib.parse import urlparse
 import sys
@@ -85,4 +85,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

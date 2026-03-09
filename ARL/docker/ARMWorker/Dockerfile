@@ -28,7 +28,6 @@ WORKDIR /code
 RUN set -x;\
     apt-get update \
     && apt-get install -y python3.8 python3-pip curl nginx nmap wget unzip \
-    && ln -s /usr/bin/python3.8 /usr/bin/python3.6 \
     && useradd -s /bin/false nginx \
     && nmap -v
 
@@ -82,5 +81,5 @@ WORKDIR /code
 
 ## 自测一下
 RUN cp app/config.yaml.example app/config.yaml
-RUN env FLASK_APP=app.main:arl_app python3.6 -m flask routes
+RUN env FLASK_APP=app.main:arl_app python3 -m flask routes
 RUN python3 -m app.celerytask

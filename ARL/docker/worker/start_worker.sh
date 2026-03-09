@@ -10,7 +10,7 @@ get_cfg_int() {
   local default_value="$2"
   local value
 
-  value="$(PYTHONPATH=/code python3.6 - "$key" "$default_value" <<'PY' 2>/dev/null || true
+  value="$(PYTHONPATH=/code python3 - "$key" "$default_value" <<'PY' 2>/dev/null || true
 import sys
 from app.config import Config
 

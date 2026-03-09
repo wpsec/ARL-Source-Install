@@ -24,5 +24,5 @@ class TestQueryPlugin(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    #  python3.6 -m test.test_query_plugin [source1] [source2]
+    #  python3 -m test.test_query_plugin [source1] [source2]
     unittest.main(argv=[sys.argv[0]])

@@ -75,7 +75,7 @@ show_build_info() {
 
     if [ "$NON_X86_BUILD" -eq 1 ]; then
         echo -e "${YELLOW}[WARN] 检测到非 x86_64 环境，已启用 ARM 兼容模式${NC}"
-        echo -e "${YELLOW}[WARN] 构建阶段会跳过 x86_64 专有工具检查(massdns/ncrack/wih/phantomjs)，不会阻塞构建${NC}"
+        echo -e "${YELLOW}[WARN] 构建阶段会跳过 x86_64 专有工具检查(massdns/ncrack)，不会阻塞构建${NC}"
         echo ""
     fi
 }
@@ -87,8 +87,47 @@ show_arch_runtime_notice() {
 
     echo -e "${YELLOW}[WARN] ARM 兼容模式提示:${NC}"
     echo "  - 已跳过 x86_64 专有组件自检，系统可继续启动"
-    echo "  - 涉及 massdns/ncrack/wih/phantomjs 的功能会自动降级并记录告警"
+    echo "  - 涉及 massdns/ncrack 的功能会自动降级并记录告警"
     echo ""
+}
+
+# 检查 tools 目录结构（适配新目录布局）
+check_tools_layout() {
+    local required_paths=(
+        "tools/ncrack/ncrack"
+        "tools/ncrack/ncrack-services"
+        "tools/nuclei/nuclei-templates"
+        "tools/GeoLite2/GeoLite2-ASN.mmdb"
+        "tools/GeoLite2/GeoLite2-City.mmdb"
+        "tools/wih/wih_linux_amd64"
+        "tools/wih/wih_linux_arm64"
+        "tools/dhparam.pem"
+        "tools/finger.json"
+    )
+
+    local missing=()
+    local path=""
+    for path in "${required_paths[@]}"; do
+        if [ ! -e "$ROOT_DIR/$path" ]; then
+            missing+=("$path")
+        fi
+    done
+
+    if ! compgen -G "$ROOT_DIR/tools/nuclei/nuclei_*_linux_amd64.zip" >/dev/null; then
+        missing+=("tools/nuclei/nuclei_*_linux_amd64.zip")
+    fi
+    # Python 源码包（Dockerfile 需要至少一个本地包以通过 COPY）
+    if ! compgen -G "$ROOT_DIR/tools/Python-*.tgz" >/dev/null; then
+        missing+=("tools/Python-*.tgz")
+    fi
+
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo -e "${RED}错误: tools 目录缺少以下必需文件/目录:${NC}"
+        printf '  - %s\n' "${missing[@]}"
+        echo ""
+        echo "请确认你调整后的 tools 目录结构与 Dockerfile 保持一致后再构建。"
+        return 1
+    fi
 }
 
 # 构建镜像（含离线回退）
@@ -150,6 +189,7 @@ quick_build() {
     show_build_info "快速构建"
     echo -e "${YELLOW}提示: 只重建代码层，复用系统包缓存，直接更新${DEFAULT_IMAGE_TAG}镜像${NC}"
     echo ""
+    check_tools_layout
     
     if [ "$COMPOSE_CMD" = "docker compose" ]; then
         # 从项目根目录直接构建统一镜像标签（含离线回退模式）
@@ -185,6 +225,7 @@ full_build() {
     show_build_info "完整构建 (15-30 分钟)"
     echo -e "${YELLOW}提示: 完整重建所有层，包括系统包和依赖${NC}"
     echo ""
+    check_tools_layout
     
     if [ "$COMPOSE_CMD" = "docker compose" ]; then
         docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
@@ -204,6 +245,7 @@ clean_build() {
     show_build_info "清空缓存完整构建 (20-35 分钟)"
     echo -e "${YELLOW}提示: 删除所有构建缓存，从零开始${NC}"
     echo ""
+    check_tools_layout
     
     # 删除 dangling images
     docker builder prune -a -f
@@ -274,6 +316,7 @@ tag_build() {
     show_build_info "标记版本构建"
     echo -e "${YELLOW}提示: 快速构建后将 ${DEFAULT_IMAGE_TAG} 标记为 arl:$VERSION${NC}"
     echo ""
+    check_tools_layout
     
     # 执行快速构建
     if [ "$COMPOSE_CMD" = "docker compose" ]; then

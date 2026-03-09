@@ -10,7 +10,7 @@ get_cfg_int() {
   local default_value="$2"
   local value
 
-  value="$(PYTHONPATH=/code python3.6 - "$key" "$default_value" <<'PY' 2>/dev/null || true
+  value="$(PYTHONPATH=/code python3 - "$key" "$default_value" <<'PY' 2>/dev/null || true
 import sys
 from app.config import Config
 
@@ -54,7 +54,7 @@ wait-for-it.sh -t 60 redis:6379
 
 if [ -f /code/tools/finger.json ]; then
   echo "Importing custom fingerprint rules..."
-  if ! PYTHONPATH=/code python3.6 -m app.tools.import_fingerprint --file /code/tools/finger.json; then
+  if ! PYTHONPATH=/code python3 -m app.tools.import_fingerprint --file /code/tools/finger.json; then
     echo "Custom fingerprint import failed, continue startup"
   fi
 else

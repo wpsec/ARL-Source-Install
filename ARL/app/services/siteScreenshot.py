@@ -17,7 +17,8 @@ class SiteScreenshot(BaseThread):
     站点截图执行器
 
     功能：
-    1. 调用 PhantomJS 生成站点截图
+    1. 优先调用 Playwright 生成站点截图（支持 x86_64/aarch64）
+    2. 当 Playwright 不可用时回退 PhantomJS（legacy 兼容）
     2. 在启用配置时，回传截图到 web 内部接口，解决 K8s 多 Pod 本地盘不共享问题
     """
 
@@ -26,7 +27,10 @@ class SiteScreenshot(BaseThread):
         self.capture_dir = capture_dir
         self.task_id = task_id
         self.screenshot_map = {}
-        self.phantomjs_bin = utils.get_phantomjs_bin(logger=logger)
+        self.screenshot_engine = str(Config.SCREENSHOT_ENGINE or "playwright").strip().lower()
+        if self.screenshot_engine not in ["playwright", "phantomjs", "auto"]:
+            self.screenshot_engine = "playwright"
+        self.phantomjs_bin = None
         self.sync_upload_url = ""
         self.sync_auth_token = ""
         self.sync_enable = False
@@ -65,6 +69,11 @@ class SiteScreenshot(BaseThread):
 
         self.sync_enable = True
         logger.info("screenshot sync enabled upload_url={}".format(self.sync_upload_url))
+
+    def get_phantomjs_bin(self):
+        if self.phantomjs_bin is None:
+            self.phantomjs_bin = utils.get_phantomjs_bin(logger=logger)
+        return self.phantomjs_bin
 
     def upload_screenshot(self, site, file_path):
         """
@@ -149,13 +158,73 @@ class SiteScreenshot(BaseThread):
             logger.warning("screenshot sync error site={} {}".format(site, e))
             return False
 
-    def work(self, site):
-        if not self.phantomjs_bin:
-            return
+    def screenshot_by_playwright(self, site, file_name):
+        timeout_ms = max(1000, int(Config.PLAYWRIGHT_TIMEOUT_MS))
+        wait_ms = max(0, int(Config.PLAYWRIGHT_WAIT_MS))
+        chromium_bin = utils.resolve_executable(Config.PLAYWRIGHT_CHROMIUM_BIN)
+        launch_kwargs = {
+            "headless": True,
+            "args": [
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ]
+        }
+        if chromium_bin:
+            launch_kwargs["executable_path"] = chromium_bin
 
-        file_name = '{}/{}.jpg'.format(self.capture_dir, self.gen_filename(site))
+        browser = None
+        context = None
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception as e:
+            logger.warning("playwright import failed {}, fallback phantomjs".format(e))
+            return False
 
-        cmd_parameters = [self.phantomjs_bin,
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(**launch_kwargs)
+                context = browser.new_context(
+                    viewport={"width": 1280, "height": 1024},
+                    ignore_https_errors=True,
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/124.0.0.0 Safari/537.36"
+                    )
+                )
+                page = context.new_page()
+                try:
+                    page.goto(site, wait_until="domcontentloaded", timeout=timeout_ms)
+                except Exception as e:
+                    # 即使导航超时也尝试截图，尽量保留可视化证据
+                    logger.debug("playwright goto timeout site={} err={}".format(site, e))
+
+                if wait_ms > 0:
+                    page.wait_for_timeout(wait_ms)
+                page.screenshot(path=file_name, type="jpeg", quality=95, full_page=False)
+            return os.path.exists(file_name)
+        except Exception as e:
+            logger.warning("playwright screenshot failed site={} err={}".format(site, e))
+            return False
+        finally:
+            try:
+                if context:
+                    context.close()
+            except Exception:
+                pass
+            try:
+                if browser:
+                    browser.close()
+            except Exception:
+                pass
+
+    def screenshot_by_phantomjs(self, site, file_name):
+        phantomjs_bin = self.get_phantomjs_bin()
+        if not phantomjs_bin:
+            return False
+
+        cmd_parameters = [phantomjs_bin,
                           '--ignore-ssl-errors true',
                           '--ssl-protocol any',
                           '--ssl-ciphers ALL',
@@ -163,7 +232,7 @@ class SiteScreenshot(BaseThread):
                           '-u={}'.format(site),
                           '-s={}'.format(file_name),
                           ]
-        logger.debug("screenshot {}".format(" ".join(cmd_parameters)))
+        logger.debug("screenshot fallback {}".format(" ".join(cmd_parameters)))
 
         try:
             completed = utils.exec_system(
@@ -172,8 +241,8 @@ class SiteScreenshot(BaseThread):
                 stderr=subprocess.PIPE
             )
         except OSError as e:
-            logger.warning("screenshot run error {} {}".format(site, e))
-            return
+            logger.warning("phantomjs screenshot run error {} {}".format(site, e))
+            return False
 
         if completed.returncode != 0:
             stderr_text = ""
@@ -183,10 +252,27 @@ class SiteScreenshot(BaseThread):
             if completed.stdout:
                 stdout_text = completed.stdout.decode("utf-8", errors="ignore").strip()
             logger.warning(
-                "screenshot failed {} rc={} stderr={} stdout={}".format(
+                "phantomjs screenshot failed {} rc={} stderr={} stdout={}".format(
                     site, completed.returncode, stderr_text[:500], stdout_text[:500]
                 )
             )
+            return False
+
+        return os.path.exists(file_name)
+
+    def work(self, site):
+        file_name = '{}/{}.jpg'.format(self.capture_dir, self.gen_filename(site))
+        capture_ok = False
+
+        if self.screenshot_engine in ["playwright", "auto"]:
+            capture_ok = self.screenshot_by_playwright(site, file_name)
+
+        if (not capture_ok) and self.screenshot_engine in ["phantomjs", "auto", "playwright"]:
+            # playwright 失败时自动回退到 phantomjs，避免中断旧环境
+            capture_ok = self.screenshot_by_phantomjs(site, file_name)
+
+        if not capture_ok:
+            logger.warning("screenshot failed all engines site={}".format(site))
             return
 
         if not os.path.exists(file_name):

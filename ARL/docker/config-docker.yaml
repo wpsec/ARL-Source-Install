@@ -29,7 +29,7 @@ RISKIQ:
   KEY: ""
 
 # 利用三方API进行域名收集
-# 测试命令 python3.6 -m test.test_query_plugin [source1] [source2]
+# 测试命令 python3 -m test.test_query_plugin [source1] [source2]
 # 域名查询插件配置, enable 字段可以单独控制是否启用该插件，如果没有这个字段也会默认启用
 QUERY_PLUGIN:
   alienvault:
@@ -135,7 +135,7 @@ WXWORK:
 # IP/域名监控和站点监控结束后会往下面的URL POST提交JSON数据
 # 为了验证身份会在Header中带上Token 字段
 # 进入容器测试  docker-compose exec worker bash
-# 测试命令 python3.6 -m test.test_webhook <task_id> <scope_id>
+# 测试命令 python3 -m test.test_webhook <task_id> <scope_id>
 WEBHOOK:
   URL: ""
   TOKEN: ""
@@ -168,6 +168,14 @@ ARL:
     - 8.8.8.8
   # worker -> web 截图回传（默认开启，未配置地址时自动降级）
   SCREENSHOT_SYNC_ENABLE: true
+  # 截图引擎：playwright / phantomjs / auto
+  SCREENSHOT_ENGINE: "playwright"
+  # Playwright 导航超时（毫秒）
+  PLAYWRIGHT_TIMEOUT_MS: 15000
+  # Playwright 截图前等待（毫秒）
+  PLAYWRIGHT_WAIT_MS: 1000
+  # 可选：自定义 Chromium 可执行路径（为空使用 Playwright 内置浏览器）
+  PLAYWRIGHT_CHROMIUM_BIN: ""
   # K8s 内部服务地址（示例：https://arl-web）
   SCREENSHOT_SYNC_WEB_URL: "https://arl-web"
   # 回传请求超时（秒）
