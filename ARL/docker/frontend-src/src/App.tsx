@@ -6360,6 +6360,505 @@ function ConfigConsoleView({ token }: { token: string }) {
   );
 }
 
+function DingtalkIntegrationView({ token }: { token: string }) {
+  type DingtalkConfigForm = {
+    dingding_access_token: string;
+    dingding_secret: string;
+    kb_enable: boolean;
+    base_url: string;
+    corp_id: string;
+    app_key: string;
+    app_secret: string;
+    operator_id: string;
+    workspace_id: string;
+    parent_node_id: string;
+    create_node_path: string;
+    kb_timeout: number;
+    title_prefix: string;
+    dry_run: boolean;
+    report_base_url: string;
+  };
+
+  type DingtalkBoolKey = 'kb_enable' | 'dry_run';
+  type DingtalkStringKey = Exclude<keyof DingtalkConfigForm, DingtalkBoolKey | 'kb_timeout'>;
+
+  const defaultForm: DingtalkConfigForm = {
+    dingding_access_token: '',
+    dingding_secret: '',
+    kb_enable: false,
+    base_url: 'https://api.dingtalk.com',
+    corp_id: '',
+    app_key: '',
+    app_secret: '',
+    operator_id: '',
+    workspace_id: '',
+    parent_node_id: '',
+    create_node_path: '/v1.0/doc/workspaces/{workspace_id}/docs',
+    kb_timeout: 20,
+    title_prefix: '互联网资产自动化收集',
+    dry_run: false,
+    report_base_url: '',
+  };
+
+  const [form, setForm] = useState<DingtalkConfigForm>(defaultForm);
+  const [runtimeStatus, setRuntimeStatus] = useState<any>({});
+  const [configPath, setConfigPath] = useState('');
+  const [updatedAt, setUpdatedAt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
+  const [loadingNodes, setLoadingNodes] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [debugResult, setDebugResult] = useState('');
+
+  const normalizeForm = useCallback((rawValue: any): DingtalkConfigForm => {
+    const raw = rawValue || {};
+    return {
+      dingding_access_token: String(raw.dingding_access_token || ''),
+      dingding_secret: String(raw.dingding_secret || ''),
+      kb_enable: Boolean(raw.kb_enable),
+      base_url: String(raw.base_url || 'https://api.dingtalk.com'),
+      corp_id: String(raw.corp_id || ''),
+      app_key: String(raw.app_key || ''),
+      app_secret: String(raw.app_secret || ''),
+      operator_id: String(raw.operator_id || ''),
+      workspace_id: String(raw.workspace_id || ''),
+      parent_node_id: String(raw.parent_node_id || ''),
+      create_node_path: String(raw.create_node_path || '/v1.0/doc/workspaces/{workspace_id}/docs'),
+      kb_timeout: Number(raw.kb_timeout || 20),
+      title_prefix: String(raw.title_prefix || '互联网资产自动化收集'),
+      dry_run: Boolean(raw.dry_run),
+      report_base_url: String(raw.report_base_url || ''),
+    };
+  }, []);
+
+  const loadDingtalkConfig = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/dingtalk_api/config/', { method: 'GET' });
+      const data = result?.data || {};
+      setForm(normalizeForm(data?.config));
+      setRuntimeStatus(data?.runtime_status || {});
+      setConfigPath(String(data.config_path || ''));
+      setUpdatedAt(String(data.updated_at || ''));
+    } catch (err: any) {
+      setError(err?.message || '加载钉钉集成配置失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, normalizeForm]);
+
+  useEffect(() => {
+    void loadDingtalkConfig();
+  }, [loadDingtalkConfig]);
+
+  const updateStringField = (key: DingtalkStringKey, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateBoolField = (key: DingtalkBoolKey, value: boolean) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateTimeout = (value: string) => {
+    setForm((prev) => ({ ...prev, kb_timeout: Number(value || 0) }));
+  };
+
+  const saveDingtalkConfig = async () => {
+    if (!form.base_url.trim()) {
+      setError('钉钉 OpenAPI 地址不能为空');
+      return;
+    }
+    if (!Number.isFinite(form.kb_timeout) || form.kb_timeout <= 0) {
+      setError('知识库超时时间必须大于 0');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/dingtalk_api/config/', {
+        method: 'POST',
+        body: {
+          dingtalk_config: {
+            ...form,
+            dingding_access_token: form.dingding_access_token.trim(),
+            dingding_secret: form.dingding_secret.trim(),
+            base_url: form.base_url.trim(),
+            corp_id: form.corp_id.trim(),
+            app_key: form.app_key.trim(),
+            app_secret: form.app_secret.trim(),
+            operator_id: form.operator_id.trim(),
+            workspace_id: form.workspace_id.trim(),
+            parent_node_id: form.parent_node_id.trim(),
+            create_node_path: form.create_node_path.trim(),
+            kb_timeout: Math.floor(form.kb_timeout),
+            title_prefix: form.title_prefix.trim(),
+            report_base_url: form.report_base_url.trim(),
+          },
+        },
+      });
+      const data = result?.data || {};
+      setForm(normalizeForm(data?.config));
+      setRuntimeStatus(data?.runtime_status || {});
+      setConfigPath(String(data.config_path || configPath));
+      setUpdatedAt(String(data.saved_at || updatedAt));
+      const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
+      setSuccess(`钉钉集成配置已保存${backupPath}`);
+    } catch (err: any) {
+      setError(err?.message || '保存钉钉集成配置失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runDingtalkTest = async () => {
+    setTesting(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/dingtalk_api/test/', {
+        method: 'POST',
+        body: { force_refresh_token: true },
+      });
+      setDebugResult(JSON.stringify(result?.data || {}, null, 2));
+      setSuccess('钉钉连通性测试完成');
+    } catch (err: any) {
+      setError(err?.message || '钉钉连通性测试失败');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const loadWorkspaces = async () => {
+    setLoadingWorkspaces(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/dingtalk_api/workspaces/', {
+        method: 'POST',
+        body: { operator_id: form.operator_id.trim() },
+      });
+      setDebugResult(JSON.stringify(result?.data || {}, null, 2));
+      setSuccess('空间列表获取成功');
+    } catch (err: any) {
+      setError(err?.message || '获取空间列表失败');
+    } finally {
+      setLoadingWorkspaces(false);
+    }
+  };
+
+  const loadNodes = async () => {
+    setLoadingNodes(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/dingtalk_api/nodes/', {
+        method: 'POST',
+        body: {
+          operator_id: form.operator_id.trim(),
+          parent_node_id: form.parent_node_id.trim(),
+        },
+      });
+      setDebugResult(JSON.stringify(result?.data || {}, null, 2));
+      setSuccess('节点列表获取成功');
+    } catch (err: any) {
+      setError(err?.message || '获取节点列表失败');
+    } finally {
+      setLoadingNodes(false);
+    }
+  };
+
+  return (
+    <div className="p-8 space-y-6">
+      <div>
+        <h2 className="text-4xl font-black tracking-tight">钉钉集成</h2>
+        <p className="text-brand-text-muted mt-2 text-sm">
+          在浏览器中维护钉钉机器人与知识库配置，保存后写入 config-docker.yaml，支持资产报告链接等参数统一管理。
+        </p>
+      </div>
+
+      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+          <div className="text-sm font-bold tracking-wide">配置状态</div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void loadDingtalkConfig()}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              disabled={loading}
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              重新加载
+            </button>
+            <button
+              onClick={() => void saveDingtalkConfig()}
+              className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={saving || loading}
+            >
+              <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
+              {saving ? '保存中...' : '保存配置'}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
+          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
+            <span className="text-brand-text-muted">配置文件:</span>
+            <span className="font-mono ml-2">{configPath || '-'}</span>
+          </div>
+          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
+            <span className="text-brand-text-muted">最近更新时间:</span>
+            <span className="font-mono ml-2">{updatedAt || '-'}</span>
+          </div>
+        </div>
+
+        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+          提示：保存后 `web` 端调试会立即生效；扫描任务通知建议重启 `worker` 容器后完全生效。
+        </div>
+
+        {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
+        {success ? <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">{success}</div> : null}
+      </div>
+
+      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              钉钉机器人 Token
+              <span className="ml-2 font-mono opacity-70">DINGDING.ACCESS_TOKEN</span>
+            </label>
+            <input
+              value={form.dingding_access_token}
+              onChange={(event) => updateStringField('dingding_access_token', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              placeholder="用于群机器人通知"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              钉钉机器人 Secret
+              <span className="ml-2 font-mono opacity-70">DINGDING.SECRET</span>
+            </label>
+            <input
+              value={form.dingding_secret}
+              onChange={(event) => updateStringField('dingding_secret', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              placeholder="机器人加签密钥（可选）"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.kb_enable}
+              onChange={(event) => updateBoolField('kb_enable', event.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+            />
+            <span className="font-medium">启用知识库推送</span>
+          </label>
+          <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.dry_run}
+              onChange={(event) => updateBoolField('dry_run', event.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+            />
+            <span className="font-medium">DryRun（只演练不落地）</span>
+          </label>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              API 超时时间(秒)
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.KB_TIMEOUT</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(form.kb_timeout)}
+              onChange={(event) => updateTimeout(event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              OpenAPI 地址
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.BASE_URL</span>
+            </label>
+            <input
+              value={form.base_url}
+              onChange={(event) => updateStringField('base_url', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              placeholder="https://api.dingtalk.com"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              资产结果访问地址
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.REPORT_BASE_URL</span>
+            </label>
+            <input
+              value={form.report_base_url}
+              onChange={(event) => updateStringField('report_base_url', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              placeholder="如: https://arl.example.com"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              CorpID
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.CORP_ID</span>
+            </label>
+            <input
+              value={form.corp_id}
+              onChange={(event) => updateStringField('corp_id', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              AppKey
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.APP_KEY</span>
+            </label>
+            <input
+              value={form.app_key}
+              onChange={(event) => updateStringField('app_key', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              AppSecret
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.APP_SECRET</span>
+            </label>
+            <input
+              value={form.app_secret}
+              onChange={(event) => updateStringField('app_secret', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              操作者ID
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.OPERATOR_ID</span>
+            </label>
+            <input
+              value={form.operator_id}
+              onChange={(event) => updateStringField('operator_id', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              工作空间ID
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.WORKSPACE_ID</span>
+            </label>
+            <input
+              value={form.workspace_id}
+              onChange={(event) => updateStringField('workspace_id', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              父节点ID
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.PARENT_NODE_ID</span>
+            </label>
+            <input
+              value={form.parent_node_id}
+              onChange={(event) => updateStringField('parent_node_id', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              创建文档接口路径
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.CREATE_NODE_PATH</span>
+            </label>
+            <input
+              value={form.create_node_path}
+              onChange={(event) => updateStringField('create_node_path', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              报告标题前缀
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.TITLE_PREFIX</span>
+            </label>
+            <input
+              value={form.title_prefix}
+              onChange={(event) => updateStringField('title_prefix', event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => void runDingtalkTest()}
+            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            disabled={testing || loading}
+          >
+            <Play className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
+            {testing ? '测试中...' : '测试连通性'}
+          </button>
+          <button
+            onClick={() => void loadWorkspaces()}
+            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            disabled={loadingWorkspaces || loading}
+          >
+            <Globe className={`w-4 h-4 ${loadingWorkspaces ? 'animate-spin' : ''}`} />
+            获取空间列表
+          </button>
+          <button
+            onClick={() => void loadNodes()}
+            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            disabled={loadingNodes || loading}
+          >
+            <Database className={`w-4 h-4 ${loadingNodes ? 'animate-spin' : ''}`} />
+            获取节点列表
+          </button>
+        </div>
+
+        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+          运行状态：缺失基础字段 {Array.isArray(runtimeStatus?.missing_basic_fields) ? runtimeStatus.missing_basic_fields.join(', ') || '无' : '无'}；
+          缺失发布字段 {Array.isArray(runtimeStatus?.missing_publish_fields) ? runtimeStatus.missing_publish_fields.join(', ') || '无' : '无'}
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-brand-text-muted block">调试输出</label>
+          <textarea
+            value={debugResult}
+            readOnly
+            className="w-full min-h-[220px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            placeholder="点击测试按钮后显示返回结果"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MainShell() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
@@ -6626,10 +7125,12 @@ function MainShell() {
         {activeModule.id === 'system_monitor' ? <SystemMonitorView token={token} /> : null}
         {activeModule.id === 'api_console' ? <ApiConsoleView token={token} /> : null}
         {activeModule.id === 'config_console' ? <ConfigConsoleView token={token} /> : null}
+        {activeModule.id === 'dingtalk_api' ? <DingtalkIntegrationView token={token} /> : null}
         {activeModule.id !== 'dashboard' &&
         activeModule.id !== 'system_monitor' &&
         activeModule.id !== 'api_console' &&
-        activeModule.id !== 'config_console' ? (
+        activeModule.id !== 'config_console' &&
+        activeModule.id !== 'dingtalk_api' ? (
           <TableModuleView
             module={activeModule}
             token={token}
