@@ -1905,6 +1905,37 @@ function truncateText(value: string, max = 120): string {
   return `${value.slice(0, max)}...`;
 }
 
+function truncateMiddleText(value: string, max = 48, head = 18, tail = 16): string {
+  const text = String(value ?? '').trim();
+  if (!text) return '-';
+  if (text.length <= max) return text;
+  const safeHead = Math.max(6, Math.min(head, Math.floor((max - 3) / 2)));
+  const safeTail = Math.max(4, Math.min(tail, max - safeHead - 3));
+  return `${text.slice(0, safeHead)}...${text.slice(-safeTail)}`;
+}
+
+function isLikelyIdColumn(column: string): boolean {
+  const key = String(column || '').toLowerCase();
+  if (!key) return false;
+  return key === '_id' || key.endsWith('_id') || key === 'taskid' || key === 'job_id';
+}
+
+function formatExternalFilterChipText(key: string, value: any): string {
+  const keyText = String(key || '').trim();
+  const valueText = String(value ?? '').trim();
+  if (!valueText) return `${keyText}=-`;
+
+  if (isLikelyIdColumn(keyText)) {
+    const parts = valueText.replace(/,/g, ' ').split(/\s+/).filter((item) => item);
+    if (parts.length > 1) {
+      return `${keyText}=${truncateMiddleText(parts[0], 32, 12, 10)} ... 共${parts.length}项`;
+    }
+    return `${keyText}=${truncateMiddleText(valueText, 44, 20, 18)}`;
+  }
+
+  return `${keyText}=${truncateMiddleText(valueText, 64, 28, 26)}`;
+}
+
 function normalizeValue(value: any): string {
   if (value === null || value === undefined) return '-';
   if (typeof value === 'string') return truncateText(value);
@@ -2608,7 +2639,14 @@ function StatusPill({ text, type }: { text: string; type: 'success' | 'error' | 
         ? 'text-brand-danger bg-brand-danger/10 border-brand-danger/30'
         : 'text-brand-accent bg-brand-accent/10 border-brand-accent/30';
 
-  return <span className={`text-xs px-3 py-1 rounded-full border font-semibold ${className}`}>{text}</span>;
+  return (
+    <span
+      title={text}
+      className={`inline-flex items-center max-w-[72vw] md:max-w-[36rem] text-xs px-3 py-1 rounded-full border font-semibold ${className}`}
+    >
+      <span className="truncate">{text}</span>
+    </span>
+  );
 }
 
 function DashboardView({
@@ -5687,8 +5725,12 @@ function TableModuleView({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-brand-text-muted">局部查看筛选:</span>
             {Object.entries(activeExternalFilters).map(([key, value]) => (
-              <span key={key} className="text-xs px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/60 font-mono">
-                {key}={String(value)}
+              <span
+                key={key}
+                title={`${key}=${String(value ?? '')}`}
+                className="text-xs px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/60 font-mono max-w-[42rem] whitespace-pre-wrap break-all leading-relaxed"
+              >
+                {formatExternalFilterChipText(key, value)}
               </span>
             ))}
             {onClearExternalFilters ? (
@@ -6087,6 +6129,22 @@ function TableModuleView({
                               className="px-4 py-3 align-middle text-sm text-center whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
                             >
                               {formatModuleCellValue(module.id, column, row)}
+                            </td>
+                          );
+                        }
+
+                        if (isLikelyIdColumn(column)) {
+                          const rawIdValue = getValueByPath(row, column);
+                          const fullIdText = normalizeValue(rawIdValue);
+                          const compactIdText = fullIdText === '-' ? '-' : truncateMiddleText(fullIdText, 38, 14, 12);
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span
+                                title={fullIdText}
+                                className="inline-block max-w-[260px] truncate align-middle font-mono"
+                              >
+                                {compactIdText}
+                              </span>
                             </td>
                           );
                         }
