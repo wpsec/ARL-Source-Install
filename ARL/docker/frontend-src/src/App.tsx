@@ -6008,6 +6008,17 @@ function TableModuleView({
                           );
                         }
 
+                        if ((module.id === 'asset_site' || module.id === 'site') && column === 'finger') {
+                          return (
+                            <td
+                              key={column}
+                              className="px-4 py-3 align-middle text-sm text-center whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
+                            >
+                              {formatModuleCellValue(module.id, column, row)}
+                            </td>
+                          );
+                        }
+
                         if (module.id === 'site' && column === 'screenshot') {
                           const screenshot = String(row?.screenshot || '').trim();
                           if (!screenshot) {
