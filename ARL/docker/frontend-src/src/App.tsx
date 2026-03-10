@@ -96,6 +96,7 @@ type ModuleConfig = {
   defaultOrder?: string;
   quickFilterKey?: string;
   columns?: string[];
+  sortableColumns?: string[];
   columnLabels?: Record<string, string>;
   searchFields?: ModuleSearchField[];
   showIndex?: boolean;
@@ -1139,13 +1140,25 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'cip',
-    label: 'C段统计',
+    label: 'C段',
     description: 'C段分布统计',
     group: '资产数据',
     icon: Database,
     listPath: '/cip/',
     rowIdKey: '_id',
+    showIndex: true,
     quickFilterKey: 'cidr_ip',
+    defaultOrder: '-ip_count',
+    columns: ['cidr_ip', 'ip_count', 'domain_count'],
+    sortableColumns: ['cidr_ip', 'ip_count', 'domain_count'],
+    columnLabels: {
+      cidr_ip: 'C段',
+      ip_count: 'IP数',
+      domain_count: '域名数',
+    },
+    searchFields: [
+      { key: 'cidr_ip', label: 'C段', placeholder: '请输入C段进行搜索' },
+    ],
     exportPath: '/cip/export/',
   },
   {
@@ -1283,17 +1296,22 @@ const modules: ModuleConfig[] = [
     description: '任务中提取的JS信息',
     group: '漏洞与规则',
     icon: FileCode,
-    listPath: '/wih/stat/',
-    rowIdKey: 'content',
+    listPath: '/wih/',
+    rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'content',
-    columns: ['content', 'cnt'],
+    columns: ['record_type', 'content', 'source', 'site'],
     columnLabels: {
-      content: 'finger',
-      cnt: '数量',
+      record_type: '记录类型',
+      content: '内容',
+      source: '来源 JS',
+      site: '来源站点',
     },
     searchFields: [
-      { key: 'content', label: 'finger', placeholder: '请输入finger进行搜索' },
+      { key: 'record_type', label: '记录类型', placeholder: '请输入记录类型进行搜索' },
+      { key: 'content', label: '内容', placeholder: '请输入内容进行搜索' },
+      { key: 'source', label: '来源 JS', placeholder: '请输入来源 JS进行搜索' },
+      { key: 'site', label: '来源站点', placeholder: '请输入来源站点进行搜索' },
     ],
     exportPath: '/wih/export/',
   },
@@ -1722,7 +1740,7 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'fileleak', label: '文件泄露' },
   { id: 'url', label: 'URL信息' },
   { id: 'vuln', label: '风险' },
-  { id: 'npoc_service', label: 'C段' },
+  { id: 'cip', label: 'C段' },
   { id: 'nuclei_result', label: 'nuclei' },
   { id: 'stat_finger', label: '指纹统计' },
   { id: 'wih', label: 'WIH' },
@@ -1956,6 +1974,16 @@ function normalizeValue(value: any): string {
   }
   if (typeof value === 'object') return truncateText(JSON.stringify(value));
   return truncateText(String(value));
+}
+
+function buildCidrPrefix(value: any): string {
+  const text = String(value ?? '').trim();
+  if (!text || text === '-') return '';
+  const cidrMatch = text.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}(?:\/\d{1,2})?$/);
+  if (cidrMatch?.[1]) return `${cidrMatch[1]}.`;
+  const prefixMatch = text.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.?$/);
+  if (prefixMatch?.[1]) return `${prefixMatch[1]}.`;
+  return '';
 }
 
 function getValueByPath(source: any, path: string): any {
@@ -2315,11 +2343,44 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
   }
 
   if (moduleId === 'service' && column === 'ip_port') {
-    const ip = normalizeValue(row?.service_info?.ip);
-    const port = normalizeValue(row?.service_info?.port_id);
-    if (ip === '-' && port === '-') return '-';
-    if (port === '-') return ip;
-    return `${ip}:${port}`;
+    const infoList = Array.isArray(row?.service_info)
+      ? row.service_info
+      : (row?.service_info && typeof row.service_info === 'object' ? [row.service_info] : []);
+
+    const ipPortList = infoList
+      .map((item: any) => {
+        const rawIp = item?.ip;
+        const rawPort = item?.port_id;
+        const ip = rawIp === null || rawIp === undefined ? '' : String(rawIp).trim();
+        const port = rawPort === null || rawPort === undefined ? '' : String(rawPort).trim();
+        if (!ip && !port) return '';
+        if (!port) return ip;
+        if (!ip) return port;
+        return `${ip}:${port}`;
+      })
+      .filter((item: string) => item && item !== '-');
+
+    if (ipPortList.length === 0) return '-';
+    return Array.from(new Set(ipPortList)).join('\n');
+  }
+
+  if (moduleId === 'service' && column === 'service_info.product') {
+    const infoList = Array.isArray(row?.service_info)
+      ? row.service_info
+      : (row?.service_info && typeof row.service_info === 'object' ? [row.service_info] : []);
+
+    const productList = infoList
+      .flatMap((item: any) => {
+        const raw = item?.product;
+        if (raw === null || raw === undefined) return [];
+        return String(raw)
+          .split(/[\r\n,]+/)
+          .map((part) => part.trim());
+      })
+      .filter((item: string) => item && item !== '-');
+
+    if (productList.length === 0) return '-';
+    return Array.from(new Set(productList)).join(', ');
   }
 
   if (moduleId === 'vuln' && column === 'credential') {
@@ -4623,6 +4684,7 @@ function TableModuleView({
   const [success, setSuccess] = useState('');
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(10);
+  const [order, setOrder] = useState(module.defaultOrder || '');
   const [total, setTotal] = useState(0);
   const [quickFilter, setQuickFilter] = useState('');
   const [searchForm, setSearchForm] = useState<JsonValue>({});
@@ -4672,6 +4734,10 @@ function TableModuleView({
     });
     setSearchForm(next);
   }, [module.id, hasAdvancedSearch, module.searchFields]);
+
+  useEffect(() => {
+    setOrder(module.defaultOrder || '');
+  }, [module.id, module.defaultOrder]);
 
   useEffect(() => {
     setRiskDialogOpen(false);
@@ -4846,7 +4912,10 @@ function TableModuleView({
         ...filters,
       };
 
-      if (module.defaultOrder && !('order' in query)) {
+      const orderValue = String(order || '').trim();
+      if (orderValue) {
+        query.order = orderValue;
+      } else if (module.defaultOrder && !('order' in query)) {
         query.order = module.defaultOrder;
       }
 
@@ -4862,7 +4931,7 @@ function TableModuleView({
     } finally {
       setLoading(false);
     }
-  }, [buildFilters, module.defaultOrder, module.listPath, page, size, token]);
+  }, [buildFilters, module.defaultOrder, module.listPath, order, page, size, token]);
 
   useEffect(() => {
     void loadRows();
@@ -4909,6 +4978,26 @@ function TableModuleView({
   }, [module.id, rowIdKey]);
   const showIndexColumn = Boolean(module.showIndex);
   const getColumnLabel = (column: string) => module.columnLabels?.[column] || humanizeField(column);
+  const isColumnSortable = useCallback((column: string) => {
+    if (!Array.isArray(module.sortableColumns)) return false;
+    return module.sortableColumns.includes(column);
+  }, [module.sortableColumns]);
+  const getColumnSortDirection = useCallback((column: string): 'asc' | 'desc' | null => {
+    const current = String(order || '').trim();
+    if (!current) return null;
+    if (current === `-${column}`) return 'desc';
+    if (current === column || current === `+${column}`) return 'asc';
+    return null;
+  }, [order]);
+  const toggleColumnSort = useCallback((column: string) => {
+    if (!isColumnSortable(column)) return;
+    setOrder((prev) => {
+      const current = String(prev || '').trim();
+      if (current === `-${column}`) return column;
+      return `-${column}`;
+    });
+    setPage(1);
+  }, [isColumnSortable]);
   const shouldWrapCell = useCallback((moduleId: string, column: string) => {
     if (moduleId === 'task' && ['target', 'options_summary'].includes(column)) return true;
     if (moduleId === 'task_schedule' && column === 'target') return true;
@@ -4916,9 +5005,10 @@ function TableModuleView({
     if (moduleId === 'site' && ['headers', 'finger'].includes(column)) return true;
     if (moduleId === 'asset_scope' && column === 'scope') return true;
     if (moduleId === 'cert' && column === 'cert_summary') return true;
+    if (moduleId === 'service' && ['ip_port', 'service_info.product'].includes(column)) return true;
     if (moduleId === 'vuln' && column === 'credential') return true;
     if (moduleId === 'nuclei_result' && ['vuln_url', 'curl_command'].includes(column)) return true;
-    if (moduleId === 'wih' && column === 'content') return true;
+    if (moduleId === 'wih' && ['content', 'source', 'site'].includes(column)) return true;
     if (moduleId === 'github_result' && ['path', 'human_content'].includes(column)) return true;
     if (moduleId === 'github_monitor_result' && ['path', 'human_content'].includes(column)) return true;
     return false;
@@ -5701,7 +5791,7 @@ function TableModuleView({
           ))}
         </div>
       ) : null}
-      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'npoc_service', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
+      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'cip', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
         <div className="flex items-center gap-2">
           <button
             onClick={() => onOpenModule('task')}
@@ -5977,11 +6067,29 @@ function TableModuleView({
                   {showIndexColumn ? (
                     <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">序号</th>
                   ) : null}
-                  {columns.map((column) => (
-                    <th key={column} className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">
-                      {getColumnLabel(column)}
-                    </th>
-                  ))}
+                  {columns.map((column) => {
+                    const sortable = isColumnSortable(column);
+                    const direction = getColumnSortDirection(column);
+                    return (
+                      <th key={column} className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">
+                        {sortable ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleColumnSort(column)}
+                            className="inline-flex items-center justify-center gap-1.5 hover:text-brand-accent transition"
+                            title={direction === 'desc' ? '当前降序，点击切换升序' : '点击按此列降序'}
+                          >
+                            <span>{getColumnLabel(column)}</span>
+                            <span className={`text-xs ${direction ? 'text-brand-accent' : 'text-brand-text-muted/70'}`}>
+                              {direction === 'desc' ? '↓' : direction === 'asc' ? '↑' : '↕'}
+                            </span>
+                          </button>
+                        ) : (
+                          getColumnLabel(column)
+                        )}
+                      </th>
+                    );
+                  })}
                   {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubTaskRowOperate || showGithubSchedulerRowOperate ? (
                     <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">操作</th>
                   ) : null}
@@ -6084,6 +6192,33 @@ function TableModuleView({
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
                               ) : null}
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'cip' && (column === 'ip_count' || column === 'domain_count')) {
+                          const taskId = String(row?.task_id || '').trim();
+                          const cidrPrefix = buildCidrPrefix(row?.cidr_ip);
+                          const destinationModule = column === 'ip_count' ? 'ip' : 'domain';
+                          const nextFilters: JsonValue = {};
+                          if (taskId) nextFilters.task_id = taskId;
+                          if (cidrPrefix) {
+                            if (column === 'ip_count') {
+                              nextFilters.ip = cidrPrefix;
+                            } else {
+                              nextFilters.ips = cidrPrefix;
+                            }
+                          }
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <button
+                                type="button"
+                                onClick={() => onOpenModule(destinationModule, nextFilters)}
+                                className="text-brand-accent hover:underline font-semibold"
+                                title={column === 'ip_count' ? '跳转到IP并自动按C段筛选' : '跳转到子域名并自动按C段筛选'}
+                              >
+                                {formatModuleCellValue(module.id, column, row)}
+                              </button>
                             </td>
                           );
                         }
@@ -8117,6 +8252,7 @@ function MainShell() {
     reversed.fileleak = 'tasks';
     reversed.url = 'tasks';
     reversed.vuln = 'tasks';
+    reversed.cip = 'tasks';
     reversed.npoc_service = 'tasks';
     reversed.nuclei_result = 'tasks';
     reversed.stat_finger = 'tasks';

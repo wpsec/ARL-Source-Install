@@ -97,8 +97,10 @@ services:
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     environment:
       - MONGO_INITDB_DATABASE=arl
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=admin
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-admin}
+      - ARL_APP_USERNAME=${ARL_APP_USERNAME:-admin}
+      - ARL_APP_PASSWORD=${ARL_APP_PASSWORD:-arlpass}
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine

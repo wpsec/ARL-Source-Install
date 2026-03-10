@@ -62,6 +62,28 @@ if [ "$COMPOSE_CMD" = "error" ]; then
     exit 1
 fi
 
+# 统一加载环境变量（优先项目根 .env，其次 ARL/docker/.env）
+load_compose_env() {
+    local env_file=""
+    if [ -f "$ROOT_DIR/.env" ]; then
+        env_file="$ROOT_DIR/.env"
+    elif [ -f "$DOCKERFILE_PATH/.env" ]; then
+        env_file="$DOCKERFILE_PATH/.env"
+    fi
+
+    if [ -n "$env_file" ]; then
+        set -a
+        # shellcheck disable=SC1090
+        . "$env_file"
+        set +a
+        echo -e "${GREEN}✓ 已加载环境变量: $env_file${NC}"
+    else
+        echo -e "${YELLOW}[WARN] 未找到 .env，使用 compose 默认值${NC}"
+    fi
+}
+
+load_compose_env
+
 # 显示构建模式
 show_build_info() {
     echo -e "${GREEN}========================================${NC}"
