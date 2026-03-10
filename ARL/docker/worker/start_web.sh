@@ -37,15 +37,27 @@ PY
   echo "$value"
 }
 
+ensure_python_runtime() {
+  # 兼容历史镜像: 某些 pip/setuptools 组合会导致 pkg_resources 丢失，进而使 gunicorn/celery 启动失败。
+  if ! python3 -c "import pkg_resources" >/dev/null 2>&1; then
+    echo "[WARN] pkg_resources missing, trying to repair setuptools..."
+    pip3 install --no-cache-dir "setuptools<81" >/dev/null 2>&1 || true
+  fi
+
+  if ! python3 -c "import pkg_resources" >/dev/null 2>&1; then
+    echo "[ERROR] pkg_resources still missing, abort startup."
+    exit 1
+  fi
+}
+
+ensure_python_runtime
+
 echo "Starting gen_crt.sh..."
 gen_crt.sh && echo "gen_crt.sh completed"
 
 echo "Starting nginx..."
-if nginx; then
-  echo "nginx started successfully"
-else
-  echo "nginx failed to start"
-fi
+nginx
+echo "nginx started successfully"
 
 echo "Waiting for services..."
 wait-for-it.sh -t 60 mongodb:27017

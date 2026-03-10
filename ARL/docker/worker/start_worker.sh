@@ -37,6 +37,21 @@ PY
   echo "$value"
 }
 
+ensure_python_runtime() {
+  # 兼容历史镜像: pkg_resources 缺失会导致 celery/gunicorn 直接崩溃循环重启。
+  if ! python3 -c "import pkg_resources" >/dev/null 2>&1; then
+    echo "[WARN] pkg_resources missing, trying to repair setuptools..."
+    pip3 install --no-cache-dir "setuptools<81" >/dev/null 2>&1 || true
+  fi
+
+  if ! python3 -c "import pkg_resources" >/dev/null 2>&1; then
+    echo "[ERROR] pkg_resources still missing, abort startup."
+    exit 1
+  fi
+}
+
+ensure_python_runtime
+
 wait-for-it.sh -t 60 mongodb:27017
 wait-for-it.sh -t 60 rabbitmq:5672
 wait-for-it.sh -t 60 redis:6379
