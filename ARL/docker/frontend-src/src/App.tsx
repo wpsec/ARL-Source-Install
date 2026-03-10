@@ -4612,6 +4612,7 @@ function TableModuleView({
   const [taskDetailCounts, setTaskDetailCounts] = useState<Record<string, number>>({});
   const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
+  const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -4642,6 +4643,7 @@ function TableModuleView({
     setPolicyTaskSubmitting(false);
     setPolicyTaskError('');
     setExpandedScopeRows({});
+    setExpandedTaskScheduleTargetRows({});
   }, [module.id]);
 
   useEffect(() => {
@@ -5935,6 +5937,7 @@ function TableModuleView({
                   const id = getRowId(row);
                   const checked = selectedIds.includes(id);
                   const scopeExpandKey = id || `scope-row-${page}-${rowIndex}`;
+                  const scheduleTargetExpandKey = id || `task-schedule-row-${page}-${rowIndex}`;
 
                   return (
                     <tr key={id || Math.random()} className="border-b border-brand-border/60 hover:bg-white/5 transition">
@@ -5986,6 +5989,39 @@ function TableModuleView({
                                     setExpandedScopeRows((prev) => ({
                                       ...prev,
                                       [scopeExpandKey]: !isExpanded,
+                                    }))
+                                  }
+                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                >
+                                  {isExpanded ? '收起' : '显示全部'}
+                                </button>
+                              ) : null}
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'task_schedule' && column === 'target') {
+                          const targetText = formatModuleCellValue(module.id, column, row);
+                          const targetLines = targetText
+                            .split(/\r?\n/)
+                            .map((item) => item.trim())
+                            .filter((item) => item && item !== '-');
+                          const collapseThreshold = 4;
+                          const shouldCollapse = targetLines.length > collapseThreshold;
+                          const isExpanded = Boolean(expandedTaskScheduleTargetRows[scheduleTargetExpandKey]);
+                          const renderedText = shouldCollapse && !isExpanded
+                            ? `${targetLines.slice(0, collapseThreshold).join('\n')}\n...`
+                            : (targetLines.length > 0 ? targetLines.join('\n') : '-');
+
+                          return (
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed font-mono">{renderedText}</div>
+                              {shouldCollapse ? (
+                                <button
+                                  onClick={() =>
+                                    setExpandedTaskScheduleTargetRows((prev) => ({
+                                      ...prev,
+                                      [scheduleTargetExpandKey]: !isExpanded,
                                     }))
                                   }
                                   className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
