@@ -6126,7 +6126,7 @@ function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openTaskLocalView(id)}
-                                className="text-brand-accent hover:underline text-left"
+                                className="text-brand-accent hover:underline text-center inline-block w-full"
                                 title="点击查看该任务详情"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -6210,7 +6210,7 @@ function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openGithubSchedulerDetail(id)}
-                                className="text-brand-accent hover:underline text-left"
+                                className="text-brand-accent hover:underline text-center inline-block w-full"
                                 title="查看该监控任务结果"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -6224,11 +6224,22 @@ function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openGithubTaskDetail(id)}
-                                className="text-brand-accent hover:underline text-left"
+                                className="text-brand-accent hover:underline text-center inline-block w-full"
                                 title="查看该任务结果"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
                               </button>
+                            </td>
+                          );
+                        }
+
+                        if ((module.id === 'github_result' || module.id === 'github_monitor_result') && column === 'path') {
+                          return (
+                            <td
+                              key={column}
+                              className="px-4 py-3 align-middle text-sm text-center whitespace-pre-wrap break-all leading-relaxed min-w-[260px] max-w-[640px]"
+                            >
+                              {formatModuleCellValue(module.id, column, row)}
                             </td>
                           );
                         }
