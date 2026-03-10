@@ -1997,35 +1997,58 @@ function buildTaskOptionsSummary(row: any): string {
     .filter(([, value]) => value === true)
     .map(([key]) => fieldLabelMap[key] || humanizeField(key));
   if (enabled.length === 0) return '未开启可选项';
-  const preview = enabled.slice(0, 4).join('、');
-  if (enabled.length <= 4) return `${enabled.length}项: ${preview}`;
-  return `${enabled.length}项: ${preview}...`;
+  return enabled.map((label, index) => `${index + 1}. ${label}`).join('\n');
+}
+
+function parseListFromString(text: string): string[] {
+  const normalized = text.trim();
+  if (!normalized) return [];
+
+  const tryParseJson = (): string[] => {
+    if (!(normalized.startsWith('[') && normalized.endsWith(']'))) return [];
+    try {
+      const parsed = JSON.parse(normalized);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((item) => String(item ?? '').trim())
+        .filter((item) => item);
+    } catch {
+      return [];
+    }
+  };
+
+  const jsonTokens = tryParseJson();
+  if (jsonTokens.length > 0) return jsonTokens;
+
+  const pyListMatch = normalized.match(/^\[(.*)\]$/);
+  if (pyListMatch) {
+    const body = pyListMatch[1].trim();
+    if (!body) return [];
+    return body
+      .split(/\s*,\s*/)
+      .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
+      .filter((item) => item);
+  }
+
+  return normalized
+    .split(/[,\uFF0C;\uFF1B\r\n\t\s]+/)
+    .map((item) => item.trim())
+    .filter((item) => item);
 }
 
 function formatTokenListText(value: any): string {
   if (value === null || value === undefined) return '-';
   if (Array.isArray(value)) {
     const tokens = value
-      .map((item) => String(item || '').trim())
+      .flatMap((item) => parseListFromString(String(item || '')))
       .filter((item) => item);
     return tokens.length > 0 ? tokens.join('\n') : '-';
   }
   const text = String(value).trim();
   if (!text) return '-';
-  if (text.includes('\n')) {
-    return text
-      .split(/\r?\n/)
-      .map((item) => item.trim())
-      .filter((item) => item)
-      .join('\n') || '-';
-  }
-  const splitReg = text.includes(',') ? /[,\s]+/ : /\s+/;
-  const tokens = text
-    .split(splitReg)
-    .map((item) => item.trim())
-    .filter((item) => item);
+  const tokens = parseListFromString(text);
   if (tokens.length > 1) return tokens.join('\n');
-  return text;
+  return tokens[0] || text;
 }
 
 function formatHeaderLines(value: any): string {
@@ -5927,7 +5950,7 @@ function TableModuleView({
                       {columns.map((column) => {
                         const wrapCell = shouldWrapCell(module.id, column);
                         const baseClassName = wrapCell
-                          ? 'px-4 py-3 align-top text-sm whitespace-pre-line break-all text-left min-w-[220px] max-w-[560px]'
+                          ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-left leading-relaxed min-w-[220px] max-w-[560px]'
                           : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-center';
 
                         if (module.id === 'task' && column === 'progress') {
