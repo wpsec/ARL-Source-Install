@@ -4611,6 +4611,7 @@ function TableModuleView({
   const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [taskDetailCounts, setTaskDetailCounts] = useState<Record<string, number>>({});
   const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
+  const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -4640,6 +4641,7 @@ function TableModuleView({
     setPolicyTaskDialogOpen(false);
     setPolicyTaskSubmitting(false);
     setPolicyTaskError('');
+    setExpandedScopeRows({});
   }, [module.id]);
 
   useEffect(() => {
@@ -5932,6 +5934,7 @@ function TableModuleView({
                 {rows.map((row, rowIndex) => {
                   const id = getRowId(row);
                   const checked = selectedIds.includes(id);
+                  const scopeExpandKey = id || `scope-row-${page}-${rowIndex}`;
 
                   return (
                     <tr key={id || Math.random()} className="border-b border-brand-border/60 hover:bg-white/5 transition">
@@ -5960,6 +5963,39 @@ function TableModuleView({
                         const baseClassName = wrapCell
                           ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-left leading-relaxed min-w-[220px] max-w-[560px]'
                           : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-center';
+
+                        if (module.id === 'asset_scope' && column === 'scope') {
+                          const scopeText = formatModuleCellValue(module.id, column, row);
+                          const scopeLines = scopeText
+                            .split(/\r?\n/)
+                            .map((item) => item.trim())
+                            .filter((item) => item && item !== '-');
+                          const collapseThreshold = 4;
+                          const shouldCollapse = scopeLines.length > collapseThreshold;
+                          const isExpanded = Boolean(expandedScopeRows[scopeExpandKey]);
+                          const renderedText = shouldCollapse && !isExpanded
+                            ? `${scopeLines.slice(0, collapseThreshold).join('\n')}\n...`
+                            : (scopeLines.length > 0 ? scopeLines.join('\n') : '-');
+
+                          return (
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>
+                              {shouldCollapse ? (
+                                <button
+                                  onClick={() =>
+                                    setExpandedScopeRows((prev) => ({
+                                      ...prev,
+                                      [scopeExpandKey]: !isExpanded,
+                                    }))
+                                  }
+                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                >
+                                  {isExpanded ? '收起' : '显示全部'}
+                                </button>
+                              ) : null}
+                            </td>
+                          );
+                        }
 
                         if (module.id === 'task' && column === 'progress') {
                           return (
