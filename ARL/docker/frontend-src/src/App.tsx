@@ -6019,7 +6019,7 @@ function TableModuleView({
                       {columns.map((column) => {
                         const wrapCell = shouldWrapCell(module.id, column);
                         const baseClassName = wrapCell
-                          ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-left leading-relaxed min-w-[220px] max-w-[560px]'
+                          ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-center leading-relaxed min-w-[220px] max-w-[560px]'
                           : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-center';
 
                         if (module.id === 'asset_scope' && column === 'scope') {
@@ -6036,7 +6036,7 @@ function TableModuleView({
                             : (scopeLines.length > 0 ? scopeLines.join('\n') : '-');
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
+                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
                               <div className="whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>
                               {shouldCollapse ? (
                                 <button
@@ -6069,7 +6069,7 @@ function TableModuleView({
                             : (targetLines.length > 0 ? targetLines.join('\n') : '-');
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
+                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
                               <div className="whitespace-pre-wrap break-all leading-relaxed font-mono">{renderedText}</div>
                               {shouldCollapse ? (
                                 <button
