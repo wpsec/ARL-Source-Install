@@ -14,8 +14,15 @@ RUN mkdir -p /root/.pip && \
     printf '[global]\nindex-url = https://pypi.mirrors.ustc.edu.cn/simple/\ntimeout = 120\n' > /root/.pip/pip.conf
 
 # 3. 安装依赖（包含 Playwright Chromium 运行时库）
-RUN dnf install -y epel-release fontconfig && \
-    dnf install -y gcc gcc-c++ make zlib-devel bzip2-devel openssl-devel sqlite-devel \
+# 注：EPEL 固定到中科大镜像，避免 metalink 随机命中失效节点
+RUN dnf install -y epel-release && \
+    sed -e 's|^metalink=|#metalink=|g' \
+        -e 's|^mirrorlist=|#mirrorlist=|g' \
+        -e 's|^#baseurl=http://download.example/pub/epel|baseurl=https://mirrors.ustc.edu.cn/epel|g' \
+        -e 's|^#baseurl=https://download.example/pub/epel|baseurl=https://mirrors.ustc.edu.cn/epel|g' \
+        -i /etc/yum.repos.d/epel*.repo && \
+    dnf clean all && \
+    dnf install -y fontconfig gcc gcc-c++ make zlib-devel bzip2-devel openssl-devel sqlite-devel \
     readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap \
     alsa-lib atk at-spi2-atk cairo cups-libs gtk3 libdrm mesa-libgbm \
     libX11 libXcomposite libXcursor libXdamage libXext libXi libXrandr \
