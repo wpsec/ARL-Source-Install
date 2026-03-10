@@ -285,17 +285,25 @@ frontend_update() {
 
     # 先构建新版前端（vite）
     if [ -d "$ROOT_DIR/ARL/docker/frontend-src" ]; then
-        echo "构建 frontend-src..."
-        (cd "$ROOT_DIR/ARL/docker/frontend-src" && npm run build)
+        if command -v npm >/dev/null 2>&1; then
+            echo "构建 frontend-src..."
+            (cd "$ROOT_DIR/ARL/docker/frontend-src" && npm run build)
 
-        if [ -d "$ROOT_DIR/ARL/docker/frontend-src/dist" ]; then
-            echo "同步 dist 到 ARL/docker/frontend..."
-            mkdir -p "$ROOT_DIR/ARL/docker/frontend"
-            rm -rf "$ROOT_DIR/ARL/docker/frontend/assets"
-            cp -a "$ROOT_DIR/ARL/docker/frontend-src/dist/." "$ROOT_DIR/ARL/docker/frontend/"
+            if [ -d "$ROOT_DIR/ARL/docker/frontend-src/dist" ]; then
+                echo "同步 dist 到 ARL/docker/frontend..."
+                mkdir -p "$ROOT_DIR/ARL/docker/frontend"
+                rm -rf "$ROOT_DIR/ARL/docker/frontend/assets"
+                cp -a "$ROOT_DIR/ARL/docker/frontend-src/dist/." "$ROOT_DIR/ARL/docker/frontend/"
+            else
+                echo -e "${RED}错误: 未找到 frontend-src/dist，构建可能失败${NC}"
+                exit 1
+            fi
         else
-            echo -e "${RED}错误: 未找到 frontend-src/dist，构建可能失败${NC}"
-            exit 1
+            echo -e "${YELLOW}[WARN] 未检测到 npm，跳过 frontend-src 构建，使用仓库内预构建静态文件${NC}"
+            if [ ! -f "$ROOT_DIR/ARL/docker/frontend/index.html" ] || [ ! -d "$ROOT_DIR/ARL/docker/frontend/assets" ]; then
+                echo -e "${RED}错误: 前端预构建静态文件不存在，请在有 npm 的环境先构建并提交 ARL/docker/frontend${NC}"
+                exit 1
+            fi
         fi
     else
         echo -e "${YELLOW}[WARN] 未找到 frontend-src，跳过构建，仅复制现有静态文件${NC}"
