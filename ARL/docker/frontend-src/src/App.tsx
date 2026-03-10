@@ -1780,6 +1780,22 @@ function sanitizeFilename(fileName: string): string {
   return fileName.replace(/[\\/:*?"<>|]/g, '_');
 }
 
+function normalizeRowIdValue(value: any): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (typeof value === 'object') {
+    const candidates = ['$oid', '_id', 'id', 'task_id', 'job_id', 'oid'];
+    for (const key of candidates) {
+      const nested = (value as Record<string, any>)?.[key];
+      if (typeof nested === 'string' || typeof nested === 'number') {
+        const text = String(nested).trim();
+        if (text) return text;
+      }
+    }
+  }
+  return '';
+}
+
 async function requestApi(token: string, path: string, options: ApiRequestOptions = {}) {
   const method = options.method ?? 'GET';
   const buildFetchOptions = (): RequestInit => {
@@ -4804,6 +4820,15 @@ function TableModuleView({
   }, [module.columns, module.rowIdKey, rows]);
 
   const rowIdKey = module.rowIdKey || '_id';
+  const getRowId = useCallback((row: any): string => {
+    const primary = normalizeRowIdValue(row?.[rowIdKey]);
+    if (primary) return primary;
+    if (module.id === 'task') {
+      const taskFallback = normalizeRowIdValue(row?.task_id) || normalizeRowIdValue(row?.id);
+      if (taskFallback) return taskFallback;
+    }
+    return '';
+  }, [module.id, rowIdKey]);
   const showIndexColumn = Boolean(module.showIndex);
   const getColumnLabel = (column: string) => module.columnLabels?.[column] || humanizeField(column);
   const shouldWrapCell = useCallback((moduleId: string, column: string) => {
@@ -5417,19 +5442,14 @@ function TableModuleView({
     }
   };
 
-  const openTaskGlobalView = () => {
-    if (module.id !== 'task') return;
-    onOpenModule('site');
-  };
+  const openTaskGlobalView = () => onOpenModule('site');
 
   const openTaskLocalView = (taskId: string) => {
-    if (module.id !== 'task') return;
     if (!taskId) return;
     onOpenModule('site', { task_id: taskId });
   };
 
   const openTaskLocalViewBySelection = () => {
-    if (module.id !== 'task') return;
     if (selectedIds.length === 0) {
       setError('请先勾选至少一条任务记录后再进行局部查看');
       return;
@@ -5855,7 +5875,7 @@ function TableModuleView({
                       onChange={(event) => {
                         if (event.target.checked) {
                           const ids = rows
-                            .map((row) => String(row?.[rowIdKey] ?? ''))
+                            .map((row) => getRowId(row))
                             .filter((value) => value);
                           setSelectedIds(ids);
                         } else {
@@ -5879,7 +5899,7 @@ function TableModuleView({
               </thead>
               <tbody>
                 {rows.map((row, rowIndex) => {
-                  const id = String(row?.[rowIdKey] ?? '');
+                  const id = getRowId(row);
                   const checked = selectedIds.includes(id);
 
                   return (
