@@ -11,6 +11,12 @@
 
 ---
 
+# 这是ARL原生版本，新版请移步分支newUI
+
+https://github.com/wpsec/ARL-Source-Install/tree/newUI
+
+
+
 ## 1. 项目简介
 
 ARL-Source-Install 用于互联网资产自动化收集与持续监控，支持：
