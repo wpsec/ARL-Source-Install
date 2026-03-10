@@ -273,7 +273,7 @@ clean_build() {
 # 前端文件更新
 frontend_update() {
     show_build_info "前端文件更新"
-    echo -e "${YELLOW}提示: 只更新前端文件到运行中的容器${NC}"
+    echo -e "${YELLOW}提示: 自动构建 frontend-src 并同步静态文件到运行中的容器${NC}"
     echo ""
     
     # 检查容器是否运行
@@ -282,11 +282,31 @@ frontend_update() {
         echo "请先启动容器: docker compose up -d"
         exit 1
     fi
+
+    # 先构建新版前端（vite）
+    if [ -d "$ROOT_DIR/ARL/docker/frontend-src" ]; then
+        echo "构建 frontend-src..."
+        (cd "$ROOT_DIR/ARL/docker/frontend-src" && npm run build)
+
+        if [ -d "$ROOT_DIR/ARL/docker/frontend-src/dist" ]; then
+            echo "同步 dist 到 ARL/docker/frontend..."
+            mkdir -p "$ROOT_DIR/ARL/docker/frontend"
+            rm -rf "$ROOT_DIR/ARL/docker/frontend/assets"
+            cp -a "$ROOT_DIR/ARL/docker/frontend-src/dist/." "$ROOT_DIR/ARL/docker/frontend/"
+        else
+            echo -e "${RED}错误: 未找到 frontend-src/dist，构建可能失败${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${YELLOW}[WARN] 未找到 frontend-src，跳过构建，仅复制现有静态文件${NC}"
+    fi
     
     echo "正在更新前端文件..."
 
     echo "初始化前端目录..."
     docker exec arl_web mkdir -p /code/frontend/js /code/frontend/css /code/frontend/assets
+    # 避免旧 hash 资源残留导致页面仍引用旧文件
+    docker exec arl_web sh -c 'rm -rf /code/frontend/assets/* /code/frontend/js/* /code/frontend/css/*'
     
     # 复制前端文件到容器
     echo "复制 JS 文件..."
