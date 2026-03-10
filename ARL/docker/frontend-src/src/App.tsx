@@ -5648,6 +5648,14 @@ function TableModuleView({
       ) : null}
       {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'npoc_service', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => onOpenModule('task')}
+            className="px-3.5 py-2 rounded-xl border text-sm font-semibold transition border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70 inline-flex items-center gap-1.5"
+            title="返回任务管理"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            返回任务管理
+          </button>
           {TASK_DETAIL_TABS.map((item) => (
             <button
               key={item.id}
@@ -5974,10 +5982,10 @@ function TableModuleView({
 
                         if (module.id === 'task' && column === 'target') {
                           return (
-                            <td key={column} className={baseClassName}>
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[220px] max-w-[560px]">
                               <button
                                 onClick={() => openTaskLocalView(id)}
-                                className="text-brand-accent hover:underline text-left font-mono whitespace-pre-line break-all"
+                                className="text-brand-accent hover:underline font-mono whitespace-pre-wrap break-all text-center inline-block w-full leading-relaxed"
                                 title="点击查看该任务详情"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
