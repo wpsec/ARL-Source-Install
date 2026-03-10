@@ -4651,6 +4651,7 @@ function TableModuleView({
   const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
+  const [screenshotPreview, setScreenshotPreview] = useState<{ url: string; title: string } | null>(null);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -4682,7 +4683,19 @@ function TableModuleView({
     setPolicyTaskError('');
     setExpandedScopeRows({});
     setExpandedTaskScheduleTargetRows({});
+    setScreenshotPreview(null);
   }, [module.id]);
+
+  useEffect(() => {
+    if (!screenshotPreview) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setScreenshotPreview(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [screenshotPreview]);
 
   useEffect(() => {
     if (module.id !== 'task_schedule') {
@@ -6170,14 +6183,24 @@ function TableModuleView({
 
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
-                              <a href={screenshotUrl} target="_blank" rel="noreferrer" className="inline-flex justify-center">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setScreenshotPreview({
+                                    url: screenshotUrl,
+                                    title: String(row?.site || row?.hostname || row?.title || '截图预览'),
+                                  })
+                                }
+                                className="inline-flex justify-center rounded-lg border border-transparent hover:border-brand-accent/60 transition"
+                                title="点击预览截图"
+                              >
                                 <img
                                   src={screenshotUrl}
                                   alt="screenshot"
                                   className="w-20 h-12 rounded-lg border border-brand-border object-cover bg-brand-bg"
                                   loading="lazy"
                                 />
-                              </a>
+                              </button>
                             </td>
                           );
                         }
@@ -6684,6 +6707,37 @@ function TableModuleView({
                   {policyTaskSubmitting ? '下发中...' : '确认下发'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {screenshotPreview ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setScreenshotPreview(null)}
+        >
+          <div
+            className="w-full max-w-6xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold truncate">截图预览: {screenshotPreview.title}</div>
+              <button
+                type="button"
+                onClick={() => setScreenshotPreview(null)}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                title="关闭预览"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 max-h-[82vh] overflow-auto bg-brand-bg/40">
+              <img
+                src={screenshotPreview.url}
+                alt={screenshotPreview.title}
+                className="mx-auto max-w-full h-auto rounded-xl border border-brand-border bg-brand-bg"
+              />
             </div>
           </div>
         </div>
