@@ -4713,6 +4713,7 @@ function TableModuleView({
   const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
+  const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [screenshotPreview, setScreenshotPreview] = useState<{ url: string; title: string } | null>(null);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
@@ -4749,6 +4750,7 @@ function TableModuleView({
     setPolicyTaskError('');
     setExpandedScopeRows({});
     setExpandedTaskScheduleTargetRows({});
+    setExpandedTaskOptionRows({});
     setScreenshotPreview(null);
   }, [module.id]);
 
@@ -6101,6 +6103,7 @@ function TableModuleView({
                   const checked = selectedIds.includes(id);
                   const scopeExpandKey = id || `scope-row-${page}-${rowIndex}`;
                   const scheduleTargetExpandKey = id || `task-schedule-row-${page}-${rowIndex}`;
+                  const taskOptionExpandKey = id || `task-option-row-${page}-${rowIndex}`;
 
                   return (
                     <tr key={id || Math.random()} className="border-b border-brand-border/60 hover:bg-white/5 transition">
@@ -6185,6 +6188,39 @@ function TableModuleView({
                                     setExpandedTaskScheduleTargetRows((prev) => ({
                                       ...prev,
                                       [scheduleTargetExpandKey]: !isExpanded,
+                                    }))
+                                  }
+                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                >
+                                  {isExpanded ? '收起' : '显示全部'}
+                                </button>
+                              ) : null}
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'task' && column === 'options_summary') {
+                          const optionText = formatModuleCellValue(module.id, column, row);
+                          const optionLines = optionText
+                            .split(/\r?\n/)
+                            .map((item) => item.trim())
+                            .filter((item) => item && item !== '-');
+                          const collapseThreshold = 3;
+                          const shouldCollapse = optionLines.length > collapseThreshold;
+                          const isExpanded = Boolean(expandedTaskOptionRows[taskOptionExpandKey]);
+                          const renderedText = shouldCollapse && !isExpanded
+                            ? `${optionLines.slice(0, collapseThreshold).join('\n')}\n...`
+                            : (optionLines.length > 0 ? optionLines.join('\n') : '-');
+
+                          return (
+                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>
+                              {shouldCollapse ? (
+                                <button
+                                  onClick={() =>
+                                    setExpandedTaskOptionRows((prev) => ({
+                                      ...prev,
+                                      [taskOptionExpandKey]: !isExpanded,
                                     }))
                                   }
                                   className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
