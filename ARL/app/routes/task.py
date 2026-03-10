@@ -277,6 +277,34 @@ class BatchStopTask(ARLResource):
         return utils.build_ret(ErrorMsg.Success, {})
 
 
+@ns.route('/stop/')
+class StopTaskCompat(ARLResource):
+    """旧版兼容：批量停止任务接口（POST /task/stop/）"""
+
+    @auth
+    @ns.expect(batch_stop_fields)
+    def post(self):
+        """
+        兼容旧版前端的批量停止路径。
+
+        请求体：
+            {
+                "task_id": ["任务ID1", "任务ID2", ...]
+            }
+
+        说明：
+        - 逻辑与 /task/batch_stop/ 保持一致
+        - 保留旧路径，避免历史脚本或旧前端调用失效
+        """
+        args = self.parse_args(batch_stop_fields)
+        task_id_list = args.pop("task_id", [])
+        for task_id in task_id_list:
+            if not task_id:
+                continue
+            stop_task(task_id)
+        return utils.build_ret(ErrorMsg.Success, {})
+
+
 @ns.route('/stop/<string:task_id>')
 class StopTask(ARLResource):
     """单个任务停止接口"""

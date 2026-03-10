@@ -224,7 +224,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'fofa_submit',
-        label: 'FOFA下发',
+        label: 'FOFA任务下发',
         method: 'POST',
         path: '/task_fofa/submit',
         payloadTemplate: {
@@ -302,7 +302,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_export_site',
-        label: '批量导出站点',
+        label: '站点批量导出',
         method: 'POST',
         path: '/batch_export/site/',
         selectedField: 'task_id',
@@ -314,7 +314,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_export_domain',
-        label: '批量导出域名',
+        label: '域名批量导出',
         method: 'POST',
         path: '/batch_export/domain/',
         selectedField: 'task_id',
@@ -326,7 +326,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_export_ip',
-        label: '批量导出IP',
+        label: 'IP批量导出',
         method: 'POST',
         path: '/batch_export/ip/',
         selectedField: 'task_id',
@@ -338,7 +338,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_export_url',
-        label: '批量导出URL',
+        label: 'URL批量导出',
         method: 'POST',
         path: '/batch_export/url/',
         selectedField: 'task_id',
@@ -350,7 +350,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_export_port',
-        label: '批量导出IP端口',
+        label: 'IP端口批量导出',
         method: 'POST',
         path: '/batch_export/ip_port/',
         selectedField: 'task_id',
@@ -362,7 +362,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_export_cip',
-        label: '批量导出C段',
+        label: 'C段批量导出',
         method: 'POST',
         path: '/batch_export/cip/',
         selectedField: 'task_id',
@@ -4838,6 +4838,7 @@ function TableModuleView({
     if (module.id === 'task') {
       const taskVisibleActionIds = [
         'create_task',
+        'fofa_submit',
         'task_stop_batch',
         'task_delete_batch',
         'task_batch_export_cip',
@@ -5722,7 +5723,13 @@ function TableModuleView({
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  {module.id === 'asset_site' || module.id === 'site' ? '导出站点' : module.id === 'domain' ? '导出子域名' : '导出'}
+                  {module.id === 'asset_site' || module.id === 'site'
+                    ? '导出站点'
+                    : module.id === 'domain'
+                      ? '导出子域名'
+                      : module.id === 'asset_ip' || module.id === 'ip'
+                        ? '导出IP端口'
+                        : '导出'}
                 </button>
               ) : null}
               {module.id === 'asset_site' ? (

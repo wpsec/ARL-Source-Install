@@ -279,9 +279,36 @@ class DeleteARLScheduler(ARLResource):
         return utils.build_ret(ErrorMsg.Success, ret_data)
 
 
+def _normalize_job_id_input(job_id_value):
+    """
+    归一化 job_id 输入，兼容字符串与列表两种格式。
+
+    兼容场景：
+    - 旧接口单值：{"job_id": "xxx"}
+    - 旧接口多值：{"job_id": ["xxx", "yyy"]}
+    - 容错字符串：{"job_id": "xxx,yyy"} / {"job_id": "xxx yyy"}
+    """
+    if isinstance(job_id_value, list):
+        return [str(item).strip() for item in job_id_value if str(item).strip()]
+
+    if job_id_value is None:
+        return []
+
+    if isinstance(job_id_value, str):
+        raw = job_id_value.strip()
+        if not raw:
+            return []
+        if ',' in raw or ' ' in raw:
+            return [item for item in raw.replace(',', ' ').split() if item]
+        return [raw]
+
+    text = str(job_id_value).strip()
+    return [text] if text else []
+
+
 # 恢复监控任务请求模型
 recover_scheduler_fields = ns.model('recoverScheduler', {
-    "job_id": fields.String(required=True, description="监控任务ID")
+    "job_id": fields.Raw(required=True, description="监控任务ID（支持字符串或列表）")
 })
 
 
@@ -313,22 +340,27 @@ class RecoverARLScheduler(ARLResource):
         - 该接口将被批量恢复接口替代
         """
         args = self.parse_args(recover_scheduler_fields)
-        job_id = args.get("job_id")
+        job_id_list = _normalize_job_id_input(args.get("job_id"))
 
-        # 验证任务是否存在
-        item = app_scheduler.find_job(job_id)
-        if not item:
-            return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
+        if not job_id_list:
+            return utils.build_ret(ErrorMsg.Success, {"job_id": []})
 
-        # 验证任务状态是否为停止
-        status = item.get("status", SchedulerStatus.RUNNING)
-        if status != SchedulerStatus.STOP:
-            return utils.build_ret(ErrorMsg.SchedulerStatusNotStop, {"job_id": job_id})
+        # 先校验所有任务状态，保证批量语义的一致性
+        for job_id in job_id_list:
+            item = app_scheduler.find_job(job_id)
+            if not item:
+                return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
 
-        # 恢复任务运行
-        app_scheduler.recover_job(job_id)
+            status = item.get("status", SchedulerStatus.RUNNING)
+            if status != SchedulerStatus.STOP:
+                return utils.build_ret(ErrorMsg.SchedulerStatusNotStop, {"job_id": job_id})
 
-        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id})
+        for job_id in job_id_list:
+            app_scheduler.recover_job(job_id)
+
+        if len(job_id_list) == 1:
+            return utils.build_ret(ErrorMsg.Success, {"job_id": job_id_list[0]})
+        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id_list})
 
 
 # 批量恢复监控任务请求模型
@@ -387,7 +419,7 @@ class BatchRecoverARLScheduler(ARLResource):
 
 # 停止监控任务请求模型
 stop_scheduler_fields = ns.model('stopScheduler', {
-    "job_id": fields.String(required=True, description="监控任务ID")
+    "job_id": fields.Raw(required=True, description="监控任务ID（支持字符串或列表）")
 })
 
 
@@ -419,22 +451,27 @@ class StopARLScheduler(ARLResource):
         - 该接口将被批量停止接口替代
         """
         args = self.parse_args(stop_scheduler_fields)
-        job_id = args.get("job_id")
+        job_id_list = _normalize_job_id_input(args.get("job_id"))
 
-        # 验证任务是否存在
-        item = app_scheduler.find_job(job_id)
-        if not item:
-            return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
+        if not job_id_list:
+            return utils.build_ret(ErrorMsg.Success, {"job_id": []})
 
-        # 验证任务状态是否为运行中
-        status = item.get("status", SchedulerStatus.RUNNING)
-        if status != SchedulerStatus.RUNNING:
-            return utils.build_ret(ErrorMsg.SchedulerStatusNotRunning, {"job_id": job_id})
+        # 先校验所有任务状态，保证批量语义的一致性
+        for job_id in job_id_list:
+            item = app_scheduler.find_job(job_id)
+            if not item:
+                return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
 
-        # 停止任务
-        app_scheduler.stop_job(job_id)
+            status = item.get("status", SchedulerStatus.RUNNING)
+            if status != SchedulerStatus.RUNNING:
+                return utils.build_ret(ErrorMsg.SchedulerStatusNotRunning, {"job_id": job_id})
 
-        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id})
+        for job_id in job_id_list:
+            app_scheduler.stop_job(job_id)
+
+        if len(job_id_list) == 1:
+            return utils.build_ret(ErrorMsg.Success, {"job_id": job_id_list[0]})
+        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id_list})
 
 
 # 批量停止监控任务请求模型
@@ -631,4 +668,3 @@ class AddWihScheduler(ARLResource):
                                                       interval=interval)
 
         return utils.build_ret(ErrorMsg.Success, {"schedule_id": _id})
-
