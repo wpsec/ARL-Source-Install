@@ -31,6 +31,8 @@ chmod +x build.sh start.sh scripts/quick-build.sh
 ./start.sh
 ```
 
+### 注意！
+
 可提前开代理下载Playwright 以提升部署速度
 
 参考：
@@ -41,7 +43,7 @@ tools/playwright/README.md
 
 只在 x86 环境做了测试，arm 没有做测试，不知道兼不兼容
 
-密码修改配置
+### 密码修改
 
 忘记系统账户密码
 
@@ -62,45 +64,40 @@ tools/playwright/README.md
   - 密码：`.env` 中 `ARL_APP_PASSWORD`（默认 `arlpass`）
   - 说明：仅在 Mongo 数据卷首次初始化时生效。若已存在 `arl_db`，需清理数据卷后重新初始化。
 
+## 升级（当前版本v3.0.28）
+
+### 常规更新
+
+```bash
+git pull
+./scripts/quick-build.sh
+```
+
 ## 二开功能总览
 
-UI 重构与优化调整
+<!-- 这是一张图片，ocr 内容为： -->
 
-- 全新 UI 风格
-- 系统监控页面
-- ......
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228172922-d4b58648-0aa2-4371-8381-b3901fbf0bf8.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773050416633-e5db0816-848a-43ea-be14-c134f221fb1b.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228196339-42bcae2e-63d8-45b8-b304-4f718ed3284b.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773050540924-54f05c58-88c5-47e4-b57f-070b9c1057ed.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228219353-51f9bdeb-5bee-44f4-98ed-68d6801f8175.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773050429917-468fcaea-327f-48e3-ba11-a7f44a526632.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228253396-5cec67df-a2c9-4a7c-9356-a59bd79bd6ac.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773050448413-2fa1b510-5254-4a8f-8be6-456dace3c72c.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228385246-41c5f9e2-fd5f-44fe-bb50-48376fd0c29a.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773050462124-fb2710fe-4955-41b2-853e-84d8eeb1a7ce.png)
-
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773050469136-16e89e60-4099-4a6f-8b9b-9ebc8da7d9c1.png)
-
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773112033563-a2b26876-d19e-4a6b-90c9-cdc574be7c7b.png)
-
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773112217332-c2a54d0a-906d-410e-9ca0-98d6844f2876.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228343138-4e70644f-6fcf-4593-b624-92961998900f.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
@@ -110,18 +107,6 @@ UI 重构与优化调整
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773112630389-e71fdb5e-39c8-4d31-aced-84ee763d5d01.png)
 
-### 批量表格导出
-
-- 功能：任务多选后一次性导出 `xlsx`
-- 特性：与单任务导出结构保持一致，支持合并与去重
-
-### 钉钉通知体系
-
-- 保留原群机器人通知能力（Webhook）
-- 新增钉钉开放平台知识库写入（WORKBOOK）
-- 支持按任务类型开关：普通任务 / 计划任务 / GitHub 监控
-- GitHub 监控机器人消息已优化为摘要，并可附知识库报告链接
-
 <!-- 这是一张图片，ocr 内容为： -->
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771926597402-de72ed7e-631d-46ba-9a19-18a6d99520bf.png)
@@ -130,15 +115,15 @@ UI 重构与优化调整
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771929284237-725a1633-0890-48bc-9ebd-629080a1368e.png)
 
-### 指纹与规则库增强
+<!-- 这是一张图片，ocr 内容为： -->
 
-- 优化 `ARL/app/dicts/webapp.json`：补充现代组件指纹（如 MinIO、Nacos、Harbor、Portainer、Argo CD、RabbitMQ Management、Nexus 等）
-- 收紧部分弱特征规则（如 `jquery`、`vue`、`WebLogic`、`KindEditor`）以降低误报
-- 优化 `ARL/app/dicts/wih_rules.yml`：新增多类高价值敏感信息规则（OpenAI/Anthropic/SendGrid/Stripe/数据库连接串等）
-- 增加 WIH 排除规则（示例值、占位符、Swagger/OpenAPI 示例 token）减少噪声
-- 修正 `ARL/app/dicts/cdn_info.json` 冲突与覆盖项（如 `dwion.com` 归属、`dnsv1.com` 覆盖）
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773224125241-86e27af2-5cd7-4151-bb6a-28f8b9f521d9.png)
 
 ### 基础设施版本升级
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228570340-62949951-33a3-44df-a8fb-c68e3b62d91d.png)
 
 | 组件         | 当前版本                          | 说明                                          |
 | ------------ | --------------------------------- | --------------------------------------------- |
@@ -152,33 +137,6 @@ UI 重构与优化调整
 
 其它 bug 修复
 
-## 日常升级与重建
-
-### 常规更新
-
-```bash
-git pull
-./scripts/quick-build.sh quick
-```
-
-### 常用构建命令
-
-```bash
-./scripts/quick-build.sh           # 默认 quick
-./scripts/quick-build.sh full      # 完整构建
-./scripts/quick-build.sh clean     # 清缓存重建
-./scripts/quick-build.sh frontend  # 仅更新前端静态资源
-```
-
-### 查看日志
-
-```bash
-cd ARL/docker
-docker compose logs -f web
-docker compose logs -f worker
-docker compose logs -f scheduler
-```
-
 ---
 
 ## 配置说明
@@ -187,86 +145,13 @@ docker compose logs -f scheduler
 ARL/docker/config-docker.yaml
 ```
 
-### 钉钉机器人（群通知）
-
-```yaml
-DINGDING:
-  ACCESS_TOKEN: ""
-  SECRET: ""
-```
-
-说明：
-
-- 仅 Access Token 也可工作（不加签机器人、适配钉钉应用不加签格式）
-- 若机器人开启签名校验，需同时配置 `SECRET`
-
-### 钉钉知识库（开放平台）
-
-请参考：
-
-```plain
-https://open.dingtalk.com/
-https://open.dingtalk.com/document/development/get-knowledge-base-list
-https://open.dingtalk.com/document/api/explore/explorer-page?api=wiki_2.0%23ListWorkspaces&devType=org
-```
-
-如果不需要钉钉报告推送，可不配置
-
-```yaml
-DINGTALK_API:
-  ENABLE: false
-  BASE_URL: "https://api.dingtalk.com"
-  CORP_ID: ""
-  APP_KEY: ""
-  APP_SECRET: ""
-  OPERATOR_ID: ""
-  WORKSPACE_ID: ""
-  PARENT_NODE_ID: ""
-  CREATE_NODE_PATH: "/v1.0/doc/workspaces/{workspace_id}/docs"
-  KB_TIMEOUT: 20
-  TITLE_PREFIX: "互联网资产自动化收集"
-  DRY_RUN: false
-  REPORT_BASE_URL: ""
-```
-
-当 `ENABLE=true` 时，以下字段必填：
-
-- `CORP_ID`
-- `APP_KEY`
-- `APP_SECRET`
-- `OPERATOR_ID`
-- `WORKSPACE_ID`
-- `PARENT_NODE_ID`
-
-### 三方域名插件采集
-
-修复了三方api不调用问题
-
-### 公网 DNS 解析器（内网环境部署扫描到内网域名服务器问题）
-
-在环境中建议显式配置公网 DNS 解析器，避免优先使用内网 DNS 导致资产混入：
-
-```yaml
-ARL:
-  DNS_RESOLVERS:
-    - 223.5.5.5
-    - 119.29.29.29
-    - 114.114.114.114
-    - 8.8.8.8
-```
-
-说明：
-
-- 为空时使用系统默认 DNS
-- 配置后由 `web/worker/scheduler` 进程统一生效
-- 建议配合 `BLACK_IPS` 对私网网段做过滤
+该目录保留了 ARL 原生大量配置，如果系统 UI 不支持配置，可自行 vim 配置
 
 ### 自定义字典持久化（避免容器重建丢失）
 
 自定义字典支持两类目录：
 
-- 代码内置目录：`ARL/app/dicts/domain/`、`ARL/app/dicts/file_leak/`
-- 宿主机持久化目录（推荐）：`ARL/docker/dicts/domain/`、`ARL/docker/dicts/file_leak/`
+- 宿主机持久化目录：`ARL/docker/dicts/domain/`、`ARL/docker/dicts/file_leak/`
 
 说明：
 
@@ -279,8 +164,6 @@ ARL:
 ## Bug？
 
 添加公众号联系我，如果使用的人多，在考虑修复
-
-<!-- 这是一张图片，ocr 内容为： -->
 
 ## 更新日志
 
@@ -307,5 +190,7 @@ ARL:
 - `[v3.0.13]` 字典目录规整：域名字典与敏感目录字典分目录归档，并保留兼容映射
 - `[v3.0.12]` 删除交互统一为前端确认弹窗；接口返回消息净化；同步前端构建产物
 - `[v3.0.10]` SSL证书采集/展示增强；导出和钉钉知识库新增 SSL 工作表；新增证书临期告警推送
+
+<!-- 这是一张图片，ocr 内容为： -->
 
 ![](https://cdn.nlark.com/yuque/0/2026/jpeg/27875807/1771929928377-73947b1a-b47e-45da-b30d-a74da57a76fd.jpeg)
