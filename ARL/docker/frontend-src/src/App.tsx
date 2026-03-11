@@ -1805,10 +1805,29 @@ function extractErrorMessage(data: any): string {
   if (!data) return '请求失败';
   if (typeof data === 'string') return sanitizeUiMessage(data) || '请求失败';
   if (Number(data.code) === 401) return '认证失败，请检查用户名密码或重新登录';
-  if (typeof data.message === 'string' && data.message) return sanitizeUiMessage(data.message) || '请求失败';
-  if (typeof data.error === 'string' && data.error) return sanitizeUiMessage(data.error) || '请求失败';
-  if (data.data && typeof data.data.error === 'string') return sanitizeUiMessage(data.data.error) || '请求失败';
-  if (typeof data.detail === 'string') return sanitizeUiMessage(data.detail) || '请求失败';
+
+  const pickNestedMessage = (obj: any): string => {
+    if (!obj || typeof obj !== 'object') return '';
+    const directKeys = ['error_message', 'error', 'message', 'msg', 'errmsg', 'errMsg', 'detail'];
+    for (const key of directKeys) {
+      const value = (obj as Record<string, any>)?.[key];
+      if (typeof value === 'string' && value.trim()) {
+        const text = sanitizeUiMessage(value);
+        if (text) return text;
+      }
+    }
+    if (Array.isArray((obj as Record<string, any>)?.missing_fields) && (obj as Record<string, any>).missing_fields.length > 0) {
+      return `缺少配置: ${(obj as Record<string, any>).missing_fields.join(', ')}`;
+    }
+    return '';
+  };
+
+  const nestedSources = [data?.data, data?.detail, data];
+  for (const source of nestedSources) {
+    const text = pickNestedMessage(source);
+    if (text) return text;
+  }
+
   return '请求失败';
 }
 
@@ -6442,6 +6461,29 @@ function TableModuleView({
   const showTaskScheduleRowOperate = module.id === 'task_schedule';
   const showGithubTaskRowOperate = module.id === 'github_task';
   const showGithubSchedulerRowOperate = module.id === 'github_scheduler';
+  const hasRowOperate =
+    showTaskRowOperate ||
+    showAssetScopeRowOperate ||
+    showPolicyRowOperate ||
+    showTaskScheduleRowOperate ||
+    showGithubTaskRowOperate ||
+    showGithubSchedulerRowOperate;
+  const rowOperateGroupClass = 'inline-flex flex-nowrap items-center justify-center gap-2 min-w-max';
+  const rowOperateButtonClass = 'px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition shrink-0';
+  const rowOperateButtonDisabledClass = `${rowOperateButtonClass} disabled:opacity-40 disabled:cursor-not-allowed`;
+  const rowOperateColumnWidthClass = showAssetScopeRowOperate
+    ? 'min-w-[760px]'
+    : showTaskRowOperate
+      ? 'min-w-[520px]'
+      : showPolicyRowOperate
+        ? 'min-w-[300px]'
+        : showTaskScheduleRowOperate
+          ? 'min-w-[220px]'
+          : showGithubTaskRowOperate
+            ? 'min-w-[220px]'
+            : showGithubSchedulerRowOperate
+              ? 'min-w-[300px]'
+              : '';
 
   return (
     <div className="p-8 space-y-6">
@@ -6812,8 +6854,8 @@ function TableModuleView({
                       </th>
                     );
                   })}
-                  {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubTaskRowOperate || showGithubSchedulerRowOperate ? (
-                    <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">操作</th>
+                  {hasRowOperate ? (
+                    <th className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>操作</th>
                   ) : null}
                 </tr>
               </thead>
@@ -7187,50 +7229,50 @@ function TableModuleView({
                           </td>
                         );
                       })}
-                      {showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubTaskRowOperate || showGithubSchedulerRowOperate ? (
-                        <td className="px-4 py-3 align-middle whitespace-nowrap text-center">
+                      {hasRowOperate ? (
+                        <td className={`px-4 py-3 align-middle whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>
                           {showTaskRowOperate ? (
-                            <div className="flex flex-wrap items-center justify-center gap-2">
+                            <div className={rowOperateGroupClass}>
                               <button
                                 onClick={() => syncTaskRow(id, row)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                className={rowOperateButtonClass}
                               >
                                 同步
                               </button>
                               <button
                                 onClick={() => void exportTaskRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                className={rowOperateButtonClass}
                               >
                                 导出
                               </button>
                               <button
                                 onClick={() => void stopTaskRow(id)}
                                 disabled={['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                                className={rowOperateButtonDisabledClass}
                               >
                                 停止
                               </button>
                               <button
                                 onClick={() => void deleteTaskRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                className={rowOperateButtonClass}
                               >
                                 删除
                               </button>
                               <button
                                 onClick={() => void restartTaskRow(id)}
                                 disabled={!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                                className={rowOperateButtonDisabledClass}
                               >
                                 重启
                               </button>
                             </div>
                           ) : null}
                           {showAssetScopeRowOperate ? (
-                            <div className="flex flex-wrap items-center justify-center gap-2">
+                            <div className={rowOperateGroupClass}>
                               {assetScopeAddScopeAction ? (
                                 <button
                                   onClick={() => openAssetScopeRowActionDialog(assetScopeAddScopeAction, id, row, { scope: '' })}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   添加资产分组范围
                                 </button>
@@ -7243,7 +7285,7 @@ function TableModuleView({
                                       name: `监控-${String(row?.name || '').trim() || id.slice(-6)}`,
                                     })
                                   }
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   添加监控任务
                                 </button>
@@ -7255,7 +7297,7 @@ function TableModuleView({
                                       name: `站点监控-${String(row?.name || '').trim() || id.slice(-6)}`,
                                     })
                                   }
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   添加站点监控任务
                                 </button>
@@ -7267,7 +7309,7 @@ function TableModuleView({
                                       name: `WIH监控-${String(row?.name || '').trim() || id.slice(-6)}`,
                                     })
                                   }
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   添加WIH监控任务
                                 </button>
@@ -7275,10 +7317,10 @@ function TableModuleView({
                             </div>
                           ) : null}
                           {showPolicyRowOperate ? (
-                            <div className="flex flex-wrap items-center justify-center gap-2">
+                            <div className={rowOperateGroupClass}>
                               <button
                                 onClick={() => openPolicyTaskDialog(row)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                className={rowOperateButtonClass}
                               >
                                 任务下发
                               </button>
@@ -7294,63 +7336,63 @@ function TableModuleView({
                                       },
                                     })
                                   }
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   编辑
                                 </button>
                               ) : null}
                               <button
                                 onClick={() => void deletePolicyRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                className={rowOperateButtonClass}
                               >
                                 删除
                               </button>
                             </div>
                           ) : null}
                           {showTaskScheduleRowOperate ? (
-                            <div className="flex flex-wrap items-center justify-center gap-2">
+                            <div className={rowOperateGroupClass}>
                               {String(row?.status || '').toLowerCase() === 'stop' ? (
                                 <button
                                   onClick={() => void recoverTaskScheduleRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   恢复
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => void stopTaskScheduleRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   停止
                                 </button>
                               )}
                               <button
                                 onClick={() => void deleteTaskScheduleRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                className={rowOperateButtonClass}
                               >
                                 删除
                               </button>
                             </div>
                           ) : null}
                           {showGithubTaskRowOperate ? (
-                            <div className="flex flex-wrap items-center justify-center gap-2">
+                            <div className={rowOperateGroupClass}>
                               <button
                                 onClick={() => void stopGithubTaskRow(id)}
                                 disabled={['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                                className={rowOperateButtonDisabledClass}
                               >
                                 停止
                               </button>
                               <button
                                 onClick={() => void deleteGithubTaskRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                className={rowOperateButtonClass}
                               >
                                 删除
                               </button>
                             </div>
                           ) : null}
                           {showGithubSchedulerRowOperate ? (
-                            <div className="flex flex-wrap items-center justify-center gap-2">
+                            <div className={rowOperateGroupClass}>
                               {githubSchedulerUpdateAction ? (
                                 <button
                                   onClick={() =>
@@ -7363,7 +7405,7 @@ function TableModuleView({
                                       kb_notify_enable: Boolean(row?.kb_notify_enable),
                                     })
                                   }
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   修改
                                 </button>
@@ -7371,21 +7413,21 @@ function TableModuleView({
                               {String(row?.status || '').toLowerCase() === 'stop' ? (
                                 <button
                                   onClick={() => void recoverGithubSchedulerRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   恢复
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => void stopGithubSchedulerRow(id)}
-                                  className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                  className={rowOperateButtonClass}
                                 >
                                   停止
                                 </button>
                               )}
                               <button
                                 onClick={() => void deleteGithubSchedulerRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                                className={rowOperateButtonClass}
                               >
                                 删除
                               </button>
@@ -7399,7 +7441,7 @@ function TableModuleView({
                 {rows.length === 0 && !loading ? (
                   <tr>
                     <td
-                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (showTaskRowOperate || showAssetScopeRowOperate || showPolicyRowOperate || showTaskScheduleRowOperate || showGithubTaskRowOperate || showGithubSchedulerRowOperate ? 1 : 0), 2)}
+                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (hasRowOperate ? 1 : 0), 2)}
                       className="px-4 py-10 text-center text-brand-text-muted"
                     >
                       暂无数据

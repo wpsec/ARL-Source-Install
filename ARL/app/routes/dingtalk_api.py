@@ -275,6 +275,16 @@ def _apply_runtime_dingtalk_config(dingtalk_config):
     )
 
 
+def _refresh_runtime_dingtalk_config_best_effort():
+    """
+    最佳努力同步钉钉配置到当前进程。
+
+    说明：
+    - 统一复用 utils 层刷新逻辑，保证 web/worker 行为一致
+    """
+    dingtalk_openapi.refresh_runtime_dingtalk_config_best_effort()
+
+
 def _build_dingtalk_error(message, detail):
     """
     统一构建钉钉调试接口的错误返回
@@ -372,6 +382,7 @@ class DingtalkApiTest(ARLResource):
     @auth
     @ns.expect(test_dingtalk_fields)
     def post(self):
+        _refresh_runtime_dingtalk_config_best_effort()
         args = self.parse_args(test_dingtalk_fields)
         success, result = dingtalk_openapi.test_connection(
             force_refresh_token=bool(args.get("force_refresh_token", False))
@@ -390,6 +401,7 @@ class DingtalkApiWorkspaces(ARLResource):
     @auth
     @ns.expect(list_workspaces_fields)
     def post(self):
+        _refresh_runtime_dingtalk_config_best_effort()
         args = self.parse_args(list_workspaces_fields)
         success, result = dingtalk_openapi.list_workspaces(operator_id=args.get("operator_id", ""))
         if not success:
@@ -406,6 +418,7 @@ class DingtalkApiNodes(ARLResource):
     @auth
     @ns.expect(list_nodes_fields)
     def post(self):
+        _refresh_runtime_dingtalk_config_best_effort()
         args = self.parse_args(list_nodes_fields)
         success, result = dingtalk_openapi.list_nodes(
             parent_node_id=args.get("parent_node_id", ""),
@@ -425,6 +438,7 @@ class DingtalkApiCreateWorkbook(ARLResource):
     @auth
     @ns.expect(create_workbook_fields)
     def post(self):
+        _refresh_runtime_dingtalk_config_best_effort()
         args = self.parse_args(create_workbook_fields)
         success, result = dingtalk_openapi.create_workbook(
             title=args.get("title", ""),
@@ -447,6 +461,7 @@ class DingtalkApiWorkbookSheets(ARLResource):
     @auth
     @ns.expect(list_sheets_fields)
     def post(self):
+        _refresh_runtime_dingtalk_config_best_effort()
         args = self.parse_args(list_sheets_fields)
         success, result = dingtalk_openapi.list_workbook_sheets(
             workbook_id=args.get("workbook_id", ""),
@@ -467,6 +482,7 @@ class DingtalkApiWriteWorkbookMarkdown(ARLResource):
     @auth
     @ns.expect(write_markdown_fields)
     def post(self):
+        _refresh_runtime_dingtalk_config_best_effort()
         args = self.parse_args(write_markdown_fields)
         markdown_content = args.get("markdown_content", "")
         if not markdown_content:

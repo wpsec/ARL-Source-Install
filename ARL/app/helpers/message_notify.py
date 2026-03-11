@@ -65,6 +65,9 @@ def push_dingding(markdown_report):
     - 适合移动端查看
     """
     try:
+        # 统一在发送前刷新一次运行时配置，避免常驻进程持有旧 token。
+        dingtalk_openapi.refresh_runtime_dingtalk_config_best_effort()
+
         if Config.DINGDING_ACCESS_TOKEN:
             data = push.dingding_send(access_token=Config.DINGDING_ACCESS_TOKEN,
                                       secret=Config.DINGDING_SECRET, msgtype="markdown",
@@ -412,6 +415,9 @@ def push_task_finish_notify(task_id):
     - 计划任务子任务会标记 from_task_schedule，避免和计划任务推送重复
     """
     try:
+        # Worker 进程常驻，任务完成回调前做一次配置热刷新，避免修改配置后必须重启容器。
+        dingtalk_openapi.refresh_runtime_dingtalk_config_best_effort()
+
         if not task_id or len(task_id) != 24:
             return
 
@@ -437,6 +443,13 @@ def push_task_finish_notify(task_id):
         finish_notify_enabled = bool(options.get("dingding_notify"))
         ssl_cert_notify_enabled = bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE and options.get("ssl_cert"))
         if not finish_notify_enabled and not ssl_cert_notify_enabled:
+            logger.info(
+                "skip task finish notify task_id:%s dingding_notify:%s ssl_cert:%s ssl_cert_notify_enable:%s",
+                task_id,
+                finish_notify_enabled,
+                bool(options.get("ssl_cert")),
+                bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE),
+            )
             return
 
         if finish_notify_enabled:

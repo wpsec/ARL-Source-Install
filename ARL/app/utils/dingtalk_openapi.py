@@ -8,7 +8,11 @@
 """
 import time
 import urllib.parse
+import threading
+import os
+from pathlib import Path
 from io import BytesIO
+import yaml
 from app import utils
 from app.config import Config
 try:
@@ -27,9 +31,161 @@ logger = utils.get_logger()
 _TOKEN_CACHE = {
     "access_token": "",
     "expires_at": 0,
+    "signature": "",
+}
+_TOKEN_CACHE_LOCK = threading.Lock()
+_RUNTIME_CONFIG_LOCK = threading.Lock()
+_RUNTIME_CONFIG_STATE = {
+    "path": "",
+    "mtime_ns": -1,
 }
 _DEFAULT_CREATE_DOC_PATH = "/v1.0/doc/workspaces/{workspace_id}/docs"
 _LEGACY_MARKDOWN_PATH = "/v2.0/wiki/nodes"
+
+
+def _safe_bool(value, default_value=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "y", "on")
+    return bool(default_value)
+
+
+def _safe_int(value, default_value, min_value=1):
+    try:
+        parsed = int(value)
+    except Exception:
+        return int(default_value)
+    if parsed < min_value:
+        return int(default_value)
+    return parsed
+
+
+def _resolve_config_path():
+    """
+    解析配置文件路径，优先容器挂载路径，兼容本地源码运行。
+    """
+    custom_path = str(os.environ.get("ARL_CONFIG_EDIT_PATH", "") or "").strip()
+    candidates = [
+        Path(custom_path) if custom_path else None,
+        Path("/code/app/config.yaml"),
+        Path(__file__).resolve().parents[2] / "docker" / "config-docker.yaml",
+    ]
+    for item in candidates:
+        if not item:
+            continue
+        if item.exists() and item.is_file():
+            return item
+    return Path(__file__).resolve().parents[2] / "docker" / "config-docker.yaml"
+
+
+def _load_config_from_file(config_path):
+    if not config_path.exists():
+        return {}
+    with config_path.open("r", encoding="utf-8") as file_obj:
+        loaded = yaml.safe_load(file_obj) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError("配置文件根节点必须为对象")
+    return loaded
+
+
+def _extract_dingtalk_runtime_config(config_obj):
+    dingding_conf = config_obj.get("DINGDING", {})
+    if not isinstance(dingding_conf, dict):
+        dingding_conf = {}
+
+    dingtalk_api_conf = config_obj.get("DINGTALK_API", {})
+    if not isinstance(dingtalk_api_conf, dict):
+        dingtalk_api_conf = {}
+
+    return {
+        "dingding_access_token": str(dingding_conf.get("ACCESS_TOKEN", Config.DINGDING_ACCESS_TOKEN or "")),
+        "dingding_secret": str(dingding_conf.get("SECRET", Config.DINGDING_SECRET or "")),
+        "kb_enable": _safe_bool(dingtalk_api_conf.get("ENABLE"), Config.DINGTALK_KB_ENABLE),
+        "base_url": str(dingtalk_api_conf.get("BASE_URL", Config.DINGTALK_API_BASE_URL or "https://api.dingtalk.com")),
+        "corp_id": str(dingtalk_api_conf.get("CORP_ID", Config.DINGTALK_CORP_ID or "")),
+        "app_key": str(dingtalk_api_conf.get("APP_KEY", Config.DINGTALK_APP_KEY or "")),
+        "app_secret": str(dingtalk_api_conf.get("APP_SECRET", Config.DINGTALK_APP_SECRET or "")),
+        "operator_id": str(dingtalk_api_conf.get("OPERATOR_ID", Config.DINGTALK_OPERATOR_ID or "")),
+        "workspace_id": str(dingtalk_api_conf.get("WORKSPACE_ID", Config.DINGTALK_WORKSPACE_ID or "")),
+        "parent_node_id": str(dingtalk_api_conf.get("PARENT_NODE_ID", Config.DINGTALK_PARENT_NODE_ID or "")),
+        "create_node_path": str(
+            dingtalk_api_conf.get("CREATE_NODE_PATH", Config.DINGTALK_KB_CREATE_NODE_PATH or "")
+        ),
+        "kb_timeout": _safe_int(dingtalk_api_conf.get("KB_TIMEOUT"), Config.DINGTALK_KB_TIMEOUT),
+        "title_prefix": str(dingtalk_api_conf.get("TITLE_PREFIX", Config.DINGTALK_KB_TITLE_PREFIX or "")),
+        "dry_run": _safe_bool(dingtalk_api_conf.get("DRY_RUN"), Config.DINGTALK_KB_DRY_RUN),
+        "report_base_url": str(dingtalk_api_conf.get("REPORT_BASE_URL", Config.DINGTALK_REPORT_BASE_URL or "")),
+        "ssl_cert_notify_enable": _safe_bool(
+            dingtalk_api_conf.get("SSL_CERT_NOTIFY_ENABLE"), Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE
+        ),
+    }
+
+
+def _apply_runtime_dingtalk_config(dingtalk_config):
+    Config.DINGDING_ACCESS_TOKEN = str(dingtalk_config.get("dingding_access_token", "")).strip()
+    Config.DINGDING_SECRET = str(dingtalk_config.get("dingding_secret", "")).strip()
+    Config.DINGTALK_KB_ENABLE = _safe_bool(dingtalk_config.get("kb_enable"), False)
+    Config.DINGTALK_API_BASE_URL = str(dingtalk_config.get("base_url", "")).strip() or "https://api.dingtalk.com"
+    Config.DINGTALK_CORP_ID = str(dingtalk_config.get("corp_id", "")).strip()
+    Config.DINGTALK_APP_KEY = str(dingtalk_config.get("app_key", "")).strip()
+    Config.DINGTALK_APP_SECRET = str(dingtalk_config.get("app_secret", "")).strip()
+    Config.DINGTALK_OPERATOR_ID = str(dingtalk_config.get("operator_id", "")).strip()
+    Config.DINGTALK_WORKSPACE_ID = str(dingtalk_config.get("workspace_id", "")).strip()
+    Config.DINGTALK_PARENT_NODE_ID = str(dingtalk_config.get("parent_node_id", "")).strip()
+    Config.DINGTALK_KB_CREATE_NODE_PATH = (
+        str(dingtalk_config.get("create_node_path", "")).strip() or "/v1.0/doc/workspaces/{workspace_id}/docs"
+    )
+    Config.DINGTALK_KB_TIMEOUT = _safe_int(dingtalk_config.get("kb_timeout"), 20)
+    Config.DINGTALK_KB_TITLE_PREFIX = str(dingtalk_config.get("title_prefix", "")).strip()
+    Config.DINGTALK_KB_DRY_RUN = _safe_bool(dingtalk_config.get("dry_run"), False)
+    Config.DINGTALK_REPORT_BASE_URL = str(dingtalk_config.get("report_base_url", "")).strip()
+    Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE = _safe_bool(
+        dingtalk_config.get("ssl_cert_notify_enable"), False
+    )
+
+
+def refresh_runtime_dingtalk_config_best_effort(force=False):
+    """
+    最佳努力从配置文件同步钉钉相关配置到当前进程内存。
+
+    说明：
+    - 用于 web/worker/scheduler 多进程场景下，避免配置更新后必须重启进程才生效。
+    - 当开放平台核心配置变化时自动清理 access_token 缓存。
+    """
+    config_path = _resolve_config_path()
+    path_text = str(config_path)
+    mtime_ns = -1
+    try:
+        mtime_ns = int(config_path.stat().st_mtime_ns)
+    except Exception:
+        pass
+
+    old_signature = _runtime_signature()
+    try:
+        with _RUNTIME_CONFIG_LOCK:
+            if (
+                not force
+                and _RUNTIME_CONFIG_STATE.get("path") == path_text
+                and int(_RUNTIME_CONFIG_STATE.get("mtime_ns", -1)) == mtime_ns
+            ):
+                return False
+
+            config_obj = _load_config_from_file(config_path)
+            dingtalk_config = _extract_dingtalk_runtime_config(config_obj)
+            _apply_runtime_dingtalk_config(dingtalk_config)
+            _RUNTIME_CONFIG_STATE["path"] = path_text
+            _RUNTIME_CONFIG_STATE["mtime_ns"] = mtime_ns
+    except Exception as exc:
+        logger.warning("refresh dingtalk runtime config failed: %s", exc)
+        return False
+
+    new_signature = _runtime_signature()
+    if old_signature != new_signature:
+        reset_access_token_cache()
+    return True
 
 
 def _is_config_ready(require_enable=True, require_workspace=True, require_parent_node=True):
@@ -120,16 +276,134 @@ def _build_url(path):
     return base_url + path
 
 
+def _runtime_signature():
+    """
+    钉钉开放平台配置签名，用于识别配置变更后触发 token 缓存失效。
+    """
+    return "|".join(
+        [
+            str(Config.DINGTALK_API_BASE_URL or "").strip(),
+            str(Config.DINGTALK_CORP_ID or "").strip(),
+            str(Config.DINGTALK_APP_KEY or "").strip(),
+            str(Config.DINGTALK_APP_SECRET or "").strip(),
+        ]
+    )
+
+
+def reset_access_token_cache():
+    """
+    清理 access_token 缓存（配置变更或鉴权失败后调用）。
+    """
+    with _TOKEN_CACHE_LOCK:
+        _TOKEN_CACHE["access_token"] = ""
+        _TOKEN_CACHE["expires_at"] = 0
+        _TOKEN_CACHE["signature"] = _runtime_signature()
+
+
+def _extract_response_error_text(data):
+    if not isinstance(data, dict):
+        return str(data or "")
+
+    for key in ["error", "message", "msg", "errMsg", "errmsg", "error_message"]:
+        value = data.get(key)
+        if value:
+            return str(value)
+
+    nested = data.get("data")
+    if isinstance(nested, dict):
+        for key in ["error", "message", "msg", "errMsg", "errmsg", "error_message"]:
+            value = nested.get(key)
+            if value:
+                return str(value)
+
+    return str(data)
+
+
+def _is_auth_failure(status_code, data):
+    if int(status_code or 0) in [401, 403]:
+        return True
+
+    err_code = ""
+    if isinstance(data, dict):
+        err_code = str(data.get("errcode") or data.get("code") or "").strip().lower()
+    err_text = _extract_response_error_text(data).lower()
+
+    auth_code_hits = {
+        "invalidauthentication",
+        "invalid_authentication",
+        "invalidtoken",
+        "invalid_token",
+        "invalidaccesstoken",
+        "invalid_access_token",
+        "accesstokeninvalid",
+        "access_token_invalid",
+        "accesstokenexpired",
+        "access_token_expired",
+    }
+    if err_code and err_code in auth_code_hits:
+        return True
+
+    auth_keywords = [
+        "access token",
+        "access_token",
+        "token",
+        "unauthorized",
+        "invalid authentication",
+        "invalid token",
+        "token expired",
+        "signature not match",
+    ]
+    return any(keyword in err_text for keyword in auth_keywords)
+
+
+def _is_transient_failure(status_code, data, error_text=""):
+    if int(status_code or 0) in [408, 409, 425, 429, 500, 502, 503, 504]:
+        return True
+
+    probe_text = " ".join(
+        [
+            _extract_response_error_text(data).lower(),
+            str(error_text or "").lower(),
+        ]
+    )
+    transient_keywords = [
+        "timeout",
+        "timed out",
+        "temporarily unavailable",
+        "too many requests",
+        "rate limit",
+        "connection reset",
+        "connection aborted",
+        "gateway",
+        "service unavailable",
+    ]
+    return any(keyword in probe_text for keyword in transient_keywords)
+
+
 def get_access_token(force_refresh=False, require_enable=True):
     """
     获取 access_token（含简单内存缓存）
     """
+    # 每次请求前按 mtime 轻量检查配置文件，保证常驻进程可感知配置变更。
+    refresh_runtime_dingtalk_config_best_effort()
+
     if not _is_config_ready(require_enable=require_enable, require_workspace=False, require_parent_node=False):
         return ""
 
     now_ts = int(time.time())
-    if not force_refresh and _TOKEN_CACHE.get("access_token") and _TOKEN_CACHE.get("expires_at", 0) > now_ts + 60:
-        return _TOKEN_CACHE["access_token"]
+    current_signature = _runtime_signature()
+    with _TOKEN_CACHE_LOCK:
+        if _TOKEN_CACHE.get("signature") != current_signature:
+            _TOKEN_CACHE["access_token"] = ""
+            _TOKEN_CACHE["expires_at"] = 0
+            _TOKEN_CACHE["signature"] = current_signature
+
+        if (
+            not force_refresh
+            and _TOKEN_CACHE.get("access_token")
+            and _TOKEN_CACHE.get("expires_at", 0) > now_ts + 60
+        ):
+            return _TOKEN_CACHE["access_token"]
 
     token_url = _build_url("/v1.0/oauth2/{}/token".format(Config.DINGTALK_CORP_ID))
     payload = {
@@ -154,45 +428,103 @@ def get_access_token(force_refresh=False, require_enable=True):
             logger.warning("dingtalk token missing, body:{}".format(data))
             return ""
 
-        _TOKEN_CACHE["access_token"] = token
-        _TOKEN_CACHE["expires_at"] = now_ts + max(expires_in - 120, 60)
+        with _TOKEN_CACHE_LOCK:
+            _TOKEN_CACHE["access_token"] = token
+            _TOKEN_CACHE["expires_at"] = now_ts + max(expires_in - 120, 60)
+            _TOKEN_CACHE["signature"] = current_signature
         return token
     except Exception as e:
         logger.warning("get dingtalk token error {}".format(e))
         return ""
 
 
-def request_openapi(method, path, params=None, json_data=None, require_enable=True, force_refresh_token=False):
+def request_openapi(
+    method,
+    path,
+    params=None,
+    json_data=None,
+    require_enable=True,
+    force_refresh_token=False,
+    retry_on_transient=False,
+    retry_max=3,
+):
     """
     调用钉钉开放平台接口
     """
-    token = get_access_token(force_refresh=force_refresh_token, require_enable=require_enable)
-    if not token:
-        return False, {"error": "access_token is empty", "missing_fields": _missing_required_fields()}
+    method_text = str(method or "get").strip().lower()
+    max_attempts = max(1, int(retry_max or 1))
+    if not retry_on_transient:
+        # 非瞬时重试模式下仍保留一次“鉴权失败后刷新 token”重试机会。
+        max_attempts = max(2, min(max_attempts, 2))
 
-    headers = {
-        "Content-Type": "application/json",
-        "x-acs-dingtalk-access-token": token,
-    }
+    force_refresh = bool(force_refresh_token)
+    auth_retry_used = False
+    last_result = {"error": "request not executed"}
     url = _build_url(path)
 
-    try:
-        conn = utils.http_req(
-            url,
-            method=method,
-            headers=headers,
-            params=params,
-            json=json_data,
-            timeout=(8, Config.DINGTALK_KB_TIMEOUT),
-        )
-        data = _parse_response(conn)
-        success = _is_success(data, conn.status_code)
-        return success, {
-            "status_code": conn.status_code,
-            "data": data,
+    for attempt in range(1, max_attempts + 1):
+        token = get_access_token(force_refresh=force_refresh, require_enable=require_enable)
+        force_refresh = False
+        if not token:
+            last_result = {
+                "error": "access_token is empty",
+                "missing_fields": _missing_required_fields(),
+                "attempt": attempt,
+            }
+            if attempt < max_attempts:
+                time.sleep(min(0.45 * attempt, 1.5))
+                continue
+            return False, last_result
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-acs-dingtalk-access-token": token,
         }
-    except Exception as e:
-        return False, {"error": str(e)}
+
+        try:
+            conn = utils.http_req(
+                url,
+                method=method_text,
+                headers=headers,
+                params=params,
+                json=json_data,
+                timeout=(8, Config.DINGTALK_KB_TIMEOUT),
+            )
+            data = _parse_response(conn)
+            success = _is_success(data, conn.status_code)
+            result = {
+                "status_code": conn.status_code,
+                "data": data,
+                "attempt": attempt,
+            }
+            if success:
+                return True, result
+
+            if not auth_retry_used and _is_auth_failure(conn.status_code, data):
+                auth_retry_used = True
+                reset_access_token_cache()
+                force_refresh = True
+                if attempt < max_attempts:
+                    continue
+
+            if retry_on_transient and attempt < max_attempts and _is_transient_failure(conn.status_code, data):
+                time.sleep(min(0.45 * attempt, 1.5))
+                last_result = result
+                continue
+
+            return False, result
+        except Exception as e:
+            error_text = str(e)
+            last_result = {
+                "error": error_text,
+                "attempt": attempt,
+            }
+            if retry_on_transient and attempt < max_attempts and _is_transient_failure(0, {}, error_text=error_text):
+                time.sleep(min(0.45 * attempt, 1.5))
+                continue
+            return False, last_result
+
+    return False, last_result
 
 
 def _extract_node_meta(data):
@@ -865,6 +1197,8 @@ def test_connection(force_refresh_token=False):
         params={"operatorId": Config.DINGTALK_OPERATOR_ID},
         require_enable=False,
         force_refresh_token=force_refresh_token,
+        retry_on_transient=True,
+        retry_max=3,
     )
     result["access_token_ok"] = True
     if success:
@@ -890,6 +1224,8 @@ def list_workspaces(operator_id=""):
         path="/v2.0/wiki/workspaces",
         params={"operatorId": op_id},
         require_enable=False,
+        retry_on_transient=True,
+        retry_max=3,
     )
 
     data = result.get("data", {})
@@ -935,6 +1271,8 @@ def list_nodes(parent_node_id="", operator_id=""):
             "operatorId": op_id,
         },
         require_enable=False,
+        retry_on_transient=True,
+        retry_max=3,
     )
 
     data = result.get("data", {})
