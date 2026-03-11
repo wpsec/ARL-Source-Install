@@ -268,49 +268,219 @@ def _parse_cert_datetime(value):
     return None
 
 
-def _extract_alert_domain(cert_obj, ip, port):
+def _normalize_alert_domain(value):
     """
-    优先使用证书域名信息作为告警展示域名。
+    规范化告警域名候选，非法域名返回空字符串。
     """
-    if not isinstance(cert_obj, dict):
-        return "{}:{}".format(ip, port) if ip and port else (ip or "")
+    domain = str(value or "").strip().lower().rstrip(".")
+    if not domain:
+        return ""
+    if domain.startswith("*."):
+        domain = domain[2:]
+    if ":" in domain and domain.count(":") == 1:
+        domain = domain.split(":", 1)[0].strip()
+    if not domain:
+        return ""
+    if not utils.is_valid_domain(domain):
+        return ""
+    return domain
 
-    subject = cert_obj.get("subject", {})
+
+def _extract_san_domains(cert_obj):
+    """
+    从证书 SAN 中提取域名候选。
+    """
+    output = []
+    if not isinstance(cert_obj, dict):
+        return output
+
+    extensions = cert_obj.get("extensions", {})
+    if not isinstance(extensions, dict):
+        return output
+
+    san_text = str(extensions.get("subjectAltName", "")).strip()
+    if not san_text:
+        return output
+
+    for raw_item in san_text.split(","):
+        item = raw_item.strip()
+        if not item:
+            continue
+        if ":" in item:
+            left, right = item.split(":", 1)
+            if left.strip().lower() != "dns":
+                continue
+            domain = _normalize_alert_domain(right)
+        else:
+            domain = _normalize_alert_domain(item)
+
+        if domain and domain not in output:
+            output.append(domain)
+
+    return output
+
+
+def _build_ssl_alert_context(task_id):
+    """
+    构建 SSL 告警所需上下文：
+    - IP 类型（用于过滤内网）
+    - IP 对应域名（优先展示任务内真实域名）
+    - 任务域名集合（用于约束证书域名候选）
+    """
+    ip_type_map = {}
+    ip_domain_map = {}
+    task_domain_set = set()
+
+    for item in utils.conn_db("domain").find({"task_id": task_id}, {"domain": 1, "ips": 1}):
+        domain = _normalize_alert_domain(item.get("domain", ""))
+        if domain:
+            task_domain_set.add(domain)
+
+        raw_ips = item.get("ips", [])
+        if isinstance(raw_ips, str):
+            raw_ips = [x.strip() for x in raw_ips.split(",") if x.strip()]
+        if not isinstance(raw_ips, list):
+            raw_ips = []
+
+        for raw_ip in raw_ips:
+            ip = str(raw_ip or "").strip()
+            if not ip:
+                continue
+            if not domain:
+                continue
+            ip_domain_map.setdefault(ip, []).append(domain)
+
+    for item in utils.conn_db("ip").find({"task_id": task_id}, {"ip": 1, "ip_type": 1, "domain": 1}):
+        ip = str(item.get("ip", "")).strip()
+        if not ip:
+            continue
+
+        ip_type = str(item.get("ip_type", "")).strip().upper()
+        if ip_type:
+            ip_type_map[ip] = ip_type
+
+        raw_domains = item.get("domain", [])
+        if isinstance(raw_domains, str):
+            raw_domains = [raw_domains]
+        if not isinstance(raw_domains, list):
+            raw_domains = []
+
+        for raw_domain in raw_domains:
+            domain = _normalize_alert_domain(raw_domain)
+            if not domain:
+                continue
+            task_domain_set.add(domain)
+            ip_domain_map.setdefault(ip, []).append(domain)
+
+    for ip, domains in list(ip_domain_map.items()):
+        ordered = []
+        seen = set()
+        for domain in domains:
+            if domain in seen:
+                continue
+            ordered.append(domain)
+            seen.add(domain)
+        ip_domain_map[ip] = ordered
+
+    return {
+        "ip_type_map": ip_type_map,
+        "ip_domain_map": ip_domain_map,
+        "task_domain_set": task_domain_set,
+    }
+
+
+def _is_private_alert_ip(ip, ip_type_map):
+    """
+    判断证书告警 IP 是否属于内网/保留类型。
+    """
+    ip_text = str(ip or "").strip()
+    if not ip_text:
+        return False
+
+    if str(ip_type_map.get(ip_text, "")).upper() == "PRIVATE":
+        return True
+
+    try:
+        ip_type = str(utils.get_ip_type(ip_text) or "").upper()
+    except Exception:
+        ip_type = ""
+    return ip_type == "PRIVATE"
+
+
+def _extract_alert_domain(cert_obj, ip, port, ip_domain_map=None, task_domain_set=None):
+    """
+    告警域名优先级：
+    1) 任务内 IP 关联域名
+    2) SAN 域名（优先命中任务域名）
+    3) CN（仅合法域名）
+    4) ip:port 回退
+    """
+    ip_text = str(ip or "").strip()
+    port_text = str(port or "").strip()
+    ip_domain_map = ip_domain_map if isinstance(ip_domain_map, dict) else {}
+    task_domain_set = task_domain_set if isinstance(task_domain_set, set) else set()
+
+    mapped_domains = ip_domain_map.get(ip_text, [])
+    if isinstance(mapped_domains, list):
+        for domain in mapped_domains:
+            if domain:
+                return domain
+
+    san_domains = _extract_san_domains(cert_obj)
+    if task_domain_set:
+        for domain in san_domains:
+            if domain in task_domain_set:
+                return domain
+    if san_domains:
+        return san_domains[0]
+
+    subject = cert_obj.get("subject", {}) if isinstance(cert_obj, dict) else {}
     if isinstance(subject, dict):
-        common_name = str(subject.get("common_name", "")).strip()
+        common_name = _normalize_alert_domain(subject.get("common_name", ""))
         if common_name:
             return common_name
 
-    extensions = cert_obj.get("extensions", {})
-    if isinstance(extensions, dict):
-        san_text = str(extensions.get("subjectAltName", "")).strip()
-        if san_text:
-            for raw_item in san_text.split(","):
-                item = raw_item.strip()
-                if not item:
-                    continue
-                if ":" in item:
-                    left, right = item.split(":", 1)
-                    if left.strip().lower() == "dns" and right.strip():
-                        return right.strip()
-                elif item:
-                    return item
+    return "{}:{}".format(ip_text, port_text) if ip_text and port_text else (ip_text or "-")
 
-    return "{}:{}".format(ip, port) if ip and port else (ip or "")
+
+def _format_cert_validity_text(remaining_days):
+    """
+    将剩余天数格式化为可读文本。
+    """
+    try:
+        days = int(remaining_days)
+    except Exception:
+        return "-"
+
+    if days < 0:
+        return "已过期 {} 天".format(abs(days))
+    if days == 0:
+        return "今日到期"
+    return "剩余 {} 天".format(days)
 
 
 def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
     """
     收集任务中临期/过期证书列表。
     """
+    alert_days = max(int(alert_days or 30), 1)
     warnings = []
     now_dt = datetime.utcnow()
+    alert_context = _build_ssl_alert_context(task_id)
+    ip_type_map = alert_context.get("ip_type_map", {})
+    ip_domain_map = alert_context.get("ip_domain_map", {})
+    task_domain_set = alert_context.get("task_domain_set", set())
 
     for item in utils.conn_db("cert").find({"task_id": task_id}):
         cert_obj = item.get("cert", {}) if isinstance(item.get("cert"), dict) else {}
         validity = cert_obj.get("validity", {}) if isinstance(cert_obj.get("validity"), dict) else {}
+        start_time = str(validity.get("start", "")).strip()
         end_time = str(validity.get("end", "")).strip()
         if not end_time:
+            continue
+
+        ip = str(item.get("ip", "")).strip()
+        if _is_private_alert_ip(ip, ip_type_map):
             continue
 
         end_dt = _parse_cert_datetime(end_time)
@@ -321,16 +491,23 @@ def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
         if remaining_days > alert_days:
             continue
 
-        ip = str(item.get("ip", "")).strip()
         port = str(item.get("port", "")).strip()
-        domain = _extract_alert_domain(cert_obj, ip, port)
+        domain = _extract_alert_domain(
+            cert_obj=cert_obj,
+            ip=ip,
+            port=port,
+            ip_domain_map=ip_domain_map,
+            task_domain_set=task_domain_set,
+        )
         warnings.append(
             {
                 "domain": domain,
                 "ip": ip,
                 "port": port,
+                "start_time": start_time,
                 "end_time": end_time,
                 "remaining_days": remaining_days,
+                "validity_text": _format_cert_validity_text(remaining_days),
             }
         )
 
@@ -354,16 +531,12 @@ def _build_ssl_cert_warning_markdown(warn_item, report_link):
     """
     构建 SSL 证书告警消息模板。
     """
-    remaining_days = int(warn_item.get("remaining_days", 0))
-    if remaining_days >= 0:
-        remain_text = "{} 天".format(remaining_days)
-    else:
-        remain_text = "已过期 {} 天".format(abs(remaining_days))
-
     markdown = "### SSL证书安全警告\n\n"
     markdown += "- 检测域名：`{}`\n".format(str(warn_item.get("domain", "") or "-"))
     markdown += "- 检测时间：`{}`\n".format(utils.curr_date())
-    markdown += "- 证书有效期剩余：`{}`\n".format(remain_text)
+    markdown += "- 生效时间：`{}`\n".format(str(warn_item.get("start_time", "") or "-"))
+    markdown += "- 失效时间：`{}`\n".format(str(warn_item.get("end_time", "") or "-"))
+    markdown += "- 证书有效期：`{}`\n".format(str(warn_item.get("validity_text", "") or "-"))
     markdown += "- 请在有效期内及时更新！\n"
     if report_link:
         markdown += "- 报告链接：[点击查看]({})\n".format(report_link)
@@ -376,23 +549,29 @@ def _push_ssl_cert_warning(task_id, task_data):
     """
     推送 SSL 证书临期告警，并尽可能附带钉钉知识库报告链接。
     """
-    warnings = _collect_ssl_cert_warnings(task_id=task_id, alert_days=30, max_items=10)
+    alert_days = int(Config.DINGTALK_SSL_CERT_NOTIFY_DAYS or 30)
+    if alert_days <= 0:
+        alert_days = 30
+
+    warnings = _collect_ssl_cert_warnings(task_id=task_id, alert_days=alert_days, max_items=10)
     if not warnings:
         return
 
     report_link = ""
     if Config.DINGTALK_KB_ENABLE:
         task_name = str(task_data.get("name", "")).strip()
-        report_title = "{}-SSL证书扫描报告-{}".format(task_name or "任务", utils.curr_date())
-        summary_markdown = "### SSL证书扫描报告\n\n- 任务ID：`{}`\n- 告警证书数量：`{}`".format(
-            task_id, len(warnings)
-        )
+        report_title = "{}-SSL证书过期报告-{}".format(task_name or "任务", utils.curr_date())
+        summary_markdown = (
+            "### SSL证书过期提醒报告\n\n"
+            "- 告警证书数量：`{}`\n"
+            "- 提醒阈值：`<= {} 天`\n"
+        ).format(len(warnings), alert_days)
         kb_success, kb_result = push_dingtalk_kb(
             report_title=report_title,
             markdown_report=summary_markdown,
             source_type="ssl_cert_warning",
             source_id=task_id,
-            extra_data={"task_id": task_id, "warning_count": len(warnings)},
+            extra_data={"task_id": task_id, "warning_count": len(warnings), "alert_days": alert_days},
             task_ids=[task_id],
         )
         if kb_success and isinstance(kb_result, dict):

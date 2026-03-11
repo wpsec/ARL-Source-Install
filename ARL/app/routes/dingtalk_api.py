@@ -210,6 +210,9 @@ def _extract_dingtalk_config(config_obj):
         "ssl_cert_notify_enable": _safe_bool(
             dingtalk_api_conf.get("SSL_CERT_NOTIFY_ENABLE"), Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE
         ),
+        "ssl_cert_notify_days": _safe_int(
+            dingtalk_api_conf.get("SSL_CERT_NOTIFY_DAYS"), Config.DINGTALK_SSL_CERT_NOTIFY_DAYS, min_value=1
+        ),
     }
 
 
@@ -246,6 +249,9 @@ def _merge_dingtalk_config(config_obj, dingtalk_config):
     dingtalk_api_conf["SSL_CERT_NOTIFY_ENABLE"] = _safe_bool(
         dingtalk_config.get("ssl_cert_notify_enable"), False
     )
+    dingtalk_api_conf["SSL_CERT_NOTIFY_DAYS"] = _safe_int(
+        dingtalk_config.get("ssl_cert_notify_days"), 30, min_value=1
+    )
     return config_obj
 
 
@@ -272,6 +278,9 @@ def _apply_runtime_dingtalk_config(dingtalk_config):
     Config.DINGTALK_REPORT_BASE_URL = str(dingtalk_config.get("report_base_url", "")).strip()
     Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE = _safe_bool(
         dingtalk_config.get("ssl_cert_notify_enable"), False
+    )
+    Config.DINGTALK_SSL_CERT_NOTIFY_DAYS = _safe_int(
+        dingtalk_config.get("ssl_cert_notify_days"), 30, min_value=1
     )
 
 

@@ -8700,6 +8700,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     dingding_secret: string;
     kb_enable: boolean;
     ssl_cert_notify_enable: boolean;
+    ssl_cert_notify_days: number;
     base_url: string;
     corp_id: string;
     app_key: string;
@@ -8715,13 +8716,14 @@ function DingtalkIntegrationView({ token }: { token: string }) {
   };
 
   type DingtalkBoolKey = 'kb_enable' | 'dry_run' | 'ssl_cert_notify_enable';
-  type DingtalkStringKey = Exclude<keyof DingtalkConfigForm, DingtalkBoolKey | 'kb_timeout'>;
+  type DingtalkStringKey = Exclude<keyof DingtalkConfigForm, DingtalkBoolKey | 'kb_timeout' | 'ssl_cert_notify_days'>;
 
   const defaultForm: DingtalkConfigForm = {
     dingding_access_token: '',
     dingding_secret: '',
     kb_enable: false,
     ssl_cert_notify_enable: false,
+    ssl_cert_notify_days: 30,
     base_url: 'https://api.dingtalk.com',
     corp_id: '',
     app_key: '',
@@ -8751,11 +8753,14 @@ function DingtalkIntegrationView({ token }: { token: string }) {
 
   const normalizeForm = useCallback((rawValue: any): DingtalkConfigForm => {
     const raw = rawValue || {};
+    const parsedNotifyDays = Number(raw.ssl_cert_notify_days || 30);
+    const safeNotifyDays = Number.isFinite(parsedNotifyDays) && parsedNotifyDays > 0 ? parsedNotifyDays : 30;
     return {
       dingding_access_token: String(raw.dingding_access_token || ''),
       dingding_secret: String(raw.dingding_secret || ''),
       kb_enable: Boolean(raw.kb_enable),
       ssl_cert_notify_enable: Boolean(raw.ssl_cert_notify_enable),
+      ssl_cert_notify_days: safeNotifyDays,
       base_url: String(raw.base_url || 'https://api.dingtalk.com'),
       corp_id: String(raw.corp_id || ''),
       app_key: String(raw.app_key || ''),
@@ -8805,6 +8810,10 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     setForm((prev) => ({ ...prev, kb_timeout: Number(value || 0) }));
   };
 
+  const updateSslNotifyDays = (value: string) => {
+    setForm((prev) => ({ ...prev, ssl_cert_notify_days: Number(value || 0) }));
+  };
+
   const saveDingtalkConfig = async () => {
     if (!form.base_url.trim()) {
       setError('钉钉 OpenAPI 地址不能为空');
@@ -8812,6 +8821,10 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     }
     if (!Number.isFinite(form.kb_timeout) || form.kb_timeout <= 0) {
       setError('知识库超时时间必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(form.ssl_cert_notify_days) || form.ssl_cert_notify_days <= 0) {
+      setError('SSL证书提醒天数必须大于 0');
       return;
     }
 
@@ -8835,6 +8848,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             parent_node_id: form.parent_node_id.trim(),
             create_node_path: form.create_node_path.trim(),
             kb_timeout: Math.floor(form.kb_timeout),
+            ssl_cert_notify_days: Math.floor(form.ssl_cert_notify_days),
             title_prefix: form.title_prefix.trim(),
             report_base_url: form.report_base_url.trim(),
           },
@@ -8990,7 +9004,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
           <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
             <input
               type="checkbox"
@@ -9007,8 +9021,21 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               onChange={(event) => updateBoolField('ssl_cert_notify_enable', event.target.checked)}
               className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
             />
-            <span className="font-medium">SSL证书扫描通知</span>
+            <span className="font-medium">SSL证书过期通知</span>
           </label>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              SSL提醒天数
+              <span className="ml-2 font-mono opacity-70">DINGTALK_API.SSL_CERT_NOTIFY_DAYS</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={String(form.ssl_cert_notify_days)}
+              onChange={(event) => updateSslNotifyDays(event.target.value)}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
           <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
             <input
               type="checkbox"

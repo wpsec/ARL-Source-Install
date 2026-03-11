@@ -328,6 +328,7 @@ class Config(object):
     DINGTALK_KB_DRY_RUN = False
     DINGTALK_REPORT_BASE_URL = ""
     DINGTALK_SSL_CERT_NOTIFY_ENABLE = False
+    DINGTALK_SSL_CERT_NOTIFY_DAYS = 30
 
     # 飞书机器人配置
     FEISHU_WEBHOOK = ""  # 飞书Webhook地址
@@ -679,6 +680,10 @@ try:
             Config.DINGTALK_REPORT_BASE_URL = dingtalk_api_conf["REPORT_BASE_URL"]
         if dingtalk_api_conf.get("SSL_CERT_NOTIFY_ENABLE") is not None:
             Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE = bool(dingtalk_api_conf["SSL_CERT_NOTIFY_ENABLE"])
+        if dingtalk_api_conf.get("SSL_CERT_NOTIFY_DAYS") is not None:
+            Config.DINGTALK_SSL_CERT_NOTIFY_DAYS = safe_positive_int(
+                dingtalk_api_conf["SSL_CERT_NOTIFY_DAYS"], Config.DINGTALK_SSL_CERT_NOTIFY_DAYS
+            )
 
     # --- 邮件推送配置 ---
     if y.get("EMAIL"):
@@ -769,6 +774,10 @@ try:
     Config.DINGTALK_REPORT_BASE_URL = env_str("ARL_DINGTALK_REPORT_BASE_URL", Config.DINGTALK_REPORT_BASE_URL)
     Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE = env_bool(
         "ARL_DINGTALK_SSL_CERT_NOTIFY_ENABLE", Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE
+    )
+    Config.DINGTALK_SSL_CERT_NOTIFY_DAYS = safe_positive_int(
+        env_int("ARL_DINGTALK_SSL_CERT_NOTIFY_DAYS", Config.DINGTALK_SSL_CERT_NOTIFY_DAYS),
+        Config.DINGTALK_SSL_CERT_NOTIFY_DAYS
     )
     Config.PHANTOMJS_BIN = env_str("ARL_PHANTOMJS_BIN", Config.PHANTOMJS_BIN)
     Config.SCREENSHOT_ENGINE = env_str("ARL_SCREENSHOT_ENGINE", Config.SCREENSHOT_ENGINE).strip().lower()

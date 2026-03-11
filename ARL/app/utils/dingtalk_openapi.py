@@ -10,6 +10,7 @@ import time
 import urllib.parse
 import threading
 import os
+import re
 from pathlib import Path
 from io import BytesIO
 import yaml
@@ -121,6 +122,9 @@ def _extract_dingtalk_runtime_config(config_obj):
         "ssl_cert_notify_enable": _safe_bool(
             dingtalk_api_conf.get("SSL_CERT_NOTIFY_ENABLE"), Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE
         ),
+        "ssl_cert_notify_days": _safe_int(
+            dingtalk_api_conf.get("SSL_CERT_NOTIFY_DAYS"), Config.DINGTALK_SSL_CERT_NOTIFY_DAYS, min_value=1
+        ),
     }
 
 
@@ -144,6 +148,9 @@ def _apply_runtime_dingtalk_config(dingtalk_config):
     Config.DINGTALK_REPORT_BASE_URL = str(dingtalk_config.get("report_base_url", "")).strip()
     Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE = _safe_bool(
         dingtalk_config.get("ssl_cert_notify_enable"), False
+    )
+    Config.DINGTALK_SSL_CERT_NOTIFY_DAYS = _safe_int(
+        dingtalk_config.get("ssl_cert_notify_days"), 30, min_value=1
     )
 
 
@@ -624,12 +631,186 @@ def _normalize_sheet_name_key(sheet_name):
     return str(sheet_name or "").strip().lower()
 
 
+def _compact_sheet_cell_text(value):
+    """
+    归一化单元格文本（用于表头匹配）。
+    """
+    text = str(value or "").strip().lower()
+    return re.sub(r"\s+", "", text)
+
+
+def _parse_int_from_cell(value):
+    """
+    从单元格值解析整数，失败返回 None。
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    try:
+        return int(float(text))
+    except Exception:
+        match = re.search(r"-?\d+", text)
+        if not match:
+            return None
+        try:
+            return int(match.group(0))
+        except Exception:
+            return None
+
+
+def _format_validity_days_text(value):
+    """
+    将剩余天数字段格式化为“证书有效期”文本。
+    """
+    parsed = _parse_int_from_cell(value)
+    if parsed is None:
+        return str(value or "-").strip() or "-"
+    if parsed < 0:
+        return "已过期 {} 天".format(abs(parsed))
+    if parsed == 0:
+        return "今日到期"
+    return "剩余 {} 天".format(parsed)
+
+
+def _strip_task_id_column(values):
+    """
+    若首列为任务ID，移除该列（仅用于钉钉知识库展示）。
+    """
+    if not isinstance(values, list) or not values:
+        return []
+
+    normalized_rows = []
+    for row in values:
+        if isinstance(row, list):
+            normalized_rows.append(list(row))
+        else:
+            normalized_rows.append([row])
+
+    header = normalized_rows[0] if normalized_rows else []
+    if not isinstance(header, list) or not header:
+        return normalized_rows
+
+    first_col = _compact_sheet_cell_text(header[0])
+    if first_col not in ["任务id", "taskid"]:
+        return normalized_rows
+
+    output = []
+    for row in normalized_rows:
+        if isinstance(row, list) and len(row) > 0:
+            output.append(row[1:])
+        else:
+            output.append([])
+    return output
+
+
+def _build_expired_ssl_sheet_item(ssl_sheet_item):
+    """
+    从 SSL证书 工作表构建“过期证书”工作表（仅过期项）。
+    """
+    if not isinstance(ssl_sheet_item, dict):
+        return None
+
+    values = ssl_sheet_item.get("values", [])
+    if not isinstance(values, list) or len(values) == 0:
+        return None
+
+    rows = []
+    for row in values:
+        if isinstance(row, list):
+            rows.append(list(row))
+        else:
+            rows.append([row])
+
+    header = rows[0] if rows else []
+    if not isinstance(header, list) or not header:
+        return None
+
+    remain_idx = -1
+    for idx, cell in enumerate(header):
+        if _compact_sheet_cell_text(cell) in ["剩余天数", "证书有效期", "有效期"]:
+            remain_idx = idx
+            break
+    if remain_idx < 0:
+        return None
+
+    expired_rows = []
+    for row in rows[1:]:
+        if not isinstance(row, list):
+            continue
+        if remain_idx >= len(row):
+            continue
+        remaining_days = _parse_int_from_cell(row[remain_idx])
+        if remaining_days is None or remaining_days >= 0:
+            continue
+        row_cp = list(row)
+        row_cp[remain_idx] = _format_validity_days_text(remaining_days)
+        expired_rows.append(row_cp)
+
+    output_header = list(header)
+    output_header[remain_idx] = "证书有效期"
+
+    output_values = [output_header]
+    if expired_rows:
+        output_values.extend(expired_rows)
+    else:
+        empty_row = ["-"] * max(len(output_header), 1)
+        empty_row[0] = "无过期证书"
+        output_values.append(empty_row)
+
+    return {
+        "sheet_name": "过期证书",
+        "values": output_values,
+    }
+
+
+def _prepare_task_export_sheet_items(raw_sheet_items):
+    """
+    预处理任务导出工作表：
+    - SSL证书工作表去掉任务ID列
+    - 追加“过期证书”工作表
+    """
+    if not isinstance(raw_sheet_items, list):
+        return []
+
+    prepared_items = []
+    ssl_sheet_item = None
+
+    for item in raw_sheet_items:
+        if not isinstance(item, dict):
+            continue
+
+        sheet_name = str(item.get("sheet_name", "")).strip()
+        values = item.get("values", [])
+        current_item = {
+            "sheet_name": sheet_name,
+            "values": values if isinstance(values, list) else [],
+        }
+
+        if _normalize_sheet_name_key(sheet_name) == _normalize_sheet_name_key("SSL证书"):
+            current_item["values"] = _strip_task_id_column(current_item.get("values", []))
+            ssl_sheet_item = current_item
+
+        prepared_items.append(current_item)
+
+    expired_sheet_item = _build_expired_ssl_sheet_item(ssl_sheet_item)
+    if expired_sheet_item:
+        prepared_items.append(expired_sheet_item)
+
+    return prepared_items
+
+
 def _build_ordered_export_sheet_items(raw_sheet_items):
     """
     按固定顺序重排导出工作表
-    期望顺序：域名、IP、系统服务、SSL证书、站点、漏洞、资产统计
+    期望顺序：域名、IP、系统服务、SSL证书、过期证书、站点、漏洞、资产统计
     """
-    preferred_order = ["域名", "IP", "系统服务", "SSL证书", "站点", "漏洞", "资产统计"]
+    preferred_order = ["域名", "IP", "系统服务", "SSL证书", "过期证书", "站点", "漏洞", "资产统计"]
     preferred_keys = [_normalize_sheet_name_key(name) for name in preferred_order]
     sheet_map = {}
     ignored_sheet_names = []
@@ -1171,6 +1352,7 @@ def get_runtime_status():
         "create_node_path": Config.DINGTALK_KB_CREATE_NODE_PATH,
         "title_prefix": Config.DINGTALK_KB_TITLE_PREFIX,
         "ssl_cert_notify_enable": bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE),
+        "ssl_cert_notify_days": int(Config.DINGTALK_SSL_CERT_NOTIFY_DAYS or 30),
         "missing_basic_fields": _missing_required_fields(),
         "missing_publish_fields": _missing_required_fields(require_workspace=True, require_parent_node=True),
     }
@@ -2027,7 +2209,8 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
         return False, create_result
 
     raw_sheet_items = parse_result.get("items", [])
-    ordered_sheet_items, ignored_sheet_names = _build_ordered_export_sheet_items(raw_sheet_items)
+    prepared_sheet_items = _prepare_task_export_sheet_items(raw_sheet_items)
+    ordered_sheet_items, ignored_sheet_names = _build_ordered_export_sheet_items(prepared_sheet_items)
 
     overview_values = _build_task_overview_sheet_values(
         title=title,

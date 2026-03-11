@@ -104,7 +104,8 @@ DINGTALK_API:
   TITLE_PREFIX: "互联网资产自动化收集" # 文档标题前缀
   DRY_RUN: false # 演练模式：true 时只走流程不真正创建文档
   REPORT_BASE_URL: "" # 可选：报告访问基础地址，用于拼接外链
-  SSL_CERT_NOTIFY_ENABLE: false # 是否启用SSL证书临期告警机器人通知
+  SSL_CERT_NOTIFY_ENABLE: false # 是否启用SSL证书过期/临期机器人通知
+  SSL_CERT_NOTIFY_DAYS: 30 # SSL证书提醒阈值（剩余天数 <= 该值时触发）
 
 
 #飞书消息推送配置, 需要设置签名校验
