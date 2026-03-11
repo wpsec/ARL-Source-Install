@@ -3730,7 +3730,11 @@ function ActionDialog({
   const isAssetScopeAddSiteMonitor = action.id === 'asset_scope_add_site_monitor';
   const isAssetScopeAddWihMonitor = action.id === 'asset_scope_add_wih_monitor';
   const isTaskScheduleCreate = action.id === 'task_schedule_add';
-  const shouldLoadPolicyOptions = isTaskScheduleCreate || isAssetScopeAddScheduler;
+  const isFofaSubmitAction = action.id === 'fofa_submit' || action.id === 'fofa_submit_center';
+  const isFofaTestAction = action.id === 'fofa_test';
+  const isFofaAction = isFofaSubmitAction || isFofaTestAction;
+  const shouldLoadPolicyOptions = isTaskScheduleCreate || isAssetScopeAddScheduler || isFofaSubmitAction;
+  const isPolicySelectionRequired = isTaskScheduleCreate || isAssetScopeAddScheduler;
   const isGithubSchedulerAction = action.id === 'github_scheduler_add' || action.id === 'github_scheduler_update';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
@@ -3788,6 +3792,9 @@ function ActionDialog({
   const taskScheduleTarget = String(formPayload?.target ?? '');
   const taskScheduleType = String(formPayload?.schedule_type ?? 'future_scan') === 'recurrent_scan' ? 'recurrent_scan' : 'future_scan';
   const taskSchedulePolicyId = String(formPayload?.policy_id ?? '');
+  const fofaTaskName = String(formPayload?.name ?? '');
+  const fofaQueryText = String(formPayload?.query ?? '');
+  const fofaPolicyId = String(formPayload?.policy_id ?? '');
   const taskScheduleCron = String(formPayload?.cron ?? '');
   const taskScheduleStartDate = toDatetimeLocalValue(formPayload?.start_date);
   const taskScheduleTag = String(formPayload?.task_tag ?? 'task') === 'risk_cruising' ? 'risk_cruising' : 'task';
@@ -3823,6 +3830,8 @@ function ActionDialog({
   const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [taskSchedulePolicyLoading, setTaskSchedulePolicyLoading] = useState(false);
   const [taskSchedulePolicyError, setTaskSchedulePolicyError] = useState('');
+  const [fofaTesting, setFofaTesting] = useState(false);
+  const [fofaResultSize, setFofaResultSize] = useState<number | null>(null);
   const [taskDomainDictOptions, setTaskDomainDictOptions] = useState<TaskDomainDictOption[]>([]);
   const [taskDomainDictLoading, setTaskDomainDictLoading] = useState(false);
   const [taskDomainDictError, setTaskDomainDictError] = useState('');
@@ -3923,7 +3932,52 @@ function ActionDialog({
     setPolicySearchKeyword('');
     setPolicyPocKeyword('');
     setPolicyBruteKeyword('');
+    setFofaTesting(false);
+    setFofaResultSize(null);
   }, [initialPayload]);
+
+  const normalizeFofaQueries = (rawQuery: string): string[] => {
+    const lines = String(rawQuery || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line);
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    lines.forEach((line) => {
+      if (seen.has(line)) return;
+      seen.add(line);
+      normalized.push(line);
+    });
+    return normalized;
+  };
+
+  const runFofaQueryTest = async () => {
+    try {
+      setError('');
+      setFofaTesting(true);
+      const queryItems = normalizeFofaQueries(fofaQueryText);
+      if (queryItems.length === 0) {
+        throw new Error('请填写查询语句（支持多行输入）');
+      }
+
+      const normalizedQuery = queryItems.join('\n');
+      setFormPayload((prev) => updatePayloadValue(prev, 'query', normalizedQuery));
+
+      const result = await requestApi(token, '/task_fofa/test', {
+        method: 'POST',
+        body: { query: normalizedQuery },
+      });
+      const totalSize = Number(result?.data?.size ?? 0);
+      setFofaResultSize(Number.isFinite(totalSize) ? totalSize : 0);
+    } catch (err: any) {
+      setFofaResultSize(null);
+      setError(err?.message || 'FOFA 语法测试失败');
+    } finally {
+      setFofaTesting(false);
+    }
+  };
 
   useEffect(() => {
     if (!isTaskCreate) {
@@ -4004,8 +4058,14 @@ function ActionDialog({
 
         setTaskSchedulePolicyOptions(options);
         if (options.length === 0) {
-          setTaskSchedulePolicyError('未找到可用策略，请先在策略配置中创建策略');
+          if (isPolicySelectionRequired) {
+            setTaskSchedulePolicyError('未找到可用策略，请先在策略配置中创建策略');
+          } else {
+            setTaskSchedulePolicyError('');
+          }
         } else {
+          setTaskSchedulePolicyError('');
+          if (!isPolicySelectionRequired) return;
           setFormPayload((prev) => {
             const currentPolicyId = String(prev?.policy_id || '').trim();
             if (currentPolicyId) return prev;
@@ -4015,7 +4075,11 @@ function ActionDialog({
       } catch (err: any) {
         if (cancelled) return;
         setTaskSchedulePolicyOptions([]);
-        setTaskSchedulePolicyError(err?.message || '加载策略列表失败');
+        if (isPolicySelectionRequired) {
+          setTaskSchedulePolicyError(err?.message || '加载策略列表失败');
+        } else {
+          setTaskSchedulePolicyError('');
+        }
       } finally {
         if (!cancelled) {
           setTaskSchedulePolicyLoading(false);
@@ -4027,7 +4091,7 @@ function ActionDialog({
     return () => {
       cancelled = true;
     };
-  }, [shouldLoadPolicyOptions, token]);
+  }, [isPolicySelectionRequired, shouldLoadPolicyOptions, token]);
 
   useEffect(() => {
     if (!isPolicyAction) return;
@@ -4261,6 +4325,83 @@ function ActionDialog({
                   ))}
                 </div>
               </div>
+            </div>
+          ) : isFofaAction ? (
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+              {isFofaSubmitAction ? (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                  <input
+                    value={fofaTaskName}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    placeholder="请输入任务名称"
+                  />
+                </div>
+              ) : null}
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">查询语句</label>
+                <textarea
+                  value={fofaQueryText}
+                  disabled={!editable}
+                  onChange={(event) => {
+                    setFormPayload((prev) => updatePayloadValue(prev, 'query', event.target.value));
+                    setFofaResultSize(null);
+                  }}
+                  className="w-full min-h-[160px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  placeholder={'请输入查询语句（支持多行输入）\napp="Nginx"\ncountry="CN" && port="443"'}
+                />
+                <p className="text-[11px] text-brand-text-muted">
+                  一行一条 FOFA 语句，测试和提交时会自动去除空行并去重。
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">结果数</label>
+                  <div className="w-full rounded-xl border border-brand-border bg-brand-bg/60 px-3 py-2 text-sm font-mono">
+                    {fofaResultSize === null ? '-' : String(fofaResultSize)}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">测试</label>
+                  <button
+                    type="button"
+                    onClick={() => void runFofaQueryTest()}
+                    disabled={!editable || fofaTesting}
+                    className="w-full px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    <Play className={`w-4 h-4 ${fofaTesting ? 'animate-spin' : ''}`} />
+                    {fofaTesting ? '测试中...' : '测试'}
+                  </button>
+                </div>
+              </div>
+
+              {isFofaSubmitAction ? (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">关联策略</label>
+                  <div className="relative">
+                    <select
+                      value={fofaPolicyId}
+                      disabled={!editable || taskSchedulePolicyLoading}
+                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'policy_id', event.target.value))}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="">
+                        {taskSchedulePolicyLoading ? '策略加载中...' : '不关联策略（使用默认扫描配置）'}
+                      </option>
+                      {taskSchedulePolicyOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : isTaskScheduleCreate ? (
             <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
@@ -4969,6 +5110,33 @@ function ActionDialog({
                   setLoading(true);
                   setError('');
                   let payload: JsonValue = deepClone(!editable ? initialPayload : formPayload);
+                  if (isFofaAction && editable) {
+                    const normalizedQueryList = normalizeFofaQueries(String(payload.query || ''));
+                    if (normalizedQueryList.length === 0) {
+                      throw new Error('请填写查询语句（支持多行输入）');
+                    }
+
+                    const normalizedQuery = normalizedQueryList.join('\n');
+                    payload.query = normalizedQuery;
+
+                    if (isFofaSubmitAction) {
+                      const normalizedName = String(payload.name || '').trim();
+                      const policyId = String(payload.policy_id || '').trim();
+
+                      if (!normalizedName) {
+                        throw new Error('请填写任务名称');
+                      }
+
+                      payload.name = normalizedName;
+                      if (policyId) {
+                        payload.policy_id = policyId;
+                      } else {
+                        delete payload.policy_id;
+                      }
+                    } else {
+                      payload = { query: normalizedQuery };
+                    }
+                  }
                   if (isTaskCreate && editable) {
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedTargets = String(payload.target || '')

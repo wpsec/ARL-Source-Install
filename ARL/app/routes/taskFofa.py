@@ -34,6 +34,30 @@ ns = Namespace('task_fofa', description="Fofa 任务下发")
 logger = get_logger()
 
 
+def normalize_fofa_queries(query_text):
+    """
+    归一化 FOFA 查询语句，支持多行输入。
+
+    说明：
+    - 一行视为一条 FOFA 语句；
+    - 自动去除空行；
+    - 自动去重（保留首次出现顺序）。
+    """
+    if not isinstance(query_text, str):
+        query_text = str(query_text or "")
+
+    query_lines = query_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    query_list = []
+    query_seen = set()
+    for query_item in query_lines:
+        query_item = query_item.strip()
+        if not query_item or query_item in query_seen:
+            continue
+        query_list.append(query_item)
+        query_seen.add(query_item)
+    return query_list
+
+
 # 测试Fofa查询请求模型
 test_fofa_fields = ns.model('taskFofaTest',  {
     'query': fields.String(required=True, description="Fofa查询语句")
@@ -75,18 +99,34 @@ class TaskFofaTest(ARLResource):
         """
         args = self.parse_args(test_fofa_fields)
         query = args.pop('query')
-        
-        # 查询Fofa（仅获取1条用于测试）
-        data = fofa_query(query, page_size=1)
-        if isinstance(data, str):
-            return build_ret(ErrorMsg.FofaConnectError, {'error': data})
 
-        if data.get("error"):
-            return build_ret(ErrorMsg.FofaKeyError, {'error': data.get("errmsg")})
+        query_list = normalize_fofa_queries(query)
+        if len(query_list) == 0:
+            return build_ret(ErrorMsg.QueryResultIsEmpty, {'error': "query is empty"})
+
+        total_size = 0
+        query_items = []
+        for query_item in query_list:
+            # 查询Fofa（仅获取1条用于测试）
+            data = fofa_query(query_item, page_size=1)
+            if isinstance(data, str):
+                return build_ret(ErrorMsg.FofaConnectError, {'error': data, "query": query_item})
+
+            if data.get("error"):
+                return build_ret(ErrorMsg.FofaKeyError, {'error': data.get("errmsg"), "query": query_item})
+
+            size = int(data.get("size", 0))
+            total_size += size
+            query_items.append({
+                "query": query_item,
+                "size": size
+            })
 
         item = {
-            "size": data["size"],
-            "query": data["query"]
+            "size": total_size,
+            "query": "\n".join(query_list),
+            "query_count": len(query_list),
+            "items": query_items
         }
 
         return build_ret(ErrorMsg.Success, item)
@@ -148,6 +188,9 @@ class AddFofaTask(ARLResource):
         query = args.pop('query')
         name = args.pop('name')
         policy_id = args.get('policy_id')
+        query_list = normalize_fofa_queries(query)
+        if len(query_list) == 0:
+            return build_ret(ErrorMsg.QueryResultIsEmpty, {'error': "query is empty"})
 
         # 默认任务选项（轻量级扫描）
         task_options = {
@@ -161,21 +204,33 @@ class AddFofaTask(ARLResource):
             "ssl_cert": False  # SSL证书获取
         }
 
-        # 测试查询（获取1条验证）
-        data = fofa_query(query, page_size=1)
-        if isinstance(data, str):
-            return build_ret(ErrorMsg.FofaConnectError, {'error': data})
+        total_size = 0
+        fofa_ip_set = set()
+        for query_item in query_list:
+            # 测试查询（获取1条验证）
+            data = fofa_query(query_item, page_size=1)
+            if isinstance(data, str):
+                return build_ret(ErrorMsg.FofaConnectError, {'error': data, "query": query_item})
 
-        if data.get("error"):
-            return build_ret(ErrorMsg.FofaKeyError, {'error': data.get("errmsg")})
+            if data.get("error"):
+                return build_ret(ErrorMsg.FofaKeyError, {'error': data.get("errmsg"), "query": query_item})
 
-        if data["size"] <= 0:
+            query_size = int(data.get("size", 0))
+            total_size += query_size
+            if query_size <= 0:
+                continue
+
+            # 获取完整IP列表
+            fofa_ip_list = fofa_query_result(query_item)
+            if isinstance(fofa_ip_list, str):
+                return build_ret(ErrorMsg.FofaConnectError, {'error': fofa_ip_list, "query": query_item})
+
+            fofa_ip_set.update(fofa_ip_list)
+
+        if total_size <= 0 or len(fofa_ip_set) == 0:
             return build_ret(ErrorMsg.FofaResultEmpty, {})
 
-        # 获取完整IP列表
-        fofa_ip_list = fofa_query_result(query)
-        if isinstance(fofa_ip_list, str):
-            return build_ret(ErrorMsg.FofaConnectError, {'error': data})
+        fofa_ip_list = sorted(fofa_ip_set)
 
         # 如果指定了策略，使用策略配置
         if policy_id and len(policy_id) == 24:
@@ -224,13 +279,13 @@ def policy_2_task_options(policy_id):
     if not data:
         return options
 
-    policy_options = data["policy"]
+    policy_options = dict(data.get("policy") or {})
     # 移除域名配置（Fofa任务不需要）
-    policy_options.pop("domain_config")
+    policy_options.pop("domain_config", None)
 
     # 提取IP和站点配置
-    ip_config = policy_options.pop("ip_config")
-    site_config = policy_options.pop("site_config")
+    ip_config = policy_options.pop("ip_config", {})
+    site_config = policy_options.pop("site_config", {})
 
     # 合并配置
     options.update(ip_config)
@@ -277,5 +332,4 @@ def submit_fofa_task(task_data):
     conn_db('task').update_one({"_id": ObjectId(task_id)}, values)
 
     return task_data
-
 

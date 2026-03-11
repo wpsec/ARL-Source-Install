@@ -5,6 +5,8 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useTheme, ThemeType } from '../context/ThemeContext';
 
+declare const __ARL_VERSION__: string;
+
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -162,17 +164,12 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         </div>
 
         <div className="p-3 bg-brand-card/30 rounded-2xl border border-brand-border space-y-1.5">
-          <span className="text-xs font-semibold text-white block">ARL互联网资产自动化收集系统加强版</span>
+          <span className="text-xs font-semibold text-white block">ARL互联网资产自动化收集系统</span>
           <div className="flex items-center gap-1 min-w-0">
-            <span className="text-[10px] text-brand-text-muted shrink-0">Github地址：</span>
-            <a
-              href="https://github.com/wpsec/ARL-Source-Install"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[10px] text-brand-text-muted tracking-wide truncate hover:text-brand-accent transition-colors"
-            >
-              点击跳转
-            </a>
+            <span className="text-[10px] text-brand-text-muted shrink-0">系统版本：</span>
+            <span className="text-[10px] text-brand-text-muted tracking-wide truncate">
+              {__ARL_VERSION__}
+            </span>
           </div>
         </div>
       </div>
