@@ -144,8 +144,11 @@ class Config(object):
     MASSDNS_BIN = os.path.join(basedir, 'tools/massdns')
     # Nuclei 可执行文件路径，默认从系统 PATH 查找
     NUCLEI_BIN = "nuclei"
-    # Nuclei 模板目录，默认使用项目根目录下的自定义模板库
+    # Nuclei 模板目录，优先兼容新目录布局 tools/nuclei/nuclei-templates
     NUCLEI_TEMPLATE_DIR = os.path.join(project_root, 'tools/nuclei-templates')
+    _NUCLEI_TEMPLATE_DIR_ALT = os.path.join(project_root, 'tools/nuclei', 'nuclei-templates')
+    if os.path.isdir(_NUCLEI_TEMPLATE_DIR_ALT):
+        NUCLEI_TEMPLATE_DIR = _NUCLEI_TEMPLATE_DIR_ALT
     # 是否启用 nuclei 自动扫描（-as），在无指纹标签时用于兜底
     NUCLEI_AUTO_SCAN = True
     # 无指纹标签时使用的默认标签

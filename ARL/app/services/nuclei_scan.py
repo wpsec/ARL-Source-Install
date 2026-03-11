@@ -265,6 +265,28 @@ class NucleiScan(object):
             self.nuclei_template_dir = nuclei_template_dir
             return
 
+        # 兼容目录布局差异：
+        # - 旧路径: /code/tools/nuclei-templates
+        # - 新路径: /code/tools/nuclei/nuclei-templates
+        compat_candidates = []
+        normalized_dir = nuclei_template_dir.rstrip("/")
+        if normalized_dir.endswith("/nuclei-templates"):
+            compat_candidates.append(normalized_dir[:-len("/nuclei-templates")] + "/nuclei/nuclei-templates")
+        compat_candidates.append(os.path.join("/code/tools/nuclei", "nuclei-templates"))
+
+        for candidate in compat_candidates:
+            candidate = str(candidate).strip()
+            if not candidate:
+                continue
+            if os.path.isdir(candidate):
+                logger.warning(
+                    "nuclei template dir not found: {}, use compatible path: {}".format(
+                        nuclei_template_dir, candidate
+                    )
+                )
+                self.nuclei_template_dir = candidate
+                return
+
         logger.warning(
             "nuclei template dir not found: {}, fallback to nuclei default templates".format(
                 nuclei_template_dir
