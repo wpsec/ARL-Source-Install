@@ -33,6 +33,7 @@ from bson import ObjectId
 from urllib.parse import urlparse
 from app.services.commonTask import CommonTask, WebSiteFetch
 from app.helpers.message_notify import push_task_finish_notify
+import traceback
 
 logger = utils.get_logger()
 
@@ -402,8 +403,13 @@ class RiskCruising(CommonTask):
             self.update_task_field("status", TaskStatus.DONE)
             success = True
         except Exception as e:
-            self.update_task_field("status", TaskStatus.ERROR)
             logger.exception(e)
+            utils.append_task_error(
+                task_id=self.task_id,
+                error=e,
+                stage="risk_cruising",
+                traceback_text=traceback.format_exc(),
+            )
 
         self.update_task_field("end_time", utils.curr_date())
         if success:

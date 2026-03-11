@@ -33,6 +33,7 @@ from app import utils
 from app.modules import TaskStatus, CollectSource, SchedulerStatus
 from app.services import sync_asset, build_domain_info, sync_asset
 import time
+import traceback
 from app.scheduler import update_job_run
 from app.services import webhook
 
@@ -151,8 +152,12 @@ def wrap_domain_executors(base_domain=None, job_id=None, scope_id=None, options=
             webhook.domain_asset_web_hook(task_id=task_id, scope_id=scope_id)
     except Exception as e:
         logger.exception(e)
-        domain_executor.update_task_field("status", TaskStatus.ERROR)
-        domain_executor.update_task_field("end_time", utils.curr_date())
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="wrap_domain_executors",
+            traceback_text=traceback.format_exc(),
+        )
 
     logger.info("end domain_executors {} {} {}".format(base_domain, scope_id, options))
 
@@ -546,4 +551,9 @@ def ip_executor(target, scope_id, task_name, job_id, options):
     except Exception as e:
         logger.warning("error on ip_executor {}".format(executor.ip_target))
         logger.exception(e)
-        executor.base_update_task.update_task_field("status", TaskStatus.ERROR)
+        utils.append_task_error(
+            task_id=executor.task_id,
+            error=e,
+            stage="ip_executor",
+            traceback_text=traceback.format_exc(),
+        )

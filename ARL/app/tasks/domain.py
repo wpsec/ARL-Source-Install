@@ -27,6 +27,7 @@ import time
 import random
 import copy
 import os
+import traceback
 from urllib.parse import urlparse
 from collections import Counter
 from app import utils
@@ -1913,5 +1914,9 @@ def domain_task(base_domain, task_id, options):
         d.run()
     except Exception as e:
         logger.exception(e)
-        d.update_task_field("status", TaskStatus.ERROR)
-        d.update_task_field("end_time", utils.curr_date())
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="domain_task",
+            traceback_text=traceback.format_exc(),
+        )

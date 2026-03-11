@@ -90,8 +90,9 @@ base_search_task_fields = {
     'task_tag': fields.String(description="任务标签（task/monitor/risk_cruising）"),
     'options.domain_brute': fields.Boolean(description="是否开启域名爆破"),
     'options.domain_brute_type': fields.String(description="域名爆破类型（test/big/test）"),
-    'options.domain_dict': fields.String(description="任务级域名爆破字典（可选）"),
-    'options.port_scan_type': fields.Boolean(description="端口扫描类型（test/top100/top1000/all）"),
+    'options.domain_dict': fields.String(description="域名爆破字典（可选）"),
+    'options.port_scan_type': fields.String(description="端口扫描类型（test/top100/top1000/all/custom）"),
+    'options.port_custom': fields.String(description="自定义端口范围（仅 port_scan_type=custom 时生效）"),
     'options.port_scan': fields.Boolean(description="是否开启端口扫描"),
     'options.service_detection': fields.Boolean(description="是否开启服务识别（nmap -sV）"),
     'options.service_brute': fields.Boolean(description="是否开启服务弱口令爆破"),
@@ -122,8 +123,9 @@ add_task_fields = ns.model('AddTask', {
     'target': fields.String(required=True, example="www.freebuf.com", description="扫描目标（域名或IP）"),
     "domain_brute": fields.Boolean(example=True, description="域名爆破"),
     'domain_brute_type': fields.String(example="test", description="爆破字典类型"),
-    'domain_dict': fields.String(example="", description="任务级域名爆破字典路径（可选，不填走默认）"),
-    "port_scan_type": fields.String(example="test", description="端口扫描类型"),
+    'domain_dict': fields.String(example="", description="域名爆破字典路径（可选，不填走默认）"),
+    "port_scan_type": fields.String(example="test", description="端口扫描类型（test/top100/top1000/all/custom）"),
+    "port_custom": fields.String(example="80,443,8080,10000-10100", description="自定义端口（仅 port_scan_type=custom 时生效）"),
     "port_scan": fields.Boolean(example=True, description="端口扫描"),
     "service_detection": fields.Boolean(example=False, description="服务识别"),
     "service_brute": fields.Boolean(example=False, description="服务弱口令爆破"),
@@ -214,7 +216,7 @@ class ARLTask(ARLResource):
 
         name = args.pop('name')
         target = args.pop('target')
-        # 任务级域名字典（可选）：不填则沿用系统默认，填写则优先使用该字典。
+        # 域名爆破字典（可选）：不填则沿用系统默认，填写则优先使用该字典。
         custom_domain_dict = normalize_dict_path_compat(args.get('domain_dict', ''))
         custom_domain_dict = str(custom_domain_dict or '').strip()
         if custom_domain_dict:
@@ -226,6 +228,21 @@ class ARLTask(ARLResource):
             args['domain_dict'] = custom_domain_dict
         else:
             args.pop('domain_dict', None)
+
+        # 端口扫描自定义范围校验（仅 custom 模式生效）
+        port_scan_type = str(args.get('port_scan_type', '') or '').strip().lower()
+        if port_scan_type == 'custom':
+            port_custom = str(args.get('port_custom', '') or '').strip()
+            if not port_custom:
+                return utils.build_ret(ErrorMsg.PortCustomInvalid, {"port_custom": "empty"})
+
+            port_list = utils.arl.build_port_custom(port_custom)
+            if isinstance(port_list, str):
+                return utils.build_ret(ErrorMsg.PortCustomInvalid, {"port_custom": port_list})
+
+            args['port_custom'] = ",".join(port_list)
+        else:
+            args.pop('port_custom', None)
 
         try:
             # 提交任务（会进行目标验证和任务创建）

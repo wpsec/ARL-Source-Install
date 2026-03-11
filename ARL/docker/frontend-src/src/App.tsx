@@ -207,6 +207,7 @@ const modules: ModuleConfig[] = [
           domain_dict: '',
           port_scan: true,
           port_scan_type: 'test',
+          port_custom: '80,443',
           service_detection: false,
           service_brute: false,
           os_detection: false,
@@ -2662,9 +2663,10 @@ const fieldLabelMap: Record<string, string> = {
   kb_notify_enable: '知识库通知',
   domain_brute: '域名爆破',
   domain_brute_type: '爆破字典类型',
-  domain_dict: '任务级字典',
+  domain_dict: '域名爆破字典',
   port_scan: '端口扫描',
   port_scan_type: '端口扫描类型',
+  port_custom: '自定义端口',
   service_detection: '服务识别',
   service_brute: '弱口令爆破',
   os_detection: '操作系统识别',
@@ -3718,7 +3720,8 @@ function ActionDialog({
     const sections = [
       {
         title: '域名探测',
-        keys: ['domain_brute', 'alt_dns', 'dns_query_plugin', 'arl_search'],
+        // “域名爆破”在任务级固定开启，这里隐藏开关，避免与字典配置形成重复认知。
+        keys: ['alt_dns', 'dns_query_plugin', 'arl_search'],
       },
       {
         title: '网络探测',
@@ -3756,6 +3759,7 @@ function ActionDialog({
   const taskDomainBruteType = String(formPayload?.domain_brute_type ?? 'test');
   const taskDomainDict = String(formPayload?.domain_dict ?? '');
   const taskPortScanType = String(formPayload?.port_scan_type ?? 'test');
+  const taskPortCustom = String(formPayload?.port_custom ?? '80,443');
   const taskScheduleName = String(formPayload?.name ?? '');
   const taskScheduleTarget = String(formPayload?.target ?? '');
   const taskScheduleType = String(formPayload?.schedule_type ?? 'future_scan') === 'recurrent_scan' ? 'recurrent_scan' : 'future_scan';
@@ -4105,11 +4109,11 @@ function ActionDialog({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">域名爆破模式</label>
+                  <label className="text-xs font-bold text-brand-text-muted">默认字典模式（未选字典时生效）</label>
                   <div className="relative">
                     <select
                       value={taskDomainBruteType}
-                      disabled={!editable}
+                      disabled={!editable || Boolean(taskDomainDict)}
                       onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain_brute_type', event.target.value))}
                       className={UNIFIED_SELECT_CLASS}
                     >
@@ -4122,7 +4126,7 @@ function ActionDialog({
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">任务级域名字典（可选）</label>
+                <label className="text-xs font-bold text-brand-text-muted">域名爆破字典</label>
                 <div className="relative">
                   <select
                     value={taskDomainDict}
@@ -4142,7 +4146,7 @@ function ActionDialog({
                   <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
                 <p className="text-[11px] text-brand-text-muted">
-                  不选则使用配置管理默认字典；选择后仅当前任务生效。
+                  不选则使用配置管理默认字典；选择后优先使用该字典，默认字典模式不生效。
                 </p>
               </div>
 
@@ -4177,9 +4181,19 @@ function ActionDialog({
                       <option value="top100">top100</option>
                       <option value="top1000">top1000</option>
                       <option value="all">all（全端口）</option>
+                      <option value="custom">custom（自定义）</option>
                     </select>
                     <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                   </div>
+                  {taskPortScanType === 'custom' ? (
+                    <input
+                      value={taskPortCustom}
+                      disabled={!editable}
+                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'port_custom', event.target.value))}
+                      className="mt-2 w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                      placeholder="例如：80,443,8080,10000-10100"
+                    />
+                  ) : null}
                   <div className="mt-3 p-3 rounded-xl border border-brand-border bg-brand-bg/40 text-[11px] text-brand-text-muted leading-relaxed">
                     建议仅勾选需要的扫描项。目标多时优先开启核心能力（端口扫描、服务识别、站点识别），可提升效率。
                   </div>
@@ -4601,7 +4615,7 @@ function ActionDialog({
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">域名爆破类型</label>
+                  <label className="text-xs font-bold text-brand-text-muted">默认字典模式</label>
                   <div className="relative">
                     <select
                       value={policyDomainBruteType}
@@ -4614,6 +4628,9 @@ function ActionDialog({
                     </select>
                     <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                   </div>
+                  <p className="text-[11px] text-brand-text-muted">
+                    该模式仅在任务未指定“域名爆破字典”时生效。
+                  </p>
                 </div>
 
                 <div className="space-y-1">
@@ -4936,6 +4953,14 @@ function ActionDialog({
                       .map((item) => item.trim())
                       .filter((item) => item);
                     const normalizedDomainDict = String(payload.domain_dict || '').trim();
+                    const normalizedPortScanType = String(payload.port_scan_type || 'test').trim().toLowerCase();
+                    const normalizedPortCustom = String(payload.port_custom || '')
+                      .replace(/，/g, ',')
+                      .replace(/\s+/g, ',')
+                      .split(',')
+                      .map((item) => item.trim())
+                      .filter((item) => item)
+                      .join(',');
 
                     if (!normalizedName) {
                       throw new Error('请填写任务名称');
@@ -4943,13 +4968,31 @@ function ActionDialog({
                     if (normalizedTargets.length === 0) {
                       throw new Error('请填写目标，支持一行一个');
                     }
+                    if (normalizedPortScanType === 'custom') {
+                      if (!normalizedPortCustom) {
+                        throw new Error('端口扫描范围为 custom 时，请填写自定义端口');
+                      }
+                      const hasInvalidPort = normalizedPortCustom
+                        .split(',')
+                        .some((item) => !/^\d+(?:-\d+)?$/.test(item));
+                      if (hasInvalidPort) {
+                        throw new Error('自定义端口格式错误，仅支持端口或端口段，如 80,443,10000-10100');
+                      }
+                    }
 
                     payload.name = normalizedName;
                     payload.target = normalizedTargets.join('\n');
+                    payload.domain_brute = true;
+                    payload.port_scan_type = normalizedPortScanType;
                     if (normalizedDomainDict) {
                       payload.domain_dict = normalizedDomainDict;
                     } else {
                       delete payload.domain_dict;
+                    }
+                    if (normalizedPortScanType === 'custom') {
+                      payload.port_custom = normalizedPortCustom;
+                    } else {
+                      delete payload.port_custom;
                     }
                   }
                   if (isTaskScheduleCreate && editable) {
@@ -5125,11 +5168,15 @@ function ActionDialog({
                     const normalizedHostTimeout = Number(getPayloadValue(payload, getPolicyPath('ip_config.host_timeout')) || 900);
                     const normalizedParallelism = Number(getPayloadValue(payload, getPolicyPath('ip_config.port_parallelism')) || 32);
                     const normalizedMinRate = Number(getPayloadValue(payload, getPolicyPath('ip_config.port_min_rate')) || 60);
-                    const normalizedPortScanType = String(getPayloadValue(payload, getPolicyPath('ip_config.port_scan_type')) || 'test');
+                    const normalizedPortScanType = String(getPayloadValue(payload, getPolicyPath('ip_config.port_scan_type')) || 'test').trim().toLowerCase();
                     const normalizedPortCustom = String(getPayloadValue(payload, getPolicyPath('ip_config.port_custom')) || '').trim();
+                    const normalizedDomainBruteType = String(getPayloadValue(payload, getPolicyPath('domain_config.domain_brute_type')) || 'test').trim().toLowerCase();
 
                     if (normalizedPortScanType === 'custom' && !normalizedPortCustom) {
                       throw new Error('端口扫描类型为自定义时，请填写自定义端口');
+                    }
+                    if (!['test', 'big'].includes(normalizedDomainBruteType)) {
+                      throw new Error('默认字典模式无效');
                     }
                     if (!Number.isFinite(normalizedHostTimeout) || normalizedHostTimeout <= 0) {
                       throw new Error('主机超时时间(s) 必须大于 0');
@@ -5142,6 +5189,8 @@ function ActionDialog({
                     }
 
                     payload = updatePayloadValue(payload, policyNamePath, normalizedPolicyName);
+                    payload = updatePayloadValue(payload, getPolicyPath('domain_config.domain_brute'), true);
+                    payload = updatePayloadValue(payload, getPolicyPath('domain_config.domain_brute_type'), normalizedDomainBruteType);
                     payload = updatePayloadValue(payload, getPolicyPath('ip_config.host_timeout'), Math.floor(normalizedHostTimeout));
                     payload = updatePayloadValue(payload, getPolicyPath('ip_config.port_parallelism'), Math.floor(normalizedParallelism));
                     payload = updatePayloadValue(payload, getPolicyPath('ip_config.port_min_rate'), Math.floor(normalizedMinRate));
@@ -5219,6 +5268,17 @@ function TableModuleView({
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [taskCompactMode, setTaskCompactMode] = useState(true);
+  const [taskErrorDialog, setTaskErrorDialog] = useState<{
+    taskId: string;
+    taskName: string;
+    target: string;
+    logs: Array<{
+      time: string;
+      stage: string;
+      message: string;
+      traceback: string;
+    }>;
+  } | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<{ url: string; title: string } | null>(null);
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
     title: string;
@@ -5234,6 +5294,62 @@ function TableModuleView({
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
+
+  const normalizeTaskErrorLog = useCallback((raw: any) => {
+    if (!raw || typeof raw !== 'object') return null;
+    const time = sanitizeUiMessage(String(raw?.time || '').trim(), 80) || '-';
+    const stage = sanitizeUiMessage(String(raw?.stage || '').trim(), 120) || '-';
+    const message = sanitizeUiMessage(String(raw?.message || '').trim(), 3000) || '未知异常';
+    const traceback = sanitizeUiMessage(String(raw?.traceback || '').trim(), 12000) || '';
+    return { time, stage, message, traceback };
+  }, []);
+
+  const buildTaskErrorLogs = useCallback((row: any) => {
+    const logs: Array<{ time: string; stage: string; message: string; traceback: string }> = [];
+    if (Array.isArray(row?.error_logs)) {
+      row.error_logs.forEach((item: any) => {
+        const normalized = normalizeTaskErrorLog(item);
+        if (normalized) logs.push(normalized);
+      });
+    }
+
+    const lastError = normalizeTaskErrorLog(row?.last_error);
+    if (lastError) logs.push(lastError);
+
+    if (logs.length === 0) {
+      const fallbackMessage =
+        sanitizeUiMessage(String(row?.error || row?.error_msg || row?.message || '').trim(), 3000) || '';
+      if (fallbackMessage) {
+        logs.push({
+          time: '-',
+          stage: '-',
+          message: fallbackMessage,
+          traceback: '',
+        });
+      }
+    }
+
+    const uniqMap = new Map<string, { time: string; stage: string; message: string; traceback: string }>();
+    logs.forEach((item) => {
+      const key = `${item.time}|${item.stage}|${item.message}|${item.traceback}`;
+      if (!uniqMap.has(key)) uniqMap.set(key, item);
+    });
+
+    return Array.from(uniqMap.values());
+  }, [normalizeTaskErrorLog]);
+
+  const openTaskErrorDialog = useCallback((row: any) => {
+    const taskId = String(row?._id || row?.task_id || '').trim();
+    const taskName = sanitizeUiMessage(String(row?.name || '').trim(), 200) || '-';
+    const target = sanitizeUiMessage(String(row?.target || '').trim(), 500) || '-';
+    const logs = buildTaskErrorLogs(row);
+    setTaskErrorDialog({
+      taskId,
+      taskName,
+      target,
+      logs,
+    });
+  }, [buildTaskErrorLogs]);
 
   useEffect(() => {
     if (!hasAdvancedSearch) {
@@ -5263,8 +5379,20 @@ function TableModuleView({
     setExpandedTaskScheduleTargetRows({});
     setExpandedTaskOptionRows({});
     setTaskCompactMode(true);
+    setTaskErrorDialog(null);
     setScreenshotPreview(null);
   }, [module.id]);
+
+  useEffect(() => {
+    if (!taskErrorDialog) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setTaskErrorDialog(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [taskErrorDialog]);
 
   useEffect(() => {
     if (!screenshotPreview) return;
@@ -6890,6 +7018,31 @@ function TableModuleView({
                           );
                         }
 
+                        if (module.id === 'task' && column === 'status') {
+                          const rawStatus = String(row?.status || '').trim().toLowerCase();
+                          const statusText = formatModuleCellValue(module.id, column, row);
+                          if (rawStatus === 'error') {
+                            return (
+                              <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => openTaskErrorDialog(row)}
+                                  className="inline-flex items-center gap-1 text-brand-danger hover:underline font-semibold"
+                                  title="点击查看异常详情"
+                                >
+                                  <AlertTriangle className="w-4 h-4" />
+                                  <span>{statusText}</span>
+                                </button>
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              {statusText}
+                            </td>
+                          );
+                        }
+
                         if (module.id === 'task' && column === 'name') {
                           return (
                             <td key={column} className={baseClassName}>
@@ -7491,6 +7644,57 @@ function TableModuleView({
                   {policyTaskSubmitting ? '下发中...' : '确认下发'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {taskErrorDialog ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-5xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-brand-danger" />
+                <h4 className="text-lg font-black">任务异常详情</h4>
+              </div>
+              <button
+                onClick={() => setTaskErrorDialog(null)}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                title="关闭"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-b border-brand-border bg-brand-bg/30 text-sm space-y-1">
+              <div><span className="text-brand-text-muted">任务名：</span>{taskErrorDialog.taskName}</div>
+              <div><span className="text-brand-text-muted">目标：</span><span className="font-mono break-all">{taskErrorDialog.target}</span></div>
+              <div><span className="text-brand-text-muted">Task_ID：</span><span className="font-mono">{taskErrorDialog.taskId || '-'}</span></div>
+            </div>
+
+            <div className="p-6 max-h-[65vh] overflow-auto space-y-4">
+              {taskErrorDialog.logs.length > 0 ? taskErrorDialog.logs.map((log, index) => (
+                <div key={`${log.time}-${log.stage}-${index}`} className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-brand-text-muted">时间：</span><span className="font-mono">{log.time || '-'}</span></div>
+                    <div><span className="text-brand-text-muted">阶段：</span><span className="font-mono">{log.stage || '-'}</span></div>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-brand-text-muted">异常说明：</span>
+                    <div className="mt-1 whitespace-pre-wrap break-all leading-relaxed">{log.message || '-'}</div>
+                  </div>
+                  {log.traceback ? (
+                    <div className="text-sm">
+                      <span className="text-brand-text-muted">日志信息：</span>
+                      <pre className="mt-1 whitespace-pre-wrap break-all leading-relaxed font-mono text-xs bg-brand-bg/70 border border-brand-border rounded-lg p-3 overflow-auto">{log.traceback}</pre>
+                    </div>
+                  ) : null}
+                </div>
+              )) : (
+                <div className="text-sm text-brand-text-muted">
+                  当前任务没有记录到详细异常日志（可能是历史任务或异常详情落库前的任务）。
+                </div>
+              )}
             </div>
           </div>
         </div>

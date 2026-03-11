@@ -21,6 +21,7 @@
 添加任务：1. 站点去重 -> 2. 站点探测 -> 3. 保存到资产组
 """
 from bson import ObjectId
+import traceback
 from app import utils
 from app.services.commonTask import CommonTask, WebSiteFetch
 from app.modules import TaskStatus
@@ -210,8 +211,12 @@ def asset_site_update_task(task_id, scope_id, scheduler_id):
         task.run()
     except Exception as e:
         logger.exception(e)
-        task.update_status(TaskStatus.ERROR)
-        task.set_end_time()
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="asset_site_update_task",
+            traceback_text=traceback.format_exc(),
+        )
 
 
 class AddAssetSiteTask(RiskCruising):
@@ -328,4 +333,3 @@ def run_add_asset_site_task(task_id):
 
     r = AddAssetSiteTask(task_id)
     r.run()
-

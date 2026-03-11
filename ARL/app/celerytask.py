@@ -13,6 +13,7 @@ Celery 异步任务调度模块
 """
 import signal
 import time
+import traceback
 from bson import ObjectId
 from app.config import Config
 from celery import Celery, platforms
@@ -120,6 +121,13 @@ def run_task(options):
             logger.warning("not found {} action".format(action))
     except Exception as e:
         logger.exception(e)
+        task_id = str(data.get("task_id", "") or "").strip() if isinstance(data, dict) else ""
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="celery_action:{}".format(action),
+            traceback_text=traceback.format_exc(),
+        )
 
     elapsed = time.time() - start_time
     logger.info("end {} elapsed: {}".format(action, elapsed))

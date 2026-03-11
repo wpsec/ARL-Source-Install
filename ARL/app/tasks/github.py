@@ -26,6 +26,7 @@ GitHub敏感信息搜索任务模块
 - 支持关键词高亮显示
 """
 from bson import ObjectId
+import traceback
 from app.services import github_search
 from app.services.githubSearch import GithubResult
 from app.modules import TaskStatus
@@ -670,16 +671,22 @@ def github_task_task(task_id, keyword):
     try:
         if not Config.GITHUB_TOKEN:
             logger.error("GITHUB_TOKEN is empty")
-            task.update_status(TaskStatus.ERROR)
-            task.set_end_time()
+            utils.append_task_error(
+                task_id=task_id,
+                error=Exception("GITHUB_TOKEN is empty"),
+                stage="github_task_task",
+            )
             return
 
         task.run()
     except Exception as e:
         logger.exception(e)
-
-        task.update_status(TaskStatus.ERROR)
-        task.set_end_time()
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="github_task_task",
+            traceback_text=traceback.format_exc(),
+        )
 
 
 def github_task_monitor(task_id, keyword, scheduler_id):
@@ -702,6 +709,9 @@ def github_task_monitor(task_id, keyword, scheduler_id):
         task.run()
     except Exception as e:
         logger.exception(e)
-
-        task.update_status(TaskStatus.ERROR)
-        task.set_end_time()
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="github_task_monitor",
+            traceback_text=traceback.format_exc(),
+        )

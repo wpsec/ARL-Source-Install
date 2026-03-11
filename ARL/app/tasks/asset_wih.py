@@ -25,6 +25,7 @@
 - 帮助发现隐藏的子域名和API接口
 """
 import time
+import traceback
 from app import utils
 from app.modules import TaskStatus
 from app.utils import get_logger
@@ -245,9 +246,11 @@ def asset_wih_update_task(task_id, scope_id, scheduler_id):
         task.base_update_task.update_task_field("status", TaskStatus.DONE)
     except Exception as e:
         logger.exception(e)
-
-        # 标记错误
-        task.base_update_task.update_task_field("status", TaskStatus.ERROR)
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="asset_wih_update_task",
+            traceback_text=traceback.format_exc(),
+        )
 
     task.base_update_task.update_task_field("end_time", utils.curr_date())
-

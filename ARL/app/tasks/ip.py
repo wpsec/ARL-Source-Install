@@ -23,6 +23,7 @@ IP扫描任务执行模块
 """
 from bson.objectid import  ObjectId
 import time
+import traceback
 from app import services
 from app.modules import ScanPortType, TaskStatus
 from app.services import fetchCert, run_risk_cruising, run_sniffer
@@ -741,4 +742,9 @@ def ip_task(ip_target, task_id, options):
         d.run()
     except Exception as e:
         logger.exception(e)
-        d.base_update_task.update_task_field("status", "error")
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="ip_task",
+            traceback_text=traceback.format_exc(),
+        )

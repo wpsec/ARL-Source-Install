@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import hashlib
+from bson import ObjectId
 from urllib.parse import urlparse
 from celery.utils.log import get_task_logger
 from celery import current_task
@@ -156,6 +157,50 @@ def get_phantomjs_bin(logger=None):
 
 def random_choices(k=6):
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=k))
+
+
+def append_task_error(task_id: str, error: Exception = None, stage: str = "", traceback_text: str = "", max_logs: int = 20):
+    """
+    记录任务异常详情，便于前端展示“异常原因/日志”。
+    """
+    task_id = str(task_id or "").strip()
+    if len(task_id) != 24:
+        return
+
+    stage = str(stage or "").strip()
+    message = str(error or "").strip()
+    if not message:
+        message = error.__class__.__name__ if error else "unknown error"
+
+    query = {"_id": ObjectId(task_id)}
+    task_item = conn_db('task').find_one(query, {"status": 1})
+    current_stage = str((task_item or {}).get("status", "") or "").strip()
+    if current_stage and current_stage not in {"error", "done", "stop"}:
+        stage = "{} / {}".format(stage, current_stage) if stage else current_stage
+
+    detail = {
+        "time": curr_date(),
+        "stage": stage,
+        "message": message,
+    }
+    traceback_text = str(traceback_text or "").strip()
+    if traceback_text:
+        detail["traceback"] = traceback_text
+
+    update = {
+        "$set": {
+            "status": "error",
+            "end_time": curr_date(),
+            "last_error": detail,
+        },
+        "$push": {
+            "error_logs": {
+                "$each": [detail],
+                "$slice": -max(1, int(max_logs)),
+            }
+        }
+    }
+    conn_db('task').update_one(query, update)
 
 
 def gen_md5(s):
