@@ -91,6 +91,36 @@ def safe_positive_int(value, default, min_value=1):
     return num
 
 
+def normalize_dict_path_compat(path_value):
+    """
+    兼容历史字典路径：
+    - 若配置路径存在，直接使用
+    - 若配置路径不存在，则按文件名回退到新目录布局
+    """
+    path_text = str(path_value or "").strip()
+    if not path_text:
+        return path_text
+
+    if os.path.isfile(path_text):
+        return path_text
+
+    fallback_map = {
+        "domain_2w.txt": os.path.join(basedir, "dicts/domain/domain_2w.txt"),
+        "domain_dict_test.txt": os.path.join(basedir, "dicts/domain/domain_dict_test.txt"),
+        "altdnsdict.txt": os.path.join(basedir, "dicts/domain/altdnsdict.txt"),
+        "file_top_2000.txt": os.path.join(basedir, "dicts/file_leak/file_top_2000.txt"),
+        "file_top_200.txt": os.path.join(basedir, "dicts/file_leak/file_top_200.txt"),
+        "file_test.txt": os.path.join(basedir, "dicts/file_leak/file_test.txt"),
+    }
+
+    file_name = os.path.basename(path_text)
+    fallback_path = fallback_map.get(file_name, "")
+    if fallback_path and os.path.isfile(fallback_path):
+        return fallback_path
+
+    return path_text
+
+
 class Config(object):
     """系统配置类，包含所有配置项的默认值"""
     
@@ -197,10 +227,13 @@ class Config(object):
     DRIVER_JS = os.path.join(basedir, 'tools/driver.js')
 
     # ==================== 字典文件路径配置 ====================
+    # 字典目录规整：
+    # - 域名字典：dicts/domain/
+    # - 敏感目录字典：dicts/file_leak/
     # 域名爆破字典 - 测试用（小字典）
-    DOMAIN_DICT_TEST = os.path.join(basedir, 'dicts/domain_dict_test.txt')
+    DOMAIN_DICT_TEST = os.path.join(basedir, 'dicts/domain/domain_dict_test.txt')
     # 域名爆破字典 - 2万条常用子域名
-    DOMAIN_DICT_2W = os.path.join(basedir, 'dicts/domain_2w.txt')
+    DOMAIN_DICT_2W = os.path.join(basedir, 'dicts/domain/domain_2w.txt')
     # DNS服务器列表
     DNS_SERVER = os.path.join(basedir, 'dicts/dnsserver.txt')
 
@@ -217,7 +250,7 @@ class Config(object):
     # 黑名单站点列表
     black_asset_site = os.path.join(basedir, 'dicts/black_asset_site.txt')
     # altdns字典，用于域名变异生成
-    altdns_dict_path = os.path.join(basedir, 'dicts/altdnsdict.txt')
+    altdns_dict_path = os.path.join(basedir, 'dicts/domain/altdnsdict.txt')
 
     # Web应用指纹识别规则文件
     web_app_rule = os.path.join(basedir, 'dicts/webapp.json')
@@ -267,9 +300,9 @@ class Config(object):
 
     # ==================== 文件泄露检测字典 ====================
     # 文件泄露检测字典 - 2000条
-    FILE_LEAK_TOP_2k = os.path.join(basedir, 'dicts/file_top_2000.txt')
+    FILE_LEAK_TOP_2k = os.path.join(basedir, 'dicts/file_leak/file_top_2000.txt')
     # 文件泄露检测字典 - 200条（快速扫描）
-    FILE_LEAK_TOP_200 = os.path.join(basedir, 'dicts/file_top_200.txt')
+    FILE_LEAK_TOP_200 = os.path.join(basedir, 'dicts/file_leak/file_top_200.txt')
 
     # ==================== 域名配置 ====================
     # 域名最大长度限制（不包括目标域名本身的长度）
@@ -581,7 +614,7 @@ try:
 
     # --- 文件泄露字典自定义配置 ---
     if y["ARL"].get("FILE_LEAK_DICT"):
-        file_leak_dict = y["ARL"]["FILE_LEAK_DICT"]
+        file_leak_dict = normalize_dict_path_compat(y["ARL"]["FILE_LEAK_DICT"])
         if os.path.isfile(file_leak_dict):
             Config.FILE_LEAK_TOP_2k = file_leak_dict
         else:
@@ -589,7 +622,7 @@ try:
 
     # --- 域名爆破字典自定义配置 ---
     if y["ARL"].get("DOMAIN_DICT"):
-        domain_dict = y["ARL"]["DOMAIN_DICT"]
+        domain_dict = normalize_dict_path_compat(y["ARL"]["DOMAIN_DICT"])
         if os.path.isfile(domain_dict):
             Config.DOMAIN_DICT_2W = domain_dict
         else:

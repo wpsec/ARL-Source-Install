@@ -34,6 +34,7 @@
 - web_info_hunter：JS信息收集
 等30+个可选项
 """
+import os
 import re
 import bson
 from flask_restx import Resource, Api, reqparse, fields, Namespace
@@ -42,6 +43,7 @@ from app import celerytask
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser, conn
 from app import utils
+from app.config import normalize_dict_path_compat
 from app.modules import TaskStatus, ErrorMsg, TaskSyncStatus, CeleryAction, TaskTag, TaskType
 from app.helpers import get_options_by_policy_id, submit_task_task,\
     submit_risk_cruising, get_scope_by_scope_id, check_target_in_scope
@@ -88,6 +90,7 @@ base_search_task_fields = {
     'task_tag': fields.String(description="任务标签（task/monitor/risk_cruising）"),
     'options.domain_brute': fields.Boolean(description="是否开启域名爆破"),
     'options.domain_brute_type': fields.String(description="域名爆破类型（test/big/test）"),
+    'options.domain_dict': fields.String(description="任务级域名爆破字典（可选）"),
     'options.port_scan_type': fields.Boolean(description="端口扫描类型（test/top100/top1000/all）"),
     'options.port_scan': fields.Boolean(description="是否开启端口扫描"),
     'options.service_detection': fields.Boolean(description="是否开启服务识别（nmap -sV）"),
@@ -119,6 +122,7 @@ add_task_fields = ns.model('AddTask', {
     'target': fields.String(required=True, example="www.freebuf.com", description="扫描目标（域名或IP）"),
     "domain_brute": fields.Boolean(example=True, description="域名爆破"),
     'domain_brute_type': fields.String(example="test", description="爆破字典类型"),
+    'domain_dict': fields.String(example="", description="任务级域名爆破字典路径（可选，不填走默认）"),
     "port_scan_type": fields.String(example="test", description="端口扫描类型"),
     "port_scan": fields.Boolean(example=True, description="端口扫描"),
     "service_detection": fields.Boolean(example=False, description="服务识别"),
@@ -210,6 +214,18 @@ class ARLTask(ARLResource):
 
         name = args.pop('name')
         target = args.pop('target')
+        # 任务级域名字典（可选）：不填则沿用系统默认，填写则优先使用该字典。
+        custom_domain_dict = normalize_dict_path_compat(args.get('domain_dict', ''))
+        custom_domain_dict = str(custom_domain_dict or '').strip()
+        if custom_domain_dict:
+            if not os.path.isfile(custom_domain_dict):
+                return utils.build_ret(
+                    ErrorMsg.Error,
+                    {"error": "domain_dict 文件不存在", "domain_dict": custom_domain_dict}
+                )
+            args['domain_dict'] = custom_domain_dict
+        else:
+            args.pop('domain_dict', None)
 
         try:
             # 提交任务（会进行目标验证和任务创建）

@@ -23,8 +23,6 @@
 ```plain
 # 新版UI及调整优化 newUI分支
 git clone -b newUI https://github.com/wpsec/ARL-Source-Install.git
-# 旧版稳定版本
-# git clone https://github.com/wpsec/ARL-Source-Install.git
 cd ARL-Source-Install
 cp .env.example .env
 # 请修改密码～
@@ -263,10 +261,62 @@ ARL:
 - 配置后由 `web/worker/scheduler` 进程统一生效
 - 建议配合 `BLACK_IPS` 对私网网段做过滤
 
+### 自定义字典持久化（避免容器重建丢失）
+
+自定义字典支持两类目录：
+
+- 代码内置目录：`ARL/app/dicts/domain/`、`ARL/app/dicts/file_leak/`
+- 宿主机持久化目录（推荐）：`ARL/docker/dicts/domain/`、`ARL/docker/dicts/file_leak/`
+
+说明：
+
+- `配置管理 -> 扫描配置 -> 域名爆破字典` 会自动枚举 `domain/` 下的 `.txt`
+- 页面上传字典将写入 `ARL/docker/dicts/domain/uploaded/`
+- `ARL.FILE_LEAK_DICT` 可直接指向 `file_leak/` 下自定义文件
+- `任务管理 -> 新建任务` 支持任务级字典选择；不选则默认使用配置管理字典
+- 以上目录通过 `docker-compose` 挂载，容器重建后文件仍保留
+
 ## Bug？
 
 添加公众号联系我，如果使用的人多，在考虑修复
 
 <!-- 这是一张图片，ocr 内容为： -->
+
+## 更新日志
+
+建议以 [CHANGELOG.md](./CHANGELOG.md) 为主，`README` 保留最近版本摘要。
+
+### v3.0.15（2026-03-11）
+
+- 新建任务新增“任务级域名字典”选项：支持按任务选择字典，不选则走配置管理默认字典
+- 任务后端增强：`/task/` 接口支持 `domain_dict` 入参并校验文件存在
+- 域名任务执行增强：优先使用任务级字典，未配置时自动回退 `domain_brute_type` 与系统默认
+
+### v3.0.14（2026-03-11）
+
+- 增加宿主机持久化字典目录：`ARL/docker/dicts/domain`、`ARL/docker/dicts/file_leak`
+- `web/worker` 新增字典目录挂载与环境变量，上传/自定义字典不再因容器重建丢失
+- 配置管理扫描项增强：自动枚举内置/自定义/上传目录中的域名字典
+- 扫描配置增强：读取与保存时自动兼容旧路径，并校验字典文件存在性
+
+### v3.0.13（2026-03-11）
+
+- 字典目录规整：新增 `app/dicts/domain` 与 `app/dicts/file_leak` 目录
+- 域名字典归档：`domain_2w.txt`、`domain_dict_test.txt`、`altdnsdict.txt` 统一迁移到 `domain/`
+- 敏感目录字典归档：`file_top_2000.txt`、`file_top_200.txt`、`file_test.txt` 统一迁移到 `file_leak/`
+- 路径兼容增强：保留对旧配置路径的自动映射，升级后无需手工改现有配置
+
+### v3.0.12（2026-03-11）
+
+- 删除交互统一：全系统删除操作统一为前端确认弹窗（替代浏览器原生 confirm）
+- 安全展示优化：接口返回消息统一净化，过滤 `<script>` 与 HTML 标签后展示
+- 前端资源更新：同步新的构建产物并更新版本号
+
+### v3.0.10（2026-03-11）
+
+- SSL证书采集增强：新增协议支持、加密套件与强度信息采集
+- 证书展示增强：任务详情与资产搜索 CERT 增加协议/套件摘要
+- 导出与钉钉知识库增强：新增 `SSL证书` 工作表
+- 钉钉集成增强：新增 SSL证书扫描通知勾选与临期证书告警推送
 
 ![](https://cdn.nlark.com/yuque/0/2026/jpeg/27875807/1771929928377-73947b1a-b47e-45da-b30d-a74da57a76fd.jpeg)

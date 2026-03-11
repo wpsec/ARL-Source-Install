@@ -204,6 +204,7 @@ const modules: ModuleConfig[] = [
           target: 'example.com',
           domain_brute: true,
           domain_brute_type: 'test',
+          domain_dict: '',
           port_scan: true,
           port_scan_type: 'test',
           service_detection: false,
@@ -1786,14 +1787,27 @@ function toggleTrailingSlash(path: string): string | null {
   return `${path}/`;
 }
 
+function sanitizeUiMessage(value: any, maxLength = 300): string {
+  if (value === null || value === undefined) return '';
+  let text = String(value);
+  // 统一移除 script/html 标签，避免接口返回原样展示脚本片段。
+  text = text.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ' ');
+  text = text.replace(/<\/?[^>]+>/g, ' ');
+  text = text.replace(/[\u0000-\u001f\u007f]+/g, ' ');
+  text = text.replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
+
 function extractErrorMessage(data: any): string {
   if (!data) return '请求失败';
-  if (typeof data === 'string') return data;
+  if (typeof data === 'string') return sanitizeUiMessage(data) || '请求失败';
   if (Number(data.code) === 401) return '认证失败，请检查用户名密码或重新登录';
-  if (typeof data.message === 'string' && data.message) return data.message;
-  if (typeof data.error === 'string' && data.error) return data.error;
-  if (data.data && typeof data.data.error === 'string') return data.data.error;
-  if (typeof data.detail === 'string') return data.detail;
+  if (typeof data.message === 'string' && data.message) return sanitizeUiMessage(data.message) || '请求失败';
+  if (typeof data.error === 'string' && data.error) return sanitizeUiMessage(data.error) || '请求失败';
+  if (data.data && typeof data.data.error === 'string') return sanitizeUiMessage(data.data.error) || '请求失败';
+  if (typeof data.detail === 'string') return sanitizeUiMessage(data.detail) || '请求失败';
   return '请求失败';
 }
 
@@ -1886,7 +1900,7 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
 
     if (!response.ok) {
       const fallbackText = await response.text();
-      throw new Error(fallbackText || `下载失败: HTTP ${response.status}`);
+      throw new Error(sanitizeUiMessage(fallbackText) || `下载失败: HTTP ${response.status}`);
     }
 
     const blob = await response.blob();
@@ -1919,7 +1933,7 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
 
   if (!response.ok) {
     if (typeof data?.raw === 'string' && data.raw) {
-      throw new Error(`HTTP ${response.status}: ${data.raw.slice(0, 300)}`);
+      throw new Error(`HTTP ${response.status}: ${sanitizeUiMessage(data.raw)}`);
     }
     throw new Error(`HTTP ${response.status}: ${extractErrorMessage(data)}`);
   }
@@ -1929,7 +1943,17 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
   }
 
   if (typeof data?.raw === 'string' && data.raw) {
-    throw new Error(`接口返回非JSON: ${data.raw.slice(0, 300)}`);
+    throw new Error(`接口返回非JSON: ${sanitizeUiMessage(data.raw)}`);
+  }
+
+  if (typeof data?.message === 'string') {
+    data.message = sanitizeUiMessage(data.message);
+  }
+  if (typeof data?.error === 'string') {
+    data.error = sanitizeUiMessage(data.error);
+  }
+  if (typeof data?.detail === 'string') {
+    data.detail = sanitizeUiMessage(data.detail);
   }
 
   return data;
@@ -1938,6 +1962,13 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
 function truncateText(value: string, max = 120): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max)}...`;
+}
+
+function isDeleteAction(action: ModuleAction): boolean {
+  const id = String(action?.id || '').toLowerCase();
+  const label = String(action?.label || '').toLowerCase();
+  const path = String(action?.path || '').toLowerCase();
+  return id.includes('delete') || label.includes('删除') || path.includes('/delete/');
 }
 
 function truncateMiddleText(value: string, max = 48, head = 18, tail = 16): string {
@@ -2631,6 +2662,7 @@ const fieldLabelMap: Record<string, string> = {
   kb_notify_enable: '知识库通知',
   domain_brute: '域名爆破',
   domain_brute_type: '爆破字典类型',
+  domain_dict: '任务级字典',
   port_scan: '端口扫描',
   port_scan_type: '端口扫描类型',
   service_detection: '服务识别',
@@ -3650,6 +3682,15 @@ function ActionDialog({
   onClose: () => void;
   onSubmit: (payload: JsonValue, file?: File | null) => Promise<void>;
 }) {
+  type TaskDomainDictOption = {
+    label: string;
+    path: string;
+    source: string;
+    exists: boolean;
+    size: number;
+    selected?: boolean;
+  };
+
   const [formPayload, setFormPayload] = useState<JsonValue>(deepClone(initialPayload));
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -3713,6 +3754,7 @@ function ActionDialog({
   const taskName = String(formPayload?.name ?? '');
   const taskTarget = String(formPayload?.target ?? '');
   const taskDomainBruteType = String(formPayload?.domain_brute_type ?? 'test');
+  const taskDomainDict = String(formPayload?.domain_dict ?? '');
   const taskPortScanType = String(formPayload?.port_scan_type ?? 'test');
   const taskScheduleName = String(formPayload?.name ?? '');
   const taskScheduleTarget = String(formPayload?.target ?? '');
@@ -3753,6 +3795,10 @@ function ActionDialog({
   const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [taskSchedulePolicyLoading, setTaskSchedulePolicyLoading] = useState(false);
   const [taskSchedulePolicyError, setTaskSchedulePolicyError] = useState('');
+  const [taskDomainDictOptions, setTaskDomainDictOptions] = useState<TaskDomainDictOption[]>([]);
+  const [taskDomainDictLoading, setTaskDomainDictLoading] = useState(false);
+  const [taskDomainDictError, setTaskDomainDictError] = useState('');
+  const [taskDefaultDomainDictPath, setTaskDefaultDomainDictPath] = useState('');
 
   const getPolicyPath = (suffix: string) => `${policyRootPath}.${suffix}`;
   const updatePolicyValue = (suffix: string, value: any) => {
@@ -3808,6 +3854,20 @@ function ActionDialog({
     policyPocOptions.length > 0 && policyPocOptions.every((item) => selectedPolicyPocNames.includes(item.plugin_name));
   const policyBruteAllSelected =
     policyBruteOptions.length > 0 && policyBruteOptions.every((item) => selectedPolicyBruteNames.includes(item.plugin_name));
+  const taskDomainDictSelectOptions = useMemo(() => {
+    const next = [...taskDomainDictOptions];
+    const exists = next.some((item) => item.path === taskDomainDict);
+    if (taskDomainDict && !exists) {
+      next.push({
+        label: taskDomainDict,
+        path: taskDomainDict,
+        source: 'custom',
+        exists: true,
+        size: 0,
+      });
+    }
+    return next;
+  }, [taskDomainDictOptions, taskDomainDict]);
 
   const setPolicyPluginConfig = (field: 'poc_config' | 'brute_config', pluginNames: string[]) => {
     const payloadList = pluginNames.map((pluginName) => ({
@@ -3836,6 +3896,55 @@ function ActionDialog({
     setPolicyPocKeyword('');
     setPolicyBruteKeyword('');
   }, [initialPayload]);
+
+  useEffect(() => {
+    if (!isTaskCreate) {
+      setTaskDomainDictOptions([]);
+      setTaskDomainDictLoading(false);
+      setTaskDomainDictError('');
+      setTaskDefaultDomainDictPath('');
+      return;
+    }
+
+    let cancelled = false;
+    const loadTaskDomainDictOptions = async () => {
+      setTaskDomainDictLoading(true);
+      setTaskDomainDictError('');
+      try {
+        const response = await requestApi(token, '/api_console/scan_config/', { method: 'GET' });
+        const data = response?.data || {};
+        const options = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+        const defaultPath = String(data?.scan_config?.domain_dict || '').trim();
+        if (cancelled) return;
+
+        const normalizedOptions = options
+          .map((item: any) => ({
+            label: String(item?.label || item?.path || '').trim(),
+            path: String(item?.path || '').trim(),
+            source: String(item?.source || 'custom').trim() || 'custom',
+            exists: Boolean(item?.exists),
+            size: Number(item?.size || 0),
+            selected: Boolean(item?.selected),
+          }))
+          .filter((item: TaskDomainDictOption) => item.path);
+
+        setTaskDomainDictOptions(normalizedOptions);
+        setTaskDefaultDomainDictPath(defaultPath);
+      } catch (err: any) {
+        if (cancelled) return;
+        setTaskDomainDictOptions([]);
+        setTaskDefaultDomainDictPath('');
+        setTaskDomainDictError(err?.message || '加载任务字典列表失败');
+      } finally {
+        if (!cancelled) setTaskDomainDictLoading(false);
+      }
+    };
+
+    void loadTaskDomainDictOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [isTaskCreate, token]);
 
   useEffect(() => {
     if (!shouldLoadPolicyOptions) {
@@ -3996,7 +4105,7 @@ function ActionDialog({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">域名爆破字典</label>
+                  <label className="text-xs font-bold text-brand-text-muted">域名爆破模式</label>
                   <div className="relative">
                     <select
                       value={taskDomainBruteType}
@@ -4011,6 +4120,37 @@ function ActionDialog({
                   </div>
                 </div>
               </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">任务级域名字典（可选）</label>
+                <div className="relative">
+                  <select
+                    value={taskDomainDict}
+                    disabled={!editable || taskDomainDictLoading}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain_dict', event.target.value))}
+                    className={UNIFIED_SELECT_CLASS}
+                  >
+                    <option value="">
+                      默认（使用配置管理字典{taskDefaultDomainDictPath ? `: ${taskDefaultDomainDictPath}` : ''}）
+                    </option>
+                    {taskDomainDictSelectOptions.map((item) => (
+                      <option key={item.path} value={item.path}>
+                        {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+                <p className="text-[11px] text-brand-text-muted">
+                  不选则使用配置管理默认字典；选择后仅当前任务生效。
+                </p>
+              </div>
+
+              {taskDomainDictError ? (
+                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                  {taskDomainDictError}
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -4795,6 +4935,7 @@ function ActionDialog({
                       .split(/\r?\n/)
                       .map((item) => item.trim())
                       .filter((item) => item);
+                    const normalizedDomainDict = String(payload.domain_dict || '').trim();
 
                     if (!normalizedName) {
                       throw new Error('请填写任务名称');
@@ -4805,6 +4946,11 @@ function ActionDialog({
 
                     payload.name = normalizedName;
                     payload.target = normalizedTargets.join('\n');
+                    if (normalizedDomainDict) {
+                      payload.domain_dict = normalizedDomainDict;
+                    } else {
+                      delete payload.domain_dict;
+                    }
                   }
                   if (isTaskScheduleCreate && editable) {
                     const normalizedName = String(payload.name || '').trim();
@@ -5074,6 +5220,12 @@ function TableModuleView({
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [screenshotPreview, setScreenshotPreview] = useState<{ url: string; title: string } | null>(null);
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmText: string;
+  } | null>(null);
+  const deleteConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -5124,6 +5276,43 @@ function TableModuleView({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [screenshotPreview]);
+
+  const closeDeleteConfirmDialog = useCallback((confirmed: boolean) => {
+    const resolver = deleteConfirmResolverRef.current;
+    deleteConfirmResolverRef.current = null;
+    setDeleteConfirmDialog(null);
+    if (resolver) resolver(confirmed);
+  }, []);
+
+  const askDeleteConfirm = useCallback((message: string, title = '确认删除'): Promise<boolean> => {
+    const safeMessage = sanitizeUiMessage(message, 400) || '确认执行删除操作吗？';
+    return new Promise((resolve) => {
+      deleteConfirmResolverRef.current = resolve;
+      setDeleteConfirmDialog({
+        title: sanitizeUiMessage(title, 80) || '确认删除',
+        message: safeMessage,
+        confirmText: '确认删除',
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!deleteConfirmDialog) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeDeleteConfirmDialog(false);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [closeDeleteConfirmDialog, deleteConfirmDialog]);
+
+  useEffect(() => () => {
+    if (deleteConfirmResolverRef.current) {
+      deleteConfirmResolverRef.current(false);
+      deleteConfirmResolverRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (module.id !== 'task_schedule') {
@@ -5487,6 +5676,15 @@ function TableModuleView({
       }
     }
 
+    if (isDeleteAction(action)) {
+      const selectedCount = selectionMode === 'none' ? 0 : selectedIds.length;
+      const countText = selectedCount > 0 ? `已选择 ${selectedCount} 条记录。` : '';
+      const confirmed = await askDeleteConfirm(
+        `将执行「${action.label}」。${countText}此操作不可恢复。`
+      );
+      if (!confirmed) return;
+    }
+
     const resolvedPath = applyPathTemplate(action.path, payload);
     if (/\\{\\w+\\}/.test(resolvedPath)) {
       throw new Error('存在未填写的路径参数，请补全后再执行');
@@ -5815,7 +6013,7 @@ function TableModuleView({
   const deletePolicyRow = async (policyId: string) => {
     if (module.id !== 'policy') return;
     if (!policyId) return;
-    if (!window.confirm('确认删除该策略吗？')) return;
+    if (!(await askDeleteConfirm('将删除该策略。此操作不可恢复。'))) return;
     setError('');
     setSuccess('');
     try {
@@ -5873,7 +6071,7 @@ function TableModuleView({
   const deleteTaskScheduleRow = async (jobId: string) => {
     if (module.id !== 'task_schedule') return;
     if (!jobId) return;
-    if (!window.confirm('确认删除该计划任务吗？')) return;
+    if (!(await askDeleteConfirm('将删除该计划任务。此操作不可恢复。'))) return;
     setError('');
     setSuccess('');
     try {
@@ -5931,7 +6129,7 @@ function TableModuleView({
   const deleteGithubSchedulerRow = async (jobId: string) => {
     if (module.id !== 'github_scheduler') return;
     if (!jobId) return;
-    if (!window.confirm('确认删除该 GitHub 监控任务吗？')) return;
+    if (!(await askDeleteConfirm('将删除该 GitHub 监控任务。此操作不可恢复。'))) return;
     setError('');
     setSuccess('');
     try {
@@ -5970,7 +6168,7 @@ function TableModuleView({
   const deleteGithubTaskRow = async (taskId: string) => {
     if (module.id !== 'github_task') return;
     if (!taskId) return;
-    if (!window.confirm('确认删除该 GitHub 任务吗？')) return;
+    if (!(await askDeleteConfirm('将删除该 GitHub 任务。此操作不可恢复。'))) return;
     setError('');
     setSuccess('');
     try {
@@ -6037,7 +6235,7 @@ function TableModuleView({
   const deleteTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
-    if (!window.confirm('确认删除该任务吗？')) return;
+    if (!(await askDeleteConfirm('将删除该任务。此操作不可恢复。'))) return;
     setError('');
     setSuccess('');
     try {
@@ -7291,6 +7489,46 @@ function TableModuleView({
                   className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider"
                 >
                   {policyTaskSubmitting ? '下发中...' : '确认下发'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteConfirmDialog ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <h4 className="text-lg font-black">{deleteConfirmDialog.title}</h4>
+              </div>
+              <button
+                onClick={() => closeDeleteConfirmDialog(false)}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                title="关闭"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5">
+              <p className="text-sm text-brand-text-muted whitespace-pre-wrap break-all leading-relaxed">
+                {deleteConfirmDialog.message}
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => closeDeleteConfirmDialog(false)}
+                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => closeDeleteConfirmDialog(true)}
+                  className="px-5 py-2.5 rounded-xl bg-brand-danger text-white text-sm font-black hover:opacity-90 transition"
+                >
+                  {deleteConfirmDialog.confirmText}
                 </button>
               </div>
             </div>

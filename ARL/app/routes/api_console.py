@@ -19,7 +19,7 @@ from flask_restx import Namespace, fields
 from werkzeug.utils import secure_filename
 
 from app import utils
-from app.config import Config
+from app.config import Config, normalize_dict_path_compat
 from app.modules import ErrorMsg
 from app.utils import auth, get_logger
 from . import ARLResource
@@ -215,16 +215,49 @@ def _normalize_string_list(raw_value):
     return uniq
 
 
+def _resolve_domain_dict_custom_dir() -> Path:
+    """
+    解析域名爆破自定义字典目录。
+    优先读取环境变量，未配置时回落到内置域名字典目录。
+    """
+    custom_path = os.environ.get('ARL_DOMAIN_DICT_CUSTOM_DIR', '').strip()
+    if custom_path:
+        return Path(custom_path)
+
+    return Path(Config.DOMAIN_DICT_TEST).resolve().parent
+
+
 def _resolve_domain_dict_upload_dir() -> Path:
     """
     解析扫描字典上传目录。
-    默认使用 app/dicts/uploaded，可通过环境变量覆盖。
+    默认使用“自定义字典目录/uploaded”，可通过环境变量覆盖。
     """
     custom_path = os.environ.get('ARL_DOMAIN_DICT_UPLOAD_DIR', '').strip()
     if custom_path:
         return Path(custom_path)
 
-    return Path(Config.DOMAIN_DICT_TEST).resolve().parent / 'uploaded'
+    return _resolve_domain_dict_custom_dir() / 'uploaded'
+
+
+def _safe_resolve_path(path_obj: Path) -> Path:
+    """
+    尝试 resolve 绝对路径；失败时回退原路径，避免因权限/软链异常中断。
+    """
+    try:
+        return path_obj.resolve()
+    except Exception:
+        return path_obj
+
+
+def _is_path_within(path_obj: Path, root_obj: Path) -> bool:
+    """
+    判断路径是否位于指定根目录下（兼容 Python 3.8+）。
+    """
+    try:
+        _safe_resolve_path(path_obj).relative_to(_safe_resolve_path(root_obj))
+        return True
+    except Exception:
+        return False
 
 
 def _collect_domain_dict_options(current_path=''):
@@ -238,7 +271,12 @@ def _collect_domain_dict_options(current_path=''):
     options = []
     seen = set()
 
+    builtin_domain_dir = _safe_resolve_path(Path(Config.DOMAIN_DICT_TEST).parent)
+    custom_domain_dir = _safe_resolve_path(_resolve_domain_dict_custom_dir())
+    upload_dir = _safe_resolve_path(_resolve_domain_dict_upload_dir())
+
     def add_option(path_obj: Path, source='custom', label=''):
+        path_obj = _safe_resolve_path(path_obj)
         path_str = str(path_obj)
         if path_str in seen:
             return
@@ -252,8 +290,20 @@ def _collect_domain_dict_options(current_path=''):
             except Exception:
                 file_size = 0
 
+        # 将目录结构折叠进标签，避免同名字典无法区分。
+        option_label = label or path_obj.name or path_str
+        if not label and source in {'custom', 'uploaded'}:
+            relative_name = ''
+            base_dir = upload_dir if source == 'uploaded' else custom_domain_dir
+            try:
+                relative_name = str(path_obj.relative_to(base_dir))
+            except Exception:
+                relative_name = path_obj.name
+            if relative_name:
+                option_label = relative_name
+
         option = {
-            'label': label or path_obj.name or path_str,
+            'label': option_label,
             'path': path_str,
             'source': source,
             'exists': exists,
@@ -262,13 +312,33 @@ def _collect_domain_dict_options(current_path=''):
         }
         options.append(option)
 
-    add_option(Path(Config.DOMAIN_DICT_TEST), source='builtin', label='测试字典 (domain_dict_test.txt)')
-    add_option(Path(Config.DOMAIN_DICT_2W), source='builtin', label='大字典 (domain_2w.txt)')
+    builtin_test_path = _safe_resolve_path(Path(Config.DOMAIN_DICT_TEST))
+    builtin_large_path = _safe_resolve_path(builtin_domain_dir / 'domain_2w.txt')
+    add_option(builtin_test_path, source='builtin', label='测试字典 (domain_dict_test.txt)')
+    add_option(builtin_large_path, source='builtin', label='大字典 (domain_2w.txt)')
 
-    upload_dir = _resolve_domain_dict_upload_dir()
     if upload_dir.exists() and upload_dir.is_dir():
-        for dict_file in sorted(upload_dir.glob('*.txt')):
-            add_option(dict_file, source='uploaded')
+        for dict_file in sorted(upload_dir.rglob('*.txt')):
+            if dict_file.is_file():
+                add_option(dict_file, source='uploaded')
+
+    custom_scan_dirs = [custom_domain_dir]
+    if str(builtin_domain_dir) != str(custom_domain_dir):
+        custom_scan_dirs.append(builtin_domain_dir)
+
+    for scan_dir in custom_scan_dirs:
+        if not scan_dir.exists() or not scan_dir.is_dir():
+            continue
+        for dict_file in sorted(scan_dir.rglob('*.txt')):
+            if not dict_file.is_file():
+                continue
+            if _is_path_within(dict_file, upload_dir):
+                continue
+            if _is_path_within(dict_file, builtin_domain_dir):
+                file_name = dict_file.name.lower()
+                if file_name in {'domain_dict_test.txt', 'domain_2w.txt'}:
+                    continue
+            add_option(dict_file, source='custom')
 
     if current_path and current_path not in seen:
         add_option(Path(current_path), source='custom')
@@ -442,7 +512,8 @@ def _extract_scan_config(config_obj):
     if not isinstance(arl_config, dict):
         arl_config = {}
 
-    domain_dict = str(arl_config.get('DOMAIN_DICT') or Config.DOMAIN_DICT_2W)
+    # 兼容历史路径：页面展示时统一折叠到当前可用路径。
+    domain_dict = normalize_dict_path_compat(arl_config.get('DOMAIN_DICT') or Config.DOMAIN_DICT_2W)
     domain_brute_concurrent = _safe_int(
         arl_config.get('DOMAIN_BRUTE_CONCURRENT'),
         Config.DOMAIN_BRUTE_CONCURRENT
@@ -502,9 +573,12 @@ def _merge_scan_config(config_obj, scan_config):
     if not isinstance(scan_config, dict):
         raise ValueError('scan_config 必须为对象')
 
-    domain_dict = str(scan_config.get('domain_dict', '')).strip()
+    domain_dict = normalize_dict_path_compat(scan_config.get('domain_dict', ''))
+    domain_dict = str(domain_dict or '').strip()
     if not domain_dict:
         raise ValueError('请先选择域名爆破字典')
+    if not os.path.isfile(domain_dict):
+        raise ValueError('所选域名字典文件不存在，请重新选择')
 
     domain_brute_concurrent = _safe_int(
         scan_config.get('domain_brute_concurrent'),

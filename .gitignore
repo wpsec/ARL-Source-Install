@@ -64,6 +64,12 @@ exports/
 reports/
 downloads/
 
+# User custom dictionaries (mounted into containers)
+ARL/docker/dicts/domain/*
+!ARL/docker/dicts/domain/.gitkeep
+ARL/docker/dicts/file_leak/*
+!ARL/docker/dicts/file_leak/.gitkeep
+
 # Test coverage
 htmlcov/
 .coverage

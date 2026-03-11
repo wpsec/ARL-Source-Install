@@ -26,10 +26,11 @@
 import time
 import random
 import copy
+import os
 from urllib.parse import urlparse
 from collections import Counter
 from app import utils
-from app.config import Config
+from app.config import Config, normalize_dict_path_compat
 from app import services
 from app import modules
 from app.modules import ScanPortType, DomainDictType, CollectSource, TaskStatus
@@ -722,6 +723,14 @@ class DomainTask(CommonTask):
     @property
     def domain_word_file(self) -> str:
         if self._domain_word_file is None:
+            # 任务级字典优先；未设置时再按 test/big 选择系统默认字典。
+            custom_domain_dict = normalize_dict_path_compat(self.options.get("domain_dict", ""))
+            custom_domain_dict = str(custom_domain_dict or "").strip()
+            if custom_domain_dict and os.path.isfile(custom_domain_dict):
+                self._domain_word_file = custom_domain_dict
+                logger.info("task_id:{} use custom domain_dict {}".format(self.task_id, custom_domain_dict))
+                return self._domain_word_file
+
             brute_dict_map = {
                 "test": DomainDictType.TEST,
                 "big": DomainDictType.BIG

@@ -41,11 +41,17 @@ services:
       - ./config-docker.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
+      # 自定义域名字典（包含 uploaded 子目录），持久化到宿主机
+      - ./dicts/domain:/code/app/dicts/custom/domain
+      # 自定义敏感目录字典，供 FILE_LEAK_DICT 指向使用
+      - ./dicts/file_leak:/code/app/dicts/custom/file_leak
       - ../../tools:/code/tools:ro
     entrypoint: ["start_web.sh"]
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
+      - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain
+      - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
 
   worker:
     # 与 web/scheduler 使用同一镜像标签，确保任务进程和 API 运行环境一致
@@ -60,12 +66,16 @@ services:
       - ./config-docker.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
+      - ./dicts/domain:/code/app/dicts/custom/domain
+      - ./dicts/file_leak:/code/app/dicts/custom/file_leak
       - ../../tools:/code/tools:ro
     entrypoint: ["start_worker.sh"]
 
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
+      - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain
+      - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
 
   scheduler:
     # 与 build.sh 保持一致，统一使用本地构建镜像标签
