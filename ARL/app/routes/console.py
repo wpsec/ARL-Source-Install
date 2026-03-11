@@ -130,7 +130,7 @@ def _build_risk_distribution():
     ]
 
 
-def _build_asset_trend_7d():
+def _build_asset_trend_7d(asset_collection="asset_site"):
     """
     构建最近 7 天资产与漏洞趋势
     """
@@ -146,12 +146,12 @@ def _build_asset_trend_7d():
             {"$project": {"day": {"$dateToString": {"format": "%Y-%m-%d", "date": "$save_date"}}}},
             {"$group": {"_id": "$day", "count": {"$sum": 1}}}
         ]
-        for item in conn("asset_site").aggregate(asset_pipeline):
+        for item in conn(asset_collection).aggregate(asset_pipeline):
             day = str(item.get("_id", ""))
             if day in asset_map:
                 asset_map[day] = int(item.get("count", 0))
     except Exception as e:
-        logger.debug("build asset trend failed: %s", e)
+        logger.debug("build asset trend failed(collection=%s): %s", asset_collection, e)
 
     try:
         vuln_pipeline = [
@@ -564,23 +564,36 @@ class ARLConsoleDashboard(ARLResource):
         waiting_tasks = _count_documents("task", {"status": "waiting"})
 
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        asset_site_total_raw = _count_documents("asset_site")
+        task_site_total = _count_documents("site")
+
+        # 优先使用资产组口径；若资产组为空则回退到任务站点口径，避免仪表盘长期显示 0。
+        asset_data_source = "asset_site" if asset_site_total_raw > 0 else "site"
+        asset_site_total = asset_site_total_raw if asset_site_total_raw > 0 else task_site_total
+        new_assets_today = _count_documents(
+            asset_data_source, {"save_date": {"$gte": today_start}}
+        )
+
         stats = {
             "task_total": _count_documents("task"),
             "running_tasks": running_tasks,
             "waiting_tasks": waiting_tasks,
             "scheduler_total": _count_documents("scheduler"),
             "asset_scope_total": _count_documents("asset_scope"),
-            "asset_site_total": _count_documents("asset_site"),
+            "asset_site_total": asset_site_total,
+            "asset_site_total_raw": asset_site_total_raw,
+            "task_site_total": task_site_total,
+            "asset_data_source": asset_data_source,
             "vuln_total": _count_documents("vuln"),
             "github_task_total": _count_documents("github_task"),
-            "new_assets_today": _count_documents("asset_site", {"save_date": {"$gte": today_start}})
+            "new_assets_today": new_assets_today,
         }
 
         data = {
             "stats": stats,
             "device_info": device_info,
             "risk_distribution": _build_risk_distribution(),
-            "asset_trend_7d": _build_asset_trend_7d(),
+            "asset_trend_7d": _build_asset_trend_7d(asset_collection=asset_data_source),
             "network_trend": _build_network_trend_6h(),
             "recent_logs": _build_recent_logs(limit=DEFAULT_RECENT_LOG_LIMIT),
             "engine": _build_engine_status(device_info, running_tasks, waiting_tasks),

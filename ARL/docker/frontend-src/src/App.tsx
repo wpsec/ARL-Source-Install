@@ -5752,32 +5752,15 @@ function TableModuleView({
         </div>
       </div>
 
-      {['asset_site', 'asset_domain', 'asset_ip'].includes(module.id) ? (
-        <div className="flex items-center gap-2">
-          {[
-            { id: 'asset_site', label: '站点' },
-            { id: 'asset_domain', label: '子域名' },
-            { id: 'asset_ip', label: 'IP' },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => onOpenModule(item.id)}
-              className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
-                module.id === item.id
-                  ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                  : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {['scheduler', 'asset_scope'].includes(module.id) ? (
+      {['scheduler', 'asset_scope', 'asset_site', 'asset_domain', 'asset_ip', 'asset_wih'].includes(module.id) ? (
         <div className="flex items-center gap-2">
           {[
             { id: 'scheduler', label: '资产监控' },
             { id: 'asset_scope', label: '资产分组' },
+            { id: 'asset_site', label: '组站点' },
+            { id: 'asset_domain', label: '组子域名' },
+            { id: 'asset_ip', label: '组IP' },
+            { id: 'asset_wih', label: '组WIH' },
           ].map((item) => (
             <button
               key={item.id}
@@ -5795,14 +5778,16 @@ function TableModuleView({
       ) : null}
       {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'cip', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => onOpenModule('task')}
-            className="px-3.5 py-2 rounded-xl border text-sm font-semibold transition border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70 inline-flex items-center gap-1.5"
-            title="返回任务管理"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            返回任务管理
-          </button>
+          {hasExternalFilters ? (
+            <button
+              onClick={() => onOpenModule('task')}
+              className="px-3.5 py-2 rounded-xl border text-sm font-semibold transition border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70 inline-flex items-center gap-1.5"
+              title="返回任务管理"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              返回任务管理
+            </button>
+          ) : null}
           {TASK_DETAIL_TABS.map((item) => (
             <button
               key={item.id}
@@ -8259,7 +8244,7 @@ function MainShell() {
   const viewToModuleMap: Record<string, string> = {
     dashboard: 'dashboard',
     tasks: 'task',
-    assets: 'asset_site',
+    assets: 'site',
     asset_monitor: 'scheduler',
     groups: 'asset_scope',
     monitoring: 'system_monitor',
@@ -8278,21 +8263,23 @@ function MainShell() {
     Object.entries(viewToModuleMap).forEach(([view, moduleId]) => {
       reversed[moduleId] = view;
     });
-    reversed.asset_domain = 'assets';
-    reversed.asset_ip = 'assets';
-    reversed.site = 'tasks';
-    reversed.domain = 'tasks';
-    reversed.ip = 'tasks';
-    reversed.cert = 'tasks';
-    reversed.service = 'tasks';
-    reversed.fileleak = 'tasks';
-    reversed.url = 'tasks';
-    reversed.vuln = 'tasks';
-    reversed.cip = 'tasks';
-    reversed.npoc_service = 'tasks';
-    reversed.nuclei_result = 'tasks';
-    reversed.stat_finger = 'tasks';
-    reversed.wih = 'tasks';
+    reversed.asset_site = 'groups';
+    reversed.asset_domain = 'groups';
+    reversed.asset_ip = 'groups';
+    reversed.asset_wih = 'groups';
+    reversed.site = 'assets';
+    reversed.domain = 'assets';
+    reversed.ip = 'assets';
+    reversed.cert = 'assets';
+    reversed.service = 'assets';
+    reversed.fileleak = 'assets';
+    reversed.url = 'assets';
+    reversed.vuln = 'assets';
+    reversed.cip = 'assets';
+    reversed.npoc_service = 'assets';
+    reversed.nuclei_result = 'assets';
+    reversed.stat_finger = 'assets';
+    reversed.wih = 'assets';
     reversed.github_result = 'github_mgmt';
     reversed.github_monitor_result = 'github_monitor';
     return reversed;
@@ -8321,7 +8308,16 @@ function MainShell() {
       return next;
     });
   }, [activeModuleId]);
-  const activeViewId = moduleToViewMap[activeModuleId] || activeModuleId;
+  const activeViewId = useMemo(() => {
+    const fallbackView = moduleToViewMap[activeModuleId] || activeModuleId;
+    const isTaskDetailModule = TASK_DETAIL_TABS.some((tab) => tab.id === activeModuleId);
+    if (!isTaskDetailModule) return fallbackView;
+
+    const filters = moduleExternalFilters[activeModuleId] || {};
+    const taskId = String(filters.task_id || '').trim();
+    if (taskId) return 'tasks';
+    return fallbackView;
+  }, [activeModuleId, moduleExternalFilters, moduleToViewMap]);
   const onSidebarViewChange = (viewId: string) => {
     const mappedModuleId = viewToModuleMap[viewId] || viewId;
     openModule(mappedModuleId);
