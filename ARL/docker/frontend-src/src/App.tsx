@@ -3089,10 +3089,10 @@ function DashboardView({
   ];
   const trendData = assetTrend.length > 0 ? assetTrend : [{ name: '周一', assets: stats.asset_site, vulns: stats.vuln }];
   const assetOverviewData = [
-    { name: '子域名', value: Number(stats.domain_total || 0), color: '#22c55e' },
+    { name: '子域名', value: Number(stats.domain_total || 0), color: '#14b8a6' },
     { name: 'IP', value: Number(stats.ip_total || 0), color: '#3b82f6' },
-    { name: '服务', value: Number(stats.service_total || 0), color: '#f59e0b' },
-    { name: 'URL', value: Number(stats.url_total || 0), color: '#a855f7' },
+    { name: '服务', value: Number(stats.service_total || 0), color: '#22c55e' },
+    { name: 'URL', value: Number(stats.url_total || 0), color: '#f97316' },
   ];
   const netData = networkTrend.length > 0 ? networkTrend : [{ time: '13:40', in: 120, out: 80 }];
   const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', source: 'SCAN', msg: '暂无扫描日志数据', time: '' }];
@@ -3218,7 +3218,12 @@ function DashboardView({
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
                 <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: 'var(--brand-card)', border: '1px solid var(--brand-border)', borderRadius: '16px' }} />
-                <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={32}>
+                <Bar
+                  dataKey="value"
+                  radius={[8, 8, 8, 8]}
+                  barSize={30}
+                  background={{ fill: 'rgba(148,163,184,0.12)', radius: 8 }}
+                >
                   {assetOverviewData.map((entry, index) => (
                     <Cell key={`asset-overview-${index}`} fill={entry?.color || '#64748b'} />
                   ))}
