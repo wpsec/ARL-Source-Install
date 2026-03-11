@@ -385,3 +385,27 @@ class AddARLAssetScope(ARLResource):
         utils.conn_db(table).find_one_and_replace(query, scope_data)
 
         return utils.build_ret(ErrorMsg.Success, {"scope_id": scope_id, "scope": scope})
+
+
+@ns.route('/export/')
+class ARLAssetScopeExport(ARLResource):
+    """资产分组导出接口"""
+
+    parser = get_arl_parser(base_fields, location='args')
+
+    @auth
+    @ns.expect(parser)
+    def get(self):
+        """
+        导出资产分组中的资产范围
+
+        参数：
+            与查询接口相同
+
+        返回：
+            文本文件下载（去重后的资产范围）
+        """
+        args = self.parser.parse_args()
+        response = self.send_export_file_attr(args=args, collection="asset_scope", field="scope")
+
+        return response

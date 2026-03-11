@@ -516,13 +516,17 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     defaultOrder: '-_id',
     quickFilterKey: 'name',
-    columns: ['name', 'domain', 'scope_id', 'interval', 'status'],
+    showIndex: true,
+    columns: ['name', 'domain', 'scope_id', 'interval', 'last_run_date', 'next_run_date', 'run_number'],
+    sortableColumns: ['domain', 'run_number'],
     columnLabels: {
       name: '名称',
       domain: '域名',
-      scope_id: '资产范围ID',
-      interval: '间隔(秒)',
-      status: '状态',
+      scope_id: '资产组范围ID',
+      interval: '运行间隔',
+      last_run_date: '上一次运行日期',
+      next_run_date: '下一次运行日期',
+      run_number: '运行次数',
     },
     searchFields: [
       { key: 'name', label: '名称', placeholder: '请输入名称进行搜索' },
@@ -658,9 +662,11 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     defaultOrder: '-_id',
     quickFilterKey: 'name',
+    exportPath: '/asset_scope/export/',
     columns: ['name', 'scope', '_id'],
+    sortableColumns: ['name'],
     columnLabels: {
-      name: '资产分组名称',
+      name: '资产组名称',
       scope: '资产范围',
       _id: '资产范围ID',
     },
@@ -680,6 +686,15 @@ const modules: ModuleConfig[] = [
           scope: 'example.com',
           scope_type: 'domain',
         },
+      },
+      {
+        id: 'asset_scope_delete',
+        label: '批量删除',
+        method: 'POST',
+        path: '/asset_scope/delete/',
+        selectedField: 'scope_id',
+        selectionMode: 'multiple',
+        payloadTemplate: { scope_id: [] },
       },
       {
         id: 'asset_scope_add_scope',
@@ -2205,6 +2220,31 @@ function formatCertSummary(row: any): string {
   ].join('\n');
 }
 
+function formatDateTimeCell(value: any): string {
+  if (value === null || value === undefined) return '-';
+  const text = String(value).trim();
+  if (!text || text === '-') return '-';
+
+  // 统一展示为 YYYY-MM-DD HH:mm:ss，避免不同来源时间字符串长度不一致。
+  const directMatch = text.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}:\d{2})/);
+  if (directMatch) {
+    return `${directMatch[1]} ${directMatch[2]}`;
+  }
+
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const hour = String(parsed.getHours()).padStart(2, '0');
+    const minute = String(parsed.getMinutes()).padStart(2, '0');
+    const second = String(parsed.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+  }
+
+  return truncateText(text, 32);
+}
+
 function getTaskProgressPercent(row: any): number {
   const status = String(row?.status || '').toLowerCase();
   if (status === 'done') return 100;
@@ -2254,6 +2294,9 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
     if (column === 'progress') {
       return `${getTaskProgressPercent(row)}%`;
     }
+    if (column === 'start_time' || column === 'end_time') {
+      return formatDateTimeCell(value);
+    }
   }
 
   if (moduleId === 'task_schedule') {
@@ -2285,6 +2328,18 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
         return normalizeValue(row?.cron || '-');
       }
       return normalizeValue(row?.cron || row?.start_date || '-');
+    }
+  }
+
+  if (moduleId === 'scheduler') {
+    if (column === 'last_run_date' || column === 'next_run_date') {
+      return formatDateTimeCell(value);
+    }
+  }
+
+  if (moduleId === 'asset_scope') {
+    if (column === 'scope') {
+      return formatTokenListText(value);
     }
   }
 
@@ -5106,7 +5161,10 @@ function TableModuleView({
       return moduleActions.filter((action) => !['asset_site_save_result_set', 'site_save_result_set'].includes(action.id));
     }
     if (module.id === 'asset_scope') {
-      return moduleActions.filter((action) => action.id === 'asset_scope_add');
+      const assetScopeVisibleActionIds = ['asset_scope_add', 'asset_scope_delete'];
+      return assetScopeVisibleActionIds
+        .map((id) => moduleActions.find((action) => action.id === id))
+        .filter((action): action is ModuleAction => Boolean(action));
     }
     if (module.id === 'policy') {
       return moduleActions.filter((action) => action.id === 'policy_add');
@@ -5293,6 +5351,32 @@ function TableModuleView({
     }
   };
 
+  const copyTextToClipboard = useCallback(async (rawText: string, label = '内容') => {
+    const text = String(rawText || '').trim();
+    if (!text) {
+      setError(`没有可复制的${label}`);
+      return;
+    }
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'readonly');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setSuccess(`${label}已复制`);
+    } catch (err: any) {
+      setError(err?.message || `${label}复制失败`);
+    }
+  }, []);
+
   const closeRiskDialog = useCallback(() => {
     if (riskDialogSubmitting) return;
     setRiskDialogOpen(false);
@@ -5403,26 +5487,6 @@ function TableModuleView({
       setRiskDialogError(err?.message || '风险任务下发失败');
     } finally {
       setRiskDialogSubmitting(false);
-    }
-  };
-
-  const deleteAssetScopeRow = async (scopeId: string) => {
-    if (module.id !== 'asset_scope') return;
-    if (!scopeId) return;
-    if (!window.confirm('确认删除该资产分组吗？')) return;
-    setError('');
-    setSuccess('');
-    try {
-      const result = await requestApi(token, '/asset_scope/delete/', {
-        method: 'POST',
-        body: {
-          scope_id: [scopeId],
-        },
-      });
-      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
-      await loadRows();
-    } catch (err: any) {
-      setError(err?.message || '删除失败');
     }
   };
 
@@ -5988,7 +6052,7 @@ function TableModuleView({
                   {module.id === 'asset_site' ? '清除' : '重置'}
                 </button>
               ) : null}
-              {module.exportPath && module.id !== 'task' ? (
+              {module.exportPath && module.id !== 'task' && module.id !== 'asset_scope' ? (
                 <button
                   onClick={() => void runExport()}
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
@@ -6122,6 +6186,15 @@ function TableModuleView({
                 </button>
               );
             })}
+            {module.id === 'asset_scope' && module.exportPath ? (
+              <button
+                onClick={() => void runExport()}
+                className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 transition flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                批量导出
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -6232,19 +6305,30 @@ function TableModuleView({
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
                               <div className="whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>
-                              {shouldCollapse ? (
+                              <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+                                {shouldCollapse ? (
+                                  <button
+                                    onClick={() =>
+                                      setExpandedScopeRows((prev) => ({
+                                        ...prev,
+                                        [scopeExpandKey]: !isExpanded,
+                                      }))
+                                    }
+                                    className="text-xs font-semibold text-brand-accent hover:underline"
+                                  >
+                                    {isExpanded ? '收起' : '显示全部'}
+                                  </button>
+                                ) : null}
                                 <button
+                                  type="button"
                                   onClick={() =>
-                                    setExpandedScopeRows((prev) => ({
-                                      ...prev,
-                                      [scopeExpandKey]: !isExpanded,
-                                    }))
+                                    void copyTextToClipboard(scopeLines.length > 0 ? scopeLines.join('\n') : scopeText, '资产范围')
                                   }
-                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                  className="text-xs font-semibold text-brand-accent hover:underline"
                                 >
-                                  {isExpanded ? '收起' : '显示全部'}
+                                  复制
                                 </button>
-                              ) : null}
+                              </div>
                             </td>
                           );
                         }
@@ -6385,6 +6469,16 @@ function TableModuleView({
                               >
                                 {formatModuleCellValue(module.id, column, row)}
                               </button>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'task' && (column === 'start_time' || column === 'end_time')) {
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span className="inline-block min-w-[19ch] font-mono tabular-nums">
+                                {formatModuleCellValue(module.id, column, row)}
+                              </span>
                             </td>
                           );
                         }
@@ -6589,12 +6683,6 @@ function TableModuleView({
                                   添加WIH监控任务
                                 </button>
                               ) : null}
-                              <button
-                                onClick={() => void deleteAssetScopeRow(id)}
-                                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-                              >
-                                删除
-                              </button>
                             </div>
                           ) : null}
                           {showPolicyRowOperate ? (
