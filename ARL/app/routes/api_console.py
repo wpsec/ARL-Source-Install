@@ -291,6 +291,9 @@ def _extract_service_api_config(config_obj):
     query_plugin = config_obj.get('QUERY_PLUGIN', {})
     if not isinstance(query_plugin, dict):
         query_plugin = {}
+    github_conf = config_obj.get('GITHUB', {})
+    if not isinstance(github_conf, dict):
+        github_conf = {}
 
     def plugin_config(name):
         plugin = query_plugin.get(name, {})
@@ -299,6 +302,7 @@ def _extract_service_api_config(config_obj):
         return plugin
 
     fofa_plugin = plugin_config('fofa')
+    certspotter_plugin = plugin_config('certspotter')
     hunter_plugin = plugin_config('hunter_qax')
     quake_plugin = plugin_config('quake_360')
     zoomeye_plugin = plugin_config('zoomeye')
@@ -323,6 +327,7 @@ def _extract_service_api_config(config_obj):
         'fofa_email': str(fofa_conf.get('EMAIL') or Config.FOFA_EMAIL or ''),
         'fofa_key': str(fofa_conf.get('KEY') or Config.FOFA_KEY or ''),
         'fofa_enable': _safe_bool(fofa_plugin.get('enable'), True),
+        'certspotter_enable': _safe_bool(certspotter_plugin.get('enable'), True),
         'hunter_api_key': str(hunter_plugin.get('api_key') or ''),
         'hunter_enable': _safe_bool(hunter_plugin.get('enable'), True),
         'quake_token': str(quake_plugin.get('quake_token') or ''),
@@ -338,6 +343,8 @@ def _extract_service_api_config(config_obj):
         'passivetotal_email': passivetotal_email,
         'passivetotal_key': passivetotal_key,
         'passivetotal_enable': _safe_bool(passivetotal_plugin.get('enable'), False),
+        # GitHub 搜索独立走 GITHUB.TOKEN，不属于 QUERY_PLUGIN。
+        'github_token': str(github_conf.get('TOKEN') or Config.GITHUB_TOKEN or ''),
     }
 
 
@@ -354,6 +361,8 @@ def _merge_service_api_config(config_obj, service_api):
         config_obj['QUERY_PLUGIN'] = {}
     if not isinstance(config_obj.get('RISKIQ'), dict):
         config_obj['RISKIQ'] = {}
+    if not isinstance(config_obj.get('GITHUB'), dict):
+        config_obj['GITHUB'] = {}
 
     query_plugin = config_obj['QUERY_PLUGIN']
 
@@ -374,6 +383,9 @@ def _merge_service_api_config(config_obj, service_api):
 
     fofa_plugin = ensure_plugin('fofa')
     fofa_plugin['enable'] = _safe_bool(service_api.get('fofa_enable'), fofa_plugin.get('enable', True))
+
+    certspotter_plugin = ensure_plugin('certspotter')
+    certspotter_plugin['enable'] = _safe_bool(service_api.get('certspotter_enable'), certspotter_plugin.get('enable', True))
 
     hunter_plugin = ensure_plugin('hunter_qax')
     hunter_plugin['api_key'] = str(service_api.get('hunter_api_key', '')).strip()
@@ -415,6 +427,9 @@ def _merge_service_api_config(config_obj, service_api):
     # 保留对旧字段的兼容（某些部署仍沿用 RISKIQ）
     config_obj['RISKIQ']['EMAIL'] = passivetotal_email
     config_obj['RISKIQ']['KEY'] = passivetotal_key
+
+    # GitHub 搜索任务凭据（用于 github_task / github_scheduler）。
+    config_obj['GITHUB']['TOKEN'] = str(service_api.get('github_token', '')).strip()
 
     return config_obj
 

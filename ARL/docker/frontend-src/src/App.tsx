@@ -7017,6 +7017,7 @@ function ApiConsoleView({ token }: { token: string }) {
     fofa_email: string;
     fofa_key: string;
     fofa_enable: boolean;
+    certspotter_enable: boolean;
     hunter_api_key: string;
     hunter_enable: boolean;
     quake_token: string;
@@ -7032,10 +7033,12 @@ function ApiConsoleView({ token }: { token: string }) {
     passivetotal_email: string;
     passivetotal_key: string;
     passivetotal_enable: boolean;
+    github_token: string;
   };
 
   type ServiceApiBoolKey =
     | 'fofa_enable'
+    | 'certspotter_enable'
     | 'hunter_enable'
     | 'quake_enable'
     | 'zoomeye_enable'
@@ -7051,6 +7054,7 @@ function ApiConsoleView({ token }: { token: string }) {
     fofa_email: '',
     fofa_key: '',
     fofa_enable: true,
+    certspotter_enable: true,
     hunter_api_key: '',
     hunter_enable: true,
     quake_token: '',
@@ -7066,6 +7070,7 @@ function ApiConsoleView({ token }: { token: string }) {
     passivetotal_email: '',
     passivetotal_key: '',
     passivetotal_enable: false,
+    github_token: '',
   };
 
   const [configPath, setConfigPath] = useState('');
@@ -7083,6 +7088,7 @@ function ApiConsoleView({ token }: { token: string }) {
       fofa_email: String(raw.fofa_email || ''),
       fofa_key: String(raw.fofa_key || ''),
       fofa_enable: raw.fofa_enable === undefined ? true : Boolean(raw.fofa_enable),
+      certspotter_enable: raw.certspotter_enable === undefined ? true : Boolean(raw.certspotter_enable),
       hunter_api_key: String(raw.hunter_api_key || ''),
       hunter_enable: raw.hunter_enable === undefined ? true : Boolean(raw.hunter_enable),
       quake_token: String(raw.quake_token || ''),
@@ -7098,6 +7104,7 @@ function ApiConsoleView({ token }: { token: string }) {
       passivetotal_email: String(raw.passivetotal_email || ''),
       passivetotal_key: String(raw.passivetotal_key || ''),
       passivetotal_enable: raw.passivetotal_enable === undefined ? false : Boolean(raw.passivetotal_enable),
+      github_token: String(raw.github_token || ''),
     };
   }, []);
 
@@ -7157,6 +7164,7 @@ function ApiConsoleView({ token }: { token: string }) {
             chaos_api_key: form.chaos_api_key.trim(),
             passivetotal_email: form.passivetotal_email.trim(),
             passivetotal_key: form.passivetotal_key.trim(),
+            github_token: form.github_token.trim(),
           },
         },
       });
@@ -7177,8 +7185,10 @@ function ApiConsoleView({ token }: { token: string }) {
   const providers: Array<{
     id: string;
     title: string;
-    enableKey: ServiceApiBoolKey;
-    enableLabel: string;
+    alias?: string;
+    website?: string;
+    enableKey?: ServiceApiBoolKey;
+    enableLabel?: string;
     fields: Array<{
       key: ServiceApiStringKey;
       label: string;
@@ -7189,6 +7199,7 @@ function ApiConsoleView({ token }: { token: string }) {
     {
       id: 'fofa',
       title: 'FOFA',
+      website: 'https://fofa.info/',
       enableKey: 'fofa_enable',
       enableLabel: '启用 FOFA 插件',
       fields: [
@@ -7198,8 +7209,18 @@ function ApiConsoleView({ token }: { token: string }) {
       ],
     },
     {
+      id: 'certspotter',
+      title: 'certspotter',
+      website: 'https://www.certspotter.com/',
+      enableKey: 'certspotter_enable',
+      enableLabel: '启用 certspotter 插件',
+      fields: [],
+    },
+    {
       id: 'hunter',
-      title: 'Hunter',
+      title: 'hunter_qax',
+      alias: 'Hunter',
+      website: 'https://hunter.qianxin.com/',
       enableKey: 'hunter_enable',
       enableLabel: '启用 Hunter 插件',
       fields: [
@@ -7208,7 +7229,9 @@ function ApiConsoleView({ token }: { token: string }) {
     },
     {
       id: 'quake',
-      title: 'Quake360',
+      title: 'quake_360',
+      alias: 'Quake360',
+      website: 'https://quake.360.cn/',
       enableKey: 'quake_enable',
       enableLabel: '启用 Quake 插件',
       fields: [
@@ -7218,6 +7241,7 @@ function ApiConsoleView({ token }: { token: string }) {
     {
       id: 'zoomeye',
       title: 'Zoomeye',
+      website: 'https://www.zoomeye.org/',
       enableKey: 'zoomeye_enable',
       enableLabel: '启用 Zoomeye 插件',
       fields: [
@@ -7227,6 +7251,7 @@ function ApiConsoleView({ token }: { token: string }) {
     {
       id: 'securitytrails',
       title: 'SecurityTrails',
+      website: 'https://securitytrails.com/',
       enableKey: 'securitytrails_enable',
       enableLabel: '启用 SecurityTrails 插件',
       fields: [
@@ -7240,7 +7265,9 @@ function ApiConsoleView({ token }: { token: string }) {
     },
     {
       id: 'virustotal',
-      title: 'VirusTotal',
+      title: 'virustotal',
+      alias: 'VirusTotal',
+      website: 'https://www.virustotal.com/gui/',
       enableKey: 'virustotal_enable',
       enableLabel: '启用 VirusTotal 插件',
       fields: [
@@ -7250,6 +7277,7 @@ function ApiConsoleView({ token }: { token: string }) {
     {
       id: 'chaos',
       title: 'Chaos',
+      website: 'https://chaos.projectdiscovery.io/',
       enableKey: 'chaos_enable',
       enableLabel: '启用 Chaos 插件',
       fields: [
@@ -7259,6 +7287,7 @@ function ApiConsoleView({ token }: { token: string }) {
     {
       id: 'passivetotal',
       title: 'PassiveTotal',
+      website: 'https://community.riskiq.com/',
       enableKey: 'passivetotal_enable',
       enableLabel: '启用 PassiveTotal 插件',
       fields: [
@@ -7274,6 +7303,14 @@ function ApiConsoleView({ token }: { token: string }) {
           placeholder: '请输入 PassiveTotal KEY',
           hint: 'QUERY_PLUGIN.passivetotal.auth_key',
         },
+      ],
+    },
+    {
+      id: 'github',
+      title: 'GitHub',
+      website: 'https://github.com/settings/tokens',
+      fields: [
+        { key: 'github_token', label: 'TOKEN', placeholder: '请输入 GitHub Personal Access Token', hint: 'GITHUB.TOKEN' },
       ],
     },
   ];
@@ -7331,19 +7368,42 @@ function ApiConsoleView({ token }: { token: string }) {
         {providers.map((provider) => (
           <div key={provider.id} className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-black tracking-wide">{provider.title}</h3>
-              <label className="flex items-center gap-2 text-xs text-brand-text-muted">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form[provider.enableKey])}
-                  onChange={(event) => updateBoolField(provider.enableKey, event.target.checked)}
-                  className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-                />
-                <span>{provider.enableLabel}</span>
-              </label>
+              <div className="min-w-0">
+                <h3 className="text-sm font-black tracking-wide break-all">
+                  {provider.title}
+                  {provider.alias ? <span className="ml-2 text-brand-text-muted font-semibold">({provider.alias})</span> : null}
+                </h3>
+                {provider.website ? (
+                  <a
+                    href={provider.website}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-brand-accent hover:underline break-all font-mono"
+                    title={provider.website}
+                  >
+                    {provider.website}
+                  </a>
+                ) : null}
+              </div>
+              {provider.enableKey ? (
+                <label className="flex items-center gap-2 text-xs text-brand-text-muted shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form[provider.enableKey])}
+                    onChange={(event) => updateBoolField(provider.enableKey, event.target.checked)}
+                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                  />
+                  <span>{provider.enableLabel}</span>
+                </label>
+              ) : null}
             </div>
 
             <div className="space-y-3">
+              {provider.fields.length === 0 ? (
+                <div className="text-xs text-brand-text-muted bg-brand-bg/40 border border-brand-border rounded-xl px-3 py-2">
+                  当前插件无需配置 API Key。
+                </div>
+              ) : null}
               {provider.fields.map((field) => (
                 <div key={field.key} className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted block">
