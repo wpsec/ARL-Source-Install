@@ -221,13 +221,8 @@ quick_build() {
     echo ""
     check_tools_layout
     
-    if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        # 从项目根目录直接构建统一镜像标签（含离线回退模式）
-        build_image_with_offline_fallback "${DEFAULT_IMAGE_TAG}"
-    else
-        cd "$DOCKERFILE_PATH"
-        docker-compose build --force-rm arl_web
-    fi
+    # 统一使用 docker build 生成镜像，避免 docker-compose(v1) 旧服务名导致构建失败
+    build_image_with_offline_fallback "${DEFAULT_IMAGE_TAG}"
     
     echo -e "${GREEN}✓ 快速构建完成!${NC}"
     echo "构建的镜像: ${DEFAULT_IMAGE_TAG}"
@@ -257,12 +252,7 @@ full_build() {
     echo ""
     check_tools_layout
     
-    if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
-    else
-        cd "$DOCKERFILE_PATH"
-        docker-compose build --force-rm --no-cache
-    fi
+    docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
     
     echo -e "${GREEN}✓ 完整构建完成!${NC}"
     echo "构建的镜像: ${DEFAULT_IMAGE_TAG}"
@@ -280,12 +270,7 @@ clean_build() {
     # 删除 dangling images
     docker builder prune -a -f
     
-    if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
-    else
-        cd "$DOCKERFILE_PATH"
-        docker-compose build --force-rm --no-cache
-    fi
+    docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
     
     echo -e "${GREEN}✓ 清空缓存构建完成!${NC}"
     echo ""
@@ -376,14 +361,8 @@ tag_build() {
     echo ""
     check_tools_layout
     
-    # 执行快速构建
-    if [ "$COMPOSE_CMD" = "docker compose" ]; then
-        # tag 模式复用 quick 的离线回退逻辑，降低网络不稳定导致的失败
-        build_image_with_offline_fallback "${DEFAULT_IMAGE_TAG}"
-    else
-        cd "$DOCKERFILE_PATH"
-        docker-compose build --force-rm arl_web
-    fi
+    # tag 模式复用 quick 的离线回退逻辑，降低网络不稳定导致的失败
+    build_image_with_offline_fallback "${DEFAULT_IMAGE_TAG}"
     
     # 添加版本标签
     echo -e "${YELLOW}正在标记镜像为 arl:$VERSION...${NC}"
