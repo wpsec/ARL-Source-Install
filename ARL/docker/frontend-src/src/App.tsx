@@ -2312,6 +2312,16 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
     return normalizeValue(value ?? row?.commit_time ?? row?.found_time);
   }
 
+  // 子域名关联IP较长时按行展示，提升可读性。
+  if ((moduleId === 'domain' || moduleId === 'asset_domain') && column === 'ips') {
+    return formatTokenListText(value);
+  }
+
+  // IP模块的多值端口/域名按行展示，避免单行过长。
+  if ((moduleId === 'ip' || moduleId === 'asset_ip') && (column === 'port_info.port_id' || column === 'domain')) {
+    return formatTokenListText(value);
+  }
+
   if (moduleId === 'ip') {
     if (column === 'geo_summary') {
       const country = normalizeValue(row?.geo_city?.country_name);
@@ -2371,15 +2381,19 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
 
     const productList = infoList
       .flatMap((item: any) => {
-        const raw = item?.product;
-        if (raw === null || raw === undefined) return [];
-        return String(raw)
-          .split(/[\r\n,]+/)
-          .map((part) => part.trim());
+        const productCandidates = [item?.product, item?.service_product, item?.serviceProduct];
+        return productCandidates
+          .filter((raw) => raw !== null && raw !== undefined)
+          .flatMap((raw) =>
+            String(raw)
+              .split(/[\r\n,]+/)
+              .map((part) => part.trim())
+          );
       })
       .filter((item: string) => item && item !== '-');
 
-    if (productList.length === 0) return '-';
+    // 未开启服务识别(-sV)或服务指纹不足时，产品信息可能为空，这里给出明确提示。
+    if (productList.length === 0) return '未识别';
     return Array.from(new Set(productList)).join(', ');
   }
 
@@ -2727,6 +2741,10 @@ function DashboardView({
     scheduler: 0,
     asset_scope: 0,
     asset_site: 0,
+    domain_total: 0,
+    ip_total: 0,
+    service_total: 0,
+    url_total: 0,
     vuln: 0,
     github_task: 0,
     running_task: 0,
@@ -2753,6 +2771,30 @@ function DashboardView({
     return { text: normalized || '未知', type: 'info' };
   };
 
+  const loadAssetOverviewCounts = useCallback(async () => {
+    const targets = [
+      { key: 'domain_total', path: '/domain/' },
+      { key: 'ip_total', path: '/ip/' },
+      { key: 'service_total', path: '/service/' },
+      { key: 'url_total', path: '/url/' },
+    ] as const;
+
+    const responses = await Promise.all(
+      targets.map((target) => requestApi(token, target.path, { method: 'GET', query: { page: 1, size: 1 } }))
+    );
+
+    const counts: Record<string, number> = {};
+    responses.forEach((response, index) => {
+      counts[targets[index].key] = Number(normalizeListData(response).total || 0);
+    });
+    return counts as {
+      domain_total: number;
+      ip_total: number;
+      service_total: number;
+      url_total: number;
+    };
+  }, [token]);
+
   const loadFallback = useCallback(async () => {
     const targets = [
       { key: 'task', path: '/task/' },
@@ -2763,10 +2805,11 @@ function DashboardView({
       { key: 'github_task', path: '/github_task/' },
     ] as const;
 
-    const [responses, consoleInfo, recentTaskResponse] = await Promise.all([
+    const [responses, consoleInfo, recentTaskResponse, assetOverview] = await Promise.all([
       Promise.all(targets.map((target) => requestApi(token, target.path, { method: 'GET', query: { page: 1, size: 1 } }))),
       requestApi(token, '/console/info', { method: 'GET' }),
       requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } }),
+      loadAssetOverviewCounts(),
     ]);
 
     const nextStats: any = {};
@@ -2774,6 +2817,11 @@ function DashboardView({
       const normalized = normalizeListData(response);
       nextStats[targets[index].key] = normalized.total;
     });
+    const recentTaskItems = normalizeListData(recentTaskResponse).items.slice(0, 6);
+    const activeRecentTaskCount = recentTaskItems.filter((task: any) => {
+      const status = String(task?.status || '').trim().toLowerCase();
+      return Boolean(status) && !['done', 'stop', 'error'].includes(status);
+    }).length;
 
     setStats((prev) => ({
       ...prev,
@@ -2781,14 +2829,19 @@ function DashboardView({
       scheduler: Number(nextStats.scheduler || 0),
       asset_scope: Number(nextStats.asset_scope || 0),
       asset_site: Number(nextStats.asset_site || 0),
+      domain_total: Number(assetOverview.domain_total || 0),
+      ip_total: Number(assetOverview.ip_total || 0),
+      service_total: Number(assetOverview.service_total || 0),
+      url_total: Number(assetOverview.url_total || 0),
       vuln: Number(nextStats.vuln || 0),
       github_task: Number(nextStats.github_task || 0),
+      running_task: Number(prev.running_task || 0) > 0 ? Number(prev.running_task || 0) : activeRecentTaskCount,
     }));
     setDeviceInfo(consoleInfo?.data?.device_info || {});
-    setRecentTasks(normalizeListData(recentTaskResponse).items.slice(0, 6));
+    setRecentTasks(recentTaskItems);
     setRecentLogs((prev) => (prev.length > 0 ? prev : [{ level: 'INFO', source: 'SCAN', msg: '当前为兼容模式，扫描日志接口不可用', time: '' }]));
     setLastUpdatedAt(new Date().toLocaleString('zh-CN', { hour12: false }));
-  }, [token]);
+  }, [token, loadAssetOverviewCounts]);
 
   const loadRecentLogs = useCallback(async (force = false) => {
     if (isLogPaused && !force) {
@@ -2816,14 +2869,32 @@ function DashboardView({
       }
 
       const nextStats = dashboardData.stats || {};
+      const hasActiveTasksField = Object.prototype.hasOwnProperty.call(nextStats, 'active_tasks');
+      const activeTaskCount = hasActiveTasksField
+        ? Number(nextStats.active_tasks || 0)
+        : Number(nextStats.running_tasks || 0) + Number(nextStats.waiting_tasks || 0);
+      const hasAssetOverviewFields = ['domain_total', 'ip_total', 'service_total', 'url_total']
+        .some((key) => Object.prototype.hasOwnProperty.call(nextStats, key));
+      const assetOverview = hasAssetOverviewFields
+        ? {
+            domain_total: Number(nextStats.domain_total || 0),
+            ip_total: Number(nextStats.ip_total || 0),
+            service_total: Number(nextStats.service_total || 0),
+            url_total: Number(nextStats.url_total || 0),
+          }
+        : await loadAssetOverviewCounts();
       setStats({
         task: Number(nextStats.task_total || 0),
         scheduler: Number(nextStats.scheduler_total || 0),
         asset_scope: Number(nextStats.asset_scope_total || 0),
         asset_site: Number(nextStats.asset_site_total || 0),
+        domain_total: Number(assetOverview.domain_total || 0),
+        ip_total: Number(assetOverview.ip_total || 0),
+        service_total: Number(assetOverview.service_total || 0),
+        url_total: Number(assetOverview.url_total || 0),
         vuln: Number(nextStats.vuln_total || 0),
         github_task: Number(nextStats.github_task_total || 0),
-        running_task: Number(nextStats.running_tasks || 0),
+        running_task: Number(activeTaskCount || 0),
         new_assets_today: Number(nextStats.new_assets_today || 0),
       });
       setDeviceInfo(dashboardData.device_info || {});
@@ -2848,7 +2919,7 @@ function DashboardView({
     } finally {
       setLoading(false);
     }
-  }, [token, loadFallback, isLogPaused]);
+  }, [token, loadFallback, isLogPaused, loadAssetOverviewCounts]);
 
   useEffect(() => {
     void load();
@@ -2879,7 +2950,12 @@ function DashboardView({
     { title: '今日新增', value: stats.new_assets_today, change: `分组 ${stats.asset_scope}`, isUp: true, icon: Shield, color: 'text-brand-warning' },
   ];
   const trendData = assetTrend.length > 0 ? assetTrend : [{ name: '周一', assets: stats.asset_site, vulns: stats.vuln }];
-  const riskData = riskDistribution.length > 0 ? riskDistribution : [{ name: '高危', value: highRisk, color: '#ef4444' }];
+  const assetOverviewData = [
+    { name: '子域名', value: Number(stats.domain_total || 0), color: '#22c55e' },
+    { name: 'IP', value: Number(stats.ip_total || 0), color: '#3b82f6' },
+    { name: '服务', value: Number(stats.service_total || 0), color: '#f59e0b' },
+    { name: 'URL', value: Number(stats.url_total || 0), color: '#a855f7' },
+  ];
   const netData = networkTrend.length > 0 ? networkTrend : [{ time: '13:40', in: 120, out: 80 }];
   const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', source: 'SCAN', msg: '暂无扫描日志数据', time: '' }];
   const quickModules = [
@@ -2996,17 +3072,17 @@ function DashboardView({
         </div>
 
         <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-8 rounded-3xl shadow-xl shadow-black/20">
-          <h3 className="text-xl font-black tracking-tight mb-8">风险等级分布</h3>
+          <h3 className="text-xl font-black tracking-tight mb-8">资产分布概览</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={riskData} layout="vertical">
+              <BarChart data={assetOverviewData} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" horizontal={false} />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
                 <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: 'var(--brand-card)', border: '1px solid var(--brand-border)', borderRadius: '16px' }} />
                 <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={32}>
-                  {riskData.map((entry, index) => (
-                    <Cell key={`risk-${index}`} fill={entry?.color || '#64748b'} />
+                  {assetOverviewData.map((entry, index) => (
+                    <Cell key={`asset-overview-${index}`} fill={entry?.color || '#64748b'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -4714,6 +4790,7 @@ function TableModuleView({
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
+  const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [screenshotPreview, setScreenshotPreview] = useState<{ url: string; title: string } | null>(null);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
@@ -4751,6 +4828,7 @@ function TableModuleView({
     setExpandedScopeRows({});
     setExpandedTaskScheduleTargetRows({});
     setExpandedTaskOptionRows({});
+    setTaskCompactMode(true);
     setScreenshotPreview(null);
   }, [module.id]);
 
@@ -4951,6 +5029,10 @@ function TableModuleView({
           nextColumns.splice(progressIndex, 1);
           nextColumns.splice(optionsIndex, 0, 'progress');
         }
+        // 简洁模式下隐藏 Task_Id 与配置项列，聚焦任务核心信息。
+        if (taskCompactMode) {
+          return nextColumns.filter((column) => column !== '_id' && column !== 'options_summary');
+        }
         return nextColumns;
       }
       return module.columns;
@@ -4966,7 +5048,7 @@ function TableModuleView({
       if (!ordered.includes(key)) ordered.push(key);
     });
     return ordered.slice(0, 10);
-  }, [module.columns, module.rowIdKey, rows]);
+  }, [module.columns, module.id, module.rowIdKey, rows, taskCompactMode]);
 
   const rowIdKey = module.rowIdKey || '_id';
   const getRowId = useCallback((row: any): string => {
@@ -5005,6 +5087,8 @@ function TableModuleView({
     if (moduleId === 'task_schedule' && column === 'target') return true;
     if (moduleId === 'asset_site' && ['headers', 'finger'].includes(column)) return true;
     if (moduleId === 'site' && ['headers', 'finger'].includes(column)) return true;
+    if ((moduleId === 'domain' || moduleId === 'asset_domain') && column === 'ips') return true;
+    if ((moduleId === 'ip' || moduleId === 'asset_ip') && ['port_info.port_id', 'domain'].includes(column)) return true;
     if (moduleId === 'asset_scope' && column === 'scope') return true;
     if (moduleId === 'cert' && column === 'cert_summary') return true;
     if (moduleId === 'service' && ['ip_port', 'service_info.product'].includes(column)) return true;
@@ -5948,6 +6032,20 @@ function TableModuleView({
                   局部查看
                 </button>
               ) : null}
+              {module.id === 'task' ? (
+                <button
+                  type="button"
+                  onClick={() => setTaskCompactMode((prev) => !prev)}
+                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
+                    taskCompactMode
+                      ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                      : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
+                  }`}
+                  title={taskCompactMode ? '当前为简洁模式，点击切换完整模式' : '当前为完整模式，点击切换简洁模式'}
+                >
+                  {taskCompactMode ? '简洁模式' : '完整模式'}
+                </button>
+              ) : null}
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('ip')}
@@ -6166,7 +6264,7 @@ function TableModuleView({
 
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed font-mono">{renderedText}</div>
+                              <div className="whitespace-pre-wrap break-all leading-relaxed font-mono text-center">{renderedText}</div>
                               {shouldCollapse ? (
                                 <button
                                   onClick={() =>
@@ -6175,7 +6273,7 @@ function TableModuleView({
                                       [scheduleTargetExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                  className="mt-2 block mx-auto text-xs font-semibold text-brand-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
@@ -6199,7 +6297,7 @@ function TableModuleView({
 
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>
+                              <div className="whitespace-pre-wrap break-all leading-relaxed text-center">{renderedText}</div>
                               {shouldCollapse ? (
                                 <button
                                   onClick={() =>
@@ -6208,7 +6306,7 @@ function TableModuleView({
                                       [taskOptionExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                  className="mt-2 block mx-auto text-xs font-semibold text-brand-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
@@ -6338,7 +6436,7 @@ function TableModuleView({
                           }
 
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[180px]">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -6347,13 +6445,13 @@ function TableModuleView({
                                     title: String(row?.site || row?.hostname || row?.title || '截图预览'),
                                   })
                                 }
-                                className="inline-flex justify-center rounded-lg border border-transparent hover:border-brand-accent/60 transition"
+                                className="inline-flex items-center justify-center p-1 rounded-xl border border-transparent hover:border-brand-accent/60 transition"
                                 title="点击预览截图"
                               >
                                 <img
                                   src={screenshotUrl}
                                   alt="screenshot"
-                                  className="w-20 h-12 rounded-lg border border-brand-border object-cover bg-brand-bg"
+                                  className="w-32 h-20 rounded-lg border border-brand-border object-cover bg-brand-bg"
                                   loading="lazy"
                                 />
                               </button>

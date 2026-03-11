@@ -84,6 +84,22 @@ def _count_documents(collection: str, query=None) -> int:
         return 0
 
 
+def _count_active_tasks() -> int:
+    """
+    统计活跃任务数量：
+    - 非终态（done/stop/error）都视为活跃
+    - 覆盖 running/waiting 以及执行阶段状态（如 port_scan、find_site 等）
+    """
+    return _count_documents(
+        "task",
+        {
+            "status": {
+                "$nin": ["done", "stop", "error"]
+            }
+        },
+    )
+
+
 def _safe_float(value, default=0.0) -> float:
     """
     安全转 float，避免异常中断监控聚合。
@@ -132,45 +148,65 @@ def _build_risk_distribution():
 
 def _build_asset_trend_7d(asset_collection="asset_site"):
     """
-    构建最近 7 天资产与漏洞趋势
+    构建最近 7 天资产与漏洞累计增长趋势。
+
+    兼容 save_date 为 date 或 string 两种存储格式，避免趋势图出现全 0 / 断层。
     """
+    def _count_daily(collection_name: str, day_start: datetime, day_end: datetime, day_key: str) -> int:
+        # date 类型记录：按时间范围统计
+        date_count = _count_documents(
+            collection_name,
+            {"save_date": {"$type": "date", "$gte": day_start, "$lt": day_end}},
+        )
+        # string 类型记录：按 YYYY-MM-DD 前缀统计
+        string_count = _count_documents(
+            collection_name,
+            {"save_date": {"$type": "string", "$regex": "^{}".format(day_key)}},
+        )
+        return int(date_count) + int(string_count)
+
     now = datetime.now()
     start = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
     day_keys = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
-    asset_map = {k: 0 for k in day_keys}
-    vuln_map = {k: 0 for k in day_keys}
+    asset_daily_map = {k: 0 for k in day_keys}
+    vuln_daily_map = {k: 0 for k in day_keys}
+    recent_asset_total = 0
+    recent_vuln_total = 0
 
-    try:
-        asset_pipeline = [
-            {"$match": {"save_date": {"$gte": start}}},
-            {"$project": {"day": {"$dateToString": {"format": "%Y-%m-%d", "date": "$save_date"}}}},
-            {"$group": {"_id": "$day", "count": {"$sum": 1}}}
-        ]
-        for item in conn(asset_collection).aggregate(asset_pipeline):
-            day = str(item.get("_id", ""))
-            if day in asset_map:
-                asset_map[day] = int(item.get("count", 0))
-    except Exception as e:
-        logger.debug("build asset trend failed(collection=%s): %s", asset_collection, e)
+    for idx, day_key in enumerate(day_keys):
+        day_start = start + timedelta(days=idx)
+        day_end = day_start + timedelta(days=1)
+        try:
+            asset_count = _count_daily(asset_collection, day_start, day_end, day_key)
+            vuln_count = _count_daily("vuln", day_start, day_end, day_key)
+        except Exception as e:
+            logger.debug("build daily trend failed(day=%s): %s", day_key, e)
+            asset_count = 0
+            vuln_count = 0
 
-    try:
-        vuln_pipeline = [
-            {"$match": {"save_date": {"$gte": start}}},
-            {"$project": {"day": {"$dateToString": {"format": "%Y-%m-%d", "date": "$save_date"}}}},
-            {"$group": {"_id": "$day", "count": {"$sum": 1}}}
-        ]
-        for item in conn("vuln").aggregate(vuln_pipeline):
-            day = str(item.get("_id", ""))
-            if day in vuln_map:
-                vuln_map[day] = int(item.get("count", 0))
-    except Exception as e:
-        logger.debug("build vuln trend failed: %s", e)
+        asset_daily_map[day_key] = asset_count
+        vuln_daily_map[day_key] = vuln_count
+        recent_asset_total += asset_count
+        recent_vuln_total += vuln_count
 
-    return [{
-        "name": day[-5:],
-        "assets": asset_map[day],
-        "vulns": vuln_map[day]
-    } for day in day_keys]
+    asset_total = _count_documents(asset_collection)
+    vuln_total = _count_documents("vuln")
+    asset_base = max(asset_total - recent_asset_total, 0)
+    vuln_base = max(vuln_total - recent_vuln_total, 0)
+
+    trend = []
+    curr_asset = asset_base
+    curr_vuln = vuln_base
+    for day_key in day_keys:
+        curr_asset += asset_daily_map[day_key]
+        curr_vuln += vuln_daily_map[day_key]
+        trend.append({
+            "name": day_key[-5:],
+            "assets": curr_asset,
+            "vulns": curr_vuln,
+        })
+
+    return trend
 
 
 def _build_network_trend_6h():
@@ -560,7 +596,10 @@ class ARLConsoleDashboard(ARLResource):
             - engine: 引擎状态
         """
         device_info = utils.device_info()
-        running_tasks = _count_documents("task", {"status": "running"})
+        # 活跃任务口径：所有非终态任务
+        active_tasks = _count_active_tasks()
+        # 纯运行态口径：仅 status=running（用于兼容观察）
+        running_state_tasks = _count_documents("task", {"status": "running"})
         waiting_tasks = _count_documents("task", {"status": "waiting"})
 
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -576,7 +615,9 @@ class ARLConsoleDashboard(ARLResource):
 
         stats = {
             "task_total": _count_documents("task"),
-            "running_tasks": running_tasks,
+            "active_tasks": active_tasks,
+            "running_tasks": active_tasks,  # 兼容旧前端字段（活跃任务）
+            "running_state_tasks": running_state_tasks,
             "waiting_tasks": waiting_tasks,
             "scheduler_total": _count_documents("scheduler"),
             "asset_scope_total": _count_documents("asset_scope"),
@@ -584,6 +625,10 @@ class ARLConsoleDashboard(ARLResource):
             "asset_site_total_raw": asset_site_total_raw,
             "task_site_total": task_site_total,
             "asset_data_source": asset_data_source,
+            "domain_total": _count_documents("domain"),
+            "ip_total": _count_documents("ip"),
+            "service_total": _count_documents("service"),
+            "url_total": _count_documents("url"),
             "vuln_total": _count_documents("vuln"),
             "github_task_total": _count_documents("github_task"),
             "new_assets_today": new_assets_today,
@@ -596,7 +641,7 @@ class ARLConsoleDashboard(ARLResource):
             "asset_trend_7d": _build_asset_trend_7d(asset_collection=asset_data_source),
             "network_trend": _build_network_trend_6h(),
             "recent_logs": _build_recent_logs(limit=DEFAULT_RECENT_LOG_LIMIT),
-            "engine": _build_engine_status(device_info, running_tasks, waiting_tasks),
+            "engine": _build_engine_status(device_info, active_tasks, waiting_tasks),
             "last_updated": str(datetime.now())
         }
         return utils.build_ret(ErrorMsg.Success, data)
