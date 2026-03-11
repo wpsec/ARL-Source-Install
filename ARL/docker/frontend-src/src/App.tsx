@@ -8711,11 +8711,10 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     create_node_path: string;
     kb_timeout: number;
     title_prefix: string;
-    dry_run: boolean;
     report_base_url: string;
   };
 
-  type DingtalkBoolKey = 'kb_enable' | 'dry_run' | 'ssl_cert_notify_enable';
+  type DingtalkBoolKey = 'kb_enable' | 'ssl_cert_notify_enable';
   type DingtalkStringKey = Exclude<keyof DingtalkConfigForm, DingtalkBoolKey | 'kb_timeout' | 'ssl_cert_notify_days'>;
 
   const defaultForm: DingtalkConfigForm = {
@@ -8734,7 +8733,6 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     create_node_path: '/v1.0/doc/workspaces/{workspace_id}/docs',
     kb_timeout: 20,
     title_prefix: '互联网资产自动化收集',
-    dry_run: false,
     report_base_url: '',
   };
 
@@ -8771,7 +8769,6 @@ function DingtalkIntegrationView({ token }: { token: string }) {
       create_node_path: String(raw.create_node_path || '/v1.0/doc/workspaces/{workspace_id}/docs'),
       kb_timeout: Number(raw.kb_timeout || 20),
       title_prefix: String(raw.title_prefix || '互联网资产自动化收集'),
-      dry_run: Boolean(raw.dry_run),
       report_base_url: String(raw.report_base_url || ''),
     };
   }, []);
@@ -9004,7 +9001,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
             <input
               type="checkbox"
@@ -9036,15 +9033,6 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
             />
           </div>
-          <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.dry_run}
-              onChange={(event) => updateBoolField('dry_run', event.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-            />
-            <span className="font-medium">DryRun（只演练不落地）</span>
-          </label>
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               API 超时时间(秒)
