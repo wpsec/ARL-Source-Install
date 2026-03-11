@@ -1,13 +1,217 @@
 """
 证书处理工具
 """
-import json
 import ssl
 import OpenSSL
 import socket
+import shutil
+import subprocess
+import re
+from collections import Counter
 from datetime import datetime
 
 socket.setdefaulttimeout(6)
+
+
+def _safe_text(value):
+    """
+    将各种输入安全转为字符串，避免后续拼接异常。
+    """
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _normalize_protocol_name(name):
+    """
+    统一协议名称格式，便于展示与导出聚合。
+    """
+    value = _safe_text(name).replace(" ", "")
+    if not value:
+        return ""
+
+    lower = value.lower()
+    if lower.startswith("tlsv"):
+        suffix = value[4:]
+        return "TLSv{}".format(suffix)
+    if lower.startswith("sslv"):
+        suffix = value[4:]
+        return "SSLv{}".format(suffix)
+    return value
+
+
+def _parse_cipher_line(line):
+    """
+    解析 nmap ssl-enum-ciphers 中的单行套件信息。
+
+    样例：
+    TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (secp256r1) - A
+    """
+    text = _safe_text(line)
+    if not text:
+        return "", ""
+
+    strength = ""
+    cipher_name = text
+
+    if " - " in text:
+        left, right = text.rsplit(" - ", 1)
+        right = _safe_text(right).upper()
+        if right in {"A", "B", "C", "D", "E", "F"}:
+            cipher_name = _safe_text(left)
+            strength = right
+
+    return cipher_name, strength
+
+
+def _parse_ssl_enum_ciphers_output(raw_text):
+    """
+    解析 nmap ssl-enum-ciphers 原始输出，提取协议/套件/强度。
+    """
+    if not _safe_text(raw_text):
+        return {}
+
+    protocol_pattern = re.compile(r"^(SSLv[0-9.]+|TLSv[0-9.]+)\s*:\s*$", re.IGNORECASE)
+    protocol_map = {}
+    cipher_suites = []
+    current_protocol = ""
+    in_cipher_block = False
+    least_strength = ""
+
+    for raw_line in raw_text.splitlines():
+        line = _safe_text(raw_line)
+        if not line:
+            continue
+
+        # nmap 脚本输出以 | / |_ 开头，先统一清洗。
+        line = line.lstrip("|").lstrip("_").strip()
+        if not line:
+            continue
+
+        low = line.lower()
+        if low.startswith("ssl-enum-ciphers"):
+            continue
+
+        protocol_match = protocol_pattern.match(line)
+        if protocol_match:
+            current_protocol = _normalize_protocol_name(protocol_match.group(1))
+            if current_protocol and current_protocol not in protocol_map:
+                protocol_map[current_protocol] = {
+                    "name": current_protocol,
+                    "supported": True,
+                    "cipher_count": 0,
+                }
+            in_cipher_block = False
+            continue
+
+        if low.startswith("ciphers:"):
+            in_cipher_block = bool(current_protocol)
+            continue
+
+        if low.startswith("compressors:") or low.startswith("compressor:"):
+            in_cipher_block = False
+            continue
+
+        if low.startswith("cipher preference"):
+            in_cipher_block = False
+            continue
+
+        if low.startswith("least strength"):
+            _, _, right = line.partition(":")
+            least_strength = _safe_text(right).upper()
+            continue
+
+        if not in_cipher_block or not current_protocol:
+            continue
+
+        cipher_name, strength = _parse_cipher_line(line)
+        if not cipher_name:
+            continue
+
+        cipher_suites.append(
+            {
+                "protocol": current_protocol,
+                "name": cipher_name,
+                "strength": strength,
+            }
+        )
+        protocol_map[current_protocol]["cipher_count"] += 1
+
+    if not protocol_map and not cipher_suites and not least_strength:
+        return {}
+
+    protocol_names = sorted(protocol_map.keys())
+    strength_counter = Counter(
+        [item.get("strength", "") for item in cipher_suites if _safe_text(item.get("strength", ""))]
+    )
+    ecdhe_count = 0
+    for item in cipher_suites:
+        name = _safe_text(item.get("name", "")).upper()
+        if "ECDHE" in name:
+            ecdhe_count += 1
+
+    strength_stat = {}
+    for key in sorted(strength_counter.keys()):
+        strength_stat[key] = strength_counter[key]
+
+    return {
+        "source": "nmap_ssl_enum_ciphers",
+        "scan_time": str(datetime.utcnow()),
+        "protocols": [protocol_map[name] for name in protocol_names],
+        "protocol_names": protocol_names,
+        "cipher_suites": cipher_suites,
+        "cipher_total": len(cipher_suites),
+        "ecdhe_count": ecdhe_count,
+        "strength_stat": strength_stat,
+        "least_strength": least_strength,
+    }
+
+
+def _scan_ssl_security_with_nmap(host, port):
+    """
+    调用 nmap ssl-enum-ciphers 脚本扫描协议与加密套件。
+    """
+    nmap_bin = shutil.which("nmap")
+    if not nmap_bin:
+        return {}
+
+    try:
+        port = int(port)
+    except Exception:
+        return {}
+
+    cmd = [
+        nmap_bin,
+        "-n",
+        "-Pn",
+        "--max-retries",
+        "1",
+        "--host-timeout",
+        "20s",
+        "--script-timeout",
+        "15s",
+        "-p",
+        str(port),
+        "--script",
+        "ssl-enum-ciphers",
+        str(host),
+    ]
+
+    try:
+        # nmap 在目标无响应时可能返回非0，但 stdout 仍有可解析信息，因此不使用 check=True。
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=28,
+            check=False,
+        )
+        parsed = _parse_ssl_enum_ciphers_output(result.stdout or "")
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
 
 def parse_certs(certs):
     result = {}
@@ -92,12 +296,14 @@ def get_cert(host, port):
     from . import get_logger
     logger = get_logger()
     try:
-
         certs = ssl.get_server_certificate((host, port))
-        return parse_certs(certs)
+        parsed_cert = parse_certs(certs)
+        ssl_security = _scan_ssl_security_with_nmap(host, port)
+        if ssl_security:
+            parsed_cert["ssl_security"] = ssl_security
+        return parsed_cert
     except Exception as e:
         logger.debug("get cert error {}:{} {}".format(host,port, e))
-
 
 
 

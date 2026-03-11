@@ -2188,6 +2188,7 @@ function formatHeaderLines(value: any): string {
 
 function formatCertSummary(row: any): string {
   const cert = row?.cert && typeof row.cert === 'object' ? row.cert : {};
+  const sslSecurity = cert?.ssl_security && typeof cert.ssl_security === 'object' ? cert.ssl_security : {};
   const toText = (value: any, max = 420): string => {
     if (value === null || value === undefined) return '-';
     if (Array.isArray(value)) {
@@ -2208,18 +2209,64 @@ function formatCertSummary(row: any): string {
   const sha256 = toText(cert?.fingerprint?.sha256);
   const sha1 = toText(cert?.fingerprint?.sha1);
   const md5 = toText(cert?.fingerprint?.md5);
-  return [
+  const protocolNamesFromItems = Array.isArray(sslSecurity?.protocols)
+    ? sslSecurity.protocols
+      .map((item: any) => (item && typeof item === 'object' ? String(item.name || '').trim() : String(item || '').trim()))
+      .filter((item: string) => item)
+    : [];
+  const protocolNamesFromList = Array.isArray(sslSecurity?.protocol_names)
+    ? sslSecurity.protocol_names.map((item: any) => String(item || '').trim()).filter((item: string) => item)
+    : [];
+  const protocolNames = Array.from(new Set([...protocolNamesFromItems, ...protocolNamesFromList]));
+  const protocolText = protocolNames.length > 0 ? protocolNames.join(', ') : '-';
+
+  const leastStrength = toText(sslSecurity?.least_strength);
+  const ecdheCountRaw = Number(sslSecurity?.ecdhe_count);
+  const ecdheCount = Number.isFinite(ecdheCountRaw) ? String(ecdheCountRaw) : '-';
+
+  const cipherItems = Array.isArray(sslSecurity?.cipher_suites)
+    ? sslSecurity.cipher_suites.filter((item: any) => item && typeof item === 'object')
+    : [];
+  const cipherPreviewLines = cipherItems.slice(0, 16).map((item: any) => {
+    const protocol = String(item.protocol || '').trim();
+    const name = String(item.name || '').trim();
+    const strength = String(item.strength || '').trim().toUpperCase();
+    if (!name) return '';
+    let line = name;
+    if (protocol) line = `[${protocol}] ${line}`;
+    if (strength) line = `${line} (${strength})`;
+    return line;
+  }).filter((item: string) => item);
+  if (cipherItems.length > 16) {
+    cipherPreviewLines.push(`... 共 ${cipherItems.length} 条`);
+  }
+
+  const summaryLines = [
     '基本信息',
     `主题名称: ${subjectDn}`,
     `签发者名称: ${issuerDn}`,
     `使用者备用名称: ${san}`,
     `序列号: ${serialNumber}`,
     `时间: ${validityStart} 至 ${validityEnd}`,
+    '协议支持',
+    `支持协议: ${protocolText}`,
+    `最弱加密强度: ${leastStrength}`,
+    `ECDHE套件数: ${ecdheCount}`,
+    '加密套件',
+    `已启用套件: ${cipherPreviewLines.length > 0 ? '' : '-'}`,
     '指纹',
     `SHA-256: ${sha256}`,
     `SHA-1: ${sha1}`,
     `MD5: ${md5}`,
-  ].join('\n');
+  ];
+
+  if (cipherPreviewLines.length > 0) {
+    cipherPreviewLines.forEach((line, index) => {
+      summaryLines.push(`  ${index + 1}. ${line}`);
+    });
+  }
+
+  return summaryLines.join('\n');
 }
 
 function formatDateTimeCell(value: any): string {
@@ -8163,6 +8210,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     dingding_access_token: string;
     dingding_secret: string;
     kb_enable: boolean;
+    ssl_cert_notify_enable: boolean;
     base_url: string;
     corp_id: string;
     app_key: string;
@@ -8177,13 +8225,14 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     report_base_url: string;
   };
 
-  type DingtalkBoolKey = 'kb_enable' | 'dry_run';
+  type DingtalkBoolKey = 'kb_enable' | 'dry_run' | 'ssl_cert_notify_enable';
   type DingtalkStringKey = Exclude<keyof DingtalkConfigForm, DingtalkBoolKey | 'kb_timeout'>;
 
   const defaultForm: DingtalkConfigForm = {
     dingding_access_token: '',
     dingding_secret: '',
     kb_enable: false,
+    ssl_cert_notify_enable: false,
     base_url: 'https://api.dingtalk.com',
     corp_id: '',
     app_key: '',
@@ -8217,6 +8266,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
       dingding_access_token: String(raw.dingding_access_token || ''),
       dingding_secret: String(raw.dingding_secret || ''),
       kb_enable: Boolean(raw.kb_enable),
+      ssl_cert_notify_enable: Boolean(raw.ssl_cert_notify_enable),
       base_url: String(raw.base_url || 'https://api.dingtalk.com'),
       corp_id: String(raw.corp_id || ''),
       app_key: String(raw.app_key || ''),
@@ -8451,7 +8501,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
           <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
             <input
               type="checkbox"
@@ -8460,6 +8510,15 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
             />
             <span className="font-medium">启用知识库推送</span>
+          </label>
+          <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.ssl_cert_notify_enable}
+              onChange={(event) => updateBoolField('ssl_cert_notify_enable', event.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+            />
+            <span className="font-medium">SSL证书扫描通知</span>
           </label>
           <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
             <input

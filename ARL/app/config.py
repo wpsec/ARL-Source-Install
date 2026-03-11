@@ -294,6 +294,7 @@ class Config(object):
     DINGTALK_KB_TITLE_PREFIX = "互联网资产自动化收集"
     DINGTALK_KB_DRY_RUN = False
     DINGTALK_REPORT_BASE_URL = ""
+    DINGTALK_SSL_CERT_NOTIFY_ENABLE = False
 
     # 飞书机器人配置
     FEISHU_WEBHOOK = ""  # 飞书Webhook地址
@@ -643,6 +644,8 @@ try:
             Config.DINGTALK_KB_DRY_RUN = bool(dingtalk_api_conf["DRY_RUN"])
         if dingtalk_api_conf.get("REPORT_BASE_URL"):
             Config.DINGTALK_REPORT_BASE_URL = dingtalk_api_conf["REPORT_BASE_URL"]
+        if dingtalk_api_conf.get("SSL_CERT_NOTIFY_ENABLE") is not None:
+            Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE = bool(dingtalk_api_conf["SSL_CERT_NOTIFY_ENABLE"])
 
     # --- 邮件推送配置 ---
     if y.get("EMAIL"):
@@ -731,6 +734,9 @@ try:
     Config.DINGTALK_KB_TITLE_PREFIX = env_str("ARL_DINGTALK_KB_TITLE_PREFIX", Config.DINGTALK_KB_TITLE_PREFIX)
     Config.DINGTALK_KB_DRY_RUN = env_bool("ARL_DINGTALK_KB_DRY_RUN", Config.DINGTALK_KB_DRY_RUN)
     Config.DINGTALK_REPORT_BASE_URL = env_str("ARL_DINGTALK_REPORT_BASE_URL", Config.DINGTALK_REPORT_BASE_URL)
+    Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE = env_bool(
+        "ARL_DINGTALK_SSL_CERT_NOTIFY_ENABLE", Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE
+    )
     Config.PHANTOMJS_BIN = env_str("ARL_PHANTOMJS_BIN", Config.PHANTOMJS_BIN)
     Config.SCREENSHOT_ENGINE = env_str("ARL_SCREENSHOT_ENGINE", Config.SCREENSHOT_ENGINE).strip().lower()
     Config.PLAYWRIGHT_TIMEOUT_MS = safe_positive_int(

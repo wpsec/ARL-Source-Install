@@ -25,6 +25,7 @@ from flask_restx import Resource, Namespace
 from openpyxl import Workbook
 from bson import ObjectId
 import re
+from datetime import datetime
 from collections import Counter
 from openpyxl.writer.excel import save_virtual_workbook
 from openpyxl.styles import Font, Color
@@ -348,6 +349,213 @@ def get_nuclei_result_data(task_id):
     获取任务的 nuclei 漏洞结果
     """
     return utils.conn_db('nuclei_result').find({'task_id': task_id})
+
+
+def get_cert_data(task_id):
+    """
+    获取任务的 SSL 证书结果
+    """
+    return utils.conn_db('cert').find({'task_id': task_id})
+
+
+def _parse_datetime_safe(value):
+    """
+    兼容多种时间字符串格式，解析失败时返回 None。
+    """
+    text = sanitize_excel_value(value).strip()
+    if not text:
+        return None
+
+    for fmt in [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+    ]:
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            continue
+
+    return None
+
+
+def _extract_protocol_names(ssl_security):
+    """
+    从证书安全字段中提取协议名称列表。
+    """
+    if not isinstance(ssl_security, dict):
+        return []
+
+    names = []
+    protocols = ssl_security.get("protocols", [])
+    if isinstance(protocols, list):
+        for item in protocols:
+            if isinstance(item, dict):
+                name = sanitize_excel_value(item.get("name", "")).strip()
+            else:
+                name = sanitize_excel_value(item).strip()
+            if name:
+                names.append(name)
+
+    if not names and isinstance(ssl_security.get("protocol_names"), list):
+        for name in ssl_security.get("protocol_names", []):
+            text = sanitize_excel_value(name).strip()
+            if text:
+                names.append(text)
+
+    return sorted(list(set(names)))
+
+
+def _extract_cipher_suite_lines(ssl_security, max_items=50):
+    """
+    组装加密套件文本（协议 + 套件 + 强度），并限制导出长度。
+    """
+    if not isinstance(ssl_security, dict):
+        return []
+
+    lines = []
+    cipher_suites = ssl_security.get("cipher_suites", [])
+    if not isinstance(cipher_suites, list):
+        return lines
+
+    for item in cipher_suites:
+        if not isinstance(item, dict):
+            continue
+        protocol = sanitize_excel_value(item.get("protocol", "")).strip()
+        cipher_name = sanitize_excel_value(item.get("name", "")).strip()
+        strength = sanitize_excel_value(item.get("strength", "")).strip().upper()
+        if not cipher_name:
+            continue
+        line = cipher_name
+        if protocol:
+            line = "[{}] {}".format(protocol, line)
+        if strength:
+            line = "{} ({})".format(line, strength)
+        lines.append(line)
+
+    if len(lines) > max_items:
+        hidden = len(lines) - max_items
+        lines = lines[:max_items]
+        lines.append("... 其余 {} 条省略".format(hidden))
+
+    return lines
+
+
+def _extract_cert_rows(task_ids):
+    """
+    汇总 SSL 证书导出行（支持协议/套件/强度信息）。
+    """
+    rows = []
+    now_dt = datetime.utcnow()
+
+    for task_id in task_ids:
+        task_id = str(task_id or "").strip()
+        if not task_id:
+            continue
+
+        for item in get_cert_data(task_id):
+            cert_obj = item.get("cert", {}) if isinstance(item.get("cert"), dict) else {}
+            validity = cert_obj.get("validity", {}) if isinstance(cert_obj.get("validity"), dict) else {}
+            ssl_security = cert_obj.get("ssl_security", {}) if isinstance(cert_obj.get("ssl_security"), dict) else {}
+
+            ip = sanitize_excel_value(item.get("ip", "")).strip()
+            port = sanitize_excel_value(item.get("port", "")).strip()
+            host = "{}:{}".format(ip, port) if ip and port else ip or port
+
+            validity_start = sanitize_excel_value(validity.get("start", "")).strip()
+            validity_end = sanitize_excel_value(validity.get("end", "")).strip()
+
+            remain_days = ""
+            end_dt = _parse_datetime_safe(validity_end)
+            if end_dt:
+                remain_days = (end_dt - now_dt).days
+
+            protocol_names = _extract_protocol_names(ssl_security)
+            protocol_text = "、".join(protocol_names)
+
+            least_strength = sanitize_excel_value(ssl_security.get("least_strength", "")).strip().upper()
+            ecdhe_count = ssl_security.get("ecdhe_count", "")
+            try:
+                ecdhe_count = int(ecdhe_count)
+            except Exception:
+                ecdhe_count = ""
+
+            cipher_lines = _extract_cipher_suite_lines(ssl_security)
+            cipher_text = " \r\n".join(cipher_lines)
+
+            sha256 = ""
+            fingerprint = cert_obj.get("fingerprint", {})
+            if isinstance(fingerprint, dict):
+                sha256 = sanitize_excel_value(fingerprint.get("sha256", "")).strip()
+
+            san = ""
+            extensions = cert_obj.get("extensions", {})
+            if isinstance(extensions, dict):
+                san = sanitize_excel_value(extensions.get("subjectAltName", "")).strip()
+
+            rows.append(
+                [
+                    task_id,
+                    sanitize_excel_value(host),
+                    sanitize_excel_value(cert_obj.get("subject_dn", "")),
+                    sanitize_excel_value(cert_obj.get("issuer_dn", "")),
+                    sanitize_excel_value(validity_start),
+                    sanitize_excel_value(validity_end),
+                    sanitize_excel_value(remain_days),
+                    sanitize_excel_value(protocol_text),
+                    sanitize_excel_value(least_strength),
+                    sanitize_excel_value(ecdhe_count),
+                    sanitize_excel_value(cipher_text),
+                    sanitize_excel_value(sha256),
+                    sanitize_excel_value(san),
+                ]
+            )
+
+    return rows
+
+
+def _build_cert_sheet(wb, task_ids):
+    """
+    在导出工作簿中新增 SSL 证书工作表。
+    """
+    ws = wb.create_sheet(title="SSL证书")
+    ws.column_dimensions['A'].width = 28.0
+    ws.column_dimensions['B'].width = 26.0
+    ws.column_dimensions['C'].width = 42.0
+    ws.column_dimensions['D'].width = 42.0
+    ws.column_dimensions['E'].width = 21.0
+    ws.column_dimensions['F'].width = 21.0
+    ws.column_dimensions['G'].width = 12.0
+    ws.column_dimensions['H'].width = 26.0
+    ws.column_dimensions['I'].width = 12.0
+    ws.column_dimensions['J'].width = 14.0
+    ws.column_dimensions['K'].width = 70.0
+    ws.column_dimensions['L'].width = 42.0
+    ws.column_dimensions['M'].width = 60.0
+
+    ws.append(
+        [
+            "任务ID",
+            "HOST",
+            "主题名称",
+            "签发者名称",
+            "生效时间",
+            "失效时间",
+            "剩余天数",
+            "支持协议",
+            "最弱强度",
+            "ECDHE套件数",
+            "加密套件",
+            "SHA-256",
+            "使用者备用名称",
+        ]
+    )
+
+    for row in _extract_cert_rows(task_ids):
+        ws.append(row)
+
+    set_sheet_style(ws)
 
 
 def _extract_vuln_rows(task_ids):
@@ -697,6 +905,12 @@ class SaveTask(object):
 
         self.set_style(ws)
 
+    def build_cert_xl(self):
+        """
+        生成 SSL 证书工作表（协议/套件/强度）。
+        """
+        _build_cert_sheet(self.wb, [self.task_id])
+
     def build_statist(self):
         statist = port_service_product_statist(self.task_id)
         ws = self.wb.create_sheet(title="资产统计")
@@ -784,6 +998,7 @@ class SaveTask(object):
         self.build_site_xl()
         self.build_ip_xl()
         self.build_service_xl()
+        self.build_cert_xl()
         if not self.is_ip_task:
             self.build_domain_xl()
 
@@ -1059,6 +1274,8 @@ def export_merge_tasks(task_id_list):
                 sanitize_excel_value(port_info.get("version", "")),
             ])
     set_sheet_style(ws)
+
+    _build_cert_sheet(wb, valid_task_ids)
 
     # 域名（与单任务导出同结构，非IP任务时输出）
     if not is_ip_task:

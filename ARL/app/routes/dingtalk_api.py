@@ -207,6 +207,9 @@ def _extract_dingtalk_config(config_obj):
         "title_prefix": str(dingtalk_api_conf.get("TITLE_PREFIX", Config.DINGTALK_KB_TITLE_PREFIX or "")),
         "dry_run": _safe_bool(dingtalk_api_conf.get("DRY_RUN"), Config.DINGTALK_KB_DRY_RUN),
         "report_base_url": str(dingtalk_api_conf.get("REPORT_BASE_URL", Config.DINGTALK_REPORT_BASE_URL or "")),
+        "ssl_cert_notify_enable": _safe_bool(
+            dingtalk_api_conf.get("SSL_CERT_NOTIFY_ENABLE"), Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE
+        ),
     }
 
 
@@ -240,6 +243,9 @@ def _merge_dingtalk_config(config_obj, dingtalk_config):
     dingtalk_api_conf["TITLE_PREFIX"] = str(dingtalk_config.get("title_prefix", "")).strip()
     dingtalk_api_conf["DRY_RUN"] = _safe_bool(dingtalk_config.get("dry_run"), False)
     dingtalk_api_conf["REPORT_BASE_URL"] = str(dingtalk_config.get("report_base_url", "")).strip()
+    dingtalk_api_conf["SSL_CERT_NOTIFY_ENABLE"] = _safe_bool(
+        dingtalk_config.get("ssl_cert_notify_enable"), False
+    )
     return config_obj
 
 
@@ -264,6 +270,9 @@ def _apply_runtime_dingtalk_config(dingtalk_config):
     Config.DINGTALK_KB_TITLE_PREFIX = str(dingtalk_config.get("title_prefix", "")).strip()
     Config.DINGTALK_KB_DRY_RUN = _safe_bool(dingtalk_config.get("dry_run"), False)
     Config.DINGTALK_REPORT_BASE_URL = str(dingtalk_config.get("report_base_url", "")).strip()
+    Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE = _safe_bool(
+        dingtalk_config.get("ssl_cert_notify_enable"), False
+    )
 
 
 def _build_dingtalk_error(message, detail):

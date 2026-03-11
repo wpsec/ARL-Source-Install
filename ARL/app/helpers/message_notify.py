@@ -6,6 +6,7 @@
 - 支持钉钉推送
 - 用于任务结果通知和监控告警
 """
+from datetime import datetime
 from bson import ObjectId
 from app.config import Config
 from app.utils import get_logger, push
@@ -242,6 +243,166 @@ def build_task_finish_markdown(task_data):
     return markdown
 
 
+def _parse_cert_datetime(value):
+    """
+    兼容解析证书有效期时间字符串。
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    for fmt in [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+    ]:
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            continue
+
+    return None
+
+
+def _extract_alert_domain(cert_obj, ip, port):
+    """
+    优先使用证书域名信息作为告警展示域名。
+    """
+    if not isinstance(cert_obj, dict):
+        return "{}:{}".format(ip, port) if ip and port else (ip or "")
+
+    subject = cert_obj.get("subject", {})
+    if isinstance(subject, dict):
+        common_name = str(subject.get("common_name", "")).strip()
+        if common_name:
+            return common_name
+
+    extensions = cert_obj.get("extensions", {})
+    if isinstance(extensions, dict):
+        san_text = str(extensions.get("subjectAltName", "")).strip()
+        if san_text:
+            for raw_item in san_text.split(","):
+                item = raw_item.strip()
+                if not item:
+                    continue
+                if ":" in item:
+                    left, right = item.split(":", 1)
+                    if left.strip().lower() == "dns" and right.strip():
+                        return right.strip()
+                elif item:
+                    return item
+
+    return "{}:{}".format(ip, port) if ip and port else (ip or "")
+
+
+def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
+    """
+    收集任务中临期/过期证书列表。
+    """
+    warnings = []
+    now_dt = datetime.utcnow()
+
+    for item in utils.conn_db("cert").find({"task_id": task_id}):
+        cert_obj = item.get("cert", {}) if isinstance(item.get("cert"), dict) else {}
+        validity = cert_obj.get("validity", {}) if isinstance(cert_obj.get("validity"), dict) else {}
+        end_time = str(validity.get("end", "")).strip()
+        if not end_time:
+            continue
+
+        end_dt = _parse_cert_datetime(end_time)
+        if not end_dt:
+            continue
+
+        remaining_days = (end_dt - now_dt).days
+        if remaining_days > alert_days:
+            continue
+
+        ip = str(item.get("ip", "")).strip()
+        port = str(item.get("port", "")).strip()
+        domain = _extract_alert_domain(cert_obj, ip, port)
+        warnings.append(
+            {
+                "domain": domain,
+                "ip": ip,
+                "port": port,
+                "end_time": end_time,
+                "remaining_days": remaining_days,
+            }
+        )
+
+    warnings.sort(key=lambda row: row.get("remaining_days", 999999))
+    if len(warnings) > max_items:
+        warnings = warnings[:max_items]
+    return warnings
+
+
+def _build_report_link_fallback(task_id):
+    """
+    当钉钉知识库链接不可用时，回退到平台报告链接。
+    """
+    base_url = str(Config.DINGTALK_REPORT_BASE_URL or "").strip().rstrip("/")
+    if not base_url:
+        return ""
+    return "{}/?task_id={}".format(base_url, task_id)
+
+
+def _build_ssl_cert_warning_markdown(warn_item, report_link):
+    """
+    构建 SSL 证书告警消息模板。
+    """
+    remaining_days = int(warn_item.get("remaining_days", 0))
+    if remaining_days >= 0:
+        remain_text = "{} 天".format(remaining_days)
+    else:
+        remain_text = "已过期 {} 天".format(abs(remaining_days))
+
+    markdown = "### SSL证书安全警告\n\n"
+    markdown += "- 检测域名：`{}`\n".format(str(warn_item.get("domain", "") or "-"))
+    markdown += "- 检测时间：`{}`\n".format(utils.curr_date())
+    markdown += "- 证书有效期剩余：`{}`\n".format(remain_text)
+    markdown += "- 请在有效期内及时更新！\n"
+    if report_link:
+        markdown += "- 报告链接：[点击查看]({})\n".format(report_link)
+    else:
+        markdown += "- 报告链接：`未生成`\n"
+    return markdown
+
+
+def _push_ssl_cert_warning(task_id, task_data):
+    """
+    推送 SSL 证书临期告警，并尽可能附带钉钉知识库报告链接。
+    """
+    warnings = _collect_ssl_cert_warnings(task_id=task_id, alert_days=30, max_items=10)
+    if not warnings:
+        return
+
+    report_link = ""
+    if Config.DINGTALK_KB_ENABLE:
+        task_name = str(task_data.get("name", "")).strip()
+        report_title = "{}-SSL证书扫描报告-{}".format(task_name or "任务", utils.curr_date())
+        summary_markdown = "### SSL证书扫描报告\n\n- 任务ID：`{}`\n- 告警证书数量：`{}`".format(
+            task_id, len(warnings)
+        )
+        kb_success, kb_result = push_dingtalk_kb(
+            report_title=report_title,
+            markdown_report=summary_markdown,
+            source_type="ssl_cert_warning",
+            source_id=task_id,
+            extra_data={"task_id": task_id, "warning_count": len(warnings)},
+            task_ids=[task_id],
+        )
+        if kb_success and isinstance(kb_result, dict):
+            report_link = str(kb_result.get("node_url", "")).strip()
+
+    if not report_link:
+        report_link = _build_report_link_fallback(task_id)
+
+    for warn_item in warnings:
+        markdown_report = _build_ssl_cert_warning_markdown(warn_item, report_link=report_link)
+        push_dingding(markdown_report=markdown_report)
+
+
 def push_task_finish_notify(task_id):
     """
     普通任务完成后的钉钉推送
@@ -267,14 +428,23 @@ def push_task_finish_notify(task_id):
             return
 
         options = task_data.get("options", {})
-        if not (isinstance(options, dict) and options.get("dingding_notify")):
+        if not isinstance(options, dict):
+            options = {}
+
+        if options.get("from_task_schedule"):
             return
 
-        if isinstance(options, dict) and options.get("from_task_schedule"):
+        finish_notify_enabled = bool(options.get("dingding_notify"))
+        ssl_cert_notify_enabled = bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE and options.get("ssl_cert"))
+        if not finish_notify_enabled and not ssl_cert_notify_enabled:
             return
 
-        markdown_report = build_task_finish_markdown(task_data)
-        push_dingding(markdown_report=markdown_report)
+        if finish_notify_enabled:
+            markdown_report = build_task_finish_markdown(task_data)
+            push_dingding(markdown_report=markdown_report)
+
+        if ssl_cert_notify_enabled:
+            _push_ssl_cert_warning(task_id, task_data)
 
     except Exception as e:
         logger.warning("push task finish notify error {}".format(task_id))

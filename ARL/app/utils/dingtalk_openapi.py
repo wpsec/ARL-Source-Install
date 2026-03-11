@@ -295,9 +295,9 @@ def _normalize_sheet_name_key(sheet_name):
 def _build_ordered_export_sheet_items(raw_sheet_items):
     """
     按固定顺序重排导出工作表
-    期望顺序：域名、IP、系统服务、站点、漏洞、资产统计
+    期望顺序：域名、IP、系统服务、SSL证书、站点、漏洞、资产统计
     """
-    preferred_order = ["域名", "IP", "系统服务", "站点", "漏洞", "资产统计"]
+    preferred_order = ["域名", "IP", "系统服务", "SSL证书", "站点", "漏洞", "资产统计"]
     preferred_keys = [_normalize_sheet_name_key(name) for name in preferred_order]
     sheet_map = {}
     ignored_sheet_names = []
@@ -838,6 +838,7 @@ def get_runtime_status():
         "parent_node_id": Config.DINGTALK_PARENT_NODE_ID,
         "create_node_path": Config.DINGTALK_KB_CREATE_NODE_PATH,
         "title_prefix": Config.DINGTALK_KB_TITLE_PREFIX,
+        "ssl_cert_notify_enable": bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE),
         "missing_basic_fields": _missing_required_fields(),
         "missing_publish_fields": _missing_required_fields(require_workspace=True, require_parent_node=True),
     }
