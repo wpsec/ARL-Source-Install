@@ -8,6 +8,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronsUpDown,
   Cpu,
   Database,
   Download,
@@ -3609,7 +3611,12 @@ function ActionDialog({
   const editable = action.allowPayloadEdit !== false;
   const isTaskCreate = action.id === 'create_task';
   const isAssetScopeCreate = action.id === 'asset_scope_add';
+  const isAssetScopeAddScope = action.id === 'asset_scope_add_scope';
+  const isAssetScopeAddScheduler = action.id === 'asset_scope_add_scheduler';
+  const isAssetScopeAddSiteMonitor = action.id === 'asset_scope_add_site_monitor';
+  const isAssetScopeAddWihMonitor = action.id === 'asset_scope_add_wih_monitor';
   const isTaskScheduleCreate = action.id === 'task_schedule_add';
+  const shouldLoadPolicyOptions = isTaskScheduleCreate || isAssetScopeAddScheduler;
   const isGithubSchedulerAction = action.id === 'github_scheduler_add' || action.id === 'github_scheduler_update';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
@@ -3677,6 +3684,9 @@ function ActionDialog({
   const scopeGroupName = String(formPayload?.name ?? '');
   const scopeType = String(formPayload?.scope_type ?? 'domain') === 'ip' ? 'ip' : 'domain';
   const scopeText = String(formPayload?.scope ?? '');
+  const scopeAddTargetText = String(formPayload?.scope ?? '');
+  const scopeMonitorRangeText = String(formPayload?.domain ?? '');
+  const scopeMonitorIntervalHours = Math.max(1, Math.round((Number(formPayload?.interval || 86400) || 86400) / 3600));
   const policyName = String(getPayloadValue(formPayload, policyNamePath) ?? '');
   const policyDesc = String(getPayloadValue(formPayload, policyDescPath) ?? '');
   const policyDomainBruteType = String(getPayloadValue(formPayload, `${policyRootPath}.domain_config.domain_brute_type`) ?? 'test');
@@ -3781,7 +3791,7 @@ function ActionDialog({
   }, [initialPayload]);
 
   useEffect(() => {
-    if (!isTaskScheduleCreate) {
+    if (!shouldLoadPolicyOptions) {
       setTaskSchedulePolicyOptions([]);
       setTaskSchedulePolicyLoading(false);
       setTaskSchedulePolicyError('');
@@ -3833,7 +3843,7 @@ function ActionDialog({
     return () => {
       cancelled = true;
     };
-  }, [isTaskScheduleCreate, token]);
+  }, [shouldLoadPolicyOptions, token]);
 
   useEffect(() => {
     if (!isPolicyAction) return;
@@ -4274,6 +4284,107 @@ function ActionDialog({
                 <p className="text-[11px] text-brand-text-muted">
                   支持换行、空格或逗号分隔，提交时会自动归一化为多条资产范围。
                 </p>
+              </div>
+            </div>
+          ) : isAssetScopeAddScope ? (
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">资产组名称</label>
+                <input
+                  value={scopeGroupName}
+                  disabled
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg/60 px-3 py-2 text-sm"
+                  placeholder="取资产组名称"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">资产范围</label>
+                <textarea
+                  value={scopeAddTargetText}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'scope', event.target.value))}
+                  className="w-full min-h-[168px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  placeholder={'example.com\napi.example.com'}
+                />
+                <p className="text-[11px] text-brand-text-muted">支持多行或逗号分割。</p>
+              </div>
+            </div>
+          ) : isAssetScopeAddScheduler ? (
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">范围</label>
+                <textarea
+                  value={scopeMonitorRangeText}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain', event.target.value))}
+                  className="w-full min-h-[148px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  placeholder={'example.com\napi.example.com'}
+                />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">运行间隔</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={6}
+                      value={scopeMonitorIntervalHours}
+                      disabled={!editable}
+                      onChange={(event) => {
+                        const nextHours = Number(event.target.value || '0');
+                        const safeHours = Number.isFinite(nextHours) ? Math.max(1, Math.floor(nextHours)) : 1;
+                        setFormPayload((prev) => updatePayloadValue(prev, 'interval', safeHours * 3600));
+                      }}
+                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 pr-10 text-sm"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-brand-text-muted">小时</span>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">策略</label>
+                  <div className="relative">
+                    <select
+                      value={taskSchedulePolicyId}
+                      disabled={!editable || taskSchedulePolicyLoading}
+                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'policy_id', event.target.value))}
+                      className={UNIFIED_SELECT_CLASS}
+                    >
+                      <option value="">{taskSchedulePolicyLoading ? '策略加载中...' : '请选择策略'}</option>
+                      {taskSchedulePolicyOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+              </div>
+              {taskSchedulePolicyError ? (
+                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                  {taskSchedulePolicyError}
+                </div>
+              ) : null}
+            </div>
+          ) : (isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? (
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">运行间隔</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min={6}
+                    value={scopeMonitorIntervalHours}
+                    disabled={!editable}
+                    onChange={(event) => {
+                      const nextHours = Number(event.target.value || '0');
+                      const safeHours = Number.isFinite(nextHours) ? Math.max(1, Math.floor(nextHours)) : 1;
+                      setFormPayload((prev) => updatePayloadValue(prev, 'interval', safeHours * 3600));
+                    }}
+                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 pr-10 text-sm"
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-brand-text-muted">小时</span>
+                </div>
               </div>
             </div>
           ) : isPolicyAction ? (
@@ -4743,6 +4854,75 @@ function ActionDialog({
                     payload.scope = normalizedScopes.join('\n');
                     payload.black_scope = '';
                   }
+                  if (isAssetScopeAddScope && editable) {
+                    const scopeId = String(payload.scope_id || '').trim();
+                    const normalizedScopes = String(payload.scope || '')
+                      .replace(/,/g, '\n')
+                      .split(/\r?\n/)
+                      .flatMap((line) => line.split(/\s+/))
+                      .map((item) => item.trim())
+                      .filter((item) => item);
+
+                    if (!scopeId) {
+                      throw new Error('资产范围ID无效，请刷新后重试');
+                    }
+                    if (normalizedScopes.length === 0) {
+                      throw new Error('请填写资产范围，支持多行或逗号分割');
+                    }
+
+                    payload = {
+                      scope_id: scopeId,
+                      scope: normalizedScopes.join(','),
+                    };
+                  }
+                  if (isAssetScopeAddScheduler && editable) {
+                    const scopeId = String(payload.scope_id || '').trim();
+                    const policyId = String(payload.policy_id || '').trim();
+                    const normalizedName = String(payload.name || '').trim();
+                    const interval = Number(payload.interval || 0);
+                    const normalizedTargets = String(payload.domain || '')
+                      .replace(/,/g, '\n')
+                      .split(/\r?\n/)
+                      .flatMap((line) => line.split(/\s+/))
+                      .map((item) => item.trim())
+                      .filter((item) => item);
+
+                    if (!scopeId) {
+                      throw new Error('资产范围ID无效，请刷新后重试');
+                    }
+                    if (normalizedTargets.length === 0) {
+                      throw new Error('请填写范围');
+                    }
+                    if (!Number.isFinite(interval) || interval < 3600 * 6) {
+                      throw new Error('运行间隔最小为6小时');
+                    }
+
+                    payload = {
+                      scope_id: scopeId,
+                      domain: normalizedTargets.join(','),
+                      interval: Math.floor(interval),
+                      name: normalizedName,
+                      policy_id: policyId,
+                    };
+                  }
+                  if ((isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) && editable) {
+                    const scopeId = String(payload.scope_id || '').trim();
+                    const normalizedName = String(payload.name || '').trim();
+                    const interval = Number(payload.interval || 0);
+
+                    if (!scopeId) {
+                      throw new Error('资产范围ID无效，请刷新后重试');
+                    }
+                    if (!Number.isFinite(interval) || interval < 3600 * 6) {
+                      throw new Error('运行间隔最小为6小时');
+                    }
+
+                    payload = {
+                      scope_id: scopeId,
+                      interval: Math.floor(interval),
+                      name: normalizedName,
+                    };
+                  }
                   if (isPolicyAction && editable) {
                     const normalizedPolicyName = String(getPayloadValue(payload, policyNamePath) || '').trim();
                     if (!normalizedPolicyName) {
@@ -4787,7 +4967,7 @@ function ActionDialog({
               className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider uppercase"
               disabled={loading}
             >
-              {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerAction) ? '确定' : '执行'}
+              {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerAction || isAssetScopeAddScope || isAssetScopeAddScheduler || isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? '确定' : '执行'}
             </button>
           </div>
         </div>
@@ -6238,8 +6418,14 @@ function TableModuleView({
                             title={direction === 'desc' ? '当前降序，点击切换升序' : '点击按此列降序'}
                           >
                             <span>{getColumnLabel(column)}</span>
-                            <span className={`text-xs ${direction ? 'text-brand-accent' : 'text-brand-text-muted/70'}`}>
-                              {direction === 'desc' ? '↓' : direction === 'asc' ? '↑' : '↕'}
+                            <span className={`inline-flex ${direction ? 'text-brand-accent' : 'text-brand-text-muted/70'}`}>
+                              {direction === 'desc' ? (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              ) : direction === 'asc' ? (
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronsUpDown className="w-3.5 h-3.5" />
+                              )}
                             </span>
                           </button>
                         ) : (
