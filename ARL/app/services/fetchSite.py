@@ -176,6 +176,7 @@ class FetchFavicon(object):
     def __init__(self, url):
         self.url = url
         self.favicon_url = None
+        self.dns_policy_cache = {}
         pass
 
     def build_result(self, data):
@@ -209,6 +210,18 @@ class FetchFavicon(object):
         return result
 
     def get_favicon_data(self, favicon_url):
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(favicon_url, cache_map=self.dns_policy_cache)
+        if not allow_scan:
+            logger.info(
+                "skip fetch_favicon by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    favicon_url,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            return
+
         conn = http_req(favicon_url)
         if conn.status_code != 200:
             return
@@ -232,6 +245,18 @@ class FetchFavicon(object):
         return "".join(pieces)
 
     def find_icon_url_from_html(self):
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(self.url, cache_map=self.dns_policy_cache)
+        if not allow_scan:
+            logger.info(
+                "skip fetch_favicon html by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    self.url,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            return
+
         conn = http_req(self.url)
         if b"<link" not in conn.content:
             return

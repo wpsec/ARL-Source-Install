@@ -28,8 +28,9 @@ import re
 from datetime import datetime
 from collections import Counter
 from openpyxl.writer.excel import save_virtual_workbook
-from openpyxl.styles import Font, Color
+from openpyxl.styles import Font, Color, PatternFill, Alignment, Border, Side
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+from openpyxl.utils import get_column_letter
 from app.utils import get_logger, auth
 from app import utils
 from urllib.parse import quote
@@ -89,6 +90,50 @@ def set_sheet_style(ws):
     for x in column:
         for y in range(1, 256):
             ws["{}{}".format(x, y)].font = font
+
+
+def beautify_cert_sheet(ws):
+    """
+    增强 SSL证书 工作表可读性：
+    - 冻结首行
+    - 表头高亮
+    - 自动筛选
+    - 斑马纹 + 边框
+    """
+    max_row = ws.max_row
+    max_col = ws.max_column
+    if max_row <= 0 or max_col <= 0:
+        return
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = "A1:{}{}".format(get_column_letter(max_col), max_row)
+
+    header_fill = PatternFill(fill_type="solid", fgColor="2F75B5")
+    zebra_fill = PatternFill(fill_type="solid", fgColor="F6FAFF")
+    thin_side = Side(style="thin", color="D9E2F3")
+    thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+
+    center_cols = {5, 6, 7, 8, 9, 10}
+    ws.row_dimensions[1].height = 24
+    for col in range(1, max_col + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.font = Font(name="Consolas", color="FFFFFF", bold=True)
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = thin_border
+
+    for row in range(2, max_row + 1):
+        if row % 2 == 0:
+            for col in range(1, max_col + 1):
+                ws.cell(row=row, column=col).fill = zebra_fill
+
+        for col in range(1, max_col + 1):
+            cell = ws.cell(row=row, column=col)
+            cell.border = thin_border
+            if col in center_cols:
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
 
 
 def as_list(value):
@@ -630,10 +675,8 @@ def _extract_cert_rows(task_ids):
                 ip_domain_map=ip_domain_map,
                 task_domain_set=task_domain_set,
             )
-            if domain and host:
-                host_lower = host.lower()
-                if not host_lower.startswith("{}:".format(domain)) and host_lower != domain:
-                    host = "{} -> {}".format(domain, host)
+            if not domain:
+                domain = "-"
 
             validity_start = sanitize_excel_value(validity.get("start", "")).strip()
             validity_end = sanitize_excel_value(validity.get("end", "")).strip()
@@ -668,6 +711,7 @@ def _extract_cert_rows(task_ids):
 
             rows.append(
                 [
+                    sanitize_excel_value(domain),
                     sanitize_excel_value(host),
                     sanitize_excel_value(cert_obj.get("subject_dn", "")),
                     sanitize_excel_value(cert_obj.get("issuer_dn", "")),
@@ -691,21 +735,23 @@ def _build_cert_sheet(wb, task_ids):
     在导出工作簿中新增 SSL 证书工作表。
     """
     ws = wb.create_sheet(title="SSL证书")
-    ws.column_dimensions['A'].width = 34.0
-    ws.column_dimensions['B'].width = 42.0
-    ws.column_dimensions['C'].width = 42.0
-    ws.column_dimensions['D'].width = 21.0
+    ws.column_dimensions['A'].width = 32.0
+    ws.column_dimensions['B'].width = 26.0
+    ws.column_dimensions['C'].width = 40.0
+    ws.column_dimensions['D'].width = 40.0
     ws.column_dimensions['E'].width = 21.0
-    ws.column_dimensions['F'].width = 12.0
-    ws.column_dimensions['G'].width = 26.0
-    ws.column_dimensions['H'].width = 12.0
-    ws.column_dimensions['I'].width = 14.0
-    ws.column_dimensions['J'].width = 70.0
-    ws.column_dimensions['K'].width = 42.0
-    ws.column_dimensions['L'].width = 60.0
+    ws.column_dimensions['F'].width = 21.0
+    ws.column_dimensions['G'].width = 12.0
+    ws.column_dimensions['H'].width = 24.0
+    ws.column_dimensions['I'].width = 12.0
+    ws.column_dimensions['J'].width = 14.0
+    ws.column_dimensions['K'].width = 68.0
+    ws.column_dimensions['L'].width = 42.0
+    ws.column_dimensions['M'].width = 60.0
 
     ws.append(
         [
+            "域名",
             "HOST",
             "主题名称",
             "签发者名称",
@@ -725,6 +771,7 @@ def _build_cert_sheet(wb, task_ids):
         ws.append(row)
 
     set_sheet_style(ws)
+    beautify_cert_sheet(ws)
 
 
 def _extract_vuln_rows(task_ids):

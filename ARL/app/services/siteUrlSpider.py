@@ -117,6 +117,7 @@ class SiteURLSpider(object):
         self.all_url_list = URLSimilarList()
         self.max_url = max(60, len(entry_urls)*6)
         self.scope_url = entry_urls[0]
+        self.dns_policy_cache = {}
 
         self.tagMap = [{'name': 'a', 'attr': 'href', 'type': URLTYPE.document},
                        {'name': 'form', 'attr': 'action', 'type': URLTYPE.document},
@@ -137,11 +138,35 @@ class SiteURLSpider(object):
             if utils.url_ext(entry_url) in self.ignore_ext:
                 return URLSimilarList()
 
+            allow_scan, policy_detail = utils.check_dns_policy_for_url(entry_url, cache_map=self.dns_policy_cache)
+            if not allow_scan:
+                logger.info(
+                    "skip site_spider by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                        entry_url,
+                        policy_detail.get("reason", ""),
+                        policy_detail.get("resolver_ips", []),
+                        policy_detail.get("system_ips", []),
+                    )
+                )
+                return URLSimilarList()
+
             conn = utils.http_req(entry_url)
             if conn.status_code in [301, 302, 307]:
                 _url = urljoin(entry_url, conn.headers.get("Location", "")).strip()
                 _url = utils.normal_url(_url)
                 if _url is None:
+                    return URLSimilarList()
+
+                allow_scan, policy_detail = utils.check_dns_policy_for_url(_url, cache_map=self.dns_policy_cache)
+                if not allow_scan:
+                    logger.info(
+                        "skip site_spider redirect by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                            _url,
+                            policy_detail.get("reason", ""),
+                            policy_detail.get("resolver_ips", []),
+                            policy_detail.get("system_ips", []),
+                        )
+                    )
                     return URLSimilarList()
 
                 url_info = URLInfo(entry_url, _url, URLTYPE.document)
@@ -245,8 +270,6 @@ def site_spider(entry_url, deep_num=3):
             ret.append(x.crawl_url)
 
     return ret
-
-
 
 
 

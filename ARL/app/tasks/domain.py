@@ -536,6 +536,7 @@ class DomainTask(CommonTask):
         self.task_tag = "task"
         # 记录域名来源，避免监控任务重建数据时丢失真实来源
         self.domain_source_map = {}
+        self._dns_policy_cache = {}
 
         # 用来存放泛解析域名映射的IP
         self._not_found_domain_ips = None
@@ -818,6 +819,27 @@ class DomainTask(CommonTask):
         new_list = []
         for info in domain_info_list:
             if not info.record_list:
+                continue
+
+            domain = str(getattr(info, "domain", "") or "").strip().lower().rstrip(".")
+            if not domain:
+                continue
+
+            if domain in self._dns_policy_cache:
+                allow_scan, policy_detail = self._dns_policy_cache[domain]
+            else:
+                allow_scan, policy_detail = utils.check_dns_policy_for_host(domain)
+                self._dns_policy_cache[domain] = (allow_scan, policy_detail)
+
+            if not allow_scan:
+                logger.info(
+                    "skip domain by dns policy domain:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                        domain,
+                        policy_detail.get("reason", ""),
+                        policy_detail.get("resolver_ips", []),
+                        policy_detail.get("system_ips", []),
+                    )
+                )
                 continue
 
             record = info.record_list[0]
@@ -1140,6 +1162,27 @@ class DomainTask(CommonTask):
             utils.conn_db('cert').insert_one(item)
 
     def build_single_domain_info(self, domain):
+        domain = str(domain or "").strip().lower().rstrip(".")
+        if not domain:
+            return
+
+        if domain in self._dns_policy_cache:
+            allow_scan, policy_detail = self._dns_policy_cache[domain]
+        else:
+            allow_scan, policy_detail = utils.check_dns_policy_for_host(domain)
+            self._dns_policy_cache[domain] = (allow_scan, policy_detail)
+
+        if not allow_scan:
+            logger.info(
+                "skip build_single_domain_info by dns policy domain:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    domain,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            return
+
         _type = "A"
         cname = utils.get_cname(domain)
         if cname:

@@ -13,11 +13,33 @@ class BuildDomainInfo(BaseThread):
     def __init__(self, domains, concurrency=6):
         super().__init__(domains, concurrency=concurrency)
         self.domain_info_list = []
+        self.dns_policy_cache = {}
 
     def work(self, target):
         domain = target
         if hasattr(target, "domain"):
             domain = target.domain
+
+        domain = str(domain or "").strip().lower().rstrip(".")
+        if not domain:
+            return
+
+        if domain in self.dns_policy_cache:
+            allow_scan, policy_detail = self.dns_policy_cache[domain]
+        else:
+            allow_scan, policy_detail = utils.check_dns_policy_for_host(domain)
+            self.dns_policy_cache[domain] = (allow_scan, policy_detail)
+
+        if not allow_scan:
+            logger.info(
+                "skip build_domain_info by dns policy domain:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    domain,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            return
 
         # 不记录日志
         ips = utils.get_ip(domain, log_flag=False)

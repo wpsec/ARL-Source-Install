@@ -24,10 +24,23 @@ class AssetSiteCompare(BaseThread):
         self.new_site_info_map = {}
         self.mutex = threading.Lock()
         self.site_change_map = {}
+        self.dns_policy_cache = {}
 
     def work(self, site):
         if is_black_asset_site(site):
             logger.debug("{} in black asset site".format(site))
+            return
+
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(site, cache_map=self.dns_policy_cache)
+        if not allow_scan:
+            logger.info(
+                "skip asset_site_monitor by dns policy site:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    site,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
             return
 
         conn = utils.http_req(site)
