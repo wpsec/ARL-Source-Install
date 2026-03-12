@@ -668,7 +668,6 @@ def _extract_cert_rows(task_ids):
 
             rows.append(
                 [
-                    task_id,
                     sanitize_excel_value(host),
                     sanitize_excel_value(cert_obj.get("subject_dn", "")),
                     sanitize_excel_value(cert_obj.get("issuer_dn", "")),
@@ -692,23 +691,21 @@ def _build_cert_sheet(wb, task_ids):
     在导出工作簿中新增 SSL 证书工作表。
     """
     ws = wb.create_sheet(title="SSL证书")
-    ws.column_dimensions['A'].width = 28.0
-    ws.column_dimensions['B'].width = 26.0
+    ws.column_dimensions['A'].width = 34.0
+    ws.column_dimensions['B'].width = 42.0
     ws.column_dimensions['C'].width = 42.0
-    ws.column_dimensions['D'].width = 42.0
+    ws.column_dimensions['D'].width = 21.0
     ws.column_dimensions['E'].width = 21.0
-    ws.column_dimensions['F'].width = 21.0
-    ws.column_dimensions['G'].width = 12.0
-    ws.column_dimensions['H'].width = 26.0
-    ws.column_dimensions['I'].width = 12.0
-    ws.column_dimensions['J'].width = 14.0
-    ws.column_dimensions['K'].width = 70.0
-    ws.column_dimensions['L'].width = 42.0
-    ws.column_dimensions['M'].width = 60.0
+    ws.column_dimensions['F'].width = 12.0
+    ws.column_dimensions['G'].width = 26.0
+    ws.column_dimensions['H'].width = 12.0
+    ws.column_dimensions['I'].width = 14.0
+    ws.column_dimensions['J'].width = 70.0
+    ws.column_dimensions['K'].width = 42.0
+    ws.column_dimensions['L'].width = 60.0
 
     ws.append(
         [
-            "任务ID",
             "HOST",
             "主题名称",
             "签发者名称",
