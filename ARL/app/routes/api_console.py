@@ -546,6 +546,10 @@ def _extract_scan_config(config_obj):
         arl_config.get('CELERY_MAX_MEMORY_PER_CHILD'),
         Config.CELERY_MAX_MEMORY_PER_CHILD
     )
+    nuclei_single_target_timeout_sec = _safe_int(
+        arl_config.get('NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'),
+        Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
+    )
     black_ips = _normalize_string_list(arl_config.get('BLACK_IPS', Config.BLACK_IPS))
     if not black_ips:
         black_ips = _normalize_string_list(Config.BLACK_IPS)
@@ -561,6 +565,7 @@ def _extract_scan_config(config_obj):
         'celery_prefetch_multiplier': celery_prefetch_multiplier,
         'celery_max_tasks_per_child': celery_max_tasks_per_child,
         'celery_max_memory_per_child': celery_max_memory_per_child,
+        'nuclei_single_target_timeout_sec': nuclei_single_target_timeout_sec,
         'black_ips': black_ips,
         'dns_resolvers': dns_resolvers,
     }
@@ -612,6 +617,10 @@ def _merge_scan_config(config_obj, scan_config):
         scan_config.get('celery_max_memory_per_child'),
         Config.CELERY_MAX_MEMORY_PER_CHILD
     )
+    nuclei_single_target_timeout_sec = _safe_int(
+        scan_config.get('nuclei_single_target_timeout_sec'),
+        Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
+    )
     black_ips = _normalize_string_list(scan_config.get('black_ips'))
     dns_resolvers = _normalize_string_list(scan_config.get('dns_resolvers'))
 
@@ -630,6 +639,7 @@ def _merge_scan_config(config_obj, scan_config):
     config_obj['ARL']['CELERY_PREFETCH_MULTIPLIER'] = celery_prefetch_multiplier
     config_obj['ARL']['CELERY_MAX_TASKS_PER_CHILD'] = celery_max_tasks_per_child
     config_obj['ARL']['CELERY_MAX_MEMORY_PER_CHILD'] = celery_max_memory_per_child
+    config_obj['ARL']['NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'] = nuclei_single_target_timeout_sec
     config_obj['ARL']['BLACK_IPS'] = black_ips
     config_obj['ARL']['DNS_RESOLVERS'] = dns_resolvers
 

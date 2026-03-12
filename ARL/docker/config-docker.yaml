@@ -186,6 +186,18 @@ ARL:
   # NUCLEI_BIN: "/usr/bin/nuclei"
   # Nuclei 模板目录（tools 新目录布局）
   NUCLEI_TEMPLATE_DIR: "/code/tools/nuclei/nuclei-templates"
+  # 单次 nuclei 子进程超时（秒），超时后当前批次跳过继续后续流程
+  NUCLEI_EXEC_TIMEOUT_SEC: 21600
+  # 单目标 nuclei 最大扫描时长（秒）
+  NUCLEI_SINGLE_TARGET_TIMEOUT_SEC: 3600
+  # 每批次最多目标数（1 表示严格单目标执行）
+  NUCLEI_TARGETS_PER_BATCH: 1
+  # nuclei 每秒请求上限（RPS），用于限制带宽占用
+  NUCLEI_RATE_LIMIT: 8
+  # nuclei 并发 worker
+  NUCLEI_CONCURRENCY: 4
+  # nuclei bulk-size（单模板并行目标数）
+  NUCLEI_BULK_SIZE: 5
   # 指纹未命中标签时是否启用 nuclei 自动扫描（-as）
   NUCLEI_AUTO_SCAN: true
   # 指纹未命中标签时的兜底标签（逗号分隔）

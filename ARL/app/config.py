@@ -179,6 +179,19 @@ class Config(object):
     _NUCLEI_TEMPLATE_DIR_ALT = os.path.join(project_root, 'tools/nuclei', 'nuclei-templates')
     if os.path.isdir(_NUCLEI_TEMPLATE_DIR_ALT):
         NUCLEI_TEMPLATE_DIR = _NUCLEI_TEMPLATE_DIR_ALT
+    # 单次 nuclei 子进程最大运行时长（秒）
+    # 说明：历史默认 96h 过长，容易造成任务长时间停留在 nuclei_scan 阶段
+    NUCLEI_EXEC_TIMEOUT_SEC = 6 * 60 * 60
+    # 单目标 nuclei 最大扫描时长（秒），用于按批次目标数折算超时上限
+    NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = 60 * 60
+    # 每个 nuclei 批次最多包含目标数（1 表示严格按单目标执行）
+    NUCLEI_TARGETS_PER_BATCH = 1
+    # nuclei 每秒请求上限（RPS）
+    NUCLEI_RATE_LIMIT = 8
+    # nuclei 并发 worker 数（模板执行并发）
+    NUCLEI_CONCURRENCY = 4
+    # nuclei 单模板批量目标并发（bulk-size）
+    NUCLEI_BULK_SIZE = 5
     # 是否启用 nuclei 自动扫描（-as），在无指纹标签时用于兜底
     NUCLEI_AUTO_SCAN = True
     # 无指纹标签时使用的默认标签
@@ -550,6 +563,36 @@ try:
     if y["ARL"].get("NUCLEI_TEMPLATE_DIR") is not None:
         Config.NUCLEI_TEMPLATE_DIR = y["ARL"]["NUCLEI_TEMPLATE_DIR"]
 
+    if y["ARL"].get("NUCLEI_EXEC_TIMEOUT_SEC") is not None:
+        Config.NUCLEI_EXEC_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["NUCLEI_EXEC_TIMEOUT_SEC"]), Config.NUCLEI_EXEC_TIMEOUT_SEC
+        )
+
+    if y["ARL"].get("NUCLEI_SINGLE_TARGET_TIMEOUT_SEC") is not None:
+        Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["NUCLEI_SINGLE_TARGET_TIMEOUT_SEC"]), Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
+        )
+
+    if y["ARL"].get("NUCLEI_TARGETS_PER_BATCH") is not None:
+        Config.NUCLEI_TARGETS_PER_BATCH = safe_positive_int(
+            int(y["ARL"]["NUCLEI_TARGETS_PER_BATCH"]), Config.NUCLEI_TARGETS_PER_BATCH
+        )
+
+    if y["ARL"].get("NUCLEI_RATE_LIMIT") is not None:
+        Config.NUCLEI_RATE_LIMIT = safe_positive_int(
+            int(y["ARL"]["NUCLEI_RATE_LIMIT"]), Config.NUCLEI_RATE_LIMIT
+        )
+
+    if y["ARL"].get("NUCLEI_CONCURRENCY") is not None:
+        Config.NUCLEI_CONCURRENCY = safe_positive_int(
+            int(y["ARL"]["NUCLEI_CONCURRENCY"]), Config.NUCLEI_CONCURRENCY
+        )
+
+    if y["ARL"].get("NUCLEI_BULK_SIZE") is not None:
+        Config.NUCLEI_BULK_SIZE = safe_positive_int(
+            int(y["ARL"]["NUCLEI_BULK_SIZE"]), Config.NUCLEI_BULK_SIZE
+        )
+
     if y["ARL"].get("NUCLEI_AUTO_SCAN") is not None:
         Config.NUCLEI_AUTO_SCAN = bool(y["ARL"]["NUCLEI_AUTO_SCAN"])
 
@@ -800,6 +843,30 @@ try:
     Config.SCREENSHOT_SYNC_MAX_SIZE = env_int("ARL_SCREENSHOT_SYNC_MAX_SIZE", Config.SCREENSHOT_SYNC_MAX_SIZE)
     Config.NUCLEI_BIN = env_str("ARL_NUCLEI_BIN", Config.NUCLEI_BIN)
     Config.NUCLEI_TEMPLATE_DIR = env_str("ARL_NUCLEI_TEMPLATE_DIR", Config.NUCLEI_TEMPLATE_DIR)
+    Config.NUCLEI_EXEC_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_NUCLEI_EXEC_TIMEOUT_SEC", Config.NUCLEI_EXEC_TIMEOUT_SEC),
+        Config.NUCLEI_EXEC_TIMEOUT_SEC
+    )
+    Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_NUCLEI_SINGLE_TARGET_TIMEOUT_SEC", Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC),
+        Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
+    )
+    Config.NUCLEI_TARGETS_PER_BATCH = safe_positive_int(
+        env_int("ARL_NUCLEI_TARGETS_PER_BATCH", Config.NUCLEI_TARGETS_PER_BATCH),
+        Config.NUCLEI_TARGETS_PER_BATCH
+    )
+    Config.NUCLEI_RATE_LIMIT = safe_positive_int(
+        env_int("ARL_NUCLEI_RATE_LIMIT", Config.NUCLEI_RATE_LIMIT),
+        Config.NUCLEI_RATE_LIMIT
+    )
+    Config.NUCLEI_CONCURRENCY = safe_positive_int(
+        env_int("ARL_NUCLEI_CONCURRENCY", Config.NUCLEI_CONCURRENCY),
+        Config.NUCLEI_CONCURRENCY
+    )
+    Config.NUCLEI_BULK_SIZE = safe_positive_int(
+        env_int("ARL_NUCLEI_BULK_SIZE", Config.NUCLEI_BULK_SIZE),
+        Config.NUCLEI_BULK_SIZE
+    )
     Config.NUCLEI_AUTO_SCAN = env_bool("ARL_NUCLEI_AUTO_SCAN", Config.NUCLEI_AUTO_SCAN)
     Config.NUCLEI_DEFAULT_TAGS = env_str("ARL_NUCLEI_DEFAULT_TAGS", Config.NUCLEI_DEFAULT_TAGS)
     Config.KSCAN_FINGERPRINT_ENABLE = env_bool(

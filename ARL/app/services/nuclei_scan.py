@@ -849,12 +849,25 @@ class NucleiScan(object):
         """
         构建 nuclei 基础命令（不含扫描模式参数）
         """
+        rate_limit = int(getattr(Config, "NUCLEI_RATE_LIMIT", 8) or 8)
+        concurrency = int(getattr(Config, "NUCLEI_CONCURRENCY", 4) or 4)
+        bulk_size = int(getattr(Config, "NUCLEI_BULK_SIZE", 5) or 5)
+        if rate_limit < 1:
+            rate_limit = 1
+        if concurrency < 1:
+            concurrency = 1
+        if bulk_size < 1:
+            bulk_size = 1
+
         command = [
             self.nuclei_bin_path,
             "-duc",
             "-severity low,medium,high,critical",
             "-type http",
             "-l {}".format(target_file),
+            "-rl {}".format(rate_limit),
+            "-c {}".format(concurrency),
+            "-bs {}".format(bulk_size),
             self.nuclei_json_flag,  # 在nuclei 2.9.1 中将 -json 改成了 -jsonl 参数
             "-stats",
             "-stats-interval 60",
@@ -880,20 +893,69 @@ class NucleiScan(object):
         except Exception:
             return 0
 
-    def _run_nuclei_command(self, command: list, batch_type: str, stage: str, result_file: str):
+    @staticmethod
+    def _calc_exec_timeout(target_count: int):
+        exec_timeout = int(getattr(Config, "NUCLEI_EXEC_TIMEOUT_SEC", 96 * 60 * 60) or 96 * 60 * 60)
+        per_target_timeout = int(getattr(Config, "NUCLEI_SINGLE_TARGET_TIMEOUT_SEC", 0) or 0)
+
+        if exec_timeout < 60:
+            exec_timeout = 60
+        if target_count < 1:
+            target_count = 1
+
+        if per_target_timeout > 0:
+            if per_target_timeout < 60:
+                per_target_timeout = 60
+            exec_timeout = min(exec_timeout, per_target_timeout * target_count)
+
+        return exec_timeout
+
+    def _run_nuclei_command(self, command: list, batch_type: str, stage: str, result_file: str, target_count: int = 1):
         """
         执行 nuclei 命令并输出统一日志
         """
-        logger.info("nuclei command stage={} batch={} cmd={}".format(stage, batch_type, " ".join(command)))
+        timeout_sec = self._calc_exec_timeout(target_count=target_count)
+
+        logger.info(
+            "nuclei command stage={} batch={} targets={} timeout={}s cmd={}".format(
+                stage, batch_type, target_count, timeout_sec, " ".join(command)
+            )
+        )
         env = os.environ.copy()
         env["XDG_CONFIG_HOME"] = self.nuclei_runtime_root
-        completed = utils.exec_system(
-            command,
-            timeout=96 * 60 * 60,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env
-        )
+        try:
+            completed = utils.exec_system(
+                command,
+                timeout=timeout_sec,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env
+            )
+        except subprocess.TimeoutExpired as e:
+            stdout_text = self._decode_output(getattr(e, "stdout", b""))
+            stderr_text = self._decode_output(getattr(e, "stderr", b""))
+            result_size = self._result_file_size(result_file)
+            logger.warning(
+                "nuclei run timeout stage={} batch={} timeout={}s result_file_size={} stderr={} stdout={}".format(
+                    stage, batch_type, timeout_sec, result_size, stderr_text[:800], stdout_text[:800]
+                )
+            )
+            return {
+                "returncode": 124,
+                "stdout": stdout_text,
+                "stderr": stderr_text,
+                "result_size": result_size,
+            }
+        except Exception as e:
+            logger.warning(
+                "nuclei run exception stage={} batch={} error={}".format(stage, batch_type, e)
+            )
+            return {
+                "returncode": 1,
+                "stdout": "",
+                "stderr": str(e),
+                "result_size": self._result_file_size(result_file),
+            }
 
         stdout_text = self._decode_output(completed.stdout)
         stderr_text = self._decode_output(completed.stderr)
@@ -923,7 +985,9 @@ class NucleiScan(object):
         result_file = self._gen_tmp_file_path("nuclei_result", index, "json")
         self.tmp_target_files.append(target_file)
         self.tmp_result_files.append(result_file)
-        self._gen_target_file(batch["targets"], target_file)
+        batch_targets = batch.get("targets", [])
+        self._gen_target_file(batch_targets, target_file)
+        target_count = len(batch_targets)
 
         # 按批次类型选择参数
         # 1) fingerprint: 仅运行匹配到的 tags
@@ -947,6 +1011,7 @@ class NucleiScan(object):
                 batch_type=batch_type,
                 stage="auto-scan",
                 result_file=result_file,
+                target_count=target_count,
             )
             auto_output_lower = "{}\n{}".format(auto_result.get("stderr", ""), auto_result.get("stdout", "")).lower()
             if auto_result["returncode"] != 0 and (
@@ -962,6 +1027,7 @@ class NucleiScan(object):
                     batch_type=batch_type,
                     stage="auto-scan-retry",
                     result_file=result_file,
+                    target_count=target_count,
                 )
 
             stderr_lower = auto_result.get("stderr", "").lower()
@@ -984,6 +1050,7 @@ class NucleiScan(object):
                     batch_type=batch_type,
                     stage="tags-fallback",
                     result_file=result_file,
+                    target_count=target_count,
                 )
             return
 
@@ -993,6 +1060,7 @@ class NucleiScan(object):
                 batch_type=batch_type,
                 stage="tags",
                 result_file=result_file,
+                target_count=target_count,
             )
             return
 
@@ -1002,14 +1070,44 @@ class NucleiScan(object):
             batch_type=batch_type,
             stage="tags-default",
             result_file=result_file,
+            target_count=target_count,
         )
+
+    @staticmethod
+    def _split_targets(targets: list, chunk_size: int):
+        if chunk_size < 1:
+            chunk_size = 1
+
+        for index in range(0, len(targets), chunk_size):
+            yield targets[index:index + chunk_size]
+
+    def _split_batch_targets(self, batch: dict):
+        targets = list(batch.get("targets", []))
+        if not targets:
+            return []
+
+        chunk_size = int(getattr(Config, "NUCLEI_TARGETS_PER_BATCH", 1) or 1)
+        if chunk_size < 1:
+            chunk_size = 1
+
+        out_batches = []
+        for part in self._split_targets(targets, chunk_size):
+            new_batch = dict(batch)
+            new_batch["targets"] = part
+            out_batches.append(new_batch)
+
+        return out_batches
 
     def exec_scan_batches(self):
         target_batches = self._build_target_batches()
-        for index, batch in enumerate(target_batches, start=1):
-            if not batch.get("targets"):
-                continue
-            self.exec_nuclei(batch=batch, index=index)
+        run_index = 1
+        for batch in target_batches:
+            split_batches = self._split_batch_targets(batch)
+            for split_batch in split_batches:
+                if not split_batch.get("targets"):
+                    continue
+                self.exec_nuclei(batch=split_batch, index=run_index)
+                run_index += 1
 
     def run(self):
         if not self.targets:

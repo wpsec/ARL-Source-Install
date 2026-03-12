@@ -8405,6 +8405,12 @@ function ApiConsoleView({ token }: { token: string }) {
 }
 
 function ConfigConsoleView({ token }: { token: string }) {
+  const nucleiTimeoutPresets = [
+    { id: 'low', label: '2核2G 低速', hours: 1, value: 3600 },
+    { id: 'medium', label: '4核4G 中速', hours: 2, value: 7200 },
+    { id: 'high', label: '8核16G 快速', hours: 3, value: 10800 },
+  ];
+
   type DomainDictOption = {
     label: string;
     path: string;
@@ -8434,6 +8440,7 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [celeryPrefetchMultiplier, setCeleryPrefetchMultiplier] = useState(1);
   const [celeryMaxTasksPerChild, setCeleryMaxTasksPerChild] = useState(20);
   const [celeryMaxMemoryPerChild, setCeleryMaxMemoryPerChild] = useState(280000);
+  const [nucleiSingleTargetTimeoutSec, setNucleiSingleTargetTimeoutSec] = useState(3600);
   const [blackIpsText, setBlackIpsText] = useState('');
   const [dnsResolversText, setDnsResolversText] = useState('');
 
@@ -8463,6 +8470,7 @@ function ConfigConsoleView({ token }: { token: string }) {
       setCeleryPrefetchMultiplier(Number(scanConfig.celery_prefetch_multiplier || 1));
       setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 20));
       setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 280000));
+      setNucleiSingleTargetTimeoutSec(Number(scanConfig.nuclei_single_target_timeout_sec || 3600));
       setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
       setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
 
@@ -8520,6 +8528,10 @@ function ConfigConsoleView({ token }: { token: string }) {
       setError('Celery 子进程内存上限必须大于 0');
       return;
     }
+    if (!Number.isFinite(nucleiSingleTargetTimeoutSec) || nucleiSingleTargetTimeoutSec <= 0) {
+      setError('Nuclei 单目标最大扫描时间必须大于 0');
+      return;
+    }
 
     const blackIps = splitTextList(blackIpsText);
     if (blackIps.length === 0) {
@@ -8544,6 +8556,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             celery_prefetch_multiplier: Math.floor(celeryPrefetchMultiplier),
             celery_max_tasks_per_child: Math.floor(celeryMaxTasksPerChild),
             celery_max_memory_per_child: Math.floor(celeryMaxMemoryPerChild),
+            nuclei_single_target_timeout_sec: Math.floor(nucleiSingleTargetTimeoutSec),
             black_ips: blackIps,
             dns_resolvers: splitTextList(dnsResolversText),
           },
@@ -8564,6 +8577,7 @@ function ConfigConsoleView({ token }: { token: string }) {
       setCeleryPrefetchMultiplier(Number(savedConfig.celery_prefetch_multiplier || celeryPrefetchMultiplier));
       setCeleryMaxTasksPerChild(Number(savedConfig.celery_max_tasks_per_child || celeryMaxTasksPerChild));
       setCeleryMaxMemoryPerChild(Number(savedConfig.celery_max_memory_per_child || celeryMaxMemoryPerChild));
+      setNucleiSingleTargetTimeoutSec(Number(savedConfig.nuclei_single_target_timeout_sec || nucleiSingleTargetTimeoutSec));
       setBlackIpsText(Array.isArray(savedConfig.black_ips) ? savedConfig.black_ips.join('\n') : blackIpsText);
       setDnsResolversText(Array.isArray(savedConfig.dns_resolvers) ? savedConfig.dns_resolvers.join('\n') : dnsResolversText);
 
@@ -8620,7 +8634,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置扫描并发、Web/Celery 运行并发、黑名单IP与域名解析器，写入 config-docker.yaml 并可在重启后生效。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置扫描并发、Nuclei 单目标超时、Web/Celery 运行并发、黑名单IP与域名解析器，写入 config-docker.yaml 并可在重启后生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -8827,6 +8841,43 @@ function ConfigConsoleView({ token }: { token: string }) {
               onChange={(event) => setCeleryMaxMemoryPerChild(Number(event.target.value || 0))}
               className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
             />
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">
+              Nuclei 单个目标最多扫描时间（秒）
+              <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC</span>
+            </label>
+            <input
+              type="number"
+              min={60}
+              value={String(nucleiSingleTargetTimeoutSec)}
+              onChange={(event) => setNucleiSingleTargetTimeoutSec(Number(event.target.value || 0))}
+              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {nucleiTimeoutPresets.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setNucleiSingleTargetTimeoutSec(item.value)}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+                  nucleiSingleTargetTimeoutSec === item.value
+                    ? 'border-brand-accent bg-brand-accent/15 text-brand-accent'
+                    : 'border-brand-border hover:bg-brand-bg/70'
+                }`}
+              >
+                {item.label}（{item.hours}小时）
+              </button>
+            ))}
+          </div>
+
+          <div className="text-xs text-brand-text-muted">
+            推荐档位：2核2G=1小时，4核4G=2小时，8核16G=3小时。当前配置约 {(nucleiSingleTargetTimeoutSec / 3600).toFixed(2)} 小时/目标。
           </div>
         </div>
 
