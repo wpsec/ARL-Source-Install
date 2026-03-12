@@ -165,20 +165,16 @@ ARL/docker/config-docker.yaml
 
 ### TruffleHog JS 二次扫描（可选）
 
-系统在 `web_info_hunter` 阶段可对 WIH 已发现的 JS 源做 TruffleHog 二次扫描（默认开启，可通过配置关闭）。
+系统在 `web_info_hunter` 阶段可对 WIH 已发现的 JS 源做 TruffleHog 二次扫描（默认跟随 WIH 开启）。
 
 前置：
 
 - 将 TruffleHog 可执行文件放到 `tools/TruffleHog/trufflehog` 并赋予执行权限
-- `ARL/docker/config-docker.yaml` 中确认：
-  - `ARL.TRUFFLEHOG_BIN=/code/tools/TruffleHog/trufflehog`
-  - `ARL.TRUFFLEHOG_ENABLE=true`
-  - `ARL.TRUFFLEHOG_NO_VERIFICATION=true`（默认建议）
 
 说明：
 
 - 扫描结果写入 `wih` 表，记录类型前缀为 `trufflehog_*`
-- 结果内容会脱敏后入库，避免明文凭证二次泄漏
+- 结果内容默认原文入库，便于复核与定位
 
 ## Bug？
 

@@ -8,7 +8,7 @@ TruffleHog JS 泄露扫描服务
 
 设计原则：
 - 默认禁用在线验证（--no-verification），降低外连和误触风险
-- 对结果进行脱敏存储，避免把完整凭证直接写入数据库
+- 结果默认原文入库，便于排查定位
 - 二进制不存在/执行失败时仅记录日志，不中断主扫描流程
 """
 import json
@@ -36,7 +36,6 @@ class TrufflehogJSScanner:
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.trufflehog_bin = str(getattr(Config, "TRUFFLEHOG_BIN", "trufflehog") or "trufflehog")
-        self.enable = bool(getattr(Config, "TRUFFLEHOG_ENABLE", False))
         self.no_verification = bool(getattr(Config, "TRUFFLEHOG_NO_VERIFICATION", True))
         self.result_types = str(getattr(Config, "TRUFFLEHOG_RESULTS", "verified,unknown,unverified") or "").strip()
         self.max_files = int(getattr(Config, "TRUFFLEHOG_JS_MAX_FILES", 80) or 80)
@@ -62,14 +61,10 @@ class TrufflehogJSScanner:
             logger.debug("cleanup trufflehog tmp dir failed {}".format(e))
 
     def check_have_trufflehog(self) -> bool:
-        if not self.enable:
-            logger.info("trufflehog js scan disabled by config")
-            return False
-
         self.trufflehog_bin = utils.resolve_executable(self.trufflehog_bin)
         if not self.trufflehog_bin:
             logger.info(
-                "not found trufflehog binary, set ARL.TRUFFLEHOG_BIN or ARL_TRUFFLEHOG_BIN"
+                "not found trufflehog binary, put it in tools/TruffleHog/trufflehog or set ARL_TRUFFLEHOG_BIN"
             )
             return False
 
@@ -235,13 +230,24 @@ class TrufflehogJSScanner:
         return ""
 
     @staticmethod
-    def _mask_secret(raw_value: str) -> str:
-        text = str(raw_value or "").strip()
-        if not text:
-            return ""
-        if len(text) <= 8:
-            return "*" * len(text)
-        return "{}***{}".format(text[:4], text[-4:])
+    def _pick_secret_value(payload: dict) -> str:
+        """
+        优先提取原始值，若不存在再回退到 redacted 字段
+        """
+        key_order = [
+            "raw",
+            "rawresult",
+            "raw_v2",
+            "rawv2",
+            "secret",
+            "redacted",
+        ]
+        for key_name in key_order:
+            value = TrufflehogJSScanner._pick_first_by_keys(payload, {key_name})
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
 
     @staticmethod
     def _sanitize_detector(detector: str) -> str:
@@ -267,19 +273,13 @@ class TrufflehogJSScanner:
             if isinstance(verified, bool):
                 result_type = "verified" if verified else "unverified"
 
-        redacted = self._pick_first_by_keys(payload, {"redacted", "raw", "rawresult", "rawv2", "raw_v2"})
-        redacted = str(redacted or "").strip()
-        if redacted:
-            masked = self._mask_secret(redacted)
-        else:
-            masked = ""
+        secret_value = self._pick_secret_value(payload)
+        if not secret_value:
+            secret_value = "[empty]"
 
-        if not masked:
-            masked = "[redacted]"
-
-        content = masked
+        content = secret_value
         if detector:
-            content = "[{}] {}".format(detector, masked)
+            content = "[{}] {}".format(detector, secret_value)
         if result_type:
             content = "{} ({})".format(content, result_type)
 
