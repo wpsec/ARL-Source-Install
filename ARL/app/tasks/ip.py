@@ -53,14 +53,7 @@ def ssl_cert(ip_info_list):
     - 用于发现证书关联的域名和组织信息
     """
     try:
-        targets = []
-        for ip_info in ip_info_list:
-            for port_info in ip_info["port_info"]:
-                if port_info["port_id"] == 80:
-                    continue
-                targets.append("{}:{}".format(ip_info["ip"], port_info["port_id"]))
-
-        f = fetchCert.SSLCert(targets)
+        f = fetchCert.SSLCert(ip_info_list)
         return f.run()
     except Exception as e:
         logger.exception(e)
@@ -441,14 +434,37 @@ class IPTask(CommonTask):
 
         # 保存证书信息到数据库
         for target in self.cert_map:
-            if ":" not in target:
+            cert_obj = self.cert_map.get(target, {})
+            if not isinstance(cert_obj, dict):
                 continue
-            ip = target.split(":")[0]
-            port = int(target.split(":")[1])
+
+            cert_data = dict(cert_obj)
+            scan_meta = cert_data.pop("_scan_meta", {})
+            if not isinstance(scan_meta, dict):
+                scan_meta = {}
+
+            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(target).strip()
+            ip, port = fetchCert.split_host_port(endpoint)
+            if not ip or port <= 0:
+                continue
+
+            domain = str(scan_meta.get("server_name", "")).strip().lower()
+            domains = scan_meta.get("domains", [])
+            if isinstance(domains, str):
+                domains = [domains]
+            if not isinstance(domains, list):
+                domains = []
+            domains = [str(x).strip().lower() for x in domains if str(x).strip()]
+            if domain and domain not in domains:
+                domains.insert(0, domain)
+
             item = {
                 "ip": ip,
                 "port": port,
-                "cert": self.cert_map[target],
+                "host": endpoint,
+                "domain": domain,
+                "domains": domains,
+                "cert": cert_data,
                 "task_id": self.task_id,
             }
             utils.conn_db('cert').insert_one(item)

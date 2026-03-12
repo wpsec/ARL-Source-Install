@@ -380,6 +380,163 @@ def _parse_datetime_safe(value):
     return None
 
 
+def _normalize_cert_domain(value):
+    """
+    归一化证书相关域名文本，非法值返回空字符串。
+    """
+    domain = sanitize_excel_value(value).strip().lower().strip(".")
+    if not domain:
+        return ""
+    if domain.startswith("*."):
+        domain = domain[2:]
+    if not utils.is_valid_domain(domain):
+        return ""
+    return domain
+
+
+def _extract_cert_san_domains(cert_obj):
+    """
+    从证书扩展字段提取 SAN 域名列表。
+    """
+    if not isinstance(cert_obj, dict):
+        return []
+
+    extensions = cert_obj.get("extensions", {})
+    if not isinstance(extensions, dict):
+        return []
+
+    san_text = sanitize_excel_value(extensions.get("subjectAltName", ""))
+    if not san_text:
+        return []
+
+    domains = []
+    seen = set()
+    for part in san_text.split(","):
+        item = sanitize_excel_value(part).strip()
+        if not item:
+            continue
+
+        if ":" in item:
+            prefix, value = item.split(":", 1)
+            if prefix.strip().upper() != "DNS":
+                continue
+            candidate = value.strip()
+        else:
+            candidate = item
+
+        domain = _normalize_cert_domain(candidate)
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
+
+    return domains
+
+
+def _build_cert_domain_context(task_id):
+    """
+    构建任务级 IP->域名映射，供 SSL 证书导出补全域名。
+    """
+    ip_domain_map = {}
+    task_domain_set = set()
+
+    for item in get_domain_data(task_id):
+        domain = _normalize_cert_domain(item.get("domain", ""))
+        if not domain:
+            continue
+        task_domain_set.add(domain)
+
+        raw_ips = item.get("ips", [])
+        if isinstance(raw_ips, str):
+            raw_ips = [x.strip() for x in raw_ips.split(",") if x.strip()]
+        if not isinstance(raw_ips, list):
+            raw_ips = []
+
+        for raw_ip in raw_ips:
+            ip = sanitize_excel_value(raw_ip).strip()
+            if not ip:
+                continue
+            ip_domain_map.setdefault(ip, []).append(domain)
+
+    for item in get_ip_data(task_id):
+        ip = sanitize_excel_value(item.get("ip", "")).strip()
+        if not ip:
+            continue
+
+        raw_domains = item.get("domain", [])
+        if isinstance(raw_domains, str):
+            raw_domains = [raw_domains]
+        if not isinstance(raw_domains, list):
+            raw_domains = []
+
+        for raw_domain in raw_domains:
+            domain = _normalize_cert_domain(raw_domain)
+            if not domain:
+                continue
+            task_domain_set.add(domain)
+            ip_domain_map.setdefault(ip, []).append(domain)
+
+    for ip, domains in list(ip_domain_map.items()):
+        ordered = []
+        seen = set()
+        for domain in domains:
+            if domain in seen:
+                continue
+            ordered.append(domain)
+            seen.add(domain)
+        ip_domain_map[ip] = ordered
+
+    return ip_domain_map, task_domain_set
+
+
+def _resolve_cert_domain(item, cert_obj, ip_domain_map=None, task_domain_set=None):
+    """
+    导出域名优先级：
+    1) cert 记录中的 domain/domains
+    2) 任务内 IP 关联域名
+    3) SAN（优先命中任务域名）
+    4) CN
+    """
+    ip_domain_map = ip_domain_map if isinstance(ip_domain_map, dict) else {}
+    task_domain_set = task_domain_set if isinstance(task_domain_set, set) else set()
+
+    item_domain = _normalize_cert_domain(item.get("domain", ""))
+    if item_domain:
+        return item_domain
+
+    item_domains = item.get("domains", [])
+    if isinstance(item_domains, str):
+        item_domains = [item_domains]
+    if isinstance(item_domains, list):
+        for domain in item_domains:
+            normalized = _normalize_cert_domain(domain)
+            if normalized:
+                return normalized
+
+    ip = sanitize_excel_value(item.get("ip", "")).strip()
+    mapped_domains = ip_domain_map.get(ip, [])
+    if isinstance(mapped_domains, list):
+        for domain in mapped_domains:
+            if domain:
+                return domain
+
+    san_domains = _extract_cert_san_domains(cert_obj)
+    if task_domain_set:
+        for domain in san_domains:
+            if domain in task_domain_set:
+                return domain
+    if san_domains:
+        return san_domains[0]
+
+    subject = cert_obj.get("subject", {}) if isinstance(cert_obj, dict) else {}
+    if isinstance(subject, dict):
+        common_name = _normalize_cert_domain(subject.get("common_name", ""))
+        if common_name:
+            return common_name
+
+    return ""
+
+
 def _extract_protocol_names(ssl_security):
     """
     从证书安全字段中提取协议名称列表。
@@ -454,6 +611,8 @@ def _extract_cert_rows(task_ids):
         if not task_id:
             continue
 
+        ip_domain_map, task_domain_set = _build_cert_domain_context(task_id)
+
         for item in get_cert_data(task_id):
             cert_obj = item.get("cert", {}) if isinstance(item.get("cert"), dict) else {}
             validity = cert_obj.get("validity", {}) if isinstance(cert_obj.get("validity"), dict) else {}
@@ -461,7 +620,20 @@ def _extract_cert_rows(task_ids):
 
             ip = sanitize_excel_value(item.get("ip", "")).strip()
             port = sanitize_excel_value(item.get("port", "")).strip()
-            host = "{}:{}".format(ip, port) if ip and port else ip or port
+            host = sanitize_excel_value(item.get("host", "")).strip()
+            if not host:
+                host = "{}:{}".format(ip, port) if ip and port else ip or port
+
+            domain = _resolve_cert_domain(
+                item=item,
+                cert_obj=cert_obj,
+                ip_domain_map=ip_domain_map,
+                task_domain_set=task_domain_set,
+            )
+            if domain and host:
+                host_lower = host.lower()
+                if not host_lower.startswith("{}:".format(domain)) and host_lower != domain:
+                    host = "{} -> {}".format(domain, host)
 
             validity_start = sanitize_excel_value(validity.get("start", "")).strip()
             validity_end = sanitize_excel_value(validity.get("end", "")).strip()

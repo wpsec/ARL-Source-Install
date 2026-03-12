@@ -7,6 +7,7 @@ import socket
 import shutil
 import subprocess
 import re
+import ipaddress
 from collections import Counter
 from datetime import datetime
 
@@ -20,6 +21,73 @@ def _safe_text(value):
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _is_ip_address(value):
+    """
+    判断输入是否是 IP 地址（v4/v6）。
+    """
+    text = _safe_text(value)
+    if not text:
+        return False
+
+    try:
+        ipaddress.ip_address(text)
+        return True
+    except Exception:
+        return False
+
+
+def _normalize_server_hostname(value):
+    """
+    归一化 SNI 主机名，IP/空值返回空字符串。
+    """
+    hostname = _safe_text(value).strip(".").lower()
+    if not hostname:
+        return ""
+    if _is_ip_address(hostname):
+        return ""
+    return hostname
+
+
+def _fetch_server_certificate(connect_host, port, server_hostname=""):
+    """
+    获取远端证书 PEM：
+    - 支持 connect_host 与 server_hostname 分离（SNI）
+    - 失败时回退 ssl.get_server_certificate
+    """
+    connect_host = _safe_text(connect_host)
+    if not connect_host:
+        return ""
+
+    try:
+        port = int(port)
+    except Exception:
+        return ""
+
+    if port <= 0:
+        return ""
+
+    normalized_sni = _normalize_server_hostname(server_hostname)
+    if not normalized_sni and not _is_ip_address(connect_host):
+        normalized_sni = _normalize_server_hostname(connect_host)
+
+    try:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with socket.create_connection((connect_host, port), timeout=6) as sock:
+            with context.wrap_socket(sock, server_hostname=normalized_sni or None) as tls_sock:
+                cert_der = tls_sock.getpeercert(binary_form=True)
+                if cert_der:
+                    return ssl.DER_cert_to_PEM_cert(cert_der)
+    except Exception:
+        pass
+
+    try:
+        return ssl.get_server_certificate((connect_host, port))
+    except Exception:
+        return ""
 
 
 def _normalize_protocol_name(name):
@@ -292,11 +360,16 @@ def parse_certs(certs):
 
 
 
-def get_cert(host, port):
+def get_cert(host, port, server_hostname=""):
     from . import get_logger
     logger = get_logger()
     try:
-        certs = ssl.get_server_certificate((host, port))
+        certs = _fetch_server_certificate(connect_host=host, port=port, server_hostname=server_hostname)
+        if not certs and _safe_text(server_hostname):
+            # SNI 失败时回退无 SNI，避免漏采
+            certs = _fetch_server_certificate(connect_host=host, port=port, server_hostname="")
+        if not certs:
+            return {}
         parsed_cert = parse_certs(certs)
         ssl_security = _scan_ssl_security_with_nmap(host, port)
         if ssl_security:
@@ -304,8 +377,6 @@ def get_cert(host, port):
         return parsed_cert
     except Exception as e:
         logger.debug("get cert error {}:{} {}".format(host,port, e))
-
-
 
 
 

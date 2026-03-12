@@ -1088,17 +1088,53 @@ class DomainTask(CommonTask):
         if self.options.get("port_scan"):
             self.cert_map = ssl_cert(self.ip_info_list, self.base_domain)
         else:
-            self.cert_map = ssl_cert(self.ip_set, self.base_domain)
+            # 未启用端口扫描时，仍构建 443 目标并携带域名上下文，保证 CDN 场景优先拿到业务域名证书
+            fake_targets = []
+            for ip in sorted(self.ip_set):
+                domains = list(self.ipv4_map.get(ip, set()))
+                fake_targets.append(
+                    modules.IPInfo(
+                        ip=ip,
+                        domain=domains,
+                        port_info=[modules.PortInfo(port_id=443, service_name="https")],
+                        os_info={},
+                        cdn_name="",
+                    )
+                )
+            self.cert_map = ssl_cert(fake_targets, self.base_domain)
 
         for target in self.cert_map:
-            if ":" not in target:
+            cert_obj = self.cert_map.get(target, {})
+            if not isinstance(cert_obj, dict):
                 continue
-            ip = target.split(":")[0]
-            port = int(target.split(":")[1])
+
+            cert_data = dict(cert_obj)
+            scan_meta = cert_data.pop("_scan_meta", {})
+            if not isinstance(scan_meta, dict):
+                scan_meta = {}
+
+            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(target).strip()
+            ip, port = fetchCert.split_host_port(endpoint)
+            if not ip or port <= 0:
+                continue
+
+            domain = str(scan_meta.get("server_name", "")).strip().lower()
+            domains = scan_meta.get("domains", [])
+            if isinstance(domains, str):
+                domains = [domains]
+            if not isinstance(domains, list):
+                domains = []
+            domains = [str(x).strip().lower() for x in domains if str(x).strip()]
+            if domain and domain not in domains:
+                domains.insert(0, domain)
+
             item = {
                 "ip": ip,
                 "port": port,
-                "cert": self.cert_map[target],
+                "host": endpoint,
+                "domain": domain,
+                "domains": domains,
+                "cert": cert_data,
                 "task_id": self.task_id,
             }
             utils.conn_db('cert').insert_one(item)
