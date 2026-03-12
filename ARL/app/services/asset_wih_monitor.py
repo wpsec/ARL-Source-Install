@@ -3,7 +3,7 @@ Web指纹信息监控
 """
 from app.helpers import asset_site, asset_wih
 from app.helpers.scope import get_scope_by_scope_id
-from app.services import run_wih
+from app.services import run_wih, run_trufflehog_js
 from app.utils import get_logger, check_domain_black
 from app.modules import WihRecord
 from app import utils
@@ -78,7 +78,12 @@ class AssetWihMonitor(object):
         if len(self.sites) == 0:
             return results
 
-        wih_results = run_wih(self.sites)
+        # 先执行原生 WIH，再基于 WIH 发现的 JS 源执行 TruffleHog 二次扫描
+        wih_results = list(run_wih(self.sites) or [])
+        if wih_results:
+            trufflehog_results = run_trufflehog_js(self.sites, wih_results)
+            if trufflehog_results:
+                wih_results.extend(trufflehog_results)
 
         fnv_hash_set = set(self.wih_record_fnv_hash)
         for item in wih_results:

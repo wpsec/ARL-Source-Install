@@ -252,6 +252,20 @@ ARL:
   DOMAIN_DICT: ""
   #文件泄漏字典， 空即系统默认
   FILE_LEAK_DICT: ""
+  # TruffleHog 可执行文件路径（建议指向 tools/TruffleHog/trufflehog）
+  TRUFFLEHOG_BIN: ""
+  # 是否启用 TruffleHog JS 二次扫描
+  TRUFFLEHOG_ENABLE: true
+  # 是否禁用在线验证（默认 true，避免外连验证）
+  TRUFFLEHOG_NO_VERIFICATION: true
+  # TruffleHog 结果类型过滤
+  TRUFFLEHOG_RESULTS: "verified,unknown,unverified"
+  # 单次任务最多扫描 JS 文件数
+  TRUFFLEHOG_JS_MAX_FILES: 80
+  # 单次 TruffleHog 扫描超时（秒）
+  TRUFFLEHOG_JS_TIMEOUT_SEC: 900
+  # 单个 JS 文件下载大小上限（字节）
+  TRUFFLEHOG_JS_MAX_FILE_BYTES: 524288
 
   # Web Gunicorn worker 数（默认2，低内存环境建议 1~2）
   WEB_GUNICORN_WORKERS: 2

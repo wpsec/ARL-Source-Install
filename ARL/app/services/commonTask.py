@@ -371,6 +371,11 @@ class WebSiteFetch(object):
 
     def run_web_info_hunter(self):
         records = set(services.run_wih(self.sites))
+        if records:
+            trufflehog_records = set(services.run_trufflehog_js(self.sites, list(records)))
+            if trufflehog_records:
+                records |= trufflehog_records
+
         for record in records:
             # 先判断记录是否已经存在
             if record.fnv_hash in self.wih_record_set:

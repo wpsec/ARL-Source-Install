@@ -198,6 +198,20 @@ class Config(object):
     NUCLEI_DEFAULT_TAGS = "cve"
     # 指纹与 nuclei tags 的映射关系，可通过 config.yaml 覆盖
     NUCLEI_FINGER_TAG_MAP = {}
+    # TruffleHog 可执行文件路径（优先使用 tools 目录）
+    TRUFFLEHOG_BIN = os.path.join(project_root, "tools", "TruffleHog", "trufflehog")
+    # 是否启用 TruffleHog JS 二次扫描
+    TRUFFLEHOG_ENABLE = True
+    # 是否禁用 TruffleHog 在线验证（默认禁用，降低外连风险）
+    TRUFFLEHOG_NO_VERIFICATION = True
+    # TruffleHog 输出结果类型
+    TRUFFLEHOG_RESULTS = "verified,unknown,unverified"
+    # 单次任务最多扫描的 JS 文件数量
+    TRUFFLEHOG_JS_MAX_FILES = 80
+    # 单次 TruffleHog 扫描超时（秒）
+    TRUFFLEHOG_JS_TIMEOUT_SEC = 900
+    # 单个 JS 文件下载大小上限（字节）
+    TRUFFLEHOG_JS_MAX_FILE_BYTES = 512 * 1024
     # 是否启用内建 kscan 指纹解析
     KSCAN_FINGERPRINT_ENABLE = True
     # kscan 指纹文件路径（默认使用 ARL 内置字典）
@@ -599,6 +613,33 @@ try:
     if y["ARL"].get("NUCLEI_DEFAULT_TAGS"):
         Config.NUCLEI_DEFAULT_TAGS = y["ARL"]["NUCLEI_DEFAULT_TAGS"]
 
+    if y["ARL"].get("TRUFFLEHOG_BIN"):
+        Config.TRUFFLEHOG_BIN = str(y["ARL"]["TRUFFLEHOG_BIN"]).strip()
+
+    if y["ARL"].get("TRUFFLEHOG_ENABLE") is not None:
+        Config.TRUFFLEHOG_ENABLE = bool(y["ARL"]["TRUFFLEHOG_ENABLE"])
+
+    if y["ARL"].get("TRUFFLEHOG_NO_VERIFICATION") is not None:
+        Config.TRUFFLEHOG_NO_VERIFICATION = bool(y["ARL"]["TRUFFLEHOG_NO_VERIFICATION"])
+
+    if y["ARL"].get("TRUFFLEHOG_RESULTS"):
+        Config.TRUFFLEHOG_RESULTS = str(y["ARL"]["TRUFFLEHOG_RESULTS"]).strip()
+
+    if y["ARL"].get("TRUFFLEHOG_JS_MAX_FILES") is not None:
+        Config.TRUFFLEHOG_JS_MAX_FILES = safe_positive_int(
+            int(y["ARL"]["TRUFFLEHOG_JS_MAX_FILES"]), Config.TRUFFLEHOG_JS_MAX_FILES
+        )
+
+    if y["ARL"].get("TRUFFLEHOG_JS_TIMEOUT_SEC") is not None:
+        Config.TRUFFLEHOG_JS_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["TRUFFLEHOG_JS_TIMEOUT_SEC"]), Config.TRUFFLEHOG_JS_TIMEOUT_SEC
+        )
+
+    if y["ARL"].get("TRUFFLEHOG_JS_MAX_FILE_BYTES") is not None:
+        Config.TRUFFLEHOG_JS_MAX_FILE_BYTES = safe_positive_int(
+            int(y["ARL"]["TRUFFLEHOG_JS_MAX_FILE_BYTES"]), Config.TRUFFLEHOG_JS_MAX_FILE_BYTES
+        )
+
     nuclei_finger_tag_map = y["ARL"].get("NUCLEI_FINGER_TAG_MAP")
     if isinstance(nuclei_finger_tag_map, dict):
         Config.NUCLEI_FINGER_TAG_MAP = nuclei_finger_tag_map
@@ -869,6 +910,24 @@ try:
     )
     Config.NUCLEI_AUTO_SCAN = env_bool("ARL_NUCLEI_AUTO_SCAN", Config.NUCLEI_AUTO_SCAN)
     Config.NUCLEI_DEFAULT_TAGS = env_str("ARL_NUCLEI_DEFAULT_TAGS", Config.NUCLEI_DEFAULT_TAGS)
+    Config.TRUFFLEHOG_BIN = env_str("ARL_TRUFFLEHOG_BIN", Config.TRUFFLEHOG_BIN)
+    Config.TRUFFLEHOG_ENABLE = env_bool("ARL_TRUFFLEHOG_ENABLE", Config.TRUFFLEHOG_ENABLE)
+    Config.TRUFFLEHOG_NO_VERIFICATION = env_bool(
+        "ARL_TRUFFLEHOG_NO_VERIFICATION", Config.TRUFFLEHOG_NO_VERIFICATION
+    )
+    Config.TRUFFLEHOG_RESULTS = env_str("ARL_TRUFFLEHOG_RESULTS", Config.TRUFFLEHOG_RESULTS)
+    Config.TRUFFLEHOG_JS_MAX_FILES = safe_positive_int(
+        env_int("ARL_TRUFFLEHOG_JS_MAX_FILES", Config.TRUFFLEHOG_JS_MAX_FILES),
+        Config.TRUFFLEHOG_JS_MAX_FILES
+    )
+    Config.TRUFFLEHOG_JS_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_TRUFFLEHOG_JS_TIMEOUT_SEC", Config.TRUFFLEHOG_JS_TIMEOUT_SEC),
+        Config.TRUFFLEHOG_JS_TIMEOUT_SEC
+    )
+    Config.TRUFFLEHOG_JS_MAX_FILE_BYTES = safe_positive_int(
+        env_int("ARL_TRUFFLEHOG_JS_MAX_FILE_BYTES", Config.TRUFFLEHOG_JS_MAX_FILE_BYTES),
+        Config.TRUFFLEHOG_JS_MAX_FILE_BYTES
+    )
     Config.KSCAN_FINGERPRINT_ENABLE = env_bool(
         "ARL_KSCAN_FINGERPRINT_ENABLE", Config.KSCAN_FINGERPRINT_ENABLE
     )

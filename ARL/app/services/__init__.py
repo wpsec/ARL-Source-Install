@@ -22,6 +22,7 @@ from .npoc import run_risk_cruising, run_sniffer
 from .autoTag import auto_tag
 from .githubSearch import github_search
 from .infoHunter import run_wih
+from .trufflehog_scan import run_trufflehog_js
 from .baseUpdateTask import BaseUpdateTask
 from .domainSiteUpdate import domain_site_update
 from .fingerprint_cache import finger_db_cache, finger_db_identify, have_human_rule_from_db
