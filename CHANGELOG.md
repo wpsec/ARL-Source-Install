@@ -6,6 +6,7 @@
 ## 2026-03-12（v3.0.33）
 
 - `[v3.0.33]` 配置管理（扫描配置）新增 `NUCLEI_SINGLE_TARGET_TIMEOUT_SEC` 字段，支持直接设置 `nuclei` 单目标最大扫描时长
+- `[v3.0.33]` 配置管理（扫描配置）新增 `FILE_LEAK_DICT` 配置项与上传入口，支持“敏感文件泄漏字典”内置/自定义/上传三类选项
 - `[v3.0.33]` 配置管理新增硬件推荐档位：`2核2G=1小时`、`4核4G=2小时`、`8核16G=3小时`
 - `[v3.0.33]` `nuclei` 扫描新增带宽限速参数（`-rl/-c/-bs`）与按目标分批执行（`NUCLEI_TARGETS_PER_BATCH`），降低扫描对出口带宽冲击
 - `[v3.0.33]` `nuclei` 扫描超时改为按目标数计算：`min(NUCLEI_EXEC_TIMEOUT_SEC, NUCLEI_SINGLE_TARGET_TIMEOUT_SEC * 目标数)`，并在超时后安全退出当前批次

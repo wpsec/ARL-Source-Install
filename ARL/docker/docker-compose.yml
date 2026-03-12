@@ -52,6 +52,8 @@ services:
       - TZ=Asia/Shanghai
       - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
+      - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
+      - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
 
   worker:
     # 与 web/scheduler 使用同一镜像标签，确保任务进程和 API 运行环境一致
@@ -76,6 +78,8 @@ services:
       - TZ=Asia/Shanghai
       - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
+      - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
+      - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
 
   scheduler:
     # 与 build.sh 保持一致，统一使用本地构建镜像标签

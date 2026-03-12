@@ -239,6 +239,30 @@ def _resolve_domain_dict_upload_dir() -> Path:
     return _resolve_domain_dict_custom_dir() / 'uploaded'
 
 
+def _resolve_file_leak_dict_custom_dir() -> Path:
+    """
+    解析敏感文件泄漏自定义字典目录。
+    优先读取环境变量，未配置时回落到内置字典目录。
+    """
+    custom_path = os.environ.get('ARL_FILE_LEAK_DICT_CUSTOM_DIR', '').strip()
+    if custom_path:
+        return Path(custom_path)
+
+    return Path(Config.FILE_LEAK_TOP_200).resolve().parent
+
+
+def _resolve_file_leak_dict_upload_dir() -> Path:
+    """
+    解析敏感文件泄漏字典上传目录。
+    默认使用“自定义字典目录/uploaded”，可通过环境变量覆盖。
+    """
+    custom_path = os.environ.get('ARL_FILE_LEAK_DICT_UPLOAD_DIR', '').strip()
+    if custom_path:
+        return Path(custom_path)
+
+    return _resolve_file_leak_dict_custom_dir() / 'uploaded'
+
+
 def _safe_resolve_path(path_obj: Path) -> Path:
     """
     尝试 resolve 绝对路径；失败时回退原路径，避免因权限/软链异常中断。
@@ -337,6 +361,93 @@ def _collect_domain_dict_options(current_path=''):
             if _is_path_within(dict_file, builtin_domain_dir):
                 file_name = dict_file.name.lower()
                 if file_name in {'domain_dict_test.txt', 'domain_2w.txt'}:
+                    continue
+            add_option(dict_file, source='custom')
+
+    if current_path and current_path not in seen:
+        add_option(Path(current_path), source='custom')
+
+    return options
+
+
+def _collect_file_leak_dict_options(current_path=''):
+    """
+    收集可选敏感文件泄漏字典列表：
+    - 内置字典
+    - 上传目录字典
+    - 当前配置引用但未收录的字典
+    """
+    current_path = str(current_path or '').strip()
+    options = []
+    seen = set()
+
+    builtin_file_leak_dir = _safe_resolve_path(Path(Config.FILE_LEAK_TOP_200).parent)
+    custom_file_leak_dir = _safe_resolve_path(_resolve_file_leak_dict_custom_dir())
+    upload_dir = _safe_resolve_path(_resolve_file_leak_dict_upload_dir())
+
+    def add_option(path_obj: Path, source='custom', label=''):
+        path_obj = _safe_resolve_path(path_obj)
+        path_str = str(path_obj)
+        if path_str in seen:
+            return
+        seen.add(path_str)
+
+        exists = path_obj.exists() and path_obj.is_file()
+        file_size = 0
+        if exists:
+            try:
+                file_size = int(path_obj.stat().st_size)
+            except Exception:
+                file_size = 0
+
+        option_label = label or path_obj.name or path_str
+        if not label and source in {'custom', 'uploaded'}:
+            relative_name = ''
+            base_dir = upload_dir if source == 'uploaded' else custom_file_leak_dir
+            try:
+                relative_name = str(path_obj.relative_to(base_dir))
+            except Exception:
+                relative_name = path_obj.name
+            if relative_name:
+                option_label = relative_name
+
+        option = {
+            'label': option_label,
+            'path': path_str,
+            'source': source,
+            'exists': exists,
+            'size': file_size,
+            'selected': bool(current_path and current_path == path_str),
+        }
+        options.append(option)
+
+    builtin_test_path = _safe_resolve_path(Path(Config.FILE_LEAK_TOP_200).parent / 'file_test.txt')
+    builtin_quick_path = _safe_resolve_path(Path(Config.FILE_LEAK_TOP_200))
+    builtin_full_path = _safe_resolve_path(Path(Config.FILE_LEAK_TOP_2k))
+    add_option(builtin_test_path, source='builtin', label='测试字典 (file_test.txt)')
+    add_option(builtin_quick_path, source='builtin', label='快速字典 (file_top_200.txt)')
+    add_option(builtin_full_path, source='builtin', label='完整字典 (file_top_2000.txt)')
+
+    if upload_dir.exists() and upload_dir.is_dir():
+        for dict_file in sorted(upload_dir.rglob('*.txt')):
+            if dict_file.is_file():
+                add_option(dict_file, source='uploaded')
+
+    custom_scan_dirs = [custom_file_leak_dir]
+    if str(builtin_file_leak_dir) != str(custom_file_leak_dir):
+        custom_scan_dirs.append(builtin_file_leak_dir)
+
+    for scan_dir in custom_scan_dirs:
+        if not scan_dir.exists() or not scan_dir.is_dir():
+            continue
+        for dict_file in sorted(scan_dir.rglob('*.txt')):
+            if not dict_file.is_file():
+                continue
+            if _is_path_within(dict_file, upload_dir):
+                continue
+            if _is_path_within(dict_file, builtin_file_leak_dir):
+                file_name = dict_file.name.lower()
+                if file_name in {'file_test.txt', 'file_top_200.txt', 'file_top_2000.txt'}:
                     continue
             add_option(dict_file, source='custom')
 
@@ -514,6 +625,7 @@ def _extract_scan_config(config_obj):
 
     # 兼容历史路径：页面展示时统一折叠到当前可用路径。
     domain_dict = normalize_dict_path_compat(arl_config.get('DOMAIN_DICT') or Config.DOMAIN_DICT_2W)
+    file_leak_dict = normalize_dict_path_compat(arl_config.get('FILE_LEAK_DICT') or Config.FILE_LEAK_TOP_2k)
     domain_brute_concurrent = _safe_int(
         arl_config.get('DOMAIN_BRUTE_CONCURRENT'),
         Config.DOMAIN_BRUTE_CONCURRENT
@@ -557,6 +669,7 @@ def _extract_scan_config(config_obj):
 
     return {
         'domain_dict': domain_dict,
+        'file_leak_dict': file_leak_dict,
         'domain_brute_concurrent': domain_brute_concurrent,
         'alt_dns_concurrent': alt_dns_concurrent,
         'web_gunicorn_workers': web_gunicorn_workers,
@@ -584,6 +697,21 @@ def _merge_scan_config(config_obj, scan_config):
         raise ValueError('请先选择域名爆破字典')
     if not os.path.isfile(domain_dict):
         raise ValueError('所选域名字典文件不存在，请重新选择')
+
+    arl_config = config_obj.get('ARL', {})
+    if not isinstance(arl_config, dict):
+        arl_config = {}
+
+    file_leak_dict = normalize_dict_path_compat(
+        scan_config.get('file_leak_dict', '') or
+        arl_config.get('FILE_LEAK_DICT') or
+        Config.FILE_LEAK_TOP_2k
+    )
+    file_leak_dict = str(file_leak_dict or '').strip()
+    if not file_leak_dict:
+        raise ValueError('请先选择敏感文件泄漏字典')
+    if not os.path.isfile(file_leak_dict):
+        raise ValueError('所选敏感文件泄漏字典文件不存在，请重新选择')
 
     domain_brute_concurrent = _safe_int(
         scan_config.get('domain_brute_concurrent'),
@@ -631,6 +759,7 @@ def _merge_scan_config(config_obj, scan_config):
         config_obj['ARL'] = {}
 
     config_obj['ARL']['DOMAIN_DICT'] = domain_dict
+    config_obj['ARL']['FILE_LEAK_DICT'] = file_leak_dict
     config_obj['ARL']['DOMAIN_BRUTE_CONCURRENT'] = domain_brute_concurrent
     config_obj['ARL']['ALT_DNS_CONCURRENT'] = alt_dns_concurrent
     config_obj['ARL']['WEB_GUNICORN_WORKERS'] = web_gunicorn_workers
@@ -795,12 +924,14 @@ class ApiConsoleScanConfig(ARLResource):
         try:
             config_obj = _load_config_from_file(config_path)
             scan_config = _extract_scan_config(config_obj)
-            options = _collect_domain_dict_options(scan_config.get('domain_dict'))
+            domain_options = _collect_domain_dict_options(scan_config.get('domain_dict'))
+            file_leak_options = _collect_file_leak_dict_options(scan_config.get('file_leak_dict'))
             return utils.build_ret(
                 ErrorMsg.Success,
                 {
                     'scan_config': scan_config,
-                    'available_domain_dicts': options,
+                    'available_domain_dicts': domain_options,
+                    'available_file_leak_dicts': file_leak_options,
                     'config_path': str(config_path),
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 }
@@ -830,7 +961,8 @@ class ApiConsoleScanConfig(ARLResource):
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
                 saved_scan_config = _extract_scan_config(config_obj)
-                options = _collect_domain_dict_options(saved_scan_config.get('domain_dict'))
+                domain_options = _collect_domain_dict_options(saved_scan_config.get('domain_dict'))
+                file_leak_options = _collect_file_leak_dict_options(saved_scan_config.get('file_leak_dict'))
             except Exception as exc:
                 logger.exception('save scan_config failed: %s', exc)
                 return utils.build_ret(
@@ -846,7 +978,8 @@ class ApiConsoleScanConfig(ARLResource):
             {
                 'saved': True,
                 'scan_config': saved_scan_config,
-                'available_domain_dicts': options,
+                'available_domain_dicts': domain_options,
+                'available_file_leak_dicts': file_leak_options,
                 'config_path': str(config_path),
                 'backup_path': backup_path,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -904,6 +1037,60 @@ class ApiConsoleDomainDictUpload(ARLResource):
                 'uploaded': True,
                 'domain_dict_path': str(save_path),
                 'available_domain_dicts': options,
+                'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+        )
+
+
+@ns.route('/scan_config/file_leak_dict/upload/')
+class ApiConsoleFileLeakDictUpload(ARLResource):
+    """
+    敏感文件泄漏字典上传接口
+    """
+
+    @auth
+    def post(self):
+        upload_file = request.files.get('file')
+        if upload_file is None:
+            return utils.build_ret(ErrorMsg.Error, {'error': '请上传字典文件（file）'})
+
+        filename = secure_filename(upload_file.filename or '')
+        if not filename:
+            return utils.build_ret(ErrorMsg.Error, {'error': '字典文件名不能为空'})
+
+        lower_name = filename.lower()
+        if not lower_name.endswith('.txt'):
+            return utils.build_ret(ErrorMsg.Error, {'error': '仅支持 .txt 字典文件'})
+
+        file_bytes = upload_file.read()
+        if not file_bytes:
+            return utils.build_ret(ErrorMsg.Error, {'error': '上传文件为空'})
+
+        if len(file_bytes) > 5 * 1024 * 1024:
+            return utils.build_ret(ErrorMsg.Error, {'error': '字典文件过大（最大 5MB）'})
+
+        upload_dir = _resolve_file_leak_dict_upload_dir()
+        upload_dir.mkdir(parents=True, exist_ok=True)
+
+        save_path = upload_dir / filename
+        if save_path.exists():
+            stamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            save_path = upload_dir / f'{save_path.stem}_{stamp}{save_path.suffix}'
+
+        try:
+            with save_path.open('wb') as file_obj:
+                file_obj.write(file_bytes)
+        except Exception as exc:
+            logger.exception('save file leak dict upload failed: %s', exc)
+            return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
+
+        options = _collect_file_leak_dict_options(str(save_path))
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'uploaded': True,
+                'file_leak_dict_path': str(save_path),
+                'available_file_leak_dicts': options,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
         )

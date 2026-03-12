@@ -157,6 +157,8 @@ ARL/docker/config-docker.yaml
 
 - `配置管理 -> 扫描配置 -> 域名爆破字典` 会自动枚举 `domain/` 下的 `.txt`
 - 页面上传字典将写入 `ARL/docker/dicts/domain/uploaded/`
+- `配置管理 -> 扫描配置 -> 敏感文件泄漏字典` 会自动枚举 `file_leak/` 下的 `.txt`
+- 页面上传敏感文件字典将写入 `ARL/docker/dicts/file_leak/uploaded/`
 - `ARL.FILE_LEAK_DICT` 可直接指向 `file_leak/` 下自定义文件
 - `任务管理 -> 新建任务` 支持选择“域名爆破字典”；不选则默认使用配置管理字典
 - 以上目录通过 `docker-compose` 挂载，容器重建后文件仍保留

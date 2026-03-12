@@ -8424,14 +8424,19 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [updatedAt, setUpdatedAt] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [domainUploading, setDomainUploading] = useState(false);
+  const [fileLeakUploading, setFileLeakUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [dictOptions, setDictOptions] = useState<DomainDictOption[]>([]);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [domainDictOptions, setDomainDictOptions] = useState<DomainDictOption[]>([]);
+  const [fileLeakDictOptions, setFileLeakDictOptions] = useState<DomainDictOption[]>([]);
+  const [uploadDomainFile, setUploadDomainFile] = useState<File | null>(null);
+  const [uploadFileLeakFile, setUploadFileLeakFile] = useState<File | null>(null);
+  const domainUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const fileLeakUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const [domainDict, setDomainDict] = useState('');
+  const [fileLeakDict, setFileLeakDict] = useState('');
   const [domainBruteConcurrent, setDomainBruteConcurrent] = useState(180);
   const [altDnsConcurrent, setAltDnsConcurrent] = useState(800);
   const [webGunicornWorkers, setWebGunicornWorkers] = useState(2);
@@ -8459,9 +8464,11 @@ function ConfigConsoleView({ token }: { token: string }) {
       const result = await requestApi(token, '/api_console/scan_config/', { method: 'GET' });
       const data = result?.data || {};
       const scanConfig = data?.scan_config || {};
-      const nextOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+      const nextDomainOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+      const nextFileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
 
       setDomainDict(String(scanConfig.domain_dict || ''));
+      setFileLeakDict(String(scanConfig.file_leak_dict || ''));
       setDomainBruteConcurrent(Number(scanConfig.domain_brute_concurrent || 180));
       setAltDnsConcurrent(Number(scanConfig.alt_dns_concurrent || 800));
       setWebGunicornWorkers(Number(scanConfig.web_gunicorn_workers || 2));
@@ -8474,7 +8481,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
       setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
 
-      setDictOptions(nextOptions);
+      setDomainDictOptions(nextDomainOptions);
+      setFileLeakDictOptions(nextFileLeakOptions);
       setConfigPath(String(data.config_path || ''));
       setUpdatedAt(String(data.updated_at || ''));
     } catch (err: any) {
@@ -8489,9 +8497,14 @@ function ConfigConsoleView({ token }: { token: string }) {
   }, [loadScanConfig]);
 
   const saveScanConfig = async () => {
-    const normalizedDict = domainDict.trim();
-    if (!normalizedDict) {
+    const normalizedDomainDict = domainDict.trim();
+    if (!normalizedDomainDict) {
       setError('请先选择域名爆破字典');
+      return;
+    }
+    const normalizedFileLeakDict = fileLeakDict.trim();
+    if (!normalizedFileLeakDict) {
+      setError('请先选择敏感文件泄漏字典');
       return;
     }
 
@@ -8547,7 +8560,8 @@ function ConfigConsoleView({ token }: { token: string }) {
         method: 'POST',
         body: {
           scan_config: {
-            domain_dict: normalizedDict,
+            domain_dict: normalizedDomainDict,
+            file_leak_dict: normalizedFileLeakDict,
             domain_brute_concurrent: Math.floor(domainBruteConcurrent),
             alt_dns_concurrent: Math.floor(altDnsConcurrent),
             web_gunicorn_workers: Math.floor(webGunicornWorkers),
@@ -8565,10 +8579,12 @@ function ConfigConsoleView({ token }: { token: string }) {
 
       const data = result?.data || {};
       const savedConfig = data?.scan_config || {};
-      const nextOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+      const nextDomainOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+      const nextFileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
 
-      setDomainDict(String(savedConfig.domain_dict || normalizedDict));
+      setDomainDict(String(savedConfig.domain_dict || normalizedDomainDict));
+      setFileLeakDict(String(savedConfig.file_leak_dict || normalizedFileLeakDict));
       setDomainBruteConcurrent(Number(savedConfig.domain_brute_concurrent || domainBruteConcurrent));
       setAltDnsConcurrent(Number(savedConfig.alt_dns_concurrent || altDnsConcurrent));
       setWebGunicornWorkers(Number(savedConfig.web_gunicorn_workers || webGunicornWorkers));
@@ -8581,7 +8597,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       setBlackIpsText(Array.isArray(savedConfig.black_ips) ? savedConfig.black_ips.join('\n') : blackIpsText);
       setDnsResolversText(Array.isArray(savedConfig.dns_resolvers) ? savedConfig.dns_resolvers.join('\n') : dnsResolversText);
 
-      setDictOptions(nextOptions);
+      setDomainDictOptions(nextDomainOptions);
+      setFileLeakDictOptions(nextFileLeakOptions);
       setConfigPath(String(data.config_path || configPath));
       setUpdatedAt(String(data.saved_at || updatedAt));
       setSuccess(`扫描配置已保存${backupPath}`);
@@ -8593,17 +8610,17 @@ function ConfigConsoleView({ token }: { token: string }) {
   };
 
   const uploadDomainDict = async () => {
-    if (!uploadFile) {
+    if (!uploadDomainFile) {
       setError('请先选择要上传的字典文件');
       return;
     }
 
-    setUploading(true);
+    setDomainUploading(true);
     setError('');
     setSuccess('');
     try {
       const formData = new FormData();
-      formData.append('file', uploadFile);
+      formData.append('file', uploadDomainFile);
       const result = await requestApi(token, '/api_console/scan_config/domain_dict/upload/', {
         method: 'POST',
         body: formData,
@@ -8615,18 +8632,56 @@ function ConfigConsoleView({ token }: { token: string }) {
       if (uploadedPath) {
         setDomainDict(uploadedPath);
       }
-      setDictOptions(nextOptions);
+      setDomainDictOptions(nextOptions);
       setUpdatedAt(String(data.saved_at || updatedAt));
-      setSuccess(`字典上传成功: ${uploadFile.name}`);
+      setSuccess(`字典上传成功: ${uploadDomainFile.name}`);
 
-      setUploadFile(null);
-      if (uploadInputRef.current) {
-        uploadInputRef.current.value = '';
+      setUploadDomainFile(null);
+      if (domainUploadInputRef.current) {
+        domainUploadInputRef.current.value = '';
       }
     } catch (err: any) {
       setError(err?.message || '字典上传失败');
     } finally {
-      setUploading(false);
+      setDomainUploading(false);
+    }
+  };
+
+  const uploadFileLeakDict = async () => {
+    if (!uploadFileLeakFile) {
+      setError('请先选择要上传的字典文件');
+      return;
+    }
+
+    setFileLeakUploading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFileLeakFile);
+      const result = await requestApi(token, '/api_console/scan_config/file_leak_dict/upload/', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = result?.data || {};
+      const uploadedPath = String(data?.file_leak_dict_path || '');
+      const nextOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
+
+      if (uploadedPath) {
+        setFileLeakDict(uploadedPath);
+      }
+      setFileLeakDictOptions(nextOptions);
+      setUpdatedAt(String(data.saved_at || updatedAt));
+      setSuccess(`字典上传成功: ${uploadFileLeakFile.name}`);
+
+      setUploadFileLeakFile(null);
+      if (fileLeakUploadInputRef.current) {
+        fileLeakUploadInputRef.current.value = '';
+      }
+    } catch (err: any) {
+      setError(err?.message || '字典上传失败');
+    } finally {
+      setFileLeakUploading(false);
     }
   };
 
@@ -8634,7 +8689,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置扫描并发、Nuclei 单目标超时、Web/Celery 运行并发、黑名单IP与域名解析器，写入 config-docker.yaml 并可在重启后生效。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、敏感文件泄漏字典、扫描并发、Nuclei 单目标超时、Web/Celery 运行并发、黑名单IP与域名解析器，写入 config-docker.yaml 并可在重启后生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -8652,7 +8707,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             <button
               onClick={() => void saveScanConfig()}
               className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
-              disabled={saving || loading || uploading}
+              disabled={saving || loading || domainUploading || fileLeakUploading}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
               {saving ? '保存中...' : '保存配置'}
@@ -8692,7 +8747,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               className={UNIFIED_SELECT_CLASS}
             >
               <option value="">请选择字典文件</option>
-              {dictOptions.map((item) => (
+              {domainDictOptions.map((item) => (
                 <option key={item.path} value={item.path}>
                   {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
                 </option>
@@ -8706,22 +8761,68 @@ function ConfigConsoleView({ token }: { token: string }) {
           <label className="text-xs font-bold text-brand-text-muted block">上传新字典（.txt）</label>
           <div className="flex flex-col lg:flex-row gap-2">
             <input
-              ref={uploadInputRef}
+              ref={domainUploadInputRef}
               type="file"
               accept=".txt"
               className="flex-1 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                setUploadFile(file || null);
+                setUploadDomainFile(file || null);
               }}
             />
             <button
               onClick={() => void uploadDomainDict()}
               className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
-              disabled={uploading || loading || saving}
+              disabled={domainUploading || loading || saving}
             >
-              <Upload className={`w-4 h-4 ${uploading ? 'animate-spin' : ''}`} />
-              {uploading ? '上传中...' : '上传字典'}
+              <Upload className={`w-4 h-4 ${domainUploading ? 'animate-spin' : ''}`} />
+              {domainUploading ? '上传中...' : '上传字典'}
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-brand-text-muted block">
+            敏感文件泄漏字典
+            <span className="ml-2 font-mono opacity-70">ARL.FILE_LEAK_DICT</span>
+          </label>
+          <div className="relative">
+            <select
+              value={fileLeakDict}
+              onChange={(event) => setFileLeakDict(event.target.value)}
+              className={UNIFIED_SELECT_CLASS}
+            >
+              <option value="">请选择字典文件</option>
+              {fileLeakDictOptions.map((item) => (
+                <option key={item.path} value={item.path}>
+                  {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-brand-text-muted block">上传敏感文件字典（.txt）</label>
+          <div className="flex flex-col lg:flex-row gap-2">
+            <input
+              ref={fileLeakUploadInputRef}
+              type="file"
+              accept=".txt"
+              className="flex-1 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                setUploadFileLeakFile(file || null);
+              }}
+            />
+            <button
+              onClick={() => void uploadFileLeakDict()}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              disabled={fileLeakUploading || loading || saving}
+            >
+              <Upload className={`w-4 h-4 ${fileLeakUploading ? 'animate-spin' : ''}`} />
+              {fileLeakUploading ? '上传中...' : '上传字典'}
             </button>
           </div>
         </div>
