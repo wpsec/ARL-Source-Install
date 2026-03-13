@@ -203,8 +203,9 @@ const modules: ModuleConfig[] = [
           name: '新扫描任务',
           target: 'example.com',
           domain_brute: true,
-          domain_brute_type: 'test',
+          domain_brute_type: 'big',
           domain_dict: '',
+          file_leak_dict: '',
           port_scan: true,
           port_scan_type: 'test',
           port_custom: '80,443',
@@ -597,7 +598,7 @@ const modules: ModuleConfig[] = [
           policy: {
             domain_config: {
               domain_brute: true,
-              domain_brute_type: 'test',
+              domain_brute_type: 'big',
               alt_dns: false,
               arl_search: false,
               dns_query_plugin: false,
@@ -623,6 +624,8 @@ const modules: ModuleConfig[] = [
               nuclei_scan: false,
               web_info_hunter: false,
             },
+            domain_dict: '',
+            file_leak_dict: '',
             file_leak: false,
             npoc_service_detection: false,
             poc_config: [],
@@ -2044,6 +2047,56 @@ function normalizeValue(value: any): string {
   return truncateText(String(value));
 }
 
+const WIH_SENSITIVE_RECORD_TYPE_SET = new Set([
+  'app_key',
+  'api_key',
+  'access_key',
+  'secret_key',
+  'client_secret',
+  'private_key',
+  'authorization',
+  'token',
+  'jwt',
+  'password',
+  'passwd',
+  'credential',
+]);
+
+const WIH_SENSITIVE_CONTENT_KEYWORDS = [
+  'app_key',
+  'api_key',
+  'access_key',
+  'secret_key',
+  'client_secret',
+  'private_key',
+  'authorization: bearer',
+  'password',
+  'passwd',
+  'token',
+  'jwt',
+];
+
+function isSensitiveWihRow(row: any): boolean {
+  const recordType = String(row?.record_type || '').trim().toLowerCase();
+  const content = String(row?.content || '').trim().toLowerCase();
+  if (!recordType && !content) return false;
+  if (recordType.startsWith('trufflehog_')) return true;
+  if (WIH_SENSITIVE_RECORD_TYPE_SET.has(recordType)) return true;
+  if (recordType.endsWith('_key') || recordType.endsWith('_token')) return true;
+  return WIH_SENSITIVE_CONTENT_KEYWORDS.some((keyword) => content.includes(keyword));
+}
+
+function getWihRecordTypeTagClass(recordType: string, sensitive: boolean): string {
+  const normalized = String(recordType || '').trim().toLowerCase();
+  if (normalized.startsWith('trufflehog_')) {
+    return 'inline-flex items-center rounded-full border border-brand-danger/45 bg-brand-danger/15 px-2.5 py-1 text-[11px] font-black text-brand-danger';
+  }
+  if (sensitive) {
+    return 'inline-flex items-center rounded-full border border-brand-warning/45 bg-brand-warning/15 px-2.5 py-1 text-[11px] font-black text-brand-warning';
+  }
+  return 'inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-[11px] font-semibold text-brand-text-muted';
+}
+
 function buildCidrPrefix(value: any): string {
   const text = String(value ?? '').trim();
   if (!text || text === '-') return '';
@@ -2683,6 +2736,7 @@ const fieldLabelMap: Record<string, string> = {
   domain_brute: '域名爆破',
   domain_brute_type: '爆破字典类型',
   domain_dict: '域名爆破字典',
+  file_leak_dict: '敏感文件泄漏字典',
   port_scan: '端口扫描',
   port_scan_type: '端口扫描类型',
   port_custom: '自定义端口',
@@ -3737,6 +3791,7 @@ function ActionDialog({
   const isPolicySelectionRequired = isTaskScheduleCreate || isAssetScopeAddScheduler;
   const isGithubSchedulerAction = action.id === 'github_scheduler_add' || action.id === 'github_scheduler_update';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
+  const shouldLoadDictOptions = isTaskCreate || isPolicyAction;
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
   const displayFields = useMemo(() => fields, [fields]);
   const policyRootPath = action.id === 'policy_edit' ? 'policy_data.policy' : 'policy';
@@ -3784,8 +3839,8 @@ function ActionDialog({
   };
   const taskName = String(formPayload?.name ?? '');
   const taskTarget = String(formPayload?.target ?? '');
-  const taskDomainBruteType = String(formPayload?.domain_brute_type ?? 'test');
   const taskDomainDict = String(formPayload?.domain_dict ?? '');
+  const taskFileLeakDict = String(formPayload?.file_leak_dict ?? '');
   const taskPortScanType = String(formPayload?.port_scan_type ?? 'test');
   const taskPortCustom = String(formPayload?.port_custom ?? '80,443');
   const taskScheduleName = String(formPayload?.name ?? '');
@@ -3813,13 +3868,10 @@ function ActionDialog({
   const scopeMonitorIntervalHours = Math.max(1, Math.round((Number(formPayload?.interval || 86400) || 86400) / 3600));
   const policyName = String(getPayloadValue(formPayload, policyNamePath) ?? '');
   const policyDesc = String(getPayloadValue(formPayload, policyDescPath) ?? '');
-  const policyDomainBruteType = String(getPayloadValue(formPayload, `${policyRootPath}.domain_config.domain_brute_type`) ?? 'test');
+  const policyDomainDict = String(getPayloadValue(formPayload, `${policyRootPath}.domain_dict`) ?? '');
+  const policyFileLeakDict = String(getPayloadValue(formPayload, `${policyRootPath}.file_leak_dict`) ?? '');
   const policyPortScanType = String(getPayloadValue(formPayload, `${policyRootPath}.ip_config.port_scan_type`) ?? 'test');
   const policyPortCustom = String(getPayloadValue(formPayload, `${policyRootPath}.ip_config.port_custom`) ?? '80,443');
-  const policyHostTimeoutType = String(getPayloadValue(formPayload, `${policyRootPath}.ip_config.host_timeout_type`) ?? 'default');
-  const policyHostTimeout = Number(getPayloadValue(formPayload, `${policyRootPath}.ip_config.host_timeout`) ?? 900);
-  const policyPortParallelism = Number(getPayloadValue(formPayload, `${policyRootPath}.ip_config.port_parallelism`) ?? 32);
-  const policyPortMinRate = Number(getPayloadValue(formPayload, `${policyRootPath}.ip_config.port_min_rate`) ?? 60);
   const [policySearchKeyword, setPolicySearchKeyword] = useState('');
   const [policyPocKeyword, setPolicyPocKeyword] = useState('');
   const [policyBruteKeyword, setPolicyBruteKeyword] = useState('');
@@ -3836,6 +3888,9 @@ function ActionDialog({
   const [taskDomainDictLoading, setTaskDomainDictLoading] = useState(false);
   const [taskDomainDictError, setTaskDomainDictError] = useState('');
   const [taskDefaultDomainDictPath, setTaskDefaultDomainDictPath] = useState('');
+  const [taskFileLeakDictOptions, setTaskFileLeakDictOptions] = useState<TaskDomainDictOption[]>([]);
+  const [taskFileLeakDictError, setTaskFileLeakDictError] = useState('');
+  const [taskDefaultFileLeakDictPath, setTaskDefaultFileLeakDictPath] = useState('');
 
   const getPolicyPath = (suffix: string) => `${policyRootPath}.${suffix}`;
   const updatePolicyValue = (suffix: string, value: any) => {
@@ -3905,6 +3960,48 @@ function ActionDialog({
     }
     return next;
   }, [taskDomainDictOptions, taskDomainDict]);
+  const taskFileLeakDictSelectOptions = useMemo(() => {
+    const next = [...taskFileLeakDictOptions];
+    const exists = next.some((item) => item.path === taskFileLeakDict);
+    if (taskFileLeakDict && !exists) {
+      next.push({
+        label: taskFileLeakDict,
+        path: taskFileLeakDict,
+        source: 'custom',
+        exists: true,
+        size: 0,
+      });
+    }
+    return next;
+  }, [taskFileLeakDictOptions, taskFileLeakDict]);
+  const policyDomainDictSelectOptions = useMemo(() => {
+    const next = [...taskDomainDictOptions];
+    const exists = next.some((item) => item.path === policyDomainDict);
+    if (policyDomainDict && !exists) {
+      next.push({
+        label: policyDomainDict,
+        path: policyDomainDict,
+        source: 'custom',
+        exists: true,
+        size: 0,
+      });
+    }
+    return next;
+  }, [taskDomainDictOptions, policyDomainDict]);
+  const policyFileLeakDictSelectOptions = useMemo(() => {
+    const next = [...taskFileLeakDictOptions];
+    const exists = next.some((item) => item.path === policyFileLeakDict);
+    if (policyFileLeakDict && !exists) {
+      next.push({
+        label: policyFileLeakDict,
+        path: policyFileLeakDict,
+        source: 'custom',
+        exists: true,
+        size: 0,
+      });
+    }
+    return next;
+  }, [taskFileLeakDictOptions, policyFileLeakDict]);
 
   const setPolicyPluginConfig = (field: 'poc_config' | 'brute_config', pluginNames: string[]) => {
     const payloadList = pluginNames.map((pluginName) => ({
@@ -3980,11 +4077,14 @@ function ActionDialog({
   };
 
   useEffect(() => {
-    if (!isTaskCreate) {
+    if (!shouldLoadDictOptions) {
       setTaskDomainDictOptions([]);
       setTaskDomainDictLoading(false);
       setTaskDomainDictError('');
       setTaskDefaultDomainDictPath('');
+      setTaskFileLeakDictOptions([]);
+      setTaskFileLeakDictError('');
+      setTaskDefaultFileLeakDictPath('');
       return;
     }
 
@@ -3992,11 +4092,14 @@ function ActionDialog({
     const loadTaskDomainDictOptions = async () => {
       setTaskDomainDictLoading(true);
       setTaskDomainDictError('');
+      setTaskFileLeakDictError('');
       try {
         const response = await requestApi(token, '/api_console/scan_config/', { method: 'GET' });
         const data = response?.data || {};
         const options = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+        const fileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
         const defaultPath = String(data?.scan_config?.domain_dict || '').trim();
+        const defaultFileLeakPath = String(data?.scan_config?.file_leak_dict || '').trim();
         if (cancelled) return;
 
         const normalizedOptions = options
@@ -4009,14 +4112,64 @@ function ActionDialog({
             selected: Boolean(item?.selected),
           }))
           .filter((item: TaskDomainDictOption) => item.path);
+        const normalizedFileLeakOptions = fileLeakOptions
+          .map((item: any) => ({
+            label: String(item?.label || item?.path || '').trim(),
+            path: String(item?.path || '').trim(),
+            source: String(item?.source || 'custom').trim() || 'custom',
+            exists: Boolean(item?.exists),
+            size: Number(item?.size || 0),
+            selected: Boolean(item?.selected),
+          }))
+          .filter((item: TaskDomainDictOption) => item.path);
+
+        // 新建任务默认优先选择 domain_2w.txt，找不到时回退到扫描配置默认字典。
+        const preferredBigDictPath =
+          normalizedOptions.find((item) => /domain_2w\.txt$/i.test(item.path) || /domain_2w\.txt/i.test(item.label))?.path || '';
+        const effectiveDefaultPath = preferredBigDictPath || defaultPath;
 
         setTaskDomainDictOptions(normalizedOptions);
-        setTaskDefaultDomainDictPath(defaultPath);
+        setTaskFileLeakDictOptions(normalizedFileLeakOptions);
+        setTaskDefaultDomainDictPath(effectiveDefaultPath);
+        setTaskDefaultFileLeakDictPath(defaultFileLeakPath);
+
+        setFormPayload((prev) => {
+          let next = prev;
+          if (isTaskCreate) {
+            const currentDict = String(prev?.domain_dict || '').trim();
+            const currentFileLeakDict = String(prev?.file_leak_dict || '').trim();
+            if (!currentDict && effectiveDefaultPath) {
+              next = updatePayloadValue(next, 'domain_dict', effectiveDefaultPath);
+            }
+            if (!currentFileLeakDict && defaultFileLeakPath) {
+              next = updatePayloadValue(next, 'file_leak_dict', defaultFileLeakPath);
+            }
+            return next;
+          }
+
+          if (isPolicyAction) {
+            const domainDictPath = `${policyRootPath}.domain_dict`;
+            const fileLeakDictPath = `${policyRootPath}.file_leak_dict`;
+            const currentDict = getPayloadValue(prev, domainDictPath);
+            const currentFileLeakDict = getPayloadValue(prev, fileLeakDictPath);
+            // 策略字典支持“跟随配置管理默认值”，因此只补齐空串字段，不强制写入默认路径。
+            if (currentDict === undefined) {
+              next = updatePayloadValue(next, domainDictPath, '');
+            }
+            if (currentFileLeakDict === undefined) {
+              next = updatePayloadValue(next, fileLeakDictPath, '');
+            }
+          }
+          return next;
+        });
       } catch (err: any) {
         if (cancelled) return;
         setTaskDomainDictOptions([]);
         setTaskDefaultDomainDictPath('');
-        setTaskDomainDictError(err?.message || '加载任务字典列表失败');
+        setTaskFileLeakDictOptions([]);
+        setTaskDefaultFileLeakDictPath('');
+        setTaskDomainDictError(err?.message || '加载字典列表失败');
+        setTaskFileLeakDictError(err?.message || '加载字典列表失败');
       } finally {
         if (!cancelled) setTaskDomainDictLoading(false);
       }
@@ -4026,7 +4179,7 @@ function ActionDialog({
     return () => {
       cancelled = true;
     };
-  }, [isTaskCreate, token]);
+  }, [isPolicyAction, isTaskCreate, policyRootPath, shouldLoadDictOptions, token]);
 
   useEffect(() => {
     if (!shouldLoadPolicyOptions) {
@@ -4185,32 +4338,15 @@ function ActionDialog({
 
           {isTaskCreate ? (
             <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
-                  <input
-                    value={taskName}
-                    disabled={!editable}
-                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                    placeholder="例如：生产资产扫描-03"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">默认字典模式（未选字典时生效）</label>
-                  <div className="relative">
-                    <select
-                      value={taskDomainBruteType}
-                      disabled={!editable || Boolean(taskDomainDict)}
-                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain_brute_type', event.target.value))}
-                      className={UNIFIED_SELECT_CLASS}
-                    >
-                      <option value="test">test（小字典）</option>
-                      <option value="big">big（大字典）</option>
-                    </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-                  </div>
-                </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                <input
+                  value={taskName}
+                  disabled={!editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
+                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  placeholder="例如：生产资产扫描-03"
+                />
               </div>
 
               <div className="space-y-1">
@@ -4222,9 +4358,7 @@ function ActionDialog({
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain_dict', event.target.value))}
                     className={UNIFIED_SELECT_CLASS}
                   >
-                    <option value="">
-                      默认（使用配置管理字典{taskDefaultDomainDictPath ? `: ${taskDefaultDomainDictPath}` : ''}）
-                    </option>
+                    {taskDomainDictSelectOptions.length === 0 ? <option value="">暂无可用字典</option> : null}
                     {taskDomainDictSelectOptions.map((item) => (
                       <option key={item.path} value={item.path}>
                         {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
@@ -4234,13 +4368,44 @@ function ActionDialog({
                   <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
                 <p className="text-[11px] text-brand-text-muted">
-                  不选则使用配置管理默认字典；选择后优先使用该字典，默认字典模式不生效。
+                  默认自动选择 `domain_2w.txt`；你可以按任务改选其它字典。当前默认：
+                  {taskDefaultDomainDictPath ? ` ${taskDefaultDomainDictPath}` : '（未找到，需手动选择）'}
                 </p>
               </div>
 
               {taskDomainDictError ? (
                 <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
                   {taskDomainDictError}
+                </div>
+              ) : null}
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">敏感文件泄漏字典</label>
+                <div className="relative">
+                  <select
+                    value={taskFileLeakDict}
+                    disabled={!editable || taskDomainDictLoading}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'file_leak_dict', event.target.value))}
+                    className={UNIFIED_SELECT_CLASS}
+                  >
+                    {taskFileLeakDictSelectOptions.length === 0 ? <option value="">暂无可用字典</option> : null}
+                    {taskFileLeakDictSelectOptions.map((item) => (
+                      <option key={item.path} value={item.path}>
+                        {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+                <p className="text-[11px] text-brand-text-muted">
+                  默认使用配置管理中的敏感文件泄漏字典；你可以按任务改选其它字典。当前默认：
+                  {taskDefaultFileLeakDictPath ? ` ${taskDefaultFileLeakDictPath}` : '（未找到，需手动选择）'}
+                </p>
+              </div>
+
+              {taskFileLeakDictError ? (
+                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                  {taskFileLeakDictError}
                 </div>
               ) : null}
 
@@ -4778,43 +4943,85 @@ function ActionDialog({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">默认字典模式</label>
-                  <div className="relative">
-                    <select
-                      value={policyDomainBruteType}
-                      disabled={!editable}
-                      onChange={(event) => updatePolicyValue('domain_config.domain_brute_type', event.target.value)}
-                      className={UNIFIED_SELECT_CLASS}
-                    >
-                      <option value="test">测试字典</option>
-                      <option value="big">大字典</option>
-                    </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+                <h5 className="text-sm font-black">字典配置</h5>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-brand-text-muted">域名爆破字典</label>
+                    <div className="relative">
+                      <select
+                        value={policyDomainDict}
+                        disabled={!editable || taskDomainDictLoading}
+                        onChange={(event) => updatePolicyValue('domain_dict', event.target.value)}
+                        className={UNIFIED_SELECT_CLASS}
+                      >
+                        <option value="">跟随配置管理默认字典</option>
+                        {policyDomainDictSelectOptions.map((item) => (
+                          <option key={item.path} value={item.path}>
+                            {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    </div>
+                    <p className="text-[11px] text-brand-text-muted">
+                      不选择时，按配置管理默认字典执行。当前默认：
+                      {taskDefaultDomainDictPath ? ` ${taskDefaultDomainDictPath}` : '（未配置）'}
+                    </p>
                   </div>
-                  <p className="text-[11px] text-brand-text-muted">
-                    该模式仅在任务未指定“域名爆破字典”时生效。
-                  </p>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-brand-text-muted">敏感文件泄漏字典</label>
+                    <div className="relative">
+                      <select
+                        value={policyFileLeakDict}
+                        disabled={!editable || taskDomainDictLoading}
+                        onChange={(event) => updatePolicyValue('file_leak_dict', event.target.value)}
+                        className={UNIFIED_SELECT_CLASS}
+                      >
+                        <option value="">跟随配置管理默认字典</option>
+                        {policyFileLeakDictSelectOptions.map((item) => (
+                          <option key={item.path} value={item.path}>
+                            {item.label} [{item.source}] {item.exists ? '' : '(文件不存在)'}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    </div>
+                    <p className="text-[11px] text-brand-text-muted">
+                      不选择时，按配置管理默认字典执行。当前默认：
+                      {taskDefaultFileLeakDictPath ? ` ${taskDefaultFileLeakDictPath}` : '（未配置）'}
+                    </p>
+                  </div>
                 </div>
+              </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">端口扫描类型</label>
-                  <div className="relative">
-                    <select
-                      value={policyPortScanType}
-                      disabled={!editable}
-                      onChange={(event) => updatePolicyValue('ip_config.port_scan_type', event.target.value)}
-                      className={UNIFIED_SELECT_CLASS}
-                    >
-                      <option value="test">测试</option>
-                      <option value="top100">TOP100</option>
-                      <option value="top1000">TOP1000</option>
-                      <option value="all">全端口</option>
-                      <option value="custom">自定义</option>
-                    </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-                  </div>
+              {taskDomainDictError ? (
+                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                  {taskDomainDictError}
+                </div>
+              ) : null}
+              {taskFileLeakDictError ? (
+                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                  {taskFileLeakDictError}
+                </div>
+              ) : null}
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">端口扫描类型</label>
+                <div className="relative">
+                  <select
+                    value={policyPortScanType}
+                    disabled={!editable}
+                    onChange={(event) => updatePolicyValue('ip_config.port_scan_type', event.target.value)}
+                    className={UNIFIED_SELECT_CLASS}
+                  >
+                    <option value="test">测试</option>
+                    <option value="top100">TOP100</option>
+                    <option value="top1000">TOP1000</option>
+                    <option value="all">全端口</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
 
@@ -4830,64 +5037,6 @@ function ActionDialog({
                   />
                 </div>
               ) : null}
-
-              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
-                <h5 className="text-sm font-black">扫描配置</h5>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted">主机超时时间</label>
-                    <div className="relative">
-                      <select
-                        value={policyHostTimeoutType}
-                        disabled={!editable}
-                        onChange={(event) => updatePolicyValue('ip_config.host_timeout_type', event.target.value)}
-                        className={UNIFIED_SELECT_CLASS}
-                      >
-                        <option value="default">默认(900s)</option>
-                        <option value="custom">自定义</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted">探测报文并行度</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={String(Number.isFinite(policyPortParallelism) ? policyPortParallelism : 32)}
-                      disabled={!editable}
-                      onChange={(event) => updatePolicyValue('ip_config.port_parallelism', Number(event.target.value || 0))}
-                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-
-                {policyHostTimeoutType === 'custom' ? (
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted">主机超时时间(s)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={String(Number.isFinite(policyHostTimeout) ? policyHostTimeout : 900)}
-                      disabled={!editable}
-                      onChange={(event) => updatePolicyValue('ip_config.host_timeout', Number(event.target.value || 0))}
-                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                    />
-                  </div>
-                ) : null}
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">最少发包速率</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={String(Number.isFinite(policyPortMinRate) ? policyPortMinRate : 60)}
-                    disabled={!editable}
-                    onChange={(event) => updatePolicyValue('ip_config.port_min_rate', Number(event.target.value || 0))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
 
               <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
                 <div className="flex items-center justify-between gap-3">
@@ -5145,6 +5294,11 @@ function ActionDialog({
                       .map((item) => item.trim())
                       .filter((item) => item);
                     const normalizedDomainDict = String(payload.domain_dict || '').trim();
+                    const fallbackDomainDict = String(taskDefaultDomainDictPath || '').trim();
+                    const resolvedDomainDict = normalizedDomainDict || fallbackDomainDict;
+                    const normalizedFileLeakDict = String(payload.file_leak_dict || '').trim();
+                    const fallbackFileLeakDict = String(taskDefaultFileLeakDictPath || '').trim();
+                    const resolvedFileLeakDict = normalizedFileLeakDict || fallbackFileLeakDict;
                     const normalizedPortScanType = String(payload.port_scan_type || 'test').trim().toLowerCase();
                     const normalizedPortCustom = String(payload.port_custom || '')
                       .replace(/，/g, ',')
@@ -5175,11 +5329,19 @@ function ActionDialog({
                     payload.name = normalizedName;
                     payload.target = normalizedTargets.join('\n');
                     payload.domain_brute = true;
+                    payload.domain_brute_type = 'big';
                     payload.port_scan_type = normalizedPortScanType;
-                    if (normalizedDomainDict) {
-                      payload.domain_dict = normalizedDomainDict;
+                    if (!resolvedDomainDict) {
+                      throw new Error('未找到可用域名爆破字典，请先在配置管理中确认 domain_2w.txt 或上传字典');
+                    }
+                    payload.domain_dict = resolvedDomainDict;
+                    if (Boolean(payload.file_leak) && !resolvedFileLeakDict) {
+                      throw new Error('文件泄漏已开启，但未找到可用敏感文件泄漏字典，请先在配置管理中配置或上传字典');
+                    }
+                    if (resolvedFileLeakDict) {
+                      payload.file_leak_dict = resolvedFileLeakDict;
                     } else {
-                      delete payload.domain_dict;
+                      delete payload.file_leak_dict;
                     }
                     if (normalizedPortScanType === 'custom') {
                       payload.port_custom = normalizedPortCustom;
@@ -5357,35 +5519,35 @@ function ActionDialog({
                       throw new Error('请填写策略名称');
                     }
 
-                    const normalizedHostTimeout = Number(getPayloadValue(payload, getPolicyPath('ip_config.host_timeout')) || 900);
-                    const normalizedParallelism = Number(getPayloadValue(payload, getPolicyPath('ip_config.port_parallelism')) || 32);
-                    const normalizedMinRate = Number(getPayloadValue(payload, getPolicyPath('ip_config.port_min_rate')) || 60);
                     const normalizedPortScanType = String(getPayloadValue(payload, getPolicyPath('ip_config.port_scan_type')) || 'test').trim().toLowerCase();
-                    const normalizedPortCustom = String(getPayloadValue(payload, getPolicyPath('ip_config.port_custom')) || '').trim();
-                    const normalizedDomainBruteType = String(getPayloadValue(payload, getPolicyPath('domain_config.domain_brute_type')) || 'test').trim().toLowerCase();
+                    const normalizedPortCustom = String(getPayloadValue(payload, getPolicyPath('ip_config.port_custom')) || '')
+                      .replace(/，/g, ',')
+                      .replace(/\s+/g, ',')
+                      .split(',')
+                      .map((item) => item.trim())
+                      .filter((item) => item)
+                      .join(',');
+                    const normalizedDomainDict = String(getPayloadValue(payload, getPolicyPath('domain_dict')) || '').trim();
+                    const normalizedFileLeakDict = String(getPayloadValue(payload, getPolicyPath('file_leak_dict')) || '').trim();
 
                     if (normalizedPortScanType === 'custom' && !normalizedPortCustom) {
                       throw new Error('端口扫描类型为自定义时，请填写自定义端口');
                     }
-                    if (!['test', 'big'].includes(normalizedDomainBruteType)) {
-                      throw new Error('默认字典模式无效');
-                    }
-                    if (!Number.isFinite(normalizedHostTimeout) || normalizedHostTimeout <= 0) {
-                      throw new Error('主机超时时间(s) 必须大于 0');
-                    }
-                    if (!Number.isFinite(normalizedParallelism) || normalizedParallelism <= 0) {
-                      throw new Error('探测报文并行度必须大于 0');
-                    }
-                    if (!Number.isFinite(normalizedMinRate) || normalizedMinRate <= 0) {
-                      throw new Error('最少发包速率必须大于 0');
+                    if (normalizedPortScanType === 'custom') {
+                      const hasInvalidPort = normalizedPortCustom
+                        .split(',')
+                        .some((item) => !/^\d+(?:-\d+)?$/.test(item));
+                      if (hasInvalidPort) {
+                        throw new Error('自定义端口格式错误，仅支持端口或端口段，如 80,443,10000-10100');
+                      }
                     }
 
                     payload = updatePayloadValue(payload, policyNamePath, normalizedPolicyName);
+                    // 策略层固定启用域名爆破，字典来源通过 domain_dict 指定。
                     payload = updatePayloadValue(payload, getPolicyPath('domain_config.domain_brute'), true);
-                    payload = updatePayloadValue(payload, getPolicyPath('domain_config.domain_brute_type'), normalizedDomainBruteType);
-                    payload = updatePayloadValue(payload, getPolicyPath('ip_config.host_timeout'), Math.floor(normalizedHostTimeout));
-                    payload = updatePayloadValue(payload, getPolicyPath('ip_config.port_parallelism'), Math.floor(normalizedParallelism));
-                    payload = updatePayloadValue(payload, getPolicyPath('ip_config.port_min_rate'), Math.floor(normalizedMinRate));
+                    payload = updatePayloadValue(payload, getPolicyPath('domain_config.domain_brute_type'), 'big');
+                    payload = updatePayloadValue(payload, getPolicyPath('domain_dict'), normalizedDomainDict);
+                    payload = updatePayloadValue(payload, getPolicyPath('file_leak_dict'), normalizedFileLeakDict);
                     if (normalizedPortScanType === 'custom') {
                       payload = updatePayloadValue(payload, getPolicyPath('ip_config.port_custom'), normalizedPortCustom);
                     }
@@ -7168,6 +7330,35 @@ function TableModuleView({
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
+                              ) : null}
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'wih' && column === 'record_type') {
+                          const recordType = String(row?.record_type || '').trim();
+                          const sensitive = isSensitiveWihRow(row);
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span className={getWihRecordTypeTagClass(recordType, sensitive)}>
+                                {recordType || '-'}
+                              </span>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'wih' && column === 'content') {
+                          const sensitive = isSensitiveWihRow(row);
+                          const contentText = formatModuleCellValue(module.id, column, row);
+                          // 敏感记录在 WIH 中添加显著色块与标识，便于人工优先复核。
+                          const contentClass = sensitive
+                            ? 'whitespace-pre-wrap break-all leading-relaxed rounded-xl border border-brand-danger/45 bg-brand-danger/10 px-3 py-2'
+                            : 'whitespace-pre-wrap break-all leading-relaxed';
+                          return (
+                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[680px]">
+                              <div className={contentClass}>{contentText}</div>
+                              {sensitive ? (
+                                <div className="mt-2 text-[11px] font-black text-brand-danger">敏感信息</div>
                               ) : null}
                             </td>
                           );

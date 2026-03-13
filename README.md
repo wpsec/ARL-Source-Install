@@ -173,8 +173,10 @@ ARL/docker/config-docker.yaml
 
 说明：
 
+- 当前仅扫描 WIH 已发现的 JS URL（`source/content` 为 `http(s)` 且命中 `.js`），不直接扫描 `html/txt` 文件
 - 扫描结果写入 `wih` 表，记录类型前缀为 `trufflehog_*`
 - 结果内容默认原文入库，便于复核与定位
+- `trufflehog_*` 与 `app_key/api_key/token` 等高价值敏感记录会同步写入 `vuln` 风险模块，并在 WIH 页面高亮显示
 
 ## Bug？
 
@@ -183,6 +185,14 @@ ARL/docker/config-docker.yaml
 ## 更新日志
 
 建议以 [CHANGELOG.md](./CHANGELOG.md) 为主，`README` 保留最近版本摘要（同日版本合并记录）。
+
+### 2026-03-13（v3.0.45 ~ v3.0.47）
+
+- `[v3.0.45]` `nuclei` 分批策略优化：`NUCLEI_TARGETS_PER_BATCH<=1` 时自动按并发与超时预算计算批次，避免默认单目标拆分导致扫描明显变慢
+- `[v3.0.45]` `nuclei` 自动扫描回退优化：仅在执行失败或模板未命中时才回退 `-tags`，不再因“无结果”重复跑一轮
+- `[v3.0.46]` 策略配置（新建/编辑）移除“扫描配置”可视化编辑区，策略层不再承载主机超时/发包速率等细粒度调优项
+- `[v3.0.46]` 策略配置新增“域名爆破字典 / 敏感文件泄漏字典”选择，支持按策略指定任务字典或留空跟随配置管理默认值
+- `[v3.0.47]` WIH 增强：`trufflehog_*` 与 `app_key/api_key/token` 等敏感记录会同步进入风险模块，并在 WIH 列表高亮提示
 
 ### 2026-03-12（v3.0.33）
 

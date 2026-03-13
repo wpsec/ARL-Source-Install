@@ -3,11 +3,12 @@
 """
 import time
 import re
+import os
 from urllib.parse import urlparse
 from bson import ObjectId
 from app import utils
 from app import services
-from app.config import Config
+from app.config import Config, normalize_dict_path_compat
 from app.modules import CollectSource, WebSiteFetchStatus, WebSiteFetchOption
 from app.services.nuclei_scan import nuclei_scan
 from app.services import run_risk_cruising, BaseUpdateTask
@@ -202,8 +203,23 @@ class WebSiteFetch(object):
             self.available_sites.append(curr_site)
 
     def file_leak(self):
+        # 任务级 file_leak_dict 优先；未指定或不可用时回退系统默认配置字典。
+        custom_file_leak_dict = normalize_dict_path_compat(self.options.get("file_leak_dict", ""))
+        custom_file_leak_dict = str(custom_file_leak_dict or "").strip()
+        file_leak_dict_path = Config.FILE_LEAK_TOP_2k
+        if custom_file_leak_dict:
+            if os.path.isfile(custom_file_leak_dict):
+                file_leak_dict_path = custom_file_leak_dict
+            else:
+                logger.warning(
+                    "task_id:{} file_leak_dict not found, fallback default dict: {}".format(
+                        self.task_id, custom_file_leak_dict
+                    )
+                )
+
+        file_leak_dict_words = utils.load_file(file_leak_dict_path)
         for site in self.poc_sites:
-            pages = services.file_leak([site], utils.load_file(Config.FILE_LEAK_TOP_2k))
+            pages = services.file_leak([site], file_leak_dict_words)
             for page in pages:
                 item = page.dump_json()
                 item["task_id"] = self.task_id
@@ -369,6 +385,167 @@ class WebSiteFetch(object):
 
                 self.wih_domain_set.add(record.content)
 
+    @staticmethod
+    def _is_http_url(value: str) -> bool:
+        """
+        判断文本是否是 http/https URL。
+        """
+        text = str(value or "").strip().lower()
+        return text.startswith("http://") or text.startswith("https://")
+
+    def _should_promote_wih_to_risk(self, record) -> bool:
+        """
+        判断 WIH 记录是否需要同步到风险(vuln)模块。
+        """
+        record_type = str(getattr(record, "recordType", "") or "").strip().lower()
+        content = str(getattr(record, "content", "") or "").strip().lower()
+        if not record_type and not content:
+            return False
+
+        if record_type.startswith("trufflehog_"):
+            return True
+
+        sensitive_record_type_set = {
+            "app_key",
+            "api_key",
+            "access_key",
+            "secret_key",
+            "client_secret",
+            "private_key",
+            "token",
+            "jwt",
+            "authorization",
+            "password",
+            "passwd",
+            "credential",
+        }
+        if record_type in sensitive_record_type_set:
+            return True
+
+        if record_type.endswith("_key") or record_type.endswith("_token"):
+            return True
+
+        sensitive_keywords = (
+            "app_key",
+            "api_key",
+            "access_key",
+            "secret_key",
+            "client_secret",
+            "private_key",
+            "authorization: bearer",
+            "password",
+            "passwd",
+            "token",
+            "jwt",
+        )
+        for keyword in sensitive_keywords:
+            if keyword in content:
+                return True
+
+        return False
+
+    @staticmethod
+    def _infer_wih_risk_severity(record_type: str, content: str) -> str:
+        """
+        基于记录类型和内容推断风险等级。
+        """
+        merged = "{} {}".format(str(record_type or "").lower(), str(content or "").lower())
+        high_keywords = (
+            "private_key",
+            "secret_key",
+            "client_secret",
+            "password",
+            "passwd",
+            "(verified)",
+        )
+        medium_keywords = (
+            "app_key",
+            "api_key",
+            "access_key",
+            "token",
+            "jwt",
+            "(unknown)",
+            "(unverified)",
+        )
+        if any(keyword in merged for keyword in high_keywords):
+            return "high"
+        if any(keyword in merged for keyword in medium_keywords):
+            return "medium"
+        return "info"
+
+    def _build_wih_vuln_item(self, record):
+        """
+        将敏感 WIH 记录转换为风险(vuln)记录。
+        """
+        if not self._should_promote_wih_to_risk(record):
+            return None
+
+        record_type = str(getattr(record, "recordType", "") or "").strip()
+        content_raw = str(getattr(record, "content", "") or "").strip()
+        source = str(getattr(record, "source", "") or "").strip()
+        site = str(getattr(record, "site", "") or "").strip()
+        fnv_hash = str(getattr(record, "fnv_hash", "") or "").strip()
+
+        # 凭证字段限制长度，避免超长内容影响风险列表与导出体验。
+        verify_data = content_raw
+        if len(verify_data) > 2048:
+            verify_data = "{}...[truncated]".format(verify_data[:2048])
+
+        normalized_type = record_type.lower()
+        is_trufflehog = normalized_type.startswith("trufflehog_")
+        detector_name = normalized_type.replace("trufflehog_", "", 1) if is_trufflehog else normalized_type
+        detector_name = detector_name or "secret"
+
+        if is_trufflehog:
+            vul_name = "TruffleHog 检测到敏感信息 ({})".format(detector_name)
+            plg_name = "trufflehog"
+            app_name = "trufflehog"
+        else:
+            vul_name = "WIH 检测到敏感信息 ({})".format(detector_name)
+            plg_name = "wih"
+            app_name = "wih"
+
+        target = source if self._is_http_url(source) else (site or source or "-")
+        detail = "record_type={} source={} site={}".format(record_type or "-", source or "-", site or "-")
+        severity = self._infer_wih_risk_severity(normalized_type, content_raw)
+
+        return {
+            "task_id": self.task_id,
+            "plg_name": plg_name,
+            "plg_type": "敏感信息泄露",
+            "vul_name": vul_name,
+            "app_name": app_name,
+            "target": target,
+            "severity": severity,
+            "description": detail,
+            "detail": detail,
+            "verify_data": verify_data,
+            "save_date": utils.curr_date(),
+            "wih_fnv_hash": fnv_hash,
+            "wih_record_type": record_type,
+            "wih_source": source,
+        }
+
+    def _save_wih_risk(self, record):
+        """
+        将敏感 WIH 记录写入风险库，按任务+WIH哈希去重。
+        """
+        item = self._build_wih_vuln_item(record)
+        if not item:
+            return
+
+        try:
+            utils.conn_db('vuln').update_one(
+                {
+                    "task_id": self.task_id,
+                    "wih_fnv_hash": item["wih_fnv_hash"],
+                },
+                {"$setOnInsert": item},
+                upsert=True,
+            )
+        except Exception as e:
+            logger.warning("save wih risk failed task_id:{} err:{}".format(self.task_id, e))
+
     def run_web_info_hunter(self):
         records = set(services.run_wih(self.sites))
         if records:
@@ -387,6 +564,8 @@ class WebSiteFetch(object):
             item["task_id"] = self.task_id
             utils.conn_db('wih').insert_one(item)
             self.wih_record_set.add(record.fnv_hash)
+            # WIH 的高价值敏感记录（含 TruffleHog 命中）同步进入风险模块统一处置。
+            self._save_wih_risk(record)
 
     def run(self):
         # *** 对站点进行基本信息的获取
