@@ -376,9 +376,15 @@ def asset_monitor_scheduler():
         - wih_update_monitor: Web指纹更新监控
     """
     curr_time = int(time.time())
-    
+
+    try:
+        items = all_job()
+    except Exception as e:
+        logger.exception("load scheduler jobs failed: {}".format(e))
+        return
+
     # 遍历所有定时任务
-    for item in all_job():
+    for item in items:
         try:
             # 跳过已停止的任务
             if item.get("status") == SchedulerStatus.STOP:
@@ -458,15 +464,24 @@ def run_forever():
     while True:
         # 资产监控任务调度
         # 处理域名/IP的定期扫描、站点更新监控、WIH更新监控
-        asset_monitor_scheduler()
+        try:
+            asset_monitor_scheduler()
+        except Exception as e:
+            logger.exception("asset_monitor_scheduler failed: {}".format(e))
 
         # Github 监控任务调度
         # 监控GitHub代码仓库，查找敏感信息泄露
-        github_task_scheduler()
+        try:
+            github_task_scheduler()
+        except Exception as e:
+            logger.exception("github_task_scheduler failed: {}".format(e))
 
         # 计划任务调度
         # 处理用户通过Web界面创建的扫描任务
-        task_schedule.task_scheduler()
+        try:
+            task_schedule.task_scheduler()
+        except Exception as e:
+            logger.exception("task_schedule.task_scheduler failed: {}".format(e))
 
         # logger.debug(time.time())
         # sleep 时间不能超过60S，Github 里的任务可能运行不了。

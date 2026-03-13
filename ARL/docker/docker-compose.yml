@@ -50,6 +50,9 @@ services:
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
+      # Mongo 启动阶段可能端口已监听但尚未可用，适当放宽客户端超时避免进程误判退出
+      - ARL_MONGO_SERVER_SELECTION_TIMEOUT_MS=30000
+      - ARL_MONGO_CONNECT_TIMEOUT_MS=15000
       - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
@@ -76,6 +79,9 @@ services:
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
+      # Mongo 启动阶段可能端口已监听但尚未可用，适当放宽客户端超时避免进程误判退出
+      - ARL_MONGO_SERVER_SELECTION_TIMEOUT_MS=30000
+      - ARL_MONGO_CONNECT_TIMEOUT_MS=15000
       - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
@@ -92,6 +98,9 @@ services:
       - redis
     volumes:
       - ./config-docker.yaml:/code/app/config.yaml
+      # scheduler 也需要读取字典路径（配置加载阶段会校验文件存在）
+      - ./dicts/domain:/code/app/dicts/custom/domain
+      - ./dicts/file_leak:/code/app/dicts/custom/file_leak
     entrypoint:
       [
         "sh",
@@ -101,6 +110,13 @@ services:
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
+      # Mongo 启动阶段可能端口已监听但尚未可用，适当放宽客户端超时避免进程误判退出
+      - ARL_MONGO_SERVER_SELECTION_TIMEOUT_MS=30000
+      - ARL_MONGO_CONNECT_TIMEOUT_MS=15000
+      - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain
+      - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
+      - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
+      - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
 
   mongodb:
     image: mongo:7.0

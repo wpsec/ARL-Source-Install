@@ -113,7 +113,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
       <nav className="flex-1 px-4 py-8 space-y-10">
         {navGroups.map((group) => (
           <div key={group.label} className="space-y-3">
-            <h3 className={cn("px-4 text-[11px] font-black uppercase tracking-[0.15em] opacity-40", group.color)}>
+            <h3 className={cn("px-4 text-[11px] font-black uppercase tracking-[0.15em] opacity-65", group.color)}>
               {group.label}
             </h3>
             <div className="space-y-1">

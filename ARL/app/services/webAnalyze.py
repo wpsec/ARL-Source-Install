@@ -13,7 +13,14 @@ class WebAnalyze(BaseThread):
     def __init__(self, sites, concurrency=3):
         super().__init__(sites, concurrency = concurrency)
         self.analyze_map = {}
-        self.phantomjs_bin = utils.get_phantomjs_bin(logger=logger)
+        try:
+            self.phantomjs_bin = utils.get_phantomjs_bin(logger=logger)
+        except Exception as e:
+            logger.warning("get_phantomjs_bin failed {}, fallback skip site_identify".format(e))
+            self.phantomjs_bin = ""
+
+        if not self.phantomjs_bin:
+            logger.warning("phantomjs unavailable, skip site_identify for current task")
 
     def work(self, site):
         if not self.phantomjs_bin:
@@ -53,7 +60,6 @@ class WebAnalyze(BaseThread):
 def web_analyze(sites, concurrency=3):
     s = WebAnalyze(sites, concurrency=concurrency)
     return s.run()
-
 
 
 

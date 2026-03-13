@@ -141,9 +141,23 @@ def get_phantomjs_bin(logger=None):
 
     try:
         completed = exec_system([command, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=8)
+    except subprocess.TimeoutExpired as e:
+        if logger:
+            logger.error(
+                "phantomjs check timeout {} timeout={}s arch={}".format(
+                    command,
+                    getattr(e, "timeout", 8),
+                    get_runtime_arch(),
+                )
+            )
+        return ""
     except OSError as e:
         if logger:
             logger.error("phantomjs exec failed {} error: {}".format(command, e))
+        return ""
+    except Exception as e:
+        if logger:
+            logger.error("phantomjs check unexpected error {} error: {}".format(command, e))
         return ""
 
     if completed.returncode != 0:
