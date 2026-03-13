@@ -21,11 +21,11 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   const { theme, setTheme } = useTheme();
 
   const themes: { id: ThemeType; label: string; color: string }[] = [
-    { id: 'nord', label: '北欧极光', color: 'bg-[#88c0d0]' },
-    { id: 'midnight', label: '午夜科技', color: 'bg-[#6366f1]' },
-    { id: 'slate', label: '专业灰蓝', color: 'bg-[#38bdf8]' },
-    { id: 'titanium', label: '钛金黑', color: 'bg-[#3b82f6]' },
-    { id: 'sandstone', label: '砂岩白', color: 'bg-[#44403c]' },
+    { id: 'nord', label: '北欧极光', color: 'bg-[#88a8c4]' },
+    { id: 'midnight', label: '午夜科技', color: 'bg-[#7b8ccf]' },
+    { id: 'slate', label: '专业灰蓝', color: 'bg-[#67a9cf]' },
+    { id: 'titanium', label: '钛金黑', color: 'bg-[#6e8bb8]' },
+    { id: 'sandstone', label: '砂岩白', color: 'bg-[#6b625a]' },
   ];
 
   const navGroups = [

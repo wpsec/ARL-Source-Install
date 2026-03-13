@@ -1,51 +1,51 @@
 @import "tailwindcss";
 
 :root {
-  --brand-bg: #020617;
-  --brand-card: #0f172a;
-  --brand-border: #1e293b;
-  --brand-accent: #6366f1;
-  --brand-accent-rgb: 99, 102, 241;
-  --brand-secondary: #0ea5e9;
-  --brand-warning: #f59e0b;
-  --brand-danger: #ef4444;
-  --brand-text-muted: #64748b;
+  --brand-bg: #0b1020;
+  --brand-card: #141c31;
+  --brand-border: #24304a;
+  --brand-accent: #7b8ccf;
+  --brand-accent-rgb: 123, 140, 207;
+  --brand-secondary: #6fa7c9;
+  --brand-warning: #d6a45a;
+  --brand-danger: #d47b7b;
+  --brand-text-muted: #8fa0c0;
 }
 
 [data-theme='slate'] {
-  --brand-bg: #0f172a;
-  --brand-card: #1e293b;
-  --brand-border: #334155;
-  --brand-accent: #38bdf8;
-  --brand-accent-rgb: 56, 189, 248;
-  --brand-secondary: #818cf8;
-  --brand-warning: #fbbf24;
-  --brand-danger: #f87171;
-  --brand-text-muted: #94a3b8;
+  --brand-bg: #131a24;
+  --brand-card: #1c2533;
+  --brand-border: #2d3a4d;
+  --brand-accent: #67a9cf;
+  --brand-accent-rgb: 103, 169, 207;
+  --brand-secondary: #8aa1d6;
+  --brand-warning: #d6b06a;
+  --brand-danger: #d88989;
+  --brand-text-muted: #97a6bb;
 }
 
 [data-theme='nord'] {
-  --brand-bg: #05070a;
-  --brand-card: #0d1117;
-  --brand-border: #1a1f29;
-  --brand-accent: #00ffcc;
-  --brand-accent-rgb: 0, 255, 204;
-  --brand-secondary: #00e5ff;
-  --brand-warning: #ffcc00;
-  --brand-danger: #ff3366;
-  --brand-text-muted: #8b949e;
+  --brand-bg: #11151c;
+  --brand-card: #1b222d;
+  --brand-border: #2a3442;
+  --brand-accent: #88a8c4;
+  --brand-accent-rgb: 136, 168, 196;
+  --brand-secondary: #9bb2c9;
+  --brand-warning: #d0b070;
+  --brand-danger: #cb8a92;
+  --brand-text-muted: #93a1b2;
 }
 
 [data-theme='titanium'] {
-  --brand-bg: #09090b;
-  --brand-card: #18181b;
-  --brand-border: #27272a;
-  --brand-accent: #3b82f6;
-  --brand-accent-rgb: 59, 130, 246;
-  --brand-secondary: #a855f7;
-  --brand-warning: #f59e0b;
-  --brand-danger: #ef4444;
-  --brand-text-muted: #d4d4d8;
+  --brand-bg: #161618;
+  --brand-card: #212226;
+  --brand-border: #34363d;
+  --brand-accent: #6e8bb8;
+  --brand-accent-rgb: 110, 139, 184;
+  --brand-secondary: #9a89b6;
+  --brand-warning: #cda268;
+  --brand-danger: #c57b7b;
+  --brand-text-muted: #acafb8;
 }
 
 [data-theme='emerald'] {
@@ -73,15 +73,15 @@
 }
 
 [data-theme='sandstone'] {
-  --brand-bg: #f5f5f4;
+  --brand-bg: #f7f5f2;
   --brand-card: #ffffff;
-  --brand-border: #d6d3d1;
-  --brand-accent: #292524;
-  --brand-accent-rgb: 41, 37, 36;
-  --brand-secondary: #57534e;
-  --brand-warning: #d97706;
-  --brand-danger: #dc2626;
-  --brand-text-muted: #78716c;
+  --brand-border: #ddd6cf;
+  --brand-accent: #3f3a36;
+  --brand-accent-rgb: 63, 58, 54;
+  --brand-secondary: #6b625a;
+  --brand-warning: #bf8b49;
+  --brand-danger: #b76161;
+  --brand-text-muted: #847a71;
 }
 
 [data-theme='oceanic'] {
@@ -143,7 +143,11 @@
   textarea {
     -webkit-tap-highlight-color: transparent;
     backface-visibility: hidden;
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
     border-radius: 0.75rem;
+    background-clip: padding-box;
     transition:
       border-color 0.18s ease,
       box-shadow 0.18s ease,
@@ -161,6 +165,15 @@
     min-height: 2.625rem;
   }
 
+  select {
+    color: inherit;
+  }
+
+  select option {
+    color: inherit;
+    background-color: var(--brand-card);
+  }
+
   textarea {
     min-height: 6.5rem;
     resize: vertical;
@@ -172,9 +185,13 @@
   textarea:focus-visible {
     outline: none;
     border-color: var(--brand-accent);
-    box-shadow:
-      0 0 0 2px rgba(var(--brand-accent-rgb), 0.24),
-      0 8px 24px rgba(2, 6, 23, 0.16);
+    box-shadow: 0 0 0 2px rgba(var(--brand-accent-rgb), 0.24);
+  }
+
+  input:not([type='checkbox']):not([type='radio'])::selection,
+  textarea::selection {
+    color: #ffffff;
+    background: rgba(var(--brand-accent-rgb), 0.42);
   }
 
   input[type='checkbox'] {
