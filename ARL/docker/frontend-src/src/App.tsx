@@ -6862,16 +6862,6 @@ function TableModuleView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {hasExternalFilters ? (
-            <button
-              onClick={() => onOpenModule('task')}
-              className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
-              title="返回任务管理"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              返回任务管理
-            </button>
-          ) : null}
           <StatusPill text={selectionStatus} type="info" />
           {success ? <StatusPill text={success} type="success" /> : null}
           {error ? <StatusPill text={error} type="error" /> : null}
