@@ -558,14 +558,16 @@ def _resolve_cert_domain(item, cert_obj, ip_domain_map=None, task_domain_set=Non
     if item_domain:
         return item_domain
 
-    item_domains = item.get("domains", [])
-    if isinstance(item_domains, str):
-        item_domains = [item_domains]
-    if isinstance(item_domains, list):
-        for domain in item_domains:
-            normalized = _normalize_cert_domain(domain)
-            if normalized:
-                return normalized
+    scan_mode = sanitize_excel_value(item.get("scan_mode", "")).strip().lower()
+    if scan_mode == "sni":
+        item_domains = item.get("domains", [])
+        if isinstance(item_domains, str):
+            item_domains = [item_domains]
+        if isinstance(item_domains, list):
+            for domain in item_domains:
+                normalized = _normalize_cert_domain(domain)
+                if normalized:
+                    return normalized
 
     ip = sanitize_excel_value(item.get("ip", "")).strip()
     mapped_domains = ip_domain_map.get(ip, [])

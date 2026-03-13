@@ -2390,6 +2390,7 @@ function formatCertHostCell(row: any): string {
   const ip = normalizeValue(row?.ip);
   const port = normalizeValue(row?.port);
   const endpoint = ip === '-' && port === '-' ? '-' : (port === '-' ? ip : `${ip}:${port}`);
+  const scanMode = String(row?.scan_mode || '').trim().toLowerCase();
 
   const domainCandidates: string[] = [];
   const sniDomain = String(row?.sni_domain || '').trim();
@@ -2400,11 +2401,13 @@ function formatCertHostCell(row: any): string {
   if (primaryDomain) {
     domainCandidates.push(primaryDomain);
   }
-  const domainList = Array.isArray(row?.domains) ? row.domains : [];
-  domainList.forEach((item: any) => {
-    const text = String(item || '').trim();
-    if (text) domainCandidates.push(text);
-  });
+  if (scanMode === 'sni') {
+    const domainList = Array.isArray(row?.domains) ? row.domains : [];
+    domainList.forEach((item: any) => {
+      const text = String(item || '').trim();
+      if (text) domainCandidates.push(text);
+    });
+  }
   const uniqueDomains = Array.from(new Set(domainCandidates));
   const domain = uniqueDomains.length > 0 ? uniqueDomains[0] : '-';
 

@@ -1150,15 +1150,26 @@ class DomainTask(CommonTask):
             if not sni_domain and scan_mode == "sni":
                 sni_domain = legacy_server_name
 
-            domain = sni_domain
-            domains = scan_meta.get("domains", [])
-            if isinstance(domains, str):
-                domains = [domains]
-            if not isinstance(domains, list):
-                domains = []
-            domains = [str(x).strip().lower() for x in domains if str(x).strip()]
-            if domain and domain not in domains:
-                domains.insert(0, domain)
+            domains = fetchCert.normalize_domains(scan_meta.get("domains", []))
+            if sni_domain and sni_domain not in domains:
+                domains = fetchCert.normalize_domains(domains + [sni_domain])
+
+            matched_domains = fetchCert.match_cert_domains(cert_data, domains)
+            # domain 任务仅保留与目标域上下文命中的证书，避免将 CDN 默认证书映射到业务域名。
+            if domains and not matched_domains:
+                continue
+
+            if scan_mode == "sni" and sni_domain and matched_domains and sni_domain not in matched_domains:
+                continue
+
+            domains = matched_domains if matched_domains else domains
+
+            if scan_mode == "sni" and sni_domain and sni_domain in domains:
+                domain = sni_domain
+            elif domains:
+                domain = domains[0]
+            else:
+                domain = ""
 
             fingerprint = cert_data.get("fingerprint", {}) if isinstance(cert_data.get("fingerprint"), dict) else {}
             cert_sha256 = str(fingerprint.get("sha256", "")).strip().lower().replace(":", "")

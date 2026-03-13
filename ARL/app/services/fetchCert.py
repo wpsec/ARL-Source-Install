@@ -140,6 +140,127 @@ def _sort_sni_domains(domains, base_domain=""):
     return sorted(domain_list, key=_score)
 
 
+def _normalize_cert_domain_pattern(value):
+    """
+    归一化证书域名模式（支持 *.example.com 通配符）。
+    """
+    text = str(value or "").strip().lower().rstrip(".")
+    if not text:
+        return ""
+
+    if text.startswith("*."):
+        base = text[2:].strip()
+        if not base or not utils.is_valid_domain(base):
+            return ""
+        return "*.{}".format(base)
+
+    if not utils.is_valid_domain(text):
+        return ""
+
+    return text
+
+
+def _extract_cert_dns_patterns(cert_obj):
+    """
+    从证书对象中提取可匹配的 DNS 模式（subject CN + SAN DNS）。
+    """
+    if not isinstance(cert_obj, dict):
+        return []
+
+    patterns = []
+    seen = set()
+
+    def _append_pattern(value):
+        pattern = _normalize_cert_domain_pattern(value)
+        if not pattern or pattern in seen:
+            return
+        seen.add(pattern)
+        patterns.append(pattern)
+
+    subject = cert_obj.get("subject", {}) if isinstance(cert_obj.get("subject"), dict) else {}
+    _append_pattern(subject.get("common_name", ""))
+
+    extensions = cert_obj.get("extensions", {}) if isinstance(cert_obj.get("extensions"), dict) else {}
+    san_text = str(extensions.get("subjectAltName", "") or "").strip()
+    if san_text:
+        for raw_item in san_text.split(","):
+            item = str(raw_item or "").strip()
+            if not item:
+                continue
+
+            if ":" in item:
+                prefix, value = item.split(":", 1)
+                if prefix.strip().lower() != "dns":
+                    continue
+                _append_pattern(value)
+            else:
+                _append_pattern(item)
+
+    return patterns
+
+
+def _match_cert_pattern(pattern, domain):
+    """
+    判断证书模式是否匹配目标域名。
+    """
+    pattern = _normalize_cert_domain_pattern(pattern)
+    domain = str(domain or "").strip().lower().rstrip(".")
+    if not pattern or not domain:
+        return False
+
+    if pattern.startswith("*."):
+        suffix = pattern[2:]
+        if not suffix:
+            return False
+        if domain == suffix:
+            return False
+        if not domain.endswith(".{}".format(suffix)):
+            return False
+        left = domain[: -(len(suffix) + 1)]
+        return bool(left) and "." not in left
+
+    return domain == pattern
+
+
+def normalize_domains(domains):
+    """
+    对外暴露的域名归一化工具。
+    """
+    return _normalize_domains(domains)
+
+
+def match_cert_domains(cert_obj, domains):
+    """
+    返回证书与给定域名列表的命中结果（去重后按字典序）。
+    """
+    domain_list = _normalize_domains(domains)
+    if not domain_list:
+        return []
+
+    patterns = _extract_cert_dns_patterns(cert_obj)
+    if not patterns:
+        return []
+
+    matched = []
+    for domain in domain_list:
+        for pattern in patterns:
+            if _match_cert_pattern(pattern, domain):
+                matched.append(domain)
+                break
+
+    return sorted(list(set(matched)))
+
+
+def cert_matches_domain(cert_obj, domain):
+    """
+    判断证书是否命中指定域名。
+    """
+    domain_text = str(domain or "").strip().lower().rstrip(".")
+    if not domain_text:
+        return False
+    return domain_text in match_cert_domains(cert_obj, [domain_text])
+
+
 def _build_cert_scan_targets(target_info, max_sni_per_endpoint=3):
     """
     将端点目标展开为证书扫描目标：
@@ -240,6 +361,16 @@ class FetchCert(BaseThread):
 
         cert = utils.get_cert(connect_host, port, server_hostname=sni_domain)
         if cert:
+            if scan_mode == "sni" and sni_domain and isinstance(cert, dict):
+                # SNI 指定域名时，仅保留证书域名命中该 SNI 的结果，避免将默认证书误标为业务证书。
+                if not cert_matches_domain(cert, sni_domain):
+                    logger.debug(
+                        "skip cert observe mismatch observe_id:{} sni:{} endpoint:{}".format(
+                            observe_id, sni_domain, endpoint
+                        )
+                    )
+                    return
+
             if isinstance(cert, dict):
                 cert["_scan_meta"] = {
                     "observe_id": observe_id,
