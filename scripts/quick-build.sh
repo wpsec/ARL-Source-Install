@@ -84,6 +84,22 @@ load_compose_env() {
 
 load_compose_env
 
+# 前端 npm 源配置（可在 .env 中覆盖）
+# 优先级：ARL_FRONTEND_NPM_REGISTRY > NPM_REGISTRY > 默认 npmmirror
+FRONTEND_NPM_REGISTRY="${ARL_FRONTEND_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
+# 构建后端配置：有 buildx 时优先使用 buildx（可通过 DOCKER_BUILD_PREFER_BUILDX=0 关闭）
+DOCKER_BUILD_PREFER_BUILDX="${DOCKER_BUILD_PREFER_BUILDX:-1}"
+
+detect_build_backend() {
+    if [ "$DOCKER_BUILD_PREFER_BUILDX" = "1" ] && docker buildx version >/dev/null 2>&1; then
+        echo "buildx"
+    else
+        echo "classic"
+    fi
+}
+
+BUILD_BACKEND="$(detect_build_backend)"
+
 # 读取项目版本号（用于前端构建校验与构建日志）
 read_project_version() {
     local version_file="$ROOT_DIR/ARL/version.txt"
@@ -110,6 +126,8 @@ show_build_info() {
     echo "主机架构: $NORMALIZED_HOST_ARCH"
     echo "上下文: $BUILD_CONTEXT"
     echo "Compose: $COMPOSE_CMD"
+    echo "Build后端: ${BUILD_BACKEND}"
+    echo "NPM镜像: ${FRONTEND_NPM_REGISTRY}"
     echo "项目版本: ${project_version}"
     echo "代码提交: ${git_commit}"
     echo ""
@@ -130,6 +148,42 @@ show_arch_runtime_notice() {
     echo "  - 已跳过 x86_64 专有组件自检，系统可继续启动"
     echo "  - 涉及 massdns/ncrack 的功能会自动降级并记录告警"
     echo ""
+}
+
+run_docker_build() {
+    local dockerfile="$1"
+    local image_tag="$2"
+    local no_cache="${3:-0}"
+
+    local -a cmd
+    if [ "$BUILD_BACKEND" = "buildx" ]; then
+        cmd=(
+            docker buildx build
+            --load
+            --pull=false
+            -f "$dockerfile"
+            -t "$image_tag"
+            "$BUILD_CONTEXT"
+            --build-arg BUILDKIT_INLINE_CACHE=1
+            --build-arg "NPM_REGISTRY=$FRONTEND_NPM_REGISTRY"
+        )
+    else
+        cmd=(
+            docker build
+            --pull=false
+            -f "$dockerfile"
+            -t "$image_tag"
+            "$BUILD_CONTEXT"
+            --build-arg BUILDKIT_INLINE_CACHE=1
+            --build-arg "NPM_REGISTRY=$FRONTEND_NPM_REGISTRY"
+        )
+    fi
+
+    if [ "$no_cache" = "1" ]; then
+        cmd+=(--no-cache)
+    fi
+
+    "${cmd[@]}"
 }
 
 # 检查 tools 目录结构（适配新目录布局）
@@ -216,6 +270,7 @@ build_frontend_dist_for_hot_update() {
         docker run --rm \
             -v "$src_dir:/workspace" \
             -v "$ROOT_DIR/ARL/version.txt:/version.txt:ro" \
+            -e "npm_config_registry=$FRONTEND_NPM_REGISTRY" \
             -w /workspace \
             "$node_image" \
             sh -lc 'if npm run build; then exit 0; fi; echo "[WARN] build failed, try install deps then rebuild..."; if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; npm run build'
@@ -243,7 +298,7 @@ build_image_with_offline_fallback() {
     local dockerfile="$DOCKERFILE_PATH/Dockerfile"
 
     # 第一轮：常规快速构建（优先复用本地缓存）
-    if docker build --pull=false -f "$dockerfile" -t "$image_tag" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1; then
+    if run_docker_build "$dockerfile" "$image_tag" "0"; then
         return 0
     fi
 
@@ -291,7 +346,7 @@ $from_images_text
 EOF
 
     echo -e "${YELLOW}离线回退: 使用本地基础镜像 ID 构建${NC}"
-    if ! DOCKER_BUILDKIT=0 docker build --pull=false -f "$temp_dockerfile" -t "$image_tag" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1; then
+    if ! DOCKER_BUILDKIT=0 docker build --pull=false -f "$temp_dockerfile" -t "$image_tag" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1 --build-arg "NPM_REGISTRY=$FRONTEND_NPM_REGISTRY"; then
         rm -f "$temp_dockerfile"
         return 1
     fi
@@ -339,7 +394,7 @@ full_build() {
     echo ""
     check_tools_layout
     
-    docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
+    run_docker_build "$DOCKERFILE_PATH/Dockerfile" "${DEFAULT_IMAGE_TAG}" "1"
     
     echo -e "${GREEN}✓ 完整构建完成!${NC}"
     echo "构建的镜像: ${DEFAULT_IMAGE_TAG}"
@@ -357,7 +412,7 @@ clean_build() {
     # 删除 dangling images
     docker builder prune -a -f
     
-    docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
+    run_docker_build "$DOCKERFILE_PATH/Dockerfile" "${DEFAULT_IMAGE_TAG}" "1"
     
     echo -e "${GREEN}✓ 清空缓存构建完成!${NC}"
     echo ""

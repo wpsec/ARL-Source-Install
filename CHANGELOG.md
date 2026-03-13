@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号。
 
-## 2026-03-13（v3.0.45 ~ v3.0.53）
+## 2026-03-13（v3.0.45 ~ v3.0.54）
 
 - `[v3.0.45]` `nuclei` 分批策略优化：当 `NUCLEI_TARGETS_PER_BATCH<=1` 时改为按 `-c * -bs` 与超时预算自动计算批次大小，避免默认单目标拆分导致进程创建开销过高
 - `[v3.0.45]` `nuclei` 自动扫描回退策略优化：移除“结果文件为空即回退 tags”逻辑，仅在执行失败或模板匹配失败时回退，减少重复扫描
@@ -14,6 +14,7 @@
 - `[v3.0.49]` SSL 证书采集修复：同一 `ip:port` 支持“默认证书 + 多SNI证书”并行观测（配置项 `CERT_MULTI_SNI_MAX_PER_ENDPOINT`），修复多域名复用IP时证书被单条结果覆盖问题；证书告警/导出优先使用 `sni_domain`
 - `[v3.0.50]` 构建链路修复：`./scripts/quick-build.sh` 在 `quick/full/clean/tag` 模式下强制基于 `frontend-src` 重新编译前端，并校验产物包含当前 `ARL/version.txt`；无本机 `npm` 时自动改用 Docker Node 构建，避免回退旧静态文件导致版本显示滞后
 - `[v3.0.53]` 前端构建改为 `Dockerfile` 多阶段编译：镜像构建时直接基于 `frontend-src` 产出静态资源，不再依赖仓库预编译目录；`quick-build` 同步移除构建前前端目录拷贝依赖，并新增 `.dockerignore` 排除 `frontend-src/node_modules|dist`，降低构建上下文污染导致的旧版本误打包风险
+- `[v3.0.54]` 构建加速优化：前端 `npm` 默认切换 `npmmirror`（支持环境变量覆盖）；`quick-build` 自动优先使用 `buildx/BuildKit` 并把 `NPM_REGISTRY` 透传到 Docker 构建与前端热更新容器，缓解依赖下载慢与 legacy builder 性能瓶颈
 
 ## 2026-03-12（v3.0.33 ~ v3.0.44）
 

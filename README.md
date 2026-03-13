@@ -78,6 +78,8 @@ git pull
 - 前端构建已迁移到 `ARL/docker/Dockerfile` 多阶段构建，镜像构建时会直接基于 `ARL/docker/frontend-src` 源码编译。
 - `./scripts/quick-build.sh` 的 `quick/full/clean/tag` 不再依赖仓库内预编译前端目录，避免“代码已更新但页面仍旧版本”。
 - `./scripts/quick-build.sh frontend` 仅用于本地热更新：编译 `frontend-src/dist` 后同步到运行中容器。
+- 默认前端 npm 镜像为 `https://registry.npmmirror.com`，可在 `.env` 中通过 `ARL_FRONTEND_NPM_REGISTRY` 覆盖。
+- 若环境已安装 `docker buildx`，`quick-build.sh` 会自动优先使用 BuildKit 构建以减少重复传输与构建耗时。
 
 ## 二开功能总览
 
@@ -196,7 +198,7 @@ ARL/docker/config-docker.yaml
 
 建议以 [CHANGELOG.md](./CHANGELOG.md) 为主，`README` 保留最近版本摘要（同日版本合并记录）。
 
-### 2026-03-13（v3.0.45 ~ v3.0.53）
+### 2026-03-13（v3.0.45 ~ v3.0.54）
 
 - `[v3.0.45]` `nuclei` 分批策略优化：`NUCLEI_TARGETS_PER_BATCH<=1` 时自动按并发与超时预算计算批次，避免默认单目标拆分导致扫描明显变慢
 - `[v3.0.45]` `nuclei` 自动扫描回退优化：仅在执行失败或模板未命中时才回退 `-tags`，不再因“无结果”重复跑一轮
@@ -207,6 +209,7 @@ ARL/docker/config-docker.yaml
 - `[v3.0.49]` SSL证书采集增强：同一 `ip:port` 会同时扫描“默认证书 + 多SNI证书”，避免域名证书被IP默认证书覆盖；新增配置 `CERT_MULTI_SNI_MAX_PER_ENDPOINT` 控制每端点SNI扫描上限
 - `[v3.0.50]` `quick-build` 升级链路修复：构建前强制基于 `frontend-src` 编译并校验版本，不再回退旧静态文件；无本机 `npm` 时自动切换 Docker Node 构建
 - `[v3.0.53]` 前端编译链路迁移到 `Dockerfile` 多阶段构建：镜像构建时直接从 `frontend-src` 编译，`quick-build` 不再依赖仓库预编译静态目录；同时新增 `.dockerignore` 排除 `frontend-src/node_modules|dist`，避免上下文污染导致旧版本误打包
+- `[v3.0.54]` 构建加速优化：前端 `npm` 默认走 `npmmirror`（可配置覆盖），`quick-build` 自动优先使用 `buildx/BuildKit` 并透传 `NPM_REGISTRY` 到 Docker 构建与前端热更新路径
 
 ### 2026-03-12（v3.0.33）
 
