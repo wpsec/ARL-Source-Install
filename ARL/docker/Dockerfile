@@ -146,7 +146,8 @@ RUN echo "===== 已安装的关键包 =====" && pip3 list | grep -E "psutil|flas
 # 5. 复制业务文件与工具
 COPY ARL/app/ app/
 COPY ARL/test/ test/
-COPY --from=frontend_builder /frontend/dist/ frontend/
+# 兼容部分集群构建器对 stage alias 解析差异，使用 stage index 引用前端构建产物
+COPY --from=0 /frontend/dist/ frontend/
 COPY ARL/docker/nginx.conf /etc/nginx/nginx.conf
 COPY ARL/docker/worker/*.sh /usr/bin/
 
