@@ -84,8 +84,25 @@ load_compose_env() {
 
 load_compose_env
 
+# 读取项目版本号（用于前端构建校验与构建日志）
+read_project_version() {
+    local version_file="$ROOT_DIR/ARL/version.txt"
+    if [ ! -f "$version_file" ]; then
+        echo "unknown"
+        return 0
+    fi
+    tr -d '\r\n' < "$version_file"
+}
+
 # 显示构建模式
 show_build_info() {
+    local project_version
+    project_version="$(read_project_version)"
+    local git_commit="unknown"
+    if command -v git >/dev/null 2>&1; then
+        git_commit="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    fi
+
     echo -e "${GREEN}========================================${NC}"
     echo "互联网资产自动化收集系统 Docker 开发构建工具"
     echo -e "${GREEN}========================================${NC}"
@@ -93,6 +110,8 @@ show_build_info() {
     echo "主机架构: $NORMALIZED_HOST_ARCH"
     echo "上下文: $BUILD_CONTEXT"
     echo "Compose: $COMPOSE_CMD"
+    echo "项目版本: ${project_version}"
+    echo "代码提交: ${git_commit}"
     echo ""
 
     if [ "$NON_X86_BUILD" -eq 1 ]; then
@@ -163,11 +182,63 @@ check_tools_layout() {
 # 预构建前端静态文件（frontend-src -> ARL/docker/frontend）
 # 说明：
 # - quick/full/clean/tag 构建前都应调用，避免镜像继续打包旧前端资源
-# - 无 npm 环境时回退使用仓库内预构建文件
+# - 不再回退使用仓库预构建静态文件，必须基于当前源码编译
+build_frontend_with_local_npm() {
+    local src_dir="$1"
+    (
+        cd "$src_dir"
+        if npm run build; then
+            return 0
+        fi
+        echo -e "${YELLOW}[WARN] 前端构建失败，尝试自动安装依赖后重试...${NC}"
+        if [ -f "package-lock.json" ]; then
+            npm ci --no-audit --no-fund
+        else
+            npm install --no-audit --no-fund
+        fi
+        npm run build
+    )
+}
+
+build_frontend_with_docker_node() {
+    local src_dir="$1"
+    local node_image="${ARL_FRONTEND_BUILD_IMAGE:-node:20-alpine}"
+
+    if ! docker image inspect "$node_image" >/dev/null 2>&1; then
+        echo -e "${YELLOW}[WARN] 未检测到 Node 构建镜像，尝试拉取: $node_image${NC}"
+        docker pull "$node_image"
+    fi
+
+    docker run --rm \
+        -v "$src_dir:/workspace" \
+        -w /workspace \
+        "$node_image" \
+        sh -lc 'if npm run build; then exit 0; fi; echo "[WARN] build failed, try install deps then rebuild..."; if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; npm run build'
+}
+
+validate_frontend_dist_version() {
+    local dist_assets_dir="$1"
+    local expected_version="$2"
+    if [ -z "$expected_version" ] || [ "$expected_version" = "unknown" ]; then
+        echo -e "${YELLOW}[WARN] 未读取到 ARL/version.txt，跳过前端版本校验${NC}"
+        return 0
+    fi
+
+    if LC_ALL=C grep -R -F "$expected_version" "$dist_assets_dir" >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ 前端构建版本校验通过: ${expected_version}${NC}"
+        return 0
+    fi
+
+    echo -e "${RED}错误: 前端构建产物未包含当前版本 ${expected_version}，疑似仍在使用旧代码${NC}"
+    return 1
+}
+
 prepare_frontend_static() {
     local src_dir="$ROOT_DIR/ARL/docker/frontend-src"
     local dist_dir="$src_dir/dist"
     local static_dir="$ROOT_DIR/ARL/docker/frontend"
+    local project_version
+    project_version="$(read_project_version)"
 
     if [ ! -d "$src_dir" ]; then
         echo -e "${YELLOW}[WARN] 未找到 frontend-src，跳过前端构建${NC}"
@@ -175,27 +246,25 @@ prepare_frontend_static() {
     fi
 
     if command -v npm >/dev/null 2>&1; then
-        echo -e "${YELLOW}构建前端静态文件(frontend-src)...${NC}"
-        (cd "$src_dir" && npm run build)
-
-        if [ ! -f "$dist_dir/index.html" ] || [ ! -d "$dist_dir/assets" ]; then
-            echo -e "${RED}错误: frontend-src 构建结果不完整（缺少 dist/index.html 或 dist/assets）${NC}"
-            return 1
-        fi
-
-        mkdir -p "$static_dir"
-        # 清理旧静态资源，避免历史 hash 文件残留导致引用错乱
-        rm -rf "$static_dir/assets" "$static_dir/js" "$static_dir/css"
-        cp -a "$dist_dir/." "$static_dir/"
-        echo -e "${GREEN}✓ 前端静态文件已同步到 ARL/docker/frontend${NC}"
-        return 0
+        echo -e "${YELLOW}构建前端静态文件(frontend-src，本机 npm)...${NC}"
+        build_frontend_with_local_npm "$src_dir"
+    else
+        echo -e "${YELLOW}[WARN] 未检测到 npm，改用 Docker Node 环境构建 frontend-src...${NC}"
+        build_frontend_with_docker_node "$src_dir"
     fi
 
-    echo -e "${YELLOW}[WARN] 未检测到 npm，回退使用仓库内预构建前端文件${NC}"
-    if [ ! -f "$static_dir/index.html" ] || [ ! -d "$static_dir/assets" ]; then
-        echo -e "${RED}错误: 预构建前端文件不存在，请在有 npm 的环境执行前端构建后再重试${NC}"
+    if [ ! -f "$dist_dir/index.html" ] || [ ! -d "$dist_dir/assets" ]; then
+        echo -e "${RED}错误: frontend-src 构建结果不完整（缺少 dist/index.html 或 dist/assets）${NC}"
         return 1
     fi
+
+    validate_frontend_dist_version "$dist_dir/assets" "$project_version"
+
+    # 清理旧静态资源，避免历史 hash 文件残留导致引用错乱
+    rm -rf "$static_dir"
+    mkdir -p "$static_dir"
+    cp -a "$dist_dir/." "$static_dir/"
+    echo -e "${GREEN}✓ 前端静态文件已同步到 ARL/docker/frontend${NC}"
     return 0
 }
 

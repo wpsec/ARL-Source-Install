@@ -73,6 +73,12 @@ git pull
 ./scripts/quick-build.sh
 ```
 
+说明：
+
+- `quick-build.sh` 现在会在镜像构建前强制使用 `ARL/docker/frontend-src` 重新编译前端静态文件（不再回退仓库内旧静态产物）。
+- 优先使用本机 `npm` 构建；若未安装 `npm`，会自动使用 Docker Node 镜像（默认 `node:20-alpine`）构建。
+- 构建后会校验前端产物是否包含当前 `ARL/version.txt` 版本号，避免更新后页面仍显示旧版本。
+
 ## 二开功能总览
 
 <!-- 这是一张图片，ocr 内容为： -->
@@ -190,7 +196,7 @@ ARL/docker/config-docker.yaml
 
 建议以 [CHANGELOG.md](./CHANGELOG.md) 为主，`README` 保留最近版本摘要（同日版本合并记录）。
 
-### 2026-03-13（v3.0.45 ~ v3.0.49）
+### 2026-03-13（v3.0.45 ~ v3.0.50）
 
 - `[v3.0.45]` `nuclei` 分批策略优化：`NUCLEI_TARGETS_PER_BATCH<=1` 时自动按并发与超时预算计算批次，避免默认单目标拆分导致扫描明显变慢
 - `[v3.0.45]` `nuclei` 自动扫描回退优化：仅在执行失败或模板未命中时才回退 `-tags`，不再因“无结果”重复跑一轮
@@ -199,6 +205,7 @@ ARL/docker/config-docker.yaml
 - `[v3.0.47]` WIH 增强：`trufflehog_*` 与 `app_key/api_key/token` 等敏感记录会同步进入风险模块，并在 WIH 列表高亮提示
 - `[v3.0.48]` SSL证书告警降噪：同一任务内按“域名+证书身份+到期时间”合并多端点，跨任务仅在告警等级升级时再推送；证书 `HOST` 展示改为“域名 -> ip:port”
 - `[v3.0.49]` SSL证书采集增强：同一 `ip:port` 会同时扫描“默认证书 + 多SNI证书”，避免域名证书被IP默认证书覆盖；新增配置 `CERT_MULTI_SNI_MAX_PER_ENDPOINT` 控制每端点SNI扫描上限
+- `[v3.0.50]` `quick-build` 升级链路修复：构建前强制基于 `frontend-src` 编译并校验版本，不再回退旧静态文件；无本机 `npm` 时自动切换 Docker Node 构建
 
 ### 2026-03-12（v3.0.33）
 
