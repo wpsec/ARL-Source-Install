@@ -4,7 +4,8 @@ WORKDIR /frontend
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 # 先复制依赖清单，提升 npm 依赖层缓存命中率
 COPY ARL/docker/frontend-src/package*.json ./
-RUN npm config set registry "${NPM_REGISTRY}" && \
+RUN apk add --no-cache python3 make g++ && \
+    npm config set registry "${NPM_REGISTRY}" && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
