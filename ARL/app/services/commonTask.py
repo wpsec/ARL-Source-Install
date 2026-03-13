@@ -548,6 +548,10 @@ class WebSiteFetch(object):
 
     def run_web_info_hunter(self):
         records = set(services.run_wih(self.sites))
+        urlfinder_records = set(services.run_urlfinder_extract(self.sites, list(records)))
+        if urlfinder_records:
+            records |= urlfinder_records
+
         if records:
             trufflehog_records = set(services.run_trufflehog_js(self.sites, list(records)))
             if trufflehog_records:

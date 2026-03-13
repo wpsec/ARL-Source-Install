@@ -99,6 +99,35 @@ class TrufflehogJSScanner:
         path = urlparse(text).path.lower()
         return path.endswith(".js")
 
+    @staticmethod
+    def _extract_host(value: str) -> str:
+        """
+        从 URL / host 文本中提取主机名（小写、去尾点）。
+        """
+        text = str(value or "").strip()
+        if not text:
+            return ""
+
+        parsed = urlparse(text)
+        host = str(parsed.hostname or "").strip().lower().rstrip(".")
+        if host:
+            return host
+
+        # 兼容无 scheme 的 host[:port] 文本
+        parsed = urlparse("//{}".format(text))
+        return str(parsed.hostname or "").strip().lower().rstrip(".")
+
+    def _collect_allowed_hosts(self) -> Set[str]:
+        """
+        仅允许扫描当前任务目标站点（域名/IP）来源的 JS。
+        """
+        hosts: Set[str] = set()
+        for site in self.sites:
+            host = self._extract_host(site)
+            if host:
+                hosts.add(host)
+        return hosts
+
     def _collect_js_urls(self) -> List[str]:
         js_urls: Set[str] = set()
 
@@ -115,7 +144,34 @@ class TrufflehogJSScanner:
             logger.info("trufflehog js scan skip, not found js source from wih records")
             return []
 
-        js_url_list = sorted(js_urls)
+        allowed_hosts = self._collect_allowed_hosts()
+        if not allowed_hosts:
+            logger.info("trufflehog js scan skip, not found allowed hosts from current target sites")
+            return []
+
+        filtered_js_urls: Set[str] = set()
+        skipped = 0
+        for js_url in js_urls:
+            js_host = self._extract_host(js_url)
+            if js_host and js_host in allowed_hosts:
+                filtered_js_urls.add(js_url)
+            else:
+                skipped += 1
+
+        if skipped > 0:
+            logger.info(
+                "trufflehog js host filter applied, allowed_hosts:{} kept:{} skipped:{}".format(
+                    len(allowed_hosts),
+                    len(filtered_js_urls),
+                    skipped,
+                )
+            )
+
+        if not filtered_js_urls:
+            logger.info("trufflehog js scan skip, all js sources are out of current target hosts")
+            return []
+
+        js_url_list = sorted(filtered_js_urls)
         if len(js_url_list) > self.max_files:
             js_url_list = js_url_list[: self.max_files]
 
@@ -260,6 +316,12 @@ class TrufflehogJSScanner:
             return "secret"
         return text[:60]
 
+    @staticmethod
+    def _stable_hash(text: str) -> int:
+        # WihRecord.__hash__ 需要整数；将 md5 十六进制稳定映射为 64bit 整数。
+        digest = utils.gen_md5(str(text or ""))
+        return int(digest[:16], 16)
+
     def _build_record(self, payload: dict) -> WihRecord:
         detector = self._pick_first_by_keys(payload, {"detectorname", "detectortype", "detector"})
         detector = str(detector or "").strip()
@@ -290,7 +352,7 @@ class TrufflehogJSScanner:
             site = str(self.sites[0])
 
         hash_text = "{}|{}|{}|{}".format(record_type, content, source, site)
-        fnv_hash = utils.gen_md5(hash_text)
+        fnv_hash = self._stable_hash(hash_text)
         return WihRecord(
             record_type=record_type,
             content=content,
