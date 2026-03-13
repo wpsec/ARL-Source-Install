@@ -173,7 +173,7 @@ ARL/docker/config-docker.yaml
 
 ### TruffleHog JS 功能
 
-系统在 `web_info_hunter` 阶段可对 WIH 已发现的 JS 源做 TruffleHog 二次扫描（默认跟随 WIH 开启）。
+系统在 `web_info_hunter` 阶段会按 `WIH -> URL/JS增强提取 -> TruffleHog` 链路执行敏感信息发现（默认跟随 WIH 开启）。
 
 前置：
 
@@ -181,7 +181,9 @@ ARL/docker/config-docker.yaml
 
 说明：
 
-- 当前仅扫描 WIH 已发现的 JS URL（`source/content` 为 `http(s)` 且命中 `.js`），不直接扫描 `html/txt` 文件
+- 自研 `urlfinder_extract` 会从目标站点页面和 JS 中提取 URL/JS 引用，支持相对路径归一化与受控递归
+- TruffleHog 仅扫描当前任务目标 host 范围内来源的 JS URL，不在目标范围内的第三方 JS 会被过滤
+- TruffleHog 不直接扫描 `html/txt` 文件
 - 扫描结果写入 `wih` 表，记录类型前缀为 `trufflehog_*`
 - 结果内容默认原文入库，便于复核与定位
 - `trufflehog_*` 与 `app_key/api_key/token` 等高价值敏感记录会同步写入 `vuln` 风险模块，并在 WIH 页面高亮显示
@@ -198,7 +200,7 @@ ARL/docker/config-docker.yaml
 
 建议以 [CHANGELOG.md](./CHANGELOG.md) 为主，`README` 保留最近版本摘要（同日版本合并记录）。
 
-### 2026-03-13（v3.0.45 ~ v3.0.57）
+### 2026-03-13（v3.0.45 ~ v3.0.69）
 
 - `[v3.0.45]` `nuclei` 分批策略优化：`NUCLEI_TARGETS_PER_BATCH<=1` 时自动按并发与超时预算计算批次，避免默认单目标拆分导致扫描明显变慢
 - `[v3.0.45]` `nuclei` 自动扫描回退优化：仅在执行失败或模板未命中时才回退 `-tags`，不再因“无结果”重复跑一轮
@@ -213,6 +215,7 @@ ARL/docker/config-docker.yaml
 - `[v3.0.55]` 集群兼容修复：前端构建产物复制由 stage alias 改为阶段索引（`COPY --from=0`），规避部分集群构建器把 `frontend_builder` 当外部镜像拉取导致构建失败
 - `[v3.0.56]` 前端安装稳定性修复：移除 `frontend-src` 中不必要的 `better-sqlite3` 原生依赖，并在前端构建阶段补齐 `python3/make/g++` 兜底，修复 `node-gyp` 因找不到 Python 导致的构建失败
 - `[v3.0.57]` 集群构建兼容增强：前端构建阶段自动识别 `apk/apt` 安装编译工具，依赖安装统一使用 `npm install`，降低 CI 环境因包管理器差异或 `package-lock` 不一致造成的构建失败
+- `[v3.0.69]` WIH 信息提取链路增强：新增自研 `urlfinder_extract`，在 `web_info_hunter` 阶段按“`WIH -> URL/JS增强提取 -> TruffleHog`”执行；增强提取支持页面与 JS 中 URL/JS 引用提取、相对路径归一化与受控递归，且 TruffleHog 仅扫描当前资产范围内来源的 JS
 
 ### 2026-03-12（v3.0.33）
 
