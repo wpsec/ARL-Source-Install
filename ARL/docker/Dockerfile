@@ -3,7 +3,7 @@ FROM node:20.18.3 AS frontend_builder
 WORKDIR /frontend
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 # 先复制依赖清单，提升 npm 依赖层缓存命中率
-COPY ARL/docker/frontend-src/package.json ./
+COPY ARL/docker/frontend-src/package*.json ./
 RUN set -e; \
     if command -v apk >/dev/null 2>&1; then \
       apk add --no-cache python3 make g++; \
@@ -11,12 +11,29 @@ RUN set -e; \
       apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*; \
     else \
       echo "[WARN] no supported package manager found, skip native build tools installation"; \
-    fi && \
-    npm config set registry "${NPM_REGISTRY}" && \
-    npm config set fetch-retries 5 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm install --no-audit --no-fund
+    fi; \
+    npm_exec() { \
+      if command -v npm >/dev/null 2>&1; then \
+        npm "$@"; \
+      elif [ -f /usr/local/lib/node_modules/npm/bin/npm-cli.js ]; then \
+        node /usr/local/lib/node_modules/npm/bin/npm-cli.js "$@"; \
+      elif command -v corepack >/dev/null 2>&1; then \
+        corepack npm "$@"; \
+      else \
+        echo "[ERROR] npm command not found in frontend_builder image"; \
+        return 127; \
+      fi; \
+    }; \
+    npm_exec --version; \
+    npm_exec config set registry "${NPM_REGISTRY}"; \
+    npm_exec config set fetch-retries 5; \
+    npm_exec config set fetch-retry-mintimeout 20000; \
+    npm_exec config set fetch-retry-maxtimeout 120000; \
+    if [ -f package-lock.json ]; then \
+      npm_exec ci --no-audit --no-fund; \
+    else \
+      npm_exec install --no-audit --no-fund; \
+    fi
 # 前端构建时读取 ../../version.txt，需要将版本文件放在 /version.txt
 COPY ARL/version.txt /version.txt
 COPY ARL/docker/frontend-src/ ./
