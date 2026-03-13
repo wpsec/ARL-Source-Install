@@ -139,7 +139,7 @@ const modules: ModuleConfig[] = [
   {
     id: 'task',
     label: '任务管理',
-    description: '任务下发、全局查看、批量停止/删除/导出',
+    description: '任务下发、全局查看、同名任务查看、批量停止/删除/导出',
     group: '核心功能',
     icon: Activity,
     listPath: '/task/',
@@ -848,7 +848,7 @@ const modules: ModuleConfig[] = [
         payloadTemplate: {
           scope_id: '',
           page: 1,
-          size: 10,
+          size: 50,
         },
       },
     ],
@@ -952,7 +952,7 @@ const modules: ModuleConfig[] = [
         sendPayloadAsQuery: true,
         payloadTemplate: {
           page: 1,
-          size: 10,
+          size: 50,
         },
       },
     ],
@@ -5627,10 +5627,11 @@ function TableModuleView({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [page, setPage] = useState(1);
-  const [size, setSize] = useState(10);
+  const [size, setSize] = useState(50);
   const [order, setOrder] = useState(module.defaultOrder || '');
   const [total, setTotal] = useState(0);
   const [quickFilter, setQuickFilter] = useState('');
+  const [taskNameViewInput, setTaskNameViewInput] = useState('');
   const [searchForm, setSearchForm] = useState<JsonValue>({});
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dialogAction, setDialogAction] = useState<ModuleAction | null>(null);
@@ -5770,6 +5771,7 @@ function TableModuleView({
     setExpandedTaskScheduleTargetRows({});
     setExpandedTaskOptionRows({});
     setTaskCompactMode(true);
+    setTaskNameViewInput('');
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
   }, [module.id]);
@@ -6712,13 +6714,54 @@ function TableModuleView({
     onOpenModule('site', { task_id: taskId });
   };
 
-  const openTaskLocalViewBySelection = () => {
-    if (selectedIds.length === 0) {
-      setError('请先勾选至少一条任务记录后再进行局部查看');
+  const openTaskViewByName = async () => {
+    if (module.id !== 'task') return;
+
+    const taskName = String(taskNameViewInput || '').trim();
+    if (!taskName) {
+      setError('请先输入任务名后再进行同名任务查看');
       return;
     }
-    // 使用逗号拼接 task_id，后端会转换为 $in 查询，局部查看只展示勾选任务的数据。
-    onOpenModule('site', { task_id: selectedIds.join(',') });
+
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await requestApi(token, '/task/', {
+        method: 'GET',
+        query: {
+          page: 1,
+          size: 10000,
+          name: taskName,
+          order: '-_id',
+        },
+      });
+
+      const taskItems = normalizeListData(response).items || [];
+      const taskIds = Array.from(
+        new Set(
+          taskItems
+            .map((item: any) => {
+              return (
+                normalizeRowIdValue(item?._id) ||
+                normalizeRowIdValue(item?.task_id) ||
+                normalizeRowIdValue(item?.id)
+              );
+            })
+            .filter((id: string) => Boolean(id))
+        )
+      );
+
+      if (taskIds.length === 0) {
+        setError(`未找到任务名为“${taskName}”的任务`);
+        return;
+      }
+
+      // 使用逗号拼接 task_id，后端会转换为 $in 查询，展示该任务名下全部任务扫描结果。
+      onOpenModule('site', { task_id: taskIds.join(',') });
+    } catch (err: any) {
+      setError(err?.message || '同名任务查看失败');
+    }
   };
 
   const openGithubSchedulerDetail = (jobId: string) => {
@@ -6929,7 +6972,7 @@ function TableModuleView({
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
         {hasExternalFilters ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-brand-text-muted">局部查看筛选:</span>
+            <span className="text-xs font-semibold text-brand-text-muted">查看筛选条件:</span>
             {Object.entries(activeExternalFilters).map(([key, value]) => (
               <span
                 key={key}
@@ -6944,7 +6987,7 @@ function TableModuleView({
                 onClick={onClearExternalFilters}
                 className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
               >
-                清除局部查看
+                清除筛选
               </button>
             ) : null}
           </div>
@@ -7055,14 +7098,29 @@ function TableModuleView({
                 </button>
               ) : null}
               {module.id === 'task' ? (
-                <button
-                  onClick={openTaskLocalViewBySelection}
-                  disabled={selectedIds.length === 0}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Eye className="w-4 h-4" />
-                  局部查看
-                </button>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={taskNameViewInput}
+                    onChange={(event) => setTaskNameViewInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void openTaskViewByName();
+                      }
+                    }}
+                    placeholder="输入任务名（查看该任务名下全部扫描）"
+                    className="w-72 bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-accent"
+                  />
+                  <button
+                    onClick={() => void openTaskViewByName()}
+                    disabled={!String(taskNameViewInput || '').trim()}
+                    className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Eye className="w-4 h-4" />
+                    同名任务查看
+                  </button>
+                </div>
               ) : null}
               {module.id === 'task' ? (
                 <button
