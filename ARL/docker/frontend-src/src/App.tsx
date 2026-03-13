@@ -355,6 +355,18 @@ const modules: ModuleConfig[] = [
         download: true,
       },
       {
+        id: 'task_batch_export_fileleak',
+        label: '文件泄露批量导出',
+        method: 'POST',
+        path: '/batch_export/fileleak/',
+        selectedField: 'task_id',
+        selectionMode: 'multiple',
+        payloadTemplate: {
+          task_id: [],
+        },
+        download: true,
+      },
+      {
         id: 'task_batch_export_port',
         label: 'IP端口批量导出',
         method: 'POST',
@@ -1311,6 +1323,7 @@ const modules: ModuleConfig[] = [
         payloadTemplate: { _id: [] },
       },
     ],
+    exportPath: '/fileleak/export/',
   },
   {
     id: 'wih',
@@ -6102,6 +6115,7 @@ function TableModuleView({
         'task_delete_batch',
         'task_batch_export_cip',
         'task_batch_export_domain',
+        'task_batch_export_fileleak',
         'task_batch_export_ip',
         'task_batch_export_port',
         'task_batch_export_site',
@@ -6848,6 +6862,16 @@ function TableModuleView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {hasExternalFilters ? (
+            <button
+              onClick={() => onOpenModule('task')}
+              className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
+              title="返回任务管理"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              返回任务管理
+            </button>
+          ) : null}
           <StatusPill text={selectionStatus} type="info" />
           {success ? <StatusPill text={success} type="success" /> : null}
           {error ? <StatusPill text={error} type="error" /> : null}
@@ -6883,7 +6907,7 @@ function TableModuleView({
           {hasExternalFilters ? (
             <button
               onClick={() => onOpenModule('task')}
-              className="px-3.5 py-2 rounded-xl border text-sm font-semibold transition border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70 inline-flex items-center gap-1.5"
+              className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
               title="返回任务管理"
             >
               <ChevronLeft className="w-4 h-4" />

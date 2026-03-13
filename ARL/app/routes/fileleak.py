@@ -98,6 +98,31 @@ class ARLFileLeak(ARLResource):
         return data
 
 
+# 文件泄露导出接口定义
+@ns.route('/export/')
+class ARLFileLeakExport(ARLResource):
+    """文件泄露导出接口"""
+
+    parser = get_arl_parser(base_search_fields, location='args')
+
+    @auth
+    @ns.expect(parser)
+    def get(self):
+        """
+        导出文件泄露数据
+
+        参数：
+            与查询接口相同
+
+        返回：
+            文本文件下载（每行一个泄露URL）
+        """
+        args = self.parser.parse_args()
+        response = self.send_export_file(args=args, _type="fileleak")
+
+        return response
+
+
 # 删除文件泄露请求模型
 delete_fileleak_fields = ns.model('deleteFileleakFields',  {
     '_id': fields.List(fields.String(required=True, description="文件泄露数据_id列表"))
@@ -140,5 +165,4 @@ class DeleteARLFileleak(ARLResource):
             utils.conn_db('fileleak').delete_one(query)
 
         return utils.build_ret(ErrorMsg.Success, {'_id': id_list})
-
 

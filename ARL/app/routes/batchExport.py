@@ -154,6 +154,32 @@ class BatchExportURL(ARLResource):
         return response
 
 
+@ns.route('/fileleak/')
+class BatchExportFileLeak(ARLResource):
+    """批量导出文件泄露接口"""
+
+    @auth
+    @ns.expect(batch_export_fields)
+    def post(self):
+        """
+        批量导出多个任务的文件泄露数据
+
+        请求体：
+            {
+                "task_id": ["任务ID1", "任务ID2", ...]
+            }
+
+        返回：
+            纯文本文件下载（每行一个文件泄露URL）
+        """
+        args = self.parse_args(batch_export_fields)
+        task_id_list = args.get("task_id", [])
+
+        response = self.send_batch_export_file(task_id_list, "fileleak")
+
+        return response
+
+
 @ns.route('/ip_port/')
 class BatchExportIpPort(ARLResource):
     """批量导出IP端口接口"""
@@ -362,4 +388,3 @@ class BatchExportAssetWIH(ARLResource):
         response = self.send_scope_batch_export_file(scope_id_list, "asset_wih")
 
         return response
-

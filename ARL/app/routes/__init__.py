@@ -393,6 +393,7 @@ class ARLResource(Resource):
             "asset_ip": "ip",
             "asset_wih": "content",
             "url": "url",
+            "fileleak": "url",
             "cip": "cidr_ip",
             "wih": "content",
         }
@@ -461,6 +462,7 @@ class ARLResource(Resource):
             "domain": "domain",
             "ip": "ip",
             "url": "url",
+            "fileleak": "url",
             "cip": "cidr_ip"
         }
         items_set = set()
