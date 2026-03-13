@@ -1,67 +1,27 @@
-FROM node:20.18.3 AS frontend_builder
+FROM node:20.20.1-bookworm AS frontend_builder
 
 WORKDIR /frontend
 ARG NPM_REGISTRY=https://registry.npmmirror.com
-# 先复制依赖清单，提升 npm 依赖层缓存命中率
+
+# 安装前端依赖（含 node-gyp 所需编译工具）
 COPY ARL/docker/frontend-src/package*.json ./
-RUN set -e; \
-    if command -v apk >/dev/null 2>&1; then \
-      apk add --no-cache python3 make g++; \
-    elif command -v apt-get >/dev/null 2>&1; then \
-      apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*; \
-    else \
-      echo "[WARN] no supported package manager found, skip native build tools installation"; \
-    fi; \
-    if ! command -v node >/dev/null 2>&1 || ! node --version >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1 || ! npm --version >/dev/null 2>&1; then \
-      echo "[WARN] node/npm unavailable or broken, try reinstall via package manager"; \
-      if command -v apk >/dev/null 2>&1; then \
-        apk add --no-cache nodejs npm; \
-      elif command -v apt-get >/dev/null 2>&1; then \
-        apt-get update && apt-get install -y --no-install-recommends nodejs npm && rm -rf /var/lib/apt/lists/*; \
-      else \
-        echo "[ERROR] cannot repair node/npm: no supported package manager"; \
-        exit 127; \
-      fi; \
-      if [ -x /usr/bin/node ]; then ln -sf /usr/bin/node /usr/local/bin/node; fi; \
-      if [ -x /usr/bin/npm ]; then ln -sf /usr/bin/npm /usr/local/bin/npm; fi; \
-    fi; \
-    node --version || (echo "[ERROR] node command not executable after repair" && exit 127); \
-    npm --version || (echo "[ERROR] npm command not executable after repair" && exit 127); \
-    npm_exec() { \
-      if command -v npm >/dev/null 2>&1; then \
-        npm "$@" && return 0; \
-        npm_rc="$?"; \
-        if [ "${npm_rc}" -ne 127 ]; then \
-          return "${npm_rc}"; \
-        fi; \
-        echo "[WARN] npm command returned 127, fallback to npm-cli.js"; \
-      fi; \
-      if [ -f /usr/local/lib/node_modules/npm/bin/npm-cli.js ]; then \
-        node /usr/local/lib/node_modules/npm/bin/npm-cli.js "$@"; \
-        return "$?"; \
-      fi; \
-      if [ -f /usr/share/nodejs/npm/bin/npm-cli.js ]; then \
-        node /usr/share/nodejs/npm/bin/npm-cli.js "$@"; \
-        return "$?"; \
-      fi; \
-      if command -v corepack >/dev/null 2>&1; then \
-        corepack npm "$@"; \
-        return "$?"; \
-      fi; \
-      echo "[ERROR] npm command not found in frontend_builder image"; \
-      return 127; \
-    }; \
-    npm_exec --version; \
-    npm_exec config set registry "${NPM_REGISTRY}"; \
-    npm_exec config set fetch-retries 5; \
-    npm_exec config set fetch-retry-mintimeout 20000; \
-    npm_exec config set fetch-retry-maxtimeout 120000; \
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends python3 make g++; \
+    rm -rf /var/lib/apt/lists/*; \
+    node --version; \
+    npm --version; \
+    npm config set registry "${NPM_REGISTRY}"; \
+    npm config set fetch-retries 5; \
+    npm config set fetch-retry-mintimeout 20000; \
+    npm config set fetch-retry-maxtimeout 120000; \
     if [ -f package-lock.json ]; then \
-      npm_exec ci --no-audit --no-fund; \
+      npm ci --no-audit --no-fund; \
     else \
-      npm_exec install --no-audit --no-fund; \
+      npm install --no-audit --no-fund; \
     fi
-# 前端构建时读取 ../../version.txt，需要将版本文件放在 /version.txt
+
+# 前端构建会读取 ../../version.txt，这里映射到 /version.txt
 COPY ARL/version.txt /version.txt
 COPY ARL/docker/frontend-src/ ./
 RUN npm run build && test -f /frontend/dist/index.html && test -d /frontend/dist/assets
@@ -71,85 +31,69 @@ FROM rockylinux:8
 WORKDIR /code
 ARG TARGETARCH
 ARG PYTHON_VERSION=3.10.20
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV LANG=en_US.UTF-8
 
-# 1. 优化源配置：适配 Rocky 8 的仓库文件名
-RUN sed -e 's|^mirrorlist=|#mirrorlist=|g' \
-    -e 's|^#baseurl=http://dl.rockylinux.org/$contentdir|baseurl=https://mirrors.aliyun.com/rockylinux|g' \
-    -i /etc/yum.repos.d/Rocky-*.repo
-
-# 2. 配置 pip 源
-RUN mkdir -p /root/.pip && \
-    printf '[global]\nindex-url = https://pypi.mirrors.ustc.edu.cn/simple/\ntimeout = 120\n' > /root/.pip/pip.conf
-
-# 3. 安装依赖（包含 Playwright Chromium 运行时库）
-# 注：EPEL 固定到中科大镜像，避免 metalink 随机命中失效节点
-RUN dnf install -y epel-release && \
+# 配置 Rocky/EPEL 与 pip 镜像源，并安装系统依赖
+RUN set -eux; \
+    sed -e 's|^mirrorlist=|#mirrorlist=|g' \
+        -e 's|^#baseurl=http://dl.rockylinux.org/$contentdir|baseurl=https://mirrors.aliyun.com/rockylinux|g' \
+        -i /etc/yum.repos.d/Rocky-*.repo; \
+    mkdir -p /root/.pip; \
+    printf '[global]\nindex-url = https://pypi.mirrors.ustc.edu.cn/simple/\ntimeout = 120\n' > /root/.pip/pip.conf; \
+    dnf install -y epel-release; \
     sed -e 's|^metalink=|#metalink=|g' \
         -e 's|^mirrorlist=|#mirrorlist=|g' \
         -e 's|^#baseurl=http://download.example/pub/epel|baseurl=https://mirrors.ustc.edu.cn/epel|g' \
         -e 's|^#baseurl=https://download.example/pub/epel|baseurl=https://mirrors.ustc.edu.cn/epel|g' \
-        -i /etc/yum.repos.d/epel*.repo && \
-    dnf clean all && \
-    dnf install -y fontconfig gcc gcc-c++ make zlib-devel bzip2-devel openssl-devel sqlite-devel \
-    readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap \
-    alsa-lib atk at-spi2-atk cairo cups-libs gtk3 libdrm mesa-libgbm \
-    libX11 libXcomposite libXcursor libXdamage libXext libXi libXrandr \
-    libXScrnSaver libXtst nss nspr pango xorg-x11-fonts-Type1 xorg-x11-fonts-misc && \
+        -i /etc/yum.repos.d/epel*.repo; \
+    dnf clean all; \
+    dnf install -y \
+      fontconfig gcc gcc-c++ make zlib-devel bzip2-devel openssl-devel sqlite-devel \
+      readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap \
+      alsa-lib atk at-spi2-atk cairo cups-libs gtk3 libdrm mesa-libgbm \
+      libX11 libXcomposite libXcursor libXdamage libXext libXi libXrandr \
+      libXScrnSaver libXtst nss nspr pango xorg-x11-fonts-Type1 xorg-x11-fonts-misc; \
     dnf clean all
 
-# 3.5. 编译安装 Python 3.10
-# - 优先使用本地 tools/Python-${PYTHON_VERSION}.tgz（离线构建）
-# - 本地不存在时，自动从公共镜像下载源码包
+# 编译安装 Python（优先离线包，失败再走在线下载）
 COPY tools/Python-*.tgz /tmp/
-RUN set -e; \
+RUN set -eux; \
     PYTHON_TGZ="/tmp/Python-${PYTHON_VERSION}.tgz"; \
-    if [ ! -f "${PYTHON_TGZ}" ]; then \
+    if [ ! -s "${PYTHON_TGZ}" ]; then \
       for URL in \
         "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
         "https://mirrors.huaweicloud.com/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
         "https://mirrors.aliyun.com/python-release/source/Python-${PYTHON_VERSION}.tgz"; do \
         echo "try download ${URL}"; \
-        if wget -q -O "${PYTHON_TGZ}" "${URL}"; then \
-          echo "download python source success: ${URL}"; \
-          break; \
-        fi; \
+        wget -q -O "${PYTHON_TGZ}" "${URL}" && break || true; \
       done; \
     fi; \
     test -s "${PYTHON_TGZ}" || (echo "[ERROR] Python source package not found: ${PYTHON_TGZ}" && exit 1); \
-    cd /tmp && \
-    tar xzf "Python-${PYTHON_VERSION}.tgz" && \
-    cd "Python-${PYTHON_VERSION}" && \
-    ./configure --prefix=/usr/local --with-ensurepip=install && \
-    make -j"$(nproc)" && \
-    make install && \
-    ln -sf /usr/local/bin/python3.10 /usr/bin/python3 && \
-    ln -sf /usr/local/bin/python3.10 /usr/bin/python3.10 && \
-    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3 && \
-    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3.10 && \
-    python3 --version && \
-    pip3 --version && \
+    cd /tmp; \
+    tar xzf "Python-${PYTHON_VERSION}.tgz"; \
+    cd "Python-${PYTHON_VERSION}"; \
+    ./configure --prefix=/usr/local --with-ensurepip=install; \
+    make -j"$(nproc)"; \
+    make install; \
+    ln -sf /usr/local/bin/python3.10 /usr/bin/python3; \
+    ln -sf /usr/local/bin/python3.10 /usr/bin/python3.10; \
+    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3; \
+    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3.10; \
+    python3 --version; \
+    pip3 --version; \
     rm -rf "/tmp/Python-${PYTHON_VERSION}" "/tmp/Python-${PYTHON_VERSION}.tgz"
 
-# 4. 环境依赖安装 (利用缓存：先装依赖，再拷源码)
 COPY ARL-NPoC/ /opt/ARL-NPoC/
 COPY ARL/requirements.txt /code/requirements.txt
 COPY tools/playwright/ /tmp/playwright-offline/
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN pip3 install --upgrade "pip<24.1" "setuptools<81" wheel && \
-    pip3 --version && \
-    python3 -c "import pkg_resources; print('pkg_resources ok')" && \
-    pip3 install --no-cache-dir -r /code/requirements.txt
-# 尝试安装 NPoC，失败不中断
-RUN pip3 install --no-cache-dir -e /opt/ARL-NPoC/ || true
-# NPoC 的 setup.py 未声明 install_requires，显式安装插件运行时依赖
-RUN pip3 install --no-cache-dir \
-    dnslib==0.9.16 \
-    pycryptodomex==3.16.0 \
-    requests_ntlm==1.1.0
-# 确保关键包已安装
-RUN pip3 install --no-cache-dir psutil flask pymongo celery || true
-# Playwright 浏览器（离线包优先，其次在线安装；失败不阻塞构建）
-RUN set -e; \
+# 安装 Python 依赖，并安装 Playwright 浏览器（离线优先）
+RUN set -eux; \
+    pip3 install --upgrade "pip<24.1" "setuptools<81" wheel; \
+    pip3 install --no-cache-dir -r /code/requirements.txt; \
+    pip3 install --no-cache-dir -e /opt/ARL-NPoC/ || true; \
+    pip3 install --no-cache-dir dnslib==0.9.16 pycryptodomex==3.16.0 requests_ntlm==1.1.0; \
+    pip3 install --no-cache-dir psutil flask pymongo celery || true; \
     OFFLINE_DIR="/tmp/playwright-offline"; \
     ARCH="${TARGETARCH:-$(uname -m)}"; \
     case "$ARCH" in \
@@ -158,49 +102,34 @@ RUN set -e; \
       *) PW_ARCH="$ARCH" ;; \
     esac; \
     mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"; \
-    OFFLINE_TAR=""; \
-    if [ -f "${OFFLINE_DIR}/ms-playwright-${PW_ARCH}.tar.gz" ]; then \
-      OFFLINE_TAR="${OFFLINE_DIR}/ms-playwright-${PW_ARCH}.tar.gz"; \
-    elif [ -f "${OFFLINE_DIR}/ms-playwright.tar.gz" ]; then \
-      OFFLINE_TAR="${OFFLINE_DIR}/ms-playwright.tar.gz"; \
-    fi; \
-    if [ -d "${OFFLINE_DIR}/ms-playwright" ] && [ -n "$(ls -A "${OFFLINE_DIR}/ms-playwright" 2>/dev/null)" ]; then \
-      echo "use offline playwright directory: ${OFFLINE_DIR}/ms-playwright"; \
-      cp -a "${OFFLINE_DIR}/ms-playwright/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
-    elif [ -n "${OFFLINE_TAR}" ]; then \
-      echo "use offline playwright tar: ${OFFLINE_TAR}"; \
+    extract_playwright_tar() { \
+      TAR_FILE="$1"; \
       TMP_PW_DIR="/tmp/ms-playwright-extract"; \
       rm -rf "${TMP_PW_DIR}" && mkdir -p "${TMP_PW_DIR}"; \
-      tar -xzf "${OFFLINE_TAR}" -C "${TMP_PW_DIR}"; \
+      tar -xzf "${TAR_FILE}" -C "${TMP_PW_DIR}"; \
       if [ -d "${TMP_PW_DIR}/ms-playwright" ]; then \
         cp -a "${TMP_PW_DIR}/ms-playwright/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
       else \
         cp -a "${TMP_PW_DIR}/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
       fi; \
       rm -rf "${TMP_PW_DIR}"; \
+    }; \
+    if [ -d "${OFFLINE_DIR}/ms-playwright" ] && [ -n "$(ls -A "${OFFLINE_DIR}/ms-playwright" 2>/dev/null)" ]; then \
+      cp -a "${OFFLINE_DIR}/ms-playwright/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
+    elif [ -f "${OFFLINE_DIR}/ms-playwright-${PW_ARCH}.tar.gz" ]; then \
+      extract_playwright_tar "${OFFLINE_DIR}/ms-playwright-${PW_ARCH}.tar.gz"; \
+    elif [ -f "${OFFLINE_DIR}/ms-playwright.tar.gz" ]; then \
+      extract_playwright_tar "${OFFLINE_DIR}/ms-playwright.tar.gz"; \
     else \
-      echo "offline playwright package not found, fallback online install"; \
       python3 -m playwright install chromium || \
       echo "[WARN] playwright browser install failed, screenshot will fallback when unavailable"; \
-    fi; \
-    if [ -z "$(ls -A "${PLAYWRIGHT_BROWSERS_PATH}" 2>/dev/null)" ]; then \
-      echo "[WARN] playwright browser directory is empty: ${PLAYWRIGHT_BROWSERS_PATH}"; \
-    else \
-      ls -1 "${PLAYWRIGHT_BROWSERS_PATH}" | head -5; \
     fi
-# 显示已安装的包
-RUN echo "===== 已安装的关键包 =====" && pip3 list | grep -E "psutil|flask|pymongo|celery|urllib3|playwright" && echo "===== 包安装检查完毕 ====="
 
-# 5. 复制业务文件与工具
 COPY ARL/app/ app/
 COPY ARL/test/ test/
-# 兼容部分集群构建器对 stage alias 解析差异，使用 stage index 引用前端构建产物
 COPY --from=0 /frontend/dist/ frontend/
 COPY ARL/docker/nginx.conf /etc/nginx/nginx.conf
 COPY ARL/docker/worker/*.sh /usr/bin/
-
-# 6. 复制二进制工具（先创建目录，再复制，并设置正确权限）
-RUN mkdir -p /data/GeoLite2 /usr/local/share/ncrack
 
 COPY tools/ncrack/ncrack /usr/local/bin/ncrack
 COPY tools/ncrack/ncrack-services /usr/local/share/ncrack/ncrack-services
@@ -211,59 +140,26 @@ COPY tools/wih/ /tmp/wih/
 COPY tools/GeoLite2/GeoLite2-* /data/GeoLite2/
 COPY tools/dhparam.pem /etc/ssl/certs/dhparam.pem
 
-# 根据架构安装 WIH，并设置可执行权限
-RUN set -e; \
+# 按架构安装 WIH，解压 Nuclei，并执行基础自检
+RUN set -eux; \
     ARCH="${TARGETARCH:-$(uname -m)}"; \
     case "$ARCH" in \
       amd64|x86_64) WIH_BIN="wih_linux_amd64" ;; \
       arm64|aarch64) WIH_BIN="wih_linux_arm64" ;; \
       *) echo "[ERROR] unsupported arch for wih: $ARCH"; exit 1 ;; \
     esac; \
-    cp "/tmp/wih/${WIH_BIN}" /usr/bin/wih && \
-    chmod +x /usr/local/bin/ncrack /usr/bin/wih && \
-    rm -rf /tmp/wih
-
-ENV LANG=en_US.UTF-8
-
-# 7. 离线工具配置与清理
-RUN ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs && \
-    NUCLEI_ZIP=$(ls -1 /tmp/nuclei_*_linux_amd64.zip | head -n 1) && \
-    unzip -q "${NUCLEI_ZIP}" nuclei && \
-    mv nuclei /usr/bin/ && \
-    rm -f /tmp/nuclei_*_linux_amd64.zip && \
-    chmod +x /usr/bin/*.sh /usr/bin/nuclei
-
-WORKDIR /code
-
-# 8. 语法与环境自测
-# 说明：
-# - ncrack/massdns 当前仓库仅提供 x86_64 预编译二进制
-# - WIH 已支持 x86_64 / aarch64 双架构
-RUN echo "===== 检查关键模块 =====" && \
-    python3 -c "import psutil; print('✓ psutil 已安装')" && \
-    python3 -c "import flask; print('✓ flask 已安装')" && \
-    python3 -c "import pymongo; print('✓ pymongo 已安装')" && \
-    python3 -c "import celery; print('✓ celery 已安装')" && \
-    python3 -c "import dnslib; print('✓ dnslib 已安装')" && \
-    python3 -c "from Cryptodome.Cipher import AES; print('✓ pycryptodomex 已安装')" && \
-    python3 -c "from requests_ntlm import HttpNtlmAuth; print('✓ requests_ntlm 已安装')" && \
-    python3 -c "import playwright; print('✓ playwright 已安装')" && \
-    cp app/config.yaml.example app/config.yaml && \
-    echo "===== 所有关键模块检查通过 =====" && \
-    echo "===== 检查关键工具 =====" && \
-    nmap --version | head -2 && echo "✓ nmap 已安装" && \
-    nuclei -version && echo "✓ nuclei 已安装" && \
-    /usr/bin/wih -h >/tmp/wih_check.txt 2>&1 && head -1 /tmp/wih_check.txt && echo "✓ wih 已安装" && \
-    ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then \
-      if /code/app/tools/massdns --help >/tmp/massdns_check.txt 2>&1; then \
-        head -1 /tmp/massdns_check.txt && echo "✓ massdns 已安装"; \
-      else \
-        echo "[WARN] massdns 自检失败，运行时将按降级策略处理"; \
-      fi; \
-      /usr/local/bin/ncrack --version >/tmp/ncrack_check.txt 2>&1 && head -1 /tmp/ncrack_check.txt && echo "✓ ncrack 已安装"; \
-      if phantomjs --version >/tmp/phantom_check.txt 2>&1; then head -1 /tmp/phantom_check.txt && echo "✓ phantomjs 已安装(兼容兜底)"; else echo "[WARN] phantomjs 自检失败，仅影响 legacy 兼容路径"; fi; \
-    else \
-      echo "[WARN] 当前架构: $ARCH，跳过 x86_64 专有工具检查(massdns/ncrack)"; \
-    fi && \
-    echo "===== 所有工具检查通过 ====="
+    cp "/tmp/wih/${WIH_BIN}" /usr/bin/wih; \
+    ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs; \
+    NUCLEI_ZIP=$(ls -1 /tmp/nuclei_*_linux_amd64.zip | head -n 1); \
+    unzip -q "${NUCLEI_ZIP}" nuclei; \
+    mv nuclei /usr/bin/; \
+    rm -f /tmp/nuclei_*_linux_amd64.zip; \
+    chmod +x /usr/local/bin/ncrack /usr/bin/wih /usr/bin/*.sh /usr/bin/nuclei; \
+    rm -rf /tmp/wih; \
+    cp app/config.yaml.example app/config.yaml; \
+    python3 -c "import psutil, flask, pymongo, celery, dnslib, playwright"; \
+    python3 -c "from Cryptodome.Cipher import AES"; \
+    python3 -c "from requests_ntlm import HttpNtlmAuth"; \
+    nmap --version >/dev/null; \
+    nuclei -version >/dev/null; \
+    /usr/bin/wih -h >/dev/null 2>&1 || true
