@@ -1,51 +1,51 @@
 @import "tailwindcss";
 
 :root {
-  --brand-bg: #0b1020;
-  --brand-card: #141c31;
-  --brand-border: #24304a;
-  --brand-accent: #7b8ccf;
-  --brand-accent-rgb: 123, 140, 207;
-  --brand-secondary: #6fa7c9;
-  --brand-warning: #d6a45a;
-  --brand-danger: #d47b7b;
-  --brand-text-muted: #8fa0c0;
+  --brand-bg: #0a1226;
+  --brand-card: #17223b;
+  --brand-border: #2a3b5f;
+  --brand-accent: #8da3e6;
+  --brand-accent-rgb: 141, 163, 230;
+  --brand-secondary: #78b5d8;
+  --brand-warning: #dfb06a;
+  --brand-danger: #d88888;
+  --brand-text-muted: #9fb1d4;
 }
 
 [data-theme='slate'] {
-  --brand-bg: #131a24;
-  --brand-card: #1c2533;
-  --brand-border: #2d3a4d;
-  --brand-accent: #67a9cf;
-  --brand-accent-rgb: 103, 169, 207;
-  --brand-secondary: #8aa1d6;
-  --brand-warning: #d6b06a;
-  --brand-danger: #d88989;
-  --brand-text-muted: #97a6bb;
+  --brand-bg: #111b2b;
+  --brand-card: #1b2a3f;
+  --brand-border: #314765;
+  --brand-accent: #76b9e2;
+  --brand-accent-rgb: 118, 185, 226;
+  --brand-secondary: #93a7dd;
+  --brand-warning: #dcb874;
+  --brand-danger: #db9696;
+  --brand-text-muted: #a2b2ca;
 }
 
 [data-theme='nord'] {
-  --brand-bg: #11151c;
-  --brand-card: #1b222d;
-  --brand-border: #2a3442;
-  --brand-accent: #88a8c4;
-  --brand-accent-rgb: 136, 168, 196;
-  --brand-secondary: #9bb2c9;
-  --brand-warning: #d0b070;
-  --brand-danger: #cb8a92;
-  --brand-text-muted: #93a1b2;
+  --brand-bg: #151b24;
+  --brand-card: #212b38;
+  --brand-border: #344457;
+  --brand-accent: #9abbd7;
+  --brand-accent-rgb: 154, 187, 215;
+  --brand-secondary: #a8bdd2;
+  --brand-warning: #d6b97d;
+  --brand-danger: #d59aa1;
+  --brand-text-muted: #a2afbf;
 }
 
 [data-theme='titanium'] {
-  --brand-bg: #161618;
-  --brand-card: #212226;
-  --brand-border: #34363d;
-  --brand-accent: #6e8bb8;
-  --brand-accent-rgb: 110, 139, 184;
-  --brand-secondary: #9a89b6;
-  --brand-warning: #cda268;
-  --brand-danger: #c57b7b;
-  --brand-text-muted: #acafb8;
+  --brand-bg: #171a20;
+  --brand-card: #252a33;
+  --brand-border: #3b4350;
+  --brand-accent: #88a3cc;
+  --brand-accent-rgb: 136, 163, 204;
+  --brand-secondary: #a693c1;
+  --brand-warning: #d4af73;
+  --brand-danger: #cc8b8b;
+  --brand-text-muted: #b5bcc9;
 }
 
 [data-theme='emerald'] {
@@ -73,15 +73,15 @@
 }
 
 [data-theme='sandstone'] {
-  --brand-bg: #f7f5f2;
+  --brand-bg: #f6f3ef;
   --brand-card: #ffffff;
-  --brand-border: #ddd6cf;
-  --brand-accent: #3f3a36;
-  --brand-accent-rgb: 63, 58, 54;
-  --brand-secondary: #6b625a;
-  --brand-warning: #bf8b49;
-  --brand-danger: #b76161;
-  --brand-text-muted: #847a71;
+  --brand-border: #d8d1c8;
+  --brand-accent: #4a433d;
+  --brand-accent-rgb: 74, 67, 61;
+  --brand-secondary: #74685e;
+  --brand-warning: #c39352;
+  --brand-danger: #bf6f6f;
+  --brand-text-muted: #8c8177;
 }
 
 [data-theme='oceanic'] {
