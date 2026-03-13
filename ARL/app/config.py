@@ -184,7 +184,7 @@ class Config(object):
     NUCLEI_EXEC_TIMEOUT_SEC = 6 * 60 * 60
     # 单目标 nuclei 最大扫描时长（秒），用于按批次目标数折算超时上限
     NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = 60 * 60
-    # 每个 nuclei 批次最多包含目标数（1 表示严格按单目标执行）
+    # 每个 nuclei 批次最多包含目标数（<=1 表示自动分批，>1 表示固定分批大小）
     NUCLEI_TARGETS_PER_BATCH = 1
     # nuclei 每秒请求上限（RPS）
     NUCLEI_RATE_LIMIT = 8

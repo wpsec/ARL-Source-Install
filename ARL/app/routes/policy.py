@@ -12,11 +12,13 @@
 - 支持PoC插件和暴力破解插件配置
 - 可关联资产范围
 """
+import os
 from flask_restx import Resource, Api, reqparse, fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.modules import ErrorMsg
 from app import utils
+from app.config import normalize_dict_path_compat
 from bson import ObjectId
 from flask_restx.fields import Nested, String, Boolean, List
 from flask_restx.model import Model
@@ -121,6 +123,8 @@ add_policy_fields = ns.model('addPolicy', {
         "domain_config": fields.Nested(domain_config_fields),
         "ip_config": fields.Nested(ip_config_fields),
         "site_config": fields.Nested(site_config_fields),
+        "domain_dict": fields.String(description="域名爆破字典路径（可选）", default=""),
+        "file_leak_dict": fields.String(description="敏感文件泄漏字典路径（可选）", default=""),
         "file_leak": fields.Boolean(description="文件泄漏", default=False),
         "npoc_service_detection": fields.Boolean(description="服务识别（纯python实现）", default=False),
         "poc_config": fields.List(fields.Nested(ns.model('pocConfig', {
@@ -151,15 +155,17 @@ class AddARLPolicy(ARLResource):
             {
                 "name": "策略名称",
                 "desc": "策略描述",
-                "policy": {
-                    "domain_config": {...域名配置...},
-                    "ip_config": {...IP配置...},
-                    "site_config": {...站点配置...},
-                    "file_leak": true/false,
-                    "npoc_service_detection": true/false,
-                    "poc_config": [{plugin_name, enable}],
-                    "brute_config": [{plugin_name, enable}],
-                    "scope_config": {scope_id}
+                    "policy": {
+                        "domain_config": {...域名配置...},
+                        "ip_config": {...IP配置...},
+                        "site_config": {...站点配置...},
+                        "domain_dict": "...可选字典路径...",
+                        "file_leak_dict": "...可选字典路径...",
+                        "file_leak": true/false,
+                        "npoc_service_detection": true/false,
+                        "poc_config": [{plugin_name, enable}],
+                        "brute_config": [{plugin_name, enable}],
+                        "scope_config": {scope_id}
                 }
             }
         
@@ -170,6 +176,7 @@ class AddARLPolicy(ARLResource):
         - domain_config: 域名扫描配置（爆破、DNS查询等）
         - ip_config: IP扫描配置（端口扫描、服务识别等）
         - site_config: 站点扫描配置（爬虫、截图、Nuclei扫描等）
+        - domain_dict/file_leak_dict: 策略级任务字典（可选，留空跟随配置管理默认）
         - poc_config: PoC插件配置列表
         - brute_config: 暴力破解插件配置列表
         - scope_config: 关联的资产范围ID
@@ -223,6 +230,17 @@ class AddARLPolicy(ARLResource):
         if isinstance(brute_config, str):
             return utils.build_ret(brute_config, {})
 
+        # 处理任务级自定义字典（可选）：为空表示跟随配置管理默认字典。
+        domain_dict, domain_dict_error = _normalize_policy_dict_path(policy.pop("domain_dict", ""), "domain_dict")
+        if domain_dict_error:
+            return utils.build_ret(ErrorMsg.Error, domain_dict_error)
+
+        file_leak_dict, file_leak_dict_error = _normalize_policy_dict_path(
+            policy.pop("file_leak_dict", ""), "file_leak_dict"
+        )
+        if file_leak_dict_error:
+            return utils.build_ret(ErrorMsg.Error, file_leak_dict_error)
+
         # 处理其他配置
         file_leak = fields.boolean(policy.pop("file_leak", False))
         npoc_service_detection = fields.boolean(policy.pop("npoc_service_detection", False))
@@ -241,6 +259,8 @@ class AddARLPolicy(ARLResource):
                 "site_config": site_config,
                 "poc_config": poc_config,
                 "brute_config": brute_config,
+                "domain_dict": domain_dict,
+                "file_leak_dict": file_leak_dict,
                 "file_leak": file_leak,
                 "npoc_service_detection": npoc_service_detection,
                 "scope_config": scope_config
@@ -323,6 +343,24 @@ def get_dict_default_from_module(module):
             ret[x] = v.example
 
     return ret
+
+
+def _normalize_policy_dict_path(path_value, field_name):
+    """
+    规范化并校验策略级字典路径（可选）。
+
+    返回：
+        (normalized_path, error_data)
+    """
+    normalized_path = normalize_dict_path_compat(path_value)
+    normalized_path = str(normalized_path or "").strip()
+    if not normalized_path:
+        return "", None
+
+    if not os.path.isfile(normalized_path):
+        return "", {"error": "{} 文件不存在".format(field_name), field_name: normalized_path}
+
+    return normalized_path, None
 
 
 # 删除策略请求模型
@@ -445,6 +483,20 @@ class EditPolicy(ARLResource):
         if isinstance(brute_config, str):
             return utils.build_ret(brute_config, {})
         item["policy"]["brute_config"] = brute_config
+
+        domain_dict, domain_dict_error = _normalize_policy_dict_path(
+            item["policy"].get("domain_dict", ""), "domain_dict"
+        )
+        if domain_dict_error:
+            return utils.build_ret(ErrorMsg.Error, domain_dict_error)
+        item["policy"]["domain_dict"] = domain_dict
+
+        file_leak_dict, file_leak_dict_error = _normalize_policy_dict_path(
+            item["policy"].get("file_leak_dict", ""), "file_leak_dict"
+        )
+        if file_leak_dict_error:
+            return utils.build_ret(ErrorMsg.Error, file_leak_dict_error)
+        item["policy"]["file_leak_dict"] = file_leak_dict
 
         # 更新时间戳并保存
         item["update_date"] = utils.curr_date()

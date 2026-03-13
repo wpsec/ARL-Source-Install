@@ -91,6 +91,7 @@ base_search_task_fields = {
     'options.domain_brute': fields.Boolean(description="是否开启域名爆破"),
     'options.domain_brute_type': fields.String(description="域名爆破类型（test/big/test）"),
     'options.domain_dict': fields.String(description="域名爆破字典（可选）"),
+    'options.file_leak_dict': fields.String(description="敏感文件泄漏字典（可选）"),
     'options.port_scan_type': fields.String(description="端口扫描类型（test/top100/top1000/all/custom）"),
     'options.port_custom': fields.String(description="自定义端口范围（仅 port_scan_type=custom 时生效）"),
     'options.port_scan': fields.Boolean(description="是否开启端口扫描"),
@@ -124,6 +125,7 @@ add_task_fields = ns.model('AddTask', {
     "domain_brute": fields.Boolean(example=True, description="域名爆破"),
     'domain_brute_type': fields.String(example="test", description="爆破字典类型"),
     'domain_dict': fields.String(example="", description="域名爆破字典路径（可选，不填走默认）"),
+    'file_leak_dict': fields.String(example="", description="敏感文件泄漏字典路径（可选，不填走默认）"),
     "port_scan_type": fields.String(example="test", description="端口扫描类型（test/top100/top1000/all/custom）"),
     "port_custom": fields.String(example="80,443,8080,10000-10100", description="自定义端口（仅 port_scan_type=custom 时生效）"),
     "port_scan": fields.Boolean(example=True, description="端口扫描"),
@@ -228,6 +230,19 @@ class ARLTask(ARLResource):
             args['domain_dict'] = custom_domain_dict
         else:
             args.pop('domain_dict', None)
+
+        # 敏感文件泄漏字典（可选）：不填则沿用系统默认，填写则优先使用该字典。
+        custom_file_leak_dict = normalize_dict_path_compat(args.get('file_leak_dict', ''))
+        custom_file_leak_dict = str(custom_file_leak_dict or '').strip()
+        if custom_file_leak_dict:
+            if not os.path.isfile(custom_file_leak_dict):
+                return utils.build_ret(
+                    ErrorMsg.Error,
+                    {"error": "file_leak_dict 文件不存在", "file_leak_dict": custom_file_leak_dict}
+                )
+            args['file_leak_dict'] = custom_file_leak_dict
+        else:
+            args.pop('file_leak_dict', None)
 
         # 端口扫描自定义范围校验（仅 custom 模式生效）
         port_scan_type = str(args.get('port_scan_type', '') or '').strip().lower()

@@ -43,10 +43,37 @@ base_search_fields = {
     'target': fields.String(description="目标"),
     'policy_name': fields.String(description="策略名称"),
     'schedule_type': fields.String(description="计划类型"),
-    'schedule_status': fields.String(description="状态")
+    'schedule_status': fields.String(description="状态"),
+    'status': fields.String(description="状态（兼容字段）")
 }
 
 base_search_fields.update(base_query_fields)
+
+
+def normalize_task_schedule_query_args(args):
+    """
+    规范化计划任务查询参数，统一状态筛选字段。
+
+    说明：
+    - 前端历史字段使用 schedule_status
+    - 兼容外部直接传入 status
+    - 最终统一写入数据库真实字段 status，避免误查 schedule_status
+    """
+    normalized_args = dict(args or {})
+    schedule_status = normalized_args.pop("schedule_status", None)
+    status = normalized_args.get("status", None)
+
+    # 兼容优先级：前端 schedule_status 优先，其次 status
+    final_status = schedule_status if schedule_status not in [None, ""] else status
+    if isinstance(final_status, str):
+        final_status = final_status.strip()
+
+    if final_status:
+        normalized_args["status"] = final_status
+    else:
+        normalized_args.pop("status", None)
+
+    return normalized_args
 
 
 add_task_schedule_fields = ns.model('addTaskScheduleSite',  {
@@ -74,7 +101,8 @@ class ARLTaskScheduleResult(ARLResource):
         """
         计划任务结果详情查询
         """
-        args = self.parser.parse_args()
+        # 统一 status 筛选字段，避免把 schedule_status 当成库字段查询导致过滤失效。
+        args = normalize_task_schedule_query_args(self.parser.parse_args())
         data = self.build_data(args=args, collection='task_schedule')
 
         return data

@@ -163,7 +163,7 @@ ARL/docker/config-docker.yaml
 - `任务管理 -> 新建任务` 支持选择“域名爆破字典”；不选则默认使用配置管理字典
 - 以上目录通过 `docker-compose` 挂载，容器重建后文件仍保留
 
-### TruffleHog JS 二次扫描（可选）
+### TruffleHog JS 功能
 
 系统在 `web_info_hunter` 阶段可对 WIH 已发现的 JS 源做 TruffleHog 二次扫描（默认跟随 WIH 开启）。
 
@@ -177,6 +177,10 @@ ARL/docker/config-docker.yaml
 - 扫描结果写入 `wih` 表，记录类型前缀为 `trufflehog_*`
 - 结果内容默认原文入库，便于复核与定位
 - `trufflehog_*` 与 `app_key/api_key/token` 等高价值敏感记录会同步写入 `vuln` 风险模块，并在 WIH 页面高亮显示
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773386503749-b9f62581-c8d8-4774-80e5-3db616465da3.png)
 
 ## Bug？
 

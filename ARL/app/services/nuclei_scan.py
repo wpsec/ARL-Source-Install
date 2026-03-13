@@ -910,6 +910,50 @@ class NucleiScan(object):
 
         return exec_timeout
 
+    @staticmethod
+    def _calc_effective_targets_per_batch(target_count: int):
+        """
+        计算本轮实际分批大小。
+
+        规则：
+        - 当 NUCLEI_TARGETS_PER_BATCH > 1 时，严格按用户配置执行
+        - 当 NUCLEI_TARGETS_PER_BATCH <= 1 时启用自动批次：
+          1) 参考 nuclei 并发能力（c * bs）
+          2) 受超时预算约束（exec_timeout / per_target_timeout）
+          3) 最终不超过当前批次目标数
+        """
+        if target_count < 1:
+            return 1
+
+        configured_chunk = int(getattr(Config, "NUCLEI_TARGETS_PER_BATCH", 1) or 1)
+        if configured_chunk > 1:
+            return min(configured_chunk, target_count)
+
+        concurrency = int(getattr(Config, "NUCLEI_CONCURRENCY", 4) or 4)
+        bulk_size = int(getattr(Config, "NUCLEI_BULK_SIZE", 5) or 5)
+        if concurrency < 1:
+            concurrency = 1
+        if bulk_size < 1:
+            bulk_size = 1
+
+        # 以 nuclei 并发吞吐能力作为自动批次上限，避免单目标串行导致慢扫描。
+        perf_budget = max(1, concurrency * bulk_size)
+
+        exec_timeout = int(getattr(Config, "NUCLEI_EXEC_TIMEOUT_SEC", 96 * 60 * 60) or 96 * 60 * 60)
+        if exec_timeout < 60:
+            exec_timeout = 60
+        per_target_timeout = int(getattr(Config, "NUCLEI_SINGLE_TARGET_TIMEOUT_SEC", 0) or 0)
+        timeout_budget = target_count
+        if per_target_timeout > 0:
+            if per_target_timeout < 60:
+                per_target_timeout = 60
+            timeout_budget = max(1, int(exec_timeout / per_target_timeout))
+
+        chunk_size = min(target_count, perf_budget, timeout_budget)
+        if chunk_size < 1:
+            chunk_size = 1
+        return chunk_size
+
     def _run_nuclei_command(self, command: list, batch_type: str, stage: str, result_file: str, target_count: int = 1):
         """
         执行 nuclei 命令并输出统一日志
@@ -991,7 +1035,7 @@ class NucleiScan(object):
 
         # 按批次类型选择参数
         # 1) fingerprint: 仅运行匹配到的 tags
-        # 2) fallback/default: 优先 -as；若 -as 没有有效模板或结果为空，再回退默认 tags
+        # 2) fallback/default: 优先 -as；若 -as 执行失败或无有效模板，再回退默认 tags
         command = self._build_base_command(target_file=target_file, result_file=result_file)
 
         logger.info(
@@ -1029,14 +1073,18 @@ class NucleiScan(object):
                     result_file=result_file,
                     target_count=target_count,
                 )
+                auto_output_lower = "{}\n{}".format(
+                    auto_result.get("stderr", ""),
+                    auto_result.get("stdout", "")
+                ).lower()
 
             stderr_lower = auto_result.get("stderr", "").lower()
             auto_need_fallback = False
             if auto_result["returncode"] != 0:
                 auto_need_fallback = True
-            elif auto_result["result_size"] <= 0 and fallback_tags:
-                auto_need_fallback = True
             elif "could not find any templates with tech tag" in stderr_lower:
+                auto_need_fallback = True
+            elif "no templates found for scan" in auto_output_lower:
                 auto_need_fallback = True
 
             if auto_need_fallback and fallback_tags:
@@ -1086,15 +1134,22 @@ class NucleiScan(object):
         if not targets:
             return []
 
-        chunk_size = int(getattr(Config, "NUCLEI_TARGETS_PER_BATCH", 1) or 1)
-        if chunk_size < 1:
-            chunk_size = 1
+        chunk_size = self._calc_effective_targets_per_batch(target_count=len(targets))
 
         out_batches = []
         for part in self._split_targets(targets, chunk_size):
             new_batch = dict(batch)
             new_batch["targets"] = part
             out_batches.append(new_batch)
+
+        logger.info(
+            "nuclei split batch={} input_targets={} chunk_size={} split_count={}".format(
+                batch.get("batch_type", "default"),
+                len(targets),
+                chunk_size,
+                len(out_batches),
+            )
+        )
 
         return out_batches
 

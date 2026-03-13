@@ -52,11 +52,14 @@ def get_options_by_policy_id(policy_id, task_tag):
 
     # 仅仅资产发现任务需要这些
     if task_tag == TaskTag.TASK:
+        # 策略层不再承载“扫描配置”细粒度调优，这些参数统一按系统默认执行。
+        filtered_ip_config = dict(ip_config)
+        for key in ("host_timeout_type", "host_timeout", "port_parallelism", "port_min_rate"):
+            filtered_ip_config.pop(key, None)
         options.update(domain_config)
-        options.update(ip_config)
+        options.update(filtered_ip_config)
 
     options.update(site_config)
 
     options.update(policy)
     return options
-

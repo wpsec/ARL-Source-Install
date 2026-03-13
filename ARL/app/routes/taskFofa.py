@@ -286,6 +286,8 @@ def policy_2_task_options(policy_id):
     # 提取IP和站点配置
     ip_config = policy_options.pop("ip_config", {})
     site_config = policy_options.pop("site_config", {})
+    for key in ("host_timeout_type", "host_timeout", "port_parallelism", "port_min_rate"):
+        ip_config.pop(key, None)
 
     # 合并配置
     options.update(ip_config)
@@ -332,4 +334,3 @@ def submit_fofa_task(task_data):
     conn_db('task').update_one({"_id": ObjectId(task_id)}, values)
 
     return task_data
-
