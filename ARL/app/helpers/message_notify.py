@@ -443,18 +443,37 @@ def _is_private_alert_ip(ip, ip_type_map):
     return ip_type == "PRIVATE"
 
 
-def _extract_alert_domain(cert_obj, ip, port, ip_domain_map=None, task_domain_set=None):
+def _extract_alert_domain(cert_obj, ip, port, item=None, ip_domain_map=None, task_domain_set=None):
     """
     告警域名优先级：
-    1) 任务内 IP 关联域名
-    2) SAN 域名（优先命中任务域名）
-    3) CN（仅合法域名）
-    4) ip:port 回退
+    1) 当前证书观测的 sni_domain/domain/domains
+    2) 任务内 IP 关联域名
+    3) SAN 域名（优先命中任务域名）
+    4) CN（仅合法域名）
+    5) ip:port 回退
     """
     ip_text = str(ip or "").strip()
     port_text = str(port or "").strip()
     ip_domain_map = ip_domain_map if isinstance(ip_domain_map, dict) else {}
     task_domain_set = task_domain_set if isinstance(task_domain_set, set) else set()
+    item = item if isinstance(item, dict) else {}
+
+    sni_domain = _normalize_alert_domain(item.get("sni_domain", ""))
+    if sni_domain:
+        return sni_domain
+
+    item_domain = _normalize_alert_domain(item.get("domain", ""))
+    if item_domain:
+        return item_domain
+
+    item_domains = item.get("domains", [])
+    if isinstance(item_domains, str):
+        item_domains = [item_domains]
+    if isinstance(item_domains, list):
+        for domain in item_domains:
+            normalized_domain = _normalize_alert_domain(domain)
+            if normalized_domain:
+                return normalized_domain
 
     mapped_domains = ip_domain_map.get(ip_text, [])
     if isinstance(mapped_domains, list):
@@ -532,6 +551,7 @@ def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
             cert_obj=cert_obj,
             ip=ip,
             port=port,
+            item=item,
             ip_domain_map=ip_domain_map,
             task_domain_set=task_domain_set,
         )

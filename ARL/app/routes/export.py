@@ -537,13 +537,17 @@ def _build_cert_domain_context(task_id):
 def _resolve_cert_domain(item, cert_obj, ip_domain_map=None, task_domain_set=None):
     """
     导出域名优先级：
-    1) cert 记录中的 domain/domains
+    1) cert 记录中的 sni_domain/domain/domains
     2) 任务内 IP 关联域名
     3) SAN（优先命中任务域名）
     4) CN
     """
     ip_domain_map = ip_domain_map if isinstance(ip_domain_map, dict) else {}
     task_domain_set = task_domain_set if isinstance(task_domain_set, set) else set()
+
+    sni_domain = _normalize_cert_domain(item.get("sni_domain", ""))
+    if sni_domain:
+        return sni_domain
 
     item_domain = _normalize_cert_domain(item.get("domain", ""))
     if item_domain:

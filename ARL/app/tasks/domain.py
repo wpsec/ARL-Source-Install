@@ -1140,7 +1140,17 @@ class DomainTask(CommonTask):
             if not ip or port <= 0:
                 continue
 
-            domain = str(scan_meta.get("server_name", "")).strip().lower()
+            scan_mode = str(scan_meta.get("scan_mode", "default") or "default").strip().lower()
+            if scan_mode not in ["default", "sni"]:
+                scan_mode = "default"
+
+            sni_domain = str(scan_meta.get("sni_domain", "")).strip().lower()
+            # 兼容旧结构：历史扫描元数据只有 server_name 字段。
+            legacy_server_name = str(scan_meta.get("server_name", "")).strip().lower()
+            if not sni_domain and scan_mode == "sni":
+                sni_domain = legacy_server_name
+
+            domain = sni_domain
             domains = scan_meta.get("domains", [])
             if isinstance(domains, str):
                 domains = [domains]
@@ -1150,16 +1160,47 @@ class DomainTask(CommonTask):
             if domain and domain not in domains:
                 domains.insert(0, domain)
 
+            fingerprint = cert_data.get("fingerprint", {}) if isinstance(cert_data.get("fingerprint"), dict) else {}
+            cert_sha256 = str(fingerprint.get("sha256", "")).strip().lower().replace(":", "")
+            cert_sha1 = str(fingerprint.get("sha1", "")).strip().lower().replace(":", "")
+            serial_number = str(cert_data.get("serial_number", "")).strip().lower().replace(" ", "")
+            cert_identity_key = cert_sha256 or cert_sha1 or serial_number or ""
+
+            validity = cert_data.get("validity", {}) if isinstance(cert_data.get("validity"), dict) else {}
+            cert_end_time = str(validity.get("end", "")).strip()
+            observe_id = str(scan_meta.get("observe_id", "")).strip()
+
             item = {
                 "ip": ip,
                 "port": port,
                 "host": endpoint,
                 "domain": domain,
                 "domains": domains,
+                "sni_domain": sni_domain,
+                "scan_mode": scan_mode,
+                "observe_id": observe_id,
+                "cert_identity_key": cert_identity_key,
+                "cert_end_time": cert_end_time,
                 "cert": cert_data,
                 "task_id": self.task_id,
             }
-            utils.conn_db('cert').insert_one(item)
+
+            # 多SNI扫描后按任务维度做轻量去重，避免重复落库同一观测。
+            query = {
+                "task_id": self.task_id,
+                "ip": ip,
+                "port": port,
+                "scan_mode": scan_mode,
+                "sni_domain": sni_domain,
+            }
+            if cert_identity_key:
+                query["cert_identity_key"] = cert_identity_key
+            if cert_end_time:
+                query["cert_end_time"] = cert_end_time
+            if not cert_identity_key and not cert_end_time:
+                query["observe_id"] = observe_id or endpoint
+
+            utils.conn_db('cert').update_one(query, {"$setOnInsert": item}, upsert=True)
 
     def build_single_domain_info(self, domain):
         domain = str(domain or "").strip().lower().rstrip(".")
@@ -1492,13 +1533,16 @@ class DomainTask(CommonTask):
 
         seen_cert_key = set()
         candidates = []
-        for endpoint in sorted(cert_map.keys()):
-            cert_obj = cert_map.get(endpoint)
+        for observe_id in sorted(cert_map.keys()):
+            cert_obj = cert_map.get(observe_id)
             if not isinstance(cert_obj, dict):
                 continue
 
-            endpoint = str(endpoint)
-            curr_ip = endpoint.split(":")[0] if ":" in endpoint else endpoint
+            scan_meta = cert_obj.get("_scan_meta", {}) if isinstance(cert_obj.get("_scan_meta"), dict) else {}
+            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(observe_id)
+            curr_ip, _ = fetchCert.split_host_port(endpoint)
+            if not curr_ip:
+                curr_ip = endpoint.split(":")[0] if ":" in endpoint else endpoint
 
             if Config.CERT_PIVOT_QUERY_SKIP_CDN:
                 cdn_name = ip_cdn_map.get(curr_ip) or utils.get_cdn_name_by_ip(curr_ip)
@@ -1525,6 +1569,7 @@ class DomainTask(CommonTask):
                 "cert": cert_obj,
                 "cert_key": cert_key,
                 "endpoint": endpoint,
+                "observe_id": str(observe_id),
                 "match_domains": matched_domains
             })
 

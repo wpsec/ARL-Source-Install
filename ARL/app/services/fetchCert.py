@@ -3,6 +3,7 @@ SSL证书获取和解析
 """
 import time
 from app import utils, modules, services
+from app.config import Config
 from .baseThread import BaseThread
 
 logger = utils.get_logger()
@@ -91,6 +92,7 @@ def _merge_target_domains(target_info, domains, base_domain=""):
     old_domains = target_info.get("domains", [])
     merged = _normalize_domains(list(old_domains) + list(domains or []))
     target_info["domains"] = merged
+    target_info["base_domain"] = str(base_domain or "").strip().lower().strip(".")
     target_info["server_name"] = _pick_server_name(merged, base_domain=base_domain)
     return target_info
 
@@ -102,6 +104,7 @@ def _build_target_info(endpoint, connect_host, port, domains=None, base_domain="
         "connect_host": str(connect_host or "").strip(),
         "port": int(port),
         "domains": domains,
+        "base_domain": str(base_domain or "").strip().lower().strip("."),
         "server_name": _pick_server_name(domains, base_domain=base_domain),
     }
 
@@ -112,6 +115,88 @@ def _build_target_info(endpoint, connect_host, port, domains=None, base_domain="
             target_info["domains"].append(connect_host_text.lower())
 
     return target_info
+
+
+def _sort_sni_domains(domains, base_domain=""):
+    """
+    对 SNI 域名候选排序：
+    1) base_domain 本身
+    2) base_domain 子域
+    3) 其他域名
+    """
+    domain_list = _normalize_domains(domains or [])
+    if not domain_list:
+        return []
+
+    base = str(base_domain or "").strip().lower().strip(".")
+
+    def _score(domain):
+        if base and domain == base:
+            return (0, len(domain), domain)
+        if base and domain.endswith(".{}".format(base)):
+            return (1, len(domain), domain)
+        return (2, len(domain), domain)
+
+    return sorted(domain_list, key=_score)
+
+
+def _build_cert_scan_targets(target_info, max_sni_per_endpoint=3):
+    """
+    将端点目标展开为证书扫描目标：
+    - default：无SNI握手（获取默认证书）
+    - sni：按候选域名逐个SNI握手（获取业务域名证书）
+    """
+    endpoint = str(target_info.get("endpoint", "")).strip()
+    connect_host = str(target_info.get("connect_host", "")).strip()
+    domains = _normalize_domains(target_info.get("domains", []))
+    base_domain = str(target_info.get("base_domain", "")).strip().lower().strip(".")
+    port = target_info.get("port", 0)
+    try:
+        port = int(port)
+    except Exception:
+        port = 0
+
+    if not endpoint or not connect_host or port <= 0:
+        return []
+
+    try:
+        max_sni = int(max_sni_per_endpoint)
+    except Exception:
+        max_sni = 3
+    max_sni = max(min(max_sni, 8), 0)
+
+    scan_targets = []
+    # 先扫描默认握手，获取未携带SNI时服务返回的默认证书。
+    scan_targets.append(
+        {
+            "endpoint": endpoint,
+            "connect_host": connect_host,
+            "port": port,
+            "domains": domains,
+            "scan_mode": "default",
+            "sni_domain": "",
+            "observe_id": "{}|default".format(endpoint),
+        }
+    )
+
+    if max_sni <= 0:
+        return scan_targets
+
+    sni_domains = _sort_sni_domains(domains, base_domain=base_domain)
+    for domain in sni_domains[:max_sni]:
+        scan_targets.append(
+            {
+                "endpoint": endpoint,
+                "connect_host": connect_host,
+                "port": port,
+                "domains": domains,
+                "scan_mode": "sni",
+                "sni_domain": domain,
+                "observe_id": "{}|sni:{}".format(endpoint, domain),
+            }
+        )
+
+    return scan_targets
 
 
 
@@ -136,8 +221,13 @@ class FetchCert(BaseThread):
 
         endpoint = str(target_info.get("endpoint", "")).strip()
         connect_host = str(target_info.get("connect_host", "")).strip()
-        server_name = str(target_info.get("server_name", "")).strip()
+        scan_mode = str(target_info.get("scan_mode", "") or "").strip().lower() or "default"
+        sni_domain = str(target_info.get("sni_domain", "") or "").strip().lower()
+        if not sni_domain and scan_mode == "sni":
+            # 兼容旧结构：未显式传入 sni_domain 时回退到 server_name 字段。
+            sni_domain = str(target_info.get("server_name", "") or "").strip().lower()
         domains = _normalize_domains(target_info.get("domains", []))
+        observe_id = str(target_info.get("observe_id", "")).strip() or endpoint
 
         port = target_info.get("port", 0)
         try:
@@ -148,16 +238,18 @@ class FetchCert(BaseThread):
         if not endpoint or not connect_host or port <= 0:
             return
 
-        cert = utils.get_cert(connect_host, port, server_hostname=server_name)
+        cert = utils.get_cert(connect_host, port, server_hostname=sni_domain)
         if cert:
             if isinstance(cert, dict):
                 cert["_scan_meta"] = {
+                    "observe_id": observe_id,
                     "endpoint": endpoint,
                     "connect_host": connect_host,
-                    "server_name": server_name,
+                    "scan_mode": scan_mode,
+                    "sni_domain": sni_domain,
                     "domains": domains,
                 }
-            self.fetch_map[endpoint] = cert
+            self.fetch_map[observe_id] = cert
 
     def run(self):
         t1 = time.time()
@@ -286,7 +378,16 @@ class SSLCert():
                 )
 
         target_temp_list = [target_map[key] for key in sorted(target_map.keys())]
+        # 同一端点执行 default + 多SNI 握手，避免多域名复用IP场景下证书被误判。
+        expanded_targets = []
+        for target_info in target_temp_list:
+            expanded_targets.extend(
+                _build_cert_scan_targets(
+                    target_info=target_info,
+                    max_sni_per_endpoint=getattr(Config, "CERT_MULTI_SNI_MAX_PER_ENDPOINT", 3),
+                )
+            )
 
-        cert_map = services.fetch_cert(target_temp_list)
+        cert_map = services.fetch_cert(expanded_targets)
 
         return cert_map

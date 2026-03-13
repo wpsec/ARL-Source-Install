@@ -2379,6 +2379,10 @@ function formatCertHostCell(row: any): string {
   const endpoint = ip === '-' && port === '-' ? '-' : (port === '-' ? ip : `${ip}:${port}`);
 
   const domainCandidates: string[] = [];
+  const sniDomain = String(row?.sni_domain || '').trim();
+  if (sniDomain) {
+    domainCandidates.push(sniDomain);
+  }
   const primaryDomain = String(row?.domain || '').trim();
   if (primaryDomain) {
     domainCandidates.push(primaryDomain);

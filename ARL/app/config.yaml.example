@@ -219,6 +219,8 @@ ARL:
   CERT_PIVOT_QUERY_REQUIRE_SCOPE: true
   # 反查前跳过已识别为CDN/WAF的证书来源IP
   CERT_PIVOT_QUERY_SKIP_CDN: true
+  # 单个 IP:Port 最多尝试的 SNI 域名数量（0=仅扫描默认证书）
+  CERT_MULTI_SNI_MAX_PER_ENDPOINT: 3
   # 指纹到 nuclei 标签映射（可按内部资产特征扩充）
   NUCLEI_FINGER_TAG_MAP:
     wordpress:

@@ -35,6 +35,8 @@ logger = get_logger()
 base_search_fields = {
     'ip': fields.String(description="IP地址"),
     'port': fields.Integer(description="端口号"),
+    'scan_mode': fields.String(description="证书扫描模式（default/sni）"),
+    'sni_domain': fields.String(description="SNI 域名（仅 scan_mode=sni 时有值）"),
     'cert.subject_dn': fields.String(description="证书主题名称（Subject DN）"),
     'cert.issuer_dn': fields.String(description="证书签发者名称（Issuer DN）"),
     'cert.serial_number ': fields.String(description="证书序列号"),

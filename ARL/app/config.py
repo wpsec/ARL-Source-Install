@@ -437,6 +437,8 @@ class Config(object):
     CERT_PIVOT_QUERY_REQUIRE_SCOPE = True
     # 证书反查前是否跳过已识别为CDN/WAF的证书来源IP
     CERT_PIVOT_QUERY_SKIP_CDN = True
+    # 单个 IP:Port 在证书扫描阶段最多尝试的 SNI 域名数量（0=仅扫默认证书）
+    CERT_MULTI_SNI_MAX_PER_ENDPOINT = 3
 
     # ==================== WebHook配置 ====================
     # 自定义WebHook推送地址
@@ -695,6 +697,13 @@ try:
 
     if y["ARL"].get("CERT_PIVOT_QUERY_SKIP_CDN") is not None:
         Config.CERT_PIVOT_QUERY_SKIP_CDN = bool(y["ARL"]["CERT_PIVOT_QUERY_SKIP_CDN"])
+
+    if y["ARL"].get("CERT_MULTI_SNI_MAX_PER_ENDPOINT") is not None:
+        Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT = safe_positive_int(
+            y["ARL"]["CERT_MULTI_SNI_MAX_PER_ENDPOINT"],
+            Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT,
+            min_value=0,
+        )
 
 
     # --- 文件泄露字典自定义配置 ---
@@ -965,6 +974,11 @@ try:
         "ARL_CERT_PIVOT_QUERY_REQUIRE_SCOPE", Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE
     )
     Config.CERT_PIVOT_QUERY_SKIP_CDN = env_bool("ARL_CERT_PIVOT_QUERY_SKIP_CDN", Config.CERT_PIVOT_QUERY_SKIP_CDN)
+    Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT = safe_positive_int(
+        env_int("ARL_CERT_MULTI_SNI_MAX_PER_ENDPOINT", Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT),
+        Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT,
+        min_value=0,
+    )
     Config.WEB_GUNICORN_WORKERS = safe_positive_int(
         env_int("ARL_WEB_GUNICORN_WORKERS", Config.WEB_GUNICORN_WORKERS),
         Config.WEB_GUNICORN_WORKERS
