@@ -1,0 +1,16 @@
+.git
+.gitignore
+
+# 前端源码目录本地依赖/产物不进入 Docker 构建上下文
+ARL/docker/frontend-src/node_modules
+ARL/docker/frontend-src/dist
+ARL/docker/frontend-src/.vite
+ARL/docker/frontend-src/.cache
+ARL/docker/frontend-src/npm-debug.log*
+
+# 旧版预编译前端目录不再参与镜像构建
+ARL/docker/frontend
+
+# 通用临时文件
+**/__pycache__/
+*.log

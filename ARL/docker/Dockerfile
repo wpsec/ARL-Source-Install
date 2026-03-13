@@ -1,3 +1,18 @@
+FROM node:20-alpine AS frontend_builder
+
+WORKDIR /frontend
+# 先复制依赖清单，提升 npm 依赖层缓存命中率
+COPY ARL/docker/frontend-src/package*.json ./
+RUN if [ -f package-lock.json ]; then \
+      npm ci --no-audit --no-fund; \
+    else \
+      npm install --no-audit --no-fund; \
+    fi
+# 前端构建时读取 ../../version.txt，需要将版本文件放在 /version.txt
+COPY ARL/version.txt /version.txt
+COPY ARL/docker/frontend-src/ ./
+RUN npm run build && test -f /frontend/dist/index.html && test -d /frontend/dist/assets
+
 FROM rockylinux:8
 
 WORKDIR /code
@@ -126,7 +141,7 @@ RUN echo "===== 已安装的关键包 =====" && pip3 list | grep -E "psutil|flas
 # 5. 复制业务文件与工具
 COPY ARL/app/ app/
 COPY ARL/test/ test/
-COPY ARL/docker/frontend/ frontend/
+COPY --from=frontend_builder /frontend/dist/ frontend/
 COPY ARL/docker/nginx.conf /etc/nginx/nginx.conf
 COPY ARL/docker/worker/*.sh /usr/bin/
 
