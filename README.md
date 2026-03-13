@@ -64,7 +64,7 @@ tools/playwright/README.md
   - 密码：`.env` 中 `ARL_APP_PASSWORD`（默认 `arlpass`）
   - 说明：仅在 Mongo 数据卷首次初始化时生效。若已存在 `arl_db`，需清理数据卷后重新初始化。
 
-## 升级（当前版本v3.0.33）
+## 升级
 
 ### 常规更新
 
