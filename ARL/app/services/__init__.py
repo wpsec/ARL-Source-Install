@@ -23,6 +23,7 @@ from .autoTag import auto_tag
 from .githubSearch import github_search
 from .infoHunter import run_wih
 from .urlfinder_extract import run_urlfinder_extract
+from .urlfinder_sensitive_scan import run_urlfinder_sensitive_scan
 from .trufflehog_scan import run_trufflehog_js
 from .baseUpdateTask import BaseUpdateTask
 from .domainSiteUpdate import domain_site_update

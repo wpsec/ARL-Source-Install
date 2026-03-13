@@ -171,9 +171,9 @@ ARL/docker/config-docker.yaml
 - `任务管理 -> 新建任务` 支持选择“域名爆破字典”；不选则默认使用配置管理字典
 - 以上目录通过 `docker-compose` 挂载，容器重建后文件仍保留
 
-### TruffleHog JS 功能
+### TruffleHog
 
-系统在 `web_info_hunter` 阶段会按 `WIH -> URL/JS增强提取 -> TruffleHog` 链路执行敏感信息发现（默认跟随 WIH 开启）。
+系统在 `web_info_hunter` 阶段会按 `WIH -> URL/JS增强提取 -> URLFinder同目标二次敏感扫描 -> TruffleHog` 链路执行敏感信息发现（默认跟随 WIH 开启）。
 
 前置：
 
@@ -182,6 +182,7 @@ ARL/docker/config-docker.yaml
 说明：
 
 - 自研 `urlfinder_extract` 会从目标站点页面和 JS 中提取 URL/JS 引用，支持相对路径归一化与受控递归
+- URLFinder 二次敏感扫描仅处理“同目标 host”来源的 URL/HTML/JS，避免扫描到无关站点
 - TruffleHog 仅扫描当前任务目标 host 范围内来源的 JS URL，不在目标范围内的第三方 JS 会被过滤
 - TruffleHog 不直接扫描 `html/txt` 文件
 - 扫描结果写入 `wih` 表，记录类型前缀为 `trufflehog_*`

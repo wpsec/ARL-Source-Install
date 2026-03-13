@@ -81,29 +81,20 @@ def extract_finger_names(finger_data):
     return ",".join([name for name in names if name])
 
 
-def set_sheet_style(ws):
+def _beautify_sheet(ws, center_cols=None):
     """
-    统一设置工作表字体样式（与单任务导出保持一致）
-    """
-    font = Font(name="Consolas", color="111111")
-    column = "ABCDEFGHIJKLMNO"
-    for x in column:
-        for y in range(1, 256):
-            ws["{}{}".format(x, y)].font = font
-
-
-def beautify_cert_sheet(ws):
-    """
-    增强 SSL证书 工作表可读性：
+    统一增强工作表可读性：
     - 冻结首行
     - 表头高亮
     - 自动筛选
-    - 斑马纹 + 边框
+    - 斑马纹 + 边框 + 自动换行
     """
     max_row = ws.max_row
     max_col = ws.max_column
     if max_row <= 0 or max_col <= 0:
         return
+
+    center_cols = set(center_cols or [])
 
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = "A1:{}{}".format(get_column_letter(max_col), max_row)
@@ -112,8 +103,8 @@ def beautify_cert_sheet(ws):
     zebra_fill = PatternFill(fill_type="solid", fgColor="F6FAFF")
     thin_side = Side(style="thin", color="D9E2F3")
     thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    body_font = Font(name="Consolas", color="111111")
 
-    center_cols = {5, 6, 7, 8, 9, 10}
     ws.row_dimensions[1].height = 24
     for col in range(1, max_col + 1):
         cell = ws.cell(row=1, column=col)
@@ -123,17 +114,31 @@ def beautify_cert_sheet(ws):
         cell.border = thin_border
 
     for row in range(2, max_row + 1):
-        if row % 2 == 0:
-            for col in range(1, max_col + 1):
-                ws.cell(row=row, column=col).fill = zebra_fill
-
+        use_zebra = row % 2 == 0
         for col in range(1, max_col + 1):
             cell = ws.cell(row=row, column=col)
+            cell.font = body_font
+            if use_zebra:
+                cell.fill = zebra_fill
             cell.border = thin_border
             if col in center_cols:
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             else:
                 cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+
+
+def set_sheet_style(ws):
+    """
+    通用工作表样式（默认左对齐）
+    """
+    _beautify_sheet(ws)
+
+
+def beautify_cert_sheet(ws):
+    """
+    SSL 证书工作表样式（保留部分字段居中）
+    """
+    _beautify_sheet(ws, center_cols={5, 6, 7, 8, 9, 10})
 
 
 def as_list(value):
@@ -774,7 +779,6 @@ def _build_cert_sheet(wb, task_ids):
     for row in _extract_cert_rows(task_ids):
         ws.append(row)
 
-    set_sheet_style(ws)
     beautify_cert_sheet(ws)
 
 
@@ -856,9 +860,9 @@ def _extract_vuln_rows(task_ids):
 
 def _build_vuln_sheet(wb, task_ids):
     """
-    在导出工作簿中新增漏洞明细工作表
+    在导出工作簿中新增风险明细工作表
     """
-    ws = wb.create_sheet(title="漏洞")
+    ws = wb.create_sheet(title="风险")
     ws.column_dimensions['A'].width = 28.0
     ws.column_dimensions['B'].width = 12.0
     ws.column_dimensions['C'].width = 36.0
@@ -869,7 +873,7 @@ def _build_vuln_sheet(wb, task_ids):
     ws.column_dimensions['H'].width = 20.0
     ws.column_dimensions['I'].width = 80.0
 
-    ws.append(["任务ID", "来源", "漏洞名称", "严重级别", "目标", "漏洞URL", "模板/插件", "漏洞类型", "详情"])
+    ws.append(["任务ID", "来源", "风险名称", "严重级别", "目标", "风险URL", "模板/插件", "风险类型", "详情"])
     for row in _extract_vuln_rows(task_ids):
         ws.append(row)
 
@@ -982,11 +986,7 @@ class SaveTask(object):
         self.is_ip_task = False
 
     def set_style(self, ws):
-        font = Font(name="Consolas", color="111111")
-        column = "ABCDEFGHIJKLMNO"
-        for x in column:
-            for y in range(1, 256):
-                ws["{}{}".format(x,y)].font = font
+        set_sheet_style(ws)
 
     def build_service_xl(self):
         ws = self.wb.create_sheet(title="系统服务")

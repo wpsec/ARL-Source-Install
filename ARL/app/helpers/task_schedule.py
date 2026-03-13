@@ -343,7 +343,7 @@ def build_schedule_run_compare_summary(run_item):
         ("domain_cnt", "域名"),
         ("ip_cnt", "IP"),
         ("url_cnt", "URL"),
-        ("vuln_cnt", "漏洞"),
+        ("vuln_cnt", "风险"),
     ]
     metrics = {}
     for metric_key, metric_label in metric_defs:
@@ -422,7 +422,7 @@ def build_schedule_run_markdown(run_item):
     markdown += "- 域名总数：`{}`\n".format(domain_cnt)
     markdown += "- IP总数：`{}`\n".format(ip_cnt)
     markdown += "- URL总数：`{}`\n".format(url_cnt)
-    markdown += "- 漏洞总数：`{}`\n".format(vuln_cnt)
+    markdown += "- 风险总数：`{}`\n".format(vuln_cnt)
 
     compare_summary = run_item.get("compare_summary", {})
     if isinstance(compare_summary, dict):

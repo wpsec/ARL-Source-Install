@@ -3,7 +3,7 @@ Web指纹信息监控
 """
 from app.helpers import asset_site, asset_wih
 from app.helpers.scope import get_scope_by_scope_id
-from app.services import run_wih, run_urlfinder_extract, run_trufflehog_js
+from app.services import run_wih, run_urlfinder_extract, run_urlfinder_sensitive_scan, run_trufflehog_js
 from app.utils import get_logger, check_domain_black
 from app.modules import WihRecord
 from app import utils
@@ -78,11 +78,15 @@ class AssetWihMonitor(object):
         if len(self.sites) == 0:
             return results
 
-        # 先执行原生 WIH，再进行 URL/JS 提取增强，最后执行 TruffleHog 二次扫描
+        # 先执行原生 WIH，再进行 URL/JS 提取增强、同目标二次敏感扫描，最后执行 TruffleHog 二次扫描
         wih_results = list(run_wih(self.sites) or [])
         urlfinder_results = list(run_urlfinder_extract(self.sites, wih_results) or [])
         if urlfinder_results:
             wih_results.extend(urlfinder_results)
+
+        urlfinder_sensitive_results = list(run_urlfinder_sensitive_scan(self.sites, wih_results) or [])
+        if urlfinder_sensitive_results:
+            wih_results.extend(urlfinder_sensitive_results)
 
         # 按记录哈希去重，避免后续 TruffleHog 重复输入
         wih_results = list(set(wih_results))

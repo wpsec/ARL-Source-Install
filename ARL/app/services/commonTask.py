@@ -553,6 +553,12 @@ class WebSiteFetch(object):
             records |= urlfinder_records
 
         if records:
+            # 对 URLFinder 提取出的同目标 URL/HTML/JS 做二次敏感信息扫描。
+            urlfinder_sensitive_records = set(services.run_urlfinder_sensitive_scan(self.sites, list(records)))
+            if urlfinder_sensitive_records:
+                records |= urlfinder_sensitive_records
+
+        if records:
             trufflehog_records = set(services.run_trufflehog_js(self.sites, list(records)))
             if trufflehog_records:
                 records |= trufflehog_records

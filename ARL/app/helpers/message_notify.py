@@ -241,7 +241,7 @@ def build_task_finish_markdown(task_data):
         markdown += "- 域名数：`{}`\n".format(domain_cnt)
         markdown += "- IP数：`{}`\n".format(ip_cnt)
         markdown += "- URL数：`{}`\n".format(url_cnt)
-        markdown += "- 漏洞数：`{}`\n".format(vuln_cnt)
+        markdown += "- 风险数：`{}`\n".format(vuln_cnt)
 
     return markdown
 

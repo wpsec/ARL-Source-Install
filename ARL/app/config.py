@@ -212,6 +212,12 @@ class Config(object):
     TRUFFLEHOG_JS_TIMEOUT_SEC = 900
     # 单个 JS 文件下载大小上限（字节）
     TRUFFLEHOG_JS_MAX_FILE_BYTES = 512 * 1024
+    # 是否启用 URLFinder 同目标 URL/HTML/JS 二次敏感扫描（复用 WIH）
+    URLFINDER_SENSITIVE_ENABLE = True
+    # URLFinder 二次敏感扫描单次最多目标数
+    URLFINDER_SENSITIVE_MAX_TARGETS = 300
+    # URLFinder 二次敏感扫描是否包含 JS 目标
+    URLFINDER_SENSITIVE_INCLUDE_JS = True
     # 是否启用内建 kscan 指纹解析
     KSCAN_FINGERPRINT_ENABLE = True
     # kscan 指纹文件路径（默认使用 ARL 内置字典）
@@ -642,6 +648,17 @@ try:
             int(y["ARL"]["TRUFFLEHOG_JS_MAX_FILE_BYTES"]), Config.TRUFFLEHOG_JS_MAX_FILE_BYTES
         )
 
+    if y["ARL"].get("URLFINDER_SENSITIVE_ENABLE") is not None:
+        Config.URLFINDER_SENSITIVE_ENABLE = bool(y["ARL"]["URLFINDER_SENSITIVE_ENABLE"])
+
+    if y["ARL"].get("URLFINDER_SENSITIVE_MAX_TARGETS") is not None:
+        Config.URLFINDER_SENSITIVE_MAX_TARGETS = safe_positive_int(
+            int(y["ARL"]["URLFINDER_SENSITIVE_MAX_TARGETS"]), Config.URLFINDER_SENSITIVE_MAX_TARGETS
+        )
+
+    if y["ARL"].get("URLFINDER_SENSITIVE_INCLUDE_JS") is not None:
+        Config.URLFINDER_SENSITIVE_INCLUDE_JS = bool(y["ARL"]["URLFINDER_SENSITIVE_INCLUDE_JS"])
+
     nuclei_finger_tag_map = y["ARL"].get("NUCLEI_FINGER_TAG_MAP")
     if isinstance(nuclei_finger_tag_map, dict):
         Config.NUCLEI_FINGER_TAG_MAP = nuclei_finger_tag_map
@@ -936,6 +953,16 @@ try:
     Config.TRUFFLEHOG_JS_MAX_FILE_BYTES = safe_positive_int(
         env_int("ARL_TRUFFLEHOG_JS_MAX_FILE_BYTES", Config.TRUFFLEHOG_JS_MAX_FILE_BYTES),
         Config.TRUFFLEHOG_JS_MAX_FILE_BYTES
+    )
+    Config.URLFINDER_SENSITIVE_ENABLE = env_bool(
+        "ARL_URLFINDER_SENSITIVE_ENABLE", Config.URLFINDER_SENSITIVE_ENABLE
+    )
+    Config.URLFINDER_SENSITIVE_MAX_TARGETS = safe_positive_int(
+        env_int("ARL_URLFINDER_SENSITIVE_MAX_TARGETS", Config.URLFINDER_SENSITIVE_MAX_TARGETS),
+        Config.URLFINDER_SENSITIVE_MAX_TARGETS
+    )
+    Config.URLFINDER_SENSITIVE_INCLUDE_JS = env_bool(
+        "ARL_URLFINDER_SENSITIVE_INCLUDE_JS", Config.URLFINDER_SENSITIVE_INCLUDE_JS
     )
     Config.KSCAN_FINGERPRINT_ENABLE = env_bool(
         "ARL_KSCAN_FINGERPRINT_ENABLE", Config.KSCAN_FINGERPRINT_ENABLE

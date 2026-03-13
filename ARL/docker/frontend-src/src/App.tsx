@@ -125,7 +125,7 @@ const modules: ModuleConfig[] = [
   {
     id: 'dashboard',
     label: '我的仪表盘',
-    description: '实时总览任务、资产、漏洞与系统状态',
+    description: '实时总览任务、资产、风险与系统状态',
     group: '核心功能',
     icon: LayoutDashboard,
   },
@@ -392,7 +392,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_excel_report',
-        label: '表格批量导出',
+        label: '报告导出',
         method: 'POST',
         path: '/export/batch',
         selectedField: 'task_ids',
@@ -1217,8 +1217,8 @@ const modules: ModuleConfig[] = [
   {
     id: 'vuln',
     label: '风险',
-    description: '漏洞结果查询和处置',
-    group: '漏洞与规则',
+    description: '风险结果查询和处置',
+    group: '风险与规则',
     icon: AlertTriangle,
     listPath: '/vuln/',
     rowIdKey: '_id',
@@ -1226,7 +1226,7 @@ const modules: ModuleConfig[] = [
     quickFilterKey: 'vul_name',
     columns: ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date'],
     columnLabels: {
-      vul_name: '漏洞名称',
+      vul_name: '风险名称',
       plg_type: '类别',
       app_name: '应用名',
       target: '目标',
@@ -1234,7 +1234,7 @@ const modules: ModuleConfig[] = [
       save_date: '发现时间',
     },
     searchFields: [
-      { key: 'vul_name', label: '漏洞名称', placeholder: '请输入漏洞名称进行搜索' },
+      { key: 'vul_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
       { key: 'plg_type', label: '类别', placeholder: '请输入类别进行搜索' },
       { key: 'app_name', label: '应用名', placeholder: '请输入应用名进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
@@ -1255,7 +1255,7 @@ const modules: ModuleConfig[] = [
     id: 'nuclei_result',
     label: 'nuclei',
     description: 'Nuclei 模板扫描结果',
-    group: '漏洞与规则',
+    group: '风险与规则',
     icon: FlaskConical,
     listPath: '/nuclei_result/',
     rowIdKey: '_id',
@@ -1265,17 +1265,17 @@ const modules: ModuleConfig[] = [
     columnLabels: {
       template_id: '模板ID',
       target: '目标',
-      vuln_url: '漏洞URL',
-      vuln_name: '漏洞名称',
-      vuln_severity: '漏洞等级',
+      vuln_url: '风险URL',
+      vuln_name: '风险名称',
+      vuln_severity: '风险等级',
       save_date: '保存时间',
       curl_command: '验证命令',
     },
     searchFields: [
       { key: 'template_id', label: '模版ID', placeholder: '请输入模版ID进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
-      { key: 'vuln_url', label: '漏洞URL', placeholder: '请输入漏洞URL进行搜索' },
-      { key: 'vuln_name', label: '漏洞名称', placeholder: '请输入漏洞名称进行搜索' },
+      { key: 'vuln_url', label: '风险URL', placeholder: '请输入风险URL进行搜索' },
+      { key: 'vuln_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
     ],
     actions: [
       {
@@ -1293,7 +1293,7 @@ const modules: ModuleConfig[] = [
     id: 'fileleak',
     label: '文件泄露',
     description: '敏感文件泄露结果',
-    group: '漏洞与规则',
+    group: '风险与规则',
     icon: ShieldAlert,
     listPath: '/fileleak/',
     rowIdKey: '_id',
@@ -1329,7 +1329,7 @@ const modules: ModuleConfig[] = [
     id: 'wih',
     label: 'WIH',
     description: '任务中提取的JS信息',
-    group: '漏洞与规则',
+    group: '风险与规则',
     icon: FileCode,
     listPath: '/wih/',
     rowIdKey: '_id',
@@ -1354,7 +1354,7 @@ const modules: ModuleConfig[] = [
     id: 'poc',
     label: 'PoC管理',
     description: 'PoC / brute 插件管理',
-    group: '漏洞与规则',
+    group: '风险与规则',
     icon: Shield,
     listPath: '/poc/',
     rowIdKey: '_id',
@@ -1366,7 +1366,7 @@ const modules: ModuleConfig[] = [
       plugin_type: '类型',
       category: '分类',
       app_name: '应用',
-      vul_name: '漏洞名称',
+      vul_name: '风险名称',
       scheme: '协议',
       update_date: '更新时间',
     },
@@ -1389,7 +1389,7 @@ const modules: ModuleConfig[] = [
     id: 'fingerprint',
     label: '指纹规则',
     description: 'Web 指纹规则管理',
-    group: '漏洞与规则',
+    group: '风险与规则',
     icon: FileCode,
     listPath: '/fingerprint/',
     rowIdKey: '_id',
@@ -2180,7 +2180,7 @@ function buildTaskStatisticSummary(row: any): string {
   const domainCnt = Number(stat.domain_cnt || 0);
   const ipCnt = Number(stat.ip_cnt || 0);
   const vulnCnt = Number(stat.vuln_cnt || 0);
-  return `站点:${siteCnt} 域名:${domainCnt} IP:${ipCnt} 漏洞:${vulnCnt}`;
+  return `站点:${siteCnt} 域名:${domainCnt} IP:${ipCnt} 风险:${vulnCnt}`;
 }
 
 function buildTaskOptionsSummary(row: any): string {
@@ -3194,7 +3194,7 @@ function DashboardView({
   const cards = [
     { title: '总资产数', value: stats.asset_site, change: `+${stats.new_assets_today}`, isUp: true, icon: Globe, color: 'text-brand-accent' },
     { title: '活跃任务', value: stats.running_task, change: `总计 ${stats.task}`, isUp: true, icon: Activity, color: 'text-brand-secondary' },
-    { title: '高危漏洞', value: highRisk, change: `总计 ${stats.vuln}`, isUp: highRisk === 0, icon: AlertTriangle, color: 'text-brand-danger' },
+    { title: '高危风险', value: highRisk, change: `总计 ${stats.vuln}`, isUp: highRisk === 0, icon: AlertTriangle, color: 'text-brand-danger' },
     { title: '今日新增', value: stats.new_assets_today, change: `分组 ${stats.asset_scope}`, isUp: true, icon: Shield, color: 'text-brand-warning' },
   ];
   const trendData = assetTrend.length > 0 ? assetTrend : [{ name: '周一', assets: stats.asset_site, vulns: stats.vuln }];
@@ -3848,7 +3848,7 @@ function ActionDialog({
         keys: ['port_scan', 'service_detection', 'os_detection', 'ssl_cert', 'skip_scan_cdn_ip'],
       },
       {
-        title: 'Web与漏洞',
+        title: 'Web与风险',
         keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'findvhost', 'web_info_hunter', 'dingding_notify'],
       },
     ];
@@ -6182,24 +6182,37 @@ function TableModuleView({
     setSuccess('');
 
     const selectionMode = action.selectionMode || 'none';
-    if (selectionMode === 'single' && selectedIds.length !== 1) {
+    let effectiveSelectedIds = [...selectedIds];
+    const taskName = String(taskNameViewInput || '').trim();
+    if (module.id === 'task' && selectionMode === 'multiple' && effectiveSelectedIds.length === 0 && taskName) {
+      const taskIdsByName = await fetchTaskIdsByName(taskName);
+      if (taskIdsByName.length === 0) {
+        throw new Error(`未找到任务名为“${taskName}”的任务`);
+      }
+      effectiveSelectedIds = taskIdsByName;
+    }
+
+    if (selectionMode === 'single' && effectiveSelectedIds.length !== 1) {
       throw new Error('该操作需要且仅需要选择一条记录');
     }
-    if (selectionMode === 'multiple' && selectedIds.length === 0) {
+    if (selectionMode === 'multiple' && effectiveSelectedIds.length === 0) {
+      if (module.id === 'task') {
+        throw new Error('请先选择记录，或输入任务名后再执行批量操作');
+      }
       throw new Error('请先选择至少一条记录');
     }
 
     if (action.selectedField) {
       if (selectionMode === 'single') {
-        payload[action.selectedField] = selectedIds[0];
+        payload[action.selectedField] = effectiveSelectedIds[0];
       }
       if (selectionMode === 'multiple') {
-        payload[action.selectedField] = selectedIds;
+        payload[action.selectedField] = effectiveSelectedIds;
       }
     }
 
     if (isDeleteAction(action)) {
-      const selectedCount = selectionMode === 'none' ? 0 : selectedIds.length;
+      const selectedCount = selectionMode === 'none' ? 0 : effectiveSelectedIds.length;
       const countText = selectedCount > 0 ? `已选择 ${selectedCount} 条记录。` : '';
       const confirmed = await askDeleteConfirm(
         `将执行「${action.label}」。${countText}此操作不可恢复。`
@@ -6714,6 +6727,36 @@ function TableModuleView({
     onOpenModule('site', { task_id: taskId });
   };
 
+  const fetchTaskIdsByName = useCallback(async (taskNameRaw: string) => {
+    const taskName = String(taskNameRaw || '').trim();
+    if (!taskName) return [];
+
+    const response = await requestApi(token, '/task/', {
+      method: 'GET',
+      query: {
+        page: 1,
+        size: 10000,
+        name: taskName,
+        order: '-_id',
+      },
+    });
+
+    const taskItems = normalizeListData(response).items || [];
+    return Array.from(
+      new Set(
+        taskItems
+          .map((item: any) => {
+            return (
+              normalizeRowIdValue(item?._id) ||
+              normalizeRowIdValue(item?.task_id) ||
+              normalizeRowIdValue(item?.id)
+            );
+          })
+          .filter((id: string) => Boolean(id))
+      )
+    );
+  }, [token]);
+
   const openTaskViewByName = async () => {
     if (module.id !== 'task') return;
 
@@ -6727,30 +6770,7 @@ function TableModuleView({
     setSuccess('');
 
     try {
-      const response = await requestApi(token, '/task/', {
-        method: 'GET',
-        query: {
-          page: 1,
-          size: 10000,
-          name: taskName,
-          order: '-_id',
-        },
-      });
-
-      const taskItems = normalizeListData(response).items || [];
-      const taskIds = Array.from(
-        new Set(
-          taskItems
-            .map((item: any) => {
-              return (
-                normalizeRowIdValue(item?._id) ||
-                normalizeRowIdValue(item?.task_id) ||
-                normalizeRowIdValue(item?.id)
-              );
-            })
-            .filter((id: string) => Boolean(id))
-        )
-      );
+      const taskIds = await fetchTaskIdsByName(taskName);
 
       if (taskIds.length === 0) {
         setError(`未找到任务名为“${taskName}”的任务`);
@@ -6759,6 +6779,7 @@ function TableModuleView({
 
       // 使用逗号拼接 task_id，后端会转换为 $in 查询，展示该任务名下全部任务扫描结果。
       onOpenModule('site', { task_id: taskIds.join(',') });
+      setSuccess(`已切换查看任务名“${taskName}”的 ${taskIds.length} 条扫描结果`);
     } catch (err: any) {
       setError(err?.message || '同名任务查看失败');
     }
@@ -7197,9 +7218,11 @@ function TableModuleView({
             {visibleActions.map((action) => {
               const needSingle = action.selectionMode === 'single';
               const needMultiple = action.selectionMode === 'multiple';
+              const canUseTaskNameForBatch =
+                module.id === 'task' && needMultiple && selectedIds.length === 0 && Boolean(String(taskNameViewInput || '').trim());
               const disabled =
                 (needSingle && selectedIds.length !== 1) ||
-                (needMultiple && selectedIds.length === 0);
+                (needMultiple && selectedIds.length === 0 && !canUseTaskNameForBatch);
 
               return (
                 <button
