@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号。
 
-## 2026-03-13（v3.0.45 ~ v3.0.56）
+## 2026-03-13（v3.0.45 ~ v3.0.57）
 
 - `[v3.0.45]` `nuclei` 分批策略优化：当 `NUCLEI_TARGETS_PER_BATCH<=1` 时改为按 `-c * -bs` 与超时预算自动计算批次大小，避免默认单目标拆分导致进程创建开销过高
 - `[v3.0.45]` `nuclei` 自动扫描回退策略优化：移除“结果文件为空即回退 tags”逻辑，仅在执行失败或模板匹配失败时回退，减少重复扫描
@@ -17,6 +17,7 @@
 - `[v3.0.54]` 构建加速优化：前端 `npm` 默认切换 `npmmirror`（支持环境变量覆盖）；`quick-build` 自动优先使用 `buildx/BuildKit` 并把 `NPM_REGISTRY` 透传到 Docker 构建与前端热更新容器，缓解依赖下载慢与 legacy builder 性能瓶颈
 - `[v3.0.55]` 集群构建兼容修复：`Dockerfile` 中前端产物复制改为 `COPY --from=0`（阶段索引），避免部分构建器将 `--from=frontend_builder` 误解析为外部镜像并触发 `frontend_builder:latest` 拉取失败
 - `[v3.0.56]` 前端依赖安装稳定性修复：移除 `frontend-src` 中触发 `node-gyp` 编译的 `better-sqlite3` 依赖，并在 `frontend_builder` 增加 `python3/make/g++` 兜底，修复 CI/集群构建阶段 `gyp ERR! find Python` 失败
+- `[v3.0.57]` 集群构建进一步兼容：前端构建阶段改为自动探测 `apk/apt` 安装编译工具；依赖安装统一使用 `npm install`，避免集群环境受未纳管 `package-lock.json` 或 `npm ci` 严格校验影响导致构建失败
 
 ## 2026-03-12（v3.0.33 ~ v3.0.44）
 

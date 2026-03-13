@@ -198,7 +198,7 @@ ARL/docker/config-docker.yaml
 
 建议以 [CHANGELOG.md](./CHANGELOG.md) 为主，`README` 保留最近版本摘要（同日版本合并记录）。
 
-### 2026-03-13（v3.0.45 ~ v3.0.56）
+### 2026-03-13（v3.0.45 ~ v3.0.57）
 
 - `[v3.0.45]` `nuclei` 分批策略优化：`NUCLEI_TARGETS_PER_BATCH<=1` 时自动按并发与超时预算计算批次，避免默认单目标拆分导致扫描明显变慢
 - `[v3.0.45]` `nuclei` 自动扫描回退优化：仅在执行失败或模板未命中时才回退 `-tags`，不再因“无结果”重复跑一轮
@@ -212,6 +212,7 @@ ARL/docker/config-docker.yaml
 - `[v3.0.54]` 构建加速优化：前端 `npm` 默认走 `npmmirror`（可配置覆盖），`quick-build` 自动优先使用 `buildx/BuildKit` 并透传 `NPM_REGISTRY` 到 Docker 构建与前端热更新路径
 - `[v3.0.55]` 集群兼容修复：前端构建产物复制由 stage alias 改为阶段索引（`COPY --from=0`），规避部分集群构建器把 `frontend_builder` 当外部镜像拉取导致构建失败
 - `[v3.0.56]` 前端安装稳定性修复：移除 `frontend-src` 中不必要的 `better-sqlite3` 原生依赖，并在前端构建阶段补齐 `python3/make/g++` 兜底，修复 `node-gyp` 因找不到 Python 导致的构建失败
+- `[v3.0.57]` 集群构建兼容增强：前端构建阶段自动识别 `apk/apt` 安装编译工具，依赖安装统一使用 `npm install`，降低 CI 环境因包管理器差异或 `package-lock` 不一致造成的构建失败
 
 ### 2026-03-12（v3.0.33）
 

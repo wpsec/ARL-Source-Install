@@ -3,17 +3,20 @@ FROM node:20-alpine AS frontend_builder
 WORKDIR /frontend
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 # 先复制依赖清单，提升 npm 依赖层缓存命中率
-COPY ARL/docker/frontend-src/package*.json ./
-RUN apk add --no-cache python3 make g++ && \
+COPY ARL/docker/frontend-src/package.json ./
+RUN set -e; \
+    if command -v apk >/dev/null 2>&1; then \
+      apk add --no-cache python3 make g++; \
+    elif command -v apt-get >/dev/null 2>&1; then \
+      apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*; \
+    else \
+      echo "[WARN] no supported package manager found, skip native build tools installation"; \
+    fi && \
     npm config set registry "${NPM_REGISTRY}" && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
-    if [ -f package-lock.json ]; then \
-      npm ci --no-audit --no-fund; \
-    else \
-      npm install --no-audit --no-fund; \
-    fi
+    npm install --no-audit --no-fund
 # 前端构建时读取 ../../version.txt，需要将版本文件放在 /version.txt
 COPY ARL/version.txt /version.txt
 COPY ARL/docker/frontend-src/ ./
