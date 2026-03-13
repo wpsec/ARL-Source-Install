@@ -3195,10 +3195,10 @@ function DashboardView({
   const diskPercent = parseNumericValue(diskInfo?.percent) || 0;
   const highRisk = Number((riskDistribution.find((item) => item?.name === '高危') || {}).value || 0);
   const cards = [
-    { title: '总资产数', value: stats.asset_site, change: `+${stats.new_assets_today}`, isUp: true, icon: Globe, color: 'text-brand-accent' },
+    { title: '总资产数', value: stats.asset_site, change: `今日 +${stats.new_assets_today}`, isUp: true, icon: Globe, color: 'text-brand-accent' },
     { title: '活跃任务', value: stats.running_task, change: `总计 ${stats.task}`, isUp: true, icon: Activity, color: 'text-brand-secondary' },
     { title: '高危风险', value: highRisk, change: `总计 ${stats.vuln}`, isUp: highRisk === 0, icon: AlertTriangle, color: 'text-brand-danger' },
-    { title: '今日新增', value: stats.new_assets_today, change: `分组 ${stats.asset_scope}`, isUp: true, icon: Shield, color: 'text-brand-warning' },
+    { title: '计划任务', value: stats.scheduler, change: `资产分组 ${stats.asset_scope}`, isUp: stats.scheduler > 0, icon: Settings, color: 'text-brand-warning' },
   ];
   const trendData = assetTrend.length > 0 ? assetTrend : [{ name: '周一', assets: stats.asset_site, vulns: stats.vuln }];
   const assetOverviewData = [
