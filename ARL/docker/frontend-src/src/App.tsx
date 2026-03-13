@@ -2373,6 +2373,30 @@ function formatCertSummary(row: any): string {
   return summaryLines.join('\n');
 }
 
+function formatCertHostCell(row: any): string {
+  const ip = normalizeValue(row?.ip);
+  const port = normalizeValue(row?.port);
+  const endpoint = ip === '-' && port === '-' ? '-' : (port === '-' ? ip : `${ip}:${port}`);
+
+  const domainCandidates: string[] = [];
+  const primaryDomain = String(row?.domain || '').trim();
+  if (primaryDomain) {
+    domainCandidates.push(primaryDomain);
+  }
+  const domainList = Array.isArray(row?.domains) ? row.domains : [];
+  domainList.forEach((item: any) => {
+    const text = String(item || '').trim();
+    if (text) domainCandidates.push(text);
+  });
+  const uniqueDomains = Array.from(new Set(domainCandidates));
+  const domain = uniqueDomains.length > 0 ? uniqueDomains[0] : '-';
+
+  // 证书列表优先展示域名身份，再附带IP端点，避免“看起来只按IP查证书”的误解。
+  if (domain !== '-' && endpoint !== '-') return `${domain} -> ${endpoint}`;
+  if (domain !== '-') return domain;
+  return endpoint;
+}
+
 function formatDateTimeCell(value: any): string {
   if (value === null || value === undefined) return '-';
   const text = String(value).trim();
@@ -2549,11 +2573,7 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
 
   if (moduleId === 'cert') {
     if (column === 'host') {
-      const ip = normalizeValue(row?.ip);
-      const port = normalizeValue(row?.port);
-      if (ip === '-' && port === '-') return '-';
-      if (port === '-') return ip;
-      return `${ip}:${port}`;
+      return formatCertHostCell(row);
     }
     if (column === 'cert_summary') {
       return formatCertSummary(row);
