@@ -1,4 +1,4 @@
-FROM node:20-alpine AS frontend_builder
+FROM node:20.18.3 AS frontend_builder
 
 WORKDIR /frontend
 ARG NPM_REGISTRY=https://registry.npmmirror.com
