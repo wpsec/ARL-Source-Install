@@ -118,7 +118,7 @@ const TOKEN_KEY = 'arl-token';
 const USERNAME_KEY = 'arl-username';
 const ACTIVE_MODULE_KEY = 'arl-active-module';
 const UNIFIED_SELECT_CLASS =
-  'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm appearance-none pr-9 ' +
+  'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text appearance-none pr-9 ' +
   'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
 
 const modules: ModuleConfig[] = [
@@ -2887,7 +2887,7 @@ function LoginView({
   const [password, setPassword] = useState('arlpass');
 
   return (
-    <div className="min-h-screen bg-brand-bg text-white flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-brand-bg text-brand-text flex items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute -top-16 -left-16 w-72 h-72 rounded-full bg-brand-accent/20 blur-[120px] pointer-events-none" />
       <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full bg-brand-secondary/20 blur-[120px] pointer-events-none" />
 
@@ -3833,7 +3833,15 @@ function ActionDialog({
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
   const shouldLoadDictOptions = isTaskCreate || isPolicyAction;
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
-  const displayFields = useMemo(() => fields, [fields]);
+  const displayFields = useMemo(
+    () =>
+      fields.filter((field) => {
+        if (!action.selectedField) return true;
+        if ((action.selectionMode || 'none') === 'none') return true;
+        return field.path !== action.selectedField;
+      }),
+    [fields, action.selectedField, action.selectionMode]
+  );
   const policyRootPath = action.id === 'policy_edit' ? 'policy_data.policy' : 'policy';
   const policyNamePath = action.id === 'policy_edit' ? 'policy_data.name' : 'name';
   const policyDescPath = action.id === 'policy_edit' ? 'policy_data.desc' : 'desc';
@@ -6951,7 +6959,7 @@ function TableModuleView({
               className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
                 module.id === item.id
                   ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                  : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
+                  : 'border-brand-border bg-brand-bg/35 text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
               }`}
             >
               {item.label}
@@ -6978,7 +6986,7 @@ function TableModuleView({
               className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
                 module.id === item.id
                   ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                  : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
+                  : 'border-brand-border bg-brand-bg/35 text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
               }`}
             >
               {`${item.label} - ${
@@ -6996,7 +7004,7 @@ function TableModuleView({
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
         {hasExternalFilters ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-brand-text-muted">查看筛选条件:</span>
+            <span className="text-xs font-semibold text-brand-text">查看筛选条件:</span>
             {Object.entries(activeExternalFilters).map(([key, value]) => (
               <span
                 key={key}
@@ -7021,7 +7029,7 @@ function TableModuleView({
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {(module.searchFields || []).map((field) => (
                 <div key={field.key} className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">{field.label}：</label>
+                  <label className="text-xs font-bold text-brand-text">{field.label}：</label>
                   {field.inputType === 'select' ? (
                     <div className="relative">
                       <select
@@ -7038,14 +7046,14 @@ function TableModuleView({
                           </option>
                         ))}
                       </select>
-                      <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                      <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                     </div>
                   ) : (
                     <input
                       type={field.inputType === 'number' ? 'number' : 'text'}
                       value={String(searchForm?.[field.key] ?? '')}
                       placeholder={field.placeholder}
-                      className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-accent"
+                      className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm text-brand-text placeholder:text-brand-text-muted focus:outline-none focus:border-brand-accent"
                       onChange={(event) => {
                         const value = event.target.value;
                         setSearchForm((prev) => ({ ...prev, [field.key]: value }));
@@ -7153,7 +7161,7 @@ function TableModuleView({
                   className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
                     taskCompactMode
                       ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                      : 'border-brand-border text-brand-text-muted hover:text-white hover:bg-brand-bg/70'
+                      : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
                   }`}
                   title={taskCompactMode ? '当前为简洁模式，点击切换完整模式' : '当前为完整模式，点击切换简洁模式'}
                 >
@@ -10109,7 +10117,7 @@ function MainShell() {
   }
 
   return (
-    <div className="h-screen flex bg-brand-bg text-white overflow-hidden">
+    <div className="h-screen flex bg-brand-bg text-brand-text overflow-hidden">
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[20%] left-[10%] w-[35%] h-[35%] bg-brand-accent/10 rounded-full blur-[120px]" />
         <div className="absolute top-[20%] -right-[10%] w-[30%] h-[30%] bg-brand-secondary/10 rounded-full blur-[120px]" />

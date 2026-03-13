@@ -113,7 +113,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
       <nav className="flex-1 px-4 py-8 space-y-10">
         {navGroups.map((group) => (
           <div key={group.label} className="space-y-3">
-            <h3 className={cn("px-4 text-[11px] font-black uppercase tracking-[0.15em] opacity-65", group.color)}>
+            <h3 className={cn("px-4 text-[11px] font-black uppercase tracking-[0.15em] opacity-90", group.color)}>
               {group.label}
             </h3>
             <div className="space-y-1">
@@ -126,10 +126,10 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                     "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-sm font-semibold group",
                     activeView === item.id
                       ? "bg-brand-accent/10 text-brand-accent"
-                      : "text-brand-text-muted hover:text-white hover:bg-brand-card/50"
+                      : "text-brand-text hover:text-brand-text hover:bg-brand-card/50"
                   )}
                 >
-                  <item.icon className={cn("w-4 h-4 transition-colors", activeView === item.id ? "text-brand-accent" : "text-brand-text-muted group-hover:text-white")} />
+                  <item.icon className={cn("w-4 h-4 transition-colors", activeView === item.id ? "text-brand-accent" : "text-brand-text group-hover:text-brand-text")} />
                   {item.label}
                 </motion.button>
               ))}
@@ -142,8 +142,8 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
       <div className="p-6 border-t border-brand-border space-y-6">
         <div className="space-y-3">
           <div className="flex items-center gap-2 px-2">
-            <Palette className="w-3 h-3 text-brand-text-muted" />
-            <span className="text-[10px] font-black text-brand-text-muted uppercase tracking-widest">主题定制</span>
+            <Palette className="w-3 h-3 text-brand-text" />
+            <span className="text-[10px] font-black text-brand-text uppercase tracking-widest">主题定制</span>
           </div>
           <div className="flex flex-wrap gap-2 px-2">
             {themes.map((t) => (
@@ -164,10 +164,10 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         </div>
 
         <div className="p-3 bg-brand-card/30 rounded-2xl border border-brand-border space-y-1.5">
-          <span className="text-xs font-semibold text-white block">ARL互联网资产自动化收集系统</span>
+          <span className="text-xs font-semibold text-brand-text block">ARL互联网资产自动化收集系统</span>
           <div className="flex items-center gap-1 min-w-0">
-            <span className="text-[10px] text-brand-text-muted shrink-0">系统版本：</span>
-            <span className="text-[10px] text-brand-text-muted tracking-wide truncate">
+            <span className="text-[10px] text-brand-text shrink-0 opacity-85">系统版本：</span>
+            <span className="text-[10px] text-brand-text tracking-wide truncate opacity-85">
               {__ARL_VERSION__}
             </span>
           </div>

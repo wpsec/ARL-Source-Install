@@ -9,7 +9,8 @@
   --brand-secondary: #86c5ea;
   --brand-warning: #e3bc7b;
   --brand-danger: #e59898;
-  --brand-text-muted: #bfd0ef;
+  --brand-text: #f6f9ff;
+  --brand-text-muted: #e0e8f6;
 }
 
 [data-theme='slate'] {
@@ -21,7 +22,8 @@
   --brand-secondary: #9db4ee;
   --brand-warning: #e3c27e;
   --brand-danger: #e6a2a2;
-  --brand-text-muted: #bdcde6;
+  --brand-text: #f5f9ff;
+  --brand-text-muted: #dde7f5;
 }
 
 [data-theme='nord'] {
@@ -33,7 +35,8 @@
   --brand-secondary: #b2c8df;
   --brand-warning: #e3c18a;
   --brand-danger: #e3acb2;
-  --brand-text-muted: #bfccda;
+  --brand-text: #f5f9fd;
+  --brand-text-muted: #dce6f1;
 }
 
 [data-theme='titanium'] {
@@ -45,7 +48,8 @@
   --brand-secondary: #b4a0d2;
   --brand-warning: #dfbc82;
   --brand-danger: #d89d9d;
-  --brand-text-muted: #c9d2df;
+  --brand-text: #f5f7fa;
+  --brand-text-muted: #dde4ec;
 }
 
 [data-theme='emerald'] {
@@ -57,7 +61,8 @@
   --brand-secondary: #34d399;
   --brand-warning: #fbbf24;
   --brand-danger: #f87171;
-  --brand-text-muted: #059669;
+  --brand-text: #f2fff9;
+  --brand-text-muted: #d3ece2;
 }
 
 [data-theme='amethyst'] {
@@ -69,7 +74,8 @@
   --brand-secondary: #c4b5fd;
   --brand-warning: #fcd34d;
   --brand-danger: #fb7185;
-  --brand-text-muted: #6366f1;
+  --brand-text: #f8f6ff;
+  --brand-text-muted: #dfdafb;
 }
 
 [data-theme='sandstone'] {
@@ -81,7 +87,8 @@
   --brand-secondary: #74685e;
   --brand-warning: #c39352;
   --brand-danger: #bf6f6f;
-  --brand-text-muted: #7e7369;
+  --brand-text: #1c1917;
+  --brand-text-muted: #6f655b;
 }
 
 [data-theme='oceanic'] {
@@ -93,7 +100,8 @@
   --brand-secondary: #7dd3fc;
   --brand-warning: #f0abfc;
   --brand-danger: #fb7185;
-  --brand-text-muted: #0ea5e9;
+  --brand-text: #f2f9ff;
+  --brand-text-muted: #d5e8f6;
 }
 
 @theme {
@@ -104,6 +112,7 @@
   --color-brand-secondary: var(--brand-secondary);
   --color-brand-warning: var(--brand-warning);
   --color-brand-danger: var(--brand-danger);
+  --color-brand-text: var(--brand-text);
   --color-brand-text-muted: var(--brand-text-muted);
   --font-mono: "JetBrains Mono", "Roboto Mono", monospace;
 }
@@ -133,7 +142,8 @@
 
 @layer base {
   body {
-    @apply bg-brand-bg text-white font-sans antialiased transition-colors duration-300;
+    @apply bg-brand-bg font-sans antialiased transition-colors duration-300;
+    color: var(--brand-text);
   }
 
   /* 统一交互控件：平滑描边 + 更大点击面积 */
@@ -163,6 +173,17 @@
   input:not([type='checkbox']):not([type='radio']),
   select {
     min-height: 2.625rem;
+  }
+
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    color: var(--brand-text);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--brand-text-muted);
   }
 
   select {
