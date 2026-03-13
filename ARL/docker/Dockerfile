@@ -20,20 +20,22 @@ RUN set -eux; \
     command -v node >/dev/null 2>&1 || (echo "[ERROR] node command not found" && exit 127); \
     npm_exec() { \
       if command -v npm >/dev/null 2>&1; then \
-        npm "$@" && return 0; \
+        if npm "$@"; then return 0; fi; \
         rc="$?"; \
         if [ "${rc}" -ne 127 ]; then return "${rc}"; fi; \
         echo "[WARN] npm command returned 127, fallback to npm-cli.js"; \
       fi; \
       for cli in /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/lib/node_modules/npm/bin/npm-cli.js /usr/share/nodejs/npm/bin/npm-cli.js; do \
         if [ -f "${cli}" ]; then \
-          node "${cli}" "$@"; \
-          return "$?"; \
+          if node "${cli}" "$@"; then return 0; fi; \
+          rc="$?"; \
+          if [ "${rc}" -ne 127 ]; then return "${rc}"; fi; \
         fi; \
       done; \
       if command -v corepack >/dev/null 2>&1; then \
-        corepack npm "$@"; \
-        return "$?"; \
+        if corepack npm "$@"; then return 0; fi; \
+        rc="$?"; \
+        if [ "${rc}" -ne 127 ]; then return "${rc}"; fi; \
       fi; \
       echo "[ERROR] npm command not found"; \
       return 127; \
@@ -53,7 +55,31 @@ RUN set -eux; \
 # 前端构建会读取 ../../version.txt，这里映射到 /version.txt
 COPY ARL/version.txt /version.txt
 COPY ARL/docker/frontend-src/ ./
-RUN npm run build && test -f /frontend/dist/index.html && test -d /frontend/dist/assets
+RUN set -eux; \
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; \
+    npm_run_build() { \
+      if command -v npm >/dev/null 2>&1; then \
+        if npm run build; then return 0; fi; \
+        rc="$?"; \
+        if [ "${rc}" -ne 127 ]; then return "${rc}"; fi; \
+      fi; \
+      for cli in /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/lib/node_modules/npm/bin/npm-cli.js /usr/share/nodejs/npm/bin/npm-cli.js; do \
+        if [ -f "${cli}" ]; then \
+          if node "${cli}" run build; then return 0; fi; \
+          rc="$?"; \
+          if [ "${rc}" -ne 127 ]; then return "${rc}"; fi; \
+        fi; \
+      done; \
+      if command -v corepack >/dev/null 2>&1; then \
+        corepack npm run build; \
+        return "$?"; \
+      fi; \
+      echo "[ERROR] npm build command not found"; \
+      return 127; \
+    }; \
+    npm_run_build; \
+    test -f /frontend/dist/index.html; \
+    test -d /frontend/dist/assets
 
 FROM rockylinux:8
 
