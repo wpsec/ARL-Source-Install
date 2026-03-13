@@ -6,19 +6,48 @@ ARG NPM_REGISTRY=https://registry.npmmirror.com
 # 安装前端依赖（含 node-gyp 所需编译工具）
 COPY ARL/docker/frontend-src/package*.json ./
 RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends python3 make g++; \
-    rm -rf /var/lib/apt/lists/*; \
-    node --version; \
-    npm --version; \
-    npm config set registry "${NPM_REGISTRY}"; \
-    npm config set fetch-retries 5; \
-    npm config set fetch-retry-mintimeout 20000; \
-    npm config set fetch-retry-maxtimeout 120000; \
-    if [ -f package-lock.json ]; then \
-      npm ci --no-audit --no-fund; \
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; \
+    if command -v apt-get >/dev/null 2>&1; then \
+      apt-get update; \
+      apt-get install -y --no-install-recommends python3 make g++; \
+      rm -rf /var/lib/apt/lists/*; \
+    elif command -v apk >/dev/null 2>&1; then \
+      apk add --no-cache python3 make g++; \
     else \
-      npm install --no-audit --no-fund; \
+      echo "[ERROR] unsupported package manager in frontend_builder"; \
+      exit 127; \
+    fi; \
+    command -v node >/dev/null 2>&1 || (echo "[ERROR] node command not found" && exit 127); \
+    npm_exec() { \
+      if command -v npm >/dev/null 2>&1; then \
+        npm "$@" && return 0; \
+        rc="$?"; \
+        if [ "${rc}" -ne 127 ]; then return "${rc}"; fi; \
+        echo "[WARN] npm command returned 127, fallback to npm-cli.js"; \
+      fi; \
+      for cli in /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/lib/node_modules/npm/bin/npm-cli.js /usr/share/nodejs/npm/bin/npm-cli.js; do \
+        if [ -f "${cli}" ]; then \
+          node "${cli}" "$@"; \
+          return "$?"; \
+        fi; \
+      done; \
+      if command -v corepack >/dev/null 2>&1; then \
+        corepack npm "$@"; \
+        return "$?"; \
+      fi; \
+      echo "[ERROR] npm command not found"; \
+      return 127; \
+    }; \
+    node --version; \
+    npm_exec --version; \
+    npm_exec config set registry "${NPM_REGISTRY}"; \
+    npm_exec config set fetch-retries 5; \
+    npm_exec config set fetch-retry-mintimeout 20000; \
+    npm_exec config set fetch-retry-maxtimeout 120000; \
+    if [ -f package-lock.json ]; then \
+      npm_exec ci --no-audit --no-fund; \
+    else \
+      npm_exec install --no-audit --no-fund; \
     fi
 
 # 前端构建会读取 ../../version.txt，这里映射到 /version.txt
