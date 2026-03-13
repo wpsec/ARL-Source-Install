@@ -12,17 +12,44 @@ RUN set -e; \
     else \
       echo "[WARN] no supported package manager found, skip native build tools installation"; \
     fi; \
+    if ! command -v node >/dev/null 2>&1 || ! node --version >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1 || ! npm --version >/dev/null 2>&1; then \
+      echo "[WARN] node/npm unavailable or broken, try reinstall via package manager"; \
+      if command -v apk >/dev/null 2>&1; then \
+        apk add --no-cache nodejs npm; \
+      elif command -v apt-get >/dev/null 2>&1; then \
+        apt-get update && apt-get install -y --no-install-recommends nodejs npm && rm -rf /var/lib/apt/lists/*; \
+      else \
+        echo "[ERROR] cannot repair node/npm: no supported package manager"; \
+        exit 127; \
+      fi; \
+      if [ -x /usr/bin/node ]; then ln -sf /usr/bin/node /usr/local/bin/node; fi; \
+      if [ -x /usr/bin/npm ]; then ln -sf /usr/bin/npm /usr/local/bin/npm; fi; \
+    fi; \
+    node --version || (echo "[ERROR] node command not executable after repair" && exit 127); \
+    npm --version || (echo "[ERROR] npm command not executable after repair" && exit 127); \
     npm_exec() { \
       if command -v npm >/dev/null 2>&1; then \
-        npm "$@"; \
-      elif [ -f /usr/local/lib/node_modules/npm/bin/npm-cli.js ]; then \
-        node /usr/local/lib/node_modules/npm/bin/npm-cli.js "$@"; \
-      elif command -v corepack >/dev/null 2>&1; then \
-        corepack npm "$@"; \
-      else \
-        echo "[ERROR] npm command not found in frontend_builder image"; \
-        return 127; \
+        npm "$@" && return 0; \
+        npm_rc="$?"; \
+        if [ "${npm_rc}" -ne 127 ]; then \
+          return "${npm_rc}"; \
+        fi; \
+        echo "[WARN] npm command returned 127, fallback to npm-cli.js"; \
       fi; \
+      if [ -f /usr/local/lib/node_modules/npm/bin/npm-cli.js ]; then \
+        node /usr/local/lib/node_modules/npm/bin/npm-cli.js "$@"; \
+        return "$?"; \
+      fi; \
+      if [ -f /usr/share/nodejs/npm/bin/npm-cli.js ]; then \
+        node /usr/share/nodejs/npm/bin/npm-cli.js "$@"; \
+        return "$?"; \
+      fi; \
+      if command -v corepack >/dev/null 2>&1; then \
+        corepack npm "$@"; \
+        return "$?"; \
+      fi; \
+      echo "[ERROR] npm command not found in frontend_builder image"; \
+      return 127; \
     }; \
     npm_exec --version; \
     npm_exec config set registry "${NPM_REGISTRY}"; \
