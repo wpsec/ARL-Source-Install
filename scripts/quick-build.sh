@@ -160,6 +160,45 @@ check_tools_layout() {
     fi
 }
 
+# 预构建前端静态文件（frontend-src -> ARL/docker/frontend）
+# 说明：
+# - quick/full/clean/tag 构建前都应调用，避免镜像继续打包旧前端资源
+# - 无 npm 环境时回退使用仓库内预构建文件
+prepare_frontend_static() {
+    local src_dir="$ROOT_DIR/ARL/docker/frontend-src"
+    local dist_dir="$src_dir/dist"
+    local static_dir="$ROOT_DIR/ARL/docker/frontend"
+
+    if [ ! -d "$src_dir" ]; then
+        echo -e "${YELLOW}[WARN] 未找到 frontend-src，跳过前端构建${NC}"
+        return 0
+    fi
+
+    if command -v npm >/dev/null 2>&1; then
+        echo -e "${YELLOW}构建前端静态文件(frontend-src)...${NC}"
+        (cd "$src_dir" && npm run build)
+
+        if [ ! -f "$dist_dir/index.html" ] || [ ! -d "$dist_dir/assets" ]; then
+            echo -e "${RED}错误: frontend-src 构建结果不完整（缺少 dist/index.html 或 dist/assets）${NC}"
+            return 1
+        fi
+
+        mkdir -p "$static_dir"
+        # 清理旧静态资源，避免历史 hash 文件残留导致引用错乱
+        rm -rf "$static_dir/assets" "$static_dir/js" "$static_dir/css"
+        cp -a "$dist_dir/." "$static_dir/"
+        echo -e "${GREEN}✓ 前端静态文件已同步到 ARL/docker/frontend${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}[WARN] 未检测到 npm，回退使用仓库内预构建前端文件${NC}"
+    if [ ! -f "$static_dir/index.html" ] || [ ! -d "$static_dir/assets" ]; then
+        echo -e "${RED}错误: 预构建前端文件不存在，请在有 npm 的环境执行前端构建后再重试${NC}"
+        return 1
+    fi
+    return 0
+}
+
 # 构建镜像（含离线回退）
 # 功能说明：先按常规 quick 方式构建；若因网络/鉴权失败，再尝试使用本地基础镜像 ID 构建
 build_image_with_offline_fallback() {
@@ -220,6 +259,7 @@ quick_build() {
     echo -e "${YELLOW}提示: 只重建代码层，复用系统包缓存，直接更新${DEFAULT_IMAGE_TAG}镜像${NC}"
     echo ""
     check_tools_layout
+    prepare_frontend_static
     
     # 统一使用 docker build 生成镜像，避免 docker-compose(v1) 旧服务名导致构建失败
     build_image_with_offline_fallback "${DEFAULT_IMAGE_TAG}"
@@ -251,6 +291,7 @@ full_build() {
     echo -e "${YELLOW}提示: 完整重建所有层，包括系统包和依赖${NC}"
     echo ""
     check_tools_layout
+    prepare_frontend_static
     
     docker build -f "$DOCKERFILE_PATH/Dockerfile" -t "${DEFAULT_IMAGE_TAG}" "$BUILD_CONTEXT" --no-cache
     
@@ -266,6 +307,7 @@ clean_build() {
     echo -e "${YELLOW}提示: 删除所有构建缓存，从零开始${NC}"
     echo ""
     check_tools_layout
+    prepare_frontend_static
     
     # 删除 dangling images
     docker builder prune -a -f
@@ -290,31 +332,7 @@ frontend_update() {
         exit 1
     fi
 
-    # 先构建新版前端（vite）
-    if [ -d "$ROOT_DIR/ARL/docker/frontend-src" ]; then
-        if command -v npm >/dev/null 2>&1; then
-            echo "构建 frontend-src..."
-            (cd "$ROOT_DIR/ARL/docker/frontend-src" && npm run build)
-
-            if [ -d "$ROOT_DIR/ARL/docker/frontend-src/dist" ]; then
-                echo "同步 dist 到 ARL/docker/frontend..."
-                mkdir -p "$ROOT_DIR/ARL/docker/frontend"
-                rm -rf "$ROOT_DIR/ARL/docker/frontend/assets"
-                cp -a "$ROOT_DIR/ARL/docker/frontend-src/dist/." "$ROOT_DIR/ARL/docker/frontend/"
-            else
-                echo -e "${RED}错误: 未找到 frontend-src/dist，构建可能失败${NC}"
-                exit 1
-            fi
-        else
-            echo -e "${YELLOW}[WARN] 未检测到 npm，跳过 frontend-src 构建，使用仓库内预构建静态文件${NC}"
-            if [ ! -f "$ROOT_DIR/ARL/docker/frontend/index.html" ] || [ ! -d "$ROOT_DIR/ARL/docker/frontend/assets" ]; then
-                echo -e "${RED}错误: 前端预构建静态文件不存在，请在有 npm 的环境先构建并提交 ARL/docker/frontend${NC}"
-                exit 1
-            fi
-        fi
-    else
-        echo -e "${YELLOW}[WARN] 未找到 frontend-src，跳过构建，仅复制现有静态文件${NC}"
-    fi
+    prepare_frontend_static
     
     echo "正在更新前端文件..."
 
@@ -360,6 +378,7 @@ tag_build() {
     echo -e "${YELLOW}提示: 快速构建后将 ${DEFAULT_IMAGE_TAG} 标记为 arl:$VERSION${NC}"
     echo ""
     check_tools_layout
+    prepare_frontend_static
     
     # tag 模式复用 quick 的离线回退逻辑，降低网络不稳定导致的失败
     build_image_with_offline_fallback "${DEFAULT_IMAGE_TAG}"
