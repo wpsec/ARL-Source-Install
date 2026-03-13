@@ -22,6 +22,20 @@ BUILD_CONTEXT="$ROOT_DIR"
 # 与 docker-compose.yml 保持一致的默认镜像标签，避免 latest/local 不一致导致容器未加载新镜像
 DEFAULT_IMAGE_TAG="arl:local"
 
+# 前端热更新构建镜像：默认跟随 Dockerfile 首个 node 基础镜像，支持环境变量覆盖
+resolve_frontend_node_image() {
+    local dockerfile="$DOCKERFILE_PATH/Dockerfile"
+    if [ -f "$dockerfile" ]; then
+        local image=""
+        image="$(awk '/^[[:space:]]*FROM[[:space:]]+node:/ {print $2; exit}' "$dockerfile")"
+        if [ -n "$image" ]; then
+            echo "$image"
+            return 0
+        fi
+    fi
+    echo "node:20.20.1-bookworm"
+}
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -87,6 +101,8 @@ load_compose_env
 # 前端 npm 源配置（可在 .env 中覆盖）
 # 优先级：ARL_FRONTEND_NPM_REGISTRY > NPM_REGISTRY > 默认 npmmirror
 FRONTEND_NPM_REGISTRY="${ARL_FRONTEND_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
+FRONTEND_NODE_IMAGE_DEFAULT="$(resolve_frontend_node_image)"
+FRONTEND_NODE_IMAGE="${ARL_FRONTEND_BUILD_IMAGE:-$FRONTEND_NODE_IMAGE_DEFAULT}"
 # 构建后端配置：有 buildx 时优先使用 buildx（可通过 DOCKER_BUILD_PREFER_BUILDX=0 关闭）
 DOCKER_BUILD_PREFER_BUILDX="${DOCKER_BUILD_PREFER_BUILDX:-1}"
 
@@ -128,6 +144,7 @@ show_build_info() {
     echo "Compose: $COMPOSE_CMD"
     echo "Build后端: ${BUILD_BACKEND}"
     echo "NPM镜像: ${FRONTEND_NPM_REGISTRY}"
+    echo "前端Node镜像: ${FRONTEND_NODE_IMAGE}"
     echo "项目版本: ${project_version}"
     echo "代码提交: ${git_commit}"
     echo ""
@@ -240,16 +257,28 @@ build_frontend_dist_for_hot_update() {
     local dist_dir="$src_dir/dist"
     local project_version
     project_version="$(read_project_version)"
+    local use_local_npm=0
 
     if [ ! -d "$src_dir" ]; then
         echo -e "${RED}错误: 未找到 frontend-src 源码目录${NC}"
         return 1
     fi
 
-    if command -v npm >/dev/null 2>&1; then
+    if command -v npm >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+        local node_major="0"
+        node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+        if [ "$node_major" -ge 20 ]; then
+            use_local_npm=1
+        else
+            echo -e "${YELLOW}[WARN] 检测到本机 Node 版本过低(node=$(node --version 2>/dev/null || echo unknown))，改用 ${FRONTEND_NODE_IMAGE} 构建${NC}"
+        fi
+    fi
+
+    if [ "$use_local_npm" -eq 1 ]; then
         echo -e "${YELLOW}构建前端静态文件(frontend-src，本机 npm)...${NC}"
         (
             cd "$src_dir"
+            npm config set registry "$FRONTEND_NPM_REGISTRY"
             if ! npm run build; then
                 echo -e "${YELLOW}[WARN] 前端构建失败，尝试自动安装依赖后重试...${NC}"
                 if [ -f "package-lock.json" ]; then
@@ -261,18 +290,17 @@ build_frontend_dist_for_hot_update() {
             fi
         )
     else
-        local node_image="${ARL_FRONTEND_BUILD_IMAGE:-node:20-alpine}"
-        echo -e "${YELLOW}[WARN] 未检测到 npm，改用 Docker Node 环境构建 frontend-src...${NC}"
-        if ! docker image inspect "$node_image" >/dev/null 2>&1; then
-            echo -e "${YELLOW}[WARN] 未检测到 Node 构建镜像，尝试拉取: $node_image${NC}"
-            docker pull "$node_image"
+        echo -e "${YELLOW}[WARN] 未使用本机 npm，改用 Docker Node 环境构建 frontend-src...${NC}"
+        if ! docker image inspect "$FRONTEND_NODE_IMAGE" >/dev/null 2>&1; then
+            echo -e "${YELLOW}[WARN] 未检测到 Node 构建镜像，尝试拉取: $FRONTEND_NODE_IMAGE${NC}"
+            docker pull "$FRONTEND_NODE_IMAGE"
         fi
         docker run --rm \
             -v "$src_dir:/workspace" \
             -v "$ROOT_DIR/ARL/version.txt:/version.txt:ro" \
             -e "npm_config_registry=$FRONTEND_NPM_REGISTRY" \
             -w /workspace \
-            "$node_image" \
+            "$FRONTEND_NODE_IMAGE" \
             sh -lc 'if npm run build; then exit 0; fi; echo "[WARN] build failed, try install deps then rebuild..."; if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; npm run build'
     fi
 
