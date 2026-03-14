@@ -767,9 +767,13 @@ def get_cert(host, port, server_hostname=""):
 
         parsed_cert = {}
         if certs:
-            parsed_cert = parse_certs(certs)
-            if isinstance(parsed_cert, dict) and parsed_cert:
-                parsed_cert["cert_source"] = "python_ssl"
+            try:
+                parsed_cert = parse_certs(certs)
+                if isinstance(parsed_cert, dict) and parsed_cert:
+                    parsed_cert["cert_source"] = "python_ssl"
+            except Exception as parse_err:
+                logger.debug("parse cert by python ssl error {}:{} {}".format(host, port, parse_err))
+                parsed_cert = {}
 
         nmap_cert = {}
         if _should_probe_nmap_ssl_cert(parsed_cert, normalized_sni):
@@ -812,7 +816,6 @@ def get_cert(host, port, server_hostname=""):
     except Exception as e:
         logger.debug("get cert error {}:{} {}".format(host,port, e))
         return {}
-
 
 
 
