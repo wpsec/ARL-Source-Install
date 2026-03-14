@@ -7940,6 +7940,13 @@ function TableModuleView({
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
+              <button
+                type="button"
+                className="px-3.5 py-2 rounded-xl border border-brand-border text-xs font-bold text-brand-text-muted cursor-default"
+                title={`当前第 ${page} 页，共 ${totalPages} 页`}
+              >
+                第 {page}/{totalPages} 页
+              </button>
               <div className="relative">
                 <select
                   value={size}
@@ -7949,7 +7956,7 @@ function TableModuleView({
                   }}
                   className={`${UNIFIED_SELECT_CLASS} w-auto min-w-[108px] py-2`}
                 >
-                  {[10, 20, 50, 100].map((option) => (
+                  {[10, 20, 50, 100, 200, 500].map((option) => (
                     <option key={option} value={option}>
                       {option} / 页
                     </option>

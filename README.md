@@ -69,7 +69,11 @@ tools/playwright/README.md
 ### 常规更新
 
 ```bash
-git pull
+# 首次执行一次：忽略本地配置文件，避免每次 pull 因 config-docker.yaml 冲突
+git update-index --skip-worktree ARL/docker/config-docker.yaml
+
+# 日常更新
+git pull --rebase
 ./scripts/quick-build.sh
 ```
 
@@ -80,6 +84,7 @@ git pull
 - `./scripts/quick-build.sh frontend` 仅用于本地热更新：编译 `frontend-src/dist` 后同步到运行中容器。
 - 默认前端 npm 镜像为 `https://registry.npmmirror.com`，可在 `.env` 中通过 `ARL_FRONTEND_NPM_REGISTRY` 覆盖。
 - 若环境已安装 `docker buildx`，`quick-build.sh` 会自动优先使用 BuildKit 构建以减少重复传输与构建耗时。
+- 如需重新跟踪并手动合并配置文件，可执行：`git update-index --no-skip-worktree ARL/docker/config-docker.yaml`
 
 ## 二开功能总览
 
