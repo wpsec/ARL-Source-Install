@@ -162,7 +162,8 @@ class Config(object):
     MONGO_MAX_IDLE_TIME_MS = 60000
     MONGO_SERVER_SELECTION_TIMEOUT_MS = 5000
     MONGO_CONNECT_TIMEOUT_MS = 5000
-    MONGO_SOCKET_TIMEOUT_MS = 30000
+    # 默认提升到 60s，降低低性能/高并发场景下的 Mongo 读取超时概率
+    MONGO_SOCKET_TIMEOUT_MS = 60000
 
     # ==================== 临时文件和工具路径配置 ====================
     # 临时文件存储目录

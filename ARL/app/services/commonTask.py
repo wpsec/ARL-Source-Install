@@ -6,6 +6,7 @@ import re
 import os
 from urllib.parse import urlparse
 from bson import ObjectId
+from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
 from app import utils
 from app import services
 from app.config import Config, normalize_dict_path_compat
@@ -88,6 +89,11 @@ class CommonTask(object):
 
 # *** 对用户提交的站点或者是发现的站点进行后续处理
 class WebSiteFetch(object):
+    # 低性能环境下，Mongo 读取可能因网络抖动/带宽占满触发超时；nuclei 目标构建最多重试 3 次。
+    NUCLEI_TARGET_BUILD_RETRY_COUNT = 3
+    NUCLEI_TARGET_BUILD_RETRY_SLEEP_SEC = 3
+    RETRYABLE_MONGO_ERRORS = (NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError)
+
     def __init__(self, task_id: str, sites: list, options: dict, scope_domain: list = None):
         self.task_id = task_id
         self.sites = sites  # ** 这个是用户提交的目标
@@ -108,6 +114,8 @@ class WebSiteFetch(object):
         self.search_engines_result = dict()
         self._poc_sites = None  # 用于PoC 执行， 文件目录爆破 的目标
         self._task_domain_set = None  # 用于保存任务中的域名
+        self._nuclei_deferred_retry_needed = False
+        self._nuclei_final_skip = False
 
     @property
     def task_domain_set(self):
@@ -272,44 +280,72 @@ class WebSiteFetch(object):
             "kong", "apisix", "zabbix", "prometheus",
         )
 
-        site_finger_map = {}
         query = {
             "task_id": self.task_id,
             "site": {"$in": poc_sites},
         }
         fields = {"site": 1, "finger": 1, "http_server": 1, "title": 1}
-        for item in utils.conn_db('site').find(query, fields):
-            site = str(item.get("site", "")).strip()
-            if not site:
-                continue
-
-            finger_names = []
-            finger_list = item.get("finger", [])
-            if isinstance(finger_list, list):
-                for finger in finger_list:
-                    if not isinstance(finger, dict):
+        site_finger_map = {}
+        for attempt in range(1, self.NUCLEI_TARGET_BUILD_RETRY_COUNT + 1):
+            site_finger_map = {}
+            try:
+                for item in utils.conn_db('site').find(
+                    query,
+                    fields,
+                    max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS
+                ):
+                    site = str(item.get("site", "")).strip()
+                    if not site:
                         continue
-                    finger_name = str(finger.get("name", "")).strip().lower()
-                    if finger_name:
-                        finger_names.append(finger_name)
 
-            # 将 HTTP Server 头拆分成关键词并作为 hint。
-            http_server = str(item.get("http_server", "")).strip().lower()
-            if http_server:
-                finger_names.append(http_server)
-                for token in re.split(r"[^a-z0-9]+", http_server):
-                    token = token.strip()
-                    if len(token) >= 3:
-                        finger_names.append(token)
+                    finger_names = []
+                    finger_list = item.get("finger", [])
+                    if isinstance(finger_list, list):
+                        for finger in finger_list:
+                            if not isinstance(finger, dict):
+                                continue
+                            finger_name = str(finger.get("name", "")).strip().lower()
+                            if finger_name:
+                                finger_names.append(finger_name)
 
-            # 将 title 中的高价值技术关键词加入 hint。
-            title_text = str(item.get("title", "")).strip().lower()
-            if title_text:
-                for keyword in title_hint_keywords:
-                    if keyword in title_text:
-                        finger_names.append(keyword)
+                    # 将 HTTP Server 头拆分成关键词并作为 hint。
+                    http_server = str(item.get("http_server", "")).strip().lower()
+                    if http_server:
+                        finger_names.append(http_server)
+                        for token in re.split(r"[^a-z0-9]+", http_server):
+                            token = token.strip()
+                            if len(token) >= 3:
+                                finger_names.append(token)
 
-            site_finger_map[site] = sorted(set(finger_names))
+                    # 将 title 中的高价值技术关键词加入 hint。
+                    title_text = str(item.get("title", "")).strip().lower()
+                    if title_text:
+                        for keyword in title_hint_keywords:
+                            if keyword in title_text:
+                                finger_names.append(keyword)
+
+                    site_finger_map[site] = sorted(set(finger_names))
+                break
+            except self.RETRYABLE_MONGO_ERRORS as e:
+                if attempt >= self.NUCLEI_TARGET_BUILD_RETRY_COUNT:
+                    logger.warning(
+                        "build_nuclei_targets failed after retries task_id:{} attempts:{} error:{}".format(
+                            self.task_id, self.NUCLEI_TARGET_BUILD_RETRY_COUNT, e
+                        )
+                    )
+                    raise
+
+                sleep_sec = self.NUCLEI_TARGET_BUILD_RETRY_SLEEP_SEC * attempt
+                logger.warning(
+                    "build_nuclei_targets mongo timeout task_id:{} attempt:{}/{} sleep:{}s error:{}".format(
+                        self.task_id,
+                        attempt,
+                        self.NUCLEI_TARGET_BUILD_RETRY_COUNT,
+                        sleep_sec,
+                        e
+                    )
+                )
+                time.sleep(sleep_sec)
 
         nuclei_targets = []
         for site in poc_sites:
@@ -322,8 +358,26 @@ class WebSiteFetch(object):
 
         return nuclei_targets
 
-    def nuclei_scan(self):
-        nuclei_targets = self.build_nuclei_targets()
+    def nuclei_scan(self, deferred_retry=False):
+        try:
+            nuclei_targets = self.build_nuclei_targets()
+        except self.RETRYABLE_MONGO_ERRORS as e:
+            if deferred_retry:
+                self._nuclei_final_skip = True
+                logger.warning(
+                    "nuclei_scan skipped task_id:{} after deferred retry due to mongo timeout:{}".format(
+                        self.task_id, e
+                    )
+                )
+            else:
+                self._nuclei_deferred_retry_needed = True
+                logger.warning(
+                    "nuclei_scan deferred task_id:{} due to mongo timeout, will retry after later stages:{}".format(
+                        self.task_id, e
+                    )
+                )
+            return
+
         finger_hit_count = 0
         for item in nuclei_targets:
             if item.get("finger"):
@@ -341,6 +395,25 @@ class WebSiteFetch(object):
             utils.conn_db('nuclei_result').insert_one(item)
 
         logger.info("end nuclei_scan， result:{}".format(len(scan_results)))
+
+    def run_deferred_nuclei_scan(self):
+        """
+        首次 nuclei 阶段因 Mongo 读取超时时，延后到其它阶段后补跑一次。
+        """
+        self._nuclei_deferred_retry_needed = False
+        deferred_status = "nuclei_scan_retry"
+        logger.info(
+            "start deferred nuclei_scan task_id:{}".format(self.task_id)
+        )
+        self.base_update_task.update_task_field("status", deferred_status)
+        t1 = time.time()
+        self.nuclei_scan(deferred_retry=True)
+        elapse = time.time() - t1
+        self.base_update_task.update_services(deferred_status, elapse)
+        if self._nuclei_final_skip:
+            logger.warning(
+                "deferred nuclei_scan still failed and skipped task_id:{}".format(self.task_id)
+            )
 
     def run_func(self, name: str, func: callable):
         logger.info("start run {}, {}".format(name, self.__str__()))
@@ -578,6 +651,9 @@ class WebSiteFetch(object):
             self._save_wih_risk(record)
 
     def run(self):
+        self._nuclei_deferred_retry_needed = False
+        self._nuclei_final_skip = False
+
         # *** 对站点进行基本信息的获取
         self.run_func(WebSiteFetchStatus.FETCH_SITE, self.fetch_site)
 
@@ -611,6 +687,10 @@ class WebSiteFetch(object):
         """ *** 对站点调用 WebInfoHunter """
         if self.options.get(WebSiteFetchOption.Info_Hunter):
             self.run_func(WebSiteFetchStatus.Info_Hunter, self.run_web_info_hunter)
+
+        # nuclei 首次因 Mongo 超时延后时，在本任务末尾补跑一次。
+        if self._nuclei_deferred_retry_needed:
+            self.run_deferred_nuclei_scan()
 
 
 def domain_in_scope_domain(domain: str, scope_domain: list):
