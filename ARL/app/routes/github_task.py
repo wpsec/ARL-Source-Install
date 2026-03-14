@@ -20,6 +20,7 @@ GitHub任务管理模块
 - 监控敏感信息暴露
 """
 from bson import ObjectId
+import re
 from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from app import utils
@@ -36,6 +37,7 @@ logger = get_logger()
 base_search_fields = {
     'name': fields.String(required=False, description="任务名"),
     'keyword': fields.String(description="关键字"),
+    'search_text': fields.String(description="任务名/关键字统一搜索"),
     'status': fields.String(description="任务状态"),
     '_id': fields.String(description="任务ID")
 }
@@ -53,6 +55,53 @@ add_github_task_fields = ns.model('AddGithubTask', {
 class ARLGithubTask(ARLResource):
     parser = get_arl_parser(base_search_fields, location='args')
 
+    def _build_data_with_search_text(self, args, collection):
+        """
+        统一搜索：一个输入同时匹配 name / keyword（OR）。
+        """
+        if not isinstance(args, dict):
+            args = {}
+
+        search_text = str(args.pop("search_text", "") or "").strip()
+        if not search_text:
+            return self.build_data(args=args, collection=collection)
+
+        default_field = self.get_default_field(args)
+        page = default_field.get("page", 1)
+        size = default_field.get("size", 10)
+        orderby_list = default_field.get("order", [("_id", -1)])
+
+        query = self.build_db_query(args)
+        search_query = {
+            "$or": [
+                {"name": {"$regex": re.escape(search_text), "$options": "i"}},
+                {"keyword": {"$regex": re.escape(search_text), "$options": "i"}},
+            ]
+        }
+        if query:
+            query = {"$and": [query, search_query]}
+        else:
+            query = search_query
+
+        result = (
+            utils.conn_db(collection)
+            .find(query)
+            .sort(orderby_list)
+            .skip(size * (page - 1))
+            .limit(size)
+        )
+        total = utils.conn_db(collection).count_documents(query)
+        items = self.build_return_items(result)
+
+        return {
+            "page": page,
+            "size": size,
+            "total": total,
+            "items": items,
+            "query": query,
+            "code": 200,
+        }
+
     @auth
     @ns.expect(parser)
     def get(self):
@@ -60,7 +109,7 @@ class ARLGithubTask(ARLResource):
         Github 任务信息查询
         """
         args = self.parser.parse_args()
-        data = self.build_data(args=args, collection='github_task')
+        data = self._build_data_with_search_text(args=args, collection='github_task')
 
         return data
 

@@ -44,8 +44,7 @@
         d =
           (a("caad"),
           [
-            { name: "任务名称", key: "name", type: "input" },
-            { name: "关键字", key: "keyword", type: "input" },
+            { name: "任务名/关键字", key: "search_text", type: "input" },
             {
               name: "状态",
               key: "status",
@@ -2499,8 +2498,7 @@
         u =
           (a("caad"),
           [
-            { name: "任务名称", key: "name", type: "input" },
-            { name: "关键字", key: "keyword", type: "input" },
+            { name: "任务名/关键字", key: "search_text", type: "input" },
             { name: "状态", key: "status", type: "input" },
           ]),
         d = [
