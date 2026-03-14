@@ -40,6 +40,7 @@ import {
   Zap,
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
+import BrandLogo from './components/BrandLogo';
 import { ThemeProvider } from './context/ThemeContext';
 import {
   AreaChart,
@@ -160,7 +161,7 @@ const modules: ModuleConfig[] = [
       _id: 'Task_Id',
     },
     searchFields: [
-      { key: 'name', label: '任务名', placeholder: '请输入任务名进行搜索' },
+      { key: 'name', label: '任务名', placeholder: '请输入任务名（用于搜索/同名查看/批量操作）' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
       { key: '_id', label: 'Task_Id', placeholder: '请输入Task_Id进行搜索' },
       {
@@ -2893,9 +2894,8 @@ function LoginView({
 
       <div className="relative z-10 w-full max-w-lg bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-8 shadow-2xl">
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-brand-accent flex items-center justify-center shadow-lg">
-            <Shield className="w-6 h-6 text-white" />
-          </div>
+          {/* 登录页与侧边栏复用同一品牌 Logo，避免出现两套不一致样式 */}
+          <BrandLogo size="md" />
           <div className="min-w-0">
             <h1 className="text-xl md:text-2xl font-black tracking-tight leading-tight whitespace-nowrap overflow-hidden text-ellipsis">ARL互联网资产自动化收集系统</h1>
             <p className="text-sm text-brand-text-muted font-semibold mt-1">
@@ -5642,7 +5642,6 @@ function TableModuleView({
   const [order, setOrder] = useState(module.defaultOrder || '');
   const [total, setTotal] = useState(0);
   const [quickFilter, setQuickFilter] = useState('');
-  const [taskNameViewInput, setTaskNameViewInput] = useState('');
   const [searchForm, setSearchForm] = useState<JsonValue>({});
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dialogAction, setDialogAction] = useState<ModuleAction | null>(null);
@@ -5697,6 +5696,7 @@ function TableModuleView({
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
+  const taskNameSearchText = String(searchForm?.name ?? '').trim();
 
   const normalizeTaskErrorLog = useCallback((raw: any) => {
     if (!raw || typeof raw !== 'object') return null;
@@ -5782,7 +5782,6 @@ function TableModuleView({
     setExpandedTaskScheduleTargetRows({});
     setExpandedTaskOptionRows({});
     setTaskCompactMode(true);
-    setTaskNameViewInput('');
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
   }, [module.id]);
@@ -6194,7 +6193,7 @@ function TableModuleView({
 
     const selectionMode = action.selectionMode || 'none';
     let effectiveSelectedIds = [...selectedIds];
-    const taskName = String(taskNameViewInput || '').trim();
+    const taskName = taskNameSearchText;
     if (module.id === 'task' && selectionMode === 'multiple' && effectiveSelectedIds.length === 0 && taskName) {
       const taskIdsByName = await fetchTaskIdsByName(taskName);
       if (taskIdsByName.length === 0) {
@@ -6771,7 +6770,7 @@ function TableModuleView({
   const openTaskViewByName = async () => {
     if (module.id !== 'task') return;
 
-    const taskName = String(taskNameViewInput || '').trim();
+    const taskName = taskNameSearchText;
     if (!taskName) {
       setError('请先输入任务名后再进行同名任务查看');
       return;
@@ -7130,29 +7129,15 @@ function TableModuleView({
                 </button>
               ) : null}
               {module.id === 'task' ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={taskNameViewInput}
-                    onChange={(event) => setTaskNameViewInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        void openTaskViewByName();
-                      }
-                    }}
-                    placeholder="输入任务名（查看该任务名下全部扫描）"
-                    className="w-72 bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm focus:outline-none focus:border-brand-accent"
-                  />
-                  <button
-                    onClick={() => void openTaskViewByName()}
-                    disabled={!String(taskNameViewInput || '').trim()}
-                    className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Eye className="w-4 h-4" />
-                    同名任务查看
-                  </button>
-                </div>
+                <button
+                  onClick={() => void openTaskViewByName()}
+                  disabled={!taskNameSearchText}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="使用上方“任务名”搜索框内容查看同名任务"
+                >
+                  <Eye className="w-4 h-4" />
+                  同名任务查看
+                </button>
               ) : null}
               {module.id === 'task' ? (
                 <button
@@ -7230,7 +7215,7 @@ function TableModuleView({
               const needSingle = action.selectionMode === 'single';
               const needMultiple = action.selectionMode === 'multiple';
               const canUseTaskNameForBatch =
-                module.id === 'task' && needMultiple && selectedIds.length === 0 && Boolean(String(taskNameViewInput || '').trim());
+                module.id === 'task' && needMultiple && selectedIds.length === 0 && Boolean(taskNameSearchText);
               const disabled =
                 (needSingle && selectedIds.length !== 1) ||
                 (needMultiple && selectedIds.length === 0 && !canUseTaskNameForBatch);

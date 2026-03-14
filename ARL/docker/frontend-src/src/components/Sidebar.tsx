@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useTheme, ThemeType } from '../context/ThemeContext';
+import BrandLogo from './BrandLogo';
 
 declare const __ARL_VERSION__: string;
 
@@ -73,29 +74,8 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   return (
     <div className="w-64 border-r border-brand-border h-screen flex flex-col bg-brand-bg/50 backdrop-blur-xl overflow-y-auto custom-scrollbar">
       <div className="p-8 flex items-center gap-4">
-        <motion.div 
-          whileHover={{ rotate: 360 }}
-          transition={{ duration: 0.8, ease: "easeInOut" }}
-          className="relative group cursor-pointer"
-        >
-          <div className="w-12 h-12 bg-brand-accent rounded-2xl flex items-center justify-center shadow-[0_0_40px_rgba(var(--brand-accent-rgb),0.8)] overflow-hidden">
-            <svg viewBox="0 0 24 24" className="w-8 h-8 text-white fill-current drop-shadow-[0_0_15px_rgba(255,255,255,1)]">
-              <path d="M12 2L9 4v2h6V4l-3-2zm-2 5h4l1 12H9l1-12zm-1 14h6v1H9v-1z" />
-              <motion.circle 
-                cx="12" cy="9" r="1.5" 
-                className="text-brand-secondary"
-                animate={{ opacity: [0.6, 1, 0.6] }}
-                transition={{ repeat: Infinity, duration: 1.5 }}
-              />
-            </svg>
-            <div className="absolute inset-0 bg-gradient-to-tr from-white/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
-          <div className="absolute -top-1 -right-1 w-4 h-4 bg-brand-secondary rounded-full border-2 border-brand-bg animate-ping" />
-        </motion.div>
-        <div className="flex flex-col">
-          <span className="font-black text-2xl tracking-tighter leading-none text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.6)]">ARL</span>
-          <span className="text-[10px] text-brand-accent font-black tracking-[0.3em] uppercase mt-1 drop-shadow-[0_0_15px_rgba(var(--brand-accent-rgb),0.7)]">Lighthouse</span>
-        </div>
+        {/* 统一品牌标识：所有主题固定高对比，不跟随主题色变暗 */}
+        <BrandLogo size="md" />
       </div>
 
       <div className="px-6 py-2">
