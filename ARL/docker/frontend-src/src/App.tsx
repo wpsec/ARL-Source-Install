@@ -2892,22 +2892,22 @@ function LoginView({
       <div className="absolute -top-16 -left-16 w-72 h-72 rounded-full bg-brand-accent/20 blur-[120px] pointer-events-none" />
       <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full bg-brand-secondary/20 blur-[120px] pointer-events-none" />
 
-      <div className="relative z-10 w-full max-w-2xl bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-10 sm:p-12 shadow-2xl">
-        <div className="flex items-start sm:items-center gap-3 mb-8">
+      <div className="relative z-10 w-full max-w-3xl bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-12 sm:p-14 shadow-2xl">
+        <div className="flex items-start sm:items-center gap-4 mb-10">
           {/* 登录页与侧边栏复用同一品牌 Logo，避免出现两套不一致样式 */}
           <BrandLogo size="lg" />
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-2xl md:text-[1.9rem] font-black tracking-tight leading-tight sm:whitespace-nowrap">
-              ARL互联网资产自动化收集系统
+            <h1 className="text-xl sm:text-3xl md:text-[2.15rem] font-black tracking-tight leading-tight sm:whitespace-nowrap">
+              互联网资产自动化收集系统
             </h1>
-            <p className="text-sm text-brand-text-muted font-semibold mt-1">
+            <p className="text-base text-brand-text-muted font-semibold mt-1">
               版本：{__ARL_VERSION__}
             </p>
           </div>
         </div>
 
         <form
-          className="space-y-5"
+          className="space-y-6"
           autoComplete="off"
           onSubmit={async (event) => {
             event.preventDefault();
@@ -2915,38 +2915,38 @@ function LoginView({
           }}
         >
           <div className="space-y-2">
-            <label className="text-xs font-black text-brand-text-muted uppercase tracking-wider">用户名</label>
+            <label className="text-sm font-black text-brand-text-muted uppercase tracking-wider">用户名</label>
             <div className="relative">
-              <User className="w-4 h-4 text-brand-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+              <User className="w-5 h-5 text-brand-text-muted absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 name="arl_username"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 autoComplete="off"
-                className="w-full bg-brand-bg border border-brand-border rounded-xl py-3.5 pl-11 pr-3 text-base focus:outline-none focus:border-brand-accent"
+                className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-14 pr-4 text-lg focus:outline-none focus:border-brand-accent"
                 placeholder="请输入用户名"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-black text-brand-text-muted uppercase tracking-wider">密码</label>
+            <label className="text-sm font-black text-brand-text-muted uppercase tracking-wider">密码</label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-brand-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+              <Lock className="w-5 h-5 text-brand-text-muted absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 type="password"
                 name="arl_password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="new-password"
-                className="w-full bg-brand-bg border border-brand-border rounded-xl py-3.5 pl-11 pr-3 text-base focus:outline-none focus:border-brand-accent"
+                className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-14 pr-4 text-lg focus:outline-none focus:border-brand-accent"
                 placeholder="请输入密码"
               />
             </div>
           </div>
 
           {error ? (
-            <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-3 py-2">
+            <div className="text-sm text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-4 py-2.5">
               {error}
             </div>
           ) : null}
@@ -2954,7 +2954,7 @@ function LoginView({
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-brand-accent hover:opacity-90 disabled:opacity-60 transition px-5 py-3.5 rounded-xl font-black text-base tracking-widest uppercase"
+            className="w-full bg-brand-accent hover:opacity-90 disabled:opacity-60 transition px-6 py-4 rounded-xl font-black text-lg tracking-widest uppercase"
           >
             {loading ? '登录中...' : '登录系统'}
           </button>
@@ -3263,7 +3263,7 @@ function DashboardView({
       <div className="flex justify-between items-end gap-4 flex-wrap">
         <div>
           <h2 className="text-6xl font-black tracking-tighter leading-none mb-2">我的仪表盘</h2>
-          <p className="text-brand-text-muted font-medium">ARL 互联网资产自动化收集系统 · 实时监控中</p>
+          <p className="text-brand-text-muted font-medium">互联网资产自动化收集系统 · 实时监控中</p>
         </div>
         <div className="text-right space-y-2">
           <p className="text-xs font-black text-brand-accent uppercase tracking-widest">最后更新</p>

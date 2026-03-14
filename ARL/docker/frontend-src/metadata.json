@@ -1,5 +1,5 @@
 {
-  "name": "ARL互联网资产自动化收集系统",
-  "description": "ARL (Asset Reconnaissance Lighthouse) - 互联网资产自动化收集系统，旨在快速发现企业外部资产并进行持续监控。",
+  "name": "互联网资产自动化收集系统",
+  "description": "互联网资产自动化收集系统，旨在快速发现企业外部资产并进行持续监控。",
   "requestFramePermissions": []
 }

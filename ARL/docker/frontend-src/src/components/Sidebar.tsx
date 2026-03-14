@@ -144,7 +144,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         </div>
 
         <div className="p-3 bg-brand-card/30 rounded-2xl border border-brand-border space-y-1.5">
-          <span className="text-xs font-semibold text-brand-text block">ARL互联网资产自动化收集系统</span>
+          <span className="text-xs font-semibold text-brand-text block">互联网资产自动化收集系统</span>
           <div className="flex items-center gap-1 min-w-0">
             <span className="text-[10px] text-brand-text shrink-0 opacity-85">系统版本：</span>
             <span className="text-[10px] text-brand-text tracking-wide truncate opacity-85">

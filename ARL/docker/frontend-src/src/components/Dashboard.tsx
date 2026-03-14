@@ -67,7 +67,7 @@ export default function Dashboard() {
       <div className="flex justify-between items-end">
         <motion.div variants={itemVariants}>
           <h2 className="text-6xl font-black text-white tracking-tighter leading-none mb-2">系统概览</h2>
-          <p className="text-brand-text-muted font-medium">ARL 互联网资产自动化收集系统 · 实时监控中</p>
+          <p className="text-brand-text-muted font-medium">互联网资产自动化收集系统 · 实时监控中</p>
         </motion.div>
         <motion.div variants={itemVariants} className="text-right">
           <p className="text-xs font-black text-brand-accent uppercase tracking-widest">最后更新</p>
