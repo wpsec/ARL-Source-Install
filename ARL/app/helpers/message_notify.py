@@ -443,6 +443,58 @@ def _is_private_alert_ip(ip, ip_type_map):
     return ip_type == "PRIVATE"
 
 
+def _alert_cert_record_rank(item):
+    """
+    告警场景证书记录优先级（值越小越优先）：
+    1) scan_mode=sni
+    2) 有 sni_domain
+    3) 有 domain
+    """
+    if not isinstance(item, dict):
+        return (9, 9, 9)
+
+    scan_mode = str(item.get("scan_mode", "") or "").strip().lower()
+    sni_domain = _normalize_alert_domain(item.get("sni_domain", ""))
+    item_domain = _normalize_alert_domain(item.get("domain", ""))
+
+    mode_rank = 0 if scan_mode == "sni" else 1
+    sni_rank = 0 if sni_domain else 1
+    domain_rank = 0 if item_domain else 1
+    return (mode_rank, sni_rank, domain_rank)
+
+
+def _select_alert_preferred_certs(cert_items):
+    """
+    按 task_id+ip+port 聚合证书记录，优先保留业务域名证书，减少 default 默认证书噪音。
+    """
+    if not isinstance(cert_items, list):
+        return []
+
+    grouped = {}
+    for item in cert_items:
+        if not isinstance(item, dict):
+            continue
+
+        task_id = str(item.get("task_id", "") or "").strip()
+        ip = str(item.get("ip", "") or "").strip()
+        port = str(item.get("port", "") or "").strip()
+        if not task_id or not ip or not port:
+            key = ("raw", str(len(grouped)))
+            grouped[key] = item
+            continue
+
+        key = (task_id, ip, port)
+        current = grouped.get(key)
+        if not current:
+            grouped[key] = item
+            continue
+
+        if _alert_cert_record_rank(item) < _alert_cert_record_rank(current):
+            grouped[key] = item
+
+    return list(grouped.values())
+
+
 def _extract_alert_domain(cert_obj, ip, port, item=None, ip_domain_map=None, task_domain_set=None):
     """
     告警域名优先级：
@@ -525,8 +577,9 @@ def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
     ip_type_map = alert_context.get("ip_type_map", {})
     ip_domain_map = alert_context.get("ip_domain_map", {})
     task_domain_set = alert_context.get("task_domain_set", set())
+    cert_items = list(utils.conn_db("cert").find({"task_id": task_id}))
 
-    for item in utils.conn_db("cert").find({"task_id": task_id}):
+    for item in _select_alert_preferred_certs(cert_items):
         cert_obj = item.get("cert", {}) if isinstance(item.get("cert"), dict) else {}
         validity = cert_obj.get("validity", {}) if isinstance(cert_obj.get("validity"), dict) else {}
         start_time = str(validity.get("start", "")).strip()

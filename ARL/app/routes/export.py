@@ -408,6 +408,59 @@ def get_cert_data(task_id):
     return utils.conn_db('cert').find({'task_id': task_id})
 
 
+def _cert_record_rank(item):
+    """
+    证书记录优先级（值越小优先级越高）：
+    1) scan_mode=sni
+    2) 有 sni_domain
+    3) 有 domain
+    """
+    if not isinstance(item, dict):
+        return (9, 9, 9)
+
+    scan_mode = sanitize_excel_value(item.get("scan_mode", "")).strip().lower()
+    sni_domain = _normalize_cert_domain(item.get("sni_domain", ""))
+    item_domain = _normalize_cert_domain(item.get("domain", ""))
+
+    mode_rank = 0 if scan_mode == "sni" else 1
+    sni_rank = 0 if sni_domain else 1
+    domain_rank = 0 if item_domain else 1
+    return (mode_rank, sni_rank, domain_rank)
+
+
+def _select_preferred_cert_items(cert_items):
+    """
+    按 task_id+ip+port 聚合证书记录，优先保留业务域名证书，抑制 default 默认证书干扰。
+    """
+    if not isinstance(cert_items, list):
+        return []
+
+    grouped = {}
+    for item in cert_items:
+        if not isinstance(item, dict):
+            continue
+
+        task_id = sanitize_excel_value(item.get("task_id", "")).strip()
+        ip = sanitize_excel_value(item.get("ip", "")).strip()
+        port = sanitize_excel_value(item.get("port", "")).strip()
+        if not task_id or not ip or not port:
+            # 结构异常记录按原样保留，避免误丢数据
+            key = ("raw", str(len(grouped)))
+            grouped[key] = item
+            continue
+
+        key = (task_id, ip, port)
+        current = grouped.get(key)
+        if not current:
+            grouped[key] = item
+            continue
+
+        if _cert_record_rank(item) < _cert_record_rank(current):
+            grouped[key] = item
+
+    return list(grouped.values())
+
+
 def _parse_datetime_safe(value):
     """
     兼容多种时间字符串格式，解析失败时返回 None。
@@ -668,8 +721,8 @@ def _extract_cert_rows(task_ids):
             continue
 
         ip_domain_map, task_domain_set = _build_cert_domain_context(task_id)
-
-        for item in get_cert_data(task_id):
+        cert_items = list(get_cert_data(task_id))
+        for item in _select_preferred_cert_items(cert_items):
             cert_obj = item.get("cert", {}) if isinstance(item.get("cert"), dict) else {}
             validity = cert_obj.get("validity", {}) if isinstance(cert_obj.get("validity"), dict) else {}
             ssl_security = cert_obj.get("ssl_security", {}) if isinstance(cert_obj.get("ssl_security"), dict) else {}

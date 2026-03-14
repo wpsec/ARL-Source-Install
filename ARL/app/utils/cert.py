@@ -50,6 +50,172 @@ def _normalize_server_hostname(value):
     return hostname
 
 
+def _normalize_hash_text(value):
+    """
+    归一化哈希文本，仅保留十六进制字符。
+    """
+    return re.sub(r"[^0-9a-fA-F]", "", _safe_text(value)).lower()
+
+
+def _normalize_cert_time_text(value):
+    """
+    统一证书时间文本格式（优先空格分隔）。
+    """
+    text = _safe_text(value)
+    if not text:
+        return ""
+    return text.replace("T", " ")
+
+
+def _extract_dn_attr(dn_text, attr_name):
+    """
+    从形如 key=value/key=value 的 DN 文本提取属性。
+    """
+    text = _safe_text(dn_text)
+    if not text:
+        return ""
+
+    pattern = re.compile(r"(?:^|/)\s*{}\s*=\s*([^/]+)".format(re.escape(attr_name)), re.IGNORECASE)
+    match = pattern.search(text)
+    if not match:
+        return ""
+    return _safe_text(match.group(1))
+
+
+def _extract_dns_patterns_from_cert(cert_obj):
+    """
+    从证书对象提取可匹配域名模式（CN + SAN DNS）。
+    """
+    if not isinstance(cert_obj, dict):
+        return []
+
+    patterns = []
+    seen = set()
+
+    def _append(pattern):
+        text = _safe_text(pattern).lower().rstrip(".")
+        if not text:
+            return
+        if text.startswith("*."):
+            text = "*.{}".format(text[2:].strip())
+        if text in seen:
+            return
+        seen.add(text)
+        patterns.append(text)
+
+    subject = cert_obj.get("subject", {})
+    if isinstance(subject, dict):
+        _append(subject.get("common_name", ""))
+
+    extensions = cert_obj.get("extensions", {})
+    if isinstance(extensions, dict):
+        san_text = _safe_text(extensions.get("subjectAltName", ""))
+        for raw in san_text.split(","):
+            item = _safe_text(raw)
+            if not item:
+                continue
+            if ":" in item:
+                prefix, value = item.split(":", 1)
+                if _safe_text(prefix).lower() != "dns":
+                    continue
+                _append(value)
+            else:
+                _append(item)
+
+    return patterns
+
+
+def _match_hostname_pattern(pattern, hostname):
+    """
+    证书域名模式匹配：支持精确和单级通配符。
+    """
+    pattern = _safe_text(pattern).lower().rstrip(".")
+    hostname = _safe_text(hostname).lower().rstrip(".")
+    if not pattern or not hostname:
+        return False
+
+    if pattern.startswith("*."):
+        suffix = pattern[2:]
+        if not suffix:
+            return False
+        if hostname == suffix:
+            return False
+        if not hostname.endswith(".{}".format(suffix)):
+            return False
+        left = hostname[:-(len(suffix) + 1)]
+        return bool(left) and "." not in left
+
+    return hostname == pattern
+
+
+def _cert_matches_server_hostname(cert_obj, server_hostname):
+    """
+    判断证书是否命中指定 server_hostname。
+    """
+    hostname = _normalize_server_hostname(server_hostname)
+    if not hostname:
+        return False
+
+    patterns = _extract_dns_patterns_from_cert(cert_obj)
+    for pattern in patterns:
+        if _match_hostname_pattern(pattern, hostname):
+            return True
+    return False
+
+
+def _looks_like_default_or_fake_cert(cert_obj):
+    """
+    识别常见默认证书/假证书特征。
+    """
+    if not isinstance(cert_obj, dict):
+        return False
+
+    texts = [
+        _safe_text(cert_obj.get("subject_dn", "")).lower(),
+        _safe_text(cert_obj.get("issuer_dn", "")).lower(),
+    ]
+
+    subject = cert_obj.get("subject", {})
+    if isinstance(subject, dict):
+        texts.append(_safe_text(subject.get("common_name", "")).lower())
+
+    extensions = cert_obj.get("extensions", {})
+    if isinstance(extensions, dict):
+        texts.append(_safe_text(extensions.get("subjectAltName", "")).lower())
+
+    joined = " ".join([x for x in texts if x])
+    if not joined:
+        return False
+
+    hit_keywords = [
+        "kubernetes ingress controller fake certificate",
+        "ingress.local",
+        "acme co",
+        "fake certificate",
+    ]
+    for keyword in hit_keywords:
+        if keyword in joined:
+            return True
+    return False
+
+
+def _should_probe_nmap_ssl_cert(parsed_cert, server_hostname=""):
+    """
+    仅在“疑似不准/可疑”场景触发 nmap ssl-cert，平衡准确性与性能。
+    """
+    if not isinstance(parsed_cert, dict) or not parsed_cert:
+        return True
+
+    if _looks_like_default_or_fake_cert(parsed_cert):
+        return True
+
+    normalized_sni = _normalize_server_hostname(server_hostname)
+    if normalized_sni and not _cert_matches_server_hostname(parsed_cert, normalized_sni):
+        return True
+
+    return False
+
+
 def _fetch_server_certificate(connect_host, port, server_hostname=""):
     """
     获取远端证书 PEM：
@@ -235,7 +401,7 @@ def _parse_ssl_enum_ciphers_output(raw_text):
     }
 
 
-def _scan_ssl_security_with_nmap(host, port):
+def _scan_ssl_security_with_nmap(host, port, server_hostname=""):
     """
     调用 nmap ssl-enum-ciphers 脚本扫描协议与加密套件。
     """
@@ -247,6 +413,8 @@ def _scan_ssl_security_with_nmap(host, port):
         port = int(port)
     except Exception:
         return {}
+
+    normalized_sni = _normalize_server_hostname(server_hostname)
 
     cmd = [
         nmap_bin,
@@ -262,8 +430,10 @@ def _scan_ssl_security_with_nmap(host, port):
         str(port),
         "--script",
         "ssl-enum-ciphers",
-        str(host),
     ]
+    if normalized_sni:
+        cmd.extend(["--script-args", "tls.servername={}".format(normalized_sni)])
+    cmd.append(str(host))
 
     try:
         # nmap 在目标无响应时可能返回非0，但 stdout 仍有可解析信息，因此不使用 check=True。
@@ -279,6 +449,231 @@ def _scan_ssl_security_with_nmap(host, port):
         return parsed if isinstance(parsed, dict) else {}
     except Exception:
         return {}
+
+
+def _parse_ssl_cert_output_with_nmap(raw_text):
+    """
+    解析 nmap ssl-cert 输出，提取基础证书信息。
+    """
+    if not _safe_text(raw_text):
+        return {}
+
+    subject_dn = ""
+    issuer_dn = ""
+    san_text = ""
+    signature_algorithm = ""
+    not_before = ""
+    not_after = ""
+    md5 = ""
+    sha1 = ""
+    sha256 = ""
+
+    for raw_line in raw_text.splitlines():
+        line = _safe_text(raw_line)
+        if not line:
+            continue
+
+        line = line.lstrip("|").lstrip("_").strip()
+        if not line:
+            continue
+
+        if line.lower().startswith("ssl-cert:"):
+            line = _safe_text(line.split(":", 1)[1])
+            if not line:
+                continue
+
+        if line.startswith("Subject:"):
+            subject_dn = _safe_text(line.split(":", 1)[1])
+            continue
+        if line.startswith("Issuer:"):
+            issuer_dn = _safe_text(line.split(":", 1)[1])
+            continue
+        if line.startswith("Subject Alternative Name:"):
+            san_text = _safe_text(line.split(":", 1)[1])
+            continue
+        if line.startswith("Signature Algorithm:"):
+            signature_algorithm = _safe_text(line.split(":", 1)[1])
+            continue
+        if line.startswith("Not valid before:"):
+            not_before = _normalize_cert_time_text(line.split(":", 1)[1])
+            continue
+        if line.startswith("Not valid after:"):
+            not_after = _normalize_cert_time_text(line.split(":", 1)[1])
+            continue
+        if line.startswith("MD5:"):
+            md5 = _normalize_hash_text(line.split(":", 1)[1])
+            continue
+        if line.startswith("SHA-1:"):
+            sha1 = _normalize_hash_text(line.split(":", 1)[1])
+            continue
+        if line.startswith("SHA-256:"):
+            sha256 = _normalize_hash_text(line.split(":", 1)[1])
+            continue
+
+    if not subject_dn and not issuer_dn and not sha256 and not sha1 and not md5:
+        return {}
+
+    validity = {
+        "start": not_before,
+        "end": not_after,
+        "expired": "",
+    }
+    if not_after:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+            try:
+                validity["expired"] = datetime.utcnow() > datetime.strptime(not_after, fmt)
+                break
+            except Exception:
+                continue
+
+    subject_common_name = _extract_dn_attr(subject_dn, "commonName")
+    issuer_common_name = _extract_dn_attr(issuer_dn, "commonName")
+
+    return {
+        "source": "nmap_ssl_cert",
+        "scan_time": str(datetime.utcnow()),
+        "subject_dn": subject_dn,
+        "issuer_dn": issuer_dn,
+        "signature_algorithm": signature_algorithm,
+        "validity": validity,
+        "extensions": {"subjectAltName": san_text},
+        "subject": {
+            "common_name": subject_common_name,
+        },
+        "issuer": {
+            "common_name": issuer_common_name,
+        },
+        "fingerprint": {
+            "md5": md5,
+            "sha1": sha1,
+            "sha256": sha256,
+        },
+    }
+
+
+def _scan_ssl_cert_with_nmap(host, port, server_hostname=""):
+    """
+    调用 nmap ssl-cert 脚本抓取证书，用于二次校验/兜底。
+    """
+    nmap_bin = shutil.which("nmap")
+    if not nmap_bin:
+        return {}
+
+    try:
+        port = int(port)
+    except Exception:
+        return {}
+
+    normalized_sni = _normalize_server_hostname(server_hostname)
+
+    cmd = [
+        nmap_bin,
+        "-n",
+        "-Pn",
+        "--max-retries",
+        "1",
+        "--host-timeout",
+        "20s",
+        "--script-timeout",
+        "15s",
+        "-p",
+        str(port),
+        "-v",
+        "--script",
+        "ssl-cert",
+    ]
+    if normalized_sni:
+        cmd.extend(["--script-args", "tls.servername={}".format(normalized_sni)])
+    cmd.append(str(host))
+
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=28,
+            check=False,
+        )
+        parsed = _parse_ssl_cert_output_with_nmap(result.stdout or "")
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _get_cert_fingerprint_sha256(cert_obj):
+    """
+    获取证书 SHA-256 指纹（不存在则返回空字符串）。
+    """
+    if not isinstance(cert_obj, dict):
+        return ""
+    fingerprint = cert_obj.get("fingerprint", {})
+    if not isinstance(fingerprint, dict):
+        return ""
+    return _normalize_hash_text(fingerprint.get("sha256", ""))
+
+
+def _merge_nmap_cert_into_parsed(parsed_cert, nmap_cert):
+    """
+    将 nmap ssl-cert 结果合并到 parse_certs 结构，优先覆盖关键身份字段。
+    """
+    if not isinstance(parsed_cert, dict):
+        parsed_cert = {}
+    if not isinstance(nmap_cert, dict) or not nmap_cert:
+        return parsed_cert
+
+    merged = dict(parsed_cert)
+    merged["cert_source"] = "python_ssl+nmap_ssl_cert"
+
+    if _safe_text(nmap_cert.get("subject_dn", "")):
+        merged["subject_dn"] = _safe_text(nmap_cert.get("subject_dn", ""))
+    if _safe_text(nmap_cert.get("issuer_dn", "")):
+        merged["issuer_dn"] = _safe_text(nmap_cert.get("issuer_dn", ""))
+    if _safe_text(nmap_cert.get("signature_algorithm", "")):
+        merged["signature_algorithm"] = _safe_text(nmap_cert.get("signature_algorithm", ""))
+
+    nmap_validity = nmap_cert.get("validity", {})
+    if isinstance(nmap_validity, dict):
+        validity = merged.get("validity", {}) if isinstance(merged.get("validity"), dict) else {}
+        for key in ["start", "end", "expired"]:
+            if nmap_validity.get(key) not in [None, ""]:
+                validity[key] = nmap_validity.get(key)
+        merged["validity"] = validity
+
+    nmap_ext = nmap_cert.get("extensions", {})
+    if isinstance(nmap_ext, dict):
+        extensions = merged.get("extensions", {}) if isinstance(merged.get("extensions"), dict) else {}
+        san_text = _safe_text(nmap_ext.get("subjectAltName", ""))
+        if san_text:
+            extensions["subjectAltName"] = san_text
+        merged["extensions"] = extensions
+
+    nmap_subject = nmap_cert.get("subject", {})
+    if isinstance(nmap_subject, dict):
+        subject = merged.get("subject", {}) if isinstance(merged.get("subject"), dict) else {}
+        common_name = _safe_text(nmap_subject.get("common_name", ""))
+        if common_name:
+            subject["common_name"] = common_name
+        merged["subject"] = subject
+
+    nmap_issuer = nmap_cert.get("issuer", {})
+    if isinstance(nmap_issuer, dict):
+        issuer = merged.get("issuer", {}) if isinstance(merged.get("issuer"), dict) else {}
+        common_name = _safe_text(nmap_issuer.get("common_name", ""))
+        if common_name:
+            issuer["common_name"] = common_name
+        merged["issuer"] = issuer
+
+    nmap_fingerprint = nmap_cert.get("fingerprint", {})
+    if isinstance(nmap_fingerprint, dict):
+        fingerprint = merged.get("fingerprint", {}) if isinstance(merged.get("fingerprint"), dict) else {}
+        for key in ["md5", "sha1", "sha256"]:
+            value = _normalize_hash_text(nmap_fingerprint.get(key, ""))
+            if value:
+                fingerprint[key] = value
+        merged["fingerprint"] = fingerprint
+
+    return merged
 
 
 def parse_certs(certs):
@@ -364,23 +759,59 @@ def get_cert(host, port, server_hostname=""):
     from . import get_logger
     logger = get_logger()
     try:
-        certs = _fetch_server_certificate(connect_host=host, port=port, server_hostname=server_hostname)
-        if not certs and _safe_text(server_hostname):
+        normalized_sni = _normalize_server_hostname(server_hostname)
+        certs = _fetch_server_certificate(connect_host=host, port=port, server_hostname=normalized_sni)
+        if not certs and normalized_sni:
             # SNI 失败时回退无 SNI，避免漏采
             certs = _fetch_server_certificate(connect_host=host, port=port, server_hostname="")
-        if not certs:
+
+        parsed_cert = {}
+        if certs:
+            parsed_cert = parse_certs(certs)
+            if isinstance(parsed_cert, dict) and parsed_cert:
+                parsed_cert["cert_source"] = "python_ssl"
+
+        nmap_cert = {}
+        if _should_probe_nmap_ssl_cert(parsed_cert, normalized_sni):
+            nmap_cert = _scan_ssl_cert_with_nmap(host, port, server_hostname=normalized_sni)
+            if not nmap_cert and normalized_sni:
+                nmap_cert = _scan_ssl_cert_with_nmap(host, port, server_hostname="")
+
+        if nmap_cert:
+            if not parsed_cert:
+                parsed_cert = nmap_cert
+                parsed_cert["cert_source"] = "nmap_ssl_cert"
+            else:
+                parsed_match = _cert_matches_server_hostname(parsed_cert, normalized_sni) if normalized_sni else False
+                nmap_match = _cert_matches_server_hostname(nmap_cert, normalized_sni) if normalized_sni else False
+                parsed_fake = _looks_like_default_or_fake_cert(parsed_cert)
+                nmap_fake = _looks_like_default_or_fake_cert(nmap_cert)
+                parsed_sha256 = _get_cert_fingerprint_sha256(parsed_cert)
+                nmap_sha256 = _get_cert_fingerprint_sha256(nmap_cert)
+
+                should_merge = False
+                if nmap_match and not parsed_match:
+                    should_merge = True
+                elif parsed_fake and not nmap_fake:
+                    should_merge = True
+                elif not parsed_sha256 and nmap_sha256:
+                    should_merge = True
+
+                if should_merge:
+                    parsed_cert = _merge_nmap_cert_into_parsed(parsed_cert, nmap_cert)
+
+        if not parsed_cert:
             return {}
-        parsed_cert = parse_certs(certs)
-        ssl_security = _scan_ssl_security_with_nmap(host, port)
+
+        ssl_security = _scan_ssl_security_with_nmap(host, port, server_hostname=normalized_sni)
+        if not ssl_security and normalized_sni:
+            ssl_security = _scan_ssl_security_with_nmap(host, port, server_hostname="")
         if ssl_security:
             parsed_cert["ssl_security"] = ssl_security
         return parsed_cert
     except Exception as e:
         logger.debug("get cert error {}:{} {}".format(host,port, e))
-
-
-
-
+        return {}
 
 
 

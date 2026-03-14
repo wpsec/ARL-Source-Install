@@ -30,6 +30,34 @@ ns = Namespace('cert', description="证书信息")
 
 logger = get_logger()
 
+
+def _build_sort_doc(orderby_list):
+    """
+    将 [(field, direction)] 转为 MongoDB sort 文档。
+    """
+    sort_doc = {}
+    for item in orderby_list or []:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+
+        field, direction = item
+        field = str(field or "").strip()
+        if not field:
+            continue
+
+        try:
+            direction = int(direction)
+        except Exception:
+            direction = -1
+
+        sort_doc[field] = -1 if direction < 0 else 1
+
+    if "_id" not in sort_doc:
+        sort_doc["_id"] = -1
+
+    return sort_doc
+
+
 # 证书查询字段定义
 # 支持按照证书的各个属性进行查询
 base_search_fields = {
@@ -58,6 +86,84 @@ class ARLCert(ARLResource):
     """SSL 证书信息查询接口"""
     parser = get_arl_parser(base_search_fields, location='args')
 
+    def _build_data_prefer_domain_cert(self, args):
+        """
+        任务维度证书查询：
+        - 同一 task_id + ip + port 仅保留一条“最优证书”记录
+        - 优先级：sni > default，且优先带 sni_domain/domain 的记录
+        """
+        default_field = self.get_default_field(args)
+        page = default_field.get("page", 1)
+        size = default_field.get("size", 10)
+        orderby_list = default_field.get("order", [("_id", -1)])
+        sort_doc = _build_sort_doc(orderby_list)
+        query = self.build_db_query(args)
+
+        base_pipeline = [
+            {"$match": query},
+            {
+                "$addFields": {
+                    "_rank_mode": {
+                        "$cond": [{"$eq": ["$scan_mode", "sni"]}, 0, 1]
+                    },
+                    "_rank_sni_domain": {
+                        "$cond": [
+                            {"$gt": [{"$strLenCP": {"$ifNull": ["$sni_domain", ""]}}, 0]},
+                            0,
+                            1,
+                        ]
+                    },
+                    "_rank_domain": {
+                        "$cond": [
+                            {"$gt": [{"$strLenCP": {"$ifNull": ["$domain", ""]}}, 0]},
+                            0,
+                            1,
+                        ]
+                    },
+                }
+            },
+            {
+                "$sort": {
+                    "task_id": 1,
+                    "ip": 1,
+                    "port": 1,
+                    "_rank_mode": 1,
+                    "_rank_sni_domain": 1,
+                    "_rank_domain": 1,
+                    "_id": -1,
+                }
+            },
+            {
+                "$group": {
+                    "_id": {"task_id": "$task_id", "ip": "$ip", "port": "$port"},
+                    "doc": {"$first": "$$ROOT"},
+                }
+            },
+            {"$replaceRoot": {"newRoot": "$doc"}},
+        ]
+
+        result_pipeline = base_pipeline + [
+            {"$sort": sort_doc},
+            {"$skip": size * (page - 1)},
+            {"$limit": size},
+        ]
+        count_pipeline = base_pipeline + [{"$count": "total"}]
+
+        result_items = list(utils.conn_db('cert').aggregate(result_pipeline, allowDiskUse=True))
+        count_items = list(utils.conn_db('cert').aggregate(count_pipeline, allowDiskUse=True))
+        total = 0
+        if count_items and isinstance(count_items[0], dict):
+            total = int(count_items[0].get("total", 0) or 0)
+
+        return {
+            "page": page,
+            "size": size,
+            "total": total,
+            "items": self.build_return_items(result_items),
+            "query": query,
+            "code": 200,
+        }
+
     @auth
     @ns.expect(parser)
     def get(self):
@@ -82,10 +188,16 @@ class ARLCert(ARLResource):
         - 审计证书配置
         """
         args = self.parser.parse_args()
-        # 从 cert 集合查询数据
-        data = self.build_data(args=args, collection='cert')
+        task_id = str(args.get("task_id", "") or "").strip()
+        scan_mode = str(args.get("scan_mode", "") or "").strip().lower()
 
-        return data
+        # 任务视图默认返回“端点优先证书”，避免 default 默认证书覆盖业务域名证书；
+        # 若显式指定 scan_mode，则按原始明细返回，便于排障。
+        if task_id and not scan_mode:
+            return self._build_data_prefer_domain_cert(args)
+
+        # 从 cert 集合查询原始数据
+        return self.build_data(args=args, collection='cert')
 
 
 # 删除证书请求模型定义
