@@ -1054,8 +1054,8 @@ def _build_task_overview_sheet_values(title, task_ids, overview_meta=None):
                 if not isinstance(metric_item, dict):
                     continue
                 label = str(metric_item.get("label", metric_key))
-                if label == "漏洞":
-                    label = "风险"
+                if "漏洞" in label:
+                    label = label.replace("漏洞", "风险")
                 current_val = int(metric_item.get("current", 0) or 0)
                 previous_val = int(metric_item.get("previous", 0) or 0)
                 delta_val = int(metric_item.get("delta", 0) or 0)

@@ -438,6 +438,8 @@ def build_schedule_run_markdown(run_item):
                 if not isinstance(metric_item, dict):
                     continue
                 label = str(metric_item.get("label", metric_key))
+                if "漏洞" in label:
+                    label = label.replace("漏洞", "风险")
                 delta_val = _safe_int(metric_item.get("delta", 0), 0)
                 previous_val = _safe_int(metric_item.get("previous", 0), 0)
                 ratio_text = str(metric_item.get("ratio_text", "0.00%"))
