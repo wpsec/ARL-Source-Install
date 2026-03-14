@@ -5695,6 +5695,8 @@ function TableModuleView({
     confirmText: string;
   } | null>(null);
   const deleteConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const tableRootRef = useRef<HTMLDivElement | null>(null);
+  const keepBottomAfterSizeChangeRef = useRef(false);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -5704,6 +5706,29 @@ function TableModuleView({
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
+
+  const resolveScrollableContainer = useCallback((): HTMLElement | null => {
+    let cursor: HTMLElement | null = tableRootRef.current;
+    while (cursor) {
+      const style = window.getComputedStyle(cursor);
+      const overflowY = style.overflowY;
+      const canScroll = (overflowY === 'auto' || overflowY === 'scroll') && cursor.scrollHeight > cursor.clientHeight;
+      if (canScroll) return cursor;
+      cursor = cursor.parentElement;
+    }
+    if (document.scrollingElement instanceof HTMLElement) return document.scrollingElement;
+    return document.documentElement;
+  }, []);
+
+  const rememberBottomAnchorBeforeSizeChange = useCallback(() => {
+    const container = resolveScrollableContainer();
+    if (!container) {
+      keepBottomAfterSizeChangeRef.current = false;
+      return;
+    }
+    const distanceToBottom = container.scrollHeight - container.clientHeight - container.scrollTop;
+    keepBottomAfterSizeChangeRef.current = distanceToBottom <= 24;
+  }, [resolveScrollableContainer]);
 
   const normalizeTaskErrorLog = useCallback((raw: any) => {
     if (!raw || typeof raw !== 'object') return null;
@@ -5814,6 +5839,18 @@ function TableModuleView({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [screenshotPreview]);
+
+  useEffect(() => {
+    if (!keepBottomAfterSizeChangeRef.current || loading) return;
+    const rafId = window.requestAnimationFrame(() => {
+      const container = resolveScrollableContainer();
+      if (container) {
+        container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      }
+      keepBottomAfterSizeChangeRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [loading, rows, total, size, resolveScrollableContainer]);
 
   const closeDeleteConfirmDialog = useCallback((confirmed: boolean) => {
     const resolver = deleteConfirmResolverRef.current;
@@ -6939,7 +6976,7 @@ function TableModuleView({
               : '';
 
   return (
-    <div className="p-8 space-y-6">
+    <div ref={tableRootRef} className="p-8 space-y-6">
       <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
         <div>
           <h2 className="text-4xl font-black tracking-tight">{module.label}</h2>
@@ -7973,7 +8010,11 @@ function TableModuleView({
                 <select
                   value={size}
                   onChange={(event) => {
-                    setSize(Number(event.target.value));
+                    const nextSize = Number(event.target.value);
+                    if (!Number.isFinite(nextSize) || nextSize <= 0) return;
+                    // 切换每页条数前记录滚动锚点：若当前在底部，刷新后继续贴底。
+                    rememberBottomAnchorBeforeSizeChange();
+                    setSize(nextSize);
                     setPage(1);
                   }}
                   className={`${UNIFIED_SELECT_CLASS} w-auto min-w-[108px] py-2`}
