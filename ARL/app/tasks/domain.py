@@ -1125,6 +1125,47 @@ class DomainTask(CommonTask):
                 )
             self.cert_map = ssl_cert(fake_targets, self.base_domain)
 
+        # 同一 endpoint 若已经命中 SNI 证书，则 default 结果仅作兜底不再入库，
+        # 避免 CDN 场景下“默认证书”覆盖业务观感。
+        sni_success_endpoints = set()
+        for target in self.cert_map:
+            cert_obj = self.cert_map.get(target, {})
+            if not isinstance(cert_obj, dict):
+                continue
+
+            cert_data = dict(cert_obj)
+            scan_meta = cert_data.pop("_scan_meta", {})
+            if not isinstance(scan_meta, dict):
+                scan_meta = {}
+
+            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(target).strip()
+            ip, port = fetchCert.split_host_port(endpoint)
+            if not ip or port <= 0:
+                continue
+
+            scan_mode = str(scan_meta.get("scan_mode", "default") or "default").strip().lower()
+            if scan_mode != "sni":
+                continue
+
+            sni_domain = str(scan_meta.get("sni_domain", "")).strip().lower()
+            legacy_server_name = str(scan_meta.get("server_name", "")).strip().lower()
+            if not sni_domain:
+                sni_domain = legacy_server_name
+            if not sni_domain:
+                continue
+
+            domains = fetchCert.normalize_domains(scan_meta.get("domains", []))
+            if sni_domain not in domains:
+                domains = fetchCert.normalize_domains(domains + [sni_domain])
+
+            matched_domains = fetchCert.match_cert_domains(cert_data, domains)
+            if domains and not matched_domains:
+                continue
+            if matched_domains and sni_domain not in matched_domains:
+                continue
+
+            sni_success_endpoints.add(endpoint)
+
         for target in self.cert_map:
             cert_obj = self.cert_map.get(target, {})
             if not isinstance(cert_obj, dict):
@@ -1143,6 +1184,9 @@ class DomainTask(CommonTask):
             scan_mode = str(scan_meta.get("scan_mode", "default") or "default").strip().lower()
             if scan_mode not in ["default", "sni"]:
                 scan_mode = "default"
+
+            if scan_mode == "default" and endpoint in sni_success_endpoints:
+                continue
 
             sni_domain = str(scan_meta.get("sni_domain", "")).strip().lower()
             # 兼容旧结构：历史扫描元数据只有 server_name 字段。
