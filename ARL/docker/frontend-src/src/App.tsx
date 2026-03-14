@@ -8754,6 +8754,10 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [celeryMaxTasksPerChild, setCeleryMaxTasksPerChild] = useState(20);
   const [celeryMaxMemoryPerChild, setCeleryMaxMemoryPerChild] = useState(280000);
   const [nucleiSingleTargetTimeoutSec, setNucleiSingleTargetTimeoutSec] = useState(3600);
+  const [hostTimeoutType, setHostTimeoutType] = useState('default');
+  const [hostTimeout, setHostTimeout] = useState(900);
+  const [portParallelism, setPortParallelism] = useState(32);
+  const [portMinRate, setPortMinRate] = useState(64);
   const [blackIpsText, setBlackIpsText] = useState('');
   const [dnsResolversText, setDnsResolversText] = useState('');
 
@@ -8786,6 +8790,10 @@ function ConfigConsoleView({ token }: { token: string }) {
       setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 20));
       setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 280000));
       setNucleiSingleTargetTimeoutSec(Number(scanConfig.nuclei_single_target_timeout_sec || 3600));
+      setHostTimeoutType(String(scanConfig.host_timeout_type || 'default').toLowerCase() === 'custom' ? 'custom' : 'default');
+      setHostTimeout(Number(scanConfig.host_timeout || 900));
+      setPortParallelism(Number(scanConfig.port_parallelism || 32));
+      setPortMinRate(Number(scanConfig.port_min_rate || 64));
       setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
       setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
 
@@ -8853,6 +8861,22 @@ function ConfigConsoleView({ token }: { token: string }) {
       setError('Nuclei 单目标最大扫描时间必须大于 0');
       return;
     }
+    if (!['default', 'custom'].includes(String(hostTimeoutType || '').toLowerCase())) {
+      setError('端口扫描主机超时策略仅支持 default/custom');
+      return;
+    }
+    if (!Number.isFinite(hostTimeout) || hostTimeout <= 0) {
+      setError('端口扫描主机超时时间必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(portParallelism) || portParallelism <= 0) {
+      setError('端口扫描并行度必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(portMinRate) || portMinRate <= 0) {
+      setError('端口扫描最小发包速率必须大于 0');
+      return;
+    }
 
     const blackIps = splitTextList(blackIpsText);
     if (blackIps.length === 0) {
@@ -8879,6 +8903,10 @@ function ConfigConsoleView({ token }: { token: string }) {
             celery_max_tasks_per_child: Math.floor(celeryMaxTasksPerChild),
             celery_max_memory_per_child: Math.floor(celeryMaxMemoryPerChild),
             nuclei_single_target_timeout_sec: Math.floor(nucleiSingleTargetTimeoutSec),
+            host_timeout_type: String(hostTimeoutType || 'default').toLowerCase() === 'custom' ? 'custom' : 'default',
+            host_timeout: Math.floor(hostTimeout),
+            port_parallelism: Math.floor(portParallelism),
+            port_min_rate: Math.floor(portMinRate),
             black_ips: blackIps,
             dns_resolvers: splitTextList(dnsResolversText),
           },
@@ -8902,6 +8930,10 @@ function ConfigConsoleView({ token }: { token: string }) {
       setCeleryMaxTasksPerChild(Number(savedConfig.celery_max_tasks_per_child || celeryMaxTasksPerChild));
       setCeleryMaxMemoryPerChild(Number(savedConfig.celery_max_memory_per_child || celeryMaxMemoryPerChild));
       setNucleiSingleTargetTimeoutSec(Number(savedConfig.nuclei_single_target_timeout_sec || nucleiSingleTargetTimeoutSec));
+      setHostTimeoutType(String(savedConfig.host_timeout_type || hostTimeoutType || 'default').toLowerCase() === 'custom' ? 'custom' : 'default');
+      setHostTimeout(Number(savedConfig.host_timeout || hostTimeout));
+      setPortParallelism(Number(savedConfig.port_parallelism || portParallelism));
+      setPortMinRate(Number(savedConfig.port_min_rate || portMinRate));
       setBlackIpsText(Array.isArray(savedConfig.black_ips) ? savedConfig.black_ips.join('\n') : blackIpsText);
       setDnsResolversText(Array.isArray(savedConfig.dns_resolvers) ? savedConfig.dns_resolvers.join('\n') : dnsResolversText);
 
@@ -8997,7 +9029,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、敏感文件泄漏字典、扫描并发、Nuclei 单目标超时、Web/Celery 运行并发、黑名单IP与域名解析器，写入 config-docker.yaml 并可在重启后生效。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、敏感文件泄漏字典、扫描并发、端口扫描默认超时/并行度、Nuclei 单目标超时、Web/Celery 运行并发、黑名单IP与域名解析器，写入 config-docker.yaml 并可在重启后生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -9287,6 +9319,73 @@ function ConfigConsoleView({ token }: { token: string }) {
 
           <div className="text-xs text-brand-text-muted">
             推荐档位：2核2G=1小时，4核4G=2小时，8核16G=3小时。当前配置约 {(nucleiSingleTargetTimeoutSec / 3600).toFixed(2)} 小时/目标。
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
+          <div className="text-xs font-bold text-brand-text-muted">端口扫描全局默认参数（策略未显式设置时生效）</div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-brand-text-muted block">
+                主机超时策略
+                <span className="ml-2 font-mono opacity-70">ARL.HOST_TIMEOUT_TYPE</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={hostTimeoutType}
+                  onChange={(event) => setHostTimeoutType(event.target.value === 'custom' ? 'custom' : 'default')}
+                  className={UNIFIED_SELECT_CLASS}
+                >
+                  <option value="default">default（按扫描模式自动估算）</option>
+                  <option value="custom">custom（固定超时）</option>
+                </select>
+                <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-brand-text-muted block">
+                主机超时（秒）
+                <span className="ml-2 font-mono opacity-70">ARL.HOST_TIMEOUT</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={String(hostTimeout)}
+                onChange={(event) => setHostTimeout(Number(event.target.value || 0))}
+                className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-brand-text-muted block">
+                探测报文并行度
+                <span className="ml-2 font-mono opacity-70">ARL.PORT_PARALLELISM</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={String(portParallelism)}
+                onChange={(event) => setPortParallelism(Number(event.target.value || 0))}
+                className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-brand-text-muted block">
+                最少发包速率
+                <span className="ml-2 font-mono opacity-70">ARL.PORT_MIN_RATE</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={String(portMinRate)}
+                onChange={(event) => setPortMinRate(Number(event.target.value || 0))}
+                className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div className="text-xs text-brand-text-muted">
+            说明：该组参数作为全局默认值。历史任务策略中未显式传入时，会自动使用这里的配置。
           </div>
         </div>
 

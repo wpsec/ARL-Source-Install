@@ -320,14 +320,18 @@ class IPTask(CommonTask):
             # nmap 仅负责端口发现，协议/服务识别统一由 npoc(sniffer) 负责
             "service_detect": False,
             "os_detect": self.options.get("os_detection", False),  # 操作系统识别
-            "port_parallelism": self.options.get("port_parallelism", 32),  # 探测报文并行度
-            "port_min_rate": self.options.get("port_min_rate", 64),  # 最少发包速率
+            # 任务未显式配置时，回退到配置管理中的全局默认参数。
+            "port_parallelism": self.options.get("port_parallelism", Config.PORT_PARALLELISM),  # 探测报文并行度
+            "port_min_rate": self.options.get("port_min_rate", Config.PORT_MIN_RATE),  # 最少发包速率
             "custom_host_timeout": None  # 主机超时时间(s)
         }
-        
-        # 只有当设置为自定义时才会去设置超时时间
-        if self.options.get("host_timeout_type") == "custom":
-            scan_port_option["custom_host_timeout"] = self.options.get("host_timeout", 60 * 15)
+
+        # 只有当超时策略为 custom 时才会设置主机超时。
+        host_timeout_type = str(
+            self.options.get("host_timeout_type", Config.HOST_TIMEOUT_TYPE)
+        ).strip().lower()
+        if host_timeout_type == "custom":
+            scan_port_option["custom_host_timeout"] = self.options.get("host_timeout", Config.HOST_TIMEOUT)
 
         # 解析目标IP列表
         targets = self.ip_target.split()

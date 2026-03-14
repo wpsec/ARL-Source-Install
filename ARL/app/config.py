@@ -390,6 +390,14 @@ class Config(object):
     GITHUB_HASH_FILE = os.path.join(TMP_PATH, 'github.hash')
 
     # ==================== 并发控制配置 ====================
+    # 端口扫描主机超时策略（default/custom）
+    HOST_TIMEOUT_TYPE = "default"
+    # 当 HOST_TIMEOUT_TYPE=custom 时生效，单位秒
+    HOST_TIMEOUT = 60 * 15
+    # nmap 探测报文并行度默认值
+    PORT_PARALLELISM = 32
+    # nmap 最少发包速率默认值
+    PORT_MIN_RATE = 64
     # 域名爆破并发数（普通域名字典爆破）
     DOMAIN_BRUTE_CONCURRENT = 180
     # 组合生成的域名爆破并发数（altdns变异域名爆破）
@@ -819,7 +827,14 @@ try:
             Config.GITHUB_TOKEN = y["GITHUB"]["TOKEN"]
 
     # --- 并发与资源配置（声明式批量加载） ---
+    host_timeout_type = str(y["ARL"].get("HOST_TIMEOUT_TYPE", Config.HOST_TIMEOUT_TYPE)).strip().lower()
+    if host_timeout_type in ("default", "custom"):
+        Config.HOST_TIMEOUT_TYPE = host_timeout_type
+
     _ARL_POSITIVE_INT_KEYS = [
+        "HOST_TIMEOUT",
+        "PORT_PARALLELISM",
+        "PORT_MIN_RATE",
         "DOMAIN_BRUTE_CONCURRENT",
         "ALT_DNS_CONCURRENT",
         "DOMAIN_RESOLVE_CONCURRENCY",
@@ -1038,6 +1053,9 @@ try:
             env_int(_env_name, getattr(Config, _key)),
             getattr(Config, _key)
         ))
+    _host_timeout_type_env = env_str("ARL_HOST_TIMEOUT_TYPE", Config.HOST_TIMEOUT_TYPE).strip().lower()
+    if _host_timeout_type_env in ("default", "custom"):
+        Config.HOST_TIMEOUT_TYPE = _host_timeout_type_env
 
     # --- 环境变量覆盖：MongoDB 连接池参数 ---
     Config.MONGO_MAX_POOL_SIZE = safe_positive_int(

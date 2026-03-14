@@ -178,6 +178,18 @@ def _safe_bool(value, default_value=False):
     return bool(default_value)
 
 
+def _normalize_host_timeout_type(value, default_value="default"):
+    """
+    规范化主机超时策略，仅允许 default/custom。
+    """
+    normalized = str(value or default_value).strip().lower()
+    if normalized not in ("default", "custom"):
+        normalized = str(default_value or "default").strip().lower()
+    if normalized not in ("default", "custom"):
+        normalized = "default"
+    return normalized
+
+
 def _normalize_string_list(raw_value):
     """
     兼容 list / str / 其他可迭代输入，输出清洗后的字符串列表。
@@ -662,6 +674,22 @@ def _extract_scan_config(config_obj):
         arl_config.get('NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'),
         Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
     )
+    host_timeout_type = _normalize_host_timeout_type(
+        arl_config.get('HOST_TIMEOUT_TYPE'),
+        Config.HOST_TIMEOUT_TYPE
+    )
+    host_timeout = _safe_int(
+        arl_config.get('HOST_TIMEOUT'),
+        Config.HOST_TIMEOUT
+    )
+    port_parallelism = _safe_int(
+        arl_config.get('PORT_PARALLELISM'),
+        Config.PORT_PARALLELISM
+    )
+    port_min_rate = _safe_int(
+        arl_config.get('PORT_MIN_RATE'),
+        Config.PORT_MIN_RATE
+    )
     black_ips = _normalize_string_list(arl_config.get('BLACK_IPS', Config.BLACK_IPS))
     if not black_ips:
         black_ips = _normalize_string_list(Config.BLACK_IPS)
@@ -679,6 +707,10 @@ def _extract_scan_config(config_obj):
         'celery_max_tasks_per_child': celery_max_tasks_per_child,
         'celery_max_memory_per_child': celery_max_memory_per_child,
         'nuclei_single_target_timeout_sec': nuclei_single_target_timeout_sec,
+        'host_timeout_type': host_timeout_type,
+        'host_timeout': host_timeout,
+        'port_parallelism': port_parallelism,
+        'port_min_rate': port_min_rate,
         'black_ips': black_ips,
         'dns_resolvers': dns_resolvers,
     }
@@ -749,6 +781,22 @@ def _merge_scan_config(config_obj, scan_config):
         scan_config.get('nuclei_single_target_timeout_sec'),
         Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
     )
+    host_timeout_type = _normalize_host_timeout_type(
+        scan_config.get('host_timeout_type'),
+        Config.HOST_TIMEOUT_TYPE
+    )
+    host_timeout = _safe_int(
+        scan_config.get('host_timeout'),
+        Config.HOST_TIMEOUT
+    )
+    port_parallelism = _safe_int(
+        scan_config.get('port_parallelism'),
+        Config.PORT_PARALLELISM
+    )
+    port_min_rate = _safe_int(
+        scan_config.get('port_min_rate'),
+        Config.PORT_MIN_RATE
+    )
     black_ips = _normalize_string_list(scan_config.get('black_ips'))
     dns_resolvers = _normalize_string_list(scan_config.get('dns_resolvers'))
 
@@ -769,6 +817,10 @@ def _merge_scan_config(config_obj, scan_config):
     config_obj['ARL']['CELERY_MAX_TASKS_PER_CHILD'] = celery_max_tasks_per_child
     config_obj['ARL']['CELERY_MAX_MEMORY_PER_CHILD'] = celery_max_memory_per_child
     config_obj['ARL']['NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'] = nuclei_single_target_timeout_sec
+    config_obj['ARL']['HOST_TIMEOUT_TYPE'] = host_timeout_type
+    config_obj['ARL']['HOST_TIMEOUT'] = host_timeout
+    config_obj['ARL']['PORT_PARALLELISM'] = port_parallelism
+    config_obj['ARL']['PORT_MIN_RATE'] = port_min_rate
     config_obj['ARL']['BLACK_IPS'] = black_ips
     config_obj['ARL']['DNS_RESOLVERS'] = dns_resolvers
 

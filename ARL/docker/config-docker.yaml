@@ -230,6 +230,14 @@ ARL:
     #- gov.cn
   #端口对应前端测试选项
   PORT_TOP_10: "80,443,8443,8080,8081,8888,8089,5000,5001,8085,800,81,9000,88,8001,8090"
+  # nmap 主机超时策略：default=按扫描模式自动估算，custom=使用 HOST_TIMEOUT 固定值
+  HOST_TIMEOUT_TYPE: "default"
+  # nmap 主机超时（秒，仅 HOST_TIMEOUT_TYPE=custom 时生效）
+  HOST_TIMEOUT: 900
+  # nmap 探测报文并行度默认值
+  PORT_PARALLELISM: 32
+  # nmap 最少发包速率默认值
+  PORT_MIN_RATE: 64
   #域名爆破字典前端大字典选项
   DOMAIN_DICT: "/code/app/dicts/domain_2w.txt"
   #文件泄漏字典

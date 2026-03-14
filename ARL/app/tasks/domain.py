@@ -225,13 +225,16 @@ class ScanPort(object):
         self.skip_scan_cdn_ip = False
 
         if option is None:
+            default_custom_host_timeout = None
+            if str(Config.HOST_TIMEOUT_TYPE).strip().lower() == "custom":
+                default_custom_host_timeout = Config.HOST_TIMEOUT
             option = {
                 "ports": ScanPortType.TEST,
                 "service_detect": False,
                 "os_detect": False,
-                "port_parallelism": 32,
-                "port_min_rate": 64,
-                "custom_host_timeout": None
+                "port_parallelism": Config.PORT_PARALLELISM,
+                "port_min_rate": Config.PORT_MIN_RATE,
+                "custom_host_timeout": default_custom_host_timeout
             }
 
         if 'skip_scan_cdn_ip' in option:
@@ -563,14 +566,18 @@ class DomainTask(CommonTask):
             "service_detect": False,
             "os_detect": self.options.get("os_detection", False),
             "skip_scan_cdn_ip": self.options.get("skip_scan_cdn_ip", False),  # 跳过扫描CDN IP
-            "port_parallelism": self.options.get("port_parallelism", 32),  # 探测报文并行度
-            "port_min_rate": self.options.get("port_min_rate", 64),  # 最少发包速率
+            # 任务未显式配置时，回退到配置管理中的全局默认参数。
+            "port_parallelism": self.options.get("port_parallelism", Config.PORT_PARALLELISM),  # 探测报文并行度
+            "port_min_rate": self.options.get("port_min_rate", Config.PORT_MIN_RATE),  # 最少发包速率
             "custom_host_timeout": None  # 主机超时时间(s)
         }
 
-        # 只有当设置为自定义时才会去设置超时时间
-        if self.options.get("host_timeout_type") == "custom":
-            scan_port_option["custom_host_timeout"] = self.options.get("host_timeout", 60 * 15)
+        # 只有当超时策略为 custom 时才会设置主机超时。
+        host_timeout_type = str(
+            self.options.get("host_timeout_type", Config.HOST_TIMEOUT_TYPE)
+        ).strip().lower()
+        if host_timeout_type == "custom":
+            scan_port_option["custom_host_timeout"] = self.options.get("host_timeout", Config.HOST_TIMEOUT)
 
         self.scan_port_option = scan_port_option
 
