@@ -2893,11 +2893,13 @@ function LoginView({
       <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full bg-brand-secondary/20 blur-[120px] pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-lg bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-8 shadow-2xl">
-        <div className="flex items-center gap-3 mb-8">
+        <div className="flex items-start sm:items-center gap-3 mb-8">
           {/* 登录页与侧边栏复用同一品牌 Logo，避免出现两套不一致样式 */}
           <BrandLogo size="md" />
           <div className="min-w-0">
-            <h1 className="text-xl md:text-2xl font-black tracking-tight leading-tight whitespace-nowrap overflow-hidden text-ellipsis">ARL互联网资产自动化收集系统</h1>
+            <h1 className="text-lg sm:text-xl md:text-2xl font-black tracking-tight leading-snug break-words">
+              ARL互联网资产自动化收集系统
+            </h1>
             <p className="text-sm text-brand-text-muted font-semibold mt-1">
               版本：{__ARL_VERSION__}
             </p>
