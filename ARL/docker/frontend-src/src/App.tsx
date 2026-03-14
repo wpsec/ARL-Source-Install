@@ -2884,20 +2884,20 @@ function LoginView({
   loading: boolean;
   error: string;
 }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('arlpass');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text flex items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute -top-16 -left-16 w-72 h-72 rounded-full bg-brand-accent/20 blur-[120px] pointer-events-none" />
       <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full bg-brand-secondary/20 blur-[120px] pointer-events-none" />
 
-      <div className="relative z-10 w-full max-w-lg bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-8 shadow-2xl">
+      <div className="relative z-10 w-full max-w-2xl bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-10 sm:p-12 shadow-2xl">
         <div className="flex items-start sm:items-center gap-3 mb-8">
           {/* 登录页与侧边栏复用同一品牌 Logo，避免出现两套不一致样式 */}
-          <BrandLogo size="md" />
+          <BrandLogo size="lg" />
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl md:text-2xl font-black tracking-tight leading-snug break-words">
+            <h1 className="text-lg sm:text-2xl md:text-[1.9rem] font-black tracking-tight leading-tight sm:whitespace-nowrap">
               ARL互联网资产自动化收集系统
             </h1>
             <p className="text-sm text-brand-text-muted font-semibold mt-1">
@@ -2908,6 +2908,7 @@ function LoginView({
 
         <form
           className="space-y-5"
+          autoComplete="off"
           onSubmit={async (event) => {
             event.preventDefault();
             await onLogin(username, password);
@@ -2918,10 +2919,12 @@ function LoginView({
             <div className="relative">
               <User className="w-4 h-4 text-brand-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
+                name="arl_username"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                className="w-full bg-brand-bg border border-brand-border rounded-xl py-3 pl-10 pr-3 text-sm focus:outline-none focus:border-brand-accent"
-                placeholder="admin"
+                autoComplete="off"
+                className="w-full bg-brand-bg border border-brand-border rounded-xl py-3.5 pl-11 pr-3 text-base focus:outline-none focus:border-brand-accent"
+                placeholder="请输入用户名"
               />
             </div>
           </div>
@@ -2932,9 +2935,11 @@ function LoginView({
               <Lock className="w-4 h-4 text-brand-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="password"
+                name="arl_password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="w-full bg-brand-bg border border-brand-border rounded-xl py-3 pl-10 pr-3 text-sm focus:outline-none focus:border-brand-accent"
+                autoComplete="new-password"
+                className="w-full bg-brand-bg border border-brand-border rounded-xl py-3.5 pl-11 pr-3 text-base focus:outline-none focus:border-brand-accent"
                 placeholder="请输入密码"
               />
             </div>
@@ -2949,7 +2954,7 @@ function LoginView({
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-brand-accent hover:opacity-90 disabled:opacity-60 transition px-5 py-3 rounded-xl font-black text-sm tracking-widest uppercase"
+            className="w-full bg-brand-accent hover:opacity-90 disabled:opacity-60 transition px-5 py-3.5 rounded-xl font-black text-base tracking-widest uppercase"
           >
             {loading ? '登录中...' : '登录系统'}
           </button>
