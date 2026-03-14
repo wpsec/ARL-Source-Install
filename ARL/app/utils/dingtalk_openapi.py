@@ -773,6 +773,7 @@ def _prepare_task_export_sheet_items(raw_sheet_items):
     """
     预处理任务导出工作表：
     - SSL证书工作表去掉任务ID列
+    - 风险工作表去掉任务ID列（兼容历史导出结构）
     - 追加“过期证书”工作表
     """
     if not isinstance(raw_sheet_items, list):
@@ -792,8 +793,14 @@ def _prepare_task_export_sheet_items(raw_sheet_items):
             "values": values if isinstance(values, list) else [],
         }
 
-        if _normalize_sheet_name_key(sheet_name) == _normalize_sheet_name_key("SSL证书"):
+        normalized_key = _normalize_sheet_name_key(sheet_name)
+        if normalized_key in [
+            _normalize_sheet_name_key("SSL证书"),
+            _normalize_sheet_name_key("风险"),
+            _normalize_sheet_name_key("漏洞"),
+        ]:
             current_item["values"] = _strip_task_id_column(current_item.get("values", []))
+        if normalized_key == _normalize_sheet_name_key("SSL证书"):
             ssl_sheet_item = current_item
 
         prepared_items.append(current_item)

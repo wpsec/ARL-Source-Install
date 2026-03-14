@@ -870,7 +870,6 @@ def _extract_vuln_rows(task_ids):
             dedup_keys.add(dedup_key)
             rows.append(
                 [
-                    task_id,
                     "npoc",
                     vuln_name,
                     severity,
@@ -898,7 +897,6 @@ def _extract_vuln_rows(task_ids):
             dedup_keys.add(dedup_key)
             rows.append(
                 [
-                    task_id,
                     "nuclei",
                     vuln_name,
                     severity,
@@ -918,17 +916,16 @@ def _build_vuln_sheet(wb, task_ids):
     在导出工作簿中新增风险明细工作表
     """
     ws = wb.create_sheet(title="风险")
-    ws.column_dimensions['A'].width = 28.0
-    ws.column_dimensions['B'].width = 12.0
-    ws.column_dimensions['C'].width = 36.0
-    ws.column_dimensions['D'].width = 14.0
-    ws.column_dimensions['E'].width = 36.0
-    ws.column_dimensions['F'].width = 60.0
-    ws.column_dimensions['G'].width = 28.0
-    ws.column_dimensions['H'].width = 20.0
-    ws.column_dimensions['I'].width = 80.0
+    ws.column_dimensions['A'].width = 12.0
+    ws.column_dimensions['B'].width = 36.0
+    ws.column_dimensions['C'].width = 14.0
+    ws.column_dimensions['D'].width = 36.0
+    ws.column_dimensions['E'].width = 60.0
+    ws.column_dimensions['F'].width = 28.0
+    ws.column_dimensions['G'].width = 20.0
+    ws.column_dimensions['H'].width = 80.0
 
-    ws.append(["任务ID", "来源", "风险名称", "严重级别", "目标", "风险URL", "模板/插件", "风险类型", "详情"])
+    ws.append(["来源", "风险名称", "严重级别", "目标", "风险URL", "模板/插件", "风险类型", "详情"])
     for row in _extract_vuln_rows(task_ids):
         ws.append(row)
 
