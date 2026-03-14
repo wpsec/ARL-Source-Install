@@ -764,9 +764,9 @@ def _save_ssl_notify_state(state_key, warn_item, level, task_id):
     )
 
 
-def _push_ssl_cert_warning(task_id, task_data):
+def _push_ssl_cert_warning(task_id):
     """
-    推送 SSL 证书临期告警，并尽可能附带钉钉知识库报告链接。
+    推送 SSL 证书临期告警（仅机器人消息，不写入知识库报告）。
     """
     alert_days = int(Config.DINGTALK_SSL_CERT_NOTIFY_DAYS or 30)
     if alert_days <= 0:
@@ -798,28 +798,7 @@ def _push_ssl_cert_warning(task_id, task_data):
         logger.info("skip ssl cert warning notify task_id:%s reason:no level upgrade", task_id)
         return
 
-    report_link = ""
-    if Config.DINGTALK_KB_ENABLE:
-        task_name = str(task_data.get("name", "")).strip()
-        report_title = "{}-SSL证书过期报告-{}".format(task_name or "任务", utils.curr_date())
-        summary_markdown = (
-            "### SSL证书过期提醒报告\n\n"
-            "- 告警证书数量：`{}`\n"
-            "- 提醒阈值：`<= {} 天`\n"
-        ).format(len(pending_warnings), alert_days)
-        kb_success, kb_result = push_dingtalk_kb(
-            report_title=report_title,
-            markdown_report=summary_markdown,
-            source_type="ssl_cert_warning",
-            source_id=task_id,
-            extra_data={"task_id": task_id, "warning_count": len(pending_warnings), "alert_days": alert_days},
-            task_ids=[task_id],
-        )
-        if kb_success and isinstance(kb_result, dict):
-            report_link = str(kb_result.get("node_url", "")).strip()
-
-    if not report_link:
-        report_link = _build_report_link_fallback(task_id)
+    report_link = _build_report_link_fallback(task_id)
 
     for item in pending_warnings:
         warn_item = item["warn_item"]
@@ -884,7 +863,7 @@ def push_task_finish_notify(task_id):
             push_dingding(markdown_report=markdown_report)
 
         if ssl_cert_notify_enabled:
-            _push_ssl_cert_warning(task_id, task_data)
+            _push_ssl_cert_warning(task_id)
 
     except Exception as e:
         logger.warning("push task finish notify error {}".format(task_id))
