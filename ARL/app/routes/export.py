@@ -387,6 +387,104 @@ def get_domain_data(task_id):
     return data
 
 
+def _normalize_task_id_list(task_ids):
+    """
+    规范化任务ID列表，兼容 str/list/tuple/set 输入。
+    """
+    if isinstance(task_ids, str):
+        raw_items = [task_ids]
+    elif isinstance(task_ids, (list, tuple, set)):
+        raw_items = list(task_ids)
+    else:
+        raw_items = []
+
+    result = []
+    for item in raw_items:
+        task_id = sanitize_excel_value(item).strip()
+        if task_id and task_id not in result:
+            result.append(task_id)
+    return result
+
+
+def get_service_data(task_ids):
+    """
+    获取任务的系统服务数据（service 集合）。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    if not task_id_list:
+        return []
+
+    if len(task_id_list) == 1:
+        query = {"task_id": task_id_list[0]}
+    else:
+        query = {"task_id": {"$in": task_id_list}}
+    return utils.conn_db('service').find(query)
+
+
+def _build_service_rows(task_ids, fallback_ip_items=None):
+    """
+    生成系统服务导出行，优先与页面一致使用 service 集合；
+    若 service 集合为空，则回退到 ip.port_info。
+    """
+    rows = []
+    task_id_list = _normalize_task_id_list(task_ids)
+    expected_task_ids = set(task_id_list)
+    service_hit_task_ids = set()
+
+    for service_item in get_service_data(task_id_list):
+        if not isinstance(service_item, dict):
+            continue
+        service_task_id = sanitize_excel_value(service_item.get("task_id", "")).strip()
+        if service_task_id:
+            service_hit_task_ids.add(service_task_id)
+        service_name = service_item.get("service_name", "")
+        for service_info in as_list(service_item.get("service_info", [])):
+            if not isinstance(service_info, dict):
+                continue
+            rows.append([
+                service_info.get("ip", ""),
+                service_info.get("port_id", ""),
+                service_name or service_info.get("service_name", ""),
+                service_info.get("product", ""),
+                service_info.get("version", ""),
+            ])
+
+    missing_task_ids = set()
+    if expected_task_ids:
+        missing_task_ids = expected_task_ids - service_hit_task_ids
+        if rows and not missing_task_ids:
+            return rows
+    elif rows:
+        return rows
+
+    for item in fallback_ip_items or []:
+        if not isinstance(item, dict):
+            continue
+
+        item_task_id = sanitize_excel_value(item.get("task_id", "")).strip()
+        if expected_task_ids:
+            if item_task_id:
+                if item_task_id not in missing_task_ids:
+                    continue
+            elif rows and missing_task_ids:
+                # 无 task_id 的回退数据无法确定归属，避免与已命中的服务数据重复
+                continue
+
+        ip = item.get("ip", "")
+        for port_info in as_list(item.get("port_info", [])):
+            if not isinstance(port_info, dict):
+                continue
+            rows.append([
+                ip,
+                port_info.get("port_id", ""),
+                port_info.get("service_name", ""),
+                port_info.get("product", ""),
+                port_info.get("version", ""),
+            ])
+
+    return rows
+
+
 def get_vuln_data(task_id):
     """
     获取任务的漏洞数据（nPoc/风险巡航等）
@@ -1049,15 +1147,15 @@ class SaveTask(object):
 
         column_tilte = ["IP", "端口","服务", "产品", "版本"]
         ws.append(column_tilte)
-        for item in get_ip_data(self.task_id):
-            for port_info in item["port_info"]:
-                row = []
-                row.append(item["ip"])
-                row.append("{}".format(port_info["port_id"]))
-                row.append(port_info["service_name"])
-                row.append(port_info.get("product", ""))
-                row.append(port_info.get("version", ""))
-                ws.append(row)
+        fallback_ip_items = list(get_ip_data(self.task_id))
+        for row in _build_service_rows([self.task_id], fallback_ip_items=fallback_ip_items):
+            ws.append([
+                sanitize_excel_value(row[0]),
+                sanitize_excel_value(row[1]),
+                sanitize_excel_value(row[2]),
+                sanitize_excel_value(row[3]),
+                sanitize_excel_value(row[4]),
+            ])
 
         self.set_style(ws)
 
@@ -1299,7 +1397,8 @@ def export_merge_tasks(task_id_list):
     说明：
     - 合并多个任务的所有扫描数据
     - 按照单个任务的导出格式生成报告
-    - 自动去重IP、域名、站点等数据
+    - 保留任务原始IP/服务明细（不做跨任务折叠），保证与页面口径一致
+    - 域名、站点仍按值合并去重，避免重复噪音
     """
     wb = Workbook()
     if 'Sheet' in wb.sheetnames:
@@ -1326,7 +1425,7 @@ def export_merge_tasks(task_id_list):
             is_ip_task = False
             break
 
-    merged_ips = {}       # key: ip, value: ip文档
+    merged_ip_items = []  # 保留原始 ip 文档（不跨任务合并）
     merged_domains = {}   # key: domain
     merged_sites = {}     # key: site
 
@@ -1334,59 +1433,35 @@ def export_merge_tasks(task_id_list):
         task_id = str(task_data.get("_id"))
 
         for ip_item in get_ip_data(task_id):
-            ip = ip_item.get("ip")
+            ip = sanitize_excel_value(ip_item.get("ip", "")).strip()
             if not ip:
                 continue
 
-            if ip not in merged_ips:
-                merged_ips[ip] = {
-                    "ip": ip,
-                    "port_info": [],
-                    "geo_city": ip_item.get("geo_city", {}),
-                    "geo_asn": ip_item.get("geo_asn", {}),
-                    "domain": as_list(ip_item.get("domain", [])),
-                    "os_info": ip_item.get("os_info", {}),
-                    "cdn_name": ip_item.get("cdn_name", ""),
-                    "ip_type": ip_item.get("ip_type", ""),
-                }
-
-            current = merged_ips[ip]
-            if not current.get("geo_city") and ip_item.get("geo_city"):
-                current["geo_city"] = ip_item.get("geo_city", {})
-            if not current.get("geo_asn") and ip_item.get("geo_asn"):
-                current["geo_asn"] = ip_item.get("geo_asn", {})
-            if not current.get("os_info") and ip_item.get("os_info"):
-                current["os_info"] = ip_item.get("os_info", {})
-            if not current.get("cdn_name") and ip_item.get("cdn_name"):
-                current["cdn_name"] = ip_item.get("cdn_name", "")
-            if not current.get("ip_type") and ip_item.get("ip_type"):
-                current["ip_type"] = ip_item.get("ip_type", "")
-
-            merged_domain_set = set(current.get("domain", []))
-            merged_domain_set.update(as_list(ip_item.get("domain", [])))
-            current["domain"] = sorted([d for d in merged_domain_set if d])
-
-            existed_port_keys = set()
-            for port_info in current.get("port_info", []):
-                existed_port_keys.add((
-                    port_info.get("port_id"),
-                    port_info.get("service_name"),
-                    port_info.get("product"),
-                    port_info.get("version")
-                ))
-
+            port_info_list = []
             for port_info in as_list(ip_item.get("port_info", [])):
-                if not isinstance(port_info, dict):
+                if isinstance(port_info, dict):
+                    port_info_list.append(port_info)
+
+            domain_list = []
+            domain_seen = set()
+            for domain in as_list(ip_item.get("domain", [])):
+                domain_text = sanitize_excel_value(domain).strip()
+                if not domain_text or domain_text in domain_seen:
                     continue
-                key = (
-                    port_info.get("port_id"),
-                    port_info.get("service_name"),
-                    port_info.get("product"),
-                    port_info.get("version")
-                )
-                if key not in existed_port_keys:
-                    current["port_info"].append(port_info)
-                    existed_port_keys.add(key)
+                domain_seen.add(domain_text)
+                domain_list.append(domain_text)
+
+            merged_ip_items.append({
+                "task_id": task_id,
+                "ip": ip,
+                "port_info": port_info_list,
+                "geo_city": ip_item.get("geo_city", {}) if isinstance(ip_item.get("geo_city", {}), dict) else {},
+                "geo_asn": ip_item.get("geo_asn", {}) if isinstance(ip_item.get("geo_asn", {}), dict) else {},
+                "domain": domain_list,
+                "os_info": ip_item.get("os_info", {}) if isinstance(ip_item.get("os_info", {}), dict) else {},
+                "cdn_name": ip_item.get("cdn_name", ""),
+                "ip_type": ip_item.get("ip_type", ""),
+            })
 
         for domain_item in get_domain_data(task_id):
             domain = domain_item.get("domain")
@@ -1444,7 +1519,7 @@ def export_merge_tasks(task_id_list):
                     new_fingers.append(finger)
                 merged["finger"] = new_fingers
 
-    if not merged_ips and not merged_domains and not merged_sites:
+    if not merged_ip_items and not merged_domains and not merged_sites:
         raise ValueError("未找到可导出的任务数据")
 
     # 站点（与单任务导出同结构）
@@ -1474,7 +1549,6 @@ def export_merge_tasks(task_id_list):
     ws.column_dimensions['D'].width = 25.0
     ws.column_dimensions['E'].width = 55.0
 
-    merged_ip_items = [merged_ips[ip] for ip in sorted(merged_ips.keys())]
     if is_ip_task:
         ws.column_dimensions['F'].width = 55.0
         ws.append(["IP", "端口信息", "开放端口数目", "geo", "as 编号", "操作系统"])
@@ -1536,15 +1610,14 @@ def export_merge_tasks(task_id_list):
     ws.column_dimensions['C'].width = 20.0
     ws.column_dimensions['D'].width = 40.0
     ws.append(["IP", "端口", "服务", "产品", "版本"])
-    for item in merged_ip_items:
-        for port_info in item.get("port_info", []):
-            ws.append([
-                sanitize_excel_value(item.get("ip", "")),
-                sanitize_excel_value(port_info.get("port_id", "")),
-                sanitize_excel_value(port_info.get("service_name", "")),
-                sanitize_excel_value(port_info.get("product", "")),
-                sanitize_excel_value(port_info.get("version", "")),
-            ])
+    for row in _build_service_rows(valid_task_ids, fallback_ip_items=merged_ip_items):
+        ws.append([
+            sanitize_excel_value(row[0]),
+            sanitize_excel_value(row[1]),
+            sanitize_excel_value(row[2]),
+            sanitize_excel_value(row[3]),
+            sanitize_excel_value(row[4]),
+        ])
     set_sheet_style(ws)
 
     _build_cert_sheet(wb, valid_task_ids)

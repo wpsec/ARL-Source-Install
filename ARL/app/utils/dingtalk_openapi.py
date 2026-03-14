@@ -1691,6 +1691,7 @@ def write_sheet_values_to_workbook(
     sheet_name="",
     require_enable=False,
     fallback_workbook_ids=None,
+    max_rows=2000,
 ):
     """
     将二维 values 写入 workbook 的指定 sheet
@@ -1711,7 +1712,10 @@ def write_sheet_values_to_workbook(
     if not workbook_candidates:
         return False, {"error": "workbook_id is empty"}
 
-    values_meta = _normalize_sheet_values(values)
+    row_limit = int(max_rows or 2000)
+    if row_limit <= 0:
+        row_limit = 2000
+    values_meta = _normalize_sheet_values(values, max_rows=row_limit)
     safe_values = values_meta.get("values", [])
     row_count = int(values_meta.get("row_count", len(safe_values)) or 1)
     col_count = int(values_meta.get("col_count", 1) or 1)
@@ -1885,6 +1889,7 @@ def write_sheet_items_to_workbook(
     operator_id="",
     require_enable=False,
     fallback_workbook_ids=None,
+    max_rows=2000,
 ):
     """
     将多个工作表内容写入 workbook
@@ -1913,6 +1918,7 @@ def write_sheet_items_to_workbook(
             sheet_name=sheet_name,
             require_enable=require_enable,
             fallback_workbook_ids=current_fallback_ids,
+            max_rows=max_rows,
         )
         output_items.append(
             {
@@ -2200,7 +2206,13 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
     except Exception as e:
         return False, {"error": "export merge tasks failed", "detail": str(e)}
 
-    parse_success, parse_result = _load_workbook_sheet_items(excel_bytes)
+    # 任务导出优先完整性：放宽行数上限，避免大任务在钉钉侧被 2000 行截断。
+    parse_success, parse_result = _load_workbook_sheet_items(
+        excel_bytes,
+        max_sheets=16,
+        max_rows=10000,
+        max_cols=26,
+    )
     if not parse_success:
         return False, {"error": "parse export workbook failed", "detail": parse_result}
 
@@ -2237,6 +2249,7 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
         sheet_name="Sheet1",
         require_enable=True,
         fallback_workbook_ids=[create_result.get("doc_key", "")],
+        max_rows=10000,
     )
     if not overview_success:
         create_result["task_ids"] = normalized_task_ids
@@ -2294,6 +2307,7 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
             operator_id=Config.DINGTALK_OPERATOR_ID,
             require_enable=True,
             fallback_workbook_ids=[],
+            max_rows=10000,
         )
 
     write_items = [
