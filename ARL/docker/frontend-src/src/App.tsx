@@ -6022,6 +6022,10 @@ function TableModuleView({
   }, [loadRows]);
 
   const totalPages = Math.max(1, Math.ceil(total / size));
+  const pageOptions = useMemo(
+    () => Array.from({ length: totalPages }, (_, idx) => idx + 1),
+    [totalPages]
+  );
 
   const columns = useMemo(() => {
     if (module.columns && module.columns.length > 0) {
@@ -7934,19 +7938,32 @@ function TableModuleView({
             </div>
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => setPage((prev) => Math.max(1, prev - 1))}
                 disabled={page <= 1}
                 className="px-3.5 py-2 rounded-xl border border-brand-border text-sm disabled:opacity-40"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <button
-                type="button"
-                className="px-3.5 py-2 rounded-xl border border-brand-border text-xs font-bold text-brand-text-muted cursor-default"
-                title={`当前第 ${page} 页，共 ${totalPages} 页`}
-              >
-                第 {page}/{totalPages} 页
-              </button>
+              <div className="relative">
+                <select
+                  value={String(page)}
+                  onChange={(event) => {
+                    const nextPage = Number(event.target.value || 1);
+                    if (!Number.isFinite(nextPage)) return;
+                    setPage(Math.max(1, Math.min(totalPages, Math.floor(nextPage))));
+                  }}
+                  className={`${UNIFIED_SELECT_CLASS} w-auto min-w-[118px] py-2`}
+                  title={`当前第 ${page} 页，共 ${totalPages} 页`}
+                >
+                  {pageOptions.map((option) => (
+                    <option key={option} value={option}>
+                      第 {option} 页
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              </div>
               <div className="relative">
                 <select
                   value={size}
@@ -7965,6 +7982,7 @@ function TableModuleView({
                 <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
               </div>
               <button
+                type="button"
                 onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 disabled={page >= totalPages}
                 className="px-3.5 py-2 rounded-xl border border-brand-border text-sm disabled:opacity-40"
