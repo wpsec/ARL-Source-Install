@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-//go:embed lib/rules.yaml
+//go:embed rules_embed.yaml
 var embeddedRulesFS embed.FS
 
 // ReadFile2Line 按行读取文件并返回去空白后的结果。
@@ -79,7 +79,7 @@ func EnsureRuleTemplate() {
 		return
 	}
 
-	content, err := embeddedRulesFS.ReadFile("lib/rules.yaml")
+	content, err := embeddedRulesFS.ReadFile("rules_embed.yaml")
 	if err != nil {
 		ErrPrint(fmt.Errorf("读取内置规则模板失败: %w", err))
 		return
@@ -92,7 +92,7 @@ func EnsureRuleTemplate() {
 
 // GenerateRuleTemplate 输出规则模板（stdout 或指定文件）。
 func GenerateRuleTemplate(outputPath string) error {
-	content, err := embeddedRulesFS.ReadFile("lib/rules.yaml")
+	content, err := embeddedRulesFS.ReadFile("rules_embed.yaml")
 	if err != nil {
 		return fmt.Errorf("读取内置规则模板失败: %w", err)
 	}
