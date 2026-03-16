@@ -8851,6 +8851,8 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [portMinRate, setPortMinRate] = useState(64);
   const [blackIpsText, setBlackIpsText] = useState('');
   const [dnsResolversText, setDnsResolversText] = useState('');
+  const compactFieldInputClass = `${CONSOLE_INPUT_CLASS} xl:max-w-[440px]`;
+  const compactFieldFilenameClass = `${CONSOLE_FILE_INPUT_CLASS} flex-none w-full lg:w-[440px]`;
 
   const splitTextList = (rawText: string) =>
     rawText
@@ -9173,7 +9175,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             域名爆破字典
             <span className="ml-2 font-mono opacity-70">ARL.DOMAIN_DICT</span>
           </label>
-          <div className="relative">
+          <div className="relative xl:max-w-[440px]">
             <select
               id="config-domain-dict-select"
               value={domainDict}
@@ -9213,7 +9215,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             >
               选择文件
             </button>
-            <div className={`${CONSOLE_FILE_INPUT_CLASS} flex items-center text-brand-text-muted truncate`}>
+            <div className={`${compactFieldFilenameClass} flex items-center text-brand-text-muted truncate`}>
               {uploadDomainFile?.name || '未选择文件'}
             </div>
             <button
@@ -9233,7 +9235,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             敏感文件泄漏字典
             <span className="ml-2 font-mono opacity-70">ARL.FILE_LEAK_DICT</span>
           </label>
-          <div className="relative">
+          <div className="relative xl:max-w-[440px]">
             <select
               id="config-fileleak-dict-select"
               value={fileLeakDict}
@@ -9273,7 +9275,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             >
               选择文件
             </button>
-            <div className={`${CONSOLE_FILE_INPUT_CLASS} flex items-center text-brand-text-muted truncate`}>
+            <div className={`${compactFieldFilenameClass} flex items-center text-brand-text-muted truncate`}>
               {uploadFileLeakFile?.name || '未选择文件'}
             </div>
             <button
@@ -9303,7 +9305,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(domainBruteConcurrent)}
               onChange={(event) => setDomainBruteConcurrent(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
 
@@ -9318,7 +9320,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(altDnsConcurrent)}
               onChange={(event) => setAltDnsConcurrent(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
         </div>
@@ -9335,7 +9337,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(webGunicornWorkers)}
               onChange={(event) => setWebGunicornWorkers(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
 
@@ -9350,7 +9352,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryTaskWorkerConcurrency)}
               onChange={(event) => setCeleryTaskWorkerConcurrency(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
 
@@ -9365,7 +9367,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryGithubWorkerConcurrency)}
               onChange={(event) => setCeleryGithubWorkerConcurrency(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
         </div>
@@ -9382,7 +9384,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryPrefetchMultiplier)}
               onChange={(event) => setCeleryPrefetchMultiplier(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
 
@@ -9397,7 +9399,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryMaxTasksPerChild)}
               onChange={(event) => setCeleryMaxTasksPerChild(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
 
@@ -9412,7 +9414,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryMaxMemoryPerChild)}
               onChange={(event) => setCeleryMaxMemoryPerChild(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
         </div>
@@ -9432,7 +9434,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={60}
               value={String(nucleiSingleTargetTimeoutSec)}
               onChange={(event) => setNucleiSingleTargetTimeoutSec(Number(event.target.value || 0))}
-              className={CONSOLE_INPUT_CLASS}
+              className={compactFieldInputClass}
             />
           </div>
 
@@ -9466,7 +9468,7 @@ function ConfigConsoleView({ token }: { token: string }) {
                 主机超时策略
                 <span className="ml-2 font-mono opacity-70">ARL.HOST_TIMEOUT_TYPE</span>
               </label>
-              <div className="relative">
+              <div className="relative xl:max-w-[440px]">
                 <select
                   id="config-host-timeout-type"
                   value={hostTimeoutType}
@@ -9490,7 +9492,7 @@ function ConfigConsoleView({ token }: { token: string }) {
                 min={1}
                 value={String(hostTimeout)}
                 onChange={(event) => setHostTimeout(Number(event.target.value || 0))}
-                className={CONSOLE_INPUT_CLASS}
+                className={compactFieldInputClass}
               />
             </div>
           </div>
@@ -9506,7 +9508,7 @@ function ConfigConsoleView({ token }: { token: string }) {
                 min={1}
                 value={String(portParallelism)}
                 onChange={(event) => setPortParallelism(Number(event.target.value || 0))}
-                className={CONSOLE_INPUT_CLASS}
+                className={compactFieldInputClass}
               />
             </div>
             <div className="space-y-2">
@@ -9520,7 +9522,7 @@ function ConfigConsoleView({ token }: { token: string }) {
                 min={1}
                 value={String(portMinRate)}
                 onChange={(event) => setPortMinRate(Number(event.target.value || 0))}
-                className={CONSOLE_INPUT_CLASS}
+                className={compactFieldInputClass}
               />
             </div>
           </div>
