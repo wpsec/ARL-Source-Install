@@ -6800,9 +6800,10 @@ function TableModuleView({
     });
 
     const taskItems = normalizeListData(response).items || [];
+    const matchedTaskItems = taskItems.filter((item: any) => String(item?.name || '').trim() === taskName);
     return Array.from(
       new Set(
-        taskItems
+        matchedTaskItems
           .map((item: any) => {
             return (
               normalizeRowIdValue(item?._id) ||
