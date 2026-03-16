@@ -114,6 +114,8 @@ RUN set -eux; \
 
 # 编译安装 Python（优先离线包，失败再走在线下载）
 COPY tools/Python-*.tgz /tmp/
+# Go 工具链离线包（存在则优先使用，不存在时在构建阶段在线下载）
+COPY tools/go1.22.4.linux-amd64.tar.gz /tmp/
 RUN set -eux; \
     PYTHON_TGZ="/tmp/Python-${PYTHON_VERSION}.tgz"; \
     if [ ! -s "${PYTHON_TGZ}" ]; then \
@@ -205,7 +207,9 @@ RUN set -eux; \
       *) echo "[ERROR] unsupported arch for go/wih build: $ARCH"; exit 1 ;; \
     esac; \
     GO_TGZ="/tmp/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
-    if [ ! -s "${GO_TGZ}" ]; then \
+    if [ -s "${GO_TGZ}" ]; then \
+      echo "use offline go toolchain: ${GO_TGZ}"; \
+    else \
       for URL in \
         "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
         "https://dl.google.com/go/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \

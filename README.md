@@ -81,6 +81,8 @@ git pull
 - `./scripts/quick-build.sh frontend` 仅用于本地热更新：编译 `frontend-src/dist` 后同步到运行中容器。
 - 默认前端 npm 镜像为 `https://registry.npmmirror.com`，可在 `.env` 中通过 `ARL_FRONTEND_NPM_REGISTRY` 覆盖。
 - 若环境已安装 `docker buildx`，`quick-build.sh` 会自动优先使用 BuildKit 构建以减少重复传输与构建耗时。
+- 镜像构建阶段会在 `rockylinux:8` 内编译源码版 `wih`；若本地已准备 `tools/go1.22.4.linux-amd64.tar.gz`，会优先离线使用该 Go 工具链包。
+- 若未提供离线 Go 包，构建会自动回退在线下载 `go1.22.4`（`go.dev` -> `dl.google.com` -> 阿里云镜像）。
 - 如需重新跟踪并手动合并配置文件，可执行：`git update-index --no-skip-worktree ARL/docker/config-docker.yaml`
 
 ## 二开功能总览
@@ -142,6 +144,8 @@ git pull
 | RabbitMQ     | `rabbitmq:3.13-management-alpine` | Celery 消息队列                               |
 | Redis        | `redis:7-alpine`                  | 业务缓存与性能优化                            |
 | nginx        | `nginx:1.24-alpine`               | basic 和服务暴露                              |
+| node         | `node:20.20.1-bookworm`           | 编译前端                                      |
+| golang       | `go1.22.4`                        | 构建阶段编译 `wih`（优先离线包，构建后清理）  |
 
 ### 其它
 
