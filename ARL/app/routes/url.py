@@ -6,7 +6,7 @@ URL信息管理模块
 - URL批量删除
 
 说明：
-- URL数据来自站点爬虫和目录扫描
+- URL数据来自站点爬虫、目录扫描以及 URLFinder 可达性探测
 - 记录了URL的状态码、标题、内容长度等信息
 - 支持按来源、站点、状态码等维度查询
 """
@@ -53,7 +53,7 @@ class ARLUrl(ARLResource):
             - content_length: 响应Body长度
             - status_code: HTTP状态码
             - title: 页面标题
-            - source: 来源（如spider、scan）
+            - source: 来源（如spider、scan、wih_url_probe）
             - task_id: 任务ID
             - page: 页码（默认1）
             - size: 每页数量（默认10）
@@ -73,7 +73,7 @@ class ARLUrl(ARLResource):
             - title: 页面标题
             - status_code: HTTP状态码
             - content_length: 响应内容长度
-            - source: 来源（spider/scan/brute）
+            - source: 来源（spider/scan/brute/wih_url_probe）
             - task_id: 关联的任务ID
         """
         args = self.parser.parse_args()
@@ -108,4 +108,3 @@ class ARLUrlExport(ARLResource):
         response = self.send_export_file(args=args, _type="url")
 
         return response
-

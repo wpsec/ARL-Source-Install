@@ -28,6 +28,7 @@ class CollectSource:
     ARL = "arl"
     SITESPIDER = "site_spider"
     SEARCHENGINE = "search_engine"
+    WIH_URL_PROBE = "wih_url_probe"
     MONITOR = "monitor"
 
 
@@ -478,4 +479,3 @@ class ErrorMsg:
     DomainSiteViaJob = error_map["DomainSiteViaJob"]
     AddAssetSiteNotSupportIP = error_map["AddAssetSiteNotSupportIP"]
     RuleAlreadyExists = error_map["RuleAlreadyExists"]
-

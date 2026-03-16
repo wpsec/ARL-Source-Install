@@ -8925,6 +8925,9 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [celeryMaxTasksPerChild, setCeleryMaxTasksPerChild] = useState(20);
   const [celeryMaxMemoryPerChild, setCeleryMaxMemoryPerChild] = useState(280000);
   const [nucleiSingleTargetTimeoutSec, setNucleiSingleTargetTimeoutSec] = useState(3600);
+  const [urlfinderUrlProbeEnable, setUrlfinderUrlProbeEnable] = useState(true);
+  const [urlfinderUrlProbeMaxTargets, setUrlfinderUrlProbeMaxTargets] = useState(300);
+  const [urlfinderUrlProbeConcurrency, setUrlfinderUrlProbeConcurrency] = useState(6);
   const [hostTimeoutType, setHostTimeoutType] = useState('default');
   const [hostTimeout, setHostTimeout] = useState(900);
   const [portParallelism, setPortParallelism] = useState(32);
@@ -8963,6 +8966,9 @@ function ConfigConsoleView({ token }: { token: string }) {
       setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 20));
       setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 280000));
       setNucleiSingleTargetTimeoutSec(Number(scanConfig.nuclei_single_target_timeout_sec || 3600));
+      setUrlfinderUrlProbeEnable(Boolean(scanConfig.urlfinder_url_probe_enable ?? true));
+      setUrlfinderUrlProbeMaxTargets(Number(scanConfig.urlfinder_url_probe_max_targets || 300));
+      setUrlfinderUrlProbeConcurrency(Number(scanConfig.urlfinder_url_probe_concurrency || 6));
       setHostTimeoutType(String(scanConfig.host_timeout_type || 'default').toLowerCase() === 'custom' ? 'custom' : 'default');
       setHostTimeout(Number(scanConfig.host_timeout || 900));
       setPortParallelism(Number(scanConfig.port_parallelism || 32));
@@ -9034,6 +9040,14 @@ function ConfigConsoleView({ token }: { token: string }) {
       setError('Nuclei 单目标最大扫描时间必须大于 0');
       return;
     }
+    if (!Number.isFinite(urlfinderUrlProbeMaxTargets) || urlfinderUrlProbeMaxTargets <= 0) {
+      setError('URLFinder URL 探测最大目标数必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(urlfinderUrlProbeConcurrency) || urlfinderUrlProbeConcurrency <= 0) {
+      setError('URLFinder URL 探测并发必须大于 0');
+      return;
+    }
     if (!['default', 'custom'].includes(String(hostTimeoutType || '').toLowerCase())) {
       setError('端口扫描主机超时策略仅支持 default/custom');
       return;
@@ -9076,6 +9090,9 @@ function ConfigConsoleView({ token }: { token: string }) {
             celery_max_tasks_per_child: Math.floor(celeryMaxTasksPerChild),
             celery_max_memory_per_child: Math.floor(celeryMaxMemoryPerChild),
             nuclei_single_target_timeout_sec: Math.floor(nucleiSingleTargetTimeoutSec),
+            urlfinder_url_probe_enable: Boolean(urlfinderUrlProbeEnable),
+            urlfinder_url_probe_max_targets: Math.floor(urlfinderUrlProbeMaxTargets),
+            urlfinder_url_probe_concurrency: Math.floor(urlfinderUrlProbeConcurrency),
             host_timeout_type: String(hostTimeoutType || 'default').toLowerCase() === 'custom' ? 'custom' : 'default',
             host_timeout: Math.floor(hostTimeout),
             port_parallelism: Math.floor(portParallelism),
@@ -9103,6 +9120,9 @@ function ConfigConsoleView({ token }: { token: string }) {
       setCeleryMaxTasksPerChild(Number(savedConfig.celery_max_tasks_per_child || celeryMaxTasksPerChild));
       setCeleryMaxMemoryPerChild(Number(savedConfig.celery_max_memory_per_child || celeryMaxMemoryPerChild));
       setNucleiSingleTargetTimeoutSec(Number(savedConfig.nuclei_single_target_timeout_sec || nucleiSingleTargetTimeoutSec));
+      setUrlfinderUrlProbeEnable(Boolean(savedConfig.urlfinder_url_probe_enable ?? urlfinderUrlProbeEnable));
+      setUrlfinderUrlProbeMaxTargets(Number(savedConfig.urlfinder_url_probe_max_targets || urlfinderUrlProbeMaxTargets));
+      setUrlfinderUrlProbeConcurrency(Number(savedConfig.urlfinder_url_probe_concurrency || urlfinderUrlProbeConcurrency));
       setHostTimeoutType(String(savedConfig.host_timeout_type || hostTimeoutType || 'default').toLowerCase() === 'custom' ? 'custom' : 'default');
       setHostTimeout(Number(savedConfig.host_timeout || hostTimeout));
       setPortParallelism(Number(savedConfig.port_parallelism || portParallelism));
@@ -9537,6 +9557,52 @@ function ConfigConsoleView({ token }: { token: string }) {
 
           <div className="text-xs text-brand-text-muted">
             推荐档位：2核2G=1小时，4核4G=2小时，8核16G=3小时。当前配置约 {(nucleiSingleTargetTimeoutSec / 3600).toFixed(2)} 小时/目标。
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
+          <div className="flex items-center gap-3">
+            <input
+              id="config-urlfinder-url-probe-enable"
+              type="checkbox"
+              checked={Boolean(urlfinderUrlProbeEnable)}
+              onChange={(event) => setUrlfinderUrlProbeEnable(event.target.checked)}
+              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+            />
+            <label htmlFor="config-urlfinder-url-probe-enable" className="text-xs font-bold text-brand-text-muted">
+              启用 URLFinder URL 可达性探测并入 URL 信息
+              <span className="ml-2 font-mono opacity-70">ARL.URLFINDER_URL_PROBE_ENABLE</span>
+            </label>
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label htmlFor="config-urlfinder-url-probe-max-targets" className="text-xs font-bold text-brand-text-muted block">
+                URL 探测最大目标数
+                <span className="ml-2 font-mono opacity-70">ARL.URLFINDER_URL_PROBE_MAX_TARGETS</span>
+              </label>
+              <input
+                id="config-urlfinder-url-probe-max-targets"
+                type="number"
+                min={1}
+                value={String(urlfinderUrlProbeMaxTargets)}
+                onChange={(event) => setUrlfinderUrlProbeMaxTargets(Number(event.target.value || 0))}
+                className={compactFieldInputClass}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="config-urlfinder-url-probe-concurrency" className="text-xs font-bold text-brand-text-muted block">
+                URL 探测并发
+                <span className="ml-2 font-mono opacity-70">ARL.URLFINDER_URL_PROBE_CONCURRENCY</span>
+              </label>
+              <input
+                id="config-urlfinder-url-probe-concurrency"
+                type="number"
+                min={1}
+                value={String(urlfinderUrlProbeConcurrency)}
+                onChange={(event) => setUrlfinderUrlProbeConcurrency(Number(event.target.value || 0))}
+                className={compactFieldInputClass}
+              />
+            </div>
           </div>
         </div>
 

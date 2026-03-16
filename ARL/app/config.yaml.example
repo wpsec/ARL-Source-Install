@@ -276,6 +276,18 @@ ARL:
   TRUFFLEHOG_JS_TIMEOUT_SEC: 900
   # 单个 JS 文件下载大小上限（字节）
   TRUFFLEHOG_JS_MAX_FILE_BYTES: 524288
+  # 是否启用 URLFinder 同目标 URL/HTML/JS 二次敏感扫描（复用 WIH）
+  URLFINDER_SENSITIVE_ENABLE: true
+  # URLFinder 二次敏感扫描单次最多目标数
+  URLFINDER_SENSITIVE_MAX_TARGETS: 300
+  # URLFinder 二次敏感扫描是否包含 JS 目标
+  URLFINDER_SENSITIVE_INCLUDE_JS: true
+  # 是否启用 URLFinder URL 可达性探测并写入 URL 信息
+  URLFINDER_URL_PROBE_ENABLE: true
+  # URLFinder URL 可达性探测单次最多目标数
+  URLFINDER_URL_PROBE_MAX_TARGETS: 300
+  # URLFinder URL 可达性探测并发
+  URLFINDER_URL_PROBE_CONCURRENCY: 6
 
   # Web Gunicorn worker 数（默认2，低内存环境建议 1~2）
   WEB_GUNICORN_WORKERS: 2

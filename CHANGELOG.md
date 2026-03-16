@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准）。
 
-## 2026-03-16（v3.1.24 ~ v3.1.35）
+## 2026-03-16（v3.1.24 ~ v3.1.36）
 
 - `[v3.1.24]` DNS 漂移校验增强：新增 `socket/getaddrinfo` 解析链路校验（覆盖 `/etc/hosts` 与运行时 NSS 解析偏移场景），并将 `get_ip/get_ip_system` 结果统一为“公网优先”排序；`http_req` 在未配置 `PROXY_URL` 时显式禁用环境代理；`fetchCert` 对域名目标接入 DNS 策略校验，降低站点/证书阶段误命中内网地址的风险
 - `[v3.1.25]` 同名任务操作精确匹配修复：同名任务查看与“按任务名执行批量操作/导出”统一改为任务名严格等值匹配，避免模糊匹配带入近似任务名导致报告口径偏差
@@ -12,6 +12,7 @@
 - `[v3.1.28]` GitHub 操作文案与系统集成布局一致性优化：`GitHub管理/监控` 批量按钮文案统一为“批量停止/批量删除”，并补齐 `GitHub管理` 的批量停止入口；`API管理/钉钉集成/配置管理` 进一步统一输入框高度、选择框高度与多列表单宽度，降低配置页面视觉混乱
 - `[v3.1.29]` 配置管理分类与上传区优化：扫描配置页按“字典管理/并发与资源配置/扫描超时与端口参数/安全过滤与解析器”分组展示；“上传新字典”文案调整为“上传域名爆破字典”，并修复上传按钮文本居中显示问题
 - `[v3.1.35]` API 管理配置精简与限频参数补齐：`certspotter` 由于默认启用且无需 API Key，前端配置页不再展示；`hunter_qax` 新增 `request_interval/rate_limit_retry/rate_limit_backoff/rate_limit_max_sleep`，`quake_360` 新增 `rate_limit_retry/rate_limit_backoff/rate_limit_max_sleep`，并补齐配置中心读写映射以持久化到 `QUERY_PLUGIN`
+- `[v3.1.36]` URLFinder URL 入库增强：`web_info_hunter` 阶段新增 `urlfinder_url` 可达性探测并写入 `url` 信息表（来源 `wih_url_probe`），探测前统一执行同目标过滤、任务内去重与 DNS 策略校验，降低“JS 拼接 URL 未进入 URL 资产”与解析漂移误扫风险；配置管理同步新增 `URLFINDER_URL_PROBE_ENABLE/MAX_TARGETS/CONCURRENCY`
 
 ## 2026-03-14（v3.1.0 ~ v3.1.23）
 

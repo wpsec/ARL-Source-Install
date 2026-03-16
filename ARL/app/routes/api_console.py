@@ -728,6 +728,18 @@ def _extract_scan_config(config_obj):
         arl_config.get('NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'),
         Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
     )
+    urlfinder_url_probe_enable = _safe_bool(
+        arl_config.get('URLFINDER_URL_PROBE_ENABLE'),
+        Config.URLFINDER_URL_PROBE_ENABLE
+    )
+    urlfinder_url_probe_max_targets = _safe_int(
+        arl_config.get('URLFINDER_URL_PROBE_MAX_TARGETS'),
+        Config.URLFINDER_URL_PROBE_MAX_TARGETS
+    )
+    urlfinder_url_probe_concurrency = _safe_int(
+        arl_config.get('URLFINDER_URL_PROBE_CONCURRENCY'),
+        Config.URLFINDER_URL_PROBE_CONCURRENCY
+    )
     host_timeout_type = _normalize_host_timeout_type(
         arl_config.get('HOST_TIMEOUT_TYPE'),
         Config.HOST_TIMEOUT_TYPE
@@ -761,6 +773,9 @@ def _extract_scan_config(config_obj):
         'celery_max_tasks_per_child': celery_max_tasks_per_child,
         'celery_max_memory_per_child': celery_max_memory_per_child,
         'nuclei_single_target_timeout_sec': nuclei_single_target_timeout_sec,
+        'urlfinder_url_probe_enable': urlfinder_url_probe_enable,
+        'urlfinder_url_probe_max_targets': urlfinder_url_probe_max_targets,
+        'urlfinder_url_probe_concurrency': urlfinder_url_probe_concurrency,
         'host_timeout_type': host_timeout_type,
         'host_timeout': host_timeout,
         'port_parallelism': port_parallelism,
@@ -835,6 +850,18 @@ def _merge_scan_config(config_obj, scan_config):
         scan_config.get('nuclei_single_target_timeout_sec'),
         Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
     )
+    urlfinder_url_probe_enable = _safe_bool(
+        scan_config.get('urlfinder_url_probe_enable'),
+        Config.URLFINDER_URL_PROBE_ENABLE
+    )
+    urlfinder_url_probe_max_targets = _safe_int(
+        scan_config.get('urlfinder_url_probe_max_targets'),
+        Config.URLFINDER_URL_PROBE_MAX_TARGETS
+    )
+    urlfinder_url_probe_concurrency = _safe_int(
+        scan_config.get('urlfinder_url_probe_concurrency'),
+        Config.URLFINDER_URL_PROBE_CONCURRENCY
+    )
     host_timeout_type = _normalize_host_timeout_type(
         scan_config.get('host_timeout_type'),
         Config.HOST_TIMEOUT_TYPE
@@ -871,6 +898,9 @@ def _merge_scan_config(config_obj, scan_config):
     config_obj['ARL']['CELERY_MAX_TASKS_PER_CHILD'] = celery_max_tasks_per_child
     config_obj['ARL']['CELERY_MAX_MEMORY_PER_CHILD'] = celery_max_memory_per_child
     config_obj['ARL']['NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'] = nuclei_single_target_timeout_sec
+    config_obj['ARL']['URLFINDER_URL_PROBE_ENABLE'] = urlfinder_url_probe_enable
+    config_obj['ARL']['URLFINDER_URL_PROBE_MAX_TARGETS'] = urlfinder_url_probe_max_targets
+    config_obj['ARL']['URLFINDER_URL_PROBE_CONCURRENCY'] = urlfinder_url_probe_concurrency
     config_obj['ARL']['HOST_TIMEOUT_TYPE'] = host_timeout_type
     config_obj['ARL']['HOST_TIMEOUT'] = host_timeout
     config_obj['ARL']['PORT_PARALLELISM'] = port_parallelism

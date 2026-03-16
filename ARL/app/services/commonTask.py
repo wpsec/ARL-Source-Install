@@ -636,6 +636,15 @@ class WebSiteFetch(object):
             if trufflehog_records:
                 records |= trufflehog_records
 
+        # 将 urlfinder 提取到的 URL 做可达性探测，并同步写入 URL 信息表。
+        if records:
+            services.run_urlfinder_url_probe(
+                task_id=self.task_id,
+                sites=self.sites,
+                wih_records=list(records),
+                page_url_set=self.page_url_set,
+            )
+
         for record in records:
             # 先判断记录是否已经存在
             if record.fnv_hash in self.wih_record_set:
