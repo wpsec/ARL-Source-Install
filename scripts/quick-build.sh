@@ -174,7 +174,13 @@ sync_fingerprint_after_deploy() {
         return 0
     fi
 
-    "$sync_script" || true
+    local log_dir="$ROOT_DIR/ARL/docker/logs"
+    local log_file="$log_dir/fingerprint-sync.log"
+    mkdir -p "$log_dir"
+    (
+        "$sync_script"
+    ) >"$log_file" 2>&1 &
+    echo -e "${GREEN}✓ 指纹同步已转为后台执行（日志: $log_file）${NC}"
 }
 
 run_docker_build() {

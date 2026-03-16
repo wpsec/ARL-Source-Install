@@ -6,19 +6,79 @@ set -euo pipefail
 #   ./scripts/sync-fingerprint.sh
 #   ARL_WEB_CONTAINER_NAME=arl_web ./scripts/sync-fingerprint.sh
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 CONTAINER_NAME="${ARL_WEB_CONTAINER_NAME:-arl_web}"
 FINGERPRINT_FILE="${ARL_FINGERPRINT_FILE:-/code/tools/finger.json}"
 MAX_RETRY="${ARL_FINGERPRINT_SYNC_RETRY:-30}"
 SLEEP_SECONDS="${ARL_FINGERPRINT_SYNC_INTERVAL:-2}"
+HOST_FINGERPRINT_FILE="${ARL_HOST_FINGERPRINT_FILE:-${ROOT_DIR}/tools/finger.json}"
+STATE_FILE="${ARL_FINGERPRINT_SYNC_STATE_FILE:-${ROOT_DIR}/ARL/docker/.fingerprint-sync.sha256}"
+LOCK_DIR="${ARL_FINGERPRINT_SYNC_LOCK_DIR:-${ROOT_DIR}/ARL/docker/.fingerprint-sync.lock}"
+
+calc_sha256() {
+  local file_path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${file_path}" | awk '{print $1}'
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${file_path}" | awk '{print $1}'
+    return 0
+  fi
+  return 1
+}
+
+get_fingerprint_count() {
+  local count
+  count="$(docker exec "${CONTAINER_NAME}" sh -lc \
+    "PYTHONPATH=/code python3 -c \"from app import utils; print(utils.conn_db('fingerprint').estimated_document_count())\"" \
+    2>/dev/null || true)"
+  if [[ "${count}" =~ ^[0-9]+$ ]]; then
+    echo "${count}"
+    return 0
+  fi
+  echo ""
+  return 0
+}
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[WARN] docker command not found, skip fingerprint sync"
   exit 0
 fi
 
+if [ ! -f "${HOST_FINGERPRINT_FILE}" ]; then
+  echo "[WARN] host fingerprint file not found: ${HOST_FINGERPRINT_FILE}, skip sync"
+  exit 0
+fi
+
 if ! docker ps --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
   echo "[WARN] container ${CONTAINER_NAME} is not running, skip fingerprint sync"
   exit 0
+fi
+
+mkdir -p "$(dirname "${STATE_FILE}")"
+if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
+  echo "[INFO] fingerprint sync already running, skip duplicate execution"
+  exit 0
+fi
+trap 'rmdir "${LOCK_DIR}" >/dev/null 2>&1 || true' EXIT
+
+current_hash=""
+if current_hash="$(calc_sha256 "${HOST_FINGERPRINT_FILE}")"; then
+  if [ -f "${STATE_FILE}" ]; then
+    last_hash="$(tr -d '\r\n' < "${STATE_FILE}")"
+    if [ -n "${last_hash}" ] && [ "${last_hash}" = "${current_hash}" ]; then
+      finger_count="$(get_fingerprint_count)"
+      if [ -n "${finger_count}" ] && [ "${finger_count}" -gt 0 ]; then
+        echo "[INFO] fingerprint unchanged(hash=${current_hash}), current count=${finger_count}, skip sync"
+        exit 0
+      fi
+    fi
+  fi
+else
+  echo "[WARN] sha256 tool not found, will force sync"
 fi
 
 echo "Syncing fingerprint file into ${CONTAINER_NAME}..."
@@ -28,6 +88,9 @@ while [ "${attempt}" -le "${MAX_RETRY}" ]; do
   if docker exec "${CONTAINER_NAME}" sh -lc "[ -f '${FINGERPRINT_FILE}' ]"; then
     if docker exec "${CONTAINER_NAME}" sh -lc \
       "PYTHONPATH=/code python3 -m app.tools.import_fingerprint --file '${FINGERPRINT_FILE}'"; then
+      if [ -n "${current_hash}" ]; then
+        printf "%s" "${current_hash}" > "${STATE_FILE}"
+      fi
       echo "✓ fingerprint sync completed"
       exit 0
     fi

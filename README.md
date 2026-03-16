@@ -81,7 +81,7 @@ git pull
 - `./scripts/quick-build.sh frontend` 仅用于本地热更新：编译 `frontend-src/dist` 后同步到运行中容器。
 - 默认前端 npm 镜像为 `https://registry.npmmirror.com`，可在 `.env` 中通过 `ARL_FRONTEND_NPM_REGISTRY` 覆盖。
 - 若环境已安装 `docker buildx`，`quick-build.sh` 会自动优先使用 BuildKit 构建以减少重复传输与构建耗时。
-- `./start.sh` 与 `./scripts/quick-build.sh quick` 在容器启动后会自动同步 `tools/finger.json` 到指纹库，确保升级后指纹规则为最新版本。
+- `./start.sh` 与 `./scripts/quick-build.sh quick` 在容器启动后会自动同步 `tools/finger.json` 到指纹库（后台执行）；当文件未变化时会自动跳过全量导入，减少重建等待时间。同步日志默认输出到 `ARL/docker/logs/fingerprint-sync.log`。
 - 镜像构建阶段会在 `rockylinux:8` 内编译源码版 `wih`；若本地已准备 `tools/go1.22.4.linux-amd64.tar.gz`，会优先离线使用该 Go 工具链包。
 - 若未提供离线 Go 包，构建会自动回退在线下载 `go1.22.4`（`go.dev` -> `dl.google.com` -> 阿里云镜像）。
 - 如需重新跟踪并手动合并配置文件，可执行：`git update-index --no-skip-worktree ARL/docker/config-docker.yaml`

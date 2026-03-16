@@ -100,7 +100,11 @@ $COMPOSE_CMD up -d
 
 # 启动后主动同步一次指纹，确保升级后运行中的容器使用最新 tools/finger.json
 if [ -x "$SCRIPT_DIR/scripts/sync-fingerprint.sh" ]; then
-    "$SCRIPT_DIR/scripts/sync-fingerprint.sh" || true
+    mkdir -p "$DOCKER_DIR/logs"
+    (
+        "$SCRIPT_DIR/scripts/sync-fingerprint.sh"
+    ) >"$DOCKER_DIR/logs/fingerprint-sync.log" 2>&1 &
+    echo "✓ 指纹同步已后台执行，日志: $DOCKER_DIR/logs/fingerprint-sync.log"
 fi
 
 echo ""
