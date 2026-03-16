@@ -9317,7 +9317,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 xl:col-span-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               Celery GitHub 队列并发
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_GITHUB_WORKER_CONCURRENCY</span>
@@ -9361,7 +9361,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 xl:col-span-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               Celery 子进程内存上限(KB)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_MEMORY_PER_CHILD</span>
@@ -9916,7 +9916,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 xl:col-span-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               AppSecret
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.APP_SECRET</span>
@@ -9952,7 +9952,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 xl:col-span-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               父节点ID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.PARENT_NODE_ID</span>
