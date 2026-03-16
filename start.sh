@@ -98,6 +98,11 @@ fi
 
 $COMPOSE_CMD up -d
 
+# 启动后主动同步一次指纹，确保升级后运行中的容器使用最新 tools/finger.json
+if [ -x "$SCRIPT_DIR/scripts/sync-fingerprint.sh" ]; then
+    "$SCRIPT_DIR/scripts/sync-fingerprint.sh" || true
+fi
+
 echo ""
 echo "========================================="
 echo "✓ 服务启动成功"

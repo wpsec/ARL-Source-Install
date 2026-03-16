@@ -167,6 +167,16 @@ show_arch_runtime_notice() {
     echo ""
 }
 
+sync_fingerprint_after_deploy() {
+    local sync_script="$ROOT_DIR/scripts/sync-fingerprint.sh"
+    if [ ! -x "$sync_script" ]; then
+        echo -e "${YELLOW}[WARN] 未找到可执行的指纹同步脚本，跳过自动同步${NC}"
+        return 0
+    fi
+
+    "$sync_script" || true
+}
+
 run_docker_build() {
     local dockerfile="$1"
     local image_tag="$2"
@@ -410,6 +420,7 @@ quick_build() {
     # 强制重建容器，确保使用刚构建的新镜像；
     # 同时重建 nginx，避免其继续使用旧的 arl_web 上游 IP 导致 502
     $COMPOSE_CMD up -d --force-recreate nginx web worker scheduler
+    sync_fingerprint_after_deploy
     echo -e "${GREEN}✓ 容器重启完成!${NC}"
     echo ""
     show_arch_runtime_notice
