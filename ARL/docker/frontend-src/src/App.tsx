@@ -121,6 +121,16 @@ const ACTIVE_MODULE_KEY = 'arl-active-module';
 const UNIFIED_SELECT_CLASS =
   'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text appearance-none pr-9 ' +
   'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
+const CONSOLE_INPUT_CLASS =
+  'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text ' +
+  'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
+const CONSOLE_INPUT_MONO_CLASS = `${CONSOLE_INPUT_CLASS} font-mono`;
+const CONSOLE_TEXTAREA_MONO_CLASS =
+  'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text font-mono ' +
+  'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition resize-y';
+const CONSOLE_FILE_INPUT_CLASS =
+  'flex-1 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text ' +
+  'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
 
 const modules: ModuleConfig[] = [
   {
@@ -8777,7 +8787,7 @@ function ApiConsoleView({ token }: { token: string }) {
                   <input
                     value={String(form[field.key] || '')}
                     onChange={(event) => updateTextField(field.key, event.target.value)}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    className={CONSOLE_INPUT_MONO_CLASS}
                     placeholder={field.placeholder}
                   />
                 </div>
@@ -9182,7 +9192,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               ref={domainUploadInputRef}
               type="file"
               accept=".txt"
-              className="flex-1 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_FILE_INPUT_CLASS}
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 setUploadDomainFile(file || null);
@@ -9228,7 +9238,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               ref={fileLeakUploadInputRef}
               type="file"
               accept=".txt"
-              className="flex-1 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_FILE_INPUT_CLASS}
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 setUploadFileLeakFile(file || null);
@@ -9256,7 +9266,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(domainBruteConcurrent)}
               onChange={(event) => setDomainBruteConcurrent(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
 
@@ -9270,7 +9280,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(altDnsConcurrent)}
               onChange={(event) => setAltDnsConcurrent(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
         </div>
@@ -9286,7 +9296,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(webGunicornWorkers)}
               onChange={(event) => setWebGunicornWorkers(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
 
@@ -9300,7 +9310,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryTaskWorkerConcurrency)}
               onChange={(event) => setCeleryTaskWorkerConcurrency(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
 
@@ -9314,7 +9324,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryGithubWorkerConcurrency)}
               onChange={(event) => setCeleryGithubWorkerConcurrency(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
         </div>
@@ -9330,7 +9340,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryPrefetchMultiplier)}
               onChange={(event) => setCeleryPrefetchMultiplier(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
 
@@ -9344,7 +9354,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryMaxTasksPerChild)}
               onChange={(event) => setCeleryMaxTasksPerChild(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
 
@@ -9358,7 +9368,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={1}
               value={String(celeryMaxMemoryPerChild)}
               onChange={(event) => setCeleryMaxMemoryPerChild(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
         </div>
@@ -9374,7 +9384,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               min={60}
               value={String(nucleiSingleTargetTimeoutSec)}
               onChange={(event) => setNucleiSingleTargetTimeoutSec(Number(event.target.value || 0))}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
 
@@ -9430,7 +9440,7 @@ function ConfigConsoleView({ token }: { token: string }) {
                 min={1}
                 value={String(hostTimeout)}
                 onChange={(event) => setHostTimeout(Number(event.target.value || 0))}
-                className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                className={CONSOLE_INPUT_CLASS}
               />
             </div>
           </div>
@@ -9445,7 +9455,7 @@ function ConfigConsoleView({ token }: { token: string }) {
                 min={1}
                 value={String(portParallelism)}
                 onChange={(event) => setPortParallelism(Number(event.target.value || 0))}
-                className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                className={CONSOLE_INPUT_CLASS}
               />
             </div>
             <div className="space-y-2">
@@ -9458,7 +9468,7 @@ function ConfigConsoleView({ token }: { token: string }) {
                 min={1}
                 value={String(portMinRate)}
                 onChange={(event) => setPortMinRate(Number(event.target.value || 0))}
-                className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                className={CONSOLE_INPUT_CLASS}
               />
             </div>
           </div>
@@ -9476,7 +9486,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             <textarea
               value={blackIpsText}
               onChange={(event) => setBlackIpsText(event.target.value)}
-              className="w-full min-h-[120px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[120px]`}
               placeholder="每行一个IP段，例如 127.0.0.0/8"
             />
           </div>
@@ -9489,7 +9499,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             <textarea
               value={dnsResolversText}
               onChange={(event) => setDnsResolversText(event.target.value)}
-              className="w-full min-h-[120px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[120px]`}
               placeholder="每行一个DNS解析器，例如 223.5.5.5 或 1.1.1.1:53"
             />
           </div>
@@ -9788,7 +9798,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.dingding_access_token}
               onChange={(event) => updateStringField('dingding_access_token', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
               placeholder="用于群机器人通知"
             />
           </div>
@@ -9800,7 +9810,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.dingding_secret}
               onChange={(event) => updateStringField('dingding_secret', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
               placeholder="机器人加签密钥（可选）"
             />
           </div>
@@ -9835,7 +9845,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               min={1}
               value={String(form.ssl_cert_notify_days)}
               onChange={(event) => updateSslNotifyDays(event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
           <div className="space-y-2">
@@ -9848,7 +9858,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               min={1}
               value={String(form.kb_timeout)}
               onChange={(event) => updateTimeout(event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
         </div>
@@ -9862,7 +9872,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.base_url}
               onChange={(event) => updateStringField('base_url', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
               placeholder="https://api.dingtalk.com"
             />
           </div>
@@ -9874,7 +9884,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.report_base_url}
               onChange={(event) => updateStringField('report_base_url', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
               placeholder="如: https://arl.example.com"
             />
           </div>
@@ -9889,7 +9899,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.corp_id}
               onChange={(event) => updateStringField('corp_id', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
           <div className="space-y-2">
@@ -9900,7 +9910,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.app_key}
               onChange={(event) => updateStringField('app_key', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
           <div className="space-y-2">
@@ -9911,7 +9921,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.app_secret}
               onChange={(event) => updateStringField('app_secret', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
         </div>
@@ -9925,7 +9935,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.operator_id}
               onChange={(event) => updateStringField('operator_id', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
           <div className="space-y-2">
@@ -9936,7 +9946,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.workspace_id}
               onChange={(event) => updateStringField('workspace_id', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
           <div className="space-y-2">
@@ -9947,7 +9957,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.parent_node_id}
               onChange={(event) => updateStringField('parent_node_id', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
         </div>
@@ -9961,7 +9971,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.create_node_path}
               onChange={(event) => updateStringField('create_node_path', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+              className={CONSOLE_INPUT_MONO_CLASS}
             />
           </div>
           <div className="space-y-2">
@@ -9972,7 +9982,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <input
               value={form.title_prefix}
               onChange={(event) => updateStringField('title_prefix', event.target.value)}
-              className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+              className={CONSOLE_INPUT_CLASS}
             />
           </div>
         </div>
@@ -10016,7 +10026,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           <textarea
             value={debugResult}
             readOnly
-            className="w-full min-h-[220px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+            className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[220px]`}
             placeholder="点击测试按钮后显示返回结果"
           />
         </div>
