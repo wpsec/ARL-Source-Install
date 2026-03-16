@@ -114,8 +114,6 @@ RUN set -eux; \
 
 # 编译安装 Python（优先离线包，失败再走在线下载）
 COPY tools/Python-*.tgz /tmp/
-# Go 工具链离线包（存在则优先使用，不存在时在构建阶段在线下载）
-COPY tools/go1.22.4.linux-amd64.tar.gz /tmp/
 RUN set -eux; \
     PYTHON_TGZ="/tmp/Python-${PYTHON_VERSION}.tgz"; \
     if [ ! -s "${PYTHON_TGZ}" ]; then \
@@ -199,7 +197,8 @@ COPY tools/GeoLite2/GeoLite2-* /data/GeoLite2/
 COPY tools/dhparam.pem /etc/ssl/certs/dhparam.pem
 
 # 安装源码版 WIH，解压 Nuclei，并执行基础自检
-RUN set -eux; \
+RUN --mount=type=bind,source=tools,target=/offline-tools,readonly \
+    set -eux; \
     ARCH="${TARGETARCH:-$(uname -m)}"; \
     case "$ARCH" in \
       amd64|x86_64) GO_ARCH="amd64" ;; \
@@ -207,9 +206,12 @@ RUN set -eux; \
       *) echo "[ERROR] unsupported arch for go/wih build: $ARCH"; exit 1 ;; \
     esac; \
     GO_TGZ="/tmp/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
-    if [ -s "${GO_TGZ}" ]; then \
-      echo "use offline go toolchain: ${GO_TGZ}"; \
-    else \
+    OFFLINE_GO_TGZ="/offline-tools/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
+    if [ -s "${OFFLINE_GO_TGZ}" ]; then \
+      echo "use offline go toolchain: ${OFFLINE_GO_TGZ}"; \
+      cp "${OFFLINE_GO_TGZ}" "${GO_TGZ}"; \
+    fi; \
+    if [ ! -s "${GO_TGZ}" ]; then \
       for URL in \
         "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
         "https://dl.google.com/go/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \

@@ -66,8 +66,6 @@ REQUIRED_TOOLS=(
     "tools/ncrack/ncrack"
     "tools/ncrack/ncrack-services"
     "tools/dhparam.pem"
-    "tools/wih/wih_linux_amd64"
-    "tools/wih/wih_linux_arm64"
 )
 
 for tool in "${REQUIRED_TOOLS[@]}"; do
@@ -75,6 +73,22 @@ for tool in "${REQUIRED_TOOLS[@]}"; do
         echo "⚠ 警告: 未找到 $tool (但可以继续，某些功能可能不可用)"
     else
         echo "✓ $(basename $tool) 存在"
+    fi
+done
+
+# 检查 WIH 源码文件（源码版构建必须）
+WIH_REQUIRED_FILES=(
+    "tools/wih/main.go"
+    "tools/wih/go.mod"
+    "tools/wih/config/rules.yml"
+)
+
+for file in "${WIH_REQUIRED_FILES[@]}"; do
+    if [ ! -f "$PROJECT_ROOT/$file" ]; then
+        echo " 错误: 未找到 $file (源码版 WIH 无法构建)"
+        exit 1
+    else
+        echo "✓ $(basename "$file") 存在"
     fi
 done
 
@@ -91,6 +105,13 @@ if [ -d "$PROJECT_ROOT/tools/playwright/ms-playwright" ] || \
     echo "✓ 检测到 Playwright 离线包，构建将优先离线安装 Chromium"
 else
     echo "⚠ 警告: 未找到 Playwright 离线包，构建将尝试联网下载 Chromium"
+fi
+
+# 检查 Go 离线包（可选）
+if [ -f "$PROJECT_ROOT/tools/go1.22.4.linux-amd64.tar.gz" ]; then
+    echo "✓ 检测到 Go 离线包（amd64），构建将优先离线编译 WIH"
+else
+    echo "⚠ 警告: 未找到 tools/go1.22.4.linux-amd64.tar.gz，构建将尝试联网下载 Go 工具链"
 fi
 
 # 询问是否构建
@@ -115,7 +136,7 @@ echo ""
 cd "$PROJECT_ROOT"
 
 # 构建镜像
-docker build \
+DOCKER_BUILDKIT=1 docker build \
     -t arl:local \
     -f "$DOCKER_DIR/Dockerfile" \
     --build-arg BUILDKIT_INLINE_CACHE=1 \
