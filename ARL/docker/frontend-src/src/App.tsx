@@ -122,15 +122,18 @@ const UNIFIED_SELECT_CLASS =
   'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text appearance-none pr-9 ' +
   'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
 const CONSOLE_INPUT_CLASS =
-  'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text ' +
+  'w-full h-10 rounded-xl border border-brand-border bg-brand-bg px-3 text-sm text-brand-text ' +
   'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
+const CONSOLE_SELECT_CLASS = `${UNIFIED_SELECT_CLASS} h-10`;
 const CONSOLE_INPUT_MONO_CLASS = `${CONSOLE_INPUT_CLASS} font-mono`;
 const CONSOLE_TEXTAREA_MONO_CLASS =
   'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text font-mono ' +
   'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition resize-y';
 const CONSOLE_FILE_INPUT_CLASS =
-  'flex-1 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text ' +
+  'flex-1 h-10 rounded-xl border border-brand-border bg-brand-bg px-3 text-sm text-brand-text ' +
   'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
+const CONSOLE_CHECKBOX_CARD_CLASS =
+  'flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 h-10 text-sm';
 
 const modules: ModuleConfig[] = [
   {
@@ -1500,7 +1503,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'github_task_stop',
-        label: '停止所选',
+        label: '批量停止',
         method: 'POST',
         path: '/github_task/stop/',
         selectedField: '_id',
@@ -1509,7 +1512,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'github_task_delete',
-        label: '删除所选',
+        label: '批量删除',
         method: 'POST',
         path: '/github_task/delete/',
         selectedField: '_id',
@@ -1605,7 +1608,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'github_scheduler_stop',
-        label: '停止所选',
+        label: '批量停止',
         method: 'POST',
         path: '/github_scheduler/stop/',
         selectedField: '_id',
@@ -1623,7 +1626,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'github_scheduler_delete',
-        label: '删除所选',
+        label: '批量删除',
         method: 'POST',
         path: '/github_scheduler/delete/',
         selectedField: '_id',
@@ -6197,7 +6200,7 @@ function TableModuleView({
         .filter((action): action is ModuleAction => Boolean(action));
     }
     if (module.id === 'github_task') {
-      const githubTaskVisibleActionIds = ['github_task_add', 'github_task_delete'];
+      const githubTaskVisibleActionIds = ['github_task_add', 'github_task_stop', 'github_task_delete'];
       return githubTaskVisibleActionIds
         .map((id) => moduleActions.find((action) => action.id === id))
         .filter((action): action is ModuleAction => Boolean(action));
@@ -9172,7 +9175,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             <select
               value={domainDict}
               onChange={(event) => setDomainDict(event.target.value)}
-              className={UNIFIED_SELECT_CLASS}
+              className={CONSOLE_SELECT_CLASS}
             >
               <option value="">请选择字典文件</option>
               {domainDictOptions.map((item) => (
@@ -9218,7 +9221,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             <select
               value={fileLeakDict}
               onChange={(event) => setFileLeakDict(event.target.value)}
-              className={UNIFIED_SELECT_CLASS}
+              className={CONSOLE_SELECT_CLASS}
             >
               <option value="">请选择字典文件</option>
               {fileLeakDictOptions.map((item) => (
@@ -9285,7 +9288,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               Web 进程并发
@@ -9329,7 +9332,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               Celery 预取倍率
@@ -9422,7 +9425,7 @@ function ConfigConsoleView({ token }: { token: string }) {
                 <select
                   value={hostTimeoutType}
                   onChange={(event) => setHostTimeoutType(event.target.value === 'custom' ? 'custom' : 'default')}
-                  className={UNIFIED_SELECT_CLASS}
+                  className={CONSOLE_SELECT_CLASS}
                 >
                   <option value="default">default（按扫描模式自动估算）</option>
                   <option value="custom">custom（固定超时）</option>
@@ -9816,8 +9819,8 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
             <input
               type="checkbox"
               checked={form.kb_enable}
@@ -9826,7 +9829,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             />
             <span className="font-medium">启用知识库推送</span>
           </label>
-          <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+          <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
             <input
               type="checkbox"
               checked={form.ssl_cert_notify_enable}
@@ -9890,7 +9893,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               CorpID
@@ -9926,7 +9929,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               操作者ID
