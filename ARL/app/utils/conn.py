@@ -60,6 +60,10 @@ def http_req(url, method='get', **kwargs):
             'http': Config.PROXY_URL,
         }
         kwargs["proxies"] = _proxies
+    else:
+        # 未显式配置代理时，禁用 requests 环境变量代理，避免扫描链路被隐式转发
+        # 导致“DNS 解析结果与实际连接目标”不一致。
+        kwargs.setdefault("proxies", {"http": None, "https": None})
 
     conn = getattr(requests, method)(url, **kwargs)
 

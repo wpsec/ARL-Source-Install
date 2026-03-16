@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import hashlib
+import socket
 from bson import ObjectId
 from urllib.parse import urlparse
 from celery.utils.log import get_task_logger
@@ -329,6 +330,35 @@ def get_dns_resolver():
     return resolver
 
 
+def _normalize_ip_list(ip_list):
+    """
+    归一化 IP 列表并按优先级排序：
+    1) PUBLIC
+    2) 其他类型（UNKNOWN/ERROR）
+    3) PRIVATE
+    """
+    seen = set()
+    public_ips = []
+    other_ips = []
+    private_ips = []
+
+    for raw_ip in ip_list:
+        ip = str(raw_ip or "").strip()
+        if not ip or ip in seen or ip == "0.0.0.1":
+            continue
+        seen.add(ip)
+
+        ip_type = get_ip_type(ip)
+        if ip_type == "PUBLIC":
+            public_ips.append(ip)
+        elif ip_type == "PRIVATE":
+            private_ips.append(ip)
+        else:
+            other_ips.append(ip)
+
+    return public_ips + other_ips + private_ips
+
+
 def get_ip(domain, log_flag=True):
     domain = domain.strip()
     logger = get_logger()
@@ -348,7 +378,7 @@ def get_ip(domain, log_flag=True):
         if log_flag:
             logger.warning("{} {}".format(domain, e))
 
-    return ips
+    return _normalize_ip_list(ips)
 
 
 def get_ip_system(domain, log_flag=True):
@@ -374,7 +404,38 @@ def get_ip_system(domain, log_flag=True):
         if log_flag:
             logger.warning("{} {}".format(domain, e))
 
-    return ips
+    return _normalize_ip_list(ips)
+
+
+def get_ip_socket(domain, log_flag=True):
+    """
+    使用运行时 socket/getaddrinfo 解析 IPv4。
+    该链路会受 /etc/hosts 与系统 NameService 配置影响，可用于识别
+    “DNS 查询结果与实际连接目标不一致”的解析漂移。
+    """
+    domain = domain.strip()
+    logger = get_logger()
+    ips = []
+    try:
+        answers = socket.getaddrinfo(
+            domain,
+            None,
+            family=socket.AF_INET,
+            type=socket.SOCK_STREAM,
+        )
+        for item in answers:
+            sockaddr = item[4] if len(item) >= 5 else ()
+            if not isinstance(sockaddr, tuple) or not sockaddr:
+                continue
+            ips.append(sockaddr[0])
+    except socket.gaierror as e:
+        if log_flag:
+            logger.info("{} {}".format(domain, e))
+    except Exception as e:
+        if log_flag:
+            logger.warning("{} {}".format(domain, e))
+
+    return _normalize_ip_list(ips)
 
 
 def check_dns_policy_for_host(hostname):
@@ -393,7 +454,9 @@ def check_dns_policy_for_host(hostname):
         "reason": "",
         "resolver_ips": [],
         "system_ips": [],
+        "socket_ips": [],
         "matched_ips": [],
+        "matched_socket_ips": [],
     }
 
     if not host:
@@ -404,16 +467,51 @@ def check_dns_policy_for_host(hostname):
         detail["reason"] = "ip_target"
         return True, detail
 
-    # 未配置自定义解析器时保持历史行为
+    # 未配置自定义解析器时尽量保持历史行为，但补充 socket 漂移兜底
     dns_resolvers = [x.strip() for x in Config.DNS_RESOLVERS if isinstance(x, str) and x.strip()]
     if not dns_resolvers:
+        resolver_ips = sorted(set(get_ip_system(host, log_flag=False)))
+        socket_ips = sorted(set(get_ip_socket(host, log_flag=False)))
+        detail["resolver_ips"] = resolver_ips
+        detail["system_ips"] = resolver_ips
+        detail["socket_ips"] = socket_ips
+
+        if resolver_ips and socket_ips:
+            resolver_set = set(resolver_ips)
+            socket_set = set(socket_ips)
+            matched_socket_ips = sorted(list(resolver_set & socket_set))
+            detail["matched_socket_ips"] = matched_socket_ips
+
+            if not matched_socket_ips:
+                private_socket_ips = [ip for ip in socket_ips if get_ip_type(ip) == "PRIVATE"]
+                if private_socket_ips:
+                    detail["reason"] = "dns_drift_socket_no_overlap"
+                    detail["private_socket_ips"] = private_socket_ips
+                    return False, detail
+
+            extra_socket_ips = sorted(list(socket_set - resolver_set))
+            for ip in extra_socket_ips:
+                if get_ip_type(ip) == "PRIVATE":
+                    detail["reason"] = "dns_drift_socket_private_extra"
+                    detail["extra_socket_ips"] = extra_socket_ips
+                    return False, detail
+
+        if (not resolver_ips) and socket_ips:
+            private_socket_ips = [ip for ip in socket_ips if get_ip_type(ip) == "PRIVATE"]
+            if private_socket_ips:
+                detail["reason"] = "dns_socket_private_only"
+                detail["private_socket_ips"] = private_socket_ips
+                return False, detail
+
         detail["reason"] = "no_custom_resolver"
         return True, detail
 
     resolver_ips = sorted(set(get_ip(host, log_flag=False)))
     system_ips = sorted(set(get_ip_system(host, log_flag=False)))
+    socket_ips = sorted(set(get_ip_socket(host, log_flag=False)))
     detail["resolver_ips"] = resolver_ips
     detail["system_ips"] = system_ips
+    detail["socket_ips"] = socket_ips
 
     if not resolver_ips:
         detail["reason"] = "resolver_no_a_record"
@@ -440,6 +538,23 @@ def check_dns_policy_for_host(hostname):
             detail["reason"] = "dns_drift_private_extra"
             detail["extra_system_ips"] = extra_system_ips
             return False, detail
+
+    # 追加 socket 解析链路校验（覆盖 /etc/hosts / NSS 覆盖场景）
+    if socket_ips:
+        socket_set = set(socket_ips)
+        matched_socket_ips = sorted(list(resolver_set & socket_set))
+        detail["matched_socket_ips"] = matched_socket_ips
+
+        if not matched_socket_ips:
+            detail["reason"] = "dns_drift_socket_no_overlap"
+            return False, detail
+
+        extra_socket_ips = sorted(list(socket_set - resolver_set))
+        for ip in extra_socket_ips:
+            if get_ip_type(ip) == "PRIVATE":
+                detail["reason"] = "dns_drift_socket_private_extra"
+                detail["extra_socket_ips"] = extra_socket_ips
+                return False, detail
 
     detail["reason"] = "pass"
     return True, detail

@@ -21,6 +21,7 @@ class BaiduSearch(object):
         self.headers = {"Accept-Language": "zh-cn"}
         self.search_result_num = 0
         self.default_interval = 3
+        self.dns_policy_cache = {}
 
     def result_num(self):
         url = self.search_url.format(page=0, keyword=quote(self.keyword))
@@ -49,9 +50,35 @@ class BaiduSearch(object):
                 if not re.match(r'^https?:/{2}\w.+$', u):
                     logger.info("url {} is invalid".format(u))
                     continue
+                allow_scan, policy_detail = utils.check_dns_policy_for_url(u, cache_map=self.dns_policy_cache)
+                if not allow_scan:
+                    logger.info(
+                        "skip baidu redirect by dns policy url:{} reason:{} resolver_ips:{} system_ips:{} socket_ips:{}".format(
+                            u,
+                            policy_detail.get("reason", ""),
+                            policy_detail.get("resolver_ips", []),
+                            policy_detail.get("system_ips", []),
+                            policy_detail.get("socket_ips", []),
+                        )
+                    )
+                    continue
                 resp = utils.http_req(u, "head")
                 real_url = resp.headers.get('Location')
                 if real_url:
+                    allow_real_url, policy_detail = utils.check_dns_policy_for_url(
+                        real_url, cache_map=self.dns_policy_cache
+                    )
+                    if not allow_real_url:
+                        logger.info(
+                            "skip baidu real_url by dns policy url:{} reason:{} resolver_ips:{} system_ips:{} socket_ips:{}".format(
+                                real_url,
+                                policy_detail.get("reason", ""),
+                                policy_detail.get("resolver_ips", []),
+                                policy_detail.get("system_ips", []),
+                                policy_detail.get("socket_ips", []),
+                            )
+                        )
+                        continue
                     urls.add(real_url)
             except Exception as e:
                 logger.exception(e)

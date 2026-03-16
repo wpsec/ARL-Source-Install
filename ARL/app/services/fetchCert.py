@@ -326,6 +326,7 @@ class FetchCert(BaseThread):
     def __init__(self, targets, concurrency=6):
         super().__init__(targets, concurrency=concurrency)
         self.fetch_map = {}
+        self.dns_policy_cache = {}
 
     def work(self, target):
         target_info = {}
@@ -358,6 +359,25 @@ class FetchCert(BaseThread):
 
         if not endpoint or not connect_host or port <= 0:
             return
+
+        if utils.is_valid_domain(connect_host):
+            if connect_host in self.dns_policy_cache:
+                allow_scan, policy_detail = self.dns_policy_cache[connect_host]
+            else:
+                allow_scan, policy_detail = utils.check_dns_policy_for_host(connect_host)
+                self.dns_policy_cache[connect_host] = (allow_scan, policy_detail)
+
+            if not allow_scan:
+                logger.info(
+                    "skip fetch_cert by dns policy host:{} reason:{} resolver_ips:{} system_ips:{} socket_ips:{}".format(
+                        connect_host,
+                        policy_detail.get("reason", ""),
+                        policy_detail.get("resolver_ips", []),
+                        policy_detail.get("system_ips", []),
+                        policy_detail.get("socket_ips", []),
+                    )
+                )
+                return
 
         cert = utils.get_cert(connect_host, port, server_hostname=sni_domain)
         if cert:
