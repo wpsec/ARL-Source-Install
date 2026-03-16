@@ -168,6 +168,18 @@ def _safe_int(value, default_value, min_value=1):
     return parsed
 
 
+def _safe_float(value, default_value, min_value=0.0):
+    try:
+        parsed = float(value)
+    except Exception:
+        return float(default_value)
+
+    if parsed < min_value:
+        return float(default_value)
+
+    return parsed
+
+
 def _safe_bool(value, default_value=False):
     if isinstance(value, bool):
         return value
@@ -523,8 +535,15 @@ def _extract_service_api_config(config_obj):
         'certspotter_enable': _safe_bool(certspotter_plugin.get('enable'), True),
         'hunter_api_key': str(hunter_plugin.get('api_key') or ''),
         'hunter_enable': _safe_bool(hunter_plugin.get('enable'), True),
+        'hunter_request_interval': _safe_float(hunter_plugin.get('request_interval'), 1.0, min_value=0.0),
+        'hunter_rate_limit_retry': _safe_int(hunter_plugin.get('rate_limit_retry'), 4, min_value=0),
+        'hunter_rate_limit_backoff': _safe_int(hunter_plugin.get('rate_limit_backoff'), 2, min_value=1),
+        'hunter_rate_limit_max_sleep': _safe_int(hunter_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
         'quake_token': str(quake_plugin.get('quake_token') or ''),
         'quake_enable': _safe_bool(quake_plugin.get('enable'), True),
+        'quake_rate_limit_retry': _safe_int(quake_plugin.get('rate_limit_retry'), 4, min_value=0),
+        'quake_rate_limit_backoff': _safe_int(quake_plugin.get('rate_limit_backoff'), 3, min_value=1),
+        'quake_rate_limit_max_sleep': _safe_int(quake_plugin.get('rate_limit_max_sleep'), 90, min_value=1),
         'zoomeye_api_key': str(zoomeye_plugin.get('api_key') or ''),
         'zoomeye_enable': _safe_bool(zoomeye_plugin.get('enable'), True),
         'securitytrails_api_key': str(securitytrails_plugin.get('api_key') or ''),
@@ -583,10 +602,45 @@ def _merge_service_api_config(config_obj, service_api):
     hunter_plugin = ensure_plugin('hunter_qax')
     hunter_plugin['api_key'] = str(service_api.get('hunter_api_key', '')).strip()
     hunter_plugin['enable'] = _safe_bool(service_api.get('hunter_enable'), hunter_plugin.get('enable', True))
+    hunter_plugin['request_interval'] = _safe_float(
+        service_api.get('hunter_request_interval'),
+        hunter_plugin.get('request_interval', 1.0),
+        min_value=0.0
+    )
+    hunter_plugin['rate_limit_retry'] = _safe_int(
+        service_api.get('hunter_rate_limit_retry'),
+        hunter_plugin.get('rate_limit_retry', 4),
+        min_value=0
+    )
+    hunter_plugin['rate_limit_backoff'] = _safe_int(
+        service_api.get('hunter_rate_limit_backoff'),
+        hunter_plugin.get('rate_limit_backoff', 2),
+        min_value=1
+    )
+    hunter_plugin['rate_limit_max_sleep'] = _safe_int(
+        service_api.get('hunter_rate_limit_max_sleep'),
+        hunter_plugin.get('rate_limit_max_sleep', 60),
+        min_value=1
+    )
 
     quake_plugin = ensure_plugin('quake_360')
     quake_plugin['quake_token'] = str(service_api.get('quake_token', '')).strip()
     quake_plugin['enable'] = _safe_bool(service_api.get('quake_enable'), quake_plugin.get('enable', True))
+    quake_plugin['rate_limit_retry'] = _safe_int(
+        service_api.get('quake_rate_limit_retry'),
+        quake_plugin.get('rate_limit_retry', 4),
+        min_value=0
+    )
+    quake_plugin['rate_limit_backoff'] = _safe_int(
+        service_api.get('quake_rate_limit_backoff'),
+        quake_plugin.get('rate_limit_backoff', 3),
+        min_value=1
+    )
+    quake_plugin['rate_limit_max_sleep'] = _safe_int(
+        service_api.get('quake_rate_limit_max_sleep'),
+        quake_plugin.get('rate_limit_max_sleep', 90),
+        min_value=1
+    )
 
     zoomeye_plugin = ensure_plugin('zoomeye')
     zoomeye_plugin['api_key'] = str(service_api.get('zoomeye_api_key', '')).strip()

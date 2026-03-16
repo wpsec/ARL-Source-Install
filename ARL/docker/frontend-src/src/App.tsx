@@ -8394,11 +8394,17 @@ function ApiConsoleView({ token }: { token: string }) {
     fofa_email: string;
     fofa_key: string;
     fofa_enable: boolean;
-    certspotter_enable: boolean;
     hunter_api_key: string;
     hunter_enable: boolean;
+    hunter_request_interval: string;
+    hunter_rate_limit_retry: string;
+    hunter_rate_limit_backoff: string;
+    hunter_rate_limit_max_sleep: string;
     quake_token: string;
     quake_enable: boolean;
+    quake_rate_limit_retry: string;
+    quake_rate_limit_backoff: string;
+    quake_rate_limit_max_sleep: string;
     zoomeye_api_key: string;
     zoomeye_enable: boolean;
     securitytrails_api_key: string;
@@ -8415,7 +8421,6 @@ function ApiConsoleView({ token }: { token: string }) {
 
   type ServiceApiBoolKey =
     | 'fofa_enable'
-    | 'certspotter_enable'
     | 'hunter_enable'
     | 'quake_enable'
     | 'zoomeye_enable'
@@ -8431,11 +8436,17 @@ function ApiConsoleView({ token }: { token: string }) {
     fofa_email: '',
     fofa_key: '',
     fofa_enable: true,
-    certspotter_enable: true,
     hunter_api_key: '',
     hunter_enable: true,
+    hunter_request_interval: '1.0',
+    hunter_rate_limit_retry: '4',
+    hunter_rate_limit_backoff: '2',
+    hunter_rate_limit_max_sleep: '60',
     quake_token: '',
     quake_enable: true,
+    quake_rate_limit_retry: '4',
+    quake_rate_limit_backoff: '3',
+    quake_rate_limit_max_sleep: '90',
     zoomeye_api_key: '',
     zoomeye_enable: true,
     securitytrails_api_key: '',
@@ -8465,11 +8476,17 @@ function ApiConsoleView({ token }: { token: string }) {
       fofa_email: String(raw.fofa_email || ''),
       fofa_key: String(raw.fofa_key || ''),
       fofa_enable: raw.fofa_enable === undefined ? true : Boolean(raw.fofa_enable),
-      certspotter_enable: raw.certspotter_enable === undefined ? true : Boolean(raw.certspotter_enable),
       hunter_api_key: String(raw.hunter_api_key || ''),
       hunter_enable: raw.hunter_enable === undefined ? true : Boolean(raw.hunter_enable),
+      hunter_request_interval: String(raw.hunter_request_interval ?? defaultForm.hunter_request_interval),
+      hunter_rate_limit_retry: String(raw.hunter_rate_limit_retry ?? defaultForm.hunter_rate_limit_retry),
+      hunter_rate_limit_backoff: String(raw.hunter_rate_limit_backoff ?? defaultForm.hunter_rate_limit_backoff),
+      hunter_rate_limit_max_sleep: String(raw.hunter_rate_limit_max_sleep ?? defaultForm.hunter_rate_limit_max_sleep),
       quake_token: String(raw.quake_token || ''),
       quake_enable: raw.quake_enable === undefined ? true : Boolean(raw.quake_enable),
+      quake_rate_limit_retry: String(raw.quake_rate_limit_retry ?? defaultForm.quake_rate_limit_retry),
+      quake_rate_limit_backoff: String(raw.quake_rate_limit_backoff ?? defaultForm.quake_rate_limit_backoff),
+      quake_rate_limit_max_sleep: String(raw.quake_rate_limit_max_sleep ?? defaultForm.quake_rate_limit_max_sleep),
       zoomeye_api_key: String(raw.zoomeye_api_key || ''),
       zoomeye_enable: raw.zoomeye_enable === undefined ? true : Boolean(raw.zoomeye_enable),
       securitytrails_api_key: String(raw.securitytrails_api_key || ''),
@@ -8534,7 +8551,14 @@ function ApiConsoleView({ token }: { token: string }) {
             fofa_email: form.fofa_email.trim(),
             fofa_key: form.fofa_key.trim(),
             hunter_api_key: form.hunter_api_key.trim(),
+            hunter_request_interval: form.hunter_request_interval.trim(),
+            hunter_rate_limit_retry: form.hunter_rate_limit_retry.trim(),
+            hunter_rate_limit_backoff: form.hunter_rate_limit_backoff.trim(),
+            hunter_rate_limit_max_sleep: form.hunter_rate_limit_max_sleep.trim(),
             quake_token: form.quake_token.trim(),
+            quake_rate_limit_retry: form.quake_rate_limit_retry.trim(),
+            quake_rate_limit_backoff: form.quake_rate_limit_backoff.trim(),
+            quake_rate_limit_max_sleep: form.quake_rate_limit_max_sleep.trim(),
             zoomeye_api_key: form.zoomeye_api_key.trim(),
             securitytrails_api_key: form.securitytrails_api_key.trim(),
             virustotal_api_key: form.virustotal_api_key.trim(),
@@ -8571,6 +8595,9 @@ function ApiConsoleView({ token }: { token: string }) {
       label: string;
       placeholder: string;
       hint?: string;
+      inputType?: 'text' | 'number';
+      step?: string;
+      min?: string;
     }>;
   }> = [
     {
@@ -8586,14 +8613,6 @@ function ApiConsoleView({ token }: { token: string }) {
       ],
     },
     {
-      id: 'certspotter',
-      title: 'certspotter',
-      website: 'https://www.certspotter.com/',
-      enableKey: 'certspotter_enable',
-      enableLabel: '启用 certspotter 插件',
-      fields: [],
-    },
-    {
       id: 'hunter',
       title: 'hunter_qax',
       alias: 'Hunter',
@@ -8602,6 +8621,42 @@ function ApiConsoleView({ token }: { token: string }) {
       enableLabel: '启用 Hunter 插件',
       fields: [
         { key: 'hunter_api_key', label: 'API KEY', placeholder: '请输入 Hunter API KEY', hint: 'QUERY_PLUGIN.hunter_qax.api_key' },
+        {
+          key: 'hunter_request_interval',
+          label: '请求间隔(秒)',
+          placeholder: '1.0',
+          hint: 'QUERY_PLUGIN.hunter_qax.request_interval',
+          inputType: 'number',
+          step: '0.1',
+          min: '0',
+        },
+        {
+          key: 'hunter_rate_limit_retry',
+          label: '限频重试次数',
+          placeholder: '4',
+          hint: 'QUERY_PLUGIN.hunter_qax.rate_limit_retry',
+          inputType: 'number',
+          step: '1',
+          min: '0',
+        },
+        {
+          key: 'hunter_rate_limit_backoff',
+          label: '退避基数(秒)',
+          placeholder: '2',
+          hint: 'QUERY_PLUGIN.hunter_qax.rate_limit_backoff',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'hunter_rate_limit_max_sleep',
+          label: '最大等待(秒)',
+          placeholder: '60',
+          hint: 'QUERY_PLUGIN.hunter_qax.rate_limit_max_sleep',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
       ],
     },
     {
@@ -8613,6 +8668,33 @@ function ApiConsoleView({ token }: { token: string }) {
       enableLabel: '启用 Quake 插件',
       fields: [
         { key: 'quake_token', label: 'Token', placeholder: '请输入 Quake Token', hint: 'QUERY_PLUGIN.quake_360.quake_token' },
+        {
+          key: 'quake_rate_limit_retry',
+          label: '限频重试次数',
+          placeholder: '4',
+          hint: 'QUERY_PLUGIN.quake_360.rate_limit_retry',
+          inputType: 'number',
+          step: '1',
+          min: '0',
+        },
+        {
+          key: 'quake_rate_limit_backoff',
+          label: '退避基数(秒)',
+          placeholder: '3',
+          hint: 'QUERY_PLUGIN.quake_360.rate_limit_backoff',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'quake_rate_limit_max_sleep',
+          label: '最大等待(秒)',
+          placeholder: '90',
+          hint: 'QUERY_PLUGIN.quake_360.rate_limit_max_sleep',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
       ],
     },
     {
@@ -8776,11 +8858,6 @@ function ApiConsoleView({ token }: { token: string }) {
             </div>
 
             <div className="space-y-3">
-              {provider.fields.length === 0 ? (
-                <div className="text-xs text-brand-text-muted bg-brand-bg/40 border border-brand-border rounded-xl px-3 py-2">
-                  当前插件无需配置 API Key。
-                </div>
-              ) : null}
               {provider.fields.map((field) => (
                 <div key={field.key} className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted block">
@@ -8788,6 +8865,9 @@ function ApiConsoleView({ token }: { token: string }) {
                     {field.hint ? <span className="ml-2 font-mono opacity-70">{field.hint}</span> : null}
                   </label>
                   <input
+                    type={field.inputType || 'text'}
+                    step={field.step}
+                    min={field.min}
                     value={String(form[field.key] || '')}
                     onChange={(event) => updateTextField(field.key, event.target.value)}
                     className={CONSOLE_INPUT_MONO_CLASS}
