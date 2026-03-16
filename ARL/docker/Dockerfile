@@ -81,23 +81,12 @@ RUN set -eux; \
     test -f /frontend/dist/index.html; \
     test -d /frontend/dist/assets
 
-FROM --platform=$BUILDPLATFORM golang:1.22.4-bookworm AS wih_builder
-ARG TARGETOS
-ARG TARGETARCH
-WORKDIR /src/wih
-COPY tools/wih/go.mod tools/wih/go.sum ./
-RUN go mod download
-COPY tools/wih/ ./
-RUN set -eux; \
-    GOOS="${TARGETOS:-linux}"; \
-    GOARCH="${TARGETARCH:-amd64}"; \
-    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/wih .
-
 FROM rockylinux:8
 
 WORKDIR /code
 ARG TARGETARCH
 ARG PYTHON_VERSION=3.10.20
+ARG GO_VERSION=1.22.4
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV LANG=en_US.UTF-8
 
@@ -206,10 +195,35 @@ COPY tools/finger.json /code/tools/finger.json
 COPY tools/wih/ /code/tools/wih/
 COPY tools/GeoLite2/GeoLite2-* /data/GeoLite2/
 COPY tools/dhparam.pem /etc/ssl/certs/dhparam.pem
-COPY --from=wih_builder /out/wih /usr/bin/wih
 
 # 安装源码版 WIH，解压 Nuclei，并执行基础自检
 RUN set -eux; \
+    ARCH="${TARGETARCH:-$(uname -m)}"; \
+    case "$ARCH" in \
+      amd64|x86_64) GO_ARCH="amd64" ;; \
+      arm64|aarch64) GO_ARCH="arm64" ;; \
+      *) echo "[ERROR] unsupported arch for go/wih build: $ARCH"; exit 1 ;; \
+    esac; \
+    GO_TGZ="/tmp/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
+    if [ ! -s "${GO_TGZ}" ]; then \
+      for URL in \
+        "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
+        "https://dl.google.com/go/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
+        "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; do \
+        echo "try download ${URL}"; \
+        wget -q -O "${GO_TGZ}" "${URL}" && break || true; \
+      done; \
+    fi; \
+    test -s "${GO_TGZ}" || (echo "[ERROR] go toolchain package not found: ${GO_TGZ}" && exit 1); \
+    rm -rf /usr/local/go; \
+    tar -C /usr/local -xzf "${GO_TGZ}"; \
+    export PATH="/usr/local/go/bin:${PATH}"; \
+    export GOPROXY="https://goproxy.cn,direct"; \
+    go version; \
+    cd /code/tools/wih; \
+    GOOS=linux GOARCH="${GO_ARCH}" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /usr/bin/wih .; \
+    cd /code; \
+    rm -rf /usr/local/go /root/go /tmp/go-build "${GO_TGZ}"; \
     ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs; \
     NUCLEI_ZIP=$(ls -1 /tmp/nuclei_*_linux_amd64.zip | head -n 1); \
     unzip -q "${NUCLEI_ZIP}" nuclei; \
