@@ -9166,6 +9166,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
+        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+          <div className="text-xs font-black tracking-wide text-brand-text">字典管理</div>
         <div className="space-y-2">
           <label className="text-xs font-bold text-brand-text-muted block">
             域名爆破字典
@@ -9189,7 +9191,7 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-bold text-brand-text-muted block">上传新字典（.txt）</label>
+          <label className="text-xs font-bold text-brand-text-muted block">上传域名爆破字典（.txt）</label>
           <div className="flex flex-col lg:flex-row gap-2">
             <input
               ref={domainUploadInputRef}
@@ -9203,11 +9205,11 @@ function ConfigConsoleView({ token }: { token: string }) {
             />
             <button
               onClick={() => void uploadDomainDict()}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
               disabled={domainUploading || loading || saving}
             >
               <Upload className={`w-4 h-4 ${domainUploading ? 'animate-spin' : ''}`} />
-              {domainUploading ? '上传中...' : '上传字典'}
+              {domainUploading ? '上传中...' : '上传域名爆破字典'}
             </button>
           </div>
         </div>
@@ -9249,15 +9251,18 @@ function ConfigConsoleView({ token }: { token: string }) {
             />
             <button
               onClick={() => void uploadFileLeakDict()}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
               disabled={fileLeakUploading || loading || saving}
             >
               <Upload className={`w-4 h-4 ${fileLeakUploading ? 'animate-spin' : ''}`} />
-              {fileLeakUploading ? '上传中...' : '上传字典'}
+              {fileLeakUploading ? '上传中...' : '上传敏感文件字典'}
             </button>
           </div>
         </div>
+        </div>
 
+        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+          <div className="text-xs font-black tracking-wide text-brand-text">并发与资源配置</div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
@@ -9375,7 +9380,10 @@ function ConfigConsoleView({ token }: { token: string }) {
             />
           </div>
         </div>
+        </div>
 
+        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+          <div className="text-xs font-black tracking-wide text-brand-text">扫描超时与端口参数</div>
         <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
@@ -9479,7 +9487,10 @@ function ConfigConsoleView({ token }: { token: string }) {
             说明：该组参数作为全局默认值。历史任务策略中未显式传入时，会自动使用这里的配置。
           </div>
         </div>
+        </div>
 
+        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+          <div className="text-xs font-black tracking-wide text-brand-text">安全过滤与解析器</div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
@@ -9506,6 +9517,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               placeholder="每行一个DNS解析器，例如 223.5.5.5 或 1.1.1.1:53"
             />
           </div>
+        </div>
         </div>
       </div>
     </div>
