@@ -6187,10 +6187,16 @@ function TableModuleView({
         .filter((action): action is ModuleAction => Boolean(action));
     }
     if (module.id === 'github_task') {
-      return moduleActions.filter((action) => action.id === 'github_task_add');
+      const githubTaskVisibleActionIds = ['github_task_add', 'github_task_delete'];
+      return githubTaskVisibleActionIds
+        .map((id) => moduleActions.find((action) => action.id === id))
+        .filter((action): action is ModuleAction => Boolean(action));
     }
     if (module.id === 'github_scheduler') {
-      return moduleActions.filter((action) => action.id === 'github_scheduler_add');
+      const githubSchedulerVisibleActionIds = ['github_scheduler_add', 'github_scheduler_stop', 'github_scheduler_delete'];
+      return githubSchedulerVisibleActionIds
+        .map((id) => moduleActions.find((action) => action.id === id))
+        .filter((action): action is ModuleAction => Boolean(action));
     }
     return moduleActions;
   }, [module.id, moduleActions]);
