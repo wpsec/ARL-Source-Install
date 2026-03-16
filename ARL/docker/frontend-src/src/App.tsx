@@ -9169,12 +9169,13 @@ function ConfigConsoleView({ token }: { token: string }) {
         <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
           <div className="text-xs font-black tracking-wide text-brand-text">字典管理</div>
         <div className="space-y-2">
-          <label className="text-xs font-bold text-brand-text-muted block">
+          <label htmlFor="config-domain-dict-select" className="text-xs font-bold text-brand-text-muted block">
             域名爆破字典
             <span className="ml-2 font-mono opacity-70">ARL.DOMAIN_DICT</span>
           </label>
           <div className="relative">
             <select
+              id="config-domain-dict-select"
               value={domainDict}
               onChange={(event) => setDomainDict(event.target.value)}
               className={CONSOLE_SELECT_CLASS}
@@ -9191,19 +9192,32 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-bold text-brand-text-muted block">上传域名爆破字典（.txt）</label>
+          <label htmlFor="config-domain-dict-upload" className="text-xs font-bold text-brand-text-muted block">上传域名爆破字典（.txt）</label>
+          <input
+            id="config-domain-dict-upload"
+            ref={domainUploadInputRef}
+            type="file"
+            accept=".txt"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              setUploadDomainFile(file || null);
+            }}
+          />
           <div className="flex flex-col lg:flex-row gap-2">
-            <input
-              ref={domainUploadInputRef}
-              type="file"
-              accept=".txt"
-              className={CONSOLE_FILE_INPUT_CLASS}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                setUploadDomainFile(file || null);
-              }}
-            />
             <button
+              type="button"
+              onClick={() => domainUploadInputRef.current?.click()}
+              className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center disabled:opacity-60"
+              disabled={domainUploading || loading || saving}
+            >
+              选择文件
+            </button>
+            <div className={`${CONSOLE_FILE_INPUT_CLASS} flex items-center text-brand-text-muted truncate`}>
+              {uploadDomainFile?.name || '未选择文件'}
+            </div>
+            <button
+              type="button"
               onClick={() => void uploadDomainDict()}
               className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
               disabled={domainUploading || loading || saving}
@@ -9215,12 +9229,13 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-bold text-brand-text-muted block">
+          <label htmlFor="config-fileleak-dict-select" className="text-xs font-bold text-brand-text-muted block">
             敏感文件泄漏字典
             <span className="ml-2 font-mono opacity-70">ARL.FILE_LEAK_DICT</span>
           </label>
           <div className="relative">
             <select
+              id="config-fileleak-dict-select"
               value={fileLeakDict}
               onChange={(event) => setFileLeakDict(event.target.value)}
               className={CONSOLE_SELECT_CLASS}
@@ -9237,19 +9252,32 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-bold text-brand-text-muted block">上传敏感文件字典（.txt）</label>
+          <label htmlFor="config-fileleak-dict-upload" className="text-xs font-bold text-brand-text-muted block">上传敏感文件字典（.txt）</label>
+          <input
+            id="config-fileleak-dict-upload"
+            ref={fileLeakUploadInputRef}
+            type="file"
+            accept=".txt"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              setUploadFileLeakFile(file || null);
+            }}
+          />
           <div className="flex flex-col lg:flex-row gap-2">
-            <input
-              ref={fileLeakUploadInputRef}
-              type="file"
-              accept=".txt"
-              className={CONSOLE_FILE_INPUT_CLASS}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                setUploadFileLeakFile(file || null);
-              }}
-            />
             <button
+              type="button"
+              onClick={() => fileLeakUploadInputRef.current?.click()}
+              className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center disabled:opacity-60"
+              disabled={fileLeakUploading || loading || saving}
+            >
+              选择文件
+            </button>
+            <div className={`${CONSOLE_FILE_INPUT_CLASS} flex items-center text-brand-text-muted truncate`}>
+              {uploadFileLeakFile?.name || '未选择文件'}
+            </div>
+            <button
+              type="button"
               onClick={() => void uploadFileLeakDict()}
               className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
               disabled={fileLeakUploading || loading || saving}
@@ -9265,11 +9293,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           <div className="text-xs font-black tracking-wide text-brand-text">并发与资源配置</div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-domain-brute-concurrent" className="text-xs font-bold text-brand-text-muted block">
               域名爆破并发数
               <span className="ml-2 font-mono opacity-70">ARL.DOMAIN_BRUTE_CONCURRENT</span>
             </label>
             <input
+              id="config-domain-brute-concurrent"
               type="number"
               min={1}
               value={String(domainBruteConcurrent)}
@@ -9279,11 +9308,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-alt-dns-concurrent" className="text-xs font-bold text-brand-text-muted block">
               组合生成域名爆破并发数
               <span className="ml-2 font-mono opacity-70">ARL.ALT_DNS_CONCURRENT</span>
             </label>
             <input
+              id="config-alt-dns-concurrent"
               type="number"
               min={1}
               value={String(altDnsConcurrent)}
@@ -9295,11 +9325,12 @@ function ConfigConsoleView({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-web-gunicorn-workers" className="text-xs font-bold text-brand-text-muted block">
               Web 进程并发
               <span className="ml-2 font-mono opacity-70">ARL.WEB_GUNICORN_WORKERS</span>
             </label>
             <input
+              id="config-web-gunicorn-workers"
               type="number"
               min={1}
               value={String(webGunicornWorkers)}
@@ -9309,11 +9340,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-task-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
               Celery 主队列并发
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_TASK_WORKER_CONCURRENCY</span>
             </label>
             <input
+              id="config-celery-task-worker-concurrency"
               type="number"
               min={1}
               value={String(celeryTaskWorkerConcurrency)}
@@ -9323,11 +9355,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2 xl:col-span-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-github-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
               Celery GitHub 队列并发
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_GITHUB_WORKER_CONCURRENCY</span>
             </label>
             <input
+              id="config-celery-github-worker-concurrency"
               type="number"
               min={1}
               value={String(celeryGithubWorkerConcurrency)}
@@ -9339,11 +9372,12 @@ function ConfigConsoleView({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-prefetch-multiplier" className="text-xs font-bold text-brand-text-muted block">
               Celery 预取倍率
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_PREFETCH_MULTIPLIER</span>
             </label>
             <input
+              id="config-celery-prefetch-multiplier"
               type="number"
               min={1}
               value={String(celeryPrefetchMultiplier)}
@@ -9353,11 +9387,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-max-tasks-per-child" className="text-xs font-bold text-brand-text-muted block">
               Celery 子进程任务上限
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_TASKS_PER_CHILD</span>
             </label>
             <input
+              id="config-celery-max-tasks-per-child"
               type="number"
               min={1}
               value={String(celeryMaxTasksPerChild)}
@@ -9367,11 +9402,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2 xl:col-span-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-max-memory-per-child" className="text-xs font-bold text-brand-text-muted block">
               Celery 子进程内存上限(KB)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_MEMORY_PER_CHILD</span>
             </label>
             <input
+              id="config-celery-max-memory-per-child"
               type="number"
               min={1}
               value={String(celeryMaxMemoryPerChild)}
@@ -9386,11 +9422,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           <div className="text-xs font-black tracking-wide text-brand-text">扫描超时与端口参数</div>
         <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-nuclei-single-target-timeout-sec" className="text-xs font-bold text-brand-text-muted block">
               Nuclei 单个目标最多扫描时间（秒）
               <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC</span>
             </label>
             <input
+              id="config-nuclei-single-target-timeout-sec"
               type="number"
               min={60}
               value={String(nucleiSingleTargetTimeoutSec)}
@@ -9425,12 +9462,13 @@ function ConfigConsoleView({ token }: { token: string }) {
           <div className="text-xs font-bold text-brand-text-muted">端口扫描全局默认参数（策略未显式设置时生效）</div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-host-timeout-type" className="text-xs font-bold text-brand-text-muted block">
                 主机超时策略
                 <span className="ml-2 font-mono opacity-70">ARL.HOST_TIMEOUT_TYPE</span>
               </label>
               <div className="relative">
                 <select
+                  id="config-host-timeout-type"
                   value={hostTimeoutType}
                   onChange={(event) => setHostTimeoutType(event.target.value === 'custom' ? 'custom' : 'default')}
                   className={CONSOLE_SELECT_CLASS}
@@ -9442,11 +9480,12 @@ function ConfigConsoleView({ token }: { token: string }) {
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-host-timeout" className="text-xs font-bold text-brand-text-muted block">
                 主机超时（秒）
                 <span className="ml-2 font-mono opacity-70">ARL.HOST_TIMEOUT</span>
               </label>
               <input
+                id="config-host-timeout"
                 type="number"
                 min={1}
                 value={String(hostTimeout)}
@@ -9457,11 +9496,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-port-parallelism" className="text-xs font-bold text-brand-text-muted block">
                 探测报文并行度
                 <span className="ml-2 font-mono opacity-70">ARL.PORT_PARALLELISM</span>
               </label>
               <input
+                id="config-port-parallelism"
                 type="number"
                 min={1}
                 value={String(portParallelism)}
@@ -9470,11 +9510,12 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-port-min-rate" className="text-xs font-bold text-brand-text-muted block">
                 最少发包速率
                 <span className="ml-2 font-mono opacity-70">ARL.PORT_MIN_RATE</span>
               </label>
               <input
+                id="config-port-min-rate"
                 type="number"
                 min={1}
                 value={String(portMinRate)}
@@ -9493,11 +9534,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           <div className="text-xs font-black tracking-wide text-brand-text">安全过滤与解析器</div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-black-ips" className="text-xs font-bold text-brand-text-muted block">
               黑名单IP配置
               <span className="ml-2 font-mono opacity-70">ARL.BLACK_IPS</span>
             </label>
             <textarea
+              id="config-black-ips"
               value={blackIpsText}
               onChange={(event) => setBlackIpsText(event.target.value)}
               className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[120px]`}
@@ -9506,11 +9548,12 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-dns-resolvers" className="text-xs font-bold text-brand-text-muted block">
               域名解析器配置
               <span className="ml-2 font-mono opacity-70">ARL.DNS_RESOLVERS</span>
             </label>
             <textarea
+              id="config-dns-resolvers"
               value={dnsResolversText}
               onChange={(event) => setDnsResolversText(event.target.value)}
               className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[120px]`}
