@@ -33,7 +33,7 @@ chmod +x build.sh start.sh scripts/quick-build.sh
 
 ### 注意！
 
-可提前开代理下载Playwright 以提升部署速度
+可提前开代理下载Playwright 以提升部署速度，不建议开启nuclei，确实太慢了且扫不出来啥漏洞。
 
 参考：
 
@@ -69,11 +69,8 @@ tools/playwright/README.md
 ### 常规更新
 
 ```bash
-# 首次执行一次：忽略本地配置文件，避免每次 pull 因 config-docker.yaml 冲突
-git update-index --skip-worktree ARL/docker/config-docker.yaml
-
 # 日常更新
-git pull --rebase
+git pull
 ./scripts/quick-build.sh
 ```
 

@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准）。
 
-## 2026-03-16（v3.1.24 ~ v3.1.38）
+## 2026-03-16（v3.1.24 ~ v3.1.42）
 
 - `[v3.1.24]` DNS 漂移校验增强：新增 `socket/getaddrinfo` 解析链路校验（覆盖 `/etc/hosts` 与运行时 NSS 解析偏移场景），并将 `get_ip/get_ip_system` 结果统一为“公网优先”排序；`http_req` 在未配置 `PROXY_URL` 时显式禁用环境代理；`fetchCert` 对域名目标接入 DNS 策略校验，降低站点/证书阶段误命中内网地址的风险
 - `[v3.1.25]` 同名任务操作精确匹配修复：同名任务查看与“按任务名执行批量操作/导出”统一改为任务名严格等值匹配，避免模糊匹配带入近似任务名导致报告口径偏差
@@ -15,6 +15,9 @@
 - `[v3.1.36]` URLFinder URL 入库增强：`web_info_hunter` 阶段新增 `urlfinder_url` 可达性探测并写入 `url` 信息表（来源 `wih_url_probe`），探测前统一执行同目标过滤、任务内去重与 DNS 策略校验，降低“JS 拼接 URL 未进入 URL 资产”与解析漂移误扫风险；配置管理同步新增 `URLFINDER_URL_PROBE_ENABLE/MAX_TARGETS/CONCURRENCY`
 - `[v3.1.37]` WIH 引擎改为源码可维护版本：移除旧 `tools/wih` 预编译二进制分发，改为仓库内保留 `tools/wih` Go 源码并在 Docker 构建阶段编译 `wih`；CLI 与输出协议对齐 ARL 现有调用（`-r/-J/-o/-t/--concurrency/--log-level/--concurrency-per-site/--disable-ak-sk-output/--proxy`），默认规则路径切换到 `tools/wih/config/rules.yml`，并去除项目标识中的 `ifacker` 硬编码
 - `[v3.1.38]` WIH 源码版能力补齐与性能优化：补齐原版核心参数（含中文说明）并统一 `wihscan -> wih` 命名；扫描链路新增“单站 JS 并发抓取 + 响应体读取限额 + 正则编译缓存 + 结果去重与上限控制”；完善 `--generate-rule/--ak-sk-output/--auto-save-name/--dc` 兼容行为，且保持 ARL 现有 `JSONL(target/records)` 调用协议不变
+- `[v3.1.39]` Docker 构建链路调整：移除独立 `golang` 构建阶段，改为在 `rockylinux:8` 阶段内按架构下载 Go toolchain 编译 `wih`，并在编译后清理工具链与缓存，统一运行时环境
+- `[v3.1.40]` 域名爆破字典扩充：新增 `ARL/app/dicts/domain/domain_10w.txt`，补齐更大规模域名字典数据源
+- `[v3.1.42]` 指纹库整合升级：合并外部收集指纹并统一为 `tools/finger.json` 标准结构（`cms/method/location/keyword`），完成去重与格式规范化，显著扩充可导入指纹规模
 
 ## 2026-03-14（v3.1.0 ~ v3.1.23）
 
