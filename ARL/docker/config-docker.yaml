@@ -254,6 +254,8 @@ ARL:
   DOMAIN_DICT: "/code/app/dicts/domain_2w.txt"
   #文件泄漏字典
   FILE_LEAK_DICT: "/code/app/dicts/file_top_2000.txt"
+  # WIH 规则文件路径（默认使用源码版 wih 的规则模板）
+  WIH_RULE_PATH: "/code/tools/wih/config/rules.yml"
 
   # Web Gunicorn worker 数（默认2，低内存环境建议 1~2）
   WEB_GUNICORN_WORKERS: 2

@@ -81,6 +81,18 @@ RUN set -eux; \
     test -f /frontend/dist/index.html; \
     test -d /frontend/dist/assets
 
+FROM --platform=$BUILDPLATFORM golang:1.22.4-bookworm AS wih_builder
+ARG TARGETOS
+ARG TARGETARCH
+WORKDIR /src/wih
+COPY tools/wih/go.mod tools/wih/go.sum ./
+RUN go mod download
+COPY tools/wih/ ./
+RUN set -eux; \
+    GOOS="${TARGETOS:-linux}"; \
+    GOARCH="${TARGETARCH:-amd64}"; \
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/wih .
+
 FROM rockylinux:8
 
 WORKDIR /code
@@ -191,26 +203,19 @@ COPY tools/ncrack/ncrack-services /usr/local/share/ncrack/ncrack-services
 COPY tools/nuclei/nuclei_*_linux_amd64.zip /tmp/
 COPY tools/nuclei/nuclei-templates/ /code/tools/nuclei-templates/
 COPY tools/finger.json /code/tools/finger.json
-COPY tools/wih/ /tmp/wih/
+COPY tools/wih/ /code/tools/wih/
 COPY tools/GeoLite2/GeoLite2-* /data/GeoLite2/
 COPY tools/dhparam.pem /etc/ssl/certs/dhparam.pem
+COPY --from=wih_builder /out/wih /usr/bin/wih
 
-# 按架构安装 WIH，解压 Nuclei，并执行基础自检
+# 安装源码版 WIH，解压 Nuclei，并执行基础自检
 RUN set -eux; \
-    ARCH="${TARGETARCH:-$(uname -m)}"; \
-    case "$ARCH" in \
-      amd64|x86_64) WIH_BIN="wih_linux_amd64" ;; \
-      arm64|aarch64) WIH_BIN="wih_linux_arm64" ;; \
-      *) echo "[ERROR] unsupported arch for wih: $ARCH"; exit 1 ;; \
-    esac; \
-    cp "/tmp/wih/${WIH_BIN}" /usr/bin/wih; \
     ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs; \
     NUCLEI_ZIP=$(ls -1 /tmp/nuclei_*_linux_amd64.zip | head -n 1); \
     unzip -q "${NUCLEI_ZIP}" nuclei; \
     mv nuclei /usr/bin/; \
     rm -f /tmp/nuclei_*_linux_amd64.zip; \
     chmod +x /usr/local/bin/ncrack /usr/bin/wih /usr/bin/*.sh /usr/bin/nuclei; \
-    rm -rf /tmp/wih; \
     cp app/config.yaml.example app/config.yaml; \
     python3 -c "import psutil, flask, pymongo, celery, dnslib, playwright"; \
     python3 -c "from Cryptodome.Cipher import AES"; \

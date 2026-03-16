@@ -280,8 +280,8 @@ class Config(object):
     # CDN信息JSON文件，用于CDN识别
     CDN_JSON_PATH = os.path.join(basedir, 'dicts/cdn_info.json')
 
-    # WebInfoHunter 规则文件，用于Web指纹识别
-    WIH_RULE_PATH = os.path.join(basedir, "dicts/wih_rules.yml")
+    # WebInfoHunter 规则文件（默认使用 ARL 自维护的源码版 wih 规则）
+    WIH_RULE_PATH = os.path.join(project_root, "tools", "wih", "config", "rules.yml")
 
     # 黑名单域名列表（通用）
     black_domain_path = os.path.join(basedir, 'dicts/blackdomain.txt')
@@ -636,6 +636,9 @@ try:
     if y["ARL"].get("NUCLEI_DEFAULT_TAGS"):
         Config.NUCLEI_DEFAULT_TAGS = y["ARL"]["NUCLEI_DEFAULT_TAGS"]
 
+    if y["ARL"].get("WIH_RULE_PATH"):
+        Config.WIH_RULE_PATH = str(y["ARL"]["WIH_RULE_PATH"]).strip()
+
     if y["ARL"].get("TRUFFLEHOG_BIN"):
         Config.TRUFFLEHOG_BIN = str(y["ARL"]["TRUFFLEHOG_BIN"]).strip()
 
@@ -971,6 +974,7 @@ try:
     )
     Config.NUCLEI_AUTO_SCAN = env_bool("ARL_NUCLEI_AUTO_SCAN", Config.NUCLEI_AUTO_SCAN)
     Config.NUCLEI_DEFAULT_TAGS = env_str("ARL_NUCLEI_DEFAULT_TAGS", Config.NUCLEI_DEFAULT_TAGS)
+    Config.WIH_RULE_PATH = env_str("ARL_WIH_RULE_PATH", Config.WIH_RULE_PATH)
     Config.TRUFFLEHOG_BIN = env_str("ARL_TRUFFLEHOG_BIN", Config.TRUFFLEHOG_BIN)
     Config.TRUFFLEHOG_ENABLE = env_bool("ARL_TRUFFLEHOG_ENABLE", Config.TRUFFLEHOG_ENABLE)
     Config.TRUFFLEHOG_NO_VERIFICATION = env_bool(

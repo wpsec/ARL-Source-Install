@@ -1,5 +1,8 @@
 ## 介绍
 
+> 说明：本目录当前为 ARL 自维护版本，核心兼容 ARL 现有调用协议。  
+> 维护说明见 `ARL_MAINTAIN.md`，如与本文档存在差异，以源码与维护文档为准。
+
 WebInfoHunter（简称 wih）工具是一款功能强大、易用性高、扩展性强的命令行工具。
 
 可以快速地获取指定网页中的各种特定信息。采用 Golang 编写。
@@ -269,4 +272,3 @@ exclude_rules:
 
 
 https://tophanttechnology.github.io/ARL-doc/function_desc/web_info_hunter/
-

@@ -2,7 +2,6 @@
 信息收集和处理
 """
 from typing import List
-import subprocess
 from app import utils
 from app.config import Config
 import os

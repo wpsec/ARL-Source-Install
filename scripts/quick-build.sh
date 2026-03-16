@@ -211,8 +211,9 @@ check_tools_layout() {
         "tools/nuclei/nuclei-templates"
         "tools/GeoLite2/GeoLite2-ASN.mmdb"
         "tools/GeoLite2/GeoLite2-City.mmdb"
-        "tools/wih/wih_linux_amd64"
-        "tools/wih/wih_linux_arm64"
+        "tools/wih/main.go"
+        "tools/wih/go.mod"
+        "tools/wih/config/rules.yml"
         "tools/dhparam.pem"
         "tools/finger.json"
     )
