@@ -577,8 +577,9 @@ class DomainTask(CommonTask):
         option_scan_port_type = self.options.get("port_scan_type", "test")
         scan_port_option = {
             "ports": scan_port_map.get(option_scan_port_type, ScanPortType.TEST),
-            # nmap 仅负责端口发现，协议/服务识别统一由 npoc(sniffer) 负责
-            "service_detect": False,
+            # 开启 service_detection 时启用 nmap -sV，用于补充产品/版本信息。
+            # 协议识别仍由 npoc(sniffer) 做二次增强。
+            "service_detect": bool(self.options.get("service_detection")),
             "os_detect": self.options.get("os_detection", False),
             "skip_scan_cdn_ip": self.options.get("skip_scan_cdn_ip", False),  # 跳过扫描CDN IP
             # 任务未显式配置时，回退到配置管理中的全局默认参数。
@@ -648,7 +649,7 @@ class DomainTask(CommonTask):
     def _enable_protocol_detection(self):
         """
         兼容历史选项：
-        - service_detection：当前语义为启用协议/服务识别（sniffer）
+        - service_detection：启用服务识别增强（nmap -sV + sniffer）
         - npoc_service_detection：历史开关，继续兼容
         """
         return bool(self.options.get("service_detection") or self.options.get("npoc_service_detection"))
@@ -1076,10 +1077,14 @@ class DomainTask(CommonTask):
             service_seen.add(uniq_key)
 
             service_map.setdefault(service, [])
+            normalized_product = str(product or "").strip()
+            if not normalized_product:
+                # -sV 未开启或未命中时，回退协议名，避免 Product 长期空白。
+                normalized_product = service
             service_map[service].append({
                 "ip": ip,
                 "port_id": port_id,
-                "product": str(product or "").strip(),
+                "product": normalized_product,
                 "version": str(version or "").strip(),
             })
             merged_total += 1

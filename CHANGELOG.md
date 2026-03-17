@@ -5,6 +5,7 @@
 
 ## 2026-03-17（v3.2.0）
 
+- `[v3.2.10]` 服务资产 Product 识别修复：恢复 `service_detection` 开启时 `nmap -sV` 产品/版本识别能力，并保留 `npoc_sniffer` 协议增强；`service` 入库阶段对空 `product` 增加协议名兜底，修复资产搜索“服务/Product 长期无结果或空白”的问题
 - `[v3.2.9]` 重启稳定性与搜索性能修复：`worker` 启动阶段新增“中断任务恢复”机制，将“已开始但非终态”的历史任务自动收敛为 `error` 并记录中断原因，修复 `docker compose` 手动重启后任务卡在中间阶段的问题；列表接口新增 `_refresh` 强制刷新参数与 `API_LIST_CACHE_EXPIRE` 可配置缓存时长，前端改为“首次加载一次 + 模块内缓存 + 手动搜索/刷新触发更新”，减少任务管理/资产搜索页面切换时的高频 API 请求
 - `[v3.2.8]` API 管理补齐 Zoomeye 高级参数：配置中心与前端表单新增 `max_page/request_interval/rate_limit_retry/rate_limit_backoff/rate_limit_max_sleep` 的读取、展示与保存能力，修复“Zoomeye 在配置文件支持分页/超时与限频参数但 API 管理页缺失”的问题
 - `[v3.2.7]` 站点指纹识别改为“先快扫后精扫”：`WebSiteFetch` 新增高价值站点评分与分层筛选策略（按状态码/标题关键词/主机关键词/端口/响应特征综合打分，`401/403` 强制入选），第一阶段优先执行 URL 发现，第二阶段仅对高价值子集执行 `site_identify`，显著降低大规模任务下全量指纹识别带来的性能压力且对用户无新增配置要求
