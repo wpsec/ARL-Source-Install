@@ -295,6 +295,43 @@ class FileLeak(BaseThread):
         self.skip_by_policy = False
         self.waf_guard = waf_guard
 
+    @staticmethod
+    def _validate_http_url(url_text: str):
+        """
+        校验 URL 基础合法性，避免 requests 在解析异常 URL 时抛出噪声日志。
+        """
+        text = str(url_text or "").strip()
+        if not text:
+            return False, "empty_url"
+
+        parsed = urlparse(text)
+        if parsed.scheme not in ("http", "https"):
+            return False, "invalid_scheme"
+        if not parsed.netloc:
+            return False, "invalid_netloc"
+
+        try:
+            # 对如 :65000a1337 这类非法端口，urlparse.port 会抛 ValueError。
+            port = parsed.port
+        except ValueError:
+            return False, "invalid_port"
+
+        if port is not None and (port < 1 or port > 65535):
+            return False, "invalid_port_range"
+
+        return True, ""
+
+    def _build_url_obj(self, raw_url: str, payload: str):
+        ok, reason = self._validate_http_url(raw_url)
+        if not ok:
+            logger.info(
+                "skip fileleak generated malformed_url url:{} reason:{}".format(
+                    str(raw_url or "")[:260], reason
+                )
+            )
+            return None
+        return URL(raw_url, payload)
+
     def work(self, url):
         if self.error_times >= 20:
             return
@@ -355,6 +392,16 @@ class FileLeak(BaseThread):
         return self.page200_set
 
     def http_req(self, url: URL):
+        ok, reason = self._validate_http_url(url.url)
+        if not ok:
+            # 生成阶段异常 URL 直接跳过，不进入 requests 解析分支。
+            logger.info(
+                "skip fileleak request malformed_url url:{} reason:{}".format(
+                    str(url.url or "")[:260], reason
+                )
+            )
+            return None
+
         try:
             req = HTTPReq(url, waf_guard=self.waf_guard, waf_module="file_leak")
             req.req()
@@ -447,28 +494,43 @@ class FileLeak(BaseThread):
             check_url = url.url + "1337"
         else:
             check_url = url.url.replace(url.path, url.path + "1337")
-        end_check_url = URL(check_url, payload + "1337")
+        end_check_url = self._build_url_obj(check_url, payload + "1337")
 
         payload_list = ["..", "?", "etc/passwd"]
         for p in payload_list:
             if p in payload:
                 check_url = url.url.replace(p, p + "a1337")
                 payload = payload.replace(p, p + "a1337")
-                return [URL(check_url, payload)]
+                url_obj = self._build_url_obj(check_url, payload)
+                return [url_obj] if url_obj else []
 
         if "." in url.path and "." in payload:
             path = url.path.replace(".", "a1337.")
-            check_url = "{}{}".format(url.scope, path)
+            if not path.startswith("/"):
+                path = "/" + path
+            # 统一用 urljoin 拼接 scope + path，避免 host:port 与 path 直接字符串拼接。
+            check_url = urljoin(url.scope + "/", path.lstrip("/"))
             payload = payload.replace(".", "a1337.")
-            return [URL(check_url, payload), end_check_url]
+            result = []
+            dot_obj = self._build_url_obj(check_url, payload)
+            if dot_obj:
+                result.append(dot_obj)
+            if end_check_url:
+                result.append(end_check_url)
+            return result
 
         if url.path.endswith("/"):
-            path = url.path[:-1] + "a1337/"
-            check_url = "{}{}".format(url.scope, path)
+            raw_path = url.path or "/"
+            if not raw_path.startswith("/"):
+                raw_path = "/" + raw_path
+            path = raw_path.rstrip("/") + "/a1337/"
+            # 修复 "/" 场景下拼出 host:porta1337 的问题。
+            check_url = urljoin(url.scope + "/", path.lstrip("/"))
             payload = payload + "a1337/"
-            return [URL(check_url, payload)]
+            slash_obj = self._build_url_obj(check_url, payload)
+            return [slash_obj] if slash_obj else []
 
-        return [end_check_url]
+        return [end_check_url] if end_check_url else []
 
 def normal_url(url):
     scheme_map = {
