@@ -38,6 +38,7 @@ base_query_fields = {
     'page': fields.Integer(description="当前页数", example=1),
     'size': fields.Integer(description="页面大小", example=10),
     'order': fields.String(description="排序字段", example='_id'),
+    '_refresh': fields.String(description="强制刷新缓存（1/true）", example='1'),
 }
 
 # 只能用等号进行 MongoDB 查询的字段
@@ -57,6 +58,18 @@ class ARLResource(Resource):
     - 数据导出
     """
     
+    @staticmethod
+    def parse_refresh_flag(value):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return value > 0
+
+        text = str(value).strip().lower()
+        return text in {"1", "true", "yes", "on", "refresh", "force"}
+
     def get_parser(self, model, location='json'):
         """
         根据模型定义创建请求参数解析器
@@ -241,10 +254,14 @@ class ARLResource(Resource):
                 "code": 状态码
             }
         """
+        if not isinstance(args, dict):
+            args = {}
+
+        # _refresh 仅用于控制缓存，不参与 DB 查询条件
+        refresh_cache = self.parse_refresh_flag(args.pop("_refresh", None))
+
         # 复制原始参数用于构建缓存键，避免 get_default_field 修改原字典导致键不稳定
-        raw_args = {}
-        if isinstance(args, dict):
-            raw_args = args.copy()
+        raw_args = args.copy()
 
         # 获取分页、排序参数
         default_field = self.get_default_field(args)
@@ -308,7 +325,11 @@ class ARLResource(Resource):
             "route:build_data:{}".format(collection),
             json.dumps(cache_raw, ensure_ascii=False, sort_keys=True, default=str)
         )
-        return cached_call(cache_key, _loader, expire=60)
+        cache_expire = int(getattr(Config, "API_LIST_CACHE_EXPIRE", 60) or 0)
+        if cache_expire <= 0:
+            return _loader()
+
+        return cached_call(cache_key, _loader, expire=cache_expire, force_refresh=refresh_cache)
 
     def get_default_field(self, args):
         """

@@ -50,6 +50,23 @@ ensure_python_runtime() {
   fi
 }
 
+recover_interrupted_tasks() {
+  local output
+  output="$(PYTHONPATH=/code python3 - <<'PY' 2>/dev/null || true
+from app import utils
+
+result = utils.recover_interrupted_tasks_on_worker_start()
+task_count = int((result or {}).get("task", 0) or 0)
+github_count = int((result or {}).get("github_task", 0) or 0)
+print("recover interrupted tasks task={} github_task={}".format(task_count, github_count))
+PY
+)"
+
+  if [ -n "$output" ]; then
+    echo "$output"
+  fi
+}
+
 ensure_python_runtime
 
 wait-for-it.sh -t 60 mongodb:27017
@@ -58,6 +75,8 @@ wait-for-it.sh -t 60 redis:6379
 mkdir -p /code/app/tmp
 LOG_FILE_PATH="${ARL_SCAN_LOG_FILE:-/code/logs/arl_worker.log}"
 mkdir -p "$(dirname "${LOG_FILE_PATH}")"
+
+recover_interrupted_tasks
 
 GITHUB_CONCURRENCY="$(get_cfg_int CELERY_GITHUB_WORKER_CONCURRENCY 1)"
 TASK_CONCURRENCY="$(get_cfg_int CELERY_TASK_WORKER_CONCURRENCY 2)"

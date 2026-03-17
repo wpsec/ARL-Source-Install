@@ -152,6 +152,8 @@ ARL:
   AUTH: true
   #API 认证key, 可以访问api/doc查看文档
   API_KEY: ""
+  # 列表接口缓存时长（秒），0=禁用列表缓存
+  API_LIST_CACHE_EXPIRE: 300
   BLACK_IPS:
     - 0.0.0.0/8
     - 10.0.0.0/8

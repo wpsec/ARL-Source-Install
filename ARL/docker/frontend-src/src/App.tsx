@@ -106,6 +106,24 @@ type ModuleConfig = {
   actions?: ModuleAction[];
 };
 
+type ModuleListCacheEntry = {
+  rows: any[];
+  total: number;
+  page: number;
+  size: number;
+  order: string;
+  quickFilter: string;
+  searchForm: JsonValue;
+};
+
+type LoadRowsOptions = {
+  page?: number;
+  size?: number;
+  order?: string;
+  forceRefresh?: boolean;
+  filters?: JsonValue;
+};
+
 type ApiRequestOptions = {
   method?: HttpMethod;
   query?: JsonValue;
@@ -5691,15 +5709,28 @@ function TableModuleView({
   const deleteConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const tableRootRef = useRef<HTMLDivElement | null>(null);
   const keepBottomAfterSizeChangeRef = useRef(false);
+  const moduleListStateCacheRef = useRef<Record<string, ModuleListCacheEntry>>({});
+  const moduleListLoadedRef = useRef<Record<string, boolean>>({});
+  const taskDetailCountCacheRef = useRef<Record<string, Record<string, number>>>({});
+  const taskSchedulePolicyOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
   );
   const hasExternalFilters = useMemo(() => Object.keys(activeExternalFilters).length > 0, [activeExternalFilters]);
+  const activeExternalFilterSignature = useMemo(() => {
+    const entries = Object.entries(activeExternalFilters).sort((a, b) => a[0].localeCompare(b[0]));
+    return JSON.stringify(entries);
+  }, [activeExternalFilters]);
+  const moduleCacheKey = useMemo(
+    () => `${module.id}::${activeExternalFilterSignature}`,
+    [module.id, activeExternalFilterSignature]
+  );
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
+  const [shouldInitialLoad, setShouldInitialLoad] = useState(false);
 
   const resolveScrollableContainer = useCallback((): HTMLElement | null => {
     let cursor: HTMLElement | null = tableRootRef.current;
@@ -5780,21 +5811,52 @@ function TableModuleView({
     });
   }, [buildTaskErrorLogs]);
 
-  useEffect(() => {
-    if (!hasAdvancedSearch) {
-      setSearchForm({});
-      return;
-    }
+  const buildDefaultSearchForm = useCallback((): JsonValue => {
+    if (!hasAdvancedSearch) return {};
     const next: JsonValue = {};
     (module.searchFields || []).forEach((field) => {
       next[field.key] = '';
     });
-    setSearchForm(next);
-  }, [module.id, hasAdvancedSearch, module.searchFields]);
+    return next;
+  }, [hasAdvancedSearch, module.searchFields]);
 
   useEffect(() => {
-    setOrder(module.defaultOrder || '');
-  }, [module.id, module.defaultOrder]);
+    const cachedState = moduleListStateCacheRef.current[moduleCacheKey];
+    if (cachedState) {
+      setRows(cachedState.rows || []);
+      setTotal(Number(cachedState.total || 0));
+      setPage(Math.max(1, Number(cachedState.page || 1)));
+      setSize(Math.max(1, Number(cachedState.size || 50)));
+      setOrder(String(cachedState.order || module.defaultOrder || ''));
+      setQuickFilter(String(cachedState.quickFilter || ''));
+      setSearchForm(cachedState.searchForm ? deepClone(cachedState.searchForm) : buildDefaultSearchForm());
+      setShouldInitialLoad(Boolean(hasList) && !Boolean(moduleListLoadedRef.current[moduleCacheKey]));
+    } else {
+      setRows([]);
+      setTotal(0);
+      setPage(1);
+      setSize(50);
+      setOrder(module.defaultOrder || '');
+      setQuickFilter('');
+      setSearchForm(buildDefaultSearchForm());
+      setShouldInitialLoad(Boolean(hasList));
+    }
+    setLoading(false);
+    setSelectedIds([]);
+  }, [buildDefaultSearchForm, hasList, module.defaultOrder, moduleCacheKey]);
+
+  useEffect(() => {
+    if (!hasList) return;
+    moduleListStateCacheRef.current[moduleCacheKey] = {
+      rows,
+      total,
+      page,
+      size,
+      order,
+      quickFilter,
+      searchForm: searchForm ? deepClone(searchForm) : {},
+    };
+  }, [hasList, moduleCacheKey, order, page, quickFilter, rows, searchForm, size, total]);
 
   useEffect(() => {
     setRiskDialogOpen(false);
@@ -5889,6 +5951,11 @@ function TableModuleView({
       return;
     }
 
+    if (taskSchedulePolicyOptionsCacheRef.current) {
+      setTaskSchedulePolicyOptions(taskSchedulePolicyOptionsCacheRef.current);
+      return;
+    }
+
     let cancelled = false;
     const loadPolicyOptions = async () => {
       try {
@@ -5905,7 +5972,9 @@ function TableModuleView({
           )
         );
         if (cancelled) return;
-        setTaskSchedulePolicyOptions(uniqueNames.map((name) => ({ label: name, value: name })));
+        const options = uniqueNames.map((name) => ({ label: name, value: name }));
+        taskSchedulePolicyOptionsCacheRef.current = options;
+        setTaskSchedulePolicyOptions(options);
       } catch {
         if (cancelled) return;
         setTaskSchedulePolicyOptions([]);
@@ -5922,10 +5991,21 @@ function TableModuleView({
     () => TASK_DETAIL_TABS.some((tab) => tab.id === module.id),
     [module.id]
   );
+  const taskDetailCountCacheKey = useMemo(
+    () => `task_detail_count::${activeExternalFilterSignature}`,
+    [activeExternalFilterSignature]
+  );
 
   useEffect(() => {
     if (!isTaskDetailModule) {
       setTaskDetailCounts({});
+      setTaskDetailCountLoading(false);
+      return;
+    }
+
+    const cachedCounts = taskDetailCountCacheRef.current[taskDetailCountCacheKey];
+    if (cachedCounts) {
+      setTaskDetailCounts(cachedCounts);
       setTaskDetailCountLoading(false);
       return;
     }
@@ -5955,6 +6035,7 @@ function TableModuleView({
         entries.forEach(([id, count]) => {
           nextCounts[id] = count;
         });
+        taskDetailCountCacheRef.current[taskDetailCountCacheKey] = nextCounts;
         setTaskDetailCounts(nextCounts);
       } catch {
         if (cancelled) return;
@@ -5968,7 +6049,7 @@ function TableModuleView({
     return () => {
       cancelled = true;
     };
-  }, [isTaskDetailModule, token, activeExternalFilters]);
+  }, [isTaskDetailModule, token, activeExternalFilters, taskDetailCountCacheKey]);
 
   const getSearchFieldOptions = (field: ModuleSearchField): Array<{ label: string; value: string }> => {
     if (field.dynamicOptionsKey === 'policy_name') {
@@ -6018,25 +6099,35 @@ function TableModuleView({
     setPage(1);
   }, [hasAdvancedSearch, module.searchFields]);
 
-  const loadRows = useCallback(async () => {
+  const loadRows = useCallback(async (loadOptions: LoadRowsOptions = {}) => {
     if (!module.listPath) return;
+    const nextPage = Number.isFinite(Number(loadOptions.page))
+      ? Math.max(1, Math.floor(Number(loadOptions.page)))
+      : page;
+    const nextSize = Number.isFinite(Number(loadOptions.size))
+      ? Math.max(1, Math.floor(Number(loadOptions.size)))
+      : size;
+    const nextOrder = typeof loadOptions.order === 'string' ? loadOptions.order : order;
+    const filters = loadOptions.filters || buildFilters();
+
     setLoading(true);
     setError('');
     setSuccess('');
     try {
-      const filters = buildFilters();
-
       const query: JsonValue = {
-        page,
-        size,
+        page: nextPage,
+        size: nextSize,
         ...filters,
       };
 
-      const orderValue = String(order || '').trim();
+      const orderValue = String(nextOrder || '').trim();
       if (orderValue) {
         query.order = orderValue;
       } else if (module.defaultOrder && !('order' in query)) {
         query.order = module.defaultOrder;
+      }
+      if (loadOptions.forceRefresh) {
+        query._refresh = '1';
       }
 
       const response = await requestApi(token, module.listPath, { method: 'GET', query });
@@ -6044,18 +6135,42 @@ function TableModuleView({
       setRows(normalized.items);
       setTotal(normalized.total);
       setSelectedIds([]);
+      moduleListLoadedRef.current[moduleCacheKey] = true;
+      if (isTaskDetailModule) {
+        const currentTotal = Number(normalized.total || 0);
+        setTaskDetailCounts((prev) => ({ ...prev, [module.id]: currentTotal }));
+        taskDetailCountCacheRef.current[taskDetailCountCacheKey] = {
+          ...(taskDetailCountCacheRef.current[taskDetailCountCacheKey] || {}),
+          [module.id]: currentTotal,
+        };
+      }
     } catch (err: any) {
       setError(err?.message || '加载失败');
       setRows([]);
       setTotal(0);
+      moduleListLoadedRef.current[moduleCacheKey] = true;
     } finally {
       setLoading(false);
     }
-  }, [buildFilters, module.defaultOrder, module.listPath, order, page, size, token]);
+  }, [
+    buildFilters,
+    isTaskDetailModule,
+    module.defaultOrder,
+    module.id,
+    module.listPath,
+    moduleCacheKey,
+    order,
+    page,
+    size,
+    taskDetailCountCacheKey,
+    token,
+  ]);
 
   useEffect(() => {
+    if (!shouldInitialLoad || !hasList) return;
+    setShouldInitialLoad(false);
     void loadRows();
-  }, [loadRows]);
+  }, [hasList, loadRows, shouldInitialLoad]);
 
   const totalPages = Math.max(1, Math.ceil(total / size));
   const pageOptions = useMemo(
@@ -6119,13 +6234,12 @@ function TableModuleView({
   }, [order]);
   const toggleColumnSort = useCallback((column: string) => {
     if (!isColumnSortable(column)) return;
-    setOrder((prev) => {
-      const current = String(prev || '').trim();
-      if (current === `-${column}`) return column;
-      return `-${column}`;
-    });
+    const current = String(order || '').trim();
+    const nextOrder = current === `-${column}` ? column : `-${column}`;
+    setOrder(nextOrder);
     setPage(1);
-  }, [isColumnSortable]);
+    void loadRows({ page: 1, order: nextOrder });
+  }, [isColumnSortable, loadRows, order]);
   const shouldWrapCell = useCallback((moduleId: string, column: string) => {
     if (moduleId === 'task' && ['target', 'options_summary'].includes(column)) return true;
     if (moduleId === 'task_schedule' && column === 'target') return true;
@@ -6319,7 +6433,7 @@ function TableModuleView({
     }
 
     if (action.reloadAfter !== false && module.listPath) {
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     }
   };
 
@@ -6617,7 +6731,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
     }
@@ -6636,7 +6750,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
     }
@@ -6655,7 +6769,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
     }
@@ -6675,7 +6789,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
     }
@@ -6694,7 +6808,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
     }
@@ -6713,7 +6827,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
     }
@@ -6733,7 +6847,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
     }
@@ -6752,7 +6866,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
     }
@@ -6772,7 +6886,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
     }
@@ -6869,7 +6983,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
     }
@@ -6890,7 +7004,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
     }
@@ -6909,7 +7023,7 @@ function TableModuleView({
         },
       });
       setSuccess(result?.message ? `重启成功: ${result.message}` : '重启成功');
-      await loadRows();
+      await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '重启失败');
     }
@@ -7110,7 +7224,7 @@ function TableModuleView({
                         if (event.key === 'Enter') {
                           event.preventDefault();
                           setPage(1);
-                          void loadRows();
+                          void loadRows({ page: 1, forceRefresh: true });
                         }
                       }}
                     />
@@ -7120,11 +7234,11 @@ function TableModuleView({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {module.id !== 'task' ? (
+              {hasList ? (
                 <button
                   onClick={() => {
                     setPage(1);
-                    void loadRows();
+                    void loadRows({ page: 1, forceRefresh: true });
                   }}
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
                   disabled={loading || !hasList}
@@ -7133,7 +7247,7 @@ function TableModuleView({
                   搜索
                 </button>
               ) : null}
-              {module.id !== 'task' ? (
+              {hasList ? (
                 <button
                   onClick={clearSearchFilters}
                   className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
@@ -7238,7 +7352,7 @@ function TableModuleView({
             </div>
 
             <button
-              onClick={() => void loadRows()}
+              onClick={() => void loadRows({ forceRefresh: true })}
               className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
               disabled={loading || !hasList}
             >
@@ -7982,7 +8096,12 @@ function TableModuleView({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                onClick={() => {
+                  const nextPage = Math.max(1, page - 1);
+                  if (nextPage === page) return;
+                  setPage(nextPage);
+                  void loadRows({ page: nextPage });
+                }}
                 disabled={page <= 1}
                 className="px-3.5 py-2 rounded-xl border border-brand-border text-sm disabled:opacity-40"
               >
@@ -7994,7 +8113,9 @@ function TableModuleView({
                   onChange={(event) => {
                     const nextPage = Number(event.target.value || 1);
                     if (!Number.isFinite(nextPage)) return;
-                    setPage(Math.max(1, Math.min(totalPages, Math.floor(nextPage))));
+                    const normalized = Math.max(1, Math.min(totalPages, Math.floor(nextPage)));
+                    setPage(normalized);
+                    void loadRows({ page: normalized });
                   }}
                   className={`${UNIFIED_SELECT_CLASS} w-auto min-w-[118px] py-2`}
                   title={`当前第 ${page} 页，共 ${totalPages} 页`}
@@ -8017,6 +8138,7 @@ function TableModuleView({
                     rememberBottomAnchorBeforeSizeChange();
                     setSize(nextSize);
                     setPage(1);
+                    void loadRows({ page: 1, size: nextSize });
                   }}
                   className={`${UNIFIED_SELECT_CLASS} w-auto min-w-[108px] py-2`}
                 >
@@ -8030,7 +8152,12 @@ function TableModuleView({
               </div>
               <button
                 type="button"
-                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                onClick={() => {
+                  const nextPage = Math.min(totalPages, page + 1);
+                  if (nextPage === page) return;
+                  setPage(nextPage);
+                  void loadRows({ page: nextPage });
+                }}
                 disabled={page >= totalPages}
                 className="px-3.5 py-2 rounded-xl border border-brand-border text-sm disabled:opacity-40"
               >

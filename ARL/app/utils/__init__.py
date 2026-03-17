@@ -739,6 +739,73 @@ def mark_task_interrupted(signum):
         logger.warning("mark_task_interrupted error {}".format(e))
 
 
+def recover_interrupted_tasks_on_worker_start(
+    reason="worker restarted before task finished",
+    max_logs=20,
+):
+    """
+    Worker 启动时恢复中断任务，避免任务长期卡在中间状态。
+
+    恢复规则：
+    - 仅处理已开始但未进入终态的任务
+    - waiting/done/stop/error 状态不会被覆盖
+    """
+    logger = get_logger()
+    now = curr_date()
+    safe_max_logs = max(1, int(max_logs))
+
+    detail = {
+        "time": now,
+        "stage": "worker_bootstrap",
+        "message": reason,
+    }
+    update = {
+        "$set": {
+            "status": "error",
+            "end_time": now,
+            "stop_reason": reason,
+            "interrupted": True,
+            "last_error": detail,
+        },
+        "$push": {
+            "error_logs": {
+                "$each": [detail],
+                "$slice": -safe_max_logs,
+            }
+        }
+    }
+    query = {
+        "status": {"$nin": ["waiting", "done", "stop", "error"]},
+        "start_time": {"$nin": ["", "-"]},
+    }
+
+    result = {
+        "task": 0,
+        "github_task": 0,
+    }
+    for collection in ["task", "github_task"]:
+        try:
+            db_result = conn_db(collection).update_many(query, update)
+            result[collection] = int(db_result.modified_count or 0)
+        except Exception as e:
+            logger.warning(
+                "recover_interrupted_tasks_on_worker_start failed collection:{} error:{}".format(
+                    collection, e
+                )
+            )
+
+    if result["task"] or result["github_task"]:
+        logger.warning(
+            "recover interrupted tasks on worker start task:{} github_task:{} reason:{}".format(
+                result["task"], result["github_task"], reason
+            )
+        )
+    else:
+        logger.info("recover interrupted tasks on worker start no stale task found")
+
+    return result
+
+
 def truncate_string(s):
     if len(s) > 30:
         truncated_string = s[:30]

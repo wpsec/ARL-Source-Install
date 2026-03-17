@@ -148,10 +148,15 @@ def cache_delete_by_prefix(prefix, batch_size=200):
         return 0
 
 
-def cached_call(key, loader, expire=None):
+def cached_call(key, loader, expire=None, force_refresh=False):
     """
     读取缓存，不命中时执行 loader 并回写缓存
     """
+    if force_refresh:
+        data = loader()
+        cache_set_obj(key, data, expire=expire)
+        return data
+
     data = cache_get_obj(key)
     if data is not None:
         return data

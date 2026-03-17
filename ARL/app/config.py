@@ -266,6 +266,13 @@ def refresh_runtime_config_best_effort(force=False):
                 continue
             setattr(Config, key_name, safe_positive_int(value, getattr(Config, key_name)))
 
+        if arl_conf.get("API_LIST_CACHE_EXPIRE") is not None:
+            Config.API_LIST_CACHE_EXPIRE = safe_positive_int(
+                arl_conf.get("API_LIST_CACHE_EXPIRE"),
+                Config.API_LIST_CACHE_EXPIRE,
+                min_value=0,
+            )
+
         if arl_conf.get("URLFINDER_URL_PROBE_ENABLE") is not None:
             Config.URLFINDER_URL_PROBE_ENABLE = _safe_runtime_bool(
                 arl_conf.get("URLFINDER_URL_PROBE_ENABLE"), Config.URLFINDER_URL_PROBE_ENABLE
@@ -279,6 +286,12 @@ def refresh_runtime_config_best_effort(force=False):
                 key_name,
                 safe_positive_int(env_int(env_name, getattr(Config, key_name)), getattr(Config, key_name)),
             )
+
+        Config.API_LIST_CACHE_EXPIRE = safe_positive_int(
+            env_int("ARL_API_LIST_CACHE_EXPIRE", Config.API_LIST_CACHE_EXPIRE),
+            Config.API_LIST_CACHE_EXPIRE,
+            min_value=0,
+        )
 
         timeout_type_env = env_str("ARL_HOST_TIMEOUT_TYPE", Config.HOST_TIMEOUT_TYPE).strip().lower()
         if timeout_type_env in ("default", "custom"):
@@ -499,6 +512,8 @@ class Config(object):
     API_PAGE_SIZE_MAX = 10000
     # 无查询条件时是否使用 estimated_document_count 作为总数统计
     API_USE_ESTIMATED_COUNT = False
+    # 列表接口 Redis 缓存时长（秒），0 表示禁用列表缓存
+    API_LIST_CACHE_EXPIRE = 300
 
     # ==================== IP黑名单配置 ====================
     # IP地址黑名单，这些IP段不会被扫描
@@ -713,6 +728,11 @@ try:
     # --- 系统认证配置 ---
     Config.AUTH = y["ARL"]["AUTH"]
     Config.API_KEY = y["ARL"]["API_KEY"]
+    api_list_cache_expire = y["ARL"].get("API_LIST_CACHE_EXPIRE")
+    if api_list_cache_expire is not None:
+        Config.API_LIST_CACHE_EXPIRE = safe_positive_int(
+            api_list_cache_expire, Config.API_LIST_CACHE_EXPIRE, min_value=0
+        )
     Config.BLACK_IPS = y["ARL"]["BLACK_IPS"]
     dns_resolvers = y["ARL"].get("DNS_RESOLVERS")
     if dns_resolvers is not None:
@@ -1300,6 +1320,11 @@ try:
     )
     Config.API_USE_ESTIMATED_COUNT = env_bool(
         "ARL_API_USE_ESTIMATED_COUNT", Config.API_USE_ESTIMATED_COUNT
+    )
+    Config.API_LIST_CACHE_EXPIRE = safe_positive_int(
+        env_int("ARL_API_LIST_CACHE_EXPIRE", Config.API_LIST_CACHE_EXPIRE),
+        Config.API_LIST_CACHE_EXPIRE,
+        min_value=0
     )
 
     dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
