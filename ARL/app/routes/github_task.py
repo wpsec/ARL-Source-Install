@@ -72,6 +72,7 @@ class ARLGithubTask(ARLResource):
         orderby_list = default_field.get("order", [("_id", -1)])
 
         query = self.build_db_query(args)
+        query = self.normalize_task_status_query(collection, args, query)
         search_query = {
             "$or": [
                 {"name": {"$regex": re.escape(search_text), "$options": "i"}},

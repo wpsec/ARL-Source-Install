@@ -2193,7 +2193,8 @@ function getTaskStatusLabel(rawStatus: any): string {
   if (normalized.includes('done') || normalized.includes('finish') || normalized.includes('success')) return '已完成';
   if (normalized.includes('stop') || normalized.includes('cancel')) return '已停止';
   if (normalized.includes('error') || normalized.includes('fail')) return '异常';
-  return normalized;
+  // 任务执行阶段状态（如 domain_brute、site_spider）统一归类为“运行中”。
+  return '运行中';
 }
 
 function getTaskTypeLabel(rawType: any): string {

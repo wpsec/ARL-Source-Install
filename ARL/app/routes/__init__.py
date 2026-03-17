@@ -44,6 +44,8 @@ base_query_fields = {
 # 只能用等号进行 MongoDB 查询的字段
 # 这些字段不支持模糊匹配，只支持精确匹配
 EQUAL_FIELDS = ["task_id", "task_tag", "ip_type", "scope_id", "type"]
+TASK_STATUS_RUNNING_EXCLUDE = ["waiting", "done", "stop", "error"]
+TASK_STATUS_COLLECTIONS = {"task", "github_task"}
 
 
 class ARLResource(Resource):
@@ -58,6 +60,38 @@ class ARLResource(Resource):
     - 数据导出
     """
     
+    @staticmethod
+    def normalize_task_status_query(collection, args, query):
+        """
+        任务状态查询兼容：
+        - status=running -> 真实阶段状态聚合（排除 waiting/done/stop/error）
+        - status=waiting/done/stop/error -> 精确匹配
+        """
+        if collection not in TASK_STATUS_COLLECTIONS:
+            return query
+        if not isinstance(args, dict) or not isinstance(query, dict):
+            return query
+
+        raw_status = args.get("status")
+        if raw_status is None:
+            return query
+
+        status_text = str(raw_status).strip().lower()
+        if not status_text:
+            return query
+
+        if status_text == "running":
+            query["status"] = {
+                "$exists": True,
+                "$nin": TASK_STATUS_RUNNING_EXCLUDE,
+            }
+            return query
+
+        if status_text in TASK_STATUS_RUNNING_EXCLUDE:
+            query["status"] = status_text
+
+        return query
+
     @staticmethod
     def parse_refresh_flag(value):
         if isinstance(value, bool):
@@ -272,6 +306,7 @@ class ARLResource(Resource):
         def _loader():
             # 构建查询条件
             query = self.build_db_query(args)
+            query = self.normalize_task_status_query(collection, args, query)
 
             # 执行分页查询
             result = conn(collection).find(query).sort(orderby_list).skip(size * (page - 1)).limit(size)
