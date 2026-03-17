@@ -389,7 +389,7 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'task_batch_export_fileleak',
-        label: '文件泄露批量导出',
+        label: '目录扫描批量导出',
         method: 'POST',
         path: '/batch_export/fileleak/',
         selectedField: 'task_id',
@@ -1327,8 +1327,8 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'fileleak',
-    label: '文件泄露',
-    description: '敏感文件泄露结果',
+    label: '目录扫描',
+    description: '目录扫描结果',
     group: '风险与规则',
     icon: ShieldAlert,
     listPath: '/fileleak/',
@@ -1809,7 +1809,7 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'ip', label: 'IP' },
   { id: 'cert', label: 'SSL证书' },
   { id: 'service', label: '服务' },
-  { id: 'fileleak', label: '文件泄露' },
+  { id: 'fileleak', label: '目录扫描' },
   { id: 'url', label: 'URL信息' },
   { id: 'vuln', label: '风险' },
   { id: 'cip', label: 'C段' },
@@ -2192,7 +2192,7 @@ const TASK_RUNNING_STAGE_LABELS: Record<string, string> = {
   site_spider: '站点爬虫',
   site_identify: '站点识别',
   site_capture: '站点截图',
-  file_leak: '文件泄露',
+  file_leak: '目录扫描',
   poc_run: 'PoC扫描',
   nuclei_scan: 'Nuclei扫描',
   afrog_scan: 'afrog扫描',
@@ -2200,21 +2200,50 @@ const TASK_RUNNING_STAGE_LABELS: Record<string, string> = {
   nuclei_scan_retry: 'Nuclei补跑',
 };
 
-function getTaskStatusLabel(rawStatus: any, options: { showRunningStage?: boolean } = {}): string {
+function normalizeTaskStatus(rawStatus: any): 'waiting' | 'running' | 'done' | 'stop' | 'error' {
   const rawText = String(rawStatus ?? '').trim();
   const normalized = rawText.toLowerCase();
+  if (!normalized) return 'running';
+  if (normalized === 'waiting') return 'waiting';
+  if (normalized === 'running') return 'running';
+  if (normalized === 'done') return 'done';
+  if (normalized === 'stop') return 'stop';
+  if (normalized === 'error') return 'error';
+  if (/^\w+\s+\d+\/\d+$/i.test(normalized)) return 'running';
+  if (normalized.includes('done') || normalized.includes('finish') || normalized.includes('success')) return 'done';
+  if (normalized.includes('stop') || normalized.includes('cancel')) return 'stop';
+  if (normalized.includes('error') || normalized.includes('fail')) return 'error';
+  if (normalized.includes('run') || normalized.includes('wait') || normalized.includes('queue') || normalized.includes('start')) {
+    return 'running';
+  }
+  return 'running';
+}
+
+function getTaskStatusSortWeight(rawStatus: any): number {
+  const normalizedStatus = normalizeTaskStatus(rawStatus);
+  if (normalizedStatus === 'done' || normalizedStatus === 'error') return 0;
+  if (normalizedStatus === 'stop') return 2;
+  return 1;
+}
+
+function getTaskStatusLabel(rawStatus: any, options: { showRunningStage?: boolean } = {}): string {
+  const rawText = String(rawStatus ?? '').trim();
   const showRunningStage = Boolean(options.showRunningStage);
-  if (!normalized) return '未知';
-  if (normalized === 'waiting') return '等待中';
-  if (normalized === 'running') return '运行中';
-  if (normalized === 'done') return '已完成';
-  if (normalized === 'stop') return '已停止';
-  if (normalized === 'error') return '异常';
+  if (!rawText) return '未知';
+  const normalized = rawText.toLowerCase();
   if (/^\w+\s+\d+\/\d+$/i.test(normalized)) return rawText;
-  if (normalized.includes('run') || normalized.includes('wait') || normalized.includes('queue') || normalized.includes('start')) return '运行中';
-  if (normalized.includes('done') || normalized.includes('finish') || normalized.includes('success')) return '已完成';
-  if (normalized.includes('stop') || normalized.includes('cancel')) return '已停止';
-  if (normalized.includes('error') || normalized.includes('fail')) return '异常';
+  const normalizedStatus = normalizeTaskStatus(rawStatus);
+  if (normalizedStatus === 'waiting') return '等待中';
+  if (normalizedStatus === 'running') {
+    if (showRunningStage) {
+      const stageLabel = TASK_RUNNING_STAGE_LABELS[normalized] || rawText.replace(/_/g, ' ');
+      if (stageLabel) return `运行中（${stageLabel}）`;
+    }
+    return '运行中';
+  }
+  if (normalizedStatus === 'done') return '已完成';
+  if (normalizedStatus === 'stop') return '已停止';
+  if (normalizedStatus === 'error') return '异常';
   if (showRunningStage) {
     const stageLabel = TASK_RUNNING_STAGE_LABELS[normalized] || rawText.replace(/_/g, ' ');
     if (stageLabel) return `运行中（${stageLabel}）`;
@@ -2853,7 +2882,7 @@ const fieldLabelMap: Record<string, string> = {
   domain_brute: '域名爆破',
   domain_brute_type: '爆破字典类型',
   domain_dict: '域名爆破字典',
-  file_leak_dict: '敏感文件泄漏字典',
+  file_leak_dict: '目录扫描字典',
   port_scan: '端口扫描',
   port_scan_type: '端口扫描类型',
   port_custom: '自定义端口',
@@ -2862,13 +2891,13 @@ const fieldLabelMap: Record<string, string> = {
   os_detection: '操作系统识别',
   site_identify: '站点识别',
   site_capture: '站点截图',
-  file_leak: '文件泄露',
+  file_leak: '目录扫描',
   search_engines: '搜索引擎调用',
   site_spider: '站点爬虫',
   arl_search: 'ARL 历史查询',
   alt_dns: 'DNS字典智能生成',
   ssl_cert: 'SSL 证书获取',
-  dns_query_plugin: '域名查询插件',
+  dns_query_plugin: '测绘引擎查询',
   skip_scan_cdn_ip: '跳过CDN',
   nuclei_scan: 'nuclei 调用',
   afrog_scan: 'afrog 调用',
@@ -4007,7 +4036,7 @@ function ActionDialog({
     { key: 'site_config.search_engines', label: '2. 搜索引擎调用' },
     { key: 'site_config.site_spider', label: '3. 站点爬虫' },
     { key: 'site_config.site_capture', label: '4. 站点截图' },
-    { key: 'file_leak', label: '5. 文件泄露' },
+    { key: 'file_leak', label: '5. 目录扫描' },
     { key: 'site_config.nuclei_scan', label: '6. nuclei 调用' },
     { key: 'site_config.afrog_scan', label: '7. afrog 调用' },
     { key: 'site_config.web_info_hunter', label: '8. WIH 调用' },
@@ -4478,7 +4507,7 @@ function ActionDialog({
               ) : null}
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">敏感文件泄漏字典</label>
+                <label className="text-xs font-bold text-brand-text-muted">目录扫描字典</label>
                 <div className="relative">
                   <select
                     value={taskFileLeakDict}
@@ -4496,7 +4525,7 @@ function ActionDialog({
                   <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
                 <p className="text-[11px] text-brand-text-muted">
-                  默认使用配置管理中的敏感文件泄漏字典；你可以按任务改选其它字典。当前默认：
+                  默认使用配置管理中的目录扫描字典；你可以按任务改选其它字典。当前默认：
                   {taskDefaultFileLeakDictPath ? ` ${taskDefaultFileLeakDictPath}` : '（未找到，需手动选择）'}
                 </p>
               </div>
@@ -5068,7 +5097,7 @@ function ActionDialog({
                     </p>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted">敏感文件泄漏字典</label>
+                    <label className="text-xs font-bold text-brand-text-muted">目录扫描字典</label>
                     <div className="relative">
                       <select
                         value={policyFileLeakDict}
@@ -5434,7 +5463,7 @@ function ActionDialog({
                     }
                     payload.domain_dict = resolvedDomainDict;
                     if (Boolean(payload.file_leak) && !resolvedFileLeakDict) {
-                      throw new Error('文件泄漏已开启，但未找到可用敏感文件泄漏字典，请先在配置管理中配置或上传字典');
+                      throw new Error('目录扫描已开启，但未找到可用目录扫描字典，请先在配置管理中配置或上传字典');
                     }
                     if (resolvedFileLeakDict) {
                       payload.file_leak_dict = resolvedFileLeakDict;
@@ -5761,6 +5790,17 @@ function TableModuleView({
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
+  const displayRows = useMemo(() => {
+    if (module.id !== 'task' || !taskNameSearchText || rows.length <= 1) return rows;
+    return rows
+      .map((row, index) => ({
+        row,
+        index,
+        statusWeight: getTaskStatusSortWeight(row?.status),
+      }))
+      .sort((a, b) => (a.statusWeight - b.statusWeight) || (a.index - b.index))
+      .map((item) => item.row);
+  }, [module.id, rows, taskNameSearchText]);
   const [shouldInitialLoad, setShouldInitialLoad] = useState(false);
 
   const resolveScrollableContainer = useCallback((): HTMLElement | null => {
@@ -6362,7 +6402,7 @@ function TableModuleView({
     ? moduleActions.find((action) => action.id === 'task_sync') || null
     : null;
 
-  const selectAllChecked = rows.length > 0 && selectedIds.length === rows.length;
+  const selectAllChecked = displayRows.length > 0 && selectedIds.length === displayRows.length;
 
   const openActionDialog = (action: ModuleAction, payloadOverrides?: JsonValue) => {
     const basePayload = deepClone(action.payloadTemplate || {});
@@ -7451,7 +7491,7 @@ function TableModuleView({
                       className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
                       onChange={(event) => {
                         if (event.target.checked) {
-                          const ids = rows
+                          const ids = displayRows
                             .map((row) => getRowId(row))
                             .filter((value) => value);
                           setSelectedIds(ids);
@@ -7499,7 +7539,7 @@ function TableModuleView({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, rowIndex) => {
+                {displayRows.map((row, rowIndex) => {
                   const id = getRowId(row);
                   const checked = selectedIds.includes(id);
                   const scopeExpandKey = id || `scope-row-${page}-${rowIndex}`;
@@ -8106,7 +8146,7 @@ function TableModuleView({
                     </tr>
                   );
                 })}
-                {rows.length === 0 && !loading ? (
+                {displayRows.length === 0 && !loading ? (
                   <tr>
                     <td
                       colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (hasRowOperate ? 1 : 0), 2)}
@@ -9451,7 +9491,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     }
     const normalizedFileLeakDict = fileLeakDict.trim();
     if (!normalizedFileLeakDict) {
-      setError('请先选择敏感文件泄漏字典');
+      setError('请先选择目录扫描字典');
       return;
     }
 
@@ -9743,7 +9783,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、敏感文件泄漏字典、扫描并发、端口扫描默认超时/并行度、Nuclei 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供 2C2G3M/4C4G5M/8C16G10M 预定义档位，写入 config-docker.yaml 后重启生效。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供 2C2G3M/4C4G5M/8C16G10M 预定义档位，写入 config-docker.yaml 后重启生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -9905,7 +9945,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
         <div className="space-y-2">
           <label htmlFor="config-fileleak-dict-select" className="text-xs font-bold text-brand-text-muted block">
-            敏感文件泄漏字典
+            目录扫描字典
             <span className="ml-2 font-mono opacity-70">ARL.FILE_LEAK_DICT</span>
           </label>
           <div className="relative xl:max-w-[440px]">
