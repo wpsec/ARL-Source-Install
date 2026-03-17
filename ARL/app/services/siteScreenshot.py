@@ -35,6 +35,7 @@ class SiteScreenshot(BaseThread):
         self.sync_auth_token = ""
         self.sync_enable = False
         self.sync_timeout = Config.SCREENSHOT_SYNC_TIMEOUT
+        self.playwright_disabled = False
 
         os.makedirs(self.capture_dir, 0o777, True)
         self.init_screenshot_sync()
@@ -74,6 +75,15 @@ class SiteScreenshot(BaseThread):
         if self.phantomjs_bin is None:
             self.phantomjs_bin = utils.get_phantomjs_bin(logger=logger)
         return self.phantomjs_bin
+
+    def disable_playwright_once(self, reason):
+        """
+        仅在当前任务运行周期内禁用 Playwright，避免每个站点重复报错刷屏。
+        """
+        if self.playwright_disabled:
+            return
+        self.playwright_disabled = True
+        logger.warning("playwright disabled for current task, fallback phantomjs reason={}".format(reason))
 
     def upload_screenshot(self, site, file_path):
         """
@@ -159,6 +169,9 @@ class SiteScreenshot(BaseThread):
             return False
 
     def screenshot_by_playwright(self, site, file_name):
+        if self.playwright_disabled:
+            return False
+
         timeout_ms = max(1000, int(Config.PLAYWRIGHT_TIMEOUT_MS))
         wait_ms = max(0, int(Config.PLAYWRIGHT_WAIT_MS))
         chromium_bin = utils.resolve_executable(Config.PLAYWRIGHT_CHROMIUM_BIN)
@@ -178,7 +191,7 @@ class SiteScreenshot(BaseThread):
         try:
             from playwright.sync_api import sync_playwright
         except Exception as e:
-            logger.warning("playwright import failed {}, fallback phantomjs".format(e))
+            self.disable_playwright_once("import_failed:{}".format(str(e)[:300]))
             return False
 
         try:
@@ -205,7 +218,14 @@ class SiteScreenshot(BaseThread):
                 page.screenshot(path=file_name, type="jpeg", quality=95, full_page=False)
             return os.path.exists(file_name)
         except Exception as e:
-            logger.warning("playwright screenshot failed site={} err={}".format(site, e))
+            err_text = str(e)
+            if ("Executable doesn't exist" in err_text) or ("playwright install" in err_text):
+                self.disable_playwright_once("browser_missing")
+                logger.warning(
+                    "playwright chromium not found site={} err={} fallback phantomjs".format(site, err_text[:300])
+                )
+            else:
+                logger.warning("playwright screenshot failed site={} err={}".format(site, err_text[:500]))
             return False
         finally:
             try:

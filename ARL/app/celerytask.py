@@ -35,6 +35,10 @@ celery.conf.update(
     # 定期回收 worker 子进程，减少长时间运行导致的内存膨胀
     worker_max_tasks_per_child=Config.CELERY_MAX_TASKS_PER_CHILD,
     worker_max_memory_per_child=Config.CELERY_MAX_MEMORY_PER_CHILD,
+    # Broker 连接稳定性配置：断连自动重连
+    broker_connection_retry=True,
+    broker_connection_retry_on_startup=True,
+    broker_connection_max_retries=None,  # None 表示无限重试，避免短暂重启导致 worker 退出
     # Broker 连接重试配置
     broker_transport_options={
         "max_retries": 3,  # 最大重试次数

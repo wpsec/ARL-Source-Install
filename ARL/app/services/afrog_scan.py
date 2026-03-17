@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import subprocess
+import zipfile
 
 from app import utils
 from app.config import Config
@@ -37,6 +38,155 @@ class AfrogScan(object):
         rand_str = utils.random_choices()
         self.target_file = os.path.join(self.tmp_path, "afrog_target_{}.txt".format(rand_str))
         self.result_file = os.path.join(self.tmp_path, "afrog_result_{}.json".format(rand_str))
+
+    def _get_afrog_base_dir(self):
+        """
+        获取 afrog 相关目录：
+        - 优先使用 AFROG_BIN 所在目录
+        - 为空时回退到项目 tools/afrog
+        """
+        configured = str(getattr(Config, "AFROG_BIN", "") or "").strip()
+        if configured:
+            return os.path.dirname(configured) or configured
+        return os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "tools", "afrog"))
+
+    @staticmethod
+    def _runtime_arch_tokens():
+        arch = str(utils.get_runtime_arch() or "").strip().lower()
+        if arch in ["x86_64", "amd64"]:
+            return ["amd64", "x86_64"]
+        if arch in ["aarch64", "arm64"]:
+            return ["arm64", "aarch64"]
+        if arch:
+            return [arch]
+        return []
+
+    def _find_linux_afrog_zip(self):
+        base_dir = self._get_afrog_base_dir()
+        if not os.path.isdir(base_dir):
+            logger.warning("afrog base dir not found:{}".format(base_dir))
+            return ""
+
+        zip_files = []
+        try:
+            for file_name in os.listdir(base_dir):
+                file_name = str(file_name or "").strip()
+                if file_name.lower().endswith(".zip") and file_name.lower().startswith("afrog"):
+                    zip_files.append(os.path.join(base_dir, file_name))
+        except Exception as e:
+            logger.warning("list afrog zip failed dir:{} err:{}".format(base_dir, e))
+            return ""
+
+        if not zip_files:
+            return ""
+
+        linux_zips = []
+        windows_zips = []
+        for zip_path in zip_files:
+            zip_name = os.path.basename(zip_path).lower()
+            if "linux" in zip_name:
+                linux_zips.append(zip_path)
+            if "windows" in zip_name:
+                windows_zips.append(zip_path)
+
+        if not linux_zips:
+            if windows_zips:
+                logger.warning("afrog only windows zip found:{} please provide linux package".format(
+                    ",".join([os.path.basename(x) for x in windows_zips])[:300]
+                ))
+            return ""
+
+        arch_tokens = self._runtime_arch_tokens()
+        for zip_path in sorted(linux_zips, reverse=True):
+            zip_name = os.path.basename(zip_path).lower()
+            if arch_tokens and any(token in zip_name for token in arch_tokens):
+                return zip_path
+
+        return sorted(linux_zips, reverse=True)[0]
+
+    def _extract_binary_from_zip(self, zip_path):
+        if not zip_path or not os.path.isfile(zip_path):
+            return ""
+
+        zip_tag = "{}_{}_{}".format(
+            os.path.basename(zip_path),
+            int(os.path.getmtime(zip_path)),
+            int(os.path.getsize(zip_path)),
+        )
+        extract_root = os.path.join(self.tmp_path, "afrog_extract", str(utils.stable_hash(zip_tag)))
+        os.makedirs(extract_root, 0o755, True)
+
+        cached_bin = os.path.join(extract_root, "afrog")
+        if os.path.isfile(cached_bin) and os.access(cached_bin, os.X_OK):
+            return cached_bin
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_file:
+                file_infos = [info for info in zip_file.infolist() if not info.is_dir()]
+                if not file_infos:
+                    logger.warning("afrog zip has no file:{}".format(zip_path))
+                    return ""
+
+                binary_info = None
+                for info in file_infos:
+                    base_name = os.path.basename(str(info.filename or ""))
+                    base_name_lc = base_name.lower()
+                    if base_name_lc == "afrog":
+                        binary_info = info
+                        break
+                if binary_info is None:
+                    for info in file_infos:
+                        base_name = os.path.basename(str(info.filename or ""))
+                        base_name_lc = base_name.lower()
+                        if base_name_lc.endswith(".exe"):
+                            continue
+                        if base_name_lc.startswith("afrog"):
+                            binary_info = info
+                            break
+
+                if binary_info is None:
+                    logger.warning("afrog zip binary not found zip:{}".format(zip_path))
+                    return ""
+
+                extracted_path = zip_file.extract(binary_info, path=extract_root)
+                if not extracted_path:
+                    return ""
+
+                try:
+                    os.chmod(extracted_path, 0o755)
+                except Exception:
+                    pass
+
+                if extracted_path != cached_bin:
+                    try:
+                        with open(extracted_path, "rb") as src, open(cached_bin, "wb") as dst:
+                            dst.write(src.read())
+                        os.chmod(cached_bin, 0o755)
+                    except Exception:
+                        cached_bin = extracted_path
+
+                resolved_bin = utils.resolve_executable(cached_bin)
+                if resolved_bin:
+                    logger.info("afrog binary extracted from zip:{} -> {}".format(zip_path, resolved_bin))
+                    return resolved_bin
+        except zipfile.BadZipFile:
+            logger.warning("afrog zip invalid:{}".format(zip_path))
+        except Exception as e:
+            logger.warning("extract afrog binary failed zip:{} err:{}".format(zip_path, e))
+
+        return ""
+
+    def _resolve_afrog_binary(self):
+        configured_bin = str(self.afrog_bin_path or "").strip()
+        resolved_bin = utils.resolve_executable(configured_bin)
+        if resolved_bin:
+            return resolved_bin
+
+        zip_path = self._find_linux_afrog_zip()
+        if not zip_path:
+            return ""
+
+        return self._extract_binary_from_zip(zip_path)
 
     @staticmethod
     def _normalize_targets(targets):
@@ -77,9 +227,12 @@ class AfrogScan(object):
         return ""
 
     def check_have_afrog(self):
-        self.afrog_bin_path = utils.resolve_executable(self.afrog_bin_path)
+        self.afrog_bin_path = self._resolve_afrog_binary()
         if not self.afrog_bin_path:
-            logger.warning("not found afrog binary, set ARL.AFROG_BIN or ARL_AFROG_BIN")
+            logger.warning("not found afrog binary, configured:{} base_dir:{}".format(
+                str(getattr(Config, "AFROG_BIN", "") or "").strip() or "-",
+                self._get_afrog_base_dir(),
+            ))
             return False
 
         try:
@@ -93,6 +246,13 @@ class AfrogScan(object):
             if completed.returncode in [0, 1]:
                 logger.info("afrog binary ready path:{}".format(self.afrog_bin_path))
                 return True
+            stderr_text = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
+            stdout_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
+            logger.warning(
+                "afrog binary check failed rc:{} path:{} stderr:{} stdout:{}".format(
+                    completed.returncode, self.afrog_bin_path, stderr_text[:300], stdout_text[:300]
+                )
+            )
         except Exception as e:
             logger.warning("afrog check failed {} error:{}".format(self.afrog_bin_path, e))
 
@@ -102,6 +262,7 @@ class AfrogScan(object):
         with open(self.target_file, "w", encoding="utf-8") as f:
             for target in self.targets:
                 f.write(target + "\n")
+        logger.info("afrog targets prepared count:{} file:{}".format(len(self.targets), self.target_file))
 
     @staticmethod
     def _normalize_severity(value):
@@ -228,11 +389,13 @@ class AfrogScan(object):
         pocs_dir = self._resolve_pocs_dir()
         if pocs_dir:
             command.append("-P {}".format(shlex.quote(pocs_dir)))
+            logger.info("afrog pocs dir resolved:{}".format(pocs_dir))
         else:
             logger.warning(
-                "afrog pocs dir unavailable config:{} bin_dir:{}",
-                self.afrog_pocs_dir,
-                os.path.dirname(self.afrog_bin_path or ""),
+                "afrog pocs dir unavailable config:{} bin_dir:{}".format(
+                    self.afrog_pocs_dir,
+                    os.path.dirname(self.afrog_bin_path or ""),
+                )
             )
 
         if self.afrog_search_keywords:
@@ -254,10 +417,11 @@ class AfrogScan(object):
         self._gen_target_file()
         command = self._build_command()
         logger.info(
-            "afrog scan options timeout:{}s keywords:{} severity:{}",
-            self.exec_timeout_sec,
-            self.afrog_search_keywords or "-",
-            self.afrog_severity or "-",
+            "afrog scan options timeout:{}s keywords:{} severity:{}".format(
+                self.exec_timeout_sec,
+                self.afrog_search_keywords or "-",
+                self.afrog_severity or "-",
+            )
         )
         logger.info("afrog command targets:{} cmd:{}".format(len(self.targets), " ".join(command)))
         stdout_text = ""
