@@ -5,6 +5,7 @@
 
 ## 2026-03-17（v3.2.0）
 
+- `[v3.2.8]` API 管理补齐 Zoomeye 高级参数：配置中心与前端表单新增 `max_page/request_interval/rate_limit_retry/rate_limit_backoff/rate_limit_max_sleep` 的读取、展示与保存能力，修复“Zoomeye 在配置文件支持分页/超时与限频参数但 API 管理页缺失”的问题
 - `[v3.2.7]` 站点指纹识别改为“先快扫后精扫”：`WebSiteFetch` 新增高价值站点评分与分层筛选策略（按状态码/标题关键词/主机关键词/端口/响应特征综合打分，`401/403` 强制入选），第一阶段优先执行 URL 发现，第二阶段仅对高价值子集执行 `site_identify`，显著降低大规模任务下全量指纹识别带来的性能压力且对用户无新增配置要求
 - `[v3.2.6]` 中文域名扫描支持：新增域名 IDN 规范化能力（`Unicode -> Punycode/xn--`），并在任务目标解析、资产范围校验、监控任务下发、域名构建/解析、DNS 插件归一化、证书域名提取匹配、导出与证书告警链路中统一使用规范化域名；修复中文域名“校验失败/范围不匹配/链路中途丢失”问题
 - `[v3.2.0]` 仪表盘扫描日志链路回归 `arl_worker.log`：`/console/recent_logs` 改为优先读取 `ARL_DASHBOARD_SCAN_LOG_PATH`（默认 `/code/logs/arl_worker.log`）并兼容回退 `/code/arl_worker.log`；`docker-compose` 为 `web/worker` 增加共享日志卷挂载，`worker` 启动脚本统一将 Celery 日志写入共享目录（支持 `ARL_SCAN_LOG_FILE` 覆盖），修复“仪表盘日志与实际扫描日志不一致”问题

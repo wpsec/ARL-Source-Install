@@ -8388,6 +8388,11 @@ function ApiConsoleView({ token }: { token: string }) {
     quake_rate_limit_max_sleep: string;
     zoomeye_api_key: string;
     zoomeye_enable: boolean;
+    zoomeye_max_page: string;
+    zoomeye_request_interval: string;
+    zoomeye_rate_limit_retry: string;
+    zoomeye_rate_limit_backoff: string;
+    zoomeye_rate_limit_max_sleep: string;
     securitytrails_api_key: string;
     securitytrails_enable: boolean;
     virustotal_api_key: string;
@@ -8430,6 +8435,11 @@ function ApiConsoleView({ token }: { token: string }) {
     quake_rate_limit_max_sleep: '90',
     zoomeye_api_key: '',
     zoomeye_enable: true,
+    zoomeye_max_page: '20',
+    zoomeye_request_interval: '1.0',
+    zoomeye_rate_limit_retry: '4',
+    zoomeye_rate_limit_backoff: '2',
+    zoomeye_rate_limit_max_sleep: '60',
     securitytrails_api_key: '',
     securitytrails_enable: false,
     virustotal_api_key: '',
@@ -8470,6 +8480,11 @@ function ApiConsoleView({ token }: { token: string }) {
       quake_rate_limit_max_sleep: String(raw.quake_rate_limit_max_sleep ?? defaultForm.quake_rate_limit_max_sleep),
       zoomeye_api_key: String(raw.zoomeye_api_key || ''),
       zoomeye_enable: raw.zoomeye_enable === undefined ? true : Boolean(raw.zoomeye_enable),
+      zoomeye_max_page: String(raw.zoomeye_max_page ?? defaultForm.zoomeye_max_page),
+      zoomeye_request_interval: String(raw.zoomeye_request_interval ?? defaultForm.zoomeye_request_interval),
+      zoomeye_rate_limit_retry: String(raw.zoomeye_rate_limit_retry ?? defaultForm.zoomeye_rate_limit_retry),
+      zoomeye_rate_limit_backoff: String(raw.zoomeye_rate_limit_backoff ?? defaultForm.zoomeye_rate_limit_backoff),
+      zoomeye_rate_limit_max_sleep: String(raw.zoomeye_rate_limit_max_sleep ?? defaultForm.zoomeye_rate_limit_max_sleep),
       securitytrails_api_key: String(raw.securitytrails_api_key || ''),
       securitytrails_enable: raw.securitytrails_enable === undefined ? false : Boolean(raw.securitytrails_enable),
       virustotal_api_key: String(raw.virustotal_api_key || ''),
@@ -8541,6 +8556,11 @@ function ApiConsoleView({ token }: { token: string }) {
             quake_rate_limit_backoff: form.quake_rate_limit_backoff.trim(),
             quake_rate_limit_max_sleep: form.quake_rate_limit_max_sleep.trim(),
             zoomeye_api_key: form.zoomeye_api_key.trim(),
+            zoomeye_max_page: form.zoomeye_max_page.trim(),
+            zoomeye_request_interval: form.zoomeye_request_interval.trim(),
+            zoomeye_rate_limit_retry: form.zoomeye_rate_limit_retry.trim(),
+            zoomeye_rate_limit_backoff: form.zoomeye_rate_limit_backoff.trim(),
+            zoomeye_rate_limit_max_sleep: form.zoomeye_rate_limit_max_sleep.trim(),
             securitytrails_api_key: form.securitytrails_api_key.trim(),
             virustotal_api_key: form.virustotal_api_key.trim(),
             chaos_api_key: form.chaos_api_key.trim(),
@@ -8686,6 +8706,51 @@ function ApiConsoleView({ token }: { token: string }) {
       enableLabel: '启用 Zoomeye 插件',
       fields: [
         { key: 'zoomeye_api_key', label: 'API KEY', placeholder: '请输入 Zoomeye API KEY', hint: 'QUERY_PLUGIN.zoomeye.api_key' },
+        {
+          key: 'zoomeye_max_page',
+          label: '最大页数',
+          placeholder: '20',
+          hint: 'QUERY_PLUGIN.zoomeye.max_page',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'zoomeye_request_interval',
+          label: '请求间隔(秒)',
+          placeholder: '1.0',
+          hint: 'QUERY_PLUGIN.zoomeye.request_interval',
+          inputType: 'number',
+          step: '0.1',
+          min: '0',
+        },
+        {
+          key: 'zoomeye_rate_limit_retry',
+          label: '限频重试次数',
+          placeholder: '4',
+          hint: 'QUERY_PLUGIN.zoomeye.rate_limit_retry',
+          inputType: 'number',
+          step: '1',
+          min: '0',
+        },
+        {
+          key: 'zoomeye_rate_limit_backoff',
+          label: '退避基数(秒)',
+          placeholder: '2',
+          hint: 'QUERY_PLUGIN.zoomeye.rate_limit_backoff',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'zoomeye_rate_limit_max_sleep',
+          label: '最大等待(秒)',
+          placeholder: '60',
+          hint: 'QUERY_PLUGIN.zoomeye.rate_limit_max_sleep',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
       ],
     },
     {

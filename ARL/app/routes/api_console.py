@@ -700,6 +700,11 @@ def _extract_service_api_config(config_obj):
         'quake_rate_limit_max_sleep': _safe_int(quake_plugin.get('rate_limit_max_sleep'), 90, min_value=1),
         'zoomeye_api_key': str(zoomeye_plugin.get('api_key') or ''),
         'zoomeye_enable': _safe_bool(zoomeye_plugin.get('enable'), True),
+        'zoomeye_max_page': _safe_int(zoomeye_plugin.get('max_page'), 20, min_value=1),
+        'zoomeye_request_interval': _safe_float(zoomeye_plugin.get('request_interval'), 1.0, min_value=0.0),
+        'zoomeye_rate_limit_retry': _safe_int(zoomeye_plugin.get('rate_limit_retry'), 4, min_value=0),
+        'zoomeye_rate_limit_backoff': _safe_int(zoomeye_plugin.get('rate_limit_backoff'), 2, min_value=1),
+        'zoomeye_rate_limit_max_sleep': _safe_int(zoomeye_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
         'securitytrails_api_key': str(securitytrails_plugin.get('api_key') or ''),
         'securitytrails_enable': _safe_bool(securitytrails_plugin.get('enable'), False),
         'virustotal_api_key': str(virustotal_plugin.get('api_key') or ''),
@@ -799,6 +804,31 @@ def _merge_service_api_config(config_obj, service_api):
     zoomeye_plugin = ensure_plugin('zoomeye')
     zoomeye_plugin['api_key'] = str(service_api.get('zoomeye_api_key', '')).strip()
     zoomeye_plugin['enable'] = _safe_bool(service_api.get('zoomeye_enable'), zoomeye_plugin.get('enable', True))
+    zoomeye_plugin['max_page'] = _safe_int(
+        service_api.get('zoomeye_max_page'),
+        zoomeye_plugin.get('max_page', 20),
+        min_value=1
+    )
+    zoomeye_plugin['request_interval'] = _safe_float(
+        service_api.get('zoomeye_request_interval'),
+        zoomeye_plugin.get('request_interval', 1.0),
+        min_value=0.0
+    )
+    zoomeye_plugin['rate_limit_retry'] = _safe_int(
+        service_api.get('zoomeye_rate_limit_retry'),
+        zoomeye_plugin.get('rate_limit_retry', 4),
+        min_value=0
+    )
+    zoomeye_plugin['rate_limit_backoff'] = _safe_int(
+        service_api.get('zoomeye_rate_limit_backoff'),
+        zoomeye_plugin.get('rate_limit_backoff', 2),
+        min_value=1
+    )
+    zoomeye_plugin['rate_limit_max_sleep'] = _safe_int(
+        service_api.get('zoomeye_rate_limit_max_sleep'),
+        zoomeye_plugin.get('rate_limit_max_sleep', 60),
+        min_value=1
+    )
 
     securitytrails_plugin = ensure_plugin('securitytrails')
     securitytrails_plugin['api_key'] = str(service_api.get('securitytrails_api_key', '')).strip()
