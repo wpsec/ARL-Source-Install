@@ -1,0 +1,79 @@
+id: springboot-actuator-unauth
+
+info:
+  name: Springboot Actuator Unauth
+  author: ffffffff0x
+  severity: high
+  verified: true
+  reference:
+    - https://github.com/LandGrey/SpringBootVulExploit
+
+rules:
+  r0:
+    request:
+      method: GET
+      path: /env
+    expression: |
+      response.status == 200 && response.content_type.contains("json") && response.body.bcontains(b"java.version") && response.body.bcontains(b"os.arch")
+  r1:
+    request:
+      method: GET
+      path: /actuator
+    expression: |
+      response.status == 200 && 
+      response.body.bcontains(b'"_links":') && 
+      response.body.bcontains(b'"self":') && 
+      response.body.bcontains(b'"health"') &&
+      response.body.bcontains(b'"env":') && 
+      response.body.bcontains(b'"heapdump":') 
+  r2: 
+    request: 
+      method: GET
+      path: /appenv
+    expression: |
+      response.status == 200 && response.content_type.contains("json") && response.body.bcontains(b"java.version") && response.body.bcontains(b"os.arch")
+  r3: 
+    request: 
+      method: GET
+      path: /api/actuator
+    expression: |
+      response.status == 200 && 
+      response.body.bcontains(b'"_links":') && 
+      response.body.bcontains(b'"self":') && 
+      response.body.bcontains(b'"health"') &&
+      response.body.bcontains(b'"env":') && 
+      response.body.bcontains(b'"heapdump":') 
+  r4:
+    request:
+      method: GET
+      path: /nacos/actuator
+    expression: |
+      response.status == 200 && 
+      response.body.bcontains(b'"_links":') && 
+      response.body.bcontains(b'"self":') && 
+      response.body.bcontains(b'"health"') &&
+      response.body.bcontains(b'"env":') && 
+      response.body.bcontains(b'"heapdump":') 
+  r5:
+    request:
+      method: GET
+      path: /prod-api/actuator
+    expression: |
+      response.status == 200 && 
+      response.body.bcontains(b'"_links":') && 
+      response.body.bcontains(b'"self":') && 
+      response.body.bcontains(b'"health"') &&
+      response.body.bcontains(b'"env":') && 
+      response.body.bcontains(b'"heapdump":') 
+  r6:
+    request:
+      method: GET
+      path: /dev-api/actuator
+    expression: |
+      response.status == 200 && 
+      response.body.bcontains(b'"_links":') && 
+      response.body.bcontains(b'"self":') && 
+      response.body.bcontains(b'"health"') &&
+      response.body.bcontains(b'"env":') && 
+      response.body.bcontains(b'"heapdump":') 
+expression: r0() || r1() || r2() || r3() || r4() || r5() || r6()

@@ -9177,6 +9177,8 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [updatedAt, setUpdatedAt] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [nucleiPocUpdating, setNucleiPocUpdating] = useState(false);
+  const [afrogPocUpdating, setAfrogPocUpdating] = useState(false);
   const [domainUploading, setDomainUploading] = useState(false);
   const [fileLeakUploading, setFileLeakUploading] = useState(false);
   const [error, setError] = useState('');
@@ -9662,6 +9664,54 @@ function ConfigConsoleView({ token }: { token: string }) {
     }
   };
 
+  const updatePocRepo = async (repoType: 'nuclei' | 'afrog') => {
+    const isNuclei = repoType === 'nuclei';
+    const endpoint = isNuclei
+      ? '/api_console/scan_config/nuclei_poc/update/'
+      : '/api_console/scan_config/afrog_poc/update/';
+
+    if (isNuclei) {
+      setNucleiPocUpdating(true);
+    } else {
+      setAfrogPocUpdating(true);
+    }
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await requestApi(token, endpoint, { method: 'POST' });
+      const data = result?.data || {};
+      const repoDir = String(data?.repo_dir || '').trim();
+      const branch = String(data?.branch || '').trim();
+      const commit = String(data?.commit || '').trim();
+      const commitSubject = String(data?.commit_subject || '').trim();
+      const backupPath = String(data?.backup_path || '').trim();
+      const commitShort = commit ? commit.slice(0, 12) : '-';
+      const summary = [
+        branch ? `分支: ${branch}` : '',
+        `commit: ${commitShort}`,
+        commitSubject ? `说明: ${commitSubject}` : '',
+        repoDir ? `目录: ${repoDir}` : '',
+        backupPath ? `备份: ${backupPath}` : '',
+      ]
+        .filter((item) => item)
+        .join('，');
+
+      setUpdatedAt(String(data?.updated_at || updatedAt));
+      setSuccess(`${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新成功（${summary}）`);
+    } catch (err: any) {
+      setError(err?.message || `${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新失败`);
+    } finally {
+      if (isNuclei) {
+        setNucleiPocUpdating(false);
+      } else {
+        setAfrogPocUpdating(false);
+      }
+    }
+  };
+  const isConfigActionBusy =
+    loading || saving || domainUploading || fileLeakUploading || nucleiPocUpdating || afrogPocUpdating;
+
   return (
     <div className="p-8 space-y-6">
       <div>
@@ -9672,19 +9722,35 @@ function ConfigConsoleView({ token }: { token: string }) {
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">扫描配置</div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => void loadScanConfig()}
               className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-              disabled={loading}
+              disabled={isConfigActionBusy}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               重新加载
             </button>
             <button
+              onClick={() => void updatePocRepo('nuclei')}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={isConfigActionBusy}
+            >
+              <GitBranch className={`w-4 h-4 ${nucleiPocUpdating ? 'animate-spin' : ''}`} />
+              {nucleiPocUpdating ? '更新中...' : '更新 Nuclei PoC'}
+            </button>
+            <button
+              onClick={() => void updatePocRepo('afrog')}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={isConfigActionBusy}
+            >
+              <GitBranch className={`w-4 h-4 ${afrogPocUpdating ? 'animate-spin' : ''}`} />
+              {afrogPocUpdating ? '更新中...' : '更新 afrog PoC'}
+            </button>
+            <button
               onClick={() => void saveScanConfig()}
               className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
-              disabled={saving || loading || domainUploading || fileLeakUploading}
+              disabled={isConfigActionBusy}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
               {saving ? '保存中...' : '保存配置'}
@@ -9705,6 +9771,9 @@ function ConfigConsoleView({ token }: { token: string }) {
 
         <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
           提示：保存后会写入配置文件，建议重启 `web` 与 `worker` 容器让扫描参数完全生效。
+        </div>
+        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+          PoC 更新说明：按钮会调用 git 同步远端仓库（nuclei: projectdiscovery/nuclei-templates，afrog: zan8in/afrog-pocs）。
         </div>
 
         {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
@@ -9788,7 +9857,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               type="button"
               onClick={() => domainUploadInputRef.current?.click()}
               className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center disabled:opacity-60"
-              disabled={domainUploading || loading || saving}
+              disabled={isConfigActionBusy}
             >
               选择文件
             </button>
@@ -9799,7 +9868,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               type="button"
               onClick={() => void uploadDomainDict()}
               className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
-              disabled={domainUploading || loading || saving}
+              disabled={isConfigActionBusy}
             >
               <Upload className={`w-4 h-4 ${domainUploading ? 'animate-spin' : ''}`} />
               {domainUploading ? '上传中...' : '上传域名爆破字典'}
@@ -9848,7 +9917,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               type="button"
               onClick={() => fileLeakUploadInputRef.current?.click()}
               className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center disabled:opacity-60"
-              disabled={fileLeakUploading || loading || saving}
+              disabled={isConfigActionBusy}
             >
               选择文件
             </button>
@@ -9859,7 +9928,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               type="button"
               onClick={() => void uploadFileLeakDict()}
               className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
-              disabled={fileLeakUploading || loading || saving}
+              disabled={isConfigActionBusy}
             >
               <Upload className={`w-4 h-4 ${fileLeakUploading ? 'animate-spin' : ''}`} />
               {fileLeakUploading ? '上传中...' : '上传敏感文件字典'}

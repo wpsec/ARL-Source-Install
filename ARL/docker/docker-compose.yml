@@ -47,7 +47,8 @@ services:
       - ./dicts/domain:/code/app/dicts/custom/domain
       # 自定义敏感目录字典，供 FILE_LEAK_DICT 指向使用
       - ./dicts/file_leak:/code/app/dicts/custom/file_leak
-      - ../../tools:/code/tools:ro
+      # 配置管理支持在线 git 更新 nuclei/afrog PoC，web 需要对 tools 目录写权限
+      - ../../tools:/code/tools
     entrypoint: ["start_web.sh"]
     environment:
       - LANG=en_US.UTF-8

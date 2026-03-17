@@ -10,6 +10,7 @@ from pathlib import Path
 import errno
 import json
 import os
+import subprocess
 import tempfile
 import threading
 
@@ -460,6 +461,302 @@ def _is_path_within(path_obj: Path, root_obj: Path) -> bool:
         return True
     except Exception:
         return False
+
+
+POC_REPO_UPDATE_TIMEOUT_SEC = 12 * 60
+NUCLEI_TEMPLATE_REPO_URL = 'https://github.com/projectdiscovery/nuclei-templates.git'
+AFROG_POC_REPO_URL = 'https://github.com/zan8in/afrog-pocs.git'
+
+
+def _normalize_git_remote_url(remote_url: str) -> str:
+    """
+    归一化远程地址，便于判断 origin 是否与预期仓库一致。
+    """
+    url = str(remote_url or '').strip()
+    if not url:
+        return ''
+    if url.endswith('/'):
+        url = url[:-1]
+    if url.endswith('.git'):
+        url = url[:-4]
+    return url.lower()
+
+
+def _run_git_command(git_bin: str, args: list, cwd: Path = None, timeout: int = POC_REPO_UPDATE_TIMEOUT_SEC):
+    """
+    执行 git 命令并返回 (rc, stdout, stderr)。
+    """
+    command = [git_bin] + list(args or [])
+    completed = subprocess.run(
+        command,
+        cwd=str(cwd) if cwd else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=max(30, int(timeout or POC_REPO_UPDATE_TIMEOUT_SEC)),
+    )
+    stdout = completed.stdout.decode('utf-8', errors='ignore').strip() if completed.stdout else ''
+    stderr = completed.stderr.decode('utf-8', errors='ignore').strip() if completed.stderr else ''
+    return int(completed.returncode), stdout, stderr
+
+
+def _resolve_poc_repo_dir(repo_type: str) -> Path:
+    """
+    解析 PoC 仓库目录，优先使用当前配置路径，回落到 tools 默认目录。
+    """
+    project_root = Path(__file__).resolve().parents[2]
+    default_root = project_root / 'tools'
+    allowed_roots = [_safe_resolve_path(default_root), Path('/code/tools')]
+
+    def is_allowed(path_obj: Path) -> bool:
+        resolved = _safe_resolve_path(path_obj)
+        for root in allowed_roots:
+            if _is_path_within(resolved, root):
+                return True
+        return False
+
+    candidate_paths = []
+    if repo_type == 'nuclei':
+        configured = str(getattr(Config, 'NUCLEI_TEMPLATE_DIR', '') or '').strip()
+        if configured:
+            candidate_paths.append(Path(configured))
+        candidate_paths.append(project_root / 'tools' / 'nuclei' / 'nuclei-templates')
+        candidate_paths.append(project_root / 'tools' / 'nuclei-templates')
+    elif repo_type == 'afrog':
+        configured = str(getattr(Config, 'AFROG_POCS_DIR', '') or '').strip()
+        if configured:
+            candidate_paths.append(Path(configured))
+        candidate_paths.append(project_root / 'tools' / 'afrog' / 'afrog-pocs')
+    else:
+        raise ValueError('未知 PoC 仓库类型')
+
+    # 优先选择“存在且可写”的候选目录。
+    for candidate in candidate_paths:
+        if not candidate:
+            continue
+        resolved = _safe_resolve_path(candidate)
+        if not is_allowed(resolved):
+            continue
+        if resolved.exists():
+            return resolved
+
+    # 都不存在时，使用首个有效候选作为目标目录。
+    for candidate in candidate_paths:
+        if not candidate:
+            continue
+        resolved = _safe_resolve_path(candidate)
+        if is_allowed(resolved):
+            return resolved
+
+    raise ValueError('未找到可用的 PoC 仓库目录')
+
+
+def _resolve_remote_default_branch(git_bin: str, repo_dir: Path) -> str:
+    """
+    解析 origin 默认分支（origin/main -> main），失败时回落 main。
+    """
+    rc, stdout, _ = _run_git_command(
+        git_bin,
+        ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
+        cwd=repo_dir,
+        timeout=30,
+    )
+    if rc != 0 or not stdout:
+        return 'main'
+
+    branch = stdout.strip()
+    if branch.startswith('origin/'):
+        branch = branch.split('/', 1)[1]
+    branch = str(branch or '').strip()
+    return branch or 'main'
+
+
+def _collect_repo_head(git_bin: str, repo_dir: Path):
+    """
+    获取仓库当前 HEAD 信息，用于返回给前端展示。
+    """
+    commit_hash = ''
+    commit_time = ''
+    commit_subject = ''
+    branch = ''
+
+    rc, stdout, _ = _run_git_command(git_bin, ['rev-parse', '--abbrev-ref', 'HEAD'], cwd=repo_dir, timeout=30)
+    if rc == 0:
+        branch = str(stdout or '').strip()
+        if branch == 'HEAD':
+            branch = ''
+
+    rc, stdout, _ = _run_git_command(
+        git_bin,
+        ['log', '-1', '--pretty=format:%H%n%ci%n%s'],
+        cwd=repo_dir,
+        timeout=30,
+    )
+    if rc == 0 and stdout:
+        lines = stdout.splitlines()
+        if len(lines) > 0:
+            commit_hash = str(lines[0] or '').strip()
+        if len(lines) > 1:
+            commit_time = str(lines[1] or '').strip()
+        if len(lines) > 2:
+            commit_subject = str(lines[2] or '').strip()
+
+    return {
+        'branch': branch,
+        'commit': commit_hash,
+        'commit_time': commit_time,
+        'commit_subject': commit_subject,
+    }
+
+
+def _sync_poc_repo(repo_type: str, repo_url: str):
+    """
+    使用 git 更新 PoC 仓库：
+    - 已存在 git 仓库：fetch + pull
+    - 不存在：clone
+    """
+    git_bin = utils.resolve_executable('git')
+    if not git_bin:
+        raise RuntimeError('未找到 git 命令，请先在容器中安装 git')
+
+    repo_dir = _resolve_poc_repo_dir(repo_type)
+    repo_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    operations = []
+    current_remote = ''
+    remote_changed = False
+    repo_exists = repo_dir.exists()
+    is_git_repo = repo_exists and (repo_dir / '.git').is_dir()
+
+    if repo_exists and not repo_dir.is_dir():
+        raise ValueError('目标路径不是目录: {}'.format(repo_dir))
+
+    backup_path = ''
+    if repo_exists and (not is_git_repo):
+        try:
+            has_content = any(repo_dir.iterdir())
+        except Exception:
+            has_content = True
+        if has_content:
+            # 兼容“历史解压目录”：自动备份后重新按 git 仓库拉取，避免要求用户手工清理目录。
+            stamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            backup_dir = repo_dir.with_name('{}.bak.{}'.format(repo_dir.name, stamp))
+            repo_dir.rename(backup_dir)
+            backup_path = str(backup_dir)
+            operations.append('backup-non-git-dir')
+            repo_exists = False
+
+    if not is_git_repo:
+        rc, stdout, stderr = _run_git_command(
+            git_bin,
+            ['clone', '--depth', '1', repo_url, str(repo_dir)],
+            timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
+        )
+        operations.append('clone')
+        if rc != 0:
+            raise RuntimeError('git clone 失败: {}'.format(stderr or stdout or 'unknown error'))
+    else:
+        rc, stdout, stderr = _run_git_command(
+            git_bin,
+            ['remote', 'get-url', 'origin'],
+            cwd=repo_dir,
+            timeout=30,
+        )
+        if rc == 0:
+            current_remote = str(stdout or '').strip()
+        else:
+            current_remote = ''
+
+        expected_remote = _normalize_git_remote_url(repo_url)
+        actual_remote = _normalize_git_remote_url(current_remote)
+        if (not actual_remote) or (actual_remote != expected_remote):
+            if current_remote:
+                rc, stdout, stderr = _run_git_command(
+                    git_bin,
+                    ['remote', 'set-url', 'origin', repo_url],
+                    cwd=repo_dir,
+                    timeout=30,
+                )
+                operations.append('set-origin-url')
+            else:
+                rc, stdout, stderr = _run_git_command(
+                    git_bin,
+                    ['remote', 'add', 'origin', repo_url],
+                    cwd=repo_dir,
+                    timeout=30,
+                )
+                operations.append('add-origin')
+            if rc != 0:
+                raise RuntimeError('设置 origin 失败: {}'.format(stderr or stdout or 'unknown error'))
+            remote_changed = True
+            current_remote = repo_url
+
+        rc, stdout, stderr = _run_git_command(
+            git_bin,
+            ['fetch', 'origin', '--prune'],
+            cwd=repo_dir,
+            timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
+        )
+        operations.append('fetch')
+        if rc != 0:
+            raise RuntimeError('git fetch 失败: {}'.format(stderr or stdout or 'unknown error'))
+
+        branch = _resolve_remote_default_branch(git_bin, repo_dir)
+
+        rc, current_branch, _ = _run_git_command(
+            git_bin,
+            ['rev-parse', '--abbrev-ref', 'HEAD'],
+            cwd=repo_dir,
+            timeout=30,
+        )
+        current_branch = str(current_branch or '').strip() if rc == 0 else ''
+        if (not current_branch) or current_branch == 'HEAD':
+            rc, stdout, stderr = _run_git_command(
+                git_bin,
+                ['checkout', branch],
+                cwd=repo_dir,
+                timeout=60,
+            )
+            if rc != 0:
+                rc, stdout, stderr = _run_git_command(
+                    git_bin,
+                    ['checkout', '-b', branch, '--track', 'origin/{}'.format(branch)],
+                    cwd=repo_dir,
+                    timeout=60,
+                )
+            operations.append('checkout')
+            if rc != 0:
+                raise RuntimeError('切换分支失败: {}'.format(stderr or stdout or 'unknown error'))
+
+        rc, stdout, stderr = _run_git_command(
+            git_bin,
+            ['pull', '--ff-only', 'origin', branch],
+            cwd=repo_dir,
+            timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
+        )
+        operations.append('pull')
+        if rc != 0:
+            raise RuntimeError('git pull 失败: {}'.format(stderr or stdout or 'unknown error'))
+
+    head = _collect_repo_head(git_bin, repo_dir)
+    if not current_remote:
+        rc, stdout, _ = _run_git_command(git_bin, ['remote', 'get-url', 'origin'], cwd=repo_dir, timeout=30)
+        if rc == 0:
+            current_remote = str(stdout or '').strip()
+
+    return {
+        'repo_type': repo_type,
+        'repo_dir': str(repo_dir),
+        'repo_url': current_remote or repo_url,
+        'branch': head.get('branch', ''),
+        'commit': head.get('commit', ''),
+        'commit_time': head.get('commit_time', ''),
+        'commit_subject': head.get('commit_subject', ''),
+        'operations': operations,
+        'repo_created': bool(not repo_exists),
+        'remote_changed': remote_changed,
+        'backup_path': backup_path,
+    }
 
 
 def _collect_domain_dict_options(current_path=''):
@@ -1346,6 +1643,70 @@ class ApiConsoleScanConfig(ARLResource):
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
         )
+
+
+@ns.route('/scan_config/nuclei_poc/update/')
+class ApiConsoleNucleiPocUpdate(ARLResource):
+    """
+    nuclei-templates 仓库更新接口（git clone/pull）。
+    """
+
+    @auth
+    def post(self):
+        try:
+            with CONFIG_LOCK:
+                update_info = _sync_poc_repo('nuclei', NUCLEI_TEMPLATE_REPO_URL)
+        except Exception as exc:
+            logger.exception('update nuclei poc failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'repo_type': 'nuclei',
+                    'repo_url': NUCLEI_TEMPLATE_REPO_URL,
+                }
+            )
+
+        logger.info(
+            'update nuclei poc done dir:%s branch:%s commit:%s',
+            update_info.get('repo_dir', ''),
+            update_info.get('branch', ''),
+            update_info.get('commit', ''),
+        )
+        update_info['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        return utils.build_ret(ErrorMsg.Success, update_info)
+
+
+@ns.route('/scan_config/afrog_poc/update/')
+class ApiConsoleAfrogPocUpdate(ARLResource):
+    """
+    afrog-pocs 仓库更新接口（git clone/pull）。
+    """
+
+    @auth
+    def post(self):
+        try:
+            with CONFIG_LOCK:
+                update_info = _sync_poc_repo('afrog', AFROG_POC_REPO_URL)
+        except Exception as exc:
+            logger.exception('update afrog poc failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'repo_type': 'afrog',
+                    'repo_url': AFROG_POC_REPO_URL,
+                }
+            )
+
+        logger.info(
+            'update afrog poc done dir:%s branch:%s commit:%s',
+            update_info.get('repo_dir', ''),
+            update_info.get('branch', ''),
+            update_info.get('commit', ''),
+        )
+        update_info['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        return utils.build_ret(ErrorMsg.Success, update_info)
 
 
 @ns.route('/scan_config/domain_dict/upload/')

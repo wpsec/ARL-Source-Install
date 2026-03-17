@@ -105,7 +105,7 @@ RUN set -eux; \
         -i /etc/yum.repos.d/epel*.repo; \
     dnf clean all; \
     dnf install -y \
-      fontconfig gcc gcc-c++ make zlib-devel bzip2-devel openssl-devel sqlite-devel \
+      fontconfig gcc gcc-c++ make git zlib-devel bzip2-devel openssl-devel sqlite-devel \
       readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap \
       alsa-lib atk at-spi2-atk cairo cups-libs gtk3 libdrm mesa-libgbm \
       libX11 libXcomposite libXcursor libXdamage libXext libXi libXrandr \
@@ -193,6 +193,7 @@ COPY tools/ncrack/ncrack /usr/local/bin/ncrack
 COPY tools/ncrack/ncrack-services /usr/local/share/ncrack/ncrack-services
 COPY tools/nuclei/nuclei_*_linux_amd64.zip /tmp/
 COPY tools/nuclei/nuclei-templates/ /code/tools/nuclei-templates/
+COPY tools/afrog/ /code/tools/afrog/
 COPY tools/finger.json /code/tools/finger.json
 COPY tools/wih/ /code/tools/wih/
 COPY tools/GeoLite2/GeoLite2-* /data/GeoLite2/
