@@ -6,6 +6,8 @@ from app import utils
 from app.config import Config
 import os
 import json
+import subprocess
+import hashlib
 from app.modules import WihRecord
 
 logger = utils.get_logger()
@@ -25,12 +27,32 @@ class InfoHunter(object):
         # wih 结果文件
         self.wih_result_path = os.path.join(tmp_path, "wih_result_{}.json".format(rand_str))
 
-        self.wih_bin_path = "wih"
+        self.wih_bin_path = self._resolve_wih_binary()
+        self._help_text = None
+
+    @staticmethod
+    def _resolve_wih_binary() -> str:
+        # 优先使用本地/挂载目录下的“成品二进制”，其次回退到镜像内编译产物。
+        candidates = [
+            "/code/tools/wih/wih",
+            "/code/tools/wih/wihscan",
+            "/code/tools/wih/bin/wih",
+            "/code/tools/wih/bin/wihscan",
+            "wihscan",
+            "wih",
+        ]
+        for candidate in candidates:
+            binary_path = utils.resolve_executable(candidate)
+            if binary_path:
+                return binary_path
+        return "wih"
 
     def _get_target_file(self):
         with open(self.wih_target_path, "w") as f:
             for site in self.sites:
-                f.write(site + "\n")
+                site = str(site or "").strip()
+                if site:
+                    f.write(site + "\n")
 
     def _delete_file(self):
         try:
@@ -41,29 +63,138 @@ class InfoHunter(object):
         except Exception as e:
             logger.warning(e)
 
+    def _load_help_text(self) -> str:
+        if self._help_text is not None:
+            return self._help_text
+
+        try:
+            output = utils.check_output([self.wih_bin_path, "-h"], timeout=2 * 60, stderr=subprocess.STDOUT)
+            self._help_text = str(output or b"", "utf-8", errors="ignore")
+        except Exception:
+            self._help_text = ""
+
+        return self._help_text
+
+    def _supports_flag(self, flag_text: str) -> bool:
+        return flag_text in self._load_help_text()
+
+    @staticmethod
+    def _resolve_rule_path() -> str:
+        configured_path = str(getattr(Config, "WIH_RULE_PATH", "") or "").strip()
+        if configured_path and os.path.isfile(configured_path):
+            return configured_path
+
+        if configured_path:
+            logger.warning("wih rule path not found: {}, fallback to built-in/default".format(configured_path))
+
+        return ""
+
+    def _build_command(self, minimal=False) -> list:
+        command = [
+            self.wih_bin_path,
+            "-J",
+            "-o",
+            self.wih_result_path,
+            "-t",
+            self.wih_target_path,
+        ]
+
+        if minimal:
+            return command
+
+        rule_path = self._resolve_rule_path()
+        if rule_path:
+            command.extend(["-r", rule_path])
+
+        # 兼容不同 WIH 版本参数差异：仅在帮助信息里检测到时才追加。
+        if self._supports_flag("--concurrency"):
+            command.extend(["--concurrency", "3"])
+        elif self._supports_flag("-c"):
+            command.extend(["-c", "3"])
+
+        if self._supports_flag("--log-level"):
+            command.extend(["--log-level", "zero"])
+        elif self._supports_flag("-v"):
+            command.extend(["-v", "zero"])
+
+        if self._supports_flag("--concurrency-per-site"):
+            command.extend(["--concurrency-per-site", "1"])
+
+        if self._supports_flag("--disable-ak-sk-output"):
+            command.append("--disable-ak-sk-output")
+
+        proxy_url = str(getattr(Config, "PROXY_URL", "") or "").strip()
+        if proxy_url:
+            if self._supports_flag("--proxy"):
+                command.extend(["--proxy", proxy_url])
+            elif self._supports_flag("-x"):
+                command.extend(["-x", proxy_url])
+
+        return command
+
     def exec_wih(self):
-        command = [self.wih_bin_path,
-                   "-r {}".format(Config.WIH_RULE_PATH),
-                   "-J",
-                   "-o {}".format(self.wih_result_path),
-                   "--concurrency 3",  # 并发数
-                   "--log-level zero",  # 不输出日志
-                   "--concurrency-per-site 1",  # 每个站点的并发数
-                   "--disable-ak-sk-output",  # 禁止 AK/SK 单独保存
-                   "-t {}".format(self.wih_target_path),
-                   ]
+        command = self._build_command(minimal=False)
+        logger.info("run wih command: {}".format(" ".join(command)))
+        completed = utils.exec_system(
+            command,
+            timeout=5 * 24 * 60 * 60,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
 
-        if Config.PROXY_URL:
-            command.append("--proxy {}".format(Config.PROXY_URL))
+        if completed.returncode == 0:
+            return True
 
-        logger.info(" ".join(command))
-        utils.exec_system(command, timeout=5 * 24 * 60 * 60)
+        stderr_text = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
+        stdout_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
+        logger.warning(
+            "wih command failed rc={} stderr={} stdout={}".format(
+                completed.returncode, stderr_text[:500], stdout_text[:500]
+            )
+        )
+
+        # 失败后回退最小参数集，兼容历史二进制或参数差异。
+        fallback_command = self._build_command(minimal=True)
+        logger.info("retry wih command (minimal): {}".format(" ".join(fallback_command)))
+        fallback_completed = utils.exec_system(
+            fallback_command,
+            timeout=5 * 24 * 60 * 60,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if fallback_completed.returncode == 0:
+            return True
+
+        fb_stderr = fallback_completed.stderr.decode("utf-8", errors="ignore").strip() if fallback_completed.stderr else ""
+        fb_stdout = fallback_completed.stdout.decode("utf-8", errors="ignore").strip() if fallback_completed.stdout else ""
+        logger.warning(
+            "wih minimal command failed rc={} stderr={} stdout={}".format(
+                fallback_completed.returncode, fb_stderr[:500], fb_stdout[:500]
+            )
+        )
+        return False
 
     def check_have_wih(self) -> bool:
         command = [self.wih_bin_path, "--version"]
         try:
-            output = utils.check_output(command, timeout=2 * 60)
-            if "version:" in str(output):
+            completed = utils.exec_system(
+                command,
+                timeout=2 * 60,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            if completed.returncode != 0:
+                return False
+
+            output_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
+            normalized = output_text.lower()
+            if output_text and (
+                "version" in normalized or normalized.startswith("v") or normalized[0].isdigit()
+            ):
+                return True
+            # 某些旧版二进制 --version 无输出，回退校验 -h。
+            help_text = self._load_help_text()
+            if help_text and ("webinfohunter" in help_text.lower() or "wih" in help_text.lower()):
                 return True
         except Exception as e:
             logger.debug("{}".format(str(e)))
@@ -72,35 +203,96 @@ class InfoHunter(object):
 
     def dump_result(self) -> list:
         results = []
+        total_items = 0
+        invalid_items = 0
 
         # 检查结果文件是否存在
         if not os.path.exists(self.wih_result_path):
+            logger.warning("wih result file not found: {}".format(self.wih_result_path))
             return results
 
-        with open(self.wih_result_path, "r") as f:
-            while True:
-                line = f.readline()
+        with open(self.wih_result_path, "r", encoding="utf-8", errors="ignore") as f:
+            raw_text = str(f.read() or "").strip()
+
+        payload_items = []
+        if not raw_text:
+            payload_items = []
+        elif raw_text.startswith("["):
+            try:
+                payload = json.loads(raw_text)
+                if isinstance(payload, list):
+                    payload_items = payload
+                elif isinstance(payload, dict):
+                    payload_items = [payload]
+            except Exception as e:
+                logger.debug("parse wih json array failed err:{}".format(e))
+                payload_items = []
+        else:
+            for line in raw_text.splitlines():
+                line = str(line or "").strip()
                 if not line:
-                    break
+                    continue
+                try:
+                    payload_items.append(json.loads(line))
+                except Exception as e:
+                    invalid_items += 1
+                    logger.debug("skip invalid wih json line err:{} line:{}".format(e, line[:200]))
 
-                data = json.loads(line)
-                site = data["target"]
-                records = data.get("records", [])
-                for item in records:
-                    content = item["content"]
-                    if item["tag"]:
-                        content = "{} ({})".format(content, item["tag"])
+        for data in payload_items:
+            total_items += 1
+            if not isinstance(data, dict):
+                invalid_items += 1
+                continue
 
-                    record_dict = {
-                        "record_type": item["id"],
-                        "content": content,
-                        "source": item["source"],
-                        "site": site,
-                        "fnv_hash": item["hash"],
-                    }
+            site = str(data.get("target") or data.get("url") or data.get("site") or "").strip()
+            if not site:
+                invalid_items += 1
+                continue
 
-                    results.append(WihRecord(**record_dict))
+            records = data.get("records")
+            if not isinstance(records, list):
+                records = data.get("result")
+            if not isinstance(records, list):
+                records = data.get("results")
+            if not isinstance(records, list):
+                continue
 
+            for item in records:
+                if not isinstance(item, dict):
+                    continue
+
+                record_type = str(item.get("id") or item.get("type") or item.get("name") or "").strip()
+                content = str(item.get("content") or item.get("value") or item.get("match") or "").strip()
+                if not record_type or not content:
+                    continue
+
+                tag_text = str(item.get("tag") or item.get("rule") or "").strip()
+                if tag_text:
+                    content = "{} ({})".format(content, tag_text)
+
+                source = str(item.get("source") or item.get("from") or site or "").strip()
+                hash_value = item.get("hash", item.get("fnv_hash"))
+                try:
+                    hash_value = int(hash_value)
+                except Exception:
+                    hash_text = "{}|{}|{}|{}".format(record_type, content, source, site)
+                    hash_digest = hashlib.md5(hash_text.encode("utf-8", errors="ignore")).hexdigest()
+                    hash_value = int(hash_digest[:16], 16)
+
+                record_dict = {
+                    "record_type": record_type,
+                    "content": content,
+                    "source": source,
+                    "site": site,
+                    "fnv_hash": hash_value,
+                }
+                results.append(WihRecord(**record_dict))
+
+        logger.info(
+            "wih parsed result file:{} payload_items:{} invalid_items:{} records:{} bin:{}".format(
+                self.wih_result_path, total_items, invalid_items, len(results), self.wih_bin_path
+            )
+        )
         return results
 
     def run(self):
@@ -109,7 +301,9 @@ class InfoHunter(object):
             return []
 
         self._get_target_file()
-        self.exec_wih()
+        if not self.exec_wih():
+            self._delete_file()
+            return []
         results = self.dump_result()
         self._delete_file()
 

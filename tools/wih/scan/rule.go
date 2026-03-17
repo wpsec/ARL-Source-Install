@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	datatype "wih/dataType"
 	"wih/global"
@@ -29,7 +31,7 @@ func rule(body string, target string, sourceTag string) []datatype.ScanRecord {
 	hashSet := make(map[uint64]struct{})
 
 	for _, ruleItem := range global.RuleWIH.Rules {
-		if !ruleItem.Enabled {
+		if !ruleItem.IsEnabled() {
 			continue
 		}
 
@@ -93,7 +95,7 @@ func isExcluded(record datatype.ScanRecord, target string, sourceTag string) boo
 	}
 
 	for _, excludeRule := range global.RuleWIH.ExcludeRules {
-		if !excludeRule.Enabled {
+		if !excludeRule.IsEnabled() {
 			continue
 		}
 		if !matchExcludeField(excludeRule.Id, record.Id) {
@@ -141,15 +143,67 @@ func matchExcludeField(ruleValue string, inputValue string) bool {
 
 // RuleLoad 加载规则文件到全局配置。
 func RuleLoad() {
-	content := util.ReadFile2Byte(global.RulePath)
-	if len(content) == 0 {
+	config, err := loadRuleConfig(global.RulePath)
+	if err == nil {
+		global.RuleWIH = config
 		return
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "[wih] load rule file failed path=%s err=%v, fallback embedded template\n", global.RulePath, err)
+	embedded := util.ReadEmbeddedRuleTemplate()
+	if len(embedded) > 0 {
+		embeddedConfig := &datatype.WIH{}
+		if unmarshalErr := yaml.Unmarshal(embedded, embeddedConfig); unmarshalErr == nil {
+			normalizeCompatConfig(embeddedConfig)
+			if len(embeddedConfig.Rules) > 0 {
+				global.RuleWIH = embeddedConfig
+				return
+			}
+		}
+	}
+
+	// 最终兜底：启用最小内置规则，避免“静默空结果”。
+	global.RuleWIH = &datatype.WIH{
+		Rules: []datatype.Rule{
+			{Id: "domain"},
+			{Id: "ip"},
+			{Id: "path"},
+			{Id: "domain_url"},
+			{Id: "ip_url"},
+			{Id: "secret_key"},
+		},
+	}
+	_, _ = fmt.Fprintln(os.Stderr, "[wih] fallback to minimal builtin rules")
+}
+
+func loadRuleConfig(path string) (*datatype.WIH, error) {
+	content := util.ReadFile2Byte(path)
+	if len(content) == 0 {
+		return nil, fmt.Errorf("empty rule file")
 	}
 
 	config := &datatype.WIH{}
 	if err := yaml.Unmarshal(content, config); err != nil {
-		util.ErrPrint(err)
+		return nil, err
+	}
+	normalizeCompatConfig(config)
+	if len(config.Rules) == 0 {
+		return nil, fmt.Errorf("no rules loaded")
+	}
+	return config, nil
+}
+
+func normalizeCompatConfig(config *datatype.WIH) {
+	if config == nil {
 		return
 	}
-	global.RuleWIH = config
+
+	// 兼容旧结构：rule -> rules
+	if len(config.Rules) == 0 && len(config.Rule) > 0 {
+		config.Rules = config.Rule
+	}
+	// 兼容旧结构：exclude -> exclude_rules
+	if len(config.ExcludeRules) == 0 && len(config.Exclude) > 0 {
+		config.ExcludeRules = config.Exclude
+	}
 }

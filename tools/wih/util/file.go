@@ -108,6 +108,15 @@ func GenerateRuleTemplate(outputPath string) error {
 	return nil
 }
 
+// ReadEmbeddedRuleTemplate 读取内置规则模板内容。
+func ReadEmbeddedRuleTemplate() []byte {
+	content, err := embeddedRulesFS.ReadFile("rules_embed.yaml")
+	if err != nil {
+		return nil
+	}
+	return content
+}
+
 // FileExists 判断路径是否存在且为普通文件。
 func FileExists(filePath string) bool {
 	info, err := os.Stat(filePath)

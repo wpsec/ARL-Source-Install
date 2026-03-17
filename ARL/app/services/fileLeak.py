@@ -107,13 +107,18 @@ class HTTPReq():
             waf_module=self.waf_module,
         )
         self.conn = conn
-        start_time = time.time()
-        for data in conn.iter_content(chunk_size=512):
-            if time.time() - start_time >= self.read_timeout:
-                break
-            content += data
-            if len(content) >= int(self.max_length):
-                break
+
+        # 兼容 smart_skip_waf 的本地构造响应：该响应没有 raw 流，不能走 iter_content。
+        if getattr(conn, "raw", None) is None:
+            content = bytes(getattr(conn, "content", b"") or b"")[:self.max_length]
+        else:
+            start_time = time.time()
+            for data in conn.iter_content(chunk_size=512):
+                if time.time() - start_time >= self.read_timeout:
+                    break
+                content += data
+                if len(content) >= int(self.max_length):
+                    break
 
         self.status_code = conn.status_code
         self.content = content[:self.max_length]
