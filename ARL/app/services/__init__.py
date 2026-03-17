@@ -26,6 +26,7 @@ from .urlfinder_extract import run_urlfinder_extract
 from .urlfinder_sensitive_scan import run_urlfinder_sensitive_scan
 from .urlfinder_url_probe import run_urlfinder_url_probe
 from .trufflehog_scan import run_trufflehog_js
+from .afrog_scan import run_afrog_scan
 from .baseUpdateTask import BaseUpdateTask
 from .domainSiteUpdate import domain_site_update
 from .fingerprint_cache import finger_db_cache, finger_db_identify, have_human_rule_from_db

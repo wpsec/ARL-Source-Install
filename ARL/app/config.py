@@ -257,6 +257,7 @@ def refresh_runtime_config_best_effort(force=False):
             "NUCLEI_RATE_LIMIT",
             "NUCLEI_CONCURRENCY",
             "NUCLEI_BULK_SIZE",
+            "AFROG_EXEC_TIMEOUT_SEC",
             "URLFINDER_URL_PROBE_MAX_TARGETS",
             "URLFINDER_URL_PROBE_CONCURRENCY",
         ]
@@ -277,6 +278,18 @@ def refresh_runtime_config_best_effort(force=False):
             Config.URLFINDER_URL_PROBE_ENABLE = _safe_runtime_bool(
                 arl_conf.get("URLFINDER_URL_PROBE_ENABLE"), Config.URLFINDER_URL_PROBE_ENABLE
             )
+
+        if arl_conf.get("AFROG_BIN"):
+            Config.AFROG_BIN = str(arl_conf.get("AFROG_BIN") or "").strip()
+
+        if arl_conf.get("AFROG_POCS_DIR") is not None:
+            Config.AFROG_POCS_DIR = str(arl_conf.get("AFROG_POCS_DIR") or "").strip()
+
+        if arl_conf.get("AFROG_SEARCH_KEYWORDS") is not None:
+            Config.AFROG_SEARCH_KEYWORDS = str(arl_conf.get("AFROG_SEARCH_KEYWORDS") or "").strip()
+
+        if arl_conf.get("AFROG_SEVERITY") is not None:
+            Config.AFROG_SEVERITY = str(arl_conf.get("AFROG_SEVERITY") or "").strip().lower()
 
         # 保持环境变量覆盖优先级（与启动阶段一致）
         for key_name in positive_keys:
@@ -300,6 +313,10 @@ def refresh_runtime_config_best_effort(force=False):
         Config.URLFINDER_URL_PROBE_ENABLE = env_bool(
             "ARL_URLFINDER_URL_PROBE_ENABLE", Config.URLFINDER_URL_PROBE_ENABLE
         )
+        Config.AFROG_BIN = env_str("ARL_AFROG_BIN", Config.AFROG_BIN).strip()
+        Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
+        Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
+        Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
         dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
         if dns_resolvers_env:
             Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]
@@ -387,6 +404,16 @@ class Config(object):
     NUCLEI_DEFAULT_TAGS = "cve"
     # 指纹与 nuclei tags 的映射关系，可通过 config.yaml 覆盖
     NUCLEI_FINGER_TAG_MAP = {}
+    # afrog 可执行文件路径，默认使用 tools 目录
+    AFROG_BIN = os.path.join(project_root, "tools", "afrog", "afrog")
+    # afrog 本地 PoC 目录（优先用用户同步到 tools 的规则）
+    AFROG_POCS_DIR = os.path.join(project_root, "tools", "afrog", "afrog-pocs")
+    # afrog 模糊搜索关键词（逗号分隔），为空表示不过滤
+    AFROG_SEARCH_KEYWORDS = ""
+    # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）
+    AFROG_SEVERITY = ""
+    # afrog 扫描执行超时（秒）
+    AFROG_EXEC_TIMEOUT_SEC = 2 * 60 * 60
     # TruffleHog 可执行文件路径（优先使用 tools 目录）
     TRUFFLEHOG_BIN = os.path.join(project_root, "tools", "TruffleHog", "trufflehog")
     # 是否启用 TruffleHog JS 二次扫描
@@ -831,6 +858,23 @@ try:
     if y["ARL"].get("NUCLEI_DEFAULT_TAGS"):
         Config.NUCLEI_DEFAULT_TAGS = y["ARL"]["NUCLEI_DEFAULT_TAGS"]
 
+    if y["ARL"].get("AFROG_BIN"):
+        Config.AFROG_BIN = str(y["ARL"]["AFROG_BIN"]).strip()
+
+    if y["ARL"].get("AFROG_POCS_DIR") is not None:
+        Config.AFROG_POCS_DIR = str(y["ARL"]["AFROG_POCS_DIR"] or "").strip()
+
+    if y["ARL"].get("AFROG_SEARCH_KEYWORDS") is not None:
+        Config.AFROG_SEARCH_KEYWORDS = str(y["ARL"]["AFROG_SEARCH_KEYWORDS"] or "").strip()
+
+    if y["ARL"].get("AFROG_SEVERITY") is not None:
+        Config.AFROG_SEVERITY = str(y["ARL"]["AFROG_SEVERITY"] or "").strip().lower()
+
+    if y["ARL"].get("AFROG_EXEC_TIMEOUT_SEC") is not None:
+        Config.AFROG_EXEC_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["AFROG_EXEC_TIMEOUT_SEC"]), Config.AFROG_EXEC_TIMEOUT_SEC
+        )
+
     if y["ARL"].get("WIH_RULE_PATH"):
         Config.WIH_RULE_PATH = str(y["ARL"]["WIH_RULE_PATH"]).strip()
 
@@ -1169,6 +1213,14 @@ try:
     )
     Config.NUCLEI_AUTO_SCAN = env_bool("ARL_NUCLEI_AUTO_SCAN", Config.NUCLEI_AUTO_SCAN)
     Config.NUCLEI_DEFAULT_TAGS = env_str("ARL_NUCLEI_DEFAULT_TAGS", Config.NUCLEI_DEFAULT_TAGS)
+    Config.AFROG_BIN = env_str("ARL_AFROG_BIN", Config.AFROG_BIN).strip()
+    Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
+    Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
+    Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
+    Config.AFROG_EXEC_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_AFROG_EXEC_TIMEOUT_SEC", Config.AFROG_EXEC_TIMEOUT_SEC),
+        Config.AFROG_EXEC_TIMEOUT_SEC
+    )
     Config.WIH_RULE_PATH = env_str("ARL_WIH_RULE_PATH", Config.WIH_RULE_PATH)
     Config.TRUFFLEHOG_BIN = env_str("ARL_TRUFFLEHOG_BIN", Config.TRUFFLEHOG_BIN)
     Config.TRUFFLEHOG_ENABLE = env_bool("ARL_TRUFFLEHOG_ENABLE", Config.TRUFFLEHOG_ENABLE)

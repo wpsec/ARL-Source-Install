@@ -254,6 +254,7 @@ const modules: ModuleConfig[] = [
           dns_query_plugin: false,
           skip_scan_cdn_ip: false,
           nuclei_scan: false,
+          afrog_scan: false,
           findvhost: false,
           web_info_hunter: false,
           smart_skip_waf: false,
@@ -666,6 +667,7 @@ const modules: ModuleConfig[] = [
               search_engines: false,
               site_spider: false,
               nuclei_scan: false,
+              afrog_scan: false,
               web_info_hunter: false,
               smart_skip_waf: false,
             },
@@ -2842,6 +2844,7 @@ const fieldLabelMap: Record<string, string> = {
   dns_query_plugin: '域名查询插件',
   skip_scan_cdn_ip: '跳过CDN',
   nuclei_scan: 'nuclei 调用',
+  afrog_scan: 'afrog 调用',
   findvhost: 'Host 碰撞',
   web_info_hunter: 'WIH 调用',
   smart_skip_waf: '跳过WAF',
@@ -3878,7 +3881,7 @@ function ActionDialog({
       },
       {
         title: 'Web与风险',
-        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'findvhost', 'web_info_hunter', 'smart_skip_waf', 'dingding_notify'],
+        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'smart_skip_waf', 'dingding_notify'],
       },
     ];
     return sections
@@ -3979,8 +3982,9 @@ function ActionDialog({
     { key: 'site_config.site_capture', label: '4. 站点截图' },
     { key: 'file_leak', label: '5. 文件泄露' },
     { key: 'site_config.nuclei_scan', label: '6. nuclei 调用' },
-    { key: 'site_config.web_info_hunter', label: '7. WIH 调用' },
-    { key: 'site_config.smart_skip_waf', label: '8. 跳过WAF' },
+    { key: 'site_config.afrog_scan', label: '7. afrog 调用' },
+    { key: 'site_config.web_info_hunter', label: '8. WIH 调用' },
+    { key: 'site_config.smart_skip_waf', label: '9. 跳过WAF' },
   ];
   const filteredPolicySiteOptions = policySiteOptionDefs.filter((item) => {
     const keyword = policySearchKeyword.trim().toLowerCase();

@@ -12,6 +12,7 @@ from app import services
 from app.config import Config, normalize_dict_path_compat
 from app.modules import CollectSource, WebSiteFetchStatus, WebSiteFetchOption
 from app.services.nuclei_scan import nuclei_scan
+from app.services.afrog_scan import run_afrog_scan
 from app.services.waf_guard import WAFSmartSkipGuard
 from app.services import run_risk_cruising, BaseUpdateTask
 logger = utils.get_logger()
@@ -631,6 +632,59 @@ class WebSiteFetch(object):
                 "deferred nuclei_scan still failed and skipped task_id:{}".format(self.task_id)
             )
 
+    def afrog_scan(self):
+        """
+        运行 afrog Web 漏洞扫描，并写入 vuln 模块。
+
+        字段映射：
+        - plg_name: afrog:<poc_id>
+        - plg_type: afrog
+        - vul_name / severity / target: 来自 afrog 结果
+        """
+        afrog_targets = sorted(self.poc_sites)
+        if not afrog_targets:
+            logger.info("skip afrog_scan, no poc_sites")
+            return
+
+        origin_target_count = len(afrog_targets)
+        afrog_targets = self._filter_waf_blocked_targets(afrog_targets, stage_name="afrog")
+        if not afrog_targets:
+            logger.info("skip afrog_scan, no targets after waf filter")
+            return
+
+        logger.info(
+            "start afrog_scan targets:{} after_waf_filter:{} smart_skip_waf:{}".format(
+                origin_target_count,
+                len(afrog_targets),
+                self.smart_skip_waf,
+            )
+        )
+        scan_results = run_afrog_scan(afrog_targets)
+        saved_count = 0
+        for result in scan_results:
+            target = str(result.get("target", "") or "").strip()
+            if not target:
+                continue
+
+            poc_id = str(result.get("poc_id", "") or "").strip()
+            item = {
+                "plg_name": "afrog:{}".format(poc_id) if poc_id else "afrog",
+                "plg_type": "afrog",
+                "vul_name": str(result.get("vuln_name", "") or "afrog 漏洞").strip(),
+                "app_name": "afrog",
+                "target": target,
+                "severity": str(result.get("severity", "") or "info").strip().lower(),
+                "description": str(result.get("description", "") or "").strip(),
+                "detail": "source=afrog poc_id={}".format(poc_id or "-"),
+                "verify_data": str(result.get("verify_data", "") or "").strip(),
+                "task_id": self.task_id,
+                "save_date": utils.curr_date(),
+            }
+            utils.conn_db('vuln').insert_one(item)
+            saved_count += 1
+
+        logger.info("end afrog_scan, result:{} saved:{}".format(len(scan_results), saved_count))
+
     def run_func(self, name: str, func: callable):
         logger.info("start run {}, {}".format(name, self.__str__()))
         self.base_update_task.update_task_field("status", name)
@@ -917,6 +971,10 @@ class WebSiteFetch(object):
         """ *** 对站点运行 nuclei """
         if self.options.get(WebSiteFetchOption.NUCLEI_SCAN):
             self.run_func(WebSiteFetchStatus.NUCLEI_SCAN, self.nuclei_scan)
+
+        """ *** 对站点运行 afrog """
+        if self.options.get(WebSiteFetchOption.AFROG_SCAN):
+            self.run_func(WebSiteFetchStatus.AFROG_SCAN, self.afrog_scan)
 
         """ *** 对站点调用 WebInfoHunter """
         if self.options.get(WebSiteFetchOption.Info_Hunter):

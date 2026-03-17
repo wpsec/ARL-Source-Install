@@ -37,14 +37,16 @@ domain_monitor_options = {
     'port_scan_type': 'test',  # 端口扫描类型（test/top100/top1000/all）
     'port_scan': True,  # 启用端口扫描
     'dns_query_plugin': True,  # 启用DNS查询插件
-    'site_identify': False  # 禁用站点识别
+    'site_identify': False,  # 禁用站点识别
+    'afrog_scan': False,  # 禁用 afrog 漏洞扫描
 }
 
 # IP监控任务的默认选项配置
 ip_monitor_options = {
     'port_scan_type': 'test',  # 端口扫描类型
     'port_scan': True,  # 启用端口扫描
-    'site_identify': False  # 禁用站点识别
+    'site_identify': False,  # 禁用站点识别
+    'afrog_scan': False,  # 禁用 afrog 漏洞扫描
 }
 
 

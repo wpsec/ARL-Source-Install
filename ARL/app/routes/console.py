@@ -79,6 +79,7 @@ TASK_STAGE_TEXT_MAP = {
     "weak_brute": "弱口令爆破",
     "findvhost": "Host碰撞",
     "waf_smart_skip": "智能跳过WAF",
+    "afrog_scan": "afrog漏洞扫描",
     "search_engines": "搜索引擎调用",
     "ip_query_plugin": "IP查询插件",
     "fetch site": "站点采集",

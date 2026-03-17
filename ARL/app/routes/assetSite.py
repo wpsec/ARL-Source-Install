@@ -182,6 +182,7 @@ class ARLAssetSite(ARLResource):
             'site_identify': False,  # 站点识别
             'site_capture': False,  # 站点截图
             'file_leak': False,  # 文件泄露检测
+            'afrog_scan': False,  # afrog 漏洞扫描
             'site_spider': False,  # 站点爬虫
             'search_engines': False,  # 搜索引擎
             'related_scope_id': scope_id  # 关联资产组
@@ -497,5 +498,4 @@ class DeleteAssetSiteTagARL(ARLResource):
         utils.conn_db('asset_site').update_one(query, {"$set": {"tag": tag_list}})
 
         return utils.build_ret(ErrorMsg.Success, {"tag": tag})
-
 

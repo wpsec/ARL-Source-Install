@@ -31,6 +31,7 @@
 - file_leak：文件泄露扫描
 - site_identify：站点识别
 - nuclei_scan：Nuclei漏洞扫描
+- afrog_scan：afrog漏洞扫描
 - web_info_hunter：JS信息收集
 等30+个可选项
 """
@@ -107,6 +108,7 @@ base_search_task_fields = {
     'options.dns_query_plugin': fields.Boolean(description="是否开启DNS查询插件"),
     'options.skip_scan_cdn_ip': fields.Boolean(description="是否跳过CDN IP的端口扫描"),
     'options.nuclei_scan': fields.Boolean(description="是否开启Nuclei漏洞扫描"),
+    'options.afrog_scan': fields.Boolean(description="是否开启afrog漏洞扫描"),
     'options.findvhost': fields.Boolean(description="是否开启虚拟主机碰撞检测"),
     'options.web_info_hunter': fields.Boolean(description="是否开启WebInfoHunter（JS信息收集）"),
     'options.smart_skip_waf': fields.Boolean(description="是否开启跳过WAF"),
@@ -144,6 +146,7 @@ add_task_fields = ns.model('AddTask', {
     "dns_query_plugin": fields.Boolean(example=False, default=False, description="DNS查询插件"),
     "skip_scan_cdn_ip": fields.Boolean(example=False, default=False, description="跳过CDN IP"),
     "nuclei_scan": fields.Boolean(description="Nuclei漏洞扫描", example=False, default=False),
+    "afrog_scan": fields.Boolean(description="afrog漏洞扫描", example=False, default=False),
     "findvhost": fields.Boolean(example=False, default=False, description="虚拟主机碰撞"),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="WebInfoHunter JS信息收集"),
     "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),

@@ -122,6 +122,7 @@ class WebSiteFetchOption:
     POC_RUN = "poc_config"
     SITE_IDENTIFY = "site_identify"
     NUCLEI_SCAN = "nuclei_scan"  # nuclei 扫描
+    AFROG_SCAN = "afrog_scan"  # afrog 扫描
     Info_Hunter = "web_info_hunter"  # 对 JS 调用WebInfoHunter
     SMART_SKIP_WAF = "smart_skip_waf"  # 智能跳过 WAF 拦截目标
 
@@ -136,6 +137,7 @@ class WebSiteFetchStatus:
     SITE_IDENTIFY = "site_identify"
     POC_RUN = "poc_run"
     NUCLEI_SCAN = "nuclei_scan"
+    AFROG_SCAN = "afrog_scan"
     Info_Hunter = "web_info_hunter"  # 对 JS 调用WebInfoHunter
 
 

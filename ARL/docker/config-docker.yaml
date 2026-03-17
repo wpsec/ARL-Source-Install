@@ -204,6 +204,16 @@ ARL:
   NUCLEI_AUTO_SCAN: true
   # 指纹未命中标签时的兜底标签（逗号分隔）
   NUCLEI_DEFAULT_TAGS: "cve"
+  # afrog 可执行文件路径（默认 tools/afrog/afrog）
+  AFROG_BIN: "/code/tools/afrog/afrog"
+  # afrog PoC 目录（默认 tools/afrog/afrog-pocs）
+  AFROG_POCS_DIR: "/code/tools/afrog/afrog-pocs"
+  # afrog 模糊搜索关键词（逗号分隔，为空表示不过滤）
+  AFROG_SEARCH_KEYWORDS: ""
+  # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）
+  AFROG_SEVERITY: ""
+  # afrog 扫描超时（秒）
+  AFROG_EXEC_TIMEOUT_SEC: 7200
   # 是否启用 URLFinder 同目标 URL/HTML/JS 二次敏感扫描（复用 WIH）
   URLFINDER_SENSITIVE_ENABLE: true
   # URLFinder 二次敏感扫描单次最多目标数
