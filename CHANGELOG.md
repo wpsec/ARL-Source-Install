@@ -3,6 +3,19 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准）。
 
+## 2026-03-17（v3.2.0）
+
+- `[v3.2.0]` 仪表盘扫描日志链路回归 `arl_worker.log`：`/console/recent_logs` 改为优先读取 `ARL_DASHBOARD_SCAN_LOG_PATH`（默认 `/code/logs/arl_worker.log`）并兼容回退 `/code/arl_worker.log`；`docker-compose` 为 `web/worker` 增加共享日志卷挂载，`worker` 启动脚本统一将 Celery 日志写入共享目录（支持 `ARL_SCAN_LOG_FILE` 覆盖），修复“仪表盘日志与实际扫描日志不一致”问题
+- `[v3.2.0]` 仪表盘可读性优化：移除“ARL 引擎”卡片，实时扫描日志窗口增大（默认拉取条数从 `24` 提升至 `120`，后端支持 `默认80/最大300`），提升低配主机场景下日志排障效率
+- `[v3.2.0]` 资产搜索能力补齐：`文件泄漏` 与 `URL信息` 模块均新增 `body 长度(content_length)` 排序支持，便于按响应体体量快速定位高价值目标
+- `[v3.2.0]` 文案修正：扫描资源档位 `2核2G3M` 描述修复错别字（`当能 -> 但能`）
+- `[v3.2.0]` 配置热刷新增强：`配置管理` 与 `API管理` 保存后触发运行时配置热刷新；`worker` 在每次任务执行前按配置文件 `mtime` 自动刷新关键运行参数（扫描并发/超时、字典路径、`QUERY_PLUGIN`、API凭据等），使新配置在“下一次任务”即可生效，降低对容器重启的依赖
+- `[v3.2.0]` 新建任务交互与文案统一：任务入口与弹窗标题统一为“新建任务”；扫描功能新增 `smart_skip_waf`（前端展示“跳过WAF”，默认关闭），开启后对同任务目标按主机识别疑似 WAF 拦截并跳过后续请求，任务统计与仪表盘日志新增跳过摘要提示
+
+## 2026-03-17（v3.1.50）
+
+- `[v3.1.50]` 扫描资源预定义档位增强：配置管理新增 `2C2G3M / 4C4G5M / 8C16G10M` 三档一键预设，统一覆盖 `Nuclei`（`timeout/rate-limit/concurrency/bulk-size`）、域名爆破并发、`Web/Celery` 并发、端口扫描参数与 `URLFinder` 探测并发；后端 `scan_config` 接口同步返回档位定义与命中状态，降低低配主机扫描时 CPU/带宽被打满导致系统不可用的风险
+
 ## 2026-03-16（v3.1.24 ~ v3.1.49）
 
 - `[v3.1.24]` DNS 漂移校验增强：新增 `socket/getaddrinfo` 解析链路校验（覆盖 `/etc/hosts` 与运行时 NSS 解析偏移场景），并将 `get_ip/get_ip_system` 结果统一为“公网优先”排序；`http_req` 在未配置 `PROXY_URL` 时显式禁用环境代理；`fetchCert` 对域名目标接入 DNS 策略校验，降低站点/证书阶段误命中内网地址的风险
@@ -25,18 +38,6 @@
 - `[v3.1.47]` 指纹升级链路增强：新增 `scripts/sync-fingerprint.sh`，`start.sh` 与 `quick-build.sh quick` 在容器启动/重建后自动触发 `tools/finger.json` 导入，保证重建与升级后指纹规则始终同步最新；同时清理无用文件 `tools/wih/LICENSE`
 - `[v3.1.48]` Docker 构建兼容修复：移除 `wih` 编译阶段对 `RUN --mount`（BuildKit 专属语法）的强依赖，回退为普通 `COPY + RUN` 链路；在未开启 BuildKit 的 `docker build/docker compose build` 环境下也可正常构建，并保留 Go 离线包优先、在线下载回退逻辑
 - `[v3.1.49]` 指纹同步性能优化：`sync-fingerprint` 新增 hash 检测（指纹文件未变化且库内已有数据时跳过导入）与锁机制（避免重复并发导入）；`start.sh` 与 `quick-build.sh quick` 改为后台执行同步，不再阻塞容器重建完成流程
-
-## 2026-03-17（v3.1.50）
-
-- `[v3.1.50]` 扫描资源预定义档位增强：配置管理新增 `2C2G3M / 4C4G5M / 8C16G10M` 三档一键预设，统一覆盖 `Nuclei`（`timeout/rate-limit/concurrency/bulk-size`）、域名爆破并发、`Web/Celery` 并发、端口扫描参数与 `URLFinder` 探测并发；后端 `scan_config` 接口同步返回档位定义与命中状态，降低低配主机扫描时 CPU/带宽被打满导致系统不可用的风险
-
-## 2026-03-17（v3.2.0）
-
-- `[v3.2.0]` 仪表盘扫描日志链路回归 `arl_worker.log`：`/console/recent_logs` 改为优先读取 `ARL_DASHBOARD_SCAN_LOG_PATH`（默认 `/code/logs/arl_worker.log`）并兼容回退 `/code/arl_worker.log`；`docker-compose` 为 `web/worker` 增加共享日志卷挂载，`worker` 启动脚本统一将 Celery 日志写入共享目录（支持 `ARL_SCAN_LOG_FILE` 覆盖），修复“仪表盘日志与实际扫描日志不一致”问题
-- `[v3.2.0]` 仪表盘可读性优化：移除“ARL 引擎”卡片，实时扫描日志窗口增大（默认拉取条数从 `24` 提升至 `120`，后端支持 `默认80/最大300`），提升低配主机场景下日志排障效率
-- `[v3.2.0]` 资产搜索能力补齐：`文件泄漏` 与 `URL信息` 模块均新增 `body 长度(content_length)` 排序支持，便于按响应体体量快速定位高价值目标
-- `[v3.2.0]` 文案修正：扫描资源档位 `2核2G3M` 描述修复错别字（`当能 -> 但能`）
-- `[v3.2.0]` 配置热刷新增强：`配置管理` 与 `API管理` 保存后触发运行时配置热刷新；`worker` 在每次任务执行前按配置文件 `mtime` 自动刷新关键运行参数（扫描并发/超时、字典路径、`QUERY_PLUGIN`、API凭据等），使新配置在“下一次任务”即可生效，降低对容器重启的依赖
 
 ## 2026-03-14（v3.1.0 ~ v3.1.23）
 

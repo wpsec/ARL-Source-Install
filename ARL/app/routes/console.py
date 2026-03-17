@@ -78,6 +78,7 @@ TASK_STAGE_TEXT_MAP = {
     "poc_run": "PoC扫描",
     "weak_brute": "弱口令爆破",
     "findvhost": "Host碰撞",
+    "waf_smart_skip": "智能跳过WAF",
     "search_engines": "搜索引擎调用",
     "ip_query_plugin": "IP查询插件",
     "fetch site": "站点采集",
@@ -414,10 +415,13 @@ def _build_recent_task_summary_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
                 for service_item in service_items[-2:]:
                     service_name = _human_task_stage(service_item.get("name"))
                     elapsed = _safe_float(service_item.get("elapsed", 0), 0.0)
+                    detail = _truncate_text(service_item.get("detail", ""), max_len=120)
                     if elapsed > 0:
                         msg = "任务[{}] 阶段完成: {} (耗时 {:.2f}s)".format(task_name, service_name, elapsed)
                     else:
                         msg = "任务[{}] 阶段完成: {}".format(task_name, service_name)
+                    if detail:
+                        msg = "{}，{}".format(msg, detail)
                     records.append({
                         "_seq": seq,
                         "_ts": ts_value,

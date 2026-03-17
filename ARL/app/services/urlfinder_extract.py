@@ -75,9 +75,10 @@ class UrlfinderExtractService:
         ".map",
     )
 
-    def __init__(self, sites: List[str], wih_records: List[WihRecord]):
+    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
+        self.waf_guard = waf_guard
 
         self.max_seed_pages = 80
         self.max_js_files = 120
@@ -270,7 +271,13 @@ class UrlfinderExtractService:
             return ""
 
         try:
-            conn = utils.http_req(url, "get", timeout=self.fetch_timeout)
+            conn = utils.http_req(
+                url,
+                "get",
+                timeout=self.fetch_timeout,
+                waf_guard=self.waf_guard,
+                waf_module="urlfinder_extract",
+            )
         except Exception as e:
             logger.debug("urlfinder fetch failed {} {}".format(url, e))
             return ""
@@ -422,6 +429,6 @@ class UrlfinderExtractService:
         return self.records
 
 
-def run_urlfinder_extract(sites: List[str], wih_records: List[WihRecord]) -> List[WihRecord]:
-    extractor = UrlfinderExtractService(sites=sites, wih_records=wih_records)
+def run_urlfinder_extract(sites: List[str], wih_records: List[WihRecord], waf_guard=None) -> List[WihRecord]:
+    extractor = UrlfinderExtractService(sites=sites, wih_records=wih_records, waf_guard=waf_guard)
     return extractor.run()

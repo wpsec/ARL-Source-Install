@@ -24,11 +24,13 @@ class UrlfinderUrlProbeService:
         sites: List[str],
         wih_records: List[WihRecord],
         page_url_set: Optional[Set[str]] = None,
+        waf_guard=None,
     ):
         self.task_id = str(task_id or "").strip()
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.page_url_set = page_url_set if isinstance(page_url_set, set) else None
+        self.waf_guard = waf_guard
 
         self.enable = bool(getattr(Config, "URLFINDER_URL_PROBE_ENABLE", True))
         self.max_targets = int(getattr(Config, "URLFINDER_URL_PROBE_MAX_TARGETS", 300) or 300)
@@ -197,7 +199,12 @@ class UrlfinderUrlProbeService:
             logger.info("urlfinder url probe skip, no targets after dns policy filtering")
             return 0
 
-        page_map = page_fetch(probe_targets, concurrency=self.concurrency)
+        page_map = page_fetch(
+            probe_targets,
+            concurrency=self.concurrency,
+            waf_guard=self.waf_guard,
+            waf_module="urlfinder_url_probe",
+        )
         inserted_count = self._insert_url_pages(page_map)
 
         logger.info(
@@ -216,11 +223,13 @@ def run_urlfinder_url_probe(
     sites: List[str],
     wih_records: List[WihRecord],
     page_url_set: Optional[Set[str]] = None,
+    waf_guard=None,
 ) -> int:
     service = UrlfinderUrlProbeService(
         task_id=task_id,
         sites=sites,
         wih_records=wih_records,
         page_url_set=page_url_set,
+        waf_guard=waf_guard,
     )
     return service.run()

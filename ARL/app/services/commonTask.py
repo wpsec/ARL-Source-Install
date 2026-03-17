@@ -12,6 +12,7 @@ from app import services
 from app.config import Config, normalize_dict_path_compat
 from app.modules import CollectSource, WebSiteFetchStatus, WebSiteFetchOption
 from app.services.nuclei_scan import nuclei_scan
+from app.services.waf_guard import WAFSmartSkipGuard
 from app.services import run_risk_cruising, BaseUpdateTask
 logger = utils.get_logger()
 
@@ -97,7 +98,13 @@ class WebSiteFetch(object):
     def __init__(self, task_id: str, sites: list, options: dict, scope_domain: list = None):
         self.task_id = task_id
         self.sites = sites  # ** 这个是用户提交的目标
-        self.options = options
+        self.options = options or {}
+        self.smart_skip_waf = bool(self.options.get("smart_skip_waf", False))
+        self.waf_guard = WAFSmartSkipGuard(
+            enabled=self.smart_skip_waf,
+            task_id=self.task_id,
+            scope_sites=self.sites,
+        )
         self.base_update_task = BaseUpdateTask(self.task_id)
         self.site_info_list = []  # *** 这个是来自 services.fetch_site 的结果
         self.available_sites = []  # *** 这个是存活的站点
@@ -116,6 +123,47 @@ class WebSiteFetch(object):
         self._task_domain_set = None  # 用于保存任务中的域名
         self._nuclei_deferred_retry_needed = False
         self._nuclei_final_skip = False
+
+    def _filter_waf_blocked_targets(self, targets, stage_name="") -> list:
+        target_list = list(targets or [])
+        if not self.waf_guard:
+            return target_list
+
+        keep_targets, skipped = self.waf_guard.filter_targets(target_list)
+        if skipped > 0:
+            logger.info(
+                "task_id:{} waf smart skip stage:{} keep:{} skipped:{}".format(
+                    self.task_id,
+                    stage_name or "-",
+                    len(keep_targets),
+                    skipped,
+                )
+            )
+        return keep_targets
+
+    def _save_waf_skip_summary(self):
+        if not self.waf_guard or not self.smart_skip_waf:
+            return
+
+        summary = self.waf_guard.summary()
+        summary["updated_at"] = utils.curr_date()
+        summary_text = self.waf_guard.summary_text()
+
+        query = {"_id": ObjectId(self.task_id)}
+        utils.conn_db("task").update_one(query, {"$set": {"waf_skip_summary": summary}})
+        utils.conn_db("task").update_one(
+            query,
+            {
+                "$push": {
+                    "service": {
+                        "name": "waf_smart_skip",
+                        "elapsed": 0.0,
+                        "detail": summary_text,
+                    }
+                }
+            },
+        )
+        logger.info("task_id:{} waf smart skip summary {}".format(self.task_id, summary_text))
 
     @property
     def task_domain_set(self):
@@ -178,7 +226,7 @@ class WebSiteFetch(object):
             entry_urls.extend(self.search_engines_result.get(site, []))
             entry_urls_list.append(entry_urls)
 
-        site_spider_result = services.site_spider_thread(entry_urls_list)
+        site_spider_result = services.site_spider_thread(entry_urls_list, waf_guard=self.waf_guard)
         spider_urls = []
         for site in site_spider_result:
             target_urls = site_spider_result[site]
@@ -197,7 +245,7 @@ class WebSiteFetch(object):
 
         if len(spider_urls) > 0:
             logger.info("spider_urls {} task_id:{}".format( len(spider_urls), self.task_id))
-            page_map = services.page_fetch(spider_urls)
+            page_map = services.page_fetch(spider_urls, waf_guard=self.waf_guard, waf_module="site_spider_probe")
             for url in page_map:
                 item = build_url_item(url, self.task_id, source=CollectSource.SITESPIDER)
                 item.update(page_map[url])
@@ -205,7 +253,7 @@ class WebSiteFetch(object):
 
     def fetch_site(self):
         # ***站点信息获取***
-        self.site_info_list = services.fetch_site(self.sites)
+        self.site_info_list = services.fetch_site(self.sites, waf_guard=self.waf_guard)
         for site_info in self.site_info_list:
             curr_site = site_info["site"]
             self.available_sites.append(curr_site)
@@ -227,7 +275,7 @@ class WebSiteFetch(object):
 
         file_leak_dict_words = utils.load_file(file_leak_dict_path)
         for site in self.poc_sites:
-            pages = services.file_leak([site], file_leak_dict_words)
+            pages = services.file_leak([site], file_leak_dict_words, waf_guard=self.waf_guard)
             for page in pages:
                 item = page.dump_json()
                 item["task_id"] = self.task_id
@@ -620,19 +668,26 @@ class WebSiteFetch(object):
             logger.warning("save wih risk failed task_id:{} err:{}".format(self.task_id, e))
 
     def run_web_info_hunter(self):
-        records = set(services.run_wih(self.sites))
-        urlfinder_records = set(services.run_urlfinder_extract(self.sites, list(records)))
+        wih_targets = self._filter_waf_blocked_targets(self.sites, stage_name="wih")
+        scan_sites = list(wih_targets or [])
+        records = set(services.run_wih(wih_targets)) if wih_targets else set()
+
+        urlfinder_records = set(
+            services.run_urlfinder_extract(scan_sites, list(records), waf_guard=self.waf_guard)
+        )
         if urlfinder_records:
             records |= urlfinder_records
 
         if records:
             # 对 URLFinder 提取出的同目标 URL/HTML/JS 做二次敏感信息扫描。
-            urlfinder_sensitive_records = set(services.run_urlfinder_sensitive_scan(self.sites, list(records)))
+            urlfinder_sensitive_records = set(
+                services.run_urlfinder_sensitive_scan(scan_sites, list(records), waf_guard=self.waf_guard)
+            )
             if urlfinder_sensitive_records:
                 records |= urlfinder_sensitive_records
 
         if records:
-            trufflehog_records = set(services.run_trufflehog_js(self.sites, list(records)))
+            trufflehog_records = set(services.run_trufflehog_js(scan_sites, list(records), waf_guard=self.waf_guard))
             if trufflehog_records:
                 records |= trufflehog_records
 
@@ -640,9 +695,10 @@ class WebSiteFetch(object):
         if records:
             services.run_urlfinder_url_probe(
                 task_id=self.task_id,
-                sites=self.sites,
+                sites=scan_sites,
                 wih_records=list(records),
                 page_url_set=self.page_url_set,
+                waf_guard=self.waf_guard,
             )
 
         for record in records:
@@ -700,6 +756,8 @@ class WebSiteFetch(object):
         # nuclei 首次因 Mongo 超时延后时，在本任务末尾补跑一次。
         if self._nuclei_deferred_retry_needed:
             self.run_deferred_nuclei_scan()
+
+        self._save_waf_skip_summary()
 
 
 def domain_in_scope_domain(domain: str, scope_domain: list):

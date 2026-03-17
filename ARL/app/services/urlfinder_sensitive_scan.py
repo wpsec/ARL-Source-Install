@@ -18,9 +18,10 @@ logger = utils.get_logger()
 
 
 class UrlfinderSensitiveScanner:
-    def __init__(self, sites: List[str], wih_records: List[WihRecord]):
+    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
+        self.waf_guard = waf_guard
 
         self.max_targets = int(getattr(Config, "URLFINDER_SENSITIVE_MAX_TARGETS", 300) or 300)
         self.include_js = bool(getattr(Config, "URLFINDER_SENSITIVE_INCLUDE_JS", True))
@@ -80,6 +81,8 @@ class UrlfinderSensitiveScanner:
 
         host = self._extract_host(text)
         if not host or host not in self.allowed_hosts:
+            return ""
+        if self.waf_guard and self.waf_guard.is_blocked_host(host):
             return ""
 
         if parsed.fragment:
@@ -175,6 +178,6 @@ class UrlfinderSensitiveScanner:
         return filtered
 
 
-def run_urlfinder_sensitive_scan(sites: List[str], wih_records: List[WihRecord]) -> List[WihRecord]:
-    scanner = UrlfinderSensitiveScanner(sites=sites, wih_records=wih_records)
+def run_urlfinder_sensitive_scan(sites: List[str], wih_records: List[WihRecord], waf_guard=None) -> List[WihRecord]:
+    scanner = UrlfinderSensitiveScanner(sites=sites, wih_records=wih_records, waf_guard=waf_guard)
     return scanner.run()

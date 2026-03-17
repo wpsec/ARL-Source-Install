@@ -42,6 +42,9 @@ def patch_content(response, timeout=None):
 
 
 def http_req(url, method='get', **kwargs):
+    waf_guard = kwargs.pop("waf_guard", None)
+    waf_module = kwargs.pop("waf_module", "")
+
     kwargs.setdefault('verify', False)
     kwargs.setdefault('timeout', (10.1, 30.1))
     kwargs.setdefault('allow_redirects', False)
@@ -65,13 +68,22 @@ def http_req(url, method='get', **kwargs):
         # 导致“DNS 解析结果与实际连接目标”不一致。
         kwargs.setdefault("proxies", {"http": None, "https": None})
 
+    if waf_guard:
+        should_skip, detail = waf_guard.should_skip(url)
+        if should_skip:
+            return waf_guard.build_skip_response(url, detail)
+
     conn = getattr(requests, method)(url, **kwargs)
 
     timeout = kwargs.get("timeout")
-    if len(timeout) > 1 and timeout[1]:
-        timeout = timeout[1]
+    if isinstance(timeout, (list, tuple)):
+        if len(timeout) > 1 and timeout[1]:
+            timeout = timeout[1]
 
     patch_content(conn, timeout)
+
+    if waf_guard:
+        waf_guard.observe_response(url, conn, module=waf_module)
 
     return conn
 

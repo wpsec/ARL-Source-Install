@@ -76,13 +76,15 @@ class URL():
         return self._path
 
 class HTTPReq():
-    def __init__(self, url: URL , read_timeout = 60, max_length = 50*1024):
+    def __init__(self, url: URL , read_timeout = 60, max_length = 50*1024, waf_guard=None, waf_module="file_leak"):
         self.url = url
         self.read_timeout = read_timeout
         self.max_length = max_length
         self.conn = None
         self.status_code = None
         self.content = None
+        self.waf_guard = waf_guard
+        self.waf_module = waf_module
 
     def req(self):
         content = b''
@@ -96,7 +98,14 @@ class HTTPReq():
                 )
             )
 
-        conn = utils.http_req(self.url.url, 'get', timeout=(3, 6), stream=True)
+        conn = utils.http_req(
+            self.url.url,
+            'get',
+            timeout=(3, 6),
+            stream=True,
+            waf_guard=self.waf_guard,
+            waf_module=self.waf_module,
+        )
         self.conn = conn
         start_time = time.time()
         for data in conn.iter_content(chunk_size=512):
@@ -260,7 +269,7 @@ class Page():
 
 
 class FileLeak(BaseThread):
-    def __init__(self, target, urls, concurrency=8):
+    def __init__(self, target, urls, concurrency=8, waf_guard=None):
         super().__init__(urls, concurrency = concurrency)
         self.target = target.rstrip("/") + "/"
         self.urls = urls
@@ -278,6 +287,7 @@ class FileLeak(BaseThread):
         self.skip_302 = False
         self.location_404_url = set()
         self.skip_by_policy = False
+        self.waf_guard = waf_guard
 
     def work(self, url):
         if self.error_times >= 20:
@@ -340,7 +350,7 @@ class FileLeak(BaseThread):
 
     def http_req(self, url: URL):
         try:
-            req = HTTPReq(url)
+            req = HTTPReq(url, waf_guard=self.waf_guard, waf_module="file_leak")
             req.req()
             return req
         except FileLeakPolicySkip as e:
@@ -545,7 +555,7 @@ class GenURL():
 
 from typing import  List
 
-def file_leak(targets, dicts, gen_dict = True) -> List[Page]:
+def file_leak(targets, dicts, gen_dict = True, waf_guard=None) -> List[Page]:
     all_gen_url = set()
     map_url = dict()
 
@@ -568,7 +578,7 @@ def file_leak(targets, dicts, gen_dict = True) -> List[Page]:
         cnt += 1
 
         try:
-            f = FileLeak(target, map_url[target], concurrency_count)
+            f = FileLeak(target, map_url[target], concurrency_count, waf_guard=waf_guard)
             pages = f.run()
             for page in pages:
                 logger.info("found => {}".format(page))

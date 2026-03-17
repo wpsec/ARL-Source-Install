@@ -123,6 +123,7 @@ class WebSiteFetchOption:
     SITE_IDENTIFY = "site_identify"
     NUCLEI_SCAN = "nuclei_scan"  # nuclei 扫描
     Info_Hunter = "web_info_hunter"  # 对 JS 调用WebInfoHunter
+    SMART_SKIP_WAF = "smart_skip_waf"  # 智能跳过 WAF 拦截目标
 
 
 class WebSiteFetchStatus:

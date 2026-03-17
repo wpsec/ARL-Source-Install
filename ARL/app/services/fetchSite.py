@@ -18,12 +18,13 @@ from app.utils.fingerprint import load_fingerprint, fetch_fingerprint
 
 
 class FetchSite(BaseThread):
-    def __init__(self, sites, concurrency=6, http_timeout=None):
+    def __init__(self, sites, concurrency=6, http_timeout=None, waf_guard=None):
         super().__init__(sites, concurrency)
         self.site_info_list = []
         self.fingerprint_list = load_fingerprint()
         self.dns_policy_cache = {}
         self.http_timeout = http_timeout
+        self.waf_guard = waf_guard
         if http_timeout is None:
             self.http_timeout = (10.1, 30.1)
 
@@ -71,7 +72,11 @@ class FetchSite(BaseThread):
 
         _, hostname, _ = get_host(site)
 
-        conn = utils.http_req(site, timeout=self.http_timeout)
+        conn = utils.http_req(site, timeout=self.http_timeout, waf_guard=self.waf_guard, waf_module="fetch_site")
+        if str((conn.headers or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
+            logger.info("skip fetch_site by waf smart skip site:{}".format(site))
+            return
+
         item = {
             "site": site[:200],
             "hostname": hostname,
@@ -82,7 +87,7 @@ class FetchSite(BaseThread):
             "http_server": conn.headers.get("Server", ""),
             "body_length": len(conn.content),
             "finger": [],
-            "favicon": fetch_favicon(site)
+            "favicon": fetch_favicon(site, waf_guard=self.waf_guard)
         }
 
         self.fetch_fingerprint(item, content=conn.content)
@@ -156,27 +161,28 @@ def same_netloc_and_scheme(u1, u2):
     return False
 
 
-def fetch_favicon(url):
-    f = FetchFavicon(url)
+def fetch_favicon(url, waf_guard=None):
+    f = FetchFavicon(url, waf_guard=waf_guard)
     return f.run()
 
 
-def fetch_site(sites, concurrency=None, http_timeout=None):
+def fetch_site(sites, concurrency=None, http_timeout=None, waf_guard=None):
     if concurrency is None:
         concurrency = Config.HTTP_FETCH_SITE_CONCURRENCY
     # 预热指纹缓存（优先命中进程内/Redis，减少重复查询 MongoDB）
     from app.services import finger_db_cache
     finger_db_cache.update_cache(force_db=False)
 
-    f = FetchSite(sites, concurrency=concurrency, http_timeout=http_timeout)
+    f = FetchSite(sites, concurrency=concurrency, http_timeout=http_timeout, waf_guard=waf_guard)
     return f.run()
 
 
 class FetchFavicon(object):
-    def __init__(self, url):
+    def __init__(self, url, waf_guard=None):
         self.url = url
         self.favicon_url = None
         self.dns_policy_cache = {}
+        self.waf_guard = waf_guard
         pass
 
     def build_result(self, data):
@@ -222,7 +228,7 @@ class FetchFavicon(object):
             )
             return
 
-        conn = http_req(favicon_url)
+        conn = http_req(favicon_url, waf_guard=self.waf_guard, waf_module="fetch_favicon")
         if conn.status_code != 200:
             return
 
@@ -257,7 +263,7 @@ class FetchFavicon(object):
             )
             return
 
-        conn = http_req(self.url)
+        conn = http_req(self.url, waf_guard=self.waf_guard, waf_module="fetch_favicon_html")
         if b"<link" not in conn.content:
             return
         d = pq(conn.content)

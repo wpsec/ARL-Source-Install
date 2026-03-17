@@ -209,7 +209,7 @@ const modules: ModuleConfig[] = [
     actions: [
       {
         id: 'create_task',
-        label: '添加任务',
+        label: '新建任务',
         method: 'POST',
         path: '/task/',
         payloadTemplate: {
@@ -238,6 +238,7 @@ const modules: ModuleConfig[] = [
           nuclei_scan: false,
           findvhost: false,
           web_info_hunter: false,
+          smart_skip_waf: false,
           dingding_notify: false,
         },
       },
@@ -648,6 +649,7 @@ const modules: ModuleConfig[] = [
               site_spider: false,
               nuclei_scan: false,
               web_info_hunter: false,
+              smart_skip_waf: false,
             },
             domain_dict: '',
             file_leak_dict: '',
@@ -2190,12 +2192,25 @@ function getTaskTypeLabel(rawType: any): string {
 
 function buildTaskStatisticSummary(row: any): string {
   const stat = row?.statistic;
-  if (!stat || typeof stat !== 'object' || Array.isArray(stat)) return '-';
+  const wafSummary = row?.waf_skip_summary && typeof row.waf_skip_summary === 'object' ? row.waf_skip_summary : {};
+  const wafBlockedHostCount = Number(wafSummary?.blocked_host_count || 0);
+  const wafSkipRequestCount = Number(wafSummary?.skip_request_count || 0);
+
+  if (!stat || typeof stat !== 'object' || Array.isArray(stat)) {
+    if (wafBlockedHostCount > 0 || wafSkipRequestCount > 0) {
+      return `WAF跳过:主机${wafBlockedHostCount} 请求${wafSkipRequestCount}`;
+    }
+    return '-';
+  }
   const siteCnt = Number(stat.site_cnt || 0);
   const domainCnt = Number(stat.domain_cnt || 0);
   const ipCnt = Number(stat.ip_cnt || 0);
   const vulnCnt = Number(stat.vuln_cnt || 0);
-  return `站点:${siteCnt} 域名:${domainCnt} IP:${ipCnt} 风险:${vulnCnt}`;
+  let summary = `站点:${siteCnt} 域名:${domainCnt} IP:${ipCnt} 风险:${vulnCnt}`;
+  if (wafBlockedHostCount > 0 || wafSkipRequestCount > 0) {
+    summary += ` WAF跳过:主机${wafBlockedHostCount}/请求${wafSkipRequestCount}`;
+  }
+  return summary;
 }
 
 function buildTaskOptionsSummary(row: any): string {
@@ -2811,6 +2826,7 @@ const fieldLabelMap: Record<string, string> = {
   nuclei_scan: 'nuclei 调用',
   findvhost: 'Host 碰撞',
   web_info_hunter: 'WIH 调用',
+  smart_skip_waf: '跳过WAF',
 };
 
 type FlatPayloadField = {
@@ -3844,7 +3860,7 @@ function ActionDialog({
       },
       {
         title: 'Web与风险',
-        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'findvhost', 'web_info_hunter', 'dingding_notify'],
+        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'findvhost', 'web_info_hunter', 'smart_skip_waf', 'dingding_notify'],
       },
     ];
     return sections
@@ -3946,6 +3962,7 @@ function ActionDialog({
     { key: 'file_leak', label: '5. 文件泄露' },
     { key: 'site_config.nuclei_scan', label: '6. nuclei 调用' },
     { key: 'site_config.web_info_hunter', label: '7. WIH 调用' },
+    { key: 'site_config.smart_skip_waf', label: '8. 跳过WAF' },
   ];
   const filteredPolicySiteOptions = policySiteOptionDefs.filter((item) => {
     const keyword = policySearchKeyword.trim().toLowerCase();

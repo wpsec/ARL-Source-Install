@@ -108,6 +108,7 @@ site_config_fields = ns.model('siteConfig', {
     "site_spider": fields.Boolean(description="站点爬虫", default=False),
     "nuclei_scan": fields.Boolean(description="nuclei 扫描", default=False),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="web JS 中的信息收集"),
+    "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),
 })
 
 # 资产组关联配置

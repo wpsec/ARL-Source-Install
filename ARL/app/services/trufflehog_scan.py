@@ -32,9 +32,10 @@ class TrufflehogJSScanner:
     TruffleHog JS 扫描执行器
     """
 
-    def __init__(self, sites: List[str], wih_records: List[WihRecord]):
+    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
+        self.waf_guard = waf_guard
         self.trufflehog_bin = str(getattr(Config, "TRUFFLEHOG_BIN", "trufflehog") or "trufflehog")
         self.no_verification = bool(getattr(Config, "TRUFFLEHOG_NO_VERIFICATION", True))
         self.result_types = str(getattr(Config, "TRUFFLEHOG_RESULTS", "verified,unknown,unverified") or "").strip()
@@ -205,7 +206,13 @@ class TrufflehogJSScanner:
                 continue
 
             try:
-                conn = utils.http_req(js_url, "get", timeout=(5, 12))
+                conn = utils.http_req(
+                    js_url,
+                    "get",
+                    timeout=(5, 12),
+                    waf_guard=self.waf_guard,
+                    waf_module="trufflehog_js",
+                )
             except Exception as e:
                 logger.debug("download js failed {} {}".format(js_url, e))
                 continue
@@ -444,9 +451,9 @@ class TrufflehogJSScanner:
             self._cleanup()
 
 
-def run_trufflehog_js(sites: List[str], wih_records: List[WihRecord]) -> List[WihRecord]:
+def run_trufflehog_js(sites: List[str], wih_records: List[WihRecord], waf_guard=None) -> List[WihRecord]:
     """
     对 WIH 收集到的 JS 源执行 TruffleHog 泄漏扫描
     """
-    scanner = TrufflehogJSScanner(sites=sites, wih_records=wih_records)
+    scanner = TrufflehogJSScanner(sites=sites, wih_records=wih_records, waf_guard=waf_guard)
     return scanner.run()

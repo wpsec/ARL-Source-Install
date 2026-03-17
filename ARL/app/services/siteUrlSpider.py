@@ -106,7 +106,7 @@ class URLSimilarList(URLList):
 
 
 class SiteURLSpider(object):
-    def __init__(self, entry_urls=None, deep_num=3):
+    def __init__(self, entry_urls=None, deep_num=3, waf_guard=None):
         entry_url_list = URLSimilarList()
         for url in entry_urls:
             entry_url_list.add(URLInfo(url, url, URLTYPE.document))
@@ -118,6 +118,7 @@ class SiteURLSpider(object):
         self.max_url = max(60, len(entry_urls)*6)
         self.scope_url = entry_urls[0]
         self.dns_policy_cache = {}
+        self.waf_guard = waf_guard
 
         self.tagMap = [{'name': 'a', 'attr': 'href', 'type': URLTYPE.document},
                        {'name': 'form', 'attr': 'action', 'type': URLTYPE.document},
@@ -150,7 +151,11 @@ class SiteURLSpider(object):
                 )
                 return URLSimilarList()
 
-            conn = utils.http_req(entry_url)
+            conn = utils.http_req(entry_url, waf_guard=self.waf_guard, waf_module="site_spider")
+            if str((conn.headers or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
+                logger.info("skip site_spider by waf smart skip url:{}".format(entry_url))
+                return URLSimilarList()
+
             if conn.status_code in [301, 302, 307]:
                 _url = urljoin(entry_url, conn.headers.get("Location", "")).strip()
                 _url = utils.normal_url(_url)
@@ -173,7 +178,10 @@ class SiteURLSpider(object):
                 if utils.same_netloc(entry_url, _url) and (url_info not in self.done_url_list):
                     entry_url = _url
                     logger.info("[{}] req 302 = > {}".format(len(self.done_url_list), entry_url))
-                    conn = utils.http_req(_url)
+                    conn = utils.http_req(_url, waf_guard=self.waf_guard, waf_module="site_spider")
+                    if str((conn.headers or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
+                        logger.info("skip site_spider redirect by waf smart skip url:{}".format(_url))
+                        return URLSimilarList()
                     self.done_url_list.add(url_info)
                     self.all_url_list.add(url_info)
 
@@ -232,15 +240,16 @@ class SiteURLSpider(object):
 
 
 class SiteURLSpiderThread(BaseThread):
-    def __init__(self, entry_urls_list, concurrency=6, deep_num=5):
+    def __init__(self, entry_urls_list, concurrency=6, deep_num=5, waf_guard=None):
         super().__init__(entry_urls_list, concurrency=concurrency)
         self.site_url_map = {}
         self.deep_num = deep_num
+        self.waf_guard = waf_guard
 
     def work(self, entry_urls):
         # entry_urls 是一个数组，第一个是当前站点
         site = entry_urls[0]
-        self.site_url_map[site] = site_spider(entry_urls, self.deep_num)
+        self.site_url_map[site] = site_spider(entry_urls, self.deep_num, waf_guard=self.waf_guard)
 
     def run(self):
         t1 = time.time()
@@ -251,17 +260,17 @@ class SiteURLSpiderThread(BaseThread):
         return self.site_url_map
 
 
-def site_spider_thread(entry_urls_list, deep_num=5):
-    s = SiteURLSpiderThread(entry_urls_list, concurrency=6, deep_num=deep_num)
+def site_spider_thread(entry_urls_list, deep_num=5, waf_guard=None):
+    s = SiteURLSpiderThread(entry_urls_list, concurrency=6, deep_num=deep_num, waf_guard=waf_guard)
     return s.run()
 
 
-def site_spider(entry_url, deep_num=3):
+def site_spider(entry_url, deep_num=3, waf_guard=None):
     if isinstance(entry_url, str):
         entry_url = [entry_url]
 
     ret = []
-    s = SiteURLSpider(entry_url, deep_num)
+    s = SiteURLSpider(entry_url, deep_num, waf_guard=waf_guard)
     for x in s.run():
         if urlparse(x.crawl_url).path == "/" or (not urlparse(x.crawl_url).path):
             continue
@@ -270,8 +279,6 @@ def site_spider(entry_url, deep_num=3):
             ret.append(x.crawl_url)
 
     return ret
-
-
 
 
 
