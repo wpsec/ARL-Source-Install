@@ -2,6 +2,7 @@
 Nuclei漏洞扫描
 """
 import copy
+import difflib
 import json
 import os
 import os.path
@@ -109,6 +110,10 @@ class NucleiScan(object):
     # 默认兜底标签过于单薄时，补一组高价值“通用漏洞”标签。
     SMART_BASELINE_TAGS = ["cve", "exposure", "misconfig", "default-login", "unauth", "panel"]
     MAX_TAGS_PER_TARGET = 18
+    # 指纹模糊匹配的内置高精度阈值（不开放配置，降低误匹配引发的无效扫描）。
+    FINGER_FUZZY_MATCH_ENABLE = True
+    FINGER_FUZZY_MATCH_THRESHOLD = 85
+    FINGER_FUZZY_MIN_TOKEN_COVERAGE = 60
     _TEMPLATE_TAG_INDEX_CACHE = {}
     # 通用噪声词，避免从指纹文本中推导出过于泛化的 tag。
     FINGER_TOKEN_STOPWORDS = {
@@ -137,6 +142,17 @@ class NucleiScan(object):
         self.nuclei_template_dir = Config.NUCLEI_TEMPLATE_DIR
         self.nuclei_auto_scan = bool(Config.NUCLEI_AUTO_SCAN)
         self.nuclei_default_tags = Config.NUCLEI_DEFAULT_TAGS
+        self.nuclei_finger_fuzzy_match_enable = bool(self.FINGER_FUZZY_MATCH_ENABLE)
+        self.nuclei_finger_fuzzy_match_threshold = int(self.FINGER_FUZZY_MATCH_THRESHOLD)
+        self.nuclei_finger_fuzzy_match_min_token_coverage = int(self.FINGER_FUZZY_MIN_TOKEN_COVERAGE)
+        if self.nuclei_finger_fuzzy_match_threshold < 60:
+            self.nuclei_finger_fuzzy_match_threshold = 60
+        if self.nuclei_finger_fuzzy_match_threshold > 95:
+            self.nuclei_finger_fuzzy_match_threshold = 95
+        if self.nuclei_finger_fuzzy_match_min_token_coverage < 0:
+            self.nuclei_finger_fuzzy_match_min_token_coverage = 0
+        if self.nuclei_finger_fuzzy_match_min_token_coverage > 100:
+            self.nuclei_finger_fuzzy_match_min_token_coverage = 100
 
         self.nuclei_finger_tag_map = copy.deepcopy(self.DEFAULT_FINGER_TAG_MAP)
         self._load_custom_finger_tag_map()
@@ -507,32 +523,127 @@ class NucleiScan(object):
             items.append(token)
         return items
 
+    @staticmethod
+    def _compact_text(value):
+        """
+        紧凑化文本，仅保留字母和数字，用于 fuzzy 相似度计算。
+        """
+        return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
+
+    @staticmethod
+    def _sequence_ratio(left, right):
+        """
+        计算两个字符串的序列相似度。
+        """
+        l_text = str(left or "")
+        r_text = str(right or "")
+        if not l_text or not r_text:
+            return 0.0
+        return float(difflib.SequenceMatcher(None, l_text, r_text).ratio())
+
+    def _calc_fuzzy_match_score(self, finger_name, map_key):
+        """
+        计算指纹与映射键的 fuzzy 分数和关键指标。
+        """
+        f_norm = self._normalize_text(finger_name)
+        k_norm = self._normalize_text(map_key)
+        if not f_norm or not k_norm:
+            return 0.0, 0.0, 0.0
+
+        f_tokens = set(self._tokenize_text(f_norm))
+        k_tokens = set(self._tokenize_text(k_norm))
+        token_coverage = 0.0
+        token_jaccard = 0.0
+        if k_tokens:
+            inter = f_tokens & k_tokens
+            # 优先看 key token 的覆盖率，避免“碰到 1 个词就算命中”。
+            token_coverage = float(len(inter)) / float(len(k_tokens))
+
+            # 补充“词片段包含”覆盖，提升 springboot/spring boot 之类命中率。
+            partial_hit = 0
+            f_token_list = list(f_tokens)
+            for k_token in k_tokens:
+                if len(k_token) < 4:
+                    continue
+                for f_token in f_token_list:
+                    if len(f_token) < 4:
+                        continue
+                    if k_token in f_token or f_token in k_token:
+                        partial_hit += 1
+                        break
+
+            if partial_hit > 0:
+                partial_coverage = float(partial_hit) / float(len(k_tokens))
+                token_coverage = max(token_coverage, partial_coverage)
+
+            union = f_tokens | k_tokens
+            if union:
+                token_jaccard = float(len(inter)) / float(len(union))
+
+        compact_ratio = self._sequence_ratio(self._compact_text(f_norm), self._compact_text(k_norm))
+        norm_ratio = self._sequence_ratio(f_norm, k_norm)
+        score = (
+            compact_ratio * 0.45
+            + norm_ratio * 0.20
+            + token_coverage * 0.25
+            + token_jaccard * 0.10
+        )
+        return score, token_coverage, compact_ratio
+
     def _match_mapping_key(self, finger_name, map_key):
         """
-        指纹键匹配规则：支持子串、双向包含、token 子集匹配。
+        指纹键匹配规则：优先严格匹配，再按阈值进行高精度 fuzzy 匹配。
         """
         f_raw = str(finger_name or "").strip().lower()
         k_raw = str(map_key or "").strip().lower()
         if not f_raw or not k_raw:
-            return False
-
-        if k_raw in f_raw or f_raw in k_raw:
-            return True
+            return False, 0.0
 
         f_norm = self._normalize_text(f_raw)
         k_norm = self._normalize_text(k_raw)
         if not f_norm or not k_norm:
-            return False
+            return False, 0.0
 
-        if k_norm in f_norm or f_norm in k_norm:
-            return True
+        # 精确匹配（含紧凑格式）
+        if f_raw == k_raw or f_norm == k_norm:
+            return True, 1.0
+        if self._compact_text(f_norm) == self._compact_text(k_norm):
+            return True, 1.0
 
         f_tokens = set(self._tokenize_text(f_norm))
         k_tokens = set(self._tokenize_text(k_norm))
-        if k_tokens and k_tokens.issubset(f_tokens):
-            return True
+        if not f_tokens or not k_tokens:
+            return False, 0.0
 
-        return False
+        # token 严格子集命中，优先作为高置信匹配。
+        if k_tokens.issubset(f_tokens):
+            return True, 1.0
+        # 单 token 场景只接受精确 token 命中，避免误扫。
+        if len(k_tokens) == 1 and len(f_tokens & k_tokens) == 1:
+            return True, 1.0
+
+        if not self.nuclei_finger_fuzzy_match_enable:
+            return False, 0.0
+
+        score, token_coverage, compact_ratio = self._calc_fuzzy_match_score(f_norm, k_norm)
+        threshold = float(self.nuclei_finger_fuzzy_match_threshold) / 100.0
+        min_coverage = float(self.nuclei_finger_fuzzy_match_min_token_coverage) / 100.0
+
+        # 单 token 映射默认更严格，避免短词误匹配放大扫描范围。
+        if len(k_tokens) == 1:
+            threshold = max(threshold, 0.88)
+            if len(next(iter(k_tokens), "")) < 5:
+                threshold = max(threshold, 0.92)
+            min_coverage = max(min_coverage, 0.0)
+
+        if score >= threshold and token_coverage >= min_coverage:
+            return True, score
+
+        # 对于连写词（如 springboot）给一个高阈值补充通道。
+        if compact_ratio >= 0.94 and score >= max(threshold, 0.86):
+            return True, score
+
+        return False, score
 
     def _load_template_tag_index(self):
         """
@@ -614,14 +725,19 @@ class NucleiScan(object):
         """
         通过别名映射补齐 tags。
         """
-        out_tags = set()
+        out_scores = {}
         for alias_key, alias_tags in self.FINGER_ALIAS_TAG_MAP.items():
-            if self._match_mapping_key(finger_name, alias_key):
-                for tag in alias_tags:
-                    tag_name = str(tag).strip().lower()
-                    if tag_name:
-                        out_tags.add(tag_name)
-        return sorted(out_tags)
+            matched, score = self._match_mapping_key(finger_name, alias_key)
+            if not matched:
+                continue
+            tag_score = 5 + int(round(max(0.0, min(1.0, score)) * 3))
+            for tag in alias_tags:
+                tag_name = str(tag).strip().lower()
+                if not tag_name:
+                    continue
+                old = out_scores.get(tag_name, 0)
+                out_scores[tag_name] = max(old, tag_score)
+        return out_scores
 
     def _add_tag_scores(self, score_map, tags, score):
         """
@@ -687,14 +803,18 @@ class NucleiScan(object):
 
             match_flag = False
             for map_key, tags in self.nuclei_finger_tag_map.items():
-                if self._match_mapping_key(finger_name, map_key):
-                    match_flag = True
-                    self._add_tag_scores(tag_score_map, tags, score=8)
-
-            alias_tags = self._match_alias_tags(finger_name)
-            if alias_tags:
+                matched, score = self._match_mapping_key(finger_name, map_key)
+                if not matched:
+                    continue
                 match_flag = True
-                self._add_tag_scores(tag_score_map, alias_tags, score=7)
+                mapping_score = 6 + int(round(max(0.0, min(1.0, score)) * 4))
+                self._add_tag_scores(tag_score_map, tags, score=mapping_score)
+
+            alias_tag_scores = self._match_alias_tags(finger_name)
+            if alias_tag_scores:
+                match_flag = True
+                for alias_tag, alias_score in alias_tag_scores.items():
+                    self._add_tag_scores(tag_score_map, [alias_tag], score=alias_score)
 
             # 显式映射未命中时，尝试依据模板 tag 做自动补全。
             if not match_flag:
