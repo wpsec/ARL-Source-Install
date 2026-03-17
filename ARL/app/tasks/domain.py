@@ -34,7 +34,7 @@ from app import utils
 from app.config import Config, normalize_dict_path_compat
 from app import services
 from app import modules
-from app.modules import ScanPortType, DomainDictType, CollectSource, TaskStatus
+from app.modules import ScanPortType, CollectSource, TaskStatus
 from app.services import fetchCert, run_risk_cruising, run_sniffer, BaseUpdateTask
 from app.services.commonTask import CommonTask, WebSiteFetch, build_url_item
 from app.helpers.domain import find_private_domain_by_task_id, find_public_ip_by_task_id
@@ -741,11 +741,11 @@ class DomainTask(CommonTask):
                 return self._domain_word_file
 
             brute_dict_map = {
-                "test": DomainDictType.TEST,
-                "big": DomainDictType.BIG
+                "test": Config.DOMAIN_DICT_TEST,
+                "big": Config.DOMAIN_DICT_2W,
             }
             domain_brute_type = self.options.get("domain_brute_type", "test")
-            domain_word_file = brute_dict_map.get(domain_brute_type, DomainDictType.TEST)
+            domain_word_file = brute_dict_map.get(domain_brute_type, Config.DOMAIN_DICT_TEST)
             self._domain_word_file = domain_word_file
 
         return self._domain_word_file

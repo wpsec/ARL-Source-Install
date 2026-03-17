@@ -1084,6 +1084,7 @@ const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'url',
     columns: ['url', 'title', 'status_code', 'content_length', 'source'],
+    sortableColumns: ['content_length'],
     columnLabels: {
       url: 'URL',
       title: '标题',

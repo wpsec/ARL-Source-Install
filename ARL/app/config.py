@@ -20,6 +20,7 @@
 import os
 import yaml
 import sys
+import threading
 
 # 获取当前文件所在目录的绝对路径，作为基础路径
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -119,6 +120,180 @@ def normalize_dict_path_compat(path_value):
         return fallback_path
 
     return path_text
+
+
+_RUNTIME_CONFIG_LOCK = threading.Lock()
+_RUNTIME_CONFIG_STATE = {
+    "path": "",
+    "mtime_ns": -1,
+}
+
+
+def _resolve_runtime_config_path():
+    """
+    解析运行时热刷新配置文件路径。
+    """
+    custom_path = str(os.environ.get("ARL_CONFIG_EDIT_PATH", "") or "").strip()
+    candidates = []
+    if custom_path:
+        candidates.append(custom_path)
+
+    candidates.append(os.path.join(basedir, "config.yaml"))
+    candidates.append(os.path.abspath(os.path.join(basedir, os.pardir, "docker", "config-docker.yaml")))
+
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            return candidate
+
+    return os.path.join(basedir, "config.yaml")
+
+
+def _safe_runtime_bool(value, default=False):
+    """
+    运行时安全解析布尔值。
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return str(value).strip().lower() in ["1", "true", "yes", "on"]
+    return bool(default)
+
+
+def refresh_runtime_config_best_effort(force=False):
+    """
+    最佳努力热刷新运行时配置（扫描配置 + API配置）。
+
+    说明：
+    - 仅刷新会影响运行时行为的核心字段，避免要求容器重启。
+    - 通过 mtime 检测减少重复解析开销。
+    - 若配置异常，仅记录警告并保持当前内存配置。
+    """
+    config_path = _resolve_runtime_config_path()
+    try:
+        mtime_ns = int(os.stat(config_path).st_mtime_ns)
+    except Exception:
+        mtime_ns = -1
+
+    with _RUNTIME_CONFIG_LOCK:
+        if (
+            not force
+            and _RUNTIME_CONFIG_STATE.get("path") == config_path
+            and int(_RUNTIME_CONFIG_STATE.get("mtime_ns", -1)) == mtime_ns
+        ):
+            return False
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as config_file:
+                loaded = yaml.load(config_file, Loader=yaml.SafeLoader) or {}
+        except Exception as e:
+            print("refresh runtime config failed {}".format(e))
+            return False
+
+        if not isinstance(loaded, dict):
+            return False
+
+        arl_conf = loaded.get("ARL", {})
+        if not isinstance(arl_conf, dict):
+            arl_conf = {}
+
+        fofa_conf = loaded.get("FOFA", {})
+        if isinstance(fofa_conf, dict):
+            if fofa_conf.get("URL"):
+                Config.FOFA_URL = str(fofa_conf.get("URL") or Config.FOFA_URL)
+            if fofa_conf.get("EMAIL") is not None:
+                Config.FOFA_EMAIL = str(fofa_conf.get("EMAIL") or "")
+            if fofa_conf.get("KEY") is not None:
+                Config.FOFA_KEY = str(fofa_conf.get("KEY") or "")
+
+        github_conf = loaded.get("GITHUB", {})
+        if isinstance(github_conf, dict) and github_conf.get("TOKEN") is not None:
+            Config.GITHUB_TOKEN = str(github_conf.get("TOKEN") or "")
+
+        query_plugin_conf = loaded.get("QUERY_PLUGIN", {})
+        if isinstance(query_plugin_conf, dict):
+            Config.QUERY_PLUGIN_CONFIG = query_plugin_conf
+
+        if arl_conf.get("BLACK_IPS") is not None and isinstance(arl_conf.get("BLACK_IPS"), list):
+            Config.BLACK_IPS = arl_conf.get("BLACK_IPS") or Config.BLACK_IPS
+
+        dns_resolvers = arl_conf.get("DNS_RESOLVERS")
+        if isinstance(dns_resolvers, list):
+            cleaned_resolvers = []
+            for resolver in dns_resolvers:
+                resolver_text = str(resolver or "").strip()
+                if resolver_text:
+                    cleaned_resolvers.append(resolver_text)
+            Config.DNS_RESOLVERS = cleaned_resolvers
+
+        if arl_conf.get("DOMAIN_DICT"):
+            domain_dict = normalize_dict_path_compat(arl_conf.get("DOMAIN_DICT"))
+            if os.path.isfile(domain_dict):
+                Config.DOMAIN_DICT_2W = domain_dict
+
+        if arl_conf.get("FILE_LEAK_DICT"):
+            file_leak_dict = normalize_dict_path_compat(arl_conf.get("FILE_LEAK_DICT"))
+            if os.path.isfile(file_leak_dict):
+                Config.FILE_LEAK_TOP_2k = file_leak_dict
+
+        host_timeout_type = str(arl_conf.get("HOST_TIMEOUT_TYPE", Config.HOST_TIMEOUT_TYPE)).strip().lower()
+        if host_timeout_type in ("default", "custom"):
+            Config.HOST_TIMEOUT_TYPE = host_timeout_type
+
+        positive_keys = [
+            "HOST_TIMEOUT",
+            "PORT_PARALLELISM",
+            "PORT_MIN_RATE",
+            "DOMAIN_BRUTE_CONCURRENT",
+            "ALT_DNS_CONCURRENT",
+            "WEB_GUNICORN_WORKERS",
+            "CELERY_TASK_WORKER_CONCURRENCY",
+            "CELERY_GITHUB_WORKER_CONCURRENCY",
+            "CELERY_PREFETCH_MULTIPLIER",
+            "CELERY_MAX_TASKS_PER_CHILD",
+            "CELERY_MAX_MEMORY_PER_CHILD",
+            "NUCLEI_SINGLE_TARGET_TIMEOUT_SEC",
+            "NUCLEI_RATE_LIMIT",
+            "NUCLEI_CONCURRENCY",
+            "NUCLEI_BULK_SIZE",
+            "URLFINDER_URL_PROBE_MAX_TARGETS",
+            "URLFINDER_URL_PROBE_CONCURRENCY",
+        ]
+        for key_name in positive_keys:
+            value = arl_conf.get(key_name)
+            if value is None:
+                continue
+            setattr(Config, key_name, safe_positive_int(value, getattr(Config, key_name)))
+
+        if arl_conf.get("URLFINDER_URL_PROBE_ENABLE") is not None:
+            Config.URLFINDER_URL_PROBE_ENABLE = _safe_runtime_bool(
+                arl_conf.get("URLFINDER_URL_PROBE_ENABLE"), Config.URLFINDER_URL_PROBE_ENABLE
+            )
+
+        # 保持环境变量覆盖优先级（与启动阶段一致）
+        for key_name in positive_keys:
+            env_name = "ARL_{}".format(key_name)
+            setattr(
+                Config,
+                key_name,
+                safe_positive_int(env_int(env_name, getattr(Config, key_name)), getattr(Config, key_name)),
+            )
+
+        timeout_type_env = env_str("ARL_HOST_TIMEOUT_TYPE", Config.HOST_TIMEOUT_TYPE).strip().lower()
+        if timeout_type_env in ("default", "custom"):
+            Config.HOST_TIMEOUT_TYPE = timeout_type_env
+
+        Config.URLFINDER_URL_PROBE_ENABLE = env_bool(
+            "ARL_URLFINDER_URL_PROBE_ENABLE", Config.URLFINDER_URL_PROBE_ENABLE
+        )
+        dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
+        if dns_resolvers_env:
+            Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]
+
+        _RUNTIME_CONFIG_STATE["path"] = config_path
+        _RUNTIME_CONFIG_STATE["mtime_ns"] = mtime_ns
+        return True
 
 
 class Config(object):

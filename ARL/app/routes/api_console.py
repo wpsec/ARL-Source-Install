@@ -19,7 +19,7 @@ from flask_restx import Namespace, fields
 from werkzeug.utils import secure_filename
 
 from app import utils
-from app.config import Config, normalize_dict_path_compat
+from app.config import Config, normalize_dict_path_compat, refresh_runtime_config_best_effort
 from app.modules import ErrorMsg
 from app.utils import auth, get_logger
 from . import ARLResource
@@ -1146,6 +1146,7 @@ class ApiConsoleConfig(ARLResource):
             try:
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
+                refresh_runtime_config_best_effort(force=True)
             except Exception as exc:
                 logger.exception('save config failed: %s', exc)
                 return utils.build_ret(
@@ -1211,6 +1212,7 @@ class ApiConsoleServiceApi(ARLResource):
                 _ensure_json_like_config(config_obj)
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
+                refresh_runtime_config_best_effort(force=True)
                 saved_service_api = _extract_service_api_config(config_obj)
             except Exception as exc:
                 logger.exception('save service_api failed: %s', exc)
@@ -1285,6 +1287,7 @@ class ApiConsoleScanConfig(ARLResource):
                 _ensure_json_like_config(config_obj)
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
+                refresh_runtime_config_best_effort(force=True)
                 saved_scan_config = _extract_scan_config(config_obj)
                 active_scan_profile = str(saved_scan_config.get('scan_profile_id', '') or '')
                 domain_options = _collect_domain_dict_options(saved_scan_config.get('domain_dict'))

@@ -15,7 +15,7 @@ import signal
 import time
 import traceback
 from bson import ObjectId
-from app.config import Config
+from app.config import Config, refresh_runtime_config_best_effort
 from celery import Celery, platforms
 from app import utils
 from app import tasks as wrap_tasks
@@ -89,6 +89,9 @@ def run_task(options):
 
     action = options.get("celery_action")
     data = options.get("data")
+
+    # 任务执行前按配置文件 mtime 轻量热刷新，保证保存后的配置尽快生效。
+    refresh_runtime_config_best_effort()
     
     # 任务类型到处理函数的映射
     action_map = {
