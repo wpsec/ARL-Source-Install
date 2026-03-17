@@ -104,7 +104,7 @@ if [ -x "$SCRIPT_DIR/scripts/sync-fingerprint.sh" ]; then
     (
         "$SCRIPT_DIR/scripts/sync-fingerprint.sh"
     ) >"$DOCKER_DIR/logs/fingerprint-sync.log" 2>&1 &
-    echo "✓ 指纹同步已后台执行，日志: $DOCKER_DIR/logs/fingerprint-sync.log"
+    echo "✓ 指纹同步已后台低优先级执行（延迟启动），日志: $DOCKER_DIR/logs/fingerprint-sync.log"
 fi
 
 echo ""

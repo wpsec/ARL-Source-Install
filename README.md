@@ -33,7 +33,7 @@ chmod +x build.sh start.sh scripts/quick-build.sh
 
 ### 注意！
 
-可提前开代理下载Playwright 以提升部署速度，不建议开启nuclei，确实太慢了且扫不出来啥漏洞。
+可提前开代理下载Playwright 以提升部署速度，不建议开启nuclei与afrog，确实太慢了且扫不出来啥漏洞。
 
 参考：
 
@@ -73,19 +73,6 @@ tools/playwright/README.md
 git pull
 ./scripts/quick-build.sh
 ```
-
-说明：
-
-- 前端构建已迁移到 `ARL/docker/Dockerfile` 多阶段构建，镜像构建时会直接基于 `ARL/docker/frontend-src` 源码编译。
-- `./scripts/quick-build.sh` 的 `quick/full/clean/tag` 不再依赖仓库内预编译前端目录，避免“代码已更新但页面仍旧版本”。
-- `./scripts/quick-build.sh frontend` 仅用于本地热更新：编译 `frontend-src/dist` 后同步到运行中容器。
-- 默认前端 npm 镜像为 `https://registry.npmmirror.com`，可在 `.env` 中通过 `ARL_FRONTEND_NPM_REGISTRY` 覆盖。
-- 若环境已安装 `docker buildx`，`quick-build.sh` 会自动优先使用 BuildKit 构建以减少重复传输与构建耗时。
-- `./start.sh` 与 `./scripts/quick-build.sh quick` 在容器启动后会自动同步 `tools/finger.json` 到指纹库（后台执行）；当文件未变化时会自动跳过全量导入，减少重建等待时间。同步日志默认输出到 `ARL/docker/logs/fingerprint-sync.log`。
-- 仪表盘“实时扫描日志”默认读取 `worker` 扫描日志文件 `/code/logs/arl_worker.log`（容器内），`docker-compose` 已将 `ARL/docker/logs` 目录挂载到 `web/worker`；如需自定义路径，可配置 `ARL_SCAN_LOG_FILE`（worker 写入）与 `ARL_DASHBOARD_SCAN_LOG_PATH`（web 读取）。
-- 镜像构建阶段会在 `rockylinux:8` 内编译源码版 `wih`；若本地已准备 `tools/go1.22.4.linux-amd64.tar.gz`，会优先离线使用该 Go 工具链包。
-- 若未提供离线 Go 包，构建会自动回退在线下载 `go1.22.4`（`go.dev` -> `dl.google.com` -> 阿里云镜像）。
-- 如需重新跟踪并手动合并配置文件，可执行：`git update-index --no-skip-worktree ARL/docker/config-docker.yaml`
 
 ## 二开功能总览
 
@@ -148,6 +135,9 @@ git pull
 | nginx        | `nginx:1.24-alpine`               | basic 和服务暴露                              |
 | node         | `node:20.20.1-bookworm`           | 编译前端                                      |
 | golang       | `go1.22.4`                        | 构建阶段编译 `wih`（优先离线包，构建后清理）  |
+| Python       | `Python-3.10.20`                  | 后端（离线安装包）                            |
+
+
 
 ### 其它
 
@@ -163,21 +153,13 @@ ARL/docker/config-docker.yaml
 
 该目录保留了 ARL 原生大量配置，如果系统 UI 不支持配置，可自行 vim 配置
 
-### 自定义字典持久化（避免容器重建丢失）
+### 自定义字典持久化
+
+（避免容器重建丢失
 
 自定义字典支持两类目录：
 
 - 宿主机持久化目录：`ARL/docker/dicts/domain/`、`ARL/docker/dicts/file_leak/`
-
-说明：
-
-- `配置管理 -> 扫描配置 -> 域名爆破字典` 会自动枚举 `domain/` 下的 `.txt`
-- 页面上传字典将写入 `ARL/docker/dicts/domain/uploaded/`
-- `配置管理 -> 扫描配置 -> 敏感文件泄漏字典` 会自动枚举 `file_leak/` 下的 `.txt`
-- 页面上传敏感文件字典将写入 `ARL/docker/dicts/file_leak/uploaded/`
-- `ARL.FILE_LEAK_DICT` 可直接指向 `file_leak/` 下自定义文件
-- `任务管理 -> 新建任务` 支持选择“域名爆破字典”；不选则默认使用配置管理字典
-- 以上目录通过 `docker-compose` 挂载，容器重建后文件仍保留
 
 ### TruffleHog
 
@@ -201,17 +183,9 @@ ARL/docker/config-docker.yaml
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773386503749-b9f62581-c8d8-4774-80e5-3db616465da3.png)
 
-### 低性能环境下的 `nuclei` 超时兜底
+### 低性能环境
 
-当测试服务器性能偏低，或短时间内带宽/IO 被占满时，`nuclei` 阶段可能在读取 Mongo（`mongodb:27017`）时出现超时。
-
-当前内置兜底策略如下：
-
-- Mongo `socketTimeout` 默认 `60s`
-- `nuclei` 目标构建（读取 `site` 集合）遇到超时时，最多重试 `3` 次
-- 首次连续失败：先跳过本次 `nuclei`，继续执行后续阶段，避免整任务中断
-- 任务后续阶段完成后：自动回头补跑一次 `nuclei`
-- 补跑仍失败：记录告警日志并最终跳过 `nuclei`，任务其余流程照常完成
+- 不建议使用nuclei与afrog进行poc扫描，性能太差的机器效果也不好
 
 ## Bug？
 

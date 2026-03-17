@@ -5,6 +5,7 @@
 
 ## 2026-03-17（v3.2.0）
 
+- `[v3.2.13]` 指纹同步启动链路优化：`web` 容器启动默认跳过阻塞式 `import_fingerprint`，改为依赖 `start.sh/quick-build` 触发的后台同步；`sync-fingerprint.sh` 新增默认 `90s` 延迟与 `nice` 低优先级导入，避免 `docker compose` 重启后与服务就绪阶段争抢 CPU 导致“已启动但长时间不可用”。如需恢复旧行为可设置 `ARL_WEB_IMPORT_FINGERPRINT_ON_BOOT=1`
 - `[v3.2.12]` 配置管理新增 PoC 一键更新：新增“更新 Nuclei PoC / 更新 afrog PoC”按钮，后端提供 `git clone/pull` 更新接口并返回分支与提交信息；兼容历史“非 git 解压目录”自动备份后重建仓库。部署链路同步增强：`web` 容器 `tools` 挂载改为可写以支持在线更新，镜像安装 `git` 并打包 `tools/afrog` 离线安装包（含 `afrog-pocs`）
 - `[v3.2.11]` 新增 afrog 漏洞扫描能力：任务/策略配置与前端“新建任务-扫描功能”新增 `afrog_scan` 开关，后端接入 `afrog -T/-P/-s/-S/-json` 扫描链路并写入 `vuln` 风险模块；同时补充执行与结果日志（可执行文件检查、PoC 目录解析、WAF 过滤前后目标数、落库统计、异常退出告警）以提升可观测性
 - `[v3.2.10]` 服务资产 Product 识别修复：恢复 `service_detection` 开启时 `nmap -sV` 产品/版本识别能力，并保留 `npoc_sniffer` 协议增强；`service` 入库阶段对空 `product` 增加协议名兜底，修复资产搜索“服务/Product 长期无结果或空白”的问题

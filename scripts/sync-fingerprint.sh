@@ -13,6 +13,9 @@ CONTAINER_NAME="${ARL_WEB_CONTAINER_NAME:-arl_web}"
 FINGERPRINT_FILE="${ARL_FINGERPRINT_FILE:-/code/tools/finger.json}"
 MAX_RETRY="${ARL_FINGERPRINT_SYNC_RETRY:-30}"
 SLEEP_SECONDS="${ARL_FINGERPRINT_SYNC_INTERVAL:-2}"
+# 默认延迟并降低导入优先级，减少与服务就绪阶段的资源竞争。
+SYNC_DELAY_SECONDS="${ARL_FINGERPRINT_SYNC_DELAY_SECONDS:-90}"
+IMPORT_NICE_LEVEL="${ARL_FINGERPRINT_SYNC_NICE_LEVEL:-19}"
 HOST_FINGERPRINT_FILE="${ARL_HOST_FINGERPRINT_FILE:-${ROOT_DIR}/tools/finger.json}"
 STATE_FILE="${ARL_FINGERPRINT_SYNC_STATE_FILE:-${ROOT_DIR}/ARL/docker/.fingerprint-sync.sha256}"
 LOCK_DIR="${ARL_FINGERPRINT_SYNC_LOCK_DIR:-${ROOT_DIR}/ARL/docker/.fingerprint-sync.lock}"
@@ -30,6 +33,29 @@ calc_sha256() {
   return 1
 }
 
+sanitize_non_negative_int() {
+  local value="$1"
+  local fallback="$2"
+  if [[ "${value}" =~ ^[0-9]+$ ]]; then
+    echo "${value}"
+    return 0
+  fi
+  echo "${fallback}"
+}
+
+run_import_fingerprint() {
+  if docker exec "${CONTAINER_NAME}" sh -lc "command -v nice >/dev/null 2>&1"; then
+    echo "[INFO] importing fingerprint with low priority (nice=${IMPORT_NICE_LEVEL})"
+    docker exec "${CONTAINER_NAME}" sh -lc \
+      "env PYTHONPATH=/code nice -n ${IMPORT_NICE_LEVEL} python3 -m app.tools.import_fingerprint --file \"${FINGERPRINT_FILE}\""
+    return $?
+  fi
+
+  echo "[INFO] nice command not found in container, importing with default priority"
+  docker exec "${CONTAINER_NAME}" sh -lc \
+    "PYTHONPATH=/code python3 -m app.tools.import_fingerprint --file \"${FINGERPRINT_FILE}\""
+}
+
 get_fingerprint_count() {
   local count
   count="$(docker exec "${CONTAINER_NAME}" sh -lc \
@@ -42,6 +68,12 @@ get_fingerprint_count() {
   echo ""
   return 0
 }
+
+SYNC_DELAY_SECONDS="$(sanitize_non_negative_int "${SYNC_DELAY_SECONDS}" "90")"
+IMPORT_NICE_LEVEL="$(sanitize_non_negative_int "${IMPORT_NICE_LEVEL}" "19")"
+if [ "${IMPORT_NICE_LEVEL}" -gt 19 ]; then
+  IMPORT_NICE_LEVEL=19
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[WARN] docker command not found, skip fingerprint sync"
@@ -82,12 +114,15 @@ else
 fi
 
 echo "Syncing fingerprint file into ${CONTAINER_NAME}..."
+if [ "${SYNC_DELAY_SECONDS}" -gt 0 ]; then
+  echo "[INFO] delay fingerprint sync ${SYNC_DELAY_SECONDS}s to avoid startup contention"
+  sleep "${SYNC_DELAY_SECONDS}"
+fi
 
 attempt=1
 while [ "${attempt}" -le "${MAX_RETRY}" ]; do
   if docker exec "${CONTAINER_NAME}" sh -lc "[ -f '${FINGERPRINT_FILE}' ]"; then
-    if docker exec "${CONTAINER_NAME}" sh -lc \
-      "PYTHONPATH=/code python3 -m app.tools.import_fingerprint --file '${FINGERPRINT_FILE}'"; then
+    if run_import_fingerprint; then
       if [ -n "${current_hash}" ]; then
         printf "%s" "${current_hash}" > "${STATE_FILE}"
       fi

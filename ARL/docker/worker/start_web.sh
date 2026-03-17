@@ -64,14 +64,23 @@ wait-for-it.sh -t 60 mongodb:27017
 wait-for-it.sh -t 60 rabbitmq:5672
 wait-for-it.sh -t 60 redis:6379
 
-if [ -f /code/tools/finger.json ]; then
-  echo "Importing custom fingerprint rules..."
-  if ! PYTHONPATH=/code python3 -m app.tools.import_fingerprint --file /code/tools/finger.json; then
-    echo "Custom fingerprint import failed, continue startup"
-  fi
-else
-  echo "Custom fingerprint file not found, skip import"
-fi
+# 默认跳过启动阶段全量导入，避免与后台同步并发争抢资源。
+IMPORT_FINGERPRINT_ON_BOOT="${ARL_WEB_IMPORT_FINGERPRINT_ON_BOOT:-0}"
+case "${IMPORT_FINGERPRINT_ON_BOOT}" in
+  1|true|TRUE|yes|YES|on|ON)
+    if [ -f /code/tools/finger.json ]; then
+      echo "Importing custom fingerprint rules during web startup..."
+      if ! PYTHONPATH=/code python3 -m app.tools.import_fingerprint --file /code/tools/finger.json; then
+        echo "Custom fingerprint import failed, continue startup"
+      fi
+    else
+      echo "Custom fingerprint file not found, skip import"
+    fi
+    ;;
+  *)
+    echo "Skip fingerprint import during web startup, rely on async sync script"
+    ;;
+esac
 
 WEB_GUNICORN_WORKERS="$(get_cfg_int WEB_GUNICORN_WORKERS 2)"
 echo "Starting gunicorn workers=${WEB_GUNICORN_WORKERS}..."

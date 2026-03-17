@@ -180,7 +180,7 @@ sync_fingerprint_after_deploy() {
     (
         "$sync_script"
     ) >"$log_file" 2>&1 &
-    echo -e "${GREEN}✓ 指纹同步已转为后台执行（日志: $log_file）${NC}"
+    echo -e "${GREEN}✓ 指纹同步已转为后台低优先级执行（延迟启动，日志: $log_file）${NC}"
 }
 
 run_docker_build() {
