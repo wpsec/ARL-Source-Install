@@ -8884,11 +8884,7 @@ function ApiConsoleView({ token }: { token: string }) {
 }
 
 function ConfigConsoleView({ token }: { token: string }) {
-  const nucleiTimeoutPresets = [
-    { id: 'low', label: '2核2G 低速', hours: 1, value: 3600 },
-    { id: 'medium', label: '4核4G 中速', hours: 2, value: 7200 },
-    { id: 'high', label: '8核16G 快速', hours: 3, value: 10800 },
-  ];
+  type ScanProfileValueMap = Record<string, string | number | boolean>;
 
   type DomainDictOption = {
     label: string;
@@ -8898,6 +8894,107 @@ function ConfigConsoleView({ token }: { token: string }) {
     size: number;
     selected?: boolean;
   };
+
+  type ScanProfile = {
+    id: string;
+    label: string;
+    description: string;
+    cpu_cores: number;
+    memory_gb: number;
+    bandwidth_mbps: number;
+    selected?: boolean;
+    values: ScanProfileValueMap;
+  };
+
+  const fallbackScanProfiles: ScanProfile[] = [
+    {
+      id: '2c2g3m',
+      label: '2核2G3M 保守',
+      description: '低配云主机，优先保证系统可访问性',
+      cpu_cores: 2,
+      memory_gb: 2,
+      bandwidth_mbps: 3,
+      values: {
+        domain_brute_concurrent: 36,
+        alt_dns_concurrent: 120,
+        web_gunicorn_workers: 1,
+        celery_task_worker_concurrency: 1,
+        celery_github_worker_concurrency: 1,
+        celery_prefetch_multiplier: 1,
+        celery_max_tasks_per_child: 16,
+        celery_max_memory_per_child: 200000,
+        nuclei_single_target_timeout_sec: 3600,
+        nuclei_rate_limit: 2,
+        nuclei_concurrency: 1,
+        nuclei_bulk_size: 2,
+        urlfinder_url_probe_enable: true,
+        urlfinder_url_probe_max_targets: 120,
+        urlfinder_url_probe_concurrency: 2,
+        host_timeout_type: 'default',
+        host_timeout: 1200,
+        port_parallelism: 8,
+        port_min_rate: 24,
+      },
+    },
+    {
+      id: '4c4g5m',
+      label: '4核4G5M 平衡',
+      description: '中配主机，兼顾扫描效率与系统可用性',
+      cpu_cores: 4,
+      memory_gb: 4,
+      bandwidth_mbps: 5,
+      values: {
+        domain_brute_concurrent: 96,
+        alt_dns_concurrent: 320,
+        web_gunicorn_workers: 2,
+        celery_task_worker_concurrency: 2,
+        celery_github_worker_concurrency: 1,
+        celery_prefetch_multiplier: 1,
+        celery_max_tasks_per_child: 20,
+        celery_max_memory_per_child: 280000,
+        nuclei_single_target_timeout_sec: 7200,
+        nuclei_rate_limit: 4,
+        nuclei_concurrency: 2,
+        nuclei_bulk_size: 3,
+        urlfinder_url_probe_enable: true,
+        urlfinder_url_probe_max_targets: 220,
+        urlfinder_url_probe_concurrency: 4,
+        host_timeout_type: 'default',
+        host_timeout: 1200,
+        port_parallelism: 16,
+        port_min_rate: 48,
+      },
+    },
+    {
+      id: '8c16g10m',
+      label: '8核16G10M 高性能',
+      description: '高配主机，提升吞吐同时避免资源打满',
+      cpu_cores: 8,
+      memory_gb: 16,
+      bandwidth_mbps: 10,
+      values: {
+        domain_brute_concurrent: 180,
+        alt_dns_concurrent: 640,
+        web_gunicorn_workers: 3,
+        celery_task_worker_concurrency: 4,
+        celery_github_worker_concurrency: 2,
+        celery_prefetch_multiplier: 1,
+        celery_max_tasks_per_child: 30,
+        celery_max_memory_per_child: 420000,
+        nuclei_single_target_timeout_sec: 10800,
+        nuclei_rate_limit: 8,
+        nuclei_concurrency: 4,
+        nuclei_bulk_size: 5,
+        urlfinder_url_probe_enable: true,
+        urlfinder_url_probe_max_targets: 300,
+        urlfinder_url_probe_concurrency: 8,
+        host_timeout_type: 'default',
+        host_timeout: 1500,
+        port_parallelism: 28,
+        port_min_rate: 96,
+      },
+    },
+  ];
 
   const [configPath, setConfigPath] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
@@ -8909,6 +9006,7 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [success, setSuccess] = useState('');
   const [domainDictOptions, setDomainDictOptions] = useState<DomainDictOption[]>([]);
   const [fileLeakDictOptions, setFileLeakDictOptions] = useState<DomainDictOption[]>([]);
+  const [scanProfiles, setScanProfiles] = useState<ScanProfile[]>(fallbackScanProfiles);
   const [uploadDomainFile, setUploadDomainFile] = useState<File | null>(null);
   const [uploadFileLeakFile, setUploadFileLeakFile] = useState<File | null>(null);
   const domainUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -8925,6 +9023,9 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [celeryMaxTasksPerChild, setCeleryMaxTasksPerChild] = useState(20);
   const [celeryMaxMemoryPerChild, setCeleryMaxMemoryPerChild] = useState(280000);
   const [nucleiSingleTargetTimeoutSec, setNucleiSingleTargetTimeoutSec] = useState(3600);
+  const [nucleiRateLimit, setNucleiRateLimit] = useState(8);
+  const [nucleiConcurrency, setNucleiConcurrency] = useState(4);
+  const [nucleiBulkSize, setNucleiBulkSize] = useState(5);
   const [urlfinderUrlProbeEnable, setUrlfinderUrlProbeEnable] = useState(true);
   const [urlfinderUrlProbeMaxTargets, setUrlfinderUrlProbeMaxTargets] = useState(300);
   const [urlfinderUrlProbeConcurrency, setUrlfinderUrlProbeConcurrency] = useState(6);
@@ -8944,6 +9045,146 @@ function ConfigConsoleView({ token }: { token: string }) {
       .map((line) => line.trim())
       .filter((line) => line !== '');
 
+  const normalizeScanProfiles = (rawValue: any): ScanProfile[] => {
+    if (!Array.isArray(rawValue) || rawValue.length === 0) {
+      return fallbackScanProfiles;
+    }
+
+    const normalizedList: ScanProfile[] = rawValue
+      .map((item: any) => {
+        const id = String(item?.id || '').trim();
+        if (!id) {
+          return null;
+        }
+        const values: ScanProfileValueMap = item?.values && typeof item.values === 'object' ? item.values : {};
+        return {
+          id,
+          label: String(item?.label || id),
+          description: String(item?.description || ''),
+          cpu_cores: Number(item?.cpu_cores || 0),
+          memory_gb: Number(item?.memory_gb || 0),
+          bandwidth_mbps: Number(item?.bandwidth_mbps || 0),
+          selected: Boolean(item?.selected),
+          values,
+        };
+      })
+      .filter((item: ScanProfile | null): item is ScanProfile => Boolean(item));
+
+    return normalizedList.length > 0 ? normalizedList : fallbackScanProfiles;
+  };
+
+  const applyScanProfile = (profile: ScanProfile) => {
+    const values = profile.values || {};
+    const getNumber = (key: string, currentValue: number) => {
+      const raw = values[key];
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : currentValue;
+    };
+    const getBool = (key: string, currentValue: boolean) => {
+      const raw = values[key];
+      if (typeof raw === 'boolean') {
+        return raw;
+      }
+      if (typeof raw === 'number') {
+        return raw > 0;
+      }
+      if (typeof raw === 'string') {
+        const normalized = raw.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) {
+          return true;
+        }
+        if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) {
+          return false;
+        }
+      }
+      return currentValue;
+    };
+
+    setDomainBruteConcurrent(getNumber('domain_brute_concurrent', domainBruteConcurrent));
+    setAltDnsConcurrent(getNumber('alt_dns_concurrent', altDnsConcurrent));
+    setWebGunicornWorkers(getNumber('web_gunicorn_workers', webGunicornWorkers));
+    setCeleryTaskWorkerConcurrency(getNumber('celery_task_worker_concurrency', celeryTaskWorkerConcurrency));
+    setCeleryGithubWorkerConcurrency(getNumber('celery_github_worker_concurrency', celeryGithubWorkerConcurrency));
+    setCeleryPrefetchMultiplier(getNumber('celery_prefetch_multiplier', celeryPrefetchMultiplier));
+    setCeleryMaxTasksPerChild(getNumber('celery_max_tasks_per_child', celeryMaxTasksPerChild));
+    setCeleryMaxMemoryPerChild(getNumber('celery_max_memory_per_child', celeryMaxMemoryPerChild));
+    setNucleiSingleTargetTimeoutSec(getNumber('nuclei_single_target_timeout_sec', nucleiSingleTargetTimeoutSec));
+    setNucleiRateLimit(getNumber('nuclei_rate_limit', nucleiRateLimit));
+    setNucleiConcurrency(getNumber('nuclei_concurrency', nucleiConcurrency));
+    setNucleiBulkSize(getNumber('nuclei_bulk_size', nucleiBulkSize));
+    setUrlfinderUrlProbeEnable(getBool('urlfinder_url_probe_enable', urlfinderUrlProbeEnable));
+    setUrlfinderUrlProbeMaxTargets(getNumber('urlfinder_url_probe_max_targets', urlfinderUrlProbeMaxTargets));
+    setUrlfinderUrlProbeConcurrency(getNumber('urlfinder_url_probe_concurrency', urlfinderUrlProbeConcurrency));
+
+    const timeoutTypeRaw = String(values.host_timeout_type || '').trim().toLowerCase();
+    if (timeoutTypeRaw === 'custom' || timeoutTypeRaw === 'default') {
+      setHostTimeoutType(timeoutTypeRaw);
+    }
+    setHostTimeout(getNumber('host_timeout', hostTimeout));
+    setPortParallelism(getNumber('port_parallelism', portParallelism));
+    setPortMinRate(getNumber('port_min_rate', portMinRate));
+    setError('');
+    setSuccess(`已应用预定义配置：${profile.label}，请点击“保存配置”生效。`);
+  };
+
+  const currentProfileValues = useMemo(
+    () => ({
+      domain_brute_concurrent: Math.floor(domainBruteConcurrent),
+      alt_dns_concurrent: Math.floor(altDnsConcurrent),
+      web_gunicorn_workers: Math.floor(webGunicornWorkers),
+      celery_task_worker_concurrency: Math.floor(celeryTaskWorkerConcurrency),
+      celery_github_worker_concurrency: Math.floor(celeryGithubWorkerConcurrency),
+      celery_prefetch_multiplier: Math.floor(celeryPrefetchMultiplier),
+      celery_max_tasks_per_child: Math.floor(celeryMaxTasksPerChild),
+      celery_max_memory_per_child: Math.floor(celeryMaxMemoryPerChild),
+      nuclei_single_target_timeout_sec: Math.floor(nucleiSingleTargetTimeoutSec),
+      nuclei_rate_limit: Math.floor(nucleiRateLimit),
+      nuclei_concurrency: Math.floor(nucleiConcurrency),
+      nuclei_bulk_size: Math.floor(nucleiBulkSize),
+      urlfinder_url_probe_enable: Boolean(urlfinderUrlProbeEnable),
+      urlfinder_url_probe_max_targets: Math.floor(urlfinderUrlProbeMaxTargets),
+      urlfinder_url_probe_concurrency: Math.floor(urlfinderUrlProbeConcurrency),
+      host_timeout_type: hostTimeoutType === 'custom' ? 'custom' : 'default',
+      host_timeout: Math.floor(hostTimeout),
+      port_parallelism: Math.floor(portParallelism),
+      port_min_rate: Math.floor(portMinRate),
+    }),
+    [
+      domainBruteConcurrent,
+      altDnsConcurrent,
+      webGunicornWorkers,
+      celeryTaskWorkerConcurrency,
+      celeryGithubWorkerConcurrency,
+      celeryPrefetchMultiplier,
+      celeryMaxTasksPerChild,
+      celeryMaxMemoryPerChild,
+      nucleiSingleTargetTimeoutSec,
+      nucleiRateLimit,
+      nucleiConcurrency,
+      nucleiBulkSize,
+      urlfinderUrlProbeEnable,
+      urlfinderUrlProbeMaxTargets,
+      urlfinderUrlProbeConcurrency,
+      hostTimeoutType,
+      hostTimeout,
+      portParallelism,
+      portMinRate,
+    ]
+  );
+
+  const matchedScanProfileId = useMemo(() => {
+    for (const profile of scanProfiles) {
+      const values = profile.values || {};
+      const matched = Object.keys(values).every((key) => {
+        return (currentProfileValues as any)[key] === values[key];
+      });
+      if (matched) {
+        return profile.id;
+      }
+    }
+    return '';
+  }, [scanProfiles, currentProfileValues]);
+
   const loadScanConfig = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -8954,6 +9195,7 @@ function ConfigConsoleView({ token }: { token: string }) {
       const scanConfig = data?.scan_config || {};
       const nextDomainOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
       const nextFileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
+      const nextScanProfiles = normalizeScanProfiles(data?.scan_profiles);
 
       setDomainDict(String(scanConfig.domain_dict || ''));
       setFileLeakDict(String(scanConfig.file_leak_dict || ''));
@@ -8966,6 +9208,9 @@ function ConfigConsoleView({ token }: { token: string }) {
       setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 20));
       setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 280000));
       setNucleiSingleTargetTimeoutSec(Number(scanConfig.nuclei_single_target_timeout_sec || 3600));
+      setNucleiRateLimit(Number(scanConfig.nuclei_rate_limit || 8));
+      setNucleiConcurrency(Number(scanConfig.nuclei_concurrency || 4));
+      setNucleiBulkSize(Number(scanConfig.nuclei_bulk_size || 5));
       setUrlfinderUrlProbeEnable(Boolean(scanConfig.urlfinder_url_probe_enable ?? true));
       setUrlfinderUrlProbeMaxTargets(Number(scanConfig.urlfinder_url_probe_max_targets || 300));
       setUrlfinderUrlProbeConcurrency(Number(scanConfig.urlfinder_url_probe_concurrency || 6));
@@ -8978,6 +9223,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
       setDomainDictOptions(nextDomainOptions);
       setFileLeakDictOptions(nextFileLeakOptions);
+      setScanProfiles(nextScanProfiles);
       setConfigPath(String(data.config_path || ''));
       setUpdatedAt(String(data.updated_at || ''));
     } catch (err: any) {
@@ -9040,6 +9286,18 @@ function ConfigConsoleView({ token }: { token: string }) {
       setError('Nuclei 单目标最大扫描时间必须大于 0');
       return;
     }
+    if (!Number.isFinite(nucleiRateLimit) || nucleiRateLimit <= 0) {
+      setError('Nuclei 限速必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(nucleiConcurrency) || nucleiConcurrency <= 0) {
+      setError('Nuclei 并发必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(nucleiBulkSize) || nucleiBulkSize <= 0) {
+      setError('Nuclei bulk-size 必须大于 0');
+      return;
+    }
     if (!Number.isFinite(urlfinderUrlProbeMaxTargets) || urlfinderUrlProbeMaxTargets <= 0) {
       setError('URLFinder URL 探测最大目标数必须大于 0');
       return;
@@ -9090,6 +9348,9 @@ function ConfigConsoleView({ token }: { token: string }) {
             celery_max_tasks_per_child: Math.floor(celeryMaxTasksPerChild),
             celery_max_memory_per_child: Math.floor(celeryMaxMemoryPerChild),
             nuclei_single_target_timeout_sec: Math.floor(nucleiSingleTargetTimeoutSec),
+            nuclei_rate_limit: Math.floor(nucleiRateLimit),
+            nuclei_concurrency: Math.floor(nucleiConcurrency),
+            nuclei_bulk_size: Math.floor(nucleiBulkSize),
             urlfinder_url_probe_enable: Boolean(urlfinderUrlProbeEnable),
             urlfinder_url_probe_max_targets: Math.floor(urlfinderUrlProbeMaxTargets),
             urlfinder_url_probe_concurrency: Math.floor(urlfinderUrlProbeConcurrency),
@@ -9097,6 +9358,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             host_timeout: Math.floor(hostTimeout),
             port_parallelism: Math.floor(portParallelism),
             port_min_rate: Math.floor(portMinRate),
+            scan_profile_id: matchedScanProfileId || '',
             black_ips: blackIps,
             dns_resolvers: splitTextList(dnsResolversText),
           },
@@ -9107,6 +9369,7 @@ function ConfigConsoleView({ token }: { token: string }) {
       const savedConfig = data?.scan_config || {};
       const nextDomainOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
       const nextFileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
+      const nextScanProfiles = normalizeScanProfiles(data?.scan_profiles);
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
 
       setDomainDict(String(savedConfig.domain_dict || normalizedDomainDict));
@@ -9120,6 +9383,9 @@ function ConfigConsoleView({ token }: { token: string }) {
       setCeleryMaxTasksPerChild(Number(savedConfig.celery_max_tasks_per_child || celeryMaxTasksPerChild));
       setCeleryMaxMemoryPerChild(Number(savedConfig.celery_max_memory_per_child || celeryMaxMemoryPerChild));
       setNucleiSingleTargetTimeoutSec(Number(savedConfig.nuclei_single_target_timeout_sec || nucleiSingleTargetTimeoutSec));
+      setNucleiRateLimit(Number(savedConfig.nuclei_rate_limit || nucleiRateLimit));
+      setNucleiConcurrency(Number(savedConfig.nuclei_concurrency || nucleiConcurrency));
+      setNucleiBulkSize(Number(savedConfig.nuclei_bulk_size || nucleiBulkSize));
       setUrlfinderUrlProbeEnable(Boolean(savedConfig.urlfinder_url_probe_enable ?? urlfinderUrlProbeEnable));
       setUrlfinderUrlProbeMaxTargets(Number(savedConfig.urlfinder_url_probe_max_targets || urlfinderUrlProbeMaxTargets));
       setUrlfinderUrlProbeConcurrency(Number(savedConfig.urlfinder_url_probe_concurrency || urlfinderUrlProbeConcurrency));
@@ -9132,6 +9398,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
       setDomainDictOptions(nextDomainOptions);
       setFileLeakDictOptions(nextFileLeakOptions);
+      setScanProfiles(nextScanProfiles);
       setConfigPath(String(data.config_path || configPath));
       setUpdatedAt(String(data.saved_at || updatedAt));
       setSuccess(`扫描配置已保存${backupPath}`);
@@ -9222,7 +9489,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、敏感文件泄漏字典、扫描并发、端口扫描默认超时/并行度、Nuclei 单目标超时、Web/Celery 运行并发、黑名单IP与域名解析器，写入 config-docker.yaml 并可在重启后生效。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、敏感文件泄漏字典、扫描并发、端口扫描默认超时/并行度、Nuclei 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供 2C2G3M/4C4G5M/8C16G10M 预定义档位，写入 config-docker.yaml 后重启生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -9268,6 +9535,39 @@ function ConfigConsoleView({ token }: { token: string }) {
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
+        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+          <div className="text-xs font-black tracking-wide text-brand-text">预定义资源档位</div>
+          <div className="text-xs text-brand-text-muted">
+            一键套用常见机型参数（CPU/内存/带宽），覆盖 Nuclei、域名爆破、端口扫描、URL 探测、Web/Celery 并发等关键项，降低低配主机被扫描压垮风险。
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+            {scanProfiles.map((profile) => {
+              const isMatched = matchedScanProfileId === profile.id;
+              return (
+                <button
+                  key={profile.id}
+                  type="button"
+                  onClick={() => applyScanProfile(profile)}
+                  className={`text-left rounded-xl border p-3 transition ${
+                    isMatched
+                      ? 'border-brand-accent bg-brand-accent/10'
+                      : 'border-brand-border hover:bg-brand-bg/70'
+                  }`}
+                >
+                  <div className="text-sm font-bold">{profile.label}</div>
+                  <div className="mt-1 text-xs text-brand-text-muted">
+                    {profile.cpu_cores}C / {profile.memory_gb}G / {profile.bandwidth_mbps}Mbps
+                  </div>
+                  <div className="mt-2 text-xs text-brand-text-muted">{profile.description || '预定义扫描参数模板'}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-xs text-brand-text-muted">
+            当前命中档位：{matchedScanProfileId || '未命中（当前为自定义参数）'}
+          </div>
+        </div>
+
         <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
           <div className="text-xs font-black tracking-wide text-brand-text">字典管理</div>
         <div className="space-y-2">
@@ -9523,40 +9823,66 @@ function ConfigConsoleView({ token }: { token: string }) {
         <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
           <div className="text-xs font-black tracking-wide text-brand-text">扫描超时与端口参数</div>
         <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
-          <div className="space-y-2">
-            <label htmlFor="config-nuclei-single-target-timeout-sec" className="text-xs font-bold text-brand-text-muted block">
-              Nuclei 单个目标最多扫描时间（秒）
-              <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC</span>
-            </label>
-            <input
-              id="config-nuclei-single-target-timeout-sec"
-              type="number"
-              min={60}
-              value={String(nucleiSingleTargetTimeoutSec)}
-              onChange={(event) => setNucleiSingleTargetTimeoutSec(Number(event.target.value || 0))}
-              className={compactFieldInputClass}
-            />
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label htmlFor="config-nuclei-single-target-timeout-sec" className="text-xs font-bold text-brand-text-muted block">
+                Nuclei 单个目标最多扫描时间（秒）
+                <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC</span>
+              </label>
+              <input
+                id="config-nuclei-single-target-timeout-sec"
+                type="number"
+                min={60}
+                value={String(nucleiSingleTargetTimeoutSec)}
+                onChange={(event) => setNucleiSingleTargetTimeoutSec(Number(event.target.value || 0))}
+                className={compactFieldInputClass}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="config-nuclei-rate-limit" className="text-xs font-bold text-brand-text-muted block">
+                Nuclei 每秒请求上限
+                <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_RATE_LIMIT</span>
+              </label>
+              <input
+                id="config-nuclei-rate-limit"
+                type="number"
+                min={1}
+                value={String(nucleiRateLimit)}
+                onChange={(event) => setNucleiRateLimit(Number(event.target.value || 0))}
+                className={compactFieldInputClass}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="config-nuclei-concurrency" className="text-xs font-bold text-brand-text-muted block">
+                Nuclei 模板并发
+                <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_CONCURRENCY</span>
+              </label>
+              <input
+                id="config-nuclei-concurrency"
+                type="number"
+                min={1}
+                value={String(nucleiConcurrency)}
+                onChange={(event) => setNucleiConcurrency(Number(event.target.value || 0))}
+                className={compactFieldInputClass}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="config-nuclei-bulk-size" className="text-xs font-bold text-brand-text-muted block">
+                Nuclei bulk-size
+                <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_BULK_SIZE</span>
+              </label>
+              <input
+                id="config-nuclei-bulk-size"
+                type="number"
+                min={1}
+                value={String(nucleiBulkSize)}
+                onChange={(event) => setNucleiBulkSize(Number(event.target.value || 0))}
+                className={compactFieldInputClass}
+              />
+            </div>
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            {nucleiTimeoutPresets.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setNucleiSingleTargetTimeoutSec(item.value)}
-                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
-                  nucleiSingleTargetTimeoutSec === item.value
-                    ? 'border-brand-accent bg-brand-accent/15 text-brand-accent'
-                    : 'border-brand-border hover:bg-brand-bg/70'
-                }`}
-              >
-                {item.label}（{item.hours}小时）
-              </button>
-            ))}
-          </div>
-
           <div className="text-xs text-brand-text-muted">
-            推荐档位：2核2G=1小时，4核4G=2小时，8核16G=3小时。当前配置约 {(nucleiSingleTargetTimeoutSec / 3600).toFixed(2)} 小时/目标。
+            当前 Nuclei 超时约 {(nucleiSingleTargetTimeoutSec / 3600).toFixed(2)} 小时/目标。建议优先使用上方预定义资源档位统一调整。
           </div>
         </div>
 

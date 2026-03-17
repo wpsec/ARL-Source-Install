@@ -239,6 +239,160 @@ def _normalize_string_list(raw_value):
     return uniq
 
 
+SCAN_PROFILE_ITEMS = [
+    {
+        'id': '2c2g3m',
+        'label': '2核2G3M 保守',
+        'description': '适用于低配云主机，优先保证系统可访问性，扫描速度较慢，当能避免CPU、带宽占用过高',
+        'cpu_cores': 2,
+        'memory_gb': 2,
+        'bandwidth_mbps': 3,
+        'values': {
+            'domain_brute_concurrent': 36,
+            'alt_dns_concurrent': 120,
+            'web_gunicorn_workers': 1,
+            'celery_task_worker_concurrency': 1,
+            'celery_github_worker_concurrency': 1,
+            'celery_prefetch_multiplier': 1,
+            'celery_max_tasks_per_child': 16,
+            'celery_max_memory_per_child': 200000,
+            'nuclei_single_target_timeout_sec': 3600,
+            'nuclei_rate_limit': 2,
+            'nuclei_concurrency': 1,
+            'nuclei_bulk_size': 2,
+            'urlfinder_url_probe_enable': True,
+            'urlfinder_url_probe_max_targets': 120,
+            'urlfinder_url_probe_concurrency': 2,
+            'host_timeout_type': 'default',
+            'host_timeout': 1200,
+            'port_parallelism': 8,
+            'port_min_rate': 24,
+        },
+    },
+    {
+        'id': '4c4g5m',
+        'label': '4核4G5M 平衡',
+        'description': '适用于中配主机，在可用性与扫描速度之间平衡，适合常规生产巡检。',
+        'cpu_cores': 4,
+        'memory_gb': 4,
+        'bandwidth_mbps': 5,
+        'values': {
+            'domain_brute_concurrent': 96,
+            'alt_dns_concurrent': 320,
+            'web_gunicorn_workers': 2,
+            'celery_task_worker_concurrency': 2,
+            'celery_github_worker_concurrency': 1,
+            'celery_prefetch_multiplier': 1,
+            'celery_max_tasks_per_child': 20,
+            'celery_max_memory_per_child': 280000,
+            'nuclei_single_target_timeout_sec': 7200,
+            'nuclei_rate_limit': 4,
+            'nuclei_concurrency': 2,
+            'nuclei_bulk_size': 3,
+            'urlfinder_url_probe_enable': True,
+            'urlfinder_url_probe_max_targets': 220,
+            'urlfinder_url_probe_concurrency': 4,
+            'host_timeout_type': 'default',
+            'host_timeout': 1200,
+            'port_parallelism': 16,
+            'port_min_rate': 48,
+        },
+    },
+    {
+        'id': '8c16g10m',
+        'label': '8核16G10M 高性能',
+        'description': '适用于高配主机，提升扫描吞吐并保持管理面可用，不建议继续无限加并发。',
+        'cpu_cores': 8,
+        'memory_gb': 16,
+        'bandwidth_mbps': 10,
+        'values': {
+            'domain_brute_concurrent': 180,
+            'alt_dns_concurrent': 640,
+            'web_gunicorn_workers': 3,
+            'celery_task_worker_concurrency': 4,
+            'celery_github_worker_concurrency': 2,
+            'celery_prefetch_multiplier': 1,
+            'celery_max_tasks_per_child': 30,
+            'celery_max_memory_per_child': 420000,
+            'nuclei_single_target_timeout_sec': 10800,
+            'nuclei_rate_limit': 8,
+            'nuclei_concurrency': 4,
+            'nuclei_bulk_size': 5,
+            'urlfinder_url_probe_enable': True,
+            'urlfinder_url_probe_max_targets': 300,
+            'urlfinder_url_probe_concurrency': 8,
+            'host_timeout_type': 'default',
+            'host_timeout': 1500,
+            'port_parallelism': 28,
+            'port_min_rate': 96,
+        },
+    },
+]
+SCAN_PROFILE_MAP = {item['id']: item for item in SCAN_PROFILE_ITEMS}
+
+
+def _extract_scan_profile_id(scan_config):
+    """
+    根据当前扫描参数匹配预定义硬件配置，完全匹配时返回 profile id。
+    """
+    if not isinstance(scan_config, dict):
+        return ''
+
+    for profile in SCAN_PROFILE_ITEMS:
+        profile_values = profile.get('values', {})
+        matched = True
+        for key, value in profile_values.items():
+            if scan_config.get(key) != value:
+                matched = False
+                break
+        if matched:
+            return profile['id']
+    return ''
+
+
+def _build_scan_profiles_payload(active_profile_id=''):
+    """
+    组装扫描预定义配置返回结构，供前端展示与一键应用。
+    """
+    payload = []
+    for profile in SCAN_PROFILE_ITEMS:
+        payload.append(
+            {
+                'id': profile['id'],
+                'label': profile['label'],
+                'description': profile['description'],
+                'cpu_cores': profile['cpu_cores'],
+                'memory_gb': profile['memory_gb'],
+                'bandwidth_mbps': profile['bandwidth_mbps'],
+                'selected': bool(active_profile_id and active_profile_id == profile['id']),
+                'values': dict(profile.get('values', {})),
+            }
+        )
+    return payload
+
+
+def _apply_scan_profile_overrides(scan_config):
+    """
+    若提交了 scan_profile_id，则先注入预定义参数，再应用请求中的显式覆盖项。
+    """
+    if not isinstance(scan_config, dict):
+        raise ValueError('scan_config 必须为对象')
+
+    normalized = dict(scan_config)
+    profile_id = str(normalized.get('scan_profile_id', '') or '').strip().lower()
+    if not profile_id:
+        return normalized, ''
+
+    profile = SCAN_PROFILE_MAP.get(profile_id)
+    if profile is None:
+        raise ValueError(f'未知扫描预定义配置: {profile_id}')
+
+    merged_config = dict(profile.get('values', {}))
+    merged_config.update(normalized)
+    merged_config['scan_profile_id'] = profile_id
+    return merged_config, profile_id
+
+
 def _resolve_domain_dict_custom_dir() -> Path:
     """
     解析域名爆破自定义字典目录。
@@ -728,6 +882,18 @@ def _extract_scan_config(config_obj):
         arl_config.get('NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'),
         Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
     )
+    nuclei_rate_limit = _safe_int(
+        arl_config.get('NUCLEI_RATE_LIMIT'),
+        Config.NUCLEI_RATE_LIMIT
+    )
+    nuclei_concurrency = _safe_int(
+        arl_config.get('NUCLEI_CONCURRENCY'),
+        Config.NUCLEI_CONCURRENCY
+    )
+    nuclei_bulk_size = _safe_int(
+        arl_config.get('NUCLEI_BULK_SIZE'),
+        Config.NUCLEI_BULK_SIZE
+    )
     urlfinder_url_probe_enable = _safe_bool(
         arl_config.get('URLFINDER_URL_PROBE_ENABLE'),
         Config.URLFINDER_URL_PROBE_ENABLE
@@ -761,7 +927,7 @@ def _extract_scan_config(config_obj):
         black_ips = _normalize_string_list(Config.BLACK_IPS)
     dns_resolvers = _normalize_string_list(arl_config.get('DNS_RESOLVERS', Config.DNS_RESOLVERS))
 
-    return {
+    scan_config = {
         'domain_dict': domain_dict,
         'file_leak_dict': file_leak_dict,
         'domain_brute_concurrent': domain_brute_concurrent,
@@ -773,6 +939,9 @@ def _extract_scan_config(config_obj):
         'celery_max_tasks_per_child': celery_max_tasks_per_child,
         'celery_max_memory_per_child': celery_max_memory_per_child,
         'nuclei_single_target_timeout_sec': nuclei_single_target_timeout_sec,
+        'nuclei_rate_limit': nuclei_rate_limit,
+        'nuclei_concurrency': nuclei_concurrency,
+        'nuclei_bulk_size': nuclei_bulk_size,
         'urlfinder_url_probe_enable': urlfinder_url_probe_enable,
         'urlfinder_url_probe_max_targets': urlfinder_url_probe_max_targets,
         'urlfinder_url_probe_concurrency': urlfinder_url_probe_concurrency,
@@ -784,13 +953,15 @@ def _extract_scan_config(config_obj):
         'dns_resolvers': dns_resolvers,
     }
 
+    scan_config['scan_profile_id'] = _extract_scan_profile_id(scan_config)
+    return scan_config
+
 
 def _merge_scan_config(config_obj, scan_config):
     """
     将扫描配置写回完整配置对象（仅修改 ARL 下指定字段）。
     """
-    if not isinstance(scan_config, dict):
-        raise ValueError('scan_config 必须为对象')
+    scan_config, _ = _apply_scan_profile_overrides(scan_config)
 
     domain_dict = normalize_dict_path_compat(scan_config.get('domain_dict', ''))
     domain_dict = str(domain_dict or '').strip()
@@ -850,6 +1021,18 @@ def _merge_scan_config(config_obj, scan_config):
         scan_config.get('nuclei_single_target_timeout_sec'),
         Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
     )
+    nuclei_rate_limit = _safe_int(
+        scan_config.get('nuclei_rate_limit'),
+        Config.NUCLEI_RATE_LIMIT
+    )
+    nuclei_concurrency = _safe_int(
+        scan_config.get('nuclei_concurrency'),
+        Config.NUCLEI_CONCURRENCY
+    )
+    nuclei_bulk_size = _safe_int(
+        scan_config.get('nuclei_bulk_size'),
+        Config.NUCLEI_BULK_SIZE
+    )
     urlfinder_url_probe_enable = _safe_bool(
         scan_config.get('urlfinder_url_probe_enable'),
         Config.URLFINDER_URL_PROBE_ENABLE
@@ -898,6 +1081,9 @@ def _merge_scan_config(config_obj, scan_config):
     config_obj['ARL']['CELERY_MAX_TASKS_PER_CHILD'] = celery_max_tasks_per_child
     config_obj['ARL']['CELERY_MAX_MEMORY_PER_CHILD'] = celery_max_memory_per_child
     config_obj['ARL']['NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'] = nuclei_single_target_timeout_sec
+    config_obj['ARL']['NUCLEI_RATE_LIMIT'] = nuclei_rate_limit
+    config_obj['ARL']['NUCLEI_CONCURRENCY'] = nuclei_concurrency
+    config_obj['ARL']['NUCLEI_BULK_SIZE'] = nuclei_bulk_size
     config_obj['ARL']['URLFINDER_URL_PROBE_ENABLE'] = urlfinder_url_probe_enable
     config_obj['ARL']['URLFINDER_URL_PROBE_MAX_TARGETS'] = urlfinder_url_probe_max_targets
     config_obj['ARL']['URLFINDER_URL_PROBE_CONCURRENCY'] = urlfinder_url_probe_concurrency
@@ -1060,12 +1246,15 @@ class ApiConsoleScanConfig(ARLResource):
         try:
             config_obj = _load_config_from_file(config_path)
             scan_config = _extract_scan_config(config_obj)
+            active_scan_profile = str(scan_config.get('scan_profile_id', '') or '')
             domain_options = _collect_domain_dict_options(scan_config.get('domain_dict'))
             file_leak_options = _collect_file_leak_dict_options(scan_config.get('file_leak_dict'))
             return utils.build_ret(
                 ErrorMsg.Success,
                 {
                     'scan_config': scan_config,
+                    'active_scan_profile': active_scan_profile,
+                    'scan_profiles': _build_scan_profiles_payload(active_scan_profile),
                     'available_domain_dicts': domain_options,
                     'available_file_leak_dicts': file_leak_options,
                     'config_path': str(config_path),
@@ -1097,6 +1286,7 @@ class ApiConsoleScanConfig(ARLResource):
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
                 saved_scan_config = _extract_scan_config(config_obj)
+                active_scan_profile = str(saved_scan_config.get('scan_profile_id', '') or '')
                 domain_options = _collect_domain_dict_options(saved_scan_config.get('domain_dict'))
                 file_leak_options = _collect_file_leak_dict_options(saved_scan_config.get('file_leak_dict'))
             except Exception as exc:
@@ -1114,6 +1304,8 @@ class ApiConsoleScanConfig(ARLResource):
             {
                 'saved': True,
                 'scan_config': saved_scan_config,
+                'active_scan_profile': active_scan_profile,
+                'scan_profiles': _build_scan_profiles_payload(active_scan_profile),
                 'available_domain_dicts': domain_options,
                 'available_file_leak_dicts': file_leak_options,
                 'config_path': str(config_path),
