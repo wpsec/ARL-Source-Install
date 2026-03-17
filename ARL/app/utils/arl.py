@@ -103,7 +103,7 @@ def get_scope_ids(domain):
     return cached_call(key, _loader, expire=120)
 
 
-def task_statistic(task_id=None):
+def task_statistic(task_id=None, force_refresh=False):
     """对任务中的资产信息进行统计"""
     query = dict()
     if isinstance(task_id, str) and len(task_id) == 24:
@@ -122,7 +122,7 @@ def task_statistic(task_id=None):
             ret[stat_key] = cnt
         return ret
 
-    return cached_call(key, _loader, expire=90)
+    return cached_call(key, _loader, expire=90, force_refresh=force_refresh)
 
 
 def gen_cip_map(task_id=None):
@@ -159,7 +159,7 @@ def gen_cip_map(task_id=None):
     return cip_map
 
 
-def gen_stat_finger_map(task_id=None):
+def gen_stat_finger_map(task_id=None, force_refresh=False):
     query = dict()
     if isinstance(task_id, str) and len(task_id) == 24:
         query["task_id"] = task_id
@@ -185,7 +185,7 @@ def gen_stat_finger_map(task_id=None):
                     finger_map[finger_key]["cnt"] += 1
         return finger_map
 
-    return cached_call(key, _loader, expire=90)
+    return cached_call(key, _loader, expire=90, force_refresh=force_refresh)
 
 
 def build_port_custom(port_custom):
@@ -201,4 +201,3 @@ def build_port_custom(port_custom):
             return item
 
     return port_list
-

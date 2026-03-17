@@ -28,16 +28,18 @@ class CommonTask(object):
             "_id": ObjectId(self.task_id)
         }
 
-        stat = utils.arl.task_statistic(self.task_id)
+        # 任务收尾阶段强制刷新统计，避免命中运行中旧缓存导致结果被写成 0。
+        stat = utils.arl.task_statistic(self.task_id, force_refresh=True)
 
-        logger.info("insert task stat")
+        logger.info("insert task stat task_id:{} stat:{}".format(self.task_id, stat))
 
         update = {"$set": {"statistic": stat}}
 
         utils.conn_db('task').update_one(query, update)
 
     def insert_finger_stat(self):
-        finger_stat_map = utils.arl.gen_stat_finger_map(self.task_id)
+        # 任务收尾阶段强制刷新指纹统计，避免命中运行中旧缓存。
+        finger_stat_map = utils.arl.gen_stat_finger_map(self.task_id, force_refresh=True)
         logger.info("insert finger stat {}".format(len(finger_stat_map)))
 
         for key in finger_stat_map:
@@ -979,6 +981,8 @@ class WebSiteFetch(object):
         """ *** 对站点调用 WebInfoHunter """
         if self.options.get(WebSiteFetchOption.Info_Hunter):
             self.run_func(WebSiteFetchStatus.Info_Hunter, self.run_web_info_hunter)
+        else:
+            logger.info("task_id:{} skip web_info_hunter because option disabled".format(self.task_id))
 
         # nuclei 首次因 Mongo 超时延后时，在本任务末尾补跑一次。
         if self._nuclei_deferred_retry_needed:

@@ -248,9 +248,9 @@ def refresh_runtime_config_best_effort(force=False):
             "PORT_SCAN_TARGET_BATCH_SIZE",
             "PORT_SCAN_HEAVY_TARGET_BATCH_SIZE",
             "PORT_SCAN_ALL_TARGET_BATCH_SIZE",
-            "PORT_SCAN_STAGE2_MAX_HOSTS",
+            "PORT_SCAN_STAGE2_PORT_CHUNK_SIZE",
+            # 兼容旧配置项（仅保留分段语义，不再做裁剪）
             "PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST",
-            "PORT_SCAN_STAGE2_OS_MAX_HOSTS",
             "TASK_HEAVY_PORT_THRESHOLD",
             "TASK_HEAVY_SERVICE_PORT_THRESHOLD",
             "TASK_HEAVY_TARGET_THRESHOLD",
@@ -639,12 +639,10 @@ class Config(object):
     PORT_SCAN_HEAVY_TARGET_BATCH_SIZE = 8
     # 全端口扫描每批目标数量
     PORT_SCAN_ALL_TARGET_BATCH_SIZE = 2
-    # 两阶段精扫最多主机数（超出自动降级）
-    PORT_SCAN_STAGE2_MAX_HOSTS = 40
-    # 两阶段精扫单主机最多端口数（超出自动裁剪）
-    PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST = 300
-    # 开启 OS 识别时，两阶段精扫最多主机数（超出自动关闭 -O）
-    PORT_SCAN_STAGE2_OS_MAX_HOSTS = 8
+    # 两阶段精扫单主机端口分段大小（仅分段，不裁剪结果）
+    PORT_SCAN_STAGE2_PORT_CHUNK_SIZE = 300
+    # 兼容旧配置项名称
+    PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST = PORT_SCAN_STAGE2_PORT_CHUNK_SIZE
     # 重任务队列分流阈值：端口数量
     TASK_HEAVY_PORT_THRESHOLD = 1000
     # 重任务队列分流阈值：service_detection 时的端口数量
@@ -1129,9 +1127,9 @@ try:
         "PORT_SCAN_TARGET_BATCH_SIZE",
         "PORT_SCAN_HEAVY_TARGET_BATCH_SIZE",
         "PORT_SCAN_ALL_TARGET_BATCH_SIZE",
-        "PORT_SCAN_STAGE2_MAX_HOSTS",
+        "PORT_SCAN_STAGE2_PORT_CHUNK_SIZE",
+        # 兼容旧配置项（仅保留分段语义，不再做裁剪）
         "PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST",
-        "PORT_SCAN_STAGE2_OS_MAX_HOSTS",
         "TASK_HEAVY_PORT_THRESHOLD",
         "TASK_HEAVY_SERVICE_PORT_THRESHOLD",
         "TASK_HEAVY_TARGET_THRESHOLD",

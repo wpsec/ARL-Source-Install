@@ -37,15 +37,15 @@ class PortScan:
             getattr(Config, "PORT_SCAN_ALL_TARGET_BATCH_SIZE", 2), 2
         )
 
-        # 二阶段精扫的自适应阈值：防止重任务把 worker 长时间占满。
-        self.stage2_max_hosts = self._safe_positive_int(
-            getattr(Config, "PORT_SCAN_STAGE2_MAX_HOSTS", 40), 40
-        )
-        self.stage2_max_ports_per_host = self._safe_positive_int(
-            getattr(Config, "PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST", 300), 300
-        )
-        self.stage2_os_max_hosts = self._safe_positive_int(
-            getattr(Config, "PORT_SCAN_STAGE2_OS_MAX_HOSTS", 8), 8
+        # 二阶段精扫端口分段大小：
+        # 说明：这里不做“裁剪”，仅做“分段”，确保结果完整不缩水。
+        self.stage2_port_chunk_size = self._safe_positive_int(
+            getattr(
+                Config,
+                "PORT_SCAN_STAGE2_PORT_CHUNK_SIZE",
+                getattr(Config, "PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST", 300)
+            ),
+            300
         )
 
         self._apply_scan_profile()
@@ -369,41 +369,13 @@ class PortScan:
         )
         return result_map
 
-    @staticmethod
-    def _calc_host_value_score(port_ids):
-        score = len(port_ids)
-        high_value_ports = {80, 443, 8080, 8443, 8000, 8001, 8090, 22, 3389, 3306, 5432, 6379}
-        for p in port_ids:
-            if p in high_value_ports:
-                score += 4
-        return score
-
-    def _select_stage2_ports(self, port_ids):
-        if len(port_ids) <= self.stage2_max_ports_per_host:
-            return port_ids
-
-        priority = [80, 443, 8080, 8443, 8000, 8001, 8090, 22, 3389, 3306, 5432, 6379, 27017, 9200]
-        selected = []
-        selected_set = set()
-        for p in priority:
-            if p in port_ids and p not in selected_set:
-                selected.append(p)
-                selected_set.add(p)
-            if len(selected) >= self.stage2_max_ports_per_host:
-                break
-
-        if len(selected) < self.stage2_max_ports_per_host:
-            for p in port_ids:
-                if p in selected_set:
-                    continue
-                selected.append(p)
-                selected_set.add(p)
-                if len(selected) >= self.stage2_max_ports_per_host:
-                    break
-
-        return selected
-
     def _build_precise_plan(self, fast_map):
+        """
+        基于快扫结果构建精扫计划：
+        - 覆盖所有发现开放端口的主机
+        - 覆盖该主机全部开放端口
+        - 通过端口分段控制单次命令长度，不裁剪结果
+        """
         plan = []
         for host, item in fast_map.items():
             port_ids = sorted(
@@ -415,29 +387,9 @@ class PortScan:
             plan.append({
                 "host": host,
                 "port_ids": port_ids,
-                "score": self._calc_host_value_score(port_ids),
             })
 
-        plan.sort(key=lambda x: (x["score"], len(x["port_ids"])), reverse=True)
-        if len(plan) > self.stage2_max_hosts:
-            logger.warning(
-                "port_scan stage2 host degrade total:{} keep:{} reason:max_host_limit".format(
-                    len(plan), self.stage2_max_hosts
-                )
-            )
-            plan = plan[:self.stage2_max_hosts]
-
-        for item in plan:
-            old_count = len(item["port_ids"])
-            selected = self._select_stage2_ports(item["port_ids"])
-            item["port_ids"] = selected
-            if len(selected) < old_count:
-                logger.warning(
-                    "port_scan stage2 port degrade host:{} total:{} keep:{} reason:max_port_per_host".format(
-                        item["host"], old_count, len(selected)
-                    )
-                )
-
+        plan.sort(key=lambda x: str(x["host"]))
         return plan
 
     def _run_two_stage_scan(self):
@@ -461,36 +413,35 @@ class PortScan:
         if not precise_plan:
             return self._sort_ip_info_list(fast_map)
 
-        enable_os_in_stage2 = self.os_detect
-        if enable_os_in_stage2 and len(precise_plan) > self.stage2_os_max_hosts:
-            enable_os_in_stage2 = False
-            logger.warning(
-                "port_scan stage2 disable os_detect total:{} keep_os:{} reason:max_os_hosts".format(
-                    len(precise_plan), self.stage2_os_max_hosts
-                )
-            )
-
         precise_args = self._build_nmap_arguments(
             enable_service=self.service_detect,
-            enable_os=enable_os_in_stage2,
+            enable_os=self.os_detect,
         )
 
-        for index, item in enumerate(precise_plan, 1):
+        for host_index, item in enumerate(precise_plan, 1):
             host = item["host"]
-            ports_text = ",".join([str(x) for x in item["port_ids"]])
-            precise_map = self._scan_with_batches(
-                targets=[host],
-                ports=ports_text,
-                arguments=precise_args,
-                stage_name="precise",
-                force_batch_size=1,
-            )
-            self._merge_ip_info(fast_map, list(precise_map.values()))
-            logger.info(
-                "port_scan stage2 progress {}/{} host:{} ports:{}".format(
-                    index, len(precise_plan), host, len(item["port_ids"])
+            port_ids = item["port_ids"]
+            port_chunks = list(self._chunk_list(port_ids, self.stage2_port_chunk_size))
+            for chunk_index, chunk_port_ids in enumerate(port_chunks, 1):
+                ports_text = ",".join([str(x) for x in chunk_port_ids])
+                precise_map = self._scan_with_batches(
+                    targets=[host],
+                    ports=ports_text,
+                    arguments=precise_args,
+                    stage_name="precise",
+                    force_batch_size=1,
                 )
-            )
+                self._merge_ip_info(fast_map, list(precise_map.values()))
+                logger.info(
+                    "port_scan stage2 progress host:{}/{} chunk:{}/{} current_host:{} chunk_ports:{}".format(
+                        host_index,
+                        len(precise_plan),
+                        chunk_index,
+                        len(port_chunks),
+                        host,
+                        len(chunk_port_ids),
+                    )
+                )
 
         return self._sort_ip_info_list(fast_map)
 
