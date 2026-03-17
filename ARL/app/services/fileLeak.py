@@ -5,6 +5,7 @@ import time
 import difflib
 from urllib.parse import urlparse, urljoin
 import urllib3
+import requests
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from tld import get_tld
 import itertools
@@ -362,9 +363,24 @@ class FileLeak(BaseThread):
             self.skip_by_policy = True
             logger.info(str(e))
             return None
-        except Exception as e:
-            logger.warning("error on {}".format(e))
+        except requests.exceptions.RequestException as e:
+            # 网络层异常（如 DNS 解析失败、连接失败、超时）按可恢复错误处理，避免任务被异常中断。
             self.error_times += 1
+            err_text = str(e)
+            dns_error_flag = (
+                "Name or service not known" in err_text
+                or "Temporary failure in name resolution" in err_text
+                or "nodename nor servname provided" in err_text
+                or "Failed to establish a new connection" in err_text
+            )
+            if dns_error_flag:
+                logger.info("skip fileleak request dns_unresolved url:{} err:{}".format(url.url, err_text[:300]))
+            else:
+                logger.warning("skip fileleak request network_error url:{} err:{}".format(url.url, err_text[:300]))
+            return None
+        except Exception as e:
+            self.error_times += 1
+            logger.warning("fileleak request unexpected_error url:{} err:{}".format(url.url, str(e)[:300]))
             raise e
 
     def is_404_page(self, page: Page):

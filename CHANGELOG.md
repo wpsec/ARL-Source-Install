@@ -5,6 +5,7 @@
 
 ## 2026-03-17（v3.2.0）
 
+- `[v3.2.15]` `file_leak` 网络异常降级处理：对 DNS 解析失败/连接失败/超时等请求层异常改为“可恢复跳过”并输出精简诊断日志（含目标 URL 与错误摘要），不再抛出整段 traceback 触发阶段 ERROR；在大字典场景下可显著降低“不可解析子域”导致的日志噪声与任务中断感知
 - `[v3.2.14]` 扫描稳定性与离线包诊断日志补齐：`afrog` 扫描新增“离线 Linux zip 自动解压执行”兜底（当 `AFROG_BIN` 不可用时自动在临时目录提取二进制），并补充二进制路径解析、Windows 包误投放提示、PoC 目录解析、目标文件生成等关键诊断日志；同时截图链路在检测到 Playwright 浏览器缺失后按任务维度一次性降级至 `phantomjs`，避免同类报错重复刷屏；Celery 增加 broker 断连自动重连配置，降低 RabbitMQ 短时重启导致的 worker 退出风险
 - `[v3.2.13]` 指纹同步启动链路优化：`web` 容器启动默认跳过阻塞式 `import_fingerprint`，改为依赖 `start.sh/quick-build` 触发的后台同步；`sync-fingerprint.sh` 新增默认 `90s` 延迟与 `nice` 低优先级导入，避免 `docker compose` 重启后与服务就绪阶段争抢 CPU 导致“已启动但长时间不可用”。如需恢复旧行为可设置 `ARL_WEB_IMPORT_FINGERPRINT_ON_BOOT=1`
 - `[v3.2.12]` 配置管理新增 PoC 一键更新：新增“更新 Nuclei PoC / 更新 afrog PoC”按钮，后端提供 `git clone/pull` 更新接口并返回分支与提交信息；兼容历史“非 git 解压目录”自动备份后重建仓库。部署链路同步增强：`web` 容器 `tools` 挂载改为可写以支持在线更新，镜像安装 `git` 并打包 `tools/afrog` 离线安装包（含 `afrog-pocs`）
