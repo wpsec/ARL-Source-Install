@@ -26,6 +26,10 @@
 - `[v3.1.48]` Docker 构建兼容修复：移除 `wih` 编译阶段对 `RUN --mount`（BuildKit 专属语法）的强依赖，回退为普通 `COPY + RUN` 链路；在未开启 BuildKit 的 `docker build/docker compose build` 环境下也可正常构建，并保留 Go 离线包优先、在线下载回退逻辑
 - `[v3.1.49]` 指纹同步性能优化：`sync-fingerprint` 新增 hash 检测（指纹文件未变化且库内已有数据时跳过导入）与锁机制（避免重复并发导入）；`start.sh` 与 `quick-build.sh quick` 改为后台执行同步，不再阻塞容器重建完成流程
 
+## 2026-03-17（v3.1.50）
+
+- `[v3.1.50]` 扫描资源预定义档位增强：配置管理新增 `2C2G3M / 4C4G5M / 8C16G10M` 三档一键预设，统一覆盖 `Nuclei`（`timeout/rate-limit/concurrency/bulk-size`）、域名爆破并发、`Web/Celery` 并发、端口扫描参数与 `URLFinder` 探测并发；后端 `scan_config` 接口同步返回档位定义与命中状态，降低低配主机扫描时 CPU/带宽被打满导致系统不可用的风险
+
 ## 2026-03-14（v3.1.0 ~ v3.1.23）
 
 - `[v3.1.0]` 发布 `3.1.0` 版本：在 `v3.0` 系列稳定性与可用性改进基础上进入新小版本，后续功能迭代以 `v3.1.x` 持续演进
