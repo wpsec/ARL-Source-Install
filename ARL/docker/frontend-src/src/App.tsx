@@ -2180,20 +2180,46 @@ function getValueByPath(source: any, path: string): any {
   return cursor;
 }
 
-function getTaskStatusLabel(rawStatus: any): string {
-  const normalized = String(rawStatus ?? '').toLowerCase();
+const TASK_RUNNING_STAGE_LABELS: Record<string, string> = {
+  domain_brute: '域名爆破',
+  alt_dns: '字典生成',
+  port_scan: '端口扫描',
+  ssl_cert: 'SSL证书',
+  npoc_service_detection: '服务识别',
+  search_engines: '搜索引擎',
+  findvhost: 'Host碰撞',
+  fetch_site: '站点探测',
+  site_spider: '站点爬虫',
+  site_identify: '站点识别',
+  site_capture: '站点截图',
+  file_leak: '文件泄露',
+  poc_run: 'PoC扫描',
+  nuclei_scan: 'Nuclei扫描',
+  afrog_scan: 'afrog扫描',
+  web_info_hunter: 'WIH扫描',
+  nuclei_scan_retry: 'Nuclei补跑',
+};
+
+function getTaskStatusLabel(rawStatus: any, options: { showRunningStage?: boolean } = {}): string {
+  const rawText = String(rawStatus ?? '').trim();
+  const normalized = rawText.toLowerCase();
+  const showRunningStage = Boolean(options.showRunningStage);
   if (!normalized) return '未知';
   if (normalized === 'waiting') return '等待中';
   if (normalized === 'running') return '运行中';
   if (normalized === 'done') return '已完成';
   if (normalized === 'stop') return '已停止';
   if (normalized === 'error') return '异常';
-  if (/^\w+\s+\d+\/\d+$/i.test(normalized)) return normalized;
+  if (/^\w+\s+\d+\/\d+$/i.test(normalized)) return rawText;
   if (normalized.includes('run') || normalized.includes('wait') || normalized.includes('queue') || normalized.includes('start')) return '运行中';
   if (normalized.includes('done') || normalized.includes('finish') || normalized.includes('success')) return '已完成';
   if (normalized.includes('stop') || normalized.includes('cancel')) return '已停止';
   if (normalized.includes('error') || normalized.includes('fail')) return '异常';
-  // 任务执行阶段状态（如 domain_brute、site_spider）统一归类为“运行中”。
+  if (showRunningStage) {
+    const stageLabel = TASK_RUNNING_STAGE_LABELS[normalized] || rawText.replace(/_/g, ' ');
+    if (stageLabel) return `运行中（${stageLabel}）`;
+  }
+  // 保持筛选兼容：未知阶段状态仍归类为“运行中”。
   return '运行中';
 }
 
@@ -2528,7 +2554,7 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
       return formatTokenListText(value);
     }
     if (column === 'status') {
-      return getTaskStatusLabel(value);
+      return getTaskStatusLabel(value, { showRunningStage: true });
     }
     if (column === 'type') {
       return getTaskTypeLabel(value);
