@@ -47,6 +47,17 @@ from app.helpers.message_notify import push_task_finish_notify
 logger = utils.get_logger()
 
 
+def _normalize_domain_target(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    if "{fuzz}" in text:
+        return utils.normalize_fuzz_domain(text) or text.lower().rstrip(".")
+
+    return utils.normalize_domain(text) or text.lower().rstrip(".")
+
+
 class DomainBrute(object):
     """
     域名爆破类
@@ -80,8 +91,8 @@ class DomainBrute(object):
         """
         if wildcard_domain_ip is None:
             wildcard_domain_ip = []
-        self.base_domain = base_domain
-        self.base_domain_scope = "." + base_domain.strip(".")
+        self.base_domain = _normalize_domain_target(base_domain)
+        self.base_domain_scope = "." + self.base_domain.strip(".")
         self.dicts = utils.load_file(word_file)
 
         self.brute_out = []  # massdns原始输出
@@ -118,7 +129,9 @@ class DomainBrute(object):
         
         # 第一轮：收集所有有效域名
         for x in self.brute_out:
-            current_domain = x["domain"].lower()
+            current_domain = utils.normalize_domain(x.get("domain", ""))
+            if not current_domain:
+                continue
             
             # 验证域名格式
             if not utils.domain_parsed(current_domain):
@@ -140,7 +153,9 @@ class DomainBrute(object):
             # 处理CNAME记录
             if x["type"] == 'CNAME':
                 self.domain_cnames.append(current_domain)
-                current_record_domain = x['record']
+                current_record_domain = utils.normalize_domain(x.get("record", ""))
+                if not current_record_domain:
+                    continue
 
                 if not utils.domain_parsed(current_record_domain):
                     continue
@@ -406,7 +421,7 @@ class FindSite(object):
 class AltDNS(object):
     def __init__(self, domain_info_list, base_domain, wildcard_domain_ip=None):
         self.domain_info_list = domain_info_list
-        self.base_domain = base_domain
+        self.base_domain = utils.normalize_domain(base_domain) or str(base_domain or "").strip().lower().rstrip(".")
         self.domains = []
         self.subdomains = []
         inner_dicts = "test adm admin api app beta demo dev front int internal intra ops pre pro prod qa sit staff stage test uat"
@@ -523,7 +538,7 @@ class DomainTask(CommonTask):
     def __init__(self, base_domain=None, task_id=None, options=None):
         super().__init__(task_id=task_id)
 
-        self.base_domain = base_domain
+        self.base_domain = _normalize_domain_target(base_domain)
         self.task_id = task_id
         self.options = options
 
@@ -828,7 +843,7 @@ class DomainTask(CommonTask):
             if not info.record_list:
                 continue
 
-            domain = str(getattr(info, "domain", "") or "").strip().lower().rstrip(".")
+            domain = utils.normalize_domain(getattr(info, "domain", ""))
             if not domain:
                 continue
 
@@ -893,7 +908,10 @@ class DomainTask(CommonTask):
             if isinstance(item, dict):
                 domain = item["domain"]
 
-            domain = domain.lower().strip()
+            domain = utils.normalize_domain(domain)
+            if not domain:
+                continue
+
             if domain in domains_set:
                 continue
             domains_set.add(domain)
@@ -1154,8 +1172,8 @@ class DomainTask(CommonTask):
             if scan_mode != "sni":
                 continue
 
-            sni_domain = str(scan_meta.get("sni_domain", "")).strip().lower()
-            legacy_server_name = str(scan_meta.get("server_name", "")).strip().lower()
+            sni_domain = utils.normalize_domain(scan_meta.get("sni_domain", ""))
+            legacy_server_name = utils.normalize_domain(scan_meta.get("server_name", ""))
             if not sni_domain:
                 sni_domain = legacy_server_name
             if not sni_domain:
@@ -1195,9 +1213,9 @@ class DomainTask(CommonTask):
             if scan_mode == "default" and endpoint in sni_success_endpoints:
                 continue
 
-            sni_domain = str(scan_meta.get("sni_domain", "")).strip().lower()
+            sni_domain = utils.normalize_domain(scan_meta.get("sni_domain", ""))
             # 兼容旧结构：历史扫描元数据只有 server_name 字段。
-            legacy_server_name = str(scan_meta.get("server_name", "")).strip().lower()
+            legacy_server_name = utils.normalize_domain(scan_meta.get("server_name", ""))
             if not sni_domain and scan_mode == "sni":
                 sni_domain = legacy_server_name
 
@@ -1265,7 +1283,7 @@ class DomainTask(CommonTask):
             utils.conn_db('cert').update_one(query, {"$setOnInsert": item}, upsert=True)
 
     def build_single_domain_info(self, domain):
-        domain = str(domain or "").strip().lower().rstrip(".")
+        domain = utils.normalize_domain(domain)
         if not domain:
             return
 
@@ -1471,22 +1489,7 @@ class DomainTask(CommonTask):
         """
         标准化证书中提取到的域名（支持去掉通配符、协议和端口）
         """
-        domain = str(value or "").strip().lower().rstrip(".")
-        if not domain:
-            return ""
-
-        if "://" in domain:
-            try:
-                domain = (urlparse(domain).hostname or "").strip().lower().rstrip(".")
-            except Exception:
-                domain = ""
-
-        if domain.startswith("*."):
-            domain = domain[2:]
-
-        if ":" in domain and domain.count(":") == 1:
-            domain = domain.split(":")[0].strip()
-
+        domain = utils.normalize_domain(value)
         if not domain:
             return ""
 
@@ -2016,7 +2019,9 @@ class DomainTask(CommonTask):
         for url in search_engines_urls:
             parse = urlparse(url)
             netloc = parse.netloc
-            netloc_domain = netloc.split(":")[0]
+            netloc_domain = utils.normalize_domain(netloc.split(":")[0])
+            if not netloc_domain:
+                continue
 
             # 只是过滤有效URL
             if netloc_domain.endswith("." + self.base_domain) or \

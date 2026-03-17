@@ -23,7 +23,15 @@ import dns.resolver
 from tld import get_tld
 from .conn import http_req, conn_db
 from .http import get_title, get_headers
-from .domain import check_domain_black, is_valid_domain, is_in_scope, is_in_scopes, is_valid_fuzz_domain
+from .domain import (
+    check_domain_black,
+    is_valid_domain,
+    is_in_scope,
+    is_in_scopes,
+    is_valid_fuzz_domain,
+    normalize_domain,
+    normalize_fuzz_domain,
+)
 from .ip import is_vaild_ip_target, not_in_black_ips, get_ip_asn, get_ip_city, get_ip_type
 from .arl import arl_domain, get_asset_domain_by_id
 from .time import curr_date, time2date, curr_date_obj
@@ -360,7 +368,10 @@ def _normalize_ip_list(ip_list):
 
 
 def get_ip(domain, log_flag=True):
-    domain = domain.strip()
+    domain = normalize_domain(domain) or str(domain or "").strip().lower().rstrip(".")
+    if not domain:
+        return []
+
     logger = get_logger()
     ips = []
     try:
@@ -385,7 +396,10 @@ def get_ip_system(domain, log_flag=True):
     """
     使用系统默认 DNS 解析器获取 A 记录
     """
-    domain = domain.strip()
+    domain = normalize_domain(domain) or str(domain or "").strip().lower().rstrip(".")
+    if not domain:
+        return []
+
     logger = get_logger()
     ips = []
     try:
@@ -413,7 +427,10 @@ def get_ip_socket(domain, log_flag=True):
     该链路会受 /etc/hosts 与系统 NameService 配置影响，可用于识别
     “DNS 查询结果与实际连接目标不一致”的解析漂移。
     """
-    domain = domain.strip()
+    domain = normalize_domain(domain) or str(domain or "").strip().lower().rstrip(".")
+    if not domain:
+        return []
+
     logger = get_logger()
     ips = []
     try:
@@ -449,6 +466,10 @@ def check_dns_policy_for_host(hostname):
     from app.config import Config
 
     host = str(hostname or "").strip().lower().rstrip(".")
+    normalized_host = normalize_domain(host)
+    if normalized_host:
+        host = normalized_host
+
     detail = {
         "host": host,
         "reason": "",
@@ -573,7 +594,7 @@ def check_dns_policy_for_url(url, cache_map=None):
     except Exception:
         host = ""
 
-    cache_key = str(host).strip().lower().rstrip(".")
+    cache_key = normalize_domain(host) or str(host).strip().lower().rstrip(".")
     if isinstance(cache_map, dict) and cache_key:
         if cache_key in cache_map:
             return cache_map[cache_key]
@@ -586,6 +607,10 @@ def check_dns_policy_for_url(url, cache_map=None):
 
 
 def get_cname(domain, log_flag=True):
+    domain = normalize_domain(domain) or str(domain or "").strip().lower().rstrip(".")
+    if not domain:
+        return []
+
     logger = get_logger()
     cnames = []
     try:
@@ -603,7 +628,10 @@ def get_cname(domain, log_flag=True):
 
 
 def domain_parsed(domain, fail_silently=True):
-    domain = domain.strip()
+    domain = normalize_domain(domain)
+    if not domain:
+        return
+
     try:
         res = get_tld(domain, fix_protocol=True,  as_object=True)
         item = {

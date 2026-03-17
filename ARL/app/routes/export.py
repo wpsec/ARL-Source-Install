@@ -585,11 +585,7 @@ def _normalize_cert_domain(value):
     """
     归一化证书相关域名文本，非法值返回空字符串。
     """
-    domain = sanitize_excel_value(value).strip().lower().strip(".")
-    if not domain:
-        return ""
-    if domain.startswith("*."):
-        domain = domain[2:]
+    domain = utils.normalize_domain(sanitize_excel_value(value))
     if not utils.is_valid_domain(domain):
         return ""
     return domain

@@ -42,7 +42,7 @@ class ResolverDomain(BaseThread):
         if not curr_domain:
             return
 
-        curr_domain = str(curr_domain or "").strip().lower().rstrip(".")
+        curr_domain = utils.normalize_domain(curr_domain)
         if not curr_domain:
             return
 

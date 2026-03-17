@@ -113,6 +113,7 @@ def get_ip_domain_list(target):
     domain_list = set()
     
     for item in target_lists:
+        item = str(item or "").strip()
         if not item:
             continue
 
@@ -121,23 +122,30 @@ def get_ip_domain_list(target):
             if not utils.not_in_black_ips(item):
                 raise Exception("{} 在黑名单IP中".format(item))
             ip_list.add(item)
+            continue
+
+        normalized_domain = utils.normalize_domain(item)
+        normalized_fuzz_domain = utils.normalize_fuzz_domain(item) if "{fuzz}" in item else ""
 
         # 禁止域名检查
-        elif utils.domain.is_forbidden_domain(item):
+        check_item = normalized_domain or normalized_fuzz_domain or item
+        if utils.domain.is_forbidden_domain(check_item):
             raise Exception("{} 包含在禁止域名内".format(item))
 
         # 普通域名
-        elif utils.is_valid_domain(item):
-            if utils.check_domain_black(item):
+        if normalized_domain and utils.is_valid_domain(normalized_domain):
+            if utils.check_domain_black(normalized_domain):
                 raise Exception("{} 包含在系统黑名单中".format(item))
 
-            domain_list.add(item)
+            domain_list.add(normalized_domain)
+            continue
 
         # 泛域名（*.example.com）
-        elif utils.is_valid_fuzz_domain(item):
-            domain_list.add(item)
-        else:
-            raise Exception("{} 无效的目标".format(item))
+        if normalized_fuzz_domain and utils.is_valid_fuzz_domain(normalized_fuzz_domain):
+            domain_list.add(normalized_fuzz_domain)
+            continue
+
+        raise Exception("{} 无效的目标".format(item))
 
     return ip_list, domain_list
 

@@ -621,7 +621,8 @@ class Target2Scope(ARLResource):
         """
         args = self.parser.parse_args()
         target = args.pop("target")
-        
+        target = utils.normalize_domain(target) or str(target or "").strip().lower().rstrip(".")
+
         # 验证域名格式
         if not utils.is_valid_domain(target):
             return utils.build_ret(ErrorMsg.DomainInvalid, {"target": target})

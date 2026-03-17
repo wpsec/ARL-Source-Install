@@ -58,17 +58,20 @@ class DNSQueryBase(object):
         """
         subdomains = []
         # 旧链路使用 target，新链路使用 scope_domain（两者二选一）
-        base_domain = target or scope_domain
+        target_domain = utils.normalize_domain(target) if target else ""
+        scope_domain = utils.normalize_domain(scope_domain) if scope_domain else ""
+        base_domain = target_domain or scope_domain
         for domain in domains:
             if not isinstance(domain, str):
                 continue
 
-            domain = domain.strip("*. \t\r\n").lower().rstrip(".")
+            domain = str(domain or "").strip(" \t\r\n")
+            domain = utils.normalize_domain(domain)
             if not domain:
                 continue
 
-            if target:
-                if not domain.endswith(".{}".format(target)):
+            if target_domain:
+                if not domain.endswith(".{}".format(target_domain)):
                     continue
 
             if scope_domain:

@@ -43,12 +43,8 @@ def _normalize_domains(domains):
     result = []
     seen = set()
     for raw_domain in domains:
-        domain = str(raw_domain or "").strip().lower().strip(".")
-        if not domain:
-            continue
-        if domain.startswith("*."):
-            domain = domain[2:]
-        if not utils.is_valid_domain(domain):
+        domain = utils.normalize_domain(raw_domain)
+        if not domain or not utils.is_valid_domain(domain):
             continue
         if domain in seen:
             continue
@@ -69,9 +65,7 @@ def _pick_server_name(domains, base_domain=""):
     if not domains:
         return ""
 
-    base = str(base_domain or "").strip().lower().strip(".")
-    if base.startswith("*."):
-        base = base[2:]
+    base = utils.normalize_domain(base_domain)
 
     if base:
         for domain in domains:
@@ -92,27 +86,33 @@ def _merge_target_domains(target_info, domains, base_domain=""):
     old_domains = target_info.get("domains", [])
     merged = _normalize_domains(list(old_domains) + list(domains or []))
     target_info["domains"] = merged
-    target_info["base_domain"] = str(base_domain or "").strip().lower().strip(".")
+    target_info["base_domain"] = utils.normalize_domain(base_domain)
     target_info["server_name"] = _pick_server_name(merged, base_domain=base_domain)
     return target_info
 
 
 def _build_target_info(endpoint, connect_host, port, domains=None, base_domain=""):
+    connect_host = utils.normalize_domain(connect_host) or str(connect_host or "").strip()
+    try:
+        port = int(port)
+    except Exception:
+        port = 0
+
     domains = _normalize_domains(domains or [])
     target_info = {
-        "endpoint": str(endpoint or "").strip(),
-        "connect_host": str(connect_host or "").strip(),
-        "port": int(port),
+        "endpoint": "{}:{}".format(connect_host, port),
+        "connect_host": connect_host,
+        "port": port,
         "domains": domains,
-        "base_domain": str(base_domain or "").strip().lower().strip("."),
+        "base_domain": utils.normalize_domain(base_domain),
         "server_name": _pick_server_name(domains, base_domain=base_domain),
     }
 
     connect_host_text = target_info["connect_host"]
     if not target_info["server_name"] and utils.is_valid_domain(connect_host_text):
-        target_info["server_name"] = connect_host_text.lower()
-        if connect_host_text.lower() not in target_info["domains"]:
-            target_info["domains"].append(connect_host_text.lower())
+        target_info["server_name"] = connect_host_text
+        if connect_host_text not in target_info["domains"]:
+            target_info["domains"].append(connect_host_text)
 
     return target_info
 
@@ -128,7 +128,7 @@ def _sort_sni_domains(domains, base_domain=""):
     if not domain_list:
         return []
 
-    base = str(base_domain or "").strip().lower().strip(".")
+    base = utils.normalize_domain(base_domain)
 
     def _score(domain):
         if base and domain == base:
@@ -149,12 +149,13 @@ def _normalize_cert_domain_pattern(value):
         return ""
 
     if text.startswith("*."):
-        base = text[2:].strip()
+        base = utils.normalize_domain(text[2:])
         if not base or not utils.is_valid_domain(base):
             return ""
         return "*.{}".format(base)
 
-    if not utils.is_valid_domain(text):
+    text = utils.normalize_domain(text)
+    if not text or not utils.is_valid_domain(text):
         return ""
 
     return text
@@ -204,7 +205,7 @@ def _match_cert_pattern(pattern, domain):
     判断证书模式是否匹配目标域名。
     """
     pattern = _normalize_cert_domain_pattern(pattern)
-    domain = str(domain or "").strip().lower().rstrip(".")
+    domain = utils.normalize_domain(domain)
     if not pattern or not domain:
         return False
 
@@ -255,7 +256,7 @@ def cert_matches_domain(cert_obj, domain):
     """
     判断证书是否命中指定域名。
     """
-    domain_text = str(domain or "").strip().lower().rstrip(".")
+    domain_text = utils.normalize_domain(domain)
     if not domain_text:
         return False
     return domain_text in match_cert_domains(cert_obj, [domain_text])
@@ -269,8 +270,9 @@ def _build_cert_scan_targets(target_info, max_sni_per_endpoint=3):
     """
     endpoint = str(target_info.get("endpoint", "")).strip()
     connect_host = str(target_info.get("connect_host", "")).strip()
+    connect_host = utils.normalize_domain(connect_host) or connect_host
     domains = _normalize_domains(target_info.get("domains", []))
-    base_domain = str(target_info.get("base_domain", "")).strip().lower().strip(".")
+    base_domain = utils.normalize_domain(target_info.get("base_domain", ""))
     port = target_info.get("port", 0)
     try:
         port = int(port)
@@ -343,11 +345,12 @@ class FetchCert(BaseThread):
 
         endpoint = str(target_info.get("endpoint", "")).strip()
         connect_host = str(target_info.get("connect_host", "")).strip()
+        connect_host = utils.normalize_domain(connect_host) or connect_host
         scan_mode = str(target_info.get("scan_mode", "") or "").strip().lower() or "default"
-        sni_domain = str(target_info.get("sni_domain", "") or "").strip().lower()
+        sni_domain = utils.normalize_domain(target_info.get("sni_domain", ""))
         if not sni_domain and scan_mode == "sni":
             # 兼容旧结构：未显式传入 sni_domain 时回退到 server_name 字段。
-            sni_domain = str(target_info.get("server_name", "") or "").strip().lower()
+            sni_domain = utils.normalize_domain(target_info.get("server_name", ""))
         domains = _normalize_domains(target_info.get("domains", []))
         observe_id = str(target_info.get("observe_id", "")).strip() or endpoint
 

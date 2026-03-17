@@ -180,19 +180,45 @@ class AddARLScheduler(ARLResource):
         if not scope_type:
             scope_type = AssetScopeType.DOMAIN
 
+        scope_array = scope_data.get("scope_array", [])
+        monitor_domain_set = set(monitor_domain)
+        if scope_type == AssetScopeType.DOMAIN:
+            scope_array = [
+                utils.normalize_domain(item) or str(item or "").strip().lower().rstrip(".")
+                for item in scope_array
+                if str(item or "").strip()
+            ]
+            monitor_domain_set = {
+                utils.normalize_domain(item) or str(item or "").strip().lower().rstrip(".")
+                for item in monitor_domain
+                if str(item or "").strip()
+            }
+
         # 解析并验证目标列表
-        domains = domain.split(",")
+        domains = [x.strip() for x in str(domain or "").split(",") if x.strip()]
+        if not domains:
+            return utils.build_ret(ErrorMsg.DomainInvalid, {"domain": domain, "scope_id": scope_id})
+
+        normalized_domains = []
         for x in domains:
-            curr_domain = x.strip()
+            curr_domain = x
+            if scope_type == AssetScopeType.DOMAIN:
+                curr_domain = utils.normalize_domain(curr_domain)
+                if not curr_domain or not utils.is_valid_domain(curr_domain):
+                    return utils.build_ret(ErrorMsg.DomainInvalid, {"domain": x, "scope_id": scope_id})
+
             # 验证目标是否在资产组范围内
-            if curr_domain not in scope_data["scope_array"]:
+            if curr_domain not in scope_array:
                 return utils.build_ret(ErrorMsg.DomainNotFoundViaScope,
                                        {"domain": curr_domain, "scope_id": scope_id})
 
             # 验证是否已有监控任务
-            if curr_domain in monitor_domain:
+            if curr_domain in monitor_domain_set:
                 return utils.build_ret(ErrorMsg.DomainViaJob,
                                        {"domain": curr_domain, "scope_id": scope_id})
+            normalized_domains.append(curr_domain)
+
+        domains = normalized_domains
 
         ret_data = []
         

@@ -129,7 +129,14 @@ class ARLAssetScope(ARLResource):
         # 处理黑名单
         black_scope_array = []
         if black_scope:
-            black_scope_array = re.split(r",|\s", black_scope)
+            black_scope_array = [x.strip() for x in re.split(r",|\s", black_scope) if x.strip()]
+            if scope_type == AssetScopeType.DOMAIN:
+                normalized_black_scope = []
+                for raw_item in black_scope_array:
+                    item = utils.normalize_domain(raw_item)
+                    if item:
+                        normalized_black_scope.append(item)
+                black_scope_array = normalized_black_scope
 
         # 分割资产范围（支持逗号和空格）
         scope_array = re.split(r",|\s", scope)
@@ -139,12 +146,14 @@ class ARLAssetScope(ARLResource):
         
         # 验证每个资产范围
         for x in scope_array:
+            x = str(x or "").strip()
             if scope_type == AssetScopeType.DOMAIN:
+                normalized_scope = utils.normalize_domain(x)
                 # 验证域名格式
-                if not utils.is_valid_domain(x):
+                if not normalized_scope or not utils.is_valid_domain(normalized_scope):
                     return utils.build_ret(ErrorMsg.DomainInvalid, {"scope": x})
 
-                new_scope_array.append(x)
+                new_scope_array.append(normalized_scope)
 
             if scope_type == AssetScopeType.IP:
                 # 转换IP范围格式（支持CIDR、IP段等）
@@ -213,13 +222,17 @@ class DeleteARLAssetScope(ARLResource):
         - 用于精细化管理资产范围
         """
         args = self.parser.parse_args()
-        scope = str(args.pop('scope', "")).lower()
+        scope = str(args.pop('scope', "")).strip().lower()
         scope_id = str(args.pop('scope_id', "")).lower()
 
         # 查询资产组数据
         scope_data = self.get_scope_data(scope_id)
         if not scope_data:
             return utils.build_ret(ErrorMsg.NotFoundScopeID, {"scope_id": scope_id})
+
+        scope_type = scope_data.get("scope_type")
+        if scope_type == AssetScopeType.DOMAIN:
+            scope = utils.normalize_domain(scope) or scope
 
         query = {'_id': ObjectId(scope_id)}
         
@@ -335,7 +348,7 @@ class AddARLAssetScope(ARLResource):
         - 自动去重，不会添加重复的资产范围
         """
         args = self.parse_args(add_scope_fields)
-        scope = str(args.pop('scope', "")).lower()
+        scope = str(args.pop('scope', "")).strip()
 
         scope_id = args.pop('scope_id', "")
 
@@ -359,12 +372,15 @@ class AddARLAssetScope(ARLResource):
 
         # 验证并添加每个资产范围
         for x in scope_array:
+            x = str(x or "").strip()
             new_scope = x
-            
+
             # 域名类型验证
             if scope_type == AssetScopeType.DOMAIN:
-                if not utils.is_valid_domain(x):
+                normalized_scope = utils.normalize_domain(x)
+                if not normalized_scope or not utils.is_valid_domain(normalized_scope):
                     return utils.build_ret(ErrorMsg.DomainInvalid, {"scope": x})
+                new_scope = normalized_scope
 
             # IP类型验证和转换
             if scope_type == AssetScopeType.IP:

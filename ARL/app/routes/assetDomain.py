@@ -156,9 +156,10 @@ class ARLAssetDomain(ARLResource):
         # 验证域名是否在资产组范围内，并检查是否已存在
         domain_in_scope_list = []
         add_domain_list = []
+        scope_array = scope_data.get("scope_array", [])
         for domain in domain_list:
-            # 检查域名的根域名是否在资产组范围内
-            if utils.get_fld(domain) not in scope_data["scope"]:
+            # 检查域名是否命中资产组范围
+            if not utils.is_in_scopes(domain, scope_array):
                 return utils.build_ret(ErrorMsg.DomainNotFoundViaScope, {"domain": domain})
 
             # 检查域名是否已存在
@@ -286,4 +287,3 @@ class ARLAssetDomainExport(ARLResource):
         response = self.send_export_file(args=args, _type="asset_domain")
 
         return response
-

@@ -20,7 +20,7 @@ class BuildDomainInfo(BaseThread):
         if hasattr(target, "domain"):
             domain = target.domain
 
-        domain = str(domain or "").strip().lower().rstrip(".")
+        domain = utils.normalize_domain(domain)
         if not domain:
             return
 

@@ -272,13 +272,7 @@ def _normalize_alert_domain(value):
     """
     规范化告警域名候选，非法域名返回空字符串。
     """
-    domain = str(value or "").strip().lower().rstrip(".")
-    if not domain:
-        return ""
-    if domain.startswith("*."):
-        domain = domain[2:]
-    if ":" in domain and domain.count(":") == 1:
-        domain = domain.split(":", 1)[0].strip()
+    domain = utils.normalize_domain(value)
     if not domain:
         return ""
     if not utils.is_valid_domain(domain):
@@ -707,7 +701,7 @@ def _build_ssl_notify_state_key(warn_item):
     """
     生成跨任务通知去重键：域名 + 证书身份 + 到期时间。
     """
-    domain = str(warn_item.get("domain", "") or "-").strip().lower()
+    domain = utils.normalize_domain(warn_item.get("domain", "")) or "-"
     cert_identity = str(warn_item.get("cert_identity_key", "") or "").strip().lower()
     if not cert_identity:
         # 兜底使用端点，避免无指纹证书导致状态键缺失。
@@ -745,7 +739,7 @@ def _save_ssl_notify_state(state_key, warn_item, level, task_id):
 
     update_doc = {
         "state_key": state_key,
-        "domain": str(warn_item.get("domain", "") or "-").strip().lower(),
+        "domain": utils.normalize_domain(warn_item.get("domain", "")) or "-",
         "cert_identity_key": str(warn_item.get("cert_identity_key", "") or "").strip().lower(),
         "end_time": str(warn_item.get("end_time", "") or "").strip(),
         "remaining_days": int(warn_item.get("remaining_days", 0) or 0),
