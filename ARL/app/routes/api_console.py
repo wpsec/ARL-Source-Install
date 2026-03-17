@@ -243,7 +243,7 @@ SCAN_PROFILE_ITEMS = [
     {
         'id': '2c2g3m',
         'label': '2核2G3M 保守',
-        'description': '适用于低配云主机，优先保证系统可访问性，扫描速度较慢，当能避免CPU、带宽占用过高',
+        'description': '适用于低配云主机，优先保证系统可访问性，扫描速度较慢，但能避免CPU、带宽占用过高',
         'cpu_cores': 2,
         'memory_gb': 2,
         'bandwidth_mbps': 3,

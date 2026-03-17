@@ -37,7 +37,6 @@ import {
   User,
   Wrench,
   X,
-  Zap,
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import BrandLogo from './components/BrandLogo';
@@ -1314,6 +1313,7 @@ const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'url',
     columns: ['url', 'title', 'status_code', 'content_length'],
+    sortableColumns: ['content_length'],
     columnLabels: {
       url: 'URL',
       title: '标题',
@@ -3028,7 +3028,6 @@ function DashboardView({
   const [networkTrend, setNetworkTrend] = useState<any[]>([]);
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [isLogPaused, setIsLogPaused] = useState(false);
-  const [engineInfo, setEngineInfo] = useState<any>({});
 
   const resolveTaskStatus = (rawStatus: any): { text: string; type: 'success' | 'error' | 'info' } => {
     const normalized = String(rawStatus ?? '').toLowerCase();
@@ -3119,7 +3118,7 @@ function DashboardView({
       return;
     }
     try {
-      const response = await requestApi(token, '/console/recent_logs', { method: 'GET', query: { limit: 24 } });
+      const response = await requestApi(token, '/console/recent_logs', { method: 'GET', query: { limit: 120 } });
       const logs = Array.isArray(response?.data?.recent_logs) ? response.data.recent_logs : [];
       if (logs.length > 0) {
         setRecentLogs(logs);
@@ -3176,7 +3175,6 @@ function DashboardView({
       if (!isLogPaused) {
         setRecentLogs(dashboardRecentLogs);
       }
-      setEngineInfo(dashboardData.engine || {});
       setLastUpdatedAt(dashboardData.last_updated ? normalizeValue(dashboardData.last_updated) : new Date().toLocaleString('zh-CN', { hour12: false }));
 
       const recentTaskResponse = await requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } });
@@ -3367,7 +3365,7 @@ function DashboardView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-brand-secondary/10 rounded-xl">
@@ -3385,41 +3383,6 @@ function DashboardView({
                   <Area type="monotone" dataKey="in" stroke="var(--brand-accent)" fill="var(--brand-accent)" fillOpacity={0.1} strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-brand-warning/10 rounded-xl">
-              <Zap className="w-5 h-5 text-brand-warning" />
-            </div>
-            <h3 className="text-xl font-black tracking-tight">ARL 引擎</h3>
-          </div>
-          <div className="flex-1 flex flex-col justify-center items-center">
-            <div className="relative mb-6">
-              <div className="w-20 h-20 rounded-full border-4 border-brand-warning/20" />
-              <div className="absolute inset-0 w-20 h-20 rounded-full border-4 border-brand-warning border-t-transparent animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Zap className="w-8 h-8 text-brand-warning fill-brand-warning/20" />
-              </div>
-            </div>
-            <div className="text-center space-y-1 mb-6">
-              <p className="text-sm font-black">{normalizeValue(engineInfo?.version || 'ARL Engine')}</p>
-              <p className="text-[10px] text-brand-text-muted font-bold uppercase tracking-widest">
-                部署模式: {normalizeValue(engineInfo?.deploy_mode_text || '单机部署')}
-              </p>
-            </div>
-            <p className="text-[11px] text-brand-text-muted mb-3">运行中任务: {normalizeValue(engineInfo?.running_tasks ?? stats.running_task ?? 0)}</p>
-            <div className="w-full grid grid-cols-2 gap-2">
-              <div className="p-3 bg-brand-bg/50 rounded-2xl border border-brand-border text-center">
-                <p className="text-[10px] font-black text-brand-text-muted uppercase mb-1">待执行任务</p>
-                <p className="text-lg font-black">{normalizeValue(engineInfo?.pending_tasks ?? engineInfo?.queue_pending ?? 0)}</p>
-              </div>
-              <div className="p-3 bg-brand-bg/50 rounded-2xl border border-brand-border text-center">
-                <p className="text-[10px] font-black text-brand-text-muted uppercase mb-1">资源评分(估算)</p>
-                <p className="text-lg font-black text-emerald-400">{formatPercent(engineInfo?.resource_score ?? engineInfo?.health_score ?? 100)}</p>
-              </div>
             </div>
           </div>
         </div>
@@ -3447,7 +3410,7 @@ function DashboardView({
               </button>
             </div>
           </div>
-          <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[10px] overflow-y-auto max-h-[320px]">
+          <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[11px] overflow-y-auto max-h-[520px] min-h-[460px]">
             {isLogPaused ? (
               <div className="mb-2 text-brand-warning border border-brand-warning/30 bg-brand-warning/10 rounded-lg px-2 py-1">扫描日志已暂停自动刷新</div>
             ) : null}

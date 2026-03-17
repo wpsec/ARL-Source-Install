@@ -41,6 +41,8 @@ services:
       - ./config-docker.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
+      # 共享 worker 扫描日志，供仪表盘“实时扫描日志”读取
+      - ./logs:/code/logs:ro
       # 自定义域名字典（包含 uploaded 子目录），持久化到宿主机
       - ./dicts/domain:/code/app/dicts/custom/domain
       # 自定义敏感目录字典，供 FILE_LEAK_DICT 指向使用
@@ -71,6 +73,8 @@ services:
       - ./config-docker.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
+      # 将 worker 日志落到宿主机，供 web 仪表盘读取
+      - ./logs:/code/logs
       - ./dicts/domain:/code/app/dicts/custom/domain
       - ./dicts/file_leak:/code/app/dicts/custom/file_leak
       - ../../tools:/code/tools:ro

@@ -8,6 +8,8 @@
 """
 from collections import deque
 from datetime import datetime, timedelta
+import os
+import re
 import threading
 import time
 
@@ -31,8 +33,19 @@ LAST_NET_IO_SAMPLE = {
     "bytes_recv": 0,
 }
 LOG_LINE_MAX_LENGTH = 320
-DEFAULT_RECENT_LOG_LIMIT = 24
-MAX_RECENT_LOG_LIMIT = 100
+DEFAULT_RECENT_LOG_LIMIT = 80
+MAX_RECENT_LOG_LIMIT = 300
+
+# 仪表盘扫描日志默认读取 worker 日志文件，可通过环境变量覆盖。
+RECENT_SCAN_LOG_PATH = str(
+    os.environ.get("ARL_DASHBOARD_SCAN_LOG_PATH", "/code/logs/arl_worker.log") or ""
+).strip()
+RECENT_SCAN_LOG_PATH_FALLBACK = "/code/arl_worker.log"
+
+WORKER_LOG_TIME_RE = re.compile(
+    r"^\[?(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:[.,]\d{1,6})?(?: [+\-]\d{4})?)\]?"
+)
+WORKER_LOG_LEVEL_RE = re.compile(r"\b(INFO|WARNING|WARN|ERROR|DEBUG|CRITICAL|CRIT)\b", re.IGNORECASE)
 
 TASK_STATUS_TEXT_MAP = {
     "waiting": "等待中",
@@ -435,10 +448,93 @@ def _build_recent_task_summary_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
     } for item in records[:safe_limit]]
 
 
+def _tail_text_file_lines(file_path, max_lines):
+    """
+    读取文本文件末尾若干行（忽略空行）。
+    """
+    safe_lines = max(1, int(max_lines or 1))
+    if not file_path or not os.path.isfile(file_path):
+        return []
+
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as file_obj:
+            return [line.rstrip("\r\n") for line in deque(file_obj, maxlen=safe_lines) if line.strip()]
+    except Exception as e:
+        logger.debug("tail worker log failed(path=%s): %s", file_path, e)
+        return []
+
+
+def _parse_worker_log_line(line):
+    """
+    解析 worker 日志行，提取时间和级别，统一为仪表盘日志结构。
+    """
+    raw_line = str(line or "").strip()
+    if not raw_line:
+        return None
+
+    level = "INFO"
+    level_match = WORKER_LOG_LEVEL_RE.search(raw_line)
+    if level_match:
+        level_text = str(level_match.group(1) or "").upper()
+        if level_text == "WARNING":
+            level_text = "WARN"
+        if level_text == "CRITICAL":
+            level_text = "CRIT"
+        level = level_text or "INFO"
+
+    display_time = ""
+    time_match = WORKER_LOG_TIME_RE.search(raw_line)
+    if time_match:
+        time_text = str(time_match.group("time") or "").replace(",", ".").strip()
+        display_time, _ = _parse_time_value(time_text)
+
+    return {
+        "time": display_time,
+        "level": level,
+        "source": "WORKER",
+        "msg": _truncate_text(raw_line),
+    }
+
+
+def _build_recent_worker_file_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
+    """
+    从 arl_worker.log 构建最近扫描日志，优先展示最新日志。
+    """
+    safe_limit = max(1, min(int(limit or DEFAULT_RECENT_LOG_LIMIT), MAX_RECENT_LOG_LIMIT))
+
+    candidate_paths = []
+    if RECENT_SCAN_LOG_PATH:
+        candidate_paths.append(RECENT_SCAN_LOG_PATH)
+    if RECENT_SCAN_LOG_PATH_FALLBACK and RECENT_SCAN_LOG_PATH_FALLBACK not in candidate_paths:
+        candidate_paths.append(RECENT_SCAN_LOG_PATH_FALLBACK)
+
+    for file_path in candidate_paths:
+        lines = _tail_text_file_lines(file_path, safe_limit * 4)
+        if not lines:
+            continue
+
+        parsed_items = []
+        for line in reversed(lines):
+            parsed = _parse_worker_log_line(line)
+            if not parsed:
+                continue
+            parsed_items.append(parsed)
+            if len(parsed_items) >= safe_limit:
+                break
+
+        if parsed_items:
+            return parsed_items
+
+    return []
+
+
 def _build_recent_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
     """
-    构建实时扫描日志（仅任务扫描过程，不读取系统运行日志）。
+    构建实时扫描日志（优先读取 arl_worker.log，缺失时回退任务摘要）。
     """
+    worker_logs = _build_recent_worker_file_logs(limit=limit)
+    if worker_logs:
+        return worker_logs
     return _build_recent_task_summary_logs(limit=limit)
 
 
@@ -656,7 +752,7 @@ class ARLConsoleRecentLogs(ARLResource):
         """
         获取最近扫描日志
         Query:
-            - limit: 条数，默认 24，最大 100
+            - limit: 条数，默认 80，最大 300
         """
         limit = request.args.get("limit", DEFAULT_RECENT_LOG_LIMIT, type=int)
         logs = _build_recent_logs(limit=limit)

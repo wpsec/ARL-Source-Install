@@ -56,11 +56,13 @@ wait-for-it.sh -t 60 mongodb:27017
 wait-for-it.sh -t 60 rabbitmq:5672
 wait-for-it.sh -t 60 redis:6379
 mkdir -p /code/app/tmp
+LOG_FILE_PATH="${ARL_SCAN_LOG_FILE:-/code/logs/arl_worker.log}"
+mkdir -p "$(dirname "${LOG_FILE_PATH}")"
 
 GITHUB_CONCURRENCY="$(get_cfg_int CELERY_GITHUB_WORKER_CONCURRENCY 1)"
 TASK_CONCURRENCY="$(get_cfg_int CELERY_TASK_WORKER_CONCURRENCY 2)"
 
-echo "start celery github=${GITHUB_CONCURRENCY} task=${TASK_CONCURRENCY}"
+echo "start celery github=${GITHUB_CONCURRENCY} task=${TASK_CONCURRENCY} log=${LOG_FILE_PATH}"
 
 celery -A app.celerytask.celery worker \
   -l info \
@@ -68,7 +70,7 @@ celery -A app.celerytask.celery worker \
   -n arlgithub \
   -c "${GITHUB_CONCURRENCY}" \
   -O fair \
-  -f arl_worker.log &
+  -f "${LOG_FILE_PATH}" &
 
 exec celery -A app.celerytask.celery worker \
   -l info \
@@ -76,4 +78,4 @@ exec celery -A app.celerytask.celery worker \
   -n arltask \
   -c "${TASK_CONCURRENCY}" \
   -O fair \
-  -f arl_worker.log
+  -f "${LOG_FILE_PATH}"
