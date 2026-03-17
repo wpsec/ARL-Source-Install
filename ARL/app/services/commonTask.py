@@ -94,6 +94,21 @@ class WebSiteFetch(object):
     NUCLEI_TARGET_BUILD_RETRY_COUNT = 3
     NUCLEI_TARGET_BUILD_RETRY_SLEEP_SEC = 3
     RETRYABLE_MONGO_ERRORS = (NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError)
+    # 站点识别分层策略：先快扫，再对高价值站点精扫。
+    SITE_IDENTIFY_AUTO_MIN_SELECT = 20
+    SITE_IDENTIFY_AUTO_MAX_SELECT = 160
+    SITE_IDENTIFY_AUTO_RATIO = 0.25
+    SITE_IDENTIFY_FORCE_STATUS_SET = {401, 403}
+    SITE_IDENTIFY_TITLE_KEYWORDS = (
+        "login", "signin", "admin", "manage", "dashboard", "console",
+        "swagger", "grafana", "jenkins", "gitlab", "jira", "confluence",
+        "harbor", "nacos", "phpmyadmin", "tomcat", "weblogic", "kibana",
+        "zabbix", "prometheus", "rabbitmq", "minio",
+    )
+    SITE_IDENTIFY_HOST_KEYWORDS = (
+        "admin", "manage", "ops", "dev", "test", "staging", "pre",
+        "console", "panel", "oa", "vpn", "api",
+    )
 
     def __init__(self, task_id: str, sites: list, options: dict, scope_domain: list = None):
         self.task_id = task_id
@@ -172,9 +187,162 @@ class WebSiteFetch(object):
 
         return self._task_domain_set
 
+    def _site_identify_score(self, site_info: dict) -> tuple:
+        """
+        基于站点元数据给出“高价值”评分，并返回是否强制识别。
+        """
+        info = site_info if isinstance(site_info, dict) else {}
+        site = str(info.get("site", "") or "").strip()
+        parsed = urlparse(site)
+        hostname = str(parsed.hostname or "").strip().lower()
+        path = str(parsed.path or "").strip()
+        title = str(info.get("title", "") or "").strip().lower()
+        headers = str(info.get("headers", "") or "").strip().lower()
+        http_server = str(info.get("http_server", "") or "").strip().lower()
+
+        status = info.get("status")
+        try:
+            status = int(status)
+        except (TypeError, ValueError):
+            status = 0
+
+        score = 0
+        force_pick = status in self.SITE_IDENTIFY_FORCE_STATUS_SET
+        if force_pick:
+            score += 120
+        elif 200 <= status < 400:
+            score += 8
+
+        # 管理后台、登录页、控制台、中间件等入口优先识别。
+        if any(keyword in title for keyword in self.SITE_IDENTIFY_TITLE_KEYWORDS):
+            score += 70
+
+        if any(keyword in hostname for keyword in self.SITE_IDENTIFY_HOST_KEYWORDS):
+            score += 45
+
+        if "www-authenticate" in headers:
+            score += 30
+
+        if "set-cookie:" in headers:
+            score += 8
+
+        if path and path != "/":
+            score += 16
+
+        if parsed.port:
+            if parsed.port not in {80, 443}:
+                score += 18
+
+        body_length = info.get("body_length", 0)
+        try:
+            body_length = int(body_length)
+        except (TypeError, ValueError):
+            body_length = 0
+        if body_length > 32 * 1024:
+            score += 12
+        elif body_length > 8 * 1024:
+            score += 6
+
+        finger_list = info.get("finger", [])
+        finger_count = len(finger_list) if isinstance(finger_list, list) else 0
+        if finger_count > 0:
+            score += min(30, finger_count * 4)
+
+        # 网关/中间件类入口通常具备较高识别价值。
+        if any(token in http_server for token in ("kong", "apisix", "openresty", "weblogic", "tomcat", "jetty")):
+            score += 22
+
+        return score, force_pick
+
+    def _build_site_identify_targets(self) -> list:
+        """
+        构建 site_identify 二阶段目标：
+        第一阶段做全量存活探测；第二阶段仅识别高价值站点。
+        """
+        candidate_sites = list(dict.fromkeys(self.available_sites))
+        total_count = len(candidate_sites)
+        if total_count <= 0:
+            return []
+
+        site_info_map = {}
+        for site_info in self.site_info_list:
+            if not isinstance(site_info, dict):
+                continue
+            site = str(site_info.get("site", "") or "").strip()
+            if not site:
+                continue
+            site_info_map[site] = site_info
+
+        scored_items = []
+        for site in candidate_sites:
+            score, force_pick = self._site_identify_score(site_info_map.get(site, {"site": site}))
+            scored_items.append((site, score, force_pick))
+
+        scored_items.sort(key=lambda x: (-x[1], x[0]))
+
+        if total_count <= self.SITE_IDENTIFY_AUTO_MIN_SELECT:
+            target_count = total_count
+        else:
+            target_count = int(total_count * self.SITE_IDENTIFY_AUTO_RATIO)
+            target_count = max(self.SITE_IDENTIFY_AUTO_MIN_SELECT, target_count)
+            target_count = min(self.SITE_IDENTIFY_AUTO_MAX_SELECT, target_count, total_count)
+
+        score_threshold = 40
+        selected = []
+        selected_set = set()
+
+        # 401/403 等“受控入口”无论评分如何都进入第二阶段。
+        for site, _, force_pick in scored_items:
+            if not force_pick:
+                continue
+            selected.append(site)
+            selected_set.add(site)
+
+        for site, score, _ in scored_items:
+            if score < score_threshold:
+                continue
+            if site in selected_set:
+                continue
+            selected.append(site)
+            selected_set.add(site)
+            if len(selected) >= target_count:
+                break
+
+        # 高分样本不足时，按排名补齐，保持“可控上限 + 稳定覆盖”。
+        if len(selected) < target_count:
+            for site, _, _ in scored_items:
+                if site in selected_set:
+                    continue
+                selected.append(site)
+                selected_set.add(site)
+                if len(selected) >= target_count:
+                    break
+
+        logger.info(
+            "task_id:{} site_identify staged select:{}/{} threshold:{} force:{} ratio:{} min:{} max:{}".format(
+                self.task_id,
+                len(selected),
+                total_count,
+                score_threshold,
+                len([1 for _, _, force_pick in scored_items if force_pick]),
+                self.SITE_IDENTIFY_AUTO_RATIO,
+                self.SITE_IDENTIFY_AUTO_MIN_SELECT,
+                self.SITE_IDENTIFY_AUTO_MAX_SELECT,
+            )
+        )
+        return selected
+
     def site_identify(self):
-        # ** 调用指纹识别
-        self.web_analyze_map = services.web_analyze(self.available_sites)
+        # 二阶段：第一阶段先快扫发现资产，第二阶段仅识别高价值站点。
+        identify_targets = self._build_site_identify_targets()
+        identify_targets = self._filter_waf_blocked_targets(identify_targets, stage_name="site_identify")
+        if not identify_targets:
+            logger.info("task_id:{} skip site_identify, no staged targets".format(self.task_id))
+            self.web_analyze_map = {}
+            return
+
+        # ** 调用指纹识别（仅针对筛选后的高价值目标）
+        self.web_analyze_map = services.web_analyze(identify_targets)
 
     def __str__(self):
         return "<WebSiteFetch> task_id:{}, sites: {}, available_sites:{}".format(
@@ -722,9 +890,15 @@ class WebSiteFetch(object):
         # *** 对站点进行基本信息的获取
         self.run_func(WebSiteFetchStatus.FETCH_SITE, self.fetch_site)
 
-        """ *** 执行站点识别 """
-        if self.options.get(WebSiteFetchOption.SITE_IDENTIFY):
-            self.run_func(WebSiteFetchStatus.SITE_IDENTIFY, self.site_identify)
+        # 第一阶段：快速发现 URL（无指纹精扫）
+        if self.options.get(WebSiteFetchOption.SITE_SPIDER):
+            self.update_page_url_set()
+            self.run_func(WebSiteFetchStatus.SITE_SPIDER, self.site_spider)
+
+        # 扫描策略默认分两阶段：
+        # 1) 全量快扫（资产发现/端口/URL）
+        # 2) 系统自动挑选高价值站点做精扫识别（用户无感知）
+        self.run_func(WebSiteFetchStatus.SITE_IDENTIFY, self.site_identify)
 
         """ *** 保存站点信息到数据库 """
         self.save_site_info()
@@ -735,11 +909,6 @@ class WebSiteFetch(object):
         """ *** 站点截图 """
         if self.options.get(WebSiteFetchOption.SITE_CAPTURE):
             self.run_func(WebSiteFetchStatus.SITE_CAPTURE, self.site_screenshot)
-
-        """ ***调用站点爬虫发现URL """
-        if self.options.get(WebSiteFetchOption.SITE_SPIDER):
-            self.update_page_url_set()
-            self.run_func(WebSiteFetchStatus.SITE_SPIDER, self.site_spider)
 
         """ *** 对站点进行文件目录爆破 """
         if self.options.get(WebSiteFetchOption.FILE_LEAK):
