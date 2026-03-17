@@ -2,7 +2,7 @@
 #
 # Worker 容器启动脚本
 # - 读取 ARL 配置中的 Celery 队列并发参数
-# - 启动 github 与主任务两个队列 worker
+# - 启动 github、heavy 与主任务三个队列 worker
 set -e
 
 get_cfg_int() {
@@ -79,15 +79,24 @@ mkdir -p "$(dirname "${LOG_FILE_PATH}")"
 recover_interrupted_tasks
 
 GITHUB_CONCURRENCY="$(get_cfg_int CELERY_GITHUB_WORKER_CONCURRENCY 1)"
+HEAVY_CONCURRENCY="$(get_cfg_int CELERY_HEAVY_WORKER_CONCURRENCY 1)"
 TASK_CONCURRENCY="$(get_cfg_int CELERY_TASK_WORKER_CONCURRENCY 2)"
 
-echo "start celery github=${GITHUB_CONCURRENCY} task=${TASK_CONCURRENCY} log=${LOG_FILE_PATH}"
+echo "start celery github=${GITHUB_CONCURRENCY} heavy=${HEAVY_CONCURRENCY} task=${TASK_CONCURRENCY} log=${LOG_FILE_PATH}"
 
 celery -A app.celerytask.celery worker \
   -l info \
   -Q arlgithub \
   -n arlgithub \
   -c "${GITHUB_CONCURRENCY}" \
+  -O fair \
+  -f "${LOG_FILE_PATH}" &
+
+celery -A app.celerytask.celery worker \
+  -l info \
+  -Q arlheavy \
+  -n arlheavy \
+  -c "${HEAVY_CONCURRENCY}" \
   -O fair \
   -f "${LOG_FILE_PATH}" &
 

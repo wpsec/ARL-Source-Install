@@ -11,53 +11,97 @@ logger = utils.get_logger()
 class PortScan:
     def __init__(self, targets, ports=None, service_detect=False, os_detect=False,
                  port_parallelism=None, port_min_rate=None, custom_host_timeout=None):
-        self.targets = " ".join(targets)
-        self.ports = ports
-        self.requested_port_count = self._estimate_port_count(ports)
+        self.target_list = [str(item or "").strip() for item in (targets or []) if str(item or "").strip()]
+        self.ports = str(ports or "").strip() or Config.TOP_10
+        self.requested_port_count = self._estimate_port_count(self.ports)
+        self.service_detect = bool(service_detect)
+        self.os_detect = bool(os_detect)
+        self.custom_host_timeout = self._safe_positive_int(custom_host_timeout, 0, min_value=1)
+
         self.max_host_group = 32
         self.alive_port = "22,80,443,843,3389,8007-8011,8443,9090,8080-8091,8093,8099,5000-5004,2222,3306,1433,21,25"
-        self.nmap_arguments = "-sT -n --open"
         self.max_retries = 3
-        self.host_timeout = 60*5
-        self.parallelism = port_parallelism  # 默认 32
-        self.min_rate = port_min_rate  # 默认64
+        self.base_host_timeout = 60 * 5
+        self.parallelism = self._safe_positive_int(port_parallelism, Config.PORT_PARALLELISM)
+        self.min_rate = self._safe_positive_int(port_min_rate, Config.PORT_MIN_RATE)
+        self.base_nmap_arguments = "-sT -n --open"
 
-        if service_detect:
-            self.host_timeout += 60 * 5
-            self.nmap_arguments += " -sV"
+        # 扫描分片大小：避免一次性 nmap 扫描过多目标导致任务长时间无输出。
+        self.port_scan_target_batch_size = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_TARGET_BATCH_SIZE", 24), 24
+        )
+        self.port_scan_heavy_target_batch_size = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_HEAVY_TARGET_BATCH_SIZE", 8), 8
+        )
+        self.port_scan_all_target_batch_size = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_ALL_TARGET_BATCH_SIZE", 2), 2
+        )
 
-        if os_detect:
-            self.host_timeout += 60 * 4
-            self.nmap_arguments += " -O"
+        # 二阶段精扫的自适应阈值：防止重任务把 worker 长时间占满。
+        self.stage2_max_hosts = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_STAGE2_MAX_HOSTS", 40), 40
+        )
+        self.stage2_max_ports_per_host = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST", 300), 300
+        )
+        self.stage2_os_max_hosts = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_STAGE2_OS_MAX_HOSTS", 8), 8
+        )
 
-        if len(self.ports.split(",")) > 60:
-            self.nmap_arguments += " -PE -PS{}".format(self.alive_port)
+        self._apply_scan_profile()
+
+    @staticmethod
+    def _safe_positive_int(value, default, min_value=1):
+        try:
+            num = int(value)
+        except Exception:
+            return default
+
+        if num < min_value:
+            return default
+
+        return num
+
+    def _apply_scan_profile(self):
+        port_token_count = len([x for x in self.ports.split(",") if str(x).strip()])
+
+        if port_token_count > 60:
+            self.base_nmap_arguments += " -PE -PS{}".format(self.alive_port)
             self.max_retries = 2
-        else:
-            if self.ports != "0-65535":
-                self.nmap_arguments += " -Pn"
+        elif self.ports != "0-65535":
+            self.base_nmap_arguments += " -Pn"
 
         if self.ports == "0-65535":
             self.max_host_group = 2
             self.min_rate = max(self.min_rate, 800)
             self.parallelism = max(self.parallelism, 128)
-
-            self.nmap_arguments += " -PE -PS{}".format(self.alive_port)
-            self.host_timeout += 60 * 5
+            self.base_nmap_arguments += " -PE -PS{}".format(self.alive_port)
+            self.base_host_timeout += 60 * 5
             self.max_retries = 2
 
-        self.nmap_arguments += " --max-rtt-timeout 800ms"
-        self.nmap_arguments += " --min-rate {}".format(self.min_rate)
-        self.nmap_arguments += " --script-timeout 6s"
-        self.nmap_arguments += " --max-hostgroup {}".format(self.max_host_group)
+    def _build_nmap_arguments(self, enable_service=False, enable_os=False):
+        host_timeout = self.base_host_timeout
+        args = self.base_nmap_arguments
 
-        # 依据传过来的超时为准
-        if custom_host_timeout is not None:
-            if int(custom_host_timeout) > 0:
-                self.host_timeout = custom_host_timeout
-        self.nmap_arguments += " --host-timeout {}s".format(self.host_timeout)
-        self.nmap_arguments += " --min-parallelism {}".format(self.parallelism)
-        self.nmap_arguments += " --max-retries {}".format(self.max_retries)
+        if enable_service:
+            host_timeout += 60 * 5
+            args += " -sV"
+
+        if enable_os:
+            host_timeout += 60 * 4
+            args += " -O"
+
+        if self.custom_host_timeout > 0:
+            host_timeout = self.custom_host_timeout
+
+        args += " --max-rtt-timeout 800ms"
+        args += " --min-rate {}".format(self.min_rate)
+        args += " --script-timeout 6s"
+        args += " --max-hostgroup {}".format(self.max_host_group)
+        args += " --host-timeout {}s".format(host_timeout)
+        args += " --min-parallelism {}".format(self.parallelism)
+        args += " --max-retries {}".format(self.max_retries)
+        return args
 
     @staticmethod
     def _estimate_port_count(ports):
@@ -127,31 +171,80 @@ class PortScan:
                 filtered.append(item)
         return filtered
 
-    def run(self):
-        logger.info("nmap target {}  ports {}  arguments {}".format(
-            self.targets[:20], self.ports[:20], self.nmap_arguments))
-        nm = nmap.PortScanner()
-        nm.scan(hosts=self.targets, ports=self.ports, arguments=self.nmap_arguments)
+    @staticmethod
+    def _build_targets_preview(targets, sample_size=6):
+        target_list = list(targets or [])
+        if not target_list:
+            return "-"
+
+        sample = target_list[:sample_size]
+        sample_text = " ".join(sample)
+        if len(target_list) > sample_size:
+            sample_text = "{} ...(+{})".format(sample_text, len(target_list) - sample_size)
+        return sample_text
+
+    @staticmethod
+    def _normalize_port_info_item(item):
+        return {
+            "port_id": int(item.get("port_id", 0) or 0),
+            "service_name": str(item.get("service_name", "") or ""),
+            "version": str(item.get("version", "") or ""),
+            "product": str(item.get("product", "") or ""),
+            "protocol": str(item.get("protocol", "tcp") or "tcp"),
+        }
+
+    @staticmethod
+    def _sort_ip_info_list(ip_info_map):
+        ip_info_list = list(ip_info_map.values())
+        ip_info_list.sort(key=lambda x: str(x.get("ip", "")))
+        for item in ip_info_list:
+            item["port_info"].sort(key=lambda x: (int(x.get("port_id", 0) or 0), str(x.get("protocol", ""))))
+        return ip_info_list
+
+    @staticmethod
+    def _chunk_list(data, chunk_size):
+        if chunk_size <= 0:
+            chunk_size = 1
+
+        chunk = []
+        for item in data:
+            chunk.append(item)
+            if len(chunk) >= chunk_size:
+                yield chunk
+                chunk = []
+
+        if chunk:
+            yield chunk
+
+    def _resolve_target_batch_size(self):
+        if self.ports == "0-65535":
+            return self.port_scan_all_target_batch_size
+
+        if self.requested_port_count >= 1000:
+            return self.port_scan_heavy_target_batch_size
+
+        return self.port_scan_target_batch_size
+
+    def _extract_scan_result(self, nm):
         ip_info_list = []
         for host in nm.all_hosts():
             port_info_list = []
             for proto in nm[host].all_protocols():
-                port_len = len(nm[host][proto])
-
-                for port in nm[host][proto]:
+                proto_ports = nm[host][proto]
+                port_len = len(proto_ports)
+                for port in proto_ports:
                     # 对于开了很多端口的直接丢弃
                     if port_len > 600 and (port not in [80, 443]):
                         continue
 
-                    port_info = nm[host][proto][port]
+                    port_info = proto_ports[port]
                     item = {
                         "port_id": port,
-                        "service_name": port_info["name"],
-                        "version": port_info["version"],
-                        "product": port_info["product"],
+                        "service_name": str(port_info.get("name", "") or ""),
+                        "version": str(port_info.get("version", "") or ""),
+                        "product": str(port_info.get("product", "") or ""),
                         "protocol": proto
                     }
-
                     port_info_list.append(item)
 
             total_open_count = len(port_info_list)
@@ -166,15 +259,265 @@ class PortScan:
 
             osmatch_list = nm[host].get("osmatch", [])
             os_info = self.os_match_by_accuracy(osmatch_list)
-
-            ip_info = {
+            ip_info_list.append({
                 "ip": host,
                 "port_info": port_info_list,
                 "os_info": os_info
-            }
-            ip_info_list.append(ip_info)
+            })
 
         return ip_info_list
+
+    @staticmethod
+    def _merge_ip_info(ip_info_map, ip_info_list):
+        for item in ip_info_list:
+            host = str(item.get("ip", "")).strip()
+            if not host:
+                continue
+
+            old = ip_info_map.get(host)
+            if not old:
+                ip_info_map[host] = {
+                    "ip": host,
+                    "port_info": [PortScan._normalize_port_info_item(x) for x in item.get("port_info", [])],
+                    "os_info": item.get("os_info", {}) or {}
+                }
+                continue
+
+            # 端口按 protocol + port_id 合并，保留精扫阶段更完整的字段。
+            port_map = {}
+            for port_item in old.get("port_info", []):
+                norm = PortScan._normalize_port_info_item(port_item)
+                key = "{}:{}".format(norm["protocol"], norm["port_id"])
+                port_map[key] = norm
+
+            for port_item in item.get("port_info", []):
+                norm = PortScan._normalize_port_info_item(port_item)
+                key = "{}:{}".format(norm["protocol"], norm["port_id"])
+                if key not in port_map:
+                    port_map[key] = norm
+                    continue
+
+                origin = port_map[key]
+                for field in ["service_name", "version", "product"]:
+                    if norm.get(field):
+                        origin[field] = norm[field]
+
+            old["port_info"] = list(port_map.values())
+            if item.get("os_info"):
+                old["os_info"] = item["os_info"]
+
+    def _run_batch_scan(self, target_batch, ports, arguments, stage_name, batch_index, batch_total):
+        ports_text = str(ports or "")
+        if len(ports_text) > 64:
+            ports_text = "{}...".format(ports_text[:64])
+
+        logger.info(
+            "nmap stage:{} batch:{}/{} targets:{} preview:{} ports:{} arguments {}".format(
+                stage_name,
+                batch_index,
+                batch_total,
+                len(target_batch),
+                self._build_targets_preview(target_batch),
+                ports_text,
+                arguments
+            )
+        )
+
+        nm = nmap.PortScanner()
+        try:
+            nm.scan(hosts=" ".join(target_batch), ports=ports, arguments=arguments)
+        except Exception as e:
+            logger.exception(
+                "nmap stage:{} batch:{}/{} failed targets:{} err:{}".format(
+                    stage_name, batch_index, batch_total, len(target_batch), e
+                )
+            )
+            return []
+
+        result = self._extract_scan_result(nm)
+        logger.info(
+            "nmap stage:{} batch:{}/{} host_result:{}".format(
+                stage_name, batch_index, batch_total, len(result)
+            )
+        )
+        return result
+
+    def _scan_with_batches(self, targets, ports, arguments, stage_name, force_batch_size=None):
+        target_list = [str(x or "").strip() for x in (targets or []) if str(x or "").strip()]
+        if not target_list:
+            return {}
+
+        batch_size = force_batch_size if force_batch_size else self._resolve_target_batch_size()
+        batches = list(self._chunk_list(target_list, batch_size))
+        total = len(batches)
+        result_map = {}
+        for index, batch in enumerate(batches, 1):
+            batch_result = self._run_batch_scan(
+                target_batch=batch,
+                ports=ports,
+                arguments=arguments,
+                stage_name=stage_name,
+                batch_index=index,
+                batch_total=total,
+            )
+            self._merge_ip_info(result_map, batch_result)
+
+        logger.info(
+            "nmap stage:{} done targets:{} batches:{} host_result:{}".format(
+                stage_name, len(target_list), total, len(result_map)
+            )
+        )
+        return result_map
+
+    @staticmethod
+    def _calc_host_value_score(port_ids):
+        score = len(port_ids)
+        high_value_ports = {80, 443, 8080, 8443, 8000, 8001, 8090, 22, 3389, 3306, 5432, 6379}
+        for p in port_ids:
+            if p in high_value_ports:
+                score += 4
+        return score
+
+    def _select_stage2_ports(self, port_ids):
+        if len(port_ids) <= self.stage2_max_ports_per_host:
+            return port_ids
+
+        priority = [80, 443, 8080, 8443, 8000, 8001, 8090, 22, 3389, 3306, 5432, 6379, 27017, 9200]
+        selected = []
+        selected_set = set()
+        for p in priority:
+            if p in port_ids and p not in selected_set:
+                selected.append(p)
+                selected_set.add(p)
+            if len(selected) >= self.stage2_max_ports_per_host:
+                break
+
+        if len(selected) < self.stage2_max_ports_per_host:
+            for p in port_ids:
+                if p in selected_set:
+                    continue
+                selected.append(p)
+                selected_set.add(p)
+                if len(selected) >= self.stage2_max_ports_per_host:
+                    break
+
+        return selected
+
+    def _build_precise_plan(self, fast_map):
+        plan = []
+        for host, item in fast_map.items():
+            port_ids = sorted(
+                list({int(x.get("port_id", 0) or 0) for x in item.get("port_info", []) if int(x.get("port_id", 0) or 0) > 0})
+            )
+            if not port_ids:
+                continue
+
+            plan.append({
+                "host": host,
+                "port_ids": port_ids,
+                "score": self._calc_host_value_score(port_ids),
+            })
+
+        plan.sort(key=lambda x: (x["score"], len(x["port_ids"])), reverse=True)
+        if len(plan) > self.stage2_max_hosts:
+            logger.warning(
+                "port_scan stage2 host degrade total:{} keep:{} reason:max_host_limit".format(
+                    len(plan), self.stage2_max_hosts
+                )
+            )
+            plan = plan[:self.stage2_max_hosts]
+
+        for item in plan:
+            old_count = len(item["port_ids"])
+            selected = self._select_stage2_ports(item["port_ids"])
+            item["port_ids"] = selected
+            if len(selected) < old_count:
+                logger.warning(
+                    "port_scan stage2 port degrade host:{} total:{} keep:{} reason:max_port_per_host".format(
+                        item["host"], old_count, len(selected)
+                    )
+                )
+
+        return plan
+
+    def _run_two_stage_scan(self):
+        logger.info(
+            "port_scan mode:two-stage targets:{} ports:{} service_detect:{} os_detect:{}".format(
+                len(self.target_list), self.ports, self.service_detect, self.os_detect
+            )
+        )
+
+        fast_args = self._build_nmap_arguments(enable_service=False, enable_os=False)
+        fast_map = self._scan_with_batches(
+            targets=self.target_list,
+            ports=self.ports,
+            arguments=fast_args,
+            stage_name="fast",
+        )
+        if not fast_map:
+            return []
+
+        precise_plan = self._build_precise_plan(fast_map)
+        if not precise_plan:
+            return self._sort_ip_info_list(fast_map)
+
+        enable_os_in_stage2 = self.os_detect
+        if enable_os_in_stage2 and len(precise_plan) > self.stage2_os_max_hosts:
+            enable_os_in_stage2 = False
+            logger.warning(
+                "port_scan stage2 disable os_detect total:{} keep_os:{} reason:max_os_hosts".format(
+                    len(precise_plan), self.stage2_os_max_hosts
+                )
+            )
+
+        precise_args = self._build_nmap_arguments(
+            enable_service=self.service_detect,
+            enable_os=enable_os_in_stage2,
+        )
+
+        for index, item in enumerate(precise_plan, 1):
+            host = item["host"]
+            ports_text = ",".join([str(x) for x in item["port_ids"]])
+            precise_map = self._scan_with_batches(
+                targets=[host],
+                ports=ports_text,
+                arguments=precise_args,
+                stage_name="precise",
+                force_batch_size=1,
+            )
+            self._merge_ip_info(fast_map, list(precise_map.values()))
+            logger.info(
+                "port_scan stage2 progress {}/{} host:{} ports:{}".format(
+                    index, len(precise_plan), host, len(item["port_ids"])
+                )
+            )
+
+        return self._sort_ip_info_list(fast_map)
+
+    def run(self):
+        if not self.target_list:
+            logger.info("skip port_scan, empty target list")
+            return []
+
+        if self.service_detect or self.os_detect:
+            return self._run_two_stage_scan()
+
+        logger.info(
+            "port_scan mode:single targets:{} ports:{} service_detect:{} os_detect:{}".format(
+                len(self.target_list), self.ports, self.service_detect, self.os_detect
+            )
+        )
+        single_args = self._build_nmap_arguments(
+            enable_service=self.service_detect,
+            enable_os=self.os_detect,
+        )
+        single_map = self._scan_with_batches(
+            targets=self.target_list,
+            ports=self.ports,
+            arguments=single_args,
+            stage_name="single",
+        )
+        return self._sort_ip_info_list(single_map)
 
     def os_match_by_accuracy(self, os_match_list):
         for os_match in os_match_list:
@@ -189,8 +532,35 @@ def port_scan(targets, ports=Config.TOP_10, service_detect=False, os_detect=Fals
               port_parallelism=Config.PORT_PARALLELISM,
               port_min_rate=Config.PORT_MIN_RATE,
               custom_host_timeout=None):
-    targets = list(set(targets))
-    targets = list(filter(utils.not_in_black_ips, targets))
+    valid_targets = []
+    invalid_targets = set()
+    for raw_target in targets or []:
+        target = str(raw_target or "").strip()
+        if not target:
+            continue
+
+        if not utils.is_vaild_ip_target(target):
+            invalid_targets.add(target)
+            continue
+
+        if not utils.not_in_black_ips(target):
+            continue
+
+        valid_targets.append(target)
+
+    if invalid_targets:
+        invalid_sample = sorted(list(invalid_targets))[:6]
+        logger.warning(
+            "skip invalid port_scan targets count:{} sample:{}".format(
+                len(invalid_targets), " ".join(invalid_sample)
+            )
+        )
+
+    targets = sorted(list(set(valid_targets)))
+    if not targets:
+        logger.info("skip port_scan, no valid targets")
+        return []
+
     ps = PortScan(targets=targets, ports=ports, service_detect=service_detect, os_detect=os_detect,
                   port_parallelism=port_parallelism, port_min_rate=port_min_rate,
                   custom_host_timeout=custom_host_timeout)

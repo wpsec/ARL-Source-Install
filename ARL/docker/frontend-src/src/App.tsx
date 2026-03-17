@@ -8988,27 +8988,6 @@ function ApiConsoleView({ token }: { token: string }) {
       ],
     },
     {
-      id: 'passivetotal',
-      title: 'PassiveTotal',
-      website: 'https://community.riskiq.com/',
-      enableKey: 'passivetotal_enable',
-      enableLabel: '启用 PassiveTotal 插件',
-      fields: [
-        {
-          key: 'passivetotal_email',
-          label: '邮箱',
-          placeholder: '请输入 PassiveTotal 邮箱',
-          hint: 'QUERY_PLUGIN.passivetotal.auth_email',
-        },
-        {
-          key: 'passivetotal_key',
-          label: 'KEY',
-          placeholder: '请输入 PassiveTotal KEY',
-          hint: 'QUERY_PLUGIN.passivetotal.auth_key',
-        },
-      ],
-    },
-    {
       id: 'github',
       title: 'GitHub',
       website: 'https://github.com/settings/tokens',

@@ -17,12 +17,14 @@
 4. WIH更新监控（wih_update_monitor）：监控Web指纹变化
 """
 import sys
+import re
 from bson import ObjectId
 from app.utils import conn_db as conn
 from app import utils
 from app import celerytask
 import time
 from app.modules import CeleryAction, SchedulerStatus, AssetScopeType
+from app.config import Config
 from app.helpers import task_schedule, asset_site_monitor, asset_wih_monitor
 
 # 获取日志记录器
@@ -48,6 +50,92 @@ ip_monitor_options = {
     'site_identify': False,  # 禁用站点识别
     'afrog_scan': False,  # 禁用 afrog 漏洞扫描
 }
+
+
+def _estimate_port_count(ports):
+    ports = str(ports or "").strip()
+    if not ports:
+        return 0
+
+    if ports == "0-65535":
+        return 65535
+
+    total = 0
+    for token in ports.split(","):
+        token = token.strip()
+        if not token:
+            continue
+
+        if "-" in token:
+            start, end = token.split("-", 1)
+            try:
+                start_i = int(start)
+                end_i = int(end)
+                if end_i >= start_i:
+                    total += end_i - start_i + 1
+            except Exception:
+                continue
+        else:
+            try:
+                int(token)
+                total += 1
+            except Exception:
+                continue
+
+    return total
+
+
+def _estimate_monitor_target_count(domain):
+    target_text = str(domain or "").strip()
+    if not target_text:
+        return 0
+    target_items = [x for x in re.split(r",|\s", target_text) if str(x).strip()]
+    return max(len(target_items), 1)
+
+
+def _should_dispatch_monitor_heavy_queue(domain, monitor_options):
+    if not isinstance(monitor_options, dict):
+        return False, ""
+
+    if not monitor_options.get("port_scan"):
+        return False, ""
+
+    scan_port_type = str(monitor_options.get("port_scan_type", "test") or "test").strip().lower()
+    service_detection = bool(monitor_options.get("service_detection"))
+    os_detection = bool(monitor_options.get("os_detection"))
+
+    scan_port_map = {
+        "test": Config.TOP_10,
+        "top100": Config.TOP_100,
+        "top1000": Config.TOP_1000,
+        "all": "0-65535",
+        "custom": str(monitor_options.get("port_custom", "") or ""),
+    }
+    port_count = _estimate_port_count(scan_port_map.get(scan_port_type, Config.TOP_10))
+    target_count = _estimate_monitor_target_count(domain)
+
+    heavy_port_threshold = max(int(getattr(Config, "TASK_HEAVY_PORT_THRESHOLD", 1000) or 1000), 1)
+    heavy_service_port_threshold = max(
+        int(getattr(Config, "TASK_HEAVY_SERVICE_PORT_THRESHOLD", 500) or 500), 1
+    )
+    heavy_target_threshold = max(int(getattr(Config, "TASK_HEAVY_TARGET_THRESHOLD", 24) or 24), 1)
+
+    if scan_port_type == "all":
+        return True, "port_scan_type=all"
+
+    if scan_port_type == "top1000":
+        return True, "port_scan_type=top1000"
+
+    if os_detection:
+        return True, "os_detection=true"
+
+    if service_detection and port_count >= heavy_service_port_threshold:
+        return True, "service_detection=true,port_count={}".format(port_count)
+
+    if target_count >= heavy_target_threshold and port_count >= heavy_port_threshold:
+        return True, "target_count={},port_count={}".format(target_count, port_count)
+
+    return False, ""
 
 
 def add_job(domain, scope_id, options=None, interval=60 * 1, name="", scope_type=AssetScopeType.DOMAIN):
@@ -309,9 +397,22 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
             "celery_action": CeleryAction.DOMAIN_EXEC_TASK,  # 指定为域名执行任务
             "data": task_data
         }
+        queue_task = celerytask.arl_task
+        queue_name = "arltask"
+        queue_reason = ""
+        is_heavy, heavy_reason = _should_dispatch_monitor_heavy_queue(domain, monitor_options)
+        if is_heavy:
+            queue_task = celerytask.arl_task_heavy
+            queue_name = "arlheavy"
+            queue_reason = heavy_reason
+
         # 提交到Celery队列，返回任务ID
-        celery_id = celerytask.arl_task.delay(options=task_options)
-        logger.info("submit domain job {} {} {}".format(celery_id, domain, scope_id))
+        celery_id = queue_task.delay(options=task_options)
+        logger.info(
+            "submit domain job {} {} {} queue:{} reason:{}".format(
+                celery_id, domain, scope_id, queue_name, queue_reason or "-"
+            )
+        )
 
     # 如果是IP类型任务
     if scope_type == AssetScopeType.IP:
@@ -319,9 +420,22 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
             "celery_action": CeleryAction.IP_EXEC_TASK,  # 指定为IP执行任务
             "data": task_data
         }
+        queue_task = celerytask.arl_task
+        queue_name = "arltask"
+        queue_reason = ""
+        is_heavy, heavy_reason = _should_dispatch_monitor_heavy_queue(domain, monitor_options)
+        if is_heavy:
+            queue_task = celerytask.arl_task_heavy
+            queue_name = "arlheavy"
+            queue_reason = heavy_reason
+
         # 提交到Celery队列，返回任务ID
-        celery_id = celerytask.arl_task.delay(options=task_options)
-        logger.info("submit ip job {} {} {}".format(celery_id, domain, scope_id))
+        celery_id = queue_task.delay(options=task_options)
+        logger.info(
+            "submit ip job {} {} {} queue:{} reason:{}".format(
+                celery_id, domain, scope_id, queue_name, queue_reason or "-"
+            )
+        )
 
 
 def update_job_run(job_id):

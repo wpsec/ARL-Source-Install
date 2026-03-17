@@ -145,6 +145,8 @@ services:
       - RABBITMQ_DEFAULT_PASS=arlpassword
       - RABBITMQ_DEFAULT_USER=arl
       - RABBITMQ_DEFAULT_VHOST=arlv2host
+      # 全端口扫描等长任务可能超过 RabbitMQ 默认 30 分钟确认超时，适当放宽到 2 小时避免 worker 通道被强制关闭。
+      - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbit consumer_timeout 7200000
     logging:
       driver: "json-file"
       options:

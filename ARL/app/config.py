@@ -245,11 +245,21 @@ def refresh_runtime_config_best_effort(force=False):
             "HOST_TIMEOUT",
             "PORT_PARALLELISM",
             "PORT_MIN_RATE",
+            "PORT_SCAN_TARGET_BATCH_SIZE",
+            "PORT_SCAN_HEAVY_TARGET_BATCH_SIZE",
+            "PORT_SCAN_ALL_TARGET_BATCH_SIZE",
+            "PORT_SCAN_STAGE2_MAX_HOSTS",
+            "PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST",
+            "PORT_SCAN_STAGE2_OS_MAX_HOSTS",
+            "TASK_HEAVY_PORT_THRESHOLD",
+            "TASK_HEAVY_SERVICE_PORT_THRESHOLD",
+            "TASK_HEAVY_TARGET_THRESHOLD",
             "DOMAIN_BRUTE_CONCURRENT",
             "ALT_DNS_CONCURRENT",
             "WEB_GUNICORN_WORKERS",
             "CELERY_TASK_WORKER_CONCURRENCY",
             "CELERY_GITHUB_WORKER_CONCURRENCY",
+            "CELERY_HEAVY_WORKER_CONCURRENCY",
             "CELERY_PREFETCH_MULTIPLIER",
             "CELERY_MAX_TASKS_PER_CHILD",
             "CELERY_MAX_MEMORY_PER_CHILD",
@@ -339,6 +349,8 @@ class Config(object):
     CELERY_TASK_WORKER_CONCURRENCY = 2
     # Celery GitHub 队列并发
     CELERY_GITHUB_WORKER_CONCURRENCY = 1
+    # Celery 重任务队列并发（全端口/深度识别等高负载任务）
+    CELERY_HEAVY_WORKER_CONCURRENCY = 1
     # Celery 预取倍率（1 表示每 worker 仅预取 1 个任务）
     CELERY_PREFETCH_MULTIPLIER = 1
     # Celery 子进程处理多少任务后重启，防止内存膨胀
@@ -621,6 +633,24 @@ class Config(object):
     PORT_PARALLELISM = 32
     # nmap 最少发包速率默认值
     PORT_MIN_RATE = 64
+    # 端口扫描每批目标数量（常规）
+    PORT_SCAN_TARGET_BATCH_SIZE = 24
+    # 端口扫描每批目标数量（重负载端口集，如 top1000）
+    PORT_SCAN_HEAVY_TARGET_BATCH_SIZE = 8
+    # 全端口扫描每批目标数量
+    PORT_SCAN_ALL_TARGET_BATCH_SIZE = 2
+    # 两阶段精扫最多主机数（超出自动降级）
+    PORT_SCAN_STAGE2_MAX_HOSTS = 40
+    # 两阶段精扫单主机最多端口数（超出自动裁剪）
+    PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST = 300
+    # 开启 OS 识别时，两阶段精扫最多主机数（超出自动关闭 -O）
+    PORT_SCAN_STAGE2_OS_MAX_HOSTS = 8
+    # 重任务队列分流阈值：端口数量
+    TASK_HEAVY_PORT_THRESHOLD = 1000
+    # 重任务队列分流阈值：service_detection 时的端口数量
+    TASK_HEAVY_SERVICE_PORT_THRESHOLD = 500
+    # 重任务队列分流阈值：目标数量
+    TASK_HEAVY_TARGET_THRESHOLD = 24
     # 域名爆破并发数（普通域名字典爆破）
     DOMAIN_BRUTE_CONCURRENT = 180
     # 组合生成的域名爆破并发数（altdns变异域名爆破）
@@ -1096,6 +1126,15 @@ try:
         "HOST_TIMEOUT",
         "PORT_PARALLELISM",
         "PORT_MIN_RATE",
+        "PORT_SCAN_TARGET_BATCH_SIZE",
+        "PORT_SCAN_HEAVY_TARGET_BATCH_SIZE",
+        "PORT_SCAN_ALL_TARGET_BATCH_SIZE",
+        "PORT_SCAN_STAGE2_MAX_HOSTS",
+        "PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST",
+        "PORT_SCAN_STAGE2_OS_MAX_HOSTS",
+        "TASK_HEAVY_PORT_THRESHOLD",
+        "TASK_HEAVY_SERVICE_PORT_THRESHOLD",
+        "TASK_HEAVY_TARGET_THRESHOLD",
         "DOMAIN_BRUTE_CONCURRENT",
         "ALT_DNS_CONCURRENT",
         "DOMAIN_RESOLVE_CONCURRENCY",
@@ -1109,6 +1148,7 @@ try:
         "NPOC_BRUTE_CONCURRENCY",
         "ASSET_SITE_MONITOR_CONCURRENCY",
         "ASSET_SITE_DISCOVERY_CONCURRENCY",
+        "CELERY_HEAVY_WORKER_CONCURRENCY",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)

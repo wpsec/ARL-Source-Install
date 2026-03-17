@@ -66,6 +66,18 @@ def arl_task(options):
     run_task(options)
 
 
+@celery.task(queue='arlheavy')
+def arl_task_heavy(options):
+    """
+    重任务队列入口
+    仅承接高负载扫描任务（如全端口/深度探测），与常规任务隔离执行。
+
+    参数：
+        options: 任务选项字典
+    """
+    run_task(options)
+
+
 def run_task(options):
     """
     任务执行核心函数

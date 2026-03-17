@@ -262,6 +262,24 @@ ARL:
   PORT_PARALLELISM: 32
   # nmap 最少发包速率默认值
   PORT_MIN_RATE: 64
+  # 端口扫描分片：常规模式每批目标数
+  PORT_SCAN_TARGET_BATCH_SIZE: 24
+  # 端口扫描分片：重负载端口集每批目标数
+  PORT_SCAN_HEAVY_TARGET_BATCH_SIZE: 8
+  # 端口扫描分片：全端口每批目标数
+  PORT_SCAN_ALL_TARGET_BATCH_SIZE: 2
+  # 两阶段精扫最多主机数
+  PORT_SCAN_STAGE2_MAX_HOSTS: 40
+  # 两阶段精扫单主机最多端口数
+  PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST: 300
+  # 两阶段精扫开启OS识别时最多主机数
+  PORT_SCAN_STAGE2_OS_MAX_HOSTS: 8
+  # 重任务队列分流阈值：端口数
+  TASK_HEAVY_PORT_THRESHOLD: 1000
+  # 重任务队列分流阈值：服务识别端口数
+  TASK_HEAVY_SERVICE_PORT_THRESHOLD: 500
+  # 重任务队列分流阈值：目标数
+  TASK_HEAVY_TARGET_THRESHOLD: 24
   #域名爆破字典前端大字典选项
   DOMAIN_DICT: "/code/app/dicts/domain_2w.txt"
   #文件泄漏字典
@@ -275,6 +293,8 @@ ARL:
   CELERY_TASK_WORKER_CONCURRENCY: 2
   # Celery GitHub 队列并发
   CELERY_GITHUB_WORKER_CONCURRENCY: 1
+  # Celery 重任务队列并发（全端口/深度识别）
+  CELERY_HEAVY_WORKER_CONCURRENCY: 1
   # Celery 预取倍率（建议保持 1，减少任务堆积占用）
   CELERY_PREFETCH_MULTIPLIER: 1
   # Celery 子进程处理多少任务后回收（防止内存膨胀）

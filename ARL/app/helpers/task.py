@@ -22,6 +22,7 @@ import bson
 import re
 from app import utils
 from app.modules import TaskStatus, TaskTag, TaskType, CeleryAction
+from app.config import Config
 from app import celerytask
 
 logger = utils.get_logger()
@@ -240,6 +241,123 @@ def build_task_data(task_name, task_target, task_type, task_tag, options):
     return task_data
 
 
+def _estimate_port_count(ports):
+    """
+    估算端口字符串对应的端口数量。
+    """
+    ports = str(ports or "").strip()
+    if not ports:
+        return 0
+
+    if ports == "0-65535":
+        return 65535
+
+    total = 0
+    for token in ports.split(","):
+        token = token.strip()
+        if not token:
+            continue
+
+        if "-" in token:
+            start, end = token.split("-", 1)
+            try:
+                start_i = int(start)
+                end_i = int(end)
+                if end_i >= start_i:
+                    total += end_i - start_i + 1
+            except Exception:
+                continue
+        else:
+            try:
+                int(token)
+                total += 1
+            except Exception:
+                continue
+
+    return total
+
+
+def _estimate_target_count(task_data):
+    """
+    估算任务目标数量（粗略值，用于队列分流）。
+    """
+    task_type = task_data.get("type")
+    target = task_data.get("target")
+    if task_type == TaskType.IP:
+        target_text = str(target or "").strip()
+        if not target_text:
+            return 0
+        target_items = [x for x in re.split(r",|\s", target_text) if str(x).strip()]
+        return len(target_items)
+
+    if task_type == TaskType.DOMAIN:
+        return 1
+
+    return 0
+
+
+def _estimate_task_port_count(options):
+    """
+    根据任务选项推断端口数量。
+    """
+    if not isinstance(options, dict):
+        return 0
+
+    scan_port_type = str(options.get("port_scan_type", "test") or "test").strip().lower()
+    scan_port_map = {
+        "test": Config.TOP_10,
+        "top100": Config.TOP_100,
+        "top1000": Config.TOP_1000,
+        "all": "0-65535",
+        "custom": str(options.get("port_custom", "") or ""),
+    }
+    return _estimate_port_count(scan_port_map.get(scan_port_type, Config.TOP_10))
+
+
+def _should_dispatch_heavy_queue(task_data, celery_action):
+    """
+    判断任务是否应分流到重任务队列 arlheavy。
+    """
+    if celery_action not in [CeleryAction.DOMAIN_TASK, CeleryAction.IP_TASK]:
+        return False, ""
+
+    options = task_data.get("options", {})
+    if not isinstance(options, dict):
+        return False, ""
+
+    if not options.get("port_scan"):
+        return False, ""
+
+    scan_port_type = str(options.get("port_scan_type", "test") or "test").strip().lower()
+    service_detection = bool(options.get("service_detection"))
+    os_detection = bool(options.get("os_detection"))
+    target_count = _estimate_target_count(task_data)
+    port_count = _estimate_task_port_count(options)
+
+    heavy_port_threshold = max(int(getattr(Config, "TASK_HEAVY_PORT_THRESHOLD", 1000) or 1000), 1)
+    heavy_service_port_threshold = max(
+        int(getattr(Config, "TASK_HEAVY_SERVICE_PORT_THRESHOLD", 500) or 500), 1
+    )
+    heavy_target_threshold = max(int(getattr(Config, "TASK_HEAVY_TARGET_THRESHOLD", 24) or 24), 1)
+
+    if scan_port_type == "all":
+        return True, "port_scan_type=all"
+
+    if task_data.get("type") == TaskType.DOMAIN and scan_port_type == "top1000":
+        return True, "domain_port_scan_type=top1000"
+
+    if os_detection:
+        return True, "os_detection=true"
+
+    if service_detection and port_count >= heavy_service_port_threshold:
+        return True, "service_detection=true,port_count={}".format(port_count)
+
+    if target_count >= heavy_target_threshold and port_count >= heavy_port_threshold:
+        return True, "target_count={},port_count={}".format(target_count, port_count)
+
+    return False, ""
+
+
 def submit_task(task_data):
     """
     提交任务到Celery
@@ -289,9 +407,28 @@ def submit_task(task_data):
     }
 
     try:
+        queue_name = "arltask"
+        queue_reason = ""
+        queue_task = celerytask.arl_task
+
+        # 将重任务分流到独立队列，避免阻塞普通任务。
+        is_heavy, heavy_reason = _should_dispatch_heavy_queue(task_data, celery_action)
+        if is_heavy:
+            queue_name = "arlheavy"
+            queue_reason = heavy_reason
+            queue_task = celerytask.arl_task_heavy
+
         # 提交到Celery
-        celery_id = celerytask.arl_task.delay(options=task_options)
-        logger.info("target:{} task_id:{} celery_id:{}".format(target, task_id, celery_id))
+        celery_id = queue_task.delay(options=task_options)
+        logger.info(
+            "target:{} task_id:{} queue:{} queue_reason:{} celery_id:{}".format(
+                target,
+                task_id,
+                queue_name,
+                queue_reason or "-",
+                celery_id
+            )
+        )
 
         # 更新celery_id
         values = {"$set": {"celery_id": str(celery_id)}}
