@@ -84,7 +84,7 @@ type ModuleSearchField = {
   placeholder: string;
   inputType?: 'text' | 'number' | 'select';
   options?: Array<{ label: string; value: string }>;
-  dynamicOptionsKey?: 'policy_name';
+  dynamicOptionsKey?: 'policy_name' | 'task_name';
 };
 
 type ModuleConfig = {
@@ -191,7 +191,12 @@ const modules: ModuleConfig[] = [
       _id: 'Task_Id',
     },
     searchFields: [
-      { key: 'name', label: '任务名', placeholder: '请输入任务名（用于搜索/同名查看/批量操作）' },
+      {
+        key: 'name',
+        label: '任务名',
+        placeholder: '请输入或选择任务名（用于搜索/同名查看/批量操作）',
+        dynamicOptionsKey: 'task_name',
+      },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
       { key: '_id', label: 'Task_Id', placeholder: '请输入Task_Id进行搜索' },
       {
@@ -5743,6 +5748,7 @@ function TableModuleView({
   const [policyTaskName, setPolicyTaskName] = useState('');
   const [policyTaskTarget, setPolicyTaskTarget] = useState('');
   const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [taskNameOptions, setTaskNameOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [taskDetailCounts, setTaskDetailCounts] = useState<Record<string, number>>({});
   const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
@@ -5774,6 +5780,7 @@ function TableModuleView({
   const moduleListLoadedRef = useRef<Record<string, boolean>>({});
   const taskDetailCountCacheRef = useRef<Record<string, Record<string, number>>>({});
   const taskSchedulePolicyOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
+  const taskNameOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -5815,6 +5822,18 @@ function TableModuleView({
       .map((item) => item.row);
   }, [module.id, rows, taskNameSearchText]);
   const [shouldInitialLoad, setShouldInitialLoad] = useState(false);
+
+  const buildUniqueTextOptions = useCallback((values: any[]): Array<{ label: string; value: string }> => {
+    const uniqueValues = Array.from(
+      new Set(
+        values
+          .map((value) => String(value || '').trim())
+          .filter((value) => value)
+      )
+    ).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+
+    return uniqueValues.map((value) => ({ label: value, value }));
+  }, []);
 
   const resolveScrollableContainer = useCallback((): HTMLElement | null => {
     let cursor: HTMLElement | null = tableRootRef.current;
@@ -6072,6 +6091,63 @@ function TableModuleView({
     };
   }, [module.id, token]);
 
+  useEffect(() => {
+    if (module.id !== 'task') {
+      setTaskNameOptions([]);
+      return;
+    }
+
+    if (taskNameOptionsCacheRef.current) {
+      setTaskNameOptions(taskNameOptionsCacheRef.current);
+      return;
+    }
+
+    let cancelled = false;
+    const loadTaskNameOptions = async () => {
+      try {
+        const response = await requestApi(token, '/task/', {
+          method: 'GET',
+          query: { page: 1, size: 1000, order: 'name' },
+        });
+        const items = normalizeListData(response).items || [];
+        const options = buildUniqueTextOptions(items.map((item: any) => item?.name));
+        if (cancelled) return;
+        taskNameOptionsCacheRef.current = options;
+        setTaskNameOptions(options);
+      } catch {
+        if (cancelled) return;
+        setTaskNameOptions([]);
+      }
+    };
+
+    void loadTaskNameOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [buildUniqueTextOptions, module.id, token]);
+
+  useEffect(() => {
+    if (module.id !== 'task' || rows.length === 0) return;
+
+    const rowOptions = buildUniqueTextOptions(rows.map((row) => row?.name));
+    if (rowOptions.length === 0) return;
+
+    setTaskNameOptions((prev) => {
+      const merged = buildUniqueTextOptions([
+        ...prev.map((option) => option.value),
+        ...rowOptions.map((option) => option.value),
+      ]);
+
+      const hasChanged =
+        merged.length !== prev.length ||
+        merged.some((option, index) => option.value !== prev[index]?.value);
+
+      if (!hasChanged) return prev;
+      taskNameOptionsCacheRef.current = merged;
+      return merged;
+    });
+  }, [buildUniqueTextOptions, module.id, rows]);
+
   const isTaskDetailModule = useMemo(
     () => TASK_DETAIL_TABS.some((tab) => tab.id === module.id),
     [module.id]
@@ -6144,6 +6220,13 @@ function TableModuleView({
       return field.options;
     }
     return [{ label: '全部', value: '' }];
+  };
+
+  const getSearchFieldSuggestionOptions = (field: ModuleSearchField): Array<{ label: string; value: string }> => {
+    if (field.dynamicOptionsKey === 'task_name') {
+      return taskNameOptions;
+    }
+    return [];
   };
 
   const buildFilters = useCallback((): JsonValue => {
@@ -7343,23 +7426,43 @@ function TableModuleView({
                       <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                     </div>
                   ) : (
-                    <input
-                      type={field.inputType === 'number' ? 'number' : 'text'}
-                      value={String(searchForm?.[field.key] ?? '')}
-                      placeholder={field.placeholder}
-                      className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm text-brand-text placeholder:text-brand-text-muted focus:outline-none focus:border-brand-accent"
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setSearchForm((prev) => ({ ...prev, [field.key]: value }));
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          setPage(1);
-                          void loadRows({ page: 1, forceRefresh: true });
-                        }
-                      }}
-                    />
+                    (() => {
+                      const suggestionOptions = getSearchFieldSuggestionOptions(field);
+                      const datalistId =
+                        suggestionOptions.length > 0 ? `search-suggestions-${module.id}-${field.key}` : undefined;
+
+                      return (
+                        <>
+                          <input
+                            list={datalistId}
+                            type={field.inputType === 'number' ? 'number' : 'text'}
+                            value={String(searchForm?.[field.key] ?? '')}
+                            placeholder={field.placeholder}
+                            className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm text-brand-text placeholder:text-brand-text-muted focus:outline-none focus:border-brand-accent"
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setSearchForm((prev) => ({ ...prev, [field.key]: value }));
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                setPage(1);
+                                void loadRows({ page: 1, forceRefresh: true });
+                              }
+                            }}
+                          />
+                          {datalistId ? (
+                            <datalist id={datalistId}>
+                              {suggestionOptions.map((option) => (
+                                <option key={`${field.key}-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </datalist>
+                          ) : null}
+                        </>
+                      );
+                    })()
                   )}
                 </div>
               ))}
