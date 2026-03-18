@@ -30,7 +30,13 @@ class AfrogScan(object):
         self.afrog_pocs_dir = str(getattr(Config, "AFROG_POCS_DIR", "") or "").strip()
         self.afrog_search_keywords = str(getattr(Config, "AFROG_SEARCH_KEYWORDS", "") or "").strip()
         self.afrog_severity = str(getattr(Config, "AFROG_SEVERITY", "") or "").strip().lower()
+        self.afrog_concurrency = int(getattr(Config, "AFROG_CONCURRENCY", 5) or 5)
+        self.afrog_rate_limit = int(getattr(Config, "AFROG_RATE_LIMIT", 5) or 5)
         self.exec_timeout_sec = int(getattr(Config, "AFROG_EXEC_TIMEOUT_SEC", 7200) or 7200)
+        if self.afrog_concurrency < 1:
+            self.afrog_concurrency = 1
+        if self.afrog_rate_limit < 1:
+            self.afrog_rate_limit = 1
         if self.exec_timeout_sec < 60:
             self.exec_timeout_sec = 60
 
@@ -384,6 +390,8 @@ class AfrogScan(object):
             shlex.quote(self.afrog_bin_path),
             "-T {}".format(shlex.quote(self.target_file)),
             "-json {}".format(shlex.quote(self.result_file)),
+            "-c {}".format(int(self.afrog_concurrency)),
+            "-rl {}".format(int(self.afrog_rate_limit)),
         ]
 
         pocs_dir = self._resolve_pocs_dir()
@@ -417,8 +425,10 @@ class AfrogScan(object):
         self._gen_target_file()
         command = self._build_command()
         logger.info(
-            "afrog scan options timeout:{}s keywords:{} severity:{}".format(
+            "afrog scan options timeout:{}s concurrency:{} rate_limit:{} keywords:{} severity:{}".format(
                 self.exec_timeout_sec,
+                self.afrog_concurrency,
+                self.afrog_rate_limit,
                 self.afrog_search_keywords or "-",
                 self.afrog_severity or "-",
             )

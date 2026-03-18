@@ -231,6 +231,10 @@ ARL:
   AFROG_SEARCH_KEYWORDS: ""
   # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）
   AFROG_SEVERITY: ""
+  # afrog 模板并发（命令行 -c）
+  AFROG_CONCURRENCY: 5
+  # afrog 每秒请求上限（命令行 -rl）
+  AFROG_RATE_LIMIT: 5
   # afrog 扫描超时（秒）
   AFROG_EXEC_TIMEOUT_SEC: 7200
   # 是否启用 URLFinder 同目标 URL/HTML/JS 二次敏感扫描（复用 WIH）

@@ -1598,6 +1598,14 @@ def _extract_scan_config(config_obj):
         arl_config.get('NUCLEI_BULK_SIZE'),
         Config.NUCLEI_BULK_SIZE
     )
+    afrog_concurrency = _safe_int(
+        arl_config.get('AFROG_CONCURRENCY'),
+        Config.AFROG_CONCURRENCY
+    )
+    afrog_rate_limit = _safe_int(
+        arl_config.get('AFROG_RATE_LIMIT'),
+        Config.AFROG_RATE_LIMIT
+    )
     urlfinder_url_probe_enable = _safe_bool(
         arl_config.get('URLFINDER_URL_PROBE_ENABLE'),
         Config.URLFINDER_URL_PROBE_ENABLE
@@ -1646,6 +1654,8 @@ def _extract_scan_config(config_obj):
         'nuclei_rate_limit': nuclei_rate_limit,
         'nuclei_concurrency': nuclei_concurrency,
         'nuclei_bulk_size': nuclei_bulk_size,
+        'afrog_concurrency': afrog_concurrency,
+        'afrog_rate_limit': afrog_rate_limit,
         'urlfinder_url_probe_enable': urlfinder_url_probe_enable,
         'urlfinder_url_probe_max_targets': urlfinder_url_probe_max_targets,
         'urlfinder_url_probe_concurrency': urlfinder_url_probe_concurrency,
@@ -1737,6 +1747,14 @@ def _merge_scan_config(config_obj, scan_config):
         scan_config.get('nuclei_bulk_size'),
         Config.NUCLEI_BULK_SIZE
     )
+    afrog_concurrency = _safe_int(
+        scan_config.get('afrog_concurrency'),
+        Config.AFROG_CONCURRENCY
+    )
+    afrog_rate_limit = _safe_int(
+        scan_config.get('afrog_rate_limit'),
+        Config.AFROG_RATE_LIMIT
+    )
     urlfinder_url_probe_enable = _safe_bool(
         scan_config.get('urlfinder_url_probe_enable'),
         Config.URLFINDER_URL_PROBE_ENABLE
@@ -1788,6 +1806,8 @@ def _merge_scan_config(config_obj, scan_config):
     config_obj['ARL']['NUCLEI_RATE_LIMIT'] = nuclei_rate_limit
     config_obj['ARL']['NUCLEI_CONCURRENCY'] = nuclei_concurrency
     config_obj['ARL']['NUCLEI_BULK_SIZE'] = nuclei_bulk_size
+    config_obj['ARL']['AFROG_CONCURRENCY'] = afrog_concurrency
+    config_obj['ARL']['AFROG_RATE_LIMIT'] = afrog_rate_limit
     config_obj['ARL']['URLFINDER_URL_PROBE_ENABLE'] = urlfinder_url_probe_enable
     config_obj['ARL']['URLFINDER_URL_PROBE_MAX_TARGETS'] = urlfinder_url_probe_max_targets
     config_obj['ARL']['URLFINDER_URL_PROBE_CONCURRENCY'] = urlfinder_url_probe_concurrency

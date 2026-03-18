@@ -1294,26 +1294,38 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'nuclei_result',
-    label: 'nuclei',
-    description: 'Nuclei 模板扫描结果',
+    label: 'PoC风险',
+    description: 'Nuclei / afrog PoC 扫描结果',
     group: '风险与规则',
     icon: FlaskConical,
     listPath: '/nuclei_result/',
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'vuln_name',
-    columns: ['template_id', 'target', 'vuln_url', 'vuln_name', 'vuln_severity', 'save_date', 'curl_command'],
+    columns: ['scanner_type', 'rule_id', 'target', 'vuln_url', 'vuln_name', 'vuln_severity', 'save_date', 'verify_data'],
     columnLabels: {
-      template_id: '模板ID',
+      scanner_type: '扫描器',
+      rule_id: '规则ID',
       target: '目标',
       vuln_url: '风险URL',
       vuln_name: '风险名称',
       vuln_severity: '风险等级',
       save_date: '保存时间',
-      curl_command: '验证命令',
+      verify_data: '验证信息',
     },
     searchFields: [
-      { key: 'template_id', label: '模版ID', placeholder: '请输入模版ID进行搜索' },
+      {
+        key: 'scanner_type',
+        label: '扫描器',
+        placeholder: '请选择扫描器',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: 'Nuclei', value: 'nuclei' },
+          { label: 'afrog', value: 'afrog' },
+        ],
+      },
+      { key: 'rule_id', label: '规则ID', placeholder: '请输入模板ID或PoC ID进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
       { key: 'vuln_url', label: '风险URL', placeholder: '请输入风险URL进行搜索' },
       { key: 'vuln_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
@@ -1818,7 +1830,7 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'url', label: 'URL信息' },
   { id: 'vuln', label: '风险' },
   { id: 'cip', label: 'C段' },
-  { id: 'nuclei_result', label: 'nuclei' },
+  { id: 'nuclei_result', label: 'PoC风险' },
   { id: 'stat_finger', label: '指纹统计' },
   { id: 'wih', label: 'WIH' },
 ];
@@ -2760,6 +2772,12 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
     const verifyData = normalizeValue(row?.verify_data);
     if (verifyData !== '-') return verifyData;
     return normalizeValue(row?.verify_obj);
+  }
+
+  if (moduleId === 'nuclei_result' && column === 'scanner_type') {
+    const scannerType = String(value || '').trim().toLowerCase();
+    if (scannerType === 'nuclei') return 'Nuclei';
+    if (scannerType === 'afrog') return 'afrog';
   }
 
   if (moduleId === 'asset_scope' && column === 'scope') {
@@ -6419,7 +6437,7 @@ function TableModuleView({
     if (moduleId === 'cert' && column === 'cert_summary') return true;
     if (moduleId === 'service' && ['ip_port', 'service_info.product'].includes(column)) return true;
     if (moduleId === 'vuln' && column === 'credential') return true;
-    if (moduleId === 'nuclei_result' && ['vuln_url', 'curl_command'].includes(column)) return true;
+    if (moduleId === 'nuclei_result' && ['vuln_url', 'verify_data'].includes(column)) return true;
     if (moduleId === 'wih' && ['content', 'source', 'site'].includes(column)) return true;
     if (moduleId === 'github_result' && ['path', 'human_content'].includes(column)) return true;
     if (moduleId === 'github_monitor_result' && ['path', 'human_content'].includes(column)) return true;
@@ -9843,6 +9861,8 @@ function ConfigConsoleView({ token }: { token: string }) {
         nuclei_rate_limit: 2,
         nuclei_concurrency: 1,
         nuclei_bulk_size: 2,
+        afrog_concurrency: 3,
+        afrog_rate_limit: 3,
         urlfinder_url_probe_enable: true,
         urlfinder_url_probe_max_targets: 120,
         urlfinder_url_probe_concurrency: 2,
@@ -9872,6 +9892,8 @@ function ConfigConsoleView({ token }: { token: string }) {
         nuclei_rate_limit: 4,
         nuclei_concurrency: 2,
         nuclei_bulk_size: 3,
+        afrog_concurrency: 4,
+        afrog_rate_limit: 4,
         urlfinder_url_probe_enable: true,
         urlfinder_url_probe_max_targets: 220,
         urlfinder_url_probe_concurrency: 4,
@@ -9901,6 +9923,8 @@ function ConfigConsoleView({ token }: { token: string }) {
         nuclei_rate_limit: 8,
         nuclei_concurrency: 4,
         nuclei_bulk_size: 5,
+        afrog_concurrency: 5,
+        afrog_rate_limit: 5,
         urlfinder_url_probe_enable: true,
         urlfinder_url_probe_max_targets: 300,
         urlfinder_url_probe_concurrency: 8,
@@ -9944,6 +9968,8 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [nucleiRateLimit, setNucleiRateLimit] = useState(8);
   const [nucleiConcurrency, setNucleiConcurrency] = useState(4);
   const [nucleiBulkSize, setNucleiBulkSize] = useState(5);
+  const [afrogConcurrency, setAfrogConcurrency] = useState(5);
+  const [afrogRateLimit, setAfrogRateLimit] = useState(5);
   const [urlfinderUrlProbeEnable, setUrlfinderUrlProbeEnable] = useState(true);
   const [urlfinderUrlProbeMaxTargets, setUrlfinderUrlProbeMaxTargets] = useState(300);
   const [urlfinderUrlProbeConcurrency, setUrlfinderUrlProbeConcurrency] = useState(6);
@@ -10030,6 +10056,8 @@ function ConfigConsoleView({ token }: { token: string }) {
     setNucleiRateLimit(getNumber('nuclei_rate_limit', nucleiRateLimit));
     setNucleiConcurrency(getNumber('nuclei_concurrency', nucleiConcurrency));
     setNucleiBulkSize(getNumber('nuclei_bulk_size', nucleiBulkSize));
+    setAfrogConcurrency(getNumber('afrog_concurrency', afrogConcurrency));
+    setAfrogRateLimit(getNumber('afrog_rate_limit', afrogRateLimit));
     setUrlfinderUrlProbeEnable(getBool('urlfinder_url_probe_enable', urlfinderUrlProbeEnable));
     setUrlfinderUrlProbeMaxTargets(getNumber('urlfinder_url_probe_max_targets', urlfinderUrlProbeMaxTargets));
     setUrlfinderUrlProbeConcurrency(getNumber('urlfinder_url_probe_concurrency', urlfinderUrlProbeConcurrency));
@@ -10059,6 +10087,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       nuclei_rate_limit: Math.floor(nucleiRateLimit),
       nuclei_concurrency: Math.floor(nucleiConcurrency),
       nuclei_bulk_size: Math.floor(nucleiBulkSize),
+      afrog_concurrency: Math.floor(afrogConcurrency),
+      afrog_rate_limit: Math.floor(afrogRateLimit),
       urlfinder_url_probe_enable: Boolean(urlfinderUrlProbeEnable),
       urlfinder_url_probe_max_targets: Math.floor(urlfinderUrlProbeMaxTargets),
       urlfinder_url_probe_concurrency: Math.floor(urlfinderUrlProbeConcurrency),
@@ -10080,6 +10110,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       nucleiRateLimit,
       nucleiConcurrency,
       nucleiBulkSize,
+      afrogConcurrency,
+      afrogRateLimit,
       urlfinderUrlProbeEnable,
       urlfinderUrlProbeMaxTargets,
       urlfinderUrlProbeConcurrency,
@@ -10129,6 +10161,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       setNucleiRateLimit(Number(scanConfig.nuclei_rate_limit || 8));
       setNucleiConcurrency(Number(scanConfig.nuclei_concurrency || 4));
       setNucleiBulkSize(Number(scanConfig.nuclei_bulk_size || 5));
+      setAfrogConcurrency(Number(scanConfig.afrog_concurrency || 5));
+      setAfrogRateLimit(Number(scanConfig.afrog_rate_limit || 5));
       setUrlfinderUrlProbeEnable(Boolean(scanConfig.urlfinder_url_probe_enable ?? true));
       setUrlfinderUrlProbeMaxTargets(Number(scanConfig.urlfinder_url_probe_max_targets || 300));
       setUrlfinderUrlProbeConcurrency(Number(scanConfig.urlfinder_url_probe_concurrency || 6));
@@ -10216,6 +10250,14 @@ function ConfigConsoleView({ token }: { token: string }) {
       setError('Nuclei bulk-size 必须大于 0');
       return;
     }
+    if (!Number.isFinite(afrogConcurrency) || afrogConcurrency <= 0) {
+      setError('afrog 并发必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(afrogRateLimit) || afrogRateLimit <= 0) {
+      setError('afrog 每秒请求上限必须大于 0');
+      return;
+    }
     if (!Number.isFinite(urlfinderUrlProbeMaxTargets) || urlfinderUrlProbeMaxTargets <= 0) {
       setError('URLFinder URL 探测最大目标数必须大于 0');
       return;
@@ -10269,6 +10311,8 @@ function ConfigConsoleView({ token }: { token: string }) {
             nuclei_rate_limit: Math.floor(nucleiRateLimit),
             nuclei_concurrency: Math.floor(nucleiConcurrency),
             nuclei_bulk_size: Math.floor(nucleiBulkSize),
+            afrog_concurrency: Math.floor(afrogConcurrency),
+            afrog_rate_limit: Math.floor(afrogRateLimit),
             urlfinder_url_probe_enable: Boolean(urlfinderUrlProbeEnable),
             urlfinder_url_probe_max_targets: Math.floor(urlfinderUrlProbeMaxTargets),
             urlfinder_url_probe_concurrency: Math.floor(urlfinderUrlProbeConcurrency),
@@ -10304,6 +10348,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       setNucleiRateLimit(Number(savedConfig.nuclei_rate_limit || nucleiRateLimit));
       setNucleiConcurrency(Number(savedConfig.nuclei_concurrency || nucleiConcurrency));
       setNucleiBulkSize(Number(savedConfig.nuclei_bulk_size || nucleiBulkSize));
+      setAfrogConcurrency(Number(savedConfig.afrog_concurrency || afrogConcurrency));
+      setAfrogRateLimit(Number(savedConfig.afrog_rate_limit || afrogRateLimit));
       setUrlfinderUrlProbeEnable(Boolean(savedConfig.urlfinder_url_probe_enable ?? urlfinderUrlProbeEnable));
       setUrlfinderUrlProbeMaxTargets(Number(savedConfig.urlfinder_url_probe_max_targets || urlfinderUrlProbeMaxTargets));
       setUrlfinderUrlProbeConcurrency(Number(savedConfig.urlfinder_url_probe_concurrency || urlfinderUrlProbeConcurrency));
@@ -10455,7 +10501,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供 2C2G3M/4C4G5M/8C16G10M 预定义档位，写入 config-docker.yaml 后重启生效。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供 2C2G3M/4C4G5M/8C16G10M 预定义档位，写入 config-docker.yaml 后重启生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -10523,7 +10569,7 @@ function ConfigConsoleView({ token }: { token: string }) {
         <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
           <div className="text-xs font-black tracking-wide text-brand-text">预定义资源档位</div>
           <div className="text-xs text-brand-text-muted">
-            一键套用常见机型参数（CPU/内存/带宽），覆盖 Nuclei、域名爆破、端口扫描、URL 探测、Web/Celery 并发等关键项，降低低配主机被扫描压垮风险。
+            一键套用常见机型参数（CPU/内存/带宽），覆盖 Nuclei、afrog、域名爆破、端口扫描、URL 探测、Web/Celery 并发等关键项，降低低配主机被扫描压垮风险。
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
             {scanProfiles.map((profile) => {
@@ -10865,9 +10911,37 @@ function ConfigConsoleView({ token }: { token: string }) {
                 className={compactFieldInputClass}
               />
             </div>
+            <div className="space-y-2">
+              <label htmlFor="config-afrog-concurrency" className="text-xs font-bold text-brand-text-muted block">
+                afrog 并发
+                <span className="ml-2 font-mono opacity-70">ARL.AFROG_CONCURRENCY</span>
+              </label>
+              <input
+                id="config-afrog-concurrency"
+                type="number"
+                min={1}
+                value={String(afrogConcurrency)}
+                onChange={(event) => setAfrogConcurrency(Number(event.target.value || 0))}
+                className={compactFieldInputClass}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="config-afrog-rate-limit" className="text-xs font-bold text-brand-text-muted block">
+                afrog 每秒请求上限
+                <span className="ml-2 font-mono opacity-70">ARL.AFROG_RATE_LIMIT</span>
+              </label>
+              <input
+                id="config-afrog-rate-limit"
+                type="number"
+                min={1}
+                value={String(afrogRateLimit)}
+                onChange={(event) => setAfrogRateLimit(Number(event.target.value || 0))}
+                className={compactFieldInputClass}
+              />
+            </div>
           </div>
           <div className="text-xs text-brand-text-muted">
-            当前 Nuclei 超时约 {(nucleiSingleTargetTimeoutSec / 3600).toFixed(2)} 小时/目标。建议优先使用上方预定义资源档位统一调整。
+            当前 Nuclei 超时约 {(nucleiSingleTargetTimeoutSec / 3600).toFixed(2)} 小时/目标，afrog 走站点级批量 PoC 扫描并会按这里的并发与限速执行。建议优先使用上方预定义资源档位统一调整。
           </div>
         </div>
 

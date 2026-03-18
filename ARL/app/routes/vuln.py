@@ -88,6 +88,9 @@ class ARLUrl(ARLResource):
         - 用于安全评估和漏洞管理
         """
         args = self.parser.parse_args()
+        # afrog 扫描结果统一在 PoC 扫描结果模块展示；风险模块默认隐藏，避免重复呈现。
+        if not str(args.get('plg_type') or '').strip():
+            args['plg_type__neq'] = 'afrog'
         data = self.build_data(args=args, collection='vuln')
 
         return data
@@ -135,5 +138,4 @@ class DeleteARLVuln(ARLResource):
             utils.conn_db('vuln').delete_one(query)
 
         return utils.build_ret(ErrorMsg.Success, {'_id': id_list})
-
 

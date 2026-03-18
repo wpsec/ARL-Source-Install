@@ -183,6 +183,16 @@ ARL/docker/config-docker.yaml
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773386503749-b9f62581-c8d8-4774-80e5-3db616465da3.png)
 
+### PoC 扫描结果
+
+- `Nuclei` 与 `afrog` 的 Web PoC 扫描结果统一展示在资产中心的 `PoC风险` 模块
+- `配置管理 -> 扫描超时与端口参数` 现已支持 `AFROG_CONCURRENCY` 与 `AFROG_RATE_LIMIT` 两个参数，分别映射到 `afrog -c` 与 `afrog -rl`
+- `afrog` 当前扫描逻辑不是“按指纹命中后才扫描”，而是基于当前任务已探测可用的站点列表执行批量 PoC 扫描：
+  - 先由 `fetch_site` 建立可访问站点集合
+  - 再对站点根 URL 做去重与 WAF 过滤
+  - 之后统一交给 `afrog` 扫描
+- 对比来看，`Nuclei` 会优先结合站点指纹构造目标与标签，但在无指纹场景下仍可走自动扫描兜底
+
 ### 低性能环境
 
 - 不建议使用nuclei与afrog进行poc扫描，性能太差的机器效果也不好
@@ -202,6 +212,7 @@ ARL/docker/config-docker.yaml
 - 精扫阶段改为“逐主机 + 端口分段”执行，覆盖全部发现开放端口的主机与端口，不再按高价值目标裁剪范围，保证结果不缩水。
 - RabbitMQ 增加长任务确认超时放宽配置（2小时）并精简 API 管理项（隐藏 PassiveTotal），降低长任务异常中断与无效配置干扰。
 - `API管理` 继续扩展第三方测绘能力：新增 `Shodan / hunter.how` 接入与在线验证，并补齐 `hunter.how` 的域名/IP 查询、`Shodan` 的域名/IP/证书查询能力；域名任务在收集 SSL 证书后，可继续复用 `Shodan` 证书搜索链路补充同域资产。
+- `afrog` PoC 链路补齐稳定性与配置能力：修复离线包自动解压执行报错，配置管理新增 `AFROG_CONCURRENCY / AFROG_RATE_LIMIT`，并将 `Nuclei + afrog` 统一展示到 `PoC风险` 模块，避免结果分散在两个入口。
 
 ### v3.2（2026-03）
 

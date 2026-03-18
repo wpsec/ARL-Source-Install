@@ -104,6 +104,14 @@ def resolve_executable(command):
     return shutil.which(command) or ""
 
 
+def stable_hash(text):
+    """
+    将文本稳定映射为 64bit 整数，便于生成可复用的缓存/临时目录标识。
+    """
+    digest = gen_md5(str(text or ""))
+    return int(digest[:16], 16)
+
+
 def get_runtime_arch():
     """
     获取当前运行时架构，并做常见别名归一化

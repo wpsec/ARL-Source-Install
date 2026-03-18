@@ -278,6 +278,8 @@ def refresh_runtime_config_best_effort(force=False):
             "NUCLEI_RATE_LIMIT",
             "NUCLEI_CONCURRENCY",
             "NUCLEI_BULK_SIZE",
+            "AFROG_CONCURRENCY",
+            "AFROG_RATE_LIMIT",
             "AFROG_EXEC_TIMEOUT_SEC",
             "URLFINDER_URL_PROBE_MAX_TARGETS",
             "URLFINDER_URL_PROBE_CONCURRENCY",
@@ -435,6 +437,10 @@ class Config(object):
     AFROG_SEARCH_KEYWORDS = ""
     # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）
     AFROG_SEVERITY = ""
+    # afrog 扫描并发（-c）
+    AFROG_CONCURRENCY = 5
+    # afrog 每秒请求上限（-rl）
+    AFROG_RATE_LIMIT = 5
     # afrog 扫描执行超时（秒）
     AFROG_EXEC_TIMEOUT_SEC = 2 * 60 * 60
     # TruffleHog 可执行文件路径（优先使用 tools 目录）
@@ -917,6 +923,16 @@ try:
     if y["ARL"].get("AFROG_SEVERITY") is not None:
         Config.AFROG_SEVERITY = str(y["ARL"]["AFROG_SEVERITY"] or "").strip().lower()
 
+    if y["ARL"].get("AFROG_CONCURRENCY") is not None:
+        Config.AFROG_CONCURRENCY = safe_positive_int(
+            int(y["ARL"]["AFROG_CONCURRENCY"]), Config.AFROG_CONCURRENCY
+        )
+
+    if y["ARL"].get("AFROG_RATE_LIMIT") is not None:
+        Config.AFROG_RATE_LIMIT = safe_positive_int(
+            int(y["ARL"]["AFROG_RATE_LIMIT"]), Config.AFROG_RATE_LIMIT
+        )
+
     if y["ARL"].get("AFROG_EXEC_TIMEOUT_SEC") is not None:
         Config.AFROG_EXEC_TIMEOUT_SEC = safe_positive_int(
             int(y["ARL"]["AFROG_EXEC_TIMEOUT_SEC"]), Config.AFROG_EXEC_TIMEOUT_SEC
@@ -1282,6 +1298,14 @@ try:
     Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
     Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
     Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
+    Config.AFROG_CONCURRENCY = safe_positive_int(
+        env_int("ARL_AFROG_CONCURRENCY", Config.AFROG_CONCURRENCY),
+        Config.AFROG_CONCURRENCY
+    )
+    Config.AFROG_RATE_LIMIT = safe_positive_int(
+        env_int("ARL_AFROG_RATE_LIMIT", Config.AFROG_RATE_LIMIT),
+        Config.AFROG_RATE_LIMIT
+    )
     Config.AFROG_EXEC_TIMEOUT_SEC = safe_positive_int(
         env_int("ARL_AFROG_EXEC_TIMEOUT_SEC", Config.AFROG_EXEC_TIMEOUT_SEC),
         Config.AFROG_EXEC_TIMEOUT_SEC

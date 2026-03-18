@@ -218,6 +218,20 @@ ARL:
   NUCLEI_AUTO_SCAN: true
   # 指纹未命中标签时的兜底标签（逗号分隔）
   NUCLEI_DEFAULT_TAGS: "cve"
+  # afrog 可执行文件路径（默认使用 tools/afrog/afrog）
+  AFROG_BIN: "/code/tools/afrog/afrog"
+  # afrog PoC 目录（默认使用 tools/afrog/afrog-pocs）
+  AFROG_POCS_DIR: "/code/tools/afrog/afrog-pocs"
+  # afrog 模糊搜索关键词（逗号分隔，为空表示不过滤）
+  AFROG_SEARCH_KEYWORDS: ""
+  # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）
+  AFROG_SEVERITY: ""
+  # afrog 模板并发（命令行 -c）
+  AFROG_CONCURRENCY: 5
+  # afrog 每秒请求上限（命令行 -rl）
+  AFROG_RATE_LIMIT: 5
+  # afrog 扫描超时（秒）
+  AFROG_EXEC_TIMEOUT_SEC: 7200
   # 公网A记录IP反查增强：按IP调用三方API补充同域资产（默认开启）
   IP_PIVOT_QUERY_ENABLE: true
   # 单任务最多参与反查的IP数量
