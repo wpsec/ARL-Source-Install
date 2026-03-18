@@ -9382,15 +9382,17 @@ function ApiConsoleView({ token }: { token: string }) {
                 ) : null}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => void testServiceApiProvider(provider.id, provider.alias || provider.title)}
-                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-1 disabled:opacity-60"
-                  disabled={Boolean(testingProviderId) || loading || saving}
+                {['github', 'chaos'].includes(provider.id) ? null : (
+                  <button
+                    type="button"
+                    onClick={() => void testServiceApiProvider(provider.id, provider.alias || provider.title)}
+                    className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-1 disabled:opacity-60"
+                    disabled={Boolean(testingProviderId) || loading || saving}
                 >
-                  <Play className={`w-3.5 h-3.5 ${testingProviderId === provider.id ? 'animate-spin' : ''}`} />
+                    <Play className={`w-3.5 h-3.5 ${testingProviderId === provider.id ? 'animate-spin' : ''}`} />
                   {testingProviderId === provider.id ? '测试中...' : '测试'}
-                </button>
+                  </button>
+                )}
                 {provider.enableKey ? (
                   <label className="flex items-center gap-2 text-xs text-brand-text-muted shrink-0">
                     <input
@@ -9434,7 +9436,7 @@ function ApiConsoleView({ token }: { token: string }) {
                 }`}
               >
                 <div>{providerTestResultMap[provider.id].message}</div>
-                {providerTestResultMap[provider.id].detail ? <div className="mt-1 font-mono opacity-80">{providerTestResultMap[provider.id].detail}</div> : null}
+                {providerTestResultMap[provider.id].detail ? <div className="mt-1 font-mono opacity-80 break-all whitespace-pre-wrap">{providerTestResultMap[provider.id].detail}</div> : null}
                 {providerTestResultMap[provider.id].testedAt ? <div className="mt-1 opacity-70">{providerTestResultMap[provider.id].testedAt}</div> : null}
               </div>
             ) : null}
