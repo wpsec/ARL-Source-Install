@@ -774,13 +774,11 @@ def _prepare_task_export_sheet_items(raw_sheet_items):
     预处理任务导出工作表：
     - SSL证书工作表去掉任务ID列
     - 风险工作表去掉任务ID列（兼容历史导出结构）
-    - 追加“过期证书”工作表
     """
     if not isinstance(raw_sheet_items, list):
         return []
 
     prepared_items = []
-    ssl_sheet_item = None
 
     for item in raw_sheet_items:
         if not isinstance(item, dict):
@@ -800,14 +798,8 @@ def _prepare_task_export_sheet_items(raw_sheet_items):
             _normalize_sheet_name_key("漏洞"),
         ]:
             current_item["values"] = _strip_task_id_column(current_item.get("values", []))
-        if normalized_key == _normalize_sheet_name_key("SSL证书"):
-            ssl_sheet_item = current_item
 
         prepared_items.append(current_item)
-
-    expired_sheet_item = _build_expired_ssl_sheet_item(ssl_sheet_item)
-    if expired_sheet_item:
-        prepared_items.append(expired_sheet_item)
 
     return prepared_items
 
@@ -815,12 +807,17 @@ def _prepare_task_export_sheet_items(raw_sheet_items):
 def _build_ordered_export_sheet_items(raw_sheet_items):
     """
     按固定顺序重排导出工作表
-    期望顺序：域名、IP、系统服务、SSL证书、过期证书、站点、风险、资产统计
+    期望顺序：站点、IP、系统服务、SSL证书、域名、URL信息、目录扫描、WIH、资产统计
     """
-    preferred_order = ["域名", "IP", "系统服务", "SSL证书", "过期证书", "站点", "风险", "资产统计"]
+    preferred_order = ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "资产统计"]
+    alias_map = {
+        _normalize_sheet_name_key("url"): _normalize_sheet_name_key("URL信息"),
+        _normalize_sheet_name_key("url信息"): _normalize_sheet_name_key("URL信息"),
+        _normalize_sheet_name_key("fileleak"): _normalize_sheet_name_key("目录扫描"),
+        _normalize_sheet_name_key("文件泄露"): _normalize_sheet_name_key("目录扫描"),
+        _normalize_sheet_name_key("wih"): _normalize_sheet_name_key("WIH"),
+    }
     preferred_keys = [_normalize_sheet_name_key(name) for name in preferred_order]
-    risk_key = _normalize_sheet_name_key("风险")
-    legacy_vuln_key = _normalize_sheet_name_key("漏洞")
     sheet_map = {}
     ignored_sheet_names = []
 
@@ -831,8 +828,7 @@ def _build_ordered_export_sheet_items(raw_sheet_items):
         if not sheet_name:
             continue
         normalized_key = _normalize_sheet_name_key(sheet_name)
-        if normalized_key == legacy_vuln_key:
-            normalized_key = risk_key
+        normalized_key = alias_map.get(normalized_key, normalized_key)
         if normalized_key == "sheet1":
             continue
         if normalized_key in sheet_map:

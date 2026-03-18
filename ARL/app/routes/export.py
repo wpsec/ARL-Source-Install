@@ -387,6 +387,27 @@ def get_domain_data(task_id):
     return data
 
 
+def get_url_data(task_id):
+    """
+    获取任务的 URL 信息数据。
+    """
+    return utils.conn_db('url').find({'task_id': task_id})
+
+
+def get_fileleak_data(task_id):
+    """
+    获取任务的目录扫描（文件泄露）数据。
+    """
+    return utils.conn_db('fileleak').find({'task_id': task_id})
+
+
+def get_wih_data(task_id):
+    """
+    获取任务的 WIH 数据。
+    """
+    return utils.conn_db('wih').find({'task_id': task_id})
+
+
 def _normalize_task_id_list(task_ids):
     """
     规范化任务ID列表，兼容 str/list/tuple/set 输入。
@@ -504,6 +525,133 @@ def get_cert_data(task_id):
     获取任务的 SSL 证书结果
     """
     return utils.conn_db('cert').find({'task_id': task_id})
+
+
+def _extract_url_rows(task_ids):
+    """
+    汇总 URL 信息导出行，按关键字段去重。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    rows = []
+    dedup_keys = set()
+    for task_id in task_id_list:
+        for item in get_url_data(task_id):
+            row = [
+                sanitize_excel_value(item.get("url", "")),
+                sanitize_excel_value(item.get("site", "")),
+                sanitize_excel_value(item.get("title", "")),
+                sanitize_excel_value(item.get("status_code", "")),
+                sanitize_excel_value(item.get("content_length", "")),
+                sanitize_excel_value(item.get("source", "")),
+            ]
+            key = tuple(row)
+            if key in dedup_keys:
+                continue
+            dedup_keys.add(key)
+            rows.append(row)
+    return rows
+
+
+def _extract_fileleak_rows(task_ids):
+    """
+    汇总目录扫描（文件泄露）导出行，按 URL 去重。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    rows = []
+    dedup_urls = set()
+    for task_id in task_id_list:
+        for item in get_fileleak_data(task_id):
+            url = sanitize_excel_value(item.get("url", "")).strip()
+            if not url or url in dedup_urls:
+                continue
+            dedup_urls.add(url)
+            rows.append(
+                [
+                    url,
+                    sanitize_excel_value(item.get("site", "")),
+                    sanitize_excel_value(item.get("title", "")),
+                    sanitize_excel_value(item.get("status_code", "")),
+                    sanitize_excel_value(item.get("content_length", "")),
+                ]
+            )
+    return rows
+
+
+def _extract_wih_rows(task_ids):
+    """
+    汇总 WIH 导出行，按 record_type+content+source+site 去重。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    rows = []
+    dedup_keys = set()
+    for task_id in task_id_list:
+        for item in get_wih_data(task_id):
+            row = [
+                sanitize_excel_value(item.get("record_type", "")),
+                sanitize_excel_value(item.get("content", "")),
+                sanitize_excel_value(item.get("source", "")),
+                sanitize_excel_value(item.get("site", "")),
+            ]
+            key = tuple(row)
+            if key in dedup_keys:
+                continue
+            dedup_keys.add(key)
+            rows.append(row)
+    return rows
+
+
+def _build_url_sheet(wb, task_ids):
+    """
+    在导出工作簿中新增 URL 信息工作表。
+    """
+    ws = wb.create_sheet(title="URL信息")
+    ws.column_dimensions['A'].width = 62.0
+    ws.column_dimensions['B'].width = 46.0
+    ws.column_dimensions['C'].width = 52.0
+    ws.column_dimensions['D'].width = 10.0
+    ws.column_dimensions['E'].width = 12.0
+    ws.column_dimensions['F'].width = 24.0
+    ws.append(["URL", "站点", "标题", "状态码", "body长度", "来源"])
+
+    for row in _extract_url_rows(task_ids):
+        ws.append(row)
+
+    set_sheet_style(ws)
+
+
+def _build_fileleak_sheet(wb, task_ids):
+    """
+    在导出工作簿中新增目录扫描工作表。
+    """
+    ws = wb.create_sheet(title="目录扫描")
+    ws.column_dimensions['A'].width = 62.0
+    ws.column_dimensions['B'].width = 46.0
+    ws.column_dimensions['C'].width = 52.0
+    ws.column_dimensions['D'].width = 10.0
+    ws.column_dimensions['E'].width = 12.0
+    ws.append(["URL", "站点", "标题", "状态码", "body长度"])
+
+    for row in _extract_fileleak_rows(task_ids):
+        ws.append(row)
+
+    set_sheet_style(ws)
+
+
+def _build_wih_sheet(wb, task_ids):
+    """
+    在导出工作簿中新增 WIH 工作表。
+    """
+    ws = wb.create_sheet(title="WIH")
+    ws.column_dimensions['A'].width = 22.0
+    ws.column_dimensions['B'].width = 64.0
+    ws.column_dimensions['C'].width = 52.0
+    ws.column_dimensions['D'].width = 46.0
+    ws.append(["记录类型", "内容", "来源", "站点"])
+
+    for row in _extract_wih_rows(task_ids):
+        ws.append(row)
+
+    set_sheet_style(ws)
 
 
 def _cert_record_rank(item):
@@ -1271,6 +1419,24 @@ class SaveTask(object):
 
         self.set_style(ws)
 
+    def build_url_xl(self):
+        """
+        构建 URL 信息工作表。
+        """
+        _build_url_sheet(self.wb, [self.task_id])
+
+    def build_fileleak_xl(self):
+        """
+        构建目录扫描工作表。
+        """
+        _build_fileleak_sheet(self.wb, [self.task_id])
+
+    def build_wih_xl(self):
+        """
+        构建 WIH 工作表。
+        """
+        _build_wih_sheet(self.wb, [self.task_id])
+
     def build_cert_xl(self):
         """
         生成 SSL 证书工作表（协议/套件/强度）。
@@ -1365,10 +1531,10 @@ class SaveTask(object):
         self.build_ip_xl()
         self.build_service_xl()
         self.build_cert_xl()
-        if not self.is_ip_task:
-            self.build_domain_xl()
-
-        self.build_vuln_xl()
+        self.build_domain_xl()
+        self.build_url_xl()
+        self.build_fileleak_xl()
+        self.build_wih_xl()
         self.build_statist()
 
         return save_virtual_workbook(self.wb)
@@ -1618,25 +1784,27 @@ def export_merge_tasks(task_id_list):
 
     _build_cert_sheet(wb, valid_task_ids)
 
-    # 域名（与单任务导出同结构，非IP任务时输出）
-    if not is_ip_task:
-        ws = wb.create_sheet(title="域名")
-        ws.column_dimensions['A'].width = 30.0
-        ws.column_dimensions['B'].width = 20.0
-        ws.column_dimensions['C'].width = 50.0
-        ws.column_dimensions['D'].width = 50.0
-        ws.append(["域名", "解析类型", "记录值", "关联ip"])
-        for domain in sorted(merged_domains.keys()):
-            item = merged_domains[domain]
-            ws.append([
-                sanitize_excel_value(item.get("domain", "")),
-                sanitize_excel_value(item.get("type", "")),
-                sanitize_excel_value(" \r\n".join(as_list(item.get("record", [])))),
-                sanitize_excel_value(" \r\n".join(as_list(item.get("ips", [])))),
-            ])
-        set_sheet_style(ws)
+    # 域名（统一保留，IP任务为空时仅输出表头）
+    ws = wb.create_sheet(title="域名")
+    ws.column_dimensions['A'].width = 30.0
+    ws.column_dimensions['B'].width = 20.0
+    ws.column_dimensions['C'].width = 50.0
+    ws.column_dimensions['D'].width = 50.0
+    ws.append(["域名", "解析类型", "记录值", "关联ip"])
+    for domain in sorted(merged_domains.keys()):
+        item = merged_domains[domain]
+        ws.append([
+            sanitize_excel_value(item.get("domain", "")),
+            sanitize_excel_value(item.get("type", "")),
+            sanitize_excel_value(" \r\n".join(as_list(item.get("record", [])))),
+            sanitize_excel_value(" \r\n".join(as_list(item.get("ips", [])))),
+        ])
+    set_sheet_style(ws)
 
-    _build_vuln_sheet(wb, valid_task_ids)
+    # URL信息 / 目录扫描 / WIH（与单任务导出顺序保持一致）
+    _build_url_sheet(wb, valid_task_ids)
+    _build_fileleak_sheet(wb, valid_task_ids)
+    _build_wih_sheet(wb, valid_task_ids)
 
     # 资产统计（与单任务导出同结构）
     statist = calc_port_service_product_statist_from_ip_items(merged_ip_items)

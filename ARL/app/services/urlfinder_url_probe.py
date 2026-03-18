@@ -2,7 +2,7 @@
 URLFinder 提取 URL 可达性探测并入库
 
 能力说明：
-- 从 WIH 的 urlfinder_url 记录中筛选当前任务同目标 URL
+- 从 WIH 的 `urlfinder_url/path_url` 记录中筛选当前任务同目标 URL
 - 探测 URL 可达性并提取页面基础信息
 - 将可访问 URL 写入 url 资产表，来源标记为 wih_url_probe
 """
@@ -18,6 +18,17 @@ logger = utils.get_logger()
 
 
 class UrlfinderUrlProbeService:
+    """
+    URLFinder/WIH 路径 URL 可达性探测服务。
+
+    说明：
+    - `urlfinder_url`：URLFinder 从 HTML/JS 提取出的候选 URL
+    - `path_url`：WIH 对 path 规则拼接探测命中的候选 URL
+    两类记录都会进入可达性探测，命中后统一写入 URL 信息表。
+    """
+
+    _SUPPORTED_RECORD_TYPES = {"urlfinder_url", "path_url"}
+
     def __init__(
         self,
         task_id: str,
@@ -43,6 +54,7 @@ class UrlfinderUrlProbeService:
             self.concurrency = 1
 
         self.allowed_hosts = self._collect_allowed_hosts()
+        self.record_type_counter = {}
 
     @staticmethod
     def _extract_host(value: str) -> str:
@@ -100,8 +112,9 @@ class UrlfinderUrlProbeService:
         urls = set()
         for record in self.wih_records:
             record_type = str(getattr(record, "recordType", "") or "").strip().lower()
-            if record_type != "urlfinder_url":
+            if record_type not in self._SUPPORTED_RECORD_TYPES:
                 continue
+            self.record_type_counter[record_type] = self.record_type_counter.get(record_type, 0) + 1
             normalized = self._normalize_url(getattr(record, "content", ""))
             if normalized:
                 urls.add(normalized)
@@ -183,7 +196,7 @@ class UrlfinderUrlProbeService:
 
         candidates = self._collect_candidates()
         if not candidates:
-            logger.info("urlfinder url probe skip, no urlfinder_url records")
+            logger.info("urlfinder url probe skip, no urlfinder_url/path_url records")
             return 0
 
         pending_targets = self._filter_existing(candidates)
@@ -208,7 +221,8 @@ class UrlfinderUrlProbeService:
         inserted_count = self._insert_url_pages(page_map)
 
         logger.info(
-            "urlfinder url probe done, candidates:{} pending:{} dns_keep:{} inserted:{}".format(
+            "urlfinder url probe done, record_types:{} candidates:{} pending:{} dns_keep:{} inserted:{}".format(
+                self.record_type_counter,
                 len(candidates),
                 len(pending_targets),
                 len(probe_targets),
