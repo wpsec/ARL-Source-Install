@@ -32,6 +32,23 @@ QUERY_PLUGIN:
     rate_limit_backoff: 2
     rate_limit_max_sleep: 60
     enable: false
+  hunter_how: # 网站 https://hunter.how/
+    api_key: ""
+    page_size: 100
+    max_page: 5
+    request_interval: 1.0
+    rate_limit_retry: 4
+    rate_limit_backoff: 2
+    rate_limit_max_sleep: 60
+    enable: false
+  shodan: # 网站 https://www.shodan.io/
+    api_key: ""
+    max_page: 20
+    request_interval: 1.0
+    rate_limit_retry: 4
+    rate_limit_backoff: 2
+    rate_limit_max_sleep: 60
+    enable: false
   passivetotal: # 请前往 https://community.riskiq.com/ 注册自己的key并替换
     auth_email: ""
     auth_key: ""

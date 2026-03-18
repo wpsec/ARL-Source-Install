@@ -21,6 +21,7 @@ from werkzeug.utils import secure_filename
 
 from app import utils
 from app.config import Config, normalize_dict_path_compat, refresh_runtime_config_best_effort
+from app.services.fofaClient import FofaClient
 from app.modules import ErrorMsg
 from app.utils import auth, get_logger
 from . import ARLResource
@@ -48,6 +49,15 @@ save_service_api_fields = ns.model(
     'SaveServiceApiConfig',
     {
         'service_api': fields.Raw(required=True, description='三方 API 配置对象'),
+    },
+)
+
+test_service_api_fields = ns.model(
+    'TestServiceApiConfig',
+    {
+        'provider': fields.String(required=True, description='需要测试的 provider 标识'),
+        'service_api': fields.Raw(required=True, description='三方 API 配置对象（使用当前表单值，不落盘）'),
+        'test_target': fields.String(required=False, description='可选测试域名，默认 example.com'),
     },
 )
 
@@ -960,6 +970,8 @@ def _extract_service_api_config(config_obj):
     fofa_plugin = plugin_config('fofa')
     certspotter_plugin = plugin_config('certspotter')
     hunter_plugin = plugin_config('hunter_qax')
+    hunter_how_plugin = plugin_config('hunter_how')
+    shodan_plugin = plugin_config('shodan')
     quake_plugin = plugin_config('quake_360')
     zoomeye_plugin = plugin_config('zoomeye')
     securitytrails_plugin = plugin_config('securitytrails')
@@ -990,6 +1002,21 @@ def _extract_service_api_config(config_obj):
         'hunter_rate_limit_retry': _safe_int(hunter_plugin.get('rate_limit_retry'), 4, min_value=0),
         'hunter_rate_limit_backoff': _safe_int(hunter_plugin.get('rate_limit_backoff'), 2, min_value=1),
         'hunter_rate_limit_max_sleep': _safe_int(hunter_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
+        'hunter_how_api_key': str(hunter_how_plugin.get('api_key') or ''),
+        'hunter_how_enable': _safe_bool(hunter_how_plugin.get('enable'), False),
+        'hunter_how_page_size': _safe_int(hunter_how_plugin.get('page_size'), 100, min_value=1),
+        'hunter_how_max_page': _safe_int(hunter_how_plugin.get('max_page'), 5, min_value=1),
+        'hunter_how_request_interval': _safe_float(hunter_how_plugin.get('request_interval'), 1.0, min_value=0.0),
+        'hunter_how_rate_limit_retry': _safe_int(hunter_how_plugin.get('rate_limit_retry'), 4, min_value=0),
+        'hunter_how_rate_limit_backoff': _safe_int(hunter_how_plugin.get('rate_limit_backoff'), 2, min_value=1),
+        'hunter_how_rate_limit_max_sleep': _safe_int(hunter_how_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
+        'shodan_api_key': str(shodan_plugin.get('api_key') or ''),
+        'shodan_enable': _safe_bool(shodan_plugin.get('enable'), False),
+        'shodan_max_page': _safe_int(shodan_plugin.get('max_page'), 20, min_value=1),
+        'shodan_request_interval': _safe_float(shodan_plugin.get('request_interval'), 1.0, min_value=0.0),
+        'shodan_rate_limit_retry': _safe_int(shodan_plugin.get('rate_limit_retry'), 4, min_value=0),
+        'shodan_rate_limit_backoff': _safe_int(shodan_plugin.get('rate_limit_backoff'), 2, min_value=1),
+        'shodan_rate_limit_max_sleep': _safe_int(shodan_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
         'quake_token': str(quake_plugin.get('quake_token') or ''),
         'quake_enable': _safe_bool(quake_plugin.get('enable'), True),
         'quake_rate_limit_retry': _safe_int(quake_plugin.get('rate_limit_retry'), 4, min_value=0),
@@ -1079,6 +1106,69 @@ def _merge_service_api_config(config_obj, service_api):
         min_value=1
     )
 
+    hunter_how_plugin = ensure_plugin('hunter_how')
+    hunter_how_plugin['api_key'] = str(service_api.get('hunter_how_api_key', '')).strip()
+    hunter_how_plugin['enable'] = _safe_bool(service_api.get('hunter_how_enable'), hunter_how_plugin.get('enable', False))
+    hunter_how_plugin['page_size'] = _safe_int(
+        service_api.get('hunter_how_page_size'),
+        hunter_how_plugin.get('page_size', 100),
+        min_value=1
+    )
+    hunter_how_plugin['max_page'] = _safe_int(
+        service_api.get('hunter_how_max_page'),
+        hunter_how_plugin.get('max_page', 5),
+        min_value=1
+    )
+    hunter_how_plugin['request_interval'] = _safe_float(
+        service_api.get('hunter_how_request_interval'),
+        hunter_how_plugin.get('request_interval', 1.0),
+        min_value=0.0
+    )
+    hunter_how_plugin['rate_limit_retry'] = _safe_int(
+        service_api.get('hunter_how_rate_limit_retry'),
+        hunter_how_plugin.get('rate_limit_retry', 4),
+        min_value=0
+    )
+    hunter_how_plugin['rate_limit_backoff'] = _safe_int(
+        service_api.get('hunter_how_rate_limit_backoff'),
+        hunter_how_plugin.get('rate_limit_backoff', 2),
+        min_value=1
+    )
+    hunter_how_plugin['rate_limit_max_sleep'] = _safe_int(
+        service_api.get('hunter_how_rate_limit_max_sleep'),
+        hunter_how_plugin.get('rate_limit_max_sleep', 60),
+        min_value=1
+    )
+
+    shodan_plugin = ensure_plugin('shodan')
+    shodan_plugin['api_key'] = str(service_api.get('shodan_api_key', '')).strip()
+    shodan_plugin['enable'] = _safe_bool(service_api.get('shodan_enable'), shodan_plugin.get('enable', False))
+    shodan_plugin['max_page'] = _safe_int(
+        service_api.get('shodan_max_page'),
+        shodan_plugin.get('max_page', 20),
+        min_value=1
+    )
+    shodan_plugin['request_interval'] = _safe_float(
+        service_api.get('shodan_request_interval'),
+        shodan_plugin.get('request_interval', 1.0),
+        min_value=0.0
+    )
+    shodan_plugin['rate_limit_retry'] = _safe_int(
+        service_api.get('shodan_rate_limit_retry'),
+        shodan_plugin.get('rate_limit_retry', 4),
+        min_value=0
+    )
+    shodan_plugin['rate_limit_backoff'] = _safe_int(
+        service_api.get('shodan_rate_limit_backoff'),
+        shodan_plugin.get('rate_limit_backoff', 2),
+        min_value=1
+    )
+    shodan_plugin['rate_limit_max_sleep'] = _safe_int(
+        service_api.get('shodan_rate_limit_max_sleep'),
+        shodan_plugin.get('rate_limit_max_sleep', 60),
+        min_value=1
+    )
+
     quake_plugin = ensure_plugin('quake_360')
     quake_plugin['quake_token'] = str(service_api.get('quake_token', '')).strip()
     quake_plugin['enable'] = _safe_bool(service_api.get('quake_enable'), quake_plugin.get('enable', True))
@@ -1160,6 +1250,197 @@ def _merge_service_api_config(config_obj, service_api):
     config_obj['GITHUB']['TOKEN'] = str(service_api.get('github_token', '')).strip()
 
     return config_obj
+
+
+def _normalize_service_api_provider(provider: str) -> str:
+    """
+    规范化 provider 标识，兼容前端别名与插件 source_name。
+    """
+    normalized = str(provider or '').strip().lower()
+    provider_alias = {
+        'hunter': 'hunter_qax',
+        'quake': 'quake_360',
+    }
+    return provider_alias.get(normalized, normalized)
+
+
+def _normalize_test_target_domain(test_target: str) -> str:
+    """
+    规范化 API 测试域名；输入无效时回退 example.com。
+    """
+    candidate = str(test_target or '').strip().lower().rstrip('.')
+    if candidate and utils.is_valid_domain(candidate):
+        return candidate
+    return 'example.com'
+
+
+def _build_runtime_service_api_config_for_test(service_api: dict) -> dict:
+    """
+    根据当前表单值构建运行期配置对象，仅用于测试，不会写入磁盘。
+    """
+    runtime_config = {
+        'FOFA': {},
+        'QUERY_PLUGIN': {},
+        'RISKIQ': {},
+        'GITHUB': {},
+    }
+    return _merge_service_api_config(runtime_config, service_api)
+
+
+def _find_query_plugin_by_source(source_name: str):
+    """
+    动态加载并定位指定 source_name 的查询插件实例。
+    """
+    plugins = utils.load_query_plugins(Config.dns_query_plugin_path)
+    for plugin in plugins:
+        if getattr(plugin, 'source_name', '') == source_name:
+            return plugin
+    return None
+
+
+def _test_fofa_provider(service_api: dict):
+    """
+    测试 FOFA 凭据是否有效，使用 info_my 轻量接口避免大结果查询。
+    """
+    fofa_url = str(service_api.get('fofa_url', '') or '').strip() or 'https://fofa.info'
+    fofa_email = str(service_api.get('fofa_email', '') or '').strip()
+    fofa_key = str(service_api.get('fofa_key', '') or '').strip()
+
+    if not fofa_email or not fofa_key:
+        return False, 'FOFA 测试失败：请填写邮箱和 KEY', {}
+
+    try:
+        client = FofaClient(fofa_email, fofa_key, page_size=1)
+        client.base_url = fofa_url
+        profile = client.info_my() or {}
+        if not isinstance(profile, dict):
+            return False, 'FOFA 测试失败：返回数据格式异常', {}
+
+        is_error = bool(profile.get('error'))
+        if is_error:
+            return False, 'FOFA 测试失败：{}'.format(profile.get('errmsg') or '未知错误'), {}
+
+        email = str(profile.get('email') or '')
+        fcoin = profile.get('fcoin', 0)
+        is_vip = bool(profile.get('isvip', False))
+        return True, 'FOFA 测试成功', {'email': email, 'fcoin': fcoin, 'isvip': is_vip}
+    except Exception as exc:
+        return False, 'FOFA 测试失败：{}'.format(exc), {}
+
+
+def _test_github_provider(service_api: dict):
+    """
+    测试 GitHub Token 可用性，调用 /user 接口获取当前账号。
+    """
+    github_token = str(service_api.get('github_token', '') or '').strip()
+    if not github_token:
+        return False, 'GitHub 测试失败：请填写 TOKEN', {}
+
+    headers = {
+        'Authorization': 'Bearer {}'.format(github_token),
+        'Accept': 'application/vnd.github+json',
+    }
+    try:
+        conn = utils.http_req('https://api.github.com/user', 'get', headers=headers, timeout=(10, 20))
+        data = conn.json() if conn is not None else {}
+        if int(getattr(conn, 'status_code', 0) or 0) != 200:
+            message = ''
+            if isinstance(data, dict):
+                message = str(data.get('message') or '')
+            return False, 'GitHub 测试失败：HTTP {} {}'.format(getattr(conn, 'status_code', 0), message), {}
+
+        login = ''
+        if isinstance(data, dict):
+            login = str(data.get('login') or '')
+        return True, 'GitHub 测试成功', {'login': login}
+    except Exception as exc:
+        return False, 'GitHub 测试失败：{}'.format(exc), {}
+
+
+def _test_query_plugin_provider(provider: str, service_api: dict, test_target: str):
+    """
+    通用查询插件测试：
+    - 用当前表单值构建临时 QUERY_PLUGIN 配置
+    - 仅执行 1 页/小样本探测，降低测试开销
+    """
+    source_name = _normalize_service_api_provider(provider)
+    runtime_config = _build_runtime_service_api_config_for_test(service_api)
+    query_plugin_conf = runtime_config.get('QUERY_PLUGIN', {}) if isinstance(runtime_config, dict) else {}
+    plugin_conf = query_plugin_conf.get(source_name, {}) if isinstance(query_plugin_conf, dict) else {}
+    if not isinstance(plugin_conf, dict):
+        plugin_conf = {}
+
+    required_conf_fields = {
+        'hunter_qax': ['api_key'],
+        'hunter_how': ['api_key'],
+        'shodan': ['api_key'],
+        'quake_360': ['quake_token'],
+        'zoomeye': ['api_key'],
+        'securitytrails': ['api_key'],
+        'virustotal': ['api_key'],
+        'chaos': ['api_key'],
+    }
+    required_fields = required_conf_fields.get(source_name, [])
+    missing_fields = [k for k in required_fields if not str(plugin_conf.get(k, '') or '').strip()]
+    if missing_fields:
+        return False, '{} 测试失败：缺少配置 {}'.format(source_name, ','.join(missing_fields)), {}
+
+    plugin = _find_query_plugin_by_source(source_name)
+    if not plugin:
+        return False, '{} 测试失败：插件未加载'.format(source_name), {}
+
+    init_kwargs = plugin_conf.copy()
+    init_kwargs.pop('enable', None)
+
+    # 测试场景使用小样本配置，避免大页数导致按钮响应过慢。
+    if source_name in ('hunter_qax', 'hunter_how'):
+        init_kwargs['max_page'] = 1
+        init_kwargs['page_size'] = min(_safe_int(init_kwargs.get('page_size'), 20, min_value=1), 20)
+    elif source_name == 'zoomeye':
+        init_kwargs['max_page'] = 1
+    elif source_name == 'shodan':
+        init_kwargs['max_page'] = 1
+    elif source_name == 'quake_360':
+        init_kwargs['max_size'] = min(_safe_int(init_kwargs.get('max_size'), 50, min_value=1), 50)
+
+    try:
+        if init_kwargs:
+            plugin.init_key(**init_kwargs)
+        domains = plugin.query(test_target)
+        if not isinstance(domains, list):
+            domains = []
+        sample = domains[:5]
+        return True, '{} 测试成功'.format(source_name), {'result_count': len(domains), 'sample': sample}
+    except Exception as exc:
+        return False, '{} 测试失败：{}'.format(source_name, exc), {}
+
+
+def _run_service_api_provider_test(provider: str, service_api: dict, test_target: str):
+    """
+    按 provider 分发测试逻辑，并统一返回结构。
+    """
+    normalized_provider = _normalize_service_api_provider(provider)
+    normalized_target = _normalize_test_target_domain(test_target)
+
+    if normalized_provider == 'fofa':
+        ok, message, detail = _test_fofa_provider(service_api)
+    elif normalized_provider == 'github':
+        ok, message, detail = _test_github_provider(service_api)
+    else:
+        ok, message, detail = _test_query_plugin_provider(
+            provider=normalized_provider,
+            service_api=service_api,
+            test_target=normalized_target,
+        )
+
+    return {
+        'provider': normalized_provider,
+        'ok': bool(ok),
+        'message': str(message or ''),
+        'test_target': normalized_target,
+        'detail': detail if isinstance(detail, dict) else {},
+        'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    }
 
 
 def _extract_scan_config(config_obj):
@@ -1561,6 +1842,49 @@ class ApiConsoleServiceApi(ARLResource):
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
         )
+
+
+@ns.route('/service_api/test/')
+class ApiConsoleServiceApiTest(ARLResource):
+    """
+    三方 API 单项测试接口（基于当前表单值实时测试，不落盘）。
+    """
+
+    @auth
+    @ns.expect(test_service_api_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        provider = str(payload.get('provider') or '').strip()
+        service_api = payload.get('service_api') or {}
+        test_target = str(payload.get('test_target') or '').strip()
+
+        if not provider:
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {'error': 'provider 不能为空'}
+            )
+        if not isinstance(service_api, dict):
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {'error': 'service_api 必须为对象'}
+            )
+
+        try:
+            result = _run_service_api_provider_test(
+                provider=provider,
+                service_api=service_api,
+                test_target=test_target,
+            )
+            return utils.build_ret(ErrorMsg.Success, result)
+        except Exception as exc:
+            logger.exception('service_api provider test failed provider:%s err:%s', provider, exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'provider': provider,
+                }
+            )
 
 
 @ns.route('/scan_config/')

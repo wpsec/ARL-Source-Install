@@ -8650,6 +8650,21 @@ function ApiConsoleView({ token }: { token: string }) {
     hunter_rate_limit_retry: string;
     hunter_rate_limit_backoff: string;
     hunter_rate_limit_max_sleep: string;
+    hunter_how_api_key: string;
+    hunter_how_enable: boolean;
+    hunter_how_page_size: string;
+    hunter_how_max_page: string;
+    hunter_how_request_interval: string;
+    hunter_how_rate_limit_retry: string;
+    hunter_how_rate_limit_backoff: string;
+    hunter_how_rate_limit_max_sleep: string;
+    shodan_api_key: string;
+    shodan_enable: boolean;
+    shodan_max_page: string;
+    shodan_request_interval: string;
+    shodan_rate_limit_retry: string;
+    shodan_rate_limit_backoff: string;
+    shodan_rate_limit_max_sleep: string;
     quake_token: string;
     quake_enable: boolean;
     quake_rate_limit_retry: string;
@@ -8677,6 +8692,8 @@ function ApiConsoleView({ token }: { token: string }) {
   type ServiceApiBoolKey =
     | 'fofa_enable'
     | 'hunter_enable'
+    | 'hunter_how_enable'
+    | 'shodan_enable'
     | 'quake_enable'
     | 'zoomeye_enable'
     | 'securitytrails_enable'
@@ -8697,6 +8714,21 @@ function ApiConsoleView({ token }: { token: string }) {
     hunter_rate_limit_retry: '4',
     hunter_rate_limit_backoff: '2',
     hunter_rate_limit_max_sleep: '60',
+    hunter_how_api_key: '',
+    hunter_how_enable: false,
+    hunter_how_page_size: '100',
+    hunter_how_max_page: '5',
+    hunter_how_request_interval: '1.0',
+    hunter_how_rate_limit_retry: '4',
+    hunter_how_rate_limit_backoff: '2',
+    hunter_how_rate_limit_max_sleep: '60',
+    shodan_api_key: '',
+    shodan_enable: false,
+    shodan_max_page: '20',
+    shodan_request_interval: '1.0',
+    shodan_rate_limit_retry: '4',
+    shodan_rate_limit_backoff: '2',
+    shodan_rate_limit_max_sleep: '60',
     quake_token: '',
     quake_enable: true,
     quake_rate_limit_retry: '4',
@@ -8728,6 +8760,8 @@ function ApiConsoleView({ token }: { token: string }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [form, setForm] = useState<ServiceApiForm>(defaultForm);
+  const [testingProviderId, setTestingProviderId] = useState('');
+  const [providerTestResultMap, setProviderTestResultMap] = useState<Record<string, { ok: boolean; message: string; detail: string; testedAt: string }>>({});
 
   const normalizeForm = useCallback((rawValue: any): ServiceApiForm => {
     const raw = rawValue || {};
@@ -8742,6 +8776,21 @@ function ApiConsoleView({ token }: { token: string }) {
       hunter_rate_limit_retry: String(raw.hunter_rate_limit_retry ?? defaultForm.hunter_rate_limit_retry),
       hunter_rate_limit_backoff: String(raw.hunter_rate_limit_backoff ?? defaultForm.hunter_rate_limit_backoff),
       hunter_rate_limit_max_sleep: String(raw.hunter_rate_limit_max_sleep ?? defaultForm.hunter_rate_limit_max_sleep),
+      hunter_how_api_key: String(raw.hunter_how_api_key || ''),
+      hunter_how_enable: raw.hunter_how_enable === undefined ? false : Boolean(raw.hunter_how_enable),
+      hunter_how_page_size: String(raw.hunter_how_page_size ?? defaultForm.hunter_how_page_size),
+      hunter_how_max_page: String(raw.hunter_how_max_page ?? defaultForm.hunter_how_max_page),
+      hunter_how_request_interval: String(raw.hunter_how_request_interval ?? defaultForm.hunter_how_request_interval),
+      hunter_how_rate_limit_retry: String(raw.hunter_how_rate_limit_retry ?? defaultForm.hunter_how_rate_limit_retry),
+      hunter_how_rate_limit_backoff: String(raw.hunter_how_rate_limit_backoff ?? defaultForm.hunter_how_rate_limit_backoff),
+      hunter_how_rate_limit_max_sleep: String(raw.hunter_how_rate_limit_max_sleep ?? defaultForm.hunter_how_rate_limit_max_sleep),
+      shodan_api_key: String(raw.shodan_api_key || ''),
+      shodan_enable: raw.shodan_enable === undefined ? false : Boolean(raw.shodan_enable),
+      shodan_max_page: String(raw.shodan_max_page ?? defaultForm.shodan_max_page),
+      shodan_request_interval: String(raw.shodan_request_interval ?? defaultForm.shodan_request_interval),
+      shodan_rate_limit_retry: String(raw.shodan_rate_limit_retry ?? defaultForm.shodan_rate_limit_retry),
+      shodan_rate_limit_backoff: String(raw.shodan_rate_limit_backoff ?? defaultForm.shodan_rate_limit_backoff),
+      shodan_rate_limit_max_sleep: String(raw.shodan_rate_limit_max_sleep ?? defaultForm.shodan_rate_limit_max_sleep),
       quake_token: String(raw.quake_token || ''),
       quake_enable: raw.quake_enable === undefined ? true : Boolean(raw.quake_enable),
       quake_rate_limit_retry: String(raw.quake_rate_limit_retry ?? defaultForm.quake_rate_limit_retry),
@@ -8796,8 +8845,56 @@ function ApiConsoleView({ token }: { token: string }) {
     void loadServiceApiConfig();
   }, [loadServiceApiConfig]);
 
+  /**
+   * 构造保存/测试共用的 service_api payload，避免两处字段处理不一致。
+   */
+  const buildServiceApiPayload = useCallback((currentForm: ServiceApiForm) => {
+    const normalizedUrl = currentForm.fofa_url.trim();
+    return {
+      ...currentForm,
+      fofa_url: normalizedUrl,
+      fofa_email: currentForm.fofa_email.trim(),
+      fofa_key: currentForm.fofa_key.trim(),
+      hunter_api_key: currentForm.hunter_api_key.trim(),
+      hunter_request_interval: currentForm.hunter_request_interval.trim(),
+      hunter_rate_limit_retry: currentForm.hunter_rate_limit_retry.trim(),
+      hunter_rate_limit_backoff: currentForm.hunter_rate_limit_backoff.trim(),
+      hunter_rate_limit_max_sleep: currentForm.hunter_rate_limit_max_sleep.trim(),
+      hunter_how_api_key: currentForm.hunter_how_api_key.trim(),
+      hunter_how_page_size: currentForm.hunter_how_page_size.trim(),
+      hunter_how_max_page: currentForm.hunter_how_max_page.trim(),
+      hunter_how_request_interval: currentForm.hunter_how_request_interval.trim(),
+      hunter_how_rate_limit_retry: currentForm.hunter_how_rate_limit_retry.trim(),
+      hunter_how_rate_limit_backoff: currentForm.hunter_how_rate_limit_backoff.trim(),
+      hunter_how_rate_limit_max_sleep: currentForm.hunter_how_rate_limit_max_sleep.trim(),
+      shodan_api_key: currentForm.shodan_api_key.trim(),
+      shodan_max_page: currentForm.shodan_max_page.trim(),
+      shodan_request_interval: currentForm.shodan_request_interval.trim(),
+      shodan_rate_limit_retry: currentForm.shodan_rate_limit_retry.trim(),
+      shodan_rate_limit_backoff: currentForm.shodan_rate_limit_backoff.trim(),
+      shodan_rate_limit_max_sleep: currentForm.shodan_rate_limit_max_sleep.trim(),
+      quake_token: currentForm.quake_token.trim(),
+      quake_rate_limit_retry: currentForm.quake_rate_limit_retry.trim(),
+      quake_rate_limit_backoff: currentForm.quake_rate_limit_backoff.trim(),
+      quake_rate_limit_max_sleep: currentForm.quake_rate_limit_max_sleep.trim(),
+      zoomeye_api_key: currentForm.zoomeye_api_key.trim(),
+      zoomeye_max_page: currentForm.zoomeye_max_page.trim(),
+      zoomeye_request_interval: currentForm.zoomeye_request_interval.trim(),
+      zoomeye_rate_limit_retry: currentForm.zoomeye_rate_limit_retry.trim(),
+      zoomeye_rate_limit_backoff: currentForm.zoomeye_rate_limit_backoff.trim(),
+      zoomeye_rate_limit_max_sleep: currentForm.zoomeye_rate_limit_max_sleep.trim(),
+      securitytrails_api_key: currentForm.securitytrails_api_key.trim(),
+      virustotal_api_key: currentForm.virustotal_api_key.trim(),
+      chaos_api_key: currentForm.chaos_api_key.trim(),
+      passivetotal_email: currentForm.passivetotal_email.trim(),
+      passivetotal_key: currentForm.passivetotal_key.trim(),
+      github_token: currentForm.github_token.trim(),
+    };
+  }, []);
+
   const saveServiceApiConfig = async () => {
-    const normalizedUrl = form.fofa_url.trim();
+    const serviceApiPayload = buildServiceApiPayload(form);
+    const normalizedUrl = serviceApiPayload.fofa_url;
     if (!normalizedUrl) {
       setError('FOFA URL 不能为空');
       return;
@@ -8810,33 +8907,7 @@ function ApiConsoleView({ token }: { token: string }) {
       const result = await requestApi(token, '/api_console/service_api/', {
         method: 'POST',
         body: {
-          service_api: {
-            ...form,
-            fofa_url: normalizedUrl,
-            fofa_email: form.fofa_email.trim(),
-            fofa_key: form.fofa_key.trim(),
-            hunter_api_key: form.hunter_api_key.trim(),
-            hunter_request_interval: form.hunter_request_interval.trim(),
-            hunter_rate_limit_retry: form.hunter_rate_limit_retry.trim(),
-            hunter_rate_limit_backoff: form.hunter_rate_limit_backoff.trim(),
-            hunter_rate_limit_max_sleep: form.hunter_rate_limit_max_sleep.trim(),
-            quake_token: form.quake_token.trim(),
-            quake_rate_limit_retry: form.quake_rate_limit_retry.trim(),
-            quake_rate_limit_backoff: form.quake_rate_limit_backoff.trim(),
-            quake_rate_limit_max_sleep: form.quake_rate_limit_max_sleep.trim(),
-            zoomeye_api_key: form.zoomeye_api_key.trim(),
-            zoomeye_max_page: form.zoomeye_max_page.trim(),
-            zoomeye_request_interval: form.zoomeye_request_interval.trim(),
-            zoomeye_rate_limit_retry: form.zoomeye_rate_limit_retry.trim(),
-            zoomeye_rate_limit_backoff: form.zoomeye_rate_limit_backoff.trim(),
-            zoomeye_rate_limit_max_sleep: form.zoomeye_rate_limit_max_sleep.trim(),
-            securitytrails_api_key: form.securitytrails_api_key.trim(),
-            virustotal_api_key: form.virustotal_api_key.trim(),
-            chaos_api_key: form.chaos_api_key.trim(),
-            passivetotal_email: form.passivetotal_email.trim(),
-            passivetotal_key: form.passivetotal_key.trim(),
-            github_token: form.github_token.trim(),
-          },
+          service_api: serviceApiPayload,
         },
       });
 
@@ -8850,6 +8921,59 @@ function ApiConsoleView({ token }: { token: string }) {
       setError(err?.message || '保存 API 配置失败');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const formatProviderTestDetail = (detailRaw: any): string => {
+    if (!detailRaw || typeof detailRaw !== 'object') return '';
+    const detailPairs = Object.entries(detailRaw)
+      .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
+      .slice(0, 6)
+      .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(',') : String(value)}`);
+    return detailPairs.join(' | ');
+  };
+
+  const testServiceApiProvider = async (providerId: string, providerTitle: string) => {
+    setTestingProviderId(providerId);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/api_console/service_api/test/', {
+        method: 'POST',
+        body: {
+          provider: providerId,
+          service_api: buildServiceApiPayload(form),
+        },
+      });
+      const data = result?.data || {};
+      const ok = Boolean(data?.ok);
+      const message = String(data?.message || (ok ? '测试成功' : '测试失败'));
+      const detail = formatProviderTestDetail(data?.detail || {});
+      const testedAt = String(data?.tested_at || '');
+      setProviderTestResultMap((prev) => ({
+        ...prev,
+        [providerId]: {
+          ok,
+          message,
+          detail,
+          testedAt,
+        },
+      }));
+      setSuccess(`${providerTitle} 测试已完成`);
+    } catch (err: any) {
+      const message = err?.message || `${providerTitle} 测试失败`;
+      setProviderTestResultMap((prev) => ({
+        ...prev,
+        [providerId]: {
+          ok: false,
+          message,
+          detail: '',
+          testedAt: '',
+        },
+      }));
+      setError(message);
+    } finally {
+      setTestingProviderId('');
     }
   };
 
@@ -8923,6 +9047,125 @@ function ApiConsoleView({ token }: { token: string }) {
           label: '最大等待(秒)',
           placeholder: '60',
           hint: 'QUERY_PLUGIN.hunter_qax.rate_limit_max_sleep',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+      ],
+    },
+    {
+      id: 'hunter_how',
+      title: 'hunter.how',
+      website: 'https://hunter.how/',
+      enableKey: 'hunter_how_enable',
+      enableLabel: '启用 hunter.how 插件',
+      fields: [
+        { key: 'hunter_how_api_key', label: 'API KEY', placeholder: '请输入 hunter.how API KEY', hint: 'QUERY_PLUGIN.hunter_how.api_key' },
+        {
+          key: 'hunter_how_page_size',
+          label: '每页数量',
+          placeholder: '100',
+          hint: 'QUERY_PLUGIN.hunter_how.page_size',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'hunter_how_max_page',
+          label: '最大页数',
+          placeholder: '5',
+          hint: 'QUERY_PLUGIN.hunter_how.max_page',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'hunter_how_request_interval',
+          label: '请求间隔(秒)',
+          placeholder: '1.0',
+          hint: 'QUERY_PLUGIN.hunter_how.request_interval',
+          inputType: 'number',
+          step: '0.1',
+          min: '0',
+        },
+        {
+          key: 'hunter_how_rate_limit_retry',
+          label: '限频重试次数',
+          placeholder: '4',
+          hint: 'QUERY_PLUGIN.hunter_how.rate_limit_retry',
+          inputType: 'number',
+          step: '1',
+          min: '0',
+        },
+        {
+          key: 'hunter_how_rate_limit_backoff',
+          label: '退避基数(秒)',
+          placeholder: '2',
+          hint: 'QUERY_PLUGIN.hunter_how.rate_limit_backoff',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'hunter_how_rate_limit_max_sleep',
+          label: '最大等待(秒)',
+          placeholder: '60',
+          hint: 'QUERY_PLUGIN.hunter_how.rate_limit_max_sleep',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+      ],
+    },
+    {
+      id: 'shodan',
+      title: 'Shodan',
+      website: 'https://www.shodan.io/',
+      enableKey: 'shodan_enable',
+      enableLabel: '启用 Shodan 插件',
+      fields: [
+        { key: 'shodan_api_key', label: 'API KEY', placeholder: '请输入 Shodan API KEY', hint: 'QUERY_PLUGIN.shodan.api_key' },
+        {
+          key: 'shodan_max_page',
+          label: '最大页数',
+          placeholder: '20',
+          hint: 'QUERY_PLUGIN.shodan.max_page',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'shodan_request_interval',
+          label: '请求间隔(秒)',
+          placeholder: '1.0',
+          hint: 'QUERY_PLUGIN.shodan.request_interval',
+          inputType: 'number',
+          step: '0.1',
+          min: '0',
+        },
+        {
+          key: 'shodan_rate_limit_retry',
+          label: '限频重试次数',
+          placeholder: '4',
+          hint: 'QUERY_PLUGIN.shodan.rate_limit_retry',
+          inputType: 'number',
+          step: '1',
+          min: '0',
+        },
+        {
+          key: 'shodan_rate_limit_backoff',
+          label: '退避基数(秒)',
+          placeholder: '2',
+          hint: 'QUERY_PLUGIN.shodan.rate_limit_backoff',
+          inputType: 'number',
+          step: '1',
+          min: '1',
+        },
+        {
+          key: 'shodan_rate_limit_max_sleep',
+          label: '最大等待(秒)',
+          placeholder: '60',
+          hint: 'QUERY_PLUGIN.shodan.rate_limit_max_sleep',
           inputType: 'number',
           step: '1',
           min: '1',
@@ -9072,7 +9315,7 @@ function ApiConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">API 管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">统一维护 FOFA、Hunter、Quake、Zoomeye 等第三方 API 配置并同步保存。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">统一维护 FOFA、Hunter、hunter.how、Shodan、Quake、Zoomeye 等第三方 API 配置并同步保存。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -9138,17 +9381,28 @@ function ApiConsoleView({ token }: { token: string }) {
                   </a>
                 ) : null}
               </div>
-              {provider.enableKey ? (
-                <label className="flex items-center gap-2 text-xs text-brand-text-muted shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(form[provider.enableKey])}
-                    onChange={(event) => updateBoolField(provider.enableKey, event.target.checked)}
-                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-                  />
-                  <span>{provider.enableLabel}</span>
-                </label>
-              ) : null}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void testServiceApiProvider(provider.id, provider.alias || provider.title)}
+                  className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-1 disabled:opacity-60"
+                  disabled={Boolean(testingProviderId) || loading || saving}
+                >
+                  <Play className={`w-3.5 h-3.5 ${testingProviderId === provider.id ? 'animate-spin' : ''}`} />
+                  {testingProviderId === provider.id ? '测试中...' : '测试'}
+                </button>
+                {provider.enableKey ? (
+                  <label className="flex items-center gap-2 text-xs text-brand-text-muted shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form[provider.enableKey])}
+                      onChange={(event) => updateBoolField(provider.enableKey, event.target.checked)}
+                      className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    />
+                    <span>{provider.enableLabel}</span>
+                  </label>
+                ) : null}
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -9170,6 +9424,20 @@ function ApiConsoleView({ token }: { token: string }) {
                 </div>
               ))}
             </div>
+
+            {providerTestResultMap[provider.id] ? (
+              <div
+                className={`text-xs rounded-lg px-3 py-2 border ${
+                  providerTestResultMap[provider.id].ok
+                    ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
+                    : 'text-brand-danger bg-brand-danger/10 border-brand-danger/30'
+                }`}
+              >
+                <div>{providerTestResultMap[provider.id].message}</div>
+                {providerTestResultMap[provider.id].detail ? <div className="mt-1 font-mono opacity-80">{providerTestResultMap[provider.id].detail}</div> : null}
+                {providerTestResultMap[provider.id].testedAt ? <div className="mt-1 opacity-70">{providerTestResultMap[provider.id].testedAt}</div> : null}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
