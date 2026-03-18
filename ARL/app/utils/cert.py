@@ -757,6 +757,8 @@ def parse_certs(certs):
 
 def get_cert(host, port, server_hostname=""):
     from . import get_logger
+    from .tls_policy import analyze_ssl_security_compliance
+
     logger = get_logger()
     try:
         normalized_sni = _normalize_server_hostname(server_hostname)
@@ -811,12 +813,13 @@ def get_cert(host, port, server_hostname=""):
         if not ssl_security and normalized_sni:
             ssl_security = _scan_ssl_security_with_nmap(host, port, server_hostname="")
         if ssl_security:
+            # 证书扫描阶段直接附带 TLS 合规判定，供导出与后续审计复用。
+            ssl_security["compliance"] = analyze_ssl_security_compliance(ssl_security)
             parsed_cert["ssl_security"] = ssl_security
         return parsed_cert
     except Exception as e:
         logger.debug("get cert error {}:{} {}".format(host,port, e))
         return {}
-
 
 
 

@@ -32,6 +32,7 @@ from openpyxl.styles import Font, Color, PatternFill, Alignment, Border, Side
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.utils import get_column_letter
 from app.utils import get_logger, auth
+from app.utils.tls_policy import get_ssl_security_compliance
 from app import utils
 from urllib.parse import quote
 
@@ -952,7 +953,7 @@ def _extract_cipher_suite_lines(ssl_security, max_items=50):
 
 def _extract_cert_rows(task_ids):
     """
-    汇总 SSL 证书导出行（支持协议/套件/强度信息）。
+    汇总 SSL 证书导出行（支持协议/套件/强度与 TLS 合规信息）。
     """
     rows = []
     now_dt = datetime.utcnow()
@@ -1004,6 +1005,12 @@ def _extract_cert_rows(task_ids):
 
             cipher_lines = _extract_cipher_suite_lines(ssl_security)
             cipher_text = " \r\n".join(cipher_lines)
+            compliance = get_ssl_security_compliance(ssl_security)
+            non_compliant_text = ""
+            remediation_text = ""
+            if isinstance(compliance, dict) and compliance.get("has_issue"):
+                non_compliant_text = sanitize_excel_value(compliance.get("non_compliant_text", "")).strip()
+                remediation_text = sanitize_excel_value(compliance.get("remediation_text", "")).strip()
 
             sha256 = ""
             fingerprint = cert_obj.get("fingerprint", {})
@@ -1028,6 +1035,8 @@ def _extract_cert_rows(task_ids):
                     sanitize_excel_value(least_strength),
                     sanitize_excel_value(ecdhe_count),
                     sanitize_excel_value(cipher_text),
+                    sanitize_excel_value(non_compliant_text),
+                    sanitize_excel_value(remediation_text),
                     sanitize_excel_value(sha256),
                     sanitize_excel_value(san),
                 ]
@@ -1038,7 +1047,7 @@ def _extract_cert_rows(task_ids):
 
 def _build_cert_sheet(wb, task_ids):
     """
-    在导出工作簿中新增 SSL 证书工作表。
+    在导出工作簿中新增 SSL 证书工作表，并补充 TLS 合规审计列。
     """
     ws = wb.create_sheet(title="SSL证书")
     ws.column_dimensions['A'].width = 32.0
@@ -1052,8 +1061,10 @@ def _build_cert_sheet(wb, task_ids):
     ws.column_dimensions['I'].width = 12.0
     ws.column_dimensions['J'].width = 14.0
     ws.column_dimensions['K'].width = 68.0
-    ws.column_dimensions['L'].width = 42.0
-    ws.column_dimensions['M'].width = 60.0
+    ws.column_dimensions['L'].width = 72.0
+    ws.column_dimensions['M'].width = 78.0
+    ws.column_dimensions['N'].width = 42.0
+    ws.column_dimensions['O'].width = 60.0
 
     ws.append(
         [
@@ -1068,6 +1079,8 @@ def _build_cert_sheet(wb, task_ids):
             "最弱强度",
             "ECDHE套件数",
             "加密套件",
+            "不合规项（协议/套件）",
+            "修复建议",
             "SHA-256",
             "使用者备用名称",
         ]
