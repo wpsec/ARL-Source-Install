@@ -170,6 +170,8 @@ ARL:
   PLAYWRIGHT_CHROMIUM_BIN: ""
   # PhantomJS 可执行文件路径（legacy 兼容可选）
   # PHANTOMJS_BIN: "/opt/ARL/app/tools/phantomjs"
+  # PhantomJS 单站点截图超时（秒）
+  PHANTOMJS_TIMEOUT_SEC: 30
   # worker 截图回传 web（默认开启，未配置地址时自动降级）
   SCREENSHOT_SYNC_ENABLE: true
   # web 内部上传接口地址（K8s 示例：https://arl-web）

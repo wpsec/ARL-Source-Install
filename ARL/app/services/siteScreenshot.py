@@ -243,6 +243,7 @@ class SiteScreenshot(BaseThread):
         phantomjs_bin = self.get_phantomjs_bin()
         if not phantomjs_bin:
             return False
+        phantomjs_timeout_sec = max(1, int(getattr(Config, "PHANTOMJS_TIMEOUT_SEC", 30) or 30))
 
         cmd_parameters = [phantomjs_bin,
                           '--ignore-ssl-errors true',
@@ -257,9 +258,17 @@ class SiteScreenshot(BaseThread):
         try:
             completed = utils.exec_system(
                 cmd_parameters,
+                timeout=phantomjs_timeout_sec,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
+        except subprocess.TimeoutExpired as e:
+            logger.warning(
+                "phantomjs screenshot timeout site={} timeout={}s".format(
+                    site, int(getattr(e, "timeout", phantomjs_timeout_sec) or phantomjs_timeout_sec)
+                )
+            )
+            return False
         except OSError as e:
             logger.warning("phantomjs screenshot run error {} {}".format(site, e))
             return False

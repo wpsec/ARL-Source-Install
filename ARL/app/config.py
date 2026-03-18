@@ -470,6 +470,8 @@ class Config(object):
     SCREENSHOT_ENGINE = "playwright"
     # PhantomJS 可执行文件路径（legacy 兼容路径）
     PHANTOMJS_BIN = os.path.join(basedir, 'tools/phantomjs')
+    # PhantomJS 单站点截图超时（秒）
+    PHANTOMJS_TIMEOUT_SEC = 30
     # Playwright 启动超时（毫秒）
     PLAYWRIGHT_TIMEOUT_MS = 15000
     # Playwright 截图前等待（毫秒）
@@ -817,6 +819,10 @@ try:
     # --- PhantomJS 路径配置 ---
     if y["ARL"].get("PHANTOMJS_BIN"):
         Config.PHANTOMJS_BIN = y["ARL"]["PHANTOMJS_BIN"]
+    if y["ARL"].get("PHANTOMJS_TIMEOUT_SEC") is not None:
+        Config.PHANTOMJS_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["PHANTOMJS_TIMEOUT_SEC"]), Config.PHANTOMJS_TIMEOUT_SEC
+        )
     if y["ARL"].get("SCREENSHOT_ENGINE"):
         Config.SCREENSHOT_ENGINE = str(y["ARL"]["SCREENSHOT_ENGINE"]).strip().lower()
     if y["ARL"].get("PLAYWRIGHT_TIMEOUT_MS") is not None:
@@ -1205,6 +1211,10 @@ try:
         Config.DINGTALK_SSL_CERT_NOTIFY_DAYS
     )
     Config.PHANTOMJS_BIN = env_str("ARL_PHANTOMJS_BIN", Config.PHANTOMJS_BIN)
+    Config.PHANTOMJS_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_PHANTOMJS_TIMEOUT_SEC", Config.PHANTOMJS_TIMEOUT_SEC),
+        Config.PHANTOMJS_TIMEOUT_SEC
+    )
     Config.SCREENSHOT_ENGINE = env_str("ARL_SCREENSHOT_ENGINE", Config.SCREENSHOT_ENGINE).strip().lower()
     Config.PLAYWRIGHT_TIMEOUT_MS = safe_positive_int(
         env_int("ARL_PLAYWRIGHT_TIMEOUT_MS", Config.PLAYWRIGHT_TIMEOUT_MS),

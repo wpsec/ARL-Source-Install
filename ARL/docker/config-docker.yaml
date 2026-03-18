@@ -178,6 +178,8 @@ ARL:
   PLAYWRIGHT_WAIT_MS: 1000
   # 可选：自定义 Chromium 可执行路径（为空使用 Playwright 内置浏览器）
   PLAYWRIGHT_CHROMIUM_BIN: ""
+  # PhantomJS 单站点截图超时（秒）
+  PHANTOMJS_TIMEOUT_SEC: 30
   # K8s 内部服务地址（示例：https://arl-web）
   SCREENSHOT_SYNC_WEB_URL: "https://arl-web"
   # 回传请求超时（秒）
