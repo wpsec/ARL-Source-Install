@@ -5749,6 +5749,7 @@ function TableModuleView({
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [taskCompactMode, setTaskCompactMode] = useState(true);
+  const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskErrorDialog, setTaskErrorDialog] = useState<{
     taskId: string;
     taskName: string;
@@ -5790,6 +5791,18 @@ function TableModuleView({
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
+  const isTaskTerminalStatus = (status: any) => ['done', 'stop', 'error'].includes(String(status || '').toLowerCase());
+  const markTaskRowActionPending = (taskId: string, action: string) => {
+    setTaskRowPendingActionMap((prev) => ({ ...prev, [taskId]: action }));
+  };
+  const clearTaskRowActionPending = (taskId: string) => {
+    setTaskRowPendingActionMap((prev) => {
+      if (!prev[taskId]) return prev;
+      const next = { ...prev };
+      delete next[taskId];
+      return next;
+    });
+  };
   const displayRows = useMemo(() => {
     if (module.id !== 'task' || !taskNameSearchText || rows.length <= 1) return rows;
     return rows
@@ -5940,6 +5953,7 @@ function TableModuleView({
     setExpandedScopeRows({});
     setExpandedTaskScheduleTargetRows({});
     setExpandedTaskOptionRows({});
+    setTaskRowPendingActionMap({});
     setTaskCompactMode(true);
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
@@ -7044,8 +7058,10 @@ function TableModuleView({
   const stopTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
+    if (taskRowPendingActionMap[taskId]) return;
+    markTaskRowActionPending(taskId, 'stop');
     setError('');
-    setSuccess('');
+    setSuccess('正在停止任务，请稍候...');
     try {
       const result = await requestApi(token, '/task/batch_stop/', {
         method: 'POST',
@@ -7053,19 +7069,23 @@ function TableModuleView({
           task_id: [taskId],
         },
       });
-      setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
       await loadRows({ forceRefresh: true });
+      setSuccess(result?.message ? `操作成功: ${result.message}` : '操作成功');
     } catch (err: any) {
       setError(err?.message || '操作失败');
+    } finally {
+      clearTaskRowActionPending(taskId);
     }
   };
 
   const deleteTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
+    if (taskRowPendingActionMap[taskId]) return;
     if (!(await askDeleteConfirm('将删除该任务。此操作不可恢复。'))) return;
+    markTaskRowActionPending(taskId, 'delete');
     setError('');
-    setSuccess('');
+    setSuccess('正在删除任务，请稍候...');
     try {
       const result = await requestApi(token, '/task/delete/', {
         method: 'POST',
@@ -7074,18 +7094,22 @@ function TableModuleView({
           del_task_data: false,
         },
       });
-      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
       await loadRows({ forceRefresh: true });
+      setSuccess(result?.message ? `删除成功: ${result.message}` : '删除成功');
     } catch (err: any) {
       setError(err?.message || '删除失败');
+    } finally {
+      clearTaskRowActionPending(taskId);
     }
   };
 
   const restartTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
+    if (taskRowPendingActionMap[taskId]) return;
+    markTaskRowActionPending(taskId, 'restart');
     setError('');
-    setSuccess('');
+    setSuccess('正在重启任务，请稍候...');
     try {
       const result = await requestApi(token, '/task/restart/', {
         method: 'POST',
@@ -7093,18 +7117,23 @@ function TableModuleView({
           task_id: [taskId],
         },
       });
-      setSuccess(result?.message ? `重启成功: ${result.message}` : '重启成功');
       await loadRows({ forceRefresh: true });
+      // 刷新列表会重置提示文案，这里在刷新后补一条最终反馈。
+      setSuccess(result?.message ? `重启成功: ${result.message}` : '重启成功');
     } catch (err: any) {
       setError(err?.message || '重启失败');
+    } finally {
+      clearTaskRowActionPending(taskId);
     }
   };
 
   const exportTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
+    if (taskRowPendingActionMap[taskId]) return;
+    markTaskRowActionPending(taskId, 'export');
     setError('');
-    setSuccess('');
+    setSuccess('正在导出任务结果，请稍候...');
     try {
       await requestApi(token, `/export/${taskId}`, {
         method: 'GET',
@@ -7113,20 +7142,52 @@ function TableModuleView({
       setSuccess('导出成功');
     } catch (err: any) {
       setError(err?.message || '导出失败');
+    } finally {
+      clearTaskRowActionPending(taskId);
     }
   };
 
-  const syncTaskRow = (taskId: string, row: any) => {
+  const syncTaskRow = async (taskId: string, row: any) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
+    if (taskRowPendingActionMap[taskId]) return;
+    if (!isTaskTerminalStatus(row?.status)) {
+      setError('任务未结束，暂不支持同步');
+      return;
+    }
+
+    const scopeId = String(row?.scope_id || '').trim();
+    if (scopeId) {
+      setError('');
+      setSuccess('正在同步任务数据，请稍候...');
+      markTaskRowActionPending(taskId, 'sync');
+      try {
+        const result = await requestApi(token, '/task/sync/', {
+          method: 'POST',
+          body: {
+            task_id: taskId,
+            scope_id: scopeId,
+          },
+        });
+        await loadRows({ forceRefresh: true });
+        setSuccess(result?.message ? `同步成功: ${result.message}` : '同步成功');
+      } catch (err: any) {
+        setError(err?.message || '同步失败');
+      } finally {
+        clearTaskRowActionPending(taskId);
+      }
+      return;
+    }
+
     if (!taskSyncAction) {
       setError('未找到任务同步动作配置');
       return;
     }
     openActionDialog(taskSyncAction, {
       task_id: taskId,
-      scope_id: String(row?.scope_id || '').trim(),
+      scope_id: '',
     });
+    setSuccess('请选择资产组后提交同步');
   };
 
   const selectionStatus =
@@ -7940,40 +8001,50 @@ function TableModuleView({
                       {hasRowOperate ? (
                         <td className={`px-4 py-3 align-middle whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>
                           {showTaskRowOperate ? (
-                            <div className={rowOperateGroupClass}>
-                              <button
-                                onClick={() => syncTaskRow(id, row)}
-                                className={rowOperateButtonClass}
-                              >
-                                同步
-                              </button>
-                              <button
-                                onClick={() => void exportTaskRow(id)}
-                                className={rowOperateButtonClass}
-                              >
-                                导出
-                              </button>
-                              <button
-                                onClick={() => void stopTaskRow(id)}
-                                disabled={['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
-                                className={rowOperateButtonDisabledClass}
-                              >
-                                停止
-                              </button>
-                              <button
-                                onClick={() => void deleteTaskRow(id)}
-                                className={rowOperateButtonClass}
-                              >
-                                删除
-                              </button>
-                              <button
-                                onClick={() => void restartTaskRow(id)}
-                                disabled={!['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
-                                className={rowOperateButtonDisabledClass}
-                              >
-                                重启
-                              </button>
-                            </div>
+                            (() => {
+                              const taskRowDone = isTaskTerminalStatus(row?.status);
+                              const taskRowPendingAction = String(taskRowPendingActionMap[id] || '');
+                              const taskRowPending = Boolean(taskRowPendingAction);
+                              return (
+                                <div className={rowOperateGroupClass}>
+                                  <button
+                                    onClick={() => void syncTaskRow(id, row)}
+                                    disabled={taskRowPending || !taskRowDone}
+                                    className={rowOperateButtonDisabledClass}
+                                  >
+                                    {taskRowPendingAction === 'sync' ? '同步中...' : '同步'}
+                                  </button>
+                                  <button
+                                    onClick={() => void exportTaskRow(id)}
+                                    disabled={taskRowPending}
+                                    className={rowOperateButtonDisabledClass}
+                                  >
+                                    {taskRowPendingAction === 'export' ? '导出中...' : '导出'}
+                                  </button>
+                                  <button
+                                    onClick={() => void stopTaskRow(id)}
+                                    disabled={taskRowPending || taskRowDone}
+                                    className={rowOperateButtonDisabledClass}
+                                  >
+                                    {taskRowPendingAction === 'stop' ? '停止中...' : '停止'}
+                                  </button>
+                                  <button
+                                    onClick={() => void deleteTaskRow(id)}
+                                    disabled={taskRowPending}
+                                    className={rowOperateButtonDisabledClass}
+                                  >
+                                    {taskRowPendingAction === 'delete' ? '删除中...' : '删除'}
+                                  </button>
+                                  <button
+                                    onClick={() => void restartTaskRow(id)}
+                                    disabled={taskRowPending || !taskRowDone}
+                                    className={rowOperateButtonDisabledClass}
+                                  >
+                                    {taskRowPendingAction === 'restart' ? '重启中...' : '重启'}
+                                  </button>
+                                </div>
+                              );
+                            })()
                           ) : null}
                           {showAssetScopeRowOperate ? (
                             <div className={rowOperateGroupClass}>
