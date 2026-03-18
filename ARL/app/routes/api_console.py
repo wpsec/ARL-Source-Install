@@ -61,6 +61,14 @@ test_service_api_fields = ns.model(
     },
 )
 
+test_service_api_batch_fields = ns.model(
+    'BatchTestServiceApiConfig',
+    {
+        'service_api': fields.Raw(required=True, description='三方 API 配置对象（使用当前表单值，不落盘）'),
+        'test_target': fields.String(required=False, description='可选测试域名，默认 example.com'),
+    },
+)
+
 
 def _resolve_config_path() -> Path:
     """
@@ -1274,6 +1282,36 @@ def _normalize_test_target_domain(test_target: str) -> str:
     return 'example.com'
 
 
+def _get_service_api_test_provider_specs():
+    """
+    定义支持批量测试的 provider 及其必填凭据字段。
+    """
+    return [
+        {'provider': 'fofa', 'label': 'FOFA', 'required_fields': ['fofa_email', 'fofa_key']},
+        {'provider': 'hunter', 'label': 'Hunter', 'required_fields': ['hunter_api_key']},
+        {'provider': 'hunter_how', 'label': 'hunter.how', 'required_fields': ['hunter_how_api_key']},
+        {'provider': 'shodan', 'label': 'Shodan', 'required_fields': ['shodan_api_key']},
+        {'provider': 'quake', 'label': 'Quake360', 'required_fields': ['quake_token']},
+        {'provider': 'zoomeye', 'label': 'Zoomeye', 'required_fields': ['zoomeye_api_key']},
+        {'provider': 'securitytrails', 'label': 'SecurityTrails', 'required_fields': ['securitytrails_api_key']},
+        {'provider': 'virustotal', 'label': 'VirusTotal', 'required_fields': ['virustotal_api_key']},
+        {'provider': 'chaos', 'label': 'Chaos', 'required_fields': ['chaos_api_key']},
+        {'provider': 'github', 'label': 'GitHub', 'required_fields': ['github_token']},
+    ]
+
+
+def _collect_configured_service_api_providers(service_api: dict):
+    """
+    找出当前表单里已经填写完必需凭据的 provider。
+    """
+    configured_specs = []
+    for spec in _get_service_api_test_provider_specs():
+        required_fields = spec.get('required_fields', [])
+        if all(str(service_api.get(field, '') or '').strip() for field in required_fields):
+            configured_specs.append(spec)
+    return configured_specs
+
+
 def _build_runtime_service_api_config_for_test(service_api: dict) -> dict:
     """
     根据当前表单值构建运行期配置对象，仅用于测试，不会写入磁盘。
@@ -1357,6 +1395,62 @@ def _test_github_provider(service_api: dict):
         return False, 'GitHub 测试失败：{}'.format(exc), {}
 
 
+def _test_virustotal_provider(service_api: dict, test_target: str):
+    """
+    轻量测试 VirusTotal 凭据可用性，避免走完整子域名分页查询导致 502。
+    """
+    api_key = str(service_api.get('virustotal_api_key', '') or '').strip()
+    if not api_key:
+        return False, 'VirusTotal 测试失败：请填写 API KEY', {}
+
+    normalized_target = _normalize_test_target_domain(test_target)
+    request_url = 'https://www.virustotal.com/api/v3/domains/{}'.format(normalized_target)
+    headers = {
+        'x-apikey': api_key,
+    }
+
+    try:
+        conn = utils.http_req(request_url, 'get', headers=headers, timeout=(10, 20))
+        status_code = int(getattr(conn, 'status_code', 0) or 0)
+        try:
+            data = conn.json() if conn is not None else {}
+        except Exception:
+            data = {}
+
+        if status_code != 200:
+            error_message = ''
+            if isinstance(data, dict):
+                error_obj = data.get('error')
+                if isinstance(error_obj, dict):
+                    error_message = str(error_obj.get('message') or '')
+                error_message = error_message or str(data.get('message') or '')
+            logger.warning(
+                'virustotal lightweight test failed status:%s target:%s message:%s',
+                status_code,
+                normalized_target,
+                error_message,
+            )
+            return False, 'VirusTotal 测试失败：HTTP {} {}'.format(status_code, error_message).strip(), {}
+
+        payload = data.get('data') if isinstance(data, dict) else {}
+        if not isinstance(payload, dict):
+            payload = {}
+        attributes = payload.get('attributes') if isinstance(payload.get('attributes'), dict) else {}
+        stats = attributes.get('last_analysis_stats') if isinstance(attributes.get('last_analysis_stats'), dict) else {}
+        detail = {
+            'domain': str(payload.get('id') or normalized_target),
+            'reputation': attributes.get('reputation', ''),
+            'harmless': stats.get('harmless', ''),
+            'suspicious': stats.get('suspicious', ''),
+            'malicious': stats.get('malicious', ''),
+        }
+        logger.info('virustotal lightweight test success target:%s', normalized_target)
+        return True, 'VirusTotal 测试成功', detail
+    except Exception as exc:
+        logger.exception('virustotal lightweight test error target:%s err:%s', normalized_target, exc)
+        return False, 'VirusTotal 测试失败：{}'.format(exc), {}
+
+
 def _test_query_plugin_provider(provider: str, service_api: dict, test_target: str):
     """
     通用查询插件测试：
@@ -1426,6 +1520,8 @@ def _run_service_api_provider_test(provider: str, service_api: dict, test_target
         ok, message, detail = _test_fofa_provider(service_api)
     elif normalized_provider == 'github':
         ok, message, detail = _test_github_provider(service_api)
+    elif normalized_provider == 'virustotal':
+        ok, message, detail = _test_virustotal_provider(service_api, normalized_target)
     else:
         ok, message, detail = _test_query_plugin_provider(
             provider=normalized_provider,
@@ -1885,6 +1981,77 @@ class ApiConsoleServiceApiTest(ARLResource):
                     'provider': provider,
                 }
             )
+
+
+@ns.route('/service_api/test_batch/')
+class ApiConsoleServiceApiBatchTest(ARLResource):
+    """
+    三方 API 批量测试接口，仅验证已填写凭据的 provider。
+    """
+
+    @auth
+    @ns.expect(test_service_api_batch_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        service_api = payload.get('service_api') or {}
+        test_target = str(payload.get('test_target') or '').strip()
+
+        if not isinstance(service_api, dict):
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {'error': 'service_api 必须为对象'}
+            )
+
+        configured_specs = _collect_configured_service_api_providers(service_api)
+        logger.info(
+            'service_api batch test start providers:%s target:%s',
+            [item.get('provider') for item in configured_specs],
+            _normalize_test_target_domain(test_target),
+        )
+
+        items = []
+        success_count = 0
+        fail_count = 0
+        for spec in configured_specs:
+            provider = str(spec.get('provider') or '').strip()
+            if not provider:
+                continue
+
+            try:
+                item = _run_service_api_provider_test(
+                    provider=provider,
+                    service_api=service_api,
+                    test_target=test_target,
+                )
+            except Exception as exc:
+                logger.exception('service_api batch test failed provider:%s err:%s', provider, exc)
+                item = {
+                    'provider': provider,
+                    'ok': False,
+                    'message': '{} 测试失败：{}'.format(spec.get('label') or provider, exc),
+                    'test_target': _normalize_test_target_domain(test_target),
+                    'detail': {},
+                    'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                }
+
+            item['provider'] = provider
+            item['label'] = str(spec.get('label') or provider)
+            items.append(item)
+
+            if item.get('ok'):
+                success_count += 1
+            else:
+                fail_count += 1
+
+        batch_payload = {
+            'items': items,
+            'total': len(items),
+            'success_count': success_count,
+            'fail_count': fail_count,
+            'message': '未检测到已配置的 API，无需验证' if not items else '批量验证完成',
+            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+        return utils.build_ret(ErrorMsg.Success, batch_payload)
 
 
 @ns.route('/scan_config/')

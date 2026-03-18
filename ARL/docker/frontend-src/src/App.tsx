@@ -8689,6 +8689,26 @@ function ApiConsoleView({ token }: { token: string }) {
     github_token: string;
   };
 
+  type ServiceApiProviderTestResult = {
+    ok: boolean;
+    message: string;
+    detail: string;
+    testedAt: string;
+  };
+
+  type ServiceApiBatchTestItem = ServiceApiProviderTestResult & {
+    providerId: string;
+    label: string;
+  };
+
+  type ServiceApiBatchTestSummary = {
+    total: number;
+    successCount: number;
+    failCount: number;
+    testedAt: string;
+    message: string;
+  };
+
   type ServiceApiBoolKey =
     | 'fofa_enable'
     | 'hunter_enable'
@@ -8761,7 +8781,18 @@ function ApiConsoleView({ token }: { token: string }) {
   const [success, setSuccess] = useState('');
   const [form, setForm] = useState<ServiceApiForm>(defaultForm);
   const [testingProviderId, setTestingProviderId] = useState('');
-  const [providerTestResultMap, setProviderTestResultMap] = useState<Record<string, { ok: boolean; message: string; detail: string; testedAt: string }>>({});
+  const [providerTestResultMap, setProviderTestResultMap] = useState<Record<string, ServiceApiProviderTestResult>>({});
+  const [batchTestDialogOpen, setBatchTestDialogOpen] = useState(false);
+  const [batchTesting, setBatchTesting] = useState(false);
+  const [batchTestError, setBatchTestError] = useState('');
+  const [batchTestResults, setBatchTestResults] = useState<ServiceApiBatchTestItem[]>([]);
+  const [batchTestSummary, setBatchTestSummary] = useState<ServiceApiBatchTestSummary>({
+    total: 0,
+    successCount: 0,
+    failCount: 0,
+    testedAt: '',
+    message: '',
+  });
 
   const normalizeForm = useCallback((rawValue: any): ServiceApiForm => {
     const raw = rawValue || {};
@@ -8933,6 +8964,16 @@ function ApiConsoleView({ token }: { token: string }) {
     return detailPairs.join(' | ');
   };
 
+  const buildProviderTestResult = (detailRaw: any, fallbackMessage: string): ServiceApiProviderTestResult => {
+    const ok = Boolean(detailRaw?.ok);
+    return {
+      ok,
+      message: String(detailRaw?.message || (ok ? '测试成功' : fallbackMessage)),
+      detail: formatProviderTestDetail(detailRaw?.detail || {}),
+      testedAt: String(detailRaw?.tested_at || detailRaw?.testedAt || ''),
+    };
+  };
+
   const testServiceApiProvider = async (providerId: string, providerTitle: string) => {
     setTestingProviderId(providerId);
     setError('');
@@ -8946,18 +8987,10 @@ function ApiConsoleView({ token }: { token: string }) {
         },
       });
       const data = result?.data || {};
-      const ok = Boolean(data?.ok);
-      const message = String(data?.message || (ok ? '测试成功' : '测试失败'));
-      const detail = formatProviderTestDetail(data?.detail || {});
-      const testedAt = String(data?.tested_at || '');
+      const providerResult = buildProviderTestResult(data, `${providerTitle} 测试失败`);
       setProviderTestResultMap((prev) => ({
         ...prev,
-        [providerId]: {
-          ok,
-          message,
-          detail,
-          testedAt,
-        },
+        [providerId]: providerResult,
       }));
       setSuccess(`${providerTitle} 测试已完成`);
     } catch (err: any) {
@@ -9311,6 +9344,97 @@ function ApiConsoleView({ token }: { token: string }) {
     },
   ];
 
+  const getProviderDisplayName = (providerId: string, fallbackLabel = '') => {
+    const provider = providers.find((item) => item.id === providerId);
+    return fallbackLabel || provider?.alias || provider?.title || providerId;
+  };
+
+  const testConfiguredServiceApis = async () => {
+    setBatchTestDialogOpen(true);
+    setBatchTesting(true);
+    setBatchTestError('');
+    setBatchTestResults([]);
+    setBatchTestSummary({
+      total: 0,
+      successCount: 0,
+      failCount: 0,
+      testedAt: '',
+      message: '',
+    });
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await requestApi(token, '/api_console/service_api/test_batch/', {
+        method: 'POST',
+        body: {
+          service_api: buildServiceApiPayload(form),
+        },
+      });
+      const data = result?.data || {};
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      const normalizedItems: ServiceApiBatchTestItem[] = rawItems.map((item: any) => {
+        const providerId = String(item?.provider || '');
+        const label = getProviderDisplayName(providerId, String(item?.label || ''));
+        const providerResult = buildProviderTestResult(item, `${label} 测试失败`);
+        return {
+          providerId,
+          label,
+          ...providerResult,
+        };
+      });
+
+      const successCount = Number(data?.success_count ?? normalizedItems.filter((item) => item.ok).length);
+      const failCount = Number(data?.fail_count ?? normalizedItems.filter((item) => !item.ok).length);
+      const summaryMessage = String(
+        data?.message || (normalizedItems.length ? '批量验证完成' : '未检测到已配置的 API，无需验证')
+      );
+
+      setBatchTestResults(normalizedItems);
+      setBatchTestSummary({
+        total: Number(data?.total ?? normalizedItems.length),
+        successCount,
+        failCount,
+        testedAt: String(data?.tested_at || ''),
+        message: summaryMessage,
+      });
+
+      if (normalizedItems.length > 0) {
+        setProviderTestResultMap((prev) => {
+          const next = { ...prev };
+          normalizedItems.forEach((item) => {
+            next[item.providerId] = {
+              ok: item.ok,
+              message: item.message,
+              detail: item.detail,
+              testedAt: item.testedAt,
+            };
+          });
+          return next;
+        });
+      }
+
+      setSuccess(
+        normalizedItems.length > 0
+          ? `一键验证完成，成功 ${successCount} 项，失败 ${failCount} 项`
+          : summaryMessage
+      );
+    } catch (err: any) {
+      const message = err?.message || '一键验证失败';
+      setBatchTestError(message);
+      setBatchTestSummary({
+        total: 0,
+        successCount: 0,
+        failCount: 0,
+        testedAt: '',
+        message,
+      });
+      setError(message);
+    } finally {
+      setBatchTesting(false);
+    }
+  };
+
   return (
     <div className="p-8 space-y-6">
       <div>
@@ -9325,15 +9449,23 @@ function ApiConsoleView({ token }: { token: string }) {
             <button
               onClick={() => void loadServiceApiConfig()}
               className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
-              disabled={loading}
+              disabled={loading || batchTesting || Boolean(testingProviderId)}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               重新加载
             </button>
             <button
+              onClick={() => void testConfiguredServiceApis()}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
+            >
+              <CheckCircle2 className={`w-4 h-4 ${batchTesting ? 'animate-pulse' : ''}`} />
+              {batchTesting ? '验证中...' : '一键验证'}
+            </button>
+            <button
               onClick={() => void saveServiceApiConfig()}
               className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
-              disabled={saving || loading}
+              disabled={saving || loading || batchTesting || Boolean(testingProviderId)}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
               {saving ? '保存中...' : '保存配置'}
@@ -9387,10 +9519,10 @@ function ApiConsoleView({ token }: { token: string }) {
                     type="button"
                     onClick={() => void testServiceApiProvider(provider.id, provider.alias || provider.title)}
                     className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-1 disabled:opacity-60"
-                    disabled={Boolean(testingProviderId) || loading || saving}
-                >
+                    disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
+                  >
                     <Play className={`w-3.5 h-3.5 ${testingProviderId === provider.id ? 'animate-spin' : ''}`} />
-                  {testingProviderId === provider.id ? '测试中...' : '测试'}
+                    {testingProviderId === provider.id ? '测试中...' : '测试'}
                   </button>
                 )}
                 {provider.enableKey ? (
@@ -9443,6 +9575,123 @@ function ApiConsoleView({ token }: { token: string }) {
           </div>
         ))}
       </div>
+
+      {batchTestDialogOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-lg font-black">API 一键验证</h4>
+                <p className="text-xs text-brand-text-muted mt-1">仅验证已填写凭据的 API，未配置项会自动跳过。</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBatchTestDialogOpen(false)}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                title="关闭"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
+                <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-3">
+                  <div className="text-brand-text-muted">已验证</div>
+                  <div className="mt-1 text-2xl font-black">{batchTestSummary.total}</div>
+                </div>
+                <div className="bg-emerald-400/10 border border-emerald-400/30 rounded-xl px-3 py-3">
+                  <div className="text-emerald-300">成功</div>
+                  <div className="mt-1 text-2xl font-black text-emerald-300">{batchTestSummary.successCount}</div>
+                </div>
+                <div className="bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-3 py-3">
+                  <div className="text-brand-danger">失败</div>
+                  <div className="mt-1 text-2xl font-black text-brand-danger">{batchTestSummary.failCount}</div>
+                </div>
+                <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-3">
+                  <div className="text-brand-text-muted">完成时间</div>
+                  <div className="mt-1 font-mono break-all">{batchTestSummary.testedAt || '-'}</div>
+                </div>
+              </div>
+
+              {batchTestSummary.message ? (
+                <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+                  {batchTestSummary.message}
+                </div>
+              ) : null}
+
+              {batchTestError ? (
+                <div className="text-sm text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-3 py-2">
+                  {batchTestError}
+                </div>
+              ) : null}
+
+              {batchTesting ? (
+                <div className="flex items-center gap-3 rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-4 text-sm">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>正在验证已配置的 API，请稍候...</span>
+                </div>
+              ) : null}
+
+              {!batchTesting && batchTestResults.length === 0 ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-8 text-sm text-brand-text-muted text-center">
+                  暂无需要验证的已配置 API。
+                </div>
+              ) : null}
+
+              {batchTestResults.length > 0 ? (
+                <div className="max-h-[55vh] overflow-auto space-y-3 pr-1">
+                  {batchTestResults.map((item) => (
+                    <div
+                      key={`${item.providerId}-${item.testedAt || item.message}`}
+                      className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-full shrink-0 ${
+                            item.ok
+                              ? 'bg-emerald-400/10 text-emerald-300 border border-emerald-400/30'
+                              : 'bg-brand-danger/10 text-brand-danger border border-brand-danger/30'
+                          }`}
+                        >
+                          {item.ok ? <CheckCircle2 className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <div className="text-sm font-black">{item.label}</div>
+                            <div className={`text-xs font-semibold ${item.ok ? 'text-emerald-300' : 'text-brand-danger'}`}>
+                              {item.ok ? '验证成功' : '验证失败'}
+                            </div>
+                          </div>
+                          <div className="mt-1 text-sm break-all">{item.message}</div>
+                          {item.detail ? (
+                            <div className="mt-2 text-xs font-mono text-brand-text-muted break-all whitespace-pre-wrap">
+                              {item.detail}
+                            </div>
+                          ) : null}
+                          {item.testedAt ? (
+                            <div className="mt-2 text-xs text-brand-text-muted">{item.testedAt}</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setBatchTestDialogOpen(false)}
+                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
