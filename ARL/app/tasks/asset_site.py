@@ -326,9 +326,15 @@ def run_add_asset_site_task(task_id):
     task_data = utils.conn_db('task').find_one(query)
 
     if not task_data:
+        logger.info("run_add_asset_site_task skip not found task_id:{}".format(task_id))
         return
 
-    if task_data["status"] != "waiting":
+    if task_data["status"] not in {"waiting", "running"}:
+        logger.info(
+            "run_add_asset_site_task skip task_id:{} status:{} expected:waiting/running".format(
+                task_id, task_data.get("status", "-")
+            )
+        )
         return
 
     r = AddAssetSiteTask(task_id)

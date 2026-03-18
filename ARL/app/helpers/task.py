@@ -378,6 +378,9 @@ def submit_task(task_data):
     异常：
         Exception: 任务提交失败
     """
+    force_queue_name = str(task_data.pop("_dispatch_queue", "") or "").strip().lower()
+    force_queue_reason = str(task_data.pop("_dispatch_queue_reason", "") or "").strip()
+
     target = task_data["target"]
     utils.conn_db('task').insert_one(task_data)
     task_id = str(task_data.pop("_id"))
@@ -411,14 +414,31 @@ def submit_task(task_data):
         queue_reason = ""
         queue_task = celerytask.arl_task
 
-        # 将重任务分流到独立队列，避免阻塞普通任务。
-        is_heavy, heavy_reason = _should_dispatch_heavy_queue(task_data, celery_action)
-        if is_heavy:
+        # 重启任务允许显式指定回主队列，兼容仅监听 arltask 的历史 worker 部署。
+        if force_queue_name == "arlheavy":
             queue_name = "arlheavy"
-            queue_reason = heavy_reason
+            queue_reason = force_queue_reason or "force_queue=arlheavy"
             queue_task = celerytask.arl_task_heavy
+        elif force_queue_name == "arltask":
+            queue_name = "arltask"
+            queue_reason = force_queue_reason or "force_queue=arltask"
+            queue_task = celerytask.arl_task
+        else:
+            # 将重任务分流到独立队列，避免阻塞普通任务。
+            is_heavy, heavy_reason = _should_dispatch_heavy_queue(task_data, celery_action)
+            if is_heavy:
+                queue_name = "arlheavy"
+                queue_reason = heavy_reason
+                queue_task = celerytask.arl_task_heavy
 
-        # 提交到Celery
+        if force_queue_name:
+            logger.info(
+                "submit_task force queue task_id:{} type:{} queue:{} reason:{}".format(
+                    task_id, task_type, queue_name, queue_reason or "-"
+                )
+            )
+
+        # 提交到 Celery
         celery_id = queue_task.delay(options=task_options)
         logger.info(
             "target:{} task_id:{} queue:{} queue_reason:{} celery_id:{}".format(
@@ -430,9 +450,19 @@ def submit_task(task_data):
             )
         )
 
-        # 更新celery_id
-        values = {"$set": {"celery_id": str(celery_id)}}
+        # 更新 celery_id 与派发队列信息，便于排查“waiting”问题。
+        values = {"$set": {"celery_id": str(celery_id), "dispatch_queue": queue_name}}
+        if queue_reason:
+            values["$set"]["dispatch_queue_reason"] = queue_reason
+        else:
+            values["$unset"] = {"dispatch_queue_reason": ""}
+
         task_data["celery_id"] = str(celery_id)
+        task_data["dispatch_queue"] = queue_name
+        if queue_reason:
+            task_data["dispatch_queue_reason"] = queue_reason
+        else:
+            task_data.pop("dispatch_queue_reason", None)
         utils.conn_db('task').update_one({"_id": bson.ObjectId(task_id)}, values)
 
     except Exception as e:
@@ -533,6 +563,9 @@ def restart_task(task_id):
     if not task_data:
         raise Exception("没有找到 task_id : {}".format(task_id))
 
+    old_status = str(task_data.get("status", "") or "")
+    old_name = str(task_data.get("name", "") or "")
+
     # 把一些基础字段初始化
     task_data.pop("_id")
     task_data["start_time"] = "-"
@@ -540,8 +573,19 @@ def restart_task(task_id):
     task_data["end_time"] = "-"
     task_data["service"] = []
     task_data["celery_id"] = ""
-    if "statistic" in task_data:
-        task_data.pop("statistic")
+    reset_fields = [
+        "statistic",
+        "sync_status",
+        "stop_reason",
+        "interrupted",
+        "last_error",
+        "error_logs",
+        "waf_skip_summary",
+        "dispatch_queue",
+        "dispatch_queue_reason",
+    ]
+    for field in reset_fields:
+        task_data.pop(field, None)
 
     name = task_data["name"]
     if name_pre not in name:
@@ -561,6 +605,20 @@ def restart_task(task_id):
 
     elif task_type == TaskType.IP and task_data["options"].get("scope_id"):
         raise Exception("task_id : {}, 不支持该任务重新运行".format(task_id))
+
+    # 历史部署可能仅监听 arltask，重启任务优先回主队列，避免落到 arlheavy 后长期 waiting。
+    task_data["_dispatch_queue"] = "arltask"
+    task_data["_dispatch_queue_reason"] = "restart_force_main_queue"
+    logger.info(
+        "restart task old_task_id:{} old_status:{} old_name:{} new_name:{} target:{} queue:{}".format(
+            task_id,
+            old_status or "-",
+            old_name or "-",
+            task_data.get("name", "-"),
+            task_data.get("target", "-"),
+            task_data["_dispatch_queue"],
+        )
+    )
 
     submit_task(task_data)
 

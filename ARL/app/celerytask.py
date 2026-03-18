@@ -30,7 +30,10 @@ celery = Celery('task', broker=Config.CELERY_BROKER_URL)
 
 # Celery 配置
 celery.conf.update(
-    task_acks_late=False,  # 任务开始执行时就确认，而不是执行完成后确认
+    # 任务执行完成后再确认，避免 worker/容器重启时，尚未真正开始的任务永久卡在 waiting。
+    task_acks_late=True,
+    # 保持默认语义：手动 stop/terminate 的任务不自动重新入队，避免被用户停止后再次跑起来。
+    task_reject_on_worker_lost=False,
     worker_prefetch_multiplier=Config.CELERY_PREFETCH_MULTIPLIER,  # Worker 每次只预取较少任务
     # 定期回收 worker 子进程，减少长时间运行导致的内存膨胀
     worker_max_tasks_per_child=Config.CELERY_MAX_TASKS_PER_CHILD,
@@ -83,9 +86,8 @@ def _mark_task_started_best_effort(action, data):
     任务刚被 Celery 消费时，尽早从 waiting 切换为 running。
 
     背景：
-    - 当前配置 task_acks_late=False，消息在执行前就会确认。
-    - 若此时进程被重启/杀死，任务可能在 DB 保持 waiting，形成“假等待”。
-    - 先标记 running 后，后续 worker 启动恢复逻辑可将中断任务改为 error。
+    - task_acks_late=True 只能保证 broker 侧不提前丢消息，但 DB 状态仍可能短暂停留在 waiting。
+    - 先标记 running 后，UI 能更快反映“已被 worker 接手”，后续中断恢复也更准确。
     """
     if not isinstance(data, dict):
         return
@@ -166,9 +168,18 @@ def run_task(options):
     
     start_time = time.time()
     # 这里监控任务 task_id 和 target 是空的
-    logger.info("run_task action:{} time: {}".format(action, start_time))
-    logger.info("name:{}, target:{}, task_id:{}".format(
-        data.get("name"), data.get("target"), data.get("task_id")))
+    logger.info("run_task action:{} time:{} acks_late:{}".format(
+        action, start_time, celery.conf.task_acks_late
+    ))
+    logger.info(
+        "name:{}, target:{}, task_id:{}, dispatch_queue:{}, dispatch_queue_reason:{}".format(
+            data.get("name"),
+            data.get("target"),
+            data.get("task_id"),
+            data.get("dispatch_queue", "-"),
+            data.get("dispatch_queue_reason", "-"),
+        )
+    )
 
     # 任务被 worker 实际消费后，先做一次“waiting -> running”兜底状态切换。
     _mark_task_started_best_effort(action=action, data=data)
