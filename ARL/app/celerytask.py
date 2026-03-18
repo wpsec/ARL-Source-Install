@@ -78,6 +78,45 @@ def arl_task_heavy(options):
     run_task(options)
 
 
+def _mark_task_started_best_effort(action, data):
+    """
+    任务刚被 Celery 消费时，尽早从 waiting 切换为 running。
+
+    背景：
+    - 当前配置 task_acks_late=False，消息在执行前就会确认。
+    - 若此时进程被重启/杀死，任务可能在 DB 保持 waiting，形成“假等待”。
+    - 先标记 running 后，后续 worker 启动恢复逻辑可将中断任务改为 error。
+    """
+    if not isinstance(data, dict):
+        return
+
+    task_id = str(data.get("task_id", "") or "").strip()
+    if not task_id:
+        return
+
+    # GitHub 任务单独落库到 github_task，其它任务落在 task。
+    collection = "task"
+    if action in [CeleryAction.GITHUB_TASK_TASK, CeleryAction.GITHUB_TASK_MONITOR]:
+        collection = "github_task"
+
+    try:
+        query = {"_id": ObjectId(task_id), "status": "waiting"}
+        update = {"$set": {"status": "running", "start_time": utils.curr_date()}}
+        result = utils.conn_db(collection).update_one(query, update)
+        if int(result.modified_count or 0) > 0:
+            logger.info(
+                "mark task started collection:{} task_id:{} action:{}".format(
+                    collection, task_id, action
+                )
+            )
+    except Exception as e:
+        logger.warning(
+            "mark task started failed collection:{} task_id:{} action:{} error:{}".format(
+                collection, task_id, action, e
+            )
+        )
+
+
 def run_task(options):
     """
     任务执行核心函数
@@ -130,6 +169,9 @@ def run_task(options):
     logger.info("run_task action:{} time: {}".format(action, start_time))
     logger.info("name:{}, target:{}, task_id:{}".format(
         data.get("name"), data.get("target"), data.get("task_id")))
+
+    # 任务被 worker 实际消费后，先做一次“waiting -> running”兜底状态切换。
+    _mark_task_started_best_effort(action=action, data=data)
     
     try:
         # 根据 action 获取对应的处理函数
