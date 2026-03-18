@@ -20,12 +20,15 @@
 """
 import bson
 import re
+import time
 from app import utils
 from app.modules import TaskStatus, TaskTag, TaskType, CeleryAction
 from app.config import Config
 from app import celerytask
 
 logger = utils.get_logger()
+_QUEUE_AVAILABILITY_CACHE = {}
+_QUEUE_AVAILABILITY_CACHE_TTL_SEC = 15
 
 
 def apply_arch_compat_options(options):
@@ -64,6 +67,58 @@ def apply_arch_compat_options(options):
         )
 
     return options_cp, notices
+
+
+def _refresh_dispatch_queue_cache(timeout_sec=1.5):
+    """
+    通过 Celery inspect 查询当前活跃消费者队列，并做短时缓存。
+
+    说明：
+    - 仅在任务下发时使用，避免把任务投递到“代码支持但部署未启动”的队列
+    - 任何异常都按“未知”处理，调用方应保守回退到 arltask
+    """
+    now = time.time()
+    available = set()
+
+    try:
+        inspect = celerytask.celery.control.inspect(timeout=timeout_sec)
+        active_queues = inspect.active_queues() or {}
+        for _, queue_items in active_queues.items():
+            if not isinstance(queue_items, list):
+                continue
+            for item in queue_items:
+                if not isinstance(item, dict):
+                    continue
+                queue_name = str(item.get("name", "") or "").strip()
+                if queue_name:
+                    available.add(queue_name)
+    except Exception as e:
+        logger.warning("inspect active_queues failed error:{}".format(e))
+
+    for queue_name in ["arltask", "arlheavy", "arlgithub"]:
+        _QUEUE_AVAILABILITY_CACHE[queue_name] = {
+            "available": queue_name in available,
+            "check_time": now,
+        }
+
+    return available
+
+
+def is_dispatch_queue_available(queue_name, cache_ttl_sec=_QUEUE_AVAILABILITY_CACHE_TTL_SEC):
+    """
+    判断指定队列当前是否存在活跃 Celery 消费者。
+    """
+    queue_name = str(queue_name or "").strip()
+    if not queue_name:
+        return False
+
+    cached = _QUEUE_AVAILABILITY_CACHE.get(queue_name)
+    now = time.time()
+    if cached and (now - float(cached.get("check_time", 0) or 0)) < max(float(cache_ttl_sec or 0), 1.0):
+        return bool(cached.get("available"))
+
+    available = _refresh_dispatch_queue_cache()
+    return queue_name in available
 
 
 def target2list(target):
@@ -340,22 +395,28 @@ def _should_dispatch_heavy_queue(task_data, celery_action):
     )
     heavy_target_threshold = max(int(getattr(Config, "TASK_HEAVY_TARGET_THRESHOLD", 24) or 24), 1)
 
+    heavy_reason = ""
     if scan_port_type == "all":
-        return True, "port_scan_type=all"
+        heavy_reason = "port_scan_type=all"
+    elif task_data.get("type") == TaskType.DOMAIN and scan_port_type == "top1000":
+        heavy_reason = "domain_port_scan_type=top1000"
+    elif os_detection:
+        heavy_reason = "os_detection=true"
+    elif service_detection and port_count >= heavy_service_port_threshold:
+        heavy_reason = "service_detection=true,port_count={}".format(port_count)
+    elif target_count >= heavy_target_threshold and port_count >= heavy_port_threshold:
+        heavy_reason = "target_count={},port_count={}".format(target_count, port_count)
 
-    if task_data.get("type") == TaskType.DOMAIN and scan_port_type == "top1000":
-        return True, "domain_port_scan_type=top1000"
+    if not heavy_reason:
+        return False, ""
 
-    if os_detection:
-        return True, "os_detection=true"
+    if not bool(getattr(Config, "TASK_HEAVY_QUEUE_ENABLE", True)):
+        return False, "heavy_queue_disabled"
 
-    if service_detection and port_count >= heavy_service_port_threshold:
-        return True, "service_detection=true,port_count={}".format(port_count)
+    if not is_dispatch_queue_available("arlheavy"):
+        return False, "heavy_queue_unavailable"
 
-    if target_count >= heavy_target_threshold and port_count >= heavy_port_threshold:
-        return True, "target_count={},port_count={}".format(target_count, port_count)
-
-    return False, ""
+    return True, heavy_reason
 
 
 def submit_task(task_data):
@@ -430,6 +491,8 @@ def submit_task(task_data):
                 queue_name = "arlheavy"
                 queue_reason = heavy_reason
                 queue_task = celerytask.arl_task_heavy
+            elif heavy_reason:
+                queue_reason = "fallback:{}".format(heavy_reason)
 
         if force_queue_name:
             logger.info(

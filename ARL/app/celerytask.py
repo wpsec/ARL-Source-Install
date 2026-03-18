@@ -19,7 +19,7 @@ from app.config import Config, refresh_runtime_config_best_effort
 from celery import Celery, platforms
 from app import utils
 from app import tasks as wrap_tasks
-from app.modules import CeleryAction, TaskSyncStatus
+from app.modules import CeleryAction, TaskSyncStatus, TaskStatus
 
 # 获取日志记录器
 logger = utils.get_logger()
@@ -119,6 +119,70 @@ def _mark_task_started_best_effort(action, data):
         )
 
 
+def _should_skip_stale_task_message(action, data):
+    """
+    跳过数据库已终态或已删除的历史队列消息，避免 broker 残留消息被重新执行。
+
+    说明：
+    - RabbitMQ 队列中的消息与 task 表状态并非强一致
+    - waiting 阶段若消息长期积压在无人消费的队列中，后续即使任务被 stop/delete，broker 里仍可能残留旧消息
+    - 这些旧消息一旦被后续 worker 捞到，必须先校验数据库状态再决定是否执行
+    """
+    if not isinstance(data, dict):
+        return False
+
+    task_id = str(data.get("task_id", "") or "").strip()
+    if not task_id:
+        return False
+
+    collection = ""
+    if action in [
+        CeleryAction.DOMAIN_TASK,
+        CeleryAction.IP_TASK,
+        CeleryAction.RUN_RISK_CRUISING,
+        CeleryAction.FOFA_TASK,
+        CeleryAction.ASSET_SITE_UPDATE,
+        CeleryAction.ADD_ASSET_SITE_TASK,
+        CeleryAction.ASSET_WIH_UPDATE,
+        CeleryAction.DOMAIN_TASK_SYNC_TASK,
+    ]:
+        collection = "task"
+    elif action in [CeleryAction.GITHUB_TASK_TASK, CeleryAction.GITHUB_TASK_MONITOR]:
+        collection = "github_task"
+
+    if not collection:
+        return False
+
+    try:
+        item = utils.conn_db(collection).find_one({"_id": ObjectId(task_id)}, {"status": 1})
+    except Exception as e:
+        logger.warning(
+            "check stale task message failed collection:{} task_id:{} action:{} error:{}".format(
+                collection, task_id, action, e
+            )
+        )
+        return False
+
+    if not item:
+        logger.warning(
+            "skip stale queued task message collection:{} task_id:{} action:{} reason:not_found".format(
+                collection, task_id, action
+            )
+        )
+        return True
+
+    status = str(item.get("status", "") or "").strip().lower()
+    if status in {TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR}:
+        logger.warning(
+            "skip stale queued task message collection:{} task_id:{} action:{} status:{}".format(
+                collection, task_id, action, status
+            )
+        )
+        return True
+
+    return False
+
+
 def run_task(options):
     """
     任务执行核心函数
@@ -180,6 +244,9 @@ def run_task(options):
             data.get("dispatch_queue_reason", "-"),
         )
     )
+
+    if _should_skip_stale_task_message(action=action, data=data):
+        return
 
     # 任务被 worker 实际消费后，先做一次“waiting -> running”兜底状态切换。
     _mark_task_started_best_effort(action=action, data=data)

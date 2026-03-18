@@ -26,6 +26,7 @@ import time
 from app.modules import CeleryAction, SchedulerStatus, AssetScopeType
 from app.config import Config
 from app.helpers import task_schedule, asset_site_monitor, asset_wih_monitor
+from app.helpers.task import is_dispatch_queue_available
 
 # 获取日志记录器
 logger = utils.get_logger()
@@ -120,22 +121,28 @@ def _should_dispatch_monitor_heavy_queue(domain, monitor_options):
     )
     heavy_target_threshold = max(int(getattr(Config, "TASK_HEAVY_TARGET_THRESHOLD", 24) or 24), 1)
 
+    heavy_reason = ""
     if scan_port_type == "all":
-        return True, "port_scan_type=all"
+        heavy_reason = "port_scan_type=all"
+    elif scan_port_type == "top1000":
+        heavy_reason = "port_scan_type=top1000"
+    elif os_detection:
+        heavy_reason = "os_detection=true"
+    elif service_detection and port_count >= heavy_service_port_threshold:
+        heavy_reason = "service_detection=true,port_count={}".format(port_count)
+    elif target_count >= heavy_target_threshold and port_count >= heavy_port_threshold:
+        heavy_reason = "target_count={},port_count={}".format(target_count, port_count)
 
-    if scan_port_type == "top1000":
-        return True, "port_scan_type=top1000"
+    if not heavy_reason:
+        return False, ""
 
-    if os_detection:
-        return True, "os_detection=true"
+    if not bool(getattr(Config, "TASK_HEAVY_QUEUE_ENABLE", True)):
+        return False, "heavy_queue_disabled"
 
-    if service_detection and port_count >= heavy_service_port_threshold:
-        return True, "service_detection=true,port_count={}".format(port_count)
+    if not is_dispatch_queue_available("arlheavy"):
+        return False, "heavy_queue_unavailable"
 
-    if target_count >= heavy_target_threshold and port_count >= heavy_port_threshold:
-        return True, "target_count={},port_count={}".format(target_count, port_count)
-
-    return False, ""
+    return True, heavy_reason
 
 
 def add_job(domain, scope_id, options=None, interval=60 * 1, name="", scope_type=AssetScopeType.DOMAIN):
@@ -405,6 +412,8 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
             queue_task = celerytask.arl_task_heavy
             queue_name = "arlheavy"
             queue_reason = heavy_reason
+        elif heavy_reason:
+            queue_reason = "fallback:{}".format(heavy_reason)
 
         # 提交到Celery队列，返回任务ID
         celery_id = queue_task.delay(options=task_options)
@@ -428,6 +437,8 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
             queue_task = celerytask.arl_task_heavy
             queue_name = "arlheavy"
             queue_reason = heavy_reason
+        elif heavy_reason:
+            queue_reason = "fallback:{}".format(heavy_reason)
 
         # 提交到Celery队列，返回任务ID
         celery_id = queue_task.delay(options=task_options)

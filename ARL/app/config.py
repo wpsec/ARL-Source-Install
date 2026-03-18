@@ -92,6 +92,17 @@ def safe_positive_int(value, default, min_value=1):
     return num
 
 
+def safe_bool(value, default=False):
+    """
+    安全转换布尔值，兼容 YAML 布尔和字符串写法。
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ["1", "true", "yes", "on"]
+
+
 def normalize_dict_path_compat(path_value):
     """
     兼容历史字典路径：
@@ -651,6 +662,8 @@ class Config(object):
     TASK_HEAVY_SERVICE_PORT_THRESHOLD = 500
     # 重任务队列分流阈值：目标数量
     TASK_HEAVY_TARGET_THRESHOLD = 24
+    # 是否启用重任务队列分流；若未检测到 arlheavy 消费者会自动回退到 arltask
+    TASK_HEAVY_QUEUE_ENABLE = True
     # 域名爆破并发数（普通域名字典爆破）
     DOMAIN_BRUTE_CONCURRENT = 180
     # 组合生成的域名爆破并发数（altdns变异域名爆破）
@@ -1158,6 +1171,10 @@ try:
         _val = y["ARL"].get(_key)
         if _val is not None:
             setattr(Config, _key, safe_positive_int(_val, getattr(Config, _key)))
+    if y["ARL"].get("TASK_HEAVY_QUEUE_ENABLE") is not None:
+        Config.TASK_HEAVY_QUEUE_ENABLE = safe_bool(
+            y["ARL"].get("TASK_HEAVY_QUEUE_ENABLE"), Config.TASK_HEAVY_QUEUE_ENABLE
+        )
 
     # --- 代理配置 ---
     if y.get("PROXY"):
@@ -1374,6 +1391,9 @@ try:
     Config.CELERY_MAX_MEMORY_PER_CHILD = safe_positive_int(
         env_int("ARL_CELERY_MAX_MEMORY_PER_CHILD", Config.CELERY_MAX_MEMORY_PER_CHILD),
         Config.CELERY_MAX_MEMORY_PER_CHILD
+    )
+    Config.TASK_HEAVY_QUEUE_ENABLE = env_bool(
+        "ARL_TASK_HEAVY_QUEUE_ENABLE", Config.TASK_HEAVY_QUEUE_ENABLE
     )
     # --- 环境变量覆盖：并发数配置（声明式） ---
     for _key in _ARL_POSITIVE_INT_KEYS:
