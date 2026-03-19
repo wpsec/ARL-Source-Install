@@ -46,7 +46,7 @@ QUERY_PLUGIN:
     api_key: ""
     page_size: 100
     max_page: 5
-    request_interval: 1.0
+    request_interval: 3.0
     rate_limit_retry: 4
     rate_limit_backoff: 2
     rate_limit_max_sleep: 60
@@ -55,7 +55,7 @@ QUERY_PLUGIN:
     api_key: ""
     page_size: 100
     max_page: 5
-    request_interval: 1.0
+    request_interval: 3.0
     rate_limit_retry: 4
     rate_limit_backoff: 2
     rate_limit_max_sleep: 60
@@ -63,7 +63,7 @@ QUERY_PLUGIN:
   shodan: # 网站 https://www.shodan.io/
     api_key: ""
     max_page: 20
-    request_interval: 1.0
+    request_interval: 3.0
     rate_limit_retry: 4
     rate_limit_backoff: 2
     rate_limit_max_sleep: 60
@@ -90,7 +90,7 @@ QUERY_PLUGIN:
   zoomeye:
     api_key: ""
     max_page: 20
-    request_interval: 1.0
+    request_interval: 3.0
     rate_limit_retry: 4
     rate_limit_backoff: 2
     rate_limit_max_sleep: 60

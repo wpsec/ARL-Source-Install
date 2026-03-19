@@ -2021,7 +2021,17 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
     }
   }
 
+  const handleUnauthorized = () => {
+    localStorage.removeItem('arl-token');
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+  };
+
   if (!response.ok) {
+    if (response.status === 401 || Number(data?.code) === 401) {
+      handleUnauthorized();
+    }
     if (typeof data?.raw === 'string' && data.raw) {
       throw new Error(`HTTP ${response.status}: ${sanitizeUiMessage(data.raw)}`);
     }
@@ -2029,6 +2039,9 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
   }
 
   if (typeof data?.code === 'number' && data.code !== 200) {
+    if (data.code === 401) {
+      handleUnauthorized();
+    }
     throw new Error(extractErrorMessage(data));
   }
 
@@ -9849,8 +9862,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       memory_gb: 2,
       bandwidth_mbps: 3,
       values: {
-        domain_brute_concurrent: 36,
-        alt_dns_concurrent: 120,
+        domain_brute_concurrent: 48,
+        alt_dns_concurrent: 160,
         web_gunicorn_workers: 1,
         celery_task_worker_concurrency: 1,
         celery_github_worker_concurrency: 1,
@@ -9858,18 +9871,18 @@ function ConfigConsoleView({ token }: { token: string }) {
         celery_max_tasks_per_child: 16,
         celery_max_memory_per_child: 200000,
         nuclei_single_target_timeout_sec: 3600,
-        nuclei_rate_limit: 2,
+        nuclei_rate_limit: 3,
         nuclei_concurrency: 1,
         nuclei_bulk_size: 2,
-        afrog_concurrency: 3,
+        afrog_concurrency: 4,
         afrog_rate_limit: 3,
         urlfinder_url_probe_enable: true,
-        urlfinder_url_probe_max_targets: 120,
-        urlfinder_url_probe_concurrency: 2,
+        urlfinder_url_probe_max_targets: 150,
+        urlfinder_url_probe_concurrency: 3,
         host_timeout_type: 'default',
         host_timeout: 1200,
-        port_parallelism: 8,
-        port_min_rate: 24,
+        port_parallelism: 10,
+        port_min_rate: 32,
       },
     },
     {
@@ -10366,6 +10379,7 @@ function ConfigConsoleView({ token }: { token: string }) {
       setConfigPath(String(data.config_path || configPath));
       setUpdatedAt(String(data.saved_at || updatedAt));
       setSuccess(`扫描配置已保存${backupPath}`);
+      window.alert('配置保存成功！由于配置不支持热更新，请手动重启容器（如 docker-compose restart）以使新配置生效。');
     } catch (err: any) {
       setError(err?.message || '保存扫描配置失败');
     } finally {
@@ -10485,7 +10499,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       setUpdatedAt(String(data?.updated_at || updatedAt));
       setSuccess(`${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新成功（${summary}）`);
     } catch (err: any) {
-      setError(err?.message || `${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新失败`);
+      const baseMsg = err?.message || `${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新失败`;
+      setError(`${baseMsg}。因为是从 GitHub 拉取，如果容易超时，建议尝试前往所在目录通过 Git 命令或离线包手动更新。`);
     } finally {
       if (isNuclei) {
         setNucleiPocUpdating(false);
@@ -10759,7 +10774,7 @@ function ConfigConsoleView({ token }: { token: string }) {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label htmlFor="config-web-gunicorn-workers" className="text-xs font-bold text-brand-text-muted block">
-              Web 进程并发
+              Web API 服务并发数 (界面与接口响应进程)
               <span className="ml-2 font-mono opacity-70">ARL.WEB_GUNICORN_WORKERS</span>
             </label>
             <input
@@ -10774,7 +10789,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
           <div className="space-y-2">
             <label htmlFor="config-celery-task-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
-              Celery 主队列并发
+              后台并行扫描任务数 (同时执行的最大任务数)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_TASK_WORKER_CONCURRENCY</span>
             </label>
             <input
@@ -10789,7 +10804,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
           <div className="space-y-2 xl:col-span-2">
             <label htmlFor="config-celery-github-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
-              Celery GitHub 队列并发
+              后台并行 GitHub 任务数 (独立队列)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_GITHUB_WORKER_CONCURRENCY</span>
             </label>
             <input
@@ -10806,7 +10821,7 @@ function ConfigConsoleView({ token }: { token: string }) {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label htmlFor="config-celery-prefetch-multiplier" className="text-xs font-bold text-brand-text-muted block">
-              Celery 预取倍率
+              任务预拉取数 (单进程一次从队列领取的排队数)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_PREFETCH_MULTIPLIER</span>
             </label>
             <input
@@ -10821,7 +10836,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
           <div className="space-y-2">
             <label htmlFor="config-celery-max-tasks-per-child" className="text-xs font-bold text-brand-text-muted block">
-              Celery 子进程任务上限
+              进程回收阈值：单进程执行多少任务后重启 (防内存泄漏)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_TASKS_PER_CHILD</span>
             </label>
             <input
@@ -10836,7 +10851,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
           <div className="space-y-2 xl:col-span-2">
             <label htmlFor="config-celery-max-memory-per-child" className="text-xs font-bold text-brand-text-muted block">
-              Celery 子进程内存上限(KB)
+              进程回收阈值：单进程达多少内存后重启(KB) (防内存泄漏)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_MEMORY_PER_CHILD</span>
             </label>
             <input
