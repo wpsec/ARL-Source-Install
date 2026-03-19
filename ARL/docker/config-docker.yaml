@@ -59,7 +59,7 @@ QUERY_PLUGIN:
     rate_limit_retry: 4
     rate_limit_backoff: 2
     rate_limit_max_sleep: 60
-    enable: false
+    enable: true
   shodan: # 网站 https://www.shodan.io/
     api_key: ""
     max_page: 20
@@ -67,7 +67,7 @@ QUERY_PLUGIN:
     rate_limit_retry: 4
     rate_limit_backoff: 2
     rate_limit_max_sleep: 60
-    enable: false
+    enable: true
   passivetotal: # 请前往 https://community.riskiq.com/ 注册自己的key并替换
     auth_email: ""
     auth_key: ""
@@ -83,7 +83,7 @@ QUERY_PLUGIN:
     enable: true
   securitytrails: # 网站 https://securitytrails.com/
     api_key: ""
-    enable: false
+    enable: true
   virustotal: # 网站 https://www.virustotal.com/gui/
     api_key: ""
     enable: true
@@ -97,7 +97,7 @@ QUERY_PLUGIN:
     enable: true
   chaos:
     api_key: ""
-    enable: false
+    enable: true
 
 #*** 监控任务消息推送配置 ****
 #监控任务消息推送配置，支持钉钉，飞书，企业微信，邮件
