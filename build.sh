@@ -63,8 +63,6 @@ echo "检查离线工具文件..."
 REQUIRED_TOOLS=(
     "tools/GeoLite2/GeoLite2-ASN.mmdb"
     "tools/GeoLite2/GeoLite2-City.mmdb"
-    "tools/ncrack/ncrack"
-    "tools/ncrack/ncrack-services"
     "tools/dhparam.pem"
 )
 
@@ -75,6 +73,12 @@ for tool in "${REQUIRED_TOOLS[@]}"; do
         echo "✓ $(basename $tool) 存在"
     fi
 done
+
+if [ -f "$PROJECT_ROOT/tools/ncrack/ncrack-0.7.tar.gz" ]; then
+    echo "✓ 检测到离线 ncrack 源码包，构建将优先使用 tools/ncrack/ncrack-0.7.tar.gz"
+else
+    echo "⚠ 警告: 未找到 tools/ncrack/ncrack-0.7.tar.gz，构建将尝试联网下载 ncrack 源码"
+fi
 
 # 检查 WIH 源码文件（源码版构建必须）
 WIH_REQUIRED_FILES=(

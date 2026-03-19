@@ -117,11 +117,12 @@ class Query(DNSQueryBase):
             try:
                 data = conn.json()
             except Exception:
-                data = {}
+                raw_text = str(getattr(conn, "text", "") or "").strip()
+                data = {"_raw_text": raw_text[:500]} if raw_text else {}
 
             message = ""
             if isinstance(data, dict):
-                message = str(data.get("error") or data.get("message") or "")
+                message = str(data.get("error") or data.get("message") or data.get("_raw_text") or "")
 
             if not self._is_rate_limited(status_code=conn.status_code, data=data, message=message):
                 return conn.status_code, data
@@ -187,17 +188,53 @@ class Query(DNSQueryBase):
                 )
 
                 if status_code != 200:
-                    self.logger.error("hunter_how query error:{}".format(json.dumps(data, ensure_ascii=False)))
+                    issue = self._mark_query_issue(
+                        status_code=status_code,
+                        data=data,
+                        message="hunter_how non-200 response",
+                    )
+                    self._log_query_issue(
+                        issue,
+                        "hunter_how query issue status:{} reason:{} search:{} target:{} curr_page:{} response:{}".format(
+                            status_code,
+                            issue.get("reason", "unexpected_error"),
+                            search,
+                            log_target or "-",
+                            curr_page,
+                            json.dumps(data, ensure_ascii=False),
+                        ),
+                    )
                     break
 
                 if not isinstance(data, dict):
-                    self.logger.error("hunter_how query error: invalid response {}".format(type(data)))
+                    self._set_last_query_state(
+                        status="warning",
+                        reason="invalid_response",
+                        detail="hunter_how response is not dict",
+                    )
+                    self.logger.warning("hunter_how query warning: invalid response {}".format(type(data)))
                     break
 
                 items = self._extract_items(data)
                 api_code = data.get("code")
                 if api_code not in (None, 0, "0", 200, "200") and not items:
-                    self.logger.error("hunter_how query error:{}".format(json.dumps(data, ensure_ascii=False)))
+                    issue = self._mark_query_issue(
+                        status_code=status_code,
+                        data=data,
+                        message="hunter_how api code error",
+                    )
+                    self._log_query_issue(
+                        issue,
+                        "hunter_how query issue status:{} code:{} reason:{} search:{} target:{} curr_page:{} response:{}".format(
+                            status_code,
+                            api_code,
+                            issue.get("reason", "unexpected_error"),
+                            search,
+                            log_target or "-",
+                            curr_page,
+                            json.dumps(data, ensure_ascii=False),
+                        ),
+                    )
                     break
 
                 for item in items:

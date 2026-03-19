@@ -7,6 +7,9 @@ from app import utils
 from app.config import Config
 
 
+PREFERRED_MEASURE_QUERY_SOURCES = ("fofa", "shodan")
+
+
 class DNSQueryBase(object):
     def __init__(self):
         self.source_name = None
@@ -19,6 +22,8 @@ class DNSQueryBase(object):
         self._rate_limit_keywords = (
             "rate limit", "too many", "429", "q3005", "频繁", "请求太多", "过于频繁", "稍后再试",
         )
+        self.last_query_state = {}
+        self._reset_last_query_state()
 
     def init_key(self, **kwargs):
         """
@@ -51,6 +56,125 @@ class DNSQueryBase(object):
         :return:
         """
         return []
+
+    def _reset_last_query_state(self, mode="", target=""):
+        self.last_query_state = {
+            "status": "idle",
+            "reason": "",
+            "detail": "",
+            "mode": str(mode or ""),
+            "target": str(target or ""),
+            "source_result_count": 0,
+            "result_count": 0,
+        }
+
+    def _set_last_query_state(
+        self,
+        status="success",
+        reason="ok",
+        detail="",
+        mode=None,
+        target=None,
+        source_result_count=None,
+        result_count=None,
+    ):
+        if mode is not None:
+            self.last_query_state["mode"] = str(mode or "")
+        if target is not None:
+            self.last_query_state["target"] = str(target or "")
+        self.last_query_state["status"] = str(status or "")
+        self.last_query_state["reason"] = str(reason or "")
+        self.last_query_state["detail"] = str(detail or "")
+        if source_result_count is not None:
+            self.last_query_state["source_result_count"] = int(self._safe_to_int(source_result_count, 0))
+        if result_count is not None:
+            self.last_query_state["result_count"] = int(self._safe_to_int(result_count, 0))
+
+    def _classify_query_issue(self, status_code=0, data=None, message="", error_text=""):
+        """
+        统一识别“配额不足 / 限频 / 鉴权失败 / 空响应 / 未知异常”等场景。
+        """
+        safe_status_code = self._safe_to_int(status_code, 0)
+        data_code = ""
+        data_message = ""
+        raw_text = ""
+        if isinstance(data, dict):
+            data_code = str(data.get("code", "")).strip().lower()
+            data_message = str(data.get("message") or data.get("error") or "").strip()
+            raw_text = str(data.get("_raw_text") or "").strip()
+
+        merged_message = " ".join(
+            [
+                str(error_text or "").strip(),
+                str(message or "").strip(),
+                data_code,
+                data_message,
+                raw_text,
+            ]
+        ).strip()
+        merged_lower = merged_message.lower()
+
+        quota_keywords = (
+            "q2001",
+            "积分不足",
+            "credit not enough",
+            "quota not enough",
+            "quota exceeded",
+            "insufficient",
+        )
+        auth_keywords = (
+            "unauthorized",
+            "forbidden",
+            "invalid key",
+            "invalid token",
+            "invalid api key",
+            "apikey",
+            "api key",
+            "鉴权",
+            "认证失败",
+            "token无效",
+            "权限不足",
+        )
+
+        if any(keyword in merged_lower for keyword in quota_keywords):
+            return {"status": "warning", "reason": "quota_exhausted"}
+
+        if self._is_rate_limited(status_code=safe_status_code, data=data, message=merged_message):
+            return {"status": "warning", "reason": "rate_limited"}
+
+        if safe_status_code in (401, 403) or any(keyword in merged_lower for keyword in auth_keywords):
+            return {"status": "warning", "reason": "auth_failed"}
+
+        if not merged_lower or merged_lower == "{}":
+            return {"status": "warning", "reason": "empty_response"}
+
+        if safe_status_code >= 500:
+            return {"status": "error", "reason": "server_error"}
+
+        return {"status": "error", "reason": "unexpected_error"}
+
+    def _mark_query_issue(self, status_code=0, data=None, message="", error_text=""):
+        issue = self._classify_query_issue(
+            status_code=status_code,
+            data=data,
+            message=message,
+            error_text=error_text,
+        )
+        current_status = str(self.last_query_state.get("status") or "")
+        if current_status != "error":
+            self._set_last_query_state(
+                status=issue["status"],
+                reason=issue["reason"],
+                detail=(str(message or "").strip() or str(error_text or "").strip()),
+            )
+        return issue
+
+    def _log_query_issue(self, issue, log_text):
+        issue_status = str((issue or {}).get("status") or "error")
+        if issue_status == "warning":
+            self.logger.warning(log_text)
+        else:
+            self.logger.error(log_text)
 
     def _normalize_domains(self, domains, target="", scope_domain=""):
         """
@@ -96,19 +220,50 @@ class DNSQueryBase(object):
         return list(set(subdomains))
 
     def query(self, target):
+        self._reset_last_query_state(mode="domain", target=target)
         t1 = time.time()
         self.logger.info("start query {} on {}".format(target, self.source_name))
         try:
             domains = self.sub_domains(target)
         except Exception as e:
-            self.logger.error("{} error: {}".format(self.source_name, e))
+            issue = self._mark_query_issue(error_text=str(e))
+            self._log_query_issue(
+                issue,
+                "{} {}: {}".format(self.source_name, issue.get("reason", "unexpected_error"), e),
+            )
             return []
 
         if not isinstance(domains, list):
+            self._set_last_query_state(
+                status="warning",
+                reason="invalid_response",
+                detail="return value is not list",
+            )
             self.logger.warning("{} is not list".format(domains))
             return []
 
         subdomains = self._normalize_domains(domains, target=target)
+
+        if str(self.last_query_state.get("status") or "") not in {"warning", "error"}:
+            if subdomains:
+                self._set_last_query_state(
+                    status="success",
+                    reason="ok",
+                    source_result_count=len(domains),
+                    result_count=len(subdomains),
+                )
+            else:
+                self._set_last_query_state(
+                    status="empty",
+                    reason="no_result",
+                    source_result_count=len(domains),
+                    result_count=0,
+                )
+        else:
+            self._set_last_query_state(
+                source_result_count=len(domains),
+                result_count=len(subdomains),
+            )
 
         t2 = time.time()
         self.logger.info("end query {} on {}, source result:{}, real result:{} ({:.2f}s)".format(
@@ -120,19 +275,51 @@ class DNSQueryBase(object):
         """
         按IP反查域名，target_domain用于范围约束
         """
+        self._reset_last_query_state(mode="ip", target=ip)
         t1 = time.time()
         self.logger.info("start query ip {} on {}".format(ip, self.source_name))
         try:
             domains = self.sub_domains_by_ip(ip)
         except Exception as e:
-            self.logger.error("{} ip {} error: {}".format(self.source_name, ip, e))
+            issue = self._mark_query_issue(error_text=str(e))
+            self._log_query_issue(
+                issue,
+                "{} ip {} {}: {}".format(
+                    self.source_name, ip, issue.get("reason", "unexpected_error"), e
+                ),
+            )
             return []
 
         if not isinstance(domains, list):
+            self._set_last_query_state(
+                status="warning",
+                reason="invalid_response",
+                detail="return value is not list",
+            )
             self.logger.warning("{} is not list".format(domains))
             return []
 
         subdomains = self._normalize_domains(domains, scope_domain=target_domain)
+        if str(self.last_query_state.get("status") or "") not in {"warning", "error"}:
+            if subdomains:
+                self._set_last_query_state(
+                    status="success",
+                    reason="ok",
+                    source_result_count=len(domains),
+                    result_count=len(subdomains),
+                )
+            else:
+                self._set_last_query_state(
+                    status="empty",
+                    reason="no_result",
+                    source_result_count=len(domains),
+                    result_count=0,
+                )
+        else:
+            self._set_last_query_state(
+                source_result_count=len(domains),
+                result_count=len(subdomains),
+            )
         t2 = time.time()
         self.logger.info(
             "end query ip {} on {}, source result:{}, real result:{} ({:.2f}s)".format(
@@ -146,19 +333,51 @@ class DNSQueryBase(object):
         按证书反查域名，target_domain用于范围约束
         """
         show_cert_id = cert_id or "-"
+        self._reset_last_query_state(mode="cert", target=show_cert_id)
         t1 = time.time()
         self.logger.info("start query cert {} on {}".format(show_cert_id, self.source_name))
         try:
             domains = self.sub_domains_by_cert(cert)
         except Exception as e:
-            self.logger.error("{} cert {} error: {}".format(self.source_name, show_cert_id, e))
+            issue = self._mark_query_issue(error_text=str(e))
+            self._log_query_issue(
+                issue,
+                "{} cert {} {}: {}".format(
+                    self.source_name, show_cert_id, issue.get("reason", "unexpected_error"), e
+                ),
+            )
             return []
 
         if not isinstance(domains, list):
+            self._set_last_query_state(
+                status="warning",
+                reason="invalid_response",
+                detail="return value is not list",
+            )
             self.logger.warning("{} is not list".format(domains))
             return []
 
         subdomains = self._normalize_domains(domains, scope_domain=target_domain)
+        if str(self.last_query_state.get("status") or "") not in {"warning", "error"}:
+            if subdomains:
+                self._set_last_query_state(
+                    status="success",
+                    reason="ok",
+                    source_result_count=len(domains),
+                    result_count=len(subdomains),
+                )
+            else:
+                self._set_last_query_state(
+                    status="empty",
+                    reason="no_result",
+                    source_result_count=len(domains),
+                    result_count=0,
+                )
+        else:
+            self._set_last_query_state(
+                source_result_count=len(domains),
+                result_count=len(subdomains),
+            )
         t2 = time.time()
         self.logger.info(
             "end query cert {} on {}, source result:{}, real result:{} ({:.2f}s)".format(
@@ -285,6 +504,56 @@ def _get_auto_enabled_sources(query_key):
     return enabled
 
 
+def _sort_plugins_for_auto_mode(plugins):
+    """
+    自动模式下固定优先级，确保 FOFA / Shodan 先执行。
+    """
+    priority_map = {
+        source_name: index
+        for index, source_name in enumerate(PREFERRED_MEASURE_QUERY_SOURCES)
+    }
+    return sorted(
+        plugins,
+        key=lambda plugin: (
+            priority_map.get(str(getattr(plugin, "source_name", "") or "").strip(), 100),
+            str(getattr(plugin, "source_name", "") or "").strip(),
+        ),
+    )
+
+
+def _read_plugin_state(plugin, result_count=0, new_count=0):
+    state = getattr(plugin, "last_query_state", {})
+    if not isinstance(state, dict):
+        state = {}
+    status = str(state.get("status") or ("success" if result_count > 0 else "empty"))
+    reason = str(state.get("reason") or ("ok" if result_count > 0 else "no_result"))
+    return {
+        "source": str(getattr(plugin, "source_name", "") or "-"),
+        "status": status,
+        "reason": reason,
+        "source_result_count": int(state.get("source_result_count") or result_count or 0),
+        "result_count": int(state.get("result_count") or result_count or 0),
+        "new_count": int(new_count or 0),
+        "detail": str(state.get("detail") or ""),
+    }
+
+
+def _format_provider_summary(provider_stats):
+    parts = []
+    for item in provider_stats:
+        source = str(item.get("source") or "-")
+        status = str(item.get("status") or "-")
+        reason = str(item.get("reason") or "-")
+        source_result_count = int(item.get("source_result_count") or 0)
+        new_count = int(item.get("new_count") or 0)
+        detail = str(item.get("detail") or "").strip()
+        part = "{}:{}:{}({}/{})".format(source, status, reason, new_count, source_result_count)
+        if detail:
+            part = "{}[{}]".format(part, detail[:120])
+        parts.append(part)
+    return " | ".join(parts) if parts else "-"
+
+
 # *****  执行域名查询插件
 """
 返回: [{
@@ -307,10 +576,22 @@ def run_query_plugin(target, sources=None):
     if sources is None:
         sources = []
     source_filter_set = set([x.strip() for x in sources if isinstance(x, str) and x.strip()])
+    auto_source_mode = not source_filter_set
 
     plugins = utils.load_query_plugins(Config.dns_query_plugin_path)
     query_key = Config.QUERY_PLUGIN_CONFIG
     logger = utils.get_logger()
+    if auto_source_mode:
+        source_filter_set = _get_auto_enabled_sources(query_key)
+        logger.info(
+            "domain query auto source mode enabled sources:{}".format(
+                ",".join(sorted(source_filter_set)) if source_filter_set else "-"
+            )
+        )
+        if not source_filter_set:
+            logger.warning("domain query auto source mode no enabled source found in QUERY_PLUGIN")
+            return []
+        plugins = _sort_plugins_for_auto_mode(plugins)
     ret = []
     # 全局去重：同一域名只保留一条记录（来源保留首次命中插件）
     subdomains = set()
@@ -318,12 +599,22 @@ def run_query_plugin(target, sources=None):
     run_count = 0
     skip_count = 0
     error_count = 0
+    warning_count = 0
+    provider_stats = []
     for p in plugins:
         try:
             source_name = p.source_name
             should_run, reason = _prepare_query_plugin(p, source_filter_set, query_key, logger)
             if not should_run:
                 skip_count += 1
+                provider_stats.append({
+                    "source": source_name,
+                    "status": "skip",
+                    "reason": reason,
+                    "source_result_count": 0,
+                    "new_count": 0,
+                    "detail": "",
+                })
                 if reason == "source_filter":
                     logger.info("skip query plugin {} by source filter".format(source_name))
                 elif reason == "enable=false":
@@ -345,9 +636,19 @@ def run_query_plugin(target, sources=None):
                 subdomains.add(result)
                 source_new_cnt += 1
 
+            provider_state = _read_plugin_state(p, result_count=len(results), new_count=source_new_cnt)
+            provider_stats.append(provider_state)
+            if provider_state["status"] == "warning":
+                warning_count += 1
+            elif provider_state["status"] == "error":
+                error_count += 1
             logger.info(
-                "end query plugin {} source_result:{} new_result:{}".format(
-                    source_name, len(results), source_new_cnt
+                "end query plugin {} status:{} reason:{} source_result:{} new_result:{}".format(
+                    source_name,
+                    provider_state["status"],
+                    provider_state["reason"],
+                    len(results),
+                    source_new_cnt,
                 )
             )
 
@@ -358,11 +659,26 @@ def run_query_plugin(target, sources=None):
             else:
                 logger.error("{} error {} {}".format(p.source_name, type(e), str(e)))
             error_count += 1
+            provider_stats.append({
+                "source": str(getattr(p, "source_name", "") or "-"),
+                "status": "error",
+                "reason": "unexpected_error",
+                "source_result_count": 0,
+                "new_count": 0,
+                "detail": error_str,
+            })
 
     t2 = time.time()
     logger.info(
-        "{} subdomains result {} run:{} skip:{} error:{} ({:.2f}s)".format(
-            target, len(subdomains), run_count, skip_count, error_count, t2 - t1
+        "{} subdomains result {} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
+            target,
+            len(subdomains),
+            run_count,
+            skip_count,
+            warning_count,
+            error_count,
+            t2 - t1,
+            _format_provider_summary(provider_stats),
         )
     )
     return ret
@@ -407,6 +723,7 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
         if not source_filter_set:
             logger.warning("ip query auto source mode no enabled source found in QUERY_PLUGIN")
             return []
+        plugins = _sort_plugins_for_auto_mode(plugins)
 
     ret = []
     subdomains = set()
@@ -414,7 +731,9 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
     run_count = 0
     skip_count = 0
     error_count = 0
+    warning_count = 0
     limit_hit = False
+    provider_stats = []
 
     for p in plugins:
         source_name = p.source_name
@@ -422,6 +741,14 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
             should_run, reason = _prepare_query_plugin(p, source_filter_set, query_key, logger)
             if not should_run:
                 skip_count += 1
+                provider_stats.append({
+                    "source": source_name,
+                    "status": "skip",
+                    "reason": reason,
+                    "source_result_count": 0,
+                    "new_count": 0,
+                    "detail": "",
+                })
                 if reason == "source_filter":
                     logger.info("skip ip query plugin {} by source filter".format(source_name))
                 elif reason == "enable=false":
@@ -430,6 +757,14 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
 
             if not getattr(p, "support_ip_query", False):
                 skip_count += 1
+                provider_stats.append({
+                    "source": source_name,
+                    "status": "skip",
+                    "reason": "support_ip_query=false",
+                    "source_result_count": 0,
+                    "new_count": 0,
+                    "detail": "",
+                })
                 logger.info("skip ip query plugin {} because support_ip_query=false".format(source_name))
                 continue
 
@@ -460,9 +795,19 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
                 if limit_hit:
                     break
 
+            provider_state = _read_plugin_state(p, result_count=source_result_cnt, new_count=source_new_cnt)
+            provider_stats.append(provider_state)
+            if provider_state["status"] == "warning":
+                warning_count += 1
+            elif provider_state["status"] == "error":
+                error_count += 1
             logger.info(
-                "end ip query plugin {} source_result:{} new_result:{}".format(
-                    source_name, source_result_cnt, source_new_cnt
+                "end ip query plugin {} status:{} reason:{} source_result:{} new_result:{}".format(
+                    source_name,
+                    provider_state["status"],
+                    provider_state["reason"],
+                    source_result_cnt,
+                    source_new_cnt,
                 )
             )
 
@@ -477,11 +822,27 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
             else:
                 logger.error("{} ip query error {} {}".format(source_name, type(e), str(e)))
             error_count += 1
+            provider_stats.append({
+                "source": source_name,
+                "status": "error",
+                "reason": "unexpected_error",
+                "source_result_count": 0,
+                "new_count": 0,
+                "detail": error_str,
+            })
 
     t2 = time.time()
     logger.info(
-        "ip_query target_domain:{} ip:{} result:{} run:{} skip:{} error:{} ({:.2f}s)".format(
-            target_domain or "-", len(normalized_ip_list), len(subdomains), run_count, skip_count, error_count, t2 - t1
+        "ip_query target_domain:{} ip:{} result:{} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
+            target_domain or "-",
+            len(normalized_ip_list),
+            len(subdomains),
+            run_count,
+            skip_count,
+            warning_count,
+            error_count,
+            t2 - t1,
+            _format_provider_summary(provider_stats),
         )
     )
     return ret
@@ -570,6 +931,7 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
         if not source_filter_set:
             logger.warning("cert query auto source mode no enabled source found in QUERY_PLUGIN")
             return []
+        plugins = _sort_plugins_for_auto_mode(plugins)
 
     ret = []
     subdomains = set()
@@ -577,7 +939,9 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
     run_count = 0
     skip_count = 0
     error_count = 0
+    warning_count = 0
     limit_hit = False
+    provider_stats = []
 
     for p in plugins:
         source_name = p.source_name
@@ -585,6 +949,14 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
             should_run, reason = _prepare_query_plugin(p, source_filter_set, query_key, logger)
             if not should_run:
                 skip_count += 1
+                provider_stats.append({
+                    "source": source_name,
+                    "status": "skip",
+                    "reason": reason,
+                    "source_result_count": 0,
+                    "new_count": 0,
+                    "detail": "",
+                })
                 if reason == "source_filter":
                     logger.info("skip cert query plugin {} by source filter".format(source_name))
                 elif reason == "enable=false":
@@ -593,6 +965,14 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
 
             if not getattr(p, "support_cert_query", False):
                 skip_count += 1
+                provider_stats.append({
+                    "source": source_name,
+                    "status": "skip",
+                    "reason": "support_cert_query=false",
+                    "source_result_count": 0,
+                    "new_count": 0,
+                    "detail": "",
+                })
                 logger.info("skip cert query plugin {} because support_cert_query=false".format(source_name))
                 continue
 
@@ -625,9 +1005,19 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
                 if limit_hit:
                     break
 
+            provider_state = _read_plugin_state(p, result_count=source_result_cnt, new_count=source_new_cnt)
+            provider_stats.append(provider_state)
+            if provider_state["status"] == "warning":
+                warning_count += 1
+            elif provider_state["status"] == "error":
+                error_count += 1
             logger.info(
-                "end cert query plugin {} source_result:{} new_result:{}".format(
-                    source_name, source_result_cnt, source_new_cnt
+                "end cert query plugin {} status:{} reason:{} source_result:{} new_result:{}".format(
+                    source_name,
+                    provider_state["status"],
+                    provider_state["reason"],
+                    source_result_cnt,
+                    source_new_cnt,
                 )
             )
 
@@ -642,11 +1032,27 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
             else:
                 logger.error("{} cert query error {} {}".format(source_name, type(e), str(e)))
             error_count += 1
+            provider_stats.append({
+                "source": source_name,
+                "status": "error",
+                "reason": "unexpected_error",
+                "source_result_count": 0,
+                "new_count": 0,
+                "detail": error_str,
+            })
 
     t2 = time.time()
     logger.info(
-        "cert_query target_domain:{} cert:{} result:{} run:{} skip:{} error:{} ({:.2f}s)".format(
-            target_domain or "-", len(normalized_cert_list), len(subdomains), run_count, skip_count, error_count, t2 - t1
+        "cert_query target_domain:{} cert:{} result:{} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
+            target_domain or "-",
+            len(normalized_cert_list),
+            len(subdomains),
+            run_count,
+            skip_count,
+            warning_count,
+            error_count,
+            t2 - t1,
+            _format_provider_summary(provider_stats),
         )
     )
     return ret

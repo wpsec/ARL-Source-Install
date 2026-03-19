@@ -87,8 +87,11 @@ WORKDIR /code
 ARG TARGETARCH
 ARG PYTHON_VERSION=3.10.20
 ARG GO_VERSION=1.22.4
+ARG NCRACK_VERSION=0.7
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV LANG=en_US.UTF-8
+
+COPY tools/ncrack/ /tmp/ncrack-offline/
 
 # 配置 Rocky/EPEL 与 pip 镜像源，并安装系统依赖
 RUN set -eux; \
@@ -111,6 +114,34 @@ RUN set -eux; \
       libX11 libXcomposite libXcursor libXdamage libXext libXi libXrandr \
       libXScrnSaver libXtst nss nspr pango xorg-x11-fonts-Type1 xorg-x11-fonts-misc; \
     dnf clean all
+
+# 编译安装 ncrack，避免预编译二进制与当前 OpenSSL 运行时不兼容
+RUN set -eux; \
+    NCRACK_TGZ="/tmp/ncrack-${NCRACK_VERSION}.tar.gz"; \
+    OFFLINE_NCRACK_TGZ="/tmp/ncrack-offline/ncrack-${NCRACK_VERSION}.tar.gz"; \
+    if [ -s "${OFFLINE_NCRACK_TGZ}" ]; then \
+      echo "use offline ncrack source package: ${OFFLINE_NCRACK_TGZ}"; \
+      cp "${OFFLINE_NCRACK_TGZ}" "${NCRACK_TGZ}"; \
+    fi; \
+    if [ ! -s "${NCRACK_TGZ}" ]; then \
+      for URL in \
+        "https://nmap.org/ncrack/dist/ncrack-${NCRACK_VERSION}.tar.gz" \
+        "https://nmap.org/svn/ncrack/ncrack-${NCRACK_VERSION}.tar.gz"; do \
+        echo "try download ${URL}"; \
+        wget -q --no-check-certificate -O "${NCRACK_TGZ}" "${URL}" && break || true; \
+      done; \
+    fi; \
+    test -s "${NCRACK_TGZ}" || (echo "[ERROR] ncrack source package not found: ${NCRACK_TGZ}" && exit 1); \
+    cd /tmp; \
+    tar -xzf "ncrack-${NCRACK_VERSION}.tar.gz"; \
+    cd "ncrack-${NCRACK_VERSION}"; \
+    ./configure; \
+    make -j"$(nproc)"; \
+    ./ncrack -V >/dev/null; \
+    install -m 0755 ncrack /usr/local/bin/ncrack; \
+    install -d /usr/local/share/ncrack; \
+    install -m 0644 ncrack-services /usr/local/share/ncrack/ncrack-services; \
+    rm -rf "/tmp/ncrack-${NCRACK_VERSION}" "/tmp/ncrack-${NCRACK_VERSION}.tar.gz" /tmp/ncrack-offline
 
 # 编译安装 Python（优先离线包，失败再走在线下载）
 COPY tools/Python-*.tgz /tmp/
@@ -189,8 +220,6 @@ COPY --from=0 /frontend/dist/ frontend/
 COPY ARL/docker/nginx.conf /etc/nginx/nginx.conf
 COPY ARL/docker/worker/*.sh /usr/bin/
 
-COPY tools/ncrack/ncrack /usr/local/bin/ncrack
-COPY tools/ncrack/ncrack-services /usr/local/share/ncrack/ncrack-services
 COPY tools/nuclei/nuclei_*_linux_amd64.zip /tmp/
 COPY tools/nuclei/nuclei-templates/ /code/tools/nuclei-templates/
 COPY tools/afrog/ /code/tools/afrog/
@@ -240,6 +269,7 @@ RUN set -eux; \
     python3 -c "import psutil, flask, pymongo, celery, dnslib, playwright"; \
     python3 -c "from Cryptodome.Cipher import AES"; \
     python3 -c "from requests_ntlm import HttpNtlmAuth"; \
+    ncrack -V >/dev/null; \
     nmap --version >/dev/null; \
     nuclei -version >/dev/null; \
     /usr/bin/wih -h >/dev/null 2>&1 || true

@@ -45,7 +45,6 @@ def apply_arch_compat_options(options):
     disable_reason_map = {
         "domain_brute": "massdns 当前仅提供 x86_64 二进制",
         "alt_dns": "massdns 当前仅提供 x86_64 二进制",
-        "service_brute": "ncrack 当前仅提供 x86_64 二进制",
     }
 
     for option_key, reason in disable_reason_map.items():
