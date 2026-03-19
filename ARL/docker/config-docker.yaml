@@ -282,11 +282,11 @@ ARL:
   # nmap 主机超时（秒，仅 HOST_TIMEOUT_TYPE=custom 时生效）
   HOST_TIMEOUT: 900
   # nmap 探测报文并行度默认值
-  PORT_PARALLELISM: 32
+  PORT_PARALLELISM: 64
   # nmap 最少发包速率默认值
-  PORT_MIN_RATE: 64
+  PORT_MIN_RATE: 200
   # 端口扫描分片：常规模式每批目标数
-  PORT_SCAN_TARGET_BATCH_SIZE: 24
+  PORT_SCAN_TARGET_BATCH_SIZE: 32
   # 端口扫描分片：重负载端口集每批目标数
   PORT_SCAN_HEAVY_TARGET_BATCH_SIZE: 8
   # 端口扫描分片：全端口每批目标数
@@ -326,9 +326,9 @@ ARL:
   # 域名爆破并发数
   DOMAIN_BRUTE_CONCURRENT: 180
   # 组合生成的域名爆破并发数
-  ALT_DNS_CONCURRENT: 800
+  ALT_DNS_CONCURRENT: 500
   # 域名解析并发
-  DOMAIN_RESOLVE_CONCURRENCY: 10
+  DOMAIN_RESOLVE_CONCURRENCY: 20
   # 域名信息构建并发
   DOMAIN_INFO_CONCURRENCY: 10
   # HTTP可用性检查并发
@@ -338,7 +338,7 @@ ARL:
   # 站点探测并发
   PROBE_HTTP_CONCURRENCY: 8
   # 站点截图并发
-  SITE_SCREENSHOT_CONCURRENCY: 4
+  SITE_SCREENSHOT_CONCURRENCY: 2
   # NPoC 服务识别并发
   NPOC_SNIFFER_CONCURRENCY: 8
   # NPoC PoC 扫描并发
