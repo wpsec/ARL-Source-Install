@@ -2,12 +2,14 @@ rules:
   # 域名，内置规则
   - id: domain
     enabled: true
+    pattern: '(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:(?:com|cn|net|org|edu|gov|mil|int|biz|info|pro|top|vip|club|xyz|online|site|tech|store|app|dev|io|ai|co|me|cc|tv|hk|jp|kr|sg|us|uk|de|fr|ru|nl|au|ca|it|es|in|br|ch|se|no|fi|pl|eu)|(?:(?:com|net|org|gov|edu|ac|mil)\.cn)|xn--[a-z0-9-]{2,59})\b'
   # IP， 内置规则
   - id: ip
     enabled: true
   # 路径，内置规则
   - id: path
     enabled: true
+    pattern: '/(?:[A-Za-z0-9._~!$&()*+,=:@%-]{1,80}/?){1,8}'
   # URL主机部分为域名，内置规则
   - id: domain_url
     enabled: true
@@ -140,7 +142,7 @@ rules:
   # OpenAI API Key
   - id: openai_api_key
     enabled: true
-    pattern: \bsk-[a-zA-Z0-9]{48}\b
+    pattern: '(?i)(?:openai|chatgpt|gpt)[^\r\n]{0,80}\bsk-[a-zA-Z0-9]{48}\b'
 
   # Anthropic API Key
   - id: anthropic_api_key
@@ -155,7 +157,7 @@ rules:
   # Cohere API Key
   - id: cohere_api_key
     enabled: true
-    pattern: \b[a-zA-Z0-9]{40}\b
+    pattern: '(?i)(?:cohere|command-r|command-light|embed-v)[^\r\n]{0,80}\b[a-zA-Z0-9]{40}\b'
 
   # Pinecone API Key
   - id: pinecone_api_key
@@ -165,12 +167,12 @@ rules:
   # DeepSeek API Key
   - id: deepseek_api_key
     enabled: true
-    pattern: \bsk-[a-zA-Z0-9]{32}\b
+    pattern: '(?i)(?:deepseek)[^\r\n]{0,80}\bsk-[a-zA-Z0-9]{32}\b'
 
   # 百川 API Key
   - id: baichuan_api_key
     enabled: true
-    pattern: \bsk-[a-zA-Z0-9]{32}\b
+    pattern: '(?i)(?:baichuan|百川)[^\r\n]{0,80}\bsk-[a-zA-Z0-9]{32}\b'
 
   # Google Gemini API Key
   - id: gemini_api_key
@@ -185,32 +187,32 @@ rules:
   # Moonshot (月之暗面/Kimi) API Key
   - id: moonshot_api_key
     enabled: true
-    pattern: \bsk-[a-zA-Z0-9]{40}\b
+    pattern: '(?i)(?:moonshot|kimi|月之暗面)[^\r\n]{0,80}\bsk-[a-zA-Z0-9]{40}\b'
 
   # Midjourney API Key
   - id: midjourney_api_key
     enabled: true
-    pattern: \b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b
+    pattern: '(?i)(?:midjourney|mj)[^\r\n]{0,80}(?:api[_-]?key|token|secret)[^\r\n]{0,80}\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b'
 
   # stability.ai API Key
   - id: stability_api_key
     enabled: true
-    pattern: \bsk-[a-zA-Z0-9]{48}\b
+    pattern: '(?i)(?:stability(?:\.ai|ai)?|stable(?:[_ -]?diffusion)?)[^\r\n]{0,80}\bsk-[a-zA-Z0-9]{48}\b'
 
   # ZhipuAI (智谱清言/ChatGLM) API Key
   - id: zhipu_api_key
     enabled: true
-    pattern: \b[a-zA-Z0-9]{32}\.[a-zA-Z0-9]{10}\b
+    pattern: '(?i)(?:zhipu|chatglm|glm-?4|智谱)[^\r\n]{0,80}\b[a-zA-Z0-9]{32}\.[a-zA-Z0-9]{10}\b'
 
   # Minimax API Key
   - id: minimax_api_key
     enabled: true
-    pattern: \b[A-Za-z0-9]{32}\b
+    pattern: '(?i)(?:minimax(?:[_-]?(?:api(?:[_-]?key)?|group(?:[_-]?id)?))?|groupid|mini[-_]?max)[^\r\n]{0,80}\b[A-Za-z0-9]{32}\b'
 
   # DashScope (阿里灵积/通义千问) API Key
   - id: dashscope_api_key
     enabled: true
-    pattern: \bsk-[a-zA-Z0-9]{32}\b
+    pattern: '(?i)(?:dashscope|qwen|通义|aliyun)[^\r\n]{0,80}\bsk-[a-zA-Z0-9]{32}\b'
 
   # ======================== SnowEyes 拓展规则（已转为 WIH 格式）========================
   # Shiro rememberMe 特征
@@ -244,11 +246,11 @@ rules:
   # 常见调试/管理参数线索
   - id: debug_logic_parameters
     enabled: true
-    pattern: "(?:access|adm|admin|alter|cfg|clone|config|create|dbg|debug|delete|disable|edit|enable|exec|execute|grant|load|make|modify|rename|reset|root|shell|test|toggl)="
+    pattern: "(?:[?&]|\\b)(?:access|adm|admin|alter|cfg|clone|config|create|dbg|debug|delete|disable|edit|enable|exec|execute|grant|load|make|modify|rename|reset|root|shell|test|toggl)="
   # URL 作为参数值（可能存在 SSRF / 跳转风险）
   - id: url_as_value
     enabled: true
-    pattern: "=(?:https?://|https?%3a%2f%2f)"
+    pattern: "(?:[?&]|\\b)[^=\\s]{1,40}=(?:https?://|https?%3a%2f%2f)"
   # 文件上传表单特征
   - id: upload_form
     enabled: true
@@ -256,7 +258,7 @@ rules:
   # 常见 DoS 相关参数线索
   - id: dos_parameters
     enabled: true
-    pattern: "(?:size|page|num|limit|start|end|count)="
+    pattern: "(?:[?&]|\\b)(?:size|page|num|limit|start|end|count)="
   # Linux passwd 文件泄露特征
   - id: passwd_file_leak
     enabled: true
@@ -315,3 +317,33 @@ exclude_rules:
   - name: "过滤来自首页的内容"
     source_tag: page
     enabled: false
+
+  - name: "过滤 path 中带引号或分号的残缺路由"
+    id: path
+    content: regex:^/.*(?:['"`;]).*$
+    enabled: true
+
+  - name: "过滤 path 中的静态资源路径"
+    id: path
+    content: regex:^/(?:static|assets?)/.*\.(?:js|mjs|css|scss|jpg|jpeg|png|gif|ico|svg|vue|ts|woff2?|ttf|map)(?:[?#].*)?$
+    enabled: true
+
+  - name: "过滤 path 中明显无意义的 HTML 标签路径"
+    id: path
+    content: regex:^/(?:head|body|html|script|style|meta|link|title)$
+    enabled: true
+
+  - name: "过滤 minimax_api_key 误命中的 32 位纯 hex 摘要"
+    id: minimax_api_key
+    content: regex:(?i)\b[a-f0-9]{32}\b
+    enabled: true
+
+  - name: "过滤 cohere_api_key 误命中的 40 位纯 hex 摘要"
+    id: cohere_api_key
+    content: regex:(?i)\b[a-f0-9]{40}\b
+    enabled: true
+
+  - name: "过滤通用线索规则中的前端国际化与对象属性噪声"
+    id: regex:^(?:domain|debug_logic_parameters|dos_parameters|url_as_value)$
+    content: regex:(?i)(?:^|[^\w])(?:formdata|this|window|eg|pleaseenterpassword|forgetpassword|passwordtip|isshowpassword|safepassword|mobilepassword|token\.js)(?:$|[^\w])
+    enabled: true

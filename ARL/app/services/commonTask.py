@@ -743,8 +743,7 @@ class WebSiteFetch(object):
         判断 WIH 记录是否需要同步到风险(vuln)模块。
         """
         record_type = str(getattr(record, "recordType", "") or "").strip().lower()
-        content = str(getattr(record, "content", "") or "").strip().lower()
-        if not record_type and not content:
+        if not record_type:
             return False
 
         if record_type.startswith("trufflehog_"):
@@ -769,23 +768,6 @@ class WebSiteFetch(object):
 
         if record_type.endswith("_key") or record_type.endswith("_token"):
             return True
-
-        sensitive_keywords = (
-            "app_key",
-            "api_key",
-            "access_key",
-            "secret_key",
-            "client_secret",
-            "private_key",
-            "authorization: bearer",
-            "password",
-            "passwd",
-            "token",
-            "jwt",
-        )
-        for keyword in sensitive_keywords:
-            if keyword in content:
-                return True
 
         return False
 
