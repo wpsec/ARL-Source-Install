@@ -60,9 +60,9 @@ nginx
 echo "nginx started successfully"
 
 echo "Waiting for services..."
-wait-for-it.sh -t 60 mongodb:27017
-wait-for-it.sh -t 60 rabbitmq:5672
-wait-for-it.sh -t 60 redis:6379
+wait-for-it.sh -t 0 mongodb:27017
+wait-for-it.sh -t 0 rabbitmq:5672
+wait-for-it.sh -t 0 redis:6379
 
 # 默认跳过启动阶段全量导入，避免与后台同步并发争抢资源。
 IMPORT_FINGERPRINT_ON_BOOT="${ARL_WEB_IMPORT_FINGERPRINT_ON_BOOT:-0}"
@@ -89,5 +89,7 @@ exec gunicorn \
   -b 0.0.0.0:5003 \
   app.main:arl_app \
   -w "${WEB_GUNICORN_WORKERS}" \
+  --timeout 300 \
+  --graceful-timeout 300 \
   --access-logfile arl_web.log \
   --access-logformat '%({x-real-ip}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'

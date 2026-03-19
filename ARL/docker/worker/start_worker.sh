@@ -69,9 +69,9 @@ PY
 
 ensure_python_runtime
 
-wait-for-it.sh -t 60 mongodb:27017
-wait-for-it.sh -t 60 rabbitmq:5672
-wait-for-it.sh -t 60 redis:6379
+wait-for-it.sh -t 0 mongodb:27017
+wait-for-it.sh -t 0 rabbitmq:5672
+wait-for-it.sh -t 0 redis:6379
 mkdir -p /code/app/tmp
 LOG_FILE_PATH="${ARL_SCAN_LOG_FILE:-/code/logs/arl_worker.log}"
 mkdir -p "$(dirname "${LOG_FILE_PATH}")"
