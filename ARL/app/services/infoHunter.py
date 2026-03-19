@@ -31,6 +31,14 @@ class InfoHunter(object):
         self._help_text = None
 
     @staticmethod
+    def _should_keep_plain_content(record_type: str, content: str) -> bool:
+        record_type = str(record_type or "").strip().lower()
+        content = str(content or "").strip().lower()
+        if record_type in {"domain_url", "ip_url", "path_url", "urlfinder_url", "urlfinder_js"}:
+            return True
+        return content.startswith("http://") or content.startswith("https://")
+
+    @staticmethod
     def _resolve_wih_binary() -> str:
         # 优先使用本地/挂载目录下的“成品二进制”，其次回退到镜像内编译产物。
         candidates = [
@@ -267,7 +275,7 @@ class InfoHunter(object):
                     continue
 
                 tag_text = str(item.get("tag") or item.get("rule") or "").strip()
-                if tag_text:
+                if tag_text and (not self._should_keep_plain_content(record_type, content)):
                     content = "{} ({})".format(content, tag_text)
 
                 source = str(item.get("source") or item.get("from") or site or "").strip()

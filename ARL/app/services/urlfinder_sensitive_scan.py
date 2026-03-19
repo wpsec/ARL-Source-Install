@@ -13,6 +13,7 @@ from app import utils
 from app.config import Config
 from app.modules import WihRecord
 from .infoHunter import run_wih
+from .url_candidate_filter import normalize_http_url_candidate
 
 logger = utils.get_logger()
 
@@ -69,25 +70,20 @@ class UrlfinderSensitiveScanner:
         return path.endswith(".js")
 
     def _normalize_target_url(self, raw_url: str) -> str:
-        text = str(raw_url or "").strip()
-        if not self._is_http_url(text):
+        normalized = normalize_http_url_candidate(
+            raw_url,
+            allowed_hosts=self.allowed_hosts,
+            allow_js=self.include_js,
+        )
+        if not normalized:
             return ""
 
-        parsed = urlparse(text)
-        if parsed.scheme not in ("http", "https"):
-            return ""
-        if not parsed.netloc:
-            return ""
-
-        host = self._extract_host(text)
+        host = self._extract_host(normalized)
         if not host or host not in self.allowed_hosts:
             return ""
         if self.waf_guard and self.waf_guard.is_blocked_host(host):
             return ""
-
-        if parsed.fragment:
-            parsed = parsed._replace(fragment="")
-        return parsed.geturl()
+        return normalized
 
     def _collect_targets(self) -> List[str]:
         targets: Set[str] = set()

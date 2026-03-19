@@ -15,6 +15,11 @@ from urllib.parse import unquote, urljoin, urlparse
 from app import utils
 from app.config import Config
 from app.modules import WihRecord
+from .url_candidate_filter import (
+    has_route_template_markers,
+    is_noise_single_segment_path,
+    strip_route_method_suffix,
+)
 
 logger = utils.get_logger()
 DNS_POLICY_CACHE = {}
@@ -193,8 +198,16 @@ class UrlfinderExtractService:
         if not host or host not in self.allowed_hosts:
             return ""
 
+        path_text = strip_route_method_suffix(parsed.path or "")
+        if has_route_template_markers(path_text):
+            return ""
+        if is_noise_single_segment_path(path_text):
+            return ""
+
         if parsed.fragment:
             parsed = parsed._replace(fragment="")
+        if path_text != parsed.path:
+            parsed = parsed._replace(path=path_text)
         return parsed.geturl()
 
     def _url_blocked(self, url: str, for_js: bool) -> bool:

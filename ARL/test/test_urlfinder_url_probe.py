@@ -63,7 +63,51 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertEqual(len(fake_collection.inserted), 1)
         self.assertEqual(fake_collection.inserted[0]["source"], CollectSource.WIH_URL_PROBE)
         self.assertIn("https://example.com/api/user", page_url_set)
-        mock_page_fetch.assert_called_once_with(["https://example.com/api/user"], concurrency=6)
+        mock_page_fetch.assert_called_once_with(
+            ["https://example.com/api/user"],
+            concurrency=6,
+            waf_guard=None,
+            waf_module="urlfinder_url_probe",
+        )
+
+    @patch("app.services.urlfinder_url_probe.page_fetch")
+    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
+    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    def test_probe_filters_template_static_and_annotation_noise(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
+        fake_collection = _FakeUrlCollection()
+        mock_conn_db.return_value = fake_collection
+        mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
+        mock_page_fetch.return_value = {
+            "https://example.com/api/user": {
+                "url": "https://example.com/api/user",
+                "title": "ok",
+                "content_length": 12,
+                "status_code": 200,
+            }
+        }
+
+        records = [
+            WihRecord("path_url", "https://example.com/api/user (path_probe status=200)", "https://example.com/a.js", "https://example.com", 11),
+            WihRecord("path_url", "https://example.com/static/app.css (path_probe status=200)", "https://example.com/a.js", "https://example.com", 12),
+            WihRecord("path_url", "https://example.com/announcement/{id}/detail|get (path_probe status=200)", "https://example.com/a.js", "https://example.com", 13),
+            WihRecord("path_url", "https://example.com/head (path_probe status=200)", "https://example.com/a.js", "https://example.com", 14),
+        ]
+
+        inserted_count = run_urlfinder_url_probe(
+            task_id="task_3",
+            sites=["https://example.com"],
+            wih_records=records,
+        )
+
+        self.assertEqual(inserted_count, 1)
+        self.assertEqual(len(fake_collection.inserted), 1)
+        self.assertEqual(fake_collection.inserted[0]["url"], "https://example.com/api/user")
+        mock_page_fetch.assert_called_once_with(
+            ["https://example.com/api/user"],
+            concurrency=6,
+            waf_guard=None,
+            waf_module="urlfinder_url_probe",
+        )
 
     @patch("app.services.urlfinder_url_probe.utils.conn_db")
     def test_probe_skip_when_disabled(self, mock_conn_db):

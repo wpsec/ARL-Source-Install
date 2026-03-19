@@ -2,6 +2,7 @@ package scan
 
 import (
 	"testing"
+
 	datatype "wih/dataType"
 )
 
@@ -53,6 +54,24 @@ func TestBuildPathProbeCandidates(t *testing.T) {
 	for urlValue, hit := range expected {
 		if !hit {
 			t.Fatalf("未命中期望候选 URL: %s", urlValue)
+		}
+	}
+}
+
+// TestNormalizePathTokenFiltersNoise 验证 path 探测前的清洗逻辑。
+func TestNormalizePathTokenFiltersNoise(t *testing.T) {
+	cases := map[string]string{
+		"/approve/rule/candidate_approvers|get": "/approve/rule/candidate_approvers",
+		"/announcement/{id}/detail|get":         "",
+		"/static/js/app.js":                     "",
+		"/head":                                 "",
+		"/api/user/list":                        "/api/user/list",
+	}
+
+	for raw, expected := range cases {
+		got := normalizePathToken(raw)
+		if got != expected {
+			t.Fatalf("path token normalize mismatch raw=%s got=%s expected=%s", raw, got, expected)
 		}
 	}
 }

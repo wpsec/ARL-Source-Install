@@ -13,6 +13,7 @@ from app import utils
 from app.config import Config
 from app.modules import CollectSource, WihRecord
 from app.services.pageFetch import page_fetch
+from app.services.url_candidate_filter import normalize_http_url_candidate
 
 logger = utils.get_logger()
 
@@ -88,25 +89,11 @@ class UrlfinderUrlProbeService:
         if not self._is_http_url(text):
             return ""
 
-        parsed = urlparse(text)
-        if parsed.scheme not in ("http", "https"):
-            return ""
-        if not parsed.netloc:
-            return ""
-
-        host = self._extract_host(text)
-        if not host:
-            return ""
-        if self.allowed_hosts and host not in self.allowed_hosts:
-            return ""
-
-        # URL 信息页不收录 JS 资源链接，避免与页面 URL 混淆。
-        if str(parsed.path or "").lower().endswith(".js"):
-            return ""
-
-        if parsed.fragment:
-            parsed = parsed._replace(fragment="")
-        return parsed.geturl()
+        return normalize_http_url_candidate(
+            text,
+            allowed_hosts=self.allowed_hosts,
+            allow_js=False,
+        )
 
     def _collect_candidates(self) -> List[str]:
         urls = set()

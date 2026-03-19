@@ -11,14 +11,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	datatype "wih/dataType"
 	"wih/global"
 	"wih/util"
 )
 
 var (
-	jsSrcPattern = regexp.MustCompile(`(?i)(?:src|href)\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']`)
-	jsAbsPattern = regexp.MustCompile(`(?i)https?://[^\s"'<>]+\.js(?:\?[^\s"'<>]*)?`)
+	jsSrcPattern             = regexp.MustCompile(`(?i)(?:src|href)\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']`)
+	jsAbsPattern             = regexp.MustCompile(`(?i)https?://[^\s"'<>]+\.js(?:\?[^\s"'<>]*)?`)
+	routeMethodSuffixPattern = regexp.MustCompile(`(?i)\|(get|post|put|delete|patch|options|head|connect|trace)$`)
 )
 
 const (
@@ -30,6 +32,37 @@ const (
 	pathProbeTimeout = 8 * time.Second
 	// pathProbeDrainBytes 限制每个探测请求的响应读取字节数，仅用于连接复用排空。
 	pathProbeDrainBytes = 2048
+)
+
+var (
+	pathProbeNoiseSingleSegments = map[string]struct{}{
+		"head":   {},
+		"body":   {},
+		"html":   {},
+		"script": {},
+		"style":  {},
+		"meta":   {},
+		"link":   {},
+		"title":  {},
+	}
+	pathProbeStaticSuffixes = []string{
+		".js",
+		".mjs",
+		".css",
+		".scss",
+		".jpg",
+		".jpeg",
+		".png",
+		".gif",
+		".ico",
+		".svg",
+		".vue",
+		".ts",
+		".woff",
+		".woff2",
+		".ttf",
+		".map",
+	}
 )
 
 // pathProbeCandidate 表示一条待探测 URL 候选。
@@ -304,11 +337,86 @@ func normalizePathToken(rawPath string) string {
 	// path 规则仅用于路径探测，剔除 query/fragment 干扰。
 	pathText = strings.SplitN(pathText, "?", 2)[0]
 	pathText = strings.SplitN(pathText, "#", 2)[0]
+	pathText = routeMethodSuffixPattern.ReplaceAllString(pathText, "")
 	pathText = strings.TrimSpace(pathText)
 	if pathText == "" || pathText == "/" {
 		return ""
 	}
+
+	if strings.Contains(pathText, " ") {
+		return ""
+	}
+	if hasPathTemplateMarker(pathText) {
+		return ""
+	}
+
+	pathText = path.Clean(pathText)
+	if !strings.HasPrefix(pathText, "/") {
+		pathText = "/" + pathText
+	}
+	if pathText == "" || pathText == "/" || pathText == "/." {
+		return ""
+	}
+	if isPathProbeStaticResource(pathText) {
+		return ""
+	}
+	if isNoiseSingleSegmentPath(pathText) {
+		return ""
+	}
+
 	return pathText
+}
+
+func hasPathTemplateMarker(pathText string) bool {
+	text := strings.TrimSpace(pathText)
+	if text == "" {
+		return false
+	}
+
+	if strings.ContainsAny(text, "{}<>[]|") || strings.Contains(text, "${") {
+		return true
+	}
+
+	for _, segment := range strings.Split(text, "/") {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		if strings.HasPrefix(segment, ":") {
+			return true
+		}
+		if strings.Contains(segment, "*") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isNoiseSingleSegmentPath(pathText string) bool {
+	text := strings.Trim(strings.TrimSpace(pathText), "/")
+	if text == "" {
+		return false
+	}
+	if strings.Contains(text, "/") || strings.Contains(text, ".") {
+		return false
+	}
+
+	_, ok := pathProbeNoiseSingleSegments[strings.ToLower(text)]
+	return ok
+}
+
+func isPathProbeStaticResource(pathText string) bool {
+	lowerPath := strings.ToLower(strings.TrimSpace(pathText))
+	if lowerPath == "" {
+		return false
+	}
+	for _, suffix := range pathProbeStaticSuffixes {
+		if strings.HasSuffix(lowerPath, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // buildCandidateURLsByPath 按“根路径 + 当前目录”构建候选 URL。
