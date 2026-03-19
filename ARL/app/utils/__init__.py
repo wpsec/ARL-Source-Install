@@ -757,6 +757,7 @@ def recover_interrupted_tasks_on_worker_start(
     恢复规则：
     - 仅处理已开始但未进入终态的任务
     - waiting/done/stop/error 状态不会被覆盖
+    - 恢复为 error，避免 ACK 已丢失但任务再次显示为 waiting 的假象
     """
     logger = get_logger()
     now = curr_date()
@@ -769,8 +770,8 @@ def recover_interrupted_tasks_on_worker_start(
     }
     update = {
         "$set": {
-            "status": "waiting",
-            "start_time": "-",
+            "status": "error",
+            "end_time": now,
             "stop_reason": reason,
             "interrupted": True,
             "last_error": detail,

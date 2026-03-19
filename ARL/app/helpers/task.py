@@ -513,7 +513,16 @@ def submit_task(task_data):
         )
 
         # 更新 celery_id 与派发队列信息，便于排查“waiting”问题。
-        values = {"$set": {"celery_id": str(celery_id), "dispatch_queue": queue_name}}
+        dispatch_now = utils.curr_date()
+        dispatch_ts = int(time.time())
+        values = {
+            "$set": {
+                "celery_id": str(celery_id),
+                "dispatch_queue": queue_name,
+                "dispatch_time": dispatch_now,
+                "dispatch_ts": dispatch_ts,
+            }
+        }
         if queue_reason:
             values["$set"]["dispatch_queue_reason"] = queue_reason
         else:
@@ -521,6 +530,8 @@ def submit_task(task_data):
 
         task_data["celery_id"] = str(celery_id)
         task_data["dispatch_queue"] = queue_name
+        task_data["dispatch_time"] = dispatch_now
+        task_data["dispatch_ts"] = dispatch_ts
         if queue_reason:
             task_data["dispatch_queue_reason"] = queue_reason
         else:
@@ -645,6 +656,8 @@ def restart_task(task_id):
         "waf_skip_summary",
         "dispatch_queue",
         "dispatch_queue_reason",
+        "dispatch_time",
+        "dispatch_ts",
     ]
     for field in reset_fields:
         task_data.pop(field, None)

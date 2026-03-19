@@ -38,8 +38,18 @@ def submit_github_task(task_data, action, delay_flag=True):
             celerytask.arl_github(options=task_options)
 
         logger.info("target:{} task_id:{} celery_id:{}".format(keyword, task_id, celery_id))
-        values = {"$set": {"celery_id": str(celery_id)}}
+        dispatch_now = utils.curr_date()
+        dispatch_ts = int(time.time())
+        values = {"$set": {
+            "celery_id": str(celery_id),
+            "dispatch_queue": "arlgithub",
+            "dispatch_time": dispatch_now,
+            "dispatch_ts": dispatch_ts,
+        }}
         task_data["celery_id"] = str(celery_id)
+        task_data["dispatch_queue"] = "arlgithub"
+        task_data["dispatch_time"] = dispatch_now
+        task_data["dispatch_ts"] = dispatch_ts
         utils.conn_db(collection).update_one({"_id": ObjectId(task_id)}, values)
 
     except Exception as e:

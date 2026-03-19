@@ -7,7 +7,9 @@
 
 - `[v3.3.25]` 502/假死卡顿熔断问题彻底修复：通过解耦服务长响应超时限制与增加 Nginx 内网动态 DNS，解决当运行巨型前置任务时导致的后续容器启动假死死锁。修改点包含：1）Web/Worker 取消启动项中对数据库/队列强制 `60s` 内连接成功的超时硬性断言（改更为无限等待），防止因历史遗留脏数据启动排障过长反复引流致死；2）Gunicorn 超时时间由 `30s` 暴增至 `300s` 且匹配对应的 `nginx proxy_read_timeout`，杜绝巨型历史记录加载触发容器进程内部互砍；3）Docker external Nginx 配置项中追加通过 `127.0.0.11` 动态解析重构 `upstream`，防止单体通过 `docker-compose restart we b` 重建节点导致的反向代理 IP 遗留缓存导致的持久化 `502` 返回。
 
-## 2026-03-19（v3.3.21 ~ v3.3.35）
+## 2026-03-19（v3.3.21 ~ v3.3.37）
+
+- `[v3.3.37]` Celery 长任务 ACK 策略修复：将扫描任务队列切回“消费后尽早 ACK”，避免 `task_acks_late=true` 叠加 RabbitMQ `consumer_timeout` 时，长任务在 `Virustotal/搜索引擎/端口扫描` 等任意阶段运行超过阈值便触发 `PRECONDITION_FAILED - delivery acknowledgement timed out` 并连带 worker 通道退出；worker 启动恢复逻辑同步从“回 waiting”改为“收敛为 error”，避免消息已丢失但任务状态仍显示等待中的假象。进一步新增“高置信孤儿 waiting 任务”回收：仅在任务已有 `celery_id`、broker 对应队列消息数为 `0`、且不在任何 worker 的 `active/reserved/scheduled` 列表中时，才在启动阶段将其收敛为 `error`；同时补充 `dispatch_time/dispatch_ts` 字段辅助判断，并将默认扫描配置中的 `CELERY_PREFETCH_MULTIPLIER` 统一回落到 `1`，减少长任务抢占队列导致的等待感，并补充对应回归测试
 
 - `[v3.3.35]` WIH 规则与风险提取降噪：系统性收紧 `tools/wih/config/rules.yml` 中高误报规则，`domain/path` 继续补充噪声过滤，AI Key 检测改为更依赖 provider 上下文，降低 `Cohere/Midjourney/Zhipu/Minimax` 及多家 `sk-` 规则的误命中与互相串标；通用线索规则 `debug_logic_parameters/url_as_value/dos_parameters` 新增边界约束与前端噪声排除。ARL 侧同步收紧 WIH 升级为“敏感信息泄露”风险的条件，不再仅因 `domain/path/urlfinder_js` 等载体型记录内容包含 `token/password` 字样就提升为风险，避免 `iToken.js`、`/password';`、前端国际化占位串等无意义结果进入风险列表；同时将 WIH 内置 fallback 规则模板与主规则文件保持一致，并补充对应回归测试
 

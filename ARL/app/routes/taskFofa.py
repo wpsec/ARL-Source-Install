@@ -20,11 +20,12 @@ Fofa简介：
 - 提交Fofa任务并自动扫描结果IP
 - 支持策略配置自定义扫描选项
 """
+import time
 from flask_restx import Namespace, fields
 from app.utils import get_logger, auth, build_ret, conn_db
 from app.modules import ErrorMsg, CeleryAction
 from app.services.fofaClient import fofa_query, fofa_query_result
-from app import celerytask
+from app import celerytask, utils
 from bson import ObjectId
 from . import ARLResource
 
@@ -330,8 +331,18 @@ def submit_fofa_task(task_data):
     logger.info("target:{} celery_id:{}".format(task_id, celery_id))
 
     # 更新任务的celery_id
-    values = {"$set": {"celery_id": str(celery_id)}}
+    dispatch_now = utils.curr_date()
+    dispatch_ts = int(time.time())
+    values = {"$set": {
+        "celery_id": str(celery_id),
+        "dispatch_queue": "arltask",
+        "dispatch_time": dispatch_now,
+        "dispatch_ts": dispatch_ts,
+    }}
     task_data["celery_id"] = str(celery_id)
+    task_data["dispatch_queue"] = "arltask"
+    task_data["dispatch_time"] = dispatch_now
+    task_data["dispatch_ts"] = dispatch_ts
     conn_db('task').update_one({"_id": ObjectId(task_id)}, values)
 
     return task_data

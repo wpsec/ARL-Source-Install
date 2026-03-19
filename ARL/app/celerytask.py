@@ -30,8 +30,11 @@ celery = Celery('task', broker=Config.CELERY_BROKER_URL)
 
 # Celery 配置
 celery.conf.update(
-    # 任务执行完成后再确认，避免 worker/容器重启时，尚未真正开始的任务永久卡在 waiting。
-    task_acks_late=True,
+    # ARL 的扫描任务经常是“单条消息运行几十分钟”的长任务。
+    # 若使用 late ack，则 RabbitMQ 会一直看不到 ACK，容易撞上 consumer_timeout
+    # 触发 PRECONDITION_FAILED 并直接关闭 worker 通道。这里改为“消费后尽早 ACK”，
+    # 再配合运行中状态落库与中断恢复逻辑，降低 MQ 侧长任务超时风险。
+    task_acks_late=False,
     # 保持默认语义：手动 stop/terminate 的任务不自动重新入队，避免被用户停止后再次跑起来。
     task_reject_on_worker_lost=False,
     worker_prefetch_multiplier=Config.CELERY_PREFETCH_MULTIPLIER,  # Worker 每次只预取较少任务
@@ -52,6 +55,254 @@ celery.conf.update(
 )
 # 允许 root 用户运行 Celery（容器环境需要）
 platforms.C_FORCE_ROOT = True
+
+_WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlgithub")
+_WAITING_ORPHAN_GRACE_SEC = 90
+
+
+def _extract_live_task_ids(task_items):
+    """
+    从 inspect 返回的任务列表中提取 celery task id。
+    """
+    task_id_set = set()
+    if not isinstance(task_items, list):
+        return task_id_set
+
+    for item in task_items:
+        if not isinstance(item, dict):
+            continue
+
+        task_id = str(item.get("id", "") or "").strip()
+        if not task_id:
+            request = item.get("request")
+            if isinstance(request, dict):
+                task_id = str(request.get("id", "") or "").strip()
+
+        if task_id:
+            task_id_set.add(task_id)
+
+    return task_id_set
+
+
+def _collect_live_celery_task_ids(timeout_sec=1.5):
+    """
+    收集当前 worker 已知的 active/reserved/scheduled 任务 id。
+    """
+    inspect = celery.control.inspect(timeout=timeout_sec)
+    live_task_id_set = set()
+
+    try:
+        result_list = [
+            inspect.active() or {},
+            inspect.reserved() or {},
+            inspect.scheduled() or {},
+        ]
+    except Exception as e:
+        logger.warning("collect live celery task ids failed error:{}".format(e))
+        return live_task_id_set, False
+
+    for result in result_list:
+        if not isinstance(result, dict):
+            continue
+        for _, task_items in result.items():
+            live_task_id_set |= _extract_live_task_ids(task_items)
+
+    return live_task_id_set, True
+
+
+def _get_broker_queue_message_counts(queue_names):
+    """
+    使用 broker 被动声明读取队列消息数，不修改队列状态。
+    """
+    from kombu import Queue
+
+    count_map = {}
+    try:
+        with celery.connection_or_acquire() as conn:
+            channel = conn.channel()
+            try:
+                for queue_name in queue_names:
+                    try:
+                        queue = Queue(queue_name, channel=channel)
+                        declared = queue.queue_declare(passive=True, channel=channel)
+                        count_map[queue_name] = int((declared or ("", 0, 0))[1] or 0)
+                    except Exception as e:
+                        logger.warning(
+                            "get broker queue message count failed queue:{} error:{}".format(
+                                queue_name, e
+                            )
+                        )
+                        return count_map, False
+            finally:
+                try:
+                    channel.close()
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning("connect broker for queue count failed error:{}".format(e))
+        return count_map, False
+
+    return count_map, True
+
+
+def _guess_waiting_task_dispatch_ts(item):
+    """
+    推断 waiting 任务的派发时间戳，优先使用 dispatch_ts，兼容历史数据回退 ObjectId 时间。
+    """
+    dispatch_ts = item.get("dispatch_ts")
+    try:
+        dispatch_ts = int(dispatch_ts or 0)
+    except Exception:
+        dispatch_ts = 0
+
+    if dispatch_ts > 0:
+        return dispatch_ts
+
+    try:
+        object_id = item.get("_id")
+        if isinstance(object_id, ObjectId):
+            return int(object_id.generation_time.timestamp())
+    except Exception:
+        pass
+
+    return 0
+
+
+def recover_orphan_waiting_tasks_on_worker_start(
+    reason="worker restarted before waiting task status update",
+    grace_sec=_WAITING_ORPHAN_GRACE_SEC,
+    inspect_timeout_sec=1.5,
+):
+    """
+    回收“高置信孤儿 waiting 任务”。
+
+    仅在同时满足以下条件时才标记为 error：
+    - 任务状态为 waiting，且已有 celery_id
+    - broker 对应队列当前消息数为 0
+    - 当前没有 worker 将该 celery_id 视为 active/reserved/scheduled
+    - 距离派发时间超过 grace_sec
+    """
+    now_ts = int(time.time())
+    now_text = utils.curr_date()
+    safe_grace_sec = max(int(grace_sec or 0), 10)
+
+    live_task_id_set, live_ok = _collect_live_celery_task_ids(timeout_sec=inspect_timeout_sec)
+    queue_count_map, queue_ok = _get_broker_queue_message_counts(_WAITING_ORPHAN_QUEUE_SET)
+    if not live_ok or not queue_ok:
+        logger.warning(
+            "skip orphan waiting task recovery live_ok:{} queue_ok:{}".format(
+                live_ok, queue_ok
+            )
+        )
+        return {"task": 0, "github_task": 0}
+
+    detail = {
+        "time": now_text,
+        "stage": "worker_bootstrap",
+        "message": reason,
+    }
+    update = {
+        "$set": {
+            "status": "error",
+            "end_time": now_text,
+            "stop_reason": reason,
+            "interrupted": True,
+            "last_error": detail,
+        },
+        "$push": {
+            "error_logs": {
+                "$each": [detail],
+                "$slice": -20,
+            }
+        }
+    }
+
+    collection_queue_map = {
+        "task": "arltask",
+        "github_task": "arlgithub",
+    }
+    recovered_count_map = {
+        "task": 0,
+        "github_task": 0,
+    }
+
+    for collection, default_queue in collection_queue_map.items():
+        query = {
+            "status": "waiting",
+            "start_time": {"$in": ["", "-"]},
+            "celery_id": {"$nin": ["", None]},
+        }
+
+        try:
+            item_list = list(
+                utils.conn_db(collection).find(
+                    query,
+                    {
+                        "_id": 1,
+                        "celery_id": 1,
+                        "dispatch_queue": 1,
+                        "dispatch_ts": 1,
+                    },
+                )
+            )
+        except Exception as e:
+            logger.warning(
+                "query waiting task for orphan recovery failed collection:{} error:{}".format(
+                    collection, e
+                )
+            )
+            continue
+
+        orphan_id_list = []
+        for item in item_list:
+            celery_id = str(item.get("celery_id", "") or "").strip()
+            if not celery_id:
+                continue
+
+            dispatch_ts = _guess_waiting_task_dispatch_ts(item)
+            if dispatch_ts <= 0 or (now_ts - dispatch_ts) < safe_grace_sec:
+                continue
+
+            if celery_id in live_task_id_set:
+                continue
+
+            queue_name = str(item.get("dispatch_queue", "") or "").strip() or default_queue
+            if int(queue_count_map.get(queue_name, 0) or 0) > 0:
+                continue
+
+            orphan_id_list.append(item["_id"])
+
+        if not orphan_id_list:
+            continue
+
+        try:
+            result = utils.conn_db(collection).update_many(
+                {
+                    "_id": {"$in": orphan_id_list},
+                    "status": "waiting",
+                },
+                update,
+            )
+            recovered_count_map[collection] = int(result.modified_count or 0)
+        except Exception as e:
+            logger.warning(
+                "update orphan waiting task failed collection:{} error:{}".format(
+                    collection, e
+                )
+            )
+
+    if recovered_count_map["task"] or recovered_count_map["github_task"]:
+        logger.warning(
+            "recover orphan waiting tasks on worker start task:{} github_task:{} reason:{}".format(
+                recovered_count_map["task"],
+                recovered_count_map["github_task"],
+                reason,
+            )
+        )
+    else:
+        logger.info("recover orphan waiting tasks on worker start no stale waiting task found")
+
+    return recovered_count_map
 
 
 @celery.task(queue='arltask')
