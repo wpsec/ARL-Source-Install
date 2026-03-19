@@ -4067,29 +4067,37 @@ function ActionDialog({
 
   const selectedPolicyPocNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('poc_config')));
   const selectedPolicyBruteNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('brute_config')));
-  const policySiteOptionDefs = [
-    { key: 'site_config.site_identify', label: '1. 站点识别' },
-    { key: 'site_config.search_engines', label: '2. 搜索引擎调用' },
-    { key: 'site_config.site_spider', label: '3. 站点爬虫' },
-    { key: 'site_config.site_capture', label: '4. 站点截图' },
-    { key: 'file_leak', label: '5. 目录扫描' },
-    { key: 'site_config.nuclei_scan', label: '6. nuclei 调用' },
-    { key: 'site_config.afrog_scan', label: '7. afrog 调用' },
-    { key: 'site_config.web_info_hunter', label: '8. WIH 调用' },
-    { key: 'site_config.smart_skip_waf', label: '9. 跳过WAF' },
+  const policyOptionDefs = [
+    { key: 'domain_config.alt_dns', label: 'DNS字典智能生成' },
+    { key: 'domain_config.dns_query_plugin', label: '测绘引擎查询' },
+    { key: 'domain_config.arl_search', label: 'ARL 历史查询' },
+    { key: 'ip_config.port_scan', label: '端口扫描' },
+    { key: 'ip_config.service_detection', label: '服务识别' },
+    { key: 'ip_config.os_detection', label: '操作系统识别' },
+    { key: 'ip_config.ssl_cert', label: 'SSL 证书获取' },
+    { key: 'ip_config.skip_scan_cdn_ip', label: '跳过CDN' },
+    { key: 'site_config.site_identify', label: '站点识别' },
+    { key: 'site_config.search_engines', label: '搜索引擎调用' },
+    { key: 'site_config.site_spider', label: '站点爬虫' },
+    { key: 'site_config.site_capture', label: '站点截图' },
+    { key: 'file_leak', label: '目录扫描' },
+    { key: 'site_config.nuclei_scan', label: 'nuclei 调用' },
+    { key: 'site_config.afrog_scan', label: 'afrog 调用' },
+    { key: 'site_config.web_info_hunter', label: 'WIH 调用' },
+    { key: 'site_config.smart_skip_waf', label: '跳过WAF' },
   ];
-  const filteredPolicySiteOptions = policySiteOptionDefs.filter((item) => {
+  const filteredPolicyOptions = policyOptionDefs.filter((item) => {
     const keyword = policySearchKeyword.trim().toLowerCase();
     if (!keyword) return true;
     return item.label.toLowerCase().includes(keyword);
   });
-  const policySiteOptionAllEnabled =
-    policySiteOptionDefs.length > 0 &&
-    policySiteOptionDefs.every((item) => Boolean(getPayloadValue(formPayload, getPolicyPath(item.key))));
-  const setPolicySiteOptionAll = (enabled: boolean) => {
+  const policyOptionAllEnabled =
+    policyOptionDefs.length > 0 &&
+    policyOptionDefs.every((item) => Boolean(getPayloadValue(formPayload, getPolicyPath(item.key))));
+  const setPolicyOptionAll = (enabled: boolean) => {
     setFormPayload((prev) => {
       let next = deepClone(prev || {});
-      policySiteOptionDefs.forEach((item) => {
+      policyOptionDefs.forEach((item) => {
         next = updatePayloadValue(next, getPolicyPath(item.key), enabled);
       });
       return next;
@@ -5203,14 +5211,14 @@ function ActionDialog({
 
               <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h5 className="text-sm font-black">站点和风险配置</h5>
+                  <h5 className="text-sm font-black">基础扫描配置</h5>
                   <button
                     type="button"
                     className="text-xs font-bold text-brand-accent hover:underline"
-                    onClick={() => setPolicySiteOptionAll(!policySiteOptionAllEnabled)}
+                    onClick={() => setPolicyOptionAll(!policyOptionAllEnabled)}
                     disabled={!editable}
                   >
-                    {policySiteOptionAllEnabled ? '取消全选' : '全选'}
+                    {policyOptionAllEnabled ? '取消全选' : '全选'}
                   </button>
                 </div>
                 <input
@@ -5220,7 +5228,7 @@ function ActionDialog({
                   placeholder="请输入关键字进行查询"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                  {filteredPolicySiteOptions.map((item) => (
+                  {filteredPolicyOptions.map((item) => (
                     <label key={item.key} className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
                       <input
                         type="checkbox"

@@ -117,6 +117,58 @@ scope_config_fields = ns.model('scopeConfig', {
     "scope_id": fields.String(description="资产分组 ID", default=""),
 })
 
+
+def _extract_enabled_bool_keys(config_dict):
+    """
+    提取配置中值为 True 的布尔开关键。
+    """
+    ret = []
+    for key, value in (config_dict or {}).items():
+        if isinstance(value, bool) and value:
+            ret.append(key)
+    return sorted(ret)
+
+
+def _flatten_nested_keys(data, prefix=""):
+    """
+    展平嵌套字典键名，便于审计日志记录本次更新涉及的字段。
+    """
+    if not isinstance(data, dict):
+        return []
+
+    ret = []
+    for key, value in data.items():
+        curr_key = "{}.{}".format(prefix, key) if prefix else str(key)
+        ret.append(curr_key)
+        if isinstance(value, dict):
+            ret.extend(_flatten_nested_keys(value, curr_key))
+
+    return ret
+
+
+def _build_policy_log_summary(name, domain_config, ip_config, site_config,
+                              domain_dict="", file_leak_dict="",
+                              file_leak=False, npoc_service_detection=False,
+                              scope_config=None):
+    """
+    生成策略审计日志摘要，避免在日志中打印完整配置大对象。
+    """
+    ip_config = ip_config or {}
+    scope_config = scope_config or {}
+    return {
+        "name": str(name or "").strip(),
+        "domain_enabled": _extract_enabled_bool_keys(domain_config),
+        "ip_enabled": _extract_enabled_bool_keys(ip_config),
+        "site_enabled": _extract_enabled_bool_keys(site_config),
+        "file_leak": bool(file_leak),
+        "npoc_service_detection": bool(npoc_service_detection),
+        "port_scan_type": str(ip_config.get("port_scan_type", "") or "").strip(),
+        "port_custom": str(ip_config.get("port_custom", "") or "").strip(),
+        "domain_dict": str(domain_dict or "").strip(),
+        "file_leak_dict": str(file_leak_dict or "").strip(),
+        "scope_id": str(scope_config.get("scope_id", "") or "").strip(),
+    }
+
 # 添加策略请求模型
 add_policy_fields = ns.model('addPolicy', {
     "name": fields.String(required=True, description="策略名称"),
@@ -270,11 +322,28 @@ class AddARLPolicy(ARLResource):
             "desc": desc,
             "update_date": utils.curr_date()
         }
-        
-        # 保存到数据库
-        utils.conn_db("policy").insert_one(item)
 
-        return utils.build_ret(ErrorMsg.Success, {"policy_id": str(item["_id"])})
+        # 保存到数据库
+        insert_ret = utils.conn_db("policy").insert_one(item)
+        policy_id = str(insert_ret.inserted_id)
+        logger.info(
+            "policy add success policy_id:{} summary:{}".format(
+                policy_id,
+                _build_policy_log_summary(
+                    name=name,
+                    domain_config=domain_config,
+                    ip_config=ip_config,
+                    site_config=site_config,
+                    domain_dict=domain_dict,
+                    file_leak_dict=file_leak_dict,
+                    file_leak=file_leak,
+                    npoc_service_detection=npoc_service_detection,
+                    scope_config=scope_config,
+                )
+            )
+        )
+
+        return utils.build_ret(ErrorMsg.Success, {"policy_id": policy_id})
 
     def _update_arg(self, arg_dict, default_module):
         """
@@ -360,6 +429,7 @@ def _normalize_policy_dict_path(path_value, field_name):
         return "", None
 
     if not os.path.isfile(normalized_path):
+        logger.warning("policy dict path invalid field:{} path:{}".format(field_name, normalized_path))
         return "", {"error": "{} 文件不存在".format(field_name), field_name: normalized_path}
 
     return normalized_path, None
@@ -401,7 +471,15 @@ class DeletePolicy(ARLResource):
         for policy_id in policy_id_list:
             if not policy_id:
                 continue
-            utils.conn_db('policy').delete_one({'_id': ObjectId(policy_id)})
+            query = {'_id': ObjectId(policy_id)}
+            policy_item = utils.conn_db('policy').find_one(query, {"name": 1})
+            utils.conn_db('policy').delete_one(query)
+            logger.info(
+                "policy delete success policy_id:{} name:{}".format(
+                    policy_id,
+                    str((policy_item or {}).get("name", "") or "").strip()
+                )
+            )
 
         return utils.build_ret(ErrorMsg.Success, {})
 
@@ -503,6 +581,23 @@ class EditPolicy(ARLResource):
         # 更新时间戳并保存
         item["update_date"] = utils.curr_date()
         utils.conn_db('policy').find_one_and_replace(query, item)
+        logger.info(
+            "policy edit success policy_id:{} update_keys:{} summary:{}".format(
+                policy_id,
+                sorted(set(_flatten_nested_keys(policy_data))),
+                _build_policy_log_summary(
+                    name=item.get("name", ""),
+                    domain_config=item["policy"].get("domain_config", {}),
+                    ip_config=item["policy"].get("ip_config", {}),
+                    site_config=item["policy"].get("site_config", {}),
+                    domain_dict=item["policy"].get("domain_dict", ""),
+                    file_leak_dict=item["policy"].get("file_leak_dict", ""),
+                    file_leak=item["policy"].get("file_leak", False),
+                    npoc_service_detection=item["policy"].get("npoc_service_detection", False),
+                    scope_config=item["policy"].get("scope_config", {}),
+                )
+            )
+        )
         item.pop('_id')
 
         return utils.build_ret(ErrorMsg.Success, {"data": item})
