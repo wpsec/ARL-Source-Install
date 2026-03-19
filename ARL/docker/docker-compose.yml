@@ -4,6 +4,7 @@ volumes:
   arl_db:
     external: true
   redis_data:
+  rabbitmq_data:
 
 services:
   nginx:
@@ -141,6 +142,8 @@ services:
     image: rabbitmq:3.13-management-alpine
     container_name: arl_rabbitmq
     restart: always
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     environment:
       - RABBITMQ_DEFAULT_PASS=arlpassword
       - RABBITMQ_DEFAULT_USER=arl

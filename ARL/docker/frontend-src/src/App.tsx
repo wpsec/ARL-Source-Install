@@ -9957,6 +9957,7 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [afrogPocUpdating, setAfrogPocUpdating] = useState(false);
   const [domainUploading, setDomainUploading] = useState(false);
   const [fileLeakUploading, setFileLeakUploading] = useState(false);
+  const [showRestartModal, setShowRestartModal] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [domainDictOptions, setDomainDictOptions] = useState<DomainDictOption[]>([]);
@@ -10379,7 +10380,7 @@ function ConfigConsoleView({ token }: { token: string }) {
       setConfigPath(String(data.config_path || configPath));
       setUpdatedAt(String(data.saved_at || updatedAt));
       setSuccess(`扫描配置已保存${backupPath}`);
-      window.alert('配置保存成功！由于配置不支持热更新，请手动重启容器（如 docker-compose restart）以使新配置生效。');
+      setShowRestartModal(true);
     } catch (err: any) {
       setError(err?.message || '保存扫描配置失败');
     } finally {
@@ -11111,6 +11112,39 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
         </div>
       </div>
+
+      {showRestartModal ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-brand-border flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400" />
+              <h4 className="text-lg font-black tracking-wide">需要重启容器</h4>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm font-semibold">配置保存成功！</p>
+              <p className="text-sm text-brand-text-muted leading-relaxed">
+                由于当前系统配置不支持热更新，请在服务器中执行容器重启以使新配置生效：
+              </p>
+              <div className="bg-brand-bg/50 border border-brand-border rounded-lg p-3">
+                <code className="text-xs text-brand-accent font-mono block select-all">
+                  docker-compose restart
+                </code>
+              </div>
+              <p className="text-xs text-brand-text-muted">
+                (或使用提供的 ./restart.sh 脚本)
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t border-brand-border flex justify-end gap-3 bg-brand-bg/30">
+              <button
+                onClick={() => setShowRestartModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-brand-accent/20"
+              >
+                我知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

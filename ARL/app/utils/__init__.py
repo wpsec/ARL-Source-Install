@@ -769,8 +769,8 @@ def recover_interrupted_tasks_on_worker_start(
     }
     update = {
         "$set": {
-            "status": "error",
-            "end_time": now,
+            "status": "waiting",
+            "start_time": "-",
             "stop_reason": reason,
             "interrupted": True,
             "last_error": detail,
