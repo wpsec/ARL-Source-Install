@@ -14,6 +14,7 @@
 - `[v3.3.38]` Worker 队列守护增强：`worker` 容器内的 `arlgithub/arlheavy/arltask` 三个 Celery 进程改为受同一启动脚本监护，只要任一子 worker 异常退出，容器会主动退出并触发 Docker 自动拉起，修复“主 worker 仍在线但重任务队列子进程已挂，导致部分任务长期停留 waiting” 的假健康问题
 - `[v3.3.38]` 目录扫描防卡死增强：保留原有 `file_leak` 功能入口与结果落库方式，但将单站点目录扫描改为受 watchdog 监护的独立子进程执行，新增 `FILE_LEAK_CONCURRENCY / FILE_LEAK_SITE_TIMEOUT_SEC / FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC` 配置项；当站点因安全设备、异常响应或长时间无进展导致目录扫描卡住时，会按站点级总超时或无进展超时主动回收子进程，避免整条任务长期停留在 `目录扫描` 阶段
 - `[v3.3.39]` Web 重任务队列隔离增强：新增独立 Celery 队列 `arlweb` 与并发配置 `CELERY_WEB_WORKER_CONCURRENCY`，将 `目录扫描 / Nuclei / afrog / 站点截图 / 站点爬虫 / WebInfoHunter` 等 Web 重阶段任务从主队列中隔离；手工任务、监控任务与资产站点/WIH 更新任务会按配置自动分流到 `arlweb`，同时 worker 启动守护、孤儿 `waiting` 回收与等待任务重投脚本同步兼容新队列，降低 Web 重任务长期占用 `arltask` 导致后续任务等待、CPU 被拖慢或队列假卡住的问题
+- `[v3.3.39]` nmap 分片批次上调：提高端口扫描单批目标数默认值，常规扫描从 `24 -> 48`、重负载端口集从 `8 -> 16`、全端口扫描从 `2 -> 4`，减少大批量目标任务的批次数与阶段切换开销，在保持 `常规 / heavy / 全端口` 分层保护的前提下提升整体吞吐
 
 ## 2026-03-19（v3.3.21 ~ v3.3.37）
 

@@ -292,11 +292,11 @@ ARL:
   # nmap 最少发包速率默认值
   PORT_MIN_RATE: 64
   # 端口扫描分片：常规模式每批目标数
-  PORT_SCAN_TARGET_BATCH_SIZE: 24
+  PORT_SCAN_TARGET_BATCH_SIZE: 48
   # 端口扫描分片：重负载端口集每批目标数
-  PORT_SCAN_HEAVY_TARGET_BATCH_SIZE: 8
+  PORT_SCAN_HEAVY_TARGET_BATCH_SIZE: 16
   # 端口扫描分片：全端口每批目标数
-  PORT_SCAN_ALL_TARGET_BATCH_SIZE: 2
+  PORT_SCAN_ALL_TARGET_BATCH_SIZE: 4
   # 两阶段精扫单主机端口分段大小（仅分段，不裁剪结果）
   PORT_SCAN_STAGE2_PORT_CHUNK_SIZE: 300
   # 重任务队列分流阈值：端口数

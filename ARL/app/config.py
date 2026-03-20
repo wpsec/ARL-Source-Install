@@ -665,11 +665,11 @@ class Config(object):
     # nmap 最少发包速率默认值
     PORT_MIN_RATE = 64
     # 端口扫描每批目标数量（常规）
-    PORT_SCAN_TARGET_BATCH_SIZE = 24
+    PORT_SCAN_TARGET_BATCH_SIZE = 48
     # 端口扫描每批目标数量（重负载端口集，如 top1000）
-    PORT_SCAN_HEAVY_TARGET_BATCH_SIZE = 8
+    PORT_SCAN_HEAVY_TARGET_BATCH_SIZE = 16
     # 全端口扫描每批目标数量
-    PORT_SCAN_ALL_TARGET_BATCH_SIZE = 2
+    PORT_SCAN_ALL_TARGET_BATCH_SIZE = 4
     # 两阶段精扫单主机端口分段大小（仅分段，不裁剪结果）
     PORT_SCAN_STAGE2_PORT_CHUNK_SIZE = 300
     # 兼容旧配置项名称
