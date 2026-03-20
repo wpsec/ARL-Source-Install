@@ -1054,6 +1054,21 @@ def _build_task_overview_sheet_values(title, task_ids, overview_meta=None):
     """
     task_id_list = _normalize_task_ids(task_ids)
     meta = overview_meta if isinstance(overview_meta, dict) else {}
+    export_summary = meta.get("export_summary", {})
+    if not isinstance(export_summary, dict):
+        export_summary = {}
+    if not export_summary and task_id_list:
+        try:
+            from app.routes.export import build_task_export_summary
+
+            export_summary = build_task_export_summary(task_id_list)
+        except Exception as e:
+            logger.warning("build task overview export summary failed: {}".format(str(e)))
+            export_summary = {}
+    export_task_summary_map = export_summary.get("task_summaries", {})
+    if not isinstance(export_task_summary_map, dict):
+        export_task_summary_map = {}
+
     rows = [
         ["互联网资产自动化收集执行报告", ""],
         ["报告类型", "执行概览"],
@@ -1170,13 +1185,19 @@ def _build_task_overview_sheet_values(title, task_ids, overview_meta=None):
         if not isinstance(statistic, dict):
             statistic = {}
 
-        site_cnt = int(statistic.get("site_cnt", 0) or 0)
-        domain_cnt = int(statistic.get("domain_cnt", 0) or 0)
-        ip_cnt = int(statistic.get("ip_cnt", 0) or 0)
-        url_cnt = int(statistic.get("url_cnt", 0) or 0)
-        vuln_cnt = int(statistic.get("vuln_cnt", 0) or 0)
-        nuclei_vuln_cnt = int(statistic.get("nuclei_result_cnt", 0) or 0)
-        total_vuln_cnt = vuln_cnt + nuclei_vuln_cnt
+        task_export_summary = export_task_summary_map.get(task_id, {})
+        if not isinstance(task_export_summary, dict):
+            task_export_summary = {}
+        site_cnt = int(task_export_summary.get("site_cnt", statistic.get("site_cnt", 0) or 0) or 0)
+        domain_cnt = int(task_export_summary.get("domain_cnt", statistic.get("domain_cnt", 0) or 0) or 0)
+        ip_cnt = int(task_export_summary.get("ip_cnt", statistic.get("ip_cnt", 0) or 0) or 0)
+        url_cnt = int(task_export_summary.get("url_cnt", statistic.get("url_cnt", 0) or 0) or 0)
+        total_vuln_cnt = int(
+            task_export_summary.get(
+                "vuln_cnt",
+                int(statistic.get("vuln_cnt", 0) or 0) + int(statistic.get("nuclei_result_cnt", 0) or 0),
+            ) or 0
+        )
 
         total_site += site_cnt
         total_domain += domain_cnt
@@ -1200,6 +1221,13 @@ def _build_task_overview_sheet_values(title, task_ids, overview_meta=None):
                 str(total_vuln_cnt),
             ]
         )
+
+    if export_summary:
+        total_site = int(export_summary.get("site_cnt", total_site) or 0)
+        total_domain = int(export_summary.get("domain_cnt", total_domain) or 0)
+        total_ip = int(export_summary.get("ip_cnt", total_ip) or 0)
+        total_url = int(export_summary.get("url_cnt", total_url) or 0)
+        total_vuln = int(export_summary.get("vuln_cnt", total_vuln) or 0)
 
     rows.append([""])
     rows.append(
@@ -2281,11 +2309,17 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
         }
 
     try:
-        from app.routes.export import export_merge_tasks
+        from app.routes.export import export_merge_tasks, build_task_export_summary
 
         excel_bytes = export_merge_tasks(normalized_task_ids)
     except Exception as e:
         return False, {"error": "export merge tasks failed", "detail": str(e)}
+    export_summary = {}
+    try:
+        export_summary = build_task_export_summary(normalized_task_ids)
+    except Exception as e:
+        logger.warning("build task export summary failed: {}".format(str(e)))
+        export_summary = {}
 
     # 任务导出优先完整性：放宽行数上限，避免大任务在钉钉侧被 2000 行截断。
     parse_success, parse_result = _load_workbook_sheet_items(
@@ -2317,6 +2351,12 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
     raw_sheet_items = parse_result.get("items", [])
     prepared_sheet_items = _prepare_task_export_sheet_items(raw_sheet_items)
     ordered_sheet_items, ignored_sheet_names = _build_ordered_export_sheet_items(prepared_sheet_items)
+    if not isinstance(overview_context, dict):
+        overview_context = {}
+    else:
+        overview_context = dict(overview_context)
+    if isinstance(export_summary, dict):
+        overview_context["export_summary"] = export_summary
 
     overview_values = _build_task_overview_sheet_values(
         title=title,

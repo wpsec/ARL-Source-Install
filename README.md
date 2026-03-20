@@ -173,6 +173,7 @@ ARL/docker/config-docker.yaml
 
 - 自研 `urlfinder_extract` 会从目标站点页面和 JS 中提取 URL/JS 引用，支持相对路径归一化与受控递归
 - URLFinder 二次敏感扫描仅处理“同目标 host”来源的 URL/HTML/JS，避免扫描到无关站点
+- WIH 原生 `email/path` 结果会先经过规则级降噪，再由 ARL 解析层做二次清洗：像 `avatar@2x.png` 这类静态资源假邮箱、`/.test(r)` 或 `/img.alicdn.com/...` 这类 JS 代码碎片/外部主机样式路径会被过滤，保留更接近真实业务线索的记录
 - TruffleHog 仅扫描当前任务目标 host 范围内来源的 JS URL，不在目标范围内的第三方 JS 会被过滤
 - TruffleHog 不直接扫描 `html/txt` 文件
 - 扫描结果写入 `wih` 表，记录类型前缀为 `trufflehog_*`

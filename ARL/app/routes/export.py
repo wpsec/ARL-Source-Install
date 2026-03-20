@@ -1166,6 +1166,136 @@ def _extract_vuln_rows(task_ids):
     return rows
 
 
+def build_task_export_summary(task_ids):
+    """
+    基于导出口径生成任务汇总，保证通知/知识库概览与实际报告一致。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    valid_task_ids = []
+    seen_valid_task_ids = set()
+    task_states = {}
+
+    for raw_task_id in task_id_list:
+        task_data = get_task_data(raw_task_id)
+        if not task_data:
+            continue
+
+        task_id = sanitize_excel_value(task_data.get("_id", raw_task_id)).strip()
+        if not task_id or task_id in seen_valid_task_ids:
+            continue
+
+        seen_valid_task_ids.add(task_id)
+        valid_task_ids.append(task_id)
+        task_states[task_id] = {
+            "site_keys": set(),
+            "domain_keys": set(),
+            "ip_cnt": 0,
+            "url_keys": set(),
+            "vuln_keys": set(),
+        }
+
+    merged_site_keys = set()
+    merged_domain_keys = set()
+    merged_ip_cnt = 0
+    merged_url_keys = set()
+    merged_vuln_keys = set()
+
+    for task_id in valid_task_ids:
+        state = task_states[task_id]
+
+        for site_item in get_site_data(task_id):
+            site = sanitize_excel_value(site_item.get("site") or site_item.get("url") or "").strip()
+            if not site:
+                continue
+            state["site_keys"].add(site)
+            merged_site_keys.add(site)
+
+        for domain_item in get_domain_data(task_id):
+            domain = sanitize_excel_value(domain_item.get("domain", "")).strip()
+            if not domain:
+                continue
+            state["domain_keys"].add(domain)
+            merged_domain_keys.add(domain)
+
+        for ip_item in get_ip_data(task_id):
+            ip = sanitize_excel_value(ip_item.get("ip", "")).strip()
+            if not ip:
+                continue
+            state["ip_cnt"] += 1
+            merged_ip_cnt += 1
+
+        for item in get_url_data(task_id):
+            row = (
+                sanitize_excel_value(item.get("url", "")),
+                sanitize_excel_value(item.get("site", "")),
+                sanitize_excel_value(item.get("title", "")),
+                sanitize_excel_value(item.get("status_code", "")),
+                sanitize_excel_value(item.get("content_length", "")),
+                sanitize_excel_value(item.get("source", "")),
+            )
+            state["url_keys"].add(row)
+            merged_url_keys.add(row)
+
+        for item in get_vuln_data(task_id):
+            vuln_name = sanitize_excel_value(item.get("vul_name", ""))
+            severity = sanitize_excel_value(item.get("severity", ""))
+            target = sanitize_excel_value(item.get("target", ""))
+            vuln_url = target if str(target).startswith("http") else ""
+            plugin = sanitize_excel_value(item.get("plg_name", ""))
+            vuln_type = sanitize_excel_value(item.get("plg_type", ""))
+            dedup_key = (
+                task_id,
+                "npoc",
+                vuln_name,
+                severity,
+                target,
+                vuln_url,
+                plugin,
+                vuln_type,
+            )
+            state["vuln_keys"].add(dedup_key)
+            merged_vuln_keys.add(dedup_key)
+
+        for item in get_nuclei_result_data(task_id):
+            vuln_name = sanitize_excel_value(item.get("vuln_name", ""))
+            severity = sanitize_excel_value(item.get("vuln_severity", ""))
+            target = sanitize_excel_value(item.get("target", ""))
+            vuln_url = sanitize_excel_value(item.get("vuln_url", ""))
+            template_id = sanitize_excel_value(item.get("template_id", ""))
+            dedup_key = (
+                task_id,
+                "nuclei",
+                vuln_name,
+                severity,
+                target,
+                vuln_url,
+                template_id,
+            )
+            state["vuln_keys"].add(dedup_key)
+            merged_vuln_keys.add(dedup_key)
+
+    task_summaries = {}
+    for task_id in valid_task_ids:
+        state = task_states.get(task_id, {})
+        task_summaries[task_id] = {
+            "site_cnt": len(state.get("site_keys", set())),
+            "domain_cnt": len(state.get("domain_keys", set())),
+            "ip_cnt": int(state.get("ip_cnt", 0) or 0),
+            "url_cnt": len(state.get("url_keys", set())),
+            "vuln_cnt": len(state.get("vuln_keys", set())),
+        }
+
+    return {
+        "task_ids": valid_task_ids,
+        "site_cnt": len(merged_site_keys),
+        "domain_cnt": len(merged_domain_keys),
+        "ip_cnt": merged_ip_cnt,
+        "url_cnt": len(merged_url_keys),
+        "vuln_cnt": len(merged_vuln_keys),
+        "task_summaries": task_summaries,
+    }
+
+
 def _build_vuln_sheet(wb, task_ids):
     """
     在导出工作簿中新增风险明细工作表

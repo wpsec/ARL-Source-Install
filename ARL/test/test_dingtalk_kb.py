@@ -3,11 +3,16 @@ from unittest.mock import MagicMock, patch
 
 IMPORT_ERROR = None
 try:
-    from app.helpers.message_notify import push_dingtalk_kb, push_task_finish_notify
+    from app.helpers.message_notify import (
+        push_dingtalk_kb,
+        push_task_finish_notify,
+        _build_ssl_cert_warning_markdown,
+    )
     from app.utils import dingtalk_openapi
 except Exception as exc:
     push_dingtalk_kb = None
     push_task_finish_notify = None
+    _build_ssl_cert_warning_markdown = None
     dingtalk_openapi = None
     IMPORT_ERROR = exc
 
@@ -193,6 +198,23 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
 
         mock_push_dingding.assert_not_called()
         mock_push_ssl_cert_warning.assert_called_once_with("65f1234567890abc12345678")
+
+    def test_build_ssl_cert_warning_markdown_should_not_include_report_link(self):
+        """SSL 证书提醒不应再展示报告链接占位。"""
+        markdown = _build_ssl_cert_warning_markdown(
+            {
+                "domain": "policy.example.com",
+                "start_time": "2025-01-01 00:00:00",
+                "end_time": "2026-01-01 00:00:00",
+                "validity_text": "剩余 7 天",
+                "endpoints": ["1.1.1.1:443"],
+                "cert_identity_text": "SHA256:demo",
+            },
+            report_link="https://example.com/report",
+        )
+
+        self.assertIn("SSL证书安全警告", markdown)
+        self.assertNotIn("报告链接", markdown)
 
 
 if __name__ == '__main__':

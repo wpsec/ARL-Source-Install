@@ -183,7 +183,7 @@ def create_task_schedule_run(item, task_data_list):
     return run_item
 
 
-def build_schedule_run_summary(task_ids):
+def build_schedule_run_summary(task_ids, prefer_export_summary=False):
     """
     统计一轮计划任务中的子任务状态
     """
@@ -215,6 +215,27 @@ def build_schedule_run_summary(task_ids):
     if not object_ids:
         return summary
 
+    export_summary = {}
+    export_task_summary_map = {}
+    use_export_summary = False
+    if prefer_export_summary:
+        try:
+            from app.routes.export import build_task_export_summary
+
+            export_summary = build_task_export_summary(task_ids)
+            if isinstance(export_summary, dict):
+                summary["site_cnt"] = _safe_int(export_summary.get("site_cnt", 0), 0)
+                summary["domain_cnt"] = _safe_int(export_summary.get("domain_cnt", 0), 0)
+                summary["ip_cnt"] = _safe_int(export_summary.get("ip_cnt", 0), 0)
+                summary["url_cnt"] = _safe_int(export_summary.get("url_cnt", 0), 0)
+                summary["vuln_cnt"] = _safe_int(export_summary.get("vuln_cnt", 0), 0)
+                export_task_summary_map = export_summary.get("task_summaries", {})
+                if not isinstance(export_task_summary_map, dict):
+                    export_task_summary_map = {}
+                use_export_summary = True
+        except Exception as e:
+            logger.warning("build schedule export summary failed: {}".format(str(e)))
+
     items = list(
         utils.conn_db("task").find(
             {"_id": {"$in": object_ids}},
@@ -237,7 +258,7 @@ def build_schedule_run_summary(task_ids):
             summary["running"] += 1
 
         statistic = item.get("statistic", {})
-        if isinstance(statistic, dict):
+        if isinstance(statistic, dict) and not use_export_summary:
             vuln_cnt = int(statistic.get("vuln_cnt", 0) or 0)
             nuclei_vuln_cnt = int(statistic.get("nuclei_result_cnt", 0) or 0)
             summary["site_cnt"] += int(statistic.get("site_cnt", 0) or 0)
@@ -246,21 +267,55 @@ def build_schedule_run_summary(task_ids):
             summary["url_cnt"] += int(statistic.get("url_cnt", 0) or 0)
             summary["vuln_cnt"] += vuln_cnt + nuclei_vuln_cnt
 
+        task_id = str(item.get("_id", ""))
+        detail_summary = export_task_summary_map.get(task_id, {}) if use_export_summary else {}
+        if not isinstance(detail_summary, dict):
+            detail_summary = {}
         summary["task_details"].append(
             {
-                "id": str(item.get("_id", "")),
+                "id": task_id,
                 "name": str(item.get("name", "")),
                 "target": str(item.get("target", "")),
                 "type": str(item.get("type", "")),
                 "status": status,
-                "site_cnt": int(statistic.get("site_cnt", 0) or 0) if isinstance(statistic, dict) else 0,
-                "domain_cnt": int(statistic.get("domain_cnt", 0) or 0) if isinstance(statistic, dict) else 0,
-                "ip_cnt": int(statistic.get("ip_cnt", 0) or 0) if isinstance(statistic, dict) else 0,
-                "url_cnt": int(statistic.get("url_cnt", 0) or 0) if isinstance(statistic, dict) else 0,
-                "vuln_cnt": (
-                    int(statistic.get("vuln_cnt", 0) or 0)
-                    + int(statistic.get("nuclei_result_cnt", 0) or 0)
-                ) if isinstance(statistic, dict) else 0,
+                "site_cnt": _safe_int(
+                    detail_summary.get(
+                        "site_cnt",
+                        statistic.get("site_cnt", 0) if isinstance(statistic, dict) else 0,
+                    ),
+                    0,
+                ),
+                "domain_cnt": _safe_int(
+                    detail_summary.get(
+                        "domain_cnt",
+                        statistic.get("domain_cnt", 0) if isinstance(statistic, dict) else 0,
+                    ),
+                    0,
+                ),
+                "ip_cnt": _safe_int(
+                    detail_summary.get(
+                        "ip_cnt",
+                        statistic.get("ip_cnt", 0) if isinstance(statistic, dict) else 0,
+                    ),
+                    0,
+                ),
+                "url_cnt": _safe_int(
+                    detail_summary.get(
+                        "url_cnt",
+                        statistic.get("url_cnt", 0) if isinstance(statistic, dict) else 0,
+                    ),
+                    0,
+                ),
+                "vuln_cnt": _safe_int(
+                    detail_summary.get(
+                        "vuln_cnt",
+                        (
+                            int(statistic.get("vuln_cnt", 0) or 0)
+                            + int(statistic.get("nuclei_result_cnt", 0) or 0)
+                        ) if isinstance(statistic, dict) else 0,
+                    ),
+                    0,
+                ),
             }
         )
 
@@ -554,6 +609,10 @@ def process_task_schedule_runs():
                 )
                 utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one_and_replace({"_id": run_item["_id"]}, run_item)
                 continue
+
+        # 完成态通知与知识库报告改为使用导出口径汇总，避免摘要与报告内容不一致。
+        summary = build_schedule_run_summary(task_ids, prefer_export_summary=True)
+        run_item["summary"] = summary
 
         # 所有子任务已结束，判定执行实例状态
         failed_count = summary.get("error", 0) + summary.get("stop", 0) + summary.get("missing", 0)

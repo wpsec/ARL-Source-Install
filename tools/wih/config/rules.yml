@@ -9,7 +9,7 @@ rules:
   # 路径，内置规则
   - id: path
     enabled: true
-    pattern: '/(?:[A-Za-z0-9._~!$&()*+,=:@%-]{1,80}/?){1,8}'
+    pattern: '/(?:\.?[A-Za-z0-9][A-Za-z0-9._-]{0,79}/?){1,8}'
   # URL主机部分为域名，内置规则
   - id: domain_url
     enabled: true
@@ -302,6 +302,22 @@ rules:
 
 # 排除规则， 支持字段 id, content, target , source 逻辑为 and ，如果是正则匹配，需要使用 regex: 开头
 exclude_rules:
+  - name: "过滤静态资源误识别邮箱"
+    id: email
+    content: 'regex:(?i)@[A-Za-z0-9._-]+\.(?:png|jpe?g|gif|svg|webp|ico|bmp|css|js|map|woff2?|ttf|eot)\b'
+    enabled: true
+
+  - name: "过滤外部主机样式 path"
+    id: path
+    content: 'regex:(?i)^/(?:localhost(?::\d{1,5})?|(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?|(?:[a-z0-9-]+\.)+(?:com|cn|net|org|edu|gov|mil|int|biz|info|pro|top|vip|club|xyz|online|site|tech|store|app|dev|io|ai|co|me|cc|tv|hk|jp|kr|sg|us|uk|de|fr|ru|nl|au|ca|it|es|in|br|ch|se|no|fi|pl|eu))(?:/|$)'
+    enabled: true
+
+  - name: "过滤 JS 代码片段型 path"
+    id: path
+    source_tag: js
+    content: 'regex:(?i)^/.*(?:\(|\)|,|=|\$|\.test\(|\.exec\(|parseint|parsefloat|math\.|offsetwidth|offsetheight|function\.prototype|object\.prototype|number\.isfinite|regexp\(|starting_with\(|django_value|xhtml\+xml)'
+    enabled: true
+
   # 排除站点 https://cc.163.com 中 类型为 secret_key 的内容
   - name: "不收集 cc.163.com 的 secret_key" # 排除规则名称，无实际意义
     id: secret_key

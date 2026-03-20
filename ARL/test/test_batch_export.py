@@ -15,12 +15,13 @@ from unittest.mock import patch
 IMPORT_ERROR = None
 try:
     from openpyxl import load_workbook
-    from app.routes.export import export_merge_tasks, SaveTask
+    from app.routes.export import export_merge_tasks, SaveTask, build_task_export_summary
     from app import create_app
 except Exception as exc:
     load_workbook = None
     export_merge_tasks = None
     SaveTask = None
+    build_task_export_summary = None
     create_app = None
     IMPORT_ERROR = exc
 
@@ -250,6 +251,73 @@ class TestBatchExport(unittest.TestCase):
 
         self.assertEqual(result, b"demo")
         mock_build_vuln_xl.assert_called_once()
+
+    @patch('app.routes.export.get_nuclei_result_data')
+    @patch('app.routes.export.get_vuln_data')
+    @patch('app.routes.export.get_url_data')
+    @patch('app.routes.export.get_task_data')
+    @patch('app.routes.export.get_ip_data')
+    @patch('app.routes.export.get_domain_data')
+    @patch('app.routes.export.get_site_data')
+    def test_build_task_export_summary_should_follow_export_counts(
+        self,
+        mock_get_site_data,
+        mock_get_domain_data,
+        mock_get_ip_data,
+        mock_get_task_data,
+        mock_get_url_data,
+        mock_get_vuln_data,
+        mock_get_nuclei_result_data,
+    ):
+        """汇总应复用导出口径，避免通知与报告不一致。"""
+        mock_get_task_data.side_effect = lambda task_id: {
+            "task_1": {"_id": "task_1", "name": "任务1", "target": "example.com"},
+            "task_2": {"_id": "task_2", "name": "任务2", "target": "example.org"},
+        }.get(task_id)
+
+        mock_get_site_data.side_effect = lambda task_id: {
+            "task_1": [
+                {"site": "https://a.example.com"},
+                {"site": "https://shared.example.com"},
+            ],
+            "task_2": [
+                {"site": "https://shared.example.com"},
+                {"url": "https://b.example.org"},
+            ],
+        }.get(task_id, [])
+        mock_get_domain_data.side_effect = lambda task_id: {
+            "task_1": [{"domain": "a.example.com"}, {"domain": "shared.example.com"}],
+            "task_2": [{"domain": "shared.example.com"}, {"domain": "b.example.org"}],
+        }.get(task_id, [])
+        mock_get_ip_data.side_effect = lambda task_id: {
+            "task_1": [{"ip": "1.1.1.1"}, {"ip": "1.1.1.2"}],
+            "task_2": [{"ip": "2.2.2.2"}],
+        }.get(task_id, [])
+        mock_get_url_data.side_effect = lambda task_id: {
+            "task_1": [
+                {"url": "https://a.example.com/login", "site": "https://a.example.com", "title": "Login", "status_code": 200, "content_length": 100, "source": "spider"},
+                {"url": "https://shared.example.com/home", "site": "https://shared.example.com", "title": "Home", "status_code": 200, "content_length": 80, "source": "spider"},
+            ],
+            "task_2": [
+                {"url": "https://shared.example.com/home", "site": "https://shared.example.com", "title": "Home", "status_code": 200, "content_length": 80, "source": "spider"},
+                {"url": "https://b.example.org/admin", "site": "https://b.example.org", "title": "Admin", "status_code": 403, "content_length": 20, "source": "wih"},
+            ],
+        }.get(task_id, [])
+        mock_get_vuln_data.side_effect = lambda task_id: {
+            "task_1": [{"vul_name": "A", "severity": "high", "target": "https://a.example.com", "plg_name": "p1", "plg_type": "info"}],
+            "task_2": [{"vul_name": "A", "severity": "high", "target": "https://a.example.com", "plg_name": "p1", "plg_type": "info"}],
+        }.get(task_id, [])
+        mock_get_nuclei_result_data.return_value = []
+
+        summary = build_task_export_summary(["task_1", "task_2"])
+
+        self.assertEqual(summary.get("site_cnt"), 3)
+        self.assertEqual(summary.get("domain_cnt"), 3)
+        self.assertEqual(summary.get("ip_cnt"), 3)
+        self.assertEqual(summary.get("url_cnt"), 3)
+        self.assertEqual(summary.get("vuln_cnt"), 2)
+        self.assertEqual(summary.get("task_summaries", {}).get("task_1", {}).get("site_cnt"), 2)
+        self.assertEqual(summary.get("task_summaries", {}).get("task_2", {}).get("site_cnt"), 2)
 
 
 @unittest.skipIf(IMPORT_ERROR is not None, "requires export test dependencies: {}".format(IMPORT_ERROR))

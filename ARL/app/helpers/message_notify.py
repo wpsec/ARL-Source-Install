@@ -657,6 +657,7 @@ def _build_ssl_cert_warning_markdown(warn_item, report_link):
     """
     构建 SSL 证书告警消息模板。
     """
+    _ = report_link
     markdown = "### SSL证书安全警告\n\n"
     markdown += "- 检测域名：`{}`\n".format(str(warn_item.get("domain", "") or "-"))
     markdown += "- 检测时间：`{}`\n".format(utils.curr_date())
@@ -668,10 +669,6 @@ def _build_ssl_cert_warning_markdown(warn_item, report_link):
     cert_identity_text = str(warn_item.get("cert_identity_text", "") or "-")
     markdown += "- 证书标识：`{}`\n".format(cert_identity_text)
     markdown += "- 请在有效期内及时更新！\n"
-    if report_link:
-        markdown += "- 报告链接：[点击查看]({})\n".format(report_link)
-    else:
-        markdown += "- 报告链接：`未生成`\n"
     return markdown
 
 

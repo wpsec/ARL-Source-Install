@@ -8,9 +8,71 @@ import os
 import json
 import subprocess
 import hashlib
+import re
+from urllib.parse import urlparse
 from app.modules import WihRecord
+from .url_candidate_filter import (
+    has_route_template_markers,
+    is_js_resource_path,
+    is_non_js_static_resource_path,
+    is_noise_single_segment_path,
+    strip_route_method_suffix,
+)
 
 logger = utils.get_logger()
+
+_EMAIL_STATIC_SUFFIXES = {
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "svg",
+    "webp",
+    "ico",
+    "bmp",
+    "css",
+    "js",
+    "map",
+    "woff",
+    "woff2",
+    "ttf",
+    "eot",
+}
+_PATH_NOISE_SINGLE_SEGMENTS = {
+    "svg",
+    "post",
+    "var",
+    "return",
+    "undefined",
+    "template",
+    "license",
+    "textarea",
+    "span",
+    "h1",
+    "h2",
+    "h3",
+    "dtd",
+    "compiler-dom",
+    "ietf",
+}
+_PATH_SHORT_ALLOWLIST = {
+    "api",
+    "app",
+    "cms",
+    "doc",
+    "docs",
+    "rpc",
+    "sdk",
+    "sms",
+    "sso",
+    "uaa",
+}
+_HOST_LIKE_SEGMENT_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?$")
+_PATH_CODE_MARKER_RE = re.compile(
+    r"(?i)(?:\.test\(|\.exec\(|parseint|parsefloat|math\.|offsetwidth|offsetheight|"
+    r"function\.prototype|object\.prototype|number\.isfinite|regexp\(|substr\(|substring\(|"
+    r"starting_with\(|django_value|xhtml\+xml|android/gi|iphone|msie|lark)"
+)
 
 
 class InfoHunter(object):
@@ -37,6 +99,109 @@ class InfoHunter(object):
         if record_type in {"domain_url", "ip_url", "path_url", "urlfinder_url", "urlfinder_js"}:
             return True
         return content.startswith("http://") or content.startswith("https://")
+
+    @staticmethod
+    def _is_js_source(source: str, site: str) -> bool:
+        source_text = str(source or "").strip()
+        site_text = str(site or "").strip()
+        if not source_text:
+            return False
+        parsed = urlparse(source_text)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            if is_js_resource_path(parsed.path or ""):
+                return True
+        return bool(site_text and source_text != site_text and source_text.endswith((".js", ".mjs")))
+
+    @staticmethod
+    def _should_keep_email_content(content: str) -> bool:
+        text = str(content or "").strip()
+        if "@" not in text:
+            return False
+
+        domain = text.rsplit("@", 1)[-1].strip().lower().rstrip(".")
+        if "." not in domain:
+            return False
+
+        suffix = domain.rsplit(".", 1)[-1]
+        if suffix in _EMAIL_STATIC_SUFFIXES:
+            return False
+
+        if re.search(r"(?i)@(1x|2x|3x|4x|5x)(?:-[a-f0-9]{4,})?\.[a-z0-9]{2,10}$", text):
+            return False
+
+        return True
+
+    @staticmethod
+    def _is_host_like_path_segment(segment: str) -> bool:
+        text = str(segment or "").strip().lower().rstrip(".")
+        if not text:
+            return False
+        if text.startswith("localhost"):
+            return True
+        if _HOST_LIKE_SEGMENT_RE.match(text):
+            return True
+        if ":" in text:
+            host_part = text.split(":", 1)[0].strip()
+            if host_part and utils.is_valid_domain(host_part):
+                return True
+        return utils.is_valid_domain(text)
+
+    @staticmethod
+    def _should_keep_path_content(content: str, source: str, site: str) -> bool:
+        path_text = strip_route_method_suffix(str(content or "").strip())
+        if not path_text or not path_text.startswith("/"):
+            return False
+        if len(path_text) > 180:
+            return False
+        if any(token in path_text for token in ("\r", "\n", "\t", "\\", " ")):
+            return False
+        if has_route_template_markers(path_text):
+            return False
+        if is_js_resource_path(path_text) or is_non_js_static_resource_path(path_text):
+            return False
+        if _PATH_CODE_MARKER_RE.search(path_text):
+            return False
+
+        raw_text = path_text.strip("/")
+        if not raw_text:
+            return False
+
+        first_segment = raw_text.split("/", 1)[0].strip()
+        if InfoHunter._is_host_like_path_segment(first_segment):
+            return False
+
+        is_js_source = InfoHunter._is_js_source(source, site)
+        if is_js_source and any(token in path_text for token in ("(", ")", ",", "=", "$")):
+            return False
+
+        if "/" not in raw_text:
+            lowered = raw_text.lower()
+            if is_noise_single_segment_path(path_text):
+                return False
+            if lowered.isdigit():
+                return False
+            if lowered in _PATH_NOISE_SINGLE_SEGMENTS:
+                return False
+            if is_js_source and len(lowered) <= 3 and lowered not in _PATH_SHORT_ALLOWLIST:
+                return False
+
+        return True
+
+    @staticmethod
+    def _normalize_record_content(record_type: str, content: str, source: str = "", site: str = "") -> str:
+        normalized_type = str(record_type or "").strip().lower()
+        text = str(content or "").strip()
+        if not normalized_type or not text:
+            return ""
+
+        if normalized_type == "email":
+            return text if InfoHunter._should_keep_email_content(text) else ""
+
+        if normalized_type == "path":
+            normalized_path = strip_route_method_suffix(text)
+            return normalized_path if InfoHunter._should_keep_path_content(normalized_path, source, site) else ""
+
+        return text
 
     @staticmethod
     def _resolve_wih_binary() -> str:
@@ -213,6 +378,7 @@ class InfoHunter(object):
         results = []
         total_items = 0
         invalid_items = 0
+        filtered_items = 0
 
         # 检查结果文件是否存在
         if not os.path.exists(self.wih_result_path):
@@ -270,17 +436,24 @@ class InfoHunter(object):
                     continue
 
                 record_type = str(item.get("id") or item.get("type") or item.get("name") or "").strip()
-                content = str(item.get("content") or item.get("value") or item.get("match") or "").strip()
+                raw_content = str(item.get("content") or item.get("value") or item.get("match") or "").strip()
+                source = str(item.get("source") or item.get("from") or site or "").strip()
+                content = self._normalize_record_content(record_type, raw_content, source=source, site=site)
                 if not record_type or not content:
+                    filtered_items += 1
                     continue
 
                 tag_text = str(item.get("tag") or item.get("rule") or "").strip()
-                if tag_text and (not self._should_keep_plain_content(record_type, content)):
+                hash_needs_refresh = content != raw_content
+                if tag_text and str(record_type or "").strip().lower() != "path" and \
+                        (not self._should_keep_plain_content(record_type, content)):
                     content = "{} ({})".format(content, tag_text)
+                    hash_needs_refresh = True
 
-                source = str(item.get("source") or item.get("from") or site or "").strip()
                 hash_value = item.get("hash", item.get("fnv_hash"))
                 try:
+                    if hash_needs_refresh:
+                        raise ValueError("refresh normalized hash")
                     hash_value = int(hash_value)
                 except Exception:
                     hash_text = "{}|{}|{}|{}".format(record_type, content, source, site)
@@ -297,8 +470,8 @@ class InfoHunter(object):
                 results.append(WihRecord(**record_dict))
 
         logger.info(
-            "wih parsed result file:{} payload_items:{} invalid_items:{} records:{} bin:{}".format(
-                self.wih_result_path, total_items, invalid_items, len(results), self.wih_bin_path
+            "wih parsed result file:{} payload_items:{} invalid_items:{} filtered_items:{} records:{} bin:{}".format(
+                self.wih_result_path, total_items, invalid_items, filtered_items, len(results), self.wih_bin_path
             )
         )
         return results
