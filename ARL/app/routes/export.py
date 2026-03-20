@@ -1548,6 +1548,7 @@ class SaveTask(object):
         self.build_url_xl()
         self.build_fileleak_xl()
         self.build_wih_xl()
+        self.build_vuln_xl()
         self.build_statist()
 
         return save_virtual_workbook(self.wb)
@@ -1814,10 +1815,11 @@ def export_merge_tasks(task_id_list):
         ])
     set_sheet_style(ws)
 
-    # URL信息 / 目录扫描 / WIH（与单任务导出顺序保持一致）
+    # URL信息 / 目录扫描 / WIH / 风险（与单任务导出顺序保持一致）
     _build_url_sheet(wb, valid_task_ids)
     _build_fileleak_sheet(wb, valid_task_ids)
     _build_wih_sheet(wb, valid_task_ids)
+    _build_vuln_sheet(wb, valid_task_ids)
 
     # 资产统计（与单任务导出同结构）
     statist = calc_port_service_product_statist_from_ip_items(merged_ip_items)

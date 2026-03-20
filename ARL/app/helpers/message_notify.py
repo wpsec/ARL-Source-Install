@@ -145,8 +145,10 @@ def push_dingtalk_kb(
             title=report_title,
             markdown_content=markdown_report,
         )
+    partial_success = bool(api_result.get("partial_success", False)) if isinstance(api_result, dict) else False
     result["api_result"] = api_result
-    result["status"] = "success" if success else "error"
+    result["status"] = "partial_success" if partial_success else ("success" if success else "error")
+    result["partial_success"] = partial_success
     result["node_id"] = api_result.get("node_id", "") if isinstance(api_result, dict) else ""
     result["node_url"] = api_result.get("node_url", "") if isinstance(api_result, dict) else ""
     result["workbook_id"] = api_result.get("workbook_id", "") if isinstance(api_result, dict) else ""
@@ -164,7 +166,10 @@ def push_dingtalk_kb(
         logger.warning("save dingtalk kb push log error {}".format(e))
 
     if success:
-        logger.info("push dingtalk knowledge base succ title:{}".format(report_title))
+        if partial_success:
+            logger.warning("push dingtalk knowledge base partial title:{} result:{}".format(report_title, api_result))
+        else:
+            logger.info("push dingtalk knowledge base succ title:{}".format(report_title))
         return True, result
 
     logger.warning("push dingtalk knowledge base fail title:{} result:{}".format(report_title, api_result))
@@ -812,7 +817,8 @@ def push_task_finish_notify(task_id):
 
     说明：
     - 仅对普通任务和风险巡航任务生效
-    - 计划任务子任务会标记 from_task_schedule，避免和计划任务推送重复
+    - 计划任务子任务不再发送“任务完成通知”，避免和计划任务聚合推送重复
+    - SSL 证书临期提醒仍允许在计划任务子任务完成后单独发送
     """
     try:
         # Worker 进程常驻，任务完成回调前做一次配置热刷新，避免修改配置后必须重启容器。
@@ -837,16 +843,15 @@ def push_task_finish_notify(task_id):
         if not isinstance(options, dict):
             options = {}
 
-        if options.get("from_task_schedule"):
-            return
-
-        finish_notify_enabled = bool(options.get("dingding_notify"))
+        from_task_schedule = bool(options.get("from_task_schedule"))
+        finish_notify_enabled = bool(options.get("dingding_notify")) and not from_task_schedule
         ssl_cert_notify_enabled = bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE and options.get("ssl_cert"))
         if not finish_notify_enabled and not ssl_cert_notify_enabled:
             logger.info(
-                "skip task finish notify task_id:%s dingding_notify:%s ssl_cert:%s ssl_cert_notify_enable:%s",
+                "skip task finish notify task_id:%s dingding_notify:%s from_task_schedule:%s ssl_cert:%s ssl_cert_notify_enable:%s",
                 task_id,
-                finish_notify_enabled,
+                bool(options.get("dingding_notify")),
+                from_task_schedule,
                 bool(options.get("ssl_cert")),
                 bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE),
             )
@@ -855,6 +860,8 @@ def push_task_finish_notify(task_id):
         if finish_notify_enabled:
             markdown_report = build_task_finish_markdown(task_data)
             push_dingding(markdown_report=markdown_report)
+        elif from_task_schedule:
+            logger.info("skip standalone finish notify for task schedule sub task task_id:%s", task_id)
 
         if ssl_cert_notify_enabled:
             _push_ssl_cert_warning(task_id)

@@ -380,6 +380,22 @@ def should_push_schedule_run(notify_on, run_status):
     return run_status == RUN_STATUS_FINISHED
 
 
+def _build_kb_partial_summary(run_item):
+    """
+    构建知识库部分写入的提示文案。
+    """
+    if not bool(run_item.get("kb_push_partial", False)):
+        return ""
+
+    success_count = _safe_int(run_item.get("kb_sheet_success_count", 0), 0)
+    failed_count = _safe_int(run_item.get("kb_sheet_failed_count", 0), 0)
+    failed_sheet_name = str(run_item.get("kb_failed_sheet_name", "") or "").strip()
+    summary = "部分写入：工作表完成 `{}` / 失败 `{}`".format(success_count, failed_count)
+    if failed_sheet_name:
+        summary += "（失败工作表：`{}`）".format(failed_sheet_name)
+    return summary
+
+
 def build_schedule_run_markdown(run_item):
     """
     构建计划任务执行结果的钉钉 Markdown 摘要
@@ -461,6 +477,9 @@ def build_schedule_run_markdown(run_item):
     if kb_node_url:
         markdown += "\n#### 报告链接\n\n"
         markdown += "- 钉钉知识库报告：[点击查看]({})\n".format(kb_node_url)
+        kb_partial_summary = _build_kb_partial_summary(run_item)
+        if kb_partial_summary:
+            markdown += "- {}\n".format(kb_partial_summary)
     elif kb_push_status == RUN_PUSH_ERROR:
         kb_push_error = str(run_item.get("kb_push_error", "") or "")
         if len(kb_push_error) > 180:
@@ -576,6 +595,21 @@ def process_task_schedule_runs():
                 run_item["kb_push_date"] = utils.curr_date()
                 run_item["kb_node_id"] = kb_result.get("node_id", "")
                 run_item["kb_node_url"] = kb_result.get("node_url", "")
+                run_item["kb_push_partial"] = bool(kb_result.get("partial_success", False))
+                run_item["kb_sheet_success_count"] = _safe_int(kb_result.get("sheet_success_count", 0), 0)
+                run_item["kb_sheet_failed_count"] = _safe_int(kb_result.get("sheet_failed_count", 0), 0)
+                run_item["kb_failed_sheet_name"] = ""
+                api_result = kb_result.get("api_result", {})
+                if isinstance(api_result, dict):
+                    sheet_write_result = api_result.get("sheet_write_result", {})
+                    if isinstance(sheet_write_result, dict):
+                        for sheet_item in sheet_write_result.get("items", []) or []:
+                            if not isinstance(sheet_item, dict):
+                                continue
+                            if sheet_item.get("success", False):
+                                continue
+                            run_item["kb_failed_sheet_name"] = str(sheet_item.get("sheet_name", "") or "")
+                            break
                 logger.info(
                     "task schedule kb push succ schedule_id:{} run_id:{} node_url:{}".format(
                         run_item.get("schedule_id", ""),
@@ -583,6 +617,16 @@ def process_task_schedule_runs():
                         run_item.get("kb_node_url", ""),
                     )
                 )
+                if run_item.get("kb_push_partial", False):
+                    logger.warning(
+                        "task schedule kb push partial schedule_id:{} run_id:{} sheet_success:{} sheet_failed:{} failed_sheet:{}".format(
+                            run_item.get("schedule_id", ""),
+                            str(run_item.get("_id", "")),
+                            run_item.get("kb_sheet_success_count", 0),
+                            run_item.get("kb_sheet_failed_count", 0),
+                            run_item.get("kb_failed_sheet_name", ""),
+                        )
+                    )
             else:
                 run_item["kb_push_error"] = str(kb_result.get("api_result", ""))[:800]
                 logger.warning(

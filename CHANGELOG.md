@@ -7,6 +7,12 @@
 
 - `[v3.3.25]` 502/假死卡顿熔断问题彻底修复：通过解耦服务长响应超时限制与增加 Nginx 内网动态 DNS，解决当运行巨型前置任务时导致的后续容器启动假死死锁。修改点包含：1）Web/Worker 取消启动项中对数据库/队列强制 `60s` 内连接成功的超时硬性断言（改更为无限等待），防止因历史遗留脏数据启动排障过长反复引流致死；2）Gunicorn 超时时间由 `30s` 暴增至 `300s` 且匹配对应的 `nginx proxy_read_timeout`，杜绝巨型历史记录加载触发容器进程内部互砍；3）Docker external Nginx 配置项中追加通过 `127.0.0.11` 动态解析重构 `upstream`，防止单体通过 `docker-compose restart we b` 重建节点导致的反向代理 IP 遗留缓存导致的持久化 `502` 返回。
 
+## 2026-03-20（v3.3.38）
+
+- `[v3.3.38]` 钉钉知识库任务报告完整性修复：恢复单任务/批量导出与钉钉知识库写入中的 `风险` 工作表，避免报告“写进去了但风险内容缺失”；同时将知识库工作表写入改为按行分块提交，降低 `URL信息/风险` 等大表一次性 PUT 导致的部分写入失败概率；当文档已创建但仅部分工作表写入成功时，任务通知改为展示知识库链接并明确标记“部分写入”，不再误报成完全失败
+- `[v3.3.38]` 计划任务下 SSL 证书过期提醒修复：保留“计划任务子任务不单独发送完成通知”的收敛策略，但不再因此跳过 SSL 证书临期/过期机器人提醒，修复计划任务扫描已发现临期证书却没有任何机器人告警的问题
+- `[v3.3.38]` Worker 队列守护增强：`worker` 容器内的 `arlgithub/arlheavy/arltask` 三个 Celery 进程改为受同一启动脚本监护，只要任一子 worker 异常退出，容器会主动退出并触发 Docker 自动拉起，修复“主 worker 仍在线但重任务队列子进程已挂，导致部分任务长期停留 waiting” 的假健康问题
+
 ## 2026-03-19（v3.3.21 ~ v3.3.37）
 
 - `[v3.3.37]` Celery 长任务 ACK 策略修复：将扫描任务队列切回“消费后尽早 ACK”，避免 `task_acks_late=true` 叠加 RabbitMQ `consumer_timeout` 时，长任务在 `Virustotal/搜索引擎/端口扫描` 等任意阶段运行超过阈值便触发 `PRECONDITION_FAILED - delivery acknowledgement timed out` 并连带 worker 通道退出；worker 启动恢复逻辑同步从“回 waiting”改为“收敛为 error”，避免消息已丢失但任务状态仍显示等待中的假象。进一步新增“高置信孤儿 waiting 任务”回收：仅在任务已有 `celery_id`、broker 对应队列消息数为 `0`、且不在任何 worker 的 `active/reserved/scheduled` 列表中时，才在启动阶段将其收敛为 `error`；同时补充 `dispatch_time/dispatch_ts` 字段辅助判断，并将默认扫描配置中的 `CELERY_PREFETCH_MULTIPLIER` 统一回落到 `1`，减少长任务抢占队列导致的等待感，并补充对应回归测试

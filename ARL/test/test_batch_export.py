@@ -9,11 +9,23 @@
 
 import unittest
 import json
-from unittest.mock import patch, MagicMock
-from app.routes.export import ARLBatchExcel, export_merge_tasks
-from app import create_app
+from io import BytesIO
+from unittest.mock import patch
+
+IMPORT_ERROR = None
+try:
+    from openpyxl import load_workbook
+    from app.routes.export import export_merge_tasks, SaveTask
+    from app import create_app
+except Exception as exc:
+    load_workbook = None
+    export_merge_tasks = None
+    SaveTask = None
+    create_app = None
+    IMPORT_ERROR = exc
 
 
+@unittest.skipIf(IMPORT_ERROR is not None, "requires export test dependencies: {}".format(IMPORT_ERROR))
 class TestBatchExport(unittest.TestCase):
     """批量导出功能测试类"""
 
@@ -111,17 +123,36 @@ class TestBatchExport(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch('app.routes.export.get_nuclei_result_data')
+    @patch('app.routes.export.get_vuln_data')
+    @patch('app.routes.export.get_wih_data')
+    @patch('app.routes.export.get_fileleak_data')
+    @patch('app.routes.export.get_url_data')
+    @patch('app.routes.export.get_cert_data')
+    @patch('app.routes.export.get_service_data')
     @patch('app.routes.export.get_task_data')
     @patch('app.routes.export.get_ip_data')
     @patch('app.routes.export.get_domain_data')
     @patch('app.routes.export.get_site_data')
-    def test_export_merge_tasks_function(self, mock_get_site_data, mock_get_domain_data,
-                                       mock_get_ip_data, mock_get_task_data):
+    def test_export_merge_tasks_function(
+        self,
+        mock_get_site_data,
+        mock_get_domain_data,
+        mock_get_ip_data,
+        mock_get_task_data,
+        mock_get_service_data,
+        mock_get_cert_data,
+        mock_get_url_data,
+        mock_get_fileleak_data,
+        mock_get_wih_data,
+        mock_get_vuln_data,
+        mock_get_nuclei_result_data,
+    ):
         """测试export_merge_tasks函数"""
         # 模拟任务数据
         mock_get_task_data.side_effect = lambda task_id: {
-            "task_1": {"name": "任务1", "target": "example.com"},
-            "task_2": {"name": "任务2", "target": "test.com"}
+            "task_1": {"_id": "task_1", "name": "任务1", "target": "example.com"},
+            "task_2": {"_id": "task_2", "name": "任务2", "target": "test.com"}
         }.get(task_id)
 
         # 模拟IP数据
@@ -138,9 +169,31 @@ class TestBatchExport(unittest.TestCase):
 
         # 模拟站点数据
         mock_get_site_data.return_value = [
-            {"url": "http://www.example.com", "title": "Example Site"},
-            {"url": "https://api.example.com", "title": "API Site"}
+            {"site": "http://www.example.com", "title": "Example Site", "finger": [], "status": 200, "favicon": {}},
+            {"site": "https://api.example.com", "title": "API Site", "finger": [], "status": 200, "favicon": {}}
         ]
+
+        mock_get_service_data.return_value = [
+            {"ip": "192.168.1.1", "port": 80, "service": "http", "product": "nginx", "version": "1.25.0"}
+        ]
+        mock_get_cert_data.return_value = []
+        mock_get_url_data.return_value = [
+            {"url": "http://www.example.com/login", "status": 200, "title": "Login", "finger": []}
+        ]
+        mock_get_fileleak_data.return_value = []
+        mock_get_wih_data.return_value = []
+        mock_get_vuln_data.return_value = [
+            {
+                "vul_name": "测试风险",
+                "vul_severity": "high",
+                "target": "http://www.example.com",
+                "vuln_url": "http://www.example.com/login",
+                "plg_name": "test-plugin",
+                "plg_type": "info-leak",
+                "description": "demo",
+            }
+        ]
+        mock_get_nuclei_result_data.return_value = []
 
         # 调用函数
         result = export_merge_tasks(["task_1", "task_2"])
@@ -152,7 +205,54 @@ class TestBatchExport(unittest.TestCase):
         # 验证Excel文件头 (ZIP文件头标识)
         self.assertEqual(result[:4], b'PK\x03\x04')
 
+        wb = load_workbook(filename=BytesIO(result), read_only=True, data_only=True)
+        try:
+            self.assertEqual(
+                wb.sheetnames,
+                ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "风险", "资产统计"],
+            )
+        finally:
+            wb.close()
 
+    @patch.object(SaveTask, 'build_statist')
+    @patch.object(SaveTask, 'build_vuln_xl')
+    @patch.object(SaveTask, 'build_wih_xl')
+    @patch.object(SaveTask, 'build_fileleak_xl')
+    @patch.object(SaveTask, 'build_url_xl')
+    @patch.object(SaveTask, 'build_domain_xl')
+    @patch.object(SaveTask, 'build_cert_xl')
+    @patch.object(SaveTask, 'build_service_xl')
+    @patch.object(SaveTask, 'build_ip_xl')
+    @patch.object(SaveTask, 'build_site_xl')
+    @patch('app.routes.export.get_task_data')
+    @patch('app.routes.export.save_virtual_workbook')
+    def test_save_task_run_should_build_vuln_sheet(
+        self,
+        mock_save_virtual_workbook,
+        mock_get_task_data,
+        mock_build_site_xl,
+        mock_build_ip_xl,
+        mock_build_service_xl,
+        mock_build_cert_xl,
+        mock_build_domain_xl,
+        mock_build_url_xl,
+        mock_build_fileleak_xl,
+        mock_build_wih_xl,
+        mock_build_vuln_xl,
+        mock_build_statist,
+    ):
+        """测试单任务导出会构建风险工作表。"""
+        mock_get_task_data.return_value = {"_id": "task_1", "target": "example.com", "type": "domain"}
+        mock_save_virtual_workbook.return_value = b"demo"
+
+        save_task = SaveTask("task_1")
+        result = save_task.run()
+
+        self.assertEqual(result, b"demo")
+        mock_build_vuln_xl.assert_called_once()
+
+
+@unittest.skipIf(IMPORT_ERROR is not None, "requires export test dependencies: {}".format(IMPORT_ERROR))
 class TestBatchExportIntegration(unittest.TestCase):
     """批量导出集成测试"""
 

@@ -77,6 +77,23 @@ PY
   fi
 }
 
+terminate_children() {
+  local pids=("$@")
+  local pid
+
+  for pid in "${pids[@]}"; do
+    if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
+      kill "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+
+  for pid in "${pids[@]}"; do
+    if [ -n "$pid" ]; then
+      wait "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
 ensure_python_runtime
 
 wait-for-it.sh -t 0 mongodb:27017
@@ -101,6 +118,7 @@ celery -A app.celerytask.celery worker \
   -c "${GITHUB_CONCURRENCY}" \
   -O fair \
   -f "${LOG_FILE_PATH}" &
+GITHUB_PID=$!
 
 celery -A app.celerytask.celery worker \
   -l info \
@@ -109,11 +127,37 @@ celery -A app.celerytask.celery worker \
   -c "${HEAVY_CONCURRENCY}" \
   -O fair \
   -f "${LOG_FILE_PATH}" &
+HEAVY_PID=$!
 
-exec celery -A app.celerytask.celery worker \
+celery -A app.celerytask.celery worker \
   -l info \
   -Q arltask \
   -n arltask \
   -c "${TASK_CONCURRENCY}" \
   -O fair \
-  -f "${LOG_FILE_PATH}"
+  -f "${LOG_FILE_PATH}" &
+TASK_PID=$!
+
+trap 'terminate_children "$GITHUB_PID" "$HEAVY_PID" "$TASK_PID"; exit 143' TERM INT
+
+while true; do
+  for worker_info in \
+    "arlgithub:${GITHUB_PID}" \
+    "arlheavy:${HEAVY_PID}" \
+    "arltask:${TASK_PID}"; do
+    WORKER_NAME="${worker_info%%:*}"
+    WORKER_PID="${worker_info##*:}"
+
+    if kill -0 "${WORKER_PID}" >/dev/null 2>&1; then
+      continue
+    fi
+
+    wait "${WORKER_PID}"
+    EXIT_CODE=$?
+    echo "[ERROR] celery worker ${WORKER_NAME} exited unexpectedly with code ${EXIT_CODE}, stopping sibling workers for container restart."
+    terminate_children "$GITHUB_PID" "$HEAVY_PID" "$TASK_PID"
+    exit "${EXIT_CODE}"
+  done
+
+  sleep 2
+done

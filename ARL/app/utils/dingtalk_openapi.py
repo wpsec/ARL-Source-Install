@@ -42,6 +42,7 @@ _RUNTIME_CONFIG_STATE = {
 }
 _DEFAULT_CREATE_DOC_PATH = "/v1.0/doc/workspaces/{workspace_id}/docs"
 _LEGACY_MARKDOWN_PATH = "/v2.0/wiki/nodes"
+_WORKBOOK_WRITE_CHUNK_ROWS = 200
 
 
 def _safe_bool(value, default_value=False):
@@ -807,15 +808,16 @@ def _prepare_task_export_sheet_items(raw_sheet_items):
 def _build_ordered_export_sheet_items(raw_sheet_items):
     """
     按固定顺序重排导出工作表
-    期望顺序：站点、IP、系统服务、SSL证书、域名、URL信息、目录扫描、WIH、资产统计
+    期望顺序：站点、IP、系统服务、SSL证书、域名、URL信息、目录扫描、WIH、风险、资产统计
     """
-    preferred_order = ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "资产统计"]
+    preferred_order = ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "风险", "资产统计"]
     alias_map = {
         _normalize_sheet_name_key("url"): _normalize_sheet_name_key("URL信息"),
         _normalize_sheet_name_key("url信息"): _normalize_sheet_name_key("URL信息"),
         _normalize_sheet_name_key("fileleak"): _normalize_sheet_name_key("目录扫描"),
         _normalize_sheet_name_key("文件泄露"): _normalize_sheet_name_key("目录扫描"),
         _normalize_sheet_name_key("wih"): _normalize_sheet_name_key("WIH"),
+        _normalize_sheet_name_key("漏洞"): _normalize_sheet_name_key("风险"),
     }
     preferred_keys = [_normalize_sheet_name_key(name) for name in preferred_order]
     sheet_map = {}
@@ -882,14 +884,48 @@ def _column_index_to_name(index):
     return result
 
 
-def _build_a1_range(row_count, col_count=1):
+def _build_a1_range(row_count, col_count=1, row_start=1):
     """
     构建 A1 范围
     """
+    row_start = max(int(row_start), 1)
     row_count = max(int(row_count), 1)
     col_count = max(int(col_count), 1)
     end_col = _column_index_to_name(col_count)
-    return "A1:{}{}".format(end_col, row_count)
+    row_end = row_start + row_count - 1
+    return "A{}:{}{}".format(row_start, end_col, row_end)
+
+
+def _build_sheet_write_chunks(values, col_count=1, chunk_rows=0):
+    """
+    按行拆分工作表写入块，降低大工作表单次请求体积。
+    """
+    normalized_values = values if isinstance(values, list) else []
+    if not normalized_values:
+        normalized_values = [[""]]
+
+    chunk_size = int(chunk_rows or 0)
+    if chunk_size <= 0:
+        chunk_size = len(normalized_values)
+
+    output = []
+    for start_idx in range(0, len(normalized_values), chunk_size):
+        chunk_values = normalized_values[start_idx:start_idx + chunk_size]
+        row_start = start_idx + 1
+        output.append(
+            {
+                "index": len(output) + 1,
+                "row_start": row_start,
+                "row_count": len(chunk_values),
+                "range": _build_a1_range(
+                    row_count=len(chunk_values),
+                    col_count=col_count,
+                    row_start=row_start,
+                ),
+                "values": chunk_values,
+            }
+        )
+    return output
 
 
 def _markdown_to_values(markdown_content, max_rows=500, max_cell_len=1800):
@@ -1716,6 +1752,11 @@ def write_sheet_values_to_workbook(
     row_count = int(values_meta.get("row_count", len(safe_values)) or 1)
     col_count = int(values_meta.get("col_count", 1) or 1)
     range_a1 = _build_a1_range(row_count=row_count, col_count=col_count)
+    write_chunks = _build_sheet_write_chunks(
+        safe_values,
+        col_count=col_count,
+        chunk_rows=_WORKBOOK_WRITE_CHUNK_ROWS,
+    )
 
     last_error = {}
     for candidate_id in workbook_candidates:
@@ -1832,22 +1873,55 @@ def write_sheet_values_to_workbook(
         if target_sheet_id and target_sheet_id not in write_sheet_refs:
             write_sheet_refs.append(target_sheet_id)
 
-        for sheet_ref in write_sheet_refs:
-            for retry_idx in range(write_retry_max):
-                write_success, write_result = update_workbook_range(
-                    workbook_id=candidate_id,
-                    sheet_name=sheet_ref,
-                    range_a1=range_a1,
-                    values=safe_values,
-                    operator_id=op_id,
-                    require_enable=require_enable,
-                )
-                if write_success:
+        chunk_success_count = 0
+        chunk_failed_count = 0
+        chunk_output_items = []
+        failed_chunk_range = ""
+        for chunk in write_chunks:
+            chunk_write_success = False
+            chunk_write_result = {}
+            chunk_range = str(chunk.get("range", "") or "")
+            chunk_values = chunk.get("values", [])
+
+            for sheet_ref in write_sheet_refs:
+                for retry_idx in range(write_retry_max):
+                    chunk_write_success, chunk_write_result = update_workbook_range(
+                        workbook_id=candidate_id,
+                        sheet_name=sheet_ref,
+                        range_a1=chunk_range,
+                        values=chunk_values,
+                        operator_id=op_id,
+                        require_enable=require_enable,
+                    )
+                    if chunk_write_success:
+                        break
+                    if retry_idx < write_retry_max - 1:
+                        time.sleep(0.6 * (retry_idx + 1))
+                if chunk_write_success:
                     break
-                if retry_idx < write_retry_max - 1:
-                    time.sleep(0.6 * (retry_idx + 1))
-            if write_success:
-                break
+
+            chunk_output_item = {
+                "index": int(chunk.get("index", len(chunk_output_items) + 1) or len(chunk_output_items) + 1),
+                "range": chunk_range,
+                "row_start": int(chunk.get("row_start", 1) or 1),
+                "row_count": int(chunk.get("row_count", 0) or 0),
+                "success": bool(chunk_write_success),
+            }
+            if not chunk_write_success:
+                chunk_output_item["result"] = chunk_write_result
+            chunk_output_items.append(chunk_output_item)
+
+            if chunk_write_success:
+                chunk_success_count += 1
+                write_success = True
+                write_result = chunk_write_result
+                continue
+
+            chunk_failed_count += 1
+            write_success = False
+            write_result = chunk_write_result
+            failed_chunk_range = chunk_range
+            break
 
         output = {
             "workbook_id": candidate_id,
@@ -1857,11 +1931,19 @@ def write_sheet_values_to_workbook(
             "range": range_a1,
             "row_count": row_count,
             "col_count": col_count,
+            "chunk_count": len(write_chunks),
+            "write_chunk_result": {
+                "chunk_count": len(write_chunks),
+                "chunk_success_count": chunk_success_count,
+                "chunk_failed_count": chunk_failed_count,
+                "failed_range": failed_chunk_range,
+                "items": chunk_output_items,
+            },
             "truncated_rows": bool(values_meta.get("truncated_rows", False)),
             "sheet_result": sheet_result,
             "write_result": write_result,
         }
-        if write_success:
+        if write_success and chunk_failed_count == 0:
             return True, output
 
         last_error = {
@@ -1871,6 +1953,9 @@ def write_sheet_values_to_workbook(
             "sheet_name": target_sheet_name,
             "sheet_id": target_sheet_id,
             "range": range_a1,
+            "failed_range": failed_chunk_range,
+            "chunk_count": len(write_chunks),
+            "write_chunk_result": output.get("write_chunk_result", {}),
             "sheet_result": sheet_result,
             "write_result": write_result,
             "error_text": _extract_error_text(write_result),
@@ -2324,10 +2409,16 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
     sheet_success_count = 1 + int(detail_result.get("sheet_success_count", 0) or 0)
     sheet_failed_count = int(detail_result.get("sheet_failed_count", 0) or 0)
     write_success = detail_success and sheet_failed_count == 0
+    partial_success = (
+        sheet_success_count > 0
+        and sheet_failed_count > 0
+        and bool(create_result.get("node_id", "") or create_result.get("node_url", ""))
+    )
     write_result = {
         "sheet_count": len(write_items),
         "sheet_success_count": sheet_success_count,
         "sheet_failed_count": sheet_failed_count,
+        "partial_success": partial_success,
         "items": write_items,
         "workbook_id": _normalize_workbook_id(detail_result.get("workbook_id", "")) or resolved_workbook_id,
         "ignored_sheet_names": ignored_sheet_names,
@@ -2347,8 +2438,9 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
     create_result["sheet_count"] = len(sheet_items)
     create_result["truncated_sheets"] = bool(parse_result.get("truncated_sheets", False))
     create_result["ignored_sheet_names"] = ignored_sheet_names
+    create_result["partial_success"] = partial_success
     if not write_success:
         create_result["error"] = "write workbook sheet items failed"
-        return False, create_result
+        return partial_success, create_result
 
     return True, create_result
