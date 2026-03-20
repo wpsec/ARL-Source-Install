@@ -71,7 +71,7 @@ class TestCeleryRecovery(unittest.TestCase):
     ):
         mock_collect_live.return_value = ({"live-task-id"}, True)
         mock_queue_counts.return_value = (
-            {"arltask": 0, "arlheavy": 3, "arlgithub": 0},
+            {"arltask": 0, "arlheavy": 3, "arlweb": 2, "arlgithub": 0},
             True,
         )
 
@@ -93,6 +93,12 @@ class TestCeleryRecovery(unittest.TestCase):
                 "_id": "task-queued",
                 "celery_id": "queued-heavy-id",
                 "dispatch_queue": "arlheavy",
+                "dispatch_ts": 1000,
+            },
+            {
+                "_id": "task-web-queued",
+                "celery_id": "queued-web-id",
+                "dispatch_queue": "arlweb",
                 "dispatch_ts": 1000,
             },
         ]

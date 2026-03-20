@@ -2,7 +2,7 @@
 #
 # Worker 容器启动脚本
 # - 读取 ARL 配置中的 Celery 队列并发参数
-# - 启动 github、heavy 与主任务三个队列 worker
+# - 启动 github、heavy、web 与主任务四个队列 worker
 set -e
 
 get_cfg_int() {
@@ -107,9 +107,10 @@ recover_interrupted_tasks
 
 GITHUB_CONCURRENCY="$(get_cfg_int CELERY_GITHUB_WORKER_CONCURRENCY 1)"
 HEAVY_CONCURRENCY="$(get_cfg_int CELERY_HEAVY_WORKER_CONCURRENCY 1)"
+WEB_CONCURRENCY="$(get_cfg_int CELERY_WEB_WORKER_CONCURRENCY 1)"
 TASK_CONCURRENCY="$(get_cfg_int CELERY_TASK_WORKER_CONCURRENCY 2)"
 
-echo "start celery github=${GITHUB_CONCURRENCY} heavy=${HEAVY_CONCURRENCY} task=${TASK_CONCURRENCY} log=${LOG_FILE_PATH}"
+echo "start celery github=${GITHUB_CONCURRENCY} heavy=${HEAVY_CONCURRENCY} web=${WEB_CONCURRENCY} task=${TASK_CONCURRENCY} log=${LOG_FILE_PATH}"
 
 celery -A app.celerytask.celery worker \
   -l info \
@@ -131,6 +132,15 @@ HEAVY_PID=$!
 
 celery -A app.celerytask.celery worker \
   -l info \
+  -Q arlweb \
+  -n arlweb \
+  -c "${WEB_CONCURRENCY}" \
+  -O fair \
+  -f "${LOG_FILE_PATH}" &
+WEB_PID=$!
+
+celery -A app.celerytask.celery worker \
+  -l info \
   -Q arltask \
   -n arltask \
   -c "${TASK_CONCURRENCY}" \
@@ -138,12 +148,13 @@ celery -A app.celerytask.celery worker \
   -f "${LOG_FILE_PATH}" &
 TASK_PID=$!
 
-trap 'terminate_children "$GITHUB_PID" "$HEAVY_PID" "$TASK_PID"; exit 143' TERM INT
+trap 'terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"; exit 143' TERM INT
 
 while true; do
   for worker_info in \
     "arlgithub:${GITHUB_PID}" \
     "arlheavy:${HEAVY_PID}" \
+    "arlweb:${WEB_PID}" \
     "arltask:${TASK_PID}"; do
     WORKER_NAME="${worker_info%%:*}"
     WORKER_PID="${worker_info##*:}"
@@ -155,7 +166,7 @@ while true; do
     wait "${WORKER_PID}"
     EXIT_CODE=$?
     echo "[ERROR] celery worker ${WORKER_NAME} exited unexpectedly with code ${EXIT_CODE}, stopping sibling workers for container restart."
-    terminate_children "$GITHUB_PID" "$HEAVY_PID" "$TASK_PID"
+    terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
     exit "${EXIT_CODE}"
   done
 

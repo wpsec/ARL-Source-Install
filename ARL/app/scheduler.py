@@ -26,7 +26,7 @@ import time
 from app.modules import CeleryAction, SchedulerStatus, AssetScopeType
 from app.config import Config
 from app.helpers import task_schedule, asset_site_monitor, asset_wih_monitor
-from app.helpers.task import is_dispatch_queue_available
+from app.helpers.task import is_dispatch_queue_available, should_dispatch_web_queue_by_options
 
 # 获取日志记录器
 logger = utils.get_logger()
@@ -143,6 +143,13 @@ def _should_dispatch_monitor_heavy_queue(domain, monitor_options):
         return False, "heavy_queue_unavailable"
 
     return True, heavy_reason
+
+
+def _should_dispatch_monitor_web_queue(monitor_options):
+    """
+    判断监控任务是否应分流到 Web 重任务队列 arlweb。
+    """
+    return should_dispatch_web_queue_by_options(monitor_options)
 
 
 def add_job(domain, scope_id, options=None, interval=60 * 1, name="", scope_type=AssetScopeType.DOMAIN):
@@ -414,6 +421,14 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
             queue_reason = heavy_reason
         elif heavy_reason:
             queue_reason = "fallback:{}".format(heavy_reason)
+        else:
+            is_web_heavy, web_reason = _should_dispatch_monitor_web_queue(monitor_options)
+            if is_web_heavy:
+                queue_task = celerytask.arl_task_web
+                queue_name = "arlweb"
+                queue_reason = web_reason
+            elif web_reason:
+                queue_reason = "fallback:{}".format(web_reason)
 
         # 提交到Celery队列，返回任务ID
         celery_id = queue_task.delay(options=task_options)
@@ -439,6 +454,14 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
             queue_reason = heavy_reason
         elif heavy_reason:
             queue_reason = "fallback:{}".format(heavy_reason)
+        else:
+            is_web_heavy, web_reason = _should_dispatch_monitor_web_queue(monitor_options)
+            if is_web_heavy:
+                queue_task = celerytask.arl_task_web
+                queue_name = "arlweb"
+                queue_reason = web_reason
+            elif web_reason:
+                queue_reason = "fallback:{}".format(web_reason)
 
         # 提交到Celery队列，返回任务ID
         celery_id = queue_task.delay(options=task_options)

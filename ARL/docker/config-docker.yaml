@@ -305,6 +305,12 @@ ARL:
   DOMAIN_DICT: "/code/app/dicts/domain_2w.txt"
   #文件泄漏字典
   FILE_LEAK_DICT: "/code/app/dicts/file_top_2000.txt"
+  # 单站点目录扫描线程数
+  FILE_LEAK_CONCURRENCY: 15
+  # 单站点目录扫描总超时（秒）
+  FILE_LEAK_SITE_TIMEOUT_SEC: 900
+  # 单站点目录扫描无进展超时（秒）
+  FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC: 120
   # WIH 规则文件路径（默认使用源码版 wih 的规则模板）
   WIH_RULE_PATH: "/code/tools/wih/config/rules.yml"
 
@@ -316,6 +322,8 @@ ARL:
   CELERY_GITHUB_WORKER_CONCURRENCY: 1
   # Celery 重任务队列并发（全端口/深度识别）
   CELERY_HEAVY_WORKER_CONCURRENCY: 1
+  # Celery Web 重任务队列并发（目录扫描/PoC/截图/站点爬虫）
+  CELERY_WEB_WORKER_CONCURRENCY: 1
   # Celery 预取倍率（建议保持 1，减少长任务抢占队列与等待感）
   CELERY_PREFETCH_MULTIPLIER: 1
   # Celery 子进程处理多少任务后回收（防止内存膨胀）

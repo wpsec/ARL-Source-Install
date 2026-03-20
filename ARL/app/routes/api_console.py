@@ -272,6 +272,8 @@ SCAN_PROFILE_ITEMS = [
             'web_gunicorn_workers': 1,
             'celery_task_worker_concurrency': 1,
             'celery_github_worker_concurrency': 1,
+            'celery_heavy_worker_concurrency': 1,
+            'celery_web_worker_concurrency': 1,
             'celery_prefetch_multiplier': 1,
             'celery_max_tasks_per_child': 16,
             'celery_max_memory_per_child': 200000,
@@ -301,6 +303,8 @@ SCAN_PROFILE_ITEMS = [
             'web_gunicorn_workers': 2,
             'celery_task_worker_concurrency': 2,
             'celery_github_worker_concurrency': 1,
+            'celery_heavy_worker_concurrency': 1,
+            'celery_web_worker_concurrency': 1,
             'celery_prefetch_multiplier': 1,
             'celery_max_tasks_per_child': 20,
             'celery_max_memory_per_child': 280000,
@@ -330,6 +334,8 @@ SCAN_PROFILE_ITEMS = [
             'web_gunicorn_workers': 3,
             'celery_task_worker_concurrency': 4,
             'celery_github_worker_concurrency': 2,
+            'celery_heavy_worker_concurrency': 2,
+            'celery_web_worker_concurrency': 2,
             'celery_prefetch_multiplier': 1,
             'celery_max_tasks_per_child': 30,
             'celery_max_memory_per_child': 420000,
@@ -1570,6 +1576,14 @@ def _extract_scan_config(config_obj):
         arl_config.get('CELERY_GITHUB_WORKER_CONCURRENCY'),
         Config.CELERY_GITHUB_WORKER_CONCURRENCY
     )
+    celery_heavy_worker_concurrency = _safe_int(
+        arl_config.get('CELERY_HEAVY_WORKER_CONCURRENCY'),
+        Config.CELERY_HEAVY_WORKER_CONCURRENCY
+    )
+    celery_web_worker_concurrency = _safe_int(
+        arl_config.get('CELERY_WEB_WORKER_CONCURRENCY'),
+        Config.CELERY_WEB_WORKER_CONCURRENCY
+    )
     celery_prefetch_multiplier = _safe_int(
         arl_config.get('CELERY_PREFETCH_MULTIPLIER'),
         Config.CELERY_PREFETCH_MULTIPLIER
@@ -1647,6 +1661,8 @@ def _extract_scan_config(config_obj):
         'web_gunicorn_workers': web_gunicorn_workers,
         'celery_task_worker_concurrency': celery_task_worker_concurrency,
         'celery_github_worker_concurrency': celery_github_worker_concurrency,
+        'celery_heavy_worker_concurrency': celery_heavy_worker_concurrency,
+        'celery_web_worker_concurrency': celery_web_worker_concurrency,
         'celery_prefetch_multiplier': celery_prefetch_multiplier,
         'celery_max_tasks_per_child': celery_max_tasks_per_child,
         'celery_max_memory_per_child': celery_max_memory_per_child,
@@ -1718,6 +1734,14 @@ def _merge_scan_config(config_obj, scan_config):
     celery_github_worker_concurrency = _safe_int(
         scan_config.get('celery_github_worker_concurrency'),
         Config.CELERY_GITHUB_WORKER_CONCURRENCY
+    )
+    celery_heavy_worker_concurrency = _safe_int(
+        scan_config.get('celery_heavy_worker_concurrency'),
+        Config.CELERY_HEAVY_WORKER_CONCURRENCY
+    )
+    celery_web_worker_concurrency = _safe_int(
+        scan_config.get('celery_web_worker_concurrency'),
+        Config.CELERY_WEB_WORKER_CONCURRENCY
     )
     celery_prefetch_multiplier = _safe_int(
         scan_config.get('celery_prefetch_multiplier'),
@@ -1799,6 +1823,8 @@ def _merge_scan_config(config_obj, scan_config):
     config_obj['ARL']['WEB_GUNICORN_WORKERS'] = web_gunicorn_workers
     config_obj['ARL']['CELERY_TASK_WORKER_CONCURRENCY'] = celery_task_worker_concurrency
     config_obj['ARL']['CELERY_GITHUB_WORKER_CONCURRENCY'] = celery_github_worker_concurrency
+    config_obj['ARL']['CELERY_HEAVY_WORKER_CONCURRENCY'] = celery_heavy_worker_concurrency
+    config_obj['ARL']['CELERY_WEB_WORKER_CONCURRENCY'] = celery_web_worker_concurrency
     config_obj['ARL']['CELERY_PREFETCH_MULTIPLIER'] = celery_prefetch_multiplier
     config_obj['ARL']['CELERY_MAX_TASKS_PER_CHILD'] = celery_max_tasks_per_child
     config_obj['ARL']['CELERY_MAX_MEMORY_PER_CHILD'] = celery_max_memory_per_child

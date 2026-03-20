@@ -29,6 +29,14 @@ from app import celerytask
 logger = utils.get_logger()
 _QUEUE_AVAILABILITY_CACHE = {}
 _QUEUE_AVAILABILITY_CACHE_TTL_SEC = 15
+_WEB_HEAVY_OPTION_KEYS = (
+    "site_capture",
+    "site_spider",
+    "file_leak",
+    "nuclei_scan",
+    "afrog_scan",
+    "web_info_hunter",
+)
 
 
 def apply_arch_compat_options(options):
@@ -94,7 +102,7 @@ def _refresh_dispatch_queue_cache(timeout_sec=1.5):
     except Exception as e:
         logger.warning("inspect active_queues failed error:{}".format(e))
 
-    for queue_name in ["arltask", "arlheavy", "arlgithub"]:
+    for queue_name in ["arltask", "arlheavy", "arlweb", "arlgithub"]:
         _QUEUE_AVAILABILITY_CACHE[queue_name] = {
             "available": queue_name in available,
             "check_time": now,
@@ -368,6 +376,49 @@ def _estimate_task_port_count(options):
     return _estimate_port_count(scan_port_map.get(scan_port_type, Config.TOP_10))
 
 
+def _resolve_queue_task(queue_name):
+    """
+    根据队列名返回对应的 Celery 任务入口。
+    """
+    queue_name = str(queue_name or "").strip().lower()
+    if queue_name == "arlheavy":
+        return celerytask.arl_task_heavy
+    if queue_name == "arlweb":
+        return celerytask.arl_task_web
+    if queue_name == "arlgithub":
+        return celerytask.arl_github
+    return celerytask.arl_task
+
+
+def _collect_enabled_web_heavy_options(options):
+    """
+    收集会显著拉长 Web 阶段的功能开关。
+    """
+    enabled = []
+    if not isinstance(options, dict):
+        return enabled
+
+    for option_key in _WEB_HEAVY_OPTION_KEYS:
+        if bool(options.get(option_key)):
+            enabled.append(option_key)
+
+    return enabled
+
+
+def should_dispatch_web_queue_by_options(options):
+    """
+    判断是否应分流到 Web 重任务队列 arlweb。
+    """
+    enabled_options = _collect_enabled_web_heavy_options(options)
+    if not enabled_options:
+        return False, ""
+
+    if not is_dispatch_queue_available("arlweb"):
+        return False, "web_queue_unavailable"
+
+    return True, "web_heavy={}".format(",".join(enabled_options[:3]))
+
+
 def _should_dispatch_heavy_queue(task_data, celery_action):
     """
     判断任务是否应分流到重任务队列 arlheavy。
@@ -416,6 +467,27 @@ def _should_dispatch_heavy_queue(task_data, celery_action):
         return False, "heavy_queue_unavailable"
 
     return True, heavy_reason
+
+
+def _should_dispatch_web_queue(task_data, celery_action):
+    """
+    判断任务是否应分流到 Web 重任务队列 arlweb。
+    """
+    action_reason_map = {
+        CeleryAction.ASSET_SITE_UPDATE: "asset_site_update",
+        CeleryAction.ASSET_WIH_UPDATE: "asset_wih_update",
+    }
+    action_reason = action_reason_map.get(celery_action, "")
+    if action_reason:
+        if not is_dispatch_queue_available("arlweb"):
+            return False, "web_queue_unavailable"
+        return True, action_reason
+
+    if celery_action not in [CeleryAction.DOMAIN_TASK, CeleryAction.IP_TASK]:
+        return False, ""
+
+    options = task_data.get("options", {})
+    return should_dispatch_web_queue_by_options(options)
 
 
 def submit_task(task_data):
@@ -478,20 +550,32 @@ def submit_task(task_data):
         if force_queue_name == "arlheavy":
             queue_name = "arlheavy"
             queue_reason = force_queue_reason or "force_queue=arlheavy"
-            queue_task = celerytask.arl_task_heavy
+            queue_task = _resolve_queue_task(queue_name)
+        elif force_queue_name == "arlweb":
+            queue_name = "arlweb"
+            queue_reason = force_queue_reason or "force_queue=arlweb"
+            queue_task = _resolve_queue_task(queue_name)
         elif force_queue_name == "arltask":
             queue_name = "arltask"
             queue_reason = force_queue_reason or "force_queue=arltask"
-            queue_task = celerytask.arl_task
+            queue_task = _resolve_queue_task(queue_name)
         else:
             # 将重任务分流到独立队列，避免阻塞普通任务。
             is_heavy, heavy_reason = _should_dispatch_heavy_queue(task_data, celery_action)
             if is_heavy:
                 queue_name = "arlheavy"
                 queue_reason = heavy_reason
-                queue_task = celerytask.arl_task_heavy
+                queue_task = _resolve_queue_task(queue_name)
             elif heavy_reason:
                 queue_reason = "fallback:{}".format(heavy_reason)
+            else:
+                is_web_heavy, web_reason = _should_dispatch_web_queue(task_data, celery_action)
+                if is_web_heavy:
+                    queue_name = "arlweb"
+                    queue_reason = web_reason
+                    queue_task = _resolve_queue_task(queue_name)
+                elif web_reason:
+                    queue_reason = "fallback:{}".format(web_reason)
 
         if force_queue_name:
             logger.info(

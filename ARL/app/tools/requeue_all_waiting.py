@@ -36,7 +36,12 @@ def recover():
         }
         
         queue_name = t.get("dispatch_queue", "arltask")
-        qt = celerytask.arl_task_heavy if queue_name == "arlheavy" else celerytask.arl_task
+        if queue_name == "arlheavy":
+            qt = celerytask.arl_task_heavy
+        elif queue_name == "arlweb":
+            qt = celerytask.arl_task_web
+        else:
+            qt = celerytask.arl_task
         
         cid = qt.delay(options=options)
         conn_db('task').update_one({"_id": bson.ObjectId(task_id)}, {"$set": {"celery_id": str(cid)}})

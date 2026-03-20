@@ -448,7 +448,7 @@ class WebSiteFetch(object):
         for site in self.poc_sites:
             pages = services.file_leak([site], file_leak_dict_words, waf_guard=self.waf_guard)
             for page in pages:
-                item = page.dump_json()
+                item = page if isinstance(page, dict) else page.dump_json()
                 item["task_id"] = self.task_id
                 item["site"] = site
                 utils.conn_db('fileleak').insert_one(item)

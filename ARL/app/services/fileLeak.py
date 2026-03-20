@@ -1,16 +1,25 @@
 """
 敏感文件泄露扫描
 """
-import time
 import difflib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from typing import List
 from urllib.parse import urlparse, urljoin
 import urllib3
+import psutil
 import requests
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from tld import get_tld
 import itertools
 
 from app import utils
+from app.config import Config
 from .baseThread import BaseThread
 
 logger = utils.get_logger()
@@ -20,7 +29,7 @@ min_length = 100
 max_length = 50*1024
 read_timeout = 60
 bool_ratio = 0.8
-concurrency_count = 6
+HEARTBEAT_UPDATE_INTERVAL_SEC = 1.0
 
 
 class FileLeakPolicySkip(Exception):
@@ -77,7 +86,15 @@ class URL():
         return self._path
 
 class HTTPReq():
-    def __init__(self, url: URL , read_timeout = 60, max_length = 50*1024, waf_guard=None, waf_module="file_leak"):
+    def __init__(
+        self,
+        url: URL,
+        read_timeout=60,
+        max_length=50 * 1024,
+        waf_guard=None,
+        waf_module="file_leak",
+        progress_callback=None,
+    ):
         self.url = url
         self.read_timeout = read_timeout
         self.max_length = max_length
@@ -86,8 +103,17 @@ class HTTPReq():
         self.content = None
         self.waf_guard = waf_guard
         self.waf_module = waf_module
+        self.progress_callback = progress_callback
+
+    def _touch_progress(self):
+        if callable(self.progress_callback):
+            try:
+                self.progress_callback()
+            except Exception:
+                pass
 
     def req(self):
+        self._touch_progress()
         content = b''
         allow_scan, policy_detail = utils.check_dns_policy_for_url(self.url.url, cache_map=DNS_POLICY_CACHE)
         if not allow_scan:
@@ -108,6 +134,7 @@ class HTTPReq():
             waf_module=self.waf_module,
         )
         self.conn = conn
+        self._touch_progress()
 
         # 兼容 smart_skip_waf 的本地构造响应：该响应没有 raw 流，不能走 iter_content。
         if getattr(conn, "raw", None) is None:
@@ -115,6 +142,7 @@ class HTTPReq():
         else:
             start_time = time.time()
             for data in conn.iter_content(chunk_size=512):
+                self._touch_progress()
                 if time.time() - start_time >= self.read_timeout:
                     break
                 content += data
@@ -128,6 +156,7 @@ class HTTPReq():
         self.conn.headers["Content-Length"] = content_len
 
         conn.close()
+        self._touch_progress()
 
         return self.status_code, self.content
 
@@ -275,8 +304,10 @@ class Page():
 
 
 class FileLeak(BaseThread):
-    def __init__(self, target, urls, concurrency=8, waf_guard=None):
-        super().__init__(urls, concurrency = concurrency)
+    def __init__(self, target, urls, concurrency=None, waf_guard=None, progress_callback=None):
+        if concurrency is None:
+            concurrency = Config.FILE_LEAK_CONCURRENCY
+        super().__init__(urls, concurrency=concurrency)
         self.target = target.rstrip("/") + "/"
         self.urls = urls
         self.path_404 = "not_found_2222_111"
@@ -294,6 +325,14 @@ class FileLeak(BaseThread):
         self.location_404_url = set()
         self.skip_by_policy = False
         self.waf_guard = waf_guard
+        self.progress_callback = progress_callback
+
+    def _touch_progress(self):
+        if callable(self.progress_callback):
+            try:
+                self.progress_callback()
+            except Exception:
+                pass
 
     @staticmethod
     def _validate_http_url(url_text: str):
@@ -333,6 +372,7 @@ class FileLeak(BaseThread):
         return URL(raw_url, payload)
 
     def work(self, url):
+        self._touch_progress()
         if self.error_times >= 20:
             return
         req = self.http_req(url)
@@ -350,9 +390,11 @@ class FileLeak(BaseThread):
 
         if page not in self.page404_set:
             self.page200_set.add(page)
+        self._touch_progress()
 
 
     def build_404_page(self):
+        self._touch_progress()
         url_404 = URL(self.target + self.path_404, self.path_404)
         logger.info("req => {}".format(url_404))
         req = self.http_req(url_404)
@@ -372,6 +414,7 @@ class FileLeak(BaseThread):
     def run(self):
         t1 = time.time()
         logger.info("start fileleak {}".format(len(self.targets)))
+        self._touch_progress()
 
         self.build_404_page()
         if self.skip_by_policy:
@@ -388,6 +431,7 @@ class FileLeak(BaseThread):
 
         elapse = time.time() - t1
         logger.info("end fileleak elapse {}".format(elapse))
+        self._touch_progress()
 
         return self.page200_set
 
@@ -403,8 +447,14 @@ class FileLeak(BaseThread):
             return None
 
         try:
-            req = HTTPReq(url, waf_guard=self.waf_guard, waf_module="file_leak")
+            req = HTTPReq(
+                url,
+                waf_guard=self.waf_guard,
+                waf_module="file_leak",
+                progress_callback=self.progress_callback,
+            )
             req.req()
+            self._touch_progress()
             return req
         except FileLeakPolicySkip as e:
             self.skip_by_policy = True
@@ -465,6 +515,7 @@ class FileLeak(BaseThread):
 
     def check_page_200(self):
         for page in self.page200_set:
+            self._touch_progress()
             if page in self.page404_set:
                 continue
 
@@ -486,6 +537,7 @@ class FileLeak(BaseThread):
                     self.skip_302 = True
 
         self.page200_set -= self.page404_set
+        self._touch_progress()
 
 
     def gen_check_url(self, url: URL):
@@ -561,12 +613,6 @@ def normal_url(url):
 
     return ret_url
 
-
-import os
-
-
-
-
 class GenBackDicts:
     def __init__(self, url):
         self.target = normal_url(url)
@@ -636,9 +682,339 @@ class GenURL():
 
         return self.urls
 
-from typing import  List
+def _serialize_urls(urls) -> List[dict]:
+    items = []
+    for url in sorted(urls):
+        items.append(
+            {
+                "url": url.url,
+                "payload": url.payload,
+            }
+        )
+    return items
 
-def file_leak(targets, dicts, gen_dict = True, waf_guard=None) -> List[Page]:
+
+def _deserialize_urls(url_items) -> set:
+    urls = set()
+    for item in url_items or []:
+        url_text = str((item or {}).get("url", "") or "").strip()
+        if not url_text:
+            continue
+        payload = str((item or {}).get("payload", "") or "")
+        urls.add(URL(url_text, payload))
+    return urls
+
+
+def _build_waf_guard_context(waf_guard) -> dict:
+    if waf_guard is None:
+        return {}
+
+    return {
+        "enabled": bool(getattr(waf_guard, "enabled", False)),
+        "task_id": str(getattr(waf_guard, "task_id", "") or ""),
+        "scope_sites": sorted(getattr(waf_guard, "scope_hosts", set()) or []),
+        "weak_block_threshold": int(getattr(waf_guard, "weak_block_threshold", 3) or 3),
+    }
+
+
+def _build_waf_guard_from_context(waf_guard_context):
+    if not waf_guard_context or not waf_guard_context.get("enabled"):
+        return None
+
+    from .waf_guard import WAFSmartSkipGuard
+
+    return WAFSmartSkipGuard(
+        enabled=bool(waf_guard_context.get("enabled")),
+        task_id=str(waf_guard_context.get("task_id", "") or ""),
+        scope_sites=list(waf_guard_context.get("scope_sites") or []),
+        weak_block_threshold=int(waf_guard_context.get("weak_block_threshold", 3) or 3),
+    )
+
+
+def _write_json_file(file_path: str, data):
+    tmp_path = "{}.tmp".format(file_path)
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp_path, file_path)
+
+
+def _read_json_file(file_path: str, default=None):
+    if not os.path.isfile(file_path):
+        return default
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _touch_heartbeat_file(file_path: str):
+    tmp_path = "{}.tmp".format(file_path)
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(str(time.time()))
+    os.replace(tmp_path, file_path)
+
+
+def _build_heartbeat_callback(heartbeat_path: str):
+    state = {"last_write_at": 0.0}
+
+    def _callback(force=False):
+        now = time.time()
+        if not force and now - float(state["last_write_at"]) < HEARTBEAT_UPDATE_INTERVAL_SEC:
+            return
+        _touch_heartbeat_file(heartbeat_path)
+        state["last_write_at"] = now
+
+    return _callback
+
+
+def _read_heartbeat_timestamp(file_path: str, default_ts: float) -> float:
+    try:
+        return float(os.path.getmtime(file_path))
+    except Exception:
+        return float(default_ts)
+
+
+def _cleanup_file_leak_watchdog_dir(temp_dir: str):
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _kill_file_leak_subprocess(proc):
+    if proc is None:
+        return
+
+    try:
+        if proc.poll() is not None:
+            return
+    except Exception:
+        return
+
+    try:
+        proc.terminate()
+        proc.wait(timeout=3)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    except Exception:
+        pass
+
+    pid = int(getattr(proc, "pid", 0) or 0)
+    if pid > 0:
+        try:
+            parent = psutil.Process(pid)
+            for child in parent.children(recursive=True):
+                child.kill()
+            parent.kill()
+        except Exception:
+            pass
+
+    try:
+        proc.wait(timeout=1)
+    except Exception:
+        pass
+
+
+def _scan_file_leak_site(target, url_items, concurrency, waf_guard_context=None, progress_callback=None):
+    if callable(progress_callback):
+        try:
+            progress_callback()
+        except Exception:
+            pass
+
+    try:
+        urls = _deserialize_urls(url_items)
+        waf_guard = _build_waf_guard_from_context(waf_guard_context)
+        file_leak_runner = FileLeak(
+            target,
+            urls,
+            concurrency=concurrency,
+            waf_guard=waf_guard,
+            progress_callback=progress_callback,
+        )
+        pages = file_leak_runner.run()
+
+        page_items = []
+        for page in pages:
+            logger.info("found => {}".format(page))
+            page_items.append(page.dump_json())
+
+        if callable(progress_callback):
+            try:
+                progress_callback()
+            except Exception:
+                pass
+
+        return {
+            "ok": True,
+            "pages": page_items,
+            "skip_by_policy": bool(file_leak_runner.skip_by_policy),
+            "error": "",
+        }
+    except Exception as e:
+        logger.info("error on {}, {}".format(target, e))
+        logger.exception(e)
+        return {
+            "ok": False,
+            "pages": [],
+            "skip_by_policy": False,
+            "error": str(e),
+        }
+
+
+def run_file_leak_worker_from_files(job_path: str, result_path: str, heartbeat_path: str):
+    heartbeat_callback = _build_heartbeat_callback(heartbeat_path)
+    heartbeat_callback(force=True)
+
+    try:
+        job = _read_json_file(job_path, default={}) or {}
+        result = _scan_file_leak_site(
+            job.get("target", ""),
+            job.get("url_items") or [],
+            int(job.get("concurrency") or Config.FILE_LEAK_CONCURRENCY),
+            waf_guard_context=job.get("waf_guard_context") or {},
+            progress_callback=heartbeat_callback,
+        )
+    except Exception as e:
+        logger.exception(e)
+        result = {
+            "ok": False,
+            "pages": [],
+            "skip_by_policy": False,
+            "error": str(e),
+        }
+
+    _write_json_file(result_path, result)
+    heartbeat_callback(force=True)
+
+
+def _file_leak_worker_cwd() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+
+
+def _build_file_leak_worker_command(job_path: str, result_path: str, heartbeat_path: str) -> List[str]:
+    bootstrap = (
+        "import sys; "
+        "from app.services.fileLeak import run_file_leak_worker_from_files as _run; "
+        "_run(sys.argv[1], sys.argv[2], sys.argv[3])"
+    )
+    return [sys.executable, "-c", bootstrap, job_path, result_path, heartbeat_path]
+
+
+def _run_file_leak_site_with_watchdog(
+    target,
+    urls,
+    concurrency,
+    site_timeout_sec,
+    no_progress_timeout_sec,
+    waf_guard=None,
+    popen_factory=None,
+    sleep_fn=None,
+    time_fn=None,
+) -> List[dict]:
+    if not urls:
+        return []
+
+    popen_factory = popen_factory or subprocess.Popen
+    sleep_fn = sleep_fn or time.sleep
+    time_fn = time_fn or time.time
+
+    temp_dir = tempfile.mkdtemp(prefix="fileleak_watchdog_", dir=Config.TMP_PATH)
+    job_path = os.path.join(temp_dir, "job.json")
+    result_path = os.path.join(temp_dir, "result.json")
+    heartbeat_path = os.path.join(temp_dir, "heartbeat.txt")
+
+    try:
+        _write_json_file(
+            job_path,
+            {
+                "target": target,
+                "url_items": _serialize_urls(urls),
+                "concurrency": int(concurrency or Config.FILE_LEAK_CONCURRENCY),
+                "waf_guard_context": _build_waf_guard_context(waf_guard),
+            },
+        )
+        _touch_heartbeat_file(heartbeat_path)
+
+        command = _build_file_leak_worker_command(job_path, result_path, heartbeat_path)
+        try:
+            proc = popen_factory(command, cwd=_file_leak_worker_cwd(), close_fds=True)
+        except Exception as e:
+            logger.warning(
+                "fileleak watchdog spawn_failed target:{} err:{} fallback:inline".format(
+                    target, str(e)[:300]
+                )
+            )
+            result = _scan_file_leak_site(
+                target,
+                _serialize_urls(urls),
+                concurrency=concurrency,
+                waf_guard_context=_build_waf_guard_context(waf_guard),
+            )
+            return list(result.get("pages") or [])
+
+        start_at = float(time_fn())
+        last_progress_at = start_at
+        timeout_reason = ""
+
+        while True:
+            retcode = proc.poll()
+            last_progress_at = max(
+                last_progress_at,
+                _read_heartbeat_timestamp(heartbeat_path, last_progress_at),
+            )
+            if retcode is not None:
+                break
+
+            now = float(time_fn())
+            if int(site_timeout_sec or 0) > 0 and now - start_at >= int(site_timeout_sec):
+                timeout_reason = "site_timeout"
+                break
+
+            if int(no_progress_timeout_sec or 0) > 0 and now - last_progress_at >= int(no_progress_timeout_sec):
+                timeout_reason = "no_progress_timeout"
+                break
+
+            sleep_fn(1)
+
+        if timeout_reason:
+            logger.warning(
+                "fileleak watchdog kill target:{} reason:{} elapsed:{:.2f}s idle:{:.2f}s urls:{}".format(
+                    target,
+                    timeout_reason,
+                    float(time_fn()) - start_at,
+                    max(0.0, float(time_fn()) - last_progress_at),
+                    len(urls),
+                )
+            )
+            _kill_file_leak_subprocess(proc)
+            return []
+
+        try:
+            proc.wait(timeout=1)
+        except Exception:
+            pass
+
+        result = _read_json_file(result_path, default={}) or {}
+        if not result:
+            logger.warning(
+                "fileleak watchdog missing_result target:{} returncode:{}".format(
+                    target, getattr(proc, "returncode", None)
+                )
+            )
+            return []
+
+        if not result.get("ok"):
+            logger.warning(
+                "fileleak watchdog worker_error target:{} err:{}".format(
+                    target, str(result.get("error", "") or "")[:300]
+                )
+            )
+            return []
+
+        return list(result.get("pages") or [])
+    finally:
+        _cleanup_file_leak_watchdog_dir(temp_dir)
+
+
+def file_leak(targets, dicts, gen_dict=True, waf_guard=None) -> List[dict]:
     all_gen_url = set()
     map_url = dict()
 
@@ -661,11 +1037,25 @@ def file_leak(targets, dicts, gen_dict = True, waf_guard=None) -> List[Page]:
         cnt += 1
 
         try:
-            f = FileLeak(target, map_url[target], concurrency_count, waf_guard=waf_guard)
-            pages = f.run()
-            for page in pages:
-                logger.info("found => {}".format(page))
-
+            logger.info(
+                "start fileleak watchdog target:{} index:{}/{} urls:{} concurrency:{} site_timeout:{} no_progress_timeout:{}".format(
+                    target,
+                    cnt,
+                    total,
+                    len(map_url[target]),
+                    Config.FILE_LEAK_CONCURRENCY,
+                    Config.FILE_LEAK_SITE_TIMEOUT_SEC,
+                    Config.FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC,
+                )
+            )
+            pages = _run_file_leak_site_with_watchdog(
+                target,
+                map_url[target],
+                concurrency=Config.FILE_LEAK_CONCURRENCY,
+                site_timeout_sec=Config.FILE_LEAK_SITE_TIMEOUT_SEC,
+                no_progress_timeout_sec=Config.FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC,
+                waf_guard=waf_guard,
+            )
             ret.extend(pages)
         except Exception as e:
             logger.info("error on {}, {}".format(target, e))

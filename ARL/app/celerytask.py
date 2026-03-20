@@ -56,7 +56,7 @@ celery.conf.update(
 # 允许 root 用户运行 Celery（容器环境需要）
 platforms.C_FORCE_ROOT = True
 
-_WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlgithub")
+_WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlweb", "arlgithub")
 _WAITING_ORPHAN_GRACE_SEC = 90
 
 
@@ -325,6 +325,18 @@ def arl_task_heavy(options):
     """
     重任务队列入口
     仅承接高负载扫描任务（如全端口/深度探测），与常规任务隔离执行。
+
+    参数：
+        options: 任务选项字典
+    """
+    run_task(options)
+
+
+@celery.task(queue='arlweb')
+def arl_task_web(options):
+    """
+    Web 重任务队列入口
+    主要承接目录扫描、PoC、截图、站点爬虫等 Web 重阶段任务。
 
     参数：
         options: 任务选项字典

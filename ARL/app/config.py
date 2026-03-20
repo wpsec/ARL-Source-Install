@@ -271,6 +271,7 @@ def refresh_runtime_config_best_effort(force=False):
             "CELERY_TASK_WORKER_CONCURRENCY",
             "CELERY_GITHUB_WORKER_CONCURRENCY",
             "CELERY_HEAVY_WORKER_CONCURRENCY",
+            "CELERY_WEB_WORKER_CONCURRENCY",
             "CELERY_PREFETCH_MULTIPLIER",
             "CELERY_MAX_TASKS_PER_CHILD",
             "CELERY_MAX_MEMORY_PER_CHILD",
@@ -281,6 +282,9 @@ def refresh_runtime_config_best_effort(force=False):
             "AFROG_CONCURRENCY",
             "AFROG_RATE_LIMIT",
             "AFROG_EXEC_TIMEOUT_SEC",
+            "FILE_LEAK_CONCURRENCY",
+            "FILE_LEAK_SITE_TIMEOUT_SEC",
+            "FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC",
             "URLFINDER_URL_PROBE_MAX_TARGETS",
             "URLFINDER_URL_PROBE_CONCURRENCY",
         ]
@@ -364,6 +368,8 @@ class Config(object):
     CELERY_GITHUB_WORKER_CONCURRENCY = 1
     # Celery 重任务队列并发（全端口/深度识别等高负载任务）
     CELERY_HEAVY_WORKER_CONCURRENCY = 1
+    # Celery Web 重任务队列并发（目录扫描/PoC/截图/站点爬虫等）
+    CELERY_WEB_WORKER_CONCURRENCY = 1
     # Celery 预取倍率（1 表示每 worker 仅预取 1 个任务）
     CELERY_PREFETCH_MULTIPLIER = 1
     # Celery 子进程处理多少任务后重启，防止内存膨胀
@@ -591,6 +597,12 @@ class Config(object):
     FILE_LEAK_TOP_2k = os.path.join(basedir, 'dicts/file_leak/file_top_2000.txt')
     # 文件泄露检测字典 - 200条（快速扫描）
     FILE_LEAK_TOP_200 = os.path.join(basedir, 'dicts/file_leak/file_top_200.txt')
+    # 单站点目录扫描线程数
+    FILE_LEAK_CONCURRENCY = 6
+    # 单站点目录扫描总超时（秒）
+    FILE_LEAK_SITE_TIMEOUT_SEC = 15 * 60
+    # 单站点目录扫描无进展超时（秒）
+    FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC = 2 * 60
 
     # ==================== 域名配置 ====================
     # 域名最大长度限制（不包括目标域名本身的长度）
@@ -762,6 +774,18 @@ try:
     if celery_github_worker_concurrency is not None:
         Config.CELERY_GITHUB_WORKER_CONCURRENCY = safe_positive_int(
             celery_github_worker_concurrency, Config.CELERY_GITHUB_WORKER_CONCURRENCY
+        )
+
+    celery_heavy_worker_concurrency = y["ARL"].get("CELERY_HEAVY_WORKER_CONCURRENCY")
+    if celery_heavy_worker_concurrency is not None:
+        Config.CELERY_HEAVY_WORKER_CONCURRENCY = safe_positive_int(
+            celery_heavy_worker_concurrency, Config.CELERY_HEAVY_WORKER_CONCURRENCY
+        )
+
+    celery_web_worker_concurrency = y["ARL"].get("CELERY_WEB_WORKER_CONCURRENCY")
+    if celery_web_worker_concurrency is not None:
+        Config.CELERY_WEB_WORKER_CONCURRENCY = safe_positive_int(
+            celery_web_worker_concurrency, Config.CELERY_WEB_WORKER_CONCURRENCY
         )
 
     celery_prefetch_multiplier = y["ARL"].get("CELERY_PREFETCH_MULTIPLIER")
@@ -1182,6 +1206,10 @@ try:
         "ASSET_SITE_MONITOR_CONCURRENCY",
         "ASSET_SITE_DISCOVERY_CONCURRENCY",
         "CELERY_HEAVY_WORKER_CONCURRENCY",
+        "CELERY_WEB_WORKER_CONCURRENCY",
+        "FILE_LEAK_CONCURRENCY",
+        "FILE_LEAK_SITE_TIMEOUT_SEC",
+        "FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
@@ -1403,6 +1431,14 @@ try:
     Config.CELERY_GITHUB_WORKER_CONCURRENCY = safe_positive_int(
         env_int("ARL_CELERY_GITHUB_WORKER_CONCURRENCY", Config.CELERY_GITHUB_WORKER_CONCURRENCY),
         Config.CELERY_GITHUB_WORKER_CONCURRENCY
+    )
+    Config.CELERY_HEAVY_WORKER_CONCURRENCY = safe_positive_int(
+        env_int("ARL_CELERY_HEAVY_WORKER_CONCURRENCY", Config.CELERY_HEAVY_WORKER_CONCURRENCY),
+        Config.CELERY_HEAVY_WORKER_CONCURRENCY
+    )
+    Config.CELERY_WEB_WORKER_CONCURRENCY = safe_positive_int(
+        env_int("ARL_CELERY_WEB_WORKER_CONCURRENCY", Config.CELERY_WEB_WORKER_CONCURRENCY),
+        Config.CELERY_WEB_WORKER_CONCURRENCY
     )
     Config.CELERY_PREFETCH_MULTIPLIER = safe_positive_int(
         env_int("ARL_CELERY_PREFETCH_MULTIPLIER", Config.CELERY_PREFETCH_MULTIPLIER),
