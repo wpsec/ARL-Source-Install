@@ -263,6 +263,7 @@ const modules: ModuleConfig[] = [
           findvhost: false,
           web_info_hunter: false,
           penetration_test: false,
+          waf_bypass: false,
           smart_skip_waf: false,
           dingding_notify: false,
         },
@@ -676,6 +677,7 @@ const modules: ModuleConfig[] = [
               afrog_scan: false,
               web_info_hunter: false,
               penetration_test: false,
+              waf_bypass: false,
               smart_skip_waf: false,
             },
             domain_dict: '',
@@ -2302,12 +2304,14 @@ function getTaskTypeLabel(rawType: any): string {
 function buildTaskStatisticSummary(row: any): string {
   const stat = row?.statistic;
   const wafSummary = row?.waf_skip_summary && typeof row.waf_skip_summary === 'object' ? row.waf_skip_summary : {};
+  const wafDetectedHostCount = Number(wafSummary?.detected_host_count || 0);
   const wafBlockedHostCount = Number(wafSummary?.blocked_host_count || 0);
+  const wafBypassHostCount = Number(wafSummary?.bypass_success_host_count || 0);
   const wafSkipRequestCount = Number(wafSummary?.skip_request_count || 0);
 
   if (!stat || typeof stat !== 'object' || Array.isArray(stat)) {
-    if (wafBlockedHostCount > 0 || wafSkipRequestCount > 0) {
-      return `WAF跳过:主机${wafBlockedHostCount} 请求${wafSkipRequestCount}`;
+    if (wafDetectedHostCount > 0 || wafBlockedHostCount > 0 || wafSkipRequestCount > 0 || wafBypassHostCount > 0) {
+      return `WAF识别:主机${wafDetectedHostCount} 跳过${wafBlockedHostCount} 绕过${wafBypassHostCount} 请求${wafSkipRequestCount}`;
     }
     return '-';
   }
@@ -2316,8 +2320,8 @@ function buildTaskStatisticSummary(row: any): string {
   const ipCnt = Number(stat.ip_cnt || 0);
   const vulnCnt = Number(stat.vuln_cnt || 0);
   let summary = `站点:${siteCnt} 域名:${domainCnt} IP:${ipCnt} 风险:${vulnCnt}`;
-  if (wafBlockedHostCount > 0 || wafSkipRequestCount > 0) {
-    summary += ` WAF跳过:主机${wafBlockedHostCount}/请求${wafSkipRequestCount}`;
+  if (wafDetectedHostCount > 0 || wafBlockedHostCount > 0 || wafSkipRequestCount > 0 || wafBypassHostCount > 0) {
+    summary += ` WAF识别:主机${wafDetectedHostCount}/跳过${wafBlockedHostCount}/绕过${wafBypassHostCount}/请求${wafSkipRequestCount}`;
   }
   return summary;
 }
@@ -2943,6 +2947,7 @@ const fieldLabelMap: Record<string, string> = {
   findvhost: 'Host 碰撞',
   web_info_hunter: 'WIH 调用',
   penetration_test: '渗透测试',
+  waf_bypass: 'WAF试探绕过',
   smart_skip_waf: '跳过WAF',
 };
 
@@ -3977,7 +3982,7 @@ function ActionDialog({
       },
       {
         title: 'Web与风险',
-        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'penetration_test', 'smart_skip_waf', 'dingding_notify'],
+        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'penetration_test', 'waf_bypass', 'smart_skip_waf', 'dingding_notify'],
       },
     ];
     return sections
@@ -4089,6 +4094,7 @@ function ActionDialog({
     { key: 'site_config.afrog_scan', label: 'afrog 调用' },
     { key: 'site_config.web_info_hunter', label: 'WIH 调用' },
     { key: 'site_config.penetration_test', label: '渗透测试' },
+    { key: 'site_config.waf_bypass', label: 'WAF试探绕过' },
     { key: 'site_config.smart_skip_waf', label: '跳过WAF' },
   ];
   const filteredPolicyOptions = policyOptionDefs.filter((item) => {
@@ -4667,7 +4673,7 @@ function ActionDialog({
                 </div>
                 {Boolean(formPayload?.penetration_test) ? (
                   <div className="rounded-xl border border-brand-warning/30 bg-brand-warning/10 px-3 py-3 text-[11px] leading-relaxed text-brand-text-muted">
-                    渗透测试与 `nuclei / afrog` 的 PoC 扫描解耦，会基于页面表单、带参 URL、API 端点与 JS 资源执行主动测试与静态分析，当前重点覆盖 SQL 注入、反射型/DOM XSS、LFI、RCE、XXE、SSTI、SSRF，以及云存储桶遍历/接管/ACL/Policy 泄露等只读型云安全检测。
+                    渗透测试与 `nuclei / afrog` 的 PoC 扫描解耦，会基于页面表单、带参 URL、API 端点与 JS 资源执行主动测试与静态分析，当前重点覆盖 SQL 注入、反射型/DOM XSS、LFI、RCE、XXE、SSTI、SSRF，以及云存储桶遍历/接管/ACL/Policy 泄露等只读型云安全检测。`WAF试探绕过` 仅作用于该主动链路，会先尝试轻量 Header/节流绕过；若仍持续命中拦截，再由 `跳过WAF` 兜底止损。
                   </div>
                 ) : null}
               </div>

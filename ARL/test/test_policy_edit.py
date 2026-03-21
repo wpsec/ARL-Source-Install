@@ -26,6 +26,7 @@ class TestWebInfoHunter(unittest.TestCase):
             "nuclei_scan",
             "afrog_scan",
             "web_info_hunter",
+            "waf_bypass",
             "smart_skip_waf",
             "file_leak",
         }
@@ -58,6 +59,7 @@ class TestWebInfoHunter(unittest.TestCase):
                 "site_spider": False,
                 "nuclei_scan": False,
                 "afrog_scan": False,
+                "waf_bypass": False,
                 "smart_skip_waf": False,
             },
             "file_leak": False,
@@ -94,6 +96,7 @@ class TestWebInfoHunter(unittest.TestCase):
                 "nuclei_scan": True,
                 "afrog_scan": True,
                 "web_info_hunter": True,
+                "waf_bypass": True,
                 "smart_skip_waf": True,
                 "not_exist": True,
             },
@@ -124,6 +127,7 @@ class TestWebInfoHunter(unittest.TestCase):
         self.assertTrue(item["site_config"]["nuclei_scan"])
         self.assertTrue(item["site_config"]["afrog_scan"])
         self.assertTrue(item["site_config"]["smart_skip_waf"])
+        self.assertTrue(item["site_config"]["waf_bypass"])
         self.assertTrue(item["domain_config"]["arl_search"])
         self.assertTrue(item["ip_config"]["service_detection"])
         self.assertTrue(item["ip_config"]["os_detection"])

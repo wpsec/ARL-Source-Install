@@ -54,6 +54,21 @@ def http_req(url, method='get', **kwargs):
     # 不允许缓存
     headers.setdefault("Cache-Control", "max-age=0")
 
+    if waf_guard:
+        should_skip, detail = waf_guard.should_skip(url, module=waf_module)
+        if should_skip:
+            return waf_guard.build_skip_response(url, detail)
+
+        # WAF 试探绕过仅在守卫允许时生效，默认只给主动渗透链路加轻量 Header/节流参数。
+        headers, waf_delay, _ = waf_guard.prepare_request(
+            url,
+            module=waf_module,
+            method=method,
+            headers=headers,
+        )
+        if waf_delay > 0:
+            time.sleep(waf_delay)
+
     kwargs["headers"] = headers
     kwargs["stream"] = True
 
@@ -67,11 +82,6 @@ def http_req(url, method='get', **kwargs):
         # 未显式配置代理时，禁用 requests 环境变量代理，避免扫描链路被隐式转发
         # 导致“DNS 解析结果与实际连接目标”不一致。
         kwargs.setdefault("proxies", {"http": None, "https": None})
-
-    if waf_guard:
-        should_skip, detail = waf_guard.should_skip(url)
-        if should_skip:
-            return waf_guard.build_skip_response(url, detail)
 
     conn = getattr(requests, method)(url, **kwargs)
 

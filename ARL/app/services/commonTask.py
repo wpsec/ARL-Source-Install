@@ -118,8 +118,14 @@ class WebSiteFetch(object):
         self.sites = sites  # ** 这个是用户提交的目标
         self.options = options or {}
         self.smart_skip_waf = bool(self.options.get("smart_skip_waf", False))
+        self.waf_bypass = bool(
+            self.options.get(WebSiteFetchOption.WAF_BYPASS, False)
+            and self.options.get(WebSiteFetchOption.PENETRATION_TEST, False)
+        )
         self.waf_guard = WAFSmartSkipGuard(
-            enabled=self.smart_skip_waf,
+            enabled=self.smart_skip_waf or self.waf_bypass,
+            smart_skip_enabled=self.smart_skip_waf,
+            bypass_enabled=self.waf_bypass,
             task_id=self.task_id,
             scope_sites=self.sites,
         )
@@ -160,7 +166,7 @@ class WebSiteFetch(object):
         return keep_targets
 
     def _save_waf_skip_summary(self):
-        if not self.waf_guard or not self.smart_skip_waf:
+        if not self.waf_guard or not getattr(self.waf_guard, "enabled", False):
             return
 
         summary = self.waf_guard.summary()
@@ -169,12 +175,13 @@ class WebSiteFetch(object):
 
         query = {"_id": ObjectId(self.task_id)}
         utils.conn_db("task").update_one(query, {"$set": {"waf_skip_summary": summary}})
+        service_name = "waf_smart_skip" if self.smart_skip_waf else "waf_observe"
         utils.conn_db("task").update_one(
             query,
             {
                 "$push": {
                     "service": {
-                        "name": "waf_smart_skip",
+                        "name": service_name,
                         "elapsed": 0.0,
                         "detail": summary_text,
                     }
