@@ -3,7 +3,15 @@ Web指纹信息监控
 """
 from app.helpers import asset_site, asset_wih
 from app.helpers.scope import get_scope_by_scope_id
-from app.services import run_wih, run_urlfinder_extract, run_urlfinder_sensitive_scan, run_trufflehog_js
+from app.services import (
+    run_api_doc_scan,
+    run_js_intel_scan,
+    run_page_intel_scan,
+    run_trufflehog_js,
+    run_urlfinder_extract,
+    run_urlfinder_sensitive_scan,
+    run_wih,
+)
 from app.utils import get_logger, check_domain_black
 from app.modules import WihRecord
 from app import utils
@@ -83,6 +91,18 @@ class AssetWihMonitor(object):
         urlfinder_results = list(run_urlfinder_extract(self.sites, wih_results) or [])
         if urlfinder_results:
             wih_results.extend(urlfinder_results)
+
+        page_intel_results = list(run_page_intel_scan(self.sites, wih_results) or [])
+        if page_intel_results:
+            wih_results.extend(page_intel_results)
+
+        api_doc_results = list(run_api_doc_scan(self.sites, wih_results) or [])
+        if api_doc_results:
+            wih_results.extend(api_doc_results)
+
+        js_intel_results = list(run_js_intel_scan(self.sites, wih_results) or [])
+        if js_intel_results:
+            wih_results.extend(js_intel_results)
 
         urlfinder_sensitive_results = list(run_urlfinder_sensitive_scan(self.sites, wih_results) or [])
         if urlfinder_sensitive_results:

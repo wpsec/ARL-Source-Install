@@ -884,6 +884,27 @@ class WebSiteFetch(object):
         if urlfinder_records:
             records |= urlfinder_records
 
+        if scan_sites:
+            page_intel_records = set(
+                services.run_page_intel_scan(scan_sites, list(records), waf_guard=self.waf_guard)
+            )
+            if page_intel_records:
+                records |= page_intel_records
+
+        if scan_sites:
+            api_doc_records = set(
+                services.run_api_doc_scan(scan_sites, list(records), waf_guard=self.waf_guard)
+            )
+            if api_doc_records:
+                records |= api_doc_records
+
+        if records:
+            js_intel_records = set(
+                services.run_js_intel_scan(scan_sites, list(records), waf_guard=self.waf_guard)
+            )
+            if js_intel_records:
+                records |= js_intel_records
+
         if records:
             # 对 URLFinder 提取出的同目标 URL/HTML/JS 做二次敏感信息扫描。
             urlfinder_sensitive_records = set(
