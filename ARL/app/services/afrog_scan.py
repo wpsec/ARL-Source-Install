@@ -24,12 +24,16 @@ class AfrogScan(object):
     - 通过 -json 输出结果并解析
     """
 
-    def __init__(self, targets):
+    def __init__(self, targets, search_keywords=None, severity=None):
         self.targets = self._normalize_targets(targets)
         self.afrog_bin_path = str(getattr(Config, "AFROG_BIN", "") or "").strip()
         self.afrog_pocs_dir = str(getattr(Config, "AFROG_POCS_DIR", "") or "").strip()
         self.afrog_search_keywords = str(getattr(Config, "AFROG_SEARCH_KEYWORDS", "") or "").strip()
         self.afrog_severity = str(getattr(Config, "AFROG_SEVERITY", "") or "").strip().lower()
+        if search_keywords is not None:
+            self.afrog_search_keywords = str(search_keywords or "").strip()
+        if severity is not None:
+            self.afrog_severity = str(severity or "").strip().lower()
         self.afrog_concurrency = int(getattr(Config, "AFROG_CONCURRENCY", 5) or 5)
         self.afrog_rate_limit = int(getattr(Config, "AFROG_RATE_LIMIT", 5) or 5)
         self.exec_timeout_sec = int(getattr(Config, "AFROG_EXEC_TIMEOUT_SEC", 7200) or 7200)
@@ -475,9 +479,9 @@ class AfrogScan(object):
         return results
 
 
-def run_afrog_scan(targets):
+def run_afrog_scan(targets, search_keywords=None, severity=None):
     if not targets:
         return []
 
-    scanner = AfrogScan(targets=targets)
+    scanner = AfrogScan(targets=targets, search_keywords=search_keywords, severity=severity)
     return scanner.run()

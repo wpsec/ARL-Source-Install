@@ -109,6 +109,7 @@ site_config_fields = ns.model('siteConfig', {
     "nuclei_scan": fields.Boolean(description="nuclei 扫描", default=False),
     "afrog_scan": fields.Boolean(description="afrog 扫描", default=False),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="web JS 中的信息收集"),
+    "penetration_test": fields.Boolean(example=False, default=False, description="Web 专项渗透测试"),
     "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),
 })
 

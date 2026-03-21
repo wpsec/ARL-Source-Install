@@ -687,6 +687,74 @@ class WebSiteFetch(object):
 
         logger.info("end afrog_scan, result:{} saved:{}".format(len(scan_results), saved_count))
 
+    def run_penetration_test(self):
+        """
+        运行 Web 专项渗透测试。
+
+        说明：
+        - 复用现有 nuclei / afrog 扫描器
+        - 在未显式开启 WIH 时，自动补做一次 Web 信息收集，便于承接 Access Key /
+          API 文档 / URL 资产等前置信息
+        """
+        if not self.options.get(WebSiteFetchOption.Info_Hunter) and not self.wih_record_set:
+            logger.info(
+                "task_id:{} penetration_test bootstrap web_info_hunter for prerequisite intel".format(
+                    self.task_id
+                )
+            )
+            self.run_web_info_hunter()
+
+        scan_result = services.run_penetration_scan(
+            task_id=self.task_id,
+            sites=self.sites,
+            page_url_set=self.page_url_set,
+            waf_guard=self.waf_guard,
+        )
+
+        nuclei_saved = 0
+        for item in scan_result.get("nuclei_results", []):
+            item["task_id"] = self.task_id
+            item["save_date"] = utils.curr_date()
+            item.setdefault("template_url", "")
+            item.setdefault("template_id", "")
+            item.setdefault("vuln_name", "")
+            item.setdefault("vuln_severity", "info")
+            item.setdefault("vuln_url", item.get("target", ""))
+            item.setdefault("curl_command", "")
+            utils.conn_db('nuclei_result').insert_one(item)
+            nuclei_saved += 1
+
+        afrog_saved = 0
+        for result in scan_result.get("afrog_results", []):
+            target = str(result.get("target", "") or "").strip()
+            if not target:
+                continue
+
+            poc_id = str(result.get("poc_id", "") or "").strip()
+            item = {
+                "plg_name": "afrog:{}".format(poc_id) if poc_id else "afrog",
+                "plg_type": "afrog",
+                "vul_name": str(result.get("vuln_name", "") or "afrog 漏洞").strip(),
+                "app_name": "afrog",
+                "target": target,
+                "severity": str(result.get("severity", "") or "info").strip().lower(),
+                "description": str(result.get("description", "") or "").strip(),
+                "detail": "source=penetration_afrog poc_id={}".format(poc_id or "-"),
+                "verify_data": str(result.get("verify_data", "") or "").strip(),
+                "task_id": self.task_id,
+                "save_date": utils.curr_date(),
+            }
+            utils.conn_db('vuln').insert_one(item)
+            afrog_saved += 1
+
+        logger.info(
+            "end penetration_test, candidates:{} nuclei_saved:{} afrog_saved:{}".format(
+                len(scan_result.get("targets", [])),
+                nuclei_saved,
+                afrog_saved,
+            )
+        )
+
     def run_func(self, name: str, func: callable):
         logger.info("start run {}, {}".format(name, self.__str__()))
         self.base_update_task.update_task_field("status", name)
@@ -986,6 +1054,10 @@ class WebSiteFetch(object):
             self.run_func(WebSiteFetchStatus.Info_Hunter, self.run_web_info_hunter)
         else:
             logger.info("task_id:{} skip web_info_hunter because option disabled".format(self.task_id))
+
+        """ *** 对站点运行专项渗透测试 """
+        if self.options.get(WebSiteFetchOption.PENETRATION_TEST):
+            self.run_func(WebSiteFetchStatus.PENETRATION_TEST, self.run_penetration_test)
 
         # nuclei 首次因 Mongo 超时延后时，在本任务末尾补跑一次。
         if self._nuclei_deferred_retry_needed:

@@ -80,6 +80,7 @@ TASK_STAGE_TEXT_MAP = {
     "findvhost": "Host碰撞",
     "waf_smart_skip": "智能跳过WAF",
     "afrog_scan": "afrog漏洞扫描",
+    "penetration_test": "渗透测试",
     "search_engines": "搜索引擎调用",
     "ip_query_plugin": "IP查询插件",
     "fetch site": "站点采集",

@@ -123,8 +123,9 @@ class NucleiScan(object):
         "version", "community", "enterprise", "open", "source", "edition",
     }
 
-    def __init__(self, targets: list):
+    def __init__(self, targets: list, scan_profile: dict = None):
         self.targets = self._normalize_targets(targets)
+        self.scan_profile = scan_profile if isinstance(scan_profile, dict) else {}
         tmp_path = Config.TMP_PATH
         rand_str = utils.random_choices()
         self.file_rand_str = rand_str
@@ -137,6 +138,8 @@ class NucleiScan(object):
         self.nuclei_runtime_config_dir = os.path.join(self.nuclei_runtime_root, "nuclei")
         self.nuclei_runtime_ignore_file = os.path.join(self.nuclei_runtime_config_dir, ".nuclei-ignore")
         self.dns_policy_cache = {}
+        self.profile_force_tags = self._normalize_profile_tags(self.scan_profile.get("force_tags"))
+        self.profile_name = str(self.scan_profile.get("name", "") or "").strip().lower() or "custom"
 
         self.nuclei_bin_path = Config.NUCLEI_BIN
         self.nuclei_template_dir = Config.NUCLEI_TEMPLATE_DIR
@@ -160,6 +163,24 @@ class NucleiScan(object):
 
         # 在nuclei 2.9.1 中 将-json 参数改成了 -jsonl 参数。
         self.nuclei_json_flag = None
+
+    @staticmethod
+    def _normalize_profile_tags(tags):
+        if isinstance(tags, str):
+            tags = [item for item in tags.split(",") if item]
+        if not isinstance(tags, (list, tuple, set)):
+            return ""
+
+        normalized = []
+        seen = set()
+        for item in tags:
+            tag = re.sub(r"[^a-z0-9._-]", "", str(item or "").strip().lower())
+            if not tag or tag in seen:
+                continue
+            seen.add(tag)
+            normalized.append(tag)
+
+        return ",".join(normalized)
 
     @staticmethod
     def _normalize_targets(targets):
@@ -839,6 +860,16 @@ class NucleiScan(object):
         - 命中指纹映射：按 tags 分组，使用 -tags 定向扫描
         - 未命中映射：走自动扫描(-as)或默认标签兜底
         """
+        if self.profile_force_tags:
+            return [
+                {
+                    "targets": [item["target"] for item in self.targets],
+                    "tags": self.profile_force_tags,
+                    "auto_scan": False,
+                    "batch_type": "profile:{}".format(self.profile_name),
+                }
+            ]
+
         fallback_tags = self._build_fallback_tags()
         tags_target_map = defaultdict(set)
         fallback_targets = set()
@@ -1317,9 +1348,9 @@ class NucleiScan(object):
         return results
 
 
-def nuclei_scan(targets: list):
+def nuclei_scan(targets: list, scan_profile: dict = None):
     if not targets:
         return []
 
-    n = NucleiScan(targets=targets)
+    n = NucleiScan(targets=targets, scan_profile=scan_profile)
     return n.run()

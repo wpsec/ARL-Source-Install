@@ -262,6 +262,7 @@ const modules: ModuleConfig[] = [
           afrog_scan: false,
           findvhost: false,
           web_info_hunter: false,
+          penetration_test: false,
           smart_skip_waf: false,
           dingding_notify: false,
         },
@@ -674,6 +675,7 @@ const modules: ModuleConfig[] = [
               nuclei_scan: false,
               afrog_scan: false,
               web_info_hunter: false,
+              penetration_test: false,
               smart_skip_waf: false,
             },
             domain_dict: '',
@@ -2227,6 +2229,7 @@ const TASK_RUNNING_STAGE_LABELS: Record<string, string> = {
   nuclei_scan: 'Nuclei扫描',
   afrog_scan: 'afrog扫描',
   web_info_hunter: 'WIH扫描',
+  penetration_test: '渗透测试',
   nuclei_scan_retry: 'Nuclei补跑',
 };
 
@@ -2939,6 +2942,7 @@ const fieldLabelMap: Record<string, string> = {
   afrog_scan: 'afrog 调用',
   findvhost: 'Host 碰撞',
   web_info_hunter: 'WIH 调用',
+  penetration_test: '渗透测试',
   smart_skip_waf: '跳过WAF',
 };
 
@@ -3973,7 +3977,7 @@ function ActionDialog({
       },
       {
         title: 'Web与风险',
-        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'smart_skip_waf', 'dingding_notify'],
+        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'penetration_test', 'smart_skip_waf', 'dingding_notify'],
       },
     ];
     return sections
@@ -4084,6 +4088,7 @@ function ActionDialog({
     { key: 'site_config.nuclei_scan', label: 'nuclei 调用' },
     { key: 'site_config.afrog_scan', label: 'afrog 调用' },
     { key: 'site_config.web_info_hunter', label: 'WIH 调用' },
+    { key: 'site_config.penetration_test', label: '渗透测试' },
     { key: 'site_config.smart_skip_waf', label: '跳过WAF' },
   ];
   const filteredPolicyOptions = policyOptionDefs.filter((item) => {
@@ -4660,6 +4665,11 @@ function ActionDialog({
                     </div>
                   ))}
                 </div>
+                {Boolean(formPayload?.penetration_test) ? (
+                  <div className="rounded-xl border border-brand-warning/30 bg-brand-warning/10 px-3 py-3 text-[11px] leading-relaxed text-brand-text-muted">
+                    渗透测试会复用现有 `nuclei + afrog + Web 信息收集` 链路，对高价值 URL/接口入口执行专项漏洞测试，重点覆盖 SQL 注入、XSS、LFI、RCE、XXE、SSTI、SSRF 以及对象存储暴露/接管类检测。
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : isFofaAction ? (
