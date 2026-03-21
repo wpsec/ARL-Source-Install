@@ -5,13 +5,15 @@ Web 专项渗透测试执行器。
 - 将“渗透测试”与 nuclei / afrog 的模板化 PoC 扫描解耦
 - 复用 ARL 已发现的页面、表单、URL、API 文档线索，构建主动测试面
 - 以保守的差分测试为主，减少高攻击性与高误报 payload
+- 增加 DOM XSS 静态分析与只读型验证，不引入 DNSLog 依赖
 """
+import base64
 import hashlib
 import json
 import re
 import time
+from urllib.parse import parse_qsl, urlencode, unquote, urlparse, urlunparse
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from app import utils
 
@@ -34,6 +36,7 @@ class PenetrationScanService(object):
         "domain_url",
         "page_form",
         "path_url",
+        "urlfinder_js",
         "urlfinder_url",
     }
     STATIC_SUFFIX_BLACKLIST = {
@@ -86,8 +89,45 @@ class PenetrationScanService(object):
         "ssti": {"content", "email", "message", "name", "query", "q", "redirect", "search", "template", "title", "view"},
         "xxe": {"body", "data", "payload", "request", "soap", "xml"},
     }
+    DOM_XSS_SOURCES = (
+        "location.href",
+        "location.search",
+        "location.hash",
+        "location.pathname",
+        "document.url",
+        "document.documenturi",
+        "document.baseuri",
+        "document.referrer",
+        "window.name",
+        "localstorage.getitem",
+        "sessionstorage.getitem",
+    )
+    DOM_XSS_SANITIZE_PATTERNS = (
+        r"dompurify",
+        r"sanitize",
+        r"escapehtml",
+        r"htmlspecialchars",
+        r"encodeuricomponent",
+        r"textcontent",
+        r"innertext",
+        r"\.replace\s*\(\s*/[<>'\"]",
+        r"createTextNode",
+    )
+    DOM_XSS_RULES = (
+        (r"\.innerHTML\s*=\s*([^;]+)", "innerHTML", "high"),
+        (r"\.outerHTML\s*=\s*([^;]+)", "outerHTML", "high"),
+        (r"document\.write(?:ln)?\s*\(\s*([^)]+)\s*\)", "document.write", "high"),
+        (r"eval\s*\(\s*([^)]+)\s*\)", "eval", "critical"),
+        (r"setTimeout\s*\(\s*([^,]+)", "setTimeout", "medium"),
+        (r"setInterval\s*\(\s*([^,]+)", "setInterval", "medium"),
+        (r"\.html\s*\(\s*([^)]+)\s*\)", "jquery.html", "high"),
+        (r"\.(?:append|prepend|after|before)\s*\(\s*([^)]+)\s*\)", "jquery.dom", "medium"),
+        (r"dangerouslySetInnerHTML\s*:\s*\{\s*__html\s*:\s*([^}]+)\}", "dangerouslySetInnerHTML", "high"),
+        (r"v-html\s*=\s*[\"']([^\"']+)[\"']", "v-html", "high"),
+    )
     MAX_TARGETS = 80
     MAX_TEST_PARAMS_PER_TARGET = 4
+    MAX_JS_TARGETS = 12
     REQUEST_TIMEOUT = (5, 12)
 
     def __init__(self, task_id: str, sites: list, page_url_set=None, waf_guard=None):
@@ -100,6 +140,7 @@ class PenetrationScanService(object):
         self.dns_policy_cache = {}
         self.baseline_cache = {}
         self.finding_hash_set = set()
+        self.wih_records_cache = None
 
     @staticmethod
     def _normalize_host(value: str) -> str:
@@ -151,6 +192,19 @@ class PenetrationScanService(object):
         text = str(value or "").strip().lower()
         return text.startswith("http://") or text.startswith("https://")
 
+    @staticmethod
+    def _is_js_url(value: str) -> bool:
+        text = str(value or "").strip().lower()
+        if not text:
+            return False
+        if ".js" in text:
+            return True
+
+        try:
+            return urlparse(text).path.lower().endswith(".js")
+        except Exception:
+            return False
+
     def _is_static_resource(self, path_text: str) -> bool:
         path_text = str(path_text or "").strip().lower()
         if not path_text:
@@ -175,6 +229,30 @@ class PenetrationScanService(object):
             return ""
 
         if not parsed.scheme or not host:
+            return ""
+
+        netloc = host
+        if parsed.port:
+            netloc = "{}:{}".format(host, parsed.port)
+
+        clean = parsed._replace(
+            scheme=parsed.scheme.lower(),
+            netloc=netloc,
+            fragment="",
+        )
+        return clean.geturl()
+
+    def _normalize_js_url(self, url: str) -> str:
+        raw = str(url or "").strip()
+        if not self._is_http_url(raw):
+            return ""
+
+        parsed = urlparse(raw)
+        host = self._normalize_host(parsed.netloc)
+        if not host or not self._host_in_scope(host):
+            return ""
+
+        if not self._is_js_url(raw):
             return ""
 
         netloc = host
@@ -222,6 +300,9 @@ class PenetrationScanService(object):
             return []
 
     def _load_wih_records(self):
+        if self.wih_records_cache is not None:
+            return list(self.wih_records_cache)
+
         if not self.task_id:
             return []
 
@@ -238,7 +319,8 @@ class PenetrationScanService(object):
                     "site": 1,
                 },
             )
-            return list(cursor or [])
+            self.wih_records_cache = list(cursor or [])
+            return list(self.wih_records_cache)
         except Exception as e:
             logger.warning("load penetration wih records failed task_id:{} err:{}".format(self.task_id, e))
             return []
@@ -446,7 +528,220 @@ class PenetrationScanService(object):
             if new_errors:
                 return True, "出现新的 SQL 错误特征"
 
+        baseline_hash = str(baseline.get("content_hash", "") or "")
+        current_hash = self._stable_hash(text[:4096])
+        if baseline_hash and current_hash != baseline_hash and baseline_length > 0:
+            length_change_pct = abs(current_length - baseline_length) / float(baseline_length)
+            if length_change_pct > 0.3:
+                return True, "响应内容结构变化明显"
+
         return False, ""
+
+    @staticmethod
+    def _is_response_similar_to_baseline(body: str, status_code: int, baseline: Dict) -> bool:
+        baseline_status = int(baseline.get("status_code", 0) or 0)
+        if baseline_status != int(status_code or 0):
+            return False
+
+        baseline_length = int(baseline.get("content_length", 0) or 0)
+        current_length = len(str(body or ""))
+        if baseline_length > 0:
+            diff_ratio = abs(current_length - baseline_length) / float(baseline_length)
+            if diff_ratio > 0.15:
+                return False
+
+        baseline_hash = str(baseline.get("content_hash", "") or "")
+        if baseline_hash:
+            current_hash = PenetrationScanService._stable_hash(str(body or "")[:4096])
+            if current_hash == baseline_hash:
+                return True
+
+        return baseline_length == 0 or abs(current_length - baseline_length) <= 64
+
+    @staticmethod
+    def _decode_js_content(content: str) -> str:
+        text = str(content or "")
+        decoded = text
+
+        for _ in range(2):
+            original = decoded
+
+            def _replace_urlencoded(match):
+                try:
+                    return '"{}"'.format(unquote(match.group(2)))
+                except Exception:
+                    return match.group(0)
+
+            decoded = re.sub(
+                r"decodeURIComponent\s*\(\s*([\"'])(.*?)\1\s*\)",
+                _replace_urlencoded,
+                decoded,
+                flags=re.I | re.S,
+            )
+
+            def _replace_base64(match):
+                value = str(match.group(2) or "")
+                try:
+                    return '"{}"'.format(
+                        base64.b64decode(value).decode("utf-8", errors="ignore")
+                    )
+                except Exception:
+                    return match.group(0)
+
+            decoded = re.sub(
+                r"atob\s*\(\s*([\"'])([A-Za-z0-9+/=]{12,})\1\s*\)",
+                _replace_base64,
+                decoded,
+                flags=re.I,
+            )
+
+            def _replace_charcode(match):
+                try:
+                    items = [
+                        int(part.strip())
+                        for part in str(match.group(1) or "").split(",")
+                        if str(part).strip().isdigit()
+                    ]
+                    if not items:
+                        return match.group(0)
+                    return '"{}"'.format("".join(chr(item) for item in items))
+                except Exception:
+                    return match.group(0)
+
+            decoded = re.sub(
+                r"String\.fromCharCode\s*\(([^)]+)\)",
+                _replace_charcode,
+                decoded,
+                flags=re.I,
+            )
+
+            decoded = re.sub(
+                r"\\x([0-9a-fA-F]{2})",
+                lambda match: chr(int(match.group(1), 16)),
+                decoded,
+            )
+            decoded = re.sub(
+                r"\\u([0-9a-fA-F]{4})",
+                lambda match: chr(int(match.group(1), 16)),
+                decoded,
+            )
+
+            if decoded == original:
+                break
+
+        return decoded
+
+    def _has_dom_sanitization(self, snippet: str) -> bool:
+        lowered = str(snippet or "")
+        return any(re.search(pattern, lowered, flags=re.I) for pattern in self.DOM_XSS_SANITIZE_PATTERNS)
+
+    def _extract_js_urls(self, records: List[Dict]) -> List[str]:
+        urls = []
+        url_set = set()
+
+        def _append(candidate: str):
+            normalized = self._normalize_js_url(candidate)
+            if not normalized or normalized in url_set:
+                return
+            url_set.add(normalized)
+            urls.append(normalized)
+
+        for record in records or []:
+            record_type = str(record.get("record_type", "") or "").strip()
+            content = str(record.get("content", "") or "").strip()
+            source = str(record.get("source", "") or "").strip()
+            if record_type == "urlfinder_js":
+                _append(content)
+            _append(source)
+            _append(content)
+
+        urls.sort()
+        return urls[: self.MAX_JS_TARGETS]
+
+    def _scan_dom_xss_js(self, js_url: str, findings: List[Dict]):
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(js_url, cache_map=self.dns_policy_cache)
+        if not allow_scan:
+            logger.info(
+                "skip dom xss js by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    js_url,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            return
+
+        try:
+            resp = utils.http_req(
+                js_url,
+                method="get",
+                timeout=self.REQUEST_TIMEOUT,
+                waf_guard=self.waf_guard,
+                waf_module="penetration_test",
+            )
+        except Exception:
+            return
+
+        status_code = int(getattr(resp, "status_code", 0) or 0)
+        if status_code >= 400:
+            return
+
+        body = bytes(getattr(resp, "content", b"") or b"")[: 512 * 1024]
+        if not body:
+            return
+
+        try:
+            js_content = body.decode("utf-8", errors="ignore")
+        except Exception:
+            return
+
+        decoded = self._decode_js_content(js_content)
+        merged_content = "{}\n{}".format(js_content, decoded) if decoded != js_content else js_content
+
+        for pattern, sink_name, severity in self.DOM_XSS_RULES:
+            for match in re.finditer(pattern, merged_content, flags=re.I):
+                expr = str(match.group(1) or "").strip()
+                if not expr:
+                    continue
+
+                snippet_start = max(0, match.start() - 120)
+                snippet_end = min(len(merged_content), match.end() + 120)
+                snippet = merged_content[snippet_start:snippet_end]
+                snippet_lower = snippet.lower()
+                expr_lower = expr.lower()
+
+                if self._has_dom_sanitization(expr_lower) or self._has_dom_sanitization(snippet_lower):
+                    continue
+
+                matched_source = ""
+                for source_name in self.DOM_XSS_SOURCES:
+                    if source_name in expr_lower or source_name in snippet_lower:
+                        matched_source = source_name
+                        break
+                if not matched_source:
+                    continue
+
+                self._append_finding(
+                    findings,
+                    vuln_type="dom_xss",
+                    vuln_name="DOM XSS",
+                    severity=severity,
+                    target={
+                        "method": "GET",
+                        "url": js_url,
+                        "source": "urlfinder_js",
+                    },
+                    param_name=matched_source,
+                    payload=sink_name,
+                    detail="JS 中发现 {} 接收 {} 且附近无明显过滤".format(sink_name, matched_source),
+                    evidence=snippet.strip()[:300],
+                    request_text="",
+                    response_text="",
+                )
+
+    def _test_dom_xss(self, findings: List[Dict], records: List[Dict]):
+        for js_url in self._extract_js_urls(records):
+            self._scan_dom_xss_js(js_url, findings)
 
     def _param_matches_hint(self, param_name: str, hint_name: str) -> bool:
         name = str(param_name or "").strip().lower()
@@ -549,6 +844,58 @@ class PenetrationScanService(object):
                     response_text=self._summarize_response(resp, body),
                 )
                 break
+
+            if any(item.get("param") == param_name and item.get("url") == target.get("url") for item in findings):
+                continue
+
+            true_params = normal_params.copy()
+            false_params = normal_params.copy()
+            true_payload = "1' AND '1'='1"
+            false_payload = "1' AND '1'='2"
+            true_params[param_name] = true_payload
+            false_params[param_name] = false_payload
+            try:
+                true_resp = self._request(target.get("method"), target.get("url"), params=true_params)
+                false_resp = self._request(target.get("method"), target.get("url"), params=false_params)
+            except Exception:
+                true_resp = None
+                false_resp = None
+
+            if true_resp is not None and false_resp is not None:
+                true_body = str(getattr(true_resp, "text", "") or "")
+                false_body = str(getattr(false_resp, "text", "") or "")
+                true_status = int(getattr(true_resp, "status_code", 0) or 0)
+                false_status = int(getattr(false_resp, "status_code", 0) or 0)
+                false_is_diff, false_reason = self._is_significant_difference(
+                    false_body,
+                    false_status,
+                    baseline,
+                    "sqli",
+                )
+                if self._is_response_similar_to_baseline(true_body, true_status, baseline) and false_is_diff:
+                    self._append_finding(
+                        findings,
+                        vuln_type="sqli",
+                        vuln_name="SQL注入",
+                        severity="critical",
+                        target=target,
+                        param_name=param_name,
+                        payload="{} | {}".format(true_payload, false_payload),
+                        detail="SQL 布尔差分命中: {}".format(false_reason),
+                        evidence="true_like_baseline=true false_diff=true",
+                        request_text=self._safe_json(
+                            {
+                                "method": target.get("method"),
+                                "true_params": true_params,
+                                "false_params": false_params,
+                            }
+                        ),
+                        response_text="true={} false={}".format(
+                            self._summarize_response(true_resp, true_body),
+                            self._summarize_response(false_resp, false_body),
+                        ),
+                    )
+                    continue
 
             # 再做时间型检测，满足用户强调的基线差分能力。
             if any(item.get("param") == param_name and item.get("url") == target.get("url") for item in findings):
@@ -939,10 +1286,10 @@ class PenetrationScanService(object):
             logger.info("penetration scan skip, no in-scope hosts")
             return {"targets": [], "findings": []}
 
+        wih_records = self._load_wih_records()
         targets = self._collect_seed_targets()
         if not targets:
-            logger.info("penetration scan skip, no structured attack surfaces")
-            return {"targets": [], "findings": []}
+            logger.info("penetration scan skip active targets, fallback to js static analysis only")
 
         findings = []
         for target in targets:
@@ -953,6 +1300,7 @@ class PenetrationScanService(object):
             self._test_ssti(target, findings)
             self._test_ssrf(target, findings)
             self._test_xxe(target, findings)
+        self._test_dom_xss(findings, wih_records)
 
         logger.info(
             "penetration scan done task_id:{} targets:{} findings:{}".format(

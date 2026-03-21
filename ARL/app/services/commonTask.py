@@ -710,9 +710,16 @@ class WebSiteFetch(object):
             page_url_set=self.page_url_set,
             waf_guard=self.waf_guard,
         )
+        cloud_result = services.run_cloud_security_scan(
+            task_id=self.task_id,
+            sites=self.sites,
+            page_url_set=self.page_url_set,
+            waf_guard=self.waf_guard,
+        )
 
         saved_count = 0
-        for result in scan_result.get("findings", []):
+        all_findings = list(scan_result.get("findings", []) or []) + list(cloud_result.get("findings", []) or [])
+        for result in all_findings:
             target = str(result.get("url", "") or "").strip()
             if not target:
                 continue
@@ -741,8 +748,9 @@ class WebSiteFetch(object):
             saved_count += 1
 
         logger.info(
-            "end penetration_test, candidates:{} findings_saved:{}".format(
+            "end penetration_test, active_targets:{} cloud_targets:{} findings_saved:{}".format(
                 len(scan_result.get("targets", [])),
+                len(cloud_result.get("targets", [])),
                 saved_count,
             )
         )

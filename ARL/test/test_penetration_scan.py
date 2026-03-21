@@ -126,6 +126,70 @@ class TestPenetrationScan(unittest.TestCase):
         self.assertEqual(1, len(findings))
         self.assertEqual("xss", findings[0]["type"])
 
+    def test_dom_xss_static_analysis_detects_unsanitized_source_to_sink(self):
+        """
+        JS 中存在 source -> sink 且未过滤时，应记录 DOM XSS。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        findings = []
+        js_resp = SimpleNamespace(
+            status_code=200,
+            content=b"document.querySelector('#app').innerHTML = location.hash;",
+            headers={},
+        )
+
+        with patch("app.services.penetration_scan.utils.check_dns_policy_for_url", return_value=(True, {})), \
+                patch("app.services.penetration_scan.utils.http_req", return_value=js_resp):
+            service._scan_dom_xss_js("https://example.com/static/app.js", findings)
+
+        self.assertEqual(1, len(findings))
+        self.assertEqual("dom_xss", findings[0]["type"])
+
+    def test_sqli_boolean_based_diff_detects_true_false_split(self):
+        """
+        当 true 请求接近基线、false 请求明显偏离时，应命中布尔型 SQL 注入。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        target = {
+            "method": "GET",
+            "url": "https://example.com/item",
+            "params": ["id"],
+            "source": "query_url",
+            "original_values": {"id": "1"},
+        }
+        findings = []
+        baseline_body = "normal product page"
+        baseline = {
+            "status_code": 200,
+            "content_length": len(baseline_body),
+            "content_hash": service._stable_hash(baseline_body[:4096]),
+            "response_time": 0.1,
+            "error_keywords": [],
+            "original_params": {"id": "1"},
+            "body": baseline_body,
+        }
+        responses = [
+            SimpleNamespace(status_code=200, text=baseline_body, headers={}),
+            SimpleNamespace(status_code=200, text=baseline_body, headers={}),
+            SimpleNamespace(status_code=200, text=baseline_body, headers={}),
+            SimpleNamespace(status_code=500, text="database error", headers={}),
+        ]
+
+        with patch.object(service, "_build_baseline", return_value=baseline), \
+                patch.object(service, "_request", side_effect=responses):
+            service._test_sqli(target, findings)
+
+        self.assertEqual(1, len(findings))
+        self.assertIn("布尔差分", findings[0]["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

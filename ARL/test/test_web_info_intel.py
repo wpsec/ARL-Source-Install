@@ -70,8 +70,6 @@ class TestWebInfoIntel(unittest.TestCase):
         mock_http_req.return_value = _FakeResponse(
             """
             const config = {
-              apiKey: "AIza12345678901234567890123456789012345",
-              client_secret: "AbCdEf1234567890SecretValue",
               contactEmail: "sec@example.com"
             };
             fetch("/api/v1/users");

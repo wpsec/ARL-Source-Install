@@ -4667,7 +4667,7 @@ function ActionDialog({
                 </div>
                 {Boolean(formPayload?.penetration_test) ? (
                   <div className="rounded-xl border border-brand-warning/30 bg-brand-warning/10 px-3 py-3 text-[11px] leading-relaxed text-brand-text-muted">
-                    渗透测试与 `nuclei / afrog` 的 PoC 扫描解耦，会基于页面表单、带参 URL 与 API 端点执行主动测试，当前重点覆盖 SQL 注入、XSS、LFI、RCE、XXE、SSTI、SSRF 等高价值场景。
+                    渗透测试与 `nuclei / afrog` 的 PoC 扫描解耦，会基于页面表单、带参 URL、API 端点与 JS 资源执行主动测试与静态分析，当前重点覆盖 SQL 注入、反射型/DOM XSS、LFI、RCE、XXE、SSTI、SSRF，以及云存储桶遍历/接管/ACL/Policy 泄露等只读型云安全检测。
                   </div>
                 ) : null}
               </div>
