@@ -2,18 +2,17 @@
 Web 专项渗透测试链路回归测试。
 """
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 try:
-    from app.services.nuclei_scan import NucleiScan
     from app.services.penetration_scan import PenetrationScanService
 except ModuleNotFoundError:
-    NucleiScan = None
     PenetrationScanService = None
 
 
 @unittest.skipIf(
-    NucleiScan is None or PenetrationScanService is None,
+    PenetrationScanService is None,
     "运行依赖未安装，跳过专项渗透测试回归",
 )
 class TestPenetrationScan(unittest.TestCase):
@@ -21,75 +20,111 @@ class TestPenetrationScan(unittest.TestCase):
     专项渗透测试服务测试。
     """
 
-    def test_nuclei_profile_force_tags_builds_single_profile_batch(self):
+    def test_parse_page_form_record(self):
         """
-        当指定专项 profile tag 时，应直接构建单批次 profile 扫描。
+        应能解析页面情报里的表单摘要。
         """
-        scanner = NucleiScan(
-            targets=["https://example.com/api/user?id=1"],
-            scan_profile={
-                "name": "penetration",
-                "force_tags": ["sqli", "xss", "xxe"],
-            },
+        parsed = PenetrationScanService._parse_form_record(
+            "POST https://example.com/login [username,password]"
         )
 
-        batches = scanner._build_target_batches()
+        self.assertEqual("POST", parsed["method"])
+        self.assertEqual("https://example.com/login", parsed["url"])
+        self.assertEqual(["username", "password"], parsed["params"])
 
-        self.assertEqual(1, len(batches))
-        self.assertEqual("profile:penetration", batches[0]["batch_type"])
-        self.assertEqual("sqli,xss,xxe", batches[0]["tags"])
-        self.assertEqual(["https://example.com/api/user?id=1"], batches[0]["targets"])
-
-    def test_penetration_target_collection_filters_static_and_out_of_scope_urls(self):
+    def test_collect_seed_targets_only_keeps_structured_in_scope_targets(self):
         """
-        仅保留同范围内的高价值 URL，静态资源与跨域候选应被过滤。
+        仅保留同范围内、具备参数的结构化入口。
         """
         service = PenetrationScanService(
             task_id="task-demo",
             sites=["https://example.com"],
             page_url_set={
-                "https://example.com/static/app.js",
-                "https://example.com/api/user?id=1",
+                "https://example.com/search?q=test",
+                "https://cdn.example.com/static/app.js",
+                "https://example.com/profile",
             },
         )
 
         with patch.object(service, "_load_db_urls", return_value=[
-            "https://example.com/swagger/index.html",
-            "https://example.com/assets/logo.png",
-        ]), patch.object(service, "_load_wih_urls", return_value=[
-            "https://example.com/graphql?query=1",
-            "https://api.other.com/openapi.json",
-        ]):
-            targets = service.collect_targets()
+            "https://example.com/user?id=1",
+            "https://example.com/logo.png",
+        ]), patch.object(service, "_load_wih_records", return_value=[
+            {
+                "record_type": "page_form",
+                "content": "POST https://example.com/login [username,password]",
+            },
+            {
+                "record_type": "api_doc_endpoint",
+                "content": "GET https://example.com/api/query?keyword=test",
+            },
+            {
+                "record_type": "urlfinder_url",
+                "content": "https://api.other.com/openapi.json?x=1",
+            },
+        ]), patch("app.services.penetration_scan.utils.check_dns_policy_for_url", return_value=(True, {})):
+            targets = service._collect_seed_targets()
 
-        self.assertIn("https://example.com", targets)
-        self.assertIn("https://example.com/api/user?id=1", targets)
-        self.assertIn("https://example.com/swagger/index.html", targets)
-        self.assertIn("https://example.com/graphql?query=1", targets)
-        self.assertNotIn("https://example.com/static/app.js", targets)
-        self.assertNotIn("https://example.com/assets/logo.png", targets)
-        self.assertNotIn("https://api.other.com/openapi.json", targets)
+        url_set = {item["url"] for item in targets}
+        self.assertIn("https://example.com/search?q=test", url_set)
+        self.assertIn("https://example.com/user?id=1", url_set)
+        self.assertIn("https://example.com/login", url_set)
+        self.assertIn("https://example.com/api/query?keyword=test", url_set)
+        self.assertNotIn("https://example.com/profile", url_set)
+        self.assertNotIn("https://api.other.com/openapi.json?x=1", url_set)
 
-    def test_penetration_afrog_target_prefers_query_urls(self):
+    def test_significant_difference_detects_new_sql_error(self):
         """
-        afrog 目标应优先挑选带参数或高价值路径的 URL。
+        SQL 错误关键字相对基线新增时，应判定为差分命中。
         """
         service = PenetrationScanService(
             task_id="task-demo",
             sites=["https://example.com"],
             page_url_set=[],
         )
+        baseline = {
+            "status_code": 200,
+            "content_length": 100,
+            "content_hash": "abc",
+            "response_time": 0.2,
+            "error_keywords": [],
+        }
 
-        selected = service._select_afrog_targets(
-            [
-                "https://example.com",
-                "https://example.com/api/search?q=test",
-                "https://example.com/swagger/index.html",
-            ]
+        matched, reason = service._is_significant_difference(
+            body="You have an error in your SQL syntax near mysql",
+            status_code=200,
+            baseline=baseline,
+            vuln_type="sqli",
+            elapsed=0.3,
         )
 
-        self.assertEqual("https://example.com/api/search?q=test", selected[0])
-        self.assertIn("https://example.com/swagger/index.html", selected)
+        self.assertTrue(matched)
+        self.assertIn("SQL", reason)
+
+    def test_xss_finding_requires_unescaped_reflection(self):
+        """
+        仅当响应直接回显 payload 时，才应记录 XSS。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        target = {
+            "method": "GET",
+            "url": "https://example.com/search",
+            "params": ["q"],
+            "source": "query_url",
+            "original_values": {"q": "normal"},
+        }
+        findings = []
+
+        with patch.object(service, "_build_baseline", return_value={"body": "", "original_params": {"q": "normal"}}), \
+                patch.object(service, "_request", return_value=SimpleNamespace(status_code=200, text="<svg/onload=alert(1337)>ARL_XSS_MARK", headers={})):
+            service._test_xss(target, findings)
+
+        self.assertEqual(1, len(findings))
+        self.assertEqual("xss", findings[0]["type"])
 
 
 if __name__ == "__main__":

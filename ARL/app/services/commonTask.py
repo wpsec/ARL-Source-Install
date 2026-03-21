@@ -692,8 +692,8 @@ class WebSiteFetch(object):
         运行 Web 专项渗透测试。
 
         说明：
-        - 复用现有 nuclei / afrog 扫描器
-        - 在未显式开启 WIH 时，自动补做一次 Web 信息收集，便于承接 Access Key /
+        - 与 nuclei / afrog 的模板化 PoC 扫描解耦
+        - 在未显式开启 WIH 时，自动补做一次 Web 信息收集，便于承接页面表单 /
           API 文档 / URL 资产等前置信息
         """
         if not self.options.get(WebSiteFetchOption.Info_Hunter) and not self.wih_record_set:
@@ -711,47 +711,39 @@ class WebSiteFetch(object):
             waf_guard=self.waf_guard,
         )
 
-        nuclei_saved = 0
-        for item in scan_result.get("nuclei_results", []):
-            item["task_id"] = self.task_id
-            item["save_date"] = utils.curr_date()
-            item.setdefault("template_url", "")
-            item.setdefault("template_id", "")
-            item.setdefault("vuln_name", "")
-            item.setdefault("vuln_severity", "info")
-            item.setdefault("vuln_url", item.get("target", ""))
-            item.setdefault("curl_command", "")
-            utils.conn_db('nuclei_result').insert_one(item)
-            nuclei_saved += 1
-
-        afrog_saved = 0
-        for result in scan_result.get("afrog_results", []):
-            target = str(result.get("target", "") or "").strip()
+        saved_count = 0
+        for result in scan_result.get("findings", []):
+            target = str(result.get("url", "") or "").strip()
             if not target:
                 continue
 
-            poc_id = str(result.get("poc_id", "") or "").strip()
             item = {
-                "plg_name": "afrog:{}".format(poc_id) if poc_id else "afrog",
-                "plg_type": "afrog",
-                "vul_name": str(result.get("vuln_name", "") or "afrog 漏洞").strip(),
-                "app_name": "afrog",
+                "plg_name": "penetration:{}".format(str(result.get("type", "") or "unknown").strip().lower() or "unknown"),
+                "plg_type": str(result.get("type", "") or "penetration").strip().lower() or "penetration",
+                "vul_name": str(result.get("name", "") or "专项渗透测试发现").strip(),
+                "app_name": "penetration_test",
                 "target": target,
                 "severity": str(result.get("severity", "") or "info").strip().lower(),
-                "description": str(result.get("description", "") or "").strip(),
-                "detail": "source=penetration_afrog poc_id={}".format(poc_id or "-"),
-                "verify_data": str(result.get("verify_data", "") or "").strip(),
+                "description": str(result.get("detail", "") or "").strip(),
+                "detail": "source={} method={} param={} payload={}".format(
+                    str(result.get("source", "") or "-").strip(),
+                    str(result.get("method", "") or "GET").strip(),
+                    str(result.get("param", "") or "-").strip(),
+                    str(result.get("payload", "") or "-").strip()[:200],
+                ),
+                "verify_data": str(result.get("evidence", "") or "").strip(),
+                "request_data": str(result.get("request", "") or "").strip(),
+                "response_data": str(result.get("response", "") or "").strip(),
                 "task_id": self.task_id,
                 "save_date": utils.curr_date(),
             }
             utils.conn_db('vuln').insert_one(item)
-            afrog_saved += 1
+            saved_count += 1
 
         logger.info(
-            "end penetration_test, candidates:{} nuclei_saved:{} afrog_saved:{}".format(
+            "end penetration_test, candidates:{} findings_saved:{}".format(
                 len(scan_result.get("targets", [])),
-                nuclei_saved,
-                afrog_saved,
+                saved_count,
             )
         )
 

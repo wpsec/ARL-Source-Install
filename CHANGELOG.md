@@ -11,7 +11,7 @@
 - `[未发布]` Celery / RabbitMQ heartbeat 稳态增强：Celery 侧显式固定 `broker_heartbeat=120` 与 `broker_heartbeat_checkrate=2.0`，RabbitMQ 改为通过独立 `rabbitmq.conf` 固定 `heartbeat=120`，降低宿主机或容器短时卡顿导致的 `Too many heartbeats missed` 误判断链概率；同时回归测试补充心跳默认值断言。`consumer_timeout` 不再额外上调，沿用 RabbitMQ 默认值，避免与“故障检测时长”语义混淆
 - `[未发布]` 配置入口收敛与日志维护：将 heartbeat 调优保留为项目内部固定值，不再暴露到 `config-docker.yaml`、示例配置和配置管理页面，减少误配空间；并修正更新日志顶部时间轴与版本区间顺序
 - `[未发布]` Web 信息收集链路增强：在保留 `WIH -> URLFinder -> URLFinder 二次敏感扫描 -> TruffleHog` 主链路的前提下，新增受控 `页面情报提取` 与 `API 文档解析`，补充页面链接、表单、脚本入口以及 `Swagger/OpenAPI/Postman` 文档端点发现；同时将 `js_intel_scan` 收敛为“JS 端点/API 文档入口增强器”，不再重复承担 `WIH` 已覆盖的 secrets 与子域名识别职责，避免双规则源带来的重复命中与维护成本
-- `[未发布]` Web 专项渗透测试入口增强：新建任务与策略模板新增统一的 `渗透测试` 开关，执行链在保持 `nuclei + afrog` 为核心扫描器的前提下，引入 `penetration_scan` 专项模式，自动从站点、URL 资产与 `WIH/API 文档` 线索中挑选高价值 URL 目标，对 SQL 注入、XSS、LFI、RCE、XXE、SSTI、SSRF 以及对象存储暴露/接管类场景执行定向模板扫描；同时在未显式开启 `WIH` 时自动补做一次前置 Web 信息收集，承接 Access Key / API 端点 / Swagger 文档等漏洞测试前置信息
+- `[未发布]` Web 专项渗透测试链路重构：新建任务与策略模板新增统一的 `渗透测试` 开关，并将其与 `nuclei / afrog` 的 PoC 扫描链路解耦；新增独立 `penetration_scan` 主动测试器，基于页面表单、带参 URL、API 文档端点与现有 `WIH` 线索构建测试面，采用“基线请求 + 少量 payload + 响应差分/特征”方式，优先覆盖 SQL 注入、XSS、LFI、RCE、XXE、SSTI、SSRF 等高价值场景；同时在未显式开启 `WIH` 时自动补做一次前置 Web 信息收集，承接页面表单 / API 文档 / URL 资产等前置信息
 
 ## 2026-03-20（v3.3.38 ~ v3.3.39）
 
