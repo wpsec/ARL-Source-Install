@@ -372,6 +372,10 @@ class Config(object):
     CELERY_WEB_WORKER_CONCURRENCY = 1
     # Celery 预取倍率（1 表示每 worker 仅预取 1 个任务）
     CELERY_PREFETCH_MULTIPLIER = 1
+    # Celery AMQP 心跳超时（秒）；内部固定值，与 RabbitMQ 侧保持一致。
+    CELERY_BROKER_HEARTBEAT = 120
+    # Celery 检查 broker 心跳的频率倍率；内部固定值，2.0 表示每 heartbeat/2 检查一次。
+    CELERY_BROKER_HEARTBEAT_CHECKRATE = 2.0
     # Celery 子进程处理多少任务后重启，防止内存膨胀
     CELERY_MAX_TASKS_PER_CHILD = 20
     # Celery 子进程最大内存（KB），超过后重启，0 表示不限制

@@ -10,6 +10,10 @@ class TestCeleryRecovery(unittest.TestCase):
     def test_celery_uses_early_ack_for_long_running_tasks(self):
         self.assertFalse(celery.conf.task_acks_late)
 
+    def test_celery_sets_explicit_broker_heartbeat_defaults(self):
+        self.assertEqual(int(celery.conf.broker_heartbeat), 120)
+        self.assertEqual(float(celery.conf.broker_heartbeat_checkrate), 2.0)
+
     @patch("app.utils.get_logger")
     @patch("app.utils.curr_date", return_value="2026-03-19 17:00:00")
     @patch("app.utils.conn_db")

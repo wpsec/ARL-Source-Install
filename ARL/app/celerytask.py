@@ -38,6 +38,9 @@ celery.conf.update(
     # 保持默认语义：手动 stop/terminate 的任务不自动重新入队，避免被用户停止后再次跑起来。
     task_reject_on_worker_lost=False,
     worker_prefetch_multiplier=Config.CELERY_PREFETCH_MULTIPLIER,  # Worker 每次只预取较少任务
+    # 显式设置 broker heartbeat，减少对默认协商值的依赖，降低宿主机短时卡顿导致的误判断链。
+    broker_heartbeat=Config.CELERY_BROKER_HEARTBEAT,
+    broker_heartbeat_checkrate=Config.CELERY_BROKER_HEARTBEAT_CHECKRATE,
     # 定期回收 worker 子进程，减少长时间运行导致的内存膨胀
     worker_max_tasks_per_child=Config.CELERY_MAX_TASKS_PER_CHILD,
     worker_max_memory_per_child=Config.CELERY_MAX_MEMORY_PER_CHILD,
