@@ -12,10 +12,11 @@ import hashlib
 import json
 import re
 import time
-from urllib.parse import parse_qsl, urlencode, unquote, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, unquote, urljoin, urlparse, urlunparse
 from typing import Dict, List, Optional, Tuple
 
 from app import utils
+from app.services.penetration_request_policy import PenetrationRequestPolicy
 
 logger = utils.get_logger()
 
@@ -125,6 +126,24 @@ class PenetrationScanService(object):
         (r"dangerouslySetInnerHTML\s*:\s*\{\s*__html\s*:\s*([^}]+)\}", "dangerouslySetInnerHTML", "high"),
         (r"v-html\s*=\s*[\"']([^\"']+)[\"']", "v-html", "high"),
     )
+    DANGEROUS_PATH_KEYWORDS = {
+        "critical": {"delete", "destroy", "drop", "payment", "checkout", "refund", "withdraw", "transfer"},
+        "high": {"logout", "signout", "cancel", "disable", "terminate", "purchase", "submitorder"},
+        "medium": {"login", "register", "signup", "reset", "update", "create", "save"},
+    }
+    DANGEROUS_PARAM_KEYWORDS = {
+        "critical": {"amount", "money", "price", "payment", "pay", "refund", "withdraw", "transfer"},
+        "high": {"password", "passwd", "pwd", "csrf", "token", "captcha", "file", "upload"},
+        "medium": {"confirm", "action", "role", "admin", "delete"},
+    }
+    NON_FUZZABLE_PARAM_KEYWORDS = {
+        "password", "passwd", "pwd", "csrf", "token", "captcha", "file", "upload",
+        "image", "amount", "money", "price", "total", "sum", "credit", "card",
+    }
+    JS_REQUEST_WINDOW_SIZE = 800
+    JS_BODY_PREVIEW_BYTES = 512 * 1024
+    MAX_JS_API_TARGETS = 40
+    MEDIUM_RISK_PARAM_LIMIT = 1
     MAX_TARGETS = 80
     MAX_TEST_PARAMS_PER_TARGET = 4
     MAX_JS_TARGETS = 12
@@ -141,6 +160,8 @@ class PenetrationScanService(object):
         self.baseline_cache = {}
         self.finding_hash_set = set()
         self.wih_records_cache = None
+        self.js_analysis_cache = {}
+        self.request_policy = PenetrationRequestPolicy()
 
     @staticmethod
     def _normalize_host(value: str) -> str:
@@ -408,6 +429,108 @@ class PenetrationScanService(object):
                 values[name] = "arl_test_123"
         return values
 
+    def _is_non_fuzzable_param(self, param_name: str) -> bool:
+        name = str(param_name or "").strip().lower()
+        if not name:
+            return True
+        return any(keyword in name for keyword in self.NON_FUZZABLE_PARAM_KEYWORDS)
+
+    def _assess_target_risk(self, method: str, url: str, params: List[str], source: str) -> Dict:
+        """
+        评估主动测试目标风险，尽量避开高副作用入口。
+        """
+        method_name = str(method or "GET").strip().upper()
+        source_name = str(source or "").strip().lower()
+        parsed = urlparse(str(url or "").strip())
+        path_text = "{}?{}".format(parsed.path or "", parsed.query or "").lower()
+        reasons = []
+        score = 0
+
+        if method_name == "POST":
+            score += 18
+            reasons.append("POST入口")
+        elif method_name in {"PUT", "PATCH"}:
+            score += 35
+            reasons.append("{}入口".format(method_name))
+        elif method_name == "DELETE":
+            score += 80
+            reasons.append("DELETE入口")
+
+        if source_name == "page_form":
+            score += 12
+            reasons.append("页面表单")
+
+        for level, keywords in self.DANGEROUS_PATH_KEYWORDS.items():
+            matched = [item for item in keywords if item in path_text]
+            if not matched:
+                continue
+            matched_text = ",".join(sorted(set(matched)))
+            if level == "critical":
+                score += 80
+            elif level == "high":
+                score += 45
+            else:
+                score += 20
+            reasons.append("路径动作:{}".format(matched_text))
+
+        for param_name in params or []:
+            param_text = str(param_name or "").strip().lower()
+            if not param_text:
+                continue
+            for level, keywords in self.DANGEROUS_PARAM_KEYWORDS.items():
+                matched = [item for item in keywords if item in param_text]
+                if not matched:
+                    continue
+                if level == "critical":
+                    score += 28
+                elif level == "high":
+                    score += 18
+                else:
+                    score += 8
+                reasons.append("参数敏感:{}".format(matched[0]))
+                break
+
+        if score >= 90:
+            level = "critical"
+        elif score >= 60:
+            level = "high"
+        elif score >= 30:
+            level = "medium"
+        else:
+            level = "low"
+
+        return {
+            "score": score,
+            "level": level,
+            "reasons": reasons[:6],
+        }
+
+    def _build_target_test_policy(self, method: str, url: str, params: List[str], source: str) -> Dict:
+        risk_info = self._assess_target_risk(method, url, params, source)
+        level = risk_info["level"]
+        return {
+            "risk_score": risk_info["score"],
+            "risk_level": level,
+            "risk_reasons": risk_info["reasons"],
+            "skip_active": level in {"high", "critical"},
+            "allow_time_based": level == "low",
+            "allow_intrusive": level == "low",
+            "param_limit": self.MAX_TEST_PARAMS_PER_TARGET if level == "low" else self.MEDIUM_RISK_PARAM_LIMIT,
+        }
+
+    def _get_target_param_names(self, target: Dict) -> List[str]:
+        params = self._normalize_param_names(target.get("params", []))
+        if not params:
+            return []
+
+        filtered = [item for item in params if not self._is_non_fuzzable_param(item)]
+        policy = target.get("test_policy") if isinstance(target.get("test_policy"), dict) else {}
+        if policy.get("skip_active"):
+            return []
+
+        limit = int(policy.get("param_limit", self.MAX_TEST_PARAMS_PER_TARGET) or self.MAX_TEST_PARAMS_PER_TARGET)
+        return filtered[: max(0, limit)]
+
     @staticmethod
     def _merge_url_params(url: str, params: Dict[str, str]) -> str:
         parsed = urlparse(str(url or "").strip())
@@ -428,29 +551,45 @@ class PenetrationScanService(object):
     ):
         timeout = timeout or self.REQUEST_TIMEOUT
         method_name = str(method or "GET").strip().lower() or "get"
-        if method_name == "get":
-            final_url = self._merge_url_params(url, params or {})
-            return utils.http_req(
-                final_url,
-                method="get",
-                timeout=timeout,
-                waf_guard=self.waf_guard,
-                waf_module="penetration_test",
-                headers=headers or {},
-            )
-
-        return utils.http_req(
+        prepared_headers, policy_delay, _ = self.request_policy.prepare(
             url,
-            method="post",
-            timeout=timeout,
-            waf_guard=self.waf_guard,
-            waf_module="penetration_test",
+            method=method_name.upper(),
             headers=headers or {},
-            data=data if data is not None else (params or {}),
         )
+        if policy_delay > 0:
+            time.sleep(policy_delay)
+
+        started_at = time.time()
+        try:
+            if method_name == "get":
+                final_url = self._merge_url_params(url, params or {})
+                resp = utils.http_req(
+                    final_url,
+                    method="get",
+                    timeout=timeout,
+                    waf_guard=self.waf_guard,
+                    waf_module="penetration_test",
+                    headers=prepared_headers,
+                )
+            else:
+                resp = utils.http_req(
+                    url,
+                    method="post",
+                    timeout=timeout,
+                    waf_guard=self.waf_guard,
+                    waf_module="penetration_test",
+                    headers=prepared_headers,
+                    data=data if data is not None else (params or {}),
+                )
+        except Exception:
+            self.request_policy.observe_error(url, elapsed=time.time() - started_at)
+            raise
+
+        self.request_policy.observe(url, int(getattr(resp, "status_code", 0) or 0), elapsed=time.time() - started_at)
+        return resp
 
     def _build_baseline(self, target: Dict) -> Dict:
-        param_names = self._normalize_param_names(target.get("params", []))
+        param_names = self._get_target_param_names(target)
         cache_key = self._stable_hash(target.get("method"), target.get("url"), ",".join(param_names))
         cached = self.baseline_cache.get(cache_key)
         if cached:
@@ -635,6 +774,259 @@ class PenetrationScanService(object):
         lowered = str(snippet or "")
         return any(re.search(pattern, lowered, flags=re.I) for pattern in self.DOM_XSS_SANITIZE_PATTERNS)
 
+    def _extract_tainted_variables(self, content: str) -> set:
+        """
+        用轻量变量传播近似静态污点分析，补足 source -> 变量 -> sink 的链路。
+        """
+        tainted = set()
+        assignment_pattern = re.compile(
+            r"(?:^|[;{\n])\s*(?:var|let|const)?\s*([A-Za-z_$][\w$]{0,63})\s*=\s*([^;\n]{1,240})",
+            flags=re.I,
+        )
+
+        for _ in range(4):
+            changed = False
+            for match in assignment_pattern.finditer(str(content or "")):
+                name = str(match.group(1) or "").strip().lower()
+                expr = str(match.group(2) or "").strip().lower()
+                if not name or self._has_dom_sanitization(expr):
+                    continue
+
+                source_hit = any(source_name in expr for source_name in self.DOM_XSS_SOURCES)
+                taint_hit = any(
+                    re.search(r"\b{}\b".format(re.escape(var_name)), expr)
+                    for var_name in tainted
+                )
+                if not (source_hit or taint_hit):
+                    continue
+
+                if name not in tainted:
+                    tainted.add(name)
+                    changed = True
+
+            if not changed:
+                break
+
+        return tainted
+
+    @staticmethod
+    def _extract_js_object_keys(snippet: str) -> List[str]:
+        keys = []
+        seen = set()
+        patterns = (
+            r"[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:",
+            r"\b([A-Za-z_][\w.-]{0,63})\s*:",
+        )
+        for pattern in patterns:
+            for match in re.finditer(pattern, str(snippet or "")):
+                name = str(match.group(1) or "").strip()
+                if not name:
+                    continue
+                lowered = name.lower()
+                if lowered in {
+                    "method", "headers", "body", "url", "type", "data", "params", "timeout",
+                    "responsetype", "mode", "credentials", "cache", "redirect", "signal",
+                    "content-type", "accept", "authorization",
+                }:
+                    continue
+                if lowered in seen:
+                    continue
+                seen.add(lowered)
+                keys.append(name)
+        return keys
+
+    def _extract_js_param_names(self, snippet: str) -> List[str]:
+        param_names = []
+        seen = set()
+        text = str(snippet or "")
+
+        capture_patterns = (
+            r"params\s*:\s*\{([^}]{1,300})\}",
+            r"data\s*:\s*\{([^}]{1,300})\}",
+            r"body\s*:\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)",
+            r"body\s*:\s*\{([^}]{1,300})\}",
+            r"send\s*\(\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)\s*\)",
+            r"new\s+URLSearchParams\s*\(\s*\{([^}]{1,300})\}\s*\)",
+        )
+        for pattern in capture_patterns:
+            for match in re.finditer(pattern, text, flags=re.I | re.S):
+                for key in self._extract_js_object_keys(match.group(1)):
+                    lowered = key.lower()
+                    if lowered in seen:
+                        continue
+                    seen.add(lowered)
+                    param_names.append(key)
+
+        for match in re.finditer(r"\.append\s*\(\s*[\"']([A-Za-z_][\w.-]{0,63})[\"']", text, flags=re.I):
+            name = str(match.group(1) or "").strip()
+            lowered = name.lower()
+            if lowered and lowered not in seen:
+                seen.add(lowered)
+                param_names.append(name)
+
+        return param_names
+
+    @staticmethod
+    def _resolve_js_candidate_url(base_url: str, raw_url: str) -> str:
+        candidate = str(raw_url or "").strip().strip("\"'`")
+        if not candidate or "javascript:" in candidate.lower():
+            return ""
+        if any(mark in candidate for mark in ("${", "{{", "}}")):
+            return ""
+
+        parsed_base = urlparse(str(base_url or "").strip())
+        origin = "{}://{}/".format(parsed_base.scheme, parsed_base.netloc) if parsed_base.scheme and parsed_base.netloc else ""
+        if candidate.startswith(("http://", "https://")):
+            return candidate
+        if candidate.startswith("//") and parsed_base.scheme:
+            return "{}:{}".format(parsed_base.scheme, candidate)
+        if candidate.startswith(("./", "../")):
+            return urljoin(base_url, candidate)
+        if candidate.startswith("/"):
+            return urljoin(origin, candidate.lstrip("/")) if origin else candidate
+        if re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./?-]+$", candidate):
+            return urljoin(origin, candidate) if origin else candidate
+        return ""
+
+    def _append_js_api_target(self, targets: List[Dict], target_set: set, base_url: str, raw_url: str,
+                              method: str, params: List[str], source: str):
+        resolved = self._resolve_js_candidate_url(base_url, raw_url)
+        normalized = self._normalize_target_url(resolved)
+        if not normalized:
+            return
+
+        all_params = []
+        seen = set()
+        for item in self._parse_query_param_names(normalized) + list(params or []):
+            name = str(item or "").strip()
+            lowered = name.lower()
+            if not name or lowered in seen:
+                continue
+            seen.add(lowered)
+            all_params.append(name)
+
+        if not all_params:
+            return
+
+        method_name = str(method or "GET").strip().upper() or "GET"
+        if method_name not in {"GET", "POST"}:
+            return
+
+        target_key = self._stable_hash(method_name, normalized, ",".join(all_params), source)
+        if target_key in target_set:
+            return
+
+        target_set.add(target_key)
+        targets.append(
+            {
+                "method": method_name,
+                "url": normalized,
+                "params": self._normalize_param_names(all_params),
+                "source": source,
+                "original_values": self._parse_query_original_values(normalized),
+            }
+        )
+
+    def _extract_js_api_targets(self, base_url: str, content: str) -> List[Dict]:
+        targets = []
+        target_set = set()
+        merged_content = str(content or "")
+
+        for match in re.finditer(r"fetch\s*\(\s*([\"'`])([^\"'`]+)\1", merged_content, flags=re.I):
+            raw_url = str(match.group(2) or "").strip()
+            window = merged_content[match.start(): match.start() + self.JS_REQUEST_WINDOW_SIZE]
+            method_match = re.search(r"method\s*:\s*[\"']([A-Za-z]+)[\"']", window, flags=re.I)
+            method_name = str(method_match.group(1) or "GET").strip().upper() if method_match else "GET"
+            params = self._extract_js_param_names(window)
+            self._append_js_api_target(targets, target_set, base_url, raw_url, method_name, params, "js_api_extract")
+
+        for match in re.finditer(r"axios\.(get|post|put|delete|patch)\s*\(\s*([\"'`])([^\"'`]+)\2", merged_content, flags=re.I):
+            method_name = str(match.group(1) or "GET").strip().upper()
+            raw_url = str(match.group(3) or "").strip()
+            window = merged_content[match.start(): match.start() + self.JS_REQUEST_WINDOW_SIZE]
+            params = self._extract_js_param_names(window)
+            self._append_js_api_target(targets, target_set, base_url, raw_url, method_name, params, "js_api_extract")
+
+        for match in re.finditer(r"\$\.ajax\s*\(\s*\{", merged_content, flags=re.I):
+            window = merged_content[match.start(): match.start() + self.JS_REQUEST_WINDOW_SIZE]
+            url_match = re.search(r"url\s*:\s*([\"'`])([^\"'`]+)\1", window, flags=re.I)
+            if not url_match:
+                continue
+            method_match = re.search(r"(?:type|method)\s*:\s*[\"']([A-Za-z]+)[\"']", window, flags=re.I)
+            params = self._extract_js_param_names(window)
+            self._append_js_api_target(
+                targets,
+                target_set,
+                base_url,
+                str(url_match.group(2) or "").strip(),
+                str(method_match.group(1) or "GET").strip().upper() if method_match else "GET",
+                params,
+                "js_api_extract",
+            )
+
+        for match in re.finditer(r"\.open\s*\(\s*([\"'])(GET|POST|PUT|PATCH|DELETE)\1\s*,\s*([\"'`])([^\"'`]+)\3", merged_content, flags=re.I):
+            method_name = str(match.group(2) or "GET").strip().upper()
+            raw_url = str(match.group(4) or "").strip()
+            window = merged_content[match.start(): match.start() + self.JS_REQUEST_WINDOW_SIZE]
+            params = self._extract_js_param_names(window)
+            self._append_js_api_target(targets, target_set, base_url, raw_url, method_name, params, "js_api_extract")
+
+        targets.sort(key=lambda item: (-len(item.get("params", [])), item.get("url", "")))
+        return targets[: self.MAX_JS_API_TARGETS]
+
+    def _load_js_analysis(self, js_url: str) -> Optional[Dict]:
+        cached = self.js_analysis_cache.get(js_url)
+        if cached is not None:
+            return cached
+
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(js_url, cache_map=self.dns_policy_cache)
+        if not allow_scan:
+            logger.info(
+                "skip penetration js by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                    js_url,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            self.js_analysis_cache[js_url] = None
+            return None
+
+        try:
+            resp = self._request("GET", js_url, params={})
+        except Exception:
+            self.js_analysis_cache[js_url] = None
+            return None
+
+        status_code = int(getattr(resp, "status_code", 0) or 0)
+        if status_code >= 400:
+            self.js_analysis_cache[js_url] = None
+            return None
+
+        body = bytes(getattr(resp, "content", b"") or b"")[: self.JS_BODY_PREVIEW_BYTES]
+        if not body:
+            self.js_analysis_cache[js_url] = None
+            return None
+
+        try:
+            js_content = body.decode("utf-8", errors="ignore")
+        except Exception:
+            self.js_analysis_cache[js_url] = None
+            return None
+
+        decoded = self._decode_js_content(js_content)
+        merged_content = "{}\n{}".format(js_content, decoded) if decoded != js_content else js_content
+        analysis = {
+            "js_url": js_url,
+            "content": js_content,
+            "decoded": decoded,
+            "merged_content": merged_content,
+            "tainted_vars": self._extract_tainted_variables(merged_content),
+            "api_targets": self._extract_js_api_targets(js_url, merged_content),
+        }
+        self.js_analysis_cache[js_url] = analysis
+        return analysis
+
     def _extract_js_urls(self, records: List[Dict]) -> List[str]:
         urls = []
         url_set = set()
@@ -659,44 +1051,12 @@ class PenetrationScanService(object):
         return urls[: self.MAX_JS_TARGETS]
 
     def _scan_dom_xss_js(self, js_url: str, findings: List[Dict]):
-        allow_scan, policy_detail = utils.check_dns_policy_for_url(js_url, cache_map=self.dns_policy_cache)
-        if not allow_scan:
-            logger.info(
-                "skip dom xss js by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
-                    js_url,
-                    policy_detail.get("reason", ""),
-                    policy_detail.get("resolver_ips", []),
-                    policy_detail.get("system_ips", []),
-                )
-            )
+        analysis = self._load_js_analysis(js_url)
+        if not analysis:
             return
 
-        try:
-            resp = utils.http_req(
-                js_url,
-                method="get",
-                timeout=self.REQUEST_TIMEOUT,
-                waf_guard=self.waf_guard,
-                waf_module="penetration_test",
-            )
-        except Exception:
-            return
-
-        status_code = int(getattr(resp, "status_code", 0) or 0)
-        if status_code >= 400:
-            return
-
-        body = bytes(getattr(resp, "content", b"") or b"")[: 512 * 1024]
-        if not body:
-            return
-
-        try:
-            js_content = body.decode("utf-8", errors="ignore")
-        except Exception:
-            return
-
-        decoded = self._decode_js_content(js_content)
-        merged_content = "{}\n{}".format(js_content, decoded) if decoded != js_content else js_content
+        merged_content = str(analysis.get("merged_content", "") or "")
+        tainted_vars = set(analysis.get("tainted_vars") or set())
 
         for pattern, sink_name, severity in self.DOM_XSS_RULES:
             for match in re.finditer(pattern, merged_content, flags=re.I):
@@ -719,6 +1079,11 @@ class PenetrationScanService(object):
                         matched_source = source_name
                         break
                 if not matched_source:
+                    for var_name in tainted_vars:
+                        if re.search(r"\b{}\b".format(re.escape(var_name)), expr_lower):
+                            matched_source = "tainted_var:{}".format(var_name)
+                            break
+                if not matched_source:
                     continue
 
                 self._append_finding(
@@ -738,6 +1103,26 @@ class PenetrationScanService(object):
                     request_text="",
                     response_text="",
                 )
+
+    def _collect_js_seed_targets(self, records: List[Dict]) -> List[Dict]:
+        targets = []
+        target_set = set()
+        for js_url in self._extract_js_urls(records):
+            analysis = self._load_js_analysis(js_url)
+            if not analysis:
+                continue
+            for item in analysis.get("api_targets", []) or []:
+                target_key = self._stable_hash(
+                    item.get("method"),
+                    item.get("url"),
+                    ",".join(item.get("params", [])),
+                    item.get("source"),
+                )
+                if target_key in target_set:
+                    continue
+                target_set.add(target_key)
+                targets.append(item)
+        return targets
 
     def _test_dom_xss(self, findings: List[Dict], records: List[Dict]):
         for js_url in self._extract_js_urls(records):
@@ -802,7 +1187,7 @@ class PenetrationScanService(object):
         )
 
     def _test_sqli(self, target: Dict, findings: List[Dict]):
-        param_names = self._normalize_param_names(target.get("params", []))
+        param_names = self._get_target_param_names(target)
         if not param_names:
             return
 
@@ -900,6 +1285,8 @@ class PenetrationScanService(object):
             # 再做时间型检测，满足用户强调的基线差分能力。
             if any(item.get("param") == param_name and item.get("url") == target.get("url") for item in findings):
                 continue
+            if not target.get("test_policy", {}).get("allow_time_based", False):
+                continue
             time_params = normal_params.copy()
             time_payload = "1' AND SLEEP(5)--"
             time_params[param_name] = time_payload
@@ -930,7 +1317,7 @@ class PenetrationScanService(object):
                 )
 
     def _test_xss(self, target: Dict, findings: List[Dict]):
-        param_names = self._normalize_param_names(target.get("params", []))
+        param_names = self._get_target_param_names(target)
         if not param_names:
             return
 
@@ -962,7 +1349,9 @@ class PenetrationScanService(object):
                 )
 
     def _test_lfi(self, target: Dict, findings: List[Dict]):
-        param_names = self._normalize_param_names(target.get("params", []))
+        if not target.get("test_policy", {}).get("allow_intrusive", False):
+            return
+        param_names = self._get_target_param_names(target)
         if not param_names:
             return
 
@@ -996,7 +1385,9 @@ class PenetrationScanService(object):
                     break
 
     def _test_rce(self, target: Dict, findings: List[Dict]):
-        param_names = self._normalize_param_names(target.get("params", []))
+        if not target.get("test_policy", {}).get("allow_intrusive", False):
+            return
+        param_names = self._get_target_param_names(target)
         if not param_names:
             return
 
@@ -1012,30 +1403,31 @@ class PenetrationScanService(object):
             delay_params = baseline.get("original_params", {}).copy()
             delay_params[param_name] = delay_payload
             started_at = time.time()
-            try:
-                resp = self._request(target.get("method"), target.get("url"), params=delay_params, timeout=(5, 8))
-                elapsed = time.time() - started_at
-                body = str(getattr(resp, "text", "") or "")
-            except Exception as e:
-                elapsed = time.time() - started_at
-                body = str(e)
-                resp = None
+            if target.get("test_policy", {}).get("allow_time_based", False):
+                try:
+                    resp = self._request(target.get("method"), target.get("url"), params=delay_params, timeout=(5, 8))
+                    elapsed = time.time() - started_at
+                    body = str(getattr(resp, "text", "") or "")
+                except Exception as e:
+                    elapsed = time.time() - started_at
+                    body = str(e)
+                    resp = None
 
-            if elapsed >= max(baseline_time * 3.0, baseline_time + 4.0):
-                self._append_finding(
-                    findings,
-                    vuln_type="rce",
-                    vuln_name="远程代码执行",
-                    severity="critical",
-                    target=target,
-                    param_name=param_name,
-                    payload=delay_payload,
-                    detail="命令执行延时特征命中",
-                    evidence="baseline={:.2f}s test={:.2f}s".format(baseline_time, elapsed),
-                    request_text=self._safe_json({"method": target.get("method"), "params": delay_params}),
-                    response_text=self._summarize_response(resp, body) if resp is not None else body[:300],
-                )
-                continue
+                if elapsed >= max(baseline_time * 3.0, baseline_time + 4.0):
+                    self._append_finding(
+                        findings,
+                        vuln_type="rce",
+                        vuln_name="远程代码执行",
+                        severity="critical",
+                        target=target,
+                        param_name=param_name,
+                        payload=delay_payload,
+                        detail="命令执行延时特征命中",
+                        evidence="baseline={:.2f}s test={:.2f}s".format(baseline_time, elapsed),
+                        request_text=self._safe_json({"method": target.get("method"), "params": delay_params}),
+                        response_text=self._summarize_response(resp, body) if resp is not None else body[:300],
+                    )
+                    continue
 
             echo_params = baseline.get("original_params", {}).copy()
             echo_params[param_name] = echo_payload
@@ -1060,7 +1452,9 @@ class PenetrationScanService(object):
                 )
 
     def _test_ssti(self, target: Dict, findings: List[Dict]):
-        param_names = self._normalize_param_names(target.get("params", []))
+        if not target.get("test_policy", {}).get("allow_intrusive", False):
+            return
+        param_names = self._get_target_param_names(target)
         if not param_names:
             return
 
@@ -1095,7 +1489,9 @@ class PenetrationScanService(object):
                     break
 
     def _test_ssrf(self, target: Dict, findings: List[Dict]):
-        param_names = self._normalize_param_names(target.get("params", []))
+        if not target.get("test_policy", {}).get("allow_intrusive", False):
+            return
+        param_names = self._get_target_param_names(target)
         if not param_names:
             return
 
@@ -1129,12 +1525,14 @@ class PenetrationScanService(object):
                 )
 
     def _test_xxe(self, target: Dict, findings: List[Dict]):
+        if not target.get("test_policy", {}).get("allow_intrusive", False):
+            return
         method = str(target.get("method") or "GET").strip().upper()
         if method != "POST":
             return
 
         url_text = str(target.get("url") or "").strip().lower()
-        param_names = self._normalize_param_names(target.get("params", []))
+        param_names = self._get_target_param_names(target)
         if not (any(key in url_text for key in ("xml", "soap", "wsdl")) or any(self._param_matches_hint(name, "xxe") for name in param_names)):
             return
 
@@ -1202,6 +1600,13 @@ class PenetrationScanService(object):
             if not params:
                 return
 
+            test_policy = self._build_target_test_policy(
+                method=method,
+                url=url_text,
+                params=params,
+                source=str(item.get("source") or "").strip(),
+            )
+
             target_key = self._stable_hash(method, url_text, ",".join(params), item.get("source"))
             if target_key in target_hash_set:
                 return
@@ -1214,6 +1619,10 @@ class PenetrationScanService(object):
                     "params": params,
                     "source": str(item.get("source") or "").strip(),
                     "original_values": item.get("original_values") if isinstance(item.get("original_values"), dict) else {},
+                    "risk_score": int(test_policy.get("risk_score", 0) or 0),
+                    "risk_level": str(test_policy.get("risk_level", "") or "low"),
+                    "risk_reasons": list(test_policy.get("risk_reasons", []) or []),
+                    "test_policy": test_policy,
                 }
             )
 
@@ -1272,8 +1681,12 @@ class PenetrationScanService(object):
                     }
                 )
 
+        for item in self._collect_js_seed_targets(wih_records):
+            _append_target(item)
+
         targets.sort(
             key=lambda item: (
+                0 if item.get("risk_level") == "low" else 1 if item.get("risk_level") == "medium" else 2,
                 0 if item.get("source") == "page_form" else 1 if item.get("source") == "query_url" else 2,
                 -len(item.get("params", [])),
                 item.get("url", ""),
@@ -1293,6 +1706,15 @@ class PenetrationScanService(object):
 
         findings = []
         for target in targets:
+            if target.get("test_policy", {}).get("skip_active"):
+                logger.info(
+                    "skip penetration active fuzz target:{} risk:{} reasons:{}".format(
+                        target.get("url", ""),
+                        target.get("risk_level", "low"),
+                        ",".join(target.get("risk_reasons", []) or []),
+                    )
+                )
+                continue
             self._test_sqli(target, findings)
             self._test_xss(target, findings)
             self._test_lfi(target, findings)
@@ -1303,10 +1725,11 @@ class PenetrationScanService(object):
         self._test_dom_xss(findings, wih_records)
 
         logger.info(
-            "penetration scan done task_id:{} targets:{} findings:{}".format(
+            "penetration scan done task_id:{} targets:{} findings:{} js_cache:{}".format(
                 self.task_id,
                 len(targets),
                 len(findings),
+                len(self.js_analysis_cache),
             )
         )
         return {

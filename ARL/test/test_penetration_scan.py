@@ -149,6 +149,80 @@ class TestPenetrationScan(unittest.TestCase):
         self.assertEqual(1, len(findings))
         self.assertEqual("dom_xss", findings[0]["type"])
 
+    def test_dom_xss_static_analysis_tracks_tainted_variable(self):
+        """
+        source 先赋值给变量、再流入 sink 时，也应识别为 DOM XSS。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        findings = []
+        js_resp = SimpleNamespace(
+            status_code=200,
+            content=b"const hashValue = location.hash; document.body.innerHTML = hashValue;",
+            headers={},
+        )
+
+        with patch.object(service, "_request", return_value=js_resp), \
+                patch("app.services.penetration_scan.utils.check_dns_policy_for_url", return_value=(True, {})):
+            service._scan_dom_xss_js("https://example.com/static/app.js", findings)
+
+        self.assertEqual(1, len(findings))
+        self.assertEqual("dom_xss", findings[0]["type"])
+        self.assertIn("tainted_var", findings[0]["param"])
+
+    def test_extract_js_api_targets_collects_endpoint_and_param_names(self):
+        """
+        应能从 fetch / axios / ajax 中提取 API 端点与参数名。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        content = """
+        fetch('/api/search?scene=web', {
+          method: 'POST',
+          body: JSON.stringify({ keyword: query, page: currentPage })
+        });
+        axios.get('/api/user/detail', { params: { id: userId, profile: mode } });
+        $.ajax({ url: '/api/profile/update', type: 'POST', data: { nickname: nickName, email: mail } });
+        """
+
+        targets = service._extract_js_api_targets("https://example.com/static/app.js", content)
+        target_map = {item["url"]: item for item in targets}
+
+        self.assertIn("https://example.com/api/search?scene=web", target_map)
+        self.assertIn("keyword", target_map["https://example.com/api/search?scene=web"]["params"])
+        self.assertIn("page", target_map["https://example.com/api/search?scene=web"]["params"])
+        self.assertIn("scene", target_map["https://example.com/api/search?scene=web"]["params"])
+        self.assertIn("https://example.com/api/user/detail", target_map)
+        self.assertIn("id", target_map["https://example.com/api/user/detail"]["params"])
+        self.assertIn("https://example.com/api/profile/update", target_map)
+        self.assertIn("nickname", target_map["https://example.com/api/profile/update"]["params"])
+
+    def test_assess_target_risk_marks_dangerous_payment_form_as_critical(self):
+        """
+        危险动作表单应被标记为高风险，避免主动插入脏数据。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+
+        risk_info = service._build_target_test_policy(
+            method="POST",
+            url="https://example.com/api/payment/checkout",
+            params=["amount", "csrf_token"],
+            source="page_form",
+        )
+
+        self.assertTrue(risk_info["skip_active"])
+        self.assertEqual("critical", risk_info["risk_level"])
+
     def test_sqli_boolean_based_diff_detects_true_false_split(self):
         """
         当 true 请求接近基线、false 请求明显偏离时，应命中布尔型 SQL 注入。
