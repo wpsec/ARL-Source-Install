@@ -20,13 +20,14 @@
 - 包含样式和格式化
 """
 
-from flask import  make_response, request
+from flask import make_response, request
 from flask_restx import Resource, Namespace
 from openpyxl import Workbook
 from bson import ObjectId
 import re
 from datetime import datetime
 from collections import Counter
+from html import escape
 from openpyxl.writer.excel import save_virtual_workbook
 from openpyxl.styles import Font, Color, PatternFill, Alignment, Border, Side
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -39,6 +40,242 @@ from urllib.parse import quote
 ns = Namespace('export', description="任务报告导出接口")
 
 logger = get_logger()
+
+
+def normalize_export_format(value):
+    """
+    规范化导出格式，兼容 table/excel/xlsx/html 等输入。
+    """
+    export_format = sanitize_excel_value(value).strip().lower()
+    if export_format in ["html", "htm"]:
+        return "html"
+    if export_format in ["table", "excel", "xlsx"]:
+        return "excel"
+    return "excel"
+
+
+def build_export_response(file_content, filename, content_type):
+    """
+    构建统一的文件下载响应。
+    """
+    response = make_response(file_content)
+    response.headers['Content-Type'] = content_type
+    response.headers["Content-Disposition"] = "attachment; filename={}".format(quote(filename))
+    return response
+
+
+def _normalize_html_cell_value(value):
+    """
+    将工作表单元格值转换为适合 HTML 展示的安全文本。
+    """
+    text = sanitize_excel_value(value).replace("\r\n", "\n").replace("\r", "\n")
+    return escape(text)
+
+
+def render_workbook_html(wb, title):
+    """
+    将导出工作簿渲染为 HTML 报告，保持与 Excel 工作表内容一致。
+    """
+    report_title = escape(sanitize_excel_value(title) or "ARL任务报告")
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    sections = []
+    for ws in wb.worksheets:
+        rows = []
+        for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column, values_only=True):
+            rows.append([_normalize_html_cell_value(cell) for cell in row])
+
+        if not rows:
+            continue
+
+        header = rows[0]
+        body = rows[1:]
+        header_html = "".join("<th>{}</th>".format(cell or "&nbsp;") for cell in header)
+
+        if body:
+            body_html = "".join(
+                "<tr>{}</tr>".format("".join("<td>{}</td>".format(cell or "&nbsp;") for cell in row))
+                for row in body
+            )
+        else:
+            body_html = "<tr><td colspan='{}' class='empty-cell'>暂无数据</td></tr>".format(max(len(header), 1))
+
+        sections.append(
+            """
+            <section class="sheet-card">
+              <div class="sheet-header">
+                <h2>{title}</h2>
+                <span>{count} 行</span>
+              </div>
+              <div class="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>{header}</tr>
+                  </thead>
+                  <tbody>
+                    {body}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            """.format(
+                title=escape(sanitize_excel_value(ws.title)),
+                count=max(len(body), 0),
+                header=header_html,
+                body=body_html,
+            )
+        )
+
+    html = """
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>{title}</title>
+      <style>
+        :root {{
+          color-scheme: light;
+          --bg: #f4f7fb;
+          --card: #ffffff;
+          --border: #d8e1ee;
+          --text: #1f2937;
+          --muted: #6b7280;
+          --accent: #1958a6;
+          --accent-soft: #edf4ff;
+        }}
+        * {{
+          box-sizing: border-box;
+        }}
+        body {{
+          margin: 0;
+          font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+          background: linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+          color: var(--text);
+        }}
+        .page {{
+          max-width: 1500px;
+          margin: 0 auto;
+          padding: 32px 20px 48px;
+        }}
+        .hero {{
+          background: linear-gradient(135deg, #ffffff 0%, #eef5ff 100%);
+          border: 1px solid var(--border);
+          border-radius: 24px;
+          padding: 28px 30px;
+          box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+          margin-bottom: 24px;
+        }}
+        .hero h1 {{
+          margin: 0 0 10px;
+          font-size: 30px;
+          line-height: 1.2;
+        }}
+        .hero p {{
+          margin: 0;
+          color: var(--muted);
+          font-size: 14px;
+        }}
+        .sheet-list {{
+          display: grid;
+          gap: 20px;
+        }}
+        .sheet-card {{
+          background: var(--card);
+          border: 1px solid var(--border);
+          border-radius: 20px;
+          box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+          overflow: hidden;
+        }}
+        .sheet-header {{
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 18px 20px;
+          border-bottom: 1px solid var(--border);
+          background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        }}
+        .sheet-header h2 {{
+          margin: 0;
+          font-size: 18px;
+        }}
+        .sheet-header span {{
+          color: var(--muted);
+          font-size: 13px;
+        }}
+        .table-wrapper {{
+          overflow-x: auto;
+        }}
+        table {{
+          width: 100%;
+          border-collapse: collapse;
+          min-width: 760px;
+        }}
+        th, td {{
+          padding: 12px 14px;
+          border-bottom: 1px solid var(--border);
+          border-right: 1px solid var(--border);
+          text-align: left;
+          vertical-align: top;
+          white-space: pre-wrap;
+          word-break: break-word;
+          font-size: 13px;
+          line-height: 1.6;
+        }}
+        th:last-child, td:last-child {{
+          border-right: 0;
+        }}
+        thead th {{
+          position: sticky;
+          top: 0;
+          background: var(--accent);
+          color: #ffffff;
+          font-weight: 700;
+          z-index: 1;
+        }}
+        tbody tr:nth-child(even) {{
+          background: var(--accent-soft);
+        }}
+        .empty-cell {{
+          text-align: center;
+          color: var(--muted);
+        }}
+        @media (max-width: 768px) {{
+          .page {{
+            padding: 20px 12px 36px;
+          }}
+          .hero {{
+            padding: 22px 18px;
+          }}
+          .hero h1 {{
+            font-size: 24px;
+          }}
+          th, td {{
+            padding: 10px 12px;
+            font-size: 12px;
+          }}
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="page">
+        <section class="hero">
+          <h1>{title}</h1>
+          <p>生成时间：{generated_at}</p>
+        </section>
+        <div class="sheet-list">
+          {sections}
+        </div>
+      </div>
+    </body>
+    </html>
+    """.format(
+        title=report_title,
+        generated_at=escape(generated_at),
+        sections="".join(sections),
+    )
+    return html.encode("utf-8")
 
 
 def sanitize_excel_value(value):
@@ -256,17 +493,17 @@ class ARLExport(Resource):
         if not task_data:
             return "not found"
 
+        export_format = normalize_export_format(request.args.get("format", "excel"))
         # 生成文件名（截取目标前20个字符）
         domain = task_data["target"].replace("/", "_")[:20]
+        if export_format == "html":
+            filename = "ARL资产导出报告_{}.html".format(domain)
+            html_data = export_arl_html(task_id)
+            return build_export_response(html_data, filename, "text/html; charset=utf-8")
+
         filename = "ARL资产导出报告_{}.xlsx".format(domain)
-
-        # 生成Excel数据
         excel_data = export_arl(task_id)
-        response = make_response(excel_data)
-        response.headers['Content-Type'] = 'application/octet-stream'
-        response.headers["Content-Disposition"] = "attachment; filename={}".format(quote(filename))
-
-        return response
+        return build_export_response(excel_data, filename, "application/octet-stream")
 
 
 
@@ -300,6 +537,7 @@ class ARLBatchExcel(Resource):
                 return {"error": "请求体为空"}, 400
                 
             task_ids = data.get("task_ids", [])
+            export_format = normalize_export_format(data.get("format", "excel"))
             
             if not task_ids or not isinstance(task_ids, list):
                 return {"error": "task_ids 必须是非空的列表"}, 400
@@ -310,16 +548,14 @@ class ARLBatchExcel(Resource):
                 return {"error": "任务不存在"}, 404
             
             task_name = first_task.get("name", "未知")
+            if export_format == "html":
+                filename = "ARL批量导出报告_{}.html".format(task_name[:20])
+                html_data = export_merge_tasks_html(task_ids)
+                return build_export_response(html_data, filename, "text/html; charset=utf-8")
+
             filename = "ARL批量导出报告_{}.xlsx".format(task_name[:20])
-            
-            # 生成整合Excel
             excel_data = export_merge_tasks(task_ids)
-            
-            response = make_response(excel_data)
-            response.headers['Content-Type'] = 'application/octet-stream'
-            response.headers["Content-Disposition"] = "attachment; filename={}".format(quote(filename))
-            
-            return response
+            return build_export_response(excel_data, filename, "application/octet-stream")
         except Exception as e:
             logger.exception("批量导出失败: {}".format(str(e)))
             return {"error": "导出失败: {}".format(str(e))}, 500
@@ -1656,11 +1892,11 @@ class SaveTask(object):
     def build_vuln_xl(self):
         _build_vuln_sheet(self.wb, [self.task_id])
 
-    def run(self):
+    def build_workbook(self):
         task_data = get_task_data(self.task_id)
         if not task_data:
             print("not found {}".format(self.task_id))
-            return
+            return None
 
         domain = task_data["target"].replace("/", "_")[:20]
 
@@ -1681,24 +1917,54 @@ class SaveTask(object):
         self.build_vuln_xl()
         self.build_statist()
 
-        return save_virtual_workbook(self.wb)
+        return self.wb
+
+    def run(self):
+        workbook = self.build_workbook()
+        if not workbook:
+            return None
+
+        return save_virtual_workbook(workbook)
+
+
+def build_single_task_workbook(task_id):
+    """
+    构建单任务导出工作簿，供 Excel/HTML 两种格式复用。
+    """
+    task_id = task_id.strip()
+    save = SaveTask(task_id)
+    return save.build_workbook()
 
 
 def export_arl(task_id):
-    task_id = task_id.strip()
-    save = SaveTask(task_id)
-    return save.run()
+    workbook = build_single_task_workbook(task_id)
+    if not workbook:
+        return None
+    return save_virtual_workbook(workbook)
 
 
-def export_merge_tasks(task_id_list):
+def export_arl_html(task_id):
     """
-    整合导出多个任务的数据
+    导出单任务 HTML 报告。
+    """
+    workbook = build_single_task_workbook(task_id)
+    if not workbook:
+        return None
+    task_data = get_task_data(task_id.strip()) or {}
+    target = sanitize_excel_value(task_data.get("target", "")).strip() or sanitize_excel_value(task_id)
+    title = "ARL资产导出报告 - {}".format(target)
+    return render_workbook_html(workbook, title)
+
+
+def build_merge_tasks_workbook(task_id_list):
+    """
+    整合多个任务并构建统一工作簿，供 Excel/HTML 两种格式复用。
     
     参数：
         task_id_list: 任务ID列表
     
     返回：
-        合并后的Excel文件二进制数据
+        Workbook 对象
     
     说明：
     - 合并多个任务的所有扫描数据
@@ -2001,4 +2267,32 @@ def export_merge_tasks(task_id_list):
     ws["K28"] = statist["product_total"]
     set_sheet_style(ws)
 
-    return save_virtual_workbook(wb)
+    return wb
+
+
+def export_merge_tasks(task_id_list):
+    workbook = build_merge_tasks_workbook(task_id_list)
+    return save_virtual_workbook(workbook)
+
+
+def export_merge_tasks_html(task_id_list):
+    """
+    导出批量任务 HTML 报告。
+    """
+    workbook = build_merge_tasks_workbook(task_id_list)
+    task_names = []
+    for task_id in _normalize_task_id_list(task_id_list):
+        task_data = get_task_data(task_id)
+        if not task_data:
+            continue
+        task_name = sanitize_excel_value(task_data.get("name", "")).strip()
+        if task_name and task_name not in task_names:
+            task_names.append(task_name)
+
+    title = "ARL批量导出报告"
+    if task_names:
+        title = "{} - {}".format(title, " / ".join(task_names[:3]))
+        if len(task_names) > 3:
+            title = "{} 等{}个任务".format(title, len(task_names))
+
+    return render_workbook_html(workbook, title)

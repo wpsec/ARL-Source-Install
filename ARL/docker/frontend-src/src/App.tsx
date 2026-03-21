@@ -131,6 +131,8 @@ type ApiRequestOptions = {
   download?: boolean;
 };
 
+type TaskReportExportFormat = 'excel' | 'html';
+
 const API_BASE = '/api';
 const TOKEN_KEY = 'arl-token';
 const USERNAME_KEY = 'arl-username';
@@ -151,6 +153,10 @@ const CONSOLE_FILE_INPUT_CLASS =
   'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
 const CONSOLE_CHECKBOX_CARD_CLASS =
   'flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 h-10 text-sm';
+const TASK_REPORT_EXPORT_OPTIONS: Array<{ label: string; value: TaskReportExportFormat }> = [
+  { label: '表格格式', value: 'excel' },
+  { label: 'HTML格式', value: 'html' },
+];
 
 const modules: ModuleConfig[] = [
   {
@@ -5811,6 +5817,7 @@ function TableModuleView({
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
+  const [taskReportExportMenu, setTaskReportExportMenu] = useState('');
   const [taskErrorDialog, setTaskErrorDialog] = useState<{
     taskId: string;
     taskName: string;
@@ -6511,7 +6518,6 @@ function TableModuleView({
         'task_batch_export_port',
         'task_batch_export_site',
         'task_batch_export_url',
-        'task_batch_excel_report',
       ];
       return taskVisibleActionIds
         .map((id) => moduleActions.find((action) => action.id === id))
@@ -6748,6 +6754,28 @@ function TableModuleView({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [closeRiskDialog, riskDialogOpen]);
+
+  useEffect(() => {
+    if (!taskReportExportMenu) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.('[data-task-report-export-menu="true"]')) return;
+      setTaskReportExportMenu('');
+    };
+
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setTaskReportExportMenu('');
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [taskReportExportMenu]);
 
   const openAssetSiteRiskDialog = async () => {
     if (module.id !== 'asset_site') return;
@@ -7193,6 +7221,55 @@ function TableModuleView({
     onOpenModule('github_result', { github_task_id: taskId });
   };
 
+  const toggleTaskReportExportMenu = (menuKey: string) => {
+    setTaskReportExportMenu((current) => (current === menuKey ? '' : menuKey));
+  };
+
+  const resolveTaskReportExportIds = useCallback(async () => {
+    if (module.id !== 'task') return [];
+    if (selectedIds.length > 0) return [...selectedIds];
+
+    const taskName = taskNameSearchText;
+    if (!taskName) return [];
+
+    return await fetchTaskIdsByName(taskName);
+  }, [fetchTaskIdsByName, module.id, selectedIds, taskNameSearchText]);
+
+  const runTaskBatchReportExport = async (format: TaskReportExportFormat) => {
+    if (module.id !== 'task') return;
+
+    setTaskReportExportMenu('');
+    setError('');
+
+    let taskIds: string[] = [];
+    try {
+      taskIds = await resolveTaskReportExportIds();
+    } catch (err: any) {
+      setError(err?.message || '获取任务列表失败');
+      return;
+    }
+
+    if (taskIds.length === 0) {
+      setError('请先勾选任务，或输入任务名后再导出报告');
+      return;
+    }
+
+    setSuccess(`正在导出${format === 'html' ? 'HTML' : '表格'}报告，请稍候...`);
+    try {
+      await requestApi(token, '/export/batch', {
+        method: 'POST',
+        body: {
+          task_ids: taskIds,
+          format,
+        },
+        download: true,
+      });
+      setSuccess(`${format === 'html' ? 'HTML' : '表格'}报告导出成功`);
+    } catch (err: any) {
+      setError(err?.message || '报告导出失败');
+    }
+  };
+
   const stopTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
@@ -7265,19 +7342,21 @@ function TableModuleView({
     }
   };
 
-  const exportTaskRow = async (taskId: string) => {
+  const exportTaskRow = async (taskId: string, format: TaskReportExportFormat = 'excel') => {
     if (module.id !== 'task') return;
     if (!taskId) return;
     if (taskRowPendingActionMap[taskId]) return;
+    setTaskReportExportMenu('');
     markTaskRowActionPending(taskId, 'export');
     setError('');
-    setSuccess('正在导出任务结果，请稍候...');
+    setSuccess(`正在导出${format === 'html' ? 'HTML' : '表格'}报告，请稍候...`);
     try {
       await requestApi(token, `/export/${taskId}`, {
         method: 'GET',
+        query: { format },
         download: true,
       });
-      setSuccess('导出成功');
+      setSuccess(`${format === 'html' ? 'HTML' : '表格'}报告导出成功`);
     } catch (err: any) {
       setError(err?.message || '导出失败');
     } finally {
@@ -7330,6 +7409,8 @@ function TableModuleView({
 
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
+  const canUseTaskNameForReportExport = module.id === 'task' && selectedIds.length === 0 && Boolean(taskNameSearchText);
+  const taskReportExportDisabled = module.id === 'task' && selectedIds.length === 0 && !canUseTaskNameForReportExport;
   const showTaskRowOperate = module.id === 'task';
   const showAssetScopeRowOperate = module.id === 'asset_scope';
   const showPolicyRowOperate = module.id === 'policy';
@@ -7346,6 +7427,8 @@ function TableModuleView({
   const rowOperateGroupClass = 'inline-flex flex-nowrap items-center justify-center gap-2 min-w-max';
   const rowOperateButtonClass = 'px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition shrink-0';
   const rowOperateButtonDisabledClass = `${rowOperateButtonClass} disabled:opacity-40 disabled:cursor-not-allowed`;
+  const taskReportMenuItemClass =
+    'block w-full text-left px-3 py-2 text-sm font-medium hover:bg-brand-bg/70 transition';
   const rowOperateColumnWidthClass = showAssetScopeRowOperate
     ? 'min-w-[760px]'
     : showTaskRowOperate
@@ -7650,7 +7733,7 @@ function TableModuleView({
               刷新
             </button>
 
-            {module.exportPath ? (
+            {module.exportPath && module.id !== 'task' ? (
               <button
                 onClick={() => void runExport()}
                 className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
@@ -7684,6 +7767,34 @@ function TableModuleView({
                 </button>
               );
             })}
+            {module.id === 'task' ? (
+              <div className="relative" data-task-report-export-menu="true">
+                <button
+                  type="button"
+                  onClick={() => toggleTaskReportExportMenu('batch')}
+                  disabled={taskReportExportDisabled}
+                  className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  报告导出
+                  <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === 'batch' ? 'rotate-180' : ''}`} />
+                </button>
+                {taskReportExportMenu === 'batch' ? (
+                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] overflow-hidden rounded-xl border border-brand-border bg-brand-card shadow-2xl">
+                    {TASK_REPORT_EXPORT_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => void runTaskBatchReportExport(option.value)}
+                        className={taskReportMenuItemClass}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {module.id === 'asset_scope' && module.exportPath ? (
               <button
                 onClick={() => void runExport()}
@@ -8172,13 +8283,31 @@ function TableModuleView({
                                   >
                                     {taskRowPendingAction === 'sync' ? '同步中...' : '同步'}
                                   </button>
-                                  <button
-                                    onClick={() => void exportTaskRow(id)}
-                                    disabled={taskRowPending}
-                                    className={rowOperateButtonDisabledClass}
-                                  >
-                                    {taskRowPendingAction === 'export' ? '导出中...' : '导出'}
-                                  </button>
+                                  <div className="relative" data-task-report-export-menu="true">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleTaskReportExportMenu(`row:${id}`)}
+                                      disabled={taskRowPending}
+                                      className={`${rowOperateButtonDisabledClass} flex items-center gap-1`}
+                                    >
+                                      {taskRowPendingAction === 'export' ? '导出中...' : '导出'}
+                                      <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === `row:${id}` ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    {taskReportExportMenu === `row:${id}` && !taskRowPending ? (
+                                      <div className="absolute right-0 top-full z-20 mt-2 min-w-[140px] overflow-hidden rounded-xl border border-brand-border bg-brand-card shadow-2xl">
+                                        {TASK_REPORT_EXPORT_OPTIONS.map((option) => (
+                                          <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => void exportTaskRow(id, option.value)}
+                                            className={taskReportMenuItemClass}
+                                          >
+                                            {option.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </div>
                                   <button
                                     onClick={() => void stopTaskRow(id)}
                                     disabled={taskRowPending || taskRowDone}

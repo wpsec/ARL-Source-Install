@@ -15,11 +15,12 @@ from unittest.mock import patch
 IMPORT_ERROR = None
 try:
     from openpyxl import load_workbook
-    from app.routes.export import export_merge_tasks, SaveTask, build_task_export_summary
+    from app.routes.export import export_merge_tasks, export_merge_tasks_html, SaveTask, build_task_export_summary
     from app import create_app
 except Exception as exc:
     load_workbook = None
     export_merge_tasks = None
+    export_merge_tasks_html = None
     SaveTask = None
     build_task_export_summary = None
     create_app = None
@@ -84,6 +85,45 @@ class TestBatchExport(unittest.TestCase):
         # 验证文件名包含任务名
         content_disposition = response.headers.get('Content-Disposition', '')
         self.assertIn('ARL批量导出报告_测试任务1.xlsx', content_disposition)
+
+    @patch('app.routes.export.export_merge_tasks_html')
+    @patch('app.routes.export.get_task_data')
+    def test_batch_export_api_html_success(self, mock_get_task_data, mock_export_merge_tasks_html):
+        """测试批量 HTML 导出 API 成功情况"""
+        mock_get_task_data.return_value = self.mock_task_data
+        mock_export_merge_tasks_html.return_value = b"<html><body>demo</body></html>"
+
+        response = self.client.post(
+            '/api/export/batch',
+            data=json.dumps({
+                "task_ids": ["test_task_1"],
+                "format": "html",
+            }),
+            content_type='application/json',
+            headers={'Token': 'test_token'}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/html', response.content_type)
+        content_disposition = response.headers.get('Content-Disposition', '')
+        self.assertIn('ARL批量导出报告_测试任务1.html', content_disposition)
+
+    @patch('app.routes.export.export_arl_html')
+    @patch('app.routes.export.get_task_data')
+    def test_single_export_api_html_success(self, mock_get_task_data, mock_export_arl_html):
+        """测试单任务 HTML 导出 API 成功情况"""
+        mock_get_task_data.return_value = self.mock_task_data
+        mock_export_arl_html.return_value = b"<html><body>single-demo</body></html>"
+
+        response = self.client.get(
+            '/api/export/test_task_1?format=html',
+            headers={'Token': 'test_token'}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/html', response.content_type)
+        content_disposition = response.headers.get('Content-Disposition', '')
+        self.assertIn('ARL资产导出报告_example.com.html', content_disposition)
 
     def test_batch_export_api_invalid_request(self):
         """测试批量导出API无效请求"""
@@ -214,6 +254,53 @@ class TestBatchExport(unittest.TestCase):
             )
         finally:
             wb.close()
+
+    @patch('app.routes.export.get_nuclei_result_data')
+    @patch('app.routes.export.get_vuln_data')
+    @patch('app.routes.export.get_wih_data')
+    @patch('app.routes.export.get_fileleak_data')
+    @patch('app.routes.export.get_url_data')
+    @patch('app.routes.export.get_cert_data')
+    @patch('app.routes.export.get_service_data')
+    @patch('app.routes.export.get_task_data')
+    @patch('app.routes.export.get_ip_data')
+    @patch('app.routes.export.get_domain_data')
+    @patch('app.routes.export.get_site_data')
+    def test_export_merge_tasks_html_function(
+        self,
+        mock_get_site_data,
+        mock_get_domain_data,
+        mock_get_ip_data,
+        mock_get_task_data,
+        mock_get_service_data,
+        mock_get_cert_data,
+        mock_get_url_data,
+        mock_get_fileleak_data,
+        mock_get_wih_data,
+        mock_get_vuln_data,
+        mock_get_nuclei_result_data,
+    ):
+        """测试批量 HTML 导出函数输出 HTML 报告。"""
+        mock_get_task_data.return_value = {"_id": "task_1", "name": "任务1", "target": "example.com"}
+        mock_get_ip_data.return_value = [{"ip": "192.168.1.1", "port_info": [{"port_id": 80, "service_name": "http"}], "geo_city": {}, "geo_asn": {}, "domain": [], "os_info": {}, "cdn_name": "", "ip_type": ""}]
+        mock_get_domain_data.return_value = [{"domain": "www.example.com", "type": "A", "record": ["1.1.1.1"], "ips": ["1.1.1.1"]}]
+        mock_get_site_data.return_value = [{"site": "http://www.example.com", "title": "Example Site", "finger": [], "status": 200, "favicon": {}}]
+        mock_get_service_data.return_value = []
+        mock_get_cert_data.return_value = []
+        mock_get_url_data.return_value = []
+        mock_get_fileleak_data.return_value = []
+        mock_get_wih_data.return_value = []
+        mock_get_vuln_data.return_value = []
+        mock_get_nuclei_result_data.return_value = []
+
+        result = export_merge_tasks_html(["task_1"])
+
+        self.assertIsInstance(result, bytes)
+        html = result.decode("utf-8")
+        self.assertIn("<html", html)
+        self.assertIn("ARL批量导出报告", html)
+        self.assertIn("站点", html)
+        self.assertIn("Example Site", html)
 
     @patch.object(SaveTask, 'build_statist')
     @patch.object(SaveTask, 'build_vuln_xl')
