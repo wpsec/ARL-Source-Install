@@ -23,13 +23,15 @@ def parse_human_rule(rule):
         "html": [],
         "title": [],
         "headers": [],
-        "favicon_hash": []
+        "favicon_hash": [],
+        "url": [],
     }
     key_map = {
         "body": "html",
         "title": "title",
         "header": "headers",
-        "icon_hash": "favicon_hash"
+        "icon_hash": "favicon_hash",
+        "url": "url",
     }
     split_result = rule.split("||")
     empty_flag = True
@@ -75,7 +77,8 @@ def transform_rule_map(rule):
         "html": "body",
         "title": "title",
         "headers": "header",
-        "favicon_hash": "icon_hash"
+        "favicon_hash": "icon_hash",
+        "url": "url",
     }
     human_rule_list = []
     for key in rule:

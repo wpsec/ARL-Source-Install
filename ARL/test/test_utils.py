@@ -1,17 +1,29 @@
 import unittest
-from app.utils.fingerprint import parse_human_rule, transform_rule_map, \
-    fetch_fingerprint, load_fingerprint
-from app import utils
+
+IMPORT_ERROR = None
+try:
+    from app.utils.fingerprint import parse_human_rule, transform_rule_map, \
+        fetch_fingerprint, load_fingerprint
+    from app import utils
+except Exception as exc:
+    parse_human_rule = None
+    transform_rule_map = None
+    fetch_fingerprint = None
+    load_fingerprint = None
+    utils = None
+    IMPORT_ERROR = exc
 
 
+@unittest.skipIf(IMPORT_ERROR is not None, "requires utils test dependencies: {}".format(IMPORT_ERROR))
 class TestCDNName(unittest.TestCase):
     def test_parse_human_rule(self):
-        human_rule = 'header="test.php" || body="test.gif" || title="test title" || body="test22.gif"'
+        human_rule = 'header="test.php" || body="test.gif" || title="test title" || url="/zentao/user" || body="test22.gif"'
         rule_map = parse_human_rule(human_rule)
 
         self.assertTrue(rule_map["html"][0] == "test.gif")
         self.assertTrue(rule_map["headers"][0] == "test.php")
         self.assertTrue(rule_map["title"][0] == "test title")
+        self.assertTrue(rule_map["url"][0] == "/zentao/user")
 
         human_rule = "xx=fdf || fdf=xxx"
         rule_map = parse_human_rule(human_rule)
@@ -25,10 +37,11 @@ class TestCDNName(unittest.TestCase):
         self.assertTrue(fld == "baidu.com")
 
     def test_transform_rule_map(self):
-        human_rule = 'header="test.php" || body="test.gif" || title="test title" || body="test22.gif"'
+        human_rule = 'header="test.php" || body="test.gif" || title="test title" || url="/zentao/user" || body="test22.gif"'
         rule_map = parse_human_rule(human_rule)
         human_rule = transform_rule_map(rule_map)
         self.assertTrue('title="test title"' in human_rule)
+        self.assertTrue('url="/zentao/user"' in human_rule)
 
     def test_fetch_fingerprint(self):
         site = "https://www.baidu.com/"

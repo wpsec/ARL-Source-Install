@@ -5,6 +5,8 @@
 
 ## 2026-03-22（未发布）
 
+- `[未发布]` 指纹识别链路增强：在保留现有 `human_rule + Mongo/Redis 缓存 + kscan` 架构的前提下，补齐标准化 JSON 指纹规则兼容能力，`import_fingerprint` 与 `kscan` 运行时加载链路均可直接承接 `name/method/keyword` 结构并自动去重；表达式引擎新增 `url` 变量，支持 `url/path` 型指纹落入现有识别体系；站点识别结果改为按命中特征给出差异化置信度，不再统一写死为 `80`
+- `[未发布]` 版本主线升级：版本号正式切入 `v4` 主线，后续新能力与结构性增强统一按 `v4.x` 演进
 - `[未发布]` Celery / RabbitMQ heartbeat 稳态增强：Celery 侧显式固定 `broker_heartbeat=120` 与 `broker_heartbeat_checkrate=2.0`，RabbitMQ 改为通过独立 `rabbitmq.conf` 固定 `heartbeat=120`，降低宿主机或容器短时卡顿导致的 `Too many heartbeats missed` 误判断链概率；同时回归测试补充心跳默认值断言。`consumer_timeout` 不再额外上调，沿用 RabbitMQ 默认值，避免与“故障检测时长”语义混淆
 - `[未发布]` 配置入口收敛与日志维护：将 heartbeat 调优保留为项目内部固定值，不再暴露到 `config-docker.yaml`、示例配置和配置管理页面，减少误配空间；并修正更新日志顶部时间轴与版本区间顺序
 - `[未发布]` Web 信息收集链路增强：在保留 `WIH -> URLFinder -> URLFinder 二次敏感扫描 -> TruffleHog` 主链路的前提下，新增受控 `页面情报提取` 与 `API 文档解析`，补充页面链接、表单、脚本入口以及 `Swagger/OpenAPI/Postman` 文档端点发现；同时将 `js_intel_scan` 收敛为“JS 端点/API 文档入口增强器”，不再重复承担 `WIH` 已覆盖的 secrets 与子域名识别职责，避免双规则源带来的重复命中与维护成本

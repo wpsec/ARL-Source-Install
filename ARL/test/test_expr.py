@@ -1,8 +1,16 @@
+import unittest
 from unittest import TestCase
-from app.services import expr
 import timeit
 
+IMPORT_ERROR = None
+try:
+    from app.services import expr
+except Exception as exc:
+    expr = None
+    IMPORT_ERROR = exc
 
+
+@unittest.skipIf(IMPORT_ERROR is not None, "requires expr test dependencies: {}".format(IMPORT_ERROR))
 class TestExpression(TestCase):
     def test_valid_expressions(self):
         test_cases = [
@@ -11,6 +19,7 @@ class TestExpression(TestCase):
             ('!(body == "jeecms" && body == "http://wwwjeecms.com") && body != "powered by"', True),
             ('(title == "jeecms" && body="http://wwwjeecms.com") || header = "powered by jeecms"', True),
             ('(title=="jeecms"&&body="http://wwwjeecms.com")||header="powered by jeecms"', True),
+            ('url = "/zentao/user"', True),
         ]
 
         for expression, expected_result in test_cases:
@@ -32,13 +41,15 @@ class TestExpression(TestCase):
             ('icon_hash != "11111111"', True),
             ('body != "test" && icon_hash != "116323821"', False),
             ('body="test"&&icon_hash=="116323821"', True),
+            ('url = "/zentao/user"', True),
         ]
 
         variables = {
             'body': "body test1",
             'header': "header test2",
             'title': "title \" test3",
-            'icon_hash': "116323821"
+            'icon_hash': "116323821",
+            'url': "https://demo.local/zentao/user-login.html",
         }
 
         for expression, expected_result in test_cases:
@@ -51,12 +62,11 @@ class TestExpression(TestCase):
             'body': "body" * 1024 * 100 + "_test",
             'header': "header test2",
             'title': "title \" test3",
-            'icon_hash': "116323821"
+            'icon_hash': "116323821",
+            'url': "https://demo.local/test",
         }
 
         print(timeit.timeit(lambda: expr.evaluate(expression, variables), number=1000))
 
         parsed = expr.parse_expression(expression)
         print(timeit.timeit(lambda: expr.evaluate_expression(parsed, variables), number=1000))
-
-

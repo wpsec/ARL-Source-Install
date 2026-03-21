@@ -30,21 +30,37 @@ class FetchSite(BaseThread):
 
     def fetch_fingerprint(self, item, content):
         favicon_hash = item["favicon"].get("hash", 0)
-        result = fetch_fingerprint(content=content, headers=item["headers"],
-                                   title=item["title"], favicon_hash=favicon_hash,
-                                   finger_list=self.fingerprint_list)
+        basic_names = fetch_fingerprint(
+            content=content,
+            headers=item["headers"],
+            title=item["title"],
+            favicon_hash=favicon_hash,
+            finger_list=self.fingerprint_list,
+        )
+        detail_list = finger_identify_detail(
+            content=content,
+            header=item["headers"],
+            title=item["title"],
+            favicon_hash=str(favicon_hash),
+            url=item["site"],
+        )
 
-        result_db = finger_identify(content=content, header=item["headers"],
-                                    title=item["title"], favicon_hash=str(favicon_hash))
+        merged = {}
+        for name in basic_names:
+            merged[name] = max(merged.get(name, 0), 80)
 
-        result = set(result + result_db)
+        for detail in detail_list:
+            name = str(detail.get("name", "")).strip()
+            if not name:
+                continue
+            merged[name] = max(merged.get(name, 0), int(detail.get("confidence", 80)))
 
         finger = []
-        for name in result:
+        for name, confidence in sorted(merged.items(), key=lambda item: (-item[1], item[0])):
             finger_item = {
                 "icon": "default.png",
                 "name": name,
-                "confidence": "80",
+                "confidence": str(confidence),
                 "version": "",
                 "website": "https://www.riskivy.com",
                 "categories": []
@@ -129,8 +145,19 @@ class FetchSite(BaseThread):
         return self.site_info_list
 
 
-def finger_identify(content: bytes, header: str, title: str, favicon_hash: str):
-    from app.services import finger_db_identify
+def finger_identify(content: bytes, header: str, title: str, favicon_hash: str, url=""):
+    detail_list = finger_identify_detail(
+        content=content,
+        header=header,
+        title=title,
+        favicon_hash=favicon_hash,
+        url=url,
+    )
+    return [item["name"] for item in detail_list]
+
+
+def finger_identify_detail(content: bytes, header: str, title: str, favicon_hash: str, url=""):
+    from app.services import finger_db_identify_detail
 
     try:
         content = content.decode("utf-8")
@@ -144,9 +171,10 @@ def finger_identify(content: bytes, header: str, title: str, favicon_hash: str):
         "icon_hash": favicon_hash,
         # 兼容规则中的 response 字段（头+体）
         "response": "{}\n{}".format(header, content),
+        "url": str(url or ""),
     }
 
-    return finger_db_identify(variables)
+    return finger_db_identify_detail(variables)
 
 
 def same_netloc_and_scheme(u1, u2):

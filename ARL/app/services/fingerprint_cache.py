@@ -2,6 +2,7 @@
 指纹缓存管理
 """
 import json
+import re
 from collections import defaultdict
 
 try:
@@ -15,6 +16,46 @@ from .kscan_fingerprint import load_kscan_fingerprint_rules
 from app.utils import get_logger, conn_db
 
 logger = get_logger()
+
+
+def extract_human_rule_fields(human_rule):
+    """
+    提取 human_rule 中出现过的字段，用于结果打分和说明
+    """
+    rule_text = str(human_rule or "")
+    ordered_fields = []
+    for field_name in ("icon_hash", "header", "title", "response", "url", "body"):
+        if re.search(r'(^|[\s!(]){}(\s*(~=|==|!=|=))'.format(re.escape(field_name)), rule_text):
+            ordered_fields.append(field_name)
+    return ordered_fields
+
+
+def estimate_human_rule_confidence(human_rule):
+    """
+    基于规则特征粗略估算识别置信度
+    """
+    fields = set(extract_human_rule_fields(human_rule))
+    fragment_count = max(str(human_rule or "").count("||") + str(human_rule or "").count("&&") + 1, 1)
+
+    if "icon_hash" in fields:
+        base_score = 95
+    elif "header" in fields and ({"body", "title", "response", "url"} & fields):
+        base_score = 90
+    elif "response" in fields:
+        base_score = 86
+    elif "header" in fields:
+        base_score = 82
+    elif "title" in fields:
+        base_score = 78
+    elif "url" in fields:
+        base_score = 76
+    elif "body" in fields:
+        base_score = 72
+    else:
+        base_score = 70
+
+    bonus = min(max(fragment_count - 1, 0) * 2, 8)
+    return min(base_score + bonus, 98)
 
 
 # 用于缓存指纹数据，避免每次请求都从MongoDB中获取数据
@@ -197,17 +238,36 @@ finger_db_cache = FingerPrintCache()
 
 
 def finger_db_identify(variables: dict) -> [str]:
+    return [item["name"] for item in finger_db_identify_detail(variables)]
+
+
+def finger_db_identify_detail(variables: dict) -> [dict]:
+    """
+    返回带置信度与命中特征的指纹识别结果
+    """
     finger_list = finger_db_cache.get_data()
-    finger_name_list = []
+    result_map = {}
 
     for finger in finger_list:
         try:
             if finger.identify(variables):
-                finger_name_list.append(finger.app_name)
+                fields = extract_human_rule_fields(finger.human_rule)
+                confidence = estimate_human_rule_confidence(finger.human_rule)
+                current = result_map.get(finger.app_name)
+                if current and current["confidence"] >= confidence:
+                    continue
+                result_map[finger.app_name] = {
+                    "name": finger.app_name,
+                    "confidence": confidence,
+                    "match_fields": fields,
+                }
         except Exception as e:
             logger.warning("error on identify {} {}".format(finger.app_name, e))
 
-    return finger_name_list
+    return sorted(
+        result_map.values(),
+        key=lambda item: (-int(item.get("confidence", 0)), str(item.get("name", ""))),
+    )
 
 
 def have_human_rule_from_db(rule: str) -> bool:

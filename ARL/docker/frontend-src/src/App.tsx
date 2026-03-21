@@ -1442,7 +1442,7 @@ const modules: ModuleConfig[] = [
   {
     id: 'fingerprint',
     label: '指纹规则',
-    description: 'Web 指纹规则管理',
+    description: 'Web 指纹规则管理（支持 body/header/title/icon_hash/response/url）',
     group: '风险与规则',
     icon: FileCode,
     listPath: '/fingerprint/',
@@ -1463,7 +1463,7 @@ const modules: ModuleConfig[] = [
         path: '/fingerprint/',
         payloadTemplate: {
           name: '自定义指纹',
-          human_rule: 'header="Server: nginx"',
+          human_rule: 'header="Server: nginx" || url="/zentao/user"',
         },
       },
       {

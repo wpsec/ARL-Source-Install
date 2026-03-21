@@ -51,7 +51,7 @@ base_search_fields.update(base_query_fields)
 
 add_fingerprint_fields = ns.model('addFingerSite', {
     'name': fields.String(required=True, description="名称"),
-    'human_rule': fields.String(required=True, description="规则"),
+    'human_rule': fields.String(required=True, description="规则，支持 body/header/title/icon_hash/response/url"),
 })
 
 
@@ -213,4 +213,3 @@ class UploadARLFinger(ARLResource):
                                                       'repeat_cnt': repeat_cnt,'success_cnt': success_cnt})
         except Exception as e:
             return utils.build_ret(ErrorMsg.Error, {'msg': str(e)})
-

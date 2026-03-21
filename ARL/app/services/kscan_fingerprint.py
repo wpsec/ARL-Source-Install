@@ -23,6 +23,8 @@ SUPPORTED_FIELDS = {
     "header": "header",
     "title": "title",
     "response": "response",
+    "url": "url",
+    "path": "url",
     "icon": "icon_hash",
     "icon_hash": "icon_hash",
     "iconhash": "icon_hash",
@@ -56,6 +58,17 @@ def _escape_human_rule_value(value):
     text = text.replace("\\", "\\\\")
     text = text.replace('"', '\\"')
     return text
+
+
+def _ensure_keyword_list(value):
+    """
+    将 keyword/keywords/path 字段统一规范为列表
+    """
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [value]
 
 
 def _unquote_string(value):
@@ -166,6 +179,40 @@ def _parse_token(raw_token, regex_fallback="literal", min_literal_len=5):
     return '{}{}"{}"'.format(field, op, value), ""
 
 
+def _build_standard_json_human_rule(item):
+    """
+    将标准化 JSON 指纹项转换为 ARL human_rule
+    """
+    name = str(item.get("name", item.get("cms", ""))).strip()
+    if not name:
+        return "", "", "missing_name"
+
+    method = str(item.get("method", item.get("type", ""))).strip().lower()
+    field = SUPPORTED_FIELDS.get(method, "")
+    if not field:
+        return name, "", "unsupported_field"
+
+    raw_keywords = item.get("keyword", item.get("keywords", item.get("path", [])))
+    keywords = _ensure_keyword_list(raw_keywords)
+
+    fragments = []
+    for keyword in keywords:
+        keyword = str(keyword).strip()
+        if not keyword:
+            continue
+
+        keyword = _escape_human_rule_value(keyword)
+        if field == "icon_hash":
+            fragments.append('{}=="{}"'.format(field, keyword))
+        else:
+            fragments.append('{}="{}"'.format(field, keyword))
+
+    if not fragments:
+        return name, "", "empty_keyword"
+
+    return name, " || ".join(sorted(set(fragments))), ""
+
+
 def _parse_kscan_expression(expression, regex_fallback="literal", min_literal_len=5):
     tokens, operators = _split_logic_expression(expression)
     if not tokens:
@@ -207,9 +254,10 @@ def _load_json_rules(file_path):
     """
     加载预编译 JSON 规则。
 
-    支持两种格式：
+    支持三种格式：
     1) {"fingerprint": [{"name": "...", "human_rule": "..."}], "meta": {...}}
     2) [{"name": "...", "human_rule": "..."}]
+    3) {"fingerprint": [{"name": "...", "method": "...", "keyword": [...]}]}
     """
     stats = defaultdict(int)
     try:
@@ -242,9 +290,19 @@ def _load_json_rules(file_path):
     for item in items:
         if not isinstance(item, dict):
             continue
-        name = str(item.get("name", "")).strip()
+        name = str(item.get("name", item.get("cms", ""))).strip()
         human_rule = str(item.get("human_rule", "")).strip()
-        if not name or not human_rule:
+        if not human_rule:
+            name, human_rule, reason = _build_standard_json_human_rule(item)
+            if not human_rule:
+                if reason:
+                    stats["skip_{}".format(reason)] += 1
+                continue
+            stats["rule_from_standard_json"] += 1
+        elif name:
+            stats["rule_from_precompiled_json"] += 1
+        else:
+            stats["skip_missing_name"] += 1
             continue
 
         key = "{}::{}".format(name, human_rule)

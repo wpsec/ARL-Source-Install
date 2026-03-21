@@ -106,6 +106,7 @@ def _check_expression(expression):
         'title': "",
         'icon_hash': "",
         'response': "",
+        'url': "",
     }
     try:
         return evaluate(expression, variables)

@@ -4,8 +4,9 @@
 
 功能说明：
 1. 读取 /code/tools/finger.json（cms/method/location/keyword 格式）
-2. 转换为 ARL 指纹管理使用的 human_rule 语法
-3. 写入 fingerprint 集合并刷新指纹缓存
+2. 兼容导入标准化 JSON 指纹（name/method/keyword 格式）
+3. 转换为 ARL 指纹管理使用的 human_rule 语法
+4. 写入 fingerprint 集合并刷新指纹缓存
 """
 import argparse
 import importlib.util
@@ -14,7 +15,26 @@ import os
 import sys
 from collections import defaultdict
 
-FINGERPRINT_REDIS_KEY = "arl:fingerprint:rules:v1"
+FINGERPRINT_REDIS_KEY = "arl:fingerprint:rules:v2"
+
+METHOD_FIELD_MAP = {
+    "body": "body",
+    "header": "header",
+    "title": "title",
+    "response": "response",
+    "faviconhash": "icon_hash",
+    "iconhash": "icon_hash",
+    "icon_hash": "icon_hash",
+    "icon": "icon_hash",
+    "url": "url",
+    "path": "url",
+}
+
+LEGACY_LOCATION_MAP = {
+    "body": "body",
+    "header": "header",
+    "title": "title",
+}
 
 
 def ensure_project_root_in_path():
@@ -35,6 +55,17 @@ def escape_human_rule_value(value):
     text = text.replace("\\", "\\\\")
     text = text.replace('"', '\\"')
     return text
+
+
+def ensure_keyword_list(value):
+    """
+    将 keyword/keywords/path 字段统一转换为字符串列表
+    """
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [value]
 
 
 def load_check_expression():
@@ -86,21 +117,27 @@ def refresh_fingerprint_cache():
         print("fingerprint cache refresh skipped: {}".format(e))
 
 
+def merge_rule_fragments(rule_map, name, fragments):
+    """
+    将指纹片段按名称聚合并自动去重
+    """
+    name = str(name or "").strip()
+    if not name:
+        return
+
+    for fragment in fragments:
+        fragment = str(fragment or "").strip()
+        if fragment:
+            rule_map[name].add(fragment)
+
+
 def build_rule_fragments(item):
     """
     将一条指纹项转换为 human_rule 片段列表
     """
     method = str(item.get("method", "")).strip().lower()
     location = str(item.get("location", "")).strip().lower()
-    keywords = item.get("keyword", [])
-    if not isinstance(keywords, list):
-        return []
-
-    location_map = {
-        "body": "body",
-        "header": "header",
-        "title": "title",
-    }
+    keywords = ensure_keyword_list(item.get("keyword", []))
 
     fragments = []
     for keyword in keywords:
@@ -111,7 +148,7 @@ def build_rule_fragments(item):
         keyword = escape_human_rule_value(keyword)
 
         if method == "keyword":
-            variable = location_map.get(location)
+            variable = LEGACY_LOCATION_MAP.get(location)
             if variable:
                 fragments.append('{}="{}"'.format(variable, keyword))
             continue
@@ -123,29 +160,120 @@ def build_rule_fragments(item):
     return fragments
 
 
-def parse_finger_json(file_path):
+def build_standard_rule_fragments(item):
     """
-    解析 finger.json 并按 cms 聚合规则
+    将标准化指纹项转换为 human_rule 片段列表
     """
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    method = str(item.get("method", item.get("type", ""))).strip().lower()
+    variable = METHOD_FIELD_MAP.get(method, "")
+    if not variable:
+        return []
 
-    items = data.get("fingerprint", [])
-    if not isinstance(items, list):
-        raise ValueError("fingerprint is not list in {}".format(file_path))
+    raw_keywords = item.get("keyword", item.get("keywords", item.get("path", [])))
+    keywords = ensure_keyword_list(raw_keywords)
+    fragments = []
 
+    for keyword in keywords:
+        keyword = str(keyword).strip()
+        if not keyword:
+            continue
+
+        keyword = escape_human_rule_value(keyword)
+        if variable == "icon_hash":
+            fragments.append('{}=="{}"'.format(variable, keyword))
+        else:
+            fragments.append('{}="{}"'.format(variable, keyword))
+
+    return fragments
+
+
+def parse_legacy_finger_items(items):
+    """
+    解析历史 cms/method/location/keyword 格式
+    """
     rule_map = defaultdict(set)
     for item in items:
         if not isinstance(item, dict):
             continue
 
         cms_name = str(item.get("cms", "")).strip()
-        if not cms_name:
+        fragments = build_rule_fragments(item)
+        merge_rule_fragments(rule_map, cms_name, fragments)
+
+    return rule_map
+
+
+def parse_standard_finger_items(items):
+    """
+    解析标准化 name/method/keyword 格式
+    """
+    rule_map = defaultdict(set)
+    for item in items:
+        if not isinstance(item, dict):
             continue
 
-        fragments = build_rule_fragments(item)
-        for fragment in fragments:
-            rule_map[cms_name].add(fragment)
+        name = str(item.get("name", item.get("cms", ""))).strip()
+        fragments = build_standard_rule_fragments(item)
+        merge_rule_fragments(rule_map, name, fragments)
+
+    return rule_map
+
+
+def parse_human_rule_items(items):
+    """
+    解析预编译 name/human_rule 格式
+    """
+    rule_map = defaultdict(set)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        name = str(item.get("name", item.get("cms", ""))).strip()
+        human_rule = str(item.get("human_rule", item.get("rule", ""))).strip()
+        merge_rule_fragments(rule_map, name, [human_rule])
+
+    return rule_map
+
+
+def parse_finger_json(file_path):
+    """
+    解析指纹 JSON 文件并按名称聚合规则
+    """
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if isinstance(data, dict):
+        items = data.get("fingerprint", [])
+    elif isinstance(data, list):
+        items = data
+    else:
+        raise ValueError("unsupported fingerprint json schema in {}".format(file_path))
+
+    if not isinstance(items, list):
+        raise ValueError("fingerprint is not list in {}".format(file_path))
+
+    schema = ""
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("human_rule") or item.get("rule"):
+            schema = "human_rule"
+            break
+        if item.get("cms") and (item.get("location") or str(item.get("method", "")).strip().lower() == "faviconhash"):
+            schema = "legacy"
+            break
+        if item.get("name") or item.get("method") or item.get("type"):
+            schema = "standard"
+            break
+
+    if schema == "human_rule":
+        rule_map = parse_human_rule_items(items)
+    elif schema == "legacy":
+        rule_map = parse_legacy_finger_items(items)
+    elif schema == "standard":
+        rule_map = parse_standard_finger_items(items)
+    else:
+        raise ValueError("unrecognized fingerprint item schema in {}".format(file_path))
 
     finger_map = {}
     for name in sorted(rule_map.keys()):
