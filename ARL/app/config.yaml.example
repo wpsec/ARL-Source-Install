@@ -264,8 +264,9 @@ ARL:
       - jenkins
   # 启用内建 kscan 指纹（无需单独导入命令）
   KSCAN_FINGERPRINT_ENABLE: true
-  # kscan 指纹文件路径（默认可不填，使用 app/dicts/kscan_fingerprint.json）
+  # kscan 指纹文件路径（默认可不填，使用 app/dicts/kscan_fingerprint.json；也可改为本地生成的单文件合并库）
   # KSCAN_FINGERPRINT_FILE: "/code/app/dicts/kscan_fingerprint.json"
+  # KSCAN_FINGERPRINT_FILE: "/code/app/dicts/kscan_fingerprint.local.json"
   # 是否给 kscan 指纹名称加前缀（默认空）
   KSCAN_FINGERPRINT_NAME_PREFIX: ""
   # 正则(~=)回退策略：none / literal

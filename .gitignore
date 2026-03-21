@@ -69,6 +69,7 @@ ARL/docker/dicts/domain/*
 !ARL/docker/dicts/domain/.gitkeep
 ARL/docker/dicts/file_leak/*
 !ARL/docker/dicts/file_leak/.gitkeep
+ARL/app/dicts/kscan_fingerprint.local.json
 
 # Test coverage
 htmlcov/
