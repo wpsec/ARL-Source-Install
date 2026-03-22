@@ -285,6 +285,9 @@ def refresh_runtime_config_best_effort(force=False):
             "FILE_LEAK_CONCURRENCY",
             "FILE_LEAK_SITE_TIMEOUT_SEC",
             "FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC",
+            "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
+            "SSL_CERT_FETCH_CONCURRENCY",
+            "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
             "URLFINDER_URL_PROBE_MAX_TARGETS",
             "URLFINDER_URL_PROBE_CONCURRENCY",
         ]
@@ -293,6 +296,80 @@ def refresh_runtime_config_best_effort(force=False):
             if value is None:
                 continue
             setattr(Config, key_name, safe_positive_int(value, getattr(Config, key_name)))
+
+        if arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_SEC") is not None:
+            Config.PORT_SCAN_STAGE_TIMEOUT_SEC = safe_positive_int(
+                arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_SEC"),
+                Config.PORT_SCAN_STAGE_TIMEOUT_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC") is not None:
+            Config.PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC = safe_positive_int(
+                arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC"),
+                Config.PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC") is not None:
+            Config.PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC = safe_positive_int(
+                arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC"),
+                Config.PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_MAX_SEC") is not None:
+            Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+                arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_MAX_SEC"),
+                Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC,
+                min_value=0,
+            )
+
+        if arl_conf.get("CELERY_TASK_TIME_LIMIT_SEC") is not None:
+            Config.CELERY_TASK_TIME_LIMIT_SEC = safe_positive_int(
+                arl_conf.get("CELERY_TASK_TIME_LIMIT_SEC"),
+                Config.CELERY_TASK_TIME_LIMIT_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("CELERY_TASK_SOFT_TIME_LIMIT_SEC") is not None:
+            Config.CELERY_TASK_SOFT_TIME_LIMIT_SEC = safe_positive_int(
+                arl_conf.get("CELERY_TASK_SOFT_TIME_LIMIT_SEC"),
+                Config.CELERY_TASK_SOFT_TIME_LIMIT_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("SSL_CERT_STAGE_TIMEOUT_SEC") is not None:
+            Config.SSL_CERT_STAGE_TIMEOUT_SEC = safe_positive_int(
+                arl_conf.get("SSL_CERT_STAGE_TIMEOUT_SEC"),
+                Config.SSL_CERT_STAGE_TIMEOUT_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC") is not None:
+            Config.SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC = safe_positive_int(
+                arl_conf.get("SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC"),
+                Config.SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("SSL_CERT_STAGE_TIMEOUT_MAX_SEC") is not None:
+            Config.SSL_CERT_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+                arl_conf.get("SSL_CERT_STAGE_TIMEOUT_MAX_SEC"),
+                Config.SSL_CERT_STAGE_TIMEOUT_MAX_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC") is not None:
+            Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC = safe_positive_int(
+                arl_conf.get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC"),
+                Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC") is not None:
+            Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC = safe_positive_int(
+                arl_conf.get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC"),
+                Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC,
+                min_value=0,
+            )
+        if arl_conf.get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC") is not None:
+            Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+                arl_conf.get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC"),
+                Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC,
+                min_value=0,
+            )
 
         if arl_conf.get("API_LIST_CACHE_EXPIRE") is not None:
             Config.API_LIST_CACHE_EXPIRE = safe_positive_int(
@@ -380,6 +457,10 @@ class Config(object):
     CELERY_MAX_TASKS_PER_CHILD = 20
     # Celery 子进程最大内存（KB），超过后重启，0 表示不限制
     CELERY_MAX_MEMORY_PER_CHILD = 280000
+    # Celery 单任务硬超时（秒），0 表示不限制
+    CELERY_TASK_TIME_LIMIT_SEC = 0
+    # Celery 单任务软超时（秒），0 表示不限制
+    CELERY_TASK_SOFT_TIME_LIMIT_SEC = 0
 
     # ==================== Redis 缓存配置 ====================
     # 默认关闭，按 config.yaml 中 REDIS.ENABLE 决定是否启用
@@ -676,6 +757,14 @@ class Config(object):
     PORT_SCAN_ALL_TARGET_BATCH_SIZE = 4
     # 两阶段精扫单主机端口分段大小（仅分段，不裁剪结果）
     PORT_SCAN_STAGE2_PORT_CHUNK_SIZE = 300
+    # 端口扫描阶段超时预算基础值（秒），0 表示不限制
+    PORT_SCAN_STAGE_TIMEOUT_SEC = 900
+    # 端口扫描阶段超时预算：每个目标额外追加（秒）
+    PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC = 90
+    # 端口扫描阶段超时预算：每 1000 个端口额外追加（秒）
+    PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC = 120
+    # 端口扫描阶段超时预算上限（秒），0 表示不限制
+    PORT_SCAN_STAGE_TIMEOUT_MAX_SEC = 3600
     # 兼容旧配置项名称
     PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST = PORT_SCAN_STAGE2_PORT_CHUNK_SIZE
     # 重任务队列分流阈值：端口数量
@@ -742,6 +831,24 @@ class Config(object):
     CERT_PIVOT_QUERY_SKIP_CDN = True
     # 单个 IP:Port 在证书扫描阶段最多尝试的 SNI 域名数量（0=仅扫默认证书）
     CERT_MULTI_SNI_MAX_PER_ENDPOINT = 3
+    # SSL 证书抓取分批大小（按展开后的 endpoint+SNI 目标数）
+    SSL_CERT_FETCH_TARGET_BATCH_SIZE = 120
+    # SSL 证书抓取并发（单批）
+    SSL_CERT_FETCH_CONCURRENCY = 15
+    # SSL 证书阶段总超时（秒），0 表示不限制
+    SSL_CERT_STAGE_TIMEOUT_SEC = 1500
+    # SSL 证书阶段超时预算：每个展开目标额外追加（秒）
+    SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC = 3
+    # SSL 证书阶段超时预算上限（秒），0 表示不限制
+    SSL_CERT_STAGE_TIMEOUT_MAX_SEC = 3600
+    # 域名插件查询阶段每批来源数
+    DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE = 4
+    # 域名插件查询阶段总超时（秒），0 表示不限制
+    DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC = 900
+    # 域名插件查询阶段超时预算：每个来源额外追加（秒）
+    DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC = 45
+    # 域名插件查询阶段超时预算上限（秒），0 表示不限制
+    DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC = 1800
 
     # ==================== WebHook配置 ====================
     # 自定义WebHook推送地址
@@ -808,6 +915,18 @@ try:
     if celery_max_memory_per_child is not None:
         Config.CELERY_MAX_MEMORY_PER_CHILD = safe_positive_int(
             celery_max_memory_per_child, Config.CELERY_MAX_MEMORY_PER_CHILD
+        )
+
+    celery_task_time_limit_sec = y["ARL"].get("CELERY_TASK_TIME_LIMIT_SEC")
+    if celery_task_time_limit_sec is not None:
+        Config.CELERY_TASK_TIME_LIMIT_SEC = safe_positive_int(
+            celery_task_time_limit_sec, Config.CELERY_TASK_TIME_LIMIT_SEC, min_value=0
+        )
+
+    celery_task_soft_time_limit_sec = y["ARL"].get("CELERY_TASK_SOFT_TIME_LIMIT_SEC")
+    if celery_task_soft_time_limit_sec is not None:
+        Config.CELERY_TASK_SOFT_TIME_LIMIT_SEC = safe_positive_int(
+            celery_task_soft_time_limit_sec, Config.CELERY_TASK_SOFT_TIME_LIMIT_SEC, min_value=0
         )
 
     # --- Redis配置 ---
@@ -1082,6 +1201,60 @@ try:
             Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT,
             min_value=0,
         )
+    if y["ARL"].get("SSL_CERT_FETCH_TARGET_BATCH_SIZE") is not None:
+        Config.SSL_CERT_FETCH_TARGET_BATCH_SIZE = safe_positive_int(
+            y["ARL"]["SSL_CERT_FETCH_TARGET_BATCH_SIZE"],
+            Config.SSL_CERT_FETCH_TARGET_BATCH_SIZE,
+            min_value=1,
+        )
+    if y["ARL"].get("SSL_CERT_FETCH_CONCURRENCY") is not None:
+        Config.SSL_CERT_FETCH_CONCURRENCY = safe_positive_int(
+            y["ARL"]["SSL_CERT_FETCH_CONCURRENCY"],
+            Config.SSL_CERT_FETCH_CONCURRENCY,
+            min_value=1,
+        )
+    if y["ARL"].get("SSL_CERT_STAGE_TIMEOUT_SEC") is not None:
+        Config.SSL_CERT_STAGE_TIMEOUT_SEC = safe_positive_int(
+            y["ARL"]["SSL_CERT_STAGE_TIMEOUT_SEC"],
+            Config.SSL_CERT_STAGE_TIMEOUT_SEC,
+            min_value=0,
+        )
+    if y["ARL"].get("SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC") is not None:
+        Config.SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC = safe_positive_int(
+            y["ARL"]["SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC"],
+            Config.SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC,
+            min_value=0,
+        )
+    if y["ARL"].get("SSL_CERT_STAGE_TIMEOUT_MAX_SEC") is not None:
+        Config.SSL_CERT_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+            y["ARL"]["SSL_CERT_STAGE_TIMEOUT_MAX_SEC"],
+            Config.SSL_CERT_STAGE_TIMEOUT_MAX_SEC,
+            min_value=0,
+        )
+    if y["ARL"].get("DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE") is not None:
+        Config.DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE = safe_positive_int(
+            y["ARL"]["DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE"],
+            Config.DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE,
+            min_value=1,
+        )
+    if y["ARL"].get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC") is not None:
+        Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC = safe_positive_int(
+            y["ARL"]["DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC"],
+            Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC,
+            min_value=0,
+        )
+    if y["ARL"].get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC") is not None:
+        Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC = safe_positive_int(
+            y["ARL"]["DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC"],
+            Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC,
+            min_value=0,
+        )
+    if y["ARL"].get("DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC") is not None:
+        Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+            y["ARL"]["DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC"],
+            Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC,
+            min_value=0,
+        )
 
 
     # --- 文件泄露字典自定义配置 ---
@@ -1214,11 +1387,38 @@ try:
         "FILE_LEAK_CONCURRENCY",
         "FILE_LEAK_SITE_TIMEOUT_SEC",
         "FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC",
+        "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
+        "SSL_CERT_FETCH_CONCURRENCY",
+        "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
         if _val is not None:
             setattr(Config, _key, safe_positive_int(_val, getattr(Config, _key)))
+    if y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_SEC") is not None:
+        Config.PORT_SCAN_STAGE_TIMEOUT_SEC = safe_positive_int(
+            y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_SEC"),
+            Config.PORT_SCAN_STAGE_TIMEOUT_SEC,
+            min_value=0,
+        )
+    if y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC") is not None:
+        Config.PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC = safe_positive_int(
+            y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC"),
+            Config.PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC,
+            min_value=0,
+        )
+    if y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC") is not None:
+        Config.PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC = safe_positive_int(
+            y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC"),
+            Config.PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC,
+            min_value=0,
+        )
+    if y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_MAX_SEC") is not None:
+        Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+            y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_MAX_SEC"),
+            Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC,
+            min_value=0,
+        )
     if y["ARL"].get("TASK_HEAVY_QUEUE_ENABLE") is not None:
         Config.TASK_HEAVY_QUEUE_ENABLE = safe_bool(
             y["ARL"].get("TASK_HEAVY_QUEUE_ENABLE"), Config.TASK_HEAVY_QUEUE_ENABLE
@@ -1455,6 +1655,72 @@ try:
     Config.CELERY_MAX_MEMORY_PER_CHILD = safe_positive_int(
         env_int("ARL_CELERY_MAX_MEMORY_PER_CHILD", Config.CELERY_MAX_MEMORY_PER_CHILD),
         Config.CELERY_MAX_MEMORY_PER_CHILD
+    )
+    Config.CELERY_TASK_TIME_LIMIT_SEC = safe_positive_int(
+        env_int("ARL_CELERY_TASK_TIME_LIMIT_SEC", Config.CELERY_TASK_TIME_LIMIT_SEC),
+        Config.CELERY_TASK_TIME_LIMIT_SEC,
+        min_value=0,
+    )
+    Config.CELERY_TASK_SOFT_TIME_LIMIT_SEC = safe_positive_int(
+        env_int("ARL_CELERY_TASK_SOFT_TIME_LIMIT_SEC", Config.CELERY_TASK_SOFT_TIME_LIMIT_SEC),
+        Config.CELERY_TASK_SOFT_TIME_LIMIT_SEC,
+        min_value=0,
+    )
+    Config.SSL_CERT_STAGE_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_SSL_CERT_STAGE_TIMEOUT_SEC", Config.SSL_CERT_STAGE_TIMEOUT_SEC),
+        Config.SSL_CERT_STAGE_TIMEOUT_SEC,
+        min_value=0,
+    )
+    Config.SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC = safe_positive_int(
+        env_int("ARL_SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC", Config.SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC),
+        Config.SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC,
+        min_value=0,
+    )
+    Config.SSL_CERT_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+        env_int("ARL_SSL_CERT_STAGE_TIMEOUT_MAX_SEC", Config.SSL_CERT_STAGE_TIMEOUT_MAX_SEC),
+        Config.SSL_CERT_STAGE_TIMEOUT_MAX_SEC,
+        min_value=0,
+    )
+    Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC", Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC),
+        Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC,
+        min_value=0,
+    )
+    Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC = safe_positive_int(
+        env_int(
+            "ARL_DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC",
+            Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC
+        ),
+        Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC,
+        min_value=0,
+    )
+    Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+        env_int("ARL_DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC", Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC),
+        Config.DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC,
+        min_value=0,
+    )
+    Config.PORT_SCAN_STAGE_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_PORT_SCAN_STAGE_TIMEOUT_SEC", Config.PORT_SCAN_STAGE_TIMEOUT_SEC),
+        Config.PORT_SCAN_STAGE_TIMEOUT_SEC,
+        min_value=0,
+    )
+    Config.PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC = safe_positive_int(
+        env_int("ARL_PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC", Config.PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC),
+        Config.PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC,
+        min_value=0,
+    )
+    Config.PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC = safe_positive_int(
+        env_int(
+            "ARL_PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC",
+            Config.PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC
+        ),
+        Config.PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC,
+        min_value=0,
+    )
+    Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC = safe_positive_int(
+        env_int("ARL_PORT_SCAN_STAGE_TIMEOUT_MAX_SEC", Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC),
+        Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC,
+        min_value=0,
     )
     Config.TASK_HEAVY_QUEUE_ENABLE = env_bool(
         "ARL_TASK_HEAVY_QUEUE_ENABLE", Config.TASK_HEAVY_QUEUE_ENABLE

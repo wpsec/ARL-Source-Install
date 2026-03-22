@@ -80,6 +80,24 @@ def _format_html_report_time(value):
     return text or "-"
 
 
+def _render_html_meta_list(items, empty_text="-"):
+    """
+    将任务名、目标等多值字段渲染为逐行展示的 HTML 列表。
+    """
+    values = [
+        sanitize_excel_value(item).strip()
+        for item in as_list(items)
+        if sanitize_excel_value(item).strip()
+    ]
+    if not values:
+        values = [sanitize_excel_value(empty_text).strip() or "-"]
+
+    return "".join(
+        '<div class="meta-list-item">{}</div>'.format(escape(value))
+        for value in values
+    )
+
+
 def build_html_report_metadata(task_items):
     """
     基于任务数据生成 HTML 报告元信息。
@@ -149,12 +167,8 @@ def render_workbook_html(wb, title, metadata=None):
         ("生成时间", generated_at),
     ]
 
-    task_name_text = " / ".join(
-        [sanitize_excel_value(name).strip() for name in as_list(metadata.get("task_names", [])) if sanitize_excel_value(name).strip()]
-    ) or "-"
-    target_text = " / ".join(
-        [sanitize_excel_value(target).strip() for target in as_list(metadata.get("targets", [])) if sanitize_excel_value(target).strip()]
-    ) or "-"
+    task_name_html = _render_html_meta_list(metadata.get("task_names", []))
+    target_html = _render_html_meta_list(metadata.get("targets", []))
 
     toc_items = []
     sections = []
@@ -169,7 +183,10 @@ def render_workbook_html(wb, title, metadata=None):
         section_id = "sheet-{}".format(index)
         header = rows[0]
         body = rows[1:]
-        header_html = "".join("<th>{}</th>".format(cell or "&nbsp;") for cell in header)
+        header_html = "".join(
+            "<th><div class='cell-header'>{}</div></th>".format(cell or "&nbsp;")
+            for cell in header
+        )
         toc_items.append(
             '<a href="#{section_id}" class="toc-link"><span>{title}</span><span>{count} 行</span></a>'.format(
                 section_id=section_id,
@@ -180,7 +197,12 @@ def render_workbook_html(wb, title, metadata=None):
 
         if body:
             body_html = "".join(
-                "<tr>{}</tr>".format("".join("<td>{}</td>".format(cell or "&nbsp;") for cell in row))
+                "<tr>{}</tr>".format(
+                    "".join(
+                        "<td><div class='cell-content'>{}</div></td>".format(cell or "&nbsp;")
+                        for cell in row
+                    )
+                )
                 for row in body
             )
         else:
@@ -292,6 +314,20 @@ def render_workbook_html(wb, title, metadata=None):
           line-height: 1.5;
           word-break: break-word;
         }}
+        .meta-list {{
+          display: grid;
+          gap: 8px;
+        }}
+        .meta-list-item {{
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: var(--accent-soft);
+          border: 1px solid rgba(25, 88, 166, 0.08);
+          font-size: 14px;
+          font-weight: 600;
+          line-height: 1.65;
+          word-break: break-word;
+        }}
         .meta-wide-grid {{
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -372,25 +408,28 @@ def render_workbook_html(wb, title, metadata=None):
         }}
         .table-wrapper {{
           overflow-x: auto;
+          padding: 0 0 6px;
         }}
         table {{
-          width: 100%;
+          width: max-content;
+          min-width: 100%;
           border-collapse: collapse;
-          min-width: 760px;
+          table-layout: auto;
         }}
         th, td {{
-          padding: 12px 14px;
+          padding: 14px 16px;
           border-bottom: 1px solid var(--border);
           border-right: 1px solid var(--border);
           text-align: left;
           vertical-align: top;
-          white-space: pre-wrap;
-          word-break: break-word;
           font-size: 13px;
-          line-height: 1.6;
+          line-height: 1.7;
         }}
         th:last-child, td:last-child {{
           border-right: 0;
+        }}
+        th {{
+          min-width: 120px;
         }}
         thead th {{
           position: sticky;
@@ -399,6 +438,21 @@ def render_workbook_html(wb, title, metadata=None):
           color: #ffffff;
           font-weight: 700;
           z-index: 1;
+        }}
+        .cell-header {{
+          min-width: 120px;
+          white-space: normal;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+          line-height: 1.5;
+        }}
+        .cell-content {{
+          min-width: 120px;
+          max-width: 420px;
+          white-space: pre-wrap;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+          line-height: 1.75;
         }}
         tbody tr:nth-child(even) {{
           background: var(--accent-soft);
@@ -433,6 +487,10 @@ def render_workbook_html(wb, title, metadata=None):
             padding: 10px 12px;
             font-size: 12px;
           }}
+          .cell-content {{
+            max-width: 320px;
+            min-width: 96px;
+          }}
         }}
       </style>
     </head>
@@ -447,11 +505,11 @@ def render_workbook_html(wb, title, metadata=None):
           <div class="meta-wide-grid">
             <div class="meta-card">
               <div class="meta-label">任务名</div>
-              <div class="meta-value">{task_names}</div>
+              <div class="meta-list">{task_names}</div>
             </div>
             <div class="meta-card">
               <div class="meta-label">目标</div>
-              <div class="meta-value">{targets}</div>
+              <div class="meta-list">{targets}</div>
             </div>
           </div>
         </section>
@@ -484,8 +542,8 @@ def render_workbook_html(wb, title, metadata=None):
             """.format(label=escape(label), value=escape(value))
             for label, value in meta_cards
         ),
-        task_names=escape(task_name_text),
-        targets=escape(target_text),
+        task_names=task_name_html,
+        targets=target_html,
         toc_items="".join(toc_items) or '<div class="meta-card"><div class="meta-value">暂无目录</div></div>',
         sections="".join(sections),
     )

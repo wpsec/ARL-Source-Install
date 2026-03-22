@@ -1331,10 +1331,153 @@ class DomainTask(CommonTask):
 
         return modules.DomainInfo(**item)
 
+    @staticmethod
+    def _chunk_list(items, chunk_size):
+        try:
+            size = int(chunk_size)
+        except Exception:
+            size = 0
+
+        if size <= 0:
+            size = len(items) if items else 1
+
+        for index in range(0, len(items), size):
+            yield items[index:index + size]
+
+    @staticmethod
+    def _format_timeout(timeout_sec):
+        if int(timeout_sec or 0) <= 0:
+            return "unlimited"
+        return "{}s".format(int(timeout_sec))
+
+    @staticmethod
+    def _calc_dns_query_plugin_stage_timeout(source_count):
+        """
+        DNS 查询插件阶段超时预算（秒）：
+        - base
+        - + 每来源追加
+        - 最后受 max 约束（max=0 表示不限制）
+        """
+        base = int(getattr(Config, "DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC", 0) or 0)
+        per_source = int(getattr(Config, "DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC", 0) or 0)
+        max_budget = int(getattr(Config, "DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC", 0) or 0)
+
+        if base < 0:
+            base = 0
+        if per_source < 0:
+            per_source = 0
+        if max_budget < 0:
+            max_budget = 0
+
+        if base <= 0 and per_source <= 0:
+            return 0
+
+        budget = base
+        if source_count > 0 and per_source > 0:
+            budget += int(source_count) * per_source
+
+        if max_budget > 0:
+            budget = min(budget, max_budget)
+
+        if budget <= 0:
+            return 0
+        return budget
+
+    def _resolve_dns_query_sources(self):
+        """
+        解析可执行的 DNS 查询来源，过滤明确 disable/缺失必填配置的来源。
+        """
+        plugins = utils.load_query_plugins(Config.dns_query_plugin_path)
+        query_key = Config.QUERY_PLUGIN_CONFIG if isinstance(Config.QUERY_PLUGIN_CONFIG, dict) else {}
+
+        source_list = []
+        seen = set()
+        for plugin in plugins:
+            source_name = str(getattr(plugin, "source_name", "") or "").strip()
+            if not source_name or source_name in seen:
+                continue
+            seen.add(source_name)
+
+            source_conf = query_key.get(source_name)
+            if isinstance(source_conf, dict):
+                if source_conf.get("enable", None) is False:
+                    continue
+
+                required_fields = {
+                    key: value
+                    for key, value in source_conf.items()
+                    if key != "enable"
+                }
+                if required_fields and not all(required_fields.values()):
+                    miss_keys = [k for k, v in required_fields.items() if not v]
+                    logger.warning(
+                        "skip dns query source {} because required config missing:{}".format(
+                            source_name, ",".join(miss_keys)
+                        )
+                    )
+                    continue
+
+            source_list.append(source_name)
+
+        return source_list
+
     # *** 执行域名查询插件
     def dns_query_plugin(self):
         logger.info("start run dns_query_plugin {}".format(self.base_domain))
-        results = run_query_plugin(self.base_domain, [])
+        source_batch_size = int(getattr(Config, "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE", 4) or 4)
+        if source_batch_size <= 0:
+            source_batch_size = 1
+
+        source_list = self._resolve_dns_query_sources()
+        if not source_list:
+            logger.warning("dns_query_plugin {} no available source".format(self.base_domain))
+            return
+        stage_timeout_sec = self._calc_dns_query_plugin_stage_timeout(len(source_list))
+
+        source_batches = list(self._chunk_list(source_list, source_batch_size))
+        logger.info(
+            "dns_query_plugin timeout_budget:{} sources:{} batches:{} batch_size:{}".format(
+                self._format_timeout(stage_timeout_sec),
+                len(source_list),
+                len(source_batches),
+                source_batch_size,
+            )
+        )
+        stage_start = time.time()
+        seen_result = set()
+        results = []
+        for idx, source_batch in enumerate(source_batches, start=1):
+            elapsed = time.time() - stage_start
+            if stage_timeout_sec > 0 and elapsed >= stage_timeout_sec:
+                logger.warning(
+                    "dns_query_plugin stage timeout {} elapsed:{:.2f}s timeout:{}s finished_batch:{}/{}".format(
+                        self.base_domain, elapsed, stage_timeout_sec, idx - 1, len(source_batches)
+                    )
+                )
+                break
+
+            logger.info(
+                "dns_query_plugin source batch start {} {}/{} sources:{} elapsed:{:.2f}s".format(
+                    self.base_domain, idx, len(source_batches), ",".join(source_batch), elapsed
+                )
+            )
+            batch_results = run_query_plugin(self.base_domain, source_batch)
+            for result in batch_results:
+                domain = str(result.get("domain", "")).strip()
+                source = str(result.get("source", "")).strip()
+                if not domain or not source:
+                    continue
+                uniq_key = "{}|{}".format(domain, source)
+                if uniq_key in seen_result:
+                    continue
+                seen_result.add(uniq_key)
+                results.append({"domain": domain, "source": source})
+            logger.info(
+                "dns_query_plugin source batch end {} {}/{} source_result:{} merged_result:{}".format(
+                    self.base_domain, idx, len(source_batches), len(batch_results), len(results)
+                )
+            )
+
         sources_map = dict()
         for result in results:
             domain = result["domain"]

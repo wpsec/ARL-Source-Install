@@ -2,11 +2,27 @@
 SSL证书获取和解析
 """
 import time
-from app import utils, modules, services
+from app import utils, modules
 from app.config import Config
 from .baseThread import BaseThread
 
 logger = utils.get_logger()
+
+
+def _chunk_list(items, chunk_size):
+    """
+    将列表按固定大小分块。
+    """
+    try:
+        size = int(chunk_size)
+    except Exception:
+        size = 0
+
+    if size <= 0:
+        size = len(items) if items else 1
+
+    for index in range(0, len(items), size):
+        yield items[index:index + size]
 
 
 def split_host_port(target):
@@ -426,6 +442,45 @@ class SSLCert():
         self.ip_info_list = ip_info_list
         self.base_domain = base_doamin
 
+    @staticmethod
+    def _format_timeout(timeout_sec):
+        if int(timeout_sec or 0) <= 0:
+            return "unlimited"
+        return "{}s".format(int(timeout_sec))
+
+    @staticmethod
+    def _calc_stage_timeout(target_count):
+        """
+        证书扫描阶段超时预算（秒）：
+        - base
+        - + 每目标追加
+        - 最后受 max 约束（max=0 表示不限制）
+        """
+        base = int(getattr(Config, "SSL_CERT_STAGE_TIMEOUT_SEC", 0) or 0)
+        per_target = int(getattr(Config, "SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC", 0) or 0)
+        max_budget = int(getattr(Config, "SSL_CERT_STAGE_TIMEOUT_MAX_SEC", 0) or 0)
+
+        if base < 0:
+            base = 0
+        if per_target < 0:
+            per_target = 0
+        if max_budget < 0:
+            max_budget = 0
+
+        if base <= 0 and per_target <= 0:
+            return 0
+
+        budget = base
+        if target_count > 0 and per_target > 0:
+            budget += int(target_count) * per_target
+
+        if max_budget > 0:
+            budget = min(budget, max_budget)
+
+        if budget <= 0:
+            return 0
+        return budget
+
     def _append_target_info(self, target_map, endpoint, connect_host, port, domains=None):
         endpoint = str(endpoint or "").strip()
         connect_host = str(connect_host or "").strip()
@@ -542,6 +597,53 @@ class SSLCert():
                 )
             )
 
-        cert_map = services.fetch_cert(expanded_targets)
+        if not expanded_targets:
+            return {}
+
+        batch_size = int(getattr(Config, "SSL_CERT_FETCH_TARGET_BATCH_SIZE", 120) or 120)
+        if batch_size <= 0:
+            batch_size = len(expanded_targets)
+
+        fetch_concurrency = int(getattr(Config, "SSL_CERT_FETCH_CONCURRENCY", 15) or 15)
+        if fetch_concurrency <= 0:
+            fetch_concurrency = 1
+
+        stage_timeout_sec = self._calc_stage_timeout(len(expanded_targets))
+
+        cert_map = {}
+        batch_list = list(_chunk_list(expanded_targets, batch_size))
+        logger.info(
+            "ssl_cert stage timeout_budget:{} expanded_targets:{} endpoint_targets:{} batches:{} batch_size:{} concurrency:{}".format(
+                self._format_timeout(stage_timeout_sec),
+                len(expanded_targets),
+                len(target_temp_list),
+                len(batch_list),
+                batch_size,
+                fetch_concurrency,
+            )
+        )
+        stage_start = time.time()
+        for idx, batch_targets in enumerate(batch_list, start=1):
+            elapsed = time.time() - stage_start
+            if stage_timeout_sec > 0 and elapsed >= stage_timeout_sec:
+                logger.warning(
+                    "ssl_cert stage timeout skip remaining batches elapsed:{:.2f}s timeout:{}s finished_batch:{}/{}".format(
+                        elapsed, stage_timeout_sec, idx - 1, len(batch_list)
+                    )
+                )
+                break
+
+            logger.info(
+                "ssl_cert batch start {}/{} targets:{} concurrency:{} elapsed:{:.2f}s".format(
+                    idx, len(batch_list), len(batch_targets), fetch_concurrency, elapsed
+                )
+            )
+            batch_map = fetch_cert(batch_targets, concurrency=fetch_concurrency)
+            cert_map.update(batch_map)
+            logger.info(
+                "ssl_cert batch end {}/{} cert:{} total:{}".format(
+                    idx, len(batch_list), len(batch_map), len(cert_map)
+                )
+            )
 
         return cert_map

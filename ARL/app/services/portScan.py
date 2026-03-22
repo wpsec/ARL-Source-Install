@@ -1,6 +1,7 @@
 """
 端口扫描执行
 """
+import time
 from app import utils
 from app.utils import nmap
 from app.config import Config
@@ -46,6 +47,27 @@ class PortScan:
                 getattr(Config, "PORT_SCAN_STAGE2_MAX_PORTS_PER_HOST", 300)
             ),
             300
+        )
+        # 端口扫描阶段超时预算（秒）：基础值 + 按目标数追加 + 按端口规模追加（带上限）。
+        self.stage_timeout_base_sec = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_STAGE_TIMEOUT_SEC", 900),
+            900,
+            min_value=0,
+        )
+        self.stage_timeout_per_target_sec = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC", 90),
+            90,
+            min_value=0,
+        )
+        self.stage_timeout_per_1000_ports_sec = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC", 120),
+            120,
+            min_value=0,
+        )
+        self.stage_timeout_max_sec = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_STAGE_TIMEOUT_MAX_SEC", 3600),
+            3600,
+            min_value=0,
         )
 
         self._apply_scan_profile()
@@ -216,6 +238,41 @@ class PortScan:
         if chunk:
             yield chunk
 
+    @staticmethod
+    def _format_timeout(timeout_sec):
+        if int(timeout_sec or 0) <= 0:
+            return "unlimited"
+        return "{}s".format(int(timeout_sec))
+
+    def _calc_stage_timeout(self, target_count, port_count):
+        """
+        计算阶段超时预算（秒）：
+        - base
+        - + 每目标追加
+        - + 每 1000 端口追加（向下取整）
+        - 最后受 max 约束（max=0 表示不限制）
+        """
+        base = int(self.stage_timeout_base_sec or 0)
+        per_target = int(self.stage_timeout_per_target_sec or 0)
+        per_1000_ports = int(self.stage_timeout_per_1000_ports_sec or 0)
+        max_budget = int(self.stage_timeout_max_sec or 0)
+
+        if base <= 0 and per_target <= 0 and per_1000_ports <= 0:
+            return 0
+
+        budget = max(base, 0)
+        if target_count > 0 and per_target > 0:
+            budget += int(target_count) * per_target
+        if port_count >= 1000 and per_1000_ports > 0:
+            budget += (int(port_count) // 1000) * per_1000_ports
+
+        if max_budget > 0:
+            budget = min(budget, max_budget)
+
+        if budget <= 0:
+            return 0
+        return budget
+
     def _resolve_target_batch_size(self):
         if self.ports == "0-65535":
             return self.port_scan_all_target_batch_size
@@ -342,16 +399,27 @@ class PortScan:
         )
         return result
 
-    def _scan_with_batches(self, targets, ports, arguments, stage_name, force_batch_size=None):
+    def _scan_with_batches(self, targets, ports, arguments, stage_name, force_batch_size=None, stage_timeout_sec=0):
         target_list = [str(x or "").strip() for x in (targets or []) if str(x or "").strip()]
         if not target_list:
-            return {}
+            return {}, False
 
         batch_size = force_batch_size if force_batch_size else self._resolve_target_batch_size()
         batches = list(self._chunk_list(target_list, batch_size))
         total = len(batches)
         result_map = {}
+        stage_start_ts = time.time()
+        timeout_hit = False
         for index, batch in enumerate(batches, 1):
+            elapsed = time.time() - stage_start_ts
+            if stage_timeout_sec > 0 and elapsed >= stage_timeout_sec:
+                logger.warning(
+                    "port_scan stage:{} timeout elapsed:{:.2f}s timeout:{}s processed_batch:{}/{} partial_host:{}".format(
+                        stage_name, elapsed, stage_timeout_sec, index - 1, total, len(result_map)
+                    )
+                )
+                timeout_hit = True
+                break
             batch_result = self._run_batch_scan(
                 target_batch=batch,
                 ports=ports,
@@ -363,11 +431,11 @@ class PortScan:
             self._merge_ip_info(result_map, batch_result)
 
         logger.info(
-            "nmap stage:{} done targets:{} batches:{} host_result:{}".format(
-                stage_name, len(target_list), total, len(result_map)
+            "nmap stage:{} done targets:{} batches:{} host_result:{} timeout_hit:{} timeout_budget:{}".format(
+                stage_name, len(target_list), total, len(result_map), timeout_hit, self._format_timeout(stage_timeout_sec)
             )
         )
-        return result_map
+        return result_map, timeout_hit
 
     def _build_precise_plan(self, fast_map):
         """
@@ -400,14 +468,33 @@ class PortScan:
         )
 
         fast_args = self._build_nmap_arguments(enable_service=False, enable_os=False)
-        fast_map = self._scan_with_batches(
+        fast_stage_timeout_sec = self._calc_stage_timeout(
+            target_count=len(self.target_list),
+            port_count=self.requested_port_count,
+        )
+        logger.info(
+            "port_scan stage:fast timeout_budget:{} targets:{} requested_ports:{}".format(
+                self._format_timeout(fast_stage_timeout_sec),
+                len(self.target_list),
+                self.requested_port_count,
+            )
+        )
+        fast_map, fast_timeout_hit = self._scan_with_batches(
             targets=self.target_list,
             ports=self.ports,
             arguments=fast_args,
             stage_name="fast",
+            stage_timeout_sec=fast_stage_timeout_sec,
         )
         if not fast_map:
             return []
+        if fast_timeout_hit:
+            logger.warning(
+                "port_scan skip precise stage because fast stage timeout host_result:{}".format(
+                    len(fast_map)
+                )
+            )
+            return self._sort_ip_info_list(fast_map)
 
         precise_plan = self._build_precise_plan(fast_map)
         if not precise_plan:
@@ -417,19 +504,50 @@ class PortScan:
             enable_service=self.service_detect,
             enable_os=self.os_detect,
         )
+        precise_total_ports = sum(len(x.get("port_ids", [])) for x in precise_plan)
+        precise_stage_timeout_sec = self._calc_stage_timeout(
+            target_count=len(precise_plan),
+            port_count=precise_total_ports,
+        )
+        logger.info(
+            "port_scan stage:precise timeout_budget:{} hosts:{} total_open_ports:{}".format(
+                self._format_timeout(precise_stage_timeout_sec),
+                len(precise_plan),
+                precise_total_ports,
+            )
+        )
 
+        precise_stage_start_ts = time.time()
+        precise_timeout_hit = False
         for host_index, item in enumerate(precise_plan, 1):
+            if precise_stage_timeout_sec > 0 and (time.time() - precise_stage_start_ts) >= precise_stage_timeout_sec:
+                precise_timeout_hit = True
+                logger.warning(
+                    "port_scan precise stage timeout before host:{}/{} partial_host:{} timeout_budget:{}s".format(
+                        host_index, len(precise_plan), len(fast_map), precise_stage_timeout_sec
+                    )
+                )
+                break
             host = item["host"]
             port_ids = item["port_ids"]
             port_chunks = list(self._chunk_list(port_ids, self.stage2_port_chunk_size))
             for chunk_index, chunk_port_ids in enumerate(port_chunks, 1):
+                if precise_stage_timeout_sec > 0 and (time.time() - precise_stage_start_ts) >= precise_stage_timeout_sec:
+                    precise_timeout_hit = True
+                    logger.warning(
+                        "port_scan precise stage timeout host:{}/{} chunk:{}/{} current_host:{} partial_host:{} timeout_budget:{}s".format(
+                            host_index, len(precise_plan), chunk_index - 1, len(port_chunks), host, len(fast_map), precise_stage_timeout_sec
+                        )
+                    )
+                    break
                 ports_text = ",".join([str(x) for x in chunk_port_ids])
-                precise_map = self._scan_with_batches(
+                precise_map, _ = self._scan_with_batches(
                     targets=[host],
                     ports=ports_text,
                     arguments=precise_args,
                     stage_name="precise",
                     force_batch_size=1,
+                    stage_timeout_sec=0,
                 )
                 self._merge_ip_info(fast_map, list(precise_map.values()))
                 logger.info(
@@ -442,6 +560,11 @@ class PortScan:
                         len(chunk_port_ids),
                     )
                 )
+            if precise_timeout_hit:
+                break
+
+        if precise_timeout_hit:
+            logger.warning("port_scan precise stage timeout return partial result host:{}".format(len(fast_map)))
 
         return self._sort_ip_info_list(fast_map)
 
@@ -462,11 +585,23 @@ class PortScan:
             enable_service=self.service_detect,
             enable_os=self.os_detect,
         )
-        single_map = self._scan_with_batches(
+        single_stage_timeout_sec = self._calc_stage_timeout(
+            target_count=len(self.target_list),
+            port_count=self.requested_port_count,
+        )
+        logger.info(
+            "port_scan stage:single timeout_budget:{} targets:{} requested_ports:{}".format(
+                self._format_timeout(single_stage_timeout_sec),
+                len(self.target_list),
+                self.requested_port_count,
+            )
+        )
+        single_map, _ = self._scan_with_batches(
             targets=self.target_list,
             ports=self.ports,
             arguments=single_args,
             stage_name="single",
+            stage_timeout_sec=single_stage_timeout_sec,
         )
         return self._sort_ip_info_list(single_map)
 

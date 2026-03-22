@@ -28,6 +28,18 @@ logger = utils.get_logger()
 # broker: 消息队列地址（RabbitMQ）
 celery = Celery('task', broker=Config.CELERY_BROKER_URL)
 
+_task_time_limit = int(getattr(Config, "CELERY_TASK_TIME_LIMIT_SEC", 0) or 0)
+if _task_time_limit <= 0:
+    _task_time_limit = None
+
+_task_soft_time_limit = int(getattr(Config, "CELERY_TASK_SOFT_TIME_LIMIT_SEC", 0) or 0)
+if _task_soft_time_limit <= 0:
+    _task_soft_time_limit = None
+
+# 避免 soft_time_limit >= time_limit 导致行为异常
+if _task_time_limit and _task_soft_time_limit and _task_soft_time_limit >= _task_time_limit:
+    _task_soft_time_limit = max(_task_time_limit - 1, 1)
+
 # Celery 配置
 celery.conf.update(
     # ARL 的扫描任务经常是“单条消息运行几十分钟”的长任务。
@@ -44,6 +56,9 @@ celery.conf.update(
     # 定期回收 worker 子进程，减少长时间运行导致的内存膨胀
     worker_max_tasks_per_child=Config.CELERY_MAX_TASKS_PER_CHILD,
     worker_max_memory_per_child=Config.CELERY_MAX_MEMORY_PER_CHILD,
+    # 单任务软/硬超时兜底（0=不限制）
+    task_time_limit=_task_time_limit,
+    task_soft_time_limit=_task_soft_time_limit,
     # Broker 连接稳定性配置：断连自动重连
     broker_connection_retry=True,
     broker_connection_retry_on_startup=True,

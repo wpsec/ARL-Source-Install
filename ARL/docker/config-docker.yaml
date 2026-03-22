@@ -269,6 +269,26 @@ ARL:
   CERT_PIVOT_QUERY_REQUIRE_SCOPE: true
   # 反查前跳过已识别为CDN/WAF的证书来源IP
   CERT_PIVOT_QUERY_SKIP_CDN: true
+  # 单个 IP:Port 最多尝试的 SNI 域名数量（0=仅扫描默认证书）
+  CERT_MULTI_SNI_MAX_PER_ENDPOINT: 3
+  # SSL 证书抓取分批大小（按 endpoint+SNI 展开后目标数）
+  SSL_CERT_FETCH_TARGET_BATCH_SIZE: 120
+  # SSL 证书抓取单批并发
+  SSL_CERT_FETCH_CONCURRENCY: 15
+  # SSL 证书阶段超时预算基础值（秒，0=不限制）
+  SSL_CERT_STAGE_TIMEOUT_SEC: 1500
+  # SSL 证书阶段超时预算：每个展开目标额外追加（秒）
+  SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC: 3
+  # SSL 证书阶段超时预算上限（秒，0=不限制）
+  SSL_CERT_STAGE_TIMEOUT_MAX_SEC: 3600
+  # 域名插件查询阶段每批来源数
+  DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE: 4
+  # 域名插件查询阶段超时预算基础值（秒，0=不限制）
+  DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC: 900
+  # 域名插件查询阶段超时预算：每个来源额外追加（秒）
+  DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC: 45
+  # 域名插件查询阶段超时预算上限（秒，0=不限制）
+  DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC: 1800
   ## 禁止域名，不可为空数组
   FORBIDDEN_DOMAINS:
     - test.com.cn
@@ -293,6 +313,14 @@ ARL:
   PORT_SCAN_ALL_TARGET_BATCH_SIZE: 4
   # 两阶段精扫单主机端口分段大小（仅分段，不裁剪结果）
   PORT_SCAN_STAGE2_PORT_CHUNK_SIZE: 300
+  # 端口扫描阶段超时预算基础值（秒，0=不限制）
+  PORT_SCAN_STAGE_TIMEOUT_SEC: 900
+  # 端口扫描阶段超时预算：每个目标额外追加（秒）
+  PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC: 90
+  # 端口扫描阶段超时预算：每 1000 个端口额外追加（秒）
+  PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC: 120
+  # 端口扫描阶段超时预算上限（秒，0=不限制）
+  PORT_SCAN_STAGE_TIMEOUT_MAX_SEC: 3600
   # 重任务队列分流阈值：端口数
   TASK_HEAVY_PORT_THRESHOLD: 1000
   # 重任务队列分流阈值：服务识别端口数
@@ -330,6 +358,10 @@ ARL:
   CELERY_MAX_TASKS_PER_CHILD: 20
   # Celery 子进程内存上限（KB），超过后自动回收
   CELERY_MAX_MEMORY_PER_CHILD: 280000
+  # Celery 单任务硬超时（秒，0=不限制）
+  CELERY_TASK_TIME_LIMIT_SEC: 0
+  # Celery 单任务软超时（秒，0=不限制）
+  CELERY_TASK_SOFT_TIME_LIMIT_SEC: 0
 
   # 域名爆破并发数
   DOMAIN_BRUTE_CONCURRENT: 180

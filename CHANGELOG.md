@@ -3,8 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准）。
 
-## 2026-03-22（v3.3.46 ~ v4.0.10）
+## 2026-03-22（v3.3.46 ~ v4.0.11）
 
+- `[v4.0.11]` 长任务稳态治理（第一批）：为 `domain` 链路中的 `dns_query_plugin` 新增“按来源分批执行 + 自适应阶段预算（基础值 + 来源数追加 + 上限）”机制，避免三方来源串行查询长时间占用单任务；为 `ssl_cert` 新增“按 endpoint+SNI 展开目标分批抓取 + 自适应阶段预算（基础值 + 目标数追加 + 上限）”机制，域名任务与 IP 任务共用同一证书抓取分批能力；`port_scan` 同步采用“自适应阶段预算（基础值 + 目标数追加 + 端口规模追加 + 上限）”，快扫/精扫/单阶段扫描在预算耗尽后返回已发现的部分结果并继续后续流程，降低单阶段超长运行导致 `delivery acknowledgement timed out` 的风险。同步新增可配置项 `SSL_CERT_FETCH_TARGET_BATCH_SIZE / SSL_CERT_FETCH_CONCURRENCY / SSL_CERT_STAGE_TIMEOUT_SEC / SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC / SSL_CERT_STAGE_TIMEOUT_MAX_SEC / DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE / DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC / DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC / DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC / PORT_SCAN_STAGE_TIMEOUT_SEC / PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC / PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC / PORT_SCAN_STAGE_TIMEOUT_MAX_SEC`，并补充 Celery 软/硬超时配置入口 `CELERY_TASK_TIME_LIMIT_SEC / CELERY_TASK_SOFT_TIME_LIMIT_SEC` 作为兜底保护
+- `[v4.0.11]` 扫描配置中心预定义档位优化：上调 `8核16G10M` 预定义资源参数，按“稳态优先、兼顾准确率与吞吐”重平衡 `域名爆破 / Celery 并发 / Nuclei / afrog / URL 探测 / 端口扫描速率`，减少高配机器空闲浪费，同时避免激进并发导致的长任务波动
 - `[v4.0.9]` 任务报告导出增强：任务管理页的报告导出改为支持下拉选择 `表格格式 / HTML格式`，单任务行内导出同步支持两种格式；后端新增 HTML 报告生成能力，并与 Excel 共用同一份工作簿构建逻辑，保证 `站点 / IP / 系统服务 / SSL证书 / 域名 / URL信息 / 目录扫描 / WIH / 风险 / 资产统计` 等内容口径一致。HTML 报告进一步补充页内目录、任务名/目标、扫描开始时间、截止时间与生成时间，长报告可直接按工作表跳转查看
 - `[v4.0.9]` 新建任务体验收敛：移除新建任务弹窗中渗透测试的长段说明文字，避免在勾选开关时占用过多可视空间；同时将 `WAF试探绕过` 统一更名为 `WAF绕过`，前后端配置项展示与接口描述保持一致
 - `[v4.0.10]` waiting 任务启动恢复增强：worker 启动时新增“高置信丢消息 waiting 任务安全重投”能力。对于数据库仍为 `waiting`、已存在历史 `celery_id`、派发超过保护时间、当前无 live task 且 broker 对应队列消息数为 `0` 的任务，系统会优先按原 `dispatch_queue` 自动重新投递并刷新 `celery_id/dispatch_time/dispatch_ts`；仅对无法安全重投的残余孤儿 `waiting` 任务，才继续沿用原有 `error` 收敛逻辑，修复系统更新/重启后部分未开始任务长期停留在“等待中”且不会自动继续的问题
