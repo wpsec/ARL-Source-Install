@@ -264,6 +264,116 @@ class TestPenetrationScan(unittest.TestCase):
         self.assertEqual(1, len(findings))
         self.assertIn("布尔差分", findings[0]["detail"])
 
+    def test_admin_unauthorized_access_requires_admin_signals_without_login(self):
+        """
+        后台入口未登录可访问且命中后台特征时，应记录后台未授权访问风险。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set={"https://example.com/admin/dashboard"},
+        )
+        findings = []
+        resp = SimpleNamespace(
+            status_code=200,
+            text="""
+            <html><head><title>管理后台 - 控制台</title></head>
+            <body>系统管理 用户管理 角色管理 权限管理</body></html>
+            """,
+            headers={},
+        )
+
+        with patch.object(service, "_load_db_urls", return_value=[]), \
+                patch.object(service, "_request", return_value=resp):
+            service._test_admin_unauthorized_access(findings, [])
+
+        self.assertEqual(1, len(findings))
+        self.assertEqual("admin_unauthorized_access", findings[0]["type"])
+
+    def test_horizontal_privilege_escalation_requires_sensitive_response_diff(self):
+        """
+        切换对象标识后，若响应显著变化且包含敏感字段，应记录水平越权风险。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        target = {
+            "method": "GET",
+            "url": "https://example.com/api/user/detail",
+            "params": ["userId"],
+            "source": "js_api_extract",
+            "original_values": {"userId": "1"},
+            "test_policy": {"skip_active": False, "param_limit": 4},
+        }
+        findings = []
+        baseline_body = '{"id":1,"username":"alice","email":"alice@example.com"}'
+        baseline = {
+            "ok": True,
+            "status_code": 200,
+            "content_length": len(baseline_body),
+            "content_hash": service._stable_hash(baseline_body[:4096]),
+            "response_time": 0.1,
+            "error_keywords": [],
+            "original_params": {"userId": "1"},
+            "body": baseline_body,
+        }
+        alt_resp = SimpleNamespace(
+            status_code=200,
+            text='{"id":2,"username":"bob","email":"bob@example.com","mobile":"13800000000"}',
+            headers={},
+        )
+
+        with patch.object(service, "_build_baseline", return_value=baseline), \
+                patch.object(service, "_request", return_value=alt_resp):
+            service._test_horizontal_privilege_escalation(target, findings)
+
+        self.assertEqual(1, len(findings))
+        self.assertEqual("horizontal_privilege_escalation", findings[0]["type"])
+
+    def test_vertical_privilege_escalation_requires_admin_signal_growth(self):
+        """
+        权限相关参数变更后，若响应出现更强后台权限特征，应记录垂直越权风险。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        target = {
+            "method": "GET",
+            "url": "https://example.com/api/user/profile",
+            "params": ["role"],
+            "source": "js_api_extract",
+            "original_values": {"role": "guest"},
+            "test_policy": {"skip_active": False, "param_limit": 4},
+        }
+        findings = []
+        baseline_body = '{"role":"guest","menu":["profile"]}'
+        baseline = {
+            "ok": True,
+            "status_code": 200,
+            "content_length": len(baseline_body),
+            "content_hash": service._stable_hash(baseline_body[:4096]),
+            "response_time": 0.1,
+            "error_keywords": [],
+            "original_params": {"role": "guest"},
+            "body": baseline_body,
+        }
+        alt_resp = SimpleNamespace(
+            status_code=200,
+            text='{"role":"admin","menus":["dashboard","system management","permission management"]}',
+            headers={},
+        )
+
+        with patch.object(service, "_build_baseline", return_value=baseline), \
+                patch.object(service, "_request", return_value=alt_resp):
+            service._test_vertical_privilege_escalation(target, findings)
+
+        self.assertEqual(1, len(findings))
+        self.assertEqual("vertical_privilege_escalation", findings[0]["type"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -72,15 +72,93 @@ def _normalize_html_cell_value(value):
     return escape(text)
 
 
-def render_workbook_html(wb, title):
+def _format_html_report_time(value):
+    """
+    格式化报告时间字段，空值返回占位符。
+    """
+    text = sanitize_excel_value(value).strip()
+    return text or "-"
+
+
+def build_html_report_metadata(task_items):
+    """
+    基于任务数据生成 HTML 报告元信息。
+    """
+    valid_tasks = []
+    for item in as_list(task_items):
+        if isinstance(item, dict):
+            valid_tasks.append(item)
+
+    start_times = []
+    end_times = []
+    task_names = []
+    targets = []
+
+    for item in valid_tasks:
+        start_text = sanitize_excel_value(item.get("start_time", "")).strip()
+        if start_text:
+            parsed = _parse_datetime_safe(start_text)
+            sort_key = parsed.strftime("%Y-%m-%d %H:%M:%S.%f") if parsed else start_text
+            start_times.append((sort_key, start_text))
+
+        end_text = sanitize_excel_value(item.get("end_time", "")).strip()
+        if end_text:
+            parsed = _parse_datetime_safe(end_text)
+            sort_key = parsed.strftime("%Y-%m-%d %H:%M:%S.%f") if parsed else end_text
+            end_times.append((sort_key, end_text))
+
+        task_name = sanitize_excel_value(item.get("name", "")).strip()
+        if task_name and task_name not in task_names:
+            task_names.append(task_name)
+
+        target = sanitize_excel_value(item.get("target", "")).strip()
+        if target and target not in targets:
+            targets.append(target)
+
+    start_value = "-"
+    if start_times:
+        start_times.sort(key=lambda x: x[0])
+        start_value = start_times[0][1]
+
+    end_value = "-"
+    if end_times:
+        end_times.sort(key=lambda x: x[0])
+        end_value = end_times[-1][1]
+
+    return {
+        "task_count": len(valid_tasks),
+        "task_names": task_names,
+        "targets": targets,
+        "scan_start_time": start_value,
+        "scan_end_time": end_value,
+    }
+
+
+def render_workbook_html(wb, title, metadata=None):
     """
     将导出工作簿渲染为 HTML 报告，保持与 Excel 工作表内容一致。
     """
     report_title = escape(sanitize_excel_value(title) or "ARL任务报告")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    metadata = metadata if isinstance(metadata, dict) else {}
 
+    meta_cards = [
+        ("扫描开始时间", _format_html_report_time(metadata.get("scan_start_time", ""))),
+        ("截止时间", _format_html_report_time(metadata.get("scan_end_time", ""))),
+        ("任务数", str(int(metadata.get("task_count", 0) or 0) or "-")),
+        ("生成时间", generated_at),
+    ]
+
+    task_name_text = " / ".join(
+        [sanitize_excel_value(name).strip() for name in as_list(metadata.get("task_names", [])) if sanitize_excel_value(name).strip()]
+    ) or "-"
+    target_text = " / ".join(
+        [sanitize_excel_value(target).strip() for target in as_list(metadata.get("targets", [])) if sanitize_excel_value(target).strip()]
+    ) or "-"
+
+    toc_items = []
     sections = []
-    for ws in wb.worksheets:
+    for index, ws in enumerate(wb.worksheets, start=1):
         rows = []
         for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column, values_only=True):
             rows.append([_normalize_html_cell_value(cell) for cell in row])
@@ -88,9 +166,17 @@ def render_workbook_html(wb, title):
         if not rows:
             continue
 
+        section_id = "sheet-{}".format(index)
         header = rows[0]
         body = rows[1:]
         header_html = "".join("<th>{}</th>".format(cell or "&nbsp;") for cell in header)
+        toc_items.append(
+            '<a href="#{section_id}" class="toc-link"><span>{title}</span><span>{count} 行</span></a>'.format(
+                section_id=section_id,
+                title=escape(sanitize_excel_value(ws.title)),
+                count=max(len(body), 0),
+            )
+        )
 
         if body:
             body_html = "".join(
@@ -102,7 +188,7 @@ def render_workbook_html(wb, title):
 
         sections.append(
             """
-            <section class="sheet-card">
+            <section class="sheet-card" id="{section_id}">
               <div class="sheet-header">
                 <h2>{title}</h2>
                 <span>{count} 行</span>
@@ -119,6 +205,7 @@ def render_workbook_html(wb, title):
               </div>
             </section>
             """.format(
+                section_id=section_id,
                 title=escape(sanitize_excel_value(ws.title)),
                 count=max(len(body), 0),
                 header=header_html,
@@ -158,6 +245,12 @@ def render_workbook_html(wb, title):
           margin: 0 auto;
           padding: 32px 20px 48px;
         }}
+        .layout {{
+          display: grid;
+          grid-template-columns: 280px minmax(0, 1fr);
+          gap: 20px;
+          align-items: start;
+        }}
         .hero {{
           background: linear-gradient(135deg, #ffffff 0%, #eef5ff 100%);
           border: 1px solid var(--border);
@@ -175,6 +268,79 @@ def render_workbook_html(wb, title):
           margin: 0;
           color: var(--muted);
           font-size: 14px;
+        }}
+        .meta-grid {{
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+          margin-top: 18px;
+        }}
+        .meta-card {{
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.86);
+          padding: 14px 16px;
+        }}
+        .meta-label {{
+          color: var(--muted);
+          font-size: 12px;
+          margin-bottom: 8px;
+        }}
+        .meta-value {{
+          font-size: 15px;
+          font-weight: 700;
+          line-height: 1.5;
+          word-break: break-word;
+        }}
+        .meta-wide-grid {{
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+          margin-top: 12px;
+        }}
+        .sidebar {{
+          position: sticky;
+          top: 20px;
+          display: grid;
+          gap: 16px;
+        }}
+        .nav-card {{
+          background: var(--card);
+          border: 1px solid var(--border);
+          border-radius: 20px;
+          box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+          overflow: hidden;
+        }}
+        .nav-card h2 {{
+          margin: 0;
+          padding: 18px 18px 12px;
+          font-size: 18px;
+        }}
+        .toc-list {{
+          display: grid;
+          gap: 8px;
+          padding: 0 12px 14px;
+        }}
+        .toc-link {{
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          color: var(--text);
+          text-decoration: none;
+          background: var(--accent-soft);
+          border: 1px solid transparent;
+          font-size: 13px;
+          line-height: 1.5;
+        }}
+        .toc-link:hover {{
+          border-color: var(--border);
+          background: #e5efff;
+        }}
+        .content {{
+          min-width: 0;
         }}
         .sheet-list {{
           display: grid;
@@ -245,11 +411,23 @@ def render_workbook_html(wb, title):
           .page {{
             padding: 20px 12px 36px;
           }}
+          .layout {{
+            grid-template-columns: 1fr;
+          }}
+          .sidebar {{
+            position: static;
+          }}
           .hero {{
             padding: 22px 18px;
           }}
           .hero h1 {{
             font-size: 24px;
+          }}
+          .meta-grid {{
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }}
+          .meta-wide-grid {{
+            grid-template-columns: 1fr;
           }}
           th, td {{
             padding: 10px 12px;
@@ -262,17 +440,53 @@ def render_workbook_html(wb, title):
       <div class="page">
         <section class="hero">
           <h1>{title}</h1>
-          <p>生成时间：{generated_at}</p>
+          <p>报告内容与表格导出保持一致，支持按目录快速跳转查看。</p>
+          <div class="meta-grid">
+            {meta_cards}
+          </div>
+          <div class="meta-wide-grid">
+            <div class="meta-card">
+              <div class="meta-label">任务名</div>
+              <div class="meta-value">{task_names}</div>
+            </div>
+            <div class="meta-card">
+              <div class="meta-label">目标</div>
+              <div class="meta-value">{targets}</div>
+            </div>
+          </div>
         </section>
-        <div class="sheet-list">
-          {sections}
+        <div class="layout">
+          <aside class="sidebar">
+            <section class="nav-card">
+              <h2>目录</h2>
+              <div class="toc-list">
+                {toc_items}
+              </div>
+            </section>
+          </aside>
+          <div class="content">
+            <div class="sheet-list">
+              {sections}
+            </div>
+          </div>
         </div>
       </div>
     </body>
     </html>
     """.format(
         title=report_title,
-        generated_at=escape(generated_at),
+        meta_cards="".join(
+            """
+            <div class="meta-card">
+              <div class="meta-label">{label}</div>
+              <div class="meta-value">{value}</div>
+            </div>
+            """.format(label=escape(label), value=escape(value))
+            for label, value in meta_cards
+        ),
+        task_names=escape(task_name_text),
+        targets=escape(target_text),
+        toc_items="".join(toc_items) or '<div class="meta-card"><div class="meta-value">暂无目录</div></div>',
         sections="".join(sections),
     )
     return html.encode("utf-8")
@@ -1953,7 +2167,8 @@ def export_arl_html(task_id):
     task_data = get_task_data(task_id.strip()) or {}
     target = sanitize_excel_value(task_data.get("target", "")).strip() or sanitize_excel_value(task_id)
     title = "ARL资产导出报告 - {}".format(target)
-    return render_workbook_html(workbook, title)
+    metadata = build_html_report_metadata([task_data])
+    return render_workbook_html(workbook, title, metadata=metadata)
 
 
 def build_merge_tasks_workbook(task_id_list):
@@ -2280,11 +2495,13 @@ def export_merge_tasks_html(task_id_list):
     导出批量任务 HTML 报告。
     """
     workbook = build_merge_tasks_workbook(task_id_list)
+    task_items = []
     task_names = []
     for task_id in _normalize_task_id_list(task_id_list):
         task_data = get_task_data(task_id)
         if not task_data:
             continue
+        task_items.append(task_data)
         task_name = sanitize_excel_value(task_data.get("name", "")).strip()
         if task_name and task_name not in task_names:
             task_names.append(task_name)
@@ -2295,4 +2512,5 @@ def export_merge_tasks_html(task_id_list):
         if len(task_names) > 3:
             title = "{} 等{}个任务".format(title, len(task_names))
 
-    return render_workbook_html(workbook, title)
+    metadata = build_html_report_metadata(task_items)
+    return render_workbook_html(workbook, title, metadata=metadata)

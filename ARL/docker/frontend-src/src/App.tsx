@@ -2953,7 +2953,7 @@ const fieldLabelMap: Record<string, string> = {
   findvhost: 'Host 碰撞',
   web_info_hunter: 'WIH 调用',
   penetration_test: '渗透测试',
-  waf_bypass: 'WAF试探绕过',
+  waf_bypass: 'WAF绕过',
   smart_skip_waf: '跳过WAF',
 };
 
@@ -4100,7 +4100,7 @@ function ActionDialog({
     { key: 'site_config.afrog_scan', label: 'afrog 调用' },
     { key: 'site_config.web_info_hunter', label: 'WIH 调用' },
     { key: 'site_config.penetration_test', label: '渗透测试' },
-    { key: 'site_config.waf_bypass', label: 'WAF试探绕过' },
+    { key: 'site_config.waf_bypass', label: 'WAF绕过' },
     { key: 'site_config.smart_skip_waf', label: '跳过WAF' },
   ];
   const filteredPolicyOptions = policyOptionDefs.filter((item) => {
@@ -4677,11 +4677,6 @@ function ActionDialog({
                     </div>
                   ))}
                 </div>
-                {Boolean(formPayload?.penetration_test) ? (
-                  <div className="rounded-xl border border-brand-warning/30 bg-brand-warning/10 px-3 py-3 text-[11px] leading-relaxed text-brand-text-muted">
-                    渗透测试与 `nuclei / afrog` 的 PoC 扫描解耦，会基于页面表单、带参 URL、API 端点与 JS 资源执行主动测试与静态分析，当前重点覆盖 SQL 注入、反射型/DOM XSS、LFI、RCE、XXE、SSTI、SSRF，以及云存储桶遍历/接管/ACL/Policy 泄露等只读型云安全检测。同时会启用自适应限速、浏览器画像轮换、JS 参数提取与风险评分，尽量避开删除/支付/注销等高副作用入口。`WAF试探绕过` 仅作用于该主动链路，会先尝试轻量 Header/节流绕过；若仍持续命中拦截，再由 `跳过WAF` 兜底止损。
-                  </div>
-                ) : null}
               </div>
             </div>
           ) : isFofaAction ? (
@@ -6418,9 +6413,11 @@ function TableModuleView({
           nextColumns.splice(progressIndex, 1);
           nextColumns.splice(optionsIndex, 0, 'progress');
         }
-        // 简洁模式下隐藏 Task_Id 与配置项列，聚焦任务核心信息。
+        // 简洁模式下隐藏统计、Task_Id 与配置项列，聚焦任务核心信息。
         if (taskCompactMode) {
-          return nextColumns.filter((column) => column !== '_id' && column !== 'options_summary');
+          return nextColumns.filter(
+            (column) => column !== 'statistic_summary' && column !== '_id' && column !== 'options_summary'
+          );
         }
         return nextColumns;
       }

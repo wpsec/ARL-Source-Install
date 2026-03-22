@@ -34,7 +34,7 @@
 - afrog_scan：afrog漏洞扫描
 - web_info_hunter：JS信息收集
 - penetration_test：Web专项渗透测试
-- waf_bypass：WAF试探绕过（仅渗透测试）
+- waf_bypass：WAF绕过（仅渗透测试）
 等30+个可选项
 """
 import os
@@ -114,7 +114,7 @@ base_search_task_fields = {
     'options.findvhost': fields.Boolean(description="是否开启虚拟主机碰撞检测"),
     'options.web_info_hunter': fields.Boolean(description="是否开启WebInfoHunter（JS信息收集）"),
     'options.penetration_test': fields.Boolean(description="是否开启Web专项渗透测试"),
-    'options.waf_bypass': fields.Boolean(description="是否开启WAF试探绕过（仅渗透测试）"),
+    'options.waf_bypass': fields.Boolean(description="是否开启WAF绕过（仅渗透测试）"),
     'options.smart_skip_waf': fields.Boolean(description="是否开启跳过WAF"),
     'options.dingding_notify': fields.Boolean(description="任务完成后是否钉钉通知"),
 }
@@ -154,7 +154,7 @@ add_task_fields = ns.model('AddTask', {
     "findvhost": fields.Boolean(example=False, default=False, description="虚拟主机碰撞"),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="WebInfoHunter JS信息收集"),
     "penetration_test": fields.Boolean(example=False, default=False, description="Web专项渗透测试"),
-    "waf_bypass": fields.Boolean(example=False, default=False, description="WAF试探绕过（仅渗透测试）"),
+    "waf_bypass": fields.Boolean(example=False, default=False, description="WAF绕过（仅渗透测试）"),
     "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),
     "dingding_notify": fields.Boolean(example=False, default=False, description="任务完成后是否推送钉钉通知"),
 })

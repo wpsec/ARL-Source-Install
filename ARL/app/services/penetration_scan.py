@@ -126,6 +126,38 @@ class PenetrationScanService(object):
         (r"dangerouslySetInnerHTML\s*:\s*\{\s*__html\s*:\s*([^}]+)\}", "dangerouslySetInnerHTML", "high"),
         (r"v-html\s*=\s*[\"']([^\"']+)[\"']", "v-html", "high"),
     )
+    ADMIN_PATH_HINTS = {
+        "admin", "backend", "console", "control", "dashboard", "manage", "manager",
+        "ops", "panel", "system", "cms", "oa", "workbench",
+    }
+    LOGIN_PATH_HINTS = {"login", "signin", "auth", "sso", "passport"}
+    ADMIN_RESPONSE_HINTS = {
+        "admin panel", "console", "dashboard", "system management", "user management",
+        "role management", "permission management", "access control", "tenant management",
+        "workspace", "menu tree", "system config", "后台管理", "管理后台", "控制台",
+        "仪表盘", "工作台", "系统管理", "用户管理", "角色管理", "权限管理", "菜单管理",
+        "租户管理", "组织架构", "系统配置",
+    }
+    LOGIN_RESPONSE_HINTS = {
+        "login", "sign in", "signin", "password", "forgot password", "otp", "captcha",
+        "登录", "验证码", "密码", "忘记密码", "手机验证码", "单点登录",
+    }
+    ACCESS_CONTROL_ID_PARAM_HINTS = {
+        "id", "uid", "userid", "user_id", "memberid", "member_id", "accountid", "account_id",
+        "customerid", "customer_id", "profileid", "profile_id", "tenantid", "tenant_id",
+        "orgid", "org_id", "deptid", "dept_id", "employeeid", "employee_id",
+    }
+    ACCESS_CONTROL_ROLE_PARAM_HINTS = {
+        "role", "roleid", "role_id", "admin", "isadmin", "is_admin", "permission",
+        "permissions", "scope", "access", "privilege", "level",
+    }
+    RESPONSE_SENSITIVE_HINTS = {
+        "username", "user_name", "nickname", "realname", "real_name", "email", "mail",
+        "mobile", "phone", "address", "idcard", "id_card", "tenant", "dept", "department",
+        "role", "permission", "permissions", "menu", "menus", "account",
+        "用户名", "昵称", "姓名", "邮箱", "手机号", "电话", "地址", "身份证", "角色", "权限",
+    }
+    MAX_ADMIN_CANDIDATES = 24
     DANGEROUS_PATH_KEYWORDS = {
         "critical": {"delete", "destroy", "drop", "payment", "checkout", "refund", "withdraw", "transfer"},
         "high": {"logout", "signout", "cancel", "disable", "terminate", "purchase", "submitorder"},
@@ -309,6 +341,201 @@ class PenetrationScanService(object):
             return json.dumps(value, ensure_ascii=False, sort_keys=True)
         except Exception:
             return str(value)
+
+    @staticmethod
+    def _extract_title(body: str) -> str:
+        match = re.search(r"<title[^>]*>(.*?)</title>", str(body or ""), flags=re.I | re.S)
+        if not match:
+            return ""
+        return re.sub(r"\s+", " ", str(match.group(1) or "")).strip()
+
+    @staticmethod
+    def _count_keyword_hits(text: str, keywords) -> List[str]:
+        lowered = str(text or "").strip().lower()
+        hits = []
+        seen = set()
+        for item in keywords or ():
+            keyword = str(item or "").strip().lower()
+            if not keyword or keyword in seen:
+                continue
+            if keyword in lowered:
+                seen.add(keyword)
+                hits.append(keyword)
+        return hits
+
+    def _looks_like_login_response(self, url: str, resp, body: str) -> bool:
+        url_text = str(url or "").strip().lower()
+        headers = dict(getattr(resp, "headers", {}) or {})
+        status_code = int(getattr(resp, "status_code", 0) or 0)
+        location = str(headers.get("Location", "") or headers.get("location", "")).strip().lower()
+        body_text = str(body or "")
+        lowered = body_text.lower()
+        title = self._extract_title(body_text).lower()
+        password_input = re.search(r"type\s*=\s*[\"']password[\"']", lowered) is not None
+
+        if status_code in {301, 302, 303, 307, 308}:
+            if self._count_keyword_hits(location, self.LOGIN_PATH_HINTS | self.LOGIN_RESPONSE_HINTS):
+                return True
+
+        login_hits = set(self._count_keyword_hits(url_text, self.LOGIN_PATH_HINTS))
+        login_hits.update(self._count_keyword_hits(location, self.LOGIN_PATH_HINTS | self.LOGIN_RESPONSE_HINTS))
+        login_hits.update(self._count_keyword_hits(title, self.LOGIN_RESPONSE_HINTS))
+        login_hits.update(self._count_keyword_hits(lowered[:6000], self.LOGIN_RESPONSE_HINTS))
+
+        if password_input and login_hits:
+            return True
+        return len(login_hits) >= 3
+
+    @classmethod
+    def _collect_json_tokens(cls, value, tokens=None, depth: int = 0):
+        if tokens is None:
+            tokens = []
+        if depth > 4 or len(tokens) >= 200:
+            return tokens
+
+        if isinstance(value, dict):
+            for key, item in value.items():
+                tokens.append(str(key or ""))
+                cls._collect_json_tokens(item, tokens, depth + 1)
+            return tokens
+
+        if isinstance(value, list):
+            for item in value[:20]:
+                cls._collect_json_tokens(item, tokens, depth + 1)
+            return tokens
+
+        if value is None:
+            return tokens
+
+        tokens.append(str(value))
+        return tokens
+
+    def _extract_response_hint_hits(self, body: str, hints) -> List[str]:
+        preview = str(body or "")[:12000]
+        hits = set(self._count_keyword_hits(preview, hints))
+        text = preview.strip()
+        if text and text[:1] in {"{", "["} and len(text) <= 200000:
+            try:
+                payload = json.loads(text)
+                tokens = self._collect_json_tokens(payload)
+                hits.update(self._count_keyword_hits("\n".join(tokens), hints))
+            except Exception:
+                pass
+        return sorted(hits)
+
+    def _response_admin_signal_hits(self, body: str) -> List[str]:
+        title = self._extract_title(body)
+        combined = "{}\n{}".format(title, str(body or "")[:12000])
+        return sorted(set(self._extract_response_hint_hits(combined, self.ADMIN_RESPONSE_HINTS)))
+
+    def _response_sensitive_signal_hits(self, body: str) -> List[str]:
+        return self._extract_response_hint_hits(body, self.RESPONSE_SENSITIVE_HINTS)
+
+    def _is_admin_candidate_url(self, url: str) -> bool:
+        parsed = urlparse(str(url or "").strip())
+        combined = "{} {}".format(parsed.hostname or "", parsed.path or "").lower()
+        hits = self._count_keyword_hits(combined, self.ADMIN_PATH_HINTS)
+        return len(hits) >= 1
+
+    @staticmethod
+    def _mutate_numeric_like_value(value: str, default: str = "2") -> str:
+        text = str(value or "").strip()
+        if text.isdigit():
+            number = int(text)
+            return str(number + 1 if number < 999999999 else max(1, number - 1))
+
+        match = re.fullmatch(r"([A-Fa-f0-9]{24})", text)
+        if match:
+            last = text[-1].lower()
+            replacement = "0" if last != "0" else "1"
+            return "{}{}".format(text[:-1], replacement)
+
+        match = re.fullmatch(r"([A-Fa-f0-9-]{36})", text)
+        if match:
+            last = text[-1].lower()
+            replacement = "0" if last != "0" else "1"
+            return "{}{}".format(text[:-1], replacement)
+
+        if text:
+            return default if text != default else "3"
+        return default
+
+    def _is_access_control_id_param(self, param_name: str) -> bool:
+        name = str(param_name or "").strip().lower()
+        if not name:
+            return False
+        if name in self.ACCESS_CONTROL_ID_PARAM_HINTS:
+            return True
+        if name in {"page", "pageid", "appid", "productid", "itemid", "goodsid", "sortid", "orderid"}:
+            return False
+        if not (name.endswith("_id") or name.endswith("id")):
+            return False
+        return any(
+            keyword in name
+            for keyword in ("user", "member", "account", "customer", "profile", "tenant", "org", "dept", "employee")
+        )
+
+    def _is_access_control_role_param(self, param_name: str) -> bool:
+        name = str(param_name or "").strip().lower()
+        if not name:
+            return False
+        return any(keyword in name for keyword in self.ACCESS_CONTROL_ROLE_PARAM_HINTS)
+
+    def _build_vertical_probe_values(self, param_name: str, original_value: str) -> List[str]:
+        name = str(param_name or "").strip().lower()
+        current = str(original_value or "").strip().lower()
+        values = []
+
+        if "role" in name:
+            values.extend(["admin", "superadmin", "root"])
+        elif "admin" in name:
+            values.extend(["true", "1", "admin"])
+        elif any(keyword in name for keyword in ("permission", "scope", "access", "privilege")):
+            values.extend(["admin", "all", "*"])
+        elif "level" in name:
+            values.extend(["9", "99", "admin"])
+
+        result = []
+        seen = set()
+        for item in values:
+            normalized = str(item or "").strip()
+            lowered = normalized.lower()
+            if not normalized or lowered == current or lowered in seen:
+                continue
+            seen.add(lowered)
+            result.append(normalized)
+        return result[:2]
+
+    def _collect_admin_candidates(self, records: List[Dict]) -> List[Dict]:
+        candidates = []
+        seen = set()
+
+        def _append(url_text: str, source: str):
+            normalized = self._normalize_target_url(url_text)
+            if not normalized:
+                return
+            if normalized in seen or not self._is_admin_candidate_url(normalized):
+                return
+            seen.add(normalized)
+            candidates.append(
+                {
+                    "method": "GET",
+                    "url": normalized,
+                    "source": source,
+                }
+            )
+
+        for url_text in list(self.page_url_set) + self._load_db_urls():
+            _append(url_text, "page_url")
+
+        for record in records or []:
+            record_type = str(record.get("record_type", "") or "").strip()
+            content = str(record.get("content", "") or "").strip()
+            if record_type in {"urlfinder_url", "path_url", "domain_url"} and self._is_http_url(content):
+                _append(content, record_type)
+
+        candidates.sort(key=lambda item: item.get("url", ""))
+        return candidates[: self.MAX_ADMIN_CANDIDATES]
 
     def _load_db_urls(self):
         if not self.task_id:
@@ -1186,6 +1413,153 @@ class PenetrationScanService(object):
             }
         )
 
+    def _test_admin_unauthorized_access(self, findings: List[Dict], records: List[Dict]):
+        for candidate in self._collect_admin_candidates(records):
+            try:
+                resp = self._request("GET", candidate.get("url", ""), params={})
+            except Exception:
+                continue
+
+            status_code = int(getattr(resp, "status_code", 0) or 0)
+            if status_code != 200:
+                continue
+
+            body = str(getattr(resp, "text", "") or "")
+            if self._looks_like_login_response(candidate.get("url", ""), resp, body):
+                continue
+
+            admin_hits = self._response_admin_signal_hits(body)
+            if len(admin_hits) < 2:
+                continue
+
+            self._append_finding(
+                findings,
+                vuln_type="admin_unauthorized_access",
+                vuln_name="通用后台未授权访问",
+                severity="high",
+                target=candidate,
+                param_name="",
+                payload="",
+                detail="疑似后台入口在未登录状态下可访问，命中后台特征关键词，需人工复核",
+                evidence="admin_hits={}".format(",".join(admin_hits[:6])),
+                request_text=self._safe_json({"method": "GET", "url": candidate.get("url", "")}),
+                response_text=self._summarize_response(resp, body),
+            )
+
+    def _test_horizontal_privilege_escalation(self, target: Dict, findings: List[Dict]):
+        param_names = self._get_target_param_names(target)
+        if not param_names:
+            return
+
+        baseline = self._build_baseline(target)
+        if not baseline.get("ok") or int(baseline.get("status_code", 0) or 0) != 200:
+            return
+
+        baseline_body = str(baseline.get("body", "") or "")
+        if self._looks_like_login_response(target.get("url", ""), None, baseline_body):
+            return
+
+        for param_name in param_names:
+            if not self._is_access_control_id_param(param_name):
+                continue
+
+            original_value = str((baseline.get("original_params", {}) or {}).get(param_name, "") or "")
+            mutated_value = self._mutate_numeric_like_value(original_value, default="2")
+            if not mutated_value or mutated_value == original_value:
+                continue
+
+            test_params = baseline.get("original_params", {}).copy()
+            test_params[param_name] = mutated_value
+            try:
+                resp = self._request(target.get("method"), target.get("url"), params=test_params)
+            except Exception:
+                continue
+
+            status_code = int(getattr(resp, "status_code", 0) or 0)
+            if status_code != 200:
+                continue
+
+            body = str(getattr(resp, "text", "") or "")
+            if self._looks_like_login_response(target.get("url", ""), resp, body):
+                continue
+            if self._is_response_similar_to_baseline(body, status_code, baseline):
+                continue
+
+            sensitive_hits = self._response_sensitive_signal_hits(body)
+            if len(sensitive_hits) < 2:
+                continue
+
+            self._append_finding(
+                findings,
+                vuln_type="horizontal_privilege_escalation",
+                vuln_name="水平越权风险",
+                severity="high",
+                target=target,
+                param_name=param_name,
+                payload=mutated_value,
+                detail="切换对象标识参数后返回内容显著变化，且响应包含敏感字段，疑似水平越权，需人工复核",
+                evidence="param={} sensitive_hits={}".format(param_name, ",".join(sensitive_hits[:6])),
+                request_text=self._safe_json({"method": target.get("method"), "params": test_params}),
+                response_text=self._summarize_response(resp, body),
+            )
+            break
+
+    def _test_vertical_privilege_escalation(self, target: Dict, findings: List[Dict]):
+        param_names = self._get_target_param_names(target)
+        if not param_names:
+            return
+
+        baseline = self._build_baseline(target)
+        if not baseline.get("ok") or int(baseline.get("status_code", 0) or 0) != 200:
+            return
+
+        baseline_body = str(baseline.get("body", "") or "")
+        if self._looks_like_login_response(target.get("url", ""), None, baseline_body):
+            return
+
+        baseline_admin_hits = self._response_admin_signal_hits(baseline_body)
+        for param_name in param_names:
+            if not self._is_access_control_role_param(param_name):
+                continue
+
+            original_value = str((baseline.get("original_params", {}) or {}).get(param_name, "") or "")
+            for probe_value in self._build_vertical_probe_values(param_name, original_value):
+                test_params = baseline.get("original_params", {}).copy()
+                test_params[param_name] = probe_value
+                try:
+                    resp = self._request(target.get("method"), target.get("url"), params=test_params)
+                except Exception:
+                    continue
+
+                status_code = int(getattr(resp, "status_code", 0) or 0)
+                if status_code != 200:
+                    continue
+
+                body = str(getattr(resp, "text", "") or "")
+                if self._looks_like_login_response(target.get("url", ""), resp, body):
+                    continue
+                if self._is_response_similar_to_baseline(body, status_code, baseline):
+                    continue
+
+                current_admin_hits = self._response_admin_signal_hits(body)
+                if len(current_admin_hits) < max(2, len(baseline_admin_hits) + 1):
+                    continue
+
+                self._append_finding(
+                    findings,
+                    vuln_type="vertical_privilege_escalation",
+                    vuln_name="垂直越权风险",
+                    severity="high",
+                    target=target,
+                    param_name=param_name,
+                    payload=probe_value,
+                    detail="调整权限/角色相关参数后返回内容出现更强后台权限特征，疑似垂直越权，需人工复核",
+                    evidence="param={} admin_hits={}".format(param_name, ",".join(current_admin_hits[:6])),
+                    request_text=self._safe_json({"method": target.get("method"), "params": test_params}),
+                    response_text=self._summarize_response(resp, body),
+                )
+                return
+
     def _test_sqli(self, target: Dict, findings: List[Dict]):
         param_names = self._get_target_param_names(target)
         if not param_names:
@@ -1705,6 +2079,7 @@ class PenetrationScanService(object):
             logger.info("penetration scan skip active targets, fallback to js static analysis only")
 
         findings = []
+        self._test_admin_unauthorized_access(findings, wih_records)
         for target in targets:
             if target.get("test_policy", {}).get("skip_active"):
                 logger.info(
@@ -1715,6 +2090,8 @@ class PenetrationScanService(object):
                     )
                 )
                 continue
+            self._test_horizontal_privilege_escalation(target, findings)
+            self._test_vertical_privilege_escalation(target, findings)
             self._test_sqli(target, findings)
             self._test_xss(target, findings)
             self._test_lfi(target, findings)
