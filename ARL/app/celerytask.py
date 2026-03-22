@@ -19,7 +19,7 @@ from app.config import Config, refresh_runtime_config_best_effort
 from celery import Celery, platforms
 from app import utils
 from app import tasks as wrap_tasks
-from app.modules import CeleryAction, TaskSyncStatus, TaskStatus
+from app.modules import CeleryAction, TaskSyncStatus, TaskStatus, TaskTag, TaskType
 
 # 获取日志记录器
 logger = utils.get_logger()
@@ -171,6 +171,272 @@ def _guess_waiting_task_dispatch_ts(item):
     return 0
 
 
+def _query_orphan_waiting_items(
+    live_task_id_set,
+    queue_count_map,
+    now_ts,
+    grace_sec,
+    extra_fields=None,
+):
+    """
+    查询“高置信丢消息”的 waiting 任务。
+
+    判定条件：
+    - 状态仍为 waiting，且已有 celery_id
+    - 距离最近一次派发已超过 grace_sec
+    - 当前没有 worker 报告该 celery_id 处于 active/reserved/scheduled
+    - broker 对应队列当前消息数为 0
+    """
+    safe_grace_sec = max(int(grace_sec or 0), 10)
+    base_projection = {
+        "_id": 1,
+        "celery_id": 1,
+        "dispatch_queue": 1,
+        "dispatch_ts": 1,
+    }
+    for field_name in extra_fields or []:
+        base_projection[str(field_name)] = 1
+
+    collection_queue_map = {
+        "task": "arltask",
+        "github_task": "arlgithub",
+    }
+    orphan_item_map = {
+        "task": [],
+        "github_task": [],
+    }
+
+    for collection, default_queue in collection_queue_map.items():
+        query = {
+            "status": "waiting",
+            "start_time": {"$in": ["", "-"]},
+            "celery_id": {"$nin": ["", None]},
+        }
+
+        try:
+            item_list = list(utils.conn_db(collection).find(query, base_projection))
+        except Exception as e:
+            logger.warning(
+                "query waiting task for orphan recovery failed collection:{} error:{}".format(
+                    collection, e
+                )
+            )
+            continue
+
+        for item in item_list:
+            celery_id = str(item.get("celery_id", "") or "").strip()
+            if not celery_id:
+                continue
+
+            dispatch_ts = _guess_waiting_task_dispatch_ts(item)
+            if dispatch_ts <= 0 or (now_ts - dispatch_ts) < safe_grace_sec:
+                continue
+
+            if celery_id in live_task_id_set:
+                continue
+
+            queue_name = str(item.get("dispatch_queue", "") or "").strip() or default_queue
+            if int(queue_count_map.get(queue_name, 0) or 0) > 0:
+                continue
+
+            orphan_item_map[collection].append(item)
+
+    return orphan_item_map
+
+
+def _resolve_waiting_requeue_queue_task(queue_name, collection):
+    """
+    根据 waiting 任务记录中的队列名解析 Celery 入口。
+    """
+    if collection == "github_task":
+        return arl_github, "arlgithub"
+
+    normalized = str(queue_name or "").strip().lower()
+    if normalized == "arlheavy":
+        return arl_task_heavy, "arlheavy"
+    if normalized == "arlweb":
+        return arl_task_web, "arlweb"
+    return arl_task, "arltask"
+
+
+def _build_waiting_requeue_options(collection, item):
+    """
+    基于数据库中的 waiting 任务记录重建 Celery 下发参数。
+    """
+    task_id = str(item.get("_id", "") or "").strip()
+    if not task_id:
+        return None
+
+    if collection == "task":
+        task_type = str(item.get("type", "") or "").strip()
+        type_map_action = {
+            TaskType.DOMAIN: CeleryAction.DOMAIN_TASK,
+            TaskType.IP: CeleryAction.IP_TASK,
+            TaskType.RISK_CRUISING: CeleryAction.RUN_RISK_CRUISING,
+            TaskType.ASSET_SITE_UPDATE: CeleryAction.ASSET_SITE_UPDATE,
+            TaskType.FOFA: CeleryAction.FOFA_TASK,
+            TaskType.ASSET_SITE_ADD: CeleryAction.ADD_ASSET_SITE_TASK,
+            TaskType.ASSET_WIH_UPDATE: CeleryAction.ASSET_WIH_UPDATE,
+        }
+        action = type_map_action.get(task_type)
+    elif collection == "github_task":
+        task_tag = str(item.get("task_tag", "") or "").strip()
+        action = (
+            CeleryAction.GITHUB_TASK_MONITOR
+            if task_tag == TaskTag.MONITOR
+            else CeleryAction.GITHUB_TASK_TASK
+        )
+    else:
+        action = None
+
+    if not action:
+        return None
+
+    data = dict(item)
+    data["_id"] = task_id
+    data["task_id"] = task_id
+    return {
+        "celery_action": action,
+        "data": data,
+    }
+
+
+def requeue_orphan_waiting_tasks_on_worker_start(
+    reason="worker restarted and waiting task message missing",
+    grace_sec=_WAITING_ORPHAN_GRACE_SEC,
+    inspect_timeout_sec=1.5,
+):
+    """
+    Worker 启动时安全重投高置信丢消息的 waiting 任务。
+
+    说明：
+    - 只处理“数据库仍是 waiting，但 broker 队列中已无消息”的高置信场景
+    - 保留原 dispatch_queue，避免把历史重任务全部挤回主队列
+    - 若重投失败，任务仍交由后续 orphan recovery 兜底标记 error
+    """
+    live_task_id_set, live_ok = _collect_live_celery_task_ids(timeout_sec=inspect_timeout_sec)
+    queue_count_map, queue_ok = _get_broker_queue_message_counts(_WAITING_ORPHAN_QUEUE_SET)
+    if not live_ok or not queue_ok:
+        logger.warning(
+            "skip orphan waiting task requeue live_ok:{} queue_ok:{}".format(
+                live_ok, queue_ok
+            )
+        )
+        return {"task": 0, "github_task": 0}
+
+    now_text = utils.curr_date()
+    now_ts = int(time.time())
+    orphan_item_map = _query_orphan_waiting_items(
+        live_task_id_set=live_task_id_set,
+        queue_count_map=queue_count_map,
+        now_ts=now_ts,
+        grace_sec=grace_sec,
+        extra_fields=["type", "task_tag", "target", "name", "options"],
+    )
+
+    requeued_count_map = {
+        "task": 0,
+        "github_task": 0,
+    }
+    dispatch_reason = "worker_start_requeue_waiting"
+
+    for collection, item_list in orphan_item_map.items():
+        for item in item_list:
+            old_celery_id = str(item.get("celery_id", "") or "").strip()
+            queue_task, queue_name = _resolve_waiting_requeue_queue_task(
+                item.get("dispatch_queue", ""),
+                collection,
+            )
+            task_options = _build_waiting_requeue_options(collection, item)
+            if not task_options:
+                logger.warning(
+                    "skip requeue orphan waiting task collection:{} task_id:{} queue:{} reason:build_options_failed".format(
+                        collection,
+                        item.get("_id"),
+                        queue_name,
+                    )
+                )
+                continue
+
+            try:
+                new_celery_id = str(queue_task.delay(options=task_options))
+            except Exception as e:
+                logger.warning(
+                    "requeue orphan waiting task failed collection:{} task_id:{} queue:{} error:{}".format(
+                        collection,
+                        item.get("_id"),
+                        queue_name,
+                        e,
+                    )
+                )
+                continue
+
+            try:
+                result = utils.conn_db(collection).update_one(
+                    {
+                        "_id": item["_id"],
+                        "status": "waiting",
+                        "celery_id": old_celery_id,
+                    },
+                    {
+                        "$set": {
+                            "celery_id": new_celery_id,
+                            "dispatch_queue": queue_name,
+                            "dispatch_queue_reason": dispatch_reason,
+                            "dispatch_time": now_text,
+                            "dispatch_ts": now_ts,
+                        }
+                    },
+                )
+            except Exception as e:
+                logger.warning(
+                    "update requeued waiting task failed collection:{} task_id:{} queue:{} error:{}".format(
+                        collection,
+                        item.get("_id"),
+                        queue_name,
+                        e,
+                    )
+                )
+                continue
+
+            if int(result.modified_count or 0) <= 0:
+                logger.warning(
+                    "requeue orphan waiting task lost race collection:{} task_id:{} queue:{} old_celery_id:{} new_celery_id:{}".format(
+                        collection,
+                        item.get("_id"),
+                        queue_name,
+                        old_celery_id or "-",
+                        new_celery_id,
+                    )
+                )
+                continue
+
+            requeued_count_map[collection] += 1
+            logger.warning(
+                "requeue orphan waiting task success collection:{} task_id:{} queue:{} old_celery_id:{} new_celery_id:{} reason:{}".format(
+                    collection,
+                    item.get("_id"),
+                    queue_name,
+                    old_celery_id or "-",
+                    new_celery_id,
+                    reason,
+                )
+            )
+
+    if requeued_count_map["task"] or requeued_count_map["github_task"]:
+        logger.warning(
+            "requeue orphan waiting tasks on worker start task:{} github_task:{} reason:{}".format(
+                requeued_count_map["task"],
+                requeued_count_map["github_task"],
+                reason,
+            )
+        )
+    else:
+        logger.info("requeue orphan waiting tasks on worker start no stale waiting task found")
+
+    return requeued_count_map
+
+
 def recover_orphan_waiting_tasks_on_worker_start(
     reason="worker restarted before waiting task status update",
     grace_sec=_WAITING_ORPHAN_GRACE_SEC,
@@ -187,7 +453,6 @@ def recover_orphan_waiting_tasks_on_worker_start(
     """
     now_ts = int(time.time())
     now_text = utils.curr_date()
-    safe_grace_sec = max(int(grace_sec or 0), 10)
 
     live_task_id_set, live_ok = _collect_live_celery_task_ids(timeout_sec=inspect_timeout_sec)
     queue_count_map, queue_ok = _get_broker_queue_message_counts(_WAITING_ORPHAN_QUEUE_SET)
@@ -220,60 +485,19 @@ def recover_orphan_waiting_tasks_on_worker_start(
         }
     }
 
-    collection_queue_map = {
-        "task": "arltask",
-        "github_task": "arlgithub",
-    }
     recovered_count_map = {
         "task": 0,
         "github_task": 0,
     }
+    orphan_item_map = _query_orphan_waiting_items(
+        live_task_id_set=live_task_id_set,
+        queue_count_map=queue_count_map,
+        now_ts=now_ts,
+        grace_sec=grace_sec,
+    )
 
-    for collection, default_queue in collection_queue_map.items():
-        query = {
-            "status": "waiting",
-            "start_time": {"$in": ["", "-"]},
-            "celery_id": {"$nin": ["", None]},
-        }
-
-        try:
-            item_list = list(
-                utils.conn_db(collection).find(
-                    query,
-                    {
-                        "_id": 1,
-                        "celery_id": 1,
-                        "dispatch_queue": 1,
-                        "dispatch_ts": 1,
-                    },
-                )
-            )
-        except Exception as e:
-            logger.warning(
-                "query waiting task for orphan recovery failed collection:{} error:{}".format(
-                    collection, e
-                )
-            )
-            continue
-
-        orphan_id_list = []
-        for item in item_list:
-            celery_id = str(item.get("celery_id", "") or "").strip()
-            if not celery_id:
-                continue
-
-            dispatch_ts = _guess_waiting_task_dispatch_ts(item)
-            if dispatch_ts <= 0 or (now_ts - dispatch_ts) < safe_grace_sec:
-                continue
-
-            if celery_id in live_task_id_set:
-                continue
-
-            queue_name = str(item.get("dispatch_queue", "") or "").strip() or default_queue
-            if int(queue_count_map.get(queue_name, 0) or 0) > 0:
-                continue
-
-            orphan_id_list.append(item["_id"])
+    for collection, item_list in orphan_item_map.items():
+        orphan_id_list = [item["_id"] for item in item_list if item.get("_id") is not None]
 
         if not orphan_id_list:
             continue

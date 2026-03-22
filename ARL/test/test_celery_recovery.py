@@ -2,7 +2,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from app.celerytask import celery, recover_orphan_waiting_tasks_on_worker_start
+from app.celerytask import (
+    celery,
+    recover_orphan_waiting_tasks_on_worker_start,
+    requeue_orphan_waiting_tasks_on_worker_start,
+)
 from app.utils import recover_interrupted_tasks_on_worker_start
 
 
@@ -59,6 +63,79 @@ class TestCeleryRecovery(unittest.TestCase):
 
         self.assertEqual(result, {"task": 2, "github_task": 1})
         logger.warning.assert_called()
+
+    @patch("app.celerytask._get_broker_queue_message_counts")
+    @patch("app.celerytask._collect_live_celery_task_ids")
+    @patch("app.celerytask.utils.curr_date", return_value="2026-03-19 18:00:00")
+    @patch("app.celerytask.time.time", return_value=2000)
+    @patch("app.celerytask.utils.conn_db")
+    @patch("app.celerytask.arl_github.delay", return_value="new-github-celery-id")
+    @patch("app.celerytask.arl_task.delay", return_value="new-task-celery-id")
+    def test_requeue_orphan_waiting_tasks_re_dispatches_safe_waiting_tasks(
+        self,
+        _mock_task_delay,
+        _mock_github_delay,
+        mock_conn_db,
+        _mock_time,
+        _mock_curr_date,
+        mock_collect_live,
+        mock_queue_counts,
+    ):
+        mock_collect_live.return_value = (set(), True)
+        mock_queue_counts.return_value = (
+            {"arltask": 0, "arlheavy": 0, "arlweb": 0, "arlgithub": 0},
+            True,
+        )
+
+        task_collection = MagicMock()
+        task_collection.find.return_value = [
+            {
+                "_id": "task-orphan",
+                "celery_id": "lost-task-id",
+                "dispatch_queue": "arltask",
+                "dispatch_ts": 1000,
+                "type": "domain",
+                "task_tag": "task",
+                "target": "example.com",
+                "name": "demo-task",
+                "options": {},
+            },
+        ]
+        task_collection.update_one.return_value = SimpleNamespace(modified_count=1)
+
+        github_collection = MagicMock()
+        github_collection.find.return_value = [
+            {
+                "_id": "github-orphan",
+                "celery_id": "lost-github-id",
+                "dispatch_queue": "arlgithub",
+                "dispatch_ts": 1000,
+                "task_tag": "monitor",
+                "target": "keyword",
+                "name": "demo-github",
+            },
+        ]
+        github_collection.update_one.return_value = SimpleNamespace(modified_count=1)
+
+        def fake_conn_db(name):
+            if name == "task":
+                return task_collection
+            if name == "github_task":
+                return github_collection
+            raise AssertionError("unexpected collection {}".format(name))
+
+        mock_conn_db.side_effect = fake_conn_db
+
+        result = requeue_orphan_waiting_tasks_on_worker_start(reason="worker restarted")
+
+        task_update_query, task_update_doc = task_collection.update_one.call_args[0]
+        github_update_query, github_update_doc = github_collection.update_one.call_args[0]
+        self.assertEqual(task_update_query["celery_id"], "lost-task-id")
+        self.assertEqual(task_update_doc["$set"]["celery_id"], "new-task-celery-id")
+        self.assertEqual(task_update_doc["$set"]["dispatch_queue_reason"], "worker_start_requeue_waiting")
+        self.assertEqual(github_update_query["celery_id"], "lost-github-id")
+        self.assertEqual(github_update_doc["$set"]["celery_id"], "new-github-celery-id")
+        self.assertEqual(result, {"task": 1, "github_task": 1})
 
     @patch("app.celerytask._get_broker_queue_message_counts")
     @patch("app.celerytask._collect_live_celery_task_ids")
