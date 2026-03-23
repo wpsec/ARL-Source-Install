@@ -10131,9 +10131,9 @@ function ConfigConsoleView({ token }: { token: string }) {
 
   const fallbackScanProfiles: ScanProfile[] = [
     {
-      id: '2c2g3m',
-      label: '2核2G3M 保守',
-      description: '低配云主机，优先保证系统可访问性',
+      id: 'low_performance',
+      label: '低性能配置',
+      description: '适用于低资源主机，单次并行约 1 个目标，优先保证系统可访问性',
       cpu_cores: 2,
       memory_gb: 2,
       bandwidth_mbps: 3,
@@ -10143,6 +10143,8 @@ function ConfigConsoleView({ token }: { token: string }) {
         web_gunicorn_workers: 1,
         celery_task_worker_concurrency: 1,
         celery_github_worker_concurrency: 1,
+        celery_heavy_worker_concurrency: 1,
+        celery_web_worker_concurrency: 1,
         celery_prefetch_multiplier: 1,
         celery_max_tasks_per_child: 16,
         celery_max_memory_per_child: 200000,
@@ -10150,7 +10152,7 @@ function ConfigConsoleView({ token }: { token: string }) {
         nuclei_rate_limit: 3,
         nuclei_concurrency: 1,
         nuclei_bulk_size: 2,
-        afrog_concurrency: 4,
+        afrog_concurrency: 3,
         afrog_rate_limit: 3,
         urlfinder_url_probe_enable: true,
         urlfinder_url_probe_max_targets: 150,
@@ -10162,9 +10164,9 @@ function ConfigConsoleView({ token }: { token: string }) {
       },
     },
     {
-      id: '4c4g5m',
-      label: '4核4G5M 平衡',
-      description: '中配主机，兼顾扫描效率与系统可用性',
+      id: 'medium_performance',
+      label: '中性能配置',
+      description: '适用于中等资源主机，单次并行约 2 个目标，兼顾扫描效率与系统可用性',
       cpu_cores: 4,
       memory_gb: 4,
       bandwidth_mbps: 5,
@@ -10174,6 +10176,8 @@ function ConfigConsoleView({ token }: { token: string }) {
         web_gunicorn_workers: 2,
         celery_task_worker_concurrency: 2,
         celery_github_worker_concurrency: 1,
+        celery_heavy_worker_concurrency: 2,
+        celery_web_worker_concurrency: 2,
         celery_prefetch_multiplier: 1,
         celery_max_tasks_per_child: 20,
         celery_max_memory_per_child: 280000,
@@ -10181,8 +10185,8 @@ function ConfigConsoleView({ token }: { token: string }) {
         nuclei_rate_limit: 4,
         nuclei_concurrency: 2,
         nuclei_bulk_size: 3,
-        afrog_concurrency: 4,
-        afrog_rate_limit: 4,
+        afrog_concurrency: 8,
+        afrog_rate_limit: 8,
         urlfinder_url_probe_enable: true,
         urlfinder_url_probe_max_targets: 220,
         urlfinder_url_probe_concurrency: 4,
@@ -10193,34 +10197,36 @@ function ConfigConsoleView({ token }: { token: string }) {
       },
     },
     {
-      id: '8c16g10m',
-      label: '8核16G10M 高性能',
-      description: '8C16G 高配主机，兼顾准确率与扫描吞吐',
+      id: 'high_performance',
+      label: '高性能配置',
+      description: '适用于高资源主机，单次并行约 3 个目标，兼顾准确率与扫描吞吐',
       cpu_cores: 8,
       memory_gb: 16,
       bandwidth_mbps: 10,
       values: {
-        domain_brute_concurrent: 260,
-        alt_dns_concurrent: 900,
-        web_gunicorn_workers: 4,
-        celery_task_worker_concurrency: 5,
+        domain_brute_concurrent: 360,
+        alt_dns_concurrent: 1400,
+        web_gunicorn_workers: 6,
+        celery_task_worker_concurrency: 3,
         celery_github_worker_concurrency: 2,
+        celery_heavy_worker_concurrency: 3,
+        celery_web_worker_concurrency: 3,
         celery_prefetch_multiplier: 1,
-        celery_max_tasks_per_child: 24,
-        celery_max_memory_per_child: 520000,
+        celery_max_tasks_per_child: 32,
+        celery_max_memory_per_child: 720000,
         nuclei_single_target_timeout_sec: 900,
-        nuclei_rate_limit: 30,
-        nuclei_concurrency: 16,
-        nuclei_bulk_size: 20,
-        afrog_concurrency: 20,
-        afrog_rate_limit: 20,
+        nuclei_rate_limit: 50,
+        nuclei_concurrency: 24,
+        nuclei_bulk_size: 30,
+        afrog_concurrency: 30,
+        afrog_rate_limit: 30,
         urlfinder_url_probe_enable: true,
-        urlfinder_url_probe_max_targets: 500,
-        urlfinder_url_probe_concurrency: 12,
+        urlfinder_url_probe_max_targets: 800,
+        urlfinder_url_probe_concurrency: 20,
         host_timeout_type: 'default',
         host_timeout: 1500,
-        port_parallelism: 40,
-        port_min_rate: 160,
+        port_parallelism: 64,
+        port_min_rate: 260,
       },
     },
   ];
@@ -10246,27 +10252,29 @@ function ConfigConsoleView({ token }: { token: string }) {
 
   const [domainDict, setDomainDict] = useState('');
   const [fileLeakDict, setFileLeakDict] = useState('');
-  const [domainBruteConcurrent, setDomainBruteConcurrent] = useState(180);
-  const [altDnsConcurrent, setAltDnsConcurrent] = useState(800);
-  const [webGunicornWorkers, setWebGunicornWorkers] = useState(2);
-  const [celeryTaskWorkerConcurrency, setCeleryTaskWorkerConcurrency] = useState(2);
-  const [celeryGithubWorkerConcurrency, setCeleryGithubWorkerConcurrency] = useState(1);
+  const [domainBruteConcurrent, setDomainBruteConcurrent] = useState(360);
+  const [altDnsConcurrent, setAltDnsConcurrent] = useState(1400);
+  const [webGunicornWorkers, setWebGunicornWorkers] = useState(6);
+  const [celeryTaskWorkerConcurrency, setCeleryTaskWorkerConcurrency] = useState(3);
+  const [celeryGithubWorkerConcurrency, setCeleryGithubWorkerConcurrency] = useState(2);
+  const [celeryHeavyWorkerConcurrency, setCeleryHeavyWorkerConcurrency] = useState(3);
+  const [celeryWebWorkerConcurrency, setCeleryWebWorkerConcurrency] = useState(3);
   const [celeryPrefetchMultiplier, setCeleryPrefetchMultiplier] = useState(1);
-  const [celeryMaxTasksPerChild, setCeleryMaxTasksPerChild] = useState(20);
-  const [celeryMaxMemoryPerChild, setCeleryMaxMemoryPerChild] = useState(280000);
-  const [nucleiSingleTargetTimeoutSec, setNucleiSingleTargetTimeoutSec] = useState(3600);
-  const [nucleiRateLimit, setNucleiRateLimit] = useState(8);
-  const [nucleiConcurrency, setNucleiConcurrency] = useState(4);
-  const [nucleiBulkSize, setNucleiBulkSize] = useState(5);
-  const [afrogConcurrency, setAfrogConcurrency] = useState(5);
-  const [afrogRateLimit, setAfrogRateLimit] = useState(5);
+  const [celeryMaxTasksPerChild, setCeleryMaxTasksPerChild] = useState(32);
+  const [celeryMaxMemoryPerChild, setCeleryMaxMemoryPerChild] = useState(720000);
+  const [nucleiSingleTargetTimeoutSec, setNucleiSingleTargetTimeoutSec] = useState(900);
+  const [nucleiRateLimit, setNucleiRateLimit] = useState(50);
+  const [nucleiConcurrency, setNucleiConcurrency] = useState(24);
+  const [nucleiBulkSize, setNucleiBulkSize] = useState(30);
+  const [afrogConcurrency, setAfrogConcurrency] = useState(30);
+  const [afrogRateLimit, setAfrogRateLimit] = useState(30);
   const [urlfinderUrlProbeEnable, setUrlfinderUrlProbeEnable] = useState(true);
-  const [urlfinderUrlProbeMaxTargets, setUrlfinderUrlProbeMaxTargets] = useState(300);
-  const [urlfinderUrlProbeConcurrency, setUrlfinderUrlProbeConcurrency] = useState(6);
+  const [urlfinderUrlProbeMaxTargets, setUrlfinderUrlProbeMaxTargets] = useState(800);
+  const [urlfinderUrlProbeConcurrency, setUrlfinderUrlProbeConcurrency] = useState(20);
   const [hostTimeoutType, setHostTimeoutType] = useState('default');
-  const [hostTimeout, setHostTimeout] = useState(900);
-  const [portParallelism, setPortParallelism] = useState(32);
-  const [portMinRate, setPortMinRate] = useState(64);
+  const [hostTimeout, setHostTimeout] = useState(1500);
+  const [portParallelism, setPortParallelism] = useState(64);
+  const [portMinRate, setPortMinRate] = useState(260);
   const [blackIpsText, setBlackIpsText] = useState('');
   const [dnsResolversText, setDnsResolversText] = useState('');
   const compactFieldInputClass = `${CONSOLE_INPUT_CLASS} xl:max-w-[440px]`;
@@ -10339,6 +10347,8 @@ function ConfigConsoleView({ token }: { token: string }) {
     setWebGunicornWorkers(getNumber('web_gunicorn_workers', webGunicornWorkers));
     setCeleryTaskWorkerConcurrency(getNumber('celery_task_worker_concurrency', celeryTaskWorkerConcurrency));
     setCeleryGithubWorkerConcurrency(getNumber('celery_github_worker_concurrency', celeryGithubWorkerConcurrency));
+    setCeleryHeavyWorkerConcurrency(getNumber('celery_heavy_worker_concurrency', celeryHeavyWorkerConcurrency));
+    setCeleryWebWorkerConcurrency(getNumber('celery_web_worker_concurrency', celeryWebWorkerConcurrency));
     setCeleryPrefetchMultiplier(getNumber('celery_prefetch_multiplier', celeryPrefetchMultiplier));
     setCeleryMaxTasksPerChild(getNumber('celery_max_tasks_per_child', celeryMaxTasksPerChild));
     setCeleryMaxMemoryPerChild(getNumber('celery_max_memory_per_child', celeryMaxMemoryPerChild));
@@ -10370,6 +10380,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       web_gunicorn_workers: Math.floor(webGunicornWorkers),
       celery_task_worker_concurrency: Math.floor(celeryTaskWorkerConcurrency),
       celery_github_worker_concurrency: Math.floor(celeryGithubWorkerConcurrency),
+      celery_heavy_worker_concurrency: Math.floor(celeryHeavyWorkerConcurrency),
+      celery_web_worker_concurrency: Math.floor(celeryWebWorkerConcurrency),
       celery_prefetch_multiplier: Math.floor(celeryPrefetchMultiplier),
       celery_max_tasks_per_child: Math.floor(celeryMaxTasksPerChild),
       celery_max_memory_per_child: Math.floor(celeryMaxMemoryPerChild),
@@ -10393,6 +10405,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       webGunicornWorkers,
       celeryTaskWorkerConcurrency,
       celeryGithubWorkerConcurrency,
+      celeryHeavyWorkerConcurrency,
+      celeryWebWorkerConcurrency,
       celeryPrefetchMultiplier,
       celeryMaxTasksPerChild,
       celeryMaxMemoryPerChild,
@@ -10439,27 +10453,29 @@ function ConfigConsoleView({ token }: { token: string }) {
 
       setDomainDict(String(scanConfig.domain_dict || ''));
       setFileLeakDict(String(scanConfig.file_leak_dict || ''));
-      setDomainBruteConcurrent(Number(scanConfig.domain_brute_concurrent || 180));
-      setAltDnsConcurrent(Number(scanConfig.alt_dns_concurrent || 800));
-      setWebGunicornWorkers(Number(scanConfig.web_gunicorn_workers || 2));
-      setCeleryTaskWorkerConcurrency(Number(scanConfig.celery_task_worker_concurrency || 2));
-      setCeleryGithubWorkerConcurrency(Number(scanConfig.celery_github_worker_concurrency || 1));
+      setDomainBruteConcurrent(Number(scanConfig.domain_brute_concurrent || 360));
+      setAltDnsConcurrent(Number(scanConfig.alt_dns_concurrent || 1400));
+      setWebGunicornWorkers(Number(scanConfig.web_gunicorn_workers || 6));
+      setCeleryTaskWorkerConcurrency(Number(scanConfig.celery_task_worker_concurrency || 3));
+      setCeleryGithubWorkerConcurrency(Number(scanConfig.celery_github_worker_concurrency || 2));
+      setCeleryHeavyWorkerConcurrency(Number(scanConfig.celery_heavy_worker_concurrency || 3));
+      setCeleryWebWorkerConcurrency(Number(scanConfig.celery_web_worker_concurrency || 3));
       setCeleryPrefetchMultiplier(Number(scanConfig.celery_prefetch_multiplier || 1));
-      setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 20));
-      setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 280000));
-      setNucleiSingleTargetTimeoutSec(Number(scanConfig.nuclei_single_target_timeout_sec || 3600));
-      setNucleiRateLimit(Number(scanConfig.nuclei_rate_limit || 8));
-      setNucleiConcurrency(Number(scanConfig.nuclei_concurrency || 4));
-      setNucleiBulkSize(Number(scanConfig.nuclei_bulk_size || 5));
-      setAfrogConcurrency(Number(scanConfig.afrog_concurrency || 5));
-      setAfrogRateLimit(Number(scanConfig.afrog_rate_limit || 5));
+      setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 32));
+      setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 720000));
+      setNucleiSingleTargetTimeoutSec(Number(scanConfig.nuclei_single_target_timeout_sec || 900));
+      setNucleiRateLimit(Number(scanConfig.nuclei_rate_limit || 50));
+      setNucleiConcurrency(Number(scanConfig.nuclei_concurrency || 24));
+      setNucleiBulkSize(Number(scanConfig.nuclei_bulk_size || 30));
+      setAfrogConcurrency(Number(scanConfig.afrog_concurrency || 30));
+      setAfrogRateLimit(Number(scanConfig.afrog_rate_limit || 30));
       setUrlfinderUrlProbeEnable(Boolean(scanConfig.urlfinder_url_probe_enable ?? true));
-      setUrlfinderUrlProbeMaxTargets(Number(scanConfig.urlfinder_url_probe_max_targets || 300));
-      setUrlfinderUrlProbeConcurrency(Number(scanConfig.urlfinder_url_probe_concurrency || 6));
+      setUrlfinderUrlProbeMaxTargets(Number(scanConfig.urlfinder_url_probe_max_targets || 800));
+      setUrlfinderUrlProbeConcurrency(Number(scanConfig.urlfinder_url_probe_concurrency || 20));
       setHostTimeoutType(String(scanConfig.host_timeout_type || 'default').toLowerCase() === 'custom' ? 'custom' : 'default');
-      setHostTimeout(Number(scanConfig.host_timeout || 900));
-      setPortParallelism(Number(scanConfig.port_parallelism || 32));
-      setPortMinRate(Number(scanConfig.port_min_rate || 64));
+      setHostTimeout(Number(scanConfig.host_timeout || 1500));
+      setPortParallelism(Number(scanConfig.port_parallelism || 64));
+      setPortMinRate(Number(scanConfig.port_min_rate || 260));
       setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
       setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
 
@@ -10510,6 +10526,14 @@ function ConfigConsoleView({ token }: { token: string }) {
     }
     if (!Number.isFinite(celeryGithubWorkerConcurrency) || celeryGithubWorkerConcurrency <= 0) {
       setError('Celery GitHub 队列并发必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(celeryHeavyWorkerConcurrency) || celeryHeavyWorkerConcurrency <= 0) {
+      setError('Celery 重任务队列并发必须大于 0');
+      return;
+    }
+    if (!Number.isFinite(celeryWebWorkerConcurrency) || celeryWebWorkerConcurrency <= 0) {
+      setError('Celery Web 重任务队列并发必须大于 0');
       return;
     }
     if (!Number.isFinite(celeryPrefetchMultiplier) || celeryPrefetchMultiplier <= 0) {
@@ -10594,6 +10618,8 @@ function ConfigConsoleView({ token }: { token: string }) {
             web_gunicorn_workers: Math.floor(webGunicornWorkers),
             celery_task_worker_concurrency: Math.floor(celeryTaskWorkerConcurrency),
             celery_github_worker_concurrency: Math.floor(celeryGithubWorkerConcurrency),
+            celery_heavy_worker_concurrency: Math.floor(celeryHeavyWorkerConcurrency),
+            celery_web_worker_concurrency: Math.floor(celeryWebWorkerConcurrency),
             celery_prefetch_multiplier: Math.floor(celeryPrefetchMultiplier),
             celery_max_tasks_per_child: Math.floor(celeryMaxTasksPerChild),
             celery_max_memory_per_child: Math.floor(celeryMaxMemoryPerChild),
@@ -10631,6 +10657,8 @@ function ConfigConsoleView({ token }: { token: string }) {
       setWebGunicornWorkers(Number(savedConfig.web_gunicorn_workers || webGunicornWorkers));
       setCeleryTaskWorkerConcurrency(Number(savedConfig.celery_task_worker_concurrency || celeryTaskWorkerConcurrency));
       setCeleryGithubWorkerConcurrency(Number(savedConfig.celery_github_worker_concurrency || celeryGithubWorkerConcurrency));
+      setCeleryHeavyWorkerConcurrency(Number(savedConfig.celery_heavy_worker_concurrency || celeryHeavyWorkerConcurrency));
+      setCeleryWebWorkerConcurrency(Number(savedConfig.celery_web_worker_concurrency || celeryWebWorkerConcurrency));
       setCeleryPrefetchMultiplier(Number(savedConfig.celery_prefetch_multiplier || celeryPrefetchMultiplier));
       setCeleryMaxTasksPerChild(Number(savedConfig.celery_max_tasks_per_child || celeryMaxTasksPerChild));
       setCeleryMaxMemoryPerChild(Number(savedConfig.celery_max_memory_per_child || celeryMaxMemoryPerChild));
@@ -11079,7 +11107,37 @@ function ConfigConsoleView({ token }: { token: string }) {
             />
           </div>
 
-          <div className="space-y-2 xl:col-span-2">
+          <div className="space-y-2">
+            <label htmlFor="config-celery-heavy-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
+              后台并行重任务数 (全端口/深度识别队列)
+              <span className="ml-2 font-mono opacity-70">ARL.CELERY_HEAVY_WORKER_CONCURRENCY</span>
+            </label>
+            <input
+              id="config-celery-heavy-worker-concurrency"
+              type="number"
+              min={1}
+              value={String(celeryHeavyWorkerConcurrency)}
+              onChange={(event) => setCeleryHeavyWorkerConcurrency(Number(event.target.value || 0))}
+              className={compactFieldInputClass}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="config-celery-web-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
+              后台并行 Web 重任务数 (目录/PoC/截图/爬虫队列)
+              <span className="ml-2 font-mono opacity-70">ARL.CELERY_WEB_WORKER_CONCURRENCY</span>
+            </label>
+            <input
+              id="config-celery-web-worker-concurrency"
+              type="number"
+              min={1}
+              value={String(celeryWebWorkerConcurrency)}
+              onChange={(event) => setCeleryWebWorkerConcurrency(Number(event.target.value || 0))}
+              className={compactFieldInputClass}
+            />
+          </div>
+
+          <div className="space-y-2">
             <label htmlFor="config-celery-github-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
               后台并行 GitHub 任务数 (独立队列)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_GITHUB_WORKER_CONCURRENCY</span>

@@ -260,9 +260,9 @@ def _normalize_string_list(raw_value):
 
 SCAN_PROFILE_ITEMS = [
     {
-        'id': '2c2g3m',
-        'label': '2核2G3M 保守',
-        'description': '适用于低配云主机，优先保证系统可访问性，扫描速度较慢，但能避免CPU、带宽占用过高',
+        'id': 'low_performance',
+        'label': '低性能配置',
+        'description': '适用于低资源主机，单次并行约 1 个目标，优先保证系统可访问性',
         'cpu_cores': 2,
         'memory_gb': 2,
         'bandwidth_mbps': 3,
@@ -281,6 +281,8 @@ SCAN_PROFILE_ITEMS = [
             'nuclei_rate_limit': 3,
             'nuclei_concurrency': 1,
             'nuclei_bulk_size': 2,
+            'afrog_concurrency': 3,
+            'afrog_rate_limit': 3,
             'urlfinder_url_probe_enable': True,
             'urlfinder_url_probe_max_targets': 150,
             'urlfinder_url_probe_concurrency': 3,
@@ -291,9 +293,9 @@ SCAN_PROFILE_ITEMS = [
         },
     },
     {
-        'id': '4c4g5m',
-        'label': '4核4G5M 平衡',
-        'description': '适用于中配主机，在可用性与扫描速度之间平衡，适合常规生产巡检。',
+        'id': 'medium_performance',
+        'label': '中性能配置',
+        'description': '适用于中等资源主机，单次并行约 2 个目标，在稳定性与扫描速度之间平衡。',
         'cpu_cores': 4,
         'memory_gb': 4,
         'bandwidth_mbps': 5,
@@ -312,6 +314,8 @@ SCAN_PROFILE_ITEMS = [
             'nuclei_rate_limit': 4,
             'nuclei_concurrency': 2,
             'nuclei_bulk_size': 3,
+            'afrog_concurrency': 8,
+            'afrog_rate_limit': 8,
             'urlfinder_url_probe_enable': True,
             'urlfinder_url_probe_max_targets': 220,
             'urlfinder_url_probe_concurrency': 4,
@@ -322,40 +326,45 @@ SCAN_PROFILE_ITEMS = [
         },
     },
     {
-        'id': '8c16g10m',
-        'label': '8核16G10M 高性能',
-        'description': '适用于 8C16G 高配主机，兼顾准确性与吞吐，优先保证长任务稳态运行。',
+        'id': 'high_performance',
+        'label': '高性能配置',
+        'description': '适用于高资源主机，单次并行约 3 个目标，在保证稳定性的前提下提升吞吐。',
         'cpu_cores': 8,
         'memory_gb': 16,
         'bandwidth_mbps': 10,
         'values': {
-            'domain_brute_concurrent': 260,
-            'alt_dns_concurrent': 900,
-            'web_gunicorn_workers': 4,
+            'domain_brute_concurrent': 360,
+            'alt_dns_concurrent': 1400,
+            'web_gunicorn_workers': 6,
             'celery_task_worker_concurrency': 3,
             'celery_github_worker_concurrency': 2,
             'celery_heavy_worker_concurrency': 3,
             'celery_web_worker_concurrency': 3,
             'celery_prefetch_multiplier': 1,
-            'celery_max_tasks_per_child': 24,
-            'celery_max_memory_per_child': 520000,
+            'celery_max_tasks_per_child': 32,
+            'celery_max_memory_per_child': 720000,
             'nuclei_single_target_timeout_sec': 900,
-            'nuclei_rate_limit': 30,
-            'nuclei_concurrency': 16,
-            'nuclei_bulk_size': 20,
-            'afrog_concurrency': 20,
-            'afrog_rate_limit': 20,
+            'nuclei_rate_limit': 50,
+            'nuclei_concurrency': 24,
+            'nuclei_bulk_size': 30,
+            'afrog_concurrency': 30,
+            'afrog_rate_limit': 30,
             'urlfinder_url_probe_enable': True,
-            'urlfinder_url_probe_max_targets': 500,
-            'urlfinder_url_probe_concurrency': 12,
+            'urlfinder_url_probe_max_targets': 800,
+            'urlfinder_url_probe_concurrency': 20,
             'host_timeout_type': 'default',
             'host_timeout': 1500,
-            'port_parallelism': 40,
-            'port_min_rate': 160,
+            'port_parallelism': 64,
+            'port_min_rate': 260,
         },
     },
 ]
 SCAN_PROFILE_MAP = {item['id']: item for item in SCAN_PROFILE_ITEMS}
+SCAN_PROFILE_ID_ALIASES = {
+    '2c2g3m': 'low_performance',
+    '4c4g5m': 'medium_performance',
+    '8c16g10m': 'high_performance',
+}
 
 
 def _extract_scan_profile_id(scan_config):
@@ -406,13 +415,14 @@ def _apply_scan_profile_overrides(scan_config):
         raise ValueError('scan_config 必须为对象')
 
     normalized = dict(scan_config)
-    profile_id = str(normalized.get('scan_profile_id', '') or '').strip().lower()
-    if not profile_id:
+    profile_id_raw = str(normalized.get('scan_profile_id', '') or '').strip().lower()
+    if not profile_id_raw:
         return normalized, ''
 
+    profile_id = SCAN_PROFILE_ID_ALIASES.get(profile_id_raw, profile_id_raw)
     profile = SCAN_PROFILE_MAP.get(profile_id)
     if profile is None:
-        raise ValueError(f'未知扫描预定义配置: {profile_id}')
+        raise ValueError(f'未知扫描预定义配置: {profile_id_raw}')
 
     merged_config = dict(profile.get('values', {}))
     merged_config.update(normalized)

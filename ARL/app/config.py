@@ -450,16 +450,16 @@ class Config(object):
     # Celery消息队列连接地址，用于分布式任务调度
     # 格式：amqp://用户名:密码@主机:端口/虚拟主机
     CELERY_BROKER_URL = "amqp://arl:arlpassword@localhost:5672/arlv2host"
-    # Gunicorn worker 数，降低默认值以减少常驻内存
-    WEB_GUNICORN_WORKERS = 2
+    # Gunicorn worker 数（默认按高性能预设）
+    WEB_GUNICORN_WORKERS = 6
     # Celery 主任务队列并发
-    CELERY_TASK_WORKER_CONCURRENCY = 2
+    CELERY_TASK_WORKER_CONCURRENCY = 3
     # Celery GitHub 队列并发
-    CELERY_GITHUB_WORKER_CONCURRENCY = 1
+    CELERY_GITHUB_WORKER_CONCURRENCY = 2
     # Celery 重任务队列并发（全端口/深度识别等高负载任务）
-    CELERY_HEAVY_WORKER_CONCURRENCY = 1
+    CELERY_HEAVY_WORKER_CONCURRENCY = 3
     # Celery Web 重任务队列并发（目录扫描/PoC/截图/站点爬虫等）
-    CELERY_WEB_WORKER_CONCURRENCY = 1
+    CELERY_WEB_WORKER_CONCURRENCY = 3
     # Celery 预取倍率（1 表示每 worker 仅预取 1 个任务）
     CELERY_PREFETCH_MULTIPLIER = 1
     # Celery AMQP 心跳超时（秒）；内部固定值，与 RabbitMQ 侧保持一致。
@@ -467,9 +467,9 @@ class Config(object):
     # Celery 检查 broker 心跳的频率倍率；内部固定值，2.0 表示每 heartbeat/2 检查一次。
     CELERY_BROKER_HEARTBEAT_CHECKRATE = 2.0
     # Celery 子进程处理多少任务后重启，防止内存膨胀
-    CELERY_MAX_TASKS_PER_CHILD = 20
+    CELERY_MAX_TASKS_PER_CHILD = 32
     # Celery 子进程最大内存（KB），超过后重启，0 表示不限制
-    CELERY_MAX_MEMORY_PER_CHILD = 280000
+    CELERY_MAX_MEMORY_PER_CHILD = 720000
     # Celery 单任务硬超时（秒），0 表示不限制
     CELERY_TASK_TIME_LIMIT_SEC = 0
     # Celery 单任务软超时（秒），0 表示不限制
@@ -522,15 +522,15 @@ class Config(object):
     # nuclei 阶段最多扫描目标数（0=不限制）
     NUCLEI_STAGE_MAX_TARGETS = 0
     # 单目标 nuclei 最大扫描时长（秒），用于按批次目标数折算超时上限
-    NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = 60 * 60
+    NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = 15 * 60
     # 每个 nuclei 批次最多包含目标数（<=1 表示自动分批，>1 表示固定分批大小）
     NUCLEI_TARGETS_PER_BATCH = 1
     # nuclei 每秒请求上限（RPS）
-    NUCLEI_RATE_LIMIT = 8
+    NUCLEI_RATE_LIMIT = 50
     # nuclei 并发 worker 数（模板执行并发）
-    NUCLEI_CONCURRENCY = 4
+    NUCLEI_CONCURRENCY = 24
     # nuclei 单模板批量目标并发（bulk-size）
-    NUCLEI_BULK_SIZE = 5
+    NUCLEI_BULK_SIZE = 30
     # 是否启用 nuclei 自动扫描（-as），在无指纹标签时用于兜底
     NUCLEI_AUTO_SCAN = True
     # 无指纹标签时使用的默认标签
@@ -546,9 +546,9 @@ class Config(object):
     # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）
     AFROG_SEVERITY = ""
     # afrog 扫描并发（-c）
-    AFROG_CONCURRENCY = 5
+    AFROG_CONCURRENCY = 30
     # afrog 每秒请求上限（-rl）
-    AFROG_RATE_LIMIT = 5
+    AFROG_RATE_LIMIT = 30
     # afrog 扫描执行超时（秒）
     AFROG_EXEC_TIMEOUT_SEC = 2 * 60 * 60
     # afrog 单批最多目标数
@@ -580,9 +580,9 @@ class Config(object):
     # 是否启用 URLFinder 提取 URL 的可达性探测并写入 URL 信息
     URLFINDER_URL_PROBE_ENABLE = True
     # URLFinder URL 可达性探测单次最多目标数
-    URLFINDER_URL_PROBE_MAX_TARGETS = 300
+    URLFINDER_URL_PROBE_MAX_TARGETS = 800
     # URLFinder URL 可达性探测并发
-    URLFINDER_URL_PROBE_CONCURRENCY = 6
+    URLFINDER_URL_PROBE_CONCURRENCY = 20
     # 是否启用内建 kscan 指纹解析
     KSCAN_FINGERPRINT_ENABLE = True
     # kscan 指纹文件路径（默认使用 ARL 内置字典）
@@ -783,11 +783,11 @@ class Config(object):
     # 端口扫描主机超时策略（default/custom）
     HOST_TIMEOUT_TYPE = "default"
     # 当 HOST_TIMEOUT_TYPE=custom 时生效，单位秒
-    HOST_TIMEOUT = 60 * 15
+    HOST_TIMEOUT = 60 * 25
     # nmap 探测报文并行度默认值
-    PORT_PARALLELISM = 32
+    PORT_PARALLELISM = 64
     # nmap 最少发包速率默认值
-    PORT_MIN_RATE = 64
+    PORT_MIN_RATE = 260
     # 端口扫描每批目标数量（常规）
     PORT_SCAN_TARGET_BATCH_SIZE = 48
     # 端口扫描每批目标数量（重负载端口集，如 top1000）
@@ -815,9 +815,9 @@ class Config(object):
     # 是否启用重任务队列分流；若未检测到 arlheavy 消费者会自动回退到 arltask
     TASK_HEAVY_QUEUE_ENABLE = True
     # 域名爆破并发数（普通域名字典爆破）
-    DOMAIN_BRUTE_CONCURRENT = 180
+    DOMAIN_BRUTE_CONCURRENT = 360
     # 组合生成的域名爆破并发数（altdns变异域名爆破）
-    ALT_DNS_CONCURRENT = 800
+    ALT_DNS_CONCURRENT = 1400
     # 域名解析并发
     DOMAIN_RESOLVE_CONCURRENCY = 10
     # 域名信息构建并发
