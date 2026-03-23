@@ -46,10 +46,18 @@ def _safe_int(value, default=0):
 
 def _parse_host_port(host: str, last_url: str):
     host_text = str(host or "").strip().lower()
-    parsed = urlparse(str(last_url or "").strip())
+    last_url_text = str(last_url or "").strip()
+    parsed = urlparse(last_url_text)
+    if not getattr(parsed, "hostname", None) and last_url_text and "://" not in last_url_text:
+        # 兼容无 scheme 的 host[:port][/path] 形态
+        parsed = urlparse("//{}".format(last_url_text))
 
     hostname = str(parsed.hostname or "").strip().lower() or host_text
-    port = _safe_int(parsed.port, 0)
+    try:
+        parsed_port = parsed.port
+    except Exception:
+        parsed_port = 0
+    port = _safe_int(parsed_port, 0)
     if port <= 0:
         if parsed.scheme == "https":
             port = 443
@@ -127,9 +135,15 @@ class ARLWafHost(ARLResource):
                 else []
             )
             for host_item in blocked_hosts:
-                host = str((host_item or {}).get("host", "") or "").strip().lower()
-                last_url = str((host_item or {}).get("last_url", "") or "").strip()
-                waf_name = str((host_item or {}).get("waf_name", "") or "").strip() or "unknown"
+                if isinstance(host_item, dict):
+                    host_data = host_item
+                else:
+                    # 兼容历史脏数据，避免前端点击“WAF识别”时接口 500
+                    host_data = {"host": str(host_item or "").strip()}
+
+                host = str(host_data.get("host", "") or "").strip().lower()
+                last_url = str(host_data.get("last_url", "") or "").strip()
+                waf_name = str(host_data.get("waf_name", "") or "").strip() or "unknown"
                 ip, domain, port = _parse_host_port(host, last_url)
 
                 if ip_kw and ip_kw not in ip:
