@@ -2169,6 +2169,38 @@ function normalizeValue(value: any): string {
   return truncateText(String(value));
 }
 
+function normalizeValueNoTruncate(value: any): string {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '-';
+    const normalized = value
+      .map((item) => {
+        if (item === null || item === undefined) return '';
+        if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
+          return String(item);
+        }
+        try {
+          return JSON.stringify(item);
+        } catch {
+          return String(item);
+        }
+      })
+      .filter((item) => item)
+      .join(', ');
+    return normalized || '-';
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 const WIH_SENSITIVE_RECORD_TYPE_SET = new Set([
   'app_key',
   'api_key',
@@ -8143,8 +8175,10 @@ function TableModuleView({
 
                         if (module.id === 'nuclei_result' && column === 'verify_data') {
                           const verifyText = formatModuleCellValue(module.id, column, row);
+                          const verifyRawText = normalizeValueNoTruncate(row?.verify_data);
                           const scannerType = String(row?.scanner_type || '').trim().toLowerCase();
-                          const hasVerifyText = verifyText && verifyText !== '-';
+                          const copyPayload = verifyRawText && verifyRawText !== '-' ? verifyRawText : verifyText;
+                          const hasVerifyText = copyPayload && copyPayload !== '-';
                           const copyLabel = scannerType === 'afrog' ? 'afrog curl命令' : '验证信息';
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[300px] max-w-[760px]">
@@ -8154,7 +8188,7 @@ function TableModuleView({
                               {hasVerifyText ? (
                                 <button
                                   type="button"
-                                  onClick={() => void copyTextToClipboard(verifyText, copyLabel)}
+                                  onClick={() => void copyTextToClipboard(copyPayload, copyLabel)}
                                   className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
                                 >
                                   复制

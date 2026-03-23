@@ -41,6 +41,100 @@ ns = Namespace('export', description="任务报告导出接口")
 
 logger = get_logger()
 
+MONGO_EXPORT_BATCH_SIZE = 500
+TASK_EXPORT_PROJECTION = {
+    "_id": 1,
+    "target": 1,
+    "name": 1,
+    "type": 1,
+    "start_time": 1,
+    "end_time": 1,
+}
+IP_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "ip": 1,
+    "port_info": 1,
+    "geo_city": 1,
+    "geo_asn": 1,
+    "domain": 1,
+    "os_info": 1,
+    "cdn_name": 1,
+    "ip_type": 1,
+}
+SITE_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "site": 1,
+    "url": 1,
+    "title": 1,
+    "finger": 1,
+    "status": 1,
+    "favicon": 1,
+}
+DOMAIN_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "domain": 1,
+    "type": 1,
+    "record": 1,
+    "ips": 1,
+}
+URL_EXPORT_PROJECTION = {
+    "url": 1,
+    "site": 1,
+    "title": 1,
+    "status_code": 1,
+    "content_length": 1,
+    "source": 1,
+}
+FILELEAK_EXPORT_PROJECTION = {
+    "url": 1,
+    "site": 1,
+    "title": 1,
+    "status_code": 1,
+    "content_length": 1,
+}
+WIH_EXPORT_PROJECTION = {
+    "record_type": 1,
+    "content": 1,
+    "source": 1,
+    "site": 1,
+}
+SERVICE_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "service_name": 1,
+    "service_info": 1,
+}
+VULN_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "vul_name": 1,
+    "severity": 1,
+    "target": 1,
+    "plg_name": 1,
+    "plg_type": 1,
+    "description": 1,
+    "detail": 1,
+    "verify_data": 1,
+}
+NUCLEI_RESULT_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "vuln_name": 1,
+    "vuln_severity": 1,
+    "target": 1,
+    "vuln_url": 1,
+    "template_id": 1,
+    "template_url": 1,
+}
+CERT_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "ip": 1,
+    "port": 1,
+    "host": 1,
+    "scan_mode": 1,
+    "sni_domain": 1,
+    "domain": 1,
+    "domains": 1,
+    "cert": 1,
+}
+
 
 def normalize_export_format(value):
     """
@@ -173,38 +267,43 @@ def render_workbook_html(wb, title, metadata=None):
     toc_items = []
     sections = []
     for index, ws in enumerate(wb.worksheets, start=1):
-        rows = []
-        for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column, values_only=True):
-            rows.append([_normalize_html_cell_value(cell) for cell in row])
-
-        if not rows:
+        row_iter = ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column, values_only=True)
+        first_row = next(row_iter, None)
+        if first_row is None:
             continue
 
         section_id = "sheet-{}".format(index)
-        header = rows[0]
-        body = rows[1:]
+        header = [_normalize_html_cell_value(cell) for cell in first_row]
         header_html = "".join(
             "<th><div class='cell-header'>{}</div></th>".format(cell or "&nbsp;")
             for cell in header
         )
+
+        body_count = 0
+        body_rows = []
+        for row in row_iter:
+            body_count += 1
+            body_rows.append(
+                "<tr>{}</tr>".format(
+                    "".join(
+                        "<td><div class='cell-content'>{}</div></td>".format(
+                            _normalize_html_cell_value(cell) or "&nbsp;"
+                        )
+                        for cell in row
+                    )
+                )
+            )
+
         toc_items.append(
             '<a href="#{section_id}" class="toc-link"><span>{title}</span><span>{count} 行</span></a>'.format(
                 section_id=section_id,
                 title=escape(sanitize_excel_value(ws.title)),
-                count=max(len(body), 0),
+                count=body_count,
             )
         )
 
-        if body:
-            body_html = "".join(
-                "<tr>{}</tr>".format(
-                    "".join(
-                        "<td><div class='cell-content'>{}</div></td>".format(cell or "&nbsp;")
-                        for cell in row
-                    )
-                )
-                for row in body
-            )
+        if body_rows:
+            body_html = "".join(body_rows)
         else:
             body_html = "<tr><td colspan='{}' class='empty-cell'>暂无数据</td></tr>".format(max(len(header), 1))
 
@@ -229,7 +328,7 @@ def render_workbook_html(wb, title, metadata=None):
             """.format(
                 section_id=section_id,
                 title=escape(sanitize_excel_value(ws.title)),
-                count=max(len(body), 0),
+                count=body_count,
                 header=header_html,
                 body=body_html,
             )
@@ -613,14 +712,18 @@ def _beautify_sheet(ws, center_cols=None):
     zebra_fill = PatternFill(fill_type="solid", fgColor="F6FAFF")
     thin_side = Side(style="thin", color="D9E2F3")
     thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    header_font = Font(name="Consolas", color="FFFFFF", bold=True)
     body_font = Font(name="Consolas", color="111111")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
 
     ws.row_dimensions[1].height = 24
     for col in range(1, max_col + 1):
         cell = ws.cell(row=1, column=col)
-        cell.font = Font(name="Consolas", color="FFFFFF", bold=True)
+        cell.font = header_font
         cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.alignment = header_alignment
         cell.border = thin_border
 
     for row in range(2, max_row + 1):
@@ -632,9 +735,9 @@ def _beautify_sheet(ws, center_cols=None):
                 cell.fill = zebra_fill
             cell.border = thin_border
             if col in center_cols:
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.alignment = center_alignment
             else:
-                cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                cell.alignment = left_alignment
 
 
 def set_sheet_style(ws):
@@ -848,7 +951,10 @@ def get_task_data(task_id):
         任务数据字典或None
     """
     try:
-        task_data = utils.conn_db('task').find_one({'_id': ObjectId(task_id)})
+        task_data = utils.conn_db('task').find_one(
+            {'_id': ObjectId(task_id)},
+            projection=TASK_EXPORT_PROJECTION,
+        )
         return task_data
     except Exception as e:
         pass
@@ -864,7 +970,10 @@ def get_ip_data(task_id):
     返回：
         IP数据游标
     """
-    data =  utils.conn_db('ip').find({'task_id': task_id})
+    data = utils.conn_db('ip').find(
+        {'task_id': task_id},
+        projection=IP_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
     return data
 
 
@@ -878,7 +987,10 @@ def get_site_data(task_id):
     返回：
         站点数据游标
     """
-    data = utils.conn_db('site').find({'task_id': task_id})
+    data = utils.conn_db('site').find(
+        {'task_id': task_id},
+        projection=SITE_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
     return data
 
 
@@ -892,7 +1004,10 @@ def get_domain_data(task_id):
     返回：
         域名数据游标
     """
-    data = utils.conn_db('domain').find({'task_id': task_id})
+    data = utils.conn_db('domain').find(
+        {'task_id': task_id},
+        projection=DOMAIN_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
     return data
 
 
@@ -900,21 +1015,30 @@ def get_url_data(task_id):
     """
     获取任务的 URL 信息数据。
     """
-    return utils.conn_db('url').find({'task_id': task_id})
+    return utils.conn_db('url').find(
+        {'task_id': task_id},
+        projection=URL_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
 def get_fileleak_data(task_id):
     """
     获取任务的目录扫描（文件泄露）数据。
     """
-    return utils.conn_db('fileleak').find({'task_id': task_id})
+    return utils.conn_db('fileleak').find(
+        {'task_id': task_id},
+        projection=FILELEAK_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
 def get_wih_data(task_id):
     """
     获取任务的 WIH 数据。
     """
-    return utils.conn_db('wih').find({'task_id': task_id})
+    return utils.conn_db('wih').find(
+        {'task_id': task_id},
+        projection=WIH_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
 def _normalize_task_id_list(task_ids):
@@ -948,7 +1072,10 @@ def get_service_data(task_ids):
         query = {"task_id": task_id_list[0]}
     else:
         query = {"task_id": {"$in": task_id_list}}
-    return utils.conn_db('service').find(query)
+    return utils.conn_db('service').find(
+        query,
+        projection=SERVICE_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
 def _build_service_rows(task_ids, fallback_ip_items=None):
@@ -1019,21 +1146,30 @@ def get_vuln_data(task_id):
     """
     获取任务的漏洞数据（nPoc/风险巡航等）
     """
-    return utils.conn_db('vuln').find({'task_id': task_id})
+    return utils.conn_db('vuln').find(
+        {'task_id': task_id},
+        projection=VULN_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
 def get_nuclei_result_data(task_id):
     """
     获取任务的 nuclei 漏洞结果
     """
-    return utils.conn_db('nuclei_result').find({'task_id': task_id})
+    return utils.conn_db('nuclei_result').find(
+        {'task_id': task_id},
+        projection=NUCLEI_RESULT_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
 def get_cert_data(task_id):
     """
     获取任务的 SSL 证书结果
     """
-    return utils.conn_db('cert').find({'task_id': task_id})
+    return utils.conn_db('cert').find(
+        {'task_id': task_id},
+        projection=CERT_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
 def _extract_url_rows(task_ids):
@@ -1109,7 +1245,7 @@ def _extract_wih_rows(task_ids):
     return rows
 
 
-def _build_url_sheet(wb, task_ids):
+def _build_url_sheet(wb, task_ids, apply_style=True):
     """
     在导出工作簿中新增 URL 信息工作表。
     """
@@ -1125,10 +1261,11 @@ def _build_url_sheet(wb, task_ids):
     for row in _extract_url_rows(task_ids):
         ws.append(row)
 
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
 
-def _build_fileleak_sheet(wb, task_ids):
+def _build_fileleak_sheet(wb, task_ids, apply_style=True):
     """
     在导出工作簿中新增目录扫描工作表。
     """
@@ -1143,10 +1280,11 @@ def _build_fileleak_sheet(wb, task_ids):
     for row in _extract_fileleak_rows(task_ids):
         ws.append(row)
 
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
 
-def _build_wih_sheet(wb, task_ids):
+def _build_wih_sheet(wb, task_ids, apply_style=True):
     """
     在导出工作簿中新增 WIH 工作表。
     """
@@ -1160,7 +1298,8 @@ def _build_wih_sheet(wb, task_ids):
     for row in _extract_wih_rows(task_ids):
         ws.append(row)
 
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
 
 def _cert_record_rank(item):
@@ -1553,7 +1692,7 @@ def _extract_cert_rows(task_ids):
     return rows
 
 
-def _build_cert_sheet(wb, task_ids):
+def _build_cert_sheet(wb, task_ids, apply_style=True):
     """
     在导出工作簿中新增 SSL 证书工作表，并补充 TLS 合规审计列。
     """
@@ -1597,7 +1736,8 @@ def _build_cert_sheet(wb, task_ids):
     for row in _extract_cert_rows(task_ids):
         ws.append(row)
 
-    beautify_cert_sheet(ws)
+    if apply_style:
+        beautify_cert_sheet(ws)
 
 
 def _extract_vuln_rows(task_ids):
@@ -1804,7 +1944,7 @@ def build_task_export_summary(task_ids):
     }
 
 
-def _build_vuln_sheet(wb, task_ids):
+def _build_vuln_sheet(wb, task_ids, apply_style=True):
     """
     在导出工作簿中新增风险明细工作表
     """
@@ -1822,7 +1962,8 @@ def _build_vuln_sheet(wb, task_ids):
     for row in _extract_vuln_rows(task_ids):
         ws.append(row)
 
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
 
 def port_service_product_statist(task_id):
@@ -1925,13 +2066,15 @@ def port_service_product_statist(task_id):
 class SaveTask(object):
     """docstring for ClassName"""
 
-    def __init__(self, task_id):
+    def __init__(self, task_id, apply_style=True):
         self.task_id = task_id
         self.wb = Workbook()
         self.is_ip_task = False
+        self.apply_style = bool(apply_style)
 
     def set_style(self, ws):
-        set_sheet_style(ws)
+        if self.apply_style:
+            set_sheet_style(ws)
 
     def build_service_xl(self):
         ws = self.wb.create_sheet(title="系统服务")
@@ -2074,25 +2217,25 @@ class SaveTask(object):
         """
         构建 URL 信息工作表。
         """
-        _build_url_sheet(self.wb, [self.task_id])
+        _build_url_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_fileleak_xl(self):
         """
         构建目录扫描工作表。
         """
-        _build_fileleak_sheet(self.wb, [self.task_id])
+        _build_fileleak_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_wih_xl(self):
         """
         构建 WIH 工作表。
         """
-        _build_wih_sheet(self.wb, [self.task_id])
+        _build_wih_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_cert_xl(self):
         """
         生成 SSL 证书工作表（协议/套件/强度）。
         """
-        _build_cert_sheet(self.wb, [self.task_id])
+        _build_cert_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_statist(self):
         statist = port_service_product_statist(self.task_id)
@@ -2162,7 +2305,7 @@ class SaveTask(object):
         self.set_style(ws)
 
     def build_vuln_xl(self):
-        _build_vuln_sheet(self.wb, [self.task_id])
+        _build_vuln_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_workbook(self):
         task_data = get_task_data(self.task_id)
@@ -2199,17 +2342,17 @@ class SaveTask(object):
         return save_virtual_workbook(workbook)
 
 
-def build_single_task_workbook(task_id):
+def build_single_task_workbook(task_id, apply_style=True):
     """
     构建单任务导出工作簿，供 Excel/HTML 两种格式复用。
     """
     task_id = task_id.strip()
-    save = SaveTask(task_id)
+    save = SaveTask(task_id, apply_style=apply_style)
     return save.build_workbook()
 
 
 def export_arl(task_id):
-    workbook = build_single_task_workbook(task_id)
+    workbook = build_single_task_workbook(task_id, apply_style=True)
     if not workbook:
         return None
     return save_virtual_workbook(workbook)
@@ -2219,7 +2362,7 @@ def export_arl_html(task_id):
     """
     导出单任务 HTML 报告。
     """
-    workbook = build_single_task_workbook(task_id)
+    workbook = build_single_task_workbook(task_id, apply_style=False)
     if not workbook:
         return None
     task_data = get_task_data(task_id.strip()) or {}
@@ -2229,7 +2372,7 @@ def export_arl_html(task_id):
     return render_workbook_html(workbook, title, metadata=metadata)
 
 
-def build_merge_tasks_workbook(task_id_list):
+def build_merge_tasks_workbook(task_id_list, apply_style=True):
     """
     整合多个任务并构建统一工作簿，供 Excel/HTML 两种格式复用。
     
@@ -2384,7 +2527,8 @@ def build_merge_tasks_workbook(task_id_list):
             sanitize_excel_value(item.get("status", "")),
             sanitize_excel_value((item.get("favicon", {}) or {}).get("hash", "")),
         ])
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
     # IP（与单任务导出同结构）
     ws = wb.create_sheet(title="IP")
@@ -2446,7 +2590,8 @@ def build_merge_tasks_workbook(task_id_list):
                 sanitize_excel_value(item.get("cdn_name", "")),
                 sanitize_excel_value(item.get("ip_type", "")),
             ])
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
     # 系统服务（与单任务导出同结构）
     ws = wb.create_sheet(title="系统服务")
@@ -2463,9 +2608,10 @@ def build_merge_tasks_workbook(task_id_list):
             sanitize_excel_value(row[3]),
             sanitize_excel_value(row[4]),
         ])
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
-    _build_cert_sheet(wb, valid_task_ids)
+    _build_cert_sheet(wb, valid_task_ids, apply_style=apply_style)
 
     # 域名（统一保留，IP任务为空时仅输出表头）
     ws = wb.create_sheet(title="域名")
@@ -2482,13 +2628,14 @@ def build_merge_tasks_workbook(task_id_list):
             sanitize_excel_value(" \r\n".join(as_list(item.get("record", [])))),
             sanitize_excel_value(" \r\n".join(as_list(item.get("ips", [])))),
         ])
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
     # URL信息 / 目录扫描 / WIH / 风险（与单任务导出顺序保持一致）
-    _build_url_sheet(wb, valid_task_ids)
-    _build_fileleak_sheet(wb, valid_task_ids)
-    _build_wih_sheet(wb, valid_task_ids)
-    _build_vuln_sheet(wb, valid_task_ids)
+    _build_url_sheet(wb, valid_task_ids, apply_style=apply_style)
+    _build_fileleak_sheet(wb, valid_task_ids, apply_style=apply_style)
+    _build_wih_sheet(wb, valid_task_ids, apply_style=apply_style)
+    _build_vuln_sheet(wb, valid_task_ids, apply_style=apply_style)
 
     # 资产统计（与单任务导出同结构）
     statist = calc_port_service_product_statist_from_ip_items(merged_ip_items)
@@ -2538,13 +2685,14 @@ def build_merge_tasks_workbook(task_id_list):
             cnt += 1
     ws["K27"] = "产品类别总数"
     ws["K28"] = statist["product_total"]
-    set_sheet_style(ws)
+    if apply_style:
+        set_sheet_style(ws)
 
     return wb
 
 
 def export_merge_tasks(task_id_list):
-    workbook = build_merge_tasks_workbook(task_id_list)
+    workbook = build_merge_tasks_workbook(task_id_list, apply_style=True)
     return save_virtual_workbook(workbook)
 
 
@@ -2552,7 +2700,7 @@ def export_merge_tasks_html(task_id_list):
     """
     导出批量任务 HTML 报告。
     """
-    workbook = build_merge_tasks_workbook(task_id_list)
+    workbook = build_merge_tasks_workbook(task_id_list, apply_style=False)
     task_items = []
     task_names = []
     for task_id in _normalize_task_id_list(task_id_list):
