@@ -13,9 +13,12 @@ PoC 扫描结果管理模块
 - vuln_severity: 风险等级
 - vuln_url: 命中 URL（afrog 回退为 target）
 - target: 扫描目标
-- verify_data: 验证信息（nuclei 为 curl_command，afrog 为 verify_data）
+- verify_data: 验证信息（nuclei 为 curl_command，afrog 尽量转换为 curl）
 """
 import re
+import json
+import shlex
+from urllib.parse import urlparse
 
 from bson import ObjectId
 from flask_restx import fields, Namespace
@@ -51,6 +54,131 @@ POC_SORT_FIELD_MAP = {
     "rule_id": "rule_id",
     "scanner_type": "scanner_type",
 }
+
+
+def _shell_quote(value):
+    return shlex.quote(str(value or ""))
+
+
+def _build_curl_from_http_request(request_text, target):
+    """
+    将 afrog 原始 HTTP 请求文本尽量转换为可复现的 curl 命令。
+    """
+    text = str(request_text or "").replace("\r\n", "\n").strip()
+    if not text:
+        return ""
+
+    lines = text.split("\n")
+    if not lines:
+        return ""
+
+    request_line = str(lines[0] or "").strip()
+    parts = request_line.split()
+    if len(parts) < 2:
+        return ""
+
+    method = str(parts[0] or "GET").strip().upper() or "GET"
+    raw_path = str(parts[1] or "").strip()
+    if not raw_path:
+        return ""
+
+    host = ""
+    headers = []
+    body_lines = []
+    in_body = False
+
+    for line in lines[1:]:
+        if not in_body:
+            if not str(line).strip():
+                in_body = True
+                continue
+            if ":" not in line:
+                continue
+            name, value = line.split(":", 1)
+            name = str(name or "").strip()
+            value = str(value or "").strip()
+            if not name:
+                continue
+            lower_name = name.lower()
+            if lower_name == "host":
+                host = value
+                continue
+            if lower_name == "content-length":
+                continue
+            headers.append((name, value))
+            continue
+
+        body_lines.append(line)
+
+    body_text = "\n".join(body_lines).strip()
+
+    target_text = str(target or "").strip()
+    parsed_target = urlparse(target_text) if target_text else None
+    scheme = "http"
+    if parsed_target and parsed_target.scheme:
+        scheme = str(parsed_target.scheme).strip().lower() or "http"
+
+    if raw_path.startswith("http://") or raw_path.startswith("https://"):
+        request_url = raw_path
+    else:
+        base_host = host
+        if not base_host and parsed_target:
+            base_host = parsed_target.netloc or parsed_target.hostname or ""
+        if not base_host:
+            return ""
+        path_text = raw_path if raw_path.startswith("/") else "/{}".format(raw_path)
+        request_url = "{}://{}{}".format(scheme, base_host, path_text)
+
+    command_parts = ["curl", "-k", "-i", "-sS", "-X", method, _shell_quote(request_url)]
+    for header_name, header_value in headers:
+        command_parts.extend(["-H", _shell_quote("{}: {}".format(header_name, header_value))])
+    if body_text:
+        command_parts.extend(["--data-raw", _shell_quote(body_text)])
+
+    return " ".join(command_parts)
+
+
+def _normalize_afrog_verify_data(verify_data, target):
+    """
+    归一化 afrog 验证信息为 curl 命令：
+    1) 优先使用结果中自带 curl 字段
+    2) 否则从 request 文本推导 curl
+    3) 再回退到基础 URL curl 或原文
+    """
+    raw_text = str(verify_data or "").strip()
+    if not raw_text:
+        return ""
+
+    payload = None
+    try:
+        parsed = json.loads(raw_text)
+        if isinstance(parsed, dict):
+            payload = parsed
+    except Exception:
+        payload = None
+
+    if not isinstance(payload, dict):
+        return raw_text
+
+    for key in ("curl_command", "curl-command", "curl"):
+        candidate = str(payload.get(key, "") or "").strip()
+        if candidate:
+            return candidate
+
+    request_text = str(payload.get("request", "") or "").strip()
+    if request_text:
+        curl_command = _build_curl_from_http_request(
+            request_text,
+            str(payload.get("target", "") or str(target or "")).strip(),
+        )
+        if curl_command:
+            return curl_command
+
+    target_text = str(payload.get("target", "") or str(target or "")).strip()
+    if target_text.startswith(("http://", "https://")):
+        return "curl -k -i -sS {}".format(_shell_quote(target_text))
+
+    return raw_text
 
 
 def _build_regex_query(value):
@@ -238,7 +366,11 @@ def _format_poc_result_items(data):
         row["vuln_url"] = str(row.get("vuln_url") or "").strip()
         row["vuln_name"] = str(row.get("vuln_name") or "").strip()
         row["vuln_severity"] = str(row.get("vuln_severity") or "info").strip().lower()
-        row["verify_data"] = str(row.get("verify_data") or "").strip()
+        raw_verify_data = str(row.get("verify_data") or "").strip()
+        if scanner_type == "afrog":
+            row["verify_data"] = _normalize_afrog_verify_data(raw_verify_data, row.get("target"))
+        else:
+            row["verify_data"] = raw_verify_data
         row["task_id"] = str(row.get("task_id") or "").strip()
         row["save_date"] = str(row.get("save_date") or "").strip()
         items.append(row)

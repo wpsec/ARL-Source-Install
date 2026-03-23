@@ -8141,6 +8141,29 @@ function TableModuleView({
                           );
                         }
 
+                        if (module.id === 'nuclei_result' && column === 'verify_data') {
+                          const verifyText = formatModuleCellValue(module.id, column, row);
+                          const scannerType = String(row?.scanner_type || '').trim().toLowerCase();
+                          const hasVerifyText = verifyText && verifyText !== '-';
+                          const copyLabel = scannerType === 'afrog' ? 'afrog curl命令' : '验证信息';
+                          return (
+                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[300px] max-w-[760px]">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed rounded-xl border border-brand-border bg-brand-bg/40 px-3 py-2 font-mono text-left">
+                                {verifyText}
+                              </div>
+                              {hasVerifyText ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void copyTextToClipboard(verifyText, copyLabel)}
+                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                >
+                                  复制
+                                </button>
+                              ) : null}
+                            </td>
+                          );
+                        }
+
                         if (module.id === 'cip' && (column === 'ip_count' || column === 'domain_count')) {
                           const taskId = String(row?.task_id || '').trim();
                           const cidrPrefix = buildCidrPrefix(row?.cidr_ip);
