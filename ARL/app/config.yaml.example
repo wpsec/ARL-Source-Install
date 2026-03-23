@@ -350,10 +350,20 @@ ARL:
   FILE_LEAK_DICT: ""
   # 单站点目录扫描线程数
   FILE_LEAK_CONCURRENCY: 6
+  # 目录扫描目标并发（并行扫描多个站点）
+  FILE_LEAK_TARGET_CONCURRENCY: 1
   # 单站点目录扫描总超时（秒）
   FILE_LEAK_SITE_TIMEOUT_SEC: 900
+  # 单站点目录扫描总超时每1000 URL追加预算（秒）
+  FILE_LEAK_SITE_TIMEOUT_PER_1000_URLS_SEC: 180
+  # 单站点目录扫描总超时预算上限（秒，0=不限制）
+  FILE_LEAK_SITE_TIMEOUT_MAX_SEC: 7200
   # 单站点目录扫描无进展超时（秒）
   FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC: 120
+  # 单站点目录扫描无进展超时每1000 URL追加预算（秒）
+  FILE_LEAK_NO_PROGRESS_TIMEOUT_PER_1000_URLS_SEC: 30
+  # 单站点目录扫描无进展超时预算上限（秒，0=不限制）
+  FILE_LEAK_NO_PROGRESS_TIMEOUT_MAX_SEC: 600
   # WIH 规则文件路径（默认使用源码版 wih 的规则模板）
   WIH_RULE_PATH: "/code/tools/wih/config/rules.yml"
   # WIH 扫描超时（秒）

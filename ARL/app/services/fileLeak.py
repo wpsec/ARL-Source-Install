@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 from urllib.parse import urlparse, urljoin
 import urllib3
@@ -1020,6 +1021,48 @@ def _run_file_leak_site_with_watchdog(
         _cleanup_file_leak_watchdog_dir(temp_dir)
 
 
+def _calc_adaptive_timeout(base_sec: int, per_1000_urls_sec: int, max_sec: int, url_count: int) -> int:
+    """
+    按 URL 数量计算自适应超时：
+    - 基础超时 + 每 1000 URL 追加预算
+    - 命中 max 时截断
+    - base<=0 视为关闭该类超时
+    """
+    base = int(base_sec or 0)
+    if base <= 0:
+        return 0
+
+    url_total = max(int(url_count or 0), 0)
+    timeout = base
+
+    per_1000 = max(int(per_1000_urls_sec or 0), 0)
+    if per_1000 > 0 and url_total > 1000:
+        step = (url_total - 1) // 1000
+        timeout += step * per_1000
+
+    timeout_max = max(int(max_sec or 0), 0)
+    if timeout_max > 0:
+        timeout = min(timeout, timeout_max)
+
+    return max(timeout, 0)
+
+
+def _calc_file_leak_target_timeouts(url_count: int):
+    site_timeout = _calc_adaptive_timeout(
+        base_sec=Config.FILE_LEAK_SITE_TIMEOUT_SEC,
+        per_1000_urls_sec=Config.FILE_LEAK_SITE_TIMEOUT_PER_1000_URLS_SEC,
+        max_sec=Config.FILE_LEAK_SITE_TIMEOUT_MAX_SEC,
+        url_count=url_count,
+    )
+    no_progress_timeout = _calc_adaptive_timeout(
+        base_sec=Config.FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC,
+        per_1000_urls_sec=Config.FILE_LEAK_NO_PROGRESS_TIMEOUT_PER_1000_URLS_SEC,
+        max_sec=Config.FILE_LEAK_NO_PROGRESS_TIMEOUT_MAX_SEC,
+        url_count=url_count,
+    )
+    return site_timeout, no_progress_timeout
+
+
 def file_leak(targets, dicts, gen_dict=True, waf_guard=None) -> List[dict]:
     all_gen_url = set()
     map_url = dict()
@@ -1036,35 +1079,59 @@ def file_leak(targets, dicts, gen_dict=True, waf_guard=None) -> List[dict]:
     for url in all_gen_url:
         map_url[url.scope].add(url)
 
-    cnt = 0
-    total = len(map_url)
     ret = []
-    for target in map_url:
-        cnt += 1
+    target_items = list(map_url.items())
+    total = len(target_items)
+    target_concurrency = max(1, int(Config.FILE_LEAK_TARGET_CONCURRENCY or 1))
 
-        try:
-            logger.info(
-                "start fileleak watchdog target:{} index:{}/{} urls:{} concurrency:{} site_timeout:{} no_progress_timeout:{}".format(
-                    target,
-                    cnt,
-                    total,
-                    len(map_url[target]),
-                    Config.FILE_LEAK_CONCURRENCY,
-                    Config.FILE_LEAK_SITE_TIMEOUT_SEC,
-                    Config.FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC,
-                )
-            )
-            pages = _run_file_leak_site_with_watchdog(
+    def _scan_one_target(index: int, item):
+        target, target_urls = item
+        site_timeout, no_progress_timeout = _calc_file_leak_target_timeouts(len(target_urls))
+        logger.info(
+            "start fileleak watchdog target:{} index:{}/{} urls:{} target_concurrency:{} req_concurrency:{} site_timeout:{} no_progress_timeout:{}".format(
                 target,
-                map_url[target],
-                concurrency=Config.FILE_LEAK_CONCURRENCY,
-                site_timeout_sec=Config.FILE_LEAK_SITE_TIMEOUT_SEC,
-                no_progress_timeout_sec=Config.FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC,
-                waf_guard=waf_guard,
+                index,
+                total,
+                len(target_urls),
+                target_concurrency,
+                Config.FILE_LEAK_CONCURRENCY,
+                site_timeout,
+                no_progress_timeout,
             )
-            ret.extend(pages)
-        except Exception as e:
-            logger.info("error on {}, {}".format(target, e))
-            logger.exception(e)
+        )
+        pages = _run_file_leak_site_with_watchdog(
+            target,
+            target_urls,
+            concurrency=Config.FILE_LEAK_CONCURRENCY,
+            site_timeout_sec=site_timeout,
+            no_progress_timeout_sec=no_progress_timeout,
+            waf_guard=waf_guard,
+        )
+        return pages
+
+    if target_concurrency <= 1 or total <= 1:
+        for index, item in enumerate(target_items, start=1):
+            try:
+                ret.extend(_scan_one_target(index, item))
+            except Exception as e:
+                logger.info("error on {}, {}".format(item[0], e))
+                logger.exception(e)
+        return ret
+
+    logger.info("fileleak target parallel enabled total:{} target_concurrency:{}".format(total, target_concurrency))
+    with ThreadPoolExecutor(max_workers=target_concurrency) as executor:
+        future_map = {}
+        for index, item in enumerate(target_items, start=1):
+            future = executor.submit(_scan_one_target, index, item)
+            future_map[future] = item[0]
+
+        for future in as_completed(future_map):
+            target = future_map[future]
+            try:
+                pages = future.result()
+                ret.extend(pages or [])
+            except Exception as e:
+                logger.info("error on {}, {}".format(target, e))
+                logger.exception(e)
 
     return ret

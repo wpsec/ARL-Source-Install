@@ -291,8 +291,13 @@ def refresh_runtime_config_best_effort(force=False):
             "WIH_CONCURRENCY",
             "WIH_CONCURRENCY_PER_SITE",
             "FILE_LEAK_CONCURRENCY",
+            "FILE_LEAK_TARGET_CONCURRENCY",
             "FILE_LEAK_SITE_TIMEOUT_SEC",
+            "FILE_LEAK_SITE_TIMEOUT_PER_1000_URLS_SEC",
+            "FILE_LEAK_SITE_TIMEOUT_MAX_SEC",
             "FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC",
+            "FILE_LEAK_NO_PROGRESS_TIMEOUT_PER_1000_URLS_SEC",
+            "FILE_LEAK_NO_PROGRESS_TIMEOUT_MAX_SEC",
             "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
             "SSL_CERT_FETCH_CONCURRENCY",
             "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
@@ -708,10 +713,20 @@ class Config(object):
     FILE_LEAK_TOP_200 = os.path.join(basedir, 'dicts/file_leak/file_top_200.txt')
     # 单站点目录扫描线程数
     FILE_LEAK_CONCURRENCY = 6
+    # 目录扫描目标并发（并行扫描多个站点）
+    FILE_LEAK_TARGET_CONCURRENCY = 1
     # 单站点目录扫描总超时（秒）
     FILE_LEAK_SITE_TIMEOUT_SEC = 15 * 60
+    # 单站点目录扫描总超时每1000 URL追加预算（秒）
+    FILE_LEAK_SITE_TIMEOUT_PER_1000_URLS_SEC = 180
+    # 单站点目录扫描总超时预算上限（秒，0=不限制）
+    FILE_LEAK_SITE_TIMEOUT_MAX_SEC = 2 * 60 * 60
     # 单站点目录扫描无进展超时（秒）
     FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC = 2 * 60
+    # 单站点目录扫描无进展超时每1000 URL追加预算（秒）
+    FILE_LEAK_NO_PROGRESS_TIMEOUT_PER_1000_URLS_SEC = 30
+    # 单站点目录扫描无进展超时预算上限（秒，0=不限制）
+    FILE_LEAK_NO_PROGRESS_TIMEOUT_MAX_SEC = 10 * 60
 
     # ==================== 域名配置 ====================
     # 域名最大长度限制（不包括目标域名本身的长度）
@@ -1458,8 +1473,13 @@ try:
         "CELERY_HEAVY_WORKER_CONCURRENCY",
         "CELERY_WEB_WORKER_CONCURRENCY",
         "FILE_LEAK_CONCURRENCY",
+        "FILE_LEAK_TARGET_CONCURRENCY",
         "FILE_LEAK_SITE_TIMEOUT_SEC",
+        "FILE_LEAK_SITE_TIMEOUT_PER_1000_URLS_SEC",
+        "FILE_LEAK_SITE_TIMEOUT_MAX_SEC",
         "FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC",
+        "FILE_LEAK_NO_PROGRESS_TIMEOUT_PER_1000_URLS_SEC",
+        "FILE_LEAK_NO_PROGRESS_TIMEOUT_MAX_SEC",
         "WIH_TIMEOUT_SEC",
         "WIH_CONCURRENCY",
         "WIH_CONCURRENCY_PER_SITE",
