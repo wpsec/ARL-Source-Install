@@ -1,27 +1,31 @@
 # 更新日志
 
 本文件记录 `newUI` 分支的重要变更。  
-日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准）。
+日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-22（v3.3.46 ~ v4.0.11）
+## 2026-03-22（v3.3.46 ~ v4.1.0）
 
+- `[v4.1.0]` 版本升级：发布 `v4.1.0`，延续 `v4` 主线能力演进，作为本轮稳定性治理、提速优化与渗透测试增强的阶段版本基线
 - `[v4.0.11]` 长任务稳态治理（第一批）：为 `domain` 链路中的 `dns_query_plugin` 新增“按来源分批执行 + 自适应阶段预算（基础值 + 来源数追加 + 上限）”机制，避免三方来源串行查询长时间占用单任务；为 `ssl_cert` 新增“按 endpoint+SNI 展开目标分批抓取 + 自适应阶段预算（基础值 + 目标数追加 + 上限）”机制，域名任务与 IP 任务共用同一证书抓取分批能力；`port_scan` 同步采用“自适应阶段预算（基础值 + 目标数追加 + 端口规模追加 + 上限）”，快扫/精扫/单阶段扫描在预算耗尽后返回已发现的部分结果并继续后续流程，降低单阶段超长运行导致 `delivery acknowledgement timed out` 的风险。同步新增可配置项 `SSL_CERT_FETCH_TARGET_BATCH_SIZE / SSL_CERT_FETCH_CONCURRENCY / SSL_CERT_STAGE_TIMEOUT_SEC / SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC / SSL_CERT_STAGE_TIMEOUT_MAX_SEC / DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE / DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC / DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC / DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC / PORT_SCAN_STAGE_TIMEOUT_SEC / PORT_SCAN_STAGE_TIMEOUT_PER_TARGET_SEC / PORT_SCAN_STAGE_TIMEOUT_PER_1000_PORTS_SEC / PORT_SCAN_STAGE_TIMEOUT_MAX_SEC`，并补充 Celery 软/硬超时配置入口 `CELERY_TASK_TIME_LIMIT_SEC / CELERY_TASK_SOFT_TIME_LIMIT_SEC` 作为兜底保护
 - `[v4.0.11]` 扫描配置中心预定义档位优化：上调 `8核16G10M` 预定义资源参数，按“稳态优先、兼顾准确率与吞吐”重平衡 `域名爆破 / Celery 并发 / Nuclei / afrog / URL 探测 / 端口扫描速率`，减少高配机器空闲浪费，同时避免激进并发导致的长任务波动
+- `[v4.0.11]` PoC 扫描提速调优：针对高配环境进一步上调 `nuclei / afrog` 并发与速率（`NUCLEI_RATE_LIMIT / NUCLEI_CONCURRENCY / NUCLEI_BULK_SIZE / AFROG_CONCURRENCY / AFROG_RATE_LIMIT`），并将 `NUCLEI_SINGLE_TARGET_TIMEOUT_SEC` 下调到 `900s`，减少单目标长时间占用导致的总耗时偏大问题
+- `[v4.0.11]` 任务管理体验优化：`风险` 模块的 `类别(plg_type)` 查询改为下拉选择（动态汇总当前范围类别），`指纹统计` 新增 `数量(cnt)` 排序并默认按数量降序；任务详情页隐藏 `C段` 页签与对应批量导出入口；`目录扫描` 在无结果时补充“未开启目录扫描或被 DNS 策略过滤”提示，降低排障成本
+- `[v4.0.11]` 渗透测试误报抑制：`cloud_key_leak` 增加同域来源约束、赋值上下文校验与“代码标识符形态”过滤，避免第三方 CDN/压缩 JS 函数名误判为云凭证；`DOM XSS` 静态分析默认跳过常见第三方库路径并收敛短变量污点命中；`SQLi` 差分判定收紧为强信号优先（不再仅凭长度/结构变化直接报 SQL 注入），降低动态页面场景下的噪声
+- `[v4.0.10]` waiting 任务启动恢复增强：worker 启动时新增“高置信丢消息 waiting 任务安全重投”能力。对于数据库仍为 `waiting`、已存在历史 `celery_id`、派发超过保护时间、当前无 live task 且 broker 对应队列消息数为 `0` 的任务，系统会优先按原 `dispatch_queue` 自动重新投递并刷新 `celery_id/dispatch_time/dispatch_ts`；仅对无法安全重投的残余孤儿 `waiting` 任务，才继续沿用原有 `error` 收敛逻辑，修复系统更新/重启后部分未开始任务长期停留在“等待中”且不会自动继续的问题
 - `[v4.0.9]` 任务报告导出增强：任务管理页的报告导出改为支持下拉选择 `表格格式 / HTML格式`，单任务行内导出同步支持两种格式；后端新增 HTML 报告生成能力，并与 Excel 共用同一份工作簿构建逻辑，保证 `站点 / IP / 系统服务 / SSL证书 / 域名 / URL信息 / 目录扫描 / WIH / 风险 / 资产统计` 等内容口径一致。HTML 报告进一步补充页内目录、任务名/目标、扫描开始时间、截止时间与生成时间，长报告可直接按工作表跳转查看
 - `[v4.0.9]` 新建任务体验收敛：移除新建任务弹窗中渗透测试的长段说明文字，避免在勾选开关时占用过多可视空间；同时将 `WAF试探绕过` 统一更名为 `WAF绕过`，前后端配置项展示与接口描述保持一致
-- `[v4.0.10]` waiting 任务启动恢复增强：worker 启动时新增“高置信丢消息 waiting 任务安全重投”能力。对于数据库仍为 `waiting`、已存在历史 `celery_id`、派发超过保护时间、当前无 live task 且 broker 对应队列消息数为 `0` 的任务，系统会优先按原 `dispatch_queue` 自动重新投递并刷新 `celery_id/dispatch_time/dispatch_ts`；仅对无法安全重投的残余孤儿 `waiting` 任务，才继续沿用原有 `error` 收敛逻辑，修复系统更新/重启后部分未开始任务长期停留在“等待中”且不会自动继续的问题
+- `[v4.0.9]` 访问控制风险检测增强：在现有渗透测试链路上新增保守版“通用后台未授权访问”“水平越权风险”“垂直越权风险”检测能力；后台未授权访问基于后台路径候选与响应特征做只读验证，越权风险则复用 `JS` 提取出的端点与参数，对 `id/user/role/admin/permission` 等关键参数执行低噪声差分探测，仅在响应显著变化且伴随敏感字段或后台权限特征增强时才落风险，尽可能降低误报
 - `[v4.0.8]` 文档刷新：重写 `README`，按当前 `v4` 主线重新梳理项目定位、核心能力、快速开始、报告导出、渗透测试、WAF、云安全与部署建议，减少历史截图与过时 `v3` 摘要带来的信息偏差
-- `[v4.0.1]` 指纹识别链路增强：在保留现有 `human_rule + Mongo/Redis 缓存 + kscan` 架构的前提下，补齐标准化 JSON 指纹规则兼容能力，`import_fingerprint` 与 `kscan` 运行时加载链路均可直接承接 `name/method/keyword` 结构并自动去重；表达式引擎新增 `url` 变量，支持 `url/path` 型指纹落入现有识别体系；站点识别结果改为按命中特征给出差异化置信度，不再统一写死为 `80`
+- `[v4.0.7]` 渗透测试请求策略与 JS 静态分析增强：新增独立请求策略层，为 `penetration_test` 主动链路补齐自适应限速、四类浏览器画像轮换与浏览器风格 Header；同时增强 JS 解码、source -> 变量 -> sink 型 DOM XSS 轻量污点分析，以及 `fetch / axios / $.ajax / XMLHttpRequest` 的 API 端点与参数名提取，并将这些 JS 派生参数回流为主动测试种子。新增目标风险评分与低污染策略后，危险动作路径、敏感参数和高风险表单会被主动收敛或跳过，避免在渗透测试阶段插入过多脏数据
+- `[v4.0.6]` WAF 观测与主动链路试探绕过增强：在保留现有 `智能跳过WAF` 保守策略的前提下，补充按主机维度的厂商画像、命中证据、置信度与跳过摘要；新增独立 `waf_bypass` 开关，仅对 `渗透测试` 主动链路启用轻量 Header/节流型试探绕过，形成“先识别、再有限绕过、失败后再跳过”的闭环，同时继续避免把高攻击性绕过逻辑扩散到被动采集阶段
+- `[v4.0.5]` 渗透测试能力增强：在原有主动测试器基础上补充 `DOM XSS` 静态分析与更稳的 SQL 布尔/时间差分判断，进一步降低纯内容回显型规则的漏报；同时新增只读版 `cloud_security_scan`，复用 `WIH / URL / 页面` 线索检测云凭证泄露、云存储桶遍历、可接管、ACL / Policy 泄露等问题，明确不引入 `DNSLog`、不执行上传/删除/ACL 写入等高副作用动作
+- `[v4.0.4]` Web 专项渗透测试链路重构：新建任务与策略模板新增统一的 `渗透测试` 开关，并将其与 `nuclei / afrog` 的 PoC 扫描链路解耦；新增独立 `penetration_scan` 主动测试器，基于页面表单、带参 URL、API 文档端点与现有 `WIH` 线索构建测试面，采用“基线请求 + 少量 payload + 响应差分/特征”方式，优先覆盖 SQL 注入、XSS、LFI、RCE、XXE、SSTI、SSRF 等高价值场景；同时在未显式开启 `WIH` 时自动补做一次前置 Web 信息收集，承接页面表单 / API 文档 / URL 资产等前置信息
 - `[v4.0.2]` 单文件指纹库合成能力：新增本地脚本 `build_fingerprint_bundle.py`，可将多个 JSON 指纹源归一、去重并生成单一 `human_rule` 指纹文件，便于继续沿用现有 `KSCAN_FINGERPRINT_FILE` 配置；同时默认忽略本地生成的 `kscan_fingerprint.local.json`，避免把外部来源规则产物直接带入仓库
+- `[v4.0.1]` 指纹识别链路增强：在保留现有 `human_rule + Mongo/Redis 缓存 + kscan` 架构的前提下，补齐标准化 JSON 指纹规则兼容能力，`import_fingerprint` 与 `kscan` 运行时加载链路均可直接承接 `name/method/keyword` 结构并自动去重；表达式引擎新增 `url` 变量，支持 `url/path` 型指纹落入现有识别体系；站点识别结果改为按命中特征给出差异化置信度，不再统一写死为 `80`
 - `[v4.0.1]` 版本主线升级：版本号正式切入 `v4` 主线，后续新能力与结构性增强统一按 `v4.x` 演进
+- `[v3.3.48]` Web 信息收集链路增强：在保留 `WIH -> URLFinder -> URLFinder 二次敏感扫描 -> TruffleHog` 主链路的前提下，新增受控 `页面情报提取` 与 `API 文档解析`，补充页面链接、表单、脚本入口以及 `Swagger/OpenAPI/Postman` 文档端点发现；同时将 `js_intel_scan` 收敛为“JS 端点/API 文档入口增强器”，不再重复承担 `WIH` 已覆盖的 secrets 与子域名识别职责，避免双规则源带来的重复命中与维护成本
 - `[v3.3.46]` Celery / RabbitMQ heartbeat 稳态增强：Celery 侧显式固定 `broker_heartbeat=120` 与 `broker_heartbeat_checkrate=2.0`，RabbitMQ 改为通过独立 `rabbitmq.conf` 固定 `heartbeat=120`，降低宿主机或容器短时卡顿导致的 `Too many heartbeats missed` 误判断链概率；同时回归测试补充心跳默认值断言。`consumer_timeout` 不再额外上调，沿用 RabbitMQ 默认值，避免与“故障检测时长”语义混淆
 - `[v3.3.46]` 配置入口收敛与日志维护：将 heartbeat 调优保留为项目内部固定值，不再暴露到 `config-docker.yaml`、示例配置和配置管理页面，减少误配空间；并修正更新日志顶部时间轴与版本区间顺序
-- `[v3.3.48]` Web 信息收集链路增强：在保留 `WIH -> URLFinder -> URLFinder 二次敏感扫描 -> TruffleHog` 主链路的前提下，新增受控 `页面情报提取` 与 `API 文档解析`，补充页面链接、表单、脚本入口以及 `Swagger/OpenAPI/Postman` 文档端点发现；同时将 `js_intel_scan` 收敛为“JS 端点/API 文档入口增强器”，不再重复承担 `WIH` 已覆盖的 secrets 与子域名识别职责，避免双规则源带来的重复命中与维护成本
-- `[v4.0.4]` Web 专项渗透测试链路重构：新建任务与策略模板新增统一的 `渗透测试` 开关，并将其与 `nuclei / afrog` 的 PoC 扫描链路解耦；新增独立 `penetration_scan` 主动测试器，基于页面表单、带参 URL、API 文档端点与现有 `WIH` 线索构建测试面，采用“基线请求 + 少量 payload + 响应差分/特征”方式，优先覆盖 SQL 注入、XSS、LFI、RCE、XXE、SSTI、SSRF 等高价值场景；同时在未显式开启 `WIH` 时自动补做一次前置 Web 信息收集，承接页面表单 / API 文档 / URL 资产等前置信息
-- `[v4.0.5]` 渗透测试能力增强：在原有主动测试器基础上补充 `DOM XSS` 静态分析与更稳的 SQL 布尔/时间差分判断，进一步降低纯内容回显型规则的漏报；同时新增只读版 `cloud_security_scan`，复用 `WIH / URL / 页面` 线索检测云凭证泄露、云存储桶遍历、可接管、ACL / Policy 泄露等问题，明确不引入 `DNSLog`、不执行上传/删除/ACL 写入等高副作用动作
-- `[v4.0.6]` WAF 观测与主动链路试探绕过增强：在保留现有 `智能跳过WAF` 保守策略的前提下，补充按主机维度的厂商画像、命中证据、置信度与跳过摘要；新增独立 `waf_bypass` 开关，仅对 `渗透测试` 主动链路启用轻量 Header/节流型试探绕过，形成“先识别、再有限绕过、失败后再跳过”的闭环，同时继续避免把高攻击性绕过逻辑扩散到被动采集阶段
-- `[v4.0.7]` 渗透测试请求策略与 JS 静态分析增强：新增独立请求策略层，为 `penetration_test` 主动链路补齐自适应限速、四类浏览器画像轮换与浏览器风格 Header；同时增强 JS 解码、source -> 变量 -> sink 型 DOM XSS 轻量污点分析，以及 `fetch / axios / $.ajax / XMLHttpRequest` 的 API 端点与参数名提取，并将这些 JS 派生参数回流为主动测试种子。新增目标风险评分与低污染策略后，危险动作路径、敏感参数和高风险表单会被主动收敛或跳过，避免在渗透测试阶段插入过多脏数据
-- `[v4.0.9]` 访问控制风险检测增强：在现有渗透测试链路上新增保守版“通用后台未授权访问”“水平越权风险”“垂直越权风险”检测能力；后台未授权访问基于后台路径候选与响应特征做只读验证，越权风险则复用 `JS` 提取出的端点与参数，对 `id/user/role/admin/permission` 等关键参数执行低噪声差分探测，仅在响应显著变化且伴随敏感字段或后台权限特征增强时才落风险，尽可能降低误报
 
 ## 2026-03-20（v3.3.38 ~ v3.3.39）
 

@@ -108,8 +108,6 @@ ARL/docker/config-docker.yaml
 - 配置热刷新、扫描日志聚合、系统监控、任务可观测性增强
 - Celery / RabbitMQ 稳态增强与重任务队列隔离
 
-
-
 <!-- 这是一张图片，ocr 内容为： -->
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228172922-d4b58648-0aa2-4371-8381-b3901fbf0bf8.png)
@@ -171,15 +169,9 @@ ARL/docker/config-docker.yaml
 | golang       | `go1.22.4`                        | 构建阶段编译 `wih`（优先离线包，构建后清理）  |
 | Python       | `Python-3.10.20`                  | 后端（离线安装包）                            |
 
-
-
-
-
 其它 bug 修复
 
 ---
-
-
 
 ### 低性能环境
 
@@ -189,7 +181,10 @@ ARL/docker/config-docker.yaml
 
 添加公众号联系我，如果使用的人多，在考虑修复
 
+## 未来计划
 
+- AI 决策调用nuclei、afrog进行poc扫描
+- AI 降低信息泄漏等信息的误报率
 
 ## 更新日志
 
