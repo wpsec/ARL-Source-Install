@@ -84,7 +84,7 @@ type ModuleSearchField = {
   placeholder: string;
   inputType?: 'text' | 'number' | 'select';
   options?: Array<{ label: string; value: string }>;
-  dynamicOptionsKey?: 'policy_name' | 'task_name';
+  dynamicOptionsKey?: 'policy_name' | 'task_name' | 'vuln_category';
 };
 
 type ModuleConfig = {
@@ -1256,7 +1256,9 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'name',
+    defaultOrder: '-cnt',
     columns: ['name', 'cnt'],
+    sortableColumns: ['cnt'],
     columnLabels: {
       name: 'finger',
       cnt: '数量',
@@ -1286,7 +1288,13 @@ const modules: ModuleConfig[] = [
     },
     searchFields: [
       { key: 'vul_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
-      { key: 'plg_type', label: '类别', placeholder: '请输入类别进行搜索' },
+      {
+        key: 'plg_type',
+        label: '类别',
+        placeholder: '请选择类别',
+        inputType: 'select',
+        dynamicOptionsKey: 'vuln_category',
+      },
       { key: 'app_name', label: '应用名', placeholder: '请输入应用名进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
     ],
@@ -1839,7 +1847,6 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'fileleak', label: '目录扫描' },
   { id: 'url', label: 'URL信息' },
   { id: 'vuln', label: '风险' },
-  { id: 'cip', label: 'C段' },
   { id: 'nuclei_result', label: 'PoC风险' },
   { id: 'stat_finger', label: '指纹统计' },
   { id: 'wih', label: 'WIH' },
@@ -5805,6 +5812,7 @@ function TableModuleView({
   const [policyTaskTarget, setPolicyTaskTarget] = useState('');
   const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [taskNameOptions, setTaskNameOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [vulnCategoryOptions, setVulnCategoryOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [taskDetailCounts, setTaskDetailCounts] = useState<Record<string, number>>({});
   const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
@@ -5838,6 +5846,7 @@ function TableModuleView({
   const taskDetailCountCacheRef = useRef<Record<string, Record<string, number>>>({});
   const taskSchedulePolicyOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
   const taskNameOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
+  const vulnCategoryOptionsCacheRef = useRef<Record<string, Array<{ label: string; value: string }>>>({});
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -6205,6 +6214,71 @@ function TableModuleView({
     });
   }, [buildUniqueTextOptions, module.id, rows]);
 
+  useEffect(() => {
+    if (module.id !== 'vuln') {
+      setVulnCategoryOptions([]);
+      return;
+    }
+
+    const cacheKey = `vuln_category::${activeExternalFilterSignature}`;
+    const cached = vulnCategoryOptionsCacheRef.current[cacheKey];
+    if (cached) {
+      setVulnCategoryOptions(cached);
+      return;
+    }
+
+    let cancelled = false;
+    const loadVulnCategoryOptions = async () => {
+      try {
+        const response = await requestApi(token, '/vuln/', {
+          method: 'GET',
+          query: {
+            page: 1,
+            size: 1000,
+            order: 'plg_type',
+            ...activeExternalFilters,
+          },
+        });
+        const items = normalizeListData(response).items || [];
+        const options = buildUniqueTextOptions(items.map((item: any) => item?.plg_type));
+        if (cancelled) return;
+        vulnCategoryOptionsCacheRef.current[cacheKey] = options;
+        setVulnCategoryOptions(options);
+      } catch {
+        if (cancelled) return;
+        setVulnCategoryOptions([]);
+      }
+    };
+
+    void loadVulnCategoryOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeExternalFilterSignature, activeExternalFilters, buildUniqueTextOptions, module.id, token]);
+
+  useEffect(() => {
+    if (module.id !== 'vuln' || rows.length === 0) return;
+
+    const cacheKey = `vuln_category::${activeExternalFilterSignature}`;
+    const rowOptions = buildUniqueTextOptions(rows.map((row) => row?.plg_type));
+    if (rowOptions.length === 0) return;
+
+    setVulnCategoryOptions((prev) => {
+      const merged = buildUniqueTextOptions([
+        ...prev.map((option) => option.value),
+        ...rowOptions.map((option) => option.value),
+      ]);
+
+      const hasChanged =
+        merged.length !== prev.length ||
+        merged.some((option, index) => option.value !== prev[index]?.value);
+
+      if (!hasChanged) return prev;
+      vulnCategoryOptionsCacheRef.current[cacheKey] = merged;
+      return merged;
+    });
+  }, [activeExternalFilterSignature, buildUniqueTextOptions, module.id, rows]);
+
   const isTaskDetailModule = useMemo(
     () => TASK_DETAIL_TABS.some((tab) => tab.id === module.id),
     [module.id]
@@ -6272,6 +6346,9 @@ function TableModuleView({
   const getSearchFieldOptions = (field: ModuleSearchField): Array<{ label: string; value: string }> => {
     if (field.dynamicOptionsKey === 'policy_name') {
       return [{ label: '全部策略', value: '' }, ...taskSchedulePolicyOptions];
+    }
+    if (field.dynamicOptionsKey === 'vuln_category') {
+      return [{ label: '全部类别', value: '' }, ...vulnCategoryOptions];
     }
     if (Array.isArray(field.options)) {
       return field.options;
@@ -6508,7 +6585,6 @@ function TableModuleView({
         'fofa_submit',
         'task_stop_batch',
         'task_delete_batch',
-        'task_batch_export_cip',
         'task_batch_export_domain',
         'task_batch_export_fileleak',
         'task_batch_export_ip',
@@ -7479,7 +7555,7 @@ function TableModuleView({
           ))}
         </div>
       ) : null}
-      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'cip', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
+      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
         <div className="flex items-center gap-2">
           {hasExternalFilters ? (
             <button
@@ -8507,7 +8583,9 @@ function TableModuleView({
                       colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (hasRowOperate ? 1 : 0), 2)}
                       className="px-4 py-10 text-center text-brand-text-muted"
                     >
-                      暂无数据
+                      {module.id === 'fileleak'
+                        ? '暂无数据。请确认任务已开启目录扫描，且目标未被 DNS 策略过滤。'
+                        : '暂无数据'}
                     </td>
                   </tr>
                 ) : null}
@@ -10082,12 +10160,12 @@ function ConfigConsoleView({ token }: { token: string }) {
         celery_prefetch_multiplier: 1,
         celery_max_tasks_per_child: 24,
         celery_max_memory_per_child: 520000,
-        nuclei_single_target_timeout_sec: 10800,
-        nuclei_rate_limit: 12,
-        nuclei_concurrency: 6,
-        nuclei_bulk_size: 8,
-        afrog_concurrency: 8,
-        afrog_rate_limit: 8,
+        nuclei_single_target_timeout_sec: 900,
+        nuclei_rate_limit: 30,
+        nuclei_concurrency: 16,
+        nuclei_bulk_size: 20,
+        afrog_concurrency: 20,
+        afrog_rate_limit: 20,
         urlfinder_url_probe_enable: true,
         urlfinder_url_probe_max_targets: 500,
         urlfinder_url_probe_concurrency: 12,

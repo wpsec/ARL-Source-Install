@@ -101,6 +101,34 @@ class TestPenetrationScan(unittest.TestCase):
         self.assertTrue(matched)
         self.assertIn("SQL", reason)
 
+    def test_significant_difference_ignores_length_only_for_sqli(self):
+        """
+        SQLi 不应仅凭长度/结构差异直接报风险，避免动态页面误报。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        baseline = {
+            "status_code": 200,
+            "content_length": 100,
+            "content_hash": service._stable_hash(("A" * 100)[:4096]),
+            "response_time": 0.2,
+            "error_keywords": [],
+        }
+
+        matched, reason = service._is_significant_difference(
+            body="B" * 260,
+            status_code=200,
+            baseline=baseline,
+            vuln_type="sqli",
+            elapsed=0.3,
+        )
+
+        self.assertFalse(matched)
+        self.assertEqual("", reason)
+
     def test_xss_finding_requires_unescaped_reflection(self):
         """
         仅当响应直接回显 payload 时，才应记录 XSS。
@@ -172,6 +200,28 @@ class TestPenetrationScan(unittest.TestCase):
         self.assertEqual(1, len(findings))
         self.assertEqual("dom_xss", findings[0]["type"])
         self.assertIn("tainted_var", findings[0]["param"])
+
+    def test_dom_xss_static_analysis_skips_common_third_party_js(self):
+        """
+        常见第三方压缩库默认跳过 DOM XSS 静态命中，降低误报噪声。
+        """
+        service = PenetrationScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        findings = []
+        js_resp = SimpleNamespace(
+            status_code=200,
+            content=b"const hashValue = location.hash; document.body.innerHTML = hashValue;",
+            headers={},
+        )
+
+        with patch.object(service, "_request", return_value=js_resp), \
+                patch("app.services.penetration_scan.utils.check_dns_policy_for_url", return_value=(True, {})):
+            service._scan_dom_xss_js("https://example.com/static/swiper-bundle.min.js", findings)
+
+        self.assertEqual(0, len(findings))
 
     def test_extract_js_api_targets_collects_endpoint_and_param_names(self):
         """

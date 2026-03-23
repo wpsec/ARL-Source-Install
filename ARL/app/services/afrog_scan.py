@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import subprocess
+import time
 import zipfile
 
 from app import utils
@@ -37,12 +38,21 @@ class AfrogScan(object):
         self.afrog_concurrency = int(getattr(Config, "AFROG_CONCURRENCY", 5) or 5)
         self.afrog_rate_limit = int(getattr(Config, "AFROG_RATE_LIMIT", 5) or 5)
         self.exec_timeout_sec = int(getattr(Config, "AFROG_EXEC_TIMEOUT_SEC", 7200) or 7200)
+        self.stage_timeout_sec = int(getattr(Config, "AFROG_STAGE_TIMEOUT_SEC", 0) or 0)
+        self.stage_max_targets = int(getattr(Config, "AFROG_STAGE_MAX_TARGETS", 0) or 0)
+        self.targets_per_batch = int(getattr(Config, "AFROG_TARGETS_PER_BATCH", 50) or 50)
         if self.afrog_concurrency < 1:
             self.afrog_concurrency = 1
         if self.afrog_rate_limit < 1:
             self.afrog_rate_limit = 1
         if self.exec_timeout_sec < 60:
             self.exec_timeout_sec = 60
+        if self.stage_timeout_sec < 0:
+            self.stage_timeout_sec = 0
+        if self.stage_max_targets < 0:
+            self.stage_max_targets = 0
+        if self.targets_per_batch < 1:
+            self.targets_per_batch = 1
 
         self.tmp_path = Config.TMP_PATH
         rand_str = utils.random_choices()
@@ -268,11 +278,11 @@ class AfrogScan(object):
 
         return False
 
-    def _gen_target_file(self):
+    def _gen_target_file(self, targets):
         with open(self.target_file, "w", encoding="utf-8") as f:
-            for target in self.targets:
+            for target in targets:
                 f.write(target + "\n")
-        logger.info("afrog targets prepared count:{} file:{}".format(len(self.targets), self.target_file))
+        logger.info("afrog targets prepared count:{} file:{}".format(len(targets), self.target_file))
 
     @staticmethod
     def _normalize_severity(value):
@@ -418,6 +428,38 @@ class AfrogScan(object):
 
         return command
 
+    def _apply_stage_target_limit(self):
+        limit = int(self.stage_max_targets or 0)
+        if limit <= 0:
+            return
+
+        total = len(self.targets)
+        if total <= limit:
+            return
+
+        self.targets = self.targets[:limit]
+        logger.warning(
+            "afrog stage target cap reached total:{} limit:{} skipped:{}".format(
+                total, limit, total - limit
+            )
+        )
+
+    @staticmethod
+    def _split_target_batches(targets, batch_size):
+        if batch_size < 1:
+            batch_size = 1
+        for idx in range(0, len(targets), batch_size):
+            yield targets[idx: idx + batch_size]
+
+    def _calc_batch_timeout(self, stage_start_time):
+        timeout_sec = int(self.exec_timeout_sec)
+        if self.stage_timeout_sec > 0:
+            remaining = int(self.stage_timeout_sec - (time.time() - stage_start_time))
+            if remaining <= 0:
+                return 0
+            timeout_sec = min(timeout_sec, max(1, remaining))
+        return timeout_sec
+
     def run(self):
         if not self.targets:
             return []
@@ -426,57 +468,125 @@ class AfrogScan(object):
             logger.warning("skip afrog scan, binary unavailable")
             return []
 
-        self._gen_target_file()
-        command = self._build_command()
+        self._apply_stage_target_limit()
+        if not self.targets:
+            logger.info("afrog targets all skipped by stage target cap")
+            return []
+
         logger.info(
-            "afrog scan options timeout:{}s concurrency:{} rate_limit:{} keywords:{} severity:{}".format(
+            "afrog scan options exec_timeout:{}s stage_timeout:{}s batch_size:{} stage_target_cap:{} concurrency:{} rate_limit:{} keywords:{} severity:{}".format(
                 self.exec_timeout_sec,
+                self.stage_timeout_sec,
+                self.targets_per_batch,
+                self.stage_max_targets,
                 self.afrog_concurrency,
                 self.afrog_rate_limit,
                 self.afrog_search_keywords or "-",
                 self.afrog_severity or "-",
             )
         )
-        logger.info("afrog command targets:{} cmd:{}".format(len(self.targets), " ".join(command)))
-        stdout_text = ""
-        stderr_text = ""
-        return_code = -1
+
+        stage_start_time = time.time()
+        all_results = []
+        seen_keys = set()
+        timeout_reached = False
+        target_batches = list(self._split_target_batches(self.targets, self.targets_per_batch))
+        total_batches = len(target_batches)
+
         try:
-            completed = utils.exec_system(
-                command,
-                timeout=self.exec_timeout_sec,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            return_code = int(completed.returncode)
-            stdout_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
-            stderr_text = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
-        except subprocess.TimeoutExpired as e:
-            stdout_text = e.stdout.decode("utf-8", errors="ignore").strip() if getattr(e, "stdout", None) else ""
-            stderr_text = e.stderr.decode("utf-8", errors="ignore").strip() if getattr(e, "stderr", None) else ""
+            for batch_idx, batch_targets in enumerate(target_batches, start=1):
+                batch_timeout = self._calc_batch_timeout(stage_start_time)
+                elapsed = time.time() - stage_start_time
+                if batch_timeout <= 0:
+                    timeout_reached = True
+                    logger.warning(
+                        "afrog stage timeout reached elapsed:{:.2f}s timeout:{}s finished_batch:{}/{}".format(
+                            elapsed, self.stage_timeout_sec, batch_idx - 1, total_batches
+                        )
+                    )
+                    break
+
+                self._gen_target_file(batch_targets)
+                try:
+                    if os.path.exists(self.result_file):
+                        os.unlink(self.result_file)
+                except Exception:
+                    pass
+                command = self._build_command()
+                logger.info(
+                    "afrog batch {}/{} targets:{} timeout:{}s cmd:{}".format(
+                        batch_idx, total_batches, len(batch_targets), batch_timeout, " ".join(command)
+                    )
+                )
+
+                stdout_text = ""
+                stderr_text = ""
+                return_code = -1
+                try:
+                    completed = utils.exec_system(
+                        command,
+                        timeout=batch_timeout,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    return_code = int(completed.returncode)
+                    stdout_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
+                    stderr_text = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
+                except subprocess.TimeoutExpired as e:
+                    stdout_text = e.stdout.decode("utf-8", errors="ignore").strip() if getattr(e, "stdout", None) else ""
+                    stderr_text = e.stderr.decode("utf-8", errors="ignore").strip() if getattr(e, "stderr", None) else ""
+                    logger.warning(
+                        "afrog batch timeout {}/{} timeout={}s stderr={} stdout={}".format(
+                            batch_idx, total_batches, batch_timeout, stderr_text[:500], stdout_text[:500]
+                        )
+                    )
+                except Exception as e:
+                    logger.warning("afrog batch run failed {}/{} error:{}".format(batch_idx, total_batches, e))
+
+                batch_results = self._load_results()
+                if return_code not in [0] and len(batch_results) == 0:
+                    logger.warning(
+                        "afrog batch exit non-zero and no result {}/{} rc:{} stderr={} stdout={}".format(
+                            batch_idx, total_batches, return_code, stderr_text[:500], stdout_text[:500]
+                        )
+                    )
+
+                merged_count = 0
+                for item in batch_results:
+                    key = (
+                        str(item.get("target", "")).strip(),
+                        str(item.get("poc_id", "")).strip(),
+                        str(item.get("vuln_name", "")).strip(),
+                    )
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    all_results.append(item)
+                    merged_count += 1
+
+                logger.info(
+                    "afrog batch done {}/{} rc:{} raw_result:{} merged_new:{} merged_total:{} stderr={} stdout={}".format(
+                        batch_idx,
+                        total_batches,
+                        return_code,
+                        len(batch_results),
+                        merged_count,
+                        len(all_results),
+                        stderr_text[:300],
+                        stdout_text[:300],
+                    )
+                )
+        finally:
+            self._delete_file()
+
+        if timeout_reached:
             logger.warning(
-                "afrog run timeout timeout={}s stderr={} stdout={}".format(
-                    self.exec_timeout_sec, stderr_text[:500], stdout_text[:500]
+                "afrog stage timeout reached timeout:{}s elapsed:{:.2f}s partial_result:{}".format(
+                    self.stage_timeout_sec, time.time() - stage_start_time, len(all_results)
                 )
             )
-        except Exception as e:
-            logger.warning("afrog run failed {}".format(e))
-
-        results = self._load_results()
-        if return_code not in [0] and len(results) == 0:
-            logger.warning(
-                "afrog run exit non-zero and no result rc:{} stderr={} stdout={}".format(
-                    return_code, stderr_text[:500], stdout_text[:500]
-                )
-            )
-        logger.info(
-            "afrog run done rc:{} result:{} stderr={} stdout={}".format(
-                return_code, len(results), stderr_text[:300], stdout_text[:300]
-            )
-        )
-        self._delete_file()
-
-        return results
+        logger.info("afrog run done result:{}".format(len(all_results)))
+        return all_results
 
 
 def run_afrog_scan(targets, search_keywords=None, severity=None):

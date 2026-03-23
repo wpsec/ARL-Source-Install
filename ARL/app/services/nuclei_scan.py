@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from collections import Counter, defaultdict
 
 from app.config import Config
@@ -145,6 +146,14 @@ class NucleiScan(object):
         self.nuclei_template_dir = Config.NUCLEI_TEMPLATE_DIR
         self.nuclei_auto_scan = bool(Config.NUCLEI_AUTO_SCAN)
         self.nuclei_default_tags = Config.NUCLEI_DEFAULT_TAGS
+        self.nuclei_stage_timeout_sec = int(getattr(Config, "NUCLEI_STAGE_TIMEOUT_SEC", 0) or 0)
+        self.nuclei_stage_max_targets = int(getattr(Config, "NUCLEI_STAGE_MAX_TARGETS", 0) or 0)
+        if self.nuclei_stage_timeout_sec < 0:
+            self.nuclei_stage_timeout_sec = 0
+        if self.nuclei_stage_max_targets < 0:
+            self.nuclei_stage_max_targets = 0
+        self.stage_start_time = 0.0
+        self.stage_timeout_reached = False
         self.nuclei_finger_fuzzy_match_enable = bool(self.FINGER_FUZZY_MATCH_ENABLE)
         self.nuclei_finger_fuzzy_match_threshold = int(self.FINGER_FUZZY_MATCH_THRESHOLD)
         self.nuclei_finger_fuzzy_match_min_token_coverage = int(self.FINGER_FUZZY_MIN_TOKEN_COVERAGE)
@@ -966,6 +975,40 @@ class NucleiScan(object):
 
         self.targets = keep_targets
 
+    def _apply_stage_target_limit(self):
+        """
+        按阶段目标上限裁剪目标，优先保留指纹信息更丰富的目标。
+        """
+        limit = int(self.nuclei_stage_max_targets or 0)
+        if limit <= 0:
+            return
+
+        total = len(self.targets)
+        if total <= limit:
+            return
+
+        sorted_targets = sorted(
+            self.targets,
+            key=lambda item: (-len(item.get("finger", []) or []), str(item.get("target", ""))),
+        )
+        skipped = max(total - limit, 0)
+        self.targets = sorted_targets[:limit]
+        logger.warning(
+            "nuclei stage target cap reached total:{} limit:{} skipped:{}".format(
+                total, limit, skipped
+            )
+        )
+
+    def _stage_elapsed_sec(self) -> float:
+        if self.stage_start_time <= 0:
+            return 0.0
+        return max(0.0, time.time() - self.stage_start_time)
+
+    def _stage_remaining_sec(self) -> int:
+        if self.nuclei_stage_timeout_sec <= 0:
+            return 0
+        return int(self.nuclei_stage_timeout_sec - self._stage_elapsed_sec())
+
     def dump_result(self) -> list:
         results = []
         for result_file in self.tmp_result_files:
@@ -1110,6 +1153,23 @@ class NucleiScan(object):
         执行 nuclei 命令并输出统一日志
         """
         timeout_sec = self._calc_exec_timeout(target_count=target_count)
+        if self.nuclei_stage_timeout_sec > 0 and self.stage_start_time > 0:
+            remaining = self._stage_remaining_sec()
+            if remaining <= 0:
+                self.stage_timeout_reached = True
+                logger.warning(
+                    "nuclei stage timeout reached before command start stage:{} batch:{} timeout:{}s elapsed:{:.2f}s".format(
+                        stage, batch_type, self.nuclei_stage_timeout_sec, self._stage_elapsed_sec()
+                    )
+                )
+                return {
+                    "returncode": 124,
+                    "stdout": "",
+                    "stderr": "nuclei stage timeout reached before command start",
+                    "result_size": self._result_file_size(result_file),
+                }
+            # 单次命令最多吃掉阶段剩余预算，避免最后一个批次超长拖尾。
+            timeout_sec = min(timeout_sec, max(1, remaining))
 
         logger.info(
             "nuclei command stage={} batch={} targets={} timeout={}s cmd={}".format(
@@ -1312,6 +1372,18 @@ class NucleiScan(object):
             for split_batch in split_batches:
                 if not split_batch.get("targets"):
                     continue
+                if self.nuclei_stage_timeout_sec > 0 and self.stage_start_time > 0:
+                    remaining = self._stage_remaining_sec()
+                    if remaining <= 0:
+                        self.stage_timeout_reached = True
+                        logger.warning(
+                            "nuclei stage timeout reached elapsed:{:.2f}s timeout:{}s finished_batch:{}".format(
+                                self._stage_elapsed_sec(),
+                                self.nuclei_stage_timeout_sec,
+                                run_index - 1,
+                            )
+                        )
+                        return
                 self.exec_nuclei(batch=split_batch, index=run_index)
                 run_index += 1
 
@@ -1319,9 +1391,16 @@ class NucleiScan(object):
         if not self.targets:
             return []
 
+        self.stage_start_time = time.time()
+        self.stage_timeout_reached = False
+
         self._filter_targets_by_dns_policy()
         if not self.targets:
             logger.info("nuclei targets all skipped by dns policy")
+            return []
+        self._apply_stage_target_limit()
+        if not self.targets:
+            logger.info("nuclei targets all skipped after stage target cap")
             return []
 
         if not self.check_have_nuclei():
@@ -1343,6 +1422,14 @@ class NucleiScan(object):
             # 删除临时文件
             self._delete_file()
 
+        if self.stage_timeout_reached:
+            logger.warning(
+                "nuclei stage timeout reached timeout:{}s elapsed:{:.2f}s partial_result:{}".format(
+                    self.nuclei_stage_timeout_sec,
+                    self._stage_elapsed_sec(),
+                    len(results),
+                )
+            )
         logger.info("nuclei scan finish result:{}".format(len(results)))
 
         return results

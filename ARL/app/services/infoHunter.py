@@ -90,6 +90,15 @@ class InfoHunter(object):
         self.wih_result_path = os.path.join(tmp_path, "wih_result_{}.json".format(rand_str))
 
         self.wih_bin_path = self._resolve_wih_binary()
+        self.wih_timeout_sec = int(getattr(Config, "WIH_TIMEOUT_SEC", 2 * 60 * 60) or (2 * 60 * 60))
+        self.wih_concurrency = int(getattr(Config, "WIH_CONCURRENCY", 6) or 6)
+        self.wih_concurrency_per_site = int(getattr(Config, "WIH_CONCURRENCY_PER_SITE", 2) or 2)
+        if self.wih_timeout_sec < 60:
+            self.wih_timeout_sec = 60
+        if self.wih_concurrency < 1:
+            self.wih_concurrency = 1
+        if self.wih_concurrency_per_site < 1:
+            self.wih_concurrency_per_site = 1
         self._help_text = None
 
     @staticmethod
@@ -281,9 +290,9 @@ class InfoHunter(object):
 
         # 兼容不同 WIH 版本参数差异：仅在帮助信息里检测到时才追加。
         if self._supports_flag("--concurrency"):
-            command.extend(["--concurrency", "3"])
+            command.extend(["--concurrency", str(self.wih_concurrency)])
         elif self._supports_flag("-c"):
-            command.extend(["-c", "3"])
+            command.extend(["-c", str(self.wih_concurrency)])
 
         if self._supports_flag("--log-level"):
             command.extend(["--log-level", "zero"])
@@ -291,7 +300,7 @@ class InfoHunter(object):
             command.extend(["-v", "zero"])
 
         if self._supports_flag("--concurrency-per-site"):
-            command.extend(["--concurrency-per-site", "1"])
+            command.extend(["--concurrency-per-site", str(self.wih_concurrency_per_site)])
 
         if self._supports_flag("--disable-ak-sk-output"):
             command.append("--disable-ak-sk-output")
@@ -307,10 +316,17 @@ class InfoHunter(object):
 
     def exec_wih(self):
         command = self._build_command(minimal=False)
-        logger.info("run wih command: {}".format(" ".join(command)))
+        logger.info(
+            "run wih command timeout:{}s concurrency:{} per_site:{} cmd:{}".format(
+                self.wih_timeout_sec,
+                self.wih_concurrency,
+                self.wih_concurrency_per_site,
+                " ".join(command),
+            )
+        )
         completed = utils.exec_system(
             command,
-            timeout=5 * 24 * 60 * 60,
+            timeout=self.wih_timeout_sec,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -331,7 +347,7 @@ class InfoHunter(object):
         logger.info("retry wih command (minimal): {}".format(" ".join(fallback_command)))
         fallback_completed = utils.exec_system(
             fallback_command,
-            timeout=5 * 24 * 60 * 60,
+            timeout=self.wih_timeout_sec,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

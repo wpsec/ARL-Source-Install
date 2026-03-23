@@ -41,6 +41,44 @@ class TestCloudSecurityScan(unittest.TestCase):
         self.assertEqual(1, len(findings))
         self.assertEqual("cloud_key_leak", findings[0]["type"])
 
+    def test_scan_cloud_keys_skips_out_of_scope_source(self):
+        service = CloudSecurityScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        findings = []
+        records = [
+            {
+                "record_type": "Aliyun_AK_ID",
+                "content": "LTAI1A2b3C4d5E6f7G8h9J0k",
+                "source": "https://rescdn.qqmail.com/static/app.js",
+                "site": "https://example.com",
+            }
+        ]
+
+        service._scan_cloud_keys(records, findings)
+        self.assertEqual(0, len(findings))
+
+    def test_scan_cloud_keys_skips_identifier_like_token(self):
+        service = CloudSecurityScanService(
+            task_id="task-demo",
+            sites=["https://example.com"],
+            page_url_set=[],
+        )
+        findings = []
+        records = [
+            {
+                "record_type": "cloud_key_hint",
+                "content": 'credential=getOffsetContentFromServerCacheItem',
+                "source": "https://example.com/static/app.js",
+                "site": "https://example.com",
+            }
+        ]
+
+        service._scan_cloud_keys(records, findings)
+        self.assertEqual(0, len(findings))
+
     def test_collect_bucket_targets_extracts_bucket_origin(self):
         service = CloudSecurityScanService(
             task_id="task-demo",

@@ -126,6 +126,22 @@ class PenetrationScanService(object):
         (r"dangerouslySetInnerHTML\s*:\s*\{\s*__html\s*:\s*([^}]+)\}", "dangerouslySetInnerHTML", "high"),
         (r"v-html\s*=\s*[\"']([^\"']+)[\"']", "v-html", "high"),
     )
+    DOM_XSS_JS_PATH_EXCLUDE_HINTS = (
+        "swiper",
+        "jquery",
+        "bootstrap",
+        "vue",
+        "react",
+        "angular",
+        "lodash",
+        "moment",
+        "axios",
+        "echarts",
+        "chart",
+        "tinymce",
+        "ckeditor",
+        "codemirror",
+    )
     ADMIN_PATH_HINTS = {
         "admin", "backend", "console", "control", "dashboard", "manage", "manager",
         "ops", "panel", "system", "cms", "oa", "workbench",
@@ -879,7 +895,7 @@ class PenetrationScanService(object):
         current_length = len(text)
         if baseline_length > 0:
             length_ratio = abs(current_length - baseline_length) / float(baseline_length)
-            if length_ratio > 0.5:
+            if length_ratio > 0.5 and vuln_type != "sqli":
                 return True, "响应长度差异显著"
 
         baseline_time = float(baseline.get("response_time", 0.0) or 0.0)
@@ -898,7 +914,7 @@ class PenetrationScanService(object):
         current_hash = self._stable_hash(text[:4096])
         if baseline_hash and current_hash != baseline_hash and baseline_length > 0:
             length_change_pct = abs(current_length - baseline_length) / float(baseline_length)
-            if length_change_pct > 0.3:
+            if length_change_pct > 0.3 and vuln_type != "sqli":
                 return True, "响应内容结构变化明显"
 
         return False, ""
@@ -1278,12 +1294,19 @@ class PenetrationScanService(object):
         return urls[: self.MAX_JS_TARGETS]
 
     def _scan_dom_xss_js(self, js_url: str, findings: List[Dict]):
+        lowered_url = str(js_url or "").strip().lower()
+        js_path = str(urlparse(lowered_url).path or "").strip().lower()
+        if any(hint in js_path for hint in self.DOM_XSS_JS_PATH_EXCLUDE_HINTS):
+            return
+
         analysis = self._load_js_analysis(js_url)
         if not analysis:
             return
 
         merged_content = str(analysis.get("merged_content", "") or "")
         tainted_vars = set(analysis.get("tainted_vars") or set())
+        finding_count = 0
+        finding_signature_set = set()
 
         for pattern, sink_name, severity in self.DOM_XSS_RULES:
             for match in re.finditer(pattern, merged_content, flags=re.I):
@@ -1312,6 +1335,16 @@ class PenetrationScanService(object):
                             break
                 if not matched_source:
                     continue
+                if matched_source.startswith("tainted_var:"):
+                    var_name = matched_source.replace("tainted_var:", "", 1).strip()
+                    # 压缩库中常见的单字母变量容易造成静态污点误报。
+                    if len(var_name) <= 2:
+                        continue
+
+                finding_signature = "{}|{}".format(sink_name, matched_source)
+                if finding_signature in finding_signature_set:
+                    continue
+                finding_signature_set.add(finding_signature)
 
                 self._append_finding(
                     findings,
@@ -1330,6 +1363,9 @@ class PenetrationScanService(object):
                     request_text="",
                     response_text="",
                 )
+                finding_count += 1
+                if finding_count >= 3:
+                    return
 
     def _collect_js_seed_targets(self, records: List[Dict]) -> List[Dict]:
         targets = []

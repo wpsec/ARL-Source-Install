@@ -275,6 +275,8 @@ def refresh_runtime_config_best_effort(force=False):
             "CELERY_PREFETCH_MULTIPLIER",
             "CELERY_MAX_TASKS_PER_CHILD",
             "CELERY_MAX_MEMORY_PER_CHILD",
+            "NUCLEI_STAGE_TIMEOUT_SEC",
+            "NUCLEI_STAGE_MAX_TARGETS",
             "NUCLEI_SINGLE_TARGET_TIMEOUT_SEC",
             "NUCLEI_RATE_LIMIT",
             "NUCLEI_CONCURRENCY",
@@ -282,6 +284,12 @@ def refresh_runtime_config_best_effort(force=False):
             "AFROG_CONCURRENCY",
             "AFROG_RATE_LIMIT",
             "AFROG_EXEC_TIMEOUT_SEC",
+            "AFROG_TARGETS_PER_BATCH",
+            "AFROG_STAGE_TIMEOUT_SEC",
+            "AFROG_STAGE_MAX_TARGETS",
+            "WIH_TIMEOUT_SEC",
+            "WIH_CONCURRENCY",
+            "WIH_CONCURRENCY_PER_SITE",
             "FILE_LEAK_CONCURRENCY",
             "FILE_LEAK_SITE_TIMEOUT_SEC",
             "FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC",
@@ -504,6 +512,10 @@ class Config(object):
     # 单次 nuclei 子进程最大运行时长（秒）
     # 说明：历史默认 96h 过长，容易造成任务长时间停留在 nuclei_scan 阶段
     NUCLEI_EXEC_TIMEOUT_SEC = 6 * 60 * 60
+    # nuclei 阶段总预算（秒，0=不限制）
+    NUCLEI_STAGE_TIMEOUT_SEC = 0
+    # nuclei 阶段最多扫描目标数（0=不限制）
+    NUCLEI_STAGE_MAX_TARGETS = 0
     # 单目标 nuclei 最大扫描时长（秒），用于按批次目标数折算超时上限
     NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = 60 * 60
     # 每个 nuclei 批次最多包含目标数（<=1 表示自动分批，>1 表示固定分批大小）
@@ -534,6 +546,12 @@ class Config(object):
     AFROG_RATE_LIMIT = 5
     # afrog 扫描执行超时（秒）
     AFROG_EXEC_TIMEOUT_SEC = 2 * 60 * 60
+    # afrog 单批最多目标数
+    AFROG_TARGETS_PER_BATCH = 50
+    # afrog 阶段总预算（秒，0=不限制）
+    AFROG_STAGE_TIMEOUT_SEC = 0
+    # afrog 阶段最多扫描目标数（0=不限制）
+    AFROG_STAGE_MAX_TARGETS = 0
     # TruffleHog 可执行文件路径（优先使用 tools 目录）
     TRUFFLEHOG_BIN = os.path.join(project_root, "tools", "TruffleHog", "trufflehog")
     # 是否启用 TruffleHog JS 二次扫描
@@ -619,6 +637,12 @@ class Config(object):
 
     # WebInfoHunter 规则文件（默认使用 ARL 自维护的源码版 wih 规则）
     WIH_RULE_PATH = os.path.join(project_root, "tools", "wih", "config", "rules.yml")
+    # WIH 扫描超时（秒）
+    WIH_TIMEOUT_SEC = 2 * 60 * 60
+    # WIH 全局并发（透传给 wih --concurrency / -c）
+    WIH_CONCURRENCY = 6
+    # WIH 单站点并发（透传给 wih --concurrency-per-site）
+    WIH_CONCURRENCY_PER_SITE = 2
 
     # 黑名单域名列表（通用）
     black_domain_path = os.path.join(basedir, 'dicts/blackdomain.txt')
@@ -1027,6 +1051,20 @@ try:
             int(y["ARL"]["NUCLEI_EXEC_TIMEOUT_SEC"]), Config.NUCLEI_EXEC_TIMEOUT_SEC
         )
 
+    if y["ARL"].get("NUCLEI_STAGE_TIMEOUT_SEC") is not None:
+        Config.NUCLEI_STAGE_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["NUCLEI_STAGE_TIMEOUT_SEC"]),
+            Config.NUCLEI_STAGE_TIMEOUT_SEC,
+            min_value=0,
+        )
+
+    if y["ARL"].get("NUCLEI_STAGE_MAX_TARGETS") is not None:
+        Config.NUCLEI_STAGE_MAX_TARGETS = safe_positive_int(
+            int(y["ARL"]["NUCLEI_STAGE_MAX_TARGETS"]),
+            Config.NUCLEI_STAGE_MAX_TARGETS,
+            min_value=0,
+        )
+
     if y["ARL"].get("NUCLEI_SINGLE_TARGET_TIMEOUT_SEC") is not None:
         Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = safe_positive_int(
             int(y["ARL"]["NUCLEI_SINGLE_TARGET_TIMEOUT_SEC"]), Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
@@ -1085,8 +1123,43 @@ try:
             int(y["ARL"]["AFROG_EXEC_TIMEOUT_SEC"]), Config.AFROG_EXEC_TIMEOUT_SEC
         )
 
+    if y["ARL"].get("AFROG_TARGETS_PER_BATCH") is not None:
+        Config.AFROG_TARGETS_PER_BATCH = safe_positive_int(
+            int(y["ARL"]["AFROG_TARGETS_PER_BATCH"]),
+            Config.AFROG_TARGETS_PER_BATCH,
+        )
+
+    if y["ARL"].get("AFROG_STAGE_TIMEOUT_SEC") is not None:
+        Config.AFROG_STAGE_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["AFROG_STAGE_TIMEOUT_SEC"]),
+            Config.AFROG_STAGE_TIMEOUT_SEC,
+            min_value=0,
+        )
+
+    if y["ARL"].get("AFROG_STAGE_MAX_TARGETS") is not None:
+        Config.AFROG_STAGE_MAX_TARGETS = safe_positive_int(
+            int(y["ARL"]["AFROG_STAGE_MAX_TARGETS"]),
+            Config.AFROG_STAGE_MAX_TARGETS,
+            min_value=0,
+        )
+
     if y["ARL"].get("WIH_RULE_PATH"):
         Config.WIH_RULE_PATH = str(y["ARL"]["WIH_RULE_PATH"]).strip()
+
+    if y["ARL"].get("WIH_TIMEOUT_SEC") is not None:
+        Config.WIH_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["WIH_TIMEOUT_SEC"]), Config.WIH_TIMEOUT_SEC
+        )
+
+    if y["ARL"].get("WIH_CONCURRENCY") is not None:
+        Config.WIH_CONCURRENCY = safe_positive_int(
+            int(y["ARL"]["WIH_CONCURRENCY"]), Config.WIH_CONCURRENCY
+        )
+
+    if y["ARL"].get("WIH_CONCURRENCY_PER_SITE") is not None:
+        Config.WIH_CONCURRENCY_PER_SITE = safe_positive_int(
+            int(y["ARL"]["WIH_CONCURRENCY_PER_SITE"]), Config.WIH_CONCURRENCY_PER_SITE
+        )
 
     if y["ARL"].get("TRUFFLEHOG_BIN"):
         Config.TRUFFLEHOG_BIN = str(y["ARL"]["TRUFFLEHOG_BIN"]).strip()
@@ -1387,9 +1460,13 @@ try:
         "FILE_LEAK_CONCURRENCY",
         "FILE_LEAK_SITE_TIMEOUT_SEC",
         "FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC",
+        "WIH_TIMEOUT_SEC",
+        "WIH_CONCURRENCY",
+        "WIH_CONCURRENCY_PER_SITE",
         "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
         "SSL_CERT_FETCH_CONCURRENCY",
         "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
+        "AFROG_TARGETS_PER_BATCH",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
@@ -1504,6 +1581,16 @@ try:
         env_int("ARL_NUCLEI_EXEC_TIMEOUT_SEC", Config.NUCLEI_EXEC_TIMEOUT_SEC),
         Config.NUCLEI_EXEC_TIMEOUT_SEC
     )
+    Config.NUCLEI_STAGE_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_NUCLEI_STAGE_TIMEOUT_SEC", Config.NUCLEI_STAGE_TIMEOUT_SEC),
+        Config.NUCLEI_STAGE_TIMEOUT_SEC,
+        min_value=0,
+    )
+    Config.NUCLEI_STAGE_MAX_TARGETS = safe_positive_int(
+        env_int("ARL_NUCLEI_STAGE_MAX_TARGETS", Config.NUCLEI_STAGE_MAX_TARGETS),
+        Config.NUCLEI_STAGE_MAX_TARGETS,
+        min_value=0,
+    )
     Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC = safe_positive_int(
         env_int("ARL_NUCLEI_SINGLE_TARGET_TIMEOUT_SEC", Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC),
         Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
@@ -1542,7 +1629,33 @@ try:
         env_int("ARL_AFROG_EXEC_TIMEOUT_SEC", Config.AFROG_EXEC_TIMEOUT_SEC),
         Config.AFROG_EXEC_TIMEOUT_SEC
     )
+    Config.AFROG_TARGETS_PER_BATCH = safe_positive_int(
+        env_int("ARL_AFROG_TARGETS_PER_BATCH", Config.AFROG_TARGETS_PER_BATCH),
+        Config.AFROG_TARGETS_PER_BATCH
+    )
+    Config.AFROG_STAGE_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_AFROG_STAGE_TIMEOUT_SEC", Config.AFROG_STAGE_TIMEOUT_SEC),
+        Config.AFROG_STAGE_TIMEOUT_SEC,
+        min_value=0,
+    )
+    Config.AFROG_STAGE_MAX_TARGETS = safe_positive_int(
+        env_int("ARL_AFROG_STAGE_MAX_TARGETS", Config.AFROG_STAGE_MAX_TARGETS),
+        Config.AFROG_STAGE_MAX_TARGETS,
+        min_value=0,
+    )
     Config.WIH_RULE_PATH = env_str("ARL_WIH_RULE_PATH", Config.WIH_RULE_PATH)
+    Config.WIH_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_WIH_TIMEOUT_SEC", Config.WIH_TIMEOUT_SEC),
+        Config.WIH_TIMEOUT_SEC
+    )
+    Config.WIH_CONCURRENCY = safe_positive_int(
+        env_int("ARL_WIH_CONCURRENCY", Config.WIH_CONCURRENCY),
+        Config.WIH_CONCURRENCY
+    )
+    Config.WIH_CONCURRENCY_PER_SITE = safe_positive_int(
+        env_int("ARL_WIH_CONCURRENCY_PER_SITE", Config.WIH_CONCURRENCY_PER_SITE),
+        Config.WIH_CONCURRENCY_PER_SITE
+    )
     Config.TRUFFLEHOG_BIN = env_str("ARL_TRUFFLEHOG_BIN", Config.TRUFFLEHOG_BIN)
     Config.TRUFFLEHOG_ENABLE = env_bool("ARL_TRUFFLEHOG_ENABLE", Config.TRUFFLEHOG_ENABLE)
     Config.TRUFFLEHOG_NO_VERIFICATION = env_bool(

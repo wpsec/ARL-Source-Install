@@ -208,17 +208,21 @@ ARL:
   # Nuclei 模板目录（tools 新目录布局）
   NUCLEI_TEMPLATE_DIR: "/code/tools/nuclei/nuclei-templates"
   # 单次 nuclei 子进程超时（秒），超时后当前批次跳过继续后续流程
-  NUCLEI_EXEC_TIMEOUT_SEC: 21600
+  NUCLEI_EXEC_TIMEOUT_SEC: 1800
+  # nuclei 阶段总预算（秒，0=不限制）
+  NUCLEI_STAGE_TIMEOUT_SEC: 5400
+  # nuclei 阶段最多扫描目标数（0=不限制）
+  NUCLEI_STAGE_MAX_TARGETS: 180
   # 单目标 nuclei 最大扫描时长（秒）
-  NUCLEI_SINGLE_TARGET_TIMEOUT_SEC: 3600
+  NUCLEI_SINGLE_TARGET_TIMEOUT_SEC: 900
   # 每批次最多目标数（1 表示严格单目标执行）
   NUCLEI_TARGETS_PER_BATCH: 1
   # nuclei 每秒请求上限（RPS），用于限制带宽占用
-  NUCLEI_RATE_LIMIT: 8
+  NUCLEI_RATE_LIMIT: 30
   # nuclei 并发 worker
-  NUCLEI_CONCURRENCY: 4
+  NUCLEI_CONCURRENCY: 16
   # nuclei bulk-size（单模板并行目标数）
-  NUCLEI_BULK_SIZE: 5
+  NUCLEI_BULK_SIZE: 20
   # 指纹未命中标签时是否启用 nuclei 自动扫描（-as）
   NUCLEI_AUTO_SCAN: true
   # 指纹未命中标签时的兜底标签（逗号分隔）
@@ -232,11 +236,17 @@ ARL:
   # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）
   AFROG_SEVERITY: ""
   # afrog 模板并发（命令行 -c）
-  AFROG_CONCURRENCY: 5
+  AFROG_CONCURRENCY: 20
   # afrog 每秒请求上限（命令行 -rl）
-  AFROG_RATE_LIMIT: 5
+  AFROG_RATE_LIMIT: 20
   # afrog 扫描超时（秒）
-  AFROG_EXEC_TIMEOUT_SEC: 7200
+  AFROG_EXEC_TIMEOUT_SEC: 1200
+  # afrog 单批最多目标数
+  AFROG_TARGETS_PER_BATCH: 40
+  # afrog 阶段总预算（秒，0=不限制）
+  AFROG_STAGE_TIMEOUT_SEC: 3600
+  # afrog 阶段最多扫描目标数（0=不限制）
+  AFROG_STAGE_MAX_TARGETS: 180
   # 是否启用 URLFinder 同目标 URL/HTML/JS 二次敏感扫描（复用 WIH）
   URLFINDER_SENSITIVE_ENABLE: true
   # URLFinder 二次敏感扫描单次最多目标数
@@ -341,6 +351,12 @@ ARL:
   FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC: 120
   # WIH 规则文件路径（默认使用源码版 wih 的规则模板）
   WIH_RULE_PATH: "/code/tools/wih/config/rules.yml"
+  # WIH 扫描超时（秒）
+  WIH_TIMEOUT_SEC: 7200
+  # WIH 全局并发（若 wih 二进制支持 --concurrency / -c）
+  WIH_CONCURRENCY: 15
+  # WIH 单站点并发（若 wih 二进制支持 --concurrency-per-site）
+  WIH_CONCURRENCY_PER_SITE: 2
 
   # Web Gunicorn worker 数（默认2，低内存环境建议 1~2）
   WEB_GUNICORN_WORKERS: 2

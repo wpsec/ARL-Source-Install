@@ -189,6 +189,8 @@ class CloudSecurityScanService(object):
         self.sites = list(sites or [])
         self.page_url_set = set(page_url_set or [])
         self.waf_guard = waf_guard
+        self.allowed_hosts = self._collect_allowed_hosts()
+        self.allowed_flds = self._collect_allowed_flds()
         self.dns_policy_cache = {}
         self.finding_hash_set = set()
         self.wih_records_cache = None
@@ -209,6 +211,65 @@ class CloudSecurityScanService(object):
     def _is_http_url(value: str) -> bool:
         text = str(value or "").strip().lower()
         return text.startswith("http://") or text.startswith("https://")
+
+    @staticmethod
+    def _normalize_host(value: str) -> str:
+        text = str(value or "").strip().lower()
+        if not text:
+            return ""
+        parsed = urlparse(text if "://" in text else "//{}".format(text))
+        return str(parsed.hostname or "").strip().lower().rstrip(".")
+
+    def _collect_allowed_hosts(self):
+        hosts = set()
+        for site in self.sites:
+            host = self._normalize_host(site)
+            if host:
+                hosts.add(host)
+        return hosts
+
+    def _collect_allowed_flds(self):
+        flds = set()
+        for host in self.allowed_hosts:
+            parsed = utils.domain_parsed(host)
+            fld = str(parsed.get("fld", "") if parsed else "").strip().lower()
+            if fld:
+                flds.add(fld)
+        return flds
+
+    def _host_in_scope(self, host: str) -> bool:
+        host = self._normalize_host(host)
+        if not host:
+            return False
+        if host in self.allowed_hosts:
+            return True
+        for item in self.allowed_hosts:
+            if host.endswith("." + item):
+                return True
+
+        parsed = utils.domain_parsed(host)
+        fld = str(parsed.get("fld", "") if parsed else "").strip().lower()
+        if fld and fld in self.allowed_flds:
+            return True
+        return False
+
+    def _pick_record_target(self, source: str, site: str) -> str:
+        source_text = str(source or "").strip()
+        site_text = str(site or "").strip()
+        if self._is_http_url(source_text):
+            return source_text
+        if self._is_http_url(site_text):
+            return site_text
+        return source_text or site_text or "-"
+
+    def _record_in_scope(self, source: str, site: str) -> bool:
+        source_text = str(source or "").strip()
+        site_text = str(site or "").strip()
+        if self._is_http_url(source_text):
+            return self._host_in_scope(source_text)
+        if self._is_http_url(site_text):
+            return self._host_in_scope(site_text)
+        return False
 
     def _load_wih_records(self):
         if self.wih_records_cache is not None:
@@ -298,7 +359,25 @@ class CloudSecurityScanService(object):
             return False
         if len(set(text)) <= 4:
             return False
+        # 过滤类似 getOffsetContentFromCache 这类代码标识符形态，降低 JS 场景误报。
+        if re.fullmatch(r"[A-Za-z_][A-Za-z_]{10,80}", text):
+            return False
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9]{12,80}", text) and not any(ch.isdigit() for ch in text):
+            return False
         return self._entropy(text) >= 3.0
+
+    @staticmethod
+    def _has_cloud_key_assignment_context(content: str, start: int, end: int) -> bool:
+        text = str(content or "")
+        left = max(0, int(start or 0) - 96)
+        right = min(len(text), int(end or 0) + 64)
+        window = text[left:right]
+        return bool(
+            re.search(
+                r"(?i)(?:access(?:_|-|)?key(?:_|-|)?(?:id|secret)?|secret(?:_|-|)?key|api(?:_|-|)?key|app(?:_|-|)?id|credential)\s*[:=]",
+                window,
+            )
+        )
 
     def _append_finding(
         self,
@@ -343,11 +422,13 @@ class CloudSecurityScanService(object):
             source = str(record.get("source", "") or "").strip()
             site = str(record.get("site", "") or "").strip()
             merged_lower = "{} {} {} {}".format(record_type, content, source, site).lower()
+            if not self._record_in_scope(source, site):
+                continue
+            target = self._pick_record_target(source, site)
 
             if record_type in self.CLOUD_RECORD_TYPE_RULES:
                 rule = self.CLOUD_RECORD_TYPE_RULES[record_type]
                 if self._is_valid_secret(content):
-                    target = source if self._is_http_url(source) else (site or source or "-")
                     self._append_finding(
                         findings,
                         vuln_type="cloud_key_leak",
@@ -364,10 +445,11 @@ class CloudSecurityScanService(object):
                 if not any(keyword in merged_lower for keyword in rule["contexts"]):
                     continue
                 for match in re.finditer(rule["pattern"], content, flags=re.I):
+                    if not self._has_cloud_key_assignment_context(content, match.start(), match.end()):
+                        continue
                     secret = str(match.group(0) or "").strip().strip("\"'")
                     if not self._is_valid_secret(secret):
                         continue
-                    target = source if self._is_http_url(source) else (site or source or "-")
                     self._append_finding(
                         findings,
                         vuln_type="cloud_key_leak",

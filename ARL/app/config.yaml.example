@@ -203,7 +203,11 @@ ARL:
   # 默认优先使用项目根目录 tools/nuclei-templates（Docker 常见路径：/code/tools/nuclei-templates）
   # NUCLEI_TEMPLATE_DIR: "/code/tools/nuclei/nuclei-templates"
   # 单次 nuclei 子进程超时（秒），超时后当前批次跳过继续后续流程
-  NUCLEI_EXEC_TIMEOUT_SEC: 21600
+  NUCLEI_EXEC_TIMEOUT_SEC: 3600
+  # nuclei 阶段总预算（秒，0=不限制）
+  NUCLEI_STAGE_TIMEOUT_SEC: 7200
+  # nuclei 阶段最多扫描目标数（0=不限制）
+  NUCLEI_STAGE_MAX_TARGETS: 0
   # 单目标 nuclei 最大扫描时长（秒）
   NUCLEI_SINGLE_TARGET_TIMEOUT_SEC: 3600
   # 每批次最多目标数（<=1 表示自动分批，>1 表示固定分批大小）
@@ -231,7 +235,13 @@ ARL:
   # afrog 每秒请求上限（命令行 -rl）
   AFROG_RATE_LIMIT: 5
   # afrog 扫描超时（秒）
-  AFROG_EXEC_TIMEOUT_SEC: 7200
+  AFROG_EXEC_TIMEOUT_SEC: 1800
+  # afrog 单批最多目标数
+  AFROG_TARGETS_PER_BATCH: 50
+  # afrog 阶段总预算（秒，0=不限制）
+  AFROG_STAGE_TIMEOUT_SEC: 3600
+  # afrog 阶段最多扫描目标数（0=不限制）
+  AFROG_STAGE_MAX_TARGETS: 0
   # 公网A记录IP反查增强：按IP调用三方API补充同域资产（默认开启）
   IP_PIVOT_QUERY_ENABLE: true
   # 单任务最多参与反查的IP数量
@@ -346,6 +356,12 @@ ARL:
   FILE_LEAK_NO_PROGRESS_TIMEOUT_SEC: 120
   # WIH 规则文件路径（默认使用源码版 wih 的规则模板）
   WIH_RULE_PATH: "/code/tools/wih/config/rules.yml"
+  # WIH 扫描超时（秒）
+  WIH_TIMEOUT_SEC: 7200
+  # WIH 全局并发（若 wih 二进制支持 --concurrency / -c）
+  WIH_CONCURRENCY: 6
+  # WIH 单站点并发（若 wih 二进制支持 --concurrency-per-site）
+  WIH_CONCURRENCY_PER_SITE: 2
   # TruffleHog 可执行文件路径（建议指向 tools/TruffleHog/trufflehog）
   TRUFFLEHOG_BIN: ""
   # 是否启用 TruffleHog JS 二次扫描
