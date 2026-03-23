@@ -28,6 +28,7 @@ import re
 from datetime import datetime
 from collections import Counter
 from html import escape
+import ipaddress
 from openpyxl.writer.excel import save_virtual_workbook
 from openpyxl.styles import Font, Color, PatternFill, Alignment, Border, Side
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -35,7 +36,7 @@ from openpyxl.utils import get_column_letter
 from app.utils import get_logger, auth
 from app.utils.tls_policy import get_ssl_security_compliance
 from app import utils
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 ns = Namespace('export', description="任务报告导出接口")
 
@@ -49,6 +50,7 @@ TASK_EXPORT_PROJECTION = {
     "type": 1,
     "start_time": 1,
     "end_time": 1,
+    "waf_skip_summary": 1,
 }
 IP_EXPORT_PROJECTION = {
     "task_id": 1,
@@ -76,6 +78,7 @@ DOMAIN_EXPORT_PROJECTION = {
     "type": 1,
     "record": 1,
     "ips": 1,
+    "source": 1,
 }
 URL_EXPORT_PROJECTION = {
     "url": 1,
@@ -765,6 +768,92 @@ def as_list(value):
     return [value]
 
 
+def _extract_domain_source_list(value):
+    """
+    将 domain.source 统一转为列表，兼容 str/list/None。
+    """
+    items = []
+    for raw in as_list(value):
+        text = sanitize_excel_value(raw).strip()
+        if not text:
+            continue
+        if "," in text:
+            parts = [x.strip() for x in text.split(",") if x.strip()]
+            items.extend(parts)
+            continue
+        items.append(text)
+
+    dedup = []
+    seen = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        dedup.append(item)
+    return dedup
+
+
+def _format_domain_source_text(value):
+    """
+    域名来源展示文本（多来源按换行显示）。
+    """
+    source_list = _extract_domain_source_list(value)
+    if not source_list:
+        return "-"
+    return " \r\n".join(source_list)
+
+
+def _is_ip_address(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    try:
+        ipaddress.ip_address(text)
+        return True
+    except Exception:
+        return False
+
+
+def _parse_waf_host_port(host: str, last_url: str):
+    """
+    解析 WAF 记录中的 IP/域名/端口，兼容 host 与 last_url 两种来源。
+    """
+    host_text = str(host or "").strip().lower()
+    last_url_text = str(last_url or "").strip()
+    parsed = urlparse(last_url_text)
+    if not getattr(parsed, "hostname", None) and last_url_text and "://" not in last_url_text:
+        parsed = urlparse("//{}".format(last_url_text))
+
+    hostname = str(parsed.hostname or "").strip().lower() or host_text
+    try:
+        parsed_port = parsed.port
+    except Exception:
+        parsed_port = 0
+
+    try:
+        port = int(parsed_port or 0)
+    except Exception:
+        port = 0
+
+    if port <= 0:
+        if parsed.scheme == "https":
+            port = 443
+        elif parsed.scheme == "http":
+            port = 80
+
+    ip = ""
+    domain = ""
+    if hostname:
+        if _is_ip_address(hostname):
+            ip = hostname
+        elif utils.is_valid_domain(hostname):
+            domain = hostname
+        else:
+            domain = hostname
+
+    return ip, domain, port
+
+
 def calc_port_service_product_statist_from_ip_items(ip_items):
     """
     基于合并后的IP数据计算资产统计（与单任务统计口径保持一致）
@@ -1245,6 +1334,78 @@ def _extract_wih_rows(task_ids):
     return rows
 
 
+def _extract_waf_rows(task_ids):
+    """
+    汇总任务的 WAF 识别结果（来源 task.waf_skip_summary.blocked_hosts）。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    rows = []
+    dedup_keys = set()
+
+    for task_id in task_id_list:
+        task_data = get_task_data(task_id)
+        if not isinstance(task_data, dict):
+            continue
+
+        waf_skip_summary = task_data.get("waf_skip_summary", {})
+        blocked_hosts = (
+            (waf_skip_summary or {}).get("blocked_hosts", [])
+            if isinstance(waf_skip_summary, dict)
+            else []
+        )
+
+        for host_item in blocked_hosts:
+            if isinstance(host_item, dict):
+                host_data = host_item
+            else:
+                host_data = {"host": sanitize_excel_value(host_item).strip()}
+
+            host = sanitize_excel_value(host_data.get("host", "")).strip().lower()
+            last_url = sanitize_excel_value(host_data.get("last_url", "")).strip()
+            waf_name = sanitize_excel_value(host_data.get("waf_name", "")).strip() or "unknown"
+            waf_confidence = sanitize_excel_value(host_data.get("waf_confidence", "")).strip()
+            module = sanitize_excel_value(host_data.get("module", "")).strip()
+            rule = sanitize_excel_value(host_data.get("rule", "")).strip()
+            reason = sanitize_excel_value(host_data.get("reason", "")).strip()
+            hit_count = sanitize_excel_value(host_data.get("hit_count", ""))
+            skip_count = sanitize_excel_value(host_data.get("skip_count", ""))
+            last_status = sanitize_excel_value(host_data.get("last_status", ""))
+            waf_evidence = " \r\n".join(
+                [
+                    sanitize_excel_value(item).strip()
+                    for item in as_list(host_data.get("waf_evidence", []))
+                    if sanitize_excel_value(item).strip()
+                ]
+            )
+
+            ip, domain, port = _parse_waf_host_port(host, last_url)
+            port_text = str(port) if int(port or 0) > 0 else ""
+            dedup_key = (task_id, host, port_text, waf_name)
+            if dedup_key in dedup_keys:
+                continue
+            dedup_keys.add(dedup_key)
+
+            rows.append(
+                [
+                    sanitize_excel_value(ip),
+                    sanitize_excel_value(domain),
+                    sanitize_excel_value(port_text),
+                    sanitize_excel_value(waf_name),
+                    sanitize_excel_value(waf_confidence),
+                    sanitize_excel_value(module),
+                    sanitize_excel_value(rule),
+                    sanitize_excel_value(reason),
+                    sanitize_excel_value(hit_count),
+                    sanitize_excel_value(skip_count),
+                    sanitize_excel_value(last_status),
+                    sanitize_excel_value(last_url),
+                    sanitize_excel_value(waf_evidence),
+                ]
+            )
+
+    return rows
+
+
 def _build_url_sheet(wb, task_ids, apply_style=True):
     """
     在导出工作簿中新增 URL 信息工作表。
@@ -1259,6 +1420,49 @@ def _build_url_sheet(wb, task_ids, apply_style=True):
     ws.append(["URL", "站点", "标题", "状态码", "body长度", "来源"])
 
     for row in _extract_url_rows(task_ids):
+        ws.append(row)
+
+    if apply_style:
+        set_sheet_style(ws)
+
+
+def _build_waf_sheet(wb, task_ids, apply_style=True):
+    """
+    在导出工作簿中新增 WAF 识别工作表。
+    """
+    ws = wb.create_sheet(title="WAF识别")
+    ws.column_dimensions['A'].width = 18.0
+    ws.column_dimensions['B'].width = 36.0
+    ws.column_dimensions['C'].width = 10.0
+    ws.column_dimensions['D'].width = 20.0
+    ws.column_dimensions['E'].width = 12.0
+    ws.column_dimensions['F'].width = 16.0
+    ws.column_dimensions['G'].width = 16.0
+    ws.column_dimensions['H'].width = 42.0
+    ws.column_dimensions['I'].width = 10.0
+    ws.column_dimensions['J'].width = 10.0
+    ws.column_dimensions['K'].width = 12.0
+    ws.column_dimensions['L'].width = 64.0
+    ws.column_dimensions['M'].width = 42.0
+    ws.append(
+        [
+            "IP",
+            "域名",
+            "端口",
+            "WAF厂家",
+            "置信度",
+            "命中模块",
+            "触发规则",
+            "触发原因",
+            "命中次数",
+            "跳过次数",
+            "最后状态码",
+            "最后URL",
+            "命中证据",
+        ]
+    )
+
+    for row in _extract_waf_rows(task_ids):
         ws.append(row)
 
     if apply_style:
@@ -2199,8 +2403,9 @@ class SaveTask(object):
         ws.column_dimensions['B'].width = 20.0
         ws.column_dimensions['C'].width = 50.0
         ws.column_dimensions['D'].width = 50.0
+        ws.column_dimensions['E'].width = 24.0
 
-        column_tilte = ["域名", "解析类型", "记录值","关联ip"]
+        column_tilte = ["域名", "解析类型", "记录值", "关联ip", "来源"]
 
         ws.append(column_tilte)
         for item in get_domain_data(self.task_id):
@@ -2209,6 +2414,7 @@ class SaveTask(object):
             row.append(item["type"])
             row.append(" \r\n".join(item["record"]))
             row.append(" \r\n".join(item["ips"]))
+            row.append(_format_domain_source_text(item.get("source", "")))
             ws.append(row)
 
         self.set_style(ws)
@@ -2230,6 +2436,12 @@ class SaveTask(object):
         构建 WIH 工作表。
         """
         _build_wih_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
+
+    def build_waf_xl(self):
+        """
+        构建 WAF 识别工作表。
+        """
+        _build_waf_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_cert_xl(self):
         """
@@ -2329,6 +2541,7 @@ class SaveTask(object):
         self.build_url_xl()
         self.build_fileleak_xl()
         self.build_wih_xl()
+        self.build_waf_xl()
         self.build_vuln_xl()
         self.build_statist()
 
@@ -2461,6 +2674,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                     "type": domain_item.get("type", ""),
                     "record": as_list(domain_item.get("record", [])),
                     "ips": as_list(domain_item.get("ips", [])),
+                    "sources": _extract_domain_source_list(domain_item.get("source", "")),
                 }
             else:
                 merged = merged_domains[domain]
@@ -2468,6 +2682,14 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                     merged["type"] = domain_item.get("type")
                 merged["record"] = sorted(list(set(merged.get("record", []) + as_list(domain_item.get("record", [])))))
                 merged["ips"] = sorted(list(set(merged.get("ips", []) + as_list(domain_item.get("ips", [])))))
+                merged["sources"] = sorted(
+                    list(
+                        set(
+                            as_list(merged.get("sources", []))
+                            + _extract_domain_source_list(domain_item.get("source", ""))
+                        )
+                    )
+                )
 
         for site_item in get_site_data(task_id):
             site = site_item.get("site") or site_item.get("url")
@@ -2619,7 +2841,8 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     ws.column_dimensions['B'].width = 20.0
     ws.column_dimensions['C'].width = 50.0
     ws.column_dimensions['D'].width = 50.0
-    ws.append(["域名", "解析类型", "记录值", "关联ip"])
+    ws.column_dimensions['E'].width = 24.0
+    ws.append(["域名", "解析类型", "记录值", "关联ip", "来源"])
     for domain in sorted(merged_domains.keys()):
         item = merged_domains[domain]
         ws.append([
@@ -2627,6 +2850,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
             sanitize_excel_value(item.get("type", "")),
             sanitize_excel_value(" \r\n".join(as_list(item.get("record", [])))),
             sanitize_excel_value(" \r\n".join(as_list(item.get("ips", [])))),
+            sanitize_excel_value(_format_domain_source_text(item.get("sources", []))),
         ])
     if apply_style:
         set_sheet_style(ws)
@@ -2635,6 +2859,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     _build_url_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_fileleak_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_wih_sheet(wb, valid_task_ids, apply_style=apply_style)
+    _build_waf_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_vuln_sheet(wb, valid_task_ids, apply_style=apply_style)
 
     # 资产统计（与单任务导出同结构）

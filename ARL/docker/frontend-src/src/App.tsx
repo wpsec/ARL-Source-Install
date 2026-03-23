@@ -2326,9 +2326,12 @@ function normalizeTaskStatus(rawStatus: any): 'waiting' | 'running' | 'done' | '
 
 function getTaskStatusSortWeight(rawStatus: any): number {
   const normalizedStatus = normalizeTaskStatus(rawStatus);
-  if (normalizedStatus === 'done' || normalizedStatus === 'error') return 0;
-  if (normalizedStatus === 'stop') return 2;
-  return 1;
+  if (normalizedStatus === 'running') return 0;
+  if (normalizedStatus === 'error') return 1;
+  if (normalizedStatus === 'waiting') return 2;
+  if (normalizedStatus === 'done') return 3;
+  if (normalizedStatus === 'stop') return 4;
+  return 5;
 }
 
 function getTaskStatusLabel(rawStatus: any, options: { showRunningStage?: boolean } = {}): string {
@@ -3633,7 +3636,7 @@ function DashboardView({
                     <span className="text-brand-text-muted">{source}</span>
                     <span className="ml-auto text-brand-text-muted">{formatLogTime(log?.time)}</span>
                   </div>
-                  <p className="text-white/80 break-all leading-relaxed">{normalizeValue(log?.msg)}</p>
+                  <p className="text-white/80 break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
                 </div>
               );
             })}
@@ -5877,6 +5880,7 @@ function TableModuleView({
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
+  const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
   const [taskReportExportMenu, setTaskReportExportMenu] = useState('');
   const [taskErrorDialog, setTaskErrorDialog] = useState<{
     taskId: string;
@@ -5934,7 +5938,7 @@ function TableModuleView({
     });
   };
   const displayRows = useMemo(() => {
-    if (module.id !== 'task' || !taskNameSearchText || rows.length <= 1) return rows;
+    if (module.id !== 'task' || rows.length <= 1) return rows;
     return rows
       .map((row, index) => ({
         row,
@@ -5943,7 +5947,7 @@ function TableModuleView({
       }))
       .sort((a, b) => (a.statusWeight - b.statusWeight) || (a.index - b.index))
       .map((item) => item.row);
-  }, [module.id, rows, taskNameSearchText]);
+  }, [module.id, rows]);
   const [shouldInitialLoad, setShouldInitialLoad] = useState(false);
 
   const buildUniqueTextOptions = useCallback((values: any[]): Array<{ label: string; value: string }> => {
@@ -6096,6 +6100,7 @@ function TableModuleView({
     setExpandedTaskScheduleTargetRows({});
     setExpandedTaskOptionRows({});
     setTaskRowPendingActionMap({});
+    setTaskStopAndDeleteLoading(false);
     setTaskCompactMode(true);
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
@@ -6142,17 +6147,26 @@ function TableModuleView({
     if (resolver) resolver(confirmed);
   }, []);
 
-  const askDeleteConfirm = useCallback((message: string, title = '确认删除'): Promise<boolean> => {
+  const askActionConfirm = useCallback((
+    message: string,
+    options: { title?: string; confirmText?: string } = {}
+  ): Promise<boolean> => {
     const safeMessage = sanitizeUiMessage(message, 400) || '确认执行删除操作吗？';
+    const safeTitle = sanitizeUiMessage(String(options.title || '确认操作'), 80) || '确认操作';
+    const safeConfirmText = sanitizeUiMessage(String(options.confirmText || '确认'), 24) || '确认';
     return new Promise((resolve) => {
       deleteConfirmResolverRef.current = resolve;
       setDeleteConfirmDialog({
-        title: sanitizeUiMessage(title, 80) || '确认删除',
+        title: safeTitle,
         message: safeMessage,
-        confirmText: '确认删除',
+        confirmText: safeConfirmText,
       });
     });
   }, []);
+
+  const askDeleteConfirm = useCallback((message: string, title = '确认删除'): Promise<boolean> => {
+    return askActionConfirm(message, { title, confirmText: '确认删除' });
+  }, [askActionConfirm]);
 
   useEffect(() => {
     if (!deleteConfirmDialog) return;
@@ -7400,6 +7414,51 @@ function TableModuleView({
     }
   };
 
+  const stopAndDeleteSelectedTasks = async () => {
+    if (module.id !== 'task') return;
+    if (taskStopAndDeleteLoading) return;
+
+    const taskIds = Array.from(new Set(selectedIds.filter((item) => Boolean(item))));
+    if (taskIds.length === 0) {
+      setError('请先勾选需要停止并删除的任务');
+      return;
+    }
+
+    const confirmed = await askDeleteConfirm(
+      `将先停止再删除已勾选的 ${taskIds.length} 条任务。此操作不可恢复。`,
+      '确认停止并删除'
+    );
+    if (!confirmed) return;
+
+    setTaskReportExportMenu('');
+    setError('');
+    setSuccess(`正在停止并删除 ${taskIds.length} 条任务，请稍候...`);
+    setTaskStopAndDeleteLoading(true);
+    try {
+      await requestApi(token, '/task/batch_stop/', {
+        method: 'POST',
+        body: {
+          task_id: taskIds,
+        },
+      });
+
+      const result = await requestApi(token, '/task/delete/', {
+        method: 'POST',
+        body: {
+          task_id: taskIds,
+          del_task_data: false,
+        },
+      });
+      await loadRows({ forceRefresh: true });
+      setSelectedIds([]);
+      setSuccess(result?.message ? `停止并删除成功: ${result.message}` : `停止并删除成功，共处理 ${taskIds.length} 条任务`);
+    } catch (err: any) {
+      setError(err?.message || '停止并删除失败');
+    } finally {
+      setTaskStopAndDeleteLoading(false);
+    }
+  };
+
   const stopTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
@@ -7452,6 +7511,9 @@ function TableModuleView({
     if (module.id !== 'task') return;
     if (!taskId) return;
     if (taskRowPendingActionMap[taskId]) return;
+    if (!(await askActionConfirm('将重启该任务并创建新的执行实例，是否继续？', { title: '确认重启', confirmText: '确认重启' }))) {
+      return;
+    }
     markTaskRowActionPending(taskId, 'restart');
     setError('');
     setSuccess('正在重启任务，请稍候...');
@@ -7464,7 +7526,15 @@ function TableModuleView({
       });
       await loadRows({ forceRefresh: true });
       // 刷新列表会重置提示文案，这里在刷新后补一条最终反馈。
-      setSuccess(result?.message ? `重启成功: ${result.message}` : '重启成功');
+      const restartedTaskIds = Array.isArray(result?.data?.restart_task_id)
+        ? result.data.restart_task_id.map((item: any) => String(item || '').trim()).filter((item: string) => item)
+        : [];
+      const restartHint = taskNameSearchText ? '（当前有任务名筛选时，新任务可能被过滤）' : '';
+      if (restartedTaskIds.length > 0) {
+        setSuccess(`重启成功，已创建新任务: ${restartedTaskIds.join(', ')}${restartHint}`);
+      } else {
+        setSuccess(result?.message ? `重启成功: ${result.message}${restartHint}` : `重启成功，已创建新任务实例${restartHint}`);
+      }
     } catch (err: any) {
       setError(err?.message || '重启失败');
     } finally {
@@ -7897,6 +7967,17 @@ function TableModuleView({
                 </button>
               );
             })}
+            {module.id === 'task' ? (
+              <button
+                type="button"
+                onClick={() => void stopAndDeleteSelectedTasks()}
+                disabled={selectedIds.length === 0 || taskStopAndDeleteLoading}
+                className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                title="先停止所选任务，再执行删除"
+              >
+                {taskStopAndDeleteLoading ? '停止并删除中...' : '停止并删除'}
+              </button>
+            ) : null}
             {module.id === 'task' ? (
               <div className="relative" data-task-report-export-menu="true">
                 <button

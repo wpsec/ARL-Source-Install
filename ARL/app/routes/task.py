@@ -837,10 +837,17 @@ class TaskRestart(ARLResource):
                     return utils.build_ret(ErrorMsg.TaskIsRunning, {"task_id": task_id})
 
             # 执行重启操作
+            restart_task_id_list = []
             for task_id in task_id_list:
-                restart_task(task_id)
+                restart_item = restart_task(task_id) or {}
+                new_task_id = str(restart_item.get("task_id", "") or "").strip()
+                if new_task_id:
+                    restart_task_id_list.append(new_task_id)
 
         except Exception as e:
             return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
 
-        return utils.build_ret(ErrorMsg.Success, {"task_id": task_id_list})
+        return utils.build_ret(ErrorMsg.Success, {
+            "task_id": task_id_list,
+            "restart_task_id": restart_task_id_list,
+        })

@@ -409,7 +409,7 @@ def _build_recent_task_summary_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
                 "time": display_time,
                 "level": level,
                 "source": "SCAN",
-                "msg": _truncate_text(msg),
+                "msg": msg,
             })
             seq += 1
 
@@ -431,7 +431,7 @@ def _build_recent_task_summary_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
                         "time": display_time,
                         "level": "INFO",
                         "source": "STEP",
-                        "msg": _truncate_text(msg),
+                        "msg": msg,
                     })
                     seq += 1
     except Exception as e:
@@ -499,7 +499,7 @@ def _parse_worker_log_line(line):
         "time": display_time,
         "level": level,
         "source": "WORKER",
-        "msg": _truncate_text(raw_line),
+        "msg": raw_line,
     }
 
 
