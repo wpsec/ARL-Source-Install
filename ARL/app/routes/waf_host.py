@@ -7,6 +7,7 @@ WAF 识别结果查询模块
 - 主要用于任务详情中快速查看“哪些主机因为 WAF 被跳过”
 """
 from urllib.parse import urlparse
+import ipaddress
 
 from bson import ObjectId
 from flask_restx import fields, Namespace
@@ -44,6 +45,18 @@ def _safe_int(value, default=0):
         return default
 
 
+def _is_ip_address(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+
+    try:
+        ipaddress.ip_address(text)
+        return True
+    except Exception:
+        return False
+
+
 def _parse_host_port(host: str, last_url: str):
     host_text = str(host or "").strip().lower()
     last_url_text = str(last_url or "").strip()
@@ -67,7 +80,7 @@ def _parse_host_port(host: str, last_url: str):
     ip = ""
     domain = ""
     if hostname:
-        if utils.is_ip(hostname):
+        if _is_ip_address(hostname):
             ip = hostname
         elif utils.is_valid_domain(hostname):
             domain = hostname

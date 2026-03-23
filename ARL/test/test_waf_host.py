@@ -38,6 +38,16 @@ class TestWafHostRouteUtils(unittest.TestCase):
         self.assertEqual("oa.example.com", domain)
         self.assertEqual(8443, port)
 
+    def test_parse_host_port_handles_ip_target(self):
+        """
+        IP 目标应识别为 ip 字段，且不抛异常。
+        """
+        ip, domain, port = _parse_host_port("1.2.3.4", "https://1.2.3.4/login")
+
+        self.assertEqual("1.2.3.4", ip)
+        self.assertEqual("", domain)
+        self.assertEqual(443, port)
+
 
 if __name__ == "__main__":
     unittest.main()
