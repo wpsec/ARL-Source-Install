@@ -68,7 +68,9 @@ SITE_EXPORT_PROJECTION = {
     "site": 1,
     "url": 1,
     "title": 1,
+    "headers": 1,
     "finger": 1,
+    "screenshot": 1,
     "status": 1,
     "favicon": 1,
 }
@@ -119,12 +121,21 @@ VULN_EXPORT_PROJECTION = {
 }
 NUCLEI_RESULT_EXPORT_PROJECTION = {
     "task_id": 1,
+    "scanner_type": 1,
+    "rule_id": 1,
     "vuln_name": 1,
     "vuln_severity": 1,
     "target": 1,
     "vuln_url": 1,
+    "save_date": 1,
+    "verify_data": 1,
     "template_id": 1,
     "template_url": 1,
+}
+STAT_FINGER_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "name": 1,
+    "cnt": 1,
 }
 CERT_EXPORT_PROJECTION = {
     "task_id": 1,
@@ -1251,6 +1262,16 @@ def get_nuclei_result_data(task_id):
     ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
+def get_stat_finger_data(task_id):
+    """
+    获取任务的指纹统计结果。
+    """
+    return utils.conn_db('stat_finger').find(
+        {'task_id': task_id},
+        projection=STAT_FINGER_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+
+
 def get_cert_data(task_id):
     """
     获取任务的 SSL 证书结果
@@ -1469,6 +1490,80 @@ def _build_waf_sheet(wb, task_ids, apply_style=True):
         set_sheet_style(ws)
 
 
+def _extract_nuclei_rows(task_ids):
+    """
+    汇总 PoC 风险导出行（nuclei_result），保留页面级关键字段。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    rows = []
+    dedup_keys = set()
+
+    for task_id in task_id_list:
+        for item in get_nuclei_result_data(task_id):
+            scanner_type = sanitize_excel_value(item.get("scanner_type", "")).strip() or "nuclei"
+            rule_id = sanitize_excel_value(
+                item.get("rule_id", "")
+                or item.get("template_id", "")
+            ).strip()
+            target = sanitize_excel_value(item.get("target", "")).strip()
+            vuln_url = sanitize_excel_value(item.get("vuln_url", "")).strip()
+            vuln_name = sanitize_excel_value(item.get("vuln_name", "")).strip()
+            vuln_severity = sanitize_excel_value(item.get("vuln_severity", "")).strip()
+            save_date = sanitize_excel_value(item.get("save_date", "")).strip()
+            verify_data = sanitize_excel_value(
+                item.get("verify_data", "")
+                or item.get("template_url", "")
+            ).strip()
+
+            dedup_key = (
+                task_id,
+                scanner_type,
+                rule_id,
+                target,
+                vuln_url,
+                vuln_name,
+                vuln_severity,
+            )
+            if dedup_key in dedup_keys:
+                continue
+            dedup_keys.add(dedup_key)
+
+            rows.append([
+                scanner_type,
+                rule_id,
+                target,
+                vuln_url,
+                vuln_name,
+                vuln_severity,
+                save_date,
+                verify_data,
+            ])
+
+    return rows
+
+
+def _build_nuclei_sheet(wb, task_ids, apply_style=True):
+    """
+    在导出工作簿中新增 PoC 风险工作表。
+    """
+    ws = wb.create_sheet(title="PoC风险")
+    ws.column_dimensions['A'].width = 12.0
+    ws.column_dimensions['B'].width = 32.0
+    ws.column_dimensions['C'].width = 36.0
+    ws.column_dimensions['D'].width = 62.0
+    ws.column_dimensions['E'].width = 36.0
+    ws.column_dimensions['F'].width = 14.0
+    ws.column_dimensions['G'].width = 21.0
+    ws.column_dimensions['H'].width = 80.0
+    ws.append(["扫描器", "规则ID", "目标", "风险URL", "风险名称", "风险等级", "发现时间", "验证信息"])
+
+    for row in _extract_nuclei_rows(task_ids):
+        ws.append(row)
+
+    if apply_style:
+        set_sheet_style(ws)
+
+
 def _build_fileleak_sheet(wb, task_ids, apply_style=True):
     """
     在导出工作簿中新增目录扫描工作表。
@@ -1500,6 +1595,46 @@ def _build_wih_sheet(wb, task_ids, apply_style=True):
     ws.append(["记录类型", "内容", "来源", "站点"])
 
     for row in _extract_wih_rows(task_ids):
+        ws.append(row)
+
+    if apply_style:
+        set_sheet_style(ws)
+
+
+def _extract_stat_finger_rows(task_ids):
+    """
+    汇总指纹统计导出行；批量导出时按指纹名累计数量。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    finger_counter = Counter()
+
+    for task_id in task_id_list:
+        for item in get_stat_finger_data(task_id):
+            name = sanitize_excel_value(item.get("name", "")).strip()
+            if not name:
+                continue
+            try:
+                cnt = int(item.get("cnt", 0) or 0)
+            except Exception:
+                cnt = 0
+            finger_counter[name] += cnt
+
+    rows = []
+    for name, cnt in sorted(finger_counter.items(), key=lambda kv: (-int(kv[1]), kv[0])):
+        rows.append([sanitize_excel_value(name), sanitize_excel_value(cnt)])
+    return rows
+
+
+def _build_stat_finger_sheet(wb, task_ids, apply_style=True):
+    """
+    在导出工作簿中新增指纹统计工作表。
+    """
+    ws = wb.create_sheet(title="指纹统计")
+    ws.column_dimensions['A'].width = 56.0
+    ws.column_dimensions['B'].width = 12.0
+    ws.append(["finger", "数量"])
+
+    for row in _extract_stat_finger_rows(task_ids):
         ws.append(row)
 
     if apply_style:
@@ -2380,19 +2515,23 @@ class SaveTask(object):
         ws = self.wb.active
         ws.column_dimensions['A'].width = 35.0
         ws.column_dimensions['B'].width = 40.0
-        ws.column_dimensions['C'].width = 60.0
-        ws.column_dimensions['D'].width = 20.0
-        ws.column_dimensions['E'].width = 30.0
+        ws.column_dimensions['C'].width = 56.0
+        ws.column_dimensions['D'].width = 60.0
+        ws.column_dimensions['E'].width = 20.0
+        ws.column_dimensions['F'].width = 30.0
+        ws.column_dimensions['G'].width = 56.0
         ws.title = "站点"
-        column_tilte = ["site", "title", "指纹", "状态码", "favicon hash"]
+        column_tilte = ["site", "title", "headers", "指纹", "状态码", "favicon hash", "截图"]
         ws.append(column_tilte)
         for item in get_site_data(self.task_id):
             row = []
             row.append(self.ignore_illegal(item["site"]))
             row.append(self.ignore_illegal(item["title"]))
+            row.append(self.ignore_illegal(sanitize_excel_value(item.get("headers", ""))))
             row.append(" \r\n".join([self.ignore_illegal(x["name"]) for x in item["finger"]]))
             row.append(item["status"])
             row.append(item["favicon"].get("hash", ""))
+            row.append(self.ignore_illegal(sanitize_excel_value(item.get("screenshot", ""))))
             ws.append(row)
 
         self.set_style(ws)
@@ -2442,6 +2581,18 @@ class SaveTask(object):
         构建 WAF 识别工作表。
         """
         _build_waf_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
+
+    def build_nuclei_xl(self):
+        """
+        构建 PoC 风险工作表。
+        """
+        _build_nuclei_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
+
+    def build_stat_finger_xl(self):
+        """
+        构建指纹统计工作表。
+        """
+        _build_stat_finger_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_cert_xl(self):
         """
@@ -2543,6 +2694,8 @@ class SaveTask(object):
         self.build_wih_xl()
         self.build_waf_xl()
         self.build_vuln_xl()
+        self.build_nuclei_xl()
+        self.build_stat_finger_xl()
         self.build_statist()
 
         return self.wb
@@ -2699,7 +2852,9 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                 merged_sites[site] = {
                     "site": site,
                     "title": site_item.get("title", ""),
+                    "headers": site_item.get("headers", ""),
                     "finger": as_list(site_item.get("finger", [])),
+                    "screenshot": site_item.get("screenshot", ""),
                     "status": site_item.get("status", ""),
                     "favicon": site_item.get("favicon", {}),
                 }
@@ -2707,6 +2862,10 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                 merged = merged_sites[site]
                 if not merged.get("title") and site_item.get("title"):
                     merged["title"] = site_item.get("title", "")
+                if not merged.get("headers") and site_item.get("headers"):
+                    merged["headers"] = site_item.get("headers", "")
+                if not merged.get("screenshot") and site_item.get("screenshot"):
+                    merged["screenshot"] = site_item.get("screenshot", "")
                 if not merged.get("status") and site_item.get("status"):
                     merged["status"] = site_item.get("status", "")
                 if (not isinstance(merged.get("favicon"), dict) or not merged.get("favicon", {}).get("hash")) and \
@@ -2736,18 +2895,22 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     ws = wb.create_sheet(title="站点")
     ws.column_dimensions['A'].width = 35.0
     ws.column_dimensions['B'].width = 40.0
-    ws.column_dimensions['C'].width = 60.0
-    ws.column_dimensions['D'].width = 20.0
-    ws.column_dimensions['E'].width = 30.0
-    ws.append(["site", "title", "指纹", "状态码", "favicon hash"])
+    ws.column_dimensions['C'].width = 56.0
+    ws.column_dimensions['D'].width = 60.0
+    ws.column_dimensions['E'].width = 20.0
+    ws.column_dimensions['F'].width = 30.0
+    ws.column_dimensions['G'].width = 56.0
+    ws.append(["site", "title", "headers", "指纹", "状态码", "favicon hash", "截图"])
     for site in sorted(merged_sites.keys()):
         item = merged_sites[site]
         ws.append([
             sanitize_excel_value(item.get("site", "")),
             sanitize_excel_value(item.get("title", "")),
+            sanitize_excel_value(item.get("headers", "")),
             sanitize_excel_value(extract_finger_names(item.get("finger", []))).replace(",", " \r\n"),
             sanitize_excel_value(item.get("status", "")),
             sanitize_excel_value((item.get("favicon", {}) or {}).get("hash", "")),
+            sanitize_excel_value(item.get("screenshot", "")),
         ])
     if apply_style:
         set_sheet_style(ws)
@@ -2861,6 +3024,8 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     _build_wih_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_waf_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_vuln_sheet(wb, valid_task_ids, apply_style=apply_style)
+    _build_nuclei_sheet(wb, valid_task_ids, apply_style=apply_style)
+    _build_stat_finger_sheet(wb, valid_task_ids, apply_style=apply_style)
 
     # 资产统计（与单任务导出同结构）
     statist = calc_port_service_product_statist_from_ip_items(merged_ip_items)

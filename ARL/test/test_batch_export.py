@@ -165,6 +165,7 @@ class TestBatchExport(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     @patch('app.routes.export.get_nuclei_result_data')
+    @patch('app.routes.export.get_stat_finger_data')
     @patch('app.routes.export.get_vuln_data')
     @patch('app.routes.export.get_wih_data')
     @patch('app.routes.export.get_fileleak_data')
@@ -187,6 +188,7 @@ class TestBatchExport(unittest.TestCase):
         mock_get_fileleak_data,
         mock_get_wih_data,
         mock_get_vuln_data,
+        mock_get_stat_finger_data,
         mock_get_nuclei_result_data,
     ):
         """测试export_merge_tasks函数"""
@@ -223,6 +225,7 @@ class TestBatchExport(unittest.TestCase):
         ]
         mock_get_fileleak_data.return_value = []
         mock_get_wih_data.return_value = []
+        mock_get_stat_finger_data.return_value = []
         mock_get_vuln_data.return_value = [
             {
                 "vul_name": "测试风险",
@@ -250,12 +253,13 @@ class TestBatchExport(unittest.TestCase):
         try:
             self.assertEqual(
                 wb.sheetnames,
-                ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "风险", "资产统计"],
+                ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "WAF识别", "风险", "PoC风险", "指纹统计", "资产统计"],
             )
         finally:
             wb.close()
 
     @patch('app.routes.export.get_nuclei_result_data')
+    @patch('app.routes.export.get_stat_finger_data')
     @patch('app.routes.export.get_vuln_data')
     @patch('app.routes.export.get_wih_data')
     @patch('app.routes.export.get_fileleak_data')
@@ -278,6 +282,7 @@ class TestBatchExport(unittest.TestCase):
         mock_get_fileleak_data,
         mock_get_wih_data,
         mock_get_vuln_data,
+        mock_get_stat_finger_data,
         mock_get_nuclei_result_data,
     ):
         """测试批量 HTML 导出函数输出 HTML 报告。"""
@@ -290,6 +295,7 @@ class TestBatchExport(unittest.TestCase):
         mock_get_url_data.return_value = []
         mock_get_fileleak_data.return_value = []
         mock_get_wih_data.return_value = []
+        mock_get_stat_finger_data.return_value = []
         mock_get_vuln_data.return_value = []
         mock_get_nuclei_result_data.return_value = []
 
@@ -303,6 +309,8 @@ class TestBatchExport(unittest.TestCase):
         self.assertIn("Example Site", html)
 
     @patch.object(SaveTask, 'build_statist')
+    @patch.object(SaveTask, 'build_stat_finger_xl')
+    @patch.object(SaveTask, 'build_nuclei_xl')
     @patch.object(SaveTask, 'build_vuln_xl')
     @patch.object(SaveTask, 'build_wih_xl')
     @patch.object(SaveTask, 'build_fileleak_xl')
@@ -327,6 +335,8 @@ class TestBatchExport(unittest.TestCase):
         mock_build_fileleak_xl,
         mock_build_wih_xl,
         mock_build_vuln_xl,
+        mock_build_nuclei_xl,
+        mock_build_stat_finger_xl,
         mock_build_statist,
     ):
         """测试单任务导出会构建风险工作表。"""
@@ -338,6 +348,8 @@ class TestBatchExport(unittest.TestCase):
 
         self.assertEqual(result, b"demo")
         mock_build_vuln_xl.assert_called_once()
+        mock_build_nuclei_xl.assert_called_once()
+        mock_build_stat_finger_xl.assert_called_once()
 
     @patch('app.routes.export.get_nuclei_result_data')
     @patch('app.routes.export.get_vuln_data')
