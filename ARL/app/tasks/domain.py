@@ -251,11 +251,11 @@ class ScanPort(object):
                 "port_min_rate": Config.PORT_MIN_RATE,
                 "custom_host_timeout": default_custom_host_timeout
             }
+        else:
+            # 避免修改调用方复用的配置对象（例如 DomainTask.scan_port_option）
+            option = dict(option)
 
-        if 'skip_scan_cdn_ip' in option:
-            self.skip_scan_cdn_ip = option["skip_scan_cdn_ip"]
-
-        del option["skip_scan_cdn_ip"]
+        self.skip_scan_cdn_ip = option.pop("skip_scan_cdn_ip", False)
 
         self.option = option
 

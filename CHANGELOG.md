@@ -5,6 +5,7 @@
 
 ## 2026-03-23（v4.1.0）
 
+- `[v4.1.0]` 域名任务稳定性修复：修复 `domain_task` 在 `cert_query_plugin` 阶段触发增量端口扫描时，因复用同一份 `scan_port_option` 并在 `ScanPort.__init__` 中执行 `del option["skip_scan_cdn_ip"]` 导致的 `KeyError: 'skip_scan_cdn_ip'` 异常。调整为“拷贝入参 + `pop` 安全读取”后，首次端口扫描与证书反查后的二次增量端口扫描可连续执行，避免任务在中途被标记为 `error`
 - `[v4.1.0]` 扫描资源预设并发策略调整：配置中心三档预设改为“按目标并发体感”统一口径，`保守=1/1/1`、`平衡=2/2/2`、`高性能=3/3/3`（`CELERY_TASK_WORKER_CONCURRENCY / CELERY_HEAVY_WORKER_CONCURRENCY / CELERY_WEB_WORKER_CONCURRENCY`），减少“同档位下体感近似串行”的认知偏差，便于按硬件规格稳定提升多目标并行扫描吞吐
 - `[v4.1.0]` 任务详情新增 `WAF识别` 视图：在 `WIH` 右侧增加独立页签与后端查询接口 `waf_host`，集中展示 `WAF 智能跳过` 主机列表，字段包含 `序号 / IP / 域名 / 端口 / WAF厂家`，并支持按 `task_id/ip/domain/port/waf_name` 检索，便于快速核查被跳过资产与厂商命中情况
 
