@@ -1423,6 +1423,30 @@ const modules: ModuleConfig[] = [
     exportPath: '/wih/export/',
   },
   {
+    id: 'waf_host',
+    label: 'WAF识别',
+    description: '任务中被 WAF 智能跳过的主机',
+    group: '风险与规则',
+    icon: ShieldAlert,
+    listPath: '/waf_host/',
+    rowIdKey: '_id',
+    showIndex: true,
+    quickFilterKey: 'domain',
+    columns: ['ip', 'domain', 'port', 'waf_name'],
+    columnLabels: {
+      ip: 'IP',
+      domain: '域名',
+      port: '端口',
+      waf_name: 'WAF厂家',
+    },
+    searchFields: [
+      { key: 'ip', label: 'IP', placeholder: '请输入IP进行搜索' },
+      { key: 'domain', label: '域名', placeholder: '请输入域名进行搜索' },
+      { key: 'port', label: '端口', placeholder: '请输入端口进行搜索', inputType: 'number' },
+      { key: 'waf_name', label: 'WAF厂家', placeholder: '请输入WAF厂家进行搜索' },
+    ],
+  },
+  {
     id: 'poc',
     label: 'PoC管理',
     description: 'PoC / brute 插件管理',
@@ -1850,6 +1874,7 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'nuclei_result', label: 'PoC风险' },
   { id: 'stat_finger', label: '指纹统计' },
   { id: 'wih', label: 'WIH' },
+  { id: 'waf_host', label: 'WAF识别' },
 ];
 
 function buildUrl(path: string, query?: JsonValue): string {
@@ -7555,7 +7580,7 @@ function TableModuleView({
           ))}
         </div>
       ) : null}
-      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih'].includes(module.id) ? (
+      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih', 'waf_host'].includes(module.id) ? (
         <div className="flex items-center gap-2">
           {hasExternalFilters ? (
             <button
