@@ -3,15 +3,15 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-24（v4.1.18 ~ v4.1.20）
+## 2026-03-24（v4.1.18 ~ v4.1.21）
 
 - `[v4.1.18]` 目录扫描链路稳定性修复：修复 `file_leak` watchdog 子进程启动时触发的循环导入异常 `ImportError: cannot import name 'domain_site_update' from partially initialized module 'app.services'`，导致目录扫描阶段无法正常执行、结果长期为 `0` 的问题。调整 `domainSiteUpdate/domain` 相关导入为按模块直连并将 `find_domain_by_task_id` 下沉到函数内延迟导入，避免 `services -> helpers -> celerytask -> tasks -> services` 启动环路
-- `[v4.1.20]` 配置管理新增 `AI管理`：在“配置管理”页面下方新增统一 AI 配置面板，支持 `通义千问 / Kimi / OpenAI / 智谱 GLM / DeepSeek / OpenAI 兼容接口`，并升级为“多模型配置 + 生效模型选择”模式；运行期每次任务仅使用一个生效模型。面板新增上方 `总测试` 按钮（`/api_console/ai_config/test/`）与配置保存（`/api_console/ai_config/`），同时支持模型级 `API Key/Base URL/模型/超时/temperature/max_tokens` 参数维护
-- `[v4.1.20]` 敏感密钥显示安全增强：`API管理` 与 `AI管理` 的 `Key` 字段默认中间脱敏展示，新增 `显示Key` 按钮；点击后需通过当前登录账号/密码二次验证（`/api_console/sensitive_verify/`）才可临时明文显示，刷新配置后自动回收为隐藏态，降低误操作泄露风险
-- `[v4.1.20]` 提示词管理能力落地：AI 管理面板新增默认提示词展示、新增提示词、编辑提示词、切换生效提示词能力，覆盖 `AI报告导出` 与 `误报复核` 场景；后端配置新增 `AI.PROMPT_TEMPLATES/AI.ACTIVE_PROMPT_ID` 持久化字段
-- `[v4.1.20]` 任务管理报告导出新增 `AI报告（MD）`：任务单条导出与批量导出均支持 `format=ai_markdown`，新增 Markdown 模板结构（任务概览、关键资产、风险聚类、误报疑似项、修复与复测建议）；导出链路改为“未完整配置 AI 时自动降级模板导出、不抛错”，并在报告头部显示生效模型与配置状态
-- `[v4.1.20]` 配置示例补齐 AI 节点：`config.yaml.example` 与 `config-docker.yaml` 新增 `AI` 配置段与默认模板，保证新部署实例可直接在 UI 中查看并调整 AI 管理配置
-- `[v4.1.20]` AI 规划文档补齐执行计划：`docs/AI智能调度与误报抑制规划.md` 新增“工作计划（执行版）”，明确 `M1~M4` 里程碑、4周节奏与验收清单，便于后续按阶段灰度推进
+- `[v4.1.21]` 配置管理新增 `AI管理`：在“配置管理”页面下方新增统一 AI 配置面板，支持 `通义千问 / Kimi / OpenAI / 智谱 GLM / DeepSeek / OpenAI 兼容接口`，并升级为“多模型配置 + 生效模型选择”模式；运行期每次任务仅使用一个生效模型。面板新增上方 `总测试` 按钮（`/api_console/ai_config/test/`）与配置保存（`/api_console/ai_config/`），同时支持模型级 `API Key/Base URL/模型/超时/temperature/max_tokens` 参数维护
+- `[v4.1.21]` 敏感密钥显示安全增强：`API管理` 与 `AI管理` 的 `Key` 字段默认中间脱敏展示，新增 `显示Key` 按钮；点击后需通过当前登录账号/密码二次验证（`/api_console/sensitive_verify/`）才可临时明文显示，刷新配置后自动回收为隐藏态，降低误操作泄露风险
+- `[v4.1.21]` 提示词管理能力落地：AI 管理面板新增默认提示词展示、新增提示词、编辑提示词、切换生效提示词能力，覆盖 `AI报告导出` 与 `误报复核` 场景；后端配置新增 `AI.PROMPT_TEMPLATES/AI.ACTIVE_PROMPT_ID` 持久化字段
+- `[v4.1.21]` 任务管理报告导出新增 `AI报告（MD）`：任务单条导出与批量导出均支持 `format=ai_markdown`，新增 Markdown 模板结构（任务概览、关键资产、风险聚类、误报疑似项、修复与复测建议）；导出链路改为“未完整配置 AI 时自动降级模板导出、不抛错”，并在报告头部显示生效模型与配置状态
+- `[v4.1.21]` 配置示例补齐 AI 节点：`config.yaml.example` 与 `config-docker.yaml` 新增 `AI` 配置段与默认模板，保证新部署实例可直接在 UI 中查看并调整 AI 管理配置
+- `[v4.1.21]` AI 规划文档补齐执行计划：`docs/AI智能调度与误报抑制规划.md` 新增“工作计划（执行版）”，明确 `M1~M4` 里程碑、4周节奏与验收清单，便于后续按阶段灰度推进
 
 ## 2026-03-23（v4.1.12 ~ v4.1.17）
 
