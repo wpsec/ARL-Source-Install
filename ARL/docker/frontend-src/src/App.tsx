@@ -10569,6 +10569,12 @@ function ConfigConsoleView({ token }: { token: string }) {
     }
     return '';
   }, [scanProfiles, currentProfileValues]);
+  const matchedScanProfileLabel = useMemo(() => {
+    if (!matchedScanProfileId) return '';
+    const matchedProfile = scanProfiles.find((profile) => profile.id === matchedScanProfileId);
+    return matchedProfile?.label || matchedScanProfileId;
+  }, [scanProfiles, matchedScanProfileId]);
+  const isCustomScanProfileMatched = !matchedScanProfileId;
 
   const loadScanConfig = useCallback(async () => {
     setLoading(true);
@@ -10952,7 +10958,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供 2C2G3M/4C4G5M/8C16G10M 预定义档位，写入 config-docker.yaml 后重启生效。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，写入 config-docker.yaml 后重启生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -11022,7 +11028,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           <div className="text-xs text-brand-text-muted">
             一键套用常见机型参数（CPU/内存/带宽），覆盖 Nuclei、afrog、域名爆破、端口扫描、URL 探测、Web/Celery 并发等关键项，降低低配主机被扫描压垮风险。
           </div>
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
             {scanProfiles.map((profile) => {
               const isMatched = matchedScanProfileId === profile.id;
               return (
@@ -11038,15 +11044,30 @@ function ConfigConsoleView({ token }: { token: string }) {
                 >
                   <div className="text-sm font-bold">{profile.label}</div>
                   <div className="mt-1 text-xs text-brand-text-muted">
-                    {profile.cpu_cores}C / {profile.memory_gb}G / {profile.bandwidth_mbps}Mbps
+                    规格：{profile.cpu_cores}核CPU · {profile.memory_gb}GB内存 · {profile.bandwidth_mbps}Mbps带宽
                   </div>
                   <div className="mt-2 text-xs text-brand-text-muted">{profile.description || '预定义扫描参数模板'}</div>
                 </button>
               );
             })}
+            <div
+              className={`text-left rounded-xl border p-3 transition ${
+                isCustomScanProfileMatched
+                  ? 'border-brand-accent bg-brand-accent/10'
+                  : 'border-brand-border bg-brand-bg/30'
+              }`}
+            >
+              <div className="text-sm font-bold">自定义配置</div>
+              <div className="mt-1 text-xs text-brand-text-muted">
+                手动调整扫描参数，不套用预定义模板
+              </div>
+              <div className="mt-2 text-xs text-brand-text-muted">
+                {isCustomScanProfileMatched ? '当前生效' : '当前未生效'}
+              </div>
+            </div>
           </div>
           <div className="text-xs text-brand-text-muted">
-            当前命中档位：{matchedScanProfileId || '未命中（当前为自定义参数）'}
+            当前命中档位：{matchedScanProfileLabel || '自定义配置'}
           </div>
         </div>
 
