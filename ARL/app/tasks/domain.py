@@ -41,7 +41,7 @@ from app.helpers.domain import find_private_domain_by_task_id, find_public_ip_by
 from app.services.findVhost import find_vhost
 from app.services.dns_query import run_query_plugin, run_query_plugin_by_ip, run_query_plugin_by_cert
 from app.services.searchEngines import search_engines
-from app.services import domain_site_update
+from app.services.domainSiteUpdate import domain_site_update
 from app.helpers.message_notify import push_task_finish_notify
 
 logger = utils.get_logger()

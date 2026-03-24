@@ -3,6 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-03-24（v4.1.18）
+
+- `[v4.1.18]` 目录扫描链路稳定性修复：修复 `file_leak` watchdog 子进程启动时触发的循环导入异常 `ImportError: cannot import name 'domain_site_update' from partially initialized module 'app.services'`，导致目录扫描阶段无法正常执行、结果长期为 `0` 的问题。调整 `domainSiteUpdate/domain` 相关导入为按模块直连并将 `find_domain_by_task_id` 下沉到函数内延迟导入，避免 `services -> helpers -> celerytask -> tasks -> services` 启动环路
+
 ## 2026-03-23（v4.1.12 ~ v4.1.17）
 
 - `[v4.1.14]` 版本同步：按 `ARL/version.txt` 当前版本 `v4.1.14` 更新本节版本标识，保持日志版本与发布版本一致

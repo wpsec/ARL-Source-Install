@@ -2,10 +2,10 @@
 域名站点更新同步
 """
 import time
-from app.services import build_domain_info,\
-    probe_http, fetch_site, BaseUpdateTask
-
-from app.helpers.domain import find_domain_by_task_id
+from app.services.buildDomainInfo import build_domain_info
+from app.services.probeHTTP import probe_http
+from app.services.fetchSite import fetch_site
+from app.services.baseUpdateTask import BaseUpdateTask
 
 from app import utils
 
@@ -57,6 +57,9 @@ class DomainSiteUpdate(object):
 
     # 对域名进行检查，如果域名不在任务范围内，就不进行更新
     def set_and_check_domains(self):
+        # 延迟导入，避免在 worker 启动阶段触发 helpers -> celerytask 循环依赖链。
+        from app.helpers.domain import find_domain_by_task_id
+
         task_domains = find_domain_by_task_id(self.task_id)
         self.domains = list(set(self.domains) - set(task_domains))
 
