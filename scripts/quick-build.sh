@@ -98,6 +98,23 @@ load_compose_env() {
 
 load_compose_env
 
+# 确保运行期配置文件存在（与 start.sh/restart.sh 保持一致）
+# - config-docker.yaml: 版本模板
+# - config-runtime.yaml: 用户运行配置（升级不覆盖）
+ensure_runtime_config_file() {
+    local template_file="$DOCKERFILE_PATH/config-docker.yaml"
+    local runtime_file="$DOCKERFILE_PATH/config-runtime.yaml"
+    if [ ! -f "$template_file" ]; then
+        echo -e "${RED}错误: 未找到配置模板 $template_file${NC}"
+        return 1
+    fi
+    if [ ! -f "$runtime_file" ]; then
+        cp "$template_file" "$runtime_file"
+        echo -e "${GREEN}✓ 已自动创建运行配置: $runtime_file${NC}"
+    fi
+    return 0
+}
+
 # 前端 npm 源配置（可在 .env 中覆盖）
 # 优先级：ARL_FRONTEND_NPM_REGISTRY > NPM_REGISTRY > 默认 npmmirror
 FRONTEND_NPM_REGISTRY="${ARL_FRONTEND_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
@@ -423,6 +440,7 @@ quick_build() {
     
     echo -e "${YELLOW}正在重启容器以使用新镜像...${NC}"
     cd "$DOCKERFILE_PATH"
+    ensure_runtime_config_file
     # 强制重建容器，确保使用刚构建的新镜像；
     # 同时重建 nginx，避免其继续使用旧的 arl_web 上游 IP 导致 502
     $COMPOSE_CMD up -d --force-recreate nginx web worker scheduler

@@ -39,7 +39,10 @@ services:
     expose:
       - "443"
     volumes:
-      - ./config-docker.yaml:/code/app/config.yaml
+      # 运行期配置与版本模板分离：
+      # - config-docker.yaml 作为版本模板（随代码更新）
+      # - config-runtime.yaml 作为用户运行配置（不进 git，升级不覆盖）
+      - ./config-runtime.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
       # 共享 worker 扫描日志，供仪表盘“实时扫描日志”读取
@@ -72,7 +75,10 @@ services:
       - rabbitmq
       - redis
     volumes:
-      - ./config-docker.yaml:/code/app/config.yaml
+      # 运行期配置与版本模板分离：
+      # - config-docker.yaml 作为版本模板（随代码更新）
+      # - config-runtime.yaml 作为用户运行配置（不进 git，升级不覆盖）
+      - ./config-runtime.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
       # 将 worker 日志落到宿主机，供 web 仪表盘读取
@@ -103,7 +109,10 @@ services:
       - rabbitmq
       - redis
     volumes:
-      - ./config-docker.yaml:/code/app/config.yaml
+      # 运行期配置与版本模板分离：
+      # - config-docker.yaml 作为版本模板（随代码更新）
+      # - config-runtime.yaml 作为用户运行配置（不进 git，升级不覆盖）
+      - ./config-runtime.yaml:/code/app/config.yaml
       # scheduler 也需要读取字典路径（配置加载阶段会校验文件存在）
       - ./dicts/domain:/code/app/dicts/custom/domain
       - ./dicts/file_leak:/code/app/dicts/custom/file_leak

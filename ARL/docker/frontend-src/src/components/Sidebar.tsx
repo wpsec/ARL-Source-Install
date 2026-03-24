@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Globe, ShieldAlert, Settings, Activity, Search, Plus, Terminal, Palette, Zap, Heart, Cpu, Layers, FileText, Shield, Github, MessageSquare, Key, Monitor } from 'lucide-react';
+import { LayoutDashboard, Globe, ShieldAlert, Settings, Activity, Search, Plus, Terminal, Palette, Zap, Heart, Cpu, Layers, FileText, Shield, Github, MessageSquare, Key, Monitor, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -67,6 +67,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         { id: 'api_mgmt', label: 'API 管理', icon: Key },
         { id: 'dingtalk', label: '钉钉集成', icon: MessageSquare },
         { id: 'config_mgmt', label: '配置管理', icon: Settings },
+        { id: 'ai_mgmt', label: 'AI 管理', icon: Sparkles },
       ]
     }
   ];

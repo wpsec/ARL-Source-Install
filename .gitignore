@@ -71,6 +71,10 @@ ARL/docker/dicts/file_leak/*
 !ARL/docker/dicts/file_leak/.gitkeep
 ARL/app/dicts/kscan_fingerprint.local.json
 
+# Runtime config (local persistent config, do not track)
+ARL/docker/config-runtime.yaml
+ARL/docker/config-runtime.yaml.bak.*
+
 # Test coverage
 htmlcov/
 .coverage

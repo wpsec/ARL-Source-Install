@@ -74,11 +74,21 @@ if [ ! -d "exports" ]; then
     echo "✓ 创建导出目录"
 fi
 
-# 检查config文件
+# 检查配置模板文件
 if [ ! -f "config-docker.yaml" ]; then
     echo "❌ 错误: config-docker.yaml 不存在"
     echo "请从 config-docker.yaml.example 复制并配置"
     exit 1
+fi
+
+# 运行期配置与模板分离：
+# - config-docker.yaml: 版本模板（随代码更新）
+# - config-runtime.yaml: 用户实际运行配置（不进 git，避免升级覆盖）
+if [ ! -f "config-runtime.yaml" ]; then
+    cp "config-docker.yaml" "config-runtime.yaml"
+    echo "✓ 首次启动：已从模板创建 config-runtime.yaml"
+else
+    echo "✓ 检测到 config-runtime.yaml，将复用用户运行配置"
 fi
 echo "✓ 配置文件已准备"
 

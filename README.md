@@ -77,10 +77,17 @@ git pull
 ### 配置说明
 
 ```plain
-ARL/docker/config-docker.yaml
+ARL/docker/config-docker.yaml   # 版本模板（随代码更新）
+ARL/docker/config-runtime.yaml  # 运行配置（用户实际生效，不进 git）
 ```
 
-该目录保留了 ARL 原生大量配置，如果系统 UI 不支持配置，可自行 vim 配置
+为避免升级后覆盖用户 key 与自定义参数，系统已采用“模板 + 运行配置”分离：
+
+- `config-docker.yaml`：版本模板，可随版本更新新增配置项
+- `config-runtime.yaml`：运行时配置，容器实际挂载此文件，UI 配置保存也写入此文件
+- `start.sh / restart.sh / scripts/quick-build.sh` 均会在缺失时自动从模板创建 `config-runtime.yaml`
+
+如果系统 UI 不支持某些配置项，可直接编辑 `config-runtime.yaml`
 
 ## 二开功能总览
 

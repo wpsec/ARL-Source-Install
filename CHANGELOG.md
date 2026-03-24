@@ -3,9 +3,12 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-24（v4.1.18 ~ v4.1.23）
+## 2026-03-24（v4.1.18 ~ v4.1.24）
 
 - `[v4.1.18]` 目录扫描链路稳定性修复：修复 `file_leak` watchdog 子进程启动时触发的循环导入异常 `ImportError: cannot import name 'domain_site_update' from partially initialized module 'app.services'`，导致目录扫描阶段无法正常执行、结果长期为 `0` 的问题。调整 `domainSiteUpdate/domain` 相关导入为按模块直连并将 `find_domain_by_task_id` 下沉到函数内延迟导入，避免 `services -> helpers -> celerytask -> tasks -> services` 启动环路
+- `[v4.1.24]` 配置管理交互修正：`API管理/AI管理` 的 Key 字段改为“编辑输入时明文可见，保存成功后自动回到隐藏态”，避免录入阶段看不到已输入内容；同时 `AI管理` 从 `配置管理` 内嵌区域拆分为侧栏平级独立模块（位于 `配置管理` 下方），导航与模块映射同步调整
+- `[v4.1.24]` 快速更新路径补齐配置兜底：`scripts/quick-build.sh` 新增 `config-runtime.yaml` 自动补齐逻辑，确保执行 `quick-build` 时与 `start.sh/restart.sh` 一致复用用户运行配置，避免升级后因运行配置缺失导致重建流程异常
+- `[v4.1.23]` 配置持久化防覆盖：`docker-compose` 改为挂载 `ARL/docker/config-runtime.yaml -> /code/app/config.yaml`，并在 `start.sh` 首次启动时自动由 `config-docker.yaml` 模板生成 `config-runtime.yaml`。后续升级代码仅更新模板文件，不再覆盖用户已保存的 API/AI key 与运行配置；`README` 同步补充分离机制说明
 - `[v4.1.23]` 配置管理新增 `AI管理`：在“配置管理”页面下方新增统一 AI 配置面板，支持 `通义千问 / Kimi / OpenAI / 智谱 GLM / DeepSeek / OpenAI 兼容接口`，并升级为“多模型配置 + 生效模型选择”模式；运行期每次任务仅使用一个生效模型。面板新增上方 `总测试` 按钮（`/api_console/ai_config/test/`）与配置保存（`/api_console/ai_config/`），同时支持模型级 `API Key/Base URL/模型/超时/temperature/max_tokens` 参数维护
 - `[v4.1.23]` 敏感密钥显示安全增强：`API管理` 与 `AI管理` 的 `Key` 字段默认中间脱敏展示，新增 `显示Key` 按钮；点击后需通过当前登录账号/密码二次验证（`/api_console/sensitive_verify/`）才可临时明文显示，刷新配置后自动回收为隐藏态，降低误操作泄露风险
 - `[v4.1.23]` 提示词管理能力落地：AI 管理面板新增默认提示词展示、新增提示词、编辑提示词、切换生效提示词能力，覆盖 `AI报告导出` 与 `误报复核` 场景；后端配置新增 `AI.PROMPT_TEMPLATES/AI.ACTIVE_PROMPT_ID` 持久化字段

@@ -30,6 +30,7 @@ import {
   Search,
   Server,
   Settings,
+  Sparkles,
   Shield,
   ShieldAlert,
   Terminal,
@@ -1869,6 +1870,13 @@ const modules: ModuleConfig[] = [
     group: '系统集成',
     icon: Settings,
   },
+  {
+    id: 'ai_console',
+    label: 'AI管理',
+    description: '管理AI模型、提示词模板、连通性测试与AI报告配置',
+    group: '系统集成',
+    icon: Sparkles,
+  },
 ];
 
 const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
@@ -2116,16 +2124,6 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
 function truncateText(value: string, max = 120): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max)}...`;
-}
-
-function maskSecretMiddle(value: string): string {
-  const text = String(value || '');
-  if (!text) return '';
-  if (text.length <= 2) return '*'.repeat(text.length);
-  const head = Math.min(4, Math.max(1, Math.floor(text.length / 3)));
-  const tail = Math.min(4, Math.max(1, Math.floor(text.length / 3)));
-  const middleLength = Math.max(4, text.length - head - tail);
-  return `${text.slice(0, head)}${'*'.repeat(middleLength)}${text.slice(-tail)}`;
 }
 
 type SensitiveRevealVerifyModalProps = {
@@ -9449,6 +9447,8 @@ function ApiConsoleView({ token }: { token: string }) {
   const [sensitiveVerifyPassword, setSensitiveVerifyPassword] = useState('');
   const [sensitiveVerifyLoading, setSensitiveVerifyLoading] = useState(false);
   const [sensitiveVerifyError, setSensitiveVerifyError] = useState('');
+  const [aiApiKeyEdited, setAiApiKeyEdited] = useState(false);
+  const [sensitiveEditingFieldSet, setSensitiveEditingFieldSet] = useState<Set<ServiceApiStringKey>>(new Set());
 
   const sensitiveFieldSet = useMemo(
     () =>
@@ -9474,6 +9474,7 @@ function ApiConsoleView({ token }: { token: string }) {
     setSensitiveVerifyPassword('');
     setSensitiveVerifyError('');
     setSensitiveVerifyLoading(false);
+    setSensitiveEditingFieldSet(new Set());
   }, []);
 
   const normalizeForm = useCallback((rawValue: any): ServiceApiForm => {
@@ -9612,6 +9613,7 @@ function ApiConsoleView({ token }: { token: string }) {
       setSensitiveVisible(false);
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
+      setSensitiveEditingFieldSet(new Set());
       return;
     }
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
@@ -9671,6 +9673,10 @@ function ApiConsoleView({ token }: { token: string }) {
       setUpdatedAt(String(data.saved_at || updatedAt));
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
       setSuccess(`API 配置已保存${backupPath}`);
+      setSensitiveVisible(false);
+      setSensitiveVerifyPassword('');
+      setSensitiveVerifyError('');
+      setSensitiveEditingFieldSet(new Set());
     } catch (err: any) {
       setError(err?.message || '保存 API 配置失败');
     } finally {
@@ -10275,8 +10281,9 @@ function ApiConsoleView({ token }: { token: string }) {
               {provider.fields.map((field) => {
                 const rawValue = String(form[field.key] || '');
                 const isSensitiveField = sensitiveFieldSet.has(field.key);
-                const displayValue = isSensitiveField && !sensitiveVisible ? maskSecretMiddle(rawValue) : rawValue;
-                const readOnly = isSensitiveField && !sensitiveVisible;
+                const isSensitiveEditing = sensitiveEditingFieldSet.has(field.key);
+                const showRaw = !isSensitiveField || sensitiveVisible || isSensitiveEditing;
+                const inputType = isSensitiveField ? (showRaw ? 'text' : 'password') : field.inputType || 'text';
                 return (
                   <div key={field.key} className="space-y-1">
                     <label className="text-xs font-bold text-brand-text-muted block">
@@ -10284,14 +10291,23 @@ function ApiConsoleView({ token }: { token: string }) {
                       {field.hint ? <span className="ml-2 font-mono opacity-70">{field.hint}</span> : null}
                     </label>
                     <input
-                      type={field.inputType || 'text'}
+                      type={inputType}
                       step={field.step}
                       min={field.min}
-                      value={displayValue}
-                      readOnly={readOnly}
-                      onChange={(event) => updateTextField(field.key, event.target.value)}
+                      value={rawValue}
+                      onChange={(event) => {
+                        if (isSensitiveField && !isSensitiveEditing) {
+                          setSensitiveEditingFieldSet((prev) => {
+                            const next = new Set(prev);
+                            next.add(field.key);
+                            return next;
+                          });
+                        }
+                        updateTextField(field.key, event.target.value);
+                      }}
                       className={CONSOLE_INPUT_MONO_CLASS}
                       placeholder={field.placeholder}
+                      autoComplete="off"
                     />
                   </div>
                 );
@@ -11813,8 +11829,6 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
       </div>
 
-      <ConfigAiManagementPanel token={token} />
-
       {showRestartModal ? (
         <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
@@ -12158,6 +12172,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setSensitiveVerifyPassword('');
     setSensitiveVerifyError('');
     setSensitiveVerifyLoading(false);
+    setAiApiKeyEdited(false);
   }, []);
 
   const findActiveModelProfile = useCallback(
@@ -12512,6 +12527,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setSensitiveVisible(false);
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
+      setAiApiKeyEdited(false);
       return;
     }
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
@@ -12587,6 +12603,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setUpdatedAt(String(data?.saved_at || updatedAt));
       const backupText = data?.backup_path ? `，备份: ${data.backup_path}` : '';
       setSuccess(`AI 管理配置已保存${backupText}`);
+      setSensitiveVisible(false);
+      setSensitiveVerifyPassword('');
+      setSensitiveVerifyError('');
+      setAiApiKeyEdited(false);
     } catch (err: any) {
       setError(err?.message || '保存 AI 管理配置失败');
     } finally {
@@ -12768,14 +12788,17 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             </label>
             <input
               id="ai-api-key"
-              type="text"
-              value={sensitiveVisible ? form.api_key : maskSecretMiddle(form.api_key)}
-              readOnly={!sensitiveVisible}
-              onChange={(event) =>
-                updateActiveModelProfile((active) => ({ ...active, api_key: event.target.value }))
-              }
+              type={sensitiveVisible || aiApiKeyEdited ? 'text' : 'password'}
+              value={form.api_key}
+              onChange={(event) => {
+                if (!aiApiKeyEdited) {
+                  setAiApiKeyEdited(true);
+                }
+                updateActiveModelProfile((active) => ({ ...active, api_key: event.target.value }));
+              }}
               className={CONSOLE_INPUT_MONO_CLASS}
               placeholder="可留空，未配置时自动降级不报错"
+              autoComplete="off"
             />
           </div>
           <div className="space-y-2">
@@ -13780,6 +13803,7 @@ function MainShell() {
     github_monitor: 'github_scheduler',
     api_mgmt: 'api_console',
     config_mgmt: 'config_console',
+    ai_mgmt: 'ai_console',
     dingtalk: 'dingtalk_api',
   };
   const moduleToViewMap = useMemo(() => {
@@ -14041,11 +14065,13 @@ function MainShell() {
         {activeModule.id === 'system_monitor' ? <SystemMonitorView token={token} /> : null}
         {activeModule.id === 'api_console' ? <ApiConsoleView token={token} /> : null}
         {activeModule.id === 'config_console' ? <ConfigConsoleView token={token} /> : null}
+        {activeModule.id === 'ai_console' ? <ConfigAiManagementPanel token={token} /> : null}
         {activeModule.id === 'dingtalk_api' ? <DingtalkIntegrationView token={token} /> : null}
         {activeModule.id !== 'dashboard' &&
         activeModule.id !== 'system_monitor' &&
         activeModule.id !== 'api_console' &&
         activeModule.id !== 'config_console' &&
+        activeModule.id !== 'ai_console' &&
         activeModule.id !== 'dingtalk_api' ? (
           <TableModuleView
             module={activeModule}
