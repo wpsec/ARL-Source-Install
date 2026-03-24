@@ -25,10 +25,13 @@ from flask_restx import Resource, Namespace
 from openpyxl import Workbook
 from bson import ObjectId
 import re
+import os
+from pathlib import Path
 from datetime import datetime
 from collections import Counter
 from html import escape
 import ipaddress
+import yaml
 from openpyxl.writer.excel import save_virtual_workbook
 from openpyxl.styles import Font, Color, PatternFill, Alignment, Border, Side
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -152,11 +155,13 @@ CERT_EXPORT_PROJECTION = {
 
 def normalize_export_format(value):
     """
-    规范化导出格式，兼容 table/excel/xlsx/html 等输入。
+    规范化导出格式，兼容 table/excel/xlsx/html/ai_markdown 等输入。
     """
     export_format = sanitize_excel_value(value).strip().lower()
     if export_format in ["html", "htm"]:
         return "html"
+    if export_format in ["ai", "ai_markdown", "ai-markdown", "markdown", "md"]:
+        return "ai_markdown"
     if export_format in ["table", "excel", "xlsx"]:
         return "excel"
     return "excel"
@@ -170,6 +175,155 @@ def build_export_response(file_content, filename, content_type):
     response.headers['Content-Type'] = content_type
     response.headers["Content-Disposition"] = "attachment; filename={}".format(quote(filename))
     return response
+
+
+def _resolve_export_config_path() -> Path:
+    """
+    解析导出模块读取配置的路径，优先使用运行时挂载配置。
+    """
+    custom_path = str(os.environ.get("ARL_CONFIG_EDIT_PATH", "") or "").strip()
+    candidates = [
+        Path(custom_path) if custom_path else None,
+        Path("/code/app/config.yaml"),
+        Path(__file__).resolve().parents[2] / "docker" / "config-docker.yaml",
+    ]
+    for item in candidates:
+        if not item:
+            continue
+        if item.exists() and item.is_file():
+            return item
+    return Path(__file__).resolve().parents[2] / "docker" / "config-docker.yaml"
+
+
+def _load_ai_export_config():
+    """
+    从配置文件读取 AI 导出相关配置。
+    """
+    config_path = _resolve_export_config_path()
+    if not config_path.exists():
+        return {}
+
+    try:
+        with config_path.open("r", encoding="utf-8") as file_obj:
+            loaded = yaml.safe_load(file_obj) or {}
+    except Exception:
+        loaded = {}
+
+    if not isinstance(loaded, dict):
+        return {}
+
+    ai_conf = loaded.get("AI", {})
+    if not isinstance(ai_conf, dict):
+        ai_conf = {}
+    return ai_conf
+
+
+def _get_ai_export_settings():
+    """
+    获取 AI 报告导出配置。
+    兼容多模型配置，未配置完整凭据时也允许导出模板报告（不抛错）。
+    """
+    ai_conf = _load_ai_export_config()
+    provider_alias = {
+        "tongyi": "qwen",
+        "qianwen": "qwen",
+        "moonshot": "kimi",
+        "openai_compatible": "custom_compatible",
+        "compatible": "custom_compatible",
+    }
+    provider_presets = {
+        "qwen": {"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "default_model": "qwen-plus"},
+        "kimi": {"base_url": "https://api.moonshot.cn/v1", "default_model": "moonshot-v1-8k"},
+        "openai": {"base_url": "https://api.openai.com/v1", "default_model": "gpt-4o-mini"},
+        "glm": {"base_url": "https://open.bigmodel.cn/api/paas/v4", "default_model": "glm-4-flash"},
+        "deepseek": {"base_url": "https://api.deepseek.com/v1", "default_model": "deepseek-chat"},
+        "custom_compatible": {"base_url": "", "default_model": ""},
+    }
+
+    def normalize_provider(raw_provider):
+        provider = str(raw_provider or "").strip().lower()
+        provider = provider_alias.get(provider, provider)
+        if provider not in provider_presets:
+            return "openai"
+        return provider
+
+    def normalize_model_profiles(raw_profiles):
+        profiles = []
+        seen = set()
+        if isinstance(raw_profiles, list):
+            for index, item in enumerate(raw_profiles):
+                if not isinstance(item, dict):
+                    continue
+                profile_id = str(item.get("id") or "").strip() or "model_{}".format(index + 1)
+                if profile_id in seen:
+                    continue
+                seen.add(profile_id)
+                provider = normalize_provider(item.get("provider"))
+                preset = provider_presets.get(provider, {})
+                profiles.append(
+                    {
+                        "id": profile_id,
+                        "name": str(item.get("name") or profile_id).strip(),
+                        "provider": provider,
+                        "base_url": str(item.get("base_url") or "").strip() or str(preset.get("base_url") or ""),
+                        "api_key": str(item.get("api_key") or "").strip(),
+                        "model": str(item.get("model") or "").strip() or str(preset.get("default_model") or ""),
+                    }
+                )
+
+        if profiles:
+            return profiles
+
+        legacy_provider = normalize_provider(ai_conf.get("PROVIDER"))
+        legacy_preset = provider_presets.get(legacy_provider, {})
+        return [
+            {
+                "id": "default_model",
+                "name": "默认模型",
+                "provider": legacy_provider,
+                "base_url": str(ai_conf.get("BASE_URL") or "").strip() or str(legacy_preset.get("base_url") or ""),
+                "api_key": str(ai_conf.get("API_KEY") or "").strip(),
+                "model": str(ai_conf.get("MODEL") or "").strip() or str(legacy_preset.get("default_model") or ""),
+            }
+        ]
+
+    model_profiles = normalize_model_profiles(ai_conf.get("MODEL_PROFILES"))
+    active_model_profile_id = str(ai_conf.get("ACTIVE_MODEL_PROFILE_ID") or "").strip()
+    active_profile = {}
+    for profile in model_profiles:
+        if str(profile.get("id") or "").strip() == active_model_profile_id:
+            active_profile = profile
+            break
+    if not active_profile and model_profiles:
+        active_profile = model_profiles[0]
+        active_model_profile_id = str(active_profile.get("id") or "").strip()
+
+    provider = str(active_profile.get("provider") or ai_conf.get("PROVIDER") or "").strip() or "openai"
+    model = str(active_profile.get("model") or ai_conf.get("MODEL") or "").strip()
+    base_url = str(active_profile.get("base_url") or ai_conf.get("BASE_URL") or "").strip()
+    api_key = str(active_profile.get("api_key") or "").strip() or str(os.environ.get("ARL_AI_API_KEY", "") or "").strip()
+    active_prompt_id = str(ai_conf.get("ACTIVE_PROMPT_ID") or "").strip()
+    configured = bool(api_key and base_url and model)
+
+    missing_fields = []
+    if not api_key:
+        missing_fields.append("api_key")
+    if not base_url:
+        missing_fields.append("base_url")
+    if not model:
+        missing_fields.append("model")
+
+    return {
+        "enable": bool(ai_conf.get("ENABLE", True)),
+        "configured": configured,
+        "missing_fields": missing_fields,
+        "provider": provider,
+        "model": model,
+        "base_url": base_url,
+        "active_model_profile_id": active_model_profile_id,
+        "active_model_profile_name": str(active_profile.get("name") or "").strip(),
+        "active_prompt_id": active_prompt_id,
+    }
 
 
 def _normalize_html_cell_value(value):
@@ -975,6 +1129,13 @@ class ARLExport(Resource):
             filename = "ARL资产导出报告_{}.html".format(domain)
             html_data = export_arl_html(task_id)
             return build_export_response(html_data, filename, "text/html; charset=utf-8")
+        if export_format == "ai_markdown":
+            try:
+                markdown_data = export_arl_ai_markdown(task_id)
+            except ValueError as exc:
+                return {"error": str(exc)}, 400
+            filename = "ARL_AI报告_{}.md".format(domain)
+            return build_export_response(markdown_data, filename, "text/markdown; charset=utf-8")
 
         filename = "ARL资产导出报告_{}.xlsx".format(domain)
         excel_data = export_arl(task_id)
@@ -1027,6 +1188,13 @@ class ARLBatchExcel(Resource):
                 filename = "ARL批量导出报告_{}.html".format(task_name[:20])
                 html_data = export_merge_tasks_html(task_ids)
                 return build_export_response(html_data, filename, "text/html; charset=utf-8")
+            if export_format == "ai_markdown":
+                try:
+                    markdown_data = export_merge_tasks_ai_markdown(task_ids)
+                except ValueError as exc:
+                    return {"error": str(exc)}, 400
+                filename = "ARL_AI报告_{}.md".format(task_name[:20])
+                return build_export_response(markdown_data, filename, "text/markdown; charset=utf-8")
 
             filename = "ARL批量导出报告_{}.xlsx".format(task_name[:20])
             excel_data = export_merge_tasks(task_ids)
@@ -2283,6 +2451,255 @@ def build_task_export_summary(task_ids):
     }
 
 
+def _severity_rank(severity_text):
+    """
+    风险等级排序权重（值越大越高）。
+    """
+    level = sanitize_excel_value(severity_text).strip().lower()
+    return {
+        "critical": 5,
+        "high": 4,
+        "medium": 3,
+        "low": 2,
+        "info": 1,
+    }.get(level, 0)
+
+
+def _build_risk_cluster_rows(vuln_rows, limit=15):
+    """
+    将风险明细聚合为“风险名称 + 来源 + 最高等级 + 数量”。
+    """
+    counter = {}
+    for row in vuln_rows:
+        if not isinstance(row, list) or len(row) < 3:
+            continue
+        source = sanitize_excel_value(row[0]).strip() or "unknown"
+        vuln_name = sanitize_excel_value(row[1]).strip() or "未知风险"
+        severity = sanitize_excel_value(row[2]).strip().lower()
+        key = (source, vuln_name)
+        item = counter.get(key, {"count": 0, "severity": severity})
+        item["count"] += 1
+        if _severity_rank(severity) > _severity_rank(item.get("severity", "")):
+            item["severity"] = severity
+        counter[key] = item
+
+    cluster_rows = []
+    for (source, vuln_name), item in counter.items():
+        cluster_rows.append(
+            {
+                "source": source,
+                "vuln_name": vuln_name,
+                "severity": item.get("severity", ""),
+                "count": int(item.get("count", 0) or 0),
+            }
+        )
+
+    cluster_rows.sort(
+        key=lambda x: (
+            -_severity_rank(x.get("severity", "")),
+            -int(x.get("count", 0) or 0),
+            x.get("vuln_name", ""),
+        )
+    )
+    return cluster_rows[:limit]
+
+
+def _build_suspected_fp_rows(vuln_rows, limit=12):
+    """
+    规则化筛选“疑似误报”候选，辅助人工复核。
+    """
+    fp_keywords = [
+        "响应长度差异",
+        "响应内容结构变化",
+        "疑似",
+        "可能",
+        "结构变化",
+    ]
+
+    suspects = []
+    seen = set()
+    for row in vuln_rows:
+        if not isinstance(row, list) or len(row) < 8:
+            continue
+        severity = sanitize_excel_value(row[2]).strip().lower()
+        detail = sanitize_excel_value(row[7]).strip()
+        if not detail:
+            continue
+
+        low_confidence = _severity_rank(severity) <= _severity_rank("low")
+        weak_signal = any(keyword in detail for keyword in fp_keywords)
+        if not (low_confidence and weak_signal):
+            continue
+
+        source = sanitize_excel_value(row[0]).strip() or "unknown"
+        vuln_name = sanitize_excel_value(row[1]).strip() or "未知风险"
+        target = sanitize_excel_value(row[3]).strip()
+        key = (source, vuln_name, target, detail[:120])
+        if key in seen:
+            continue
+        seen.add(key)
+        suspects.append(
+            {
+                "source": source,
+                "vuln_name": vuln_name,
+                "target": target,
+                "reason": detail[:220],
+            }
+        )
+        if len(suspects) >= limit:
+            break
+
+    return suspects
+
+
+def _build_ai_markdown_report(task_ids, ai_settings):
+    """
+    生成 AI 报告导出用 Markdown 模板（基于现有扫描数据）。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    if not task_id_list:
+        raise ValueError("未找到可导出的任务数据")
+
+    task_items = []
+    for task_id in task_id_list:
+        item = get_task_data(task_id)
+        if isinstance(item, dict):
+            task_items.append(item)
+
+    summary = build_task_export_summary(task_id_list)
+    vuln_rows = _extract_vuln_rows(task_id_list)
+    poc_rows = _extract_nuclei_rows(task_id_list)
+    waf_rows = _extract_waf_rows(task_id_list)
+    wih_rows = _extract_wih_rows(task_id_list)
+
+    risk_clusters = _build_risk_cluster_rows(vuln_rows, limit=15)
+    suspected_fp_rows = _build_suspected_fp_rows(vuln_rows, limit=12)
+
+    names = []
+    targets = []
+    start_values = []
+    end_values = []
+    for item in task_items:
+        name = sanitize_excel_value(item.get("name", "")).strip()
+        target = sanitize_excel_value(item.get("target", "")).strip()
+        start_time = sanitize_excel_value(item.get("start_time", "")).strip()
+        end_time = sanitize_excel_value(item.get("end_time", "")).strip()
+        if name and name not in names:
+            names.append(name)
+        if target and target not in targets:
+            targets.append(target)
+        if start_time:
+            start_values.append(start_time)
+        if end_time:
+            end_values.append(end_time)
+
+    scan_start = min(start_values) if start_values else "-"
+    scan_end = max(end_values) if end_values else "-"
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    lines = []
+    lines.append("# ARL AI报告（Markdown）")
+    lines.append("")
+    lines.append("> 生成时间：`{}`".format(generated_at))
+    lines.append("> 扫描开始时间：`{}`".format(scan_start))
+    lines.append("> 扫描截止时间：`{}`".format(scan_end))
+    lines.append("> AI提供方：`{}`  模型：`{}`".format(
+        sanitize_excel_value(ai_settings.get("provider", "")).strip() or "-",
+        sanitize_excel_value(ai_settings.get("model", "")).strip() or "-",
+    ))
+    lines.append("> 生效模型配置：`{}`".format(
+        sanitize_excel_value(ai_settings.get("active_model_profile_name", "")).strip()
+        or sanitize_excel_value(ai_settings.get("active_model_profile_id", "")).strip()
+        or "-"
+    ))
+    lines.append("> Prompt：`{}`".format(
+        sanitize_excel_value(ai_settings.get("active_prompt_id", "")).strip() or "-"
+    ))
+    if ai_settings.get("configured"):
+        lines.append("> AI配置状态：`已配置`")
+    else:
+        missing_fields = ai_settings.get("missing_fields") or []
+        missing_text = ",".join([sanitize_excel_value(item).strip() for item in missing_fields if sanitize_excel_value(item).strip()])
+        lines.append("> AI配置状态：`未完整配置`（缺少：`{}`，当前导出为离线模板）".format(missing_text or "-"))
+    lines.append("")
+    lines.append("## 任务概览")
+    lines.append("")
+    lines.append("| 任务名 | 目标 |")
+    lines.append("| --- | --- |")
+    if names or targets:
+        max_len = max(len(names), len(targets))
+        for idx in range(max_len):
+            name = names[idx] if idx < len(names) else "-"
+            target = targets[idx] if idx < len(targets) else "-"
+            lines.append("| {} | {} |".format(name, target))
+    else:
+        lines.append("| - | - |")
+    lines.append("")
+    lines.append("## 关键资产")
+    lines.append("")
+    lines.append("- 站点：`{}`".format(summary.get("site_cnt", 0)))
+    lines.append("- 子域名：`{}`".format(summary.get("domain_cnt", 0)))
+    lines.append("- IP：`{}`".format(summary.get("ip_cnt", 0)))
+    lines.append("- URL信息：`{}`".format(summary.get("url_cnt", 0)))
+    lines.append("- 风险总数：`{}`".format(summary.get("vuln_cnt", 0)))
+    lines.append("- PoC风险：`{}`".format(len(poc_rows)))
+    lines.append("- WAF识别：`{}`".format(len(waf_rows)))
+    lines.append("- WIH记录：`{}`".format(len(wih_rows)))
+    lines.append("")
+    lines.append("## 风险聚类")
+    lines.append("")
+    lines.append("| 来源 | 风险名称 | 最高等级 | 数量 |")
+    lines.append("| --- | --- | --- | --- |")
+    if risk_clusters:
+        for item in risk_clusters:
+            lines.append(
+                "| {} | {} | {} | {} |".format(
+                    sanitize_excel_value(item.get("source", "")),
+                    sanitize_excel_value(item.get("vuln_name", "")),
+                    sanitize_excel_value(item.get("severity", "")),
+                    int(item.get("count", 0) or 0),
+                )
+            )
+    else:
+        lines.append("| - | - | - | 0 |")
+    lines.append("")
+    lines.append("## 误报疑似项")
+    lines.append("")
+    if suspected_fp_rows:
+        for idx, item in enumerate(suspected_fp_rows, start=1):
+            lines.append(
+                "{}. [{}] {} | 目标：`{}` | 依据：{}".format(
+                    idx,
+                    sanitize_excel_value(item.get("source", "")),
+                    sanitize_excel_value(item.get("vuln_name", "")),
+                    sanitize_excel_value(item.get("target", "")),
+                    sanitize_excel_value(item.get("reason", "")),
+                )
+            )
+    else:
+        lines.append("- 未发现明显的低置信弱信号误报候选。")
+    lines.append("")
+    lines.append("## 优先修复建议")
+    lines.append("")
+    lines.append("1. 优先处理 `critical/high` 风险项，先修复可被外网直接访问且存在认证缺失的入口。")
+    lines.append("2. 对同一来源的重复风险按“单漏洞多目标”方式集中修复，降低修复切换成本。")
+    lines.append("3. 若命中 `WAF识别` 且厂商为 `unknown`，建议补做人工指纹确认后再决定绕过策略。")
+    lines.append("")
+    lines.append("## 复测建议")
+    lines.append("")
+    lines.append("- 修复后建议对高风险目标执行一次完整复测，并对误报疑似项执行最小化人工验证。")
+    lines.append("- 对云凭证/令牌类问题建议同步轮换密钥并追踪近 30 天相关调用日志。")
+    lines.append("- 对 `PoC风险` 建议保留 `verify_data/curl` 作为复测脚本，避免人工复现偏差。")
+    lines.append("")
+    lines.append("## 说明")
+    lines.append("")
+    lines.append("- 本报告为 AI 导出模板，内容基于当前任务扫描结果自动结构化生成。")
+    lines.append("- 若需更强语义总结，可在后续版本接入在线模型推理后扩展。")
+    lines.append("")
+
+    return "\n".join(lines).encode("utf-8")
+
+
 def _build_vuln_sheet(wb, task_ids, apply_style=True):
     """
     在导出工作簿中新增风险明细工作表
@@ -2738,6 +3155,14 @@ def export_arl_html(task_id):
     return render_workbook_html(workbook, title, metadata=metadata)
 
 
+def export_arl_ai_markdown(task_id):
+    """
+    导出单任务 AI 报告（Markdown 模板）。
+    """
+    ai_settings = _get_ai_export_settings()
+    return _build_ai_markdown_report([task_id], ai_settings)
+
+
 def build_merge_tasks_workbook(task_id_list, apply_style=True):
     """
     整合多个任务并构建统一工作簿，供 Excel/HTML 两种格式复用。
@@ -3110,3 +3535,11 @@ def export_merge_tasks_html(task_id_list):
 
     metadata = build_html_report_metadata(task_items)
     return render_workbook_html(workbook, title, metadata=metadata)
+
+
+def export_merge_tasks_ai_markdown(task_id_list):
+    """
+    导出批量任务 AI 报告（Markdown 模板）。
+    """
+    ai_settings = _get_ai_export_settings()
+    return _build_ai_markdown_report(task_id_list, ai_settings)

@@ -129,6 +129,50 @@ DINGTALK_API:
   DRY_RUN: false # 演练模式：true 时只走流程不真正创建文档
   REPORT_BASE_URL: "" # 可选：报告访问基础地址，用于拼接外链
 
+# AI 管理配置
+# 用途：
+# 1. 任务管理 -> AI 报告（Markdown）导出
+# 2. 后续 AI 调度与误报复核能力（按规划灰度接入）
+AI:
+  ENABLE: true # AI 能力总开关（默认开启；未配置完整模型时自动降级，不报错）
+  ACTIVE_MODEL_PROFILE_ID: "default_model" # 当前生效模型（运行期单次仅使用一个生效模型）
+  MODEL_PROFILES:
+    - id: "default_model"
+      name: "默认模型"
+      provider: "openai" # qwen / kimi / openai / glm / deepseek / custom_compatible
+      base_url: "https://api.openai.com/v1"
+      api_key: "" # 建议通过环境变量注入敏感信息
+      model: "gpt-4o-mini"
+      timeout_sec: 40
+      temperature: 0.2
+      max_tokens: 4000
+  # 兼容字段：由当前生效模型自动同步，可不手动维护
+  PROVIDER: "openai"
+  CUSTOM_PROVIDER_NAME: "" # 当 PROVIDER=custom_compatible 时可填写别名
+  BASE_URL: "https://api.openai.com/v1"
+  API_KEY: ""
+  MODEL: "gpt-4o-mini"
+  TIMEOUT_SEC: 40
+  TEMPERATURE: 0.2
+  MAX_TOKENS: 4000
+  DIALOG_SYSTEM_PROMPT: ""
+  DIALOG_STYLE: "专业"
+  DIALOG_LANGUAGE: "zh-CN"
+  DIALOG_CONTEXT_MESSAGES: 8
+  ACTIVE_PROMPT_ID: "default_ai_report"
+  PROMPT_TEMPLATES:
+    - id: "default_ai_report"
+      name: "默认AI报告模板"
+      scene: "ai_report_export"
+      content: "你是互联网资产自动化收集系统的安全分析助手。请基于输入数据输出结构化研判：任务概览、关键资产、风险聚类、疑似误报、优先修复建议、复测建议。要求结论可执行、避免夸大风险、避免输出不存在的数据。"
+      updated_at: ""
+    - id: "default_fp_review"
+      name: "默认误报复核模板"
+      scene: "false_positive_review"
+      content: "你是安全误报复核助手。请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。"
+      updated_at: ""
+  CUSTOM_COMPAT_PROVIDERS: [] # 可添加 OpenAI 兼容网关列表
+
 #邮件推送配置
 EMAIL:
   HOST: ""

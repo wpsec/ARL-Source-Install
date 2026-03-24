@@ -131,7 +131,8 @@ type ApiRequestOptions = {
   download?: boolean;
 };
 
-type TaskReportExportFormat = 'excel' | 'html';
+type TaskReportExportFormat = 'excel' | 'html' | 'ai_markdown';
+type SensitiveVerifyContext = 'api' | 'ai';
 
 const API_BASE = '/api';
 const TOKEN_KEY = 'arl-token';
@@ -156,7 +157,13 @@ const CONSOLE_CHECKBOX_CARD_CLASS =
 const TASK_REPORT_EXPORT_OPTIONS: Array<{ label: string; value: TaskReportExportFormat }> = [
   { label: '表格格式', value: 'excel' },
   { label: 'HTML格式', value: 'html' },
+  { label: 'AI报告（MD）', value: 'ai_markdown' },
 ];
+const TASK_REPORT_EXPORT_LABELS: Record<TaskReportExportFormat, string> = {
+  excel: '表格',
+  html: 'HTML',
+  ai_markdown: 'AI（MD）',
+};
 
 const modules: ModuleConfig[] = [
   {
@@ -2109,6 +2116,106 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
 function truncateText(value: string, max = 120): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max)}...`;
+}
+
+function maskSecretMiddle(value: string): string {
+  const text = String(value || '');
+  if (!text) return '';
+  if (text.length <= 2) return '*'.repeat(text.length);
+  const head = Math.min(4, Math.max(1, Math.floor(text.length / 3)));
+  const tail = Math.min(4, Math.max(1, Math.floor(text.length / 3)));
+  const middleLength = Math.max(4, text.length - head - tail);
+  return `${text.slice(0, head)}${'*'.repeat(middleLength)}${text.slice(-tail)}`;
+}
+
+type SensitiveRevealVerifyModalProps = {
+  open: boolean;
+  title: string;
+  username: string;
+  password: string;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  onUsernameChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+};
+
+function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProps) {
+  if (!props.open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+          <div>
+            <h4 className="text-lg font-black">{props.title}</h4>
+            <p className="text-xs text-brand-text-muted mt-1">请输入当前登录账号和密码后显示敏感 key。</p>
+          </div>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+            title="关闭"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-6 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text-muted block">登录账号</label>
+            <input
+              value={props.username}
+              onChange={(event) => props.onUsernameChange(event.target.value)}
+              className={CONSOLE_INPUT_CLASS}
+              placeholder="请输入当前登录账号"
+              autoComplete="username"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text-muted block">登录密码</label>
+            <input
+              type="password"
+              value={props.password}
+              onChange={(event) => props.onPasswordChange(event.target.value)}
+              className={CONSOLE_INPUT_CLASS}
+              placeholder="请输入当前登录密码"
+              autoComplete="current-password"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !props.loading) {
+                  event.preventDefault();
+                  props.onConfirm();
+                }
+              }}
+            />
+          </div>
+          {props.error ? (
+            <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+              {props.error}
+            </div>
+          ) : null}
+        </div>
+        <div className="px-6 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/30">
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+            disabled={props.loading}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={props.onConfirm}
+            className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition disabled:opacity-60"
+            disabled={props.loading}
+          >
+            {props.loading ? '验证中...' : '验证并显示'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function isDeleteAction(action: ModuleAction): boolean {
@@ -7401,7 +7508,8 @@ function TableModuleView({
       return;
     }
 
-    setSuccess(`正在导出${format === 'html' ? 'HTML' : '表格'}报告，请稍候...`);
+    const formatLabel = TASK_REPORT_EXPORT_LABELS[format] || '表格';
+    setSuccess(`正在导出${formatLabel}报告，请稍候...`);
     try {
       await requestApi(token, '/export/batch', {
         method: 'POST',
@@ -7411,7 +7519,7 @@ function TableModuleView({
         },
         download: true,
       });
-      setSuccess(`${format === 'html' ? 'HTML' : '表格'}报告导出成功`);
+      setSuccess(`${formatLabel}报告导出成功`);
     } catch (err: any) {
       setError(err?.message || '报告导出失败');
     }
@@ -7552,14 +7660,15 @@ function TableModuleView({
     setTaskReportExportMenu('');
     markTaskRowActionPending(taskId, 'export');
     setError('');
-    setSuccess(`正在导出${format === 'html' ? 'HTML' : '表格'}报告，请稍候...`);
+    const formatLabel = TASK_REPORT_EXPORT_LABELS[format] || '表格';
+    setSuccess(`正在导出${formatLabel}报告，请稍候...`);
     try {
       await requestApi(token, `/export/${taskId}`, {
         method: 'GET',
         query: { format },
         download: true,
       });
-      setSuccess(`${format === 'html' ? 'HTML' : '表格'}报告导出成功`);
+      setSuccess(`${formatLabel}报告导出成功`);
     } catch (err: any) {
       setError(err?.message || '导出失败');
     } finally {
@@ -9334,6 +9443,38 @@ function ApiConsoleView({ token }: { token: string }) {
     testedAt: '',
     message: '',
   });
+  const [sensitiveVisible, setSensitiveVisible] = useState(false);
+  const [sensitiveVerifyDialogOpen, setSensitiveVerifyDialogOpen] = useState(false);
+  const [sensitiveVerifyUsername, setSensitiveVerifyUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || '');
+  const [sensitiveVerifyPassword, setSensitiveVerifyPassword] = useState('');
+  const [sensitiveVerifyLoading, setSensitiveVerifyLoading] = useState(false);
+  const [sensitiveVerifyError, setSensitiveVerifyError] = useState('');
+
+  const sensitiveFieldSet = useMemo(
+    () =>
+      new Set<ServiceApiStringKey>([
+        'fofa_key',
+        'hunter_api_key',
+        'hunter_how_api_key',
+        'shodan_api_key',
+        'quake_token',
+        'zoomeye_api_key',
+        'securitytrails_api_key',
+        'virustotal_api_key',
+        'chaos_api_key',
+        'passivetotal_key',
+        'github_token',
+      ]),
+    []
+  );
+
+  const resetSensitiveState = useCallback(() => {
+    setSensitiveVisible(false);
+    setSensitiveVerifyDialogOpen(false);
+    setSensitiveVerifyPassword('');
+    setSensitiveVerifyError('');
+    setSensitiveVerifyLoading(false);
+  }, []);
 
   const normalizeForm = useCallback((rawValue: any): ServiceApiForm => {
     const raw = rawValue || {};
@@ -9397,6 +9538,7 @@ function ApiConsoleView({ token }: { token: string }) {
   };
 
   const loadServiceApiConfig = useCallback(async () => {
+    resetSensitiveState();
     setLoading(true);
     setError('');
     setSuccess('');
@@ -9406,12 +9548,13 @@ function ApiConsoleView({ token }: { token: string }) {
       setForm(normalizeForm(data?.service_api));
       setConfigPath(String(data.config_path || ''));
       setUpdatedAt(String(data.updated_at || ''));
+      setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
     } catch (err: any) {
       setError(err?.message || '加载 API 配置失败');
     } finally {
       setLoading(false);
     }
-  }, [token, normalizeForm]);
+  }, [token, normalizeForm, resetSensitiveState]);
 
   useEffect(() => {
     void loadServiceApiConfig();
@@ -9463,6 +9606,45 @@ function ApiConsoleView({ token }: { token: string }) {
       github_token: currentForm.github_token.trim(),
     };
   }, []);
+
+  const toggleSensitiveDisplay = () => {
+    if (sensitiveVisible) {
+      setSensitiveVisible(false);
+      setSensitiveVerifyPassword('');
+      setSensitiveVerifyError('');
+      return;
+    }
+    setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
+    setSensitiveVerifyPassword('');
+    setSensitiveVerifyError('');
+    setSensitiveVerifyDialogOpen(true);
+  };
+
+  const verifySensitiveDisplay = async () => {
+    if (!sensitiveVerifyUsername.trim() || !sensitiveVerifyPassword) {
+      setSensitiveVerifyError('请输入登录账号和密码');
+      return;
+    }
+    setSensitiveVerifyLoading(true);
+    setSensitiveVerifyError('');
+    try {
+      await requestApi(token, '/api_console/sensitive_verify/', {
+        method: 'POST',
+        body: {
+          username: sensitiveVerifyUsername.trim(),
+          password: sensitiveVerifyPassword,
+        },
+      });
+      setSensitiveVisible(true);
+      setSensitiveVerifyDialogOpen(false);
+      setSensitiveVerifyPassword('');
+      setSuccess('身份验证通过，已显示敏感 key');
+    } catch (err: any) {
+      setSensitiveVerifyError(err?.message || '验证失败');
+    } finally {
+      setSensitiveVerifyLoading(false);
+    }
+  };
 
   const saveServiceApiConfig = async () => {
     const serviceApiPayload = buildServiceApiPayload(form);
@@ -10004,6 +10186,15 @@ function ApiConsoleView({ token }: { token: string }) {
               {batchTesting ? '验证中...' : '一键验证'}
             </button>
             <button
+              type="button"
+              onClick={toggleSensitiveDisplay}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
+            >
+              <Eye className="w-4 h-4" />
+              {sensitiveVisible ? '隐藏Key' : '显示Key'}
+            </button>
+            <button
               onClick={() => void saveServiceApiConfig()}
               className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
               disabled={saving || loading || batchTesting || Boolean(testingProviderId)}
@@ -10081,23 +10272,30 @@ function ApiConsoleView({ token }: { token: string }) {
             </div>
 
             <div className="space-y-3">
-              {provider.fields.map((field) => (
-                <div key={field.key} className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted block">
-                    {field.label}
-                    {field.hint ? <span className="ml-2 font-mono opacity-70">{field.hint}</span> : null}
-                  </label>
-                  <input
-                    type={field.inputType || 'text'}
-                    step={field.step}
-                    min={field.min}
-                    value={String(form[field.key] || '')}
-                    onChange={(event) => updateTextField(field.key, event.target.value)}
-                    className={CONSOLE_INPUT_MONO_CLASS}
-                    placeholder={field.placeholder}
-                  />
-                </div>
-              ))}
+              {provider.fields.map((field) => {
+                const rawValue = String(form[field.key] || '');
+                const isSensitiveField = sensitiveFieldSet.has(field.key);
+                const displayValue = isSensitiveField && !sensitiveVisible ? maskSecretMiddle(rawValue) : rawValue;
+                const readOnly = isSensitiveField && !sensitiveVisible;
+                return (
+                  <div key={field.key} className="space-y-1">
+                    <label className="text-xs font-bold text-brand-text-muted block">
+                      {field.label}
+                      {field.hint ? <span className="ml-2 font-mono opacity-70">{field.hint}</span> : null}
+                    </label>
+                    <input
+                      type={field.inputType || 'text'}
+                      step={field.step}
+                      min={field.min}
+                      value={displayValue}
+                      readOnly={readOnly}
+                      onChange={(event) => updateTextField(field.key, event.target.value)}
+                      className={CONSOLE_INPUT_MONO_CLASS}
+                      placeholder={field.placeholder}
+                    />
+                  </div>
+                );
+              })}
             </div>
 
             {providerTestResultMap[provider.id] ? (
@@ -10233,6 +10431,22 @@ function ApiConsoleView({ token }: { token: string }) {
           </div>
         </div>
       ) : null}
+      <SensitiveRevealVerifyModal
+        open={sensitiveVerifyDialogOpen}
+        title="显示 API Key 需要身份验证"
+        username={sensitiveVerifyUsername}
+        password={sensitiveVerifyPassword}
+        loading={sensitiveVerifyLoading}
+        error={sensitiveVerifyError}
+        onClose={() => {
+          setSensitiveVerifyDialogOpen(false);
+          setSensitiveVerifyPassword('');
+          setSensitiveVerifyError('');
+        }}
+        onConfirm={() => void verifySensitiveDisplay()}
+        onUsernameChange={setSensitiveVerifyUsername}
+        onPasswordChange={setSensitiveVerifyPassword}
+      />
     </div>
   );
 }
@@ -11599,6 +11813,8 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
       </div>
 
+      <ConfigAiManagementPanel token={token} />
+
       {showRestartModal ? (
         <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
@@ -11629,6 +11845,1378 @@ function ConfigConsoleView({ token }: { token: string }) {
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ConfigAiManagementPanel({ token }: { token: string }) {
+  type AiProviderPreset = {
+    id: string;
+    label: string;
+    base_url?: string;
+    default_model?: string;
+  };
+
+  type AiCustomCompatProvider = {
+    id: string;
+    name: string;
+    base_url: string;
+    model: string;
+  };
+
+  type AiPromptTemplate = {
+    id: string;
+    name: string;
+    scene: string;
+    content: string;
+    updated_at: string;
+  };
+
+  type AiModelProfile = {
+    id: string;
+    name: string;
+    provider: string;
+    base_url: string;
+    api_key: string;
+    model: string;
+    timeout_sec: number;
+    temperature: number;
+    max_tokens: number;
+  };
+
+  type AiConfigForm = {
+    enable: boolean;
+    active_model_profile_id: string;
+    model_profiles: AiModelProfile[];
+    provider: string;
+    custom_provider_name: string;
+    base_url: string;
+    api_key: string;
+    model: string;
+    timeout_sec: number;
+    temperature: number;
+    max_tokens: number;
+    dialog_system_prompt: string;
+    dialog_style: string;
+    dialog_language: string;
+    dialog_context_messages: number;
+    active_prompt_id: string;
+    prompt_templates: AiPromptTemplate[];
+    custom_compat_providers: AiCustomCompatProvider[];
+  };
+
+  type AiTestResult = {
+    ok: boolean;
+    message: string;
+    provider?: string;
+    tested_at?: string;
+    detail?: string;
+  };
+
+  const defaultProviderPresets: AiProviderPreset[] = [
+    { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', default_model: 'qwen-plus' },
+    { id: 'kimi', label: 'Kimi', base_url: 'https://api.moonshot.cn/v1', default_model: 'moonshot-v1-8k' },
+    { id: 'openai', label: 'OpenAI', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o-mini' },
+    { id: 'glm', label: '智谱 GLM', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4-flash' },
+    { id: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.com/v1', default_model: 'deepseek-chat' },
+    { id: 'custom_compatible', label: 'OpenAI 兼容接口', base_url: '', default_model: '' },
+  ];
+
+  const defaultPromptTemplates: AiPromptTemplate[] = [
+    {
+      id: 'default_ai_report',
+      name: '默认AI报告模板',
+      scene: 'ai_report_export',
+      content:
+        '你是互联网资产自动化收集系统的安全分析助手。请基于输入数据输出结构化研判：任务概览、关键资产、风险聚类、疑似误报、优先修复建议、复测建议。要求结论可执行、避免夸大风险、避免输出不存在的数据。',
+      updated_at: '',
+    },
+    {
+      id: 'default_fp_review',
+      name: '默认误报复核模板',
+      scene: 'false_positive_review',
+      content:
+        '你是安全误报复核助手。请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。',
+      updated_at: '',
+    },
+  ];
+
+  const normalizeProviderId = (rawProvider: any) => {
+    const value = String(rawProvider || '').trim().toLowerCase();
+    const aliases: Record<string, string> = {
+      tongyi: 'qwen',
+      qianwen: 'qwen',
+      moonshot: 'kimi',
+      openai_compatible: 'custom_compatible',
+      compatible: 'custom_compatible',
+    };
+    return aliases[value] || value || 'openai';
+  };
+
+  const buildPromptId = (rawText: string, fallbackIndex: number) => {
+    const normalized = String(rawText || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return normalized || `prompt_${fallbackIndex}`;
+  };
+
+  const buildModelProfileId = (rawText: string, fallbackIndex: number) => {
+    const normalized = String(rawText || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return normalized || `model_${fallbackIndex}`;
+  };
+
+  const normalizeModelProfiles = (rawProfiles: any, legacyRawForm?: any): AiModelProfile[] => {
+    const items: AiModelProfile[] = [];
+    const seen = new Set<string>();
+
+    if (Array.isArray(rawProfiles)) {
+      rawProfiles.forEach((item: any, index: number) => {
+        const id = buildModelProfileId(String(item?.id || item?.name || `model_${index + 1}`), index + 1);
+        if (seen.has(id)) return;
+        seen.add(id);
+        const provider = normalizeProviderId(item?.provider);
+        const preset = defaultProviderPresets.find((entry) => entry.id === provider);
+        const timeoutSec = Number(item?.timeout_sec ?? 40);
+        const maxTokens = Number(item?.max_tokens ?? 4000);
+        const temperature = Number(item?.temperature ?? 0.2);
+        items.push({
+          id,
+          name: String(item?.name || id),
+          provider,
+          base_url: String(item?.base_url || '').trim() || String(preset?.base_url || ''),
+          api_key: String(item?.api_key || ''),
+          model: String(item?.model || '').trim() || String(preset?.default_model || ''),
+          timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
+          temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
+          max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 4000,
+        });
+      });
+    }
+
+    if (items.length > 0) {
+      return items;
+    }
+
+    const fallbackProvider = normalizeProviderId(legacyRawForm?.provider || 'openai');
+    const fallbackPreset = defaultProviderPresets.find((entry) => entry.id === fallbackProvider);
+    const timeoutSec = Number(legacyRawForm?.timeout_sec ?? 40);
+    const maxTokens = Number(legacyRawForm?.max_tokens ?? 4000);
+    const temperature = Number(legacyRawForm?.temperature ?? 0.2);
+    return [
+      {
+        id: 'default_model',
+        name: '默认模型',
+        provider: fallbackProvider,
+        base_url: String(legacyRawForm?.base_url || '').trim() || String(fallbackPreset?.base_url || ''),
+        api_key: String(legacyRawForm?.api_key || ''),
+        model: String(legacyRawForm?.model || '').trim() || String(fallbackPreset?.default_model || ''),
+        timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
+        temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
+        max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 4000,
+      },
+    ];
+  };
+
+  const normalizePromptTemplates = (rawTemplates: any): AiPromptTemplate[] => {
+    if (!Array.isArray(rawTemplates) || rawTemplates.length === 0) {
+      return [...defaultPromptTemplates];
+    }
+
+    const items: AiPromptTemplate[] = [];
+    const seen = new Set<string>();
+    rawTemplates.forEach((item: any, index: number) => {
+      const fallbackId = `prompt_${index + 1}`;
+      const id = buildPromptId(String(item?.id || item?.name || fallbackId), index + 1);
+      if (seen.has(id)) return;
+      const content = String(item?.content || '').trim();
+      if (!content) return;
+      seen.add(id);
+      items.push({
+        id,
+        name: String(item?.name || id),
+        scene: String(item?.scene || 'ai_report_export') || 'ai_report_export',
+        content,
+        updated_at: String(item?.updated_at || ''),
+      });
+    });
+
+    return items.length > 0 ? items : [...defaultPromptTemplates];
+  };
+
+  const normalizeCustomCompatProviders = (rawProviders: any): AiCustomCompatProvider[] => {
+    if (!Array.isArray(rawProviders)) return [];
+    const items: AiCustomCompatProvider[] = [];
+    const seen = new Set<string>();
+    rawProviders.forEach((item: any, index: number) => {
+      const id = buildPromptId(String(item?.id || item?.name || `custom_${index + 1}`), index + 1);
+      if (seen.has(id)) return;
+      seen.add(id);
+      items.push({
+        id,
+        name: String(item?.name || id),
+        base_url: String(item?.base_url || ''),
+        model: String(item?.model || ''),
+      });
+    });
+    return items;
+  };
+
+  const normalizeForm = (rawForm: any): AiConfigForm => {
+    const promptTemplates = normalizePromptTemplates(rawForm?.prompt_templates);
+    const promptIds = promptTemplates.map((item) => item.id);
+    const activePromptIdRaw = String(rawForm?.active_prompt_id || '').trim();
+    const activePromptId = promptIds.includes(activePromptIdRaw) ? activePromptIdRaw : promptIds[0] || '';
+    const dialogContextMessages = Number(rawForm?.dialog_context_messages ?? 8);
+    const modelProfiles = normalizeModelProfiles(rawForm?.model_profiles, rawForm);
+    const activeModelProfileIdRaw = String(rawForm?.active_model_profile_id || '').trim();
+    const activeProfile =
+      modelProfiles.find((item) => item.id === activeModelProfileIdRaw) || modelProfiles[0];
+    const activeModelProfileId = activeProfile?.id || '';
+    const timeoutSec = Number(activeProfile?.timeout_sec ?? 40);
+    const temperature = Number(activeProfile?.temperature ?? 0.2);
+    const maxTokens = Number(activeProfile?.max_tokens ?? 4000);
+
+    return {
+      enable: rawForm?.enable !== false,
+      active_model_profile_id: activeModelProfileId,
+      model_profiles: modelProfiles,
+      provider: normalizeProviderId(activeProfile?.provider || rawForm?.provider),
+      custom_provider_name: String(rawForm?.custom_provider_name || activeProfile?.name || ''),
+      base_url: String(activeProfile?.base_url || rawForm?.base_url || ''),
+      api_key: String(activeProfile?.api_key || rawForm?.api_key || ''),
+      model: String(activeProfile?.model || rawForm?.model || ''),
+      timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
+      temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
+      max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 4000,
+      dialog_system_prompt: String(rawForm?.dialog_system_prompt || ''),
+      dialog_style: String(rawForm?.dialog_style || '专业'),
+      dialog_language: String(rawForm?.dialog_language || 'zh-CN'),
+      dialog_context_messages:
+        Number.isFinite(dialogContextMessages) && dialogContextMessages > 0 ? dialogContextMessages : 8,
+      active_prompt_id: activePromptId,
+      prompt_templates: promptTemplates,
+      custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
+    };
+  };
+
+  const defaultForm: AiConfigForm = normalizeForm({});
+  const [form, setForm] = useState<AiConfigForm>(defaultForm);
+  const [providerPresets, setProviderPresets] = useState<AiProviderPreset[]>(defaultProviderPresets);
+  const [configPath, setConfigPath] = useState('');
+  const [updatedAt, setUpdatedAt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [testResult, setTestResult] = useState<AiTestResult | null>(null);
+  const [compatDraft, setCompatDraft] = useState<AiCustomCompatProvider>({
+    id: '',
+    name: '',
+    base_url: '',
+    model: '',
+  });
+  const [promptDraft, setPromptDraft] = useState<Omit<AiPromptTemplate, 'updated_at'>>({
+    id: '',
+    name: '',
+    scene: 'ai_report_export',
+    content: '',
+  });
+  const [modelDraft, setModelDraft] = useState<{ id: string; name: string; provider: string }>({
+    id: '',
+    name: '',
+    provider: 'openai',
+  });
+  const [sensitiveVisible, setSensitiveVisible] = useState(false);
+  const [sensitiveVerifyDialogOpen, setSensitiveVerifyDialogOpen] = useState(false);
+  const [sensitiveVerifyUsername, setSensitiveVerifyUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || '');
+  const [sensitiveVerifyPassword, setSensitiveVerifyPassword] = useState('');
+  const [sensitiveVerifyLoading, setSensitiveVerifyLoading] = useState(false);
+  const [sensitiveVerifyError, setSensitiveVerifyError] = useState('');
+
+  const providerPresetMap = useMemo(() => {
+    const map: Record<string, AiProviderPreset> = {};
+    providerPresets.forEach((item) => {
+      map[item.id] = item;
+    });
+    return map;
+  }, [providerPresets]);
+
+  const isActionBusy = loading || saving || testing;
+
+  const resetSensitiveState = useCallback(() => {
+    setSensitiveVisible(false);
+    setSensitiveVerifyDialogOpen(false);
+    setSensitiveVerifyPassword('');
+    setSensitiveVerifyError('');
+    setSensitiveVerifyLoading(false);
+  }, []);
+
+  const findActiveModelProfile = useCallback(
+    (currentForm: AiConfigForm) =>
+      currentForm.model_profiles.find((item) => item.id === currentForm.active_model_profile_id) ||
+      currentForm.model_profiles[0],
+    []
+  );
+
+  const syncFormWithActiveModel = useCallback(
+    (currentForm: AiConfigForm, profile: AiModelProfile): AiConfigForm => ({
+      ...currentForm,
+      active_model_profile_id: profile.id,
+      provider: profile.provider,
+      base_url: profile.base_url,
+      api_key: profile.api_key,
+      model: profile.model,
+      timeout_sec: profile.timeout_sec,
+      temperature: profile.temperature,
+      max_tokens: profile.max_tokens,
+      custom_provider_name: profile.name || currentForm.custom_provider_name,
+    }),
+    []
+  );
+
+  const updateActiveModelProfile = useCallback(
+    (updater: (current: AiModelProfile) => AiModelProfile) => {
+      setForm((prev) => {
+        const activeProfile = findActiveModelProfile(prev);
+        if (!activeProfile) return prev;
+        const nextProfile = updater(activeProfile);
+        const nextProfiles = prev.model_profiles.map((item) => (item.id === nextProfile.id ? nextProfile : item));
+        return syncFormWithActiveModel(
+          {
+            ...prev,
+            model_profiles: nextProfiles,
+          },
+          nextProfile
+        );
+      });
+    },
+    [findActiveModelProfile, syncFormWithActiveModel]
+  );
+
+  const buildAiPayload = useCallback((currentForm: AiConfigForm): AiConfigForm => {
+    const timeoutSec = Number(currentForm.timeout_sec);
+    const maxTokens = Number(currentForm.max_tokens);
+    const dialogContextMessages = Number(currentForm.dialog_context_messages);
+    const temperature = Number(currentForm.temperature);
+    const promptTemplates = normalizePromptTemplates(currentForm.prompt_templates);
+    const promptIds = promptTemplates.map((item) => item.id);
+    const activePromptId = promptIds.includes(currentForm.active_prompt_id)
+      ? currentForm.active_prompt_id
+      : promptIds[0] || '';
+    const profiles = normalizeModelProfiles(currentForm.model_profiles, currentForm);
+    const activeModelProfileId = String(currentForm.active_model_profile_id || '').trim() || profiles[0]?.id || '';
+    const activeProvider = normalizeProviderId(currentForm.provider);
+    const normalizedActiveProfile: AiModelProfile = {
+      id: activeModelProfileId || buildModelProfileId('default_model', 1),
+      name: String(
+        profiles.find((item) => item.id === activeModelProfileId)?.name ||
+          currentForm.custom_provider_name ||
+          '默认模型'
+      ).trim(),
+      provider: activeProvider,
+      base_url: String(currentForm.base_url || '').trim(),
+      api_key: String(currentForm.api_key || '').trim(),
+      model: String(currentForm.model || '').trim(),
+      timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? Math.floor(timeoutSec) : 40,
+      temperature: Number.isFinite(temperature) && temperature >= 0 ? Number(temperature.toFixed(2)) : 0.2,
+      max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : 4000,
+    };
+    let activeExists = false;
+    const modelProfiles = profiles.map((item) => {
+      if (item.id !== normalizedActiveProfile.id) return item;
+      activeExists = true;
+      return { ...item, ...normalizedActiveProfile };
+    });
+    if (!activeExists) {
+      modelProfiles.unshift(normalizedActiveProfile);
+    }
+
+    return {
+      enable: Boolean(currentForm.enable),
+      active_model_profile_id: normalizedActiveProfile.id,
+      model_profiles: modelProfiles,
+      provider: activeProvider,
+      custom_provider_name: String(currentForm.custom_provider_name || '').trim(),
+      base_url: normalizedActiveProfile.base_url,
+      api_key: normalizedActiveProfile.api_key,
+      model: normalizedActiveProfile.model,
+      timeout_sec: normalizedActiveProfile.timeout_sec,
+      temperature: normalizedActiveProfile.temperature,
+      max_tokens: normalizedActiveProfile.max_tokens,
+      dialog_system_prompt: String(currentForm.dialog_system_prompt || '').trim(),
+      dialog_style: String(currentForm.dialog_style || '专业').trim() || '专业',
+      dialog_language: String(currentForm.dialog_language || 'zh-CN').trim() || 'zh-CN',
+      dialog_context_messages:
+        Number.isFinite(dialogContextMessages) && dialogContextMessages > 0 ? Math.floor(dialogContextMessages) : 8,
+      active_prompt_id: activePromptId,
+      prompt_templates: promptTemplates,
+      custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
+    };
+  }, [findActiveModelProfile]);
+
+  const loadAiConfig = useCallback(async () => {
+    resetSensitiveState();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    setTestResult(null);
+    try {
+      const result = await requestApi(token, '/api_console/ai_config/', { method: 'GET' });
+      const data = result?.data || {};
+      const remotePresets = Array.isArray(data?.provider_presets) ? data.provider_presets : [];
+      const normalizedPresets = remotePresets
+        .map((item: any) => {
+          const id = String(item?.id || '').trim();
+          if (!id) return null;
+          return {
+            id,
+            label: String(item?.label || id),
+            base_url: String(item?.base_url || ''),
+            default_model: String(item?.default_model || ''),
+          };
+        })
+        .filter((item: AiProviderPreset | null): item is AiProviderPreset => Boolean(item));
+
+      setProviderPresets(normalizedPresets.length > 0 ? normalizedPresets : defaultProviderPresets);
+      const normalizedForm = normalizeForm(data?.ai_config || {});
+      setForm(normalizedForm);
+      setModelDraft((prev) => ({ ...prev, provider: normalizedForm.provider || 'openai' }));
+      setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
+      setConfigPath(String(data?.config_path || ''));
+      setUpdatedAt(String(data?.updated_at || ''));
+    } catch (err: any) {
+      setError(err?.message || '加载 AI 管理配置失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, resetSensitiveState]);
+
+  useEffect(() => {
+    void loadAiConfig();
+  }, [loadAiConfig]);
+
+  const handleProviderChange = (nextProvider: string) => {
+    const providerId = normalizeProviderId(nextProvider);
+    const preset = providerPresetMap[providerId];
+    updateActiveModelProfile((active) => {
+      const nextBaseUrl = String(preset?.base_url || '').trim() || active.base_url;
+      const nextModel = String(preset?.default_model || '').trim() || active.model;
+      return {
+        ...active,
+        provider: providerId,
+        base_url: providerId === 'custom_compatible' ? active.base_url : nextBaseUrl,
+        model: providerId === 'custom_compatible' ? active.model : nextModel,
+      };
+    });
+    setError('');
+    setSuccess('');
+  };
+
+  const selectActiveModelProfile = (profileId: string) => {
+    setForm((prev) => {
+      const profile = prev.model_profiles.find((item) => item.id === profileId);
+      if (!profile) return prev;
+      return syncFormWithActiveModel(prev, profile);
+    });
+    setError('');
+    setSuccess('');
+  };
+
+  const addModelProfile = () => {
+    const providerId = normalizeProviderId(modelDraft.provider || 'openai');
+    const preset = providerPresetMap[providerId];
+    const profileName = modelDraft.name.trim() || `模型${form.model_profiles.length + 1}`;
+    const candidateId = buildModelProfileId(modelDraft.id || profileName, form.model_profiles.length + 1);
+    if (form.model_profiles.some((item) => item.id === candidateId)) {
+      setError(`模型配置ID重复：${candidateId}`);
+      return;
+    }
+
+    const nextProfile: AiModelProfile = {
+      id: candidateId,
+      name: profileName,
+      provider: providerId,
+      base_url: String(preset?.base_url || ''),
+      api_key: '',
+      model: String(preset?.default_model || ''),
+      timeout_sec: 40,
+      temperature: 0.2,
+      max_tokens: 4000,
+    };
+
+    setForm((prev) => {
+      const merged = {
+        ...prev,
+        model_profiles: [...prev.model_profiles, nextProfile],
+      };
+      return syncFormWithActiveModel(merged, nextProfile);
+    });
+    setModelDraft({ id: '', name: '', provider: 'openai' });
+    setError('');
+    setSuccess(`模型配置已新增：${profileName}`);
+  };
+
+  const removeModelProfile = (profileId: string) => {
+    if (form.model_profiles.length <= 1) {
+      setError('至少保留一个模型配置');
+      return;
+    }
+    setForm((prev) => {
+      const remaining = prev.model_profiles.filter((item) => item.id !== profileId);
+      if (remaining.length === prev.model_profiles.length) return prev;
+      const fallbackProfile = remaining[0];
+      const baseForm = {
+        ...prev,
+        model_profiles: remaining,
+      };
+      return syncFormWithActiveModel(baseForm, fallbackProfile);
+    });
+    setSuccess('');
+  };
+
+  const updateActiveModelName = (nextName: string) => {
+    updateActiveModelProfile((active) => ({
+      ...active,
+      name: nextName,
+    }));
+  };
+
+  const applyCompatProvider = (providerId: string) => {
+    const provider = form.custom_compat_providers.find((item) => item.id === providerId);
+    if (!provider) return;
+    updateActiveModelProfile((active) => ({
+      ...active,
+      name: provider.name || active.name,
+      provider: 'custom_compatible',
+      base_url: provider.base_url,
+      model: provider.model || active.model,
+    }));
+    setForm((prev) => ({
+      ...prev,
+      custom_provider_name: provider.name,
+    }));
+    setError('');
+    setSuccess(`已套用兼容接口：${provider.name}`);
+  };
+
+  const addCompatProvider = () => {
+    const name = compatDraft.name.trim();
+    const baseUrl = compatDraft.base_url.trim();
+    if (!name) {
+      setError('请填写兼容接口名称');
+      return;
+    }
+    if (!baseUrl) {
+      setError('请填写兼容接口 Base URL');
+      return;
+    }
+
+    const candidateId = buildPromptId(compatDraft.id || name, form.custom_compat_providers.length + 1);
+    if (form.custom_compat_providers.some((item) => item.id === candidateId)) {
+      setError(`兼容接口 ID 重复：${candidateId}`);
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      custom_compat_providers: [
+        ...prev.custom_compat_providers,
+        {
+          id: candidateId,
+          name,
+          base_url: baseUrl,
+          model: compatDraft.model.trim(),
+        },
+      ],
+    }));
+    setCompatDraft({ id: '', name: '', base_url: '', model: '' });
+    setError('');
+    setSuccess(`兼容接口已新增：${name}`);
+  };
+
+  const removeCompatProvider = (providerId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      custom_compat_providers: prev.custom_compat_providers.filter((item) => item.id !== providerId),
+    }));
+    setError('');
+  };
+
+  const addPromptTemplate = () => {
+    const content = promptDraft.content.trim();
+    if (!content) {
+      setError('请填写提示词内容');
+      return;
+    }
+    const candidateId = buildPromptId(promptDraft.id || promptDraft.name, form.prompt_templates.length + 1);
+    if (form.prompt_templates.some((item) => item.id === candidateId)) {
+      setError(`提示词 ID 重复：${candidateId}`);
+      return;
+    }
+
+    const nowText = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const nextPrompt: AiPromptTemplate = {
+      id: candidateId,
+      name: promptDraft.name.trim() || candidateId,
+      scene: promptDraft.scene || 'ai_report_export',
+      content,
+      updated_at: nowText,
+    };
+
+    setForm((prev) => ({
+      ...prev,
+      prompt_templates: [...prev.prompt_templates, nextPrompt],
+      active_prompt_id: prev.active_prompt_id || nextPrompt.id,
+    }));
+    setPromptDraft({ id: '', name: '', scene: 'ai_report_export', content: '' });
+    setError('');
+    setSuccess(`提示词已新增：${nextPrompt.name}`);
+  };
+
+  const updatePromptTemplateField = (promptId: string, field: keyof AiPromptTemplate, value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      prompt_templates: prev.prompt_templates.map((item) =>
+        item.id === promptId ? { ...item, [field]: value, updated_at: item.updated_at || new Date().toISOString().slice(0, 19).replace('T', ' ') } : item
+      ),
+    }));
+    setError('');
+  };
+
+  const removePromptTemplate = (promptId: string) => {
+    setForm((prev) => {
+      const nextTemplates = prev.prompt_templates.filter((item) => item.id !== promptId);
+      const nextActive = nextTemplates.some((item) => item.id === prev.active_prompt_id)
+        ? prev.active_prompt_id
+        : nextTemplates[0]?.id || '';
+      return {
+        ...prev,
+        prompt_templates: nextTemplates,
+        active_prompt_id: nextActive,
+      };
+    });
+    setError('');
+  };
+
+  const toggleSensitiveDisplay = () => {
+    if (sensitiveVisible) {
+      setSensitiveVisible(false);
+      setSensitiveVerifyPassword('');
+      setSensitiveVerifyError('');
+      return;
+    }
+    setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
+    setSensitiveVerifyPassword('');
+    setSensitiveVerifyError('');
+    setSensitiveVerifyDialogOpen(true);
+  };
+
+  const verifySensitiveDisplay = async () => {
+    if (!sensitiveVerifyUsername.trim() || !sensitiveVerifyPassword) {
+      setSensitiveVerifyError('请输入登录账号和密码');
+      return;
+    }
+    setSensitiveVerifyLoading(true);
+    setSensitiveVerifyError('');
+    try {
+      await requestApi(token, '/api_console/sensitive_verify/', {
+        method: 'POST',
+        body: {
+          username: sensitiveVerifyUsername.trim(),
+          password: sensitiveVerifyPassword,
+        },
+      });
+      setSensitiveVisible(true);
+      setSensitiveVerifyDialogOpen(false);
+      setSensitiveVerifyPassword('');
+      setSuccess('身份验证通过，已显示敏感 key');
+    } catch (err: any) {
+      setSensitiveVerifyError(err?.message || '验证失败');
+    } finally {
+      setSensitiveVerifyLoading(false);
+    }
+  };
+
+  const saveAiConfig = async () => {
+    const payload = buildAiPayload(form);
+    if (payload.prompt_templates.length === 0) {
+      setError('请至少保留一条提示词模板');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await requestApi(token, '/api_console/ai_config/', {
+        method: 'POST',
+        body: {
+          ai_config: payload,
+        },
+      });
+      const data = result?.data || {};
+      const remotePresets = Array.isArray(data?.provider_presets) ? data.provider_presets : [];
+      const normalizedPresets = remotePresets
+        .map((item: any) => {
+          const id = String(item?.id || '').trim();
+          if (!id) return null;
+          return {
+            id,
+            label: String(item?.label || id),
+            base_url: String(item?.base_url || ''),
+            default_model: String(item?.default_model || ''),
+          };
+        })
+        .filter((item: AiProviderPreset | null): item is AiProviderPreset => Boolean(item));
+      if (normalizedPresets.length > 0) {
+        setProviderPresets(normalizedPresets);
+      }
+      const normalizedSavedForm = normalizeForm(data?.ai_config || payload);
+      setForm(normalizedSavedForm);
+      setModelDraft((prev) => ({ ...prev, provider: normalizedSavedForm.provider || 'openai' }));
+      setConfigPath(String(data?.config_path || configPath));
+      setUpdatedAt(String(data?.saved_at || updatedAt));
+      const backupText = data?.backup_path ? `，备份: ${data.backup_path}` : '';
+      setSuccess(`AI 管理配置已保存${backupText}`);
+    } catch (err: any) {
+      setError(err?.message || '保存 AI 管理配置失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runAiConnectivityTest = async () => {
+    const payload = buildAiPayload(form);
+    setTesting(true);
+    setError('');
+    setSuccess('');
+    setTestResult(null);
+    try {
+      const result = await requestApi(token, '/api_console/ai_config/test/', {
+        method: 'POST',
+        body: {
+          ai_config: payload,
+        },
+      });
+      const data = result?.data || {};
+      const detailText = data?.detail ? JSON.stringify(data.detail, null, 2) : '';
+      const normalized: AiTestResult = {
+        ok: Boolean(data?.ok),
+        message: String(data?.message || ''),
+        provider: String(data?.provider || ''),
+        tested_at: String(data?.tested_at || ''),
+        detail: detailText,
+      };
+      setTestResult(normalized);
+      const skippedWithoutConfig = !normalized.ok && normalized.message.includes('已跳过');
+      if (normalized.ok) {
+        setSuccess('AI 连通性测试成功');
+      } else if (skippedWithoutConfig) {
+        setSuccess(normalized.message || '当前模型尚未完整配置，已跳过测试');
+      } else {
+        setError(normalized.message || 'AI 连通性测试失败');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'AI 连通性测试失败');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+        <div>
+          <div className="text-sm font-bold tracking-wide">AI管理</div>
+          <div className="text-xs text-brand-text-muted mt-1">
+            统一管理 AI 提供方、对话参数、提示词模板与 OpenAI 兼容接口。可配置多个模型，运行期每次仅使用一个生效模型。
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void loadAiConfig()}
+            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+            disabled={isActionBusy}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            重新加载
+          </button>
+          <button
+            type="button"
+            onClick={() => void runAiConnectivityTest()}
+            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+            disabled={isActionBusy}
+          >
+            <Play className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
+            {testing ? '测试中...' : '总测试'}
+          </button>
+          <button
+            type="button"
+            onClick={toggleSensitiveDisplay}
+            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+            disabled={isActionBusy}
+          >
+            <Eye className="w-4 h-4" />
+            {sensitiveVisible ? '隐藏Key' : '显示Key'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveAiConfig()}
+            className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
+            disabled={isActionBusy}
+          >
+            <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
+            {saving ? '保存中...' : '保存配置'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
+        <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
+          <span className="text-brand-text-muted">配置文件:</span>
+          <span className="font-mono ml-2">{configPath || '-'}</span>
+        </div>
+        <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
+          <span className="text-brand-text-muted">最近更新时间:</span>
+          <span className="font-mono ml-2">{updatedAt || '-'}</span>
+        </div>
+      </div>
+      <div className="text-xs text-amber-300 bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2">
+        开发中：AI 调度与误报抑制主链路正按规划分阶段接入，当前优先开放模型配置、提示词管理、连通性测试与 AI 报告导出能力。
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+        <div className="text-xs font-black tracking-wide text-brand-text">模型与对话配置</div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
+            <input
+              type="checkbox"
+              checked={form.enable}
+              onChange={(event) => setForm((prev) => ({ ...prev, enable: event.target.checked }))}
+              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+            />
+            <span className="font-medium">启用 AI 能力</span>
+          </label>
+          <div className="space-y-2">
+            <label htmlFor="ai-active-model-id" className="text-xs font-bold text-brand-text-muted block">
+              当前生效模型
+            </label>
+            <div className="relative xl:max-w-[440px]">
+              <select
+                id="ai-active-model-id"
+                value={form.active_model_profile_id}
+                onChange={(event) => selectActiveModelProfile(event.target.value)}
+                className={CONSOLE_SELECT_CLASS}
+              >
+                {form.model_profiles.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} ({providerPresetMap[item.provider]?.label || item.provider})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-model-profile-name" className="text-xs font-bold text-brand-text-muted block">
+              模型配置名称
+            </label>
+            <input
+              id="ai-model-profile-name"
+              value={
+                form.model_profiles.find((item) => item.id === form.active_model_profile_id)?.name ||
+                form.custom_provider_name
+              }
+              onChange={(event) => updateActiveModelName(event.target.value)}
+              className={CONSOLE_INPUT_CLASS}
+              placeholder="如 主模型 / 备用模型"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-provider" className="text-xs font-bold text-brand-text-muted block">
+              模型提供方
+            </label>
+            <div className="relative xl:max-w-[440px]">
+              <select
+                id="ai-provider"
+                value={form.provider}
+                onChange={(event) => handleProviderChange(event.target.value)}
+                className={CONSOLE_SELECT_CLASS}
+              >
+                {providerPresets.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-api-key" className="text-xs font-bold text-brand-text-muted block">
+              API Key
+            </label>
+            <input
+              id="ai-api-key"
+              type="text"
+              value={sensitiveVisible ? form.api_key : maskSecretMiddle(form.api_key)}
+              readOnly={!sensitiveVisible}
+              onChange={(event) =>
+                updateActiveModelProfile((active) => ({ ...active, api_key: event.target.value }))
+              }
+              className={CONSOLE_INPUT_MONO_CLASS}
+              placeholder="可留空，未配置时自动降级不报错"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-base-url" className="text-xs font-bold text-brand-text-muted block">
+              Base URL
+            </label>
+            <input
+              id="ai-base-url"
+              value={form.base_url}
+              onChange={(event) =>
+                updateActiveModelProfile((active) => ({ ...active, base_url: event.target.value }))
+              }
+              className={CONSOLE_INPUT_MONO_CLASS}
+              placeholder="https://api.openai.com/v1"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-model" className="text-xs font-bold text-brand-text-muted block">
+              模型名称
+            </label>
+            <input
+              id="ai-model"
+              value={form.model}
+              onChange={(event) =>
+                updateActiveModelProfile((active) => ({ ...active, model: event.target.value }))
+              }
+              className={CONSOLE_INPUT_MONO_CLASS}
+              placeholder="如 gpt-4o-mini / qwen-plus"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-timeout" className="text-xs font-bold text-brand-text-muted block">
+              超时时间（秒）
+            </label>
+            <input
+              id="ai-timeout"
+              type="number"
+              min={1}
+              value={String(form.timeout_sec)}
+              onChange={(event) =>
+                updateActiveModelProfile((active) => ({
+                  ...active,
+                  timeout_sec: Number(event.target.value || 0),
+                }))
+              }
+              className={CONSOLE_INPUT_CLASS}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-temperature" className="text-xs font-bold text-brand-text-muted block">
+              温度（Temperature）
+            </label>
+            <input
+              id="ai-temperature"
+              type="number"
+              min={0}
+              step={0.1}
+              value={String(form.temperature)}
+              onChange={(event) =>
+                updateActiveModelProfile((active) => ({
+                  ...active,
+                  temperature: Number(event.target.value || 0),
+                }))
+              }
+              className={CONSOLE_INPUT_CLASS}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-max-tokens" className="text-xs font-bold text-brand-text-muted block">
+              最大 Tokens
+            </label>
+            <input
+              id="ai-max-tokens"
+              type="number"
+              min={1}
+              value={String(form.max_tokens)}
+              onChange={(event) =>
+                updateActiveModelProfile((active) => ({
+                  ...active,
+                  max_tokens: Number(event.target.value || 0),
+                }))
+              }
+              className={CONSOLE_INPUT_CLASS}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-dialog-style" className="text-xs font-bold text-brand-text-muted block">
+              回复风格
+            </label>
+            <input
+              id="ai-dialog-style"
+              value={form.dialog_style}
+              onChange={(event) => setForm((prev) => ({ ...prev, dialog_style: event.target.value }))}
+              className={CONSOLE_INPUT_CLASS}
+              placeholder="专业 / 简洁 / 审计导向"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-dialog-language" className="text-xs font-bold text-brand-text-muted block">
+              输出语言
+            </label>
+            <input
+              id="ai-dialog-language"
+              value={form.dialog_language}
+              onChange={(event) => setForm((prev) => ({ ...prev, dialog_language: event.target.value }))}
+              className={CONSOLE_INPUT_CLASS}
+              placeholder="zh-CN"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-dialog-context" className="text-xs font-bold text-brand-text-muted block">
+              上下文消息数
+            </label>
+            <input
+              id="ai-dialog-context"
+              type="number"
+              min={1}
+              value={String(form.dialog_context_messages)}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, dialog_context_messages: Number(event.target.value || 0) }))
+              }
+              className={CONSOLE_INPUT_CLASS}
+            />
+          </div>
+          <div className="space-y-2 xl:col-span-2">
+            <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-brand-text-muted block">
+              系统提示词（对话级）
+            </label>
+            <textarea
+              id="ai-dialog-system-prompt"
+              value={form.dialog_system_prompt}
+              onChange={(event) => setForm((prev) => ({ ...prev, dialog_system_prompt: event.target.value }))}
+              className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[100px]`}
+              placeholder="用于统一约束 AI 输出风格与格式（可选）"
+            />
+          </div>
+          <div className="space-y-2 xl:col-span-2">
+            <div className="text-xs font-bold text-brand-text-muted">模型配置管理</div>
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
+              <input
+                value={modelDraft.id}
+                onChange={(event) => setModelDraft((prev) => ({ ...prev, id: event.target.value }))}
+                className={CONSOLE_INPUT_MONO_CLASS}
+                placeholder="模型配置ID（可选）"
+              />
+              <input
+                value={modelDraft.name}
+                onChange={(event) => setModelDraft((prev) => ({ ...prev, name: event.target.value }))}
+                className={CONSOLE_INPUT_CLASS}
+                placeholder="模型配置名称"
+              />
+              <div className="relative">
+                <select
+                  value={modelDraft.provider}
+                  onChange={(event) => setModelDraft((prev) => ({ ...prev, provider: event.target.value }))}
+                  className={CONSOLE_SELECT_CLASS}
+                >
+                  {providerPresets.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              </div>
+              <button
+                type="button"
+                onClick={addModelProfile}
+                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              >
+                新增模型配置
+              </button>
+            </div>
+            <div className="space-y-2 pt-1">
+              {form.model_profiles.map((item) => (
+                <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+                  <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold break-all">
+                        {item.name} {item.id === form.active_model_profile_id ? '(生效中)' : ''}
+                      </div>
+                      <div className="text-xs text-brand-text-muted font-mono break-all mt-1">
+                        {item.id} | {providerPresetMap[item.provider]?.label || item.provider} | {item.base_url || '-'} |
+                        {item.model || '-'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => selectActiveModelProfile(item.id)}
+                        className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                      >
+                        设为生效
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeModelProfile(item.id)}
+                        className="px-3 py-1.5 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+        <div className="text-xs font-black tracking-wide text-brand-text">OpenAI 兼容接口管理</div>
+        <div className="text-xs text-brand-text-muted">
+          可新增第三方 OpenAI 兼容网关。保存后会写入配置，供提供方选择 `OpenAI 兼容接口` 时快速套用。
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
+          <input
+            value={compatDraft.id}
+            onChange={(event) => setCompatDraft((prev) => ({ ...prev, id: event.target.value }))}
+            className={CONSOLE_INPUT_CLASS}
+            placeholder="接口ID（可选）"
+          />
+          <input
+            value={compatDraft.name}
+            onChange={(event) => setCompatDraft((prev) => ({ ...prev, name: event.target.value }))}
+            className={CONSOLE_INPUT_CLASS}
+            placeholder="接口名称（必填）"
+          />
+          <input
+            value={compatDraft.base_url}
+            onChange={(event) => setCompatDraft((prev) => ({ ...prev, base_url: event.target.value }))}
+            className={CONSOLE_INPUT_MONO_CLASS}
+            placeholder="Base URL（必填）"
+          />
+          <div className="flex gap-2">
+            <input
+              value={compatDraft.model}
+              onChange={(event) => setCompatDraft((prev) => ({ ...prev, model: event.target.value }))}
+              className={CONSOLE_INPUT_CLASS}
+              placeholder="默认模型（可选）"
+            />
+            <button
+              type="button"
+              onClick={addCompatProvider}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+            >
+              添加
+            </button>
+          </div>
+        </div>
+        {form.custom_compat_providers.length > 0 ? (
+          <div className="space-y-2">
+            {form.custom_compat_providers.map((item) => (
+              <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold break-all">{item.name}</div>
+                    <div className="text-xs text-brand-text-muted font-mono break-all mt-1">
+                      {item.id} | {item.base_url} | {item.model || '-'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => applyCompatProvider(item.id)}
+                      className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                    >
+                      套用
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeCompatProvider(item.id)}
+                      className="px-3 py-1.5 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs text-brand-text-muted">暂无自定义兼容接口。</div>
+        )}
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+        <div className="text-xs font-black tracking-wide text-brand-text">提示词管理</div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label htmlFor="ai-active-prompt-id" className="text-xs font-bold text-brand-text-muted block">
+              当前生效提示词
+            </label>
+            <div className="relative xl:max-w-[440px]">
+              <select
+                id="ai-active-prompt-id"
+                value={form.active_prompt_id}
+                onChange={(event) => setForm((prev) => ({ ...prev, active_prompt_id: event.target.value }))}
+                className={CONSOLE_SELECT_CLASS}
+              >
+                {form.prompt_templates.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} ({item.scene})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {form.prompt_templates.map((item) => (
+            <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 space-y-2">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                <input
+                  value={item.name}
+                  onChange={(event) => updatePromptTemplateField(item.id, 'name', event.target.value)}
+                  className={CONSOLE_INPUT_CLASS}
+                  placeholder="提示词名称"
+                />
+                <input
+                  value={item.scene}
+                  onChange={(event) => updatePromptTemplateField(item.id, 'scene', event.target.value)}
+                  className={CONSOLE_INPUT_CLASS}
+                  placeholder="场景标识"
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    value={item.id}
+                    readOnly
+                    className={`${CONSOLE_INPUT_MONO_CLASS} bg-brand-bg/40`}
+                    placeholder="提示词ID"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePromptTemplate(item.id)}
+                    className="px-3 py-2 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={item.content}
+                onChange={(event) => updatePromptTemplateField(item.id, 'content', event.target.value)}
+                className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[96px]`}
+                placeholder="提示词内容"
+              />
+              <div className="text-[11px] text-brand-text-muted">更新时间：{item.updated_at || '-'}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 space-y-2">
+          <div className="text-xs font-bold text-brand-text-muted">新增提示词</div>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+            <input
+              value={promptDraft.id}
+              onChange={(event) => setPromptDraft((prev) => ({ ...prev, id: event.target.value }))}
+              className={CONSOLE_INPUT_MONO_CLASS}
+              placeholder="提示词ID（可选）"
+            />
+            <input
+              value={promptDraft.name}
+              onChange={(event) => setPromptDraft((prev) => ({ ...prev, name: event.target.value }))}
+              className={CONSOLE_INPUT_CLASS}
+              placeholder="提示词名称（可选）"
+            />
+            <div className="relative">
+              <select
+                value={promptDraft.scene}
+                onChange={(event) => setPromptDraft((prev) => ({ ...prev, scene: event.target.value }))}
+                className={CONSOLE_SELECT_CLASS}
+              >
+                <option value="ai_report_export">AI报告导出</option>
+                <option value="false_positive_review">误报复核</option>
+                <option value="scan_planner">扫描调度</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <textarea
+            value={promptDraft.content}
+            onChange={(event) => setPromptDraft((prev) => ({ ...prev, content: event.target.value }))}
+            className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[96px]`}
+            placeholder="输入新增提示词内容"
+          />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={addPromptTemplate}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+            >
+              新增提示词
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {testResult ? (
+        <div
+          className={`text-xs rounded-lg px-3 py-2 border ${
+            testResult.ok
+              ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
+              : testResult.message.includes('已跳过')
+                ? 'text-amber-300 bg-amber-300/10 border-amber-300/30'
+                : 'text-brand-danger bg-brand-danger/10 border-brand-danger/30'
+          }`}
+        >
+          <div>{testResult.message}</div>
+          {testResult.detail ? (
+            <div className="mt-1 font-mono opacity-80 break-all whitespace-pre-wrap">{testResult.detail}</div>
+          ) : null}
+          {testResult.tested_at ? <div className="mt-1 opacity-70">{testResult.tested_at}</div> : null}
+        </div>
+      ) : null}
+      <SensitiveRevealVerifyModal
+        open={sensitiveVerifyDialogOpen}
+        title="显示 AI Key 需要身份验证"
+        username={sensitiveVerifyUsername}
+        password={sensitiveVerifyPassword}
+        loading={sensitiveVerifyLoading}
+        error={sensitiveVerifyError}
+        onClose={() => {
+          setSensitiveVerifyDialogOpen(false);
+          setSensitiveVerifyPassword('');
+          setSensitiveVerifyError('');
+        }}
+        onConfirm={() => void verifySensitiveDisplay()}
+        onUsernameChange={setSensitiveVerifyUsername}
+        onPasswordChange={setSensitiveVerifyPassword}
+      />
+      {error ? (
+        <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      ) : null}
+      {success ? (
+        <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+          {success}
         </div>
       ) : null}
     </div>

@@ -69,6 +69,28 @@ test_service_api_batch_fields = ns.model(
     },
 )
 
+save_ai_config_fields = ns.model(
+    'SaveAiConfig',
+    {
+        'ai_config': fields.Raw(required=True, description='AI 配置对象'),
+    },
+)
+
+test_ai_config_fields = ns.model(
+    'TestAiConfig',
+    {
+        'ai_config': fields.Raw(required=True, description='AI 配置对象（使用当前表单值，不落盘）'),
+    },
+)
+
+verify_sensitive_fields = ns.model(
+    'VerifySensitiveAccess',
+    {
+        'username': fields.String(required=True, description='当前登录账号'),
+        'password': fields.String(required=True, description='当前登录密码'),
+    },
+)
+
 
 def _resolve_config_path() -> Path:
     """
@@ -365,6 +387,493 @@ SCAN_PROFILE_ID_ALIASES = {
     '4c4g5m': 'medium_performance',
     '8c16g10m': 'high_performance',
 }
+
+AI_PROVIDER_PRESETS = [
+    {
+        'id': 'qwen',
+        'label': '通义千问',
+        'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        'default_model': 'qwen-plus',
+    },
+    {
+        'id': 'kimi',
+        'label': 'Kimi',
+        'base_url': 'https://api.moonshot.cn/v1',
+        'default_model': 'moonshot-v1-8k',
+    },
+    {
+        'id': 'openai',
+        'label': 'OpenAI',
+        'base_url': 'https://api.openai.com/v1',
+        'default_model': 'gpt-4o-mini',
+    },
+    {
+        'id': 'glm',
+        'label': '智谱 GLM',
+        'base_url': 'https://open.bigmodel.cn/api/paas/v4',
+        'default_model': 'glm-4-flash',
+    },
+    {
+        'id': 'deepseek',
+        'label': 'DeepSeek',
+        'base_url': 'https://api.deepseek.com/v1',
+        'default_model': 'deepseek-chat',
+    },
+    {
+        'id': 'custom_compatible',
+        'label': 'OpenAI 兼容接口',
+        'base_url': '',
+        'default_model': '',
+    },
+]
+AI_PROVIDER_PRESET_MAP = {item.get('id'): item for item in AI_PROVIDER_PRESETS}
+AI_PROVIDER_IDS = set(item.get('id') for item in AI_PROVIDER_PRESETS if item.get('id'))
+
+
+def _default_ai_prompt_templates():
+    """
+    默认提示词模板（覆盖 AI 报告与误报复核两类场景）。
+    """
+    return [
+        {
+            'id': 'default_ai_report',
+            'name': '默认AI报告模板',
+            'scene': 'ai_report_export',
+            'content': (
+                "你是互联网资产自动化收集系统的安全分析助手。"
+                "请基于输入数据输出结构化研判：任务概览、关键资产、风险聚类、疑似误报、优先修复建议、复测建议。"
+                "要求结论可执行、避免夸大风险、避免输出不存在的数据。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': 'default_fp_review',
+            'name': '默认误报复核模板',
+            'scene': 'false_positive_review',
+            'content': (
+                "你是安全误报复核助手。"
+                "请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。"
+            ),
+            'updated_at': '',
+        },
+    ]
+
+
+def _normalize_ai_provider_id(raw_provider):
+    """
+    规范化 AI 提供方标识。
+    """
+    provider_id = str(raw_provider or '').strip().lower()
+    provider_alias = {
+        'tongyi': 'qwen',
+        'qianwen': 'qwen',
+        'moonshot': 'kimi',
+        'openai_compatible': 'custom_compatible',
+        'compatible': 'custom_compatible',
+    }
+    provider_id = provider_alias.get(provider_id, provider_id)
+    if provider_id not in AI_PROVIDER_IDS:
+        return 'openai'
+    return provider_id
+
+
+def _normalize_ai_custom_providers(raw_items):
+    """
+    规范化 OpenAI 兼容自定义提供方列表。
+    """
+    if not isinstance(raw_items, list):
+        return []
+
+    items = []
+    seen = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+
+        provider_id = str(item.get('id') or '').strip()
+        name = str(item.get('name') or '').strip()
+        base_url = str(item.get('base_url') or '').strip()
+        model = str(item.get('model') or '').strip()
+        if not provider_id:
+            provider_id = 'custom_{}'.format(len(items) + 1)
+        if not name:
+            name = provider_id
+        if provider_id in seen:
+            continue
+        seen.add(provider_id)
+        items.append(
+            {
+                'id': provider_id,
+                'name': name,
+                'base_url': base_url,
+                'model': model,
+            }
+        )
+
+    return items
+
+
+def _normalize_ai_prompt_templates(raw_templates):
+    """
+    规范化提示词模板，若为空则回落默认模板。
+    """
+    templates = []
+    seen = set()
+
+    if isinstance(raw_templates, list):
+        for item in raw_templates:
+            if not isinstance(item, dict):
+                continue
+            prompt_id = str(item.get('id') or '').strip()
+            name = str(item.get('name') or '').strip()
+            scene = str(item.get('scene') or '').strip() or 'ai_report_export'
+            content = str(item.get('content') or '').strip()
+            updated_at = str(item.get('updated_at') or '').strip()
+            if not prompt_id:
+                prompt_id = 'prompt_{}'.format(len(templates) + 1)
+            if not name:
+                name = prompt_id
+            if not content:
+                continue
+            if prompt_id in seen:
+                continue
+            seen.add(prompt_id)
+            templates.append(
+                {
+                    'id': prompt_id,
+                    'name': name,
+                    'scene': scene,
+                    'content': content,
+                    'updated_at': updated_at,
+                }
+            )
+
+    if templates:
+        return templates
+    return _default_ai_prompt_templates()
+
+
+def _default_ai_model_profiles():
+    """
+    默认模型配置（单模型生效，多模型可配置）。
+    """
+    preset = AI_PROVIDER_PRESET_MAP.get('openai', {})
+    return [
+        {
+            'id': 'default_model',
+            'name': '默认模型',
+            'provider': 'openai',
+            'base_url': str(preset.get('base_url') or ''),
+            'api_key': '',
+            'model': str(preset.get('default_model') or ''),
+            'timeout_sec': 40,
+            'temperature': 0.2,
+            'max_tokens': 4000,
+        }
+    ]
+
+
+def _normalize_ai_model_profiles(raw_profiles, legacy_ai_conf=None):
+    """
+    规范化模型配置列表，兼容旧版单模型字段。
+    """
+    profiles = []
+    seen = set()
+
+    if isinstance(raw_profiles, list):
+        for index, item in enumerate(raw_profiles):
+            if not isinstance(item, dict):
+                continue
+
+            profile_id = str(item.get('id') or '').strip() or 'model_{}'.format(index + 1)
+            if profile_id in seen:
+                continue
+            seen.add(profile_id)
+
+            provider_id = _normalize_ai_provider_id(item.get('provider'))
+            provider_preset = AI_PROVIDER_PRESET_MAP.get(provider_id, {})
+            base_url = str(item.get('base_url') or '').strip() or str(provider_preset.get('base_url') or '')
+            model = str(item.get('model') or '').strip() or str(provider_preset.get('default_model') or '')
+
+            profiles.append(
+                {
+                    'id': profile_id,
+                    'name': str(item.get('name') or profile_id).strip(),
+                    'provider': provider_id,
+                    'base_url': base_url,
+                    'api_key': str(item.get('api_key') or '').strip(),
+                    'model': model,
+                    'timeout_sec': _safe_int(item.get('timeout_sec'), 40, min_value=1),
+                    'temperature': _safe_float(item.get('temperature'), 0.2, min_value=0.0),
+                    'max_tokens': _safe_int(item.get('max_tokens'), 4000, min_value=1),
+                }
+            )
+
+    # 兼容旧版单模型字段，自动转换为 profiles[0]
+    if not profiles and isinstance(legacy_ai_conf, dict):
+        provider_id = _normalize_ai_provider_id(legacy_ai_conf.get('PROVIDER', 'openai'))
+        provider_preset = AI_PROVIDER_PRESET_MAP.get(provider_id, {})
+        profiles = [
+            {
+                'id': 'default_model',
+                'name': '默认模型',
+                'provider': provider_id,
+                'base_url': str(legacy_ai_conf.get('BASE_URL') or '').strip() or str(provider_preset.get('base_url') or ''),
+                'api_key': str(legacy_ai_conf.get('API_KEY') or '').strip(),
+                'model': str(legacy_ai_conf.get('MODEL') or '').strip() or str(provider_preset.get('default_model') or ''),
+                'timeout_sec': _safe_int(legacy_ai_conf.get('TIMEOUT_SEC'), 40, min_value=1),
+                'temperature': _safe_float(legacy_ai_conf.get('TEMPERATURE'), 0.2, min_value=0.0),
+                'max_tokens': _safe_int(legacy_ai_conf.get('MAX_TOKENS'), 4000, min_value=1),
+            }
+        ]
+
+    if profiles:
+        return profiles
+    return _default_ai_model_profiles()
+
+
+def _pick_active_ai_model_profile(model_profiles, active_profile_id=''):
+    """
+    从模型列表中选出当前生效模型，若未匹配则回退首项。
+    """
+    profiles = model_profiles if isinstance(model_profiles, list) else []
+    if not profiles:
+        return {}
+
+    target_id = str(active_profile_id or '').strip()
+    if target_id:
+        for item in profiles:
+            if str(item.get('id') or '').strip() == target_id:
+                return item
+
+    return profiles[0]
+
+
+def _extract_ai_config(config_obj):
+    """
+    从完整配置中提取 AI 管理配置。
+    """
+    ai_conf = config_obj.get('AI', {})
+    if not isinstance(ai_conf, dict):
+        ai_conf = {}
+
+    model_profiles = _normalize_ai_model_profiles(ai_conf.get('MODEL_PROFILES'), legacy_ai_conf=ai_conf)
+    active_model_profile_id = str(ai_conf.get('ACTIVE_MODEL_PROFILE_ID') or '').strip()
+    active_profile = _pick_active_ai_model_profile(model_profiles, active_model_profile_id)
+    if active_profile:
+        active_model_profile_id = str(active_profile.get('id') or '').strip()
+
+    prompt_templates = _normalize_ai_prompt_templates(ai_conf.get('PROMPT_TEMPLATES'))
+    prompt_ids = [item.get('id') for item in prompt_templates if item.get('id')]
+    active_prompt_id = str(ai_conf.get('ACTIVE_PROMPT_ID') or '').strip()
+    if active_prompt_id not in prompt_ids:
+        active_prompt_id = prompt_ids[0] if prompt_ids else ''
+
+    return {
+        'enable': _safe_bool(ai_conf.get('ENABLE'), True),
+        'active_model_profile_id': active_model_profile_id,
+        'model_profiles': model_profiles,
+        # 向后兼容：保留单模型字段，前端旧版与历史调用可继续读取
+        'provider': str(active_profile.get('provider') or 'openai'),
+        'custom_provider_name': str(ai_conf.get('CUSTOM_PROVIDER_NAME') or active_profile.get('name') or '').strip(),
+        'base_url': str(active_profile.get('base_url') or '').strip(),
+        'api_key': str(active_profile.get('api_key') or '').strip(),
+        'model': str(active_profile.get('model') or '').strip(),
+        'timeout_sec': _safe_int(active_profile.get('timeout_sec'), 40, min_value=1),
+        'temperature': _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0),
+        'max_tokens': _safe_int(active_profile.get('max_tokens'), 4000, min_value=1),
+        'dialog_system_prompt': str(ai_conf.get('DIALOG_SYSTEM_PROMPT') or '').strip(),
+        'dialog_style': str(ai_conf.get('DIALOG_STYLE') or '专业').strip(),
+        'dialog_language': str(ai_conf.get('DIALOG_LANGUAGE') or 'zh-CN').strip(),
+        'dialog_context_messages': _safe_int(ai_conf.get('DIALOG_CONTEXT_MESSAGES'), 8, min_value=1),
+        'active_prompt_id': active_prompt_id,
+        'prompt_templates': prompt_templates,
+        'custom_compat_providers': _normalize_ai_custom_providers(ai_conf.get('CUSTOM_COMPAT_PROVIDERS')),
+    }
+
+
+def _merge_ai_config(config_obj, ai_config):
+    """
+    将 AI 管理配置写回完整配置对象。
+    """
+    if not isinstance(ai_config, dict):
+        raise ValueError('ai_config 必须为对象')
+
+    if not isinstance(config_obj.get('AI'), dict):
+        config_obj['AI'] = {}
+    ai_conf = config_obj['AI']
+
+    model_profiles = _normalize_ai_model_profiles(ai_config.get('model_profiles'), legacy_ai_conf=ai_config)
+    active_model_profile_id = str(ai_config.get('active_model_profile_id') or '').strip()
+    active_profile = _pick_active_ai_model_profile(model_profiles, active_model_profile_id)
+    if active_profile:
+        active_model_profile_id = str(active_profile.get('id') or '').strip()
+
+    prompt_templates = _normalize_ai_prompt_templates(ai_config.get('prompt_templates'))
+    prompt_ids = [item.get('id') for item in prompt_templates if item.get('id')]
+
+    active_prompt_id = str(ai_config.get('active_prompt_id') or '').strip()
+    if active_prompt_id not in prompt_ids:
+        active_prompt_id = prompt_ids[0] if prompt_ids else ''
+
+    ai_conf['ENABLE'] = _safe_bool(ai_config.get('enable'), True)
+    ai_conf['MODEL_PROFILES'] = model_profiles
+    ai_conf['ACTIVE_MODEL_PROFILE_ID'] = active_model_profile_id
+    # 向后兼容：保留单模型字段，运行期组件可继续复用
+    ai_conf['PROVIDER'] = str(active_profile.get('provider') or 'openai')
+    ai_conf['CUSTOM_PROVIDER_NAME'] = str(ai_config.get('custom_provider_name') or active_profile.get('name') or '').strip()
+    ai_conf['BASE_URL'] = str(active_profile.get('base_url') or '').strip()
+    ai_conf['API_KEY'] = str(active_profile.get('api_key') or '').strip()
+    ai_conf['MODEL'] = str(active_profile.get('model') or '').strip()
+    ai_conf['TIMEOUT_SEC'] = _safe_int(active_profile.get('timeout_sec'), 40, min_value=1)
+    ai_conf['TEMPERATURE'] = _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0)
+    ai_conf['MAX_TOKENS'] = _safe_int(active_profile.get('max_tokens'), 4000, min_value=1)
+    ai_conf['DIALOG_SYSTEM_PROMPT'] = str(ai_config.get('dialog_system_prompt') or '').strip()
+    ai_conf['DIALOG_STYLE'] = str(ai_config.get('dialog_style') or '专业').strip()
+    ai_conf['DIALOG_LANGUAGE'] = str(ai_config.get('dialog_language') or 'zh-CN').strip()
+    ai_conf['DIALOG_CONTEXT_MESSAGES'] = _safe_int(ai_config.get('dialog_context_messages'), 8, min_value=1)
+    ai_conf['ACTIVE_PROMPT_ID'] = active_prompt_id
+    ai_conf['PROMPT_TEMPLATES'] = prompt_templates
+    ai_conf['CUSTOM_COMPAT_PROVIDERS'] = _normalize_ai_custom_providers(
+        ai_config.get('custom_compat_providers')
+    )
+
+    return config_obj
+
+
+def _test_ai_config_connectivity(ai_config):
+    """
+    测试 AI 连接可用性（OpenAI 兼容 /models 轻量探测）。
+    """
+    if not isinstance(ai_config, dict):
+        raise ValueError('ai_config 必须为对象')
+
+    model_profiles = _normalize_ai_model_profiles(ai_config.get('model_profiles'), legacy_ai_conf=ai_config)
+    active_model_profile_id = str(ai_config.get('active_model_profile_id') or '').strip()
+    active_profile = _pick_active_ai_model_profile(model_profiles, active_model_profile_id)
+
+    provider_id = str(active_profile.get('provider') or 'openai')
+    base_url = str(active_profile.get('base_url') or '').strip()
+    api_key = str(active_profile.get('api_key') or '').strip()
+    model_name = str(active_profile.get('model') or '').strip()
+    profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
+    timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=5)
+
+    if not api_key:
+        return {
+            'ok': False,
+            'message': '未配置 API Key，已跳过连通性测试',
+            'provider': provider_id,
+            'detail': {
+                'model': model_name,
+                'profile': profile_name,
+            },
+            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+    if not base_url:
+        return {
+            'ok': False,
+            'message': '未配置 Base URL，已跳过连通性测试',
+            'provider': provider_id,
+            'detail': {
+                'model': model_name,
+                'profile': profile_name,
+            },
+            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+
+    request_url = '{}/models'.format(base_url.rstrip('/'))
+    headers = {
+        'Authorization': 'Bearer {}'.format(api_key),
+    }
+
+    try:
+        conn = utils.http_req(request_url, 'get', headers=headers, timeout=(8, timeout_sec))
+        status_code = int(getattr(conn, 'status_code', 0) or 0)
+        try:
+            payload = conn.json() if conn is not None else {}
+        except Exception:
+            payload = {}
+
+        if status_code != 200:
+            err_message = ''
+            if isinstance(payload, dict):
+                error_obj = payload.get('error')
+                if isinstance(error_obj, dict):
+                    err_message = str(error_obj.get('message') or '')
+                err_message = err_message or str(payload.get('message') or '')
+            err_message = err_message or 'HTTP {}'.format(status_code)
+            return {
+                'ok': False,
+                'message': 'AI 测试失败：{}'.format(err_message),
+                'provider': provider_id,
+                'detail': {
+                    'status_code': status_code,
+                    'base_url': base_url,
+                    'model': model_name,
+                    'profile': profile_name,
+                },
+                'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+
+        models = payload.get('data', []) if isinstance(payload, dict) else []
+        model_count = len(models) if isinstance(models, list) else 0
+        first_model = ''
+        if isinstance(models, list) and models:
+            first_model = str((models[0] or {}).get('id') or '').strip()
+
+        return {
+            'ok': True,
+            'message': 'AI 连接测试成功',
+            'provider': provider_id,
+            'detail': {
+                'base_url': base_url,
+                'model_count': model_count,
+                'first_model': first_model,
+                'model': model_name,
+                'profile': profile_name,
+            },
+            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+    except Exception as exc:
+        return {
+            'ok': False,
+            'message': 'AI 测试失败：{}'.format(exc),
+            'provider': provider_id,
+            'detail': {
+                'base_url': base_url,
+                'model': model_name,
+                'profile': profile_name,
+            },
+            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+
+
+def _verify_sensitive_access(username: str, password: str):
+    """
+    二次验证当前用户身份（仅验证，不刷新登录 token）。
+    """
+    username = str(username or '').strip()
+    password = str(password or '')
+    if not username or not password:
+        return False, '用户名和密码不能为空'
+
+    login_user = utils.user_login_header()
+    if isinstance(login_user, dict) and login_user.get('type') == 'login':
+        current_username = str(login_user.get('username') or '').strip()
+        if current_username and current_username != username:
+            return False, '请使用当前登录账号进行验证'
+
+    password_hash = utils.gen_md5('arlsalt!@#' + password)
+    query = {
+        'username': username,
+        'password': password_hash,
+    }
+    data = utils.conn_db('user').find_one(query, {'_id': 1})
+    if not data:
+        return False, '账号或密码错误'
+
+    return True, '验证通过'
 
 
 def _extract_scan_profile_id(scan_config):
@@ -2110,6 +2619,139 @@ class ApiConsoleServiceApiBatchTest(ARLResource):
             'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         return utils.build_ret(ErrorMsg.Success, batch_payload)
+
+
+@ns.route('/ai_config/')
+class ApiConsoleAiConfig(ARLResource):
+    """
+    AI 管理配置读取与保存接口。
+    """
+
+    @auth
+    def get(self):
+        config_path = _resolve_config_path()
+        try:
+            config_obj = _load_config_from_file(config_path)
+            ai_config = _extract_ai_config(config_obj)
+            return utils.build_ret(
+                ErrorMsg.Success,
+                {
+                    'ai_config': ai_config,
+                    'provider_presets': AI_PROVIDER_PRESETS,
+                    'config_path': str(config_path),
+                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                }
+            )
+        except Exception as exc:
+            logger.exception('load ai_config failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
+
+    @auth
+    @ns.expect(save_ai_config_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        ai_config = payload.get('ai_config')
+        config_path = _resolve_config_path()
+
+        with CONFIG_LOCK:
+            try:
+                config_obj = _load_config_from_file(config_path)
+                config_obj = _merge_ai_config(config_obj, ai_config)
+                _ensure_json_like_config(config_obj)
+                backup_path = _backup_config_file(config_path)
+                _atomic_write_yaml(config_path, config_obj)
+                refresh_runtime_config_best_effort(force=True)
+                saved_ai_config = _extract_ai_config(config_obj)
+            except Exception as exc:
+                logger.exception('save ai_config failed: %s', exc)
+                return utils.build_ret(
+                    ErrorMsg.Error,
+                    {
+                        'error': str(exc),
+                        'config_path': str(config_path),
+                    }
+                )
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'saved': True,
+                'ai_config': saved_ai_config,
+                'provider_presets': AI_PROVIDER_PRESETS,
+                'config_path': str(config_path),
+                'backup_path': backup_path,
+                'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+        )
+
+
+@ns.route('/ai_config/test/')
+class ApiConsoleAiConfigTest(ARLResource):
+    """
+    AI 管理连通性测试接口（基于当前表单值，不落盘）。
+    """
+
+    @auth
+    @ns.expect(test_ai_config_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        ai_config = payload.get('ai_config') or {}
+
+        if not isinstance(ai_config, dict):
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {'error': 'ai_config 必须为对象'}
+            )
+
+        try:
+            result = _test_ai_config_connectivity(ai_config)
+            return utils.build_ret(ErrorMsg.Success, result)
+        except Exception as exc:
+            logger.exception('ai_config test failed err:%s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                }
+            )
+
+
+@ns.route('/sensitive_verify/')
+class ApiConsoleSensitiveVerify(ARLResource):
+    """
+    敏感信息显示前的二次身份验证接口。
+    """
+
+    @auth
+    @ns.expect(verify_sensitive_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        username = str(payload.get('username') or '').strip()
+        password = str(payload.get('password') or '')
+
+        ok, message = _verify_sensitive_access(username, password)
+        if not ok:
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': message,
+                }
+            )
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'verified': True,
+                'message': message,
+                'verified_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+        )
 
 
 @ns.route('/scan_config/')
