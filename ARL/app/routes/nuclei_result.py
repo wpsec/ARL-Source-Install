@@ -181,6 +181,64 @@ def _normalize_afrog_verify_data(verify_data, target):
     return raw_text
 
 
+def _is_generic_afrog_vuln_name(vuln_name):
+    text = str(vuln_name or "").strip()
+    if not text:
+        return True
+    compact = text.lower().replace(" ", "")
+    return compact in {"afrog", "afrog漏洞", "afrogvulnerability", "vulnerability", "漏洞", "-"}
+
+
+def _extract_afrog_name_from_rule_id(rule_id):
+    text = str(rule_id or "").strip()
+    if not text:
+        return ""
+    if text.lower().startswith("afrog:"):
+        text = text.split(":", 1)[1].strip()
+    if _is_generic_afrog_vuln_name(text):
+        return ""
+    return text
+
+
+def _extract_afrog_name_from_verify_data(verify_data):
+    raw_text = str(verify_data or "").strip()
+    if not raw_text:
+        return ""
+    try:
+        payload = json.loads(raw_text)
+    except Exception:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+
+    for key in ("name", "vuln_name", "vul_name", "title", "poc_name", "plugin_name"):
+        candidate = str(payload.get(key, "") or "").strip()
+        if candidate and not _is_generic_afrog_vuln_name(candidate):
+            return candidate
+
+    for key in ("id", "poc_id"):
+        candidate = str(payload.get(key, "") or "").strip()
+        if candidate and not _is_generic_afrog_vuln_name(candidate):
+            return candidate
+    return ""
+
+
+def _resolve_afrog_vuln_name(vuln_name, rule_id, verify_data):
+    current = str(vuln_name or "").strip()
+    if current and not _is_generic_afrog_vuln_name(current):
+        return current
+
+    by_rule = _extract_afrog_name_from_rule_id(rule_id)
+    if by_rule:
+        return by_rule
+
+    by_verify = _extract_afrog_name_from_verify_data(verify_data)
+    if by_verify:
+        return by_verify
+
+    return current or "afrog 漏洞"
+
+
 def _build_regex_query(value):
     text = str(value or "").strip()
     if not text:
@@ -368,6 +426,7 @@ def _format_poc_result_items(data):
         row["vuln_severity"] = str(row.get("vuln_severity") or "info").strip().lower()
         raw_verify_data = str(row.get("verify_data") or "").strip()
         if scanner_type == "afrog":
+            row["vuln_name"] = _resolve_afrog_vuln_name(row.get("vuln_name"), row.get("rule_id"), raw_verify_data)
             row["verify_data"] = _normalize_afrog_verify_data(raw_verify_data, row.get("target"))
         else:
             row["verify_data"] = raw_verify_data

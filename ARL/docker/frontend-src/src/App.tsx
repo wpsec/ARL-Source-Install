@@ -1432,18 +1432,20 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'domain',
-    columns: ['ip', 'domain', 'port', 'waf_name'],
+    columns: ['ip', 'domain', 'port', 'waf_name', 'hit_rule'],
     columnLabels: {
       ip: 'IP',
       domain: '域名',
       port: '端口',
       waf_name: 'WAF厂家',
+      hit_rule: '命中规则',
     },
     searchFields: [
       { key: 'ip', label: 'IP', placeholder: '请输入IP进行搜索' },
       { key: 'domain', label: '域名', placeholder: '请输入域名进行搜索' },
       { key: 'port', label: '端口', placeholder: '请输入端口进行搜索', inputType: 'number' },
       { key: 'waf_name', label: 'WAF厂家', placeholder: '请输入WAF厂家进行搜索' },
+      { key: 'hit_rule', label: '命中规则', placeholder: '请输入命中规则或命中理由进行搜索' },
     ],
   },
   {
@@ -6627,6 +6629,7 @@ function TableModuleView({
     if (moduleId === 'service' && ['ip_port', 'service_info.product'].includes(column)) return true;
     if (moduleId === 'vuln' && column === 'credential') return true;
     if (moduleId === 'nuclei_result' && ['vuln_url', 'verify_data'].includes(column)) return true;
+    if (moduleId === 'waf_host' && column === 'hit_rule') return true;
     if (moduleId === 'wih' && ['content', 'source', 'site'].includes(column)) return true;
     if (moduleId === 'github_result' && ['path', 'human_content'].includes(column)) return true;
     if (moduleId === 'github_monitor_result' && ['path', 'human_content'].includes(column)) return true;
@@ -8250,6 +8253,19 @@ function TableModuleView({
                               {sensitive ? (
                                 <div className="mt-2 text-[11px] font-black text-brand-danger">敏感信息</div>
                               ) : null}
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'nuclei_result' && column === 'vuln_url') {
+                          const vulnUrlRaw = normalizeValueNoTruncate(row?.vuln_url);
+                          const targetRaw = normalizeValueNoTruncate(row?.target);
+                          const displayUrl = (vulnUrlRaw && vulnUrlRaw !== '-' ? vulnUrlRaw : targetRaw) || '-';
+                          return (
+                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[320px] max-w-[760px]">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed text-center">
+                                {displayUrl}
+                              </div>
                             </td>
                           );
                         }

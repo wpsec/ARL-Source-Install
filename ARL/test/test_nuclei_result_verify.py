@@ -5,14 +5,21 @@ import json
 import unittest
 
 try:
-    from app.routes.nuclei_result import _build_curl_from_http_request, _normalize_afrog_verify_data
+    from app.routes.nuclei_result import (
+        _build_curl_from_http_request,
+        _normalize_afrog_verify_data,
+        _resolve_afrog_vuln_name,
+    )
 except ModuleNotFoundError:
     _build_curl_from_http_request = None
     _normalize_afrog_verify_data = None
+    _resolve_afrog_vuln_name = None
 
 
 @unittest.skipIf(
-    _build_curl_from_http_request is None or _normalize_afrog_verify_data is None,
+    _build_curl_from_http_request is None
+    or _normalize_afrog_verify_data is None
+    or _resolve_afrog_vuln_name is None,
     "运行依赖未安装，跳过 PoC 验证信息回归",
 )
 class TestNucleiResultVerifyFormat(unittest.TestCase):
@@ -53,6 +60,15 @@ class TestNucleiResultVerifyFormat(unittest.TestCase):
         self.assertIn("curl -k -i -sS -X POST", result)
         self.assertIn("https://demo.example.com/api/check", result)
         self.assertIn("--data-raw", result)
+
+    def test_resolve_afrog_vuln_name_prefers_rule_id_when_generic(self):
+        resolved = _resolve_afrog_vuln_name("afrog 漏洞", "afrog:CVE-2026-0001", "")
+        self.assertEqual("CVE-2026-0001", resolved)
+
+    def test_resolve_afrog_vuln_name_reads_verify_data_when_generic(self):
+        payload = {"id": "poc-raw-download", "target": "https://demo.example.com"}
+        resolved = _resolve_afrog_vuln_name("afrog 漏洞", "afrog", json.dumps(payload, ensure_ascii=False))
+        self.assertEqual("poc-raw-download", resolved)
 
 
 if __name__ == "__main__":

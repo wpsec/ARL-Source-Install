@@ -292,6 +292,62 @@ class AfrogScan(object):
         return "info"
 
     @staticmethod
+    def _is_generic_vuln_name(value):
+        text = str(value or "").strip()
+        if not text:
+            return True
+        compact = text.lower().replace(" ", "")
+        return compact in {"afrog", "afrog漏洞", "afrogvulnerability", "vulnerability", "漏洞", "-"}
+
+    @staticmethod
+    def _pick_first_text(candidates):
+        for value in candidates:
+            if isinstance(value, (list, tuple)):
+                candidate = AfrogScan._pick_first_text(value)
+                if candidate:
+                    return candidate
+                continue
+            if isinstance(value, dict):
+                candidate = AfrogScan._pick_first_text(value.values())
+                if candidate:
+                    return candidate
+                continue
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _extract_vuln_name(self, item, info, poc_id):
+        poc_info = item.get("poc", {})
+        if not isinstance(poc_info, dict):
+            poc_info = {}
+
+        candidate = self._pick_first_text(
+            [
+                info.get("name"),
+                info.get("title"),
+                info.get("vuln_name"),
+                info.get("vul_name"),
+                item.get("vuln_name"),
+                item.get("vul_name"),
+                item.get("name"),
+                item.get("title"),
+                item.get("plugin_name"),
+                item.get("poc_name"),
+                item.get("rule"),
+                poc_info.get("name"),
+                poc_info.get("title"),
+                poc_info.get("id"),
+                item.get("id"),
+            ]
+        )
+        if candidate and not self._is_generic_vuln_name(candidate):
+            return candidate
+        if poc_id:
+            return poc_id
+        return "afrog 漏洞"
+
+    @staticmethod
     def _safe_json_loads(text):
         raw = str(text or "").strip()
         if not raw:
@@ -357,9 +413,7 @@ class AfrogScan(object):
             if not target:
                 target = str(item.get("target", "") or "").strip()
 
-            vuln_name = str(info.get("name", "") or "").strip()
-            if not vuln_name:
-                vuln_name = poc_id or "afrog 漏洞"
+            vuln_name = self._extract_vuln_name(item, info, poc_id)
 
             severity = self._normalize_severity(info.get("severity", item.get("severity", "")))
             description = str(info.get("description", "") or "").strip()

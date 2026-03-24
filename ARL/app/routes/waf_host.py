@@ -27,6 +27,7 @@ base_search_fields = {
     "domain": fields.String(required=False, description="域名"),
     "port": fields.Integer(required=False, description="端口"),
     "waf_name": fields.String(required=False, description="WAF 厂商"),
+    "hit_rule": fields.String(required=False, description="命中规则/理由"),
 }
 base_search_fields.update(base_query_fields)
 
@@ -90,6 +91,14 @@ def _parse_host_port(host: str, last_url: str):
     return ip, domain, port
 
 
+def _format_hit_rule(rule: str, reason: str) -> str:
+    rule_text = str(rule or "").strip()
+    reason_text = str(reason or "").strip()
+    if rule_text and reason_text:
+        return "{} | {}".format(rule_text, reason_text)
+    return rule_text or reason_text or "-"
+
+
 @ns.route("/")
 class ARLWafHost(ARLResource):
     """WAF 跳过主机查询接口"""
@@ -108,6 +117,7 @@ class ARLWafHost(ARLResource):
         ip_kw = str(args.get("ip") or "").strip().lower()
         domain_kw = str(args.get("domain") or "").strip().lower()
         waf_name_kw = str(args.get("waf_name") or "").strip().lower()
+        hit_rule_kw = str(args.get("hit_rule") or "").strip().lower()
         port_kw = _safe_int(args.get("port"), 0)
 
         task_query = {"waf_skip_summary.blocked_hosts.0": {"$exists": True}}
@@ -157,6 +167,9 @@ class ARLWafHost(ARLResource):
                 host = str(host_data.get("host", "") or "").strip().lower()
                 last_url = str(host_data.get("last_url", "") or "").strip()
                 waf_name = str(host_data.get("waf_name", "") or "").strip() or "unknown"
+                rule = str(host_data.get("rule", "") or "").strip()
+                reason = str(host_data.get("reason", "") or "").strip()
+                hit_rule = _format_hit_rule(rule, reason)
                 ip, domain, port = _parse_host_port(host, last_url)
 
                 if ip_kw and ip_kw not in ip:
@@ -164,6 +177,8 @@ class ARLWafHost(ARLResource):
                 if domain_kw and domain_kw not in domain:
                     continue
                 if waf_name_kw and waf_name_kw not in waf_name.lower():
+                    continue
+                if hit_rule_kw and hit_rule_kw not in hit_rule.lower():
                     continue
                 if port_kw > 0 and port_kw != port:
                     continue
@@ -181,6 +196,7 @@ class ARLWafHost(ARLResource):
                         "domain": domain,
                         "port": port if port > 0 else "",
                         "waf_name": waf_name,
+                        "hit_rule": hit_rule,
                     }
                 )
 
