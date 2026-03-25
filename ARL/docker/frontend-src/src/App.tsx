@@ -12543,6 +12543,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     scene: 'ai_report_export',
     content: '',
   });
+  const [compatDialogOpen, setCompatDialogOpen] = useState(false);
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [dialogSystemPromptOpen, setDialogSystemPromptOpen] = useState(false);
   const [modelDraft, setModelDraft] = useState<{ id: string; name: string; provider: string }>({
     id: '',
     name: '',
@@ -12828,17 +12831,17 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const baseUrl = compatDraft.base_url.trim();
     if (!name) {
       setError('请填写兼容接口名称');
-      return;
+      return false;
     }
     if (!baseUrl) {
       setError('请填写兼容接口 Base URL');
-      return;
+      return false;
     }
 
     const candidateId = buildPromptId(compatDraft.id || name, form.custom_compat_providers.length + 1);
     if (form.custom_compat_providers.some((item) => item.id === candidateId)) {
       setError(`兼容接口 ID 重复：${candidateId}`);
-      return;
+      return false;
     }
 
     setForm((prev) => ({
@@ -12856,6 +12859,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setCompatDraft({ id: '', name: '', base_url: '', model: '' });
     setError('');
     setSuccess(`兼容接口已新增：${name}`);
+    return true;
   };
 
   const removeCompatProvider = (providerId: string) => {
@@ -12870,12 +12874,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const content = promptDraft.content.trim();
     if (!content) {
       setError('请填写提示词内容');
-      return;
+      return false;
     }
     const candidateId = buildPromptId(promptDraft.id || promptDraft.name, form.prompt_templates.length + 1);
     if (form.prompt_templates.some((item) => item.id === candidateId)) {
       setError(`提示词 ID 重复：${candidateId}`);
-      return;
+      return false;
     }
 
     const nowText = new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -12895,6 +12899,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setPromptDraft({ id: '', name: '', scene: 'ai_report_export', content: '' });
     setError('');
     setSuccess(`提示词已新增：${nextPrompt.name}`);
+    return true;
   };
 
   const updatePromptTemplateField = (promptId: string, field: keyof AiPromptTemplate, value: string) => {
@@ -13265,6 +13270,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               }
               className={CONSOLE_INPUT_CLASS}
             />
+            <div className="text-[11px] text-brand-text-muted">
+              温度越低越稳定（推荐 `0.2`），越高越发散。安全分析与报告场景建议低温度。（你可以简单理解为AI的创造性、联想能力，配置过高易出现AI幻觉，过低易出现呆滞的情况，但是就目前这套系统的使用场景，建议0.1-0.3）
+            </div>
           </div>
           <div className="space-y-2">
             <label htmlFor="ai-max-tokens" className="text-xs font-bold text-brand-text-muted block">
@@ -13300,13 +13308,18 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <label htmlFor="ai-dialog-language" className="text-xs font-bold text-brand-text-muted block">
               输出语言
             </label>
-            <input
-              id="ai-dialog-language"
-              value={form.dialog_language}
-              onChange={(event) => setForm((prev) => ({ ...prev, dialog_language: event.target.value }))}
-              className={CONSOLE_INPUT_CLASS}
-              placeholder="zh-CN"
-            />
+            <div className="relative xl:max-w-[440px]">
+              <select
+                id="ai-dialog-language"
+                value={form.dialog_language}
+                onChange={(event) => setForm((prev) => ({ ...prev, dialog_language: event.target.value }))}
+                className={CONSOLE_SELECT_CLASS}
+              >
+                <option value="zh-CN">中文</option>
+                <option value="en-US">英文</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
           </div>
           <div className="space-y-2">
             <label htmlFor="ai-dialog-context" className="text-xs font-bold text-brand-text-muted block">
@@ -13324,16 +13337,30 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2 xl:col-span-2">
-            <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-brand-text-muted block">
-              系统提示词（对话级）
-            </label>
-            <textarea
-              id="ai-dialog-system-prompt"
-              value={form.dialog_system_prompt}
-              onChange={(event) => setForm((prev) => ({ ...prev, dialog_system_prompt: event.target.value }))}
-              className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[100px]`}
-              placeholder="用于统一约束 AI 输出风格与格式（可选）"
-            />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-brand-text-muted block">
+                系统提示词（高级可选）
+              </label>
+              <button
+                type="button"
+                onClick={() => setDialogSystemPromptOpen((prev) => !prev)}
+                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+              >
+                {dialogSystemPromptOpen ? '收起高级配置' : '展开高级配置'}
+              </button>
+            </div>
+            <div className="text-[11px] text-brand-text-muted">
+              该项用于给模型增加全局约束（例如固定输出结构）。默认留空即可，不影响基础功能。
+            </div>
+            {dialogSystemPromptOpen ? (
+              <textarea
+                id="ai-dialog-system-prompt"
+                value={form.dialog_system_prompt}
+                onChange={(event) => setForm((prev) => ({ ...prev, dialog_system_prompt: event.target.value }))}
+                className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[100px]`}
+                placeholder="用于统一约束 AI 输出风格与格式（可选）"
+              />
+            ) : null}
           </div>
           <div className="space-y-2 xl:col-span-2">
             <div className="text-xs font-bold text-brand-text-muted">模型配置管理</div>
@@ -13410,44 +13437,18 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       </div>
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-        <div className="text-xs font-black tracking-wide text-brand-text">OpenAI 兼容接口管理</div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-black tracking-wide text-brand-text">OpenAI 兼容接口管理</div>
+          <button
+            type="button"
+            onClick={() => setCompatDialogOpen(true)}
+            className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+          >
+            添加OpenAI兼容接口
+          </button>
+        </div>
         <div className="text-xs text-brand-text-muted">
           可新增第三方 OpenAI 兼容网关。保存后会写入配置，供提供方选择 `OpenAI 兼容接口` 时快速套用。
-        </div>
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
-          <input
-            value={compatDraft.id}
-            onChange={(event) => setCompatDraft((prev) => ({ ...prev, id: event.target.value }))}
-            className={CONSOLE_INPUT_CLASS}
-            placeholder="接口ID（可选）"
-          />
-          <input
-            value={compatDraft.name}
-            onChange={(event) => setCompatDraft((prev) => ({ ...prev, name: event.target.value }))}
-            className={CONSOLE_INPUT_CLASS}
-            placeholder="接口名称（必填）"
-          />
-          <input
-            value={compatDraft.base_url}
-            onChange={(event) => setCompatDraft((prev) => ({ ...prev, base_url: event.target.value }))}
-            className={CONSOLE_INPUT_MONO_CLASS}
-            placeholder="Base URL（必填）"
-          />
-          <div className="flex gap-2">
-            <input
-              value={compatDraft.model}
-              onChange={(event) => setCompatDraft((prev) => ({ ...prev, model: event.target.value }))}
-              className={CONSOLE_INPUT_CLASS}
-              placeholder="默认模型（可选）"
-            />
-            <button
-              type="button"
-              onClick={addCompatProvider}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-            >
-              添加
-            </button>
-          </div>
         </div>
         {form.custom_compat_providers.length > 0 ? (
           <div className="space-y-2">
@@ -13486,7 +13487,16 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       </div>
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-        <div className="text-xs font-black tracking-wide text-brand-text">提示词管理</div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-black tracking-wide text-brand-text">提示词管理</div>
+          <button
+            type="button"
+            onClick={() => setPromptDialogOpen(true)}
+            className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+          >
+            新增提示词
+          </button>
+        </div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label htmlFor="ai-active-prompt-id" className="text-xs font-bold text-brand-text-muted block">
@@ -13552,52 +13562,144 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             </div>
           ))}
         </div>
+      </div>
 
-        <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 space-y-2">
-          <div className="text-xs font-bold text-brand-text-muted">新增提示词</div>
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-            <input
-              value={promptDraft.id}
-              onChange={(event) => setPromptDraft((prev) => ({ ...prev, id: event.target.value }))}
-              className={CONSOLE_INPUT_MONO_CLASS}
-              placeholder="提示词ID（可选）"
-            />
-            <input
-              value={promptDraft.name}
-              onChange={(event) => setPromptDraft((prev) => ({ ...prev, name: event.target.value }))}
-              className={CONSOLE_INPUT_CLASS}
-              placeholder="提示词名称（可选）"
-            />
-            <div className="relative">
-              <select
-                value={promptDraft.scene}
-                onChange={(event) => setPromptDraft((prev) => ({ ...prev, scene: event.target.value }))}
-                className={CONSOLE_SELECT_CLASS}
+      {compatDialogOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="text-sm font-black tracking-wide">添加 OpenAI 兼容接口</div>
+              <button
+                type="button"
+                onClick={() => setCompatDialogOpen(false)}
+                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
               >
-                <option value="ai_report_export">AI报告导出</option>
-                <option value="false_positive_review">误报复核</option>
-                <option value="scan_planner">扫描调度</option>
-              </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                <input
+                  value={compatDraft.id}
+                  onChange={(event) => setCompatDraft((prev) => ({ ...prev, id: event.target.value }))}
+                  className={CONSOLE_INPUT_MONO_CLASS}
+                  placeholder="接口ID（可选）"
+                />
+                <input
+                  value={compatDraft.name}
+                  onChange={(event) => setCompatDraft((prev) => ({ ...prev, name: event.target.value }))}
+                  className={CONSOLE_INPUT_CLASS}
+                  placeholder="接口名称（必填）"
+                />
+                <input
+                  value={compatDraft.base_url}
+                  onChange={(event) => setCompatDraft((prev) => ({ ...prev, base_url: event.target.value }))}
+                  className={CONSOLE_INPUT_MONO_CLASS}
+                  placeholder="Base URL（必填）"
+                />
+                <input
+                  value={compatDraft.model}
+                  onChange={(event) => setCompatDraft((prev) => ({ ...prev, model: event.target.value }))}
+                  className={CONSOLE_INPUT_CLASS}
+                  placeholder="默认模型（可选）"
+                />
+              </div>
+              <div className="text-xs text-brand-text-muted">
+                保存配置后，该接口会出现在「模型提供方 = OpenAI 兼容接口」的可套用列表中。
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+              <button
+                type="button"
+                onClick={() => setCompatDialogOpen(false)}
+                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const ok = addCompatProvider();
+                  if (ok) setCompatDialogOpen(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition"
+              >
+                确认添加
+              </button>
             </div>
           </div>
-          <textarea
-            value={promptDraft.content}
-            onChange={(event) => setPromptDraft((prev) => ({ ...prev, content: event.target.value }))}
-            className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[96px]`}
-            placeholder="输入新增提示词内容"
-          />
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={addPromptTemplate}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-            >
-              新增提示词
-            </button>
+        </div>
+      ) : null}
+
+      {promptDialogOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="text-sm font-black tracking-wide">新增提示词</div>
+              <button
+                type="button"
+                onClick={() => setPromptDialogOpen(false)}
+                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                <input
+                  value={promptDraft.id}
+                  onChange={(event) => setPromptDraft((prev) => ({ ...prev, id: event.target.value }))}
+                  className={CONSOLE_INPUT_MONO_CLASS}
+                  placeholder="提示词ID（可选）"
+                />
+                <input
+                  value={promptDraft.name}
+                  onChange={(event) => setPromptDraft((prev) => ({ ...prev, name: event.target.value }))}
+                  className={CONSOLE_INPUT_CLASS}
+                  placeholder="提示词名称（可选）"
+                />
+                <div className="relative">
+                  <select
+                    value={promptDraft.scene}
+                    onChange={(event) => setPromptDraft((prev) => ({ ...prev, scene: event.target.value }))}
+                    className={CONSOLE_SELECT_CLASS}
+                  >
+                    <option value="ai_report_export">AI报告导出</option>
+                    <option value="false_positive_review">误报复核</option>
+                    <option value="scan_planner">扫描调度</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+              <textarea
+                value={promptDraft.content}
+                onChange={(event) => setPromptDraft((prev) => ({ ...prev, content: event.target.value }))}
+                className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[160px]`}
+                placeholder="输入新增提示词内容"
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+              <button
+                type="button"
+                onClick={() => setPromptDialogOpen(false)}
+                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const ok = addPromptTemplate();
+                  if (ok) setPromptDialogOpen(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition"
+              >
+                确认新增
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       {testResult ? (
         <div
