@@ -174,6 +174,10 @@ const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
   wih: ['content', 'source', 'site'],
 };
 const TABLE_HEADER_FREEZE_MODULE_IDS = new Set([
+  'task',
+  'task_schedule',
+  'github_task',
+  'github_scheduler',
   'asset_site',
   'asset_domain',
   'asset_ip',
