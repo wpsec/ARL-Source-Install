@@ -10,11 +10,13 @@ from pathlib import Path
 import errno
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
 
 import yaml
+from bson import ObjectId
 from flask import request
 from flask_restx import Namespace, fields
 from werkzeug.utils import secure_filename
@@ -80,6 +82,15 @@ test_ai_config_fields = ns.model(
     'TestAiConfig',
     {
         'ai_config': fields.Raw(required=True, description='AI 配置对象（使用当前表单值，不落盘）'),
+    },
+)
+
+analyze_ai_denoise_fields = ns.model(
+    'AnalyzeAiDenoise',
+    {
+        'module_id': fields.String(required=True, description='模块ID（fileleak/cert/url/vuln/nuclei_result）'),
+        'items': fields.List(fields.Raw, required=True, description='待分析的数据行列表'),
+        'prefer_ai': fields.Boolean(required=False, description='是否优先使用已配置模型（单条详情建议开启）'),
     },
 )
 
@@ -443,6 +454,31 @@ AI_PROVIDER_PRESETS = [
 AI_PROVIDER_PRESET_MAP = {item.get('id'): item for item in AI_PROVIDER_PRESETS}
 AI_PROVIDER_IDS = set(item.get('id') for item in AI_PROVIDER_PRESETS if item.get('id'))
 
+AI_DENOISE_MODULE_SCENE_MAP = {
+    'fileleak': 'ai_denoise_fileleak',
+    'cert': 'ai_denoise_cert',
+    'url': 'ai_denoise_url',
+    'vuln': 'ai_denoise_vuln',
+    'nuclei_result': 'ai_denoise_nuclei_result',
+}
+
+AI_DENOISE_MODULE_LABEL_MAP = {
+    'fileleak': '目录扫描',
+    'cert': 'SSL证书',
+    'url': 'URL信息',
+    'vuln': '风险',
+    'nuclei_result': 'PoC风险',
+}
+
+AI_DENOISE_MAX_ITEMS = 120
+AI_DENOISE_MAX_ITEM_TEXT_LEN = 5000
+AI_DENOISE_RESULT_LEVEL_WEIGHT = {
+    'disabled': -1,
+    'safe': 0,
+    'suspicious': 1,
+    'danger': 2,
+}
+
 
 def _default_ai_prompt_templates():
     """
@@ -467,6 +503,56 @@ def _default_ai_prompt_templates():
             'content': (
                 "你是安全误报复核助手。"
                 "请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': 'default_ai_denoise_fileleak',
+            'name': '默认AI去噪-目录扫描',
+            'scene': 'ai_denoise_fileleak',
+            'content': (
+                "你是目录扫描去噪助手。请基于URL路径、状态码、标题和返回体长度，输出风险结论：正常/可疑/危险。"
+                "必须给出证据要点与修复建议，避免夸大。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': 'default_ai_denoise_cert',
+            'name': '默认AI去噪-SSL证书',
+            'scene': 'ai_denoise_cert',
+            'content': (
+                "你是证书安全分析助手。请基于证书有效期、签发信息、协议与套件特征，给出证书安全结论，"
+                "并输出到期风险依据与处置建议。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': 'default_ai_denoise_url',
+            'name': '默认AI去噪-URL信息',
+            'scene': 'ai_denoise_url',
+            'content': (
+                "你是URL风险去噪助手。请基于URL路径、状态码、标题和上下文，输出安全/可疑/危险结论，"
+                "并给出依据与建议。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': 'default_ai_denoise_vuln',
+            'name': '默认AI去噪-风险',
+            'scene': 'ai_denoise_vuln',
+            'content': (
+                "你是漏洞误报复核助手。请根据风险等级、目标、验证证据与规则上下文，判断可信或疑似误报，"
+                "并输出处置建议。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': 'default_ai_denoise_poc',
+            'name': '默认AI去噪-PoC风险',
+            'scene': 'ai_denoise_nuclei_result',
+            'content': (
+                "你是PoC风险复核助手。请结合扫描器、规则ID、风险等级、命中URL与验证信息判断可信度，"
+                "识别疑似误报并给出复测建议。"
             ),
             'updated_at': '',
         },
@@ -562,9 +648,19 @@ def _normalize_ai_prompt_templates(raw_templates):
                 }
             )
 
-    if templates:
-        return templates
-    return _default_ai_prompt_templates()
+    default_templates = _default_ai_prompt_templates()
+    if not templates:
+        return default_templates
+
+    existing_ids = set(str(item.get('id') or '').strip() for item in templates if item.get('id'))
+    for item in default_templates:
+        template_id = str(item.get('id') or '').strip()
+        if not template_id or template_id in existing_ids:
+            continue
+        templates.append(dict(item))
+        existing_ids.add(template_id)
+
+    return templates
 
 
 def _default_ai_model_profiles():
@@ -663,6 +759,57 @@ def _pick_active_ai_model_profile(model_profiles, active_profile_id=''):
     return profiles[0]
 
 
+def _normalize_ai_denoise_modules(raw_modules):
+    """
+    规范化 AI 去噪模块开关（默认全部开启）。
+    """
+    normalized = {}
+    source = raw_modules if isinstance(raw_modules, dict) else {}
+    for module_id in AI_DENOISE_MODULE_SCENE_MAP:
+        if module_id in source:
+            normalized[module_id] = _safe_bool(source.get(module_id), True)
+        else:
+            normalized[module_id] = True
+    return normalized
+
+
+def _normalize_ai_denoise_prompt_ids(raw_prompt_ids, prompt_templates):
+    """
+    规范化 AI 去噪模块提示词绑定。
+    """
+    source = raw_prompt_ids if isinstance(raw_prompt_ids, dict) else {}
+    template_id_set = set()
+    scene_prompt_ids = {}
+    for item in prompt_templates or []:
+        if not isinstance(item, dict):
+            continue
+        prompt_id = str(item.get('id') or '').strip()
+        scene = str(item.get('scene') or '').strip()
+        if not prompt_id:
+            continue
+        template_id_set.add(prompt_id)
+        if scene and scene not in scene_prompt_ids:
+            scene_prompt_ids[scene] = prompt_id
+
+    fallback_prompt_id = ''
+    if prompt_templates:
+        fallback_prompt_id = str((prompt_templates[0] or {}).get('id') or '').strip()
+
+    normalized = {}
+    for module_id, scene in AI_DENOISE_MODULE_SCENE_MAP.items():
+        candidate = str(source.get(module_id) or '').strip()
+        if candidate and candidate in template_id_set:
+            normalized[module_id] = candidate
+            continue
+        scene_prompt_id = str(scene_prompt_ids.get(scene) or '').strip()
+        if scene_prompt_id:
+            normalized[module_id] = scene_prompt_id
+            continue
+        normalized[module_id] = fallback_prompt_id
+
+    return normalized
+
+
 def _extract_ai_config(config_obj):
     """
     从完整配置中提取 AI 管理配置。
@@ -682,6 +829,11 @@ def _extract_ai_config(config_obj):
     active_prompt_id = str(ai_conf.get('ACTIVE_PROMPT_ID') or '').strip()
     if active_prompt_id not in prompt_ids:
         active_prompt_id = prompt_ids[0] if prompt_ids else ''
+    ai_denoise_modules = _normalize_ai_denoise_modules(ai_conf.get('AI_DENOISE_MODULES'))
+    ai_denoise_prompt_ids = _normalize_ai_denoise_prompt_ids(
+        ai_conf.get('AI_DENOISE_PROMPT_IDS'),
+        prompt_templates,
+    )
 
     return {
         'enable': _safe_bool(ai_conf.get('ENABLE'), True),
@@ -703,6 +855,9 @@ def _extract_ai_config(config_obj):
         'active_prompt_id': active_prompt_id,
         'prompt_templates': prompt_templates,
         'custom_compat_providers': _normalize_ai_custom_providers(ai_conf.get('CUSTOM_COMPAT_PROVIDERS')),
+        'ai_denoise_enable': _safe_bool(ai_conf.get('AI_DENOISE_ENABLE'), True),
+        'ai_denoise_modules': ai_denoise_modules,
+        'ai_denoise_prompt_ids': ai_denoise_prompt_ids,
     }
 
 
@@ -729,6 +884,11 @@ def _merge_ai_config(config_obj, ai_config):
     active_prompt_id = str(ai_config.get('active_prompt_id') or '').strip()
     if active_prompt_id not in prompt_ids:
         active_prompt_id = prompt_ids[0] if prompt_ids else ''
+    ai_denoise_modules = _normalize_ai_denoise_modules(ai_config.get('ai_denoise_modules'))
+    ai_denoise_prompt_ids = _normalize_ai_denoise_prompt_ids(
+        ai_config.get('ai_denoise_prompt_ids'),
+        prompt_templates,
+    )
 
     ai_conf['ENABLE'] = _safe_bool(ai_config.get('enable'), True)
     ai_conf['MODEL_PROFILES'] = model_profiles
@@ -751,6 +911,9 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['CUSTOM_COMPAT_PROVIDERS'] = _normalize_ai_custom_providers(
         ai_config.get('custom_compat_providers')
     )
+    ai_conf['AI_DENOISE_ENABLE'] = _safe_bool(ai_config.get('ai_denoise_enable'), True)
+    ai_conf['AI_DENOISE_MODULES'] = ai_denoise_modules
+    ai_conf['AI_DENOISE_PROMPT_IDS'] = ai_denoise_prompt_ids
 
     return config_obj
 
@@ -861,6 +1024,836 @@ def _test_ai_config_connectivity(ai_config):
             },
             'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
+
+
+def _safe_int_any(value, default_value=0):
+    try:
+        if isinstance(value, str) and not value.strip():
+            return int(default_value)
+        return int(float(value))
+    except Exception:
+        return int(default_value)
+
+
+def _safe_float_any(value, default_value=0.0):
+    try:
+        if isinstance(value, str) and not value.strip():
+            return float(default_value)
+        return float(value)
+    except Exception:
+        return float(default_value)
+
+
+def _truncate_text(text, max_length=220):
+    value = str(text or '').strip()
+    if not value:
+        return ''
+    if len(value) <= max_length:
+        return value
+    return '{}...'.format(value[:max_length])
+
+
+def _normalize_string_list_value(value, max_items=6, max_item_len=180):
+    if value is None:
+        return []
+
+    items = []
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, tuple):
+        items = list(value)
+    elif isinstance(value, str):
+        items = [item for item in re.split(r'[\r\n]+', value) if str(item or '').strip()]
+    else:
+        items = [value]
+
+    cleaned = []
+    seen = set()
+    for item in items:
+        if isinstance(item, dict):
+            text = _truncate_text(json.dumps(item, ensure_ascii=False), max_item_len)
+        elif isinstance(item, (list, tuple)):
+            text = _truncate_text(', '.join(str(x or '').strip() for x in item if str(x or '').strip()), max_item_len)
+        else:
+            text = _truncate_text(str(item or '').strip(), max_item_len)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        cleaned.append(text)
+        if len(cleaned) >= max_items:
+            break
+    return cleaned
+
+
+def _normalize_item_text(value, max_length=AI_DENOISE_MAX_ITEM_TEXT_LEN):
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return _truncate_text(value, max_length)
+    if isinstance(value, (int, float, bool)):
+        return _truncate_text(str(value), max_length)
+    try:
+        return _truncate_text(json.dumps(value, ensure_ascii=False), max_length)
+    except Exception:
+        return _truncate_text(str(value), max_length)
+
+
+def _extract_row_key(item, index=0):
+    if isinstance(item, dict):
+        for key in ('_row_key', '_id', 'id', 'task_id', 'job_id'):
+            value = item.get(key)
+            if isinstance(value, ObjectId):
+                return str(value)
+            if isinstance(value, dict):
+                oid = str(value.get('$oid') or value.get('oid') or '').strip()
+                if oid:
+                    return oid
+            if isinstance(value, (str, int, float)):
+                text = str(value).strip()
+                if text:
+                    return text
+    return 'row_{}'.format(index + 1)
+
+
+def _normalize_ai_denoise_result_level(value, default_value='safe'):
+    text = str(value or '').strip().lower()
+    if text in ('disabled', 'close', 'off', '关闭', '已关闭'):
+        return 'disabled'
+    if text in ('danger', 'high', 'critical', '严重', '危险', '高危', '危急'):
+        return 'danger'
+    if text in ('suspicious', 'medium', 'manual_review', '可疑', '中危', '待复核'):
+        return 'suspicious'
+    if text in ('safe', 'normal', 'low', 'pass', '安全', '正常', '低危', '可信'):
+        return 'safe'
+    return default_value
+
+
+def _merge_ai_denoise_result_level(current_level, next_level):
+    current = _normalize_ai_denoise_result_level(current_level, 'safe')
+    candidate = _normalize_ai_denoise_result_level(next_level, 'safe')
+    if AI_DENOISE_RESULT_LEVEL_WEIGHT.get(candidate, 0) > AI_DENOISE_RESULT_LEVEL_WEIGHT.get(current, 0):
+        return candidate
+    return current
+
+
+def _normalize_risk_level_text(value):
+    text = str(value or '').strip().lower()
+    if any(word in text for word in ('critical', '严重', 'critical', 'urgent')):
+        return '严重'
+    if any(word in text for word in ('high', '高', '危急')):
+        return '高'
+    if any(word in text for word in ('medium', '中')):
+        return '中'
+    if any(word in text for word in ('low', '低', 'info', '信息')):
+        return '低'
+    return '中'
+
+
+def _normalize_trust_level_text(value):
+    text = str(value or '').strip().lower()
+    if any(word in text for word in ('fp', '误报', 'suspected', '疑似')):
+        return '疑似误报'
+    return '可信'
+
+
+def _build_ai_denoise_display_text(module_id, result_level, risk_level='中', trust='可信', cert_expire_days=None):
+    if result_level == 'disabled':
+        return '已关闭'
+
+    module_id = str(module_id or '').strip()
+    if module_id == 'fileleak':
+        mapping = {'safe': '正常', 'suspicious': '可疑', 'danger': '危险'}
+        return mapping.get(result_level, '正常')
+    if module_id == 'url':
+        mapping = {'safe': '安全', 'suspicious': '可疑', 'danger': '危险'}
+        return mapping.get(result_level, '安全')
+    if module_id == 'cert':
+        mapping = {'safe': '安全', 'suspicious': '可疑', 'danger': '危险'}
+        base = mapping.get(result_level, '安全')
+        if cert_expire_days is None:
+            return base
+        days_text = '已过期' if cert_expire_days < 0 else '剩余{}天'.format(cert_expire_days)
+        return '{}（{}）'.format(base, days_text)
+    if module_id in ('vuln', 'nuclei_result'):
+        return '{}/{}'.format(risk_level or '中', trust or '可信')
+    return '已分析'
+
+
+def _parse_datetime_text(value):
+    text = str(value or '').strip()
+    if not text:
+        return None
+
+    formats = [
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%dT%H:%M:%SZ',
+        '%Y-%m-%d',
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            continue
+
+    normalized = text
+    if normalized.endswith('Z'):
+        normalized = normalized[:-1] + '+00:00'
+    try:
+        return datetime.fromisoformat(normalized)
+    except Exception:
+        return None
+
+
+def _rule_analyze_fileleak_item(item):
+    url_text = _normalize_item_text(item.get('url'), 900)
+    title_text = _normalize_item_text(item.get('title'), 300)
+    status_code = _safe_int_any(item.get('status_code'), 0)
+    content_length = _safe_int_any(item.get('content_length'), 0)
+    lower_url = url_text.lower()
+    lower_title = title_text.lower()
+
+    sensitive_keywords = (
+        'admin', 'backup', 'bak', '.sql', '.zip', '.tar', '.gz', '.7z', '.env',
+        'config', 'secret', 'token', 'password', 'passwd', 'credential', 'swagger', 'actuator', '.git'
+    )
+
+    result_level = 'safe'
+    evidence = []
+    if any(keyword in lower_url for keyword in sensitive_keywords) and status_code in (200, 201, 206):
+        result_level = 'danger'
+        evidence.append('URL 含敏感路径关键字且返回 {}。'.format(status_code))
+    elif any(keyword in lower_url for keyword in sensitive_keywords) and status_code in (401, 403):
+        result_level = 'suspicious'
+        evidence.append('敏感路径被鉴权拦截（{}），建议进一步验证。'.format(status_code))
+
+    if 'index of' in lower_title and status_code in (200, 206):
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+        evidence.append('页面标题存在目录索引特征。')
+
+    if content_length >= 2 * 1024 * 1024 and status_code in (200, 206):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('响应体积较大（{} 字节），可能存在打包文件暴露。'.format(content_length))
+
+    if not evidence:
+        evidence.append('未发现显著敏感目录暴露特征。')
+
+    suggestions = []
+    if result_level == 'danger':
+        suggestions.extend([
+            '立即下线相关目录并核查是否包含备份/配置/密钥文件。',
+            '为目录访问添加鉴权和最小暴露策略，补充WAF规则。',
+        ])
+    elif result_level == 'suspicious':
+        suggestions.extend([
+            '使用认证账户与不同来源IP复测，确认是否存在越权访问。',
+            '对疑似目录启用访问日志审计并限制目录遍历。',
+        ])
+    else:
+        suggestions.append('保持当前最小暴露策略，定期巡检目录字典命中结果。')
+
+    display_text = _build_ai_denoise_display_text('fileleak', result_level)
+    summary = '目录扫描分析结果：{}。URL: {}'.format(display_text, url_text or '-')
+    return {
+        'result_level': result_level,
+        'risk_level': '高' if result_level == 'danger' else ('中' if result_level == 'suspicious' else '低'),
+        'trust': '-',
+        'summary': summary,
+        'evidence': evidence[:6],
+        'suggestions': suggestions[:6],
+        'display_text': display_text,
+    }
+
+
+def _rule_analyze_url_item(item):
+    url_text = _normalize_item_text(item.get('url'), 900)
+    title_text = _normalize_item_text(item.get('title'), 300)
+    status_code = _safe_int_any(item.get('status_code'), 0)
+    lower_url = url_text.lower()
+    lower_title = title_text.lower()
+
+    dangerous_patterns = (
+        'token=', 'apikey=', 'api_key=', 'password=', 'passwd=', 'secret=', 'debug=1',
+        '/.git', '/swagger', '/v2/api-docs', '/actuator', '/phpinfo', '/admin'
+    )
+    suspicious_patterns = (
+        '/login', '/manage', '/console', '/upload', '/download', '/backup', '/test'
+    )
+
+    result_level = 'safe'
+    evidence = []
+    if any(pattern in lower_url for pattern in dangerous_patterns) and status_code in (200, 201, 206):
+        result_level = 'danger'
+        evidence.append('URL 命中敏感参数/路径特征并返回 {}。'.format(status_code))
+    elif any(pattern in lower_url for pattern in suspicious_patterns) and status_code in (200, 401, 403):
+        result_level = 'suspicious'
+        evidence.append('URL 命中管理/调试路径特征，建议人工复核。')
+
+    if 'index of' in lower_title or 'swagger ui' in lower_title:
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('标题包含目录索引或接口文档特征。')
+
+    if not evidence:
+        evidence.append('未发现明显的高风险 URL 特征。')
+
+    suggestions = []
+    if result_level == 'danger':
+        suggestions.extend([
+            '立即限制敏感 URL 访问并核查是否存在凭据泄漏。',
+            '对外暴露接口加鉴权、限流与最小权限控制。',
+        ])
+    elif result_level == 'suspicious':
+        suggestions.extend([
+            '结合请求头、鉴权状态和业务上下文做二次验证。',
+            '确认是否为测试接口或历史遗留调试入口。',
+        ])
+    else:
+        suggestions.append('保持 URL 最小暴露策略并持续监控新增路径。')
+
+    display_text = _build_ai_denoise_display_text('url', result_level)
+    summary = 'URL 分析结果：{}。URL: {}'.format(display_text, url_text or '-')
+    return {
+        'result_level': result_level,
+        'risk_level': '高' if result_level == 'danger' else ('中' if result_level == 'suspicious' else '低'),
+        'trust': '-',
+        'summary': summary,
+        'evidence': evidence[:6],
+        'suggestions': suggestions[:6],
+        'display_text': display_text,
+    }
+
+
+def _rule_analyze_cert_item(item):
+    cert_obj = item.get('cert') if isinstance(item.get('cert'), dict) else {}
+    validity = cert_obj.get('validity') if isinstance(cert_obj.get('validity'), dict) else {}
+    expire_text = str(validity.get('end') or '').strip()
+    expire_time = _parse_datetime_text(expire_text)
+    expire_days = None
+    if expire_time:
+        expire_days = int((expire_time - datetime.now(expire_time.tzinfo)).total_seconds() // 86400)
+
+    result_level = 'safe'
+    evidence = []
+    if expire_days is not None:
+        if expire_days < 0:
+            result_level = 'danger'
+            evidence.append('证书已过期 {} 天。'.format(abs(expire_days)))
+        elif expire_days <= 30:
+            result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+            evidence.append('证书将在 {} 天内过期。'.format(expire_days))
+        else:
+            evidence.append('证书有效期剩余 {} 天。'.format(expire_days))
+    else:
+        evidence.append('未识别到证书到期时间字段。')
+
+    ssl_security = cert_obj.get('ssl_security') if isinstance(cert_obj.get('ssl_security'), dict) else {}
+    protocol_names = []
+    if isinstance(ssl_security.get('protocol_names'), list):
+        protocol_names.extend(_normalize_string_list_value(ssl_security.get('protocol_names'), max_items=12))
+    if isinstance(ssl_security.get('protocols'), list):
+        for entry in ssl_security.get('protocols'):
+            if isinstance(entry, dict):
+                text = str(entry.get('name') or '').strip()
+                if text:
+                    protocol_names.append(text)
+
+    weak_protocols = []
+    for protocol in protocol_names:
+        lower_protocol = protocol.lower()
+        if lower_protocol in ('sslv2', 'sslv3'):
+            weak_protocols.append(protocol)
+        elif lower_protocol in ('tlsv1', 'tlsv1.0', 'tlsv1.1'):
+            weak_protocols.append(protocol)
+    if weak_protocols:
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('检测到弱协议：{}。'.format(', '.join(sorted(set(weak_protocols)))))
+
+    least_strength = str(ssl_security.get('least_strength') or '').strip().lower()
+    if least_strength in ('weak', 'low'):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('最弱套件强度为 {}。'.format(least_strength))
+
+    suggestions = []
+    if result_level == 'danger':
+        suggestions.extend([
+            '立即替换或续签证书，避免业务中断与中间人风险。',
+            '同步检查证书链和自动续签任务，确保下次更新前完成部署。',
+        ])
+    elif result_level == 'suspicious':
+        suggestions.extend([
+            '建议关闭 TLS1.0/1.1 与 SSLv3 等弱协议，仅保留现代协议。',
+            '按基线收敛弱加密套件，优先启用 ECDHE + AEAD 套件。',
+        ])
+    else:
+        suggestions.append('证书状态整体正常，建议保持定期轮换与到期预警。')
+
+    display_text = _build_ai_denoise_display_text('cert', result_level, cert_expire_days=expire_days)
+    summary = '证书分析结果：{}。到期时间：{}'.format(display_text, expire_text or '-')
+    return {
+        'result_level': result_level,
+        'risk_level': '高' if result_level == 'danger' else ('中' if result_level == 'suspicious' else '低'),
+        'trust': '-',
+        'summary': summary,
+        'evidence': evidence[:8],
+        'suggestions': suggestions[:6],
+        'display_text': display_text,
+        'cert_expire_days': expire_days,
+        'cert_expire_at': expire_text or '-',
+    }
+
+
+def _rule_analyze_vuln_item(item, module_id='vuln'):
+    vul_name = _normalize_item_text(item.get('vul_name') or item.get('vuln_name'), 320)
+    target_text = _normalize_item_text(item.get('target') or item.get('vuln_url') or '-', 420)
+    verify_text = _normalize_item_text(
+        item.get('verify_data') or item.get('credential') or item.get('verify_obj') or '',
+        600
+    )
+    severity_candidates = [
+        item.get('vuln_severity'),
+        item.get('severity'),
+        item.get('risk_level'),
+        item.get('level'),
+        item.get('plg_type'),
+    ]
+    risk_level = '中'
+    for candidate in severity_candidates:
+        normalized = _normalize_risk_level_text(candidate)
+        if normalized:
+            risk_level = normalized
+            break
+
+    result_level = 'suspicious'
+    if risk_level in ('高', '严重'):
+        result_level = 'danger'
+    elif risk_level == '低':
+        result_level = 'safe'
+
+    trust = '可信'
+    lower_name = vul_name.lower()
+    if not verify_text or verify_text == '-':
+        if 'afrog 漏洞' in vul_name or '可能存在' in vul_name or 'suspected' in lower_name:
+            trust = '疑似误报'
+            result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+    if target_text in ('', '-'):
+        trust = '疑似误报'
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+
+    evidence = [
+        '风险名称：{}。'.format(vul_name or '-'),
+        '风险等级：{}。'.format(risk_level),
+    ]
+    if verify_text and verify_text != '-':
+        evidence.append('存在验证信息，长度 {}。'.format(len(verify_text)))
+    else:
+        evidence.append('缺少明确验证信息。')
+
+    suggestions = []
+    if trust == '疑似误报':
+        suggestions.extend([
+            '建议使用原始插件或手工 PoC 二次复测，确认是否真实可利用。',
+            '结合业务鉴权与返回差异补充证据后再定级。',
+        ])
+    else:
+        suggestions.extend([
+            '按风险等级优先修复并保留复现截图/请求响应证据。',
+            '修复后执行复测任务，确保风险状态可闭环。',
+        ])
+
+    display_text = _build_ai_denoise_display_text(module_id, result_level, risk_level=risk_level, trust=trust)
+    summary = '{} 分析结果：{}。目标：{}'.format(
+        AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or '风险',
+        display_text,
+        target_text or '-',
+    )
+    return {
+        'result_level': result_level,
+        'risk_level': risk_level,
+        'trust': trust,
+        'summary': summary,
+        'evidence': evidence[:8],
+        'suggestions': suggestions[:6],
+        'display_text': display_text,
+    }
+
+
+def _build_ai_denoise_rule_result(module_id, item):
+    if module_id == 'fileleak':
+        return _rule_analyze_fileleak_item(item)
+    if module_id == 'cert':
+        return _rule_analyze_cert_item(item)
+    if module_id == 'url':
+        return _rule_analyze_url_item(item)
+    if module_id == 'vuln':
+        return _rule_analyze_vuln_item(item, module_id='vuln')
+    if module_id == 'nuclei_result':
+        return _rule_analyze_vuln_item(item, module_id='nuclei_result')
+    return {
+        'result_level': 'safe',
+        'risk_level': '低',
+        'trust': '-',
+        'summary': '未匹配到模块分析器，已回退为安全判定。',
+        'evidence': ['模块 {} 暂无分析规则。'.format(module_id)],
+        'suggestions': ['请在 AI 管理中补充该模块提示词并开启功能。'],
+        'display_text': '已分析',
+    }
+
+
+def _resolve_ai_prompt_content(prompt_templates, prompt_id, module_id):
+    if not isinstance(prompt_templates, list):
+        prompt_templates = []
+
+    for item in prompt_templates:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get('id') or '').strip() == str(prompt_id or '').strip():
+            return str(item.get('content') or '').strip()
+
+    target_scene = AI_DENOISE_MODULE_SCENE_MAP.get(module_id, '')
+    for item in prompt_templates:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get('scene') or '').strip() == target_scene:
+            return str(item.get('content') or '').strip()
+    return ''
+
+
+def _extract_json_object_from_text(raw_text):
+    text = str(raw_text or '').strip()
+    if not text:
+        return None
+
+    fence_match = re.search(r'```(?:json)?\s*(\{[\s\S]*\})\s*```', text, re.IGNORECASE)
+    if fence_match:
+        text = fence_match.group(1).strip()
+
+    start = text.find('{')
+    end = text.rfind('}')
+    if start >= 0 and end > start:
+        candidate = text[start:end + 1]
+    else:
+        candidate = text
+
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        return None
+    return None
+
+
+def _build_ai_denoise_context(module_id, item):
+    if module_id == 'fileleak':
+        return {
+            'url': _normalize_item_text(item.get('url'), 1200),
+            'title': _normalize_item_text(item.get('title'), 400),
+            'status_code': _safe_int_any(item.get('status_code'), 0),
+            'content_length': _safe_int_any(item.get('content_length'), 0),
+            'source': _normalize_item_text(item.get('source'), 200),
+        }
+    if module_id == 'url':
+        return {
+            'url': _normalize_item_text(item.get('url'), 1200),
+            'title': _normalize_item_text(item.get('title'), 400),
+            'status_code': _safe_int_any(item.get('status_code'), 0),
+            'content_length': _safe_int_any(item.get('content_length'), 0),
+            'source': _normalize_item_text(item.get('source'), 200),
+        }
+    if module_id == 'cert':
+        cert_obj = item.get('cert') if isinstance(item.get('cert'), dict) else {}
+        validity = cert_obj.get('validity') if isinstance(cert_obj.get('validity'), dict) else {}
+        ssl_security = cert_obj.get('ssl_security') if isinstance(cert_obj.get('ssl_security'), dict) else {}
+        return {
+            'host': _normalize_item_text(item.get('host') or item.get('ip'), 260),
+            'domain': _normalize_item_text(item.get('domain') or item.get('sni_domain'), 260),
+            'validity_start': _normalize_item_text(validity.get('start'), 60),
+            'validity_end': _normalize_item_text(validity.get('end'), 60),
+            'least_strength': _normalize_item_text(ssl_security.get('least_strength'), 80),
+            'protocol_names': _normalize_string_list_value(ssl_security.get('protocol_names'), max_items=10),
+            'issuer_dn': _normalize_item_text(cert_obj.get('issuer_dn'), 420),
+            'subject_dn': _normalize_item_text(cert_obj.get('subject_dn'), 420),
+        }
+    if module_id == 'vuln':
+        return {
+            'vul_name': _normalize_item_text(item.get('vul_name'), 260),
+            'plg_type': _normalize_item_text(item.get('plg_type'), 120),
+            'target': _normalize_item_text(item.get('target'), 420),
+            'credential': _normalize_item_text(item.get('credential'), 800),
+            'save_date': _normalize_item_text(item.get('save_date'), 60),
+        }
+    if module_id == 'nuclei_result':
+        return {
+            'scanner_type': _normalize_item_text(item.get('scanner_type'), 80),
+            'rule_id': _normalize_item_text(item.get('rule_id'), 200),
+            'target': _normalize_item_text(item.get('target'), 420),
+            'vuln_url': _normalize_item_text(item.get('vuln_url'), 420),
+            'vuln_name': _normalize_item_text(item.get('vuln_name'), 260),
+            'vuln_severity': _normalize_item_text(item.get('vuln_severity'), 60),
+            'verify_data': _normalize_item_text(item.get('verify_data'), 1200),
+        }
+    return {'raw': _normalize_item_text(item, 1800)}
+
+
+def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result):
+    base_url = str(active_profile.get('base_url') or '').strip()
+    api_key = str(active_profile.get('api_key') or '').strip()
+    model_name = str(active_profile.get('model') or '').strip()
+    timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=8)
+    if not base_url or not api_key or not model_name:
+        return None, '模型配置不完整'
+
+    prompt_text = str(ai_prompt or '').strip()
+    if not prompt_text:
+        prompt_text = '你是网络资产风险分析助手，请输出结构化审计结论。'
+
+    context = _build_ai_denoise_context(module_id, item)
+    user_payload = {
+        'module_id': module_id,
+        'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+        'item': context,
+        'rule_reference': {
+            'result_level': rule_result.get('result_level'),
+            'risk_level': rule_result.get('risk_level'),
+            'trust': rule_result.get('trust'),
+            'summary': rule_result.get('summary'),
+        },
+        'output_requirement': {
+            'language': 'zh-CN',
+            'format': {
+                'result_level': 'safe|suspicious|danger',
+                'risk_level': '低|中|高|严重',
+                'trust': '可信|疑似误报',
+                'summary': '一句话结论',
+                'evidence': ['证据1', '证据2'],
+                'suggestions': ['建议1', '建议2'],
+            },
+        },
+    }
+    request_body = {
+        'model': model_name,
+        'temperature': min(max(_safe_float(active_profile.get('temperature'), 0.2, min_value=0.0), 0.0), 1.0),
+        'max_tokens': max(400, min(_safe_int(active_profile.get('max_tokens'), 1200, min_value=200), 1800)),
+        'messages': [
+            {
+                'role': 'system',
+                'content': '{}\n仅输出 JSON 对象，不要输出 Markdown 或解释文本。'.format(prompt_text),
+            },
+            {
+                'role': 'user',
+                'content': json.dumps(user_payload, ensure_ascii=False),
+            },
+        ],
+    }
+    request_url = '{}/chat/completions'.format(base_url.rstrip('/'))
+    headers = {
+        'Authorization': 'Bearer {}'.format(api_key),
+        'Content-Type': 'application/json',
+    }
+
+    try:
+        conn = utils.http_req(request_url, 'post', headers=headers, json=request_body, timeout=(8, timeout_sec))
+        status_code = _safe_int_any(getattr(conn, 'status_code', 0), 0)
+        payload = {}
+        try:
+            payload = conn.json() if conn is not None else {}
+        except Exception:
+            payload = {}
+
+        if status_code != 200:
+            err_message = ''
+            if isinstance(payload, dict):
+                error_obj = payload.get('error')
+                if isinstance(error_obj, dict):
+                    err_message = str(error_obj.get('message') or '').strip()
+                if not err_message:
+                    err_message = str(payload.get('message') or '').strip()
+            return None, err_message or 'HTTP {}'.format(status_code)
+
+        choices = payload.get('choices', []) if isinstance(payload, dict) else []
+        message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
+        content_text = ''
+        if isinstance(message_obj, dict):
+            content_text = str(message_obj.get('content') or '').strip()
+        parsed = _extract_json_object_from_text(content_text)
+        if not isinstance(parsed, dict):
+            return None, 'AI 返回格式不可解析'
+        return parsed, ''
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _normalize_ai_denoise_output(module_id, ai_output, rule_result):
+    if not isinstance(ai_output, dict):
+        return dict(rule_result)
+
+    merged = dict(rule_result)
+    merged['result_level'] = _normalize_ai_denoise_result_level(
+        ai_output.get('result_level') or ai_output.get('level') or ai_output.get('status'),
+        rule_result.get('result_level', 'safe')
+    )
+    merged['risk_level'] = _normalize_risk_level_text(
+        ai_output.get('risk_level') or ai_output.get('severity') or rule_result.get('risk_level')
+    )
+    if module_id in ('vuln', 'nuclei_result'):
+        merged['trust'] = _normalize_trust_level_text(ai_output.get('trust') or ai_output.get('review_status'))
+    else:
+        merged['trust'] = rule_result.get('trust', '-')
+
+    summary = _normalize_item_text(ai_output.get('summary') or ai_output.get('analysis') or '', 600)
+    if summary:
+        merged['summary'] = summary
+
+    evidence = _normalize_string_list_value(
+        ai_output.get('evidence') if ai_output.get('evidence') is not None else ai_output.get('basis'),
+        max_items=8,
+        max_item_len=260
+    )
+    suggestions = _normalize_string_list_value(
+        ai_output.get('suggestions') if ai_output.get('suggestions') is not None else ai_output.get('advice'),
+        max_items=8,
+        max_item_len=260
+    )
+    if evidence:
+        merged['evidence'] = evidence
+    if suggestions:
+        merged['suggestions'] = suggestions
+
+    merged['display_text'] = _build_ai_denoise_display_text(
+        module_id,
+        merged.get('result_level'),
+        risk_level=merged.get('risk_level', '中'),
+        trust=merged.get('trust', '可信'),
+        cert_expire_days=merged.get('cert_expire_days'),
+    )
+    return merged
+
+
+def _normalize_ai_denoise_items(raw_items):
+    if not isinstance(raw_items, list):
+        return []
+    items = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            items.append(item)
+        else:
+            items.append({'value': _normalize_item_text(item, 1200)})
+        if len(items) >= AI_DENOISE_MAX_ITEMS:
+            break
+    return items
+
+
+def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
+    module_id = str(module_id or '').strip()
+    normalized_items = _normalize_ai_denoise_items(items)
+
+    ai_denoise_enable = _safe_bool(ai_config.get('ai_denoise_enable'), True)
+    module_flags = _normalize_ai_denoise_modules(ai_config.get('ai_denoise_modules'))
+    module_enabled = bool(module_flags.get(module_id, True))
+    prompt_templates = _normalize_ai_prompt_templates(ai_config.get('prompt_templates'))
+    prompt_ids = _normalize_ai_denoise_prompt_ids(ai_config.get('ai_denoise_prompt_ids'), prompt_templates)
+    prompt_id = str(prompt_ids.get(module_id) or '').strip()
+    prompt_content = _resolve_ai_prompt_content(prompt_templates, prompt_id, module_id)
+
+    model_profiles = _normalize_ai_model_profiles(ai_config.get('model_profiles'), legacy_ai_conf=ai_config)
+    active_model_profile_id = str(ai_config.get('active_model_profile_id') or '').strip()
+    active_profile = _pick_active_ai_model_profile(model_profiles, active_model_profile_id)
+    ai_model_ready = bool(
+        _safe_bool(ai_config.get('enable'), True)
+        and str(active_profile.get('base_url') or '').strip()
+        and str(active_profile.get('api_key') or '').strip()
+        and str(active_profile.get('model') or '').strip()
+    )
+
+    # 列表批量分析默认走规则，详情场景（单条）按需尝试模型，避免列表页被外部接口阻塞。
+    try_use_ai = bool(prefer_ai and ai_model_ready and ai_denoise_enable and module_enabled and len(normalized_items) <= 3)
+    now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    results = []
+    for index, item in enumerate(normalized_items):
+        row_key = _extract_row_key(item, index)
+        rule_result = _build_ai_denoise_rule_result(module_id, item)
+        source = 'rule'
+
+        if not ai_denoise_enable or not module_enabled:
+            disabled_summary = 'AI 去噪功能已关闭，可在 AI 管理中开启后重试。'
+            results.append(
+                {
+                    'row_key': row_key,
+                    'module_id': module_id,
+                    'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+                    'result_level': 'disabled',
+                    'risk_level': rule_result.get('risk_level', '低'),
+                    'trust': rule_result.get('trust', '-'),
+                    'display_text': '已关闭',
+                    'summary': disabled_summary,
+                    'evidence': ['当前模块或全局 AI 去噪开关关闭。'],
+                    'suggestions': ['前往 AI 管理开启对应模块后可继续分析。'],
+                    'source': 'disabled',
+                    'prompt_id': prompt_id,
+                    'analyzed_at': now_text,
+                }
+            )
+            continue
+
+        final_result = dict(rule_result)
+        if try_use_ai:
+            ai_output, ai_error = _try_run_ai_denoise(
+                module_id=module_id,
+                item=item,
+                ai_prompt=prompt_content,
+                active_profile=active_profile,
+                rule_result=rule_result,
+            )
+            if ai_output:
+                final_result = _normalize_ai_denoise_output(module_id, ai_output, rule_result)
+                source = 'ai'
+            else:
+                source = 'rule'
+                if ai_error:
+                    fallback_evidence = _normalize_string_list_value(final_result.get('evidence'), max_items=6)
+                    fallback_evidence.insert(0, 'AI 调用失败，已回退规则分析：{}'.format(_truncate_text(ai_error, 120)))
+                    final_result['evidence'] = fallback_evidence[:8]
+
+        results.append(
+            {
+                'row_key': row_key,
+                'module_id': module_id,
+                'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+                'result_level': _normalize_ai_denoise_result_level(final_result.get('result_level'), 'safe'),
+                'risk_level': final_result.get('risk_level') or '中',
+                'trust': final_result.get('trust') or '-',
+                'display_text': final_result.get('display_text')
+                or _build_ai_denoise_display_text(
+                    module_id,
+                    final_result.get('result_level'),
+                    risk_level=final_result.get('risk_level'),
+                    trust=final_result.get('trust'),
+                    cert_expire_days=final_result.get('cert_expire_days'),
+                ),
+                'summary': _normalize_item_text(final_result.get('summary') or '', 900),
+                'evidence': _normalize_string_list_value(final_result.get('evidence'), max_items=8, max_item_len=280),
+                'suggestions': _normalize_string_list_value(final_result.get('suggestions'), max_items=8, max_item_len=280),
+                'source': source,
+                'prompt_id': prompt_id,
+                'cert_expire_at': final_result.get('cert_expire_at') or '',
+                'cert_expire_days': final_result.get('cert_expire_days'),
+                'analyzed_at': now_text,
+            }
+        )
+
+    return {
+        'module_id': module_id,
+        'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+        'enable': ai_denoise_enable,
+        'module_enabled': module_enabled,
+        'prompt_id': prompt_id,
+        'prefer_ai': bool(prefer_ai),
+        'ai_used': bool(try_use_ai),
+        'ai_model_ready': bool(ai_model_ready),
+        'items': results,
+        'analyzed_at': now_text,
+    }
 
 
 def _verify_sensitive_access(username: str, password: str):
@@ -2789,7 +3782,7 @@ class ApiConsoleAiConfig(ARLResource):
                 _ensure_json_like_config(config_obj)
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
-                refresh_runtime_config_best_effort(force=True)
+                runtime_refreshed = bool(refresh_runtime_config_best_effort(force=True))
                 saved_ai_config = _extract_ai_config(config_obj)
             except Exception as exc:
                 logger.exception('save ai_config failed: %s', exc)
@@ -2809,6 +3802,7 @@ class ApiConsoleAiConfig(ARLResource):
                 'provider_presets': AI_PROVIDER_PRESETS,
                 'config_path': str(config_path),
                 'backup_path': backup_path,
+                'runtime_refreshed': runtime_refreshed,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
         )
@@ -2841,6 +3835,60 @@ class ApiConsoleAiConfigTest(ARLResource):
                 ErrorMsg.Error,
                 {
                     'error': str(exc),
+                }
+            )
+
+
+@ns.route('/ai_denoise/analyze/')
+class ApiConsoleAiDenoiseAnalyze(ARLResource):
+    """
+    AI 去噪分析接口（列表批量分析 + 详情按需 AI 分析）。
+    """
+
+    @auth
+    @ns.expect(analyze_ai_denoise_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        module_id = str(payload.get('module_id') or '').strip()
+        raw_items = payload.get('items')
+        prefer_ai = _safe_bool(payload.get('prefer_ai'), False)
+
+        if module_id not in AI_DENOISE_MODULE_SCENE_MAP:
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': '不支持的 module_id: {}'.format(module_id),
+                }
+            )
+
+        if not isinstance(raw_items, list):
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': 'items 必须为数组',
+                }
+            )
+
+        config_path = _resolve_config_path()
+        try:
+            config_obj = _load_config_from_file(config_path)
+            ai_config = _extract_ai_config(config_obj)
+            result = _analyze_ai_denoise_batch(
+                ai_config=ai_config,
+                module_id=module_id,
+                items=raw_items,
+                prefer_ai=prefer_ai,
+            )
+            result['config_path'] = str(config_path)
+            result['item_count'] = len(result.get('items') or [])
+            return utils.build_ret(ErrorMsg.Success, result)
+        except Exception as exc:
+            logger.exception('ai_denoise analyze failed module:%s err:%s', module_id, exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'module_id': module_id,
                 }
             )
 

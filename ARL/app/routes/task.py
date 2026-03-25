@@ -116,6 +116,7 @@ base_search_task_fields = {
     'options.penetration_test': fields.Boolean(description="是否开启Web专项渗透测试"),
     'options.waf_bypass': fields.Boolean(description="是否开启WAF绕过（仅渗透测试）"),
     'options.smart_skip_waf': fields.Boolean(description="是否开启跳过WAF"),
+    'options.ai_denoise': fields.Boolean(description="是否开启AI去噪分析"),
     'options.dingding_notify': fields.Boolean(description="任务完成后是否钉钉通知"),
 }
 
@@ -156,6 +157,7 @@ add_task_fields = ns.model('AddTask', {
     "penetration_test": fields.Boolean(example=False, default=False, description="Web专项渗透测试"),
     "waf_bypass": fields.Boolean(example=False, default=False, description="WAF绕过（仅渗透测试）"),
     "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),
+    "ai_denoise": fields.Boolean(example=True, default=True, description="AI去噪分析"),
     "dingding_notify": fields.Boolean(example=False, default=False, description="任务完成后是否推送钉钉通知"),
 })
 

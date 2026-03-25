@@ -174,6 +174,38 @@ const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
   wih: ['content', 'source', 'site'],
 };
 
+const AI_DENOISE_MODULE_IDS = ['fileleak', 'cert', 'url', 'vuln', 'nuclei_result'] as const;
+type AiDenoiseModuleId = (typeof AI_DENOISE_MODULE_IDS)[number];
+const AI_DENOISE_MODULE_LABEL_MAP: Record<AiDenoiseModuleId, string> = {
+  fileleak: '目录扫描',
+  cert: 'SSL证书',
+  url: 'URL信息',
+  vuln: '风险',
+  nuclei_result: 'PoC风险',
+};
+
+type AiDenoiseResultItem = {
+  row_key: string;
+  result_level: 'disabled' | 'safe' | 'suspicious' | 'danger';
+  risk_level: string;
+  trust: string;
+  display_text: string;
+  summary: string;
+  evidence: string[];
+  suggestions: string[];
+  source: 'disabled' | 'rule' | 'ai';
+  prompt_id: string;
+  analyzed_at: string;
+  cert_expire_at?: string;
+  cert_expire_days?: number;
+};
+
+type AiDenoiseConfigSnapshot = {
+  enable: boolean;
+  moduleEnabled: boolean;
+  promptId: string;
+};
+
 function canToggleHyperlink(moduleId: string): boolean {
   return Array.isArray(HYPERLINK_MODULE_COLUMN_MAP[moduleId]);
 }
@@ -194,6 +226,10 @@ function normalizeHttpHyperlink(value: any): string {
   } catch {
     return '';
   }
+}
+
+function isAiDenoiseModule(moduleId: string): moduleId is AiDenoiseModuleId {
+  return (AI_DENOISE_MODULE_IDS as readonly string[]).includes(moduleId);
 }
 
 const modules: ModuleConfig[] = [
@@ -309,6 +345,7 @@ const modules: ModuleConfig[] = [
           penetration_test: false,
           waf_bypass: false,
           smart_skip_waf: false,
+          ai_denoise: true,
           dingding_notify: false,
         },
       },
@@ -1158,7 +1195,7 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'url',
-    columns: ['url', 'title', 'status_code', 'content_length', 'source'],
+    columns: ['url', 'title', 'status_code', 'content_length', 'source', 'ai_analysis'],
     sortableColumns: ['content_length'],
     columnLabels: {
       url: 'URL',
@@ -1166,6 +1203,7 @@ const modules: ModuleConfig[] = [
       status_code: '状态码',
       content_length: 'body 长度',
       source: '来源',
+      ai_analysis: 'AI分析',
     },
     searchFields: [
       { key: 'url', label: 'URL', placeholder: '请输入URL进行搜索' },
@@ -1186,10 +1224,11 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'ip',
-    columns: ['host', 'cert_summary'],
+    columns: ['host', 'cert_summary', 'ai_analysis'],
     columnLabels: {
       host: 'HOST',
       cert_summary: 'CERT',
+      ai_analysis: 'AI分析',
     },
     searchFields: [
       { key: 'ip', label: 'IP字段', placeholder: '请输入IP字段进行搜索' },
@@ -1315,7 +1354,7 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'vul_name',
-    columns: ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date'],
+    columns: ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date', 'ai_analysis'],
     columnLabels: {
       vul_name: '风险名称',
       plg_type: '类别',
@@ -1323,6 +1362,7 @@ const modules: ModuleConfig[] = [
       target: '目标',
       credential: '凭证',
       save_date: '发现时间',
+      ai_analysis: 'AI分析',
     },
     searchFields: [
       { key: 'vul_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
@@ -1358,7 +1398,7 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'vuln_name',
-    columns: ['scanner_type', 'rule_id', 'target', 'vuln_url', 'vuln_name', 'vuln_severity', 'save_date', 'verify_data'],
+    columns: ['scanner_type', 'rule_id', 'target', 'vuln_url', 'vuln_name', 'vuln_severity', 'save_date', 'verify_data', 'ai_analysis'],
     columnLabels: {
       scanner_type: '扫描器',
       rule_id: '规则ID',
@@ -1368,6 +1408,7 @@ const modules: ModuleConfig[] = [
       vuln_severity: '风险等级',
       save_date: '保存时间',
       verify_data: '验证信息',
+      ai_analysis: 'AI分析',
     },
     searchFields: [
       {
@@ -1408,13 +1449,14 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'url',
-    columns: ['url', 'title', 'status_code', 'content_length'],
+    columns: ['url', 'title', 'status_code', 'content_length', 'ai_analysis'],
     sortableColumns: ['content_length'],
     columnLabels: {
       url: 'URL',
       title: '标题',
       status_code: '状态码',
       content_length: 'body 长度',
+      ai_analysis: 'AI分析',
     },
     searchFields: [
       { key: 'url', label: 'URL', placeholder: '请输入URL进行搜索' },
@@ -3307,6 +3349,7 @@ const fieldLabelMap: Record<string, string> = {
   penetration_test: '渗透测试',
   waf_bypass: 'WAF绕过',
   smart_skip_waf: '跳过WAF',
+  ai_denoise: 'AI去噪分析',
 };
 
 type FlatPayloadField = {
@@ -4340,7 +4383,7 @@ function ActionDialog({
       },
       {
         title: 'Web与风险',
-        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'penetration_test', 'waf_bypass', 'smart_skip_waf', 'dingding_notify'],
+        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'penetration_test', 'waf_bypass', 'smart_skip_waf', 'ai_denoise', 'dingding_notify'],
       },
     ];
     return sections
@@ -6166,6 +6209,21 @@ function TableModuleView({
   const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
   const [hyperlinkEnabled, setHyperlinkEnabled] = useState(false);
   const [taskCompactMode, setTaskCompactMode] = useState(true);
+  const [aiDenoiseConfig, setAiDenoiseConfig] = useState<AiDenoiseConfigSnapshot>({
+    enable: true,
+    moduleEnabled: true,
+    promptId: '',
+  });
+  const [aiDenoiseConfigLoading, setAiDenoiseConfigLoading] = useState(false);
+  const [aiDenoiseLoading, setAiDenoiseLoading] = useState(false);
+  const [aiDenoiseResultMap, setAiDenoiseResultMap] = useState<Record<string, AiDenoiseResultItem>>({});
+  const [aiDenoiseDetail, setAiDenoiseDetail] = useState<{
+    rowId: string;
+    rowTitle: string;
+    analysis: AiDenoiseResultItem;
+  } | null>(null);
+  const [aiDenoiseDetailLoading, setAiDenoiseDetailLoading] = useState(false);
+  const [aiDenoiseDetailError, setAiDenoiseDetailError] = useState('');
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
   const [taskReportExportMenu, setTaskReportExportMenu] = useState('');
@@ -6195,6 +6253,8 @@ function TableModuleView({
   const taskSchedulePolicyOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
   const taskNameOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
   const vulnCategoryOptionsCacheRef = useRef<Record<string, Array<{ label: string; value: string }>>>({});
+  const aiDenoiseConfigCacheRef = useRef<Record<string, AiDenoiseConfigSnapshot>>({});
+  const aiDenoiseDetailRequestSeqRef = useRef(0);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -6394,6 +6454,11 @@ function TableModuleView({
     setHyperlinkEnabled(false);
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
+    setAiDenoiseResultMap({});
+    setAiDenoiseDetail(null);
+    setAiDenoiseDetailLoading(false);
+    setAiDenoiseDetailError('');
+    aiDenoiseDetailRequestSeqRef.current += 1;
   }, [module.id]);
 
   const renderTextWithHyperlink = useCallback((value: string): React.ReactNode => {
@@ -6445,6 +6510,20 @@ function TableModuleView({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [screenshotPreview]);
+
+  useEffect(() => {
+    if (!aiDenoiseDetail) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setAiDenoiseDetail(null);
+      setAiDenoiseDetailError('');
+      setAiDenoiseDetailLoading(false);
+      aiDenoiseDetailRequestSeqRef.current += 1;
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [aiDenoiseDetail]);
 
   useEffect(() => {
     if (!keepBottomAfterSizeChangeRef.current || loading) return;
@@ -6912,6 +6991,460 @@ function TableModuleView({
     }
     return '';
   }, [module.id, rowIdKey]);
+  const aiDenoiseModuleId = useMemo(
+    () => (isAiDenoiseModule(module.id) ? module.id : null),
+    [module.id]
+  );
+  const normalizeAiDenoiseResultLevel = useCallback((value: any): AiDenoiseResultItem['result_level'] => {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'safe' || normalized === 'suspicious' || normalized === 'danger' || normalized === 'disabled') {
+      return normalized as AiDenoiseResultItem['result_level'];
+    }
+    return 'safe';
+  }, []);
+  const buildAiDenoiseDisplayText = useCallback((
+    resultLevel: AiDenoiseResultItem['result_level'],
+    riskLevel: string,
+    trust: string,
+    certExpireDays?: number,
+  ) => {
+    if (!aiDenoiseModuleId) return '已分析';
+    if (resultLevel === 'disabled') return '已关闭';
+
+    if (aiDenoiseModuleId === 'fileleak') {
+      const mapping: Record<string, string> = {
+        safe: '正常',
+        suspicious: '可疑',
+        danger: '危险',
+      };
+      return mapping[resultLevel] || '正常';
+    }
+    if (aiDenoiseModuleId === 'url') {
+      const mapping: Record<string, string> = {
+        safe: '安全',
+        suspicious: '可疑',
+        danger: '危险',
+      };
+      return mapping[resultLevel] || '安全';
+    }
+    if (aiDenoiseModuleId === 'cert') {
+      const mapping: Record<string, string> = {
+        safe: '安全',
+        suspicious: '可疑',
+        danger: '危险',
+      };
+      const base = mapping[resultLevel] || '安全';
+      if (!Number.isFinite(Number(certExpireDays))) return base;
+      const days = Number(certExpireDays);
+      return days < 0 ? `${base}（已过期）` : `${base}（剩余${days}天）`;
+    }
+    if (aiDenoiseModuleId === 'vuln' || aiDenoiseModuleId === 'nuclei_result') {
+      return `${riskLevel || '中'}/${trust || '可信'}`;
+    }
+    return '已分析';
+  }, [aiDenoiseModuleId]);
+  const normalizeAiDenoiseStringList = useCallback((value: any, maxItems = 8): string[] => {
+    const rawList = Array.isArray(value) ? value : value ? [value] : [];
+    const seen = new Set<string>();
+    const items: string[] = [];
+    rawList.forEach((item) => {
+      if (items.length >= maxItems) return;
+      const text = sanitizeUiMessage(item, 280);
+      if (!text || seen.has(text)) return;
+      seen.add(text);
+      items.push(text);
+    });
+    return items;
+  }, []);
+  const normalizeAiDenoiseResultItem = useCallback((raw: any, rowKey: string): AiDenoiseResultItem => {
+    const resultLevel = normalizeAiDenoiseResultLevel(raw?.result_level);
+    const riskLevel = sanitizeUiMessage(String(raw?.risk_level || '中'), 24) || '中';
+    const trust = sanitizeUiMessage(String(raw?.trust || '-'), 32) || '-';
+    const certExpireDays = Number(raw?.cert_expire_days);
+    const safeCertExpireDays = Number.isFinite(certExpireDays) ? certExpireDays : undefined;
+    const displayText = sanitizeUiMessage(String(raw?.display_text || ''), 64)
+      || buildAiDenoiseDisplayText(resultLevel, riskLevel, trust, safeCertExpireDays);
+    const source = String(raw?.source || '').trim().toLowerCase();
+
+    return {
+      row_key: rowKey,
+      result_level: resultLevel,
+      risk_level: riskLevel,
+      trust,
+      display_text: displayText,
+      summary: sanitizeUiMessage(String(raw?.summary || '暂无分析摘要'), 900) || '暂无分析摘要',
+      evidence: normalizeAiDenoiseStringList(raw?.evidence, 8),
+      suggestions: normalizeAiDenoiseStringList(raw?.suggestions, 8),
+      source: source === 'ai' ? 'ai' : source === 'disabled' ? 'disabled' : 'rule',
+      prompt_id: sanitizeUiMessage(String(raw?.prompt_id || ''), 80),
+      analyzed_at: sanitizeUiMessage(String(raw?.analyzed_at || ''), 64),
+      cert_expire_at: sanitizeUiMessage(String(raw?.cert_expire_at || ''), 80),
+      cert_expire_days: safeCertExpireDays,
+    };
+  }, [buildAiDenoiseDisplayText, normalizeAiDenoiseResultLevel, normalizeAiDenoiseStringList]);
+  const buildAiDenoiseDisabledResult = useCallback((
+    rowKey: string,
+    summary?: string,
+    displayText = '已关闭',
+  ): AiDenoiseResultItem => {
+    const message = sanitizeUiMessage(summary || '当前模块 AI 去噪未启用。', 260) || '当前模块 AI 去噪未启用。';
+    const isDisabledBySwitch = displayText === '已关闭';
+    return {
+      row_key: rowKey,
+      result_level: 'disabled',
+      risk_level: '-',
+      trust: '-',
+      display_text: displayText,
+      summary: message,
+      evidence: [isDisabledBySwitch ? '当前模块或全局 AI 去噪开关关闭。' : 'AI 分析接口调用异常。'],
+      suggestions: [isDisabledBySwitch ? '前往 AI 管理开启对应模块。' : '请稍后重试或检查 AI 管理配置与服务连通性。'],
+      source: 'disabled',
+      prompt_id: aiDenoiseConfig.promptId,
+      analyzed_at: '',
+      cert_expire_at: '',
+      cert_expire_days: undefined,
+    };
+  }, [aiDenoiseConfig.promptId]);
+  const buildAiDenoiseRowKey = useCallback((row: any, rowIndex: number): string => {
+    const rowId = getRowId(row);
+    if (rowId) return rowId;
+    const candidates = [
+      normalizeRowIdValue(row?._id),
+      normalizeRowIdValue(row?.id),
+      normalizeRowIdValue(row?.task_id),
+      normalizeRowIdValue(row?.job_id),
+    ].filter((item) => item);
+    if (candidates.length > 0) return candidates[0];
+    return `${module.id}-row-${page}-${rowIndex + 1}`;
+  }, [getRowId, module.id, page]);
+  const buildAiDenoiseRowTitle = useCallback((row: any, rowIndex: number): string => {
+    const fallback = `第 ${(page - 1) * size + rowIndex + 1} 行`;
+    if (!aiDenoiseModuleId) return fallback;
+    if (aiDenoiseModuleId === 'fileleak' || aiDenoiseModuleId === 'url') {
+      return sanitizeUiMessage(String(row?.url || ''), 260) || fallback;
+    }
+    if (aiDenoiseModuleId === 'cert') {
+      return sanitizeUiMessage(String(row?.host || row?.domain || row?.ip || ''), 260) || fallback;
+    }
+    if (aiDenoiseModuleId === 'vuln') {
+      return sanitizeUiMessage(String(row?.vul_name || row?.target || ''), 260) || fallback;
+    }
+    if (aiDenoiseModuleId === 'nuclei_result') {
+      return sanitizeUiMessage(String(row?.vuln_name || row?.rule_id || row?.target || ''), 260) || fallback;
+    }
+    return fallback;
+  }, [aiDenoiseModuleId, page, size]);
+  const buildAiDenoiseAnalyzeItem = useCallback((row: any, rowKey: string): Record<string, any> => {
+    const base = { _row_key: rowKey };
+    if (!aiDenoiseModuleId) return base;
+    if (aiDenoiseModuleId === 'fileleak') {
+      return {
+        ...base,
+        url: row?.url,
+        title: row?.title,
+        status_code: row?.status_code,
+        content_length: row?.content_length,
+        source: row?.source,
+      };
+    }
+    if (aiDenoiseModuleId === 'cert') {
+      return {
+        ...base,
+        host: row?.host,
+        domain: row?.domain,
+        ip: row?.ip,
+        cert: row?.cert,
+        cert_summary: row?.cert_summary,
+      };
+    }
+    if (aiDenoiseModuleId === 'url') {
+      return {
+        ...base,
+        url: row?.url,
+        title: row?.title,
+        status_code: row?.status_code,
+        content_length: row?.content_length,
+        source: row?.source,
+      };
+    }
+    if (aiDenoiseModuleId === 'vuln') {
+      return {
+        ...base,
+        vul_name: row?.vul_name,
+        plg_type: row?.plg_type,
+        app_name: row?.app_name,
+        target: row?.target,
+        credential: row?.credential,
+        save_date: row?.save_date,
+        vuln_severity: row?.vuln_severity,
+      };
+    }
+    if (aiDenoiseModuleId === 'nuclei_result') {
+      return {
+        ...base,
+        scanner_type: row?.scanner_type,
+        rule_id: row?.rule_id,
+        target: row?.target,
+        vuln_url: row?.vuln_url,
+        vuln_name: row?.vuln_name,
+        vuln_severity: row?.vuln_severity,
+        save_date: row?.save_date,
+        verify_data: row?.verify_data,
+      };
+    }
+    return base;
+  }, [aiDenoiseModuleId]);
+  const canOpenAiDenoiseDetail = useCallback((analysis: AiDenoiseResultItem): boolean => {
+    if (!aiDenoiseModuleId) return false;
+    if (analysis.result_level === 'disabled') return false;
+    if (aiDenoiseModuleId === 'fileleak' || aiDenoiseModuleId === 'url') {
+      return analysis.result_level === 'suspicious' || analysis.result_level === 'danger';
+    }
+    return true;
+  }, [aiDenoiseModuleId]);
+  const closeAiDenoiseDetail = useCallback(() => {
+    aiDenoiseDetailRequestSeqRef.current += 1;
+    setAiDenoiseDetail(null);
+    setAiDenoiseDetailLoading(false);
+    setAiDenoiseDetailError('');
+  }, []);
+  const getAiDenoiseCellClass = useCallback((resultLevel: AiDenoiseResultItem['result_level'], clickable: boolean): string => {
+    const base = clickable
+      ? 'inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border text-xs font-black transition hover:opacity-85'
+      : 'inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border text-xs font-black';
+    if (resultLevel === 'danger') return `${base} border-brand-danger/40 bg-brand-danger/10 text-brand-danger`;
+    if (resultLevel === 'suspicious') return `${base} border-brand-warning/45 bg-brand-warning/12 text-brand-warning`;
+    if (resultLevel === 'disabled') return `${base} border-brand-border bg-brand-bg/65 text-brand-text-muted`;
+    return `${base} border-emerald-400/35 bg-emerald-400/12 text-emerald-300`;
+  }, []);
+  const openAiDenoiseDetail = useCallback(async (row: any, rowIndex: number, currentAnalysis: AiDenoiseResultItem) => {
+    if (!aiDenoiseModuleId) return;
+    const rowKey = buildAiDenoiseRowKey(row, rowIndex);
+    const rowTitle = buildAiDenoiseRowTitle(row, rowIndex);
+    setAiDenoiseDetail({
+      rowId: rowKey,
+      rowTitle,
+      analysis: currentAnalysis,
+    });
+    setAiDenoiseDetailError('');
+    if (!aiDenoiseConfig.enable || !aiDenoiseConfig.moduleEnabled) return;
+    if (currentAnalysis.result_level === 'disabled') return;
+
+    const requestSeq = aiDenoiseDetailRequestSeqRef.current + 1;
+    aiDenoiseDetailRequestSeqRef.current = requestSeq;
+    setAiDenoiseDetailLoading(true);
+    try {
+      const payloadItem = buildAiDenoiseAnalyzeItem(row, rowKey);
+      const result = await requestApi(token, '/api_console/ai_denoise/analyze/', {
+        method: 'POST',
+        body: {
+          module_id: aiDenoiseModuleId,
+          items: [payloadItem],
+          prefer_ai: true,
+        },
+      });
+      if (aiDenoiseDetailRequestSeqRef.current !== requestSeq) return;
+      const item = Array.isArray(result?.data?.items) ? result.data.items[0] : null;
+      if (!item || typeof item !== 'object') {
+        setAiDenoiseDetailError('未返回详情分析结果，已保留当前结果。');
+        return;
+      }
+      const normalized = normalizeAiDenoiseResultItem(item, rowKey);
+      setAiDenoiseResultMap((prev) => ({ ...prev, [rowKey]: normalized }));
+      setAiDenoiseDetail({
+        rowId: rowKey,
+        rowTitle,
+        analysis: normalized,
+      });
+    } catch (err: any) {
+      if (aiDenoiseDetailRequestSeqRef.current !== requestSeq) return;
+      setAiDenoiseDetailError(sanitizeUiMessage(err?.message || '详情分析失败', 220) || '详情分析失败');
+    } finally {
+      if (aiDenoiseDetailRequestSeqRef.current === requestSeq) {
+        setAiDenoiseDetailLoading(false);
+      }
+    }
+  }, [
+    aiDenoiseConfig.enable,
+    aiDenoiseConfig.moduleEnabled,
+    aiDenoiseModuleId,
+    buildAiDenoiseAnalyzeItem,
+    buildAiDenoiseRowKey,
+    buildAiDenoiseRowTitle,
+    normalizeAiDenoiseResultItem,
+    token,
+  ]);
+
+  useEffect(() => {
+    if (!aiDenoiseModuleId) {
+      setAiDenoiseConfig({ enable: true, moduleEnabled: true, promptId: '' });
+      setAiDenoiseConfigLoading(false);
+      return;
+    }
+
+    const cached = aiDenoiseConfigCacheRef.current[aiDenoiseModuleId];
+    if (cached) {
+      setAiDenoiseConfig(cached);
+    }
+
+    let cancelled = false;
+    const loadAiDenoiseConfig = async () => {
+      setAiDenoiseConfigLoading(true);
+      try {
+        const result = await requestApi(token, '/api_console/ai_config/', { method: 'GET' });
+        if (cancelled) return;
+        const aiConfig = (result?.data?.ai_config && typeof result.data.ai_config === 'object')
+          ? result.data.ai_config
+          : {};
+        const moduleConfig = (aiConfig?.ai_denoise_modules && typeof aiConfig.ai_denoise_modules === 'object')
+          ? aiConfig.ai_denoise_modules
+          : {};
+        const modulePromptIds = (aiConfig?.ai_denoise_prompt_ids && typeof aiConfig.ai_denoise_prompt_ids === 'object')
+          ? aiConfig.ai_denoise_prompt_ids
+          : {};
+        const nextSnapshot: AiDenoiseConfigSnapshot = {
+          enable: aiConfig?.ai_denoise_enable !== false,
+          moduleEnabled: moduleConfig[aiDenoiseModuleId] !== false,
+          promptId: sanitizeUiMessage(String(modulePromptIds[aiDenoiseModuleId] || ''), 80),
+        };
+        aiDenoiseConfigCacheRef.current[aiDenoiseModuleId] = nextSnapshot;
+        setAiDenoiseConfig(nextSnapshot);
+      } catch {
+        if (cancelled) return;
+        if (cached) {
+          setAiDenoiseConfig(cached);
+        } else {
+          const fallbackSnapshot: AiDenoiseConfigSnapshot = {
+            enable: true,
+            moduleEnabled: true,
+            promptId: '',
+          };
+          aiDenoiseConfigCacheRef.current[aiDenoiseModuleId] = fallbackSnapshot;
+          setAiDenoiseConfig(fallbackSnapshot);
+        }
+      } finally {
+        if (!cancelled) setAiDenoiseConfigLoading(false);
+      }
+    };
+
+    void loadAiDenoiseConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [aiDenoiseModuleId, token]);
+
+  useEffect(() => {
+    if (!aiDenoiseModuleId) {
+      setAiDenoiseLoading(false);
+      setAiDenoiseResultMap({});
+      return;
+    }
+    if (rows.length === 0) {
+      setAiDenoiseLoading(false);
+      setAiDenoiseResultMap({});
+      return;
+    }
+
+    const rowEntries = rows.map((row, rowIndex) => {
+      const rowKey = buildAiDenoiseRowKey(row, rowIndex);
+      return {
+        row,
+        rowKey,
+        payload: buildAiDenoiseAnalyzeItem(row, rowKey),
+      };
+    });
+
+    if (!aiDenoiseConfig.enable || !aiDenoiseConfig.moduleEnabled) {
+      const disabledMap: Record<string, AiDenoiseResultItem> = {};
+      rowEntries.forEach((entry) => {
+        disabledMap[entry.rowKey] = buildAiDenoiseDisabledResult(entry.rowKey);
+      });
+      setAiDenoiseResultMap(disabledMap);
+      setAiDenoiseLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const analyzeRowsByBatch = async () => {
+      setAiDenoiseLoading(true);
+      try {
+        const mergedMap: Record<string, AiDenoiseResultItem> = {};
+        const chunkSize = 100;
+        for (let index = 0; index < rowEntries.length; index += chunkSize) {
+          const chunk = rowEntries.slice(index, index + chunkSize);
+          const result = await requestApi(token, '/api_console/ai_denoise/analyze/', {
+            method: 'POST',
+            body: {
+              module_id: aiDenoiseModuleId,
+              items: chunk.map((entry) => entry.payload),
+              prefer_ai: false,
+            },
+          });
+          if (cancelled) return;
+          const resultItems = Array.isArray(result?.data?.items) ? result.data.items : [];
+          resultItems.forEach((item: any, itemIndex: number) => {
+            const fallbackRowKey = chunk[itemIndex]?.rowKey || '';
+            const rowKey = String(item?.row_key || fallbackRowKey || '').trim();
+            if (!rowKey) return;
+            mergedMap[rowKey] = normalizeAiDenoiseResultItem(item, rowKey);
+          });
+        }
+        if (cancelled) return;
+        rowEntries.forEach((entry) => {
+          if (!mergedMap[entry.rowKey]) {
+            mergedMap[entry.rowKey] = normalizeAiDenoiseResultItem(
+              {
+                row_key: entry.rowKey,
+                result_level: 'safe',
+                risk_level: '低',
+                trust: '-',
+                display_text: aiDenoiseModuleId === 'fileleak' ? '正常' : aiDenoiseModuleId === 'url' ? '安全' : '已分析',
+                summary: '本行暂未返回分析详情，可点击刷新详情或稍后重试。',
+                evidence: ['批量分析未返回该行详细结果。'],
+                suggestions: ['可点击对应行结果查看详情并触发单条分析。'],
+                source: 'rule',
+                prompt_id: aiDenoiseConfig.promptId,
+                analyzed_at: '',
+              },
+              entry.rowKey
+            );
+          }
+        });
+        setAiDenoiseResultMap(mergedMap);
+      } catch (err: any) {
+        if (cancelled) return;
+        const errMessage = sanitizeUiMessage(err?.message || 'AI分析请求失败', 220) || 'AI分析请求失败';
+        const failedMap: Record<string, AiDenoiseResultItem> = {};
+        rowEntries.forEach((entry) => {
+          failedMap[entry.rowKey] = buildAiDenoiseDisabledResult(
+            entry.rowKey,
+            `AI分析接口异常：${errMessage}`,
+            '异常'
+          );
+        });
+        setAiDenoiseResultMap(failedMap);
+      } finally {
+        if (!cancelled) setAiDenoiseLoading(false);
+      }
+    };
+
+    void analyzeRowsByBatch();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    aiDenoiseConfig.enable,
+    aiDenoiseConfig.moduleEnabled,
+    aiDenoiseConfig.promptId,
+    aiDenoiseModuleId,
+    buildAiDenoiseAnalyzeItem,
+    buildAiDenoiseDisabledResult,
+    buildAiDenoiseRowKey,
+    normalizeAiDenoiseResultItem,
+    rows,
+    token,
+  ]);
+
   const taskDurationHoverSummary = useMemo(() => {
     if (module.id !== 'task') {
       return {
@@ -8528,6 +9061,59 @@ function TableModuleView({
                           ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-center leading-relaxed min-w-[220px] max-w-[560px]'
                           : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-center';
 
+                        if (column === 'ai_analysis' && aiDenoiseModuleId) {
+                          const rowKey = buildAiDenoiseRowKey(row, rowIndex);
+                          const analyzed = aiDenoiseResultMap[rowKey];
+                          const moduleEnabled = aiDenoiseConfig.enable && aiDenoiseConfig.moduleEnabled;
+                          const pending =
+                            moduleEnabled
+                            && (aiDenoiseConfigLoading || (aiDenoiseLoading && !Boolean(analyzed)));
+                          const analysis = analyzed || (!moduleEnabled ? buildAiDenoiseDisabledResult(rowKey) : null);
+
+                          if (pending) {
+                            return (
+                              <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]">
+                                <div className="inline-flex items-center justify-center gap-1.5 text-brand-text-muted">
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  <span className="text-xs font-semibold">分析中...</span>
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          if (!analysis) {
+                            return (
+                              <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]">
+                                <span className="inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border border-brand-border bg-brand-bg/65 text-xs font-semibold text-brand-text-muted">
+                                  待分析
+                                </span>
+                              </td>
+                            );
+                          }
+
+                          const clickable = canOpenAiDenoiseDetail(analysis);
+                          const cellClass = getAiDenoiseCellClass(analysis.result_level, clickable);
+                          const contentTitle = analysis.summary || '查看 AI 分析详情';
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]">
+                              {clickable ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void openAiDenoiseDetail(row, rowIndex, analysis)}
+                                  className={cellClass}
+                                  title={contentTitle}
+                                >
+                                  {analysis.display_text || '查看详情'}
+                                </button>
+                              ) : (
+                                <span className={cellClass} title={contentTitle}>
+                                  {analysis.display_text || '-'}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        }
+
                         if (module.id === 'asset_scope' && column === 'scope') {
                           const scopeText = formatModuleCellValue(module.id, column, row);
                           const scopeLines = scopeText
@@ -9533,6 +10119,133 @@ function TableModuleView({
         </div>
       ) : null}
 
+      {aiDenoiseDetail ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeAiDenoiseDetail}
+        >
+          <div
+            className="w-full max-w-4xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <h4 className="text-lg font-black">AI分析详情</h4>
+                <p className="text-xs text-brand-text-muted">
+                  模块：{aiDenoiseModuleId ? AI_DENOISE_MODULE_LABEL_MAP[aiDenoiseModuleId] : '-'}
+                </p>
+                <p className="text-sm font-semibold break-all">目标：{aiDenoiseDetail.rowTitle || '-'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAiDenoiseDetail}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                title="关闭"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-auto">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={getAiDenoiseCellClass(aiDenoiseDetail.analysis.result_level, false)}>
+                  {aiDenoiseDetail.analysis.display_text || '-'}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  风险等级：{aiDenoiseDetail.analysis.risk_level || '-'}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  可信度：{aiDenoiseDetail.analysis.trust || '-'}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  来源：{
+                    aiDenoiseDetail.analysis.source === 'ai'
+                      ? 'AI模型'
+                      : aiDenoiseDetail.analysis.source === 'rule'
+                        ? '规则'
+                        : '已关闭'
+                  }
+                </span>
+                {aiDenoiseDetail.analysis.analyzed_at ? (
+                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                    分析时间：{aiDenoiseDetail.analysis.analyzed_at}
+                  </span>
+                ) : null}
+                {aiDenoiseModuleId === 'cert' ? (
+                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                    到期：{aiDenoiseDetail.analysis.cert_expire_at || '-'}
+                    {Number.isFinite(Number(aiDenoiseDetail.analysis.cert_expire_days))
+                      ? `（${Number(aiDenoiseDetail.analysis.cert_expire_days) < 0 ? '已过期' : `剩余${Number(aiDenoiseDetail.analysis.cert_expire_days)}天`}）`
+                      : ''}
+                  </span>
+                ) : null}
+              </div>
+
+              {aiDenoiseDetailLoading ? (
+                <div className="inline-flex items-center gap-2 text-sm text-brand-text-muted">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  正在执行单条详情分析...
+                </div>
+              ) : null}
+
+              {aiDenoiseDetailError ? (
+                <div className="text-sm text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-3 py-2">
+                  {aiDenoiseDetailError}
+                </div>
+              ) : null}
+
+              <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                <div className="text-xs font-black tracking-wide text-brand-text">分析摘要</div>
+                <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                  {aiDenoiseDetail.analysis.summary || '-'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-brand-text">分析依据</div>
+                  {aiDenoiseDetail.analysis.evidence.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {aiDenoiseDetail.analysis.evidence.map((item, index) => (
+                        <div key={`${index}-${item}`} className="text-sm leading-relaxed break-all">
+                          {index + 1}. {item}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-brand-text-muted">暂无依据</div>
+                  )}
+                </div>
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-brand-text">处置建议</div>
+                  {aiDenoiseDetail.analysis.suggestions.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {aiDenoiseDetail.analysis.suggestions.map((item, index) => (
+                        <div key={`${index}-${item}`} className="text-sm leading-relaxed break-all">
+                          {index + 1}. {item}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-brand-text-muted">暂无建议</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-brand-border bg-brand-bg/30 flex justify-end">
+              <button
+                type="button"
+                onClick={closeAiDenoiseDetail}
+                className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {taskErrorDialog ? (
         <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-5xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
@@ -10049,6 +10762,7 @@ function ApiConsoleView({ token }: { token: string }) {
     setSaving(true);
     setError('');
     setSuccess('');
+    setShowRestartModal(false);
     try {
       const result = await requestApi(token, '/api_console/service_api/', {
         method: 'POST',
@@ -12299,6 +13013,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     max_tokens: number;
   };
 
+  type AiDenoiseModuleId = 'fileleak' | 'cert' | 'url' | 'vuln' | 'nuclei_result';
+
+  type AiDenoiseModules = Record<AiDenoiseModuleId, boolean>;
+  type AiDenoisePromptIds = Record<AiDenoiseModuleId, string>;
+
   type AiConfigForm = {
     enable: boolean;
     active_model_profile_id: string;
@@ -12318,6 +13037,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     active_prompt_id: string;
     prompt_templates: AiPromptTemplate[];
     custom_compat_providers: AiCustomCompatProvider[];
+    ai_denoise_enable: boolean;
+    ai_denoise_modules: AiDenoiseModules;
+    ai_denoise_prompt_ids: AiDenoisePromptIds;
   };
 
   type AiTestResult = {
@@ -12354,7 +13076,67 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         '你是安全误报复核助手。请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。',
       updated_at: '',
     },
+    {
+      id: 'default_ai_denoise_fileleak',
+      name: '默认AI去噪-目录扫描',
+      scene: 'ai_denoise_fileleak',
+      content:
+        '你是目录扫描去噪助手。请基于URL路径、状态码、标题和返回体长度，输出风险结论：正常/可疑/危险，并提供证据与建议。',
+      updated_at: '',
+    },
+    {
+      id: 'default_ai_denoise_cert',
+      name: '默认AI去噪-SSL证书',
+      scene: 'ai_denoise_cert',
+      content:
+        '你是证书安全分析助手。请根据证书有效期、签发信息、协议与套件特征输出安全判断，并给出依据与处置建议。',
+      updated_at: '',
+    },
+    {
+      id: 'default_ai_denoise_url',
+      name: '默认AI去噪-URL信息',
+      scene: 'ai_denoise_url',
+      content:
+        '你是URL风险去噪助手。请基于URL路径、状态码、标题和上下文输出安全/可疑/危险结论，并说明证据与建议。',
+      updated_at: '',
+    },
+    {
+      id: 'default_ai_denoise_vuln',
+      name: '默认AI去噪-风险',
+      scene: 'ai_denoise_vuln',
+      content:
+        '你是漏洞误报复核助手。请结合风险等级、目标、验证证据与规则上下文，判断可信或疑似误报并给出处置建议。',
+      updated_at: '',
+    },
+    {
+      id: 'default_ai_denoise_poc',
+      name: '默认AI去噪-PoC风险',
+      scene: 'ai_denoise_nuclei_result',
+      content:
+        '你是PoC风险复核助手。请结合扫描器、规则ID、风险等级、命中URL与验证信息判断可信度，识别疑似误报并给出复测建议。',
+      updated_at: '',
+    },
   ];
+
+  const aiDenoiseModuleConfigs: Array<{
+    id: AiDenoiseModuleId;
+    label: string;
+    scene: string;
+  }> = [
+    { id: 'fileleak', label: '目录扫描', scene: 'ai_denoise_fileleak' },
+    { id: 'cert', label: 'SSL证书', scene: 'ai_denoise_cert' },
+    { id: 'url', label: 'URL信息', scene: 'ai_denoise_url' },
+    { id: 'vuln', label: '风险', scene: 'ai_denoise_vuln' },
+    { id: 'nuclei_result', label: 'PoC风险', scene: 'ai_denoise_nuclei_result' },
+  ];
+
+  const defaultAiDenoiseModules: AiDenoiseModules = {
+    fileleak: true,
+    cert: true,
+    url: true,
+    vuln: true,
+    nuclei_result: true,
+  };
 
   const normalizeProviderId = (rawProvider: any) => {
     const value = String(rawProvider || '').trim().toLowerCase();
@@ -12482,6 +13264,46 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     return items;
   };
 
+  const normalizeAiDenoiseModules = (rawModules: any): AiDenoiseModules => {
+    const source = rawModules && typeof rawModules === 'object' ? rawModules : {};
+    return {
+      fileleak: source.fileleak !== false,
+      cert: source.cert !== false,
+      url: source.url !== false,
+      vuln: source.vuln !== false,
+      nuclei_result: source.nuclei_result !== false,
+    };
+  };
+
+  const normalizeAiDenoisePromptIds = (
+    rawPromptIds: any,
+    promptTemplates: AiPromptTemplate[],
+  ): AiDenoisePromptIds => {
+    const source = rawPromptIds && typeof rawPromptIds === 'object' ? rawPromptIds : {};
+    const templateIdSet = new Set(promptTemplates.map((item) => item.id));
+    const scenePromptIdMap: Partial<Record<AiDenoiseModuleId, string>> = {};
+    aiDenoiseModuleConfigs.forEach((configItem) => {
+      const foundByScene = promptTemplates.find((item) => item.scene === configItem.scene);
+      if (foundByScene?.id) {
+        scenePromptIdMap[configItem.id] = foundByScene.id;
+      }
+    });
+    const fallbackPromptId = promptTemplates[0]?.id || '';
+    const normalizeOne = (moduleId: AiDenoiseModuleId) => {
+      const candidate = String(source[moduleId] || '').trim();
+      if (candidate && templateIdSet.has(candidate)) return candidate;
+      if (scenePromptIdMap[moduleId]) return String(scenePromptIdMap[moduleId] || '');
+      return fallbackPromptId;
+    };
+    return {
+      fileleak: normalizeOne('fileleak'),
+      cert: normalizeOne('cert'),
+      url: normalizeOne('url'),
+      vuln: normalizeOne('vuln'),
+      nuclei_result: normalizeOne('nuclei_result'),
+    };
+  };
+
   const normalizeForm = (rawForm: any): AiConfigForm => {
     const promptTemplates = normalizePromptTemplates(rawForm?.prompt_templates);
     const promptIds = promptTemplates.map((item) => item.id);
@@ -12517,6 +13339,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
+      ai_denoise_enable: rawForm?.ai_denoise_enable !== false,
+      ai_denoise_modules: normalizeAiDenoiseModules(rawForm?.ai_denoise_modules),
+      ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(rawForm?.ai_denoise_prompt_ids, promptTemplates),
     };
   };
 
@@ -12564,6 +13389,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [sensitiveVerifyLoading, setSensitiveVerifyLoading] = useState(false);
   const [sensitiveVerifyError, setSensitiveVerifyError] = useState('');
   const [aiApiKeyEdited, setAiApiKeyEdited] = useState(false);
+  const [showRestartModal, setShowRestartModal] = useState(false);
 
   const providerPresetMap = useMemo(() => {
     const map: Record<string, AiProviderPreset> = {};
@@ -12688,6 +13514,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
+      ai_denoise_enable: Boolean(currentForm.ai_denoise_enable),
+      ai_denoise_modules: normalizeAiDenoiseModules(currentForm.ai_denoise_modules),
+      ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(currentForm.ai_denoise_prompt_ids, promptTemplates),
     };
   }, [findActiveModelProfile]);
 
@@ -12697,6 +13526,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setError('');
     setSuccess('');
     setTestResult(null);
+    setShowRestartModal(false);
     try {
       const result = await requestApi(token, '/api_console/ai_config/', { method: 'GET' });
       const data = result?.data || {};
@@ -12733,10 +13563,14 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   }, [loadAiConfig]);
 
   useEffect(() => {
-    if (!compatDialogOpen && !promptDialogOpen) return;
+    if (!compatDialogOpen && !promptDialogOpen && !showRestartModal) return;
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      if (showRestartModal) {
+        setShowRestartModal(false);
+        return;
+      }
       if (promptDialogOpen) {
         setPromptDialogOpen(false);
         return;
@@ -12747,7 +13581,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [compatDialogOpen, promptDialogOpen]);
+  }, [compatDialogOpen, promptDialogOpen, showRestartModal]);
 
   const handleProviderChange = (nextProvider: string) => {
     const providerId = normalizeProviderId(nextProvider);
@@ -12960,6 +13794,28 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setError('');
   };
 
+  const updateAiDenoiseModuleEnabled = (moduleId: AiDenoiseModuleId, enabled: boolean) => {
+    setForm((prev) => ({
+      ...prev,
+      ai_denoise_modules: {
+        ...prev.ai_denoise_modules,
+        [moduleId]: enabled,
+      },
+    }));
+    setError('');
+  };
+
+  const updateAiDenoisePromptId = (moduleId: AiDenoiseModuleId, promptId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      ai_denoise_prompt_ids: {
+        ...prev.ai_denoise_prompt_ids,
+        [moduleId]: promptId,
+      },
+    }));
+    setError('');
+  };
+
   const toggleSensitiveDisplay = () => {
     if (sensitiveVisible) {
       setSensitiveVisible(false);
@@ -13040,7 +13896,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setConfigPath(String(data?.config_path || configPath));
       setUpdatedAt(String(data?.saved_at || updatedAt));
       const backupText = data?.backup_path ? `，备份: ${data.backup_path}` : '';
-      setSuccess(`AI 管理配置已保存${backupText}`);
+      const runtimeRefreshed = data?.runtime_refreshed !== false;
+      setSuccess(runtimeRefreshed ? `AI 管理配置已保存${backupText}` : `AI 管理配置已保存${backupText}，需重启容器生效`);
+      setShowRestartModal(!runtimeRefreshed);
       setSensitiveVisible(false);
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
@@ -13150,7 +14008,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
       <div className="text-xs text-amber-300 bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2">
-        开发中：AI 调度与误报抑制主链路正按规划分阶段接入，当前优先开放模型配置、提示词管理、连通性测试与 AI 报告导出能力。
+        提示：AI 去噪分析支持按模块独立开关与提示词绑定。列表页默认批量规则分析，单条详情可按需触发模型分析并自动回退。
       </div>
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
@@ -13527,6 +14385,63 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-black tracking-wide text-brand-text">AI去噪配置</div>
+          <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+            <input
+              type="checkbox"
+              checked={form.ai_denoise_enable}
+              onChange={(event) => setForm((prev) => ({ ...prev, ai_denoise_enable: event.target.checked }))}
+              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+            />
+            <span className="text-xs font-semibold">启用AI去噪</span>
+          </label>
+        </div>
+        <div className="text-xs text-brand-text-muted">
+          目录扫描、SSL证书、URL信息、风险、PoC风险支持独立开关与提示词绑定；默认开启，可按需单独关闭。
+        </div>
+        <div className="space-y-2">
+          {aiDenoiseModuleConfigs.map((moduleConfig) => {
+            const moduleEnabled = Boolean(form.ai_denoise_modules[moduleConfig.id]);
+            const selectedPromptId = String(form.ai_denoise_prompt_ids[moduleConfig.id] || '');
+            return (
+              <div
+                key={moduleConfig.id}
+                className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center"
+              >
+                <div className="text-sm font-semibold">{moduleConfig.label}</div>
+                <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+                  <input
+                    type="checkbox"
+                    checked={moduleEnabled}
+                    onChange={(event) => updateAiDenoiseModuleEnabled(moduleConfig.id, event.target.checked)}
+                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    disabled={!form.ai_denoise_enable}
+                  />
+                  <span className="text-xs font-semibold">{moduleEnabled ? '已开启' : '已关闭'}</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedPromptId}
+                    onChange={(event) => updateAiDenoisePromptId(moduleConfig.id, event.target.value)}
+                    className={CONSOLE_SELECT_CLASS}
+                    disabled={!form.ai_denoise_enable || !moduleEnabled}
+                  >
+                    {form.prompt_templates.map((item) => (
+                      <option key={`${moduleConfig.id}-${item.id}`} value={item.id}>
+                        {item.name} ({item.scene})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-black tracking-wide text-brand-text">提示词管理</div>
           <button
             type="button"
@@ -13705,6 +14620,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                     <option value="ai_report_export">AI报告导出</option>
                     <option value="false_positive_review">误报复核</option>
                     <option value="scan_planner">扫描调度</option>
+                    <option value="ai_denoise_fileleak">AI去噪-目录扫描</option>
+                    <option value="ai_denoise_cert">AI去噪-SSL证书</option>
+                    <option value="ai_denoise_url">AI去噪-URL信息</option>
+                    <option value="ai_denoise_vuln">AI去噪-风险</option>
+                    <option value="ai_denoise_nuclei_result">AI去噪-PoC风险</option>
                   </select>
                   <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
@@ -13733,6 +14653,38 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition"
               >
                 确认新增
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showRestartModal ? (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-brand-border flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400" />
+              <h4 className="text-lg font-black tracking-wide">需要重启容器</h4>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm font-semibold">AI 配置保存成功！</p>
+              <p className="text-sm text-brand-text-muted leading-relaxed">
+                当前运行环境未完成热加载，请在服务器执行重启命令使配置生效：
+              </p>
+              <div className="bg-brand-bg/50 border border-brand-border rounded-lg p-3">
+                <code className="text-xs text-brand-accent font-mono block select-all">
+                  docker-compose restart
+                </code>
+              </div>
+              <p className="text-xs text-brand-text-muted">(或使用 ./restart.sh 脚本)</p>
+            </div>
+            <div className="px-6 py-4 border-t border-brand-border flex justify-end bg-brand-bg/30">
+              <button
+                type="button"
+                onClick={() => setShowRestartModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-brand-accent/20"
+              >
+                我知道了
               </button>
             </div>
           </div>

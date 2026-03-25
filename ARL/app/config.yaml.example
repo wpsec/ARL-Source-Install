@@ -155,6 +155,19 @@ AI:
   DIALOG_LANGUAGE: "zh-CN"
   DIALOG_CONTEXT_MESSAGES: 8
   ACTIVE_PROMPT_ID: "default_ai_report"
+  AI_DENOISE_ENABLE: true
+  AI_DENOISE_MODULES:
+    fileleak: true
+    cert: true
+    url: true
+    vuln: true
+    nuclei_result: true
+  AI_DENOISE_PROMPT_IDS:
+    fileleak: "default_ai_denoise_fileleak"
+    cert: "default_ai_denoise_cert"
+    url: "default_ai_denoise_url"
+    vuln: "default_ai_denoise_vuln"
+    nuclei_result: "default_ai_denoise_poc"
   PROMPT_TEMPLATES:
     - id: "default_ai_report"
       name: "默认AI报告模板"
@@ -165,6 +178,31 @@ AI:
       name: "默认误报复核模板"
       scene: "false_positive_review"
       content: "你是安全误报复核助手。请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。"
+      updated_at: ""
+    - id: "default_ai_denoise_fileleak"
+      name: "默认AI去噪-目录扫描"
+      scene: "ai_denoise_fileleak"
+      content: "你是目录扫描去噪助手。请基于URL路径、状态码、标题和返回体长度，输出风险结论：正常/可疑/危险。必须给出证据要点与修复建议，避免夸大。"
+      updated_at: ""
+    - id: "default_ai_denoise_cert"
+      name: "默认AI去噪-SSL证书"
+      scene: "ai_denoise_cert"
+      content: "你是证书安全分析助手。请基于证书有效期、签发信息、协议与套件特征，给出证书安全结论，并输出到期风险依据与处置建议。"
+      updated_at: ""
+    - id: "default_ai_denoise_url"
+      name: "默认AI去噪-URL信息"
+      scene: "ai_denoise_url"
+      content: "你是URL风险去噪助手。请基于URL路径、状态码、标题和上下文，输出安全/可疑/危险结论，并给出依据与建议。"
+      updated_at: ""
+    - id: "default_ai_denoise_vuln"
+      name: "默认AI去噪-风险"
+      scene: "ai_denoise_vuln"
+      content: "你是漏洞误报复核助手。请根据风险等级、目标、验证证据与规则上下文，判断可信或疑似误报，并输出处置建议。"
+      updated_at: ""
+    - id: "default_ai_denoise_poc"
+      name: "默认AI去噪-PoC风险"
+      scene: "ai_denoise_nuclei_result"
+      content: "你是PoC风险复核助手。请结合扫描器、规则ID、风险等级、命中URL与验证信息判断可信度，识别疑似误报并给出复测建议。"
       updated_at: ""
   CUSTOM_COMPAT_PROVIDERS: [] # 可添加 OpenAI 兼容网关列表
 
