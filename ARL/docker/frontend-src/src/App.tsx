@@ -6403,8 +6403,6 @@ function TableModuleView({
     rowTitle: string;
     analysis: AiDenoiseResultItem;
   } | null>(null);
-  const [aiDenoiseDetailLoading, setAiDenoiseDetailLoading] = useState(false);
-  const [aiDenoiseDetailError, setAiDenoiseDetailError] = useState('');
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
   const [taskReportExportMenu, setTaskReportExportMenu] = useState('');
@@ -6435,7 +6433,6 @@ function TableModuleView({
   const taskNameOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
   const vulnCategoryOptionsCacheRef = useRef<Record<string, Array<{ label: string; value: string }>>>({});
   const aiDenoiseConfigCacheRef = useRef<Record<string, AiDenoiseConfigSnapshot>>({});
-  const aiDenoiseDetailRequestSeqRef = useRef(0);
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -6678,9 +6675,6 @@ function TableModuleView({
     setScreenshotPreview(null);
     setAiDenoiseResultMap({});
     setAiDenoiseDetail(null);
-    setAiDenoiseDetailLoading(false);
-    setAiDenoiseDetailError('');
-    aiDenoiseDetailRequestSeqRef.current += 1;
   }, [module.id]);
 
   const renderTextWithHyperlink = useCallback((value: string): React.ReactNode => {
@@ -6739,9 +6733,6 @@ function TableModuleView({
       if (event.key !== 'Escape') return;
       event.preventDefault();
       setAiDenoiseDetail(null);
-      setAiDenoiseDetailError('');
-      setAiDenoiseDetailLoading(false);
-      aiDenoiseDetailRequestSeqRef.current += 1;
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
@@ -7292,6 +7283,83 @@ function TableModuleView({
     });
     return items;
   }, []);
+  const extractJsonObjectFromText = useCallback((value: any): Record<string, any> | null => {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    let candidate = text;
+    const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fencedMatch && fencedMatch[1]) {
+      candidate = fencedMatch[1].trim();
+    }
+    const start = candidate.indexOf('{');
+    const end = candidate.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      candidate = candidate.slice(start, end + 1);
+    }
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, any>;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }, []);
+  const formatAiDialogueContent = useCallback((role: 'system' | 'user' | 'assistant' | 'tool', rawContent: string): string => {
+    const safeContent = sanitizeUiMessage(rawContent, 3200) || '';
+    if (!safeContent || role !== 'assistant') return safeContent;
+    const parsed = extractJsonObjectFromText(safeContent);
+    if (!parsed) return safeContent;
+
+    const resultLevelMap: Record<string, string> = {
+      safe: '正常',
+      suspicious: '可疑',
+      danger: '危险',
+    };
+    const normalizeList = (value: any, maxItems = 6): string[] => {
+      const rawList = Array.isArray(value) ? value : value ? [value] : [];
+      const seen = new Set<string>();
+      const items: string[] = [];
+      rawList.forEach((item) => {
+        if (items.length >= maxItems) return;
+        const text = sanitizeUiMessage(item, 260);
+        if (!text || seen.has(text)) return;
+        seen.add(text);
+        items.push(text);
+      });
+      return items;
+    };
+
+    const rawLevel = String(parsed.result_level || parsed.level || parsed.status || '').trim().toLowerCase();
+    const resultLevel = resultLevelMap[rawLevel] || sanitizeUiMessage(rawLevel, 24) || '-';
+    const riskLevel = sanitizeUiMessage(parsed.risk_level || parsed.severity, 24) || '-';
+    const trust = sanitizeUiMessage(parsed.trust || parsed.review_status, 24) || '-';
+    const summary = sanitizeUiMessage(parsed.summary || parsed.analysis, 600) || '';
+    const evidence = normalizeList(parsed.evidence ?? parsed.basis, 8);
+    const suggestions = normalizeList(parsed.suggestions ?? parsed.advice, 8);
+    const fingerResult = normalizeList(parsed.finger_result ?? parsed.finger, 12);
+
+    const lines: string[] = [
+      `结论：${resultLevel}`,
+      `风险等级：${riskLevel}`,
+      `可信度：${trust}`,
+    ];
+    if (summary) lines.push(`摘要：${summary}`);
+    if (evidence.length > 0) {
+      lines.push('分析依据：');
+      evidence.forEach((item, index) => lines.push(`${index + 1}. ${item}`));
+    }
+    if (suggestions.length > 0) {
+      lines.push('处置建议：');
+      suggestions.forEach((item, index) => lines.push(`${index + 1}. ${item}`));
+    }
+    if (fingerResult.length > 0) {
+      lines.push('AI修正指纹：');
+      fingerResult.forEach((item, index) => lines.push(`${index + 1}. ${item}`));
+    }
+    return lines.join('\n');
+  }, [extractJsonObjectFromText]);
   const normalizeAiDenoiseResultItem = useCallback((raw: any, rowKey: string): AiDenoiseResultItem => {
     const resultLevel = normalizeAiDenoiseResultLevel(raw?.result_level);
     const riskLevel = sanitizeUiMessage(String(raw?.risk_level || '中'), 24) || '中';
@@ -7472,10 +7540,7 @@ function TableModuleView({
     return Boolean(analysis);
   }, [aiDenoiseModuleId]);
   const closeAiDenoiseDetail = useCallback(() => {
-    aiDenoiseDetailRequestSeqRef.current += 1;
     setAiDenoiseDetail(null);
-    setAiDenoiseDetailLoading(false);
-    setAiDenoiseDetailError('');
   }, []);
   const getAiDenoiseCellClass = useCallback((resultLevel: AiDenoiseResultItem['result_level'], clickable: boolean): string => {
     const base = clickable
@@ -7486,7 +7551,7 @@ function TableModuleView({
     if (resultLevel === 'disabled') return `${base} border-brand-border bg-brand-bg/65 text-brand-text-muted`;
     return `${base} border-emerald-400/35 bg-emerald-400/12 text-emerald-300`;
   }, []);
-  const openAiDenoiseDetail = useCallback(async (row: any, rowIndex: number, currentAnalysis: AiDenoiseResultItem) => {
+  const openAiDenoiseDetail = useCallback((row: any, rowIndex: number, currentAnalysis: AiDenoiseResultItem) => {
     if (!aiDenoiseModuleId) return;
     const rowKey = buildAiDenoiseRowKey(row, rowIndex);
     const rowTitle = buildAiDenoiseRowTitle(row, rowIndex);
@@ -7495,53 +7560,10 @@ function TableModuleView({
       rowTitle,
       analysis: currentAnalysis,
     });
-    setAiDenoiseDetailError('');
-    if (!aiDenoiseConfig.enable || !aiDenoiseConfig.moduleEnabled) return;
-    if (currentAnalysis.result_level === 'disabled') return;
-
-    const requestSeq = aiDenoiseDetailRequestSeqRef.current + 1;
-    aiDenoiseDetailRequestSeqRef.current = requestSeq;
-    setAiDenoiseDetailLoading(true);
-    try {
-      const payloadItem = buildAiDenoiseAnalyzeItem(row, rowKey);
-      const result = await requestApi(token, '/api_console/ai_denoise/analyze/', {
-        method: 'POST',
-        body: {
-          module_id: aiDenoiseModuleId,
-          items: [payloadItem],
-          prefer_ai: true,
-        },
-      });
-      if (aiDenoiseDetailRequestSeqRef.current !== requestSeq) return;
-      const item = Array.isArray(result?.data?.items) ? result.data.items[0] : null;
-      if (!item || typeof item !== 'object') {
-        setAiDenoiseDetailError('未返回详情分析结果，已保留当前结果。');
-        return;
-      }
-      const normalized = normalizeAiDenoiseResultItem(item, rowKey);
-      setAiDenoiseResultMap((prev) => ({ ...prev, [rowKey]: normalized }));
-      setAiDenoiseDetail({
-        rowId: rowKey,
-        rowTitle,
-        analysis: normalized,
-      });
-    } catch (err: any) {
-      if (aiDenoiseDetailRequestSeqRef.current !== requestSeq) return;
-      setAiDenoiseDetailError(sanitizeUiMessage(err?.message || '详情分析失败', 220) || '详情分析失败');
-    } finally {
-      if (aiDenoiseDetailRequestSeqRef.current === requestSeq) {
-        setAiDenoiseDetailLoading(false);
-      }
-    }
   }, [
-    aiDenoiseConfig.enable,
-    aiDenoiseConfig.moduleEnabled,
     aiDenoiseModuleId,
-    buildAiDenoiseAnalyzeItem,
     buildAiDenoiseRowKey,
     buildAiDenoiseRowTitle,
-    normalizeAiDenoiseResultItem,
-    token,
   ]);
 
   useEffect(() => {
@@ -7675,9 +7697,9 @@ function TableModuleView({
                       : aiDenoiseModuleId === 'url'
                         ? '安全'
                         : '已分析',
-                summary: '本行暂未返回分析详情，可点击刷新详情或稍后重试。',
+                summary: '本行暂未返回分析详情，请稍后刷新列表查看。',
                 evidence: ['批量分析未返回该行详细结果。'],
-                suggestions: ['可点击对应行结果查看详情并触发单条分析。'],
+                suggestions: ['稍后刷新列表或等待任务分析阶段完成后再查看。'],
                 source: 'rule',
                 prompt_id: aiDenoiseConfig.promptId,
                 analyzed_at: '',
@@ -10437,18 +10459,9 @@ function TableModuleView({
                 ) : null}
               </div>
 
-              {aiDenoiseDetailLoading ? (
-                <div className="inline-flex items-center gap-2 text-sm text-brand-text-muted">
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  正在执行单条详情分析...
-                </div>
-              ) : null}
-
-              {aiDenoiseDetailError ? (
-                <div className="text-sm text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-3 py-2">
-                  {aiDenoiseDetailError}
-                </div>
-              ) : null}
+              <div className="text-xs text-brand-text-muted">
+                说明：此处仅展示扫描阶段已落库的分析结果，点击详情不会再次触发 AI 调用。
+              </div>
 
               <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
                 <div className="text-xs font-black tracking-wide text-brand-text">分析摘要</div>
@@ -10532,7 +10545,9 @@ function TableModuleView({
                       return (
                         <div key={`${index}-${item.role}`} className={`rounded-xl border px-3 py-2 ${roleClass}`}>
                           <div className="text-[11px] font-black tracking-wide mb-1">{roleLabel}</div>
-                          <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">{item.content}</div>
+                          <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                            {formatAiDialogueContent(item.role, item.content)}
+                          </div>
                         </div>
                       );
                     })}
@@ -14422,7 +14437,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
       <div className="text-xs text-amber-300 bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2">
-        提示：AI 去噪分析支持按模块独立开关与提示词绑定。列表页默认批量规则分析，单条详情可按需触发模型分析并自动回退。
+        提示：AI 去噪分析支持按模块独立开关与提示词绑定。详情页仅展示扫描阶段已落库的分析结果，不会因点击详情而再次触发 AI 调用。
       </div>
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">

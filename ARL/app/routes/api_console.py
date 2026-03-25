@@ -90,7 +90,7 @@ analyze_ai_denoise_fields = ns.model(
     {
         'module_id': fields.String(required=True, description='模块ID（site/fileleak/cert/url/vuln/nuclei_result）'),
         'items': fields.List(fields.Raw, required=True, description='待分析的数据行列表'),
-        'prefer_ai': fields.Boolean(required=False, description='是否优先使用已配置模型（单条详情建议开启）'),
+        'prefer_ai': fields.Boolean(required=False, description='兼容旧参数，当前接口会忽略该值（避免点击详情触发实时AI调用）'),
     },
 )
 
@@ -2125,6 +2125,62 @@ def _extract_json_object_from_text(raw_text):
     return None
 
 
+def _format_ai_structured_dialogue_text(parsed_obj):
+    if not isinstance(parsed_obj, dict):
+        return ''
+
+    result_level_raw = str(parsed_obj.get('result_level') or parsed_obj.get('level') or parsed_obj.get('status') or '').strip().lower()
+    result_level_map = {
+        'safe': '正常',
+        'suspicious': '可疑',
+        'danger': '危险',
+    }
+    result_level_text = result_level_map.get(result_level_raw) or _normalize_item_text(result_level_raw, 24) or '-'
+    risk_level_text = _normalize_risk_level_text(parsed_obj.get('risk_level') or parsed_obj.get('severity')) or '-'
+    trust_text = _normalize_trust_level_text(parsed_obj.get('trust') or parsed_obj.get('review_status')) or '-'
+    summary_text = _normalize_item_text(parsed_obj.get('summary') or parsed_obj.get('analysis'), 600)
+    evidence_list = _normalize_string_list_value(
+        parsed_obj.get('evidence') if parsed_obj.get('evidence') is not None else parsed_obj.get('basis'),
+        max_items=8,
+        max_item_len=240
+    )
+    suggestion_list = _normalize_string_list_value(
+        parsed_obj.get('suggestions') if parsed_obj.get('suggestions') is not None else parsed_obj.get('advice'),
+        max_items=8,
+        max_item_len=240
+    )
+    finger_result_list = _normalize_string_list_value(
+        parsed_obj.get('finger_result') if parsed_obj.get('finger_result') is not None else parsed_obj.get('finger'),
+        max_items=10,
+        max_item_len=100
+    )
+
+    lines = [
+        '结论：{}'.format(result_level_text),
+        '风险等级：{}'.format(risk_level_text),
+        '可信度：{}'.format(trust_text),
+    ]
+    if summary_text:
+        lines.append('摘要：{}'.format(summary_text))
+
+    if evidence_list:
+        lines.append('分析依据：')
+        for index, item in enumerate(evidence_list):
+            lines.append('{}. {}'.format(index + 1, item))
+
+    if suggestion_list:
+        lines.append('处置建议：')
+        for index, item in enumerate(suggestion_list):
+            lines.append('{}. {}'.format(index + 1, item))
+
+    if finger_result_list:
+        lines.append('AI修正指纹：')
+        for index, item in enumerate(finger_result_list):
+            lines.append('{}. {}'.format(index + 1, item))
+
+    return '\n'.join(lines).strip()
+
+
 def _build_ai_denoise_context(module_id, item):
     if module_id == 'site':
         return {
@@ -2332,6 +2388,19 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
             )
             return None, call_message, dialogue_records
 
+        parsed = _extract_json_object_from_text(content_text)
+        if isinstance(parsed, dict):
+            parsed_dialogue = _format_ai_structured_dialogue_text(parsed)
+            if parsed_dialogue:
+                dialogue_records.extend(
+                    _normalize_dialogue_records(
+                        [{'role': 'assistant', 'content': parsed_dialogue}],
+                        max_items=2,
+                        max_len=3200,
+                    )
+                )
+            return parsed, '', dialogue_records
+
         if content_text:
             dialogue_records.extend(
                 _normalize_dialogue_records(
@@ -2340,7 +2409,7 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                     max_len=3200,
                 )
             )
-        parsed = _extract_json_object_from_text(content_text)
+
         if not isinstance(parsed, dict):
             dialogue_records.extend(
                 _normalize_dialogue_records(
@@ -2349,7 +2418,7 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                 )
             )
             return None, 'AI 返回格式不可解析', dialogue_records
-        return parsed, '', dialogue_records
+        return None, 'AI 返回格式不可解析', dialogue_records
     except Exception as exc:
         message = str(exc)
         dialogue_records.extend(
@@ -4723,7 +4792,7 @@ class ApiConsoleAiConfigTest(ARLResource):
 @ns.route('/ai_denoise/analyze/')
 class ApiConsoleAiDenoiseAnalyze(ARLResource):
     """
-    AI 去噪分析接口（列表批量分析 + 详情按需 AI 分析）。
+    AI 去噪分析接口（详情仅展示已分析结果，不再触发实时 AI 调用）。
     """
 
     @auth
@@ -4732,7 +4801,9 @@ class ApiConsoleAiDenoiseAnalyze(ARLResource):
         payload = request.get_json(silent=True) or {}
         module_id = str(payload.get('module_id') or '').strip()
         raw_items = payload.get('items')
-        prefer_ai = _safe_bool(payload.get('prefer_ai'), False)
+        prefer_ai_requested = _safe_bool(payload.get('prefer_ai'), False)
+        # 2026-03-25 起，为避免“点击详情触发实时模型调用”，此接口统一关闭 prefer_ai。
+        prefer_ai = False
 
         if module_id not in AI_DENOISE_MODULE_SCENE_MAP:
             return utils.build_ret(
@@ -4762,6 +4833,7 @@ class ApiConsoleAiDenoiseAnalyze(ARLResource):
             )
             result['config_path'] = str(config_path)
             result['item_count'] = len(result.get('items') or [])
+            result['prefer_ai_requested'] = bool(prefer_ai_requested)
             return utils.build_ret(ErrorMsg.Success, result)
         except Exception as exc:
             logger.exception('ai_denoise analyze failed module:%s err:%s', module_id, exc)
