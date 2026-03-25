@@ -5,7 +5,7 @@
 - 在浏览器中读取与修改 ARL 运行配置
 - 将配置变更同步到容器挂载的配置文件，避免手工进容器编辑
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import errno
 import json
@@ -480,6 +480,17 @@ AI_DENOISE_RESULT_LEVEL_WEIGHT = {
     'suspicious': 1,
     'danger': 2,
 }
+AI_USAGE_LOG_COLLECTION = 'ai_usage_log'
+AI_USAGE_LOG_MAX_LIMIT = 200
+AI_USAGE_SCENE_LABEL_MAP = {
+    'ai_config_test': 'AI测试',
+    'ai_denoise_site': 'AI去噪-站点',
+    'ai_denoise_fileleak': 'AI去噪-目录扫描',
+    'ai_denoise_cert': 'AI去噪-SSL证书',
+    'ai_denoise_url': 'AI去噪-URL信息',
+    'ai_denoise_vuln': 'AI去噪-风险',
+    'ai_denoise_nuclei_result': 'AI去噪-PoC风险',
+}
 
 
 def _default_ai_prompt_templates():
@@ -513,8 +524,12 @@ def _default_ai_prompt_templates():
             'name': '默认AI去噪-站点',
             'scene': 'ai_denoise_site',
             'content': (
-                "你是站点价值分析助手。请基于站点URL、标题、响应头、状态码与指纹信息，"
-                "输出正常/可疑/危险结论，并给出AI研判后的指纹结果、证据与处置建议。"
+                "你是渗透测试前置研判助手。请基于站点URL、标题、响应头、状态码与指纹信息，"
+                "判断该站点是否值得优先进入渗透测试，并输出："
+                "1) 正常/可疑/危险结论；"
+                "2) 最可能真实的技术栈/指纹（过滤明显误报）；"
+                "3) 可直接执行的验证建议（如目录探测、认证边界测试、WAF绕过前置检查）。"
+                "禁止编造不存在的信息。"
             ),
             'updated_at': '',
         },
@@ -523,8 +538,12 @@ def _default_ai_prompt_templates():
             'name': '默认AI去噪-目录扫描',
             'scene': 'ai_denoise_fileleak',
             'content': (
-                "你是目录扫描去噪助手。请基于URL路径、状态码、标题和返回体长度，输出风险结论：正常/可疑/危险。"
-                "必须给出证据要点与修复建议，避免夸大。"
+                "你是目录扫描去噪与渗透准备助手。请基于URL路径、状态码、标题、响应体长度判断：正常/可疑/危险，"
+                "并补充后续渗透验证优先级："
+                "1) 是否存在可利用入口（备份/配置/调试/上传）；"
+                "2) 建议先做哪类验证（鉴权绕过、目录遍历、文件读取、上传执行）；"
+                "3) 给出2-3条可操作的验证建议。"
+                "禁止夸大风险，证据不足时明确标注待复核。"
             ),
             'updated_at': '',
         },
@@ -533,8 +552,11 @@ def _default_ai_prompt_templates():
             'name': '默认AI去噪-SSL证书',
             'scene': 'ai_denoise_cert',
             'content': (
-                "你是证书安全分析助手。请基于证书有效期、签发信息、协议与套件特征，给出证书安全结论，"
-                "并输出到期风险依据与处置建议。"
+                "你是证书与传输安全评估助手。请基于证书有效期、签发信息、协议与套件特征，"
+                "输出结论并判断对渗透测试阶段的影响："
+                "1) 是否存在弱协议/弱套件可用于降级或中间人相关测试前置；"
+                "2) 证书到期与配置缺陷是否影响攻击面稳定性；"
+                "3) 给出优先整改建议与验证步骤。"
             ),
             'updated_at': '',
         },
@@ -543,8 +565,11 @@ def _default_ai_prompt_templates():
             'name': '默认AI去噪-URL信息',
             'scene': 'ai_denoise_url',
             'content': (
-                "你是URL风险去噪助手。请基于URL路径、状态码、标题和上下文，输出安全/可疑/危险结论，"
-                "并给出依据与建议。"
+                "你是URL攻击面去噪助手。请基于URL路径、参数、状态码、标题与上下文，输出安全/可疑/危险结论，"
+                "并围绕渗透测试准备给出："
+                "1) 该URL属于登录、管理、调试、接口还是静态资源；"
+                "2) 是否值得进一步测试（鉴权、越权、注入、文件读取、重定向等）；"
+                "3) 明确下一步验证建议与优先级。"
             ),
             'updated_at': '',
         },
@@ -553,8 +578,11 @@ def _default_ai_prompt_templates():
             'name': '默认AI去噪-风险',
             'scene': 'ai_denoise_vuln',
             'content': (
-                "你是漏洞误报复核助手。请根据风险等级、目标、验证证据与规则上下文，判断可信或疑似误报，"
-                "并输出处置建议。"
+                "你是漏洞结果复核助手。请根据风险等级、目标、验证证据与规则上下文判断：可信/疑似误报，"
+                "并从渗透测试视角输出："
+                "1) 哪些漏洞应优先复测；"
+                "2) 复测前置条件与利用链关键点；"
+                "3) 若疑似误报，给出最小复核路径。"
             ),
             'updated_at': '',
         },
@@ -563,8 +591,11 @@ def _default_ai_prompt_templates():
             'name': '默认AI去噪-PoC风险',
             'scene': 'ai_denoise_nuclei_result',
             'content': (
-                "你是PoC风险复核助手。请结合扫描器、规则ID、风险等级、命中URL与验证信息判断可信度，"
-                "识别疑似误报并给出复测建议。"
+                "你是PoC命中结果复核助手。请结合扫描器、规则ID、风险等级、命中URL与验证信息判断可信度，"
+                "并输出渗透测试可执行建议："
+                "1) 是否值得人工复现；"
+                "2) 复现路径与关键请求点；"
+                "3) 哪些结果应降权为疑似误报。"
             ),
             'updated_at': '',
         },
@@ -1112,32 +1143,84 @@ def _test_ai_config_connectivity(ai_config):
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=5)
     request_text = '你好呀～'
 
+    def _extract_reply_text(chat_payload):
+        reply_text = ''
+        choices = chat_payload.get('choices', []) if isinstance(chat_payload, dict) else []
+        message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
+        if isinstance(message_obj, dict):
+            content_obj = message_obj.get('content')
+            if isinstance(content_obj, str):
+                reply_text = content_obj.strip()
+            elif isinstance(content_obj, list):
+                text_parts = []
+                for fragment in content_obj:
+                    if isinstance(fragment, dict) and str(fragment.get('type') or '').strip() == 'text':
+                        text_value = str(fragment.get('text') or '').strip()
+                        if text_value:
+                            text_parts.append(text_value)
+                reply_text = '\n'.join(text_parts).strip()
+        if not reply_text:
+            reply_text = '（接口已响应，但返回内容为空）'
+        return reply_text
+
+    def _build_result(ok, message, detail, status='', usage=None, error_message=''):
+        tested_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        detail_value = detail if isinstance(detail, dict) else {}
+        result = {
+            'ok': bool(ok),
+            'message': str(message or ''),
+            'provider': provider_id,
+            'detail': detail_value,
+            'tested_at': tested_at,
+        }
+
+        status_value = str(status or '').strip().lower()
+        if status_value not in ('ok', 'error', 'skipped'):
+            status_value = 'ok' if ok else 'error'
+        log_error = str(error_message or '').strip()
+        if status_value == 'error' and not log_error:
+            log_error = str(message or '').strip()
+        _write_ai_usage_log(
+            scene='ai_config_test',
+            provider=provider_id,
+            model=str(detail_value.get('model') or model_name),
+            profile=str(detail_value.get('profile') or profile_name),
+            status=status_value,
+            request_text=str(detail_value.get('request_text') or request_text),
+            reply_text=str(detail_value.get('reply_text') or ''),
+            error_message=log_error,
+            usage=usage,
+            meta={
+                'base_url': base_url,
+                'model_count': _safe_int_any(detail_value.get('model_count'), 0),
+            },
+        )
+        return result
+
     if not api_key:
-        return {
-            'ok': False,
-            'message': '未配置 API Key，已跳过连通性测试',
-            'provider': provider_id,
-            'detail': {
+        return _build_result(
+            ok=False,
+            message='未配置 API Key，已跳过连通性测试',
+            detail={
                 'model': model_name,
                 'profile': profile_name,
                 'request_text': request_text,
                 'reply_text': '',
             },
-            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        }
+            status='skipped',
+        )
     if not base_url:
-        return {
-            'ok': False,
-            'message': '未配置 Base URL，已跳过连通性测试',
-            'provider': provider_id,
-            'detail': {
+        return _build_result(
+            ok=False,
+            message='未配置 Base URL，已跳过连通性测试',
+            detail={
                 'model': model_name,
                 'profile': profile_name,
                 'request_text': request_text,
                 'reply_text': '',
             },
-            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        }
+            status='skipped',
+        )
 
     models_url = '{}/models'.format(base_url.rstrip('/'))
     headers = {
@@ -1161,11 +1244,10 @@ def _test_ai_config_connectivity(ai_config):
                     err_message = str(error_obj.get('message') or '')
                 err_message = err_message or str(payload.get('message') or '')
             err_message = err_message or 'HTTP {}'.format(status_code)
-            return {
-                'ok': False,
-                'message': 'AI 测试失败：{}'.format(err_message),
-                'provider': provider_id,
-                'detail': {
+            return _build_result(
+                ok=False,
+                message='AI 测试失败：{}'.format(err_message),
+                detail={
                     'status_code': status_code,
                     'base_url': base_url,
                     'model': model_name,
@@ -1173,8 +1255,9 @@ def _test_ai_config_connectivity(ai_config):
                     'request_text': request_text,
                     'reply_text': '',
                 },
-                'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            }
+                status='error',
+                error_message=err_message,
+            )
 
         models = payload.get('data', []) if isinstance(payload, dict) else []
         model_count = len(models) if isinstance(models, list) else 0
@@ -1184,11 +1267,10 @@ def _test_ai_config_connectivity(ai_config):
 
         test_model = model_name or first_model
         if not test_model:
-            return {
-                'ok': False,
-                'message': 'AI 测试失败：未发现可用模型',
-                'provider': provider_id,
-                'detail': {
+            return _build_result(
+                ok=False,
+                message='AI 测试失败：未发现可用模型',
+                detail={
                     'base_url': base_url,
                     'model_count': model_count,
                     'first_model': first_model,
@@ -1197,8 +1279,9 @@ def _test_ai_config_connectivity(ai_config):
                     'request_text': request_text,
                     'reply_text': '',
                 },
-                'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            }
+                status='error',
+                error_message='未发现可用模型',
+            )
 
         chat_url = '{}/chat/completions'.format(base_url.rstrip('/'))
         request_body = {
@@ -1242,28 +1325,14 @@ def _test_ai_config_connectivity(ai_config):
                 except Exception:
                     retry_payload = {}
                 if retry_status_code == 200:
-                    retry_reply_text = ''
-                    retry_choices = retry_payload.get('choices', []) if isinstance(retry_payload, dict) else []
-                    retry_message_obj = retry_choices[0].get('message') if isinstance(retry_choices, list) and retry_choices else {}
-                    if isinstance(retry_message_obj, dict):
-                        retry_content_obj = retry_message_obj.get('content')
-                        if isinstance(retry_content_obj, str):
-                            retry_reply_text = retry_content_obj.strip()
-                        elif isinstance(retry_content_obj, list):
-                            text_parts = []
-                            for fragment in retry_content_obj:
-                                if isinstance(fragment, dict) and str(fragment.get('type') or '').strip() == 'text':
-                                    text_value = str(fragment.get('text') or '').strip()
-                                    if text_value:
-                                        text_parts.append(text_value)
-                            retry_reply_text = '\n'.join(text_parts).strip()
-                    if not retry_reply_text:
-                        retry_reply_text = '（接口已响应，但返回内容为空）'
-                    return {
-                        'ok': True,
-                        'message': 'AI 测试成功（模型已从 {} 自动切换为 {}）'.format(test_model, retry_model),
-                        'provider': provider_id,
-                        'detail': {
+                    retry_reply_text = _extract_reply_text(retry_payload)
+                    retry_usage = _normalize_ai_usage_dict(
+                        retry_payload.get('usage') if isinstance(retry_payload, dict) else {}
+                    )
+                    return _build_result(
+                        ok=True,
+                        message='AI 测试成功（模型已从 {} 自动切换为 {}）'.format(test_model, retry_model),
+                        detail={
                             'base_url': base_url,
                             'model_count': model_count,
                             'first_model': first_model,
@@ -1271,14 +1340,15 @@ def _test_ai_config_connectivity(ai_config):
                             'profile': profile_name,
                             'request_text': request_text,
                             'reply_text': retry_reply_text,
+                            'usage': retry_usage,
                         },
-                        'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    }
-            return {
-                'ok': False,
-                'message': 'AI 测试失败：{}'.format(err_message),
-                'provider': provider_id,
-                'detail': {
+                        status='ok',
+                        usage=retry_usage,
+                    )
+            return _build_result(
+                ok=False,
+                message='AI 测试失败：{}'.format(err_message),
+                detail={
                     'status_code': chat_status_code,
                     'base_url': base_url,
                     'model_count': model_count,
@@ -1288,33 +1358,16 @@ def _test_ai_config_connectivity(ai_config):
                     'request_text': request_text,
                     'reply_text': '',
                 },
-                'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            }
+                status='error',
+                error_message=err_message,
+            )
 
-        reply_text = ''
-        choices = chat_payload.get('choices', []) if isinstance(chat_payload, dict) else []
-        message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
-        if isinstance(message_obj, dict):
-            content_obj = message_obj.get('content')
-            if isinstance(content_obj, str):
-                reply_text = content_obj.strip()
-            elif isinstance(content_obj, list):
-                text_parts = []
-                for fragment in content_obj:
-                    if isinstance(fragment, dict) and str(fragment.get('type') or '').strip() == 'text':
-                        text_value = str(fragment.get('text') or '').strip()
-                        if text_value:
-                            text_parts.append(text_value)
-                reply_text = '\n'.join(text_parts).strip()
-
-        if not reply_text:
-            reply_text = '（接口已响应，但返回内容为空）'
-
-        return {
-            'ok': True,
-            'message': 'AI 测试成功',
-            'provider': provider_id,
-            'detail': {
+        usage = _normalize_ai_usage_dict(chat_payload.get('usage') if isinstance(chat_payload, dict) else {})
+        reply_text = _extract_reply_text(chat_payload)
+        return _build_result(
+            ok=True,
+            message='AI 测试成功',
+            detail={
                 'base_url': base_url,
                 'model_count': model_count,
                 'first_model': first_model,
@@ -1322,23 +1375,26 @@ def _test_ai_config_connectivity(ai_config):
                 'profile': profile_name,
                 'request_text': request_text,
                 'reply_text': reply_text,
+                'usage': usage,
             },
-            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        }
+            status='ok',
+            usage=usage,
+        )
     except Exception as exc:
-        return {
-            'ok': False,
-            'message': 'AI 测试失败：{}'.format(exc),
-            'provider': provider_id,
-            'detail': {
+        message = str(exc)
+        return _build_result(
+            ok=False,
+            message='AI 测试失败：{}'.format(message),
+            detail={
                 'base_url': base_url,
                 'model': model_name,
                 'profile': profile_name,
                 'request_text': request_text,
                 'reply_text': '',
             },
-            'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        }
+            status='error',
+            error_message=message,
+        )
 
 
 def _safe_int_any(value, default_value=0):
@@ -1366,6 +1422,162 @@ def _truncate_text(text, max_length=220):
     if len(value) <= max_length:
         return value
     return '{}...'.format(value[:max_length])
+
+
+def _normalize_ai_usage_value(value):
+    parsed = _safe_int_any(value, 0)
+    if parsed < 0:
+        return 0
+    return parsed
+
+
+def _normalize_ai_usage_dict(raw_usage):
+    usage = raw_usage if isinstance(raw_usage, dict) else {}
+    prompt_tokens = _normalize_ai_usage_value(usage.get('prompt_tokens'))
+    completion_tokens = _normalize_ai_usage_value(usage.get('completion_tokens'))
+    total_tokens_raw = _normalize_ai_usage_value(usage.get('total_tokens'))
+    total_tokens = total_tokens_raw or (prompt_tokens + completion_tokens)
+    if total_tokens < 0:
+        total_tokens = 0
+    return {
+        'prompt_tokens': prompt_tokens,
+        'completion_tokens': completion_tokens,
+        'total_tokens': total_tokens,
+    }
+
+
+def _normalize_ai_usage_scene_label(scene):
+    scene_text = str(scene or '').strip()
+    return AI_USAGE_SCENE_LABEL_MAP.get(scene_text, scene_text or 'AI调用')
+
+
+def _build_ai_usage_log_stats_default():
+    return {
+        'request_count': 0,
+        'success_count': 0,
+        'error_count': 0,
+        'skip_count': 0,
+        'prompt_tokens': 0,
+        'completion_tokens': 0,
+        'total_tokens': 0,
+    }
+
+
+def _normalize_ai_usage_stats_value(raw_value):
+    base = _build_ai_usage_log_stats_default()
+    value = raw_value if isinstance(raw_value, dict) else {}
+    base['request_count'] = _normalize_ai_usage_value(value.get('request_count'))
+    base['success_count'] = _normalize_ai_usage_value(value.get('success_count'))
+    base['error_count'] = _normalize_ai_usage_value(value.get('error_count'))
+    base['skip_count'] = _normalize_ai_usage_value(value.get('skip_count'))
+    base['prompt_tokens'] = _normalize_ai_usage_value(value.get('prompt_tokens'))
+    base['completion_tokens'] = _normalize_ai_usage_value(value.get('completion_tokens'))
+    base['total_tokens'] = _normalize_ai_usage_value(value.get('total_tokens'))
+    return base
+
+
+def _aggregate_ai_usage_stats(match_query=None):
+    query = match_query if isinstance(match_query, dict) else {}
+    pipeline = []
+    if query:
+        pipeline.append({'$match': query})
+    pipeline.append(
+        {
+            '$group': {
+                '_id': None,
+                'request_count': {'$sum': 1},
+                'success_count': {'$sum': {'$cond': [{'$eq': ['$status', 'ok']}, 1, 0]}},
+                'error_count': {'$sum': {'$cond': [{'$eq': ['$status', 'error']}, 1, 0]}},
+                'skip_count': {'$sum': {'$cond': [{'$eq': ['$status', 'skipped']}, 1, 0]}},
+                'prompt_tokens': {'$sum': {'$ifNull': ['$usage.prompt_tokens', 0]}},
+                'completion_tokens': {'$sum': {'$ifNull': ['$usage.completion_tokens', 0]}},
+                'total_tokens': {'$sum': {'$ifNull': ['$usage.total_tokens', 0]}},
+            }
+        }
+    )
+    try:
+        results = list(utils.conn_db(AI_USAGE_LOG_COLLECTION).aggregate(pipeline))
+        if results:
+            return _normalize_ai_usage_stats_value(results[0])
+    except Exception as exc:
+        logger.warning('aggregate ai usage stats failed: %s', exc)
+    return _build_ai_usage_log_stats_default()
+
+
+def _write_ai_usage_log(
+    *,
+    scene='',
+    provider='',
+    model='',
+    profile='',
+    status='ok',
+    request_text='',
+    reply_text='',
+    error_message='',
+    usage=None,
+    meta=None
+):
+    now = datetime.now()
+    scene_text = str(scene or '').strip() or 'ai_call'
+    status_text = str(status or '').strip().lower()
+    if status_text not in ('ok', 'error', 'skipped'):
+        status_text = 'ok'
+    usage_value = _normalize_ai_usage_dict(usage)
+    meta_value = meta if isinstance(meta, dict) else {}
+
+    record = {
+        'created_at': now,
+        'created_at_text': now.strftime('%Y-%m-%d %H:%M:%S'),
+        'scene': scene_text,
+        'scene_label': _normalize_ai_usage_scene_label(scene_text),
+        'provider': _truncate_text(provider, 64),
+        'model': _truncate_text(model, 120),
+        'profile': _truncate_text(profile, 120),
+        'status': status_text,
+        'request_text': _truncate_text(request_text, 3200),
+        'reply_text': _truncate_text(reply_text, 3200),
+        'error_message': _truncate_text(error_message, 320),
+        'usage': usage_value,
+        'meta': meta_value,
+    }
+    try:
+        utils.conn_db(AI_USAGE_LOG_COLLECTION).insert_one(record)
+    except Exception as exc:
+        logger.warning('write ai usage log failed: %s', exc)
+
+
+def _serialize_ai_usage_log_record(item):
+    if not isinstance(item, dict):
+        return {}
+    usage_value = _normalize_ai_usage_dict(item.get('usage'))
+    created_at_text = str(item.get('created_at_text') or '').strip()
+    if not created_at_text:
+        created_at = item.get('created_at')
+        if isinstance(created_at, datetime):
+            created_at_text = created_at.strftime('%Y-%m-%d %H:%M:%S')
+    object_id = item.get('_id')
+    log_id = str(object_id) if isinstance(object_id, ObjectId) else _truncate_text(object_id, 80)
+    scene = str(item.get('scene') or '').strip()
+    status_text = str(item.get('status') or '').strip().lower()
+    if status_text not in ('ok', 'error', 'skipped'):
+        status_text = 'ok'
+    return {
+        'id': log_id,
+        'created_at': created_at_text,
+        'scene': scene,
+        'scene_label': str(item.get('scene_label') or _normalize_ai_usage_scene_label(scene)),
+        'provider': str(item.get('provider') or ''),
+        'model': str(item.get('model') or ''),
+        'profile': str(item.get('profile') or ''),
+        'status': status_text,
+        'request_text': _truncate_text(item.get('request_text'), 3200),
+        'reply_text': _truncate_text(item.get('reply_text'), 3200),
+        'error_message': _truncate_text(item.get('error_message'), 320),
+        'prompt_tokens': usage_value.get('prompt_tokens', 0),
+        'completion_tokens': usage_value.get('completion_tokens', 0),
+        'total_tokens': usage_value.get('total_tokens', 0),
+        'meta': item.get('meta') if isinstance(item.get('meta'), dict) else {},
+    }
 
 
 def _normalize_string_list_value(value, max_items=6, max_item_len=180):
@@ -1452,7 +1664,11 @@ def _build_rule_dialogue_records(module_id, item, rule_result, note=''):
         [
             {
                 'role': 'system',
-                'content': '站在安全运营视角，对“{}”进行去噪与价值研判。'.format(module_label),
+                'content': (
+                    '你是渗透测试前置研判助手。'
+                    '请对“{}”做去噪与价值判断，目标是为后续人工渗透测试提供可执行优先级。'
+                    '要求：仅基于现有证据，不编造；给出可落地的下一步验证建议。'
+                ).format(module_label),
             },
             {
                 'role': 'user',
@@ -2246,14 +2462,32 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
     base_url = str(active_profile.get('base_url') or '').strip()
     api_key = str(active_profile.get('api_key') or '').strip()
     model_name = _normalize_ai_model_name(provider_id, active_profile.get('model'))
+    profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
+    usage_scene = AI_DENOISE_MODULE_SCENE_MAP.get(module_id) or 'ai_denoise'
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=8)
     dialogue_records = []
+    user_content = ''
     if not base_url or not api_key or not model_name:
         dialogue_records = _normalize_dialogue_records(
             [
                 {'role': 'system', 'content': 'AI 去噪详情分析请求被拒绝。'},
                 {'role': 'assistant', 'content': '模型配置不完整，无法调用 AI。'},
             ]
+        )
+        _write_ai_usage_log(
+            scene=usage_scene,
+            provider=provider_id,
+            model=model_name,
+            profile=profile_name,
+            status='skipped',
+            request_text='AI 去噪分析（模型配置不完整）',
+            reply_text='',
+            error_message='模型配置不完整',
+            usage={},
+            meta={
+                'module_id': module_id,
+                'source': 'ai_denoise_detail',
+            },
         )
         return None, '模型配置不完整', dialogue_records
 
@@ -2335,7 +2569,7 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                     if not err_message:
                         err_message = str(payload.get('message') or '').strip()
                 message = err_message or 'HTTP {}'.format(status_code)
-                return False, '', message
+                return False, '', message, _normalize_ai_usage_dict(payload.get('usage') if isinstance(payload, dict) else {})
 
             choices = payload.get('choices', []) if isinstance(payload, dict) else []
             message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
@@ -2352,9 +2586,10 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                             if text_value:
                                 text_parts.append(text_value)
                     content_text = '\n'.join(text_parts).strip()
-            return True, content_text, ''
+            usage = _normalize_ai_usage_dict(payload.get('usage') if isinstance(payload, dict) else {})
+            return True, content_text, '', usage
 
-        call_ok, content_text, call_message = _request_chat_completion(model_name)
+        call_ok, content_text, call_message, usage = _request_chat_completion(model_name)
         if not call_ok and _is_ai_model_unavailable_error(call_message):
             retry_model = _pick_ai_retry_model(provider_id, model_name)
             if retry_model:
@@ -2369,15 +2604,17 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                         max_items=2,
                     )
                 )
-                retry_ok, retry_content_text, retry_message = _request_chat_completion(retry_model)
+                retry_ok, retry_content_text, retry_message, retry_usage = _request_chat_completion(retry_model)
                 if retry_ok:
                     model_name = retry_model
                     call_ok = True
                     content_text = retry_content_text
                     call_message = ''
+                    usage = retry_usage
                 else:
                     call_ok = False
                     call_message = retry_message
+                    usage = retry_usage
 
         if not call_ok:
             dialogue_records.extend(
@@ -2385,6 +2622,21 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                     [{'role': 'assistant', 'content': 'AI接口调用失败：{}'.format(call_message)}],
                     max_items=2,
                 )
+            )
+            _write_ai_usage_log(
+                scene=usage_scene,
+                provider=provider_id,
+                model=model_name,
+                profile=profile_name,
+                status='error',
+                request_text=user_content,
+                reply_text='',
+                error_message=call_message,
+                usage=usage,
+                meta={
+                    'module_id': module_id,
+                    'source': 'ai_denoise_detail',
+                },
             )
             return None, call_message, dialogue_records
 
@@ -2399,6 +2651,21 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                         max_len=3200,
                     )
                 )
+            _write_ai_usage_log(
+                scene=usage_scene,
+                provider=provider_id,
+                model=model_name,
+                profile=profile_name,
+                status='ok',
+                request_text=user_content,
+                reply_text=content_text,
+                error_message='',
+                usage=usage,
+                meta={
+                    'module_id': module_id,
+                    'source': 'ai_denoise_detail',
+                },
+            )
             return parsed, '', dialogue_records
 
         if content_text:
@@ -2411,13 +2678,29 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
             )
 
         if not isinstance(parsed, dict):
+            format_error = 'AI 返回格式不可解析'
             dialogue_records.extend(
                 _normalize_dialogue_records(
-                    [{'role': 'assistant', 'content': 'AI 返回格式不可解析，回退规则分析。'}],
+                    [{'role': 'assistant', 'content': '{}，回退规则分析。'.format(format_error)}],
                     max_items=2,
                 )
             )
-            return None, 'AI 返回格式不可解析', dialogue_records
+            _write_ai_usage_log(
+                scene=usage_scene,
+                provider=provider_id,
+                model=model_name,
+                profile=profile_name,
+                status='error',
+                request_text=user_content,
+                reply_text=content_text,
+                error_message=format_error,
+                usage=usage,
+                meta={
+                    'module_id': module_id,
+                    'source': 'ai_denoise_detail',
+                },
+            )
+            return None, format_error, dialogue_records
         return None, 'AI 返回格式不可解析', dialogue_records
     except Exception as exc:
         message = str(exc)
@@ -2426,6 +2709,21 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                 [{'role': 'assistant', 'content': 'AI请求异常：{}'.format(_truncate_text(message, 240))}],
                 max_items=2,
             )
+        )
+        _write_ai_usage_log(
+            scene=usage_scene,
+            provider=provider_id,
+            model=model_name,
+            profile=profile_name,
+            status='error',
+            request_text=user_content,
+            reply_text='',
+            error_message=message,
+            usage={},
+            meta={
+                'module_id': module_id,
+                'source': 'ai_denoise_detail',
+            },
         )
         return None, message, dialogue_records
 
@@ -2512,6 +2810,16 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
     prompt_ids = _normalize_ai_denoise_prompt_ids(ai_config.get('ai_denoise_prompt_ids'), prompt_templates)
     prompt_id = str(prompt_ids.get(module_id) or '').strip()
     prompt_content = _resolve_ai_prompt_content(prompt_templates, prompt_id, module_id)
+    prompt_name = ''
+    if prompt_id:
+        for template_item in prompt_templates:
+            if not isinstance(template_item, dict):
+                continue
+            if str(template_item.get('id') or '').strip() == prompt_id:
+                prompt_name = str(template_item.get('name') or '').strip()
+                break
+    if not prompt_name:
+        prompt_name = '模块默认提示词'
 
     model_profiles = _normalize_ai_model_profiles(ai_config.get('model_profiles'), legacy_ai_conf=ai_config)
     active_model_profile_id = str(ai_config.get('active_model_profile_id') or '').strip()
@@ -2533,12 +2841,14 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
         row_key = _extract_row_key(item, index)
         rule_result = _build_ai_denoise_rule_result(module_id, item)
         source = 'rule'
+        analysis_note = ''
         dialogue_records = _build_rule_dialogue_records(module_id, item, rule_result, note='当前为规则分析模式。')
         task_id = _extract_task_id_from_item(item)
         task_ai_denoise_flag = _resolve_task_ai_denoise_flag(task_id, task_flag_cache)
 
         if not ai_denoise_enable or not module_enabled:
             disabled_summary = 'AI 去噪功能已关闭，可在 AI 管理中开启后重试。'
+            analysis_note = '当前模块或全局 AI 去噪开关关闭，未进入 AI 研判。'
             dialogue_records = _normalize_dialogue_records(
                 [
                     {
@@ -2565,6 +2875,8 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                     'suggestions': ['前往 AI 管理开启对应模块后可继续分析。'],
                     'source': 'disabled',
                     'prompt_id': prompt_id,
+                    'prompt_name': prompt_name,
+                    'note': analysis_note,
                     'analyzed_at': now_text,
                     'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
                     'dialogue_records': dialogue_records,
@@ -2574,6 +2886,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
 
         if task_ai_denoise_flag is None:
             summary_text = '当前资产来自旧任务（未启用 AI 去噪），统一标记为未分析。'
+            analysis_note = '当前资产属于历史任务，任务配置中不存在 AI 去噪上下文。'
             dialogue_records = _normalize_dialogue_records(
                 [
                     {'role': 'system', 'content': '检测到旧任务资产，未具备 AI 去噪分析上下文。'},
@@ -2594,6 +2907,8 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                     'suggestions': ['建议对该任务重新扫描并开启 AI 去噪分析。'],
                     'source': 'disabled',
                     'prompt_id': prompt_id,
+                    'prompt_name': prompt_name,
+                    'note': analysis_note,
                     'analyzed_at': now_text,
                     'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
                     'dialogue_records': dialogue_records,
@@ -2603,6 +2918,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
 
         if task_ai_denoise_flag is False:
             summary_text = '该任务未开启 AI 去噪，当前资产标记为未分析。'
+            analysis_note = '任务创建时未开启 ai_denoise 选项。'
             dialogue_records = _normalize_dialogue_records(
                 [
                     {'role': 'system', 'content': '任务配置未开启 AI 去噪。'},
@@ -2623,6 +2939,8 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                     'suggestions': ['重新创建任务并开启 AI 去噪分析后再查看。'],
                     'source': 'disabled',
                     'prompt_id': prompt_id,
+                    'prompt_name': prompt_name,
+                    'note': analysis_note,
                     'analyzed_at': now_text,
                     'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
                     'dialogue_records': dialogue_records,
@@ -2632,6 +2950,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
 
         if not ai_model_ready:
             summary_text = 'AI 模型配置不完整（未配置可用 API Key/Model/BaseURL），当前标记为未分析。'
+            analysis_note = 'AI 管理中缺少可用的 API Key / 模型 / 地址配置。'
             dialogue_records = _normalize_dialogue_records(
                 [
                     {'role': 'system', 'content': 'AI 模型配置校验未通过。'},
@@ -2652,6 +2971,8 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                     'suggestions': ['请在 AI 管理完成模型配置并保存后重试。'],
                     'source': 'disabled',
                     'prompt_id': prompt_id,
+                    'prompt_name': prompt_name,
+                    'note': analysis_note,
                     'analyzed_at': now_text,
                     'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
                     'dialogue_records': dialogue_records,
@@ -2671,6 +2992,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
             if ai_output:
                 final_result = _normalize_ai_denoise_output(module_id, ai_output, rule_result)
                 source = 'ai'
+                analysis_note = '当前结果来自扫描阶段 AI 分析并已落库。'
                 dialogue_records = _normalize_dialogue_records(
                     (ai_dialogue_records or []) + [
                         {
@@ -2687,6 +3009,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                     fallback_evidence.insert(0, 'AI 调用失败，已回退规则分析：{}'.format(_truncate_text(ai_error, 120)))
                     final_result['evidence'] = fallback_evidence[:8]
                     fallback_note = 'AI 调用失败，已自动回退规则分析：{}'.format(_truncate_text(ai_error, 160))
+                analysis_note = fallback_note or 'AI 未返回有效结构化内容，已回退规则分析。'
                 dialogue_records = _build_rule_dialogue_records(module_id, item, final_result, note=fallback_note or 'AI 未返回有效结构化内容，已回退规则分析。')
                 if ai_dialogue_records:
                     dialogue_records = _normalize_dialogue_records(
@@ -2703,6 +3026,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                 fallback_note = 'AI 模型配置不可用，已回退规则分析。'
             elif not prefer_ai:
                 fallback_note = '当前为列表批量分析，默认使用规则模式避免阻塞页面。'
+            analysis_note = fallback_note or '当前结果来自规则分析。'
             dialogue_records = _build_rule_dialogue_records(module_id, item, final_result, note=fallback_note)
 
         results.append(
@@ -2726,6 +3050,8 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                 'suggestions': _normalize_string_list_value(final_result.get('suggestions'), max_items=8, max_item_len=280),
                 'source': source,
                 'prompt_id': prompt_id,
+                'prompt_name': prompt_name,
+                'note': _normalize_item_text(analysis_note, 260),
                 'cert_expire_at': final_result.get('cert_expire_at') or '',
                 'cert_expire_days': final_result.get('cert_expire_days'),
                 'analyzed_at': now_text,
@@ -2740,6 +3066,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
         'enable': ai_denoise_enable,
         'module_enabled': module_enabled,
         'prompt_id': prompt_id,
+        'prompt_name': prompt_name,
         'prefer_ai': bool(prefer_ai),
         'ai_used': bool(try_use_ai),
         'ai_model_ready': bool(ai_model_ready),
@@ -4787,6 +5114,186 @@ class ApiConsoleAiConfigTest(ARLResource):
                     'error': str(exc),
                 }
             )
+
+
+@ns.route('/ai_usage/stats/')
+class ApiConsoleAiUsageStats(ARLResource):
+    """
+    AI Token 用量统计接口。
+    """
+
+    @auth
+    def get(self):
+        now = datetime.now()
+        window_days = _safe_int_any(request.args.get('days'), 7)
+        if window_days <= 0:
+            window_days = 7
+        if window_days > 90:
+            window_days = 90
+
+        day_1_query = {'created_at': {'$gte': now - timedelta(days=1)}}
+        day_7_query = {'created_at': {'$gte': now - timedelta(days=7)}}
+        window_query = {'created_at': {'$gte': now - timedelta(days=window_days)}}
+
+        all_time = _aggregate_ai_usage_stats()
+        last_24h = _aggregate_ai_usage_stats(day_1_query)
+        last_7d = _aggregate_ai_usage_stats(day_7_query)
+
+        by_model = []
+        by_scene = []
+        try:
+            by_model_pipeline = [
+                {'$match': window_query},
+                {
+                    '$group': {
+                        '_id': {
+                            'provider': {'$ifNull': ['$provider', '']},
+                            'model': {'$ifNull': ['$model', '']},
+                        },
+                        'request_count': {'$sum': 1},
+                        'success_count': {'$sum': {'$cond': [{'$eq': ['$status', 'ok']}, 1, 0]}},
+                        'error_count': {'$sum': {'$cond': [{'$eq': ['$status', 'error']}, 1, 0]}},
+                        'skip_count': {'$sum': {'$cond': [{'$eq': ['$status', 'skipped']}, 1, 0]}},
+                        'prompt_tokens': {'$sum': {'$ifNull': ['$usage.prompt_tokens', 0]}},
+                        'completion_tokens': {'$sum': {'$ifNull': ['$usage.completion_tokens', 0]}},
+                        'total_tokens': {'$sum': {'$ifNull': ['$usage.total_tokens', 0]}},
+                    }
+                },
+                {'$sort': {'total_tokens': -1, 'request_count': -1}},
+                {'$limit': 12},
+            ]
+            by_model_items = list(utils.conn_db(AI_USAGE_LOG_COLLECTION).aggregate(by_model_pipeline))
+            for item in by_model_items:
+                identity = item.get('_id') if isinstance(item, dict) else {}
+                stats_value = _normalize_ai_usage_stats_value(item)
+                by_model.append(
+                    {
+                        'provider': str((identity or {}).get('provider') or '-'),
+                        'model': str((identity or {}).get('model') or '-'),
+                        **stats_value,
+                    }
+                )
+        except Exception as exc:
+            logger.warning('aggregate ai usage by_model failed: %s', exc)
+
+        try:
+            by_scene_pipeline = [
+                {'$match': window_query},
+                {
+                    '$group': {
+                        '_id': {'$ifNull': ['$scene', '']},
+                        'request_count': {'$sum': 1},
+                        'success_count': {'$sum': {'$cond': [{'$eq': ['$status', 'ok']}, 1, 0]}},
+                        'error_count': {'$sum': {'$cond': [{'$eq': ['$status', 'error']}, 1, 0]}},
+                        'skip_count': {'$sum': {'$cond': [{'$eq': ['$status', 'skipped']}, 1, 0]}},
+                        'prompt_tokens': {'$sum': {'$ifNull': ['$usage.prompt_tokens', 0]}},
+                        'completion_tokens': {'$sum': {'$ifNull': ['$usage.completion_tokens', 0]}},
+                        'total_tokens': {'$sum': {'$ifNull': ['$usage.total_tokens', 0]}},
+                    }
+                },
+                {'$sort': {'total_tokens': -1, 'request_count': -1}},
+                {'$limit': 20},
+            ]
+            by_scene_items = list(utils.conn_db(AI_USAGE_LOG_COLLECTION).aggregate(by_scene_pipeline))
+            for item in by_scene_items:
+                scene = str(item.get('_id') or '').strip()
+                stats_value = _normalize_ai_usage_stats_value(item)
+                by_scene.append(
+                    {
+                        'scene': scene,
+                        'scene_label': _normalize_ai_usage_scene_label(scene),
+                        **stats_value,
+                    }
+                )
+        except Exception as exc:
+            logger.warning('aggregate ai usage by_scene failed: %s', exc)
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'all_time': all_time,
+                'last_24h': last_24h,
+                'last_7d': last_7d,
+                'by_model': by_model,
+                'by_scene': by_scene,
+                'window_days': window_days,
+                'updated_at': now.strftime('%Y-%m-%d %H:%M:%S'),
+            },
+        )
+
+
+@ns.route('/ai_usage/logs/')
+class ApiConsoleAiUsageLogs(ARLResource):
+    """
+    AI 对话日志查询接口。
+    """
+
+    @auth
+    def get(self):
+        limit = _safe_int_any(request.args.get('limit'), 80)
+        if limit <= 0:
+            limit = 80
+        if limit > AI_USAGE_LOG_MAX_LIMIT:
+            limit = AI_USAGE_LOG_MAX_LIMIT
+
+        status = str(request.args.get('status') or '').strip().lower()
+        scene = str(request.args.get('scene') or '').strip()
+        provider = str(request.args.get('provider') or '').strip()
+        model = str(request.args.get('model') or '').strip()
+
+        query = {}
+        if status in ('ok', 'error', 'skipped'):
+            query['status'] = status
+        if scene:
+            query['scene'] = scene
+        if provider:
+            query['provider'] = provider
+        if model:
+            query['model'] = model
+
+        items = []
+        total = 0
+        try:
+            cursor = utils.conn_db(AI_USAGE_LOG_COLLECTION).find(query).sort([('_id', -1)]).limit(limit)
+            items = [_serialize_ai_usage_log_record(item) for item in cursor]
+            total = utils.conn_db(AI_USAGE_LOG_COLLECTION).count_documents(query)
+        except Exception as exc:
+            logger.warning('load ai usage logs failed: %s', exc)
+
+        scene_candidates = list(AI_USAGE_SCENE_LABEL_MAP.keys())
+        try:
+            scene_values = utils.conn_db(AI_USAGE_LOG_COLLECTION).distinct('scene') or []
+            for raw_scene in scene_values:
+                scene_text = str(raw_scene or '').strip()
+                if not scene_text:
+                    continue
+                if scene_text not in scene_candidates:
+                    scene_candidates.append(scene_text)
+        except Exception as exc:
+            logger.warning('load ai usage scene candidates failed: %s', exc)
+
+        available_scenes = [
+            {
+                'scene': scene_item,
+                'scene_label': _normalize_ai_usage_scene_label(scene_item),
+            }
+            for scene_item in scene_candidates
+        ]
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'items': items,
+                'total': total,
+                'limit': limit,
+                'status': status,
+                'scene': scene,
+                'provider': provider,
+                'model': model,
+                'available_scenes': available_scenes,
+                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            },
+        )
 
 
 @ns.route('/ai_denoise/analyze/')

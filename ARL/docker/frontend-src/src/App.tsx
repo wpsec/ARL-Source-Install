@@ -228,6 +228,8 @@ type AiDenoiseResultItem = {
   suggestions: string[];
   source: 'disabled' | 'rule' | 'ai';
   prompt_id: string;
+  prompt_name?: string;
+  note?: string;
   analyzed_at: string;
   cert_expire_at?: string;
   cert_expire_days?: number;
@@ -2058,6 +2060,14 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'waf_host', label: 'WAF识别' },
 ];
 
+function getDefaultModulePageSize(moduleId: string, filters?: JsonValue): number {
+  const isTaskDetailModule = TASK_DETAIL_TABS.some((tab) => tab.id === moduleId);
+  if (!isTaskDetailModule) return 50;
+  const taskId = String((filters || {}).task_id || '').trim();
+  if (taskId) return 200;
+  return 50;
+}
+
 function buildUrl(path: string, query?: JsonValue): string {
   const p = path.startsWith('/') ? path : `/${path}`;
   const full = `${API_BASE}${p}`;
@@ -2598,11 +2608,56 @@ function normalizeTaskStatus(rawStatus: any): 'waiting' | 'running' | 'done' | '
 function getTaskStatusSortWeight(rawStatus: any): number {
   const normalizedStatus = normalizeTaskStatus(rawStatus);
   if (normalizedStatus === 'running') return 0;
-  if (normalizedStatus === 'error') return 1;
+  if (normalizedStatus === 'done') return 1;
   if (normalizedStatus === 'waiting') return 2;
-  if (normalizedStatus === 'done') return 3;
-  if (normalizedStatus === 'stop') return 4;
+  if (normalizedStatus === 'error' || normalizedStatus === 'stop') return 3;
   return 5;
+}
+
+function getTaskSortTimeByStatus(row: any, normalizedStatus: ReturnType<typeof normalizeTaskStatus>): number {
+  const resolveTimestamp = (keys: string[]): number => {
+    for (const key of keys) {
+      const ts = parseDateTimeToTimestamp(row?.[key]);
+      if (ts !== null && Number.isFinite(ts)) return ts;
+    }
+    return 0;
+  };
+
+  if (normalizedStatus === 'done') {
+    return resolveTimestamp(['end_time', 'update_time', 'start_time', 'create_time']);
+  }
+  if (normalizedStatus === 'running') {
+    return resolveTimestamp(['start_time', 'create_time', 'update_time', 'end_time']);
+  }
+  if (normalizedStatus === 'waiting') {
+    return resolveTimestamp(['create_time', 'update_time', 'start_time', 'end_time']);
+  }
+  return resolveTimestamp(['end_time', 'update_time', 'start_time', 'create_time']);
+}
+
+function getAiPrioritySortWeight(
+  analysis: AiDenoiseResultItem | undefined,
+  moduleId: string
+): number {
+  if (!analysis) return 1000;
+  const levelWeightMap: Record<AiDenoiseResultItem['result_level'], number> = {
+    danger: 0,
+    suspicious: 1,
+    safe: 2,
+    disabled: 4,
+  };
+  const sourceWeightMap: Record<AiDenoiseResultItem['source'], number> = {
+    ai: 0,
+    rule: 1,
+    disabled: 2,
+  };
+  let weight = levelWeightMap[analysis.result_level] * 10 + sourceWeightMap[analysis.source] * 2;
+  if (moduleId === 'vuln' || moduleId === 'nuclei_result') {
+    const trust = String(analysis.trust || '').toLowerCase();
+    if (trust.includes('误报') || trust.includes('suspected')) weight += 3;
+    if (trust.includes('可信') || trust.includes('trusted')) weight -= 1;
+  }
+  return weight;
 }
 
 function getTaskStatusLabel(rawStatus: any, options: { showRunningStage?: boolean } = {}): string {
@@ -6353,7 +6408,7 @@ function TableModuleView({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [page, setPage] = useState(1);
-  const [size, setSize] = useState(50);
+  const [size, setSize] = useState(() => getDefaultModulePageSize(module.id, externalFilters));
   const [order, setOrder] = useState(module.defaultOrder || '');
   const [total, setTotal] = useState(0);
   const [quickFilter, setQuickFilter] = useState('');
@@ -6453,6 +6508,20 @@ function TableModuleView({
   const showTableHeaderFreezeToggle = canToggleTableHeaderFreeze(module.id);
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
   const aiAnalysisFilterValue = String(searchForm?.ai_analysis ?? '').trim();
+  const hasSearchCriteria = useMemo(() => {
+    if (hasExternalFilters) return true;
+    if (!hasAdvancedSearch) {
+      return Boolean(String(quickFilter || '').trim());
+    }
+    return (module.searchFields || []).some((field) => {
+      const value = searchForm?.[field.key];
+      if (value === null || value === undefined) return false;
+      if (typeof value === 'string') return value.trim() !== '';
+      if (typeof value === 'number') return Number.isFinite(value);
+      if (typeof value === 'boolean') return value;
+      return String(value).trim() !== '';
+    });
+  }, [hasAdvancedSearch, hasExternalFilters, module.searchFields, quickFilter, searchForm]);
   const isTaskTerminalStatus = (status: any) => ['done', 'stop', 'error'].includes(String(status || '').toLowerCase());
   const markTaskRowActionPending = (taskId: string, action: string) => {
     setTaskRowPendingActionMap((prev) => ({ ...prev, [taskId]: action }));
@@ -6504,16 +6573,62 @@ function TableModuleView({
       });
     }
 
+    const orderText = String(order || '').trim();
+    const defaultOrderText = String(module.defaultOrder || '').trim();
+    const usingDefaultOrder = !orderText || orderText === defaultOrderText;
+
+    if (filterableModule && sourceRows.length > 1 && !aiAnalysisFilterValue && usingDefaultOrder) {
+      sourceRows = sourceRows
+        .map((row, index) => {
+          const rowKey =
+            normalizeRowIdValue(row?.[preferredRowIdKey])
+            || normalizeRowIdValue(row?._id)
+            || normalizeRowIdValue(row?.id)
+            || normalizeRowIdValue(row?.task_id)
+            || normalizeRowIdValue(row?.job_id)
+            || `${module.id}-row-${page}-${index + 1}`;
+          const analysis = aiDenoiseResultMap[rowKey];
+          return {
+            row,
+            index,
+            aiWeight: getAiPrioritySortWeight(analysis, module.id),
+          };
+        })
+        .sort((a, b) => (a.aiWeight - b.aiWeight) || (a.index - b.index))
+        .map((item) => item.row);
+    }
+
     if (module.id !== 'task' || sourceRows.length <= 1) return sourceRows;
+    if (hasSearchCriteria) return sourceRows;
+
     return sourceRows
-      .map((row, index) => ({
-        row,
-        index,
-        statusWeight: getTaskStatusSortWeight(row?.status),
-      }))
-      .sort((a, b) => (a.statusWeight - b.statusWeight) || (a.index - b.index))
+      .map((row, index) => {
+        const normalizedStatus = normalizeTaskStatus(row?.status);
+        return {
+          row,
+          index,
+          statusWeight: getTaskStatusSortWeight(normalizedStatus),
+          status: normalizedStatus,
+          sortTime: getTaskSortTimeByStatus(row, normalizedStatus),
+        };
+      })
+      .sort((a, b) => {
+        if (a.statusWeight !== b.statusWeight) return a.statusWeight - b.statusWeight;
+        if (a.sortTime !== b.sortTime) return b.sortTime - a.sortTime;
+        return a.index - b.index;
+      })
       .map((item) => item.row);
-  }, [aiAnalysisFilterValue, aiDenoiseResultMap, module.id, module.rowIdKey, page, rows]);
+  }, [
+    aiAnalysisFilterValue,
+    aiDenoiseResultMap,
+    hasSearchCriteria,
+    module.defaultOrder,
+    module.id,
+    module.rowIdKey,
+    order,
+    page,
+    rows,
+  ]);
   const [shouldInitialLoad, setShouldInitialLoad] = useState(false);
 
   const buildUniqueTextOptions = useCallback((values: any[]): Array<{ label: string; value: string }> => {
@@ -6617,12 +6732,13 @@ function TableModuleView({
   }, [hasAdvancedSearch, module.searchFields]);
 
   useEffect(() => {
+    const defaultSize = getDefaultModulePageSize(module.id, activeExternalFilters);
     const cachedState = moduleListStateCacheRef.current[moduleCacheKey];
     if (cachedState) {
       setRows(cachedState.rows || []);
       setTotal(Number(cachedState.total || 0));
       setPage(Math.max(1, Number(cachedState.page || 1)));
-      setSize(Math.max(1, Number(cachedState.size || 50)));
+      setSize(Math.max(1, Number(cachedState.size || defaultSize)));
       setOrder(String(cachedState.order || module.defaultOrder || ''));
       setQuickFilter(String(cachedState.quickFilter || ''));
       setSearchForm(cachedState.searchForm ? deepClone(cachedState.searchForm) : buildDefaultSearchForm());
@@ -6631,7 +6747,7 @@ function TableModuleView({
       setRows([]);
       setTotal(0);
       setPage(1);
-      setSize(50);
+      setSize(defaultSize);
       setOrder(module.defaultOrder || '');
       setQuickFilter('');
       setSearchForm(buildDefaultSearchForm());
@@ -6639,7 +6755,7 @@ function TableModuleView({
     }
     setLoading(false);
     setSelectedIds([]);
-  }, [buildDefaultSearchForm, hasList, module.defaultOrder, moduleCacheKey]);
+  }, [activeExternalFilters, buildDefaultSearchForm, hasList, module.defaultOrder, module.id, moduleCacheKey]);
 
   useEffect(() => {
     if (!hasList) return;
@@ -7383,12 +7499,36 @@ function TableModuleView({
       })
       .filter((item: { role: 'system' | 'user' | 'assistant' | 'tool'; content: string } | null): item is { role: 'system' | 'user' | 'assistant' | 'tool'; content: string } => Boolean(item))
       .slice(0, 12);
-    const normalizedDialogueRecords = dialogueRecords.length > 0
-      ? dialogueRecords
-      : [{
+    const summaryText = sanitizeUiMessage(String(raw?.summary || '暂无分析摘要'), 900) || '暂无分析摘要';
+    const synthesizedAssistantContent = [
+      `最终结果：${displayText || '-'}`,
+      `摘要：${summaryText}`,
+      ...(normalizeAiDenoiseStringList(raw?.evidence, 3).length > 0
+        ? ['依据：', ...normalizeAiDenoiseStringList(raw?.evidence, 3).map((item, index) => `${index + 1}. ${item}`)]
+        : []),
+      ...(normalizeAiDenoiseStringList(raw?.suggestions, 3).length > 0
+        ? ['建议：', ...normalizeAiDenoiseStringList(raw?.suggestions, 3).map((item, index) => `${index + 1}. ${item}`)]
+        : []),
+    ].join('\n');
+    const normalizedDialogueRecords = (() => {
+      if (dialogueRecords.length === 0) {
+        return [{
           role: 'assistant' as const,
-          content: `最终结果：${displayText || '-'}\n摘要：${sanitizeUiMessage(String(raw?.summary || '暂无分析摘要'), 900) || '暂无分析摘要'}`,
+          content: synthesizedAssistantContent,
         }];
+      }
+      const hasAssistant = dialogueRecords.some((item) => item.role === 'assistant');
+      if (!hasAssistant) {
+        return [
+          ...dialogueRecords,
+          {
+            role: 'assistant' as const,
+            content: synthesizedAssistantContent,
+          },
+        ].slice(0, 12);
+      }
+      return dialogueRecords;
+    })();
     const fingerResult = normalizeAiDenoiseStringList(raw?.finger_result, 12);
 
     return {
@@ -7397,11 +7537,13 @@ function TableModuleView({
       risk_level: riskLevel,
       trust,
       display_text: displayText,
-      summary: sanitizeUiMessage(String(raw?.summary || '暂无分析摘要'), 900) || '暂无分析摘要',
+      summary: summaryText,
       evidence: normalizeAiDenoiseStringList(raw?.evidence, 8),
       suggestions: normalizeAiDenoiseStringList(raw?.suggestions, 8),
       source: source === 'ai' ? 'ai' : source === 'disabled' ? 'disabled' : 'rule',
       prompt_id: sanitizeUiMessage(String(raw?.prompt_id || ''), 80),
+      prompt_name: sanitizeUiMessage(String(raw?.prompt_name || ''), 120),
+      note: sanitizeUiMessage(String(raw?.note || ''), 260),
       analyzed_at: sanitizeUiMessage(String(raw?.analyzed_at || ''), 64),
       cert_expire_at: sanitizeUiMessage(String(raw?.cert_expire_at || ''), 80),
       cert_expire_days: safeCertExpireDays,
@@ -7427,6 +7569,8 @@ function TableModuleView({
       suggestions: [isDisabledBySwitch ? '前往 AI 管理开启对应模块。' : '请稍后重试或检查 AI 管理配置与服务连通性。'],
       source: 'disabled',
       prompt_id: aiDenoiseConfig.promptId,
+      prompt_name: '',
+      note: message,
       analyzed_at: '',
       cert_expire_at: '',
       cert_expire_days: undefined,
@@ -7702,6 +7846,8 @@ function TableModuleView({
                 suggestions: ['稍后刷新列表或等待任务分析阶段完成后再查看。'],
                 source: 'rule',
                 prompt_id: aiDenoiseConfig.promptId,
+                prompt_name: '',
+                note: '批量分析暂未返回该行完整详情，建议稍后刷新。',
                 analyzed_at: '',
               },
               entry.rowKey
@@ -10462,6 +10608,16 @@ function TableModuleView({
               <div className="text-xs text-brand-text-muted">
                 说明：此处仅展示扫描阶段已落库的分析结果，点击详情不会再次触发 AI 调用。
               </div>
+              {aiDenoiseDetail.analysis.note ? (
+                <div className="text-xs text-brand-text-muted">
+                  当前记录说明：{aiDenoiseDetail.analysis.note}
+                </div>
+              ) : null}
+              {aiDenoiseDetail.analysis.prompt_name || aiDenoiseDetail.analysis.prompt_id ? (
+                <div className="text-xs text-brand-text-muted">
+                  使用提示词：{aiDenoiseDetail.analysis.prompt_name || aiDenoiseDetail.analysis.prompt_id}
+                </div>
+              ) : null}
 
               <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
                 <div className="text-xs font-black tracking-wide text-brand-text">分析摘要</div>
@@ -13379,6 +13535,50 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     detail?: string;
   };
 
+  type AiUsageStats = {
+    request_count: number;
+    success_count: number;
+    error_count: number;
+    skip_count: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+
+  type AiUsageByDimensionItem = AiUsageStats & {
+    provider?: string;
+    model?: string;
+    scene?: string;
+    scene_label?: string;
+  };
+
+  type AiUsageStatsPayload = {
+    all_time: AiUsageStats;
+    last_24h: AiUsageStats;
+    last_7d: AiUsageStats;
+    by_model: AiUsageByDimensionItem[];
+    by_scene: AiUsageByDimensionItem[];
+    window_days: number;
+    updated_at: string;
+  };
+
+  type AiUsageLogItem = {
+    id: string;
+    created_at: string;
+    scene: string;
+    scene_label: string;
+    provider: string;
+    model: string;
+    profile: string;
+    status: 'ok' | 'error' | 'skipped';
+    request_text: string;
+    reply_text: string;
+    error_message: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+
   const defaultProviderPresets: AiProviderPreset[] = [
     { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', default_model: 'qwen-plus' },
     { id: 'kimi', label: 'Kimi', base_url: 'https://api.moonshot.cn/v1', default_model: 'moonshot-v1-8k' },
@@ -13410,7 +13610,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       name: '默认AI去噪-站点',
       scene: 'ai_denoise_site',
       content:
-        '你是站点价值分析助手。请基于站点URL、标题、响应头、状态码与指纹信息，输出正常/可疑/危险结论，并给出AI研判后的指纹结果、证据与处置建议。',
+        '你是渗透测试前置研判助手。请基于站点URL、标题、响应头、状态码与指纹信息，判断该站点是否值得优先进入渗透测试，并输出：1) 正常/可疑/危险结论；2) 最可能真实的技术栈/指纹（过滤明显误报）；3) 可直接执行的验证建议（如目录探测、认证边界测试、WAF绕过前置检查）。禁止编造不存在的信息。',
       updated_at: '',
     },
     {
@@ -13418,7 +13618,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       name: '默认AI去噪-目录扫描',
       scene: 'ai_denoise_fileleak',
       content:
-        '你是目录扫描去噪助手。请基于URL路径、状态码、标题和返回体长度，输出风险结论：正常/可疑/危险，并提供证据与建议。',
+        '你是目录扫描去噪与渗透准备助手。请基于URL路径、状态码、标题、响应体长度判断：正常/可疑/危险，并补充后续渗透验证优先级：1) 是否存在可利用入口（备份/配置/调试/上传）；2) 建议先做哪类验证（鉴权绕过、目录遍历、文件读取、上传执行）；3) 给出2-3条可操作的验证建议。禁止夸大风险，证据不足时明确标注待复核。',
       updated_at: '',
     },
     {
@@ -13426,7 +13626,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       name: '默认AI去噪-SSL证书',
       scene: 'ai_denoise_cert',
       content:
-        '你是证书安全分析助手。请根据证书有效期、签发信息、协议与套件特征输出安全判断，并给出依据与处置建议。',
+        '你是证书与传输安全评估助手。请基于证书有效期、签发信息、协议与套件特征，输出结论并判断对渗透测试阶段的影响：1) 是否存在弱协议/弱套件可用于降级或中间人相关测试前置；2) 证书到期与配置缺陷是否影响攻击面稳定性；3) 给出优先整改建议与验证步骤。',
       updated_at: '',
     },
     {
@@ -13434,7 +13634,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       name: '默认AI去噪-URL信息',
       scene: 'ai_denoise_url',
       content:
-        '你是URL风险去噪助手。请基于URL路径、状态码、标题和上下文输出安全/可疑/危险结论，并说明证据与建议。',
+        '你是URL攻击面去噪助手。请基于URL路径、参数、状态码、标题与上下文，输出安全/可疑/危险结论，并围绕渗透测试准备给出：1) 该URL属于登录、管理、调试、接口还是静态资源；2) 是否值得进一步测试（鉴权、越权、注入、文件读取、重定向等）；3) 明确下一步验证建议与优先级。',
       updated_at: '',
     },
     {
@@ -13442,7 +13642,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       name: '默认AI去噪-风险',
       scene: 'ai_denoise_vuln',
       content:
-        '你是漏洞误报复核助手。请结合风险等级、目标、验证证据与规则上下文，判断可信或疑似误报并给出处置建议。',
+        '你是漏洞结果复核助手。请根据风险等级、目标、验证证据与规则上下文判断：可信/疑似误报，并从渗透测试视角输出：1) 哪些漏洞应优先复测；2) 复测前置条件与利用链关键点；3) 若疑似误报，给出最小复核路径。',
       updated_at: '',
     },
     {
@@ -13450,7 +13650,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       name: '默认AI去噪-PoC风险',
       scene: 'ai_denoise_nuclei_result',
       content:
-        '你是PoC风险复核助手。请结合扫描器、规则ID、风险等级、命中URL与验证信息判断可信度，识别疑似误报并给出复测建议。',
+        '你是PoC命中结果复核助手。请结合扫描器、规则ID、风险等级、命中URL与验证信息判断可信度，并输出渗透测试可执行建议：1) 是否值得人工复现；2) 复现路径与关键请求点；3) 哪些结果应降权为疑似误报。',
       updated_at: '',
     },
   ];
@@ -13738,6 +13938,15 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   });
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [aiTestDialogOpen, setAiTestDialogOpen] = useState(false);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState('');
+  const [usageStats, setUsageStats] = useState<AiUsageStatsPayload | null>(null);
+  const [usageLogs, setUsageLogs] = useState<AiUsageLogItem[]>([]);
+  const [usageLogsTotal, setUsageLogsTotal] = useState(0);
+  const [usageLogsUpdatedAt, setUsageLogsUpdatedAt] = useState('');
+  const [usageLogStatus, setUsageLogStatus] = useState('');
+  const [usageLogScene, setUsageLogScene] = useState('');
+  const [usageSceneOptions, setUsageSceneOptions] = useState<Array<{ scene: string; scene_label: string }>>([]);
 
   const providerPresetMap = useMemo(() => {
     const map: Record<string, AiProviderPreset> = {};
@@ -13905,6 +14114,99 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     return payload;
   }, [findActiveModelProfile, sensitiveEditingModelProfileIds, sensitiveVisible]);
 
+  const normalizeAiUsageStatsValue = useCallback((rawValue: any): AiUsageStats => {
+    const toInt = (value: any) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0;
+    };
+    return {
+      request_count: toInt(rawValue?.request_count),
+      success_count: toInt(rawValue?.success_count),
+      error_count: toInt(rawValue?.error_count),
+      skip_count: toInt(rawValue?.skip_count),
+      prompt_tokens: toInt(rawValue?.prompt_tokens),
+      completion_tokens: toInt(rawValue?.completion_tokens),
+      total_tokens: toInt(rawValue?.total_tokens),
+    };
+  }, []);
+
+  const loadAiUsageDashboard = useCallback(async () => {
+    setUsageLoading(true);
+    setUsageError('');
+    try {
+      const logsQuery: Record<string, any> = { limit: 80 };
+      if (usageLogStatus) logsQuery.status = usageLogStatus;
+      if (usageLogScene) logsQuery.scene = usageLogScene;
+      const [statsResult, logsResult] = await Promise.all([
+        requestApi(token, '/api_console/ai_usage/stats/', { method: 'GET' }),
+        requestApi(token, '/api_console/ai_usage/logs/', { method: 'GET', query: logsQuery }),
+      ]);
+      const statsData = statsResult?.data || {};
+      const logsData = logsResult?.data || {};
+      const normalizedStats: AiUsageStatsPayload = {
+        all_time: normalizeAiUsageStatsValue(statsData?.all_time),
+        last_24h: normalizeAiUsageStatsValue(statsData?.last_24h),
+        last_7d: normalizeAiUsageStatsValue(statsData?.last_7d),
+        by_model: Array.isArray(statsData?.by_model)
+          ? statsData.by_model.map((item: any) => ({
+              ...normalizeAiUsageStatsValue(item),
+              provider: String(item?.provider || ''),
+              model: String(item?.model || ''),
+            }))
+          : [],
+        by_scene: Array.isArray(statsData?.by_scene)
+          ? statsData.by_scene.map((item: any) => ({
+              ...normalizeAiUsageStatsValue(item),
+              scene: String(item?.scene || ''),
+              scene_label: String(item?.scene_label || item?.scene || ''),
+            }))
+          : [],
+        window_days: Number(statsData?.window_days || 7) || 7,
+        updated_at: String(statsData?.updated_at || ''),
+      };
+      setUsageStats(normalizedStats);
+
+      const sceneItems = Array.isArray(logsData?.available_scenes) ? logsData.available_scenes : [];
+      setUsageSceneOptions(
+        sceneItems
+          .map((item: any) => ({
+            scene: String(item?.scene || ''),
+            scene_label: String(item?.scene_label || item?.scene || ''),
+          }))
+          .filter((item: { scene: string }) => Boolean(item.scene))
+      );
+
+      const logItems = Array.isArray(logsData?.items) ? logsData.items : [];
+      const normalizedLogs: AiUsageLogItem[] = logItems.map((item: any) => {
+        const statusRaw = String(item?.status || '').toLowerCase();
+        const status = statusRaw === 'error' ? 'error' : statusRaw === 'skipped' ? 'skipped' : 'ok';
+        return {
+          id: String(item?.id || ''),
+          created_at: String(item?.created_at || ''),
+          scene: String(item?.scene || ''),
+          scene_label: String(item?.scene_label || item?.scene || ''),
+          provider: String(item?.provider || ''),
+          model: String(item?.model || ''),
+          profile: String(item?.profile || ''),
+          status,
+          request_text: String(item?.request_text || ''),
+          reply_text: String(item?.reply_text || ''),
+          error_message: String(item?.error_message || ''),
+          prompt_tokens: normalizeAiUsageStatsValue({ prompt_tokens: item?.prompt_tokens }).prompt_tokens,
+          completion_tokens: normalizeAiUsageStatsValue({ completion_tokens: item?.completion_tokens }).completion_tokens,
+          total_tokens: normalizeAiUsageStatsValue({ total_tokens: item?.total_tokens }).total_tokens,
+        };
+      });
+      setUsageLogs(normalizedLogs);
+      setUsageLogsTotal(Number(logsData?.total || 0) || 0);
+      setUsageLogsUpdatedAt(String(logsData?.updated_at || statsData?.updated_at || ''));
+    } catch (err: any) {
+      setUsageError(err?.message || '加载 AI 用量统计失败');
+    } finally {
+      setUsageLoading(false);
+    }
+  }, [normalizeAiUsageStatsValue, token, usageLogScene, usageLogStatus]);
+
   const loadAiConfig = useCallback(async () => {
     resetSensitiveState();
     setLoading(true);
@@ -13948,6 +14250,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   useEffect(() => {
     void loadAiConfig();
   }, [loadAiConfig]);
+
+  useEffect(() => {
+    void loadAiUsageDashboard();
+  }, [loadAiUsageDashboard]);
 
   useEffect(() => {
     if (!compatDialogOpen && !promptDialogOpen && !showRestartModal && !aiTestDialogOpen) return;
@@ -14365,6 +14671,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setError(err?.message || 'AI 连通性测试失败');
     } finally {
       setTesting(false);
+      void loadAiUsageDashboard();
     }
   };
 
@@ -14435,6 +14742,170 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <span className="text-brand-text-muted">最近更新时间:</span>
           <span className="font-mono ml-2">{updatedAt || '-'}</span>
         </div>
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-black tracking-wide text-brand-text">Token用量统计与AI对话日志</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[120px]">
+              <select
+                value={usageLogStatus}
+                onChange={(event) => setUsageLogStatus(event.target.value)}
+                className={CONSOLE_SELECT_CLASS}
+                disabled={usageLoading}
+              >
+                <option value="">全部状态</option>
+                <option value="ok">成功</option>
+                <option value="error">失败</option>
+                <option value="skipped">跳过</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+            <div className="relative min-w-[180px]">
+              <select
+                value={usageLogScene}
+                onChange={(event) => setUsageLogScene(event.target.value)}
+                className={CONSOLE_SELECT_CLASS}
+                disabled={usageLoading}
+              >
+                <option value="">全部场景</option>
+                {usageSceneOptions.map((item) => (
+                  <option key={item.scene} value={item.scene}>
+                    {item.scene_label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadAiUsageDashboard()}
+              className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={usageLoading}
+            >
+              <RefreshCw className={`w-4 h-4 ${usageLoading ? 'animate-spin' : ''}`} />
+              刷新统计
+            </button>
+          </div>
+        </div>
+
+        {usageStats ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
+              <div className="text-xs text-brand-text-muted">累计总量</div>
+              <div className="text-sm font-black">Total {usageStats.all_time.total_tokens}</div>
+              <div className="text-[11px] text-brand-text-muted">
+                Prompt {usageStats.all_time.prompt_tokens} / Completion {usageStats.all_time.completion_tokens}
+              </div>
+              <div className="text-[11px] text-brand-text-muted">
+                请求 {usageStats.all_time.request_count} | 成功 {usageStats.all_time.success_count} | 失败 {usageStats.all_time.error_count}
+              </div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
+              <div className="text-xs text-brand-text-muted">近24小时</div>
+              <div className="text-sm font-black">Total {usageStats.last_24h.total_tokens}</div>
+              <div className="text-[11px] text-brand-text-muted">
+                Prompt {usageStats.last_24h.prompt_tokens} / Completion {usageStats.last_24h.completion_tokens}
+              </div>
+              <div className="text-[11px] text-brand-text-muted">
+                请求 {usageStats.last_24h.request_count} | 成功 {usageStats.last_24h.success_count} | 失败 {usageStats.last_24h.error_count}
+              </div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
+              <div className="text-xs text-brand-text-muted">近7天</div>
+              <div className="text-sm font-black">Total {usageStats.last_7d.total_tokens}</div>
+              <div className="text-[11px] text-brand-text-muted">
+                Prompt {usageStats.last_7d.prompt_tokens} / Completion {usageStats.last_7d.completion_tokens}
+              </div>
+              <div className="text-[11px] text-brand-text-muted">
+                请求 {usageStats.last_7d.request_count} | 成功 {usageStats.last_7d.success_count} | 失败 {usageStats.last_7d.error_count}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-xs text-brand-text-muted">暂无 Token 统计数据。</div>
+        )}
+
+        {usageStats?.by_model?.length ? (
+          <div className="text-[11px] text-brand-text-muted">
+            最近{usageStats.window_days}天高频模型：
+            {usageStats.by_model
+              .slice(0, 5)
+              .map((item) => `${item.provider || '-'} / ${item.model || '-'} (${item.total_tokens})`)
+              .join('；')}
+          </div>
+        ) : null}
+
+        <div className="rounded-xl border border-brand-border bg-brand-bg/35 overflow-hidden">
+          <div className="px-3 py-2 text-xs text-brand-text-muted border-b border-brand-border flex items-center justify-between gap-2">
+            <span>最近对话日志（显示最新 {usageLogs.length} / 总计 {usageLogsTotal}）</span>
+            <span>{usageLogsUpdatedAt ? `更新时间：${usageLogsUpdatedAt}` : ''}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead className="bg-brand-bg/60">
+                <tr>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">时间</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">场景</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">状态</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">模型</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">Tokens</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">用户输入</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">AI回复</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usageLogs.length > 0 ? (
+                  usageLogs.map((item) => (
+                    <tr key={item.id || `${item.created_at}-${item.scene}-${item.model}`} className="border-t border-brand-border/60 align-top">
+                      <td className="px-3 py-2 whitespace-nowrap">{item.created_at || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{item.scene_label || item.scene || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded border ${
+                            item.status === 'ok'
+                              ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
+                              : item.status === 'skipped'
+                                ? 'text-amber-300 border-amber-300/40 bg-amber-300/10'
+                                : 'text-brand-danger border-brand-danger/40 bg-brand-danger/10'
+                          }`}
+                        >
+                          {item.status === 'ok' ? '成功' : item.status === 'skipped' ? '跳过' : '失败'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div>{item.provider || '-'}</div>
+                        <div className="text-[11px] text-brand-text-muted">{item.model || '-'}</div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div>Total {item.total_tokens}</div>
+                        <div className="text-[11px] text-brand-text-muted">
+                          P {item.prompt_tokens} / C {item.completion_tokens}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 max-w-[260px] whitespace-pre-wrap break-all">{item.request_text || '-'}</td>
+                      <td className="px-3 py-2 max-w-[320px] whitespace-pre-wrap break-all">
+                        {item.reply_text || item.error_message || '-'}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr className="border-t border-brand-border/60">
+                    <td colSpan={7} className="px-3 py-4 text-center text-brand-text-muted">
+                      暂无日志记录
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {usageError ? (
+          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+            {usageError}
+          </div>
+        ) : null}
       </div>
       <div className="text-xs text-amber-300 bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2">
         提示：AI 去噪分析支持按模块独立开关与提示词绑定。详情页仅展示扫描阶段已落库的分析结果，不会因点击详情而再次触发 AI 调用。
