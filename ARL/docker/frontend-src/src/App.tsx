@@ -158,12 +158,12 @@ const CONSOLE_CHECKBOX_CARD_CLASS =
 const TASK_REPORT_EXPORT_OPTIONS: Array<{ label: string; value: TaskReportExportFormat }> = [
   { label: '表格格式', value: 'excel' },
   { label: 'HTML格式', value: 'html' },
-  { label: 'AI报告（MD）', value: 'ai_markdown' },
+  { label: 'AI报告（Markdown）', value: 'ai_markdown' },
 ];
 const TASK_REPORT_EXPORT_LABELS: Record<TaskReportExportFormat, string> = {
   excel: '表格',
   html: 'HTML',
-  ai_markdown: 'AI（MD）',
+  ai_markdown: 'AI报告（Markdown）',
 };
 const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
   site: ['site'],

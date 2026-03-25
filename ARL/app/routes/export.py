@@ -2603,24 +2603,8 @@ def _build_ai_markdown_report(task_ids, ai_settings):
     lines.append("> 生成时间：`{}`".format(generated_at))
     lines.append("> 扫描开始时间：`{}`".format(scan_start))
     lines.append("> 扫描截止时间：`{}`".format(scan_end))
-    lines.append("> AI提供方：`{}`  模型：`{}`".format(
-        sanitize_excel_value(ai_settings.get("provider", "")).strip() or "-",
-        sanitize_excel_value(ai_settings.get("model", "")).strip() or "-",
-    ))
-    lines.append("> 生效模型配置：`{}`".format(
-        sanitize_excel_value(ai_settings.get("active_model_profile_name", "")).strip()
-        or sanitize_excel_value(ai_settings.get("active_model_profile_id", "")).strip()
-        or "-"
-    ))
-    lines.append("> Prompt：`{}`".format(
-        sanitize_excel_value(ai_settings.get("active_prompt_id", "")).strip() or "-"
-    ))
-    if ai_settings.get("configured"):
-        lines.append("> AI配置状态：`已配置`")
-    else:
-        missing_fields = ai_settings.get("missing_fields") or []
-        missing_text = ",".join([sanitize_excel_value(item).strip() for item in missing_fields if sanitize_excel_value(item).strip()])
-        lines.append("> AI配置状态：`未完整配置`（缺少：`{}`，当前导出为离线模板）".format(missing_text or "-"))
+    lines.append("> 报告类型：`AI报告（Markdown）固定模板 V1`")
+    lines.append("> 生成方式：`离线结构化汇总（不触发在线模型实时推理）`")
     lines.append("")
     lines.append("## 任务概览")
     lines.append("")
@@ -2634,6 +2618,12 @@ def _build_ai_markdown_report(task_ids, ai_settings):
             lines.append("| {} | {} |".format(name, target))
     else:
         lines.append("| - | - |")
+    lines.append("")
+    lines.append("## 执行摘要（固定模板）")
+    lines.append("")
+    lines.append("- 整体风险态势：`待人工研判`")
+    lines.append("- 高优先级处置方向：`优先处理高危漏洞、弱口令与认证缺失入口`")
+    lines.append("- 误报复核建议：`优先复核低危且弱信号风险项`")
     lines.append("")
     lines.append("## 关键资产")
     lines.append("")
