@@ -6374,7 +6374,7 @@ function TableModuleView({
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
   const [hyperlinkEnabled, setHyperlinkEnabled] = useState(false);
-  const [tableHeaderFreezeEnabled, setTableHeaderFreezeEnabled] = useState(canToggleTableHeaderFreeze(module.id));
+  const [tableHeaderFreezeEnabled, setTableHeaderFreezeEnabled] = useState(false);
   const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [aiDenoiseConfig, setAiDenoiseConfig] = useState<AiDenoiseConfigSnapshot>({
     enable: true,
@@ -6659,7 +6659,7 @@ function TableModuleView({
     setTaskStopAndDeleteLoading(false);
     setTaskCompactMode(true);
     setHyperlinkEnabled(false);
-    setTableHeaderFreezeEnabled(canToggleTableHeaderFreeze(module.id));
+    setTableHeaderFreezeEnabled(false);
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
     setAiDenoiseResultMap({});
