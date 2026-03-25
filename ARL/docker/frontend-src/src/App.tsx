@@ -12537,8 +12537,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     base_url: '',
     model: '',
   });
-  const [promptDraft, setPromptDraft] = useState<Omit<AiPromptTemplate, 'updated_at'>>({
-    id: '',
+  const [promptDraft, setPromptDraft] = useState<{
+    name: string;
+    scene: string;
+    content: string;
+  }>({
     name: '',
     scene: 'ai_report_export',
     content: '',
@@ -12568,6 +12571,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   }, [providerPresets]);
 
   const isActionBusy = loading || saving || testing;
+  const aiControlMaxWidthClass = 'xl:max-w-[360px]';
+  const aiInputClass = `${CONSOLE_INPUT_CLASS} ${aiControlMaxWidthClass}`;
+  const aiInputMonoClass = `${CONSOLE_INPUT_MONO_CLASS} ${aiControlMaxWidthClass}`;
+  const aiSelectWrapClass = `relative ${aiControlMaxWidthClass}`;
 
   const resetSensitiveState = useCallback(() => {
     setSensitiveVisible(false);
@@ -12721,6 +12728,23 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   useEffect(() => {
     void loadAiConfig();
   }, [loadAiConfig]);
+
+  useEffect(() => {
+    if (!compatDialogOpen && !promptDialogOpen) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      if (promptDialogOpen) {
+        setPromptDialogOpen(false);
+        return;
+      }
+      if (compatDialogOpen) {
+        setCompatDialogOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [compatDialogOpen, promptDialogOpen]);
 
   const handleProviderChange = (nextProvider: string) => {
     const providerId = normalizeProviderId(nextProvider);
@@ -12876,7 +12900,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setError('请填写提示词内容');
       return false;
     }
-    const candidateId = buildPromptId(promptDraft.id || promptDraft.name, form.prompt_templates.length + 1);
+    const candidateId = buildPromptId(promptDraft.name, form.prompt_templates.length + 1);
     if (form.prompt_templates.some((item) => item.id === candidateId)) {
       setError(`提示词 ID 重复：${candidateId}`);
       return false;
@@ -12896,7 +12920,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       prompt_templates: [...prev.prompt_templates, nextPrompt],
       active_prompt_id: prev.active_prompt_id || nextPrompt.id,
     }));
-    setPromptDraft({ id: '', name: '', scene: 'ai_report_export', content: '' });
+    setPromptDraft({ name: '', scene: 'ai_report_export', content: '' });
     setError('');
     setSuccess(`提示词已新增：${nextPrompt.name}`);
     return true;
@@ -13122,21 +13146,24 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
         <div className="text-xs font-black tracking-wide text-brand-text">模型与对话配置</div>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
-            <input
-              type="checkbox"
-              checked={form.enable}
-              onChange={(event) => setForm((prev) => ({ ...prev, enable: event.target.checked }))}
-              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-            />
-            <span className="font-medium">启用 AI 能力</span>
-          </label>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-5 gap-y-4 items-start">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">AI能力开关</label>
+            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} ${aiControlMaxWidthClass}`}>
+              <input
+                type="checkbox"
+                checked={form.enable}
+                onChange={(event) => setForm((prev) => ({ ...prev, enable: event.target.checked }))}
+                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              />
+              <span className="font-medium">启用 AI 能力</span>
+            </label>
+          </div>
           <div className="space-y-2">
             <label htmlFor="ai-active-model-id" className="text-xs font-bold text-brand-text-muted block">
               当前生效模型
             </label>
-            <div className="relative xl:max-w-[440px]">
+            <div className={aiSelectWrapClass}>
               <select
                 id="ai-active-model-id"
                 value={form.active_model_profile_id}
@@ -13163,7 +13190,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 form.custom_provider_name
               }
               onChange={(event) => updateActiveModelName(event.target.value)}
-              className={CONSOLE_INPUT_CLASS}
+              className={aiInputClass}
               placeholder="如 主模型 / 备用模型"
             />
           </div>
@@ -13171,7 +13198,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <label htmlFor="ai-provider" className="text-xs font-bold text-brand-text-muted block">
               模型提供方
             </label>
-            <div className="relative xl:max-w-[440px]">
+            <div className={aiSelectWrapClass}>
               <select
                 id="ai-provider"
                 value={form.provider}
@@ -13201,7 +13228,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 }
                 updateActiveModelProfile((active) => ({ ...active, api_key: event.target.value }));
               }}
-              className={CONSOLE_INPUT_MONO_CLASS}
+              className={aiInputMonoClass}
               placeholder="可留空，未配置时自动降级不报错"
               autoComplete="off"
             />
@@ -13216,7 +13243,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               onChange={(event) =>
                 updateActiveModelProfile((active) => ({ ...active, base_url: event.target.value }))
               }
-              className={CONSOLE_INPUT_MONO_CLASS}
+              className={aiInputMonoClass}
               placeholder="https://api.openai.com/v1"
             />
           </div>
@@ -13230,7 +13257,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               onChange={(event) =>
                 updateActiveModelProfile((active) => ({ ...active, model: event.target.value }))
               }
-              className={CONSOLE_INPUT_MONO_CLASS}
+              className={aiInputMonoClass}
               placeholder="如 gpt-4o-mini / qwen-plus"
             />
           </div>
@@ -13249,7 +13276,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   timeout_sec: Number(event.target.value || 0),
                 }))
               }
-              className={CONSOLE_INPUT_CLASS}
+              className={aiInputClass}
             />
           </div>
           <div className="space-y-2">
@@ -13268,10 +13295,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   temperature: Number(event.target.value || 0),
                 }))
               }
-              className={CONSOLE_INPUT_CLASS}
+              className={aiInputClass}
             />
             <div className="text-[11px] text-brand-text-muted">
-              温度越低越稳定（推荐 `0.2`），越高越发散。安全分析与报告场景建议低温度。（你可以简单理解为AI的创造性、联想能力，配置过高易出现AI幻觉，过低易出现呆滞的情况，但是就目前这套系统的使用场景，建议0.1-0.3）
+              温度越低越稳定（推荐 `0.2`），越高越发散。安全分析与报告场景建议 `0.1~0.3`。
             </div>
           </div>
           <div className="space-y-2">
@@ -13289,7 +13316,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   max_tokens: Number(event.target.value || 0),
                 }))
               }
-              className={CONSOLE_INPUT_CLASS}
+              className={aiInputClass}
             />
           </div>
           <div className="space-y-2">
@@ -13300,7 +13327,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               id="ai-dialog-style"
               value={form.dialog_style}
               onChange={(event) => setForm((prev) => ({ ...prev, dialog_style: event.target.value }))}
-              className={CONSOLE_INPUT_CLASS}
+              className={aiInputClass}
               placeholder="专业 / 简洁 / 审计导向"
             />
           </div>
@@ -13308,7 +13335,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <label htmlFor="ai-dialog-language" className="text-xs font-bold text-brand-text-muted block">
               输出语言
             </label>
-            <div className="relative xl:max-w-[440px]">
+            <div className={aiSelectWrapClass}>
               <select
                 id="ai-dialog-language"
                 value={form.dialog_language}
@@ -13333,7 +13360,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, dialog_context_messages: Number(event.target.value || 0) }))
               }
-              className={CONSOLE_INPUT_CLASS}
+              className={aiInputClass}
             />
           </div>
           <div className="space-y-2 xl:col-span-2">
@@ -13491,7 +13518,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <div className="text-xs font-black tracking-wide text-brand-text">提示词管理</div>
           <button
             type="button"
-            onClick={() => setPromptDialogOpen(true)}
+            onClick={() => {
+              setPromptDraft({ name: '', scene: 'ai_report_export', content: '' });
+              setPromptDialogOpen(true);
+            }}
             className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
           >
             新增提示词
@@ -13502,7 +13532,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <label htmlFor="ai-active-prompt-id" className="text-xs font-bold text-brand-text-muted block">
               当前生效提示词
             </label>
-            <div className="relative xl:max-w-[440px]">
+            <div className={aiSelectWrapClass}>
               <select
                 id="ai-active-prompt-id"
                 value={form.active_prompt_id}
@@ -13523,7 +13553,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         <div className="space-y-3">
           {form.prompt_templates.map((item) => (
             <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 space-y-2">
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-center">
                 <input
                   value={item.name}
                   onChange={(event) => updatePromptTemplateField(item.id, 'name', event.target.value)}
@@ -13536,21 +13566,13 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   className={CONSOLE_INPUT_CLASS}
                   placeholder="场景标识"
                 />
-                <div className="flex items-center gap-2">
-                  <input
-                    value={item.id}
-                    readOnly
-                    className={`${CONSOLE_INPUT_MONO_CLASS} bg-brand-bg/40`}
-                    placeholder="提示词ID"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removePromptTemplate(item.id)}
-                    className="px-3 py-2 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition"
-                  >
-                    删除
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => removePromptTemplate(item.id)}
+                  className="h-10 px-3 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition whitespace-nowrap"
+                >
+                  删除
+                </button>
               </div>
               <textarea
                 value={item.content}
@@ -13565,8 +13587,16 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       </div>
 
       {compatDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setCompatDialogOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
               <div className="text-sm font-black tracking-wide">添加 OpenAI 兼容接口</div>
               <button
@@ -13632,8 +13662,16 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ) : null}
 
       {promptDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setPromptDialogOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
               <div className="text-sm font-black tracking-wide">新增提示词</div>
               <button
@@ -13645,18 +13683,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </button>
             </div>
             <div className="p-5 space-y-3">
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-                <input
-                  value={promptDraft.id}
-                  onChange={(event) => setPromptDraft((prev) => ({ ...prev, id: event.target.value }))}
-                  className={CONSOLE_INPUT_MONO_CLASS}
-                  placeholder="提示词ID（可选）"
-                />
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                 <input
                   value={promptDraft.name}
                   onChange={(event) => setPromptDraft((prev) => ({ ...prev, name: event.target.value }))}
                   className={CONSOLE_INPUT_CLASS}
-                  placeholder="提示词名称（可选）"
+                  placeholder="提示词名称（可选，不填自动生成）"
                 />
                 <div className="relative">
                   <select
