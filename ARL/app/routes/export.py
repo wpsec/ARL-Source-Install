@@ -151,6 +151,71 @@ CERT_EXPORT_PROJECTION = {
     "domains": 1,
     "cert": 1,
 }
+AI_DENOISE_RESULT_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "module_id": 1,
+    "row_key": 1,
+    "data_id": 1,
+    "result_level": 1,
+    "risk_level": 1,
+    "trust": 1,
+    "display_text": 1,
+    "summary": 1,
+    "evidence": 1,
+    "suggestions": 1,
+    "source": 1,
+    "prompt_id": 1,
+    "prompt_name": 1,
+    "note": 1,
+    "analyzed_at": 1,
+    "updated_at": 1,
+}
+AI_DENOISE_RESULT_LEVEL_ORDER = {
+    "disabled": 0,
+    "safe": 1,
+    "suspicious": 2,
+    "danger": 3,
+}
+AI_DENOISE_RESULT_LEVEL_LABEL = {
+    "disabled": "未分析",
+    "safe": "正常",
+    "suspicious": "可疑",
+    "danger": "危险",
+}
+AI_DENOISE_SOURCE_ORDER = {
+    "disabled": 0,
+    "rule": 1,
+    "ai": 2,
+}
+AI_DENOISE_SOURCE_LABEL = {
+    "disabled": "未分析",
+    "rule": "规则",
+    "ai": "AI模型",
+}
+AI_DENOISE_MODULE_LABEL_MAP = {
+    "site": "站点",
+    "fileleak": "目录扫描",
+    "cert": "SSL证书",
+    "url": "URL信息",
+    "vuln": "风险",
+    "nuclei_result": "PoC风险",
+}
+AI_DENOISE_MODULE_COLLECTION_MAP = {
+    "site": "site",
+    "fileleak": "fileleak",
+    "cert": "cert",
+    "url": "url",
+    "vuln": "vuln",
+    "nuclei_result": "nuclei_result",
+}
+AI_DENOISE_MODULE_TARGET_PROJECTION = {
+    "site": {"_id": 1, "site": 1, "url": 1, "title": 1},
+    "fileleak": {"_id": 1, "url": 1, "site": 1, "title": 1},
+    "cert": {"_id": 1, "host": 1, "domain": 1, "ip": 1, "port": 1},
+    "url": {"_id": 1, "url": 1, "site": 1, "title": 1},
+    "vuln": {"_id": 1, "target": 1, "vul_name": 1},
+    "nuclei_result": {"_id": 1, "target": 1, "vuln_url": 1, "vuln_name": 1},
+}
 
 
 def normalize_export_format(value):
@@ -1134,7 +1199,7 @@ class ARLExport(Resource):
                 markdown_data = export_arl_ai_markdown(task_id)
             except ValueError as exc:
                 return {"error": str(exc)}, 400
-            filename = "ARL_AI报告_{}.md".format(domain)
+            filename = "ARL_AI分析报告_{}.md".format(domain)
             return build_export_response(markdown_data, filename, "text/markdown; charset=utf-8")
 
         filename = "ARL资产导出报告_{}.xlsx".format(domain)
@@ -1193,7 +1258,7 @@ class ARLBatchExcel(Resource):
                     markdown_data = export_merge_tasks_ai_markdown(task_ids)
                 except ValueError as exc:
                     return {"error": str(exc)}, 400
-                filename = "ARL_AI报告_{}.md".format(task_name[:20])
+                filename = "ARL_AI分析报告_{}.md".format(task_name[:20])
                 return build_export_response(markdown_data, filename, "text/markdown; charset=utf-8")
 
             filename = "ARL批量导出报告_{}.xlsx".format(task_name[:20])
@@ -1450,16 +1515,534 @@ def get_cert_data(task_id):
     ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
+def get_ai_denoise_result_data(task_ids):
+    """
+    获取任务范围内 AI 去噪落库结果。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    if not task_id_list:
+        return []
+    if len(task_id_list) == 1:
+        query = {"task_id": task_id_list[0]}
+    else:
+        query = {"task_id": {"$in": task_id_list}}
+    return utils.conn_db("ai_denoise_result").find(
+        query,
+        projection=AI_DENOISE_RESULT_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+
+
+def _normalize_ai_denoise_module_id(value):
+    module_id = sanitize_excel_value(value).strip()
+    if module_id in AI_DENOISE_MODULE_LABEL_MAP:
+        return module_id
+    return module_id or "unknown"
+
+
+def _normalize_ai_denoise_result_level(value):
+    level = sanitize_excel_value(value).strip().lower()
+    if level in ("danger", "critical", "high", "严重"):
+        return "danger"
+    if level in ("suspicious", "warn", "warning", "medium", "中"):
+        return "suspicious"
+    if level in ("safe", "normal", "ok", "low", "info", "正常", "安全"):
+        return "safe"
+    if level in ("disabled", "none", "未分析"):
+        return "disabled"
+    return "disabled"
+
+
+def _normalize_ai_denoise_source(value):
+    source = sanitize_excel_value(value).strip().lower()
+    if source in ("ai", "rule", "disabled"):
+        return source
+    return "disabled"
+
+
+def _normalize_ai_denoise_risk_level(value):
+    risk_text = sanitize_excel_value(value).strip()
+    if not risk_text or risk_text == "-":
+        return "-"
+
+    level = risk_text.lower()
+    if level in ("critical", "severe", "严重"):
+        return "严重"
+    if level in ("high", "高"):
+        return "高"
+    if level in ("medium", "moderate", "中"):
+        return "中"
+    if level in ("low", "info", "informational", "低", "信息"):
+        return "低"
+    return risk_text
+
+
+def _ai_denoise_risk_rank(value):
+    risk_level = _normalize_ai_denoise_risk_level(value)
+    return {
+        "严重": 4,
+        "高": 3,
+        "中": 2,
+        "低": 1,
+    }.get(risk_level, 0)
+
+
+def _normalize_ai_denoise_trust(value):
+    trust_text = sanitize_excel_value(value).strip()
+    if not trust_text or trust_text == "-":
+        return "-"
+
+    low = trust_text.lower()
+    if "误报" in trust_text or low in ("false_positive", "fp", "suspected_false_positive"):
+        return "疑似误报"
+    if "可信" in trust_text or low in ("trusted", "可信", "reliable"):
+        return "可信"
+    return trust_text
+
+
+def _truncate_report_text(value, max_length=160):
+    text = sanitize_excel_value(value).replace("\r", " ").replace("\n", " ").strip()
+    if not text:
+        return ""
+    if len(text) > max_length:
+        return "{}...".format(text[:max_length].rstrip())
+    return text
+
+
+def _normalize_text_list(value, max_items=3, max_item_len=180):
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        text = _truncate_report_text(item, max_item_len)
+        if text:
+            items.append(text)
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def _resolve_ai_denoise_target_text(module_id, item):
+    if not isinstance(item, dict):
+        return ""
+
+    if module_id == "site":
+        return _truncate_report_text(item.get("site") or item.get("url") or item.get("title"), 180)
+    if module_id == "fileleak":
+        return _truncate_report_text(item.get("url") or item.get("site") or item.get("title"), 180)
+    if module_id == "cert":
+        host = sanitize_excel_value(item.get("host", "")).strip()
+        if host:
+            return _truncate_report_text(host, 180)
+        domain = sanitize_excel_value(item.get("domain", "")).strip()
+        if domain:
+            return _truncate_report_text(domain, 180)
+        ip = sanitize_excel_value(item.get("ip", "")).strip()
+        port = sanitize_excel_value(item.get("port", "")).strip()
+        if ip and port:
+            return "{}:{}".format(ip, port)
+        return _truncate_report_text(ip or port, 180)
+    if module_id == "url":
+        return _truncate_report_text(item.get("url") or item.get("site") or item.get("title"), 180)
+    if module_id == "vuln":
+        return _truncate_report_text(item.get("target") or item.get("vul_name"), 180)
+    if module_id == "nuclei_result":
+        return _truncate_report_text(item.get("vuln_url") or item.get("target") or item.get("vuln_name"), 180)
+
+    return ""
+
+
+def _query_docs_by_ids(collection_name, id_values, projection):
+    if not collection_name or not isinstance(projection, dict):
+        return {}
+
+    text_ids = set()
+    object_ids = []
+    seen_object_ids = set()
+    for raw_id in id_values or []:
+        data_id = sanitize_excel_value(raw_id).strip()
+        if not data_id:
+            continue
+        text_ids.add(data_id)
+        if ObjectId.is_valid(data_id) and data_id not in seen_object_ids:
+            seen_object_ids.add(data_id)
+            object_ids.append(ObjectId(data_id))
+
+    query_parts = []
+    if object_ids:
+        query_parts.append({"_id": {"$in": object_ids}})
+    if text_ids:
+        query_parts.append({"_id": {"$in": list(text_ids)}})
+    if not query_parts:
+        return {}
+
+    query = query_parts[0] if len(query_parts) == 1 else {"$or": query_parts}
+    doc_map = {}
+    for item in utils.conn_db(collection_name).find(query, projection=projection).batch_size(MONGO_EXPORT_BATCH_SIZE):
+        doc_id = sanitize_excel_value(item.get("_id", "")).strip()
+        if doc_id:
+            doc_map[doc_id] = item
+    return doc_map
+
+
+def _build_ai_denoise_target_map(ai_rows):
+    module_id_map = {}
+    for row in ai_rows:
+        if not isinstance(row, dict):
+            continue
+        module_id = _normalize_ai_denoise_module_id(row.get("module_id"))
+        if module_id not in AI_DENOISE_MODULE_COLLECTION_MAP:
+            continue
+
+        candidates = []
+        for raw_id in (row.get("data_id"), row.get("row_key")):
+            data_id = sanitize_excel_value(raw_id).strip()
+            if data_id:
+                candidates.append(data_id)
+        if not candidates:
+            continue
+
+        id_set = module_id_map.setdefault(module_id, set())
+        for data_id in candidates:
+            id_set.add(data_id)
+
+    target_map = {}
+    for module_id, id_set in module_id_map.items():
+        collection_name = AI_DENOISE_MODULE_COLLECTION_MAP.get(module_id, "")
+        projection = AI_DENOISE_MODULE_TARGET_PROJECTION.get(module_id, {"_id": 1})
+        doc_map = _query_docs_by_ids(collection_name, id_set, projection)
+        for doc_id, item in doc_map.items():
+            target_text = _resolve_ai_denoise_target_text(module_id, item)
+            if target_text:
+                target_map[(module_id, doc_id)] = target_text
+    return target_map
+
+
+def _build_default_ai_lookup_result():
+    return {
+        "text": "未分析",
+        "result_level": "disabled",
+        "source": "disabled",
+        "level_rank": AI_DENOISE_RESULT_LEVEL_ORDER.get("disabled", 0),
+        "source_rank": AI_DENOISE_SOURCE_ORDER.get("disabled", 0),
+    }
+
+
+def _normalize_ai_lookup_key(value):
+    if isinstance(value, ObjectId):
+        return str(value)
+    return sanitize_excel_value(value).strip()
+
+
+def _build_ai_display_text_from_doc(result_doc):
+    display_text = _truncate_report_text(result_doc.get("display_text"), 80)
+    if display_text:
+        return display_text
+
+    result_level = _normalize_ai_denoise_result_level(result_doc.get("result_level"))
+    risk_level = _normalize_ai_denoise_risk_level(result_doc.get("risk_level"))
+    trust = _normalize_ai_denoise_trust(result_doc.get("trust"))
+    result_label = AI_DENOISE_RESULT_LEVEL_LABEL.get(result_level, "未分析")
+
+    if risk_level != "-" and trust != "-":
+        return "{}（{}/{}）".format(result_label, risk_level, trust)
+    if risk_level != "-":
+        return "{}（{}）".format(result_label, risk_level)
+    return result_label
+
+
+def _build_ai_lookup_result_from_doc(result_doc):
+    result_level = _normalize_ai_denoise_result_level(result_doc.get("result_level"))
+    source = _normalize_ai_denoise_source(result_doc.get("source"))
+    return {
+        "text": _build_ai_display_text_from_doc(result_doc),
+        "result_level": result_level,
+        "source": source,
+        "level_rank": AI_DENOISE_RESULT_LEVEL_ORDER.get(result_level, 0),
+        "source_rank": AI_DENOISE_SOURCE_ORDER.get(source, 0),
+    }
+
+
+def _is_ai_lookup_result_better(candidate, current):
+    if not isinstance(candidate, dict):
+        return False
+    if not isinstance(current, dict):
+        return True
+
+    candidate_tuple = (
+        int(candidate.get("level_rank", 0) or 0),
+        int(candidate.get("source_rank", 0) or 0),
+    )
+    current_tuple = (
+        int(current.get("level_rank", 0) or 0),
+        int(current.get("source_rank", 0) or 0),
+    )
+    return candidate_tuple > current_tuple
+
+
+def _build_ai_denoise_lookup(task_ids, module_id):
+    """
+    构建 ai_denoise_result 的 data_id/row_key 索引，供 Excel 导出补充 AI 分析列。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    module_id_text = _normalize_ai_denoise_module_id(module_id)
+    if not task_id_list or not module_id_text:
+        return {"by_data_id": {}, "by_row_key": {}}
+
+    if len(task_id_list) == 1:
+        query = {"task_id": task_id_list[0], "module_id": module_id_text}
+    else:
+        query = {"task_id": {"$in": task_id_list}, "module_id": module_id_text}
+
+    by_data_id = {}
+    by_row_key = {}
+    projection = {
+        "data_id": 1,
+        "row_key": 1,
+        "display_text": 1,
+        "result_level": 1,
+        "risk_level": 1,
+        "trust": 1,
+        "source": 1,
+    }
+    for item in utils.conn_db("ai_denoise_result").find(query, projection=projection).batch_size(MONGO_EXPORT_BATCH_SIZE):
+        result = _build_ai_lookup_result_from_doc(item)
+        data_id = _normalize_ai_lookup_key(item.get("data_id", ""))
+        row_key = _normalize_ai_lookup_key(item.get("row_key", ""))
+
+        if data_id:
+            current = by_data_id.get(data_id)
+            if _is_ai_lookup_result_better(result, current):
+                by_data_id[data_id] = result
+        if row_key:
+            current = by_row_key.get(row_key)
+            if _is_ai_lookup_result_better(result, current):
+                by_row_key[row_key] = result
+
+    return {"by_data_id": by_data_id, "by_row_key": by_row_key}
+
+
+def _resolve_ai_lookup_result(lookup, data_id="", row_key=""):
+    by_data_id = (lookup or {}).get("by_data_id", {})
+    by_row_key = (lookup or {}).get("by_row_key", {})
+
+    data_id_key = _normalize_ai_lookup_key(data_id)
+    row_key_key = _normalize_ai_lookup_key(row_key)
+    result = None
+
+    if data_id_key and data_id_key in by_data_id:
+        result = by_data_id.get(data_id_key)
+    if row_key_key and row_key_key in by_row_key:
+        candidate = by_row_key.get(row_key_key)
+        if _is_ai_lookup_result_better(candidate, result):
+            result = candidate
+    if isinstance(result, dict):
+        return result
+    return _build_default_ai_lookup_result()
+
+
+def _extract_ai_denoise_rows(task_ids):
+    """
+    汇总 AI 去噪结果，供 Markdown 报告展示。
+    """
+    rows = []
+    dedup_keys = set()
+
+    for item in get_ai_denoise_result_data(task_ids):
+        if not isinstance(item, dict):
+            continue
+
+        task_id = sanitize_excel_value(item.get("task_id", "")).strip()
+        module_id = _normalize_ai_denoise_module_id(item.get("module_id"))
+        row_key = sanitize_excel_value(item.get("row_key", "")).strip()
+        data_id = sanitize_excel_value(item.get("data_id", "")).strip()
+        dedup_key = (task_id, module_id, row_key or data_id)
+        if dedup_key in dedup_keys:
+            continue
+        dedup_keys.add(dedup_key)
+
+        result_level = _normalize_ai_denoise_result_level(item.get("result_level"))
+        risk_level = _normalize_ai_denoise_risk_level(item.get("risk_level"))
+        trust = _normalize_ai_denoise_trust(item.get("trust"))
+        source = _normalize_ai_denoise_source(item.get("source"))
+
+        display_text = _truncate_report_text(item.get("display_text"), 120)
+        if not display_text:
+            display_text = AI_DENOISE_RESULT_LEVEL_LABEL.get(result_level, "未分析")
+
+        rows.append(
+            {
+                "task_id": task_id,
+                "module_id": module_id,
+                "module_label": AI_DENOISE_MODULE_LABEL_MAP.get(module_id, module_id),
+                "row_key": row_key,
+                "data_id": data_id,
+                "result_level": result_level,
+                "result_label": AI_DENOISE_RESULT_LEVEL_LABEL.get(result_level, "未分析"),
+                "risk_level": risk_level,
+                "trust": trust,
+                "source": source,
+                "source_label": AI_DENOISE_SOURCE_LABEL.get(source, "未分析"),
+                "display_text": display_text,
+                "summary": _truncate_report_text(item.get("summary"), 280),
+                "analyzed_at": sanitize_excel_value(item.get("analyzed_at", "")).strip()
+                or sanitize_excel_value(item.get("updated_at", "")).strip(),
+                "evidence": _normalize_text_list(item.get("evidence"), max_items=3, max_item_len=180),
+                "suggestions": _normalize_text_list(item.get("suggestions"), max_items=3, max_item_len=180),
+            }
+        )
+
+    target_map = _build_ai_denoise_target_map(rows)
+    for row in rows:
+        module_id = row.get("module_id", "")
+        target = ""
+        for data_id in (row.get("data_id", ""), row.get("row_key", "")):
+            key = (module_id, sanitize_excel_value(data_id).strip())
+            if key in target_map:
+                target = target_map[key]
+                break
+        if not target:
+            target = (
+                _truncate_report_text(row.get("summary"), 120)
+                or _truncate_report_text(row.get("display_text"), 120)
+                or _truncate_report_text(row.get("row_key"), 80)
+                or "-"
+            )
+        row["target"] = target
+
+    return rows
+
+
+def _build_ai_denoise_overview(ai_rows):
+    """
+    生成 AI 去噪报告概览统计。
+    """
+    overview = {
+        "total": 0,
+        "analyzed": 0,
+        "high_value": 0,
+        "suspected_fp": 0,
+        "source_stat": {"ai": 0, "rule": 0, "disabled": 0},
+        "result_stat": {"danger": 0, "suspicious": 0, "safe": 0, "disabled": 0},
+        "module_rows": [],
+    }
+    module_stats = {}
+
+    for row in ai_rows:
+        if not isinstance(row, dict):
+            continue
+
+        overview["total"] += 1
+        source = _normalize_ai_denoise_source(row.get("source"))
+        level = _normalize_ai_denoise_result_level(row.get("result_level"))
+        trust = _normalize_ai_denoise_trust(row.get("trust"))
+        module_id = _normalize_ai_denoise_module_id(row.get("module_id"))
+        module_label = AI_DENOISE_MODULE_LABEL_MAP.get(module_id, module_id)
+
+        overview["source_stat"][source] = overview["source_stat"].get(source, 0) + 1
+        overview["result_stat"][level] = overview["result_stat"].get(level, 0) + 1
+        if source in ("ai", "rule") and level != "disabled":
+            overview["analyzed"] += 1
+        if level in ("danger", "suspicious"):
+            overview["high_value"] += 1
+        if trust == "疑似误报":
+            overview["suspected_fp"] += 1
+
+        module_item = module_stats.get(module_id)
+        if not module_item:
+            module_item = {
+                "module_id": module_id,
+                "module_label": module_label,
+                "total": 0,
+                "ai": 0,
+                "rule": 0,
+                "disabled": 0,
+                "danger": 0,
+                "suspicious": 0,
+                "safe": 0,
+                "suspected_fp": 0,
+            }
+            module_stats[module_id] = module_item
+
+        module_item["total"] += 1
+        module_item[source] += 1
+        if level in ("danger", "suspicious", "safe"):
+            module_item[level] += 1
+        if trust == "疑似误报":
+            module_item["suspected_fp"] += 1
+
+    overview["module_rows"] = sorted(
+        list(module_stats.values()),
+        key=lambda item: (
+            -int(item.get("danger", 0) or 0),
+            -int(item.get("suspicious", 0) or 0),
+            -int(item.get("total", 0) or 0),
+            sanitize_excel_value(item.get("module_label", "")),
+        ),
+    )
+    return overview
+
+
+def _build_ai_high_value_rows(ai_rows, limit=20):
+    """
+    取 AI 去噪中危险/可疑的高价值目标。
+    """
+    rows = []
+    for row in ai_rows:
+        if not isinstance(row, dict):
+            continue
+        level = _normalize_ai_denoise_result_level(row.get("result_level"))
+        if level not in ("danger", "suspicious"):
+            continue
+        rows.append(row)
+
+    rows.sort(
+        key=lambda item: (
+            -AI_DENOISE_RESULT_LEVEL_ORDER.get(_normalize_ai_denoise_result_level(item.get("result_level")), 0),
+            -_ai_denoise_risk_rank(item.get("risk_level")),
+            -AI_DENOISE_SOURCE_ORDER.get(_normalize_ai_denoise_source(item.get("source")), 0),
+            sanitize_excel_value(item.get("module_label", "")),
+            sanitize_excel_value(item.get("target", "")),
+        )
+    )
+    return rows[:limit]
+
+
+def _build_ai_suspected_fp_rows(ai_rows, limit=20):
+    """
+    取 AI 去噪中“疑似误报”的候选项。
+    """
+    rows = []
+    for row in ai_rows:
+        if not isinstance(row, dict):
+            continue
+        trust = _normalize_ai_denoise_trust(row.get("trust"))
+        if trust != "疑似误报":
+            continue
+        rows.append(row)
+
+    rows.sort(
+        key=lambda item: (
+            AI_DENOISE_RESULT_LEVEL_ORDER.get(_normalize_ai_denoise_result_level(item.get("result_level")), 0),
+            _ai_denoise_risk_rank(item.get("risk_level")),
+            sanitize_excel_value(item.get("analyzed_at", "")),
+            sanitize_excel_value(item.get("module_label", "")),
+        ),
+        reverse=True,
+    )
+    return rows[:limit]
+
+
 def _extract_url_rows(task_ids):
     """
     汇总 URL 信息导出行，按关键字段去重。
     """
     task_id_list = _normalize_task_id_list(task_ids)
+    ai_lookup = _build_ai_denoise_lookup(task_id_list, "url")
     rows = []
     dedup_keys = set()
     for task_id in task_id_list:
         for item in get_url_data(task_id):
-            row = [
+            base_row = [
                 sanitize_excel_value(item.get("url", "")),
                 sanitize_excel_value(item.get("site", "")),
                 sanitize_excel_value(item.get("title", "")),
@@ -1467,10 +2050,13 @@ def _extract_url_rows(task_ids):
                 sanitize_excel_value(item.get("content_length", "")),
                 sanitize_excel_value(item.get("source", "")),
             ]
-            key = tuple(row)
+            key = tuple(base_row)
             if key in dedup_keys:
                 continue
             dedup_keys.add(key)
+            item_id = _normalize_ai_lookup_key(item.get("_id", ""))
+            ai_result = _resolve_ai_lookup_result(ai_lookup, data_id=item_id, row_key=item_id)
+            row = base_row + [sanitize_excel_value(ai_result.get("text", "未分析"))]
             rows.append(row)
     return rows
 
@@ -1480,6 +2066,7 @@ def _extract_fileleak_rows(task_ids):
     汇总目录扫描（文件泄露）导出行，按 URL 去重。
     """
     task_id_list = _normalize_task_id_list(task_ids)
+    ai_lookup = _build_ai_denoise_lookup(task_id_list, "fileleak")
     rows = []
     dedup_urls = set()
     for task_id in task_id_list:
@@ -1488,6 +2075,8 @@ def _extract_fileleak_rows(task_ids):
             if not url or url in dedup_urls:
                 continue
             dedup_urls.add(url)
+            item_id = _normalize_ai_lookup_key(item.get("_id", ""))
+            ai_result = _resolve_ai_lookup_result(ai_lookup, data_id=item_id, row_key=item_id)
             rows.append(
                 [
                     url,
@@ -1495,6 +2084,7 @@ def _extract_fileleak_rows(task_ids):
                     sanitize_excel_value(item.get("title", "")),
                     sanitize_excel_value(item.get("status_code", "")),
                     sanitize_excel_value(item.get("content_length", "")),
+                    sanitize_excel_value(ai_result.get("text", "未分析")),
                 ]
             )
     return rows
@@ -1606,7 +2196,8 @@ def _build_url_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['D'].width = 10.0
     ws.column_dimensions['E'].width = 12.0
     ws.column_dimensions['F'].width = 24.0
-    ws.append(["URL", "站点", "标题", "状态码", "body长度", "来源"])
+    ws.column_dimensions['G'].width = 24.0
+    ws.append(["URL", "站点", "标题", "状态码", "body长度", "来源", "AI分析"])
 
     for row in _extract_url_rows(task_ids):
         ws.append(row)
@@ -1663,6 +2254,7 @@ def _extract_nuclei_rows(task_ids):
     汇总 PoC 风险导出行（nuclei_result），保留页面级关键字段。
     """
     task_id_list = _normalize_task_id_list(task_ids)
+    ai_lookup = _build_ai_denoise_lookup(task_id_list, "nuclei_result")
     rows = []
     dedup_keys = set()
 
@@ -1695,6 +2287,8 @@ def _extract_nuclei_rows(task_ids):
             if dedup_key in dedup_keys:
                 continue
             dedup_keys.add(dedup_key)
+            item_id = _normalize_ai_lookup_key(item.get("_id", ""))
+            ai_result = _resolve_ai_lookup_result(ai_lookup, data_id=item_id, row_key=item_id)
 
             rows.append([
                 scanner_type,
@@ -1705,6 +2299,7 @@ def _extract_nuclei_rows(task_ids):
                 vuln_severity,
                 save_date,
                 verify_data,
+                sanitize_excel_value(ai_result.get("text", "未分析")),
             ])
 
     return rows
@@ -1723,7 +2318,8 @@ def _build_nuclei_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['F'].width = 14.0
     ws.column_dimensions['G'].width = 21.0
     ws.column_dimensions['H'].width = 80.0
-    ws.append(["扫描器", "规则ID", "目标", "风险URL", "风险名称", "风险等级", "发现时间", "验证信息"])
+    ws.column_dimensions['I'].width = 24.0
+    ws.append(["扫描器", "规则ID", "目标", "风险URL", "风险名称", "风险等级", "发现时间", "验证信息", "AI分析"])
 
     for row in _extract_nuclei_rows(task_ids):
         ws.append(row)
@@ -1742,7 +2338,8 @@ def _build_fileleak_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['C'].width = 52.0
     ws.column_dimensions['D'].width = 10.0
     ws.column_dimensions['E'].width = 12.0
-    ws.append(["URL", "站点", "标题", "状态码", "body长度"])
+    ws.column_dimensions['F'].width = 24.0
+    ws.append(["URL", "站点", "标题", "状态码", "body长度", "AI分析"])
 
     for row in _extract_fileleak_rows(task_ids):
         ws.append(row)
@@ -2109,10 +2706,12 @@ def _extract_cert_rows(task_ids):
     """
     汇总 SSL 证书导出行（支持协议/套件/强度与 TLS 合规信息）。
     """
+    task_id_list = _normalize_task_id_list(task_ids)
+    ai_lookup = _build_ai_denoise_lookup(task_id_list, "cert")
     rows = []
     now_dt = datetime.utcnow()
 
-    for task_id in task_ids:
+    for task_id in task_id_list:
         task_id = str(task_id or "").strip()
         if not task_id:
             continue
@@ -2193,6 +2792,13 @@ def _extract_cert_rows(task_ids):
                     sanitize_excel_value(remediation_text),
                     sanitize_excel_value(sha256),
                     sanitize_excel_value(san),
+                    sanitize_excel_value(
+                        _resolve_ai_lookup_result(
+                            ai_lookup,
+                            data_id=_normalize_ai_lookup_key(item.get("_id", "")),
+                            row_key=_normalize_ai_lookup_key(item.get("_id", "")),
+                        ).get("text", "未分析")
+                    ),
                 ]
             )
 
@@ -2219,6 +2825,7 @@ def _build_cert_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['M'].width = 78.0
     ws.column_dimensions['N'].width = 42.0
     ws.column_dimensions['O'].width = 60.0
+    ws.column_dimensions['P'].width = 24.0
 
     ws.append(
         [
@@ -2237,6 +2844,7 @@ def _build_cert_sheet(wb, task_ids, apply_style=True):
             "修复建议",
             "SHA-256",
             "使用者备用名称",
+            "AI分析",
         ]
     )
 
@@ -2251,10 +2859,13 @@ def _extract_vuln_rows(task_ids):
     """
     汇总漏洞明细（合并 vuln 与 nuclei_result），并按关键字段去重
     """
+    task_id_list = _normalize_task_id_list(task_ids)
+    vuln_ai_lookup = _build_ai_denoise_lookup(task_id_list, "vuln")
+    nuclei_ai_lookup = _build_ai_denoise_lookup(task_id_list, "nuclei_result")
     rows = []
     dedup_keys = set()
 
-    for task_id in task_ids:
+    for task_id in task_id_list:
         task_id = str(task_id or "").strip()
         if not task_id:
             continue
@@ -2278,6 +2889,8 @@ def _extract_vuln_rows(task_ids):
             if dedup_key in dedup_keys:
                 continue
             dedup_keys.add(dedup_key)
+            item_id = _normalize_ai_lookup_key(item.get("_id", ""))
+            ai_result = _resolve_ai_lookup_result(vuln_ai_lookup, data_id=item_id, row_key=item_id)
             rows.append(
                 [
                     "npoc",
@@ -2288,6 +2901,7 @@ def _extract_vuln_rows(task_ids):
                     plugin,
                     vuln_type,
                     detail,
+                    sanitize_excel_value(ai_result.get("text", "未分析")),
                 ]
             )
 
@@ -2305,6 +2919,8 @@ def _extract_vuln_rows(task_ids):
             if dedup_key in dedup_keys:
                 continue
             dedup_keys.add(dedup_key)
+            item_id = _normalize_ai_lookup_key(item.get("_id", ""))
+            ai_result = _resolve_ai_lookup_result(nuclei_ai_lookup, data_id=item_id, row_key=item_id)
             rows.append(
                 [
                     "nuclei",
@@ -2315,6 +2931,7 @@ def _extract_vuln_rows(task_ids):
                     template_id,
                     "nuclei",
                     template_url,
+                    sanitize_excel_value(ai_result.get("text", "未分析")),
                 ]
             )
 
@@ -2465,6 +3082,170 @@ def _severity_rank(severity_text):
     }.get(level, 0)
 
 
+def _build_vuln_severity_distribution(vuln_rows):
+    """
+    统计风险等级分布（critical/high/medium/low/info）。
+    """
+    stat = {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "info": 0,
+    }
+    for row in vuln_rows:
+        if not isinstance(row, list) or len(row) < 3:
+            continue
+        raw = sanitize_excel_value(row[2]).strip().lower()
+        if raw in ("critical", "严重"):
+            stat["critical"] += 1
+        elif raw in ("high", "高"):
+            stat["high"] += 1
+        elif raw in ("medium", "中"):
+            stat["medium"] += 1
+        elif raw in ("low", "低"):
+            stat["low"] += 1
+        elif raw in ("info", "informational", "信息"):
+            stat["info"] += 1
+    return stat
+
+
+def _split_scan_target_items(raw_target):
+    """
+    解析任务目标文本，兼容换行/逗号/分号分隔。
+    """
+    text = sanitize_excel_value(raw_target).replace("\r", "\n").strip()
+    if not text:
+        return []
+
+    items = []
+    seen = set()
+    for part in re.split(r"[\n,，;；]+", text):
+        target = sanitize_excel_value(part).strip()
+        if not target or target in seen:
+            continue
+        seen.add(target)
+        items.append(target)
+    return items
+
+
+def _build_scan_target_rows(task_items, per_task_limit=60, total_limit=300):
+    """
+    构建“扫描目标清单”表格数据。
+    """
+    rows = []
+    total_count = 0
+    for item in task_items:
+        task_name = sanitize_excel_value(item.get("name", "")).strip() or "-"
+        targets = _split_scan_target_items(item.get("target", ""))
+        if not targets:
+            fallback_target = sanitize_excel_value(item.get("target", "")).strip()
+            targets = [fallback_target] if fallback_target else ["-"]
+
+        for idx, target in enumerate(targets):
+            if idx >= per_task_limit or total_count >= total_limit:
+                break
+            rows.append(
+                {
+                    "task_name": task_name,
+                    "target": _truncate_report_text(target, 220),
+                }
+            )
+            total_count += 1
+
+        if total_count >= total_limit:
+            break
+
+    return rows
+
+
+def _build_task_asset_rows(task_items, summary):
+    """
+    构建按任务维度的资产产出统计行。
+    """
+    rows = []
+    summary_map = summary.get("task_summaries", {}) if isinstance(summary, dict) else {}
+    for item in task_items:
+        task_id = sanitize_excel_value(item.get("_id", "")).strip()
+        task_name = sanitize_excel_value(item.get("name", "")).strip() or "-"
+        task_target = _truncate_report_text(item.get("target", ""), 120) or "-"
+        task_stat = summary_map.get(task_id, {})
+        rows.append(
+            {
+                "task_name": task_name,
+                "task_target": task_target,
+                "site_cnt": int(task_stat.get("site_cnt", 0) or 0),
+                "domain_cnt": int(task_stat.get("domain_cnt", 0) or 0),
+                "ip_cnt": int(task_stat.get("ip_cnt", 0) or 0),
+                "url_cnt": int(task_stat.get("url_cnt", 0) or 0),
+                "vuln_cnt": int(task_stat.get("vuln_cnt", 0) or 0),
+            }
+        )
+    return rows
+
+
+def _collect_asset_samples(task_ids, sample_limit=20):
+    """
+    汇总资产样本，展示“得到了哪些资产”。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    sample_limit = max(1, int(sample_limit or 20))
+
+    site_seen = set()
+    domain_seen = set()
+    ip_seen = set()
+    url_seen = set()
+
+    site_samples = []
+    domain_samples = []
+    ip_samples = []
+    url_samples = []
+
+    for task_id in task_id_list:
+        for item in get_site_data(task_id):
+            site = sanitize_excel_value(item.get("site") or item.get("url") or "").strip()
+            if not site or site in site_seen:
+                continue
+            site_seen.add(site)
+            if len(site_samples) < sample_limit:
+                site_samples.append(_truncate_report_text(site, 180))
+
+        for item in get_domain_data(task_id):
+            domain = sanitize_excel_value(item.get("domain", "")).strip()
+            if not domain or domain in domain_seen:
+                continue
+            domain_seen.add(domain)
+            if len(domain_samples) < sample_limit:
+                domain_samples.append(_truncate_report_text(domain, 180))
+
+        for item in get_ip_data(task_id):
+            ip = sanitize_excel_value(item.get("ip", "")).strip()
+            if not ip or ip in ip_seen:
+                continue
+            ip_seen.add(ip)
+            if len(ip_samples) < sample_limit:
+                ip_samples.append(_truncate_report_text(ip, 180))
+
+        for item in get_url_data(task_id):
+            url = sanitize_excel_value(item.get("url", "")).strip()
+            if not url or url in url_seen:
+                continue
+            url_seen.add(url)
+            if len(url_samples) < sample_limit:
+                url_samples.append(_truncate_report_text(url, 180))
+
+    return {
+        "site_total": len(site_seen),
+        "domain_total": len(domain_seen),
+        "ip_total": len(ip_seen),
+        "url_total": len(url_seen),
+        "site_samples": site_samples,
+        "domain_samples": domain_samples,
+        "ip_samples": ip_samples,
+        "url_samples": url_samples,
+    }
+
+
 def _build_risk_cluster_rows(vuln_rows, limit=15):
     """
     将风险明细聚合为“风险名称 + 来源 + 最高等级 + 数量”。
@@ -2571,9 +3352,24 @@ def _build_ai_markdown_report(task_ids, ai_settings):
     poc_rows = _extract_nuclei_rows(task_id_list)
     waf_rows = _extract_waf_rows(task_id_list)
     wih_rows = _extract_wih_rows(task_id_list)
+    ai_denoise_rows = _extract_ai_denoise_rows(task_id_list)
 
+    severity_stat = _build_vuln_severity_distribution(vuln_rows)
     risk_clusters = _build_risk_cluster_rows(vuln_rows, limit=15)
     suspected_fp_rows = _build_suspected_fp_rows(vuln_rows, limit=12)
+    ai_overview = _build_ai_denoise_overview(ai_denoise_rows)
+    ai_high_value_rows = _build_ai_high_value_rows(ai_denoise_rows, limit=30)
+    ai_suspected_fp_rows = _build_ai_suspected_fp_rows(ai_denoise_rows, limit=20)
+    scan_target_rows = _build_scan_target_rows(task_items, per_task_limit=80, total_limit=400)
+    task_asset_rows = _build_task_asset_rows(task_items, summary)
+    asset_samples = _collect_asset_samples(task_id_list, sample_limit=25)
+
+    ai_denoise_enabled = True
+    raw_ai_denoise_enable = ""
+    if isinstance(ai_settings, dict):
+        raw_ai_denoise_enable = sanitize_excel_value(ai_settings.get("ai_denoise_enable", "")).strip().lower()
+    if raw_ai_denoise_enable in ("0", "false", "off", "no"):
+        ai_denoise_enabled = False
 
     names = []
     targets = []
@@ -2598,13 +3394,13 @@ def _build_ai_markdown_report(task_ids, ai_settings):
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     lines = []
-    lines.append("# ARL AI报告（Markdown）")
+    lines.append("# ARL AI分析报告")
     lines.append("")
     lines.append("> 生成时间：`{}`".format(generated_at))
     lines.append("> 扫描开始时间：`{}`".format(scan_start))
     lines.append("> 扫描截止时间：`{}`".format(scan_end))
-    lines.append("> 报告类型：`AI报告（Markdown）固定模板 V1`")
-    lines.append("> 生成方式：`离线结构化汇总（不触发在线模型实时推理）`")
+    lines.append("> 报告类型：`AI分析报告固定模板 V2`")
+    lines.append("> 生成方式：`离线结构化汇总（仅读取扫描与AI去噪落库结果，不触发实时模型调用）`")
     lines.append("")
     lines.append("## 任务概览")
     lines.append("")
@@ -2618,6 +3414,83 @@ def _build_ai_markdown_report(task_ids, ai_settings):
             lines.append("| {} | {} |".format(name, target))
     else:
         lines.append("| - | - |")
+    lines.append("")
+    lines.append("## 扫描目标清单")
+    lines.append("")
+    lines.append("| 任务名 | 扫描目标 |")
+    lines.append("| --- | --- |")
+    if scan_target_rows:
+        for item in scan_target_rows:
+            lines.append(
+                "| {} | {} |".format(
+                    sanitize_excel_value(item.get("task_name", "")),
+                    sanitize_excel_value(item.get("target", "")),
+                )
+            )
+    else:
+        lines.append("| - | - |")
+    lines.append("")
+    lines.append("## 任务资产产出统计")
+    lines.append("")
+    lines.append("| 任务名 | 任务目标 | 站点 | 子域名 | IP | URL | 风险 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+    if task_asset_rows:
+        for item in task_asset_rows:
+            lines.append(
+                "| {} | {} | {} | {} | {} | {} | {} |".format(
+                    sanitize_excel_value(item.get("task_name", "")),
+                    sanitize_excel_value(item.get("task_target", "")),
+                    int(item.get("site_cnt", 0) or 0),
+                    int(item.get("domain_cnt", 0) or 0),
+                    int(item.get("ip_cnt", 0) or 0),
+                    int(item.get("url_cnt", 0) or 0),
+                    int(item.get("vuln_cnt", 0) or 0),
+                )
+            )
+    else:
+        lines.append("| - | - | 0 | 0 | 0 | 0 | 0 |")
+    lines.append("")
+    lines.append("## 资产样本（节选）")
+    lines.append("")
+    lines.append("- 站点资产（总数 `{}`，展示 `{}`）".format(
+        int(asset_samples.get("site_total", 0) or 0),
+        len(asset_samples.get("site_samples", [])),
+    ))
+    if asset_samples.get("site_samples"):
+        for idx, value in enumerate(asset_samples.get("site_samples", []), start=1):
+            lines.append("{}. {}".format(idx, sanitize_excel_value(value)))
+    else:
+        lines.append("- 无")
+    lines.append("")
+    lines.append("- 子域名资产（总数 `{}`，展示 `{}`）".format(
+        int(asset_samples.get("domain_total", 0) or 0),
+        len(asset_samples.get("domain_samples", [])),
+    ))
+    if asset_samples.get("domain_samples"):
+        for idx, value in enumerate(asset_samples.get("domain_samples", []), start=1):
+            lines.append("{}. {}".format(idx, sanitize_excel_value(value)))
+    else:
+        lines.append("- 无")
+    lines.append("")
+    lines.append("- IP资产（总数 `{}`，展示 `{}`）".format(
+        int(asset_samples.get("ip_total", 0) or 0),
+        len(asset_samples.get("ip_samples", [])),
+    ))
+    if asset_samples.get("ip_samples"):
+        for idx, value in enumerate(asset_samples.get("ip_samples", []), start=1):
+            lines.append("{}. {}".format(idx, sanitize_excel_value(value)))
+    else:
+        lines.append("- 无")
+    lines.append("")
+    lines.append("- URL资产（总数 `{}`，展示 `{}`）".format(
+        int(asset_samples.get("url_total", 0) or 0),
+        len(asset_samples.get("url_samples", [])),
+    ))
+    if asset_samples.get("url_samples"):
+        for idx, value in enumerate(asset_samples.get("url_samples", []), start=1):
+            lines.append("{}. {}".format(idx, sanitize_excel_value(value)))
+    else:
+        lines.append("- 无")
     lines.append("")
     lines.append("## 执行摘要（固定模板）")
     lines.append("")
@@ -2636,6 +3509,105 @@ def _build_ai_markdown_report(task_ids, ai_settings):
     lines.append("- WAF识别：`{}`".format(len(waf_rows)))
     lines.append("- WIH记录：`{}`".format(len(wih_rows)))
     lines.append("")
+    lines.append("## 风险等级分布")
+    lines.append("")
+    lines.append("| 严重级别 | 数量 |")
+    lines.append("| --- | --- |")
+    lines.append("| 严重 | {} |".format(int(severity_stat.get("critical", 0) or 0)))
+    lines.append("| 高危 | {} |".format(int(severity_stat.get("high", 0) or 0)))
+    lines.append("| 中危 | {} |".format(int(severity_stat.get("medium", 0) or 0)))
+    lines.append("| 低危 | {} |".format(int(severity_stat.get("low", 0) or 0)))
+    lines.append("| 信息 | {} |".format(int(severity_stat.get("info", 0) or 0)))
+    lines.append("")
+    lines.append("## AI去噪概览")
+    lines.append("")
+    lines.append("- AI去噪配置开关：`{}`".format("开启" if ai_denoise_enabled else "关闭"))
+    lines.append("- AI去噪落库记录：`{}`".format(ai_overview.get("total", 0)))
+    lines.append("- 已完成分析（AI/规则）：`{}`".format(ai_overview.get("analyzed", 0)))
+    lines.append("- 高价值目标（危险/可疑）：`{}`".format(ai_overview.get("high_value", 0)))
+    lines.append("- 疑似误报候选：`{}`".format(ai_overview.get("suspected_fp", 0)))
+    lines.append(
+        "- 分析来源分布：`AI {}` / `规则 {}` / `未分析 {}`".format(
+            ai_overview.get("source_stat", {}).get("ai", 0),
+            ai_overview.get("source_stat", {}).get("rule", 0),
+            ai_overview.get("source_stat", {}).get("disabled", 0),
+        )
+    )
+    lines.append(
+        "- 结果级别分布：`危险 {}` / `可疑 {}` / `正常 {}` / `未分析 {}`".format(
+            ai_overview.get("result_stat", {}).get("danger", 0),
+            ai_overview.get("result_stat", {}).get("suspicious", 0),
+            ai_overview.get("result_stat", {}).get("safe", 0),
+            ai_overview.get("result_stat", {}).get("disabled", 0),
+        )
+    )
+    lines.append("")
+    lines.append("| 模块 | 记录数 | 危险 | 可疑 | 正常 | AI模型 | 规则 | 未分析 | 疑似误报 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    if ai_overview.get("module_rows"):
+        for item in ai_overview.get("module_rows", []):
+            lines.append(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                    sanitize_excel_value(item.get("module_label", "")),
+                    int(item.get("total", 0) or 0),
+                    int(item.get("danger", 0) or 0),
+                    int(item.get("suspicious", 0) or 0),
+                    int(item.get("safe", 0) or 0),
+                    int(item.get("ai", 0) or 0),
+                    int(item.get("rule", 0) or 0),
+                    int(item.get("disabled", 0) or 0),
+                    int(item.get("suspected_fp", 0) or 0),
+                )
+            )
+    else:
+        lines.append("| - | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |")
+    lines.append("")
+    lines.append("## AI高价值目标（危险/可疑）")
+    lines.append("")
+    lines.append("| 模块 | 目标 | 结论 | 来源 | 风险等级 | 可信度 | 分析时间 | 摘要 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    if ai_high_value_rows:
+        for item in ai_high_value_rows:
+            lines.append(
+                "| {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                    sanitize_excel_value(item.get("module_label", "")),
+                    sanitize_excel_value(item.get("target", "")),
+                    sanitize_excel_value(item.get("result_label", "")),
+                    sanitize_excel_value(item.get("source_label", "")),
+                    sanitize_excel_value(item.get("risk_level", "")),
+                    sanitize_excel_value(item.get("trust", "")),
+                    sanitize_excel_value(item.get("analyzed_at", "")),
+                    sanitize_excel_value(
+                        _truncate_report_text(item.get("summary") or item.get("display_text"), 140)
+                    ),
+                )
+            )
+    else:
+        lines.append("| - | - | - | - | - | - | - | - |")
+    lines.append("")
+    lines.append("## AI疑似误报候选")
+    lines.append("")
+    lines.append("| 模块 | 目标 | 结论 | 来源 | 风险等级 | 分析时间 | 依据摘要 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+    if ai_suspected_fp_rows:
+        for item in ai_suspected_fp_rows:
+            evidence_text = ""
+            if isinstance(item.get("evidence"), list) and item.get("evidence"):
+                evidence_text = "；".join(item.get("evidence", []))
+            lines.append(
+                "| {} | {} | {} | {} | {} | {} | {} |".format(
+                    sanitize_excel_value(item.get("module_label", "")),
+                    sanitize_excel_value(item.get("target", "")),
+                    sanitize_excel_value(item.get("result_label", "")),
+                    sanitize_excel_value(item.get("source_label", "")),
+                    sanitize_excel_value(item.get("risk_level", "")),
+                    sanitize_excel_value(item.get("analyzed_at", "")),
+                    sanitize_excel_value(_truncate_report_text(evidence_text or item.get("summary"), 140)),
+                )
+            )
+    else:
+        lines.append("| - | - | - | - | - | - | - |")
+    lines.append("")
     lines.append("## 风险聚类")
     lines.append("")
     lines.append("| 来源 | 风险名称 | 最高等级 | 数量 |")
@@ -2653,7 +3625,7 @@ def _build_ai_markdown_report(task_ids, ai_settings):
     else:
         lines.append("| - | - | - | 0 |")
     lines.append("")
-    lines.append("## 误报疑似项")
+    lines.append("## 规则误报疑似项")
     lines.append("")
     if suspected_fp_rows:
         for idx, item in enumerate(suspected_fp_rows, start=1):
@@ -2683,7 +3655,7 @@ def _build_ai_markdown_report(task_ids, ai_settings):
     lines.append("")
     lines.append("## 说明")
     lines.append("")
-    lines.append("- 本报告为 AI 导出模板，内容基于当前任务扫描结果自动结构化生成。")
+    lines.append("- 本报告为 AI分析报告固定模板，内容基于当前任务扫描结果自动结构化生成。")
     lines.append("- 若需更强语义总结，可在后续版本接入在线模型推理后扩展。")
     lines.append("")
 
@@ -2703,8 +3675,9 @@ def _build_vuln_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['F'].width = 28.0
     ws.column_dimensions['G'].width = 20.0
     ws.column_dimensions['H'].width = 80.0
+    ws.column_dimensions['I'].width = 24.0
 
-    ws.append(["来源", "风险名称", "严重级别", "目标", "风险URL", "模板/插件", "风险类型", "详情"])
+    ws.append(["来源", "风险名称", "严重级别", "目标", "风险URL", "模板/插件", "风险类型", "详情", "AI分析"])
     for row in _extract_vuln_rows(task_ids):
         ws.append(row)
 
@@ -2927,10 +3900,14 @@ class SaveTask(object):
         ws.column_dimensions['E'].width = 20.0
         ws.column_dimensions['F'].width = 30.0
         ws.column_dimensions['G'].width = 56.0
+        ws.column_dimensions['H'].width = 24.0
         ws.title = "站点"
-        column_tilte = ["site", "title", "headers", "指纹", "状态码", "favicon hash", "截图"]
+        column_tilte = ["site", "title", "headers", "指纹", "状态码", "favicon hash", "截图", "AI分析"]
         ws.append(column_tilte)
+        ai_lookup = _build_ai_denoise_lookup([self.task_id], "site")
         for item in get_site_data(self.task_id):
+            item_id = _normalize_ai_lookup_key(item.get("_id", ""))
+            ai_result = _resolve_ai_lookup_result(ai_lookup, data_id=item_id, row_key=item_id)
             row = []
             row.append(self.ignore_illegal(item["site"]))
             row.append(self.ignore_illegal(item["title"]))
@@ -2939,6 +3916,7 @@ class SaveTask(object):
             row.append(item["status"])
             row.append(item["favicon"].get("hash", ""))
             row.append(self.ignore_illegal(sanitize_excel_value(item.get("screenshot", ""))))
+            row.append(sanitize_excel_value(ai_result.get("text", "未分析")))
             ws.append(row)
 
         self.set_style(ws)
@@ -3197,6 +4175,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     merged_ip_items = []  # 保留原始 ip 文档（不跨任务合并）
     merged_domains = {}   # key: domain
     merged_sites = {}     # key: site
+    site_ai_lookup = _build_ai_denoise_lookup(valid_task_ids, "site")
 
     for task_data in valid_tasks:
         task_id = str(task_data.get("_id"))
@@ -3263,6 +4242,8 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
             site = site_item.get("site") or site_item.get("url")
             if not site:
                 continue
+            site_item_id = _normalize_ai_lookup_key(site_item.get("_id", ""))
+            site_ai_result = _resolve_ai_lookup_result(site_ai_lookup, data_id=site_item_id, row_key=site_item_id)
             if site not in merged_sites:
                 merged_sites[site] = {
                     "site": site,
@@ -3272,6 +4253,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                     "screenshot": site_item.get("screenshot", ""),
                     "status": site_item.get("status", ""),
                     "favicon": site_item.get("favicon", {}),
+                    "ai_result": site_ai_result,
                 }
             else:
                 merged = merged_sites[site]
@@ -3286,6 +4268,9 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                 if (not isinstance(merged.get("favicon"), dict) or not merged.get("favicon", {}).get("hash")) and \
                         isinstance(site_item.get("favicon"), dict):
                     merged["favicon"] = site_item.get("favicon", {})
+                current_ai_result = merged.get("ai_result")
+                if _is_ai_lookup_result_better(site_ai_result, current_ai_result):
+                    merged["ai_result"] = site_ai_result
 
                 # 按指纹名称去重
                 name_set = set()
@@ -3315,7 +4300,8 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     ws.column_dimensions['E'].width = 20.0
     ws.column_dimensions['F'].width = 30.0
     ws.column_dimensions['G'].width = 56.0
-    ws.append(["site", "title", "headers", "指纹", "状态码", "favicon hash", "截图"])
+    ws.column_dimensions['H'].width = 24.0
+    ws.append(["site", "title", "headers", "指纹", "状态码", "favicon hash", "截图", "AI分析"])
     for site in sorted(merged_sites.keys()):
         item = merged_sites[site]
         ws.append([
@@ -3326,6 +4312,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
             sanitize_excel_value(item.get("status", "")),
             sanitize_excel_value((item.get("favicon", {}) or {}).get("hash", "")),
             sanitize_excel_value(item.get("screenshot", "")),
+            sanitize_excel_value((item.get("ai_result") or {}).get("text", "未分析")),
         ])
     if apply_style:
         set_sheet_style(ws)
