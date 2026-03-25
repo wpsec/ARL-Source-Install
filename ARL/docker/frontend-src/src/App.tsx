@@ -1105,6 +1105,13 @@ const modules: ModuleConfig[] = [
       { key: 'finger.name', label: '指 纹', placeholder: '请输入指 纹进行搜索' },
       { key: 'favicon.hash', label: 'favicon hash', placeholder: '请输入favicon hash进行搜索', inputType: 'number' },
       { key: 'tag', label: '标签', placeholder: '请输入标签进行搜索' },
+      {
+        key: 'ai_analysis',
+        label: 'AI分析',
+        placeholder: '请选择AI分析结果',
+        inputType: 'select',
+        options: AI_ANALYSIS_SEARCH_OPTIONS,
+      },
     ],
     exportPath: '/site/export/',
     actions: [
@@ -1541,6 +1548,13 @@ const modules: ModuleConfig[] = [
       { key: 'title', label: '标题', placeholder: '请输入标题进行搜索' },
       { key: 'status_code', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
       { key: 'content_length', label: 'body 长度', placeholder: '请输入body 长度进行搜索', inputType: 'number' },
+      {
+        key: 'ai_analysis',
+        label: 'AI分析',
+        placeholder: '请选择AI分析结果',
+        inputType: 'select',
+        options: AI_ANALYSIS_SEARCH_OPTIONS,
+      },
     ],
     actions: [
       {
@@ -7455,11 +7469,7 @@ function TableModuleView({
   }, [aiDenoiseModuleId]);
   const canOpenAiDenoiseDetail = useCallback((analysis: AiDenoiseResultItem): boolean => {
     if (!aiDenoiseModuleId) return false;
-    if (analysis.result_level === 'disabled') return false;
-    if (aiDenoiseModuleId === 'site' || aiDenoiseModuleId === 'fileleak' || aiDenoiseModuleId === 'url') {
-      return analysis.result_level === 'suspicious' || analysis.result_level === 'danger';
-    }
-    return true;
+    return Boolean(analysis);
   }, [aiDenoiseModuleId]);
   const closeAiDenoiseDetail = useCallback(() => {
     aiDenoiseDetailRequestSeqRef.current += 1;

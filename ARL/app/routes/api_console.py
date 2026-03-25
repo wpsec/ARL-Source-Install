@@ -589,6 +589,72 @@ def _normalize_ai_provider_id(raw_provider):
     return provider_id
 
 
+def _normalize_ai_model_name(provider_id, model_name):
+    """
+    规范化常见模型别名，降低大小写/旧命名带来的误配置概率。
+    """
+    raw_name = str(model_name or '').strip()
+    if not raw_name:
+        return ''
+
+    provider = _normalize_ai_provider_id(provider_id)
+    normalized = raw_name.lower().replace('_', '-').replace(' ', '')
+    normalized = normalized.replace('–', '-').replace('—', '-')
+
+    if provider == 'qwen':
+        alias_map = {
+            'qwen3.5-plus': 'qwen-plus',
+            'qwen-3.5-plus': 'qwen-plus',
+            'qwen35-plus': 'qwen-plus',
+            'qwen3.5plus': 'qwen-plus',
+            'qwen3.5': 'qwen-plus',
+            'qwen3-plus': 'qwen-plus',
+            'qwen3.5-max': 'qwen-max',
+            'qwen-3.5-max': 'qwen-max',
+            'qwen35-max': 'qwen-max',
+            'qwen3.5max': 'qwen-max',
+            'qwen3-max': 'qwen-max',
+            'qwen3.5-turbo': 'qwen-turbo',
+            'qwen-3.5-turbo': 'qwen-turbo',
+            'qwen35-turbo': 'qwen-turbo',
+            'qwen3.5turbo': 'qwen-turbo',
+            'qwen3-turbo': 'qwen-turbo',
+        }
+        mapped = alias_map.get(normalized)
+        if mapped:
+            return mapped
+
+    return raw_name
+
+
+def _is_ai_model_unavailable_error(message):
+    text = str(message or '').strip().lower()
+    if not text:
+        return False
+    keywords = (
+        'does not exist',
+        'not exist',
+        'model not found',
+        'you do not have access',
+        'no access to model',
+        '模型不存在',
+        '无权访问',
+        '模型不可用',
+    )
+    return any(keyword in text for keyword in keywords)
+
+
+def _pick_ai_retry_model(provider_id, current_model):
+    provider = _normalize_ai_provider_id(provider_id)
+    default_model = str((AI_PROVIDER_PRESET_MAP.get(provider) or {}).get('default_model') or '').strip()
+    current = str(current_model or '').strip()
+    if not default_model:
+        return ''
+    if default_model == current:
+        return ''
+    return default_model
+
+
 def _normalize_ai_custom_providers(raw_items):
     """
     规范化 OpenAI 兼容自定义提供方列表。
@@ -1038,10 +1104,10 @@ def _test_ai_config_connectivity(ai_config):
     active_model_profile_id = str(ai_config.get('active_model_profile_id') or '').strip()
     active_profile = _pick_active_ai_model_profile(model_profiles, active_model_profile_id)
 
-    provider_id = str(active_profile.get('provider') or 'openai')
+    provider_id = _normalize_ai_provider_id(active_profile.get('provider') or 'openai')
     base_url = str(active_profile.get('base_url') or '').strip()
     api_key = str(active_profile.get('api_key') or '').strip()
-    model_name = str(active_profile.get('model') or '').strip()
+    model_name = _normalize_ai_model_name(provider_id, active_profile.get('model'))
     profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=5)
     request_text = '你好呀～'
@@ -1163,6 +1229,51 @@ def _test_ai_config_connectivity(ai_config):
                 if not err_message:
                     err_message = str(chat_payload.get('message') or '').strip()
             err_message = err_message or 'HTTP {}'.format(chat_status_code)
+            retry_model = ''
+            if _is_ai_model_unavailable_error(err_message):
+                retry_model = _pick_ai_retry_model(provider_id, test_model)
+            if retry_model:
+                retry_body = dict(request_body)
+                retry_body['model'] = retry_model
+                retry_conn = utils.http_req(chat_url, 'post', headers=headers, json=retry_body, timeout=(8, timeout_sec))
+                retry_status_code = int(getattr(retry_conn, 'status_code', 0) or 0)
+                try:
+                    retry_payload = retry_conn.json() if retry_conn is not None else {}
+                except Exception:
+                    retry_payload = {}
+                if retry_status_code == 200:
+                    retry_reply_text = ''
+                    retry_choices = retry_payload.get('choices', []) if isinstance(retry_payload, dict) else []
+                    retry_message_obj = retry_choices[0].get('message') if isinstance(retry_choices, list) and retry_choices else {}
+                    if isinstance(retry_message_obj, dict):
+                        retry_content_obj = retry_message_obj.get('content')
+                        if isinstance(retry_content_obj, str):
+                            retry_reply_text = retry_content_obj.strip()
+                        elif isinstance(retry_content_obj, list):
+                            text_parts = []
+                            for fragment in retry_content_obj:
+                                if isinstance(fragment, dict) and str(fragment.get('type') or '').strip() == 'text':
+                                    text_value = str(fragment.get('text') or '').strip()
+                                    if text_value:
+                                        text_parts.append(text_value)
+                            retry_reply_text = '\n'.join(text_parts).strip()
+                    if not retry_reply_text:
+                        retry_reply_text = '（接口已响应，但返回内容为空）'
+                    return {
+                        'ok': True,
+                        'message': 'AI 测试成功（模型已从 {} 自动切换为 {}）'.format(test_model, retry_model),
+                        'provider': provider_id,
+                        'detail': {
+                            'base_url': base_url,
+                            'model_count': model_count,
+                            'first_model': first_model,
+                            'model': retry_model,
+                            'profile': profile_name,
+                            'request_text': request_text,
+                            'reply_text': retry_reply_text,
+                        },
+                        'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    }
             return {
                 'ok': False,
                 'message': 'AI 测试失败：{}'.format(err_message),
@@ -2075,9 +2186,10 @@ def _build_ai_denoise_context(module_id, item):
 
 
 def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result):
+    provider_id = _normalize_ai_provider_id(active_profile.get('provider') or 'openai')
     base_url = str(active_profile.get('base_url') or '').strip()
     api_key = str(active_profile.get('api_key') or '').strip()
-    model_name = str(active_profile.get('model') or '').strip()
+    model_name = _normalize_ai_model_name(provider_id, active_profile.get('model'))
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=8)
     dialogue_records = []
     if not base_url or not api_key or not model_name:
@@ -2147,36 +2259,79 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
     }
 
     try:
-        conn = utils.http_req(request_url, 'post', headers=headers, json=request_body, timeout=(8, timeout_sec))
-        status_code = _safe_int_any(getattr(conn, 'status_code', 0), 0)
-        payload = {}
-        try:
-            payload = conn.json() if conn is not None else {}
-        except Exception:
+        def _request_chat_completion(target_model):
+            request_payload = dict(request_body)
+            request_payload['model'] = str(target_model or '').strip()
+            conn = utils.http_req(request_url, 'post', headers=headers, json=request_payload, timeout=(8, timeout_sec))
+            status_code = _safe_int_any(getattr(conn, 'status_code', 0), 0)
             payload = {}
+            try:
+                payload = conn.json() if conn is not None else {}
+            except Exception:
+                payload = {}
 
-        if status_code != 200:
-            err_message = ''
-            if isinstance(payload, dict):
-                error_obj = payload.get('error')
-                if isinstance(error_obj, dict):
-                    err_message = str(error_obj.get('message') or '').strip()
-                if not err_message:
-                    err_message = str(payload.get('message') or '').strip()
-            message = err_message or 'HTTP {}'.format(status_code)
+            if status_code != 200:
+                err_message = ''
+                if isinstance(payload, dict):
+                    error_obj = payload.get('error')
+                    if isinstance(error_obj, dict):
+                        err_message = str(error_obj.get('message') or '').strip()
+                    if not err_message:
+                        err_message = str(payload.get('message') or '').strip()
+                message = err_message or 'HTTP {}'.format(status_code)
+                return False, '', message
+
+            choices = payload.get('choices', []) if isinstance(payload, dict) else []
+            message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
+            content_text = ''
+            if isinstance(message_obj, dict):
+                content_obj = message_obj.get('content')
+                if isinstance(content_obj, str):
+                    content_text = content_obj.strip()
+                elif isinstance(content_obj, list):
+                    text_parts = []
+                    for fragment in content_obj:
+                        if isinstance(fragment, dict) and str(fragment.get('type') or '').strip() == 'text':
+                            text_value = str(fragment.get('text') or '').strip()
+                            if text_value:
+                                text_parts.append(text_value)
+                    content_text = '\n'.join(text_parts).strip()
+            return True, content_text, ''
+
+        call_ok, content_text, call_message = _request_chat_completion(model_name)
+        if not call_ok and _is_ai_model_unavailable_error(call_message):
+            retry_model = _pick_ai_retry_model(provider_id, model_name)
+            if retry_model:
+                dialogue_records.extend(
+                    _normalize_dialogue_records(
+                        [
+                            {
+                                'role': 'system',
+                                'content': '模型 {} 不可用，已自动切换为 {} 重试。'.format(model_name, retry_model),
+                            }
+                        ],
+                        max_items=2,
+                    )
+                )
+                retry_ok, retry_content_text, retry_message = _request_chat_completion(retry_model)
+                if retry_ok:
+                    model_name = retry_model
+                    call_ok = True
+                    content_text = retry_content_text
+                    call_message = ''
+                else:
+                    call_ok = False
+                    call_message = retry_message
+
+        if not call_ok:
             dialogue_records.extend(
                 _normalize_dialogue_records(
-                    [{'role': 'assistant', 'content': 'AI接口调用失败：{}'.format(message)}],
+                    [{'role': 'assistant', 'content': 'AI接口调用失败：{}'.format(call_message)}],
                     max_items=2,
                 )
             )
-            return None, message, dialogue_records
+            return None, call_message, dialogue_records
 
-        choices = payload.get('choices', []) if isinstance(payload, dict) else []
-        message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
-        content_text = ''
-        if isinstance(message_obj, dict):
-            content_text = str(message_obj.get('content') or '').strip()
         if content_text:
             dialogue_records.extend(
                 _normalize_dialogue_records(
@@ -2468,8 +2623,8 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                     dialogue_records = _normalize_dialogue_records(
                         (ai_dialogue_records or []) + [
                             {
-                                'role': 'assistant',
-                                'content': 'AI 结果不可用，回退规则结论：{}'.format(final_result.get('display_text') or final_result.get('summary') or '-'),
+                                'role': 'system',
+                                'content': '已回退为规则结论：{}'.format(final_result.get('display_text') or final_result.get('summary') or '-'),
                             },
                         ]
                     )
