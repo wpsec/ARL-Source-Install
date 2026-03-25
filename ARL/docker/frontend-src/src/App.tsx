@@ -165,6 +165,36 @@ const TASK_REPORT_EXPORT_LABELS: Record<TaskReportExportFormat, string> = {
   html: 'HTML',
   ai_markdown: 'AI（MD）',
 };
+const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
+  site: ['site'],
+  url: ['url'],
+  fileleak: ['url'],
+  vuln: ['target'],
+  nuclei_result: ['vuln_url'],
+  wih: ['content', 'source', 'site'],
+};
+
+function canToggleHyperlink(moduleId: string): boolean {
+  return Array.isArray(HYPERLINK_MODULE_COLUMN_MAP[moduleId]);
+}
+
+function isHyperlinkEnabledColumn(moduleId: string, column: string): boolean {
+  const columns = HYPERLINK_MODULE_COLUMN_MAP[moduleId];
+  return Array.isArray(columns) && columns.includes(column);
+}
+
+function normalizeHttpHyperlink(value: any): string {
+  const text = String(value ?? '').trim();
+  if (!text || text === '-') return '';
+  if (!/^https?:\/\//i.test(text)) return '';
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
 
 const modules: ModuleConfig[] = [
   {
@@ -6134,6 +6164,7 @@ function TableModuleView({
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
+  const [hyperlinkEnabled, setHyperlinkEnabled] = useState(false);
   const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
@@ -6180,6 +6211,7 @@ function TableModuleView({
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
+  const showHyperlinkToggle = canToggleHyperlink(module.id);
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
   const isTaskTerminalStatus = (status: any) => ['done', 'stop', 'error'].includes(String(status || '').toLowerCase());
   const markTaskRowActionPending = (taskId: string, action: string) => {
@@ -6359,9 +6391,38 @@ function TableModuleView({
     setTaskRowPendingActionMap({});
     setTaskStopAndDeleteLoading(false);
     setTaskCompactMode(true);
+    setHyperlinkEnabled(false);
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
   }, [module.id]);
+
+  const renderTextWithHyperlink = useCallback((value: string): React.ReactNode => {
+    const lines = String(value || '')
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter((item) => item && item !== '-');
+    if (lines.length === 0) return '-';
+    return lines.map((line, index) => {
+      const href = normalizeHttpHyperlink(line);
+      return (
+        <React.Fragment key={`${index}-${line}`}>
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand-accent hover:underline font-medium break-all"
+            >
+              {line}
+            </a>
+          ) : (
+            line
+          )}
+          {index < lines.length - 1 ? <br /> : null}
+        </React.Fragment>
+      );
+    });
+  }, []);
 
   useEffect(() => {
     if (!taskErrorDialog) return;
@@ -8152,6 +8213,20 @@ function TableModuleView({
                   {module.id === 'asset_site' ? '清除' : '重置'}
                 </button>
               ) : null}
+              {showHyperlinkToggle ? (
+                <button
+                  type="button"
+                  onClick={() => setHyperlinkEnabled((prev) => !prev)}
+                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
+                    hyperlinkEnabled
+                      ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                      : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                  }`}
+                  title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
+                >
+                  超链接
+                </button>
+              ) : null}
               {module.exportPath && module.id !== 'task' && module.id !== 'asset_scope' ? (
                 <button
                   onClick={() => void runExport()}
@@ -8262,6 +8337,20 @@ function TableModuleView({
               >
                 <Download className="w-4 h-4" />
                 导出
+              </button>
+            ) : null}
+            {showHyperlinkToggle ? (
+              <button
+                type="button"
+                onClick={() => setHyperlinkEnabled((prev) => !prev)}
+                className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
+                  hyperlinkEnabled
+                    ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                    : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                }`}
+                title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
+              >
+                超链接
               </button>
             ) : null}
           </div>
@@ -8570,7 +8659,11 @@ function TableModuleView({
                             : 'whitespace-pre-wrap break-all leading-relaxed';
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[680px]">
-                              <div className={contentClass}>{contentText}</div>
+                              <div className={contentClass}>
+                                {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
+                                  ? renderTextWithHyperlink(contentText)
+                                  : contentText}
+                              </div>
                               {sensitive ? (
                                 <div className="mt-2 text-[11px] font-black text-brand-danger">敏感信息</div>
                               ) : null}
@@ -8585,7 +8678,9 @@ function TableModuleView({
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[320px] max-w-[760px]">
                               <div className="whitespace-pre-wrap break-all leading-relaxed text-center">
-                                {displayUrl}
+                                {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
+                                  ? renderTextWithHyperlink(displayUrl)
+                                  : displayUrl}
                               </div>
                             </td>
                           );
@@ -8786,6 +8881,15 @@ function TableModuleView({
                                   {isExpanded ? '收起' : '展开'}
                                 </button>
                               ) : null}
+                            </td>
+                          );
+                        }
+
+                        if (hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)) {
+                          const cellText = formatModuleCellValue(module.id, column, row);
+                          return (
+                            <td key={column} className={baseClassName}>
+                              {renderTextWithHyperlink(cellText)}
                             </td>
                           );
                         }
