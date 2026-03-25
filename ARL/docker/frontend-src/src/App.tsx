@@ -2552,6 +2552,83 @@ function parseListFromString(text: string): string[] {
     .filter((item) => item);
 }
 
+function parseFingerListFromString(text: string): string[] {
+  const normalized = text.trim();
+  if (!normalized) return [];
+
+  const tryParseJson = (): string[] => {
+    if (!((normalized.startsWith('[') && normalized.endsWith(']')) || (normalized.startsWith('{') && normalized.endsWith('}')))) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(normalized);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => String(item ?? '').trim())
+          .filter((item) => item);
+      }
+      if (parsed && typeof parsed === 'object') {
+        const name = String((parsed as Record<string, any>).name || (parsed as Record<string, any>).cms || '').trim();
+        return name ? [name] : [];
+      }
+    } catch {
+      return [];
+    }
+    return [];
+  };
+
+  const jsonTokens = tryParseJson();
+  if (jsonTokens.length > 0) return jsonTokens;
+
+  const pyListMatch = normalized.match(/^\[(.*)\]$/);
+  if (pyListMatch) {
+    const body = pyListMatch[1].trim();
+    if (!body) return [];
+    return body
+      .split(/\s*,\s*/)
+      .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
+      .filter((item) => item);
+  }
+
+  return normalized
+    .split(/[,\uFF0C;\uFF1B\r\n]+/)
+    .map((item) => item.trim())
+    .filter((item) => item);
+}
+
+function extractFingerNames(value: any): string[] {
+  if (value === null || value === undefined) return [];
+
+  const addTokens = (bucket: string[], raw: any) => {
+    if (raw === null || raw === undefined) return;
+    if (typeof raw === 'string') {
+      bucket.push(...parseFingerListFromString(raw));
+      return;
+    }
+    if (Array.isArray(raw)) {
+      raw.forEach((item) => addTokens(bucket, item));
+      return;
+    }
+    if (typeof raw === 'object') {
+      const obj = raw as Record<string, any>;
+      const name = String(obj.name || obj.cms || '').trim();
+      if (name) {
+        bucket.push(name);
+      } else {
+        const fallback = String(raw).trim();
+        if (fallback && fallback !== '[object Object]') bucket.push(fallback);
+      }
+      return;
+    }
+    const text = String(raw).trim();
+    if (text) bucket.push(text);
+  };
+
+  const tokens: string[] = [];
+  addTokens(tokens, value);
+  return Array.from(new Set(tokens.filter((item) => item && item !== '-')));
+}
+
 function formatTokenListText(value: any): string {
   if (value === null || value === undefined) return '-';
   if (Array.isArray(value)) {
@@ -2763,6 +2840,86 @@ function formatDateTimeCell(value: any): string {
   }
 
   return truncateText(text, 32);
+}
+
+function parseDateTimeToTimestamp(value: any): number | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value > 1e12) return Math.floor(value);
+    if (value > 1e9) return Math.floor(value * 1000);
+    return null;
+  }
+
+  const text = String(value).trim();
+  if (!text || text === '-') return null;
+
+  const directMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+  if (directMatch) {
+    const parsed = new Date(
+      Number(directMatch[1]),
+      Number(directMatch[2]) - 1,
+      Number(directMatch[3]),
+      Number(directMatch[4]),
+      Number(directMatch[5]),
+      Number(directMatch[6])
+    ).getTime();
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  const parsed = Date.parse(text);
+  if (!Number.isNaN(parsed)) return parsed;
+  return null;
+}
+
+function formatDurationSecondsLabel(totalSeconds: number | null): string {
+  if (totalSeconds === null || !Number.isFinite(totalSeconds) || totalSeconds < 0) return '-';
+  const seconds = Math.floor(totalSeconds);
+  if (seconds < 60) return `${seconds}秒`;
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainSeconds = seconds % 60;
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}天`);
+  if (hours > 0) parts.push(`${hours}小时`);
+  if (minutes > 0) parts.push(`${minutes}分`);
+  if (remainSeconds > 0 || parts.length === 0) parts.push(`${remainSeconds}秒`);
+  return parts.join('');
+}
+
+function buildTaskExecutionDurationInfo(row: any, nowMs: number): {
+  startText: string;
+  endText: string;
+  durationSeconds: number | null;
+  durationLabel: string;
+} {
+  const startMs = parseDateTimeToTimestamp(row?.start_time);
+  const endMsRaw = parseDateTimeToTimestamp(row?.end_time);
+  const startText = formatDateTimeCell(row?.start_time);
+  const status = normalizeTaskStatus(row?.status);
+  const runningLike = status === 'running' || status === 'waiting';
+  const effectiveEndMs = endMsRaw ?? (startMs && runningLike ? nowMs : null);
+  const endText = endMsRaw
+    ? formatDateTimeCell(row?.end_time)
+    : (startMs && runningLike ? '进行中' : formatDateTimeCell(row?.end_time));
+
+  if (!startMs || !effectiveEndMs || effectiveEndMs < startMs) {
+    return {
+      startText,
+      endText,
+      durationSeconds: null,
+      durationLabel: '-',
+    };
+  }
+
+  const durationSeconds = Math.floor((effectiveEndMs - startMs) / 1000);
+  return {
+    startText,
+    endText,
+    durationSeconds,
+    durationLabel: formatDurationSecondsLabel(durationSeconds),
+  };
 }
 
 function getTaskProgressPercent(row: any): number {
@@ -2988,18 +3145,9 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
     return formatHeaderLines(value);
   }
 
-  if ((moduleId === 'asset_site' || moduleId === 'site') && column === 'finger' && Array.isArray(value)) {
-    const fingerNames = value
-      .map((item) => {
-        if (typeof item === 'string') return item;
-        if (item && typeof item === 'object') {
-          if (typeof item.name === 'string' && item.name.trim()) return item.name;
-          if (typeof item.cms === 'string' && item.cms.trim()) return item.cms;
-        }
-        return '';
-      })
-      .filter((item) => item);
-    if (fingerNames.length > 0) return truncateText(fingerNames.join(', '));
+  if ((moduleId === 'asset_site' || moduleId === 'site') && column === 'finger') {
+    const fingerNames = extractFingerNames(value);
+    if (fingerNames.length > 0) return fingerNames.join('\n');
   }
 
   return normalizeValue(value);
@@ -5985,6 +6133,7 @@ function TableModuleView({
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
+  const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
   const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
@@ -6206,6 +6355,7 @@ function TableModuleView({
     setExpandedScopeRows({});
     setExpandedTaskScheduleTargetRows({});
     setExpandedTaskOptionRows({});
+    setExpandedSiteFingerRows({});
     setTaskRowPendingActionMap({});
     setTaskStopAndDeleteLoading(false);
     setTaskCompactMode(true);
@@ -6701,6 +6851,68 @@ function TableModuleView({
     }
     return '';
   }, [module.id, rowIdKey]);
+  const taskDurationHoverSummary = useMemo(() => {
+    if (module.id !== 'task') {
+      return {
+        detailsByKey: {} as Record<string, {
+          taskId: string;
+          taskName: string;
+          startText: string;
+          endText: string;
+          durationSeconds: number | null;
+          durationLabel: string;
+        }>,
+        allTaskLines: [] as string[],
+        totalDurationLabel: '-',
+        averageDurationLabel: '-',
+        countedTaskCount: 0,
+      };
+    }
+
+    const nowMs = Date.now();
+    const detailEntries = displayRows.map((taskRow, index) => {
+      const taskId = getRowId(taskRow);
+      const fallbackTaskName = `任务${(page - 1) * size + index + 1}`;
+      const taskName = sanitizeUiMessage(String(taskRow?.name || ''), 120) || fallbackTaskName;
+      const hoverKey = taskId || `task-status-row-${page}-${index}`;
+      const durationInfo = buildTaskExecutionDurationInfo(taskRow, nowMs);
+      return {
+        hoverKey,
+        taskId: taskId || '-',
+        taskName,
+        ...durationInfo,
+      };
+    });
+
+    const detailsByKey: Record<string, {
+      taskId: string;
+      taskName: string;
+      startText: string;
+      endText: string;
+      durationSeconds: number | null;
+      durationLabel: string;
+    }> = {};
+    detailEntries.forEach((item) => {
+      detailsByKey[item.hoverKey] = item;
+    });
+
+    const allTaskLines = detailEntries.map(
+      (item, index) => `${index + 1}. ${item.taskName} [${item.taskId}]：${item.durationLabel}`
+    );
+    const durationEntries = detailEntries.filter((item) => item.durationSeconds !== null);
+    const totalDurationSeconds = durationEntries.reduce((sum, item) => sum + Number(item.durationSeconds || 0), 0);
+    const averageDurationSeconds = durationEntries.length > 0
+      ? Math.floor(totalDurationSeconds / durationEntries.length)
+      : null;
+
+    return {
+      detailsByKey,
+      allTaskLines,
+      totalDurationLabel: formatDurationSecondsLabel(totalDurationSeconds),
+      averageDurationLabel: formatDurationSecondsLabel(averageDurationSeconds),
+      countedTaskCount: durationEntries.length,
+    };
+  }, [displayRows, getRowId, module.id, page, size]);
   const showIndexColumn = Boolean(module.showIndex);
   const getColumnLabel = (column: string) => module.columnLabels?.[column] || humanizeField(column);
   const isColumnSortable = useCallback((column: string) => {
@@ -8196,6 +8408,8 @@ function TableModuleView({
                   const scopeExpandKey = id || `scope-row-${page}-${rowIndex}`;
                   const scheduleTargetExpandKey = id || `task-schedule-row-${page}-${rowIndex}`;
                   const taskOptionExpandKey = id || `task-option-row-${page}-${rowIndex}`;
+                  const siteFingerExpandKey = id || `site-finger-row-${page}-${rowIndex}`;
+                  const taskStatusHoverKey = id || `task-status-row-${page}-${rowIndex}`;
 
                   return (
                     <tr key={id || Math.random()} className="border-b border-brand-border/60 hover:bg-white/5 transition">
@@ -8465,24 +8679,53 @@ function TableModuleView({
                         if (module.id === 'task' && column === 'status') {
                           const rawStatus = String(row?.status || '').trim().toLowerCase();
                           const statusText = formatModuleCellValue(module.id, column, row);
-                          if (rawStatus === 'error') {
-                            return (
-                              <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => openTaskErrorDialog(row)}
-                                  className="inline-flex items-center gap-1 text-brand-danger hover:underline font-semibold"
-                                  title="点击查看异常详情"
-                                >
-                                  <AlertTriangle className="w-4 h-4" />
-                                  <span>{statusText}</span>
-                                </button>
-                              </td>
-                            );
-                          }
+                          const durationDetail = taskDurationHoverSummary.detailsByKey[taskStatusHoverKey];
+                          const currentDurationLabel = durationDetail?.durationLabel || '-';
+                          const currentStartText = durationDetail?.startText || '-';
+                          const currentEndText = durationDetail?.endText || '-';
+                          const statusNode = rawStatus === 'error' ? (
+                            <button
+                              type="button"
+                              onClick={() => openTaskErrorDialog(row)}
+                              className="inline-flex items-center gap-1 text-brand-danger hover:underline font-semibold"
+                              title="点击查看异常详情"
+                            >
+                              <AlertTriangle className="w-4 h-4" />
+                              <span>{statusText}</span>
+                            </button>
+                          ) : (
+                            <span>{statusText}</span>
+                          );
+
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
-                              {statusText}
+                              <div className="group relative inline-flex items-center justify-center">
+                                {statusNode}
+                                <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 mt-2 w-[420px] max-w-[82vw] -translate-x-1/2 rounded-xl border border-brand-border bg-brand-card/95 p-3 text-left opacity-0 shadow-2xl backdrop-blur-xl transition duration-150 group-hover:visible group-hover:opacity-100">
+                                  <div className="text-xs font-black tracking-wide text-brand-text">任务执行时间概览</div>
+                                  <div className="mt-2 rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
+                                    <div className="text-[11px] text-brand-text-muted">当前任务执行时长</div>
+                                    <div className="mt-1 text-sm font-semibold text-brand-text">{currentDurationLabel}</div>
+                                    <div className="mt-1 text-[11px] text-brand-text-muted">开始：{currentStartText}</div>
+                                    <div className="text-[11px] text-brand-text-muted">结束：{currentEndText}</div>
+                                  </div>
+                                  <div className="mt-2 text-[11px] text-brand-text-muted">
+                                    当前页任务共 {taskDurationHoverSummary.allTaskLines.length} 个，已统计 {taskDurationHoverSummary.countedTaskCount} 个可计算时长任务
+                                  </div>
+                                  <div className="text-[11px] text-brand-text-muted">
+                                    总时长：{taskDurationHoverSummary.totalDurationLabel} | 平均：{taskDurationHoverSummary.averageDurationLabel}
+                                  </div>
+                                  <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-brand-border bg-brand-bg/40 p-2 text-[11px] leading-relaxed text-brand-text">
+                                    {taskDurationHoverSummary.allTaskLines.length > 0 ? (
+                                      taskDurationHoverSummary.allTaskLines.map((line, lineIndex) => (
+                                        <div key={`${lineIndex}-${line}`} className="font-mono break-all">{line}</div>
+                                      ))
+                                    ) : (
+                                      <div className="text-brand-text-muted">暂无任务执行时间数据</div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
                             </td>
                           );
                         }
@@ -8512,12 +8755,37 @@ function TableModuleView({
                         }
 
                         if ((module.id === 'asset_site' || module.id === 'site') && column === 'finger') {
+                          const fingerText = formatModuleCellValue(module.id, column, row);
+                          const fingerLines = fingerText
+                            .split(/\r?\n/)
+                            .map((item) => item.trim())
+                            .filter((item) => item && item !== '-');
+                          const collapseThreshold = 3;
+                          const shouldCollapse = fingerLines.length > collapseThreshold;
+                          const isExpanded = Boolean(expandedSiteFingerRows[siteFingerExpandKey]);
+                          const renderedText = shouldCollapse && !isExpanded
+                            ? `${fingerLines.slice(0, collapseThreshold).join('\n')}\n...`
+                            : (fingerLines.length > 0 ? fingerLines.join('\n') : '-');
                           return (
                             <td
                               key={column}
                               className="px-4 py-3 align-middle text-sm text-center whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
                             >
-                              {formatModuleCellValue(module.id, column, row)}
+                              <div>{renderedText}</div>
+                              {shouldCollapse ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedSiteFingerRows((prev) => ({
+                                      ...prev,
+                                      [siteFingerExpandKey]: !isExpanded,
+                                    }))
+                                  }
+                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                >
+                                  {isExpanded ? '收起' : '展开'}
+                                </button>
+                              ) : null}
                             </td>
                           );
                         }
@@ -9447,8 +9715,8 @@ function ApiConsoleView({ token }: { token: string }) {
   const [sensitiveVerifyPassword, setSensitiveVerifyPassword] = useState('');
   const [sensitiveVerifyLoading, setSensitiveVerifyLoading] = useState(false);
   const [sensitiveVerifyError, setSensitiveVerifyError] = useState('');
-  const [aiApiKeyEdited, setAiApiKeyEdited] = useState(false);
   const [sensitiveEditingFieldSet, setSensitiveEditingFieldSet] = useState<Set<ServiceApiStringKey>>(new Set());
+  const [sensitiveConfiguredMap, setSensitiveConfiguredMap] = useState<Partial<Record<ServiceApiStringKey, boolean>>>({});
 
   const sensitiveFieldSet = useMemo(
     () =>
@@ -9530,6 +9798,15 @@ function ApiConsoleView({ token }: { token: string }) {
     };
   }, []);
 
+  const normalizeSensitiveConfigured = useCallback((rawValue: any) => {
+    const raw = rawValue && typeof rawValue === 'object' ? rawValue : {};
+    const normalized: Partial<Record<ServiceApiStringKey, boolean>> = {};
+    sensitiveFieldSet.forEach((fieldKey) => {
+      normalized[fieldKey] = Boolean((raw as Record<string, any>)?.[fieldKey]);
+    });
+    return normalized;
+  }, [sensitiveFieldSet]);
+
   const updateTextField = (key: ServiceApiStringKey, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -9547,6 +9824,7 @@ function ApiConsoleView({ token }: { token: string }) {
       const result = await requestApi(token, '/api_console/service_api/', { method: 'GET' });
       const data = result?.data || {};
       setForm(normalizeForm(data?.service_api));
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
       setConfigPath(String(data.config_path || ''));
       setUpdatedAt(String(data.updated_at || ''));
       setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
@@ -9555,7 +9833,7 @@ function ApiConsoleView({ token }: { token: string }) {
     } finally {
       setLoading(false);
     }
-  }, [token, normalizeForm, resetSensitiveState]);
+  }, [token, normalizeForm, normalizeSensitiveConfigured, resetSensitiveState]);
 
   useEffect(() => {
     void loadServiceApiConfig();
@@ -9566,54 +9844,57 @@ function ApiConsoleView({ token }: { token: string }) {
    */
   const buildServiceApiPayload = useCallback((currentForm: ServiceApiForm) => {
     const normalizedUrl = currentForm.fofa_url.trim();
-    return {
+    const payload: Record<string, any> = {
       ...currentForm,
       fofa_url: normalizedUrl,
       fofa_email: currentForm.fofa_email.trim(),
-      fofa_key: currentForm.fofa_key.trim(),
-      hunter_api_key: currentForm.hunter_api_key.trim(),
       hunter_request_interval: currentForm.hunter_request_interval.trim(),
       hunter_rate_limit_retry: currentForm.hunter_rate_limit_retry.trim(),
       hunter_rate_limit_backoff: currentForm.hunter_rate_limit_backoff.trim(),
       hunter_rate_limit_max_sleep: currentForm.hunter_rate_limit_max_sleep.trim(),
-      hunter_how_api_key: currentForm.hunter_how_api_key.trim(),
       hunter_how_page_size: currentForm.hunter_how_page_size.trim(),
       hunter_how_max_page: currentForm.hunter_how_max_page.trim(),
       hunter_how_request_interval: currentForm.hunter_how_request_interval.trim(),
       hunter_how_rate_limit_retry: currentForm.hunter_how_rate_limit_retry.trim(),
       hunter_how_rate_limit_backoff: currentForm.hunter_how_rate_limit_backoff.trim(),
       hunter_how_rate_limit_max_sleep: currentForm.hunter_how_rate_limit_max_sleep.trim(),
-      shodan_api_key: currentForm.shodan_api_key.trim(),
       shodan_max_page: currentForm.shodan_max_page.trim(),
       shodan_request_interval: currentForm.shodan_request_interval.trim(),
       shodan_rate_limit_retry: currentForm.shodan_rate_limit_retry.trim(),
       shodan_rate_limit_backoff: currentForm.shodan_rate_limit_backoff.trim(),
       shodan_rate_limit_max_sleep: currentForm.shodan_rate_limit_max_sleep.trim(),
-      quake_token: currentForm.quake_token.trim(),
       quake_rate_limit_retry: currentForm.quake_rate_limit_retry.trim(),
       quake_rate_limit_backoff: currentForm.quake_rate_limit_backoff.trim(),
       quake_rate_limit_max_sleep: currentForm.quake_rate_limit_max_sleep.trim(),
-      zoomeye_api_key: currentForm.zoomeye_api_key.trim(),
       zoomeye_max_page: currentForm.zoomeye_max_page.trim(),
       zoomeye_request_interval: currentForm.zoomeye_request_interval.trim(),
       zoomeye_rate_limit_retry: currentForm.zoomeye_rate_limit_retry.trim(),
       zoomeye_rate_limit_backoff: currentForm.zoomeye_rate_limit_backoff.trim(),
       zoomeye_rate_limit_max_sleep: currentForm.zoomeye_rate_limit_max_sleep.trim(),
-      securitytrails_api_key: currentForm.securitytrails_api_key.trim(),
-      virustotal_api_key: currentForm.virustotal_api_key.trim(),
-      chaos_api_key: currentForm.chaos_api_key.trim(),
       passivetotal_email: currentForm.passivetotal_email.trim(),
-      passivetotal_key: currentForm.passivetotal_key.trim(),
-      github_token: currentForm.github_token.trim(),
     };
-  }, []);
+    sensitiveFieldSet.forEach((fieldKey) => {
+      if (sensitiveEditingFieldSet.has(fieldKey)) {
+        payload[fieldKey] = String(currentForm[fieldKey] || '').trim();
+        return;
+      }
+      delete payload[fieldKey];
+    });
+    return payload;
+  }, [sensitiveEditingFieldSet, sensitiveFieldSet]);
 
   const toggleSensitiveDisplay = () => {
     if (sensitiveVisible) {
+      setForm((prev) => {
+        const next = { ...prev };
+        sensitiveFieldSet.forEach((fieldKey) => {
+          next[fieldKey] = '';
+        });
+        return next;
+      });
       setSensitiveVisible(false);
-      setSensitiveVerifyPassword('');
-      setSensitiveVerifyError('');
       setSensitiveEditingFieldSet(new Set());
+      void loadServiceApiConfig();
       return;
     }
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
@@ -9629,18 +9910,23 @@ function ApiConsoleView({ token }: { token: string }) {
     }
     setSensitiveVerifyLoading(true);
     setSensitiveVerifyError('');
+    setError('');
     try {
-      await requestApi(token, '/api_console/sensitive_verify/', {
+      const result = await requestApi(token, '/api_console/service_api/reveal/', {
         method: 'POST',
         body: {
           username: sensitiveVerifyUsername.trim(),
           password: sensitiveVerifyPassword,
         },
       });
+      const data = result?.data || {};
+      setForm(normalizeForm(data?.service_api));
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
+      setSensitiveEditingFieldSet(new Set());
       setSensitiveVisible(true);
       setSensitiveVerifyDialogOpen(false);
       setSensitiveVerifyPassword('');
-      setSuccess('身份验证通过，已显示敏感 key');
+      setSuccess('身份验证通过，已按需拉取敏感 key');
     } catch (err: any) {
       setSensitiveVerifyError(err?.message || '验证失败');
     } finally {
@@ -9669,6 +9955,7 @@ function ApiConsoleView({ token }: { token: string }) {
 
       const data = result?.data || {};
       setForm(normalizeForm(data?.service_api));
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
       setConfigPath(String(data.config_path || configPath));
       setUpdatedAt(String(data.saved_at || updatedAt));
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
@@ -10282,8 +10569,13 @@ function ApiConsoleView({ token }: { token: string }) {
                 const rawValue = String(form[field.key] || '');
                 const isSensitiveField = sensitiveFieldSet.has(field.key);
                 const isSensitiveEditing = sensitiveEditingFieldSet.has(field.key);
+                const sensitiveConfigured = isSensitiveField && Boolean(sensitiveConfiguredMap[field.key]);
                 const showRaw = !isSensitiveField || sensitiveVisible || isSensitiveEditing;
                 const inputType = isSensitiveField ? (showRaw ? 'text' : 'password') : field.inputType || 'text';
+                const placeholderText =
+                  isSensitiveField && sensitiveConfigured && !showRaw
+                    ? '已配置（留空保持不变，输入新值将覆盖）'
+                    : field.placeholder;
                 return (
                   <div key={field.key} className="space-y-1">
                     <label className="text-xs font-bold text-brand-text-muted block">
@@ -10306,9 +10598,12 @@ function ApiConsoleView({ token }: { token: string }) {
                         updateTextField(field.key, event.target.value);
                       }}
                       className={CONSOLE_INPUT_MONO_CLASS}
-                      placeholder={field.placeholder}
+                      placeholder={placeholderText}
                       autoComplete="off"
                     />
+                    {isSensitiveField && sensitiveConfigured && !showRaw ? (
+                      <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -12155,6 +12450,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [sensitiveVerifyPassword, setSensitiveVerifyPassword] = useState('');
   const [sensitiveVerifyLoading, setSensitiveVerifyLoading] = useState(false);
   const [sensitiveVerifyError, setSensitiveVerifyError] = useState('');
+  const [aiApiKeyEdited, setAiApiKeyEdited] = useState(false);
 
   const providerPresetMap = useMemo(() => {
     const map: Record<string, AiProviderPreset> = {};

@@ -91,6 +91,20 @@ verify_sensitive_fields = ns.model(
     },
 )
 
+SERVICE_API_SENSITIVE_FIELDS = (
+    'fofa_key',
+    'hunter_api_key',
+    'hunter_how_api_key',
+    'shodan_api_key',
+    'quake_token',
+    'zoomeye_api_key',
+    'securitytrails_api_key',
+    'virustotal_api_key',
+    'chaos_api_key',
+    'passivetotal_key',
+    'github_token',
+)
+
 
 def _resolve_config_path() -> Path:
     """
@@ -1578,6 +1592,47 @@ def _extract_service_api_config(config_obj):
     }
 
 
+def _build_service_api_sensitive_configured_map(service_api: dict):
+    """
+    基于 service_api 计算敏感字段是否已配置（仅返回布尔状态，不返回明文）。
+    """
+    if not isinstance(service_api, dict):
+        service_api = {}
+
+    configured = {}
+    for field_name in SERVICE_API_SENSITIVE_FIELDS:
+        configured[field_name] = bool(str(service_api.get(field_name, '') or '').strip())
+    return configured
+
+
+def _sanitize_service_api_for_client(service_api: dict):
+    """
+    返回给前端时抹除敏感字段明文，并附带是否已配置状态。
+    """
+    safe_service_api = dict(service_api or {})
+    sensitive_configured = _build_service_api_sensitive_configured_map(safe_service_api)
+    for field_name in SERVICE_API_SENSITIVE_FIELDS:
+        safe_service_api[field_name] = ''
+    return safe_service_api, sensitive_configured
+
+
+def _fill_missing_sensitive_service_api_fields(service_api: dict, config_obj: dict):
+    """
+    对未提交的敏感字段回填当前配置值，避免前端“未改动字段”被误清空。
+    """
+    if not isinstance(service_api, dict):
+        raise ValueError('service_api 必须为对象')
+
+    merged_service_api = dict(service_api)
+    current_service_api = _extract_service_api_config(config_obj if isinstance(config_obj, dict) else {})
+    for field_name in SERVICE_API_SENSITIVE_FIELDS:
+        if field_name in merged_service_api:
+            continue
+        merged_service_api[field_name] = current_service_api.get(field_name, '')
+
+    return merged_service_api
+
+
 def _merge_service_api_config(config_obj, service_api):
     """
     将三方 API 配置写回完整配置对象。
@@ -2450,11 +2505,13 @@ class ApiConsoleServiceApi(ARLResource):
         config_path = _resolve_config_path()
         try:
             config_obj = _load_config_from_file(config_path)
-            service_api = _extract_service_api_config(config_obj)
+            raw_service_api = _extract_service_api_config(config_obj)
+            service_api, sensitive_configured = _sanitize_service_api_for_client(raw_service_api)
             return utils.build_ret(
                 ErrorMsg.Success,
                 {
                     'service_api': service_api,
+                    'sensitive_configured': sensitive_configured,
                     'config_path': str(config_path),
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 }
@@ -2479,12 +2536,14 @@ class ApiConsoleServiceApi(ARLResource):
         with CONFIG_LOCK:
             try:
                 config_obj = _load_config_from_file(config_path)
-                config_obj = _merge_service_api_config(config_obj, service_api)
+                merged_service_api = _fill_missing_sensitive_service_api_fields(service_api, config_obj)
+                config_obj = _merge_service_api_config(config_obj, merged_service_api)
                 _ensure_json_like_config(config_obj)
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
                 refresh_runtime_config_best_effort(force=True)
-                saved_service_api = _extract_service_api_config(config_obj)
+                raw_saved_service_api = _extract_service_api_config(config_obj)
+                saved_service_api, sensitive_configured = _sanitize_service_api_for_client(raw_saved_service_api)
             except Exception as exc:
                 logger.exception('save service_api failed: %s', exc)
                 return utils.build_ret(
@@ -2500,9 +2559,59 @@ class ApiConsoleServiceApi(ARLResource):
             {
                 'saved': True,
                 'service_api': saved_service_api,
+                'sensitive_configured': sensitive_configured,
                 'config_path': str(config_path),
                 'backup_path': backup_path,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+        )
+
+
+@ns.route('/service_api/reveal/')
+class ApiConsoleServiceApiReveal(ARLResource):
+    """
+    二次验证后返回敏感字段明文，仅用于“显示 key”场景。
+    """
+
+    @auth
+    @ns.expect(verify_sensitive_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        username = str(payload.get('username') or '').strip()
+        password = str(payload.get('password') or '')
+
+        ok, message = _verify_sensitive_access(username, password)
+        if not ok:
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': message,
+                }
+            )
+
+        config_path = _resolve_config_path()
+        try:
+            config_obj = _load_config_from_file(config_path)
+            service_api = _extract_service_api_config(config_obj)
+            sensitive_configured = _build_service_api_sensitive_configured_map(service_api)
+        except Exception as exc:
+            logger.exception('reveal service_api failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'service_api': service_api,
+                'sensitive_configured': sensitive_configured,
+                'config_path': str(config_path),
+                'revealed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': message,
             }
         )
 
@@ -2533,9 +2642,16 @@ class ApiConsoleServiceApiTest(ARLResource):
             )
 
         try:
+            config_obj = _load_config_from_file(_resolve_config_path())
+            merged_service_api = _fill_missing_sensitive_service_api_fields(service_api, config_obj)
+        except Exception as exc:
+            logger.exception('load config for service_api test failed: %s', exc)
+            merged_service_api = service_api
+
+        try:
             result = _run_service_api_provider_test(
                 provider=provider,
-                service_api=service_api,
+                service_api=merged_service_api,
                 test_target=test_target,
             )
             return utils.build_ret(ErrorMsg.Success, result)
@@ -2569,7 +2685,14 @@ class ApiConsoleServiceApiBatchTest(ARLResource):
                 {'error': 'service_api 必须为对象'}
             )
 
-        configured_specs = _collect_configured_service_api_providers(service_api)
+        try:
+            config_obj = _load_config_from_file(_resolve_config_path())
+            merged_service_api = _fill_missing_sensitive_service_api_fields(service_api, config_obj)
+        except Exception as exc:
+            logger.exception('load config for service_api batch test failed: %s', exc)
+            merged_service_api = service_api
+
+        configured_specs = _collect_configured_service_api_providers(merged_service_api)
         logger.info(
             'service_api batch test start providers:%s target:%s',
             [item.get('provider') for item in configured_specs],
@@ -2587,7 +2710,7 @@ class ApiConsoleServiceApiBatchTest(ARLResource):
             try:
                 item = _run_service_api_provider_test(
                     provider=provider,
-                    service_api=service_api,
+                    service_api=merged_service_api,
                     test_target=test_target,
                 )
             except Exception as exc:
