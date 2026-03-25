@@ -50,8 +50,27 @@ class BaseUpdateTask(object):
         query = {"_id": ObjectId(self.task_id)}
         update = {"$push": {"service": {"name": service_name, "elapsed": float(elapsed)}}}
         self._safe_update_task(query, update, action="push_service")
+        self.trigger_ai_denoise_stage(stage_name=service_name)
 
     def update_task_field(self, field=None, value=None):
         query = {"_id": ObjectId(self.task_id)}
         update = {"$set": {field: value}}
         self._safe_update_task(query, update, action="set_{}".format(field))
+
+    def trigger_ai_denoise_stage(self, stage_name: str, task_options=None):
+        stage = str(stage_name or "").strip()
+        if not stage:
+            return
+
+        try:
+            # 延迟导入，避免 services 与 celerytask 初始化时出现循环依赖。
+            from app import celerytask as celerytask_module
+            enqueue_func = getattr(celerytask_module, "enqueue_ai_denoise_for_stage", None)
+            if callable(enqueue_func):
+                enqueue_func(task_id=self.task_id, stage_name=stage, task_options=task_options)
+        except Exception as e:
+            self.logger.warning(
+                "trigger ai denoise stage failed task_id:{} stage:{} err:{}".format(
+                    self.task_id, stage, e
+                )
+            )

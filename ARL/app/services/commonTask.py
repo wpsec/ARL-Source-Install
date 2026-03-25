@@ -381,6 +381,11 @@ class WebSiteFetch(object):
         logger.info("save_site_info site:{}, {}".format(len(self.site_info_list), self.__str__()))
         if self.site_info_list:
             utils.conn_db('site').insert_many(self.site_info_list)
+            # 站点信息落库完成后，触发“站点”模块 AI 去噪增量分析。
+            self.base_update_task.trigger_ai_denoise_stage(
+                stage_name="site_saved",
+                task_options=self.options,
+            )
 
     def site_screenshot(self):
         # ***站点截图***

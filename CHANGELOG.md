@@ -3,6 +3,12 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-03-26（v4.2.21）
+
+- `[v4.2.21]` AI 去噪调度改造为“子阶段增量触发”：在保留“任务完成后兜底触发”链路的同时，新增按扫描阶段触发的模块级去噪任务（`ssl_cert/site_saved/site_spider/search_engines/web_info_hunter/file_leak/nuclei_scan/poc_run/weak_brute/findvhost/penetration_test` 对应 `cert/site/url/fileleak/nuclei_result/vuln`），支持“阶段完成即分析、未完成阶段继续等待”；新增 `AI_DENOISE_MODULE_TASK`、`pending_modules` 合并与补偿调度机制，避免并发重复执行与触发丢失
+- `[v4.2.21]` AI 去噪流水线支持按模块增量执行：`run_task_ai_denoise_pipeline` 新增 `modules` 入参并改为模块粒度执行与状态回写，保持结果统一落库 `ai_denoise_result`，详情页继续仅读取落库结果、不触发实时模型调用
+- `[v4.2.21]` 新增运行架构文档：补充 `docs/容器职责与任务流程分析.md`，系统说明 `arl_web/arl_worker/scheduler` 各自职责、队列分发关系（`arltask/arlheavy/arlweb/arlgithub`）、AI 去噪执行位置与全链路/单任务 Mermaid 流程图，便于容量规划与排障定位
+
 ## 2026-03-25（v4.1.24 ~ v4.2.21）
 
 - `[v4.2.21]` 报告导出 AI 去噪字段补齐：`Excel/HTML` 报告中的 `站点 / 目录扫描 / SSL证书 / URL信息 / 风险 / PoC风险` 工作表统一新增 `AI分析` 列，导出内容仅读取扫描阶段已落库的 `ai_denoise_result` 结果（不触发实时 AI 调用）；其中 `风险` 表对 `npoc` 与 `nuclei` 来源分别回填对应模块 AI 结论，批量导出的 `站点` 合并视图按“危险优先、AI来源优先”选择更高价值 AI 分析结果展示

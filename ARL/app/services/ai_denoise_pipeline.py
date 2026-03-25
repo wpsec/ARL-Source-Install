@@ -2,7 +2,7 @@
 扫描后 AI 去噪异步流水线
 
 设计目标：
-- AI 去噪在扫描任务完成后异步执行，避免阻塞主扫描链路
+- AI 去噪支持按阶段增量异步执行，不阻塞主扫描链路
 - 结果统一落库，前端详情仅展示落库内容，不再触发实时 AI 调用
 """
 from datetime import datetime
@@ -22,6 +22,8 @@ AI_DENOISE_MODULE_COLLECTION_MAP = (
     ("nuclei_result", "nuclei_result"),
 )
 AI_DENOISE_BATCH_SIZE = 2
+AI_DENOISE_MODULE_ID_SET = tuple(module_id for module_id, _ in AI_DENOISE_MODULE_COLLECTION_MAP)
+AI_DENOISE_MODULE_COLLECTION_DICT = dict(AI_DENOISE_MODULE_COLLECTION_MAP)
 
 _AI_DENOISE_RESULT_INDEX_READY = False
 
@@ -35,6 +37,30 @@ def _safe_list(value):
         text = str(value or "").strip()
         return [text] if text else []
     return []
+
+
+def normalize_ai_denoise_modules(raw_modules, default_all=True):
+    if isinstance(raw_modules, str):
+        raw_modules = [raw_modules]
+    elif isinstance(raw_modules, tuple):
+        raw_modules = list(raw_modules)
+    elif not isinstance(raw_modules, list):
+        raw_modules = []
+
+    normalized = []
+    seen = set()
+    for item in raw_modules:
+        module_id = str(item or "").strip()
+        if not module_id or module_id not in AI_DENOISE_MODULE_COLLECTION_DICT:
+            continue
+        if module_id in seen:
+            continue
+        seen.add(module_id)
+        normalized.append(module_id)
+
+    if default_all and not normalized:
+        normalized = list(AI_DENOISE_MODULE_ID_SET)
+    return normalized
 
 
 def _ensure_ai_denoise_result_indexes():
@@ -141,9 +167,103 @@ def _save_ai_denoise_result(task_id, module_id, row_key, data_id, result_item):
     return True
 
 
-def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
+def _accumulate_batch_results(module_id, task_id_text, module_stat, summary, analyzed_items, batch_row_map):
+    for result_item in list(analyzed_items or []):
+        row_key_text = str(result_item.get("row_key") or "").strip()
+        if not row_key_text:
+            continue
+        raw_row = batch_row_map.get(row_key_text) or {}
+        data_id = _normalize_object_id_text(raw_row.get("_id"))
+        saved = _save_ai_denoise_result(
+            task_id=task_id_text,
+            module_id=module_id,
+            row_key=row_key_text,
+            data_id=data_id,
+            result_item=result_item,
+        )
+        if saved:
+            module_stat["saved"] += 1
+            summary["saved_items"] += 1
+        source_text = str(result_item.get("source") or "disabled").strip().lower()
+        if source_text not in ("ai", "rule", "disabled"):
+            source_text = "disabled"
+        module_stat[source_text] += 1
+        summary["source_stat"][source_text] += 1
+
+
+def _run_module_ai_denoise(api_console_module, ai_config, task_id_text, module_id, collection_name, summary):
+    result_coll = utils.conn_db(AI_DENOISE_RESULT_COLLECTION)
+    module_query = _build_module_query(module_id, task_id_text)
+    result_coll.delete_many(
+        {
+            "task_id": task_id_text,
+            "module_id": module_id,
+        }
+    )
+
+    module_stat = {
+        "collection": collection_name,
+        "total": 0,
+        "saved": 0,
+        "ai": 0,
+        "rule": 0,
+        "disabled": 0,
+    }
+
+    cursor = utils.conn_db(collection_name).find(module_query)
+    batch_items = []
+    batch_row_map = {}
+    for raw_item in cursor:
+        payload_item, row_key = _build_payload_item(api_console_module, raw_item, task_id_text)
+        batch_items.append(payload_item)
+        batch_row_map[row_key] = raw_item
+        module_stat["total"] += 1
+        summary["total_items"] += 1
+
+        if len(batch_items) < AI_DENOISE_BATCH_SIZE:
+            continue
+
+        analyzed = api_console_module._analyze_ai_denoise_batch(
+            ai_config=ai_config,
+            module_id=module_id,
+            items=batch_items,
+            prefer_ai=True,
+            persisted_only=False,
+        )
+        _accumulate_batch_results(
+            module_id=module_id,
+            task_id_text=task_id_text,
+            module_stat=module_stat,
+            summary=summary,
+            analyzed_items=analyzed.get("items"),
+            batch_row_map=batch_row_map,
+        )
+        batch_items = []
+        batch_row_map = {}
+
+    if batch_items:
+        analyzed = api_console_module._analyze_ai_denoise_batch(
+            ai_config=ai_config,
+            module_id=module_id,
+            items=batch_items,
+            prefer_ai=True,
+            persisted_only=False,
+        )
+        _accumulate_batch_results(
+            module_id=module_id,
+            task_id_text=task_id_text,
+            module_stat=module_stat,
+            summary=summary,
+            analyzed_items=analyzed.get("items"),
+            batch_row_map=batch_row_map,
+        )
+
+    return module_stat
+
+
+def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False, modules=None):
     """
-    执行任务级 AI 去噪流水线（异步）。
+    执行任务级 AI 去噪流水线（异步，支持按模块增量执行）。
     """
     from app.routes import api_console as api_console_module
 
@@ -178,11 +298,15 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
                         "trigger": str(trigger or "task_done"),
                         "updated_at": now_text,
                         "message": "任务未开启 AI 去噪选项。",
+                        "requested_modules": normalize_ai_denoise_modules(modules, default_all=False),
+                        "pending_modules": [],
                     }
                 }
             },
         )
         return {"status": "skipped", "reason": "option_disabled", "task_id": task_id_text}
+
+    requested_modules = normalize_ai_denoise_modules(modules, default_all=True)
 
     _ensure_ai_denoise_result_indexes()
     started_at = utils.curr_date()
@@ -195,6 +319,8 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
                     "trigger": str(trigger or "task_done"),
                     "started_at": started_at,
                     "updated_at": started_at,
+                    "requested_modules": requested_modules,
+                    "pending_modules": [],
                 }
             }
         },
@@ -205,11 +331,11 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
         config_obj = api_console_module._load_config_from_file(config_path)
         ai_config = api_console_module._extract_ai_config(config_obj)
 
-        result_coll = utils.conn_db(AI_DENOISE_RESULT_COLLECTION)
         summary = {
             "task_id": task_id_text,
             "status": "done",
             "trigger": str(trigger or "task_done"),
+            "requested_modules": requested_modules,
             "started_at": started_at,
             "ended_at": "",
             "modules": {},
@@ -217,106 +343,34 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
             "saved_items": 0,
             "source_stat": {"ai": 0, "rule": 0, "disabled": 0},
             "error_modules": [],
+            "pending_modules": [],
         }
 
-        for module_id, collection_name in AI_DENOISE_MODULE_COLLECTION_MAP:
-            module_query = _build_module_query(module_id, task_id_text)
-            result_coll.delete_many(
-                {
-                    "task_id": task_id_text,
-                    "module_id": module_id,
-                }
-            )
-
-            module_stat = {
-                "collection": collection_name,
-                "total": 0,
-                "saved": 0,
-                "ai": 0,
-                "rule": 0,
-                "disabled": 0,
-            }
-
+        for module_id in requested_modules:
+            collection_name = AI_DENOISE_MODULE_COLLECTION_DICT.get(module_id)
+            if not collection_name:
+                continue
             try:
-                cursor = utils.conn_db(collection_name).find(module_query)
-                batch_items = []
-                batch_row_map = {}
-                for raw_item in cursor:
-                    payload_item, row_key = _build_payload_item(api_console_module, raw_item, task_id_text)
-                    batch_items.append(payload_item)
-                    batch_row_map[row_key] = raw_item
-                    module_stat["total"] += 1
-                    summary["total_items"] += 1
-
-                    if len(batch_items) < AI_DENOISE_BATCH_SIZE:
-                        continue
-
-                    analyzed = api_console_module._analyze_ai_denoise_batch(
-                        ai_config=ai_config,
-                        module_id=module_id,
-                        items=batch_items,
-                        prefer_ai=True,
-                        persisted_only=False,
-                    )
-                    for result_item in list(analyzed.get("items") or []):
-                        row_key_text = str(result_item.get("row_key") or "").strip()
-                        if not row_key_text:
-                            continue
-                        raw_row = batch_row_map.get(row_key_text) or {}
-                        data_id = _normalize_object_id_text(raw_row.get("_id"))
-                        saved = _save_ai_denoise_result(
-                            task_id=task_id_text,
-                            module_id=module_id,
-                            row_key=row_key_text,
-                            data_id=data_id,
-                            result_item=result_item,
-                        )
-                        if saved:
-                            module_stat["saved"] += 1
-                            summary["saved_items"] += 1
-                        source_text = str(result_item.get("source") or "disabled").strip().lower()
-                        if source_text not in ("ai", "rule", "disabled"):
-                            source_text = "disabled"
-                        module_stat[source_text] += 1
-                        summary["source_stat"][source_text] += 1
-
-                    batch_items = []
-                    batch_row_map = {}
-
-                if batch_items:
-                    analyzed = api_console_module._analyze_ai_denoise_batch(
-                        ai_config=ai_config,
-                        module_id=module_id,
-                        items=batch_items,
-                        prefer_ai=True,
-                        persisted_only=False,
-                    )
-                    for result_item in list(analyzed.get("items") or []):
-                        row_key_text = str(result_item.get("row_key") or "").strip()
-                        if not row_key_text:
-                            continue
-                        raw_row = batch_row_map.get(row_key_text) or {}
-                        data_id = _normalize_object_id_text(raw_row.get("_id"))
-                        saved = _save_ai_denoise_result(
-                            task_id=task_id_text,
-                            module_id=module_id,
-                            row_key=row_key_text,
-                            data_id=data_id,
-                            result_item=result_item,
-                        )
-                        if saved:
-                            module_stat["saved"] += 1
-                            summary["saved_items"] += 1
-                        source_text = str(result_item.get("source") or "disabled").strip().lower()
-                        if source_text not in ("ai", "rule", "disabled"):
-                            source_text = "disabled"
-                        module_stat[source_text] += 1
-                        summary["source_stat"][source_text] += 1
-
+                module_stat = _run_module_ai_denoise(
+                    api_console_module=api_console_module,
+                    ai_config=ai_config,
+                    task_id_text=task_id_text,
+                    module_id=module_id,
+                    collection_name=collection_name,
+                    summary=summary,
+                )
             except Exception as module_exc:
                 module_error = "module:{} error:{}".format(module_id, module_exc)
                 logger.warning("ai denoise module failed task_id:%s %s", task_id_text, module_error)
                 summary["error_modules"].append(module_error)
+                module_stat = {
+                    "collection": collection_name,
+                    "total": 0,
+                    "saved": 0,
+                    "ai": 0,
+                    "rule": 0,
+                    "disabled": 0,
+                }
 
             summary["modules"][module_id] = module_stat
 
@@ -324,6 +378,18 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
         summary["ended_at"] = ended_at
         if summary["error_modules"]:
             summary["status"] = "done_with_error"
+
+        latest_doc = utils.conn_db("task").find_one(
+            {"_id": query_id},
+            {"ai_denoise_status.pending_modules": 1},
+        )
+        latest_status = latest_doc.get("ai_denoise_status") if isinstance(latest_doc, dict) else {}
+        latest_status = latest_status if isinstance(latest_status, dict) else {}
+        pending_modules = normalize_ai_denoise_modules(
+            latest_status.get("pending_modules"),
+            default_all=False,
+        )
+        summary["pending_modules"] = pending_modules
 
         utils.conn_db("task").update_one(
             {"_id": query_id},
@@ -335,6 +401,8 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
                         "started_at": summary["started_at"],
                         "ended_at": summary["ended_at"],
                         "updated_at": summary["ended_at"],
+                        "requested_modules": summary["requested_modules"],
+                        "pending_modules": pending_modules,
                         "total_items": summary["total_items"],
                         "saved_items": summary["saved_items"],
                         "source_stat": summary["source_stat"],
@@ -345,14 +413,17 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
             },
         )
         logger.info(
-            "ai denoise pipeline finished task_id:%s status:%s total:%s saved:%s ai:%s rule:%s disabled:%s",
+            "ai denoise pipeline finished task_id:%s trigger:%s modules:%s status:%s total:%s saved:%s ai:%s rule:%s disabled:%s pending:%s",
             task_id_text,
+            summary["trigger"],
+            ",".join(requested_modules),
             summary["status"],
             summary["total_items"],
             summary["saved_items"],
             summary["source_stat"]["ai"],
             summary["source_stat"]["rule"],
             summary["source_stat"]["disabled"],
+            ",".join(pending_modules),
         )
         return summary
     except Exception as exc:
@@ -367,6 +438,8 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False):
                         "started_at": started_at,
                         "ended_at": ended_at,
                         "updated_at": ended_at,
+                        "requested_modules": requested_modules,
+                        "pending_modules": [],
                         "message": str(exc),
                     }
                 }

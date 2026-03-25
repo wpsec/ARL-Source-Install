@@ -77,6 +77,25 @@ platforms.C_FORCE_ROOT = True
 _WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlweb", "arlgithub")
 _WAITING_ORPHAN_GRACE_SEC = 90
 
+_AI_DENOISE_STAGE_MODULE_MAP = {
+    # 基础阶段：证书收集完成后即可先跑证书去噪。
+    "ssl_cert": ["cert"],
+    # 站点信息真正落库后的显式阶段（由 WebSiteFetch.save_site_info 触发）。
+    "site_saved": ["site"],
+    # URL 来源阶段。
+    "site_spider": ["url"],
+    "search_engines": ["url"],
+    "web_info_hunter": ["url", "vuln"],
+    # 目录与漏洞阶段。
+    "file_leak": ["fileleak"],
+    "nuclei_scan": ["nuclei_result"],
+    "nuclei_scan_retry": ["nuclei_result"],
+    "poc_run": ["vuln"],
+    "weak_brute": ["vuln"],
+    "findvhost": ["vuln"],
+    "penetration_test": ["vuln"],
+}
+
 
 def _extract_live_task_ids(task_items):
     """
@@ -655,10 +674,10 @@ def _should_skip_stale_task_message(action, data):
     elif action in [CeleryAction.GITHUB_TASK_TASK, CeleryAction.GITHUB_TASK_MONITOR]:
         collection = "github_task"
 
-    if not collection and action != CeleryAction.AI_DENOISE_TASK:
+    if not collection and action not in (CeleryAction.AI_DENOISE_TASK, CeleryAction.AI_DENOISE_MODULE_TASK):
         return False
 
-    if action == CeleryAction.AI_DENOISE_TASK:
+    if action in (CeleryAction.AI_DENOISE_TASK, CeleryAction.AI_DENOISE_MODULE_TASK):
         collection = "task"
 
     try:
@@ -680,7 +699,7 @@ def _should_skip_stale_task_message(action, data):
         return True
 
     status = str(item.get("status", "") or "").strip().lower()
-    if action == CeleryAction.AI_DENOISE_TASK:
+    if action in (CeleryAction.AI_DENOISE_TASK, CeleryAction.AI_DENOISE_MODULE_TASK):
         # AI 去噪任务允许在主任务 done 后继续执行，仅拦截已停止/异常任务。
         if status in {TaskStatus.STOP, TaskStatus.ERROR}:
             logger.warning(
@@ -748,6 +767,7 @@ def run_task(options):
         CeleryAction.ADD_ASSET_SITE_TASK: asset_site_add_task,
         CeleryAction.ASSET_WIH_UPDATE: asset_wih_update_task,
         CeleryAction.AI_DENOISE_TASK: run_ai_denoise_task,
+        CeleryAction.AI_DENOISE_MODULE_TASK: run_ai_denoise_task,
     }
     
     start_time = time.time()
@@ -941,37 +961,115 @@ def run_risk_cruising_task(options):
     )
 
 
-def _enqueue_ai_denoise_task(task_id, task_options, trigger="task_done"):
+def _normalize_ai_denoise_modules(modules, default_all=True):
+    try:
+        from app.services.ai_denoise_pipeline import normalize_ai_denoise_modules
+        return normalize_ai_denoise_modules(modules, default_all=default_all)
+    except Exception:
+        if isinstance(modules, str):
+            modules = [modules]
+        elif isinstance(modules, tuple):
+            modules = list(modules)
+        elif not isinstance(modules, list):
+            modules = []
+        normalized = [str(item).strip() for item in modules if str(item or "").strip()]
+        if default_all and not normalized:
+            return ["site", "fileleak", "cert", "url", "vuln", "nuclei_result"]
+        return normalized
+
+
+def enqueue_ai_denoise_for_stage(task_id, stage_name, task_options=None):
+    stage = str(stage_name or "").strip()
+    if not stage:
+        return
+    modules = _AI_DENOISE_STAGE_MODULE_MAP.get(stage)
+    if not modules:
+        return
+    _enqueue_ai_denoise_task(
+        task_id=task_id,
+        task_options=task_options,
+        trigger="stage:{}".format(stage),
+        modules=modules,
+        action=CeleryAction.AI_DENOISE_MODULE_TASK,
+    )
+
+
+def _enqueue_ai_denoise_task(
+    task_id,
+    task_options=None,
+    trigger="task_done",
+    modules=None,
+    action=CeleryAction.AI_DENOISE_TASK,
+):
     try:
         task_id_text = str(task_id or "").strip()
         if not task_id_text:
             return
 
+        requested_modules = _normalize_ai_denoise_modules(modules, default_all=True)
+        if not requested_modules:
+            return
+
         option_dict = task_options if isinstance(task_options, dict) else {}
-        if not bool(option_dict.get("ai_denoise", True)):
-            logger.info("skip enqueue ai_denoise task_id:{} reason:option_disabled".format(task_id_text))
+        if "ai_denoise" in option_dict and not bool(option_dict.get("ai_denoise", True)):
+            logger.info("skip enqueue ai_denoise task_id:%s reason:option_disabled(trigger_option)", task_id_text)
             return
 
         query_id = ObjectId(task_id_text) if ObjectId.is_valid(task_id_text) else task_id_text
         task_doc = utils.conn_db("task").find_one(
             {"_id": query_id},
-            {"_id": 1, "status": 1, "ai_denoise_status.status": 1},
+            {
+                "_id": 1,
+                "status": 1,
+                "options.ai_denoise": 1,
+                "ai_denoise_status.status": 1,
+                "ai_denoise_status.pending_modules": 1,
+            },
         )
         if not isinstance(task_doc, dict):
             return
 
+        task_options_doc = task_doc.get("options") if isinstance(task_doc.get("options"), dict) else {}
+        if not bool(task_options_doc.get("ai_denoise", True)):
+            logger.info("skip enqueue ai_denoise task_id:%s reason:option_disabled(task_doc)", task_id_text)
+            return
+
         status = str(task_doc.get("status", "") or "").strip().lower()
         if status in (TaskStatus.STOP, TaskStatus.ERROR):
-            logger.info("skip enqueue ai_denoise task_id:{} status:{}".format(task_id_text, status))
+            logger.info("skip enqueue ai_denoise task_id:%s status:%s", task_id_text, status)
             return
 
         ai_status = task_doc.get("ai_denoise_status") if isinstance(task_doc.get("ai_denoise_status"), dict) else {}
         ai_status_text = str(ai_status.get("status", "") or "").strip().lower()
+        now_text = utils.curr_date()
         if ai_status_text in ("queued", "running"):
-            logger.info("skip enqueue ai_denoise task_id:{} ai_status:{}".format(task_id_text, ai_status_text))
+            pending_modules = _normalize_ai_denoise_modules(
+                ai_status.get("pending_modules"),
+                default_all=False,
+            )
+            merged_pending = _normalize_ai_denoise_modules(
+                pending_modules + requested_modules,
+                default_all=False,
+            )
+            utils.conn_db("task").update_one(
+                {"_id": query_id},
+                {
+                    "$set": {
+                        "ai_denoise_status.pending_modules": merged_pending,
+                        "ai_denoise_status.updated_at": now_text,
+                        "ai_denoise_status.last_trigger": str(trigger or "task_done"),
+                    }
+                },
+            )
+            logger.info(
+                "merge pending ai_denoise task_id:%s ai_status:%s pending:%s trigger:%s",
+                task_id_text,
+                ai_status_text,
+                ",".join(merged_pending),
+                trigger,
+            )
             return
 
-        now_text = utils.curr_date()
         utils.conn_db("task").update_one(
             {"_id": query_id},
             {
@@ -981,33 +1079,60 @@ def _enqueue_ai_denoise_task(task_id, task_options, trigger="task_done"):
                         "trigger": str(trigger or "task_done"),
                         "queued_at": now_text,
                         "updated_at": now_text,
+                        "requested_modules": requested_modules,
+                        "pending_modules": [],
                     }
                 }
             },
         )
         task_options_payload = {
-            "celery_action": CeleryAction.AI_DENOISE_TASK,
+            "celery_action": action,
             "data": {
                 "task_id": task_id_text,
                 "trigger": str(trigger or "task_done"),
+                "modules": requested_modules,
             },
         }
         arl_task_web.delay(options=task_options_payload)
-        logger.info("enqueue ai_denoise task_id:{} trigger:{}".format(task_id_text, trigger))
+        logger.info(
+            "enqueue ai_denoise task_id:%s trigger:%s modules:%s action:%s",
+            task_id_text,
+            trigger,
+            ",".join(requested_modules),
+            action,
+        )
     except Exception as exc:
-        logger.warning("enqueue ai_denoise failed task_id:{} trigger:{} err:{}".format(task_id, trigger, exc))
+        logger.warning("enqueue ai_denoise failed task_id:%s trigger:%s err:%s", task_id, trigger, exc)
 
 
 def run_ai_denoise_task(options):
     task_id = str(options.get("task_id", "") or "").strip()
     trigger = str(options.get("trigger", "task_done") or "task_done").strip()
+    modules = _normalize_ai_denoise_modules(options.get("modules"), default_all=True)
     if not task_id:
         return
     try:
         from app.services.ai_denoise_pipeline import run_task_ai_denoise_pipeline
-        run_task_ai_denoise_pipeline(task_id=task_id, trigger=trigger, force=False)
+        summary = run_task_ai_denoise_pipeline(
+            task_id=task_id,
+            trigger=trigger,
+            force=False,
+            modules=modules,
+        )
+        pending_modules = _normalize_ai_denoise_modules(
+            summary.get("pending_modules") if isinstance(summary, dict) else [],
+            default_all=False,
+        )
+        if pending_modules:
+            _enqueue_ai_denoise_task(
+                task_id=task_id,
+                task_options=None,
+                trigger="pending_flush",
+                modules=pending_modules,
+                action=CeleryAction.AI_DENOISE_MODULE_TASK,
+            )
     except Exception as exc:
-        logger.exception("run ai_denoise task failed task_id:{} err:{}".format(task_id, exc))
+        logger.exception("run ai_denoise task failed task_id:%s err:%s", task_id, exc)
 
 
 def fofa_task(options):
