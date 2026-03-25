@@ -3024,6 +3024,7 @@ function parseDateTimeToTimestamp(value: any): number | null {
 
 function formatDurationSecondsLabel(totalSeconds: number | null): string {
   if (totalSeconds === null || !Number.isFinite(totalSeconds) || totalSeconds < 0) return '-';
+  if (totalSeconds > 0 && totalSeconds < 1) return '<1秒';
   const seconds = Math.floor(totalSeconds);
   if (seconds < 60) return `${seconds}秒`;
   const days = Math.floor(seconds / 86400);

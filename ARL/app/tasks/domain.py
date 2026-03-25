@@ -2159,8 +2159,8 @@ class DomainTask(CommonTask):
             return
 
         self.update_task_field("status", "search_engines")
-        search_engines_urls = search_engines(self.base_domain)
         t1 = time.time()
+        search_engines_urls = search_engines(self.base_domain)
 
         urls = set()  # 保存通过搜索引擎获取到的URL
         domains = set()

@@ -4,6 +4,7 @@
 import re
 from pyquery import PyQuery as pq
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, urljoin, urlparse
 from app import utils
 
@@ -212,19 +213,59 @@ def bing_search(domain, page_num=5):
 class SearchEngines(object):
     # *** 调用搜索引擎查找URL
     def __init__(self, base_domain):
-        self.engines = [bing_search, baidu_search]
+        self.engines = [
+            ("bing", bing_search),
+            ("baidu", baidu_search),
+        ]
         self.base_domain = base_domain
 
+    def _run_single_engine(self, engine_name, engine_fn):
+        start_time = time.time()
+        urls = engine_fn(self.base_domain)
+        elapsed = time.time() - start_time
+        url_list = urls if isinstance(urls, list) else []
+        logger.info(
+            "search_engine {} domain:{} result:{} elapsed:{:.2f}s".format(
+                engine_name,
+                self.base_domain,
+                len(url_list),
+                elapsed,
+            )
+        )
+        return url_list
+
     def run(self):
-        urls = []
-        for engine in self.engines:
+        # Bing / Baidu 独立网络调用，使用并行减少整体等待时间。
+        all_urls = []
+        if len(self.engines) <= 1:
+            engine_name, engine_fn = self.engines[0]
             try:
-                urls.extend(engine(self.base_domain))
-                urls = utils.rm_similar_url(urls)
+                all_urls.extend(self._run_single_engine(engine_name, engine_fn))
             except Exception as e:
                 logger.exception(e)
+                return []
+            return utils.rm_similar_url(all_urls)
 
-        return urls
+        with ThreadPoolExecutor(max_workers=min(len(self.engines), 4)) as executor:
+            future_map = {
+                executor.submit(self._run_single_engine, engine_name, engine_fn): engine_name
+                for engine_name, engine_fn in self.engines
+            }
+            for future in as_completed(future_map):
+                engine_name = future_map[future]
+                try:
+                    all_urls.extend(future.result())
+                except Exception as e:
+                    logger.warning(
+                        "search_engine {} domain:{} failed error:{}".format(
+                            engine_name,
+                            self.base_domain,
+                            e,
+                        )
+                    )
+                    logger.exception(e)
+
+        return utils.rm_similar_url(all_urls)
 
 
 def search_engines(base_domain):
