@@ -189,15 +189,58 @@ def _is_generic_afrog_vuln_name(vuln_name):
     return compact in {"afrog", "afrog漏洞", "afrogvulnerability", "vulnerability", "漏洞", "-"}
 
 
-def _extract_afrog_name_from_rule_id(rule_id):
-    text = str(rule_id or "").strip()
+def _sanitize_afrog_name_candidate(value):
+    text = str(value or "").strip()
     if not text:
         return ""
+
+    text = text.strip("`'\"")
     if text.lower().startswith("afrog:"):
         text = text.split(":", 1)[1].strip()
+
+    text = text.replace("\\", "/")
+    if "/" in text and " " not in text:
+        text = text.rsplit("/", 1)[-1]
+
+    text = re.sub(r"\.(?:ya?ml|json|txt|md|rule)$", "", text, flags=re.I)
+    text = re.sub(r"_+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" -_")
+
+    if text.startswith(("http://", "https://")):
+        return ""
     if _is_generic_afrog_vuln_name(text):
         return ""
+    if len(text) > 120:
+        text = text[:120].rstrip()
     return text
+
+
+def _extract_afrog_name_from_rule_id(rule_id):
+    return _sanitize_afrog_name_candidate(rule_id)
+
+
+def _extract_afrog_name_from_mapping(payload):
+    if not isinstance(payload, dict):
+        return ""
+
+    for key in ("name", "vuln_name", "vul_name", "title", "poc_name", "plugin_name", "rule"):
+        candidate = _sanitize_afrog_name_candidate(payload.get(key))
+        if candidate:
+            return candidate
+
+    for nested_key in ("info", "poc", "rule", "plugin", "meta"):
+        nested = payload.get(nested_key)
+        if isinstance(nested, dict):
+            candidate = _extract_afrog_name_from_mapping(nested)
+            if candidate:
+                return candidate
+
+    for key in ("id", "poc_id", "rule_id", "template_id"):
+        candidate = _sanitize_afrog_name_candidate(payload.get(key))
+        if candidate:
+            return candidate
+
+    return ""
 
 
 def _extract_afrog_name_from_verify_data(verify_data):
@@ -207,25 +250,49 @@ def _extract_afrog_name_from_verify_data(verify_data):
     try:
         payload = json.loads(raw_text)
     except Exception:
-        return ""
-    if not isinstance(payload, dict):
-        return ""
+        payload = None
 
-    for key in ("name", "vuln_name", "vul_name", "title", "poc_name", "plugin_name"):
-        candidate = str(payload.get(key, "") or "").strip()
-        if candidate and not _is_generic_afrog_vuln_name(candidate):
+    if isinstance(payload, dict):
+        candidate = _extract_afrog_name_from_mapping(payload)
+        if candidate:
             return candidate
 
-    for key in ("id", "poc_id"):
-        candidate = str(payload.get(key, "") or "").strip()
-        if candidate and not _is_generic_afrog_vuln_name(candidate):
-            return candidate
+    match = re.search(r"(?:poc[_-]?id|rule[_-]?id|template[_-]?id)\s*[:=]\s*([^\s,;]+)", raw_text, flags=re.I)
+    if match:
+        return _sanitize_afrog_name_candidate(match.group(1))
+
     return ""
 
 
-def _resolve_afrog_vuln_name(vuln_name, rule_id, verify_data):
-    current = str(vuln_name or "").strip()
-    if current and not _is_generic_afrog_vuln_name(current):
+def _extract_afrog_name_from_detail(detail):
+    detail_text = str(detail or "").strip()
+    if not detail_text:
+        return ""
+    match = re.search(r"poc[_-]?id\s*[:=]\s*([^\s,;]+)", detail_text, flags=re.I)
+    if not match:
+        return ""
+    return _sanitize_afrog_name_candidate(match.group(1))
+
+
+def _extract_afrog_name_from_description(description):
+    text = str(description or "").strip()
+    if not text:
+        return ""
+    first_segment = re.split(r"[\r\n；;。]", text, maxsplit=1)[0].strip()
+    if not first_segment:
+        return ""
+    if first_segment.startswith(("http://", "https://")):
+        return ""
+    if _is_generic_afrog_vuln_name(first_segment):
+        return ""
+    if len(first_segment) > 120:
+        first_segment = first_segment[:120].rstrip()
+    return first_segment
+
+
+def _resolve_afrog_vuln_name(vuln_name, rule_id, verify_data, description="", detail=""):
+    current = _sanitize_afrog_name_candidate(vuln_name)
+    if current:
         return current
 
     by_rule = _extract_afrog_name_from_rule_id(rule_id)
@@ -236,7 +303,15 @@ def _resolve_afrog_vuln_name(vuln_name, rule_id, verify_data):
     if by_verify:
         return by_verify
 
-    return current or "afrog 漏洞"
+    by_detail = _extract_afrog_name_from_detail(detail)
+    if by_detail:
+        return by_detail
+
+    by_description = _extract_afrog_name_from_description(description)
+    if by_description:
+        return by_description
+
+    return "afrog 漏洞"
 
 
 def _build_regex_query(value):
@@ -302,7 +377,16 @@ def _build_collection_queries(args):
     vuln_name_query = _build_regex_query(args.get("vuln_name"))
     if vuln_name_query:
         nuclei_query["vuln_name"] = vuln_name_query
-        afrog_query["vul_name"] = vuln_name_query
+        afrog_or_conditions = afrog_query.get("$or", [])
+        if not isinstance(afrog_or_conditions, list):
+            afrog_or_conditions = []
+        afrog_or_conditions.extend([
+            {"vul_name": vuln_name_query},
+            {"plg_name": vuln_name_query},
+            {"description": vuln_name_query},
+            {"detail": vuln_name_query},
+        ])
+        afrog_query["$or"] = afrog_or_conditions
 
     vuln_severity = str(args.get("vuln_severity") or "").strip().lower()
     if vuln_severity:
@@ -345,6 +429,8 @@ def _build_afrog_project_stage():
             "vuln_name": {"$ifNull": ["$vul_name", ""]},
             "vuln_severity": {"$ifNull": ["$severity", "info"]},
             "verify_data": {"$ifNull": ["$verify_data", ""]},
+            "description": {"$ifNull": ["$description", ""]},
+            "detail": {"$ifNull": ["$detail", ""]},
             "task_id": {"$ifNull": ["$task_id", ""]},
             "save_date": {"$ifNull": ["$save_date", ""]},
         }
@@ -425,11 +511,21 @@ def _format_poc_result_items(data):
         row["vuln_name"] = str(row.get("vuln_name") or "").strip()
         row["vuln_severity"] = str(row.get("vuln_severity") or "info").strip().lower()
         raw_verify_data = str(row.get("verify_data") or "").strip()
+        raw_description = str(row.get("description") or "").strip()
+        raw_detail = str(row.get("detail") or "").strip()
         if scanner_type == "afrog":
-            row["vuln_name"] = _resolve_afrog_vuln_name(row.get("vuln_name"), row.get("rule_id"), raw_verify_data)
+            row["vuln_name"] = _resolve_afrog_vuln_name(
+                row.get("vuln_name"),
+                row.get("rule_id"),
+                raw_verify_data,
+                raw_description,
+                raw_detail,
+            )
             row["verify_data"] = _normalize_afrog_verify_data(raw_verify_data, row.get("target"))
         else:
             row["verify_data"] = raw_verify_data
+        row.pop("description", None)
+        row.pop("detail", None)
         row["task_id"] = str(row.get("task_id") or "").strip()
         row["save_date"] = str(row.get("save_date") or "").strip()
         items.append(row)

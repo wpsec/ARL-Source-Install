@@ -8676,8 +8676,8 @@ function TableModuleView({
                           const targetRaw = normalizeValueNoTruncate(row?.target);
                           const displayUrl = (vulnUrlRaw && vulnUrlRaw !== '-' ? vulnUrlRaw : targetRaw) || '-';
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[320px] max-w-[760px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[320px] max-w-[760px]">
+                              <div className="min-h-[24px] flex items-center justify-center whitespace-pre-wrap break-all leading-relaxed text-center">
                                 {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
                                   ? renderTextWithHyperlink(displayUrl)
                                   : displayUrl}
@@ -12531,8 +12531,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [testResult, setTestResult] = useState<AiTestResult | null>(null);
-  const [compatDraft, setCompatDraft] = useState<AiCustomCompatProvider>({
-    id: '',
+  const [compatDraft, setCompatDraft] = useState<{
+    name: string;
+    base_url: string;
+    model: string;
+  }>({
     name: '',
     base_url: '',
     model: '',
@@ -12862,10 +12865,16 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       return false;
     }
 
-    const candidateId = buildPromptId(compatDraft.id || name, form.custom_compat_providers.length + 1);
-    if (form.custom_compat_providers.some((item) => item.id === candidateId)) {
-      setError(`兼容接口 ID 重复：${candidateId}`);
+    if (form.custom_compat_providers.some((item) => item.name.trim().toLowerCase() === name.toLowerCase())) {
+      setError(`兼容接口名称重复：${name}`);
       return false;
+    }
+
+    let fallbackIndex = form.custom_compat_providers.length + 1;
+    let candidateId = buildPromptId(name, fallbackIndex);
+    while (form.custom_compat_providers.some((item) => item.id === candidateId)) {
+      fallbackIndex += 1;
+      candidateId = buildPromptId(`${name}_${fallbackIndex}`, fallbackIndex);
     }
 
     setForm((prev) => ({
@@ -12880,7 +12889,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         },
       ],
     }));
-    setCompatDraft({ id: '', name: '', base_url: '', model: '' });
+    setCompatDraft({ name: '', base_url: '', model: '' });
     setError('');
     setSuccess(`兼容接口已新增：${name}`);
     return true;
@@ -13468,7 +13477,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <div className="text-xs font-black tracking-wide text-brand-text">OpenAI 兼容接口管理</div>
           <button
             type="button"
-            onClick={() => setCompatDialogOpen(true)}
+            onClick={() => {
+              setCompatDraft({ name: '', base_url: '', model: '' });
+              setCompatDialogOpen(true);
+            }}
             className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
           >
             添加OpenAI兼容接口
@@ -13485,7 +13497,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   <div className="min-w-0">
                     <div className="text-sm font-bold break-all">{item.name}</div>
                     <div className="text-xs text-brand-text-muted font-mono break-all mt-1">
-                      {item.id} | {item.base_url} | {item.model || '-'}
+                      {item.base_url} | {item.model || '-'}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -13610,12 +13622,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <div className="p-5 space-y-3">
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                 <input
-                  value={compatDraft.id}
-                  onChange={(event) => setCompatDraft((prev) => ({ ...prev, id: event.target.value }))}
-                  className={CONSOLE_INPUT_MONO_CLASS}
-                  placeholder="接口ID（可选）"
-                />
-                <input
                   value={compatDraft.name}
                   onChange={(event) => setCompatDraft((prev) => ({ ...prev, name: event.target.value }))}
                   className={CONSOLE_INPUT_CLASS}
@@ -13624,7 +13630,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 <input
                   value={compatDraft.base_url}
                   onChange={(event) => setCompatDraft((prev) => ({ ...prev, base_url: event.target.value }))}
-                  className={CONSOLE_INPUT_MONO_CLASS}
+                  className={`${CONSOLE_INPUT_MONO_CLASS} xl:col-span-2`}
                   placeholder="Base URL（必填）"
                 />
                 <input
