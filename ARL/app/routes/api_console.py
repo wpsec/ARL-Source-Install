@@ -873,6 +873,103 @@ def _extract_ai_config(config_obj):
     }
 
 
+def _build_ai_sensitive_configured_map(ai_config: dict):
+    """
+    基于 ai_config 计算敏感字段（API Key）是否已配置。
+    """
+    if not isinstance(ai_config, dict):
+        ai_config = {}
+
+    model_profiles = ai_config.get('model_profiles')
+    profile_list = model_profiles if isinstance(model_profiles, list) else []
+    model_profile_api_keys = {}
+    for item in profile_list:
+        if not isinstance(item, dict):
+            continue
+        profile_id = str(item.get('id') or '').strip()
+        if not profile_id:
+            continue
+        model_profile_api_keys[profile_id] = bool(str(item.get('api_key') or '').strip())
+
+    active_profile = _pick_active_ai_model_profile(
+        profile_list,
+        str(ai_config.get('active_model_profile_id') or '').strip(),
+    )
+    active_api_key_configured = False
+    if isinstance(active_profile, dict):
+        active_api_key_configured = bool(str(active_profile.get('api_key') or '').strip())
+
+    return {
+        'api_key': active_api_key_configured,
+        'model_profile_api_keys': model_profile_api_keys,
+    }
+
+
+def _sanitize_ai_config_for_client(ai_config: dict):
+    """
+    返回给前端时抹除 AI Key 明文，并附带是否已配置状态。
+    """
+    safe_ai_config = dict(ai_config or {})
+    sensitive_configured = _build_ai_sensitive_configured_map(safe_ai_config)
+
+    safe_profiles = []
+    raw_profiles = safe_ai_config.get('model_profiles')
+    if isinstance(raw_profiles, list):
+        for item in raw_profiles:
+            if not isinstance(item, dict):
+                continue
+            profile = dict(item)
+            profile['api_key'] = ''
+            safe_profiles.append(profile)
+    safe_ai_config['model_profiles'] = safe_profiles
+    safe_ai_config['api_key'] = ''
+    return safe_ai_config, sensitive_configured
+
+
+def _fill_missing_sensitive_ai_fields(ai_config: dict, config_obj: dict):
+    """
+    对未提交的 AI Key 回填当前配置值，避免前端“未改动字段”被误清空。
+    """
+    if not isinstance(ai_config, dict):
+        raise ValueError('ai_config 必须为对象')
+
+    merged_ai_config = dict(ai_config)
+    current_ai_config = _extract_ai_config(config_obj if isinstance(config_obj, dict) else {})
+
+    current_profile_key_map = {}
+    current_profiles = current_ai_config.get('model_profiles')
+    if isinstance(current_profiles, list):
+        for item in current_profiles:
+            if not isinstance(item, dict):
+                continue
+            profile_id = str(item.get('id') or '').strip()
+            if not profile_id:
+                continue
+            current_profile_key_map[profile_id] = str(item.get('api_key') or '').strip()
+
+    submitted_profiles = ai_config.get('model_profiles')
+    if isinstance(submitted_profiles, list):
+        merged_profiles = []
+        for item in submitted_profiles:
+            if not isinstance(item, dict):
+                continue
+            profile = dict(item)
+            profile_id = str(profile.get('id') or '').strip()
+            if 'api_key' not in profile and profile_id:
+                profile['api_key'] = current_profile_key_map.get(profile_id, '')
+            merged_profiles.append(profile)
+        merged_ai_config['model_profiles'] = merged_profiles
+
+    if 'api_key' not in merged_ai_config:
+        active_profile_id = str(merged_ai_config.get('active_model_profile_id') or '').strip()
+        if active_profile_id:
+            merged_ai_config['api_key'] = current_profile_key_map.get(active_profile_id, '')
+        else:
+            merged_ai_config['api_key'] = str(current_ai_config.get('api_key') or '').strip()
+
+    return merged_ai_config
+
+
 def _merge_ai_config(config_obj, ai_config):
     """
     将 AI 管理配置写回完整配置对象。
@@ -932,7 +1029,7 @@ def _merge_ai_config(config_obj, ai_config):
 
 def _test_ai_config_connectivity(ai_config):
     """
-    测试 AI 连接可用性（OpenAI 兼容 /models 轻量探测）。
+    测试 AI 连接可用性（发送固定问候语，校验真实对话链路）。
     """
     if not isinstance(ai_config, dict):
         raise ValueError('ai_config 必须为对象')
@@ -947,6 +1044,7 @@ def _test_ai_config_connectivity(ai_config):
     model_name = str(active_profile.get('model') or '').strip()
     profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=5)
+    request_text = '你好呀～'
 
     if not api_key:
         return {
@@ -956,6 +1054,8 @@ def _test_ai_config_connectivity(ai_config):
             'detail': {
                 'model': model_name,
                 'profile': profile_name,
+                'request_text': request_text,
+                'reply_text': '',
             },
             'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
@@ -967,17 +1067,20 @@ def _test_ai_config_connectivity(ai_config):
             'detail': {
                 'model': model_name,
                 'profile': profile_name,
+                'request_text': request_text,
+                'reply_text': '',
             },
             'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
 
-    request_url = '{}/models'.format(base_url.rstrip('/'))
+    models_url = '{}/models'.format(base_url.rstrip('/'))
     headers = {
         'Authorization': 'Bearer {}'.format(api_key),
+        'Content-Type': 'application/json',
     }
 
     try:
-        conn = utils.http_req(request_url, 'get', headers=headers, timeout=(8, timeout_sec))
+        conn = utils.http_req(models_url, 'get', headers=headers, timeout=(8, timeout_sec))
         status_code = int(getattr(conn, 'status_code', 0) or 0)
         try:
             payload = conn.json() if conn is not None else {}
@@ -1001,6 +1104,8 @@ def _test_ai_config_connectivity(ai_config):
                     'base_url': base_url,
                     'model': model_name,
                     'profile': profile_name,
+                    'request_text': request_text,
+                    'reply_text': '',
                 },
                 'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
@@ -1011,16 +1116,101 @@ def _test_ai_config_connectivity(ai_config):
         if isinstance(models, list) and models:
             first_model = str((models[0] or {}).get('id') or '').strip()
 
+        test_model = model_name or first_model
+        if not test_model:
+            return {
+                'ok': False,
+                'message': 'AI 测试失败：未发现可用模型',
+                'provider': provider_id,
+                'detail': {
+                    'base_url': base_url,
+                    'model_count': model_count,
+                    'first_model': first_model,
+                    'model': model_name,
+                    'profile': profile_name,
+                    'request_text': request_text,
+                    'reply_text': '',
+                },
+                'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+
+        chat_url = '{}/chat/completions'.format(base_url.rstrip('/'))
+        request_body = {
+            'model': test_model,
+            'temperature': min(max(_safe_float(active_profile.get('temperature'), 0.2, min_value=0.0), 0.0), 1.0),
+            'max_tokens': max(64, min(_safe_int(active_profile.get('max_tokens'), 128, min_value=32), 512)),
+            'messages': [
+                {
+                    'role': 'user',
+                    'content': request_text,
+                }
+            ],
+        }
+
+        chat_conn = utils.http_req(chat_url, 'post', headers=headers, json=request_body, timeout=(8, timeout_sec))
+        chat_status_code = int(getattr(chat_conn, 'status_code', 0) or 0)
+        try:
+            chat_payload = chat_conn.json() if chat_conn is not None else {}
+        except Exception:
+            chat_payload = {}
+
+        if chat_status_code != 200:
+            err_message = ''
+            if isinstance(chat_payload, dict):
+                error_obj = chat_payload.get('error')
+                if isinstance(error_obj, dict):
+                    err_message = str(error_obj.get('message') or '').strip()
+                if not err_message:
+                    err_message = str(chat_payload.get('message') or '').strip()
+            err_message = err_message or 'HTTP {}'.format(chat_status_code)
+            return {
+                'ok': False,
+                'message': 'AI 测试失败：{}'.format(err_message),
+                'provider': provider_id,
+                'detail': {
+                    'status_code': chat_status_code,
+                    'base_url': base_url,
+                    'model_count': model_count,
+                    'first_model': first_model,
+                    'model': test_model,
+                    'profile': profile_name,
+                    'request_text': request_text,
+                    'reply_text': '',
+                },
+                'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+
+        reply_text = ''
+        choices = chat_payload.get('choices', []) if isinstance(chat_payload, dict) else []
+        message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
+        if isinstance(message_obj, dict):
+            content_obj = message_obj.get('content')
+            if isinstance(content_obj, str):
+                reply_text = content_obj.strip()
+            elif isinstance(content_obj, list):
+                text_parts = []
+                for fragment in content_obj:
+                    if isinstance(fragment, dict) and str(fragment.get('type') or '').strip() == 'text':
+                        text_value = str(fragment.get('text') or '').strip()
+                        if text_value:
+                            text_parts.append(text_value)
+                reply_text = '\n'.join(text_parts).strip()
+
+        if not reply_text:
+            reply_text = '（接口已响应，但返回内容为空）'
+
         return {
             'ok': True,
-            'message': 'AI 连接测试成功',
+            'message': 'AI 测试成功',
             'provider': provider_id,
             'detail': {
                 'base_url': base_url,
                 'model_count': model_count,
                 'first_model': first_model,
-                'model': model_name,
+                'model': test_model,
                 'profile': profile_name,
+                'request_text': request_text,
+                'reply_text': reply_text,
             },
             'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
@@ -1033,6 +1223,8 @@ def _test_ai_config_connectivity(ai_config):
                 'base_url': base_url,
                 'model': model_name,
                 'profile': profile_name,
+                'request_text': request_text,
+                'reply_text': '',
             },
             'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
@@ -4224,11 +4416,13 @@ class ApiConsoleAiConfig(ARLResource):
         config_path = _resolve_config_path()
         try:
             config_obj = _load_config_from_file(config_path)
-            ai_config = _extract_ai_config(config_obj)
+            ai_config_raw = _extract_ai_config(config_obj)
+            ai_config, sensitive_configured = _sanitize_ai_config_for_client(ai_config_raw)
             return utils.build_ret(
                 ErrorMsg.Success,
                 {
                     'ai_config': ai_config,
+                    'sensitive_configured': sensitive_configured,
                     'provider_presets': AI_PROVIDER_PRESETS,
                     'config_path': str(config_path),
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -4254,12 +4448,14 @@ class ApiConsoleAiConfig(ARLResource):
         with CONFIG_LOCK:
             try:
                 config_obj = _load_config_from_file(config_path)
-                config_obj = _merge_ai_config(config_obj, ai_config)
+                merged_ai_config = _fill_missing_sensitive_ai_fields(ai_config, config_obj)
+                config_obj = _merge_ai_config(config_obj, merged_ai_config)
                 _ensure_json_like_config(config_obj)
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
                 runtime_refreshed = bool(refresh_runtime_config_best_effort(force=True))
-                saved_ai_config = _extract_ai_config(config_obj)
+                saved_ai_config_raw = _extract_ai_config(config_obj)
+                saved_ai_config, sensitive_configured = _sanitize_ai_config_for_client(saved_ai_config_raw)
             except Exception as exc:
                 logger.exception('save ai_config failed: %s', exc)
                 return utils.build_ret(
@@ -4275,11 +4471,62 @@ class ApiConsoleAiConfig(ARLResource):
             {
                 'saved': True,
                 'ai_config': saved_ai_config,
+                'sensitive_configured': sensitive_configured,
                 'provider_presets': AI_PROVIDER_PRESETS,
                 'config_path': str(config_path),
                 'backup_path': backup_path,
                 'runtime_refreshed': runtime_refreshed,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+        )
+
+
+@ns.route('/ai_config/reveal/')
+class ApiConsoleAiConfigReveal(ARLResource):
+    """
+    AI 管理敏感字段显示接口（需二次身份验证）。
+    """
+
+    @auth
+    @ns.expect(verify_sensitive_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        username = str(payload.get('username') or '').strip()
+        password = str(payload.get('password') or '')
+        config_path = _resolve_config_path()
+
+        ok, message = _verify_sensitive_access(username, password)
+        if not ok:
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': message,
+                }
+            )
+
+        try:
+            config_obj = _load_config_from_file(config_path)
+            ai_config = _extract_ai_config(config_obj)
+            sensitive_configured = _build_ai_sensitive_configured_map(ai_config)
+        except Exception as exc:
+            logger.exception('reveal ai_config failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'revealed': True,
+                'ai_config': ai_config,
+                'sensitive_configured': sensitive_configured,
+                'provider_presets': AI_PROVIDER_PRESETS,
+                'config_path': str(config_path),
+                'revealed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
         )
 
@@ -4295,6 +4542,7 @@ class ApiConsoleAiConfigTest(ARLResource):
     def post(self):
         payload = request.get_json(silent=True) or {}
         ai_config = payload.get('ai_config') or {}
+        config_path = _resolve_config_path()
 
         if not isinstance(ai_config, dict):
             return utils.build_ret(
@@ -4303,7 +4551,9 @@ class ApiConsoleAiConfigTest(ARLResource):
             )
 
         try:
-            result = _test_ai_config_connectivity(ai_config)
+            config_obj = _load_config_from_file(config_path)
+            merged_ai_config = _fill_missing_sensitive_ai_fields(ai_config, config_obj)
+            result = _test_ai_config_connectivity(merged_ai_config)
             return utils.build_ret(ErrorMsg.Success, result)
         except Exception as exc:
             logger.exception('ai_config test failed err:%s', exc)

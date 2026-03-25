@@ -13346,6 +13346,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     ok: boolean;
     message: string;
     provider?: string;
+    profile?: string;
+    model?: string;
+    request_text?: string;
+    reply_text?: string;
     tested_at?: string;
     detail?: string;
   };
@@ -13689,8 +13693,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [compatDialogOpen, setCompatDialogOpen] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [dialogSystemPromptOpen, setDialogSystemPromptOpen] = useState(false);
-  const [modelDraft, setModelDraft] = useState<{ id: string; name: string; provider: string }>({
-    id: '',
+  const [modelDraft, setModelDraft] = useState<{ name: string; provider: string }>({
     name: '',
     provider: 'openai',
   });
@@ -13700,8 +13703,16 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [sensitiveVerifyPassword, setSensitiveVerifyPassword] = useState('');
   const [sensitiveVerifyLoading, setSensitiveVerifyLoading] = useState(false);
   const [sensitiveVerifyError, setSensitiveVerifyError] = useState('');
-  const [aiApiKeyEdited, setAiApiKeyEdited] = useState(false);
+  const [sensitiveEditingModelProfileIds, setSensitiveEditingModelProfileIds] = useState<Set<string>>(new Set());
+  const [sensitiveConfiguredMap, setSensitiveConfiguredMap] = useState<{
+    api_key: boolean;
+    model_profile_api_keys: Record<string, boolean>;
+  }>({
+    api_key: false,
+    model_profile_api_keys: {},
+  });
   const [showRestartModal, setShowRestartModal] = useState(false);
+  const [aiTestDialogOpen, setAiTestDialogOpen] = useState(false);
 
   const providerPresetMap = useMemo(() => {
     const map: Record<string, AiProviderPreset> = {};
@@ -13723,7 +13734,29 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setSensitiveVerifyPassword('');
     setSensitiveVerifyError('');
     setSensitiveVerifyLoading(false);
-    setAiApiKeyEdited(false);
+    setSensitiveEditingModelProfileIds(new Set());
+  }, []);
+
+  const normalizeSensitiveConfigured = useCallback((rawValue: any, currentForm?: AiConfigForm) => {
+    const raw = rawValue && typeof rawValue === 'object' ? rawValue : {};
+    const rawProfileMap = raw?.model_profile_api_keys && typeof raw.model_profile_api_keys === 'object'
+      ? raw.model_profile_api_keys
+      : {};
+    const profileMap: Record<string, boolean> = {};
+    Object.entries(rawProfileMap).forEach(([profileId, configured]) => {
+      const normalizedId = String(profileId || '').trim();
+      if (!normalizedId) return;
+      profileMap[normalizedId] = Boolean(configured);
+    });
+    const activeProfileId = String(currentForm?.active_model_profile_id || '').trim();
+    const activeConfiguredByProfile = activeProfileId ? Boolean(profileMap[activeProfileId]) : false;
+    const activeConfigured = raw?.api_key !== undefined
+      ? Boolean(raw.api_key)
+      : activeConfiguredByProfile;
+    return {
+      api_key: activeConfigured,
+      model_profile_api_keys: profileMap,
+    };
   }, []);
 
   const findActiveModelProfile = useCallback(
@@ -13768,7 +13801,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     [findActiveModelProfile, syncFormWithActiveModel]
   );
 
-  const buildAiPayload = useCallback((currentForm: AiConfigForm): AiConfigForm => {
+  const buildAiPayload = useCallback((currentForm: AiConfigForm): Record<string, any> => {
     const timeoutSec = Number(currentForm.timeout_sec);
     const maxTokens = Number(currentForm.max_tokens);
     const dialogContextMessages = Number(currentForm.dialog_context_messages);
@@ -13805,11 +13838,22 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     if (!activeExists) {
       modelProfiles.unshift(normalizedActiveProfile);
     }
+    const sanitizedModelProfiles = modelProfiles.map((item) => {
+      const normalizedItem = {
+        ...item,
+        api_key: String(item.api_key || '').trim(),
+      };
+      if (sensitiveVisible || sensitiveEditingModelProfileIds.has(item.id)) {
+        return normalizedItem;
+      }
+      const { api_key, ...rest } = normalizedItem;
+      return rest;
+    });
 
-    return {
+    const payload: Record<string, any> = {
       enable: Boolean(currentForm.enable),
       active_model_profile_id: normalizedActiveProfile.id,
-      model_profiles: modelProfiles,
+      model_profiles: sanitizedModelProfiles,
       provider: activeProvider,
       custom_provider_name: String(currentForm.custom_provider_name || '').trim(),
       base_url: normalizedActiveProfile.base_url,
@@ -13830,7 +13874,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ai_denoise_modules: normalizeAiDenoiseModules(currentForm.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(currentForm.ai_denoise_prompt_ids, promptTemplates),
     };
-  }, [findActiveModelProfile]);
+    if (!sensitiveVisible && !sensitiveEditingModelProfileIds.has(normalizedActiveProfile.id)) {
+      delete payload.api_key;
+    }
+    return payload;
+  }, [findActiveModelProfile, sensitiveEditingModelProfileIds, sensitiveVisible]);
 
   const loadAiConfig = useCallback(async () => {
     resetSensitiveState();
@@ -13838,6 +13886,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setError('');
     setSuccess('');
     setTestResult(null);
+    setAiTestDialogOpen(false);
     setShowRestartModal(false);
     try {
       const result = await requestApi(token, '/api_console/ai_config/', { method: 'GET' });
@@ -13859,6 +13908,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setProviderPresets(normalizedPresets.length > 0 ? normalizedPresets : defaultProviderPresets);
       const normalizedForm = normalizeForm(data?.ai_config || {});
       setForm(normalizedForm);
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedForm));
       setModelDraft((prev) => ({ ...prev, provider: normalizedForm.provider || 'openai' }));
       setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
       setConfigPath(String(data?.config_path || ''));
@@ -13868,17 +13918,21 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     } finally {
       setLoading(false);
     }
-  }, [token, resetSensitiveState]);
+  }, [token, normalizeSensitiveConfigured, resetSensitiveState]);
 
   useEffect(() => {
     void loadAiConfig();
   }, [loadAiConfig]);
 
   useEffect(() => {
-    if (!compatDialogOpen && !promptDialogOpen && !showRestartModal) return;
+    if (!compatDialogOpen && !promptDialogOpen && !showRestartModal && !aiTestDialogOpen) return;
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      if (aiTestDialogOpen) {
+        setAiTestDialogOpen(false);
+        return;
+      }
       if (showRestartModal) {
         setShowRestartModal(false);
         return;
@@ -13893,20 +13947,34 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [compatDialogOpen, promptDialogOpen, showRestartModal]);
+  }, [aiTestDialogOpen, compatDialogOpen, promptDialogOpen, showRestartModal]);
 
   const handleProviderChange = (nextProvider: string) => {
     const providerId = normalizeProviderId(nextProvider);
-    const preset = providerPresetMap[providerId];
-    updateActiveModelProfile((active) => {
-      const nextBaseUrl = String(preset?.base_url || '').trim() || active.base_url;
-      const nextModel = String(preset?.default_model || '').trim() || active.model;
-      return {
-        ...active,
+    setForm((prev) => {
+      const matchedProfile = prev.model_profiles.find((item) => item.provider === providerId);
+      if (matchedProfile) {
+        return syncFormWithActiveModel(prev, matchedProfile);
+      }
+      const activeProfile = findActiveModelProfile(prev);
+      if (!activeProfile) return prev;
+      const preset = providerPresetMap[providerId];
+      const nextBaseUrl = String(preset?.base_url || '').trim() || activeProfile.base_url;
+      const nextModel = String(preset?.default_model || '').trim() || activeProfile.model;
+      const nextProfile: AiModelProfile = {
+        ...activeProfile,
         provider: providerId,
-        base_url: providerId === 'custom_compatible' ? active.base_url : nextBaseUrl,
-        model: providerId === 'custom_compatible' ? active.model : nextModel,
+        base_url: providerId === 'custom_compatible' ? activeProfile.base_url : nextBaseUrl,
+        model: providerId === 'custom_compatible' ? activeProfile.model : nextModel,
       };
+      const nextProfiles = prev.model_profiles.map((item) => (item.id === nextProfile.id ? nextProfile : item));
+      return syncFormWithActiveModel(
+        {
+          ...prev,
+          model_profiles: nextProfiles,
+        },
+        nextProfile
+      );
     });
     setError('');
     setSuccess('');
@@ -13926,10 +13994,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const providerId = normalizeProviderId(modelDraft.provider || 'openai');
     const preset = providerPresetMap[providerId];
     const profileName = modelDraft.name.trim() || `模型${form.model_profiles.length + 1}`;
-    const candidateId = buildModelProfileId(modelDraft.id || profileName, form.model_profiles.length + 1);
-    if (form.model_profiles.some((item) => item.id === candidateId)) {
-      setError(`模型配置ID重复：${candidateId}`);
-      return;
+    let fallbackIndex = form.model_profiles.length + 1;
+    let candidateId = buildModelProfileId(profileName, fallbackIndex);
+    while (form.model_profiles.some((item) => item.id === candidateId)) {
+      fallbackIndex += 1;
+      candidateId = buildModelProfileId(`${profileName}_${fallbackIndex}`, fallbackIndex);
     }
 
     const nextProfile: AiModelProfile = {
@@ -13951,7 +14020,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       };
       return syncFormWithActiveModel(merged, nextProfile);
     });
-    setModelDraft({ id: '', name: '', provider: 'openai' });
+    setModelDraft({ name: '', provider: providerId });
     setError('');
     setSuccess(`模型配置已新增：${profileName}`);
   };
@@ -14133,7 +14202,8 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setSensitiveVisible(false);
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
-      setAiApiKeyEdited(false);
+      setSensitiveEditingModelProfileIds(new Set());
+      void loadAiConfig();
       return;
     }
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
@@ -14150,17 +14220,22 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setSensitiveVerifyLoading(true);
     setSensitiveVerifyError('');
     try {
-      await requestApi(token, '/api_console/sensitive_verify/', {
+      const result = await requestApi(token, '/api_console/ai_config/reveal/', {
         method: 'POST',
         body: {
           username: sensitiveVerifyUsername.trim(),
           password: sensitiveVerifyPassword,
         },
       });
+      const data = result?.data || {};
+      const normalizedForm = normalizeForm(data?.ai_config || {});
+      setForm(normalizedForm);
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedForm));
+      setSensitiveEditingModelProfileIds(new Set());
       setSensitiveVisible(true);
       setSensitiveVerifyDialogOpen(false);
       setSensitiveVerifyPassword('');
-      setSuccess('身份验证通过，已显示敏感 key');
+      setSuccess('身份验证通过，已按需拉取敏感 key');
     } catch (err: any) {
       setSensitiveVerifyError(err?.message || '验证失败');
     } finally {
@@ -14204,6 +14279,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       }
       const normalizedSavedForm = normalizeForm(data?.ai_config || payload);
       setForm(normalizedSavedForm);
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedSavedForm));
       setModelDraft((prev) => ({ ...prev, provider: normalizedSavedForm.provider || 'openai' }));
       setConfigPath(String(data?.config_path || configPath));
       setUpdatedAt(String(data?.saved_at || updatedAt));
@@ -14214,7 +14290,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setSensitiveVisible(false);
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
-      setAiApiKeyEdited(false);
+      setSensitiveEditingModelProfileIds(new Set());
     } catch (err: any) {
       setError(err?.message || '保存 AI 管理配置失败');
     } finally {
@@ -14228,6 +14304,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setError('');
     setSuccess('');
     setTestResult(null);
+    setAiTestDialogOpen(false);
     try {
       const result = await requestApi(token, '/api_console/ai_config/test/', {
         method: 'POST',
@@ -14236,15 +14313,21 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         },
       });
       const data = result?.data || {};
-      const detailText = data?.detail ? JSON.stringify(data.detail, null, 2) : '';
+      const detailRaw = data?.detail && typeof data.detail === 'object' ? data.detail : {};
+      const detailText = Object.keys(detailRaw).length > 0 ? JSON.stringify(detailRaw, null, 2) : '';
       const normalized: AiTestResult = {
         ok: Boolean(data?.ok),
         message: String(data?.message || ''),
         provider: String(data?.provider || ''),
+        profile: String(detailRaw?.profile || ''),
+        model: String(detailRaw?.model || ''),
+        request_text: String(detailRaw?.request_text || '你好呀～'),
+        reply_text: String(detailRaw?.reply_text || ''),
         tested_at: String(data?.tested_at || ''),
         detail: detailText,
       };
       setTestResult(normalized);
+      setAiTestDialogOpen(true);
       const skippedWithoutConfig = !normalized.ok && normalized.message.includes('已跳过');
       if (normalized.ok) {
         setSuccess('AI 连通性测试成功');
@@ -14259,6 +14342,15 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setTesting(false);
     }
   };
+
+  const activeModelProfileId = String(form.active_model_profile_id || '').trim();
+  const activeApiKeyConfigured = activeModelProfileId
+    ? Boolean(sensitiveConfiguredMap.model_profile_api_keys[activeModelProfileId])
+    : Boolean(sensitiveConfiguredMap.api_key);
+  const activeApiKeyEditing = activeModelProfileId
+    ? sensitiveEditingModelProfileIds.has(activeModelProfileId)
+    : false;
+  const showActiveApiKeyRaw = sensitiveVisible || activeApiKeyEditing;
 
   return (
     <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
@@ -14286,7 +14378,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             disabled={isActionBusy}
           >
             <Play className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
-            {testing ? '测试中...' : '总测试'}
+            {testing ? '测试中...' : 'AI测试'}
           </button>
           <button
             type="button"
@@ -14399,18 +14491,29 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             </label>
             <input
               id="ai-api-key"
-              type={sensitiveVisible || aiApiKeyEdited ? 'text' : 'password'}
+              type={showActiveApiKeyRaw ? 'text' : 'password'}
               value={form.api_key}
               onChange={(event) => {
-                if (!aiApiKeyEdited) {
-                  setAiApiKeyEdited(true);
+                if (activeModelProfileId && !activeApiKeyEditing) {
+                  setSensitiveEditingModelProfileIds((prev) => {
+                    const next = new Set(prev);
+                    next.add(activeModelProfileId);
+                    return next;
+                  });
                 }
                 updateActiveModelProfile((active) => ({ ...active, api_key: event.target.value }));
               }}
               className={aiInputMonoClass}
-              placeholder="可留空，未配置时自动降级不报错"
+              placeholder={
+                activeApiKeyConfigured && !showActiveApiKeyRaw
+                  ? '已配置（留空保持不变，输入新值将覆盖）'
+                  : '可留空，未配置时自动降级不报错'
+              }
               autoComplete="off"
             />
+            {activeApiKeyConfigured && !showActiveApiKeyRaw ? (
+              <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+            ) : null}
           </div>
           <div className="space-y-2">
             <label htmlFor="ai-base-url" className="text-xs font-bold text-brand-text-muted block">
@@ -14570,13 +14673,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </div>
           <div className="space-y-2 xl:col-span-2">
             <div className="text-xs font-bold text-brand-text-muted">模型配置管理</div>
-            <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
-              <input
-                value={modelDraft.id}
-                onChange={(event) => setModelDraft((prev) => ({ ...prev, id: event.target.value }))}
-                className={CONSOLE_INPUT_MONO_CLASS}
-                placeholder="模型配置ID（可选）"
-              />
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3">
               <input
                 value={modelDraft.name}
                 onChange={(event) => setModelDraft((prev) => ({ ...prev, name: event.target.value }))}
@@ -14614,7 +14711,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                         {item.name} {item.id === form.active_model_profile_id ? '(生效中)' : ''}
                       </div>
                       <div className="text-xs text-brand-text-muted font-mono break-all mt-1">
-                        {item.id} | {providerPresetMap[item.provider]?.label || item.provider} | {item.base_url || '-'} |
+                        {providerPresetMap[item.provider]?.label || item.provider} | {item.base_url || '-'} |
                         {item.model || '-'}
                       </div>
                     </div>
@@ -15004,21 +15101,74 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       ) : null}
 
-      {testResult ? (
+      {aiTestDialogOpen && testResult ? (
         <div
-          className={`text-xs rounded-lg px-3 py-2 border ${
-            testResult.ok
-              ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
-              : testResult.message.includes('已跳过')
-                ? 'text-amber-300 bg-amber-300/10 border-amber-300/30'
-                : 'text-brand-danger bg-brand-danger/10 border-brand-danger/30'
-          }`}
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setAiTestDialogOpen(false);
+          }}
         >
-          <div>{testResult.message}</div>
-          {testResult.detail ? (
-            <div className="mt-1 font-mono opacity-80 break-all whitespace-pre-wrap">{testResult.detail}</div>
-          ) : null}
-          {testResult.tested_at ? <div className="mt-1 opacity-70">{testResult.tested_at}</div> : null}
+          <div
+            className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="text-sm font-black tracking-wide">AI测试结果</div>
+              <button
+                type="button"
+                onClick={() => setAiTestDialogOpen(false)}
+                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div
+                className={`text-xs rounded-lg px-3 py-2 border ${
+                  testResult.ok
+                    ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
+                    : testResult.message.includes('已跳过')
+                      ? 'text-amber-300 bg-amber-300/10 border-amber-300/30'
+                      : 'text-brand-danger bg-brand-danger/10 border-brand-danger/30'
+                }`}
+              >
+                {testResult.message || '-'}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-brand-text-muted">
+                <div>提供方：{testResult.provider || '-'}</div>
+                <div>模型：{testResult.model || '-'}</div>
+                <div>配置：{testResult.profile || '-'}</div>
+                <div>测试时间：{testResult.tested_at || '-'}</div>
+              </div>
+              <div className="space-y-2 rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+                <div className="text-xs font-semibold">用户发送</div>
+                <div className="text-sm rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2">
+                  {testResult.request_text || '你好呀～'}
+                </div>
+                <div className="text-xs font-semibold pt-1">AI回复</div>
+                <div className="text-sm rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2 whitespace-pre-wrap break-all min-h-[44px]">
+                  {testResult.reply_text || '-'}
+                </div>
+              </div>
+              {testResult.detail ? (
+                <details className="text-xs text-brand-text-muted">
+                  <summary className="cursor-pointer select-none">调试详情</summary>
+                  <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-[11px] bg-brand-bg/45 border border-brand-border rounded-lg p-3">
+                    {testResult.detail}
+                  </pre>
+                </details>
+              ) : null}
+            </div>
+            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+              <button
+                type="button"
+                onClick={() => setAiTestDialogOpen(false)}
+                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
       <SensitiveRevealVerifyModal
