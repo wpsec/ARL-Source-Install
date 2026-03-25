@@ -7166,10 +7166,15 @@ function TableModuleView({
           nextColumns.splice(progressIndex, 1);
           nextColumns.splice(optionsIndex, 0, 'progress');
         }
-        // 简洁模式下隐藏统计、Task_Id 与配置项列，聚焦任务核心信息。
+        // 简洁模式下隐藏统计、Task_Id、时间列与配置项列，聚焦任务核心信息。
         if (taskCompactMode) {
           return nextColumns.filter(
-            (column) => column !== 'statistic_summary' && column !== '_id' && column !== 'options_summary'
+            (column) =>
+              column !== 'statistic_summary'
+              && column !== '_id'
+              && column !== 'options_summary'
+              && column !== 'start_time'
+              && column !== 'end_time'
           );
         }
         return nextColumns;
