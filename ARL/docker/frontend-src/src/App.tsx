@@ -173,10 +173,20 @@ const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
   nuclei_result: ['vuln_url'],
   wih: ['content', 'source', 'site'],
 };
+const AI_ANALYSIS_SEARCH_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '全部', value: '' },
+  { label: '未分析', value: 'unanalyzed' },
+  { label: '安全/正常', value: 'safe' },
+  { label: '可疑', value: 'suspicious' },
+  { label: '危险', value: 'danger' },
+  { label: '可信', value: 'trusted' },
+  { label: '疑似误报', value: 'suspected_fp' },
+];
 
-const AI_DENOISE_MODULE_IDS = ['fileleak', 'cert', 'url', 'vuln', 'nuclei_result'] as const;
+const AI_DENOISE_MODULE_IDS = ['site', 'fileleak', 'cert', 'url', 'vuln', 'nuclei_result'] as const;
 type AiDenoiseModuleId = (typeof AI_DENOISE_MODULE_IDS)[number];
 const AI_DENOISE_MODULE_LABEL_MAP: Record<AiDenoiseModuleId, string> = {
+  site: '站点',
   fileleak: '目录扫描',
   cert: 'SSL证书',
   url: 'URL信息',
@@ -198,6 +208,11 @@ type AiDenoiseResultItem = {
   analyzed_at: string;
   cert_expire_at?: string;
   cert_expire_days?: number;
+  finger_result?: string[];
+  dialogue_records?: Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: string;
+  }>;
 };
 
 type AiDenoiseConfigSnapshot = {
@@ -952,6 +967,13 @@ const modules: ModuleConfig[] = [
       { key: 'finger.name', label: '指 纹', placeholder: '请输入指 纹进行搜索' },
       { key: 'favicon.hash', label: 'favicon hash', placeholder: '请输入favicon hash进行搜索', inputType: 'number' },
       { key: 'tag', label: '标签', placeholder: '请输入标签进行搜索' },
+      {
+        key: 'ai_analysis',
+        label: 'AI分析',
+        placeholder: '请选择AI分析结果',
+        inputType: 'select',
+        options: AI_ANALYSIS_SEARCH_OPTIONS,
+      },
     ],
     exportPath: '/asset_site/export/',
     actions: [
@@ -1037,13 +1059,14 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'site',
-    columns: ['site', 'title', 'headers', 'finger', 'screenshot'],
+    columns: ['site', 'title', 'headers', 'finger', 'screenshot', 'ai_analysis'],
     columnLabels: {
       site: '站点',
       title: '标题',
       headers: 'headers',
       finger: 'finger',
       screenshot: '截图',
+      ai_analysis: 'AI分析',
     },
     searchFields: [
       { key: 'site', label: '站点', placeholder: '请输入站点进行搜索' },
@@ -1211,6 +1234,13 @@ const modules: ModuleConfig[] = [
       { key: 'status_code', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
       { key: 'content_length', label: 'body 长度', placeholder: '请输入body 长度进行搜索', inputType: 'number' },
       { key: 'source', label: '来源', placeholder: '请输入来源进行搜索' },
+      {
+        key: 'ai_analysis',
+        label: 'AI分析',
+        placeholder: '请选择AI分析结果',
+        inputType: 'select',
+        options: AI_ANALYSIS_SEARCH_OPTIONS,
+      },
     ],
     exportPath: '/url/export/',
   },
@@ -1239,6 +1269,13 @@ const modules: ModuleConfig[] = [
         key: 'cert.extensions.subjectAltName',
         label: '使用者备用名称',
         placeholder: '请输入使用者备用名称进行搜索',
+      },
+      {
+        key: 'ai_analysis',
+        label: 'AI分析',
+        placeholder: '请选择AI分析结果',
+        inputType: 'select',
+        options: AI_ANALYSIS_SEARCH_OPTIONS,
       },
     ],
     actions: [
@@ -1375,6 +1412,13 @@ const modules: ModuleConfig[] = [
       },
       { key: 'app_name', label: '应用名', placeholder: '请输入应用名进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+      {
+        key: 'ai_analysis',
+        label: 'AI分析',
+        placeholder: '请选择AI分析结果',
+        inputType: 'select',
+        options: AI_ANALYSIS_SEARCH_OPTIONS,
+      },
     ],
     actions: [
       {
@@ -1426,6 +1470,13 @@ const modules: ModuleConfig[] = [
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
       { key: 'vuln_url', label: '风险URL', placeholder: '请输入风险URL进行搜索' },
       { key: 'vuln_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
+      {
+        key: 'ai_analysis',
+        label: 'AI分析',
+        placeholder: '请选择AI分析结果',
+        inputType: 'select',
+        options: AI_ANALYSIS_SEARCH_OPTIONS,
+      },
     ],
     actions: [
       {
@@ -6273,6 +6324,7 @@ function TableModuleView({
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
   const showHyperlinkToggle = canToggleHyperlink(module.id);
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
+  const aiAnalysisFilterValue = String(searchForm?.ai_analysis ?? '').trim();
   const isTaskTerminalStatus = (status: any) => ['done', 'stop', 'error'].includes(String(status || '').toLowerCase());
   const markTaskRowActionPending = (taskId: string, action: string) => {
     setTaskRowPendingActionMap((prev) => ({ ...prev, [taskId]: action }));
@@ -6286,8 +6338,46 @@ function TableModuleView({
     });
   };
   const displayRows = useMemo(() => {
-    if (module.id !== 'task' || rows.length <= 1) return rows;
-    return rows
+    const filterableModule = isAiDenoiseModule(module.id);
+    const preferredRowIdKey = module.rowIdKey || '_id';
+    let sourceRows = rows;
+    if (filterableModule && aiAnalysisFilterValue) {
+      sourceRows = rows.filter((row, index) => {
+        const rowKey =
+          normalizeRowIdValue(row?.[preferredRowIdKey])
+          || normalizeRowIdValue(row?._id)
+          || normalizeRowIdValue(row?.id)
+          || normalizeRowIdValue(row?.task_id)
+          || normalizeRowIdValue(row?.job_id)
+          || `${module.id}-row-${page}-${index + 1}`;
+        const analysis = aiDenoiseResultMap[rowKey];
+        if (!analysis) return aiAnalysisFilterValue === 'unanalyzed';
+
+        const trustText = String(analysis.trust || '').trim().toLowerCase();
+        if (aiAnalysisFilterValue === 'unanalyzed') {
+          return analysis.result_level === 'disabled' || String(analysis.display_text || '').includes('未分析');
+        }
+        if (aiAnalysisFilterValue === 'safe') {
+          return analysis.result_level === 'safe';
+        }
+        if (aiAnalysisFilterValue === 'suspicious') {
+          return analysis.result_level === 'suspicious';
+        }
+        if (aiAnalysisFilterValue === 'danger') {
+          return analysis.result_level === 'danger';
+        }
+        if (aiAnalysisFilterValue === 'trusted') {
+          return trustText.includes('可信') && !trustText.includes('误报');
+        }
+        if (aiAnalysisFilterValue === 'suspected_fp') {
+          return trustText.includes('误报') || trustText.includes('suspected');
+        }
+        return true;
+      });
+    }
+
+    if (module.id !== 'task' || sourceRows.length <= 1) return sourceRows;
+    return sourceRows
       .map((row, index) => ({
         row,
         index,
@@ -6295,7 +6385,7 @@ function TableModuleView({
       }))
       .sort((a, b) => (a.statusWeight - b.statusWeight) || (a.index - b.index))
       .map((item) => item.row);
-  }, [module.id, rows]);
+  }, [aiAnalysisFilterValue, aiDenoiseResultMap, module.id, module.rowIdKey, page, rows]);
   const [shouldInitialLoad, setShouldInitialLoad] = useState(false);
 
   const buildUniqueTextOptions = useCallback((values: any[]): Array<{ label: string; value: string }> => {
@@ -6835,6 +6925,7 @@ function TableModuleView({
     const filters: JsonValue = {};
     if (hasAdvancedSearch) {
       (module.searchFields || []).forEach((field) => {
+        if (field.key === 'ai_analysis') return;
         const raw = searchForm?.[field.key];
         if (raw === undefined || raw === null) return;
         const text = String(raw).trim();
@@ -7011,6 +7102,14 @@ function TableModuleView({
     if (!aiDenoiseModuleId) return '已分析';
     if (resultLevel === 'disabled') return '已关闭';
 
+    if (aiDenoiseModuleId === 'site') {
+      const mapping: Record<string, string> = {
+        safe: '正常',
+        suspicious: '可疑',
+        danger: '危险',
+      };
+      return mapping[resultLevel] || '正常';
+    }
     if (aiDenoiseModuleId === 'fileleak') {
       const mapping: Record<string, string> = {
         safe: '正常',
@@ -7065,6 +7164,27 @@ function TableModuleView({
     const displayText = sanitizeUiMessage(String(raw?.display_text || ''), 64)
       || buildAiDenoiseDisplayText(resultLevel, riskLevel, trust, safeCertExpireDays);
     const source = String(raw?.source || '').trim().toLowerCase();
+    const dialogueRecordsRaw = Array.isArray(raw?.dialogue_records) ? raw.dialogue_records : [];
+    const dialogueRecords = dialogueRecordsRaw
+      .map((item: any) => {
+        const roleText = String(item?.role || '').trim().toLowerCase();
+        const role: 'system' | 'user' | 'assistant' | 'tool' =
+          roleText === 'system' || roleText === 'user' || roleText === 'assistant' || roleText === 'tool'
+            ? roleText
+            : 'assistant';
+        const content = sanitizeUiMessage(item?.content, 3200);
+        if (!content) return null;
+        return { role, content };
+      })
+      .filter((item: { role: 'system' | 'user' | 'assistant' | 'tool'; content: string } | null): item is { role: 'system' | 'user' | 'assistant' | 'tool'; content: string } => Boolean(item))
+      .slice(0, 12);
+    const normalizedDialogueRecords = dialogueRecords.length > 0
+      ? dialogueRecords
+      : [{
+          role: 'assistant' as const,
+          content: `最终结果：${displayText || '-'}\n摘要：${sanitizeUiMessage(String(raw?.summary || '暂无分析摘要'), 900) || '暂无分析摘要'}`,
+        }];
+    const fingerResult = normalizeAiDenoiseStringList(raw?.finger_result, 12);
 
     return {
       row_key: rowKey,
@@ -7080,6 +7200,8 @@ function TableModuleView({
       analyzed_at: sanitizeUiMessage(String(raw?.analyzed_at || ''), 64),
       cert_expire_at: sanitizeUiMessage(String(raw?.cert_expire_at || ''), 80),
       cert_expire_days: safeCertExpireDays,
+      finger_result: fingerResult,
+      dialogue_records: normalizedDialogueRecords,
     };
   }, [buildAiDenoiseDisplayText, normalizeAiDenoiseResultLevel, normalizeAiDenoiseStringList]);
   const buildAiDenoiseDisabledResult = useCallback((
@@ -7123,6 +7245,9 @@ function TableModuleView({
     if (aiDenoiseModuleId === 'fileleak' || aiDenoiseModuleId === 'url') {
       return sanitizeUiMessage(String(row?.url || ''), 260) || fallback;
     }
+    if (aiDenoiseModuleId === 'site') {
+      return sanitizeUiMessage(String(row?.site || row?.url || row?.host || ''), 260) || fallback;
+    }
     if (aiDenoiseModuleId === 'cert') {
       return sanitizeUiMessage(String(row?.host || row?.domain || row?.ip || ''), 260) || fallback;
     }
@@ -7135,8 +7260,19 @@ function TableModuleView({
     return fallback;
   }, [aiDenoiseModuleId, page, size]);
   const buildAiDenoiseAnalyzeItem = useCallback((row: any, rowKey: string): Record<string, any> => {
-    const base = { _row_key: rowKey };
+    const base = { _row_key: rowKey, task_id: row?.task_id };
     if (!aiDenoiseModuleId) return base;
+    if (aiDenoiseModuleId === 'site') {
+      return {
+        ...base,
+        site: row?.site,
+        url: row?.site,
+        title: row?.title,
+        status_code: row?.status_code ?? row?.status,
+        headers: row?.headers,
+        finger: row?.finger,
+      };
+    }
     if (aiDenoiseModuleId === 'fileleak') {
       return {
         ...base,
@@ -7197,7 +7333,7 @@ function TableModuleView({
   const canOpenAiDenoiseDetail = useCallback((analysis: AiDenoiseResultItem): boolean => {
     if (!aiDenoiseModuleId) return false;
     if (analysis.result_level === 'disabled') return false;
-    if (aiDenoiseModuleId === 'fileleak' || aiDenoiseModuleId === 'url') {
+    if (aiDenoiseModuleId === 'site' || aiDenoiseModuleId === 'fileleak' || aiDenoiseModuleId === 'url') {
       return analysis.result_level === 'suspicious' || analysis.result_level === 'danger';
     }
     return true;
@@ -7398,7 +7534,14 @@ function TableModuleView({
                 result_level: 'safe',
                 risk_level: '低',
                 trust: '-',
-                display_text: aiDenoiseModuleId === 'fileleak' ? '正常' : aiDenoiseModuleId === 'url' ? '安全' : '已分析',
+                display_text:
+                  aiDenoiseModuleId === 'site'
+                    ? '正常'
+                    : aiDenoiseModuleId === 'fileleak'
+                      ? '正常'
+                      : aiDenoiseModuleId === 'url'
+                        ? '安全'
+                        : '已分析',
                 summary: '本行暂未返回分析详情，可点击刷新详情或稍后重试。',
                 evidence: ['批量分析未返回该行详细结果。'],
                 suggestions: ['可点击对应行结果查看详情并触发单条分析。'],
@@ -10201,6 +10344,26 @@ function TableModuleView({
                 </div>
               </div>
 
+              {aiDenoiseModuleId === 'site' ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-brand-text">AI分析后的指纹结果</div>
+                  {Array.isArray(aiDenoiseDetail.analysis.finger_result) && aiDenoiseDetail.analysis.finger_result.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {aiDenoiseDetail.analysis.finger_result.map((item, index) => (
+                        <span
+                          key={`${index}-${item}`}
+                          className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-brand-text-muted">暂无 AI 指纹修正结果</div>
+                  )}
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
                   <div className="text-xs font-black tracking-wide text-brand-text">分析依据</div>
@@ -10230,6 +10393,40 @@ function TableModuleView({
                     <div className="text-sm text-brand-text-muted">暂无建议</div>
                   )}
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                <div className="text-xs font-black tracking-wide text-brand-text">AI交互记录</div>
+                {Array.isArray(aiDenoiseDetail.analysis.dialogue_records) && aiDenoiseDetail.analysis.dialogue_records.length > 0 ? (
+                  <div className="space-y-2 max-h-[300px] overflow-auto">
+                    {aiDenoiseDetail.analysis.dialogue_records.map((item, index) => {
+                      const roleLabel =
+                        item.role === 'system'
+                          ? '系统'
+                          : item.role === 'user'
+                            ? '用户输入'
+                            : item.role === 'tool'
+                              ? '工具'
+                              : 'AI回复';
+                      const roleClass =
+                        item.role === 'system'
+                          ? 'border-brand-border bg-brand-bg/60 text-brand-text-muted'
+                          : item.role === 'user'
+                            ? 'border-brand-accent/35 bg-brand-accent/10 text-brand-text'
+                            : item.role === 'tool'
+                              ? 'border-brand-warning/35 bg-brand-warning/10 text-brand-text'
+                              : 'border-emerald-400/35 bg-emerald-400/10 text-brand-text';
+                      return (
+                        <div key={`${index}-${item.role}`} className={`rounded-xl border px-3 py-2 ${roleClass}`}>
+                          <div className="text-[11px] font-black tracking-wide mb-1">{roleLabel}</div>
+                          <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">{item.content}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-sm text-brand-text-muted">暂无对话记录</div>
+                )}
               </div>
             </div>
 
@@ -13013,7 +13210,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     max_tokens: number;
   };
 
-  type AiDenoiseModuleId = 'fileleak' | 'cert' | 'url' | 'vuln' | 'nuclei_result';
+  type AiDenoiseModuleId = 'site' | 'fileleak' | 'cert' | 'url' | 'vuln' | 'nuclei_result';
 
   type AiDenoiseModules = Record<AiDenoiseModuleId, boolean>;
   type AiDenoisePromptIds = Record<AiDenoiseModuleId, string>;
@@ -13077,6 +13274,14 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       updated_at: '',
     },
     {
+      id: 'default_ai_denoise_site',
+      name: '默认AI去噪-站点',
+      scene: 'ai_denoise_site',
+      content:
+        '你是站点价值分析助手。请基于站点URL、标题、响应头、状态码与指纹信息，输出正常/可疑/危险结论，并给出AI研判后的指纹结果、证据与处置建议。',
+      updated_at: '',
+    },
+    {
       id: 'default_ai_denoise_fileleak',
       name: '默认AI去噪-目录扫描',
       scene: 'ai_denoise_fileleak',
@@ -13123,6 +13328,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     label: string;
     scene: string;
   }> = [
+    { id: 'site', label: '站点', scene: 'ai_denoise_site' },
     { id: 'fileleak', label: '目录扫描', scene: 'ai_denoise_fileleak' },
     { id: 'cert', label: 'SSL证书', scene: 'ai_denoise_cert' },
     { id: 'url', label: 'URL信息', scene: 'ai_denoise_url' },
@@ -13131,6 +13337,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   ];
 
   const defaultAiDenoiseModules: AiDenoiseModules = {
+    site: true,
     fileleak: true,
     cert: true,
     url: true,
@@ -13267,6 +13474,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const normalizeAiDenoiseModules = (rawModules: any): AiDenoiseModules => {
     const source = rawModules && typeof rawModules === 'object' ? rawModules : {};
     return {
+      site: source.site !== false,
       fileleak: source.fileleak !== false,
       cert: source.cert !== false,
       url: source.url !== false,
@@ -13296,6 +13504,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       return fallbackPromptId;
     };
     return {
+      site: normalizeOne('site'),
       fileleak: normalizeOne('fileleak'),
       cert: normalizeOne('cert'),
       url: normalizeOne('url'),
@@ -14620,6 +14829,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                     <option value="ai_report_export">AI报告导出</option>
                     <option value="false_positive_review">误报复核</option>
                     <option value="scan_planner">扫描调度</option>
+                    <option value="ai_denoise_site">AI去噪-站点</option>
                     <option value="ai_denoise_fileleak">AI去噪-目录扫描</option>
                     <option value="ai_denoise_cert">AI去噪-SSL证书</option>
                     <option value="ai_denoise_url">AI去噪-URL信息</option>

@@ -88,7 +88,7 @@ test_ai_config_fields = ns.model(
 analyze_ai_denoise_fields = ns.model(
     'AnalyzeAiDenoise',
     {
-        'module_id': fields.String(required=True, description='模块ID（fileleak/cert/url/vuln/nuclei_result）'),
+        'module_id': fields.String(required=True, description='模块ID（site/fileleak/cert/url/vuln/nuclei_result）'),
         'items': fields.List(fields.Raw, required=True, description='待分析的数据行列表'),
         'prefer_ai': fields.Boolean(required=False, description='是否优先使用已配置模型（单条详情建议开启）'),
     },
@@ -455,6 +455,7 @@ AI_PROVIDER_PRESET_MAP = {item.get('id'): item for item in AI_PROVIDER_PRESETS}
 AI_PROVIDER_IDS = set(item.get('id') for item in AI_PROVIDER_PRESETS if item.get('id'))
 
 AI_DENOISE_MODULE_SCENE_MAP = {
+    'site': 'ai_denoise_site',
     'fileleak': 'ai_denoise_fileleak',
     'cert': 'ai_denoise_cert',
     'url': 'ai_denoise_url',
@@ -463,6 +464,7 @@ AI_DENOISE_MODULE_SCENE_MAP = {
 }
 
 AI_DENOISE_MODULE_LABEL_MAP = {
+    'site': '站点',
     'fileleak': '目录扫描',
     'cert': 'SSL证书',
     'url': 'URL信息',
@@ -503,6 +505,16 @@ def _default_ai_prompt_templates():
             'content': (
                 "你是安全误报复核助手。"
                 "请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': 'default_ai_denoise_site',
+            'name': '默认AI去噪-站点',
+            'scene': 'ai_denoise_site',
+            'content': (
+                "你是站点价值分析助手。请基于站点URL、标题、响应头、状态码与指纹信息，"
+                "输出正常/可疑/危险结论，并给出AI研判后的指纹结果、证据与处置建议。"
             ),
             'updated_at': '',
         },
@@ -1085,6 +1097,72 @@ def _normalize_string_list_value(value, max_items=6, max_item_len=180):
     return cleaned
 
 
+def _normalize_dialogue_role(value):
+    role = str(value or '').strip().lower()
+    if role in ('system', 'user', 'assistant', 'tool'):
+        return role
+    return 'assistant'
+
+
+def _normalize_dialogue_records(records, max_items=10, max_len=2600):
+    if not isinstance(records, list):
+        return []
+
+    normalized = []
+    for item in records:
+        if len(normalized) >= max_items:
+            break
+        if isinstance(item, dict):
+            role = _normalize_dialogue_role(item.get('role'))
+            content = _normalize_item_text(item.get('content') or item.get('message') or '', max_len)
+        else:
+            role = 'assistant'
+            content = _normalize_item_text(item, max_len)
+        if not content:
+            continue
+        normalized.append(
+            {
+                'role': role,
+                'content': content,
+            }
+        )
+    return normalized
+
+
+def _build_rule_dialogue_records(module_id, item, rule_result, note=''):
+    module_label = AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id
+    context = _build_ai_denoise_context(module_id, item)
+    assistant_lines = [
+        '最终结论：{}'.format(rule_result.get('display_text') or '-'),
+        '摘要：{}'.format(rule_result.get('summary') or '-'),
+    ]
+    evidence_items = _normalize_string_list_value(rule_result.get('evidence'), max_items=4, max_item_len=160)
+    if evidence_items:
+        assistant_lines.append('依据：{}'.format('；'.join(evidence_items)))
+    suggestion_items = _normalize_string_list_value(rule_result.get('suggestions'), max_items=4, max_item_len=160)
+    if suggestion_items:
+        assistant_lines.append('建议：{}'.format('；'.join(suggestion_items)))
+    if note:
+        assistant_lines.append('说明：{}'.format(_truncate_text(note, 180)))
+
+    return _normalize_dialogue_records(
+        [
+            {
+                'role': 'system',
+                'content': '站在安全运营视角，对“{}”进行去噪与价值研判。'.format(module_label),
+            },
+            {
+                'role': 'user',
+                'content': json.dumps(context, ensure_ascii=False),
+            },
+            {
+                'role': 'assistant',
+                'content': '\n'.join(assistant_lines),
+            },
+        ]
+    )
+
+
 def _normalize_item_text(value, max_length=AI_DENOISE_MAX_ITEM_TEXT_LEN):
     if value is None:
         return ''
@@ -1113,6 +1191,54 @@ def _extract_row_key(item, index=0):
                 if text:
                     return text
     return 'row_{}'.format(index + 1)
+
+
+def _extract_task_id_from_item(item):
+    if not isinstance(item, dict):
+        return ''
+    for key in ('task_id', '_task_id', 'taskId'):
+        value = item.get(key)
+        if isinstance(value, ObjectId):
+            return str(value)
+        if isinstance(value, (str, int, float)):
+            text = str(value).strip()
+            if text:
+                return text
+        if isinstance(value, dict):
+            oid = str(value.get('$oid') or value.get('oid') or value.get('_id') or '').strip()
+            if oid:
+                return oid
+    return ''
+
+
+def _resolve_task_ai_denoise_flag(task_id, cache_dict):
+    task_id_text = str(task_id or '').strip()
+    if not task_id_text:
+        return True
+    if task_id_text in cache_dict:
+        return cache_dict[task_id_text]
+
+    query_id = task_id_text
+    if ObjectId.is_valid(task_id_text):
+        query_id = ObjectId(task_id_text)
+
+    task_doc = utils.conn_db('task').find_one(
+        {'_id': query_id},
+        {'_id': 1, 'options.ai_denoise': 1}
+    )
+    if not isinstance(task_doc, dict):
+        cache_dict[task_id_text] = None
+        return None
+
+    options = task_doc.get('options') if isinstance(task_doc.get('options'), dict) else {}
+    if 'ai_denoise' not in options:
+        # 历史任务未包含该字段，按“旧资产未分析”处理。
+        cache_dict[task_id_text] = None
+        return None
+
+    enabled = bool(options.get('ai_denoise'))
+    cache_dict[task_id_text] = enabled
+    return enabled
 
 
 def _normalize_ai_denoise_result_level(value, default_value='safe'):
@@ -1164,6 +1290,9 @@ def _build_ai_denoise_display_text(module_id, result_level, risk_level='中', tr
     if module_id == 'fileleak':
         mapping = {'safe': '正常', 'suspicious': '可疑', 'danger': '危险'}
         return mapping.get(result_level, '正常')
+    if module_id == 'site':
+        mapping = {'safe': '正常', 'suspicious': '可疑', 'danger': '危险'}
+        return mapping.get(result_level, '正常')
     if module_id == 'url':
         mapping = {'safe': '安全', 'suspicious': '可疑', 'danger': '危险'}
         return mapping.get(result_level, '安全')
@@ -1203,6 +1332,154 @@ def _parse_datetime_text(value):
         return datetime.fromisoformat(normalized)
     except Exception:
         return None
+
+
+def _extract_site_finger_names(value):
+    if value is None:
+        return []
+
+    names = []
+    if isinstance(value, dict):
+        candidate_name = str(value.get('name') or value.get('finger') or '').strip()
+        if candidate_name:
+            names.append(candidate_name)
+        for nested_key in ('finger', 'fingers', 'items'):
+            nested_value = value.get(nested_key)
+            if isinstance(nested_value, list):
+                names.extend(_extract_site_finger_names(nested_value))
+    elif isinstance(value, list):
+        for item in value:
+            names.extend(_extract_site_finger_names(item))
+    elif isinstance(value, str):
+        raw_text = value.strip()
+        if not raw_text:
+            return []
+        parsed = None
+        if raw_text.startswith('{') or raw_text.startswith('['):
+            try:
+                parsed = json.loads(raw_text)
+            except Exception:
+                parsed = None
+        if parsed is not None:
+            names.extend(_extract_site_finger_names(parsed))
+        else:
+            for item in re.split(r'[\r\n,;/]+', raw_text):
+                text = str(item or '').strip()
+                if text and text not in ('-', 'null', 'None'):
+                    names.append(text)
+    else:
+        text = str(value).strip()
+        if text:
+            names.append(text)
+
+    cleaned = []
+    seen = set()
+    for item in names:
+        text = _truncate_text(str(item or '').strip(), 80)
+        if not text:
+            continue
+        normalized = text.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned.append(text)
+        if len(cleaned) >= 20:
+            break
+    return cleaned
+
+
+def _normalize_header_text(value):
+    if value is None:
+        return ''
+    if isinstance(value, dict):
+        lines = []
+        for key, item in value.items():
+            key_text = str(key or '').strip()
+            item_text = _normalize_item_text(item, 260)
+            if key_text and item_text:
+                lines.append('{}: {}'.format(key_text, item_text))
+        return '\n'.join(lines[:40])
+    return _normalize_item_text(value, 2000)
+
+
+def _rule_analyze_site_item(item):
+    site_url = _normalize_item_text(item.get('site') or item.get('url') or item.get('host'), 900)
+    title_text = _normalize_item_text(item.get('title'), 320)
+    header_text = _normalize_header_text(item.get('headers'))
+    finger_names = _extract_site_finger_names(item.get('finger'))
+    status_code = _safe_int_any(item.get('status_code') or item.get('status'), 0)
+
+    lower_title = title_text.lower()
+    lower_headers = header_text.lower()
+    lower_fingers = [name.lower() for name in finger_names]
+
+    high_value_title_keywords = (
+        'admin', '后台', '管理', 'console', 'dashboard', 'jenkins', 'grafana', 'kibana',
+        'swagger', 'phpinfo', 'index of', 'actuator'
+    )
+    high_value_header_keywords = (
+        'x-powered-by', 'server:', 'set-cookie', 'x-aspnet-version', 'x-generator'
+    )
+    high_value_finger_keywords = (
+        'wordpress', 'drupal', 'jenkins', 'grafana', 'phpmyadmin', 'elasticsearch',
+        'weblogic', 'struts', 'spring', 'tomcat', 'nginx', 'apache'
+    )
+
+    result_level = 'safe'
+    evidence = []
+    ai_finger_result = list(finger_names)
+
+    if status_code in (401, 403):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('站点返回鉴权状态码 {}，可能存在后台入口。'.format(status_code))
+
+    if status_code in (200, 201, 206):
+        if any(keyword in lower_title for keyword in high_value_title_keywords):
+            result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+            evidence.append('标题命中高价值资产特征（后台/组件/调试入口）。')
+
+    if any(keyword in lower_headers for keyword in high_value_header_keywords):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('响应头暴露技术栈特征，可用于后续攻击面研判。')
+
+    if any(any(keyword in finger for keyword in high_value_finger_keywords) for finger in lower_fingers):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('指纹命中高价值中间件或常见攻击面组件。')
+
+    if not finger_names:
+        evidence.append('未识别到稳定指纹，建议结合截图与源码二次确认。')
+    else:
+        evidence.append('识别到指纹 {} 个。'.format(len(finger_names)))
+
+    if not evidence:
+        evidence.append('未发现明显高价值站点特征。')
+
+    suggestions = []
+    if result_level == 'danger':
+        suggestions.extend([
+            '建议优先纳入人工复核，检查后台鉴权、默认口令与敏感接口暴露。',
+            '结合 PoC 扫描与手工验证确认可利用性后再推进修复闭环。',
+        ])
+    elif result_level == 'suspicious':
+        suggestions.extend([
+            '建议补充目录、URL、证书与端口信息交叉分析，提高价值判定准确率。',
+            '对命中组件持续关注版本与漏洞情报，必要时优先复测。',
+        ])
+    else:
+        suggestions.append('站点整体风险信号较弱，建议维持常规巡检与指纹更新。')
+
+    display_text = _build_ai_denoise_display_text('site', result_level)
+    summary = '站点价值分析结果：{}。站点：{}'.format(display_text, site_url or '-')
+    return {
+        'result_level': result_level,
+        'risk_level': '高' if result_level == 'danger' else ('中' if result_level == 'suspicious' else '低'),
+        'trust': '-',
+        'summary': summary,
+        'evidence': evidence[:8],
+        'suggestions': suggestions[:6],
+        'display_text': display_text,
+        'finger_result': ai_finger_result[:12],
+    }
 
 
 def _rule_analyze_fileleak_item(item):
@@ -1478,6 +1755,8 @@ def _rule_analyze_vuln_item(item, module_id='vuln'):
 
 
 def _build_ai_denoise_rule_result(module_id, item):
+    if module_id == 'site':
+        return _rule_analyze_site_item(item)
     if module_id == 'fileleak':
         return _rule_analyze_fileleak_item(item)
     if module_id == 'cert':
@@ -1544,6 +1823,14 @@ def _extract_json_object_from_text(raw_text):
 
 
 def _build_ai_denoise_context(module_id, item):
+    if module_id == 'site':
+        return {
+            'site': _normalize_item_text(item.get('site') or item.get('url') or item.get('host'), 1200),
+            'title': _normalize_item_text(item.get('title'), 420),
+            'status_code': _safe_int_any(item.get('status_code') or item.get('status'), 0),
+            'headers': _normalize_header_text(item.get('headers')),
+            'finger': _extract_site_finger_names(item.get('finger')),
+        }
     if module_id == 'fileleak':
         return {
             'url': _normalize_item_text(item.get('url'), 1200),
@@ -1600,8 +1887,15 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
     api_key = str(active_profile.get('api_key') or '').strip()
     model_name = str(active_profile.get('model') or '').strip()
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=8)
+    dialogue_records = []
     if not base_url or not api_key or not model_name:
-        return None, '模型配置不完整'
+        dialogue_records = _normalize_dialogue_records(
+            [
+                {'role': 'system', 'content': 'AI 去噪详情分析请求被拒绝。'},
+                {'role': 'assistant', 'content': '模型配置不完整，无法调用 AI。'},
+            ]
+        )
+        return None, '模型配置不完整', dialogue_records
 
     prompt_text = str(ai_prompt or '').strip()
     if not prompt_text:
@@ -1627,9 +1921,12 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                 'summary': '一句话结论',
                 'evidence': ['证据1', '证据2'],
                 'suggestions': ['建议1', '建议2'],
+                'finger_result': ['AI修正后的指纹1', 'AI修正后的指纹2'],
             },
         },
     }
+    system_content = '{}\n仅输出 JSON 对象，不要输出 Markdown 或解释文本。'.format(prompt_text)
+    user_content = json.dumps(user_payload, ensure_ascii=False)
     request_body = {
         'model': model_name,
         'temperature': min(max(_safe_float(active_profile.get('temperature'), 0.2, min_value=0.0), 0.0), 1.0),
@@ -1637,14 +1934,20 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
         'messages': [
             {
                 'role': 'system',
-                'content': '{}\n仅输出 JSON 对象，不要输出 Markdown 或解释文本。'.format(prompt_text),
+                'content': system_content,
             },
             {
                 'role': 'user',
-                'content': json.dumps(user_payload, ensure_ascii=False),
+                'content': user_content,
             },
         ],
     }
+    dialogue_records = _normalize_dialogue_records(
+        [
+            {'role': 'system', 'content': system_content},
+            {'role': 'user', 'content': user_content},
+        ]
+    )
     request_url = '{}/chat/completions'.format(base_url.rstrip('/'))
     headers = {
         'Authorization': 'Bearer {}'.format(api_key),
@@ -1668,19 +1971,47 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                     err_message = str(error_obj.get('message') or '').strip()
                 if not err_message:
                     err_message = str(payload.get('message') or '').strip()
-            return None, err_message or 'HTTP {}'.format(status_code)
+            message = err_message or 'HTTP {}'.format(status_code)
+            dialogue_records.extend(
+                _normalize_dialogue_records(
+                    [{'role': 'assistant', 'content': 'AI接口调用失败：{}'.format(message)}],
+                    max_items=2,
+                )
+            )
+            return None, message, dialogue_records
 
         choices = payload.get('choices', []) if isinstance(payload, dict) else []
         message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
         content_text = ''
         if isinstance(message_obj, dict):
             content_text = str(message_obj.get('content') or '').strip()
+        if content_text:
+            dialogue_records.extend(
+                _normalize_dialogue_records(
+                    [{'role': 'assistant', 'content': content_text}],
+                    max_items=2,
+                    max_len=3200,
+                )
+            )
         parsed = _extract_json_object_from_text(content_text)
         if not isinstance(parsed, dict):
-            return None, 'AI 返回格式不可解析'
-        return parsed, ''
+            dialogue_records.extend(
+                _normalize_dialogue_records(
+                    [{'role': 'assistant', 'content': 'AI 返回格式不可解析，回退规则分析。'}],
+                    max_items=2,
+                )
+            )
+            return None, 'AI 返回格式不可解析', dialogue_records
+        return parsed, '', dialogue_records
     except Exception as exc:
-        return None, str(exc)
+        message = str(exc)
+        dialogue_records.extend(
+            _normalize_dialogue_records(
+                [{'role': 'assistant', 'content': 'AI请求异常：{}'.format(_truncate_text(message, 240))}],
+                max_items=2,
+            )
+        )
+        return None, message, dialogue_records
 
 
 def _normalize_ai_denoise_output(module_id, ai_output, rule_result):
@@ -1718,6 +2049,17 @@ def _normalize_ai_denoise_output(module_id, ai_output, rule_result):
         merged['evidence'] = evidence
     if suggestions:
         merged['suggestions'] = suggestions
+
+    if module_id == 'site':
+        ai_finger_result = _normalize_string_list_value(
+            ai_output.get('finger_result') if ai_output.get('finger_result') is not None else ai_output.get('finger'),
+            max_items=12,
+            max_item_len=80
+        )
+        if ai_finger_result:
+            merged['finger_result'] = ai_finger_result
+        else:
+            merged['finger_result'] = _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80)
 
     merged['display_text'] = _build_ai_denoise_display_text(
         module_id,
@@ -1768,15 +2110,31 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
     # 列表批量分析默认走规则，详情场景（单条）按需尝试模型，避免列表页被外部接口阻塞。
     try_use_ai = bool(prefer_ai and ai_model_ready and ai_denoise_enable and module_enabled and len(normalized_items) <= 3)
     now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    task_flag_cache = {}
 
     results = []
     for index, item in enumerate(normalized_items):
         row_key = _extract_row_key(item, index)
         rule_result = _build_ai_denoise_rule_result(module_id, item)
         source = 'rule'
+        dialogue_records = _build_rule_dialogue_records(module_id, item, rule_result, note='当前为规则分析模式。')
+        task_id = _extract_task_id_from_item(item)
+        task_ai_denoise_flag = _resolve_task_ai_denoise_flag(task_id, task_flag_cache)
 
         if not ai_denoise_enable or not module_enabled:
             disabled_summary = 'AI 去噪功能已关闭，可在 AI 管理中开启后重试。'
+            dialogue_records = _normalize_dialogue_records(
+                [
+                    {
+                        'role': 'system',
+                        'content': '当前模块 AI 去噪未启用。',
+                    },
+                    {
+                        'role': 'assistant',
+                        'content': disabled_summary,
+                    },
+                ]
+            )
             results.append(
                 {
                     'row_key': row_key,
@@ -1792,13 +2150,102 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                     'source': 'disabled',
                     'prompt_id': prompt_id,
                     'analyzed_at': now_text,
+                    'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
+                    'dialogue_records': dialogue_records,
+                }
+            )
+            continue
+
+        if task_ai_denoise_flag is None:
+            summary_text = '当前资产来自旧任务（未启用 AI 去噪），统一标记为未分析。'
+            dialogue_records = _normalize_dialogue_records(
+                [
+                    {'role': 'system', 'content': '检测到旧任务资产，未具备 AI 去噪分析上下文。'},
+                    {'role': 'assistant', 'content': summary_text},
+                ]
+            )
+            results.append(
+                {
+                    'row_key': row_key,
+                    'module_id': module_id,
+                    'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+                    'result_level': 'disabled',
+                    'risk_level': '-',
+                    'trust': '-',
+                    'display_text': '未分析',
+                    'summary': summary_text,
+                    'evidence': ['该资产对应任务缺少 ai_denoise 选项（历史任务）。'],
+                    'suggestions': ['建议对该任务重新扫描并开启 AI 去噪分析。'],
+                    'source': 'disabled',
+                    'prompt_id': prompt_id,
+                    'analyzed_at': now_text,
+                    'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
+                    'dialogue_records': dialogue_records,
+                }
+            )
+            continue
+
+        if task_ai_denoise_flag is False:
+            summary_text = '该任务未开启 AI 去噪，当前资产标记为未分析。'
+            dialogue_records = _normalize_dialogue_records(
+                [
+                    {'role': 'system', 'content': '任务配置未开启 AI 去噪。'},
+                    {'role': 'assistant', 'content': summary_text},
+                ]
+            )
+            results.append(
+                {
+                    'row_key': row_key,
+                    'module_id': module_id,
+                    'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+                    'result_level': 'disabled',
+                    'risk_level': '-',
+                    'trust': '-',
+                    'display_text': '未分析',
+                    'summary': summary_text,
+                    'evidence': ['任务 options.ai_denoise 为关闭状态。'],
+                    'suggestions': ['重新创建任务并开启 AI 去噪分析后再查看。'],
+                    'source': 'disabled',
+                    'prompt_id': prompt_id,
+                    'analyzed_at': now_text,
+                    'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
+                    'dialogue_records': dialogue_records,
+                }
+            )
+            continue
+
+        if not ai_model_ready:
+            summary_text = 'AI 模型配置不完整（未配置可用 API Key/Model/BaseURL），当前标记为未分析。'
+            dialogue_records = _normalize_dialogue_records(
+                [
+                    {'role': 'system', 'content': 'AI 模型配置校验未通过。'},
+                    {'role': 'assistant', 'content': summary_text},
+                ]
+            )
+            results.append(
+                {
+                    'row_key': row_key,
+                    'module_id': module_id,
+                    'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+                    'result_level': 'disabled',
+                    'risk_level': '-',
+                    'trust': '-',
+                    'display_text': '未分析',
+                    'summary': summary_text,
+                    'evidence': ['AI 管理中缺少可用的 API Key / 模型 / 地址配置。'],
+                    'suggestions': ['请在 AI 管理完成模型配置并保存后重试。'],
+                    'source': 'disabled',
+                    'prompt_id': prompt_id,
+                    'analyzed_at': now_text,
+                    'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
+                    'dialogue_records': dialogue_records,
                 }
             )
             continue
 
         final_result = dict(rule_result)
         if try_use_ai:
-            ai_output, ai_error = _try_run_ai_denoise(
+            ai_output, ai_error, ai_dialogue_records = _try_run_ai_denoise(
                 module_id=module_id,
                 item=item,
                 ai_prompt=prompt_content,
@@ -1808,12 +2255,39 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
             if ai_output:
                 final_result = _normalize_ai_denoise_output(module_id, ai_output, rule_result)
                 source = 'ai'
+                dialogue_records = _normalize_dialogue_records(
+                    (ai_dialogue_records or []) + [
+                        {
+                            'role': 'assistant',
+                            'content': '最终结构化结论：{}'.format(final_result.get('display_text') or final_result.get('summary') or '已完成分析'),
+                        },
+                    ]
+                )
             else:
                 source = 'rule'
+                fallback_note = ''
                 if ai_error:
                     fallback_evidence = _normalize_string_list_value(final_result.get('evidence'), max_items=6)
                     fallback_evidence.insert(0, 'AI 调用失败，已回退规则分析：{}'.format(_truncate_text(ai_error, 120)))
                     final_result['evidence'] = fallback_evidence[:8]
+                    fallback_note = 'AI 调用失败，已自动回退规则分析：{}'.format(_truncate_text(ai_error, 160))
+                dialogue_records = _build_rule_dialogue_records(module_id, item, final_result, note=fallback_note or 'AI 未返回有效结构化内容，已回退规则分析。')
+                if ai_dialogue_records:
+                    dialogue_records = _normalize_dialogue_records(
+                        (ai_dialogue_records or []) + [
+                            {
+                                'role': 'assistant',
+                                'content': 'AI 结果不可用，回退规则结论：{}'.format(final_result.get('display_text') or final_result.get('summary') or '-'),
+                            },
+                        ]
+                    )
+        else:
+            fallback_note = ''
+            if prefer_ai and not ai_model_ready:
+                fallback_note = 'AI 模型配置不可用，已回退规则分析。'
+            elif not prefer_ai:
+                fallback_note = '当前为列表批量分析，默认使用规则模式避免阻塞页面。'
+            dialogue_records = _build_rule_dialogue_records(module_id, item, final_result, note=fallback_note)
 
         results.append(
             {
@@ -1839,6 +2313,8 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                 'cert_expire_at': final_result.get('cert_expire_at') or '',
                 'cert_expire_days': final_result.get('cert_expire_days'),
                 'analyzed_at': now_text,
+                'finger_result': _normalize_string_list_value(final_result.get('finger_result'), max_items=12, max_item_len=80),
+                'dialogue_records': dialogue_records,
             }
         )
 

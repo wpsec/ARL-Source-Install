@@ -157,12 +157,14 @@ AI:
   ACTIVE_PROMPT_ID: "default_ai_report"
   AI_DENOISE_ENABLE: true
   AI_DENOISE_MODULES:
+    site: true
     fileleak: true
     cert: true
     url: true
     vuln: true
     nuclei_result: true
   AI_DENOISE_PROMPT_IDS:
+    site: "default_ai_denoise_site"
     fileleak: "default_ai_denoise_fileleak"
     cert: "default_ai_denoise_cert"
     url: "default_ai_denoise_url"
@@ -178,6 +180,11 @@ AI:
       name: "默认误报复核模板"
       scene: "false_positive_review"
       content: "你是安全误报复核助手。请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。"
+      updated_at: ""
+    - id: "default_ai_denoise_site"
+      name: "默认AI去噪-站点"
+      scene: "ai_denoise_site"
+      content: "你是站点价值分析助手。请基于站点URL、标题、响应头、状态码与指纹信息，输出正常/可疑/危险结论，并给出AI研判后的指纹结果、证据与处置建议。"
       updated_at: ""
     - id: "default_ai_denoise_fileleak"
       name: "默认AI去噪-目录扫描"
