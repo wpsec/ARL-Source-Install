@@ -7660,6 +7660,8 @@ function TableModuleView({
         app_name: row?.app_name,
         target: row?.target,
         credential: row?.credential,
+        verify_data: row?.verify_data,
+        verify_obj: row?.verify_obj,
         save_date: row?.save_date,
         vuln_severity: row?.vuln_severity,
       };

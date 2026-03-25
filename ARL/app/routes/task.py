@@ -491,6 +491,8 @@ class DeleteTask(ARLResource):
         for task_id in task_id_list:
             # 删除任务记录
             utils.conn_db('task').delete_many({'_id': ObjectId(task_id)})
+            # AI 去噪结果与任务强关联，任务删除时一并清理。
+            utils.conn_db('ai_denoise_result').delete_many({'task_id': task_id})
             
             # 相关资产数据表列表
             table_list = ["cert", "domain", "fileleak","ip", "service",

@@ -655,8 +655,11 @@ def _should_skip_stale_task_message(action, data):
     elif action in [CeleryAction.GITHUB_TASK_TASK, CeleryAction.GITHUB_TASK_MONITOR]:
         collection = "github_task"
 
-    if not collection:
+    if not collection and action != CeleryAction.AI_DENOISE_TASK:
         return False
+
+    if action == CeleryAction.AI_DENOISE_TASK:
+        collection = "task"
 
     try:
         item = utils.conn_db(collection).find_one({"_id": ObjectId(task_id)}, {"status": 1})
@@ -677,6 +680,17 @@ def _should_skip_stale_task_message(action, data):
         return True
 
     status = str(item.get("status", "") or "").strip().lower()
+    if action == CeleryAction.AI_DENOISE_TASK:
+        # AI 去噪任务允许在主任务 done 后继续执行，仅拦截已停止/异常任务。
+        if status in {TaskStatus.STOP, TaskStatus.ERROR}:
+            logger.warning(
+                "skip ai_denoise task message collection:{} task_id:{} action:{} status:{}".format(
+                    collection, task_id, action, status
+                )
+            )
+            return True
+        return False
+
     if status in {TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR}:
         logger.warning(
             "skip stale queued task message collection:{} task_id:{} action:{} status:{}".format(
@@ -733,6 +747,7 @@ def run_task(options):
         CeleryAction.ASSET_SITE_UPDATE: asset_site_update,
         CeleryAction.ADD_ASSET_SITE_TASK: asset_site_add_task,
         CeleryAction.ASSET_WIH_UPDATE: asset_wih_update_task,
+        CeleryAction.AI_DENOISE_TASK: run_ai_denoise_task,
     }
     
     start_time = time.time()
@@ -882,6 +897,7 @@ def domain_task(options):
     
     # 执行域名扫描任务
     wrap_tasks.domain_task(target, task_id, task_options)
+    _enqueue_ai_denoise_task(task_id=task_id, task_options=task_options, trigger="domain_task_done")
 
 
 def ip_task(options):
@@ -904,6 +920,7 @@ def ip_task(options):
     task_options = options["options"]
     task_id = options["task_id"]
     wrap_tasks.ip_task(target, task_id, task_options)
+    _enqueue_ai_denoise_task(task_id=task_id, task_options=task_options, trigger="ip_task_done")
 
 
 def run_risk_cruising_task(options):
@@ -917,6 +934,80 @@ def run_risk_cruising_task(options):
     """
     task_id = options["task_id"]
     wrap_tasks.run_risk_cruising_task(task_id)
+    _enqueue_ai_denoise_task(
+        task_id=task_id,
+        task_options=options.get("options", {}),
+        trigger="risk_cruising_done",
+    )
+
+
+def _enqueue_ai_denoise_task(task_id, task_options, trigger="task_done"):
+    try:
+        task_id_text = str(task_id or "").strip()
+        if not task_id_text:
+            return
+
+        option_dict = task_options if isinstance(task_options, dict) else {}
+        if not bool(option_dict.get("ai_denoise", True)):
+            logger.info("skip enqueue ai_denoise task_id:{} reason:option_disabled".format(task_id_text))
+            return
+
+        query_id = ObjectId(task_id_text) if ObjectId.is_valid(task_id_text) else task_id_text
+        task_doc = utils.conn_db("task").find_one(
+            {"_id": query_id},
+            {"_id": 1, "status": 1, "ai_denoise_status.status": 1},
+        )
+        if not isinstance(task_doc, dict):
+            return
+
+        status = str(task_doc.get("status", "") or "").strip().lower()
+        if status in (TaskStatus.STOP, TaskStatus.ERROR):
+            logger.info("skip enqueue ai_denoise task_id:{} status:{}".format(task_id_text, status))
+            return
+
+        ai_status = task_doc.get("ai_denoise_status") if isinstance(task_doc.get("ai_denoise_status"), dict) else {}
+        ai_status_text = str(ai_status.get("status", "") or "").strip().lower()
+        if ai_status_text in ("queued", "running"):
+            logger.info("skip enqueue ai_denoise task_id:{} ai_status:{}".format(task_id_text, ai_status_text))
+            return
+
+        now_text = utils.curr_date()
+        utils.conn_db("task").update_one(
+            {"_id": query_id},
+            {
+                "$set": {
+                    "ai_denoise_status": {
+                        "status": "queued",
+                        "trigger": str(trigger or "task_done"),
+                        "queued_at": now_text,
+                        "updated_at": now_text,
+                    }
+                }
+            },
+        )
+        task_options_payload = {
+            "celery_action": CeleryAction.AI_DENOISE_TASK,
+            "data": {
+                "task_id": task_id_text,
+                "trigger": str(trigger or "task_done"),
+            },
+        }
+        arl_task_web.delay(options=task_options_payload)
+        logger.info("enqueue ai_denoise task_id:{} trigger:{}".format(task_id_text, trigger))
+    except Exception as exc:
+        logger.warning("enqueue ai_denoise failed task_id:{} trigger:{} err:{}".format(task_id, trigger, exc))
+
+
+def run_ai_denoise_task(options):
+    task_id = str(options.get("task_id", "") or "").strip()
+    trigger = str(options.get("trigger", "task_done") or "task_done").strip()
+    if not task_id:
+        return
+    try:
+        from app.services.ai_denoise_pipeline import run_task_ai_denoise_pipeline
+        run_task_ai_denoise_pipeline(task_id=task_id, trigger=trigger, force=False)
+    except Exception as exc:
+        logger.exception("run ai_denoise task failed task_id:{} err:{}".format(task_id, exc))
 
 
 def fofa_task(options):

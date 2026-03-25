@@ -183,6 +183,9 @@ class CeleryAction:
     """资产WIH更新任务"""
     ASSET_WIH_UPDATE = "asset_wih_update"
 
+    """扫描后 AI 去噪异步任务"""
+    AI_DENOISE_TASK = "ai_denoise_task"
+
 
 error_map = {
     'CeleryIdNotFound': {

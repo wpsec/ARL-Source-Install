@@ -474,12 +474,14 @@ AI_DENOISE_MODULE_LABEL_MAP = {
 
 AI_DENOISE_MAX_ITEMS = 120
 AI_DENOISE_MAX_ITEM_TEXT_LEN = 5000
+AI_DENOISE_RESULT_COLLECTION = 'ai_denoise_result'
 AI_DENOISE_RESULT_LEVEL_WEIGHT = {
     'disabled': -1,
     'safe': 0,
     'suspicious': 1,
     'danger': 2,
 }
+_AI_DENOISE_RESULT_INDEX_READY = False
 AI_USAGE_LOG_COLLECTION = 'ai_usage_log'
 AI_USAGE_LOG_MAX_LIMIT = 200
 AI_USAGE_SCENE_LABEL_MAP = {
@@ -1730,6 +1732,161 @@ def _extract_task_id_from_item(item):
     return ''
 
 
+def _extract_data_id_from_item(item):
+    if not isinstance(item, dict):
+        return ''
+    for key in ('_id', 'id', '_data_id'):
+        value = item.get(key)
+        if isinstance(value, ObjectId):
+            return str(value)
+        if isinstance(value, (str, int, float)):
+            text = str(value).strip()
+            if text:
+                return text
+        if isinstance(value, dict):
+            oid = str(value.get('$oid') or value.get('oid') or value.get('_id') or '').strip()
+            if oid:
+                return oid
+    return ''
+
+
+def _ensure_ai_denoise_result_indexes():
+    global _AI_DENOISE_RESULT_INDEX_READY
+    if _AI_DENOISE_RESULT_INDEX_READY:
+        return
+
+    coll = utils.conn_db(AI_DENOISE_RESULT_COLLECTION)
+    try:
+        coll.create_index(
+            [('task_id', 1), ('module_id', 1), ('row_key', 1)],
+            unique=True,
+            background=True,
+            name='uniq_task_module_row',
+        )
+    except Exception as exc:
+        logger.warning('create ai_denoise_result uniq index failed: %s', exc)
+    try:
+        coll.create_index(
+            [('task_id', 1), ('module_id', 1), ('updated_at', -1)],
+            background=True,
+            name='task_module_updated_at',
+        )
+    except Exception as exc:
+        logger.warning('create ai_denoise_result updated_at index failed: %s', exc)
+    _AI_DENOISE_RESULT_INDEX_READY = True
+
+
+def _load_ai_denoise_persisted_result(task_id, module_id, row_key, data_id=''):
+    task_id_text = str(task_id or '').strip()
+    module_id_text = str(module_id or '').strip()
+    row_key_text = str(row_key or '').strip()
+    data_id_text = str(data_id or '').strip()
+    if not task_id_text or not module_id_text:
+        return None
+
+    query = {
+        'task_id': task_id_text,
+        'module_id': module_id_text,
+    }
+    if row_key_text:
+        query['row_key'] = row_key_text
+    elif data_id_text:
+        query['data_id'] = data_id_text
+    else:
+        return None
+
+    result = utils.conn_db(AI_DENOISE_RESULT_COLLECTION).find_one(query)
+    if isinstance(result, dict):
+        return result
+
+    if row_key_text and data_id_text:
+        return utils.conn_db(AI_DENOISE_RESULT_COLLECTION).find_one(
+            {
+                'task_id': task_id_text,
+                'module_id': module_id_text,
+                'data_id': data_id_text,
+            }
+        )
+    return None
+
+
+def _build_ai_denoise_result_from_persisted(result_doc, row_key, module_id, prompt_id, prompt_name):
+    source_text = str(result_doc.get('source') or 'disabled').strip().lower()
+    if source_text not in ('ai', 'rule', 'disabled'):
+        source_text = 'disabled'
+
+    result_level = _normalize_ai_denoise_result_level(result_doc.get('result_level'), 'disabled')
+    raw_risk_level = str(result_doc.get('risk_level') or '').strip()
+    risk_level = '-' if not raw_risk_level or raw_risk_level == '-' else _normalize_risk_level_text(raw_risk_level)
+    trust_value = result_doc.get('trust')
+    if module_id in ('vuln', 'nuclei_result'):
+        trust_raw = str(trust_value or '').strip()
+        trust_text = '-' if not trust_raw or trust_raw == '-' else _normalize_trust_level_text(trust_raw)
+    else:
+        trust_text = _normalize_item_text(trust_value or '-', 32) or '-'
+    cert_expire_days = result_doc.get('cert_expire_days')
+
+    display_text = _normalize_item_text(
+        result_doc.get('display_text')
+        or _build_ai_denoise_display_text(
+            module_id,
+            result_level,
+            risk_level=risk_level,
+            trust=trust_text,
+            cert_expire_days=cert_expire_days,
+        ),
+        64,
+    ) or '未分析'
+
+    return {
+        'row_key': str(row_key or '').strip(),
+        'module_id': module_id,
+        'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+        'result_level': result_level,
+        'risk_level': risk_level,
+        'trust': trust_text,
+        'display_text': display_text,
+        'summary': _normalize_item_text(result_doc.get('summary'), 900),
+        'evidence': _normalize_string_list_value(result_doc.get('evidence'), max_items=8, max_item_len=280),
+        'suggestions': _normalize_string_list_value(result_doc.get('suggestions'), max_items=8, max_item_len=280),
+        'source': source_text,
+        'prompt_id': _normalize_item_text(result_doc.get('prompt_id') or prompt_id, 80),
+        'prompt_name': _normalize_item_text(result_doc.get('prompt_name') or prompt_name, 120),
+        'note': _normalize_item_text(result_doc.get('note') or '当前结果来自扫描阶段已落库数据。', 260),
+        'cert_expire_at': _normalize_item_text(result_doc.get('cert_expire_at'), 80),
+        'cert_expire_days': cert_expire_days,
+        'analyzed_at': _normalize_item_text(result_doc.get('analyzed_at'), 64),
+        'finger_result': _normalize_string_list_value(result_doc.get('finger_result'), max_items=12, max_item_len=80),
+        'dialogue_records': _normalize_dialogue_records(result_doc.get('dialogue_records') if isinstance(result_doc.get('dialogue_records'), list) else []),
+    }
+
+
+def _resolve_task_ai_denoise_runtime_status(task_id, cache_dict):
+    task_id_text = str(task_id or '').strip()
+    if not task_id_text:
+        return {'task_status': '', 'ai_status': ''}
+    if task_id_text in cache_dict:
+        return cache_dict[task_id_text]
+
+    query_id = task_id_text
+    if ObjectId.is_valid(task_id_text):
+        query_id = ObjectId(task_id_text)
+    task_doc = utils.conn_db('task').find_one(
+        {'_id': query_id},
+        {'_id': 1, 'status': 1, 'ai_denoise_status.status': 1}
+    )
+    task_status = ''
+    ai_status = ''
+    if isinstance(task_doc, dict):
+        task_status = str(task_doc.get('status') or '').strip().lower()
+        ai_status_obj = task_doc.get('ai_denoise_status') if isinstance(task_doc.get('ai_denoise_status'), dict) else {}
+        ai_status = str(ai_status_obj.get('status') or '').strip().lower()
+
+    info = {'task_status': task_status, 'ai_status': ai_status}
+    cache_dict[task_id_text] = info
+    return info
+
+
 def _resolve_task_ai_denoise_flag(task_id, cache_dict):
     task_id_text = str(task_id or '').strip()
     if not task_id_text:
@@ -2225,12 +2382,14 @@ def _rule_analyze_vuln_item(item, module_id='vuln'):
     elif risk_level == '低':
         result_level = 'safe'
 
-    trust = '可信'
-    lower_name = vul_name.lower()
-    if not verify_text or verify_text == '-':
-        if 'afrog 漏洞' in vul_name or '可能存在' in vul_name or 'suspected' in lower_name:
-            trust = '疑似误报'
-            result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+    plg_type_text = _normalize_item_text(item.get('plg_type') or item.get('type'), 120)
+    has_verify = bool(verify_text and verify_text != '-')
+
+    # 风险模块规则仅做兜底，不在规则层硬编码“可信”细分逻辑。
+    trust = '-'
+    if not has_verify:
+        trust = '疑似误报'
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
     if target_text in ('', '-'):
         trust = '疑似误报'
         result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
@@ -2239,10 +2398,12 @@ def _rule_analyze_vuln_item(item, module_id='vuln'):
         '风险名称：{}。'.format(vul_name or '-'),
         '风险等级：{}。'.format(risk_level),
     ]
-    if verify_text and verify_text != '-':
-        evidence.append('存在验证信息，长度 {}。'.format(len(verify_text)))
+    if plg_type_text and plg_type_text != '-':
+        evidence.append('风险类型：{}。'.format(plg_type_text))
+    if has_verify:
+        evidence.append('存在验证信息，长度 {}（当前规则仅占位，建议以 AI 结果为准）。'.format(len(verify_text)))
     else:
-        evidence.append('缺少明确验证信息。')
+        evidence.append('缺少明确验证信息（verify_data/credential 为空），已降权为疑似误报。')
 
     suggestions = []
     if trust == '疑似误报':
@@ -2252,8 +2413,8 @@ def _rule_analyze_vuln_item(item, module_id='vuln'):
         ])
     else:
         suggestions.extend([
-            '按风险等级优先修复并保留复现截图/请求响应证据。',
-            '修复后执行复测任务，确保风险状态可闭环。',
+            '建议以扫描阶段 AI 去噪结论作为主判断，规则结果仅作占位参考。',
+            '建议补充请求/响应证据后再复测，避免误报影响优先级。',
         ])
 
     display_text = _build_ai_denoise_display_text(module_id, result_level, risk_level=risk_level, trust=trust)
@@ -2441,7 +2602,7 @@ def _build_ai_denoise_context(module_id, item):
             'vul_name': _normalize_item_text(item.get('vul_name'), 260),
             'plg_type': _normalize_item_text(item.get('plg_type'), 120),
             'target': _normalize_item_text(item.get('target'), 420),
-            'credential': _normalize_item_text(item.get('credential'), 800),
+            'credential': _normalize_item_text(item.get('verify_data') or item.get('credential') or item.get('verify_obj'), 800),
             'save_date': _normalize_item_text(item.get('save_date'), 60),
         }
     if module_id == 'nuclei_result':
@@ -2799,7 +2960,7 @@ def _normalize_ai_denoise_items(raw_items):
     return items
 
 
-def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
+def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False, persisted_only=False):
     module_id = str(module_id or '').strip()
     normalized_items = _normalize_ai_denoise_items(items)
 
@@ -2832,9 +2993,20 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
     )
 
     # 列表批量分析默认走规则，详情场景（单条）按需尝试模型，避免列表页被外部接口阻塞。
-    try_use_ai = bool(prefer_ai and ai_model_ready and ai_denoise_enable and module_enabled and len(normalized_items) <= 3)
+    try_use_ai = bool(
+        (not persisted_only)
+        and prefer_ai
+        and ai_model_ready
+        and ai_denoise_enable
+        and module_enabled
+        and len(normalized_items) <= 3
+    )
     now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     task_flag_cache = {}
+    task_runtime_status_cache = {}
+
+    if persisted_only:
+        _ensure_ai_denoise_result_indexes()
 
     results = []
     for index, item in enumerate(normalized_items):
@@ -2943,6 +3115,65 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False):
                     'note': analysis_note,
                     'analyzed_at': now_text,
                     'finger_result': _normalize_string_list_value(rule_result.get('finger_result'), max_items=12, max_item_len=80),
+                    'dialogue_records': dialogue_records,
+                }
+            )
+            continue
+
+        if persisted_only:
+            data_id = _extract_data_id_from_item(item)
+            persisted_result = _load_ai_denoise_persisted_result(
+                task_id=task_id,
+                module_id=module_id,
+                row_key=row_key,
+                data_id=data_id,
+            )
+            if isinstance(persisted_result, dict):
+                results.append(
+                    _build_ai_denoise_result_from_persisted(
+                        result_doc=persisted_result,
+                        row_key=row_key,
+                        module_id=module_id,
+                        prompt_id=prompt_id,
+                        prompt_name=prompt_name,
+                    )
+                )
+                continue
+
+            runtime_status = _resolve_task_ai_denoise_runtime_status(task_id, task_runtime_status_cache)
+            ai_status = str(runtime_status.get('ai_status') or '').strip().lower()
+            in_progress = ai_status in ('queued', 'running')
+            summary_text = '扫描阶段 AI 去噪结果暂未落库，请稍后刷新。' if in_progress else '当前资产尚未完成 AI 去噪分析。'
+            display_text = '分析中' if in_progress else '未分析'
+            note_text = (
+                '此处仅展示扫描阶段已落库的分析结果，未落库记录不会触发实时 AI 调用。'
+                if not in_progress else
+                'AI 去噪后台任务正在运行，此处仅展示已落库结果。'
+            )
+            dialogue_records = _normalize_dialogue_records(
+                [
+                    {'role': 'system', 'content': '当前为落库结果只读模式。'},
+                    {'role': 'assistant', 'content': summary_text},
+                ]
+            )
+            results.append(
+                {
+                    'row_key': row_key,
+                    'module_id': module_id,
+                    'module_label': AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id,
+                    'result_level': 'disabled',
+                    'risk_level': '-',
+                    'trust': '-',
+                    'display_text': display_text,
+                    'summary': summary_text,
+                    'evidence': ['未检索到对应 row_key 的 AI 去噪落库记录。'],
+                    'suggestions': ['可等待后台 AI 去噪任务完成后刷新查看。'],
+                    'source': 'disabled',
+                    'prompt_id': prompt_id,
+                    'prompt_name': prompt_name,
+                    'note': note_text,
+                    'analyzed_at': '',
+                    'finger_result': [],
                     'dialogue_records': dialogue_records,
                 }
             )
@@ -5337,6 +5568,7 @@ class ApiConsoleAiDenoiseAnalyze(ARLResource):
                 module_id=module_id,
                 items=raw_items,
                 prefer_ai=prefer_ai,
+                persisted_only=True,
             )
             result['config_path'] = str(config_path)
             result['item_count'] = len(result.get('items') or [])
