@@ -173,6 +173,25 @@ const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
   nuclei_result: ['vuln_url'],
   wih: ['content', 'source', 'site'],
 };
+const TABLE_HEADER_FREEZE_MODULE_IDS = new Set([
+  'asset_site',
+  'asset_domain',
+  'asset_ip',
+  'asset_wih',
+  'site',
+  'domain',
+  'ip',
+  'cert',
+  'service',
+  'fileleak',
+  'url',
+  'vuln',
+  'nuclei_result',
+  'stat_finger',
+  'wih',
+  'waf_host',
+  'cip',
+]);
 const AI_ANALYSIS_SEARCH_OPTIONS: Array<{ label: string; value: string }> = [
   { label: '全部', value: '' },
   { label: '未分析', value: 'unanalyzed' },
@@ -228,6 +247,10 @@ function canToggleHyperlink(moduleId: string): boolean {
 function isHyperlinkEnabledColumn(moduleId: string, column: string): boolean {
   const columns = HYPERLINK_MODULE_COLUMN_MAP[moduleId];
   return Array.isArray(columns) && columns.includes(column);
+}
+
+function canToggleTableHeaderFreeze(moduleId: string): boolean {
+  return TABLE_HEADER_FREEZE_MODULE_IDS.has(moduleId);
 }
 
 function normalizeHttpHyperlink(value: any): string {
@@ -3009,6 +3032,93 @@ function formatDurationSecondsLabel(totalSeconds: number | null): string {
   if (minutes > 0) parts.push(`${minutes}分`);
   if (remainSeconds > 0 || parts.length === 0) parts.push(`${remainSeconds}秒`);
   return parts.join('');
+}
+
+const TASK_SERVICE_STAGE_LABEL_MAP: Record<string, string> = {
+  domain_brute: '域名爆破',
+  dns_query_plugin: '测绘引擎查询',
+  arl_search: 'ARL历史查询',
+  alt_dns: 'DNS字典智能生成',
+  ip_query_plugin: 'IP测绘补充',
+  port_scan: '端口扫描',
+  ssl_cert: 'SSL证书获取',
+  cert_query_plugin: '证书关联查询',
+  find_site: '站点识别',
+  site_spider: '站点爬虫',
+  site_capture: '站点截图',
+  file_leak: '目录扫描',
+  nuclei_scan: 'Nuclei扫描',
+  afrog: 'afrog扫描',
+  afrog_scan: 'afrog扫描',
+  web_info_hunter: 'WIH信息收集',
+  wih: 'WIH信息收集',
+  findvhost: 'Host碰撞',
+  search_engines: '搜索引擎调用',
+  npoc_service_detection: '服务识别',
+  poc_run: 'PoC扫描',
+  weak_brute: '弱口令爆破',
+  penetration_scan: '渗透测试',
+  cloud_security_scan: '云安全扫描',
+  waf_smart_skip: 'WAF智能跳过',
+  waf_observe: 'WAF识别观察',
+};
+
+function parseTaskServiceElapsedSeconds(rawValue: any): number | null {
+  if (rawValue === null || rawValue === undefined) return null;
+  if (typeof rawValue === 'number') {
+    return Number.isFinite(rawValue) && rawValue >= 0 ? rawValue : null;
+  }
+  const parsed = Number(String(rawValue).trim());
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+function getTaskServiceStageLabel(rawName: any, fallback: string): string {
+  const text = String(rawName ?? '').trim();
+  if (!text) return fallback;
+  const normalized = text.toLowerCase();
+  return TASK_SERVICE_STAGE_LABEL_MAP[normalized] || fieldLabelMap[normalized] || fieldLabelMap[text] || humanizeField(text);
+}
+
+function buildTaskServiceDurationSummary(row: any): {
+  entries: Array<{
+    stageName: string;
+    elapsedSeconds: number | null;
+    elapsedLabel: string;
+    detail: string;
+  }>;
+  totalDurationSeconds: number | null;
+  totalDurationLabel: string;
+  countedStageCount: number;
+} {
+  const serviceItems = Array.isArray(row?.service) ? row.service : [];
+  const entries = serviceItems.map((item, index) => {
+    const stageName = getTaskServiceStageLabel(
+      item?.name ?? item?.service_name ?? item?.stage ?? item,
+      `阶段${index + 1}`
+    );
+    const elapsedSeconds = parseTaskServiceElapsedSeconds(
+      item?.elapsed ?? item?.duration ?? item?.cost ?? item?.seconds
+    );
+    const detail = sanitizeUiMessage(String(item?.detail || item?.message || '').trim(), 240) || '';
+    return {
+      stageName,
+      elapsedSeconds,
+      elapsedLabel: elapsedSeconds === null ? '-' : formatDurationSecondsLabel(elapsedSeconds),
+      detail,
+    };
+  });
+  const entriesWithDuration = entries.filter((item) => item.elapsedSeconds !== null);
+  const totalDurationSeconds = entriesWithDuration.length > 0
+    ? entriesWithDuration.reduce((sum, item) => sum + Number(item.elapsedSeconds || 0), 0)
+    : null;
+
+  return {
+    entries,
+    totalDurationSeconds,
+    totalDurationLabel: formatDurationSecondsLabel(totalDurationSeconds),
+    countedStageCount: entriesWithDuration.length,
+  };
 }
 
 function buildTaskExecutionDurationInfo(row: any, nowMs: number): {
@@ -6259,6 +6369,7 @@ function TableModuleView({
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
   const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
   const [hyperlinkEnabled, setHyperlinkEnabled] = useState(false);
+  const [tableHeaderFreezeEnabled, setTableHeaderFreezeEnabled] = useState(canToggleTableHeaderFreeze(module.id));
   const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [aiDenoiseConfig, setAiDenoiseConfig] = useState<AiDenoiseConfigSnapshot>({
     enable: true,
@@ -6323,6 +6434,7 @@ function TableModuleView({
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
   const showHyperlinkToggle = canToggleHyperlink(module.id);
+  const showTableHeaderFreezeToggle = canToggleTableHeaderFreeze(module.id);
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
   const aiAnalysisFilterValue = String(searchForm?.ai_analysis ?? '').trim();
   const isTaskTerminalStatus = (status: any) => ['done', 'stop', 'error'].includes(String(status || '').toLowerCase());
@@ -6542,6 +6654,7 @@ function TableModuleView({
     setTaskStopAndDeleteLoading(false);
     setTaskCompactMode(true);
     setHyperlinkEnabled(false);
+    setTableHeaderFreezeEnabled(canToggleTableHeaderFreeze(module.id));
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
     setAiDenoiseResultMap({});
@@ -7588,68 +7701,6 @@ function TableModuleView({
     token,
   ]);
 
-  const taskDurationHoverSummary = useMemo(() => {
-    if (module.id !== 'task') {
-      return {
-        detailsByKey: {} as Record<string, {
-          taskId: string;
-          taskName: string;
-          startText: string;
-          endText: string;
-          durationSeconds: number | null;
-          durationLabel: string;
-        }>,
-        allTaskLines: [] as string[],
-        totalDurationLabel: '-',
-        averageDurationLabel: '-',
-        countedTaskCount: 0,
-      };
-    }
-
-    const nowMs = Date.now();
-    const detailEntries = displayRows.map((taskRow, index) => {
-      const taskId = getRowId(taskRow);
-      const fallbackTaskName = `任务${(page - 1) * size + index + 1}`;
-      const taskName = sanitizeUiMessage(String(taskRow?.name || ''), 120) || fallbackTaskName;
-      const hoverKey = taskId || `task-status-row-${page}-${index}`;
-      const durationInfo = buildTaskExecutionDurationInfo(taskRow, nowMs);
-      return {
-        hoverKey,
-        taskId: taskId || '-',
-        taskName,
-        ...durationInfo,
-      };
-    });
-
-    const detailsByKey: Record<string, {
-      taskId: string;
-      taskName: string;
-      startText: string;
-      endText: string;
-      durationSeconds: number | null;
-      durationLabel: string;
-    }> = {};
-    detailEntries.forEach((item) => {
-      detailsByKey[item.hoverKey] = item;
-    });
-
-    const allTaskLines = detailEntries.map(
-      (item, index) => `${index + 1}. ${item.taskName} [${item.taskId}]：${item.durationLabel}`
-    );
-    const durationEntries = detailEntries.filter((item) => item.durationSeconds !== null);
-    const totalDurationSeconds = durationEntries.reduce((sum, item) => sum + Number(item.durationSeconds || 0), 0);
-    const averageDurationSeconds = durationEntries.length > 0
-      ? Math.floor(totalDurationSeconds / durationEntries.length)
-      : null;
-
-    return {
-      detailsByKey,
-      allTaskLines,
-      totalDurationLabel: formatDurationSecondsLabel(totalDurationSeconds),
-      averageDurationLabel: formatDurationSecondsLabel(averageDurationSeconds),
-      countedTaskCount: durationEntries.length,
-    };
-  }, [displayRows, getRowId, module.id, page, size]);
   const showIndexColumn = Boolean(module.showIndex);
   const getColumnLabel = (column: string) => module.columnLabels?.[column] || humanizeField(column);
   const isColumnSortable = useCallback((column: string) => {
@@ -8903,6 +8954,20 @@ function TableModuleView({
                   超链接
                 </button>
               ) : null}
+              {showTableHeaderFreezeToggle ? (
+                <button
+                  type="button"
+                  onClick={() => setTableHeaderFreezeEnabled((prev) => !prev)}
+                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
+                    tableHeaderFreezeEnabled
+                      ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                      : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                  }`}
+                  title={tableHeaderFreezeEnabled ? '首行冻结已开启，点击关闭' : '首行冻结已关闭，点击开启'}
+                >
+                  首行冻结
+                </button>
+              ) : null}
               {module.exportPath && module.id !== 'task' && module.id !== 'asset_scope' ? (
                 <button
                   onClick={() => void runExport()}
@@ -9029,6 +9094,20 @@ function TableModuleView({
                 超链接
               </button>
             ) : null}
+            {showTableHeaderFreezeToggle ? (
+              <button
+                type="button"
+                onClick={() => setTableHeaderFreezeEnabled((prev) => !prev)}
+                className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
+                  tableHeaderFreezeEnabled
+                    ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                    : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                }`}
+                title={tableHeaderFreezeEnabled ? '首行冻结已开启，点击关闭' : '首行冻结已关闭，点击开启'}
+              >
+                首行冻结
+              </button>
+            ) : null}
           </div>
         )}
 
@@ -9108,11 +9187,11 @@ function TableModuleView({
 
       {hasList ? (
         <div className="bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
-          <div className="overflow-auto">
+          <div className={tableHeaderFreezeEnabled ? 'overflow-auto max-h-[72vh]' : 'overflow-auto'}>
             <table className="w-full border-collapse text-sm md:text-[15px]">
               <thead className="bg-brand-bg/40 border-b border-brand-border">
                 <tr>
-                  <th className="px-4 py-3 w-12 text-center">
+                  <th className={`px-4 py-3 w-12 text-center ${tableHeaderFreezeEnabled ? 'sticky top-0 z-20 bg-brand-bg/90 backdrop-blur' : ''}`}>
                     <input
                       type="checkbox"
                       checked={selectAllChecked}
@@ -9130,13 +9209,16 @@ function TableModuleView({
                     />
                   </th>
                   {showIndexColumn ? (
-                    <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">序号</th>
+                    <th className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${tableHeaderFreezeEnabled ? 'sticky top-0 z-20 bg-brand-bg/90 backdrop-blur' : ''}`}>序号</th>
                   ) : null}
                   {columns.map((column) => {
                     const sortable = isColumnSortable(column);
                     const direction = getColumnSortDirection(column);
                     return (
-                      <th key={column} className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">
+                      <th
+                        key={column}
+                        className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${tableHeaderFreezeEnabled ? 'sticky top-0 z-20 bg-brand-bg/90 backdrop-blur' : ''}`}
+                      >
                         {sortable ? (
                           <button
                             type="button"
@@ -9162,7 +9244,7 @@ function TableModuleView({
                     );
                   })}
                   {hasRowOperate ? (
-                    <th className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>操作</th>
+                    <th className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass} ${tableHeaderFreezeEnabled ? 'sticky top-0 z-20 bg-brand-bg/90 backdrop-blur' : ''}`}>操作</th>
                   ) : null}
                 </tr>
               </thead>
@@ -9174,7 +9256,6 @@ function TableModuleView({
                   const scheduleTargetExpandKey = id || `task-schedule-row-${page}-${rowIndex}`;
                   const taskOptionExpandKey = id || `task-option-row-${page}-${rowIndex}`;
                   const siteFingerExpandKey = id || `site-finger-row-${page}-${rowIndex}`;
-                  const taskStatusHoverKey = id || `task-status-row-${page}-${rowIndex}`;
 
                   return (
                     <tr key={id || Math.random()} className="border-b border-brand-border/60 hover:bg-white/5 transition">
@@ -9503,10 +9584,11 @@ function TableModuleView({
                         if (module.id === 'task' && column === 'status') {
                           const rawStatus = String(row?.status || '').trim().toLowerCase();
                           const statusText = formatModuleCellValue(module.id, column, row);
-                          const durationDetail = taskDurationHoverSummary.detailsByKey[taskStatusHoverKey];
-                          const currentDurationLabel = durationDetail?.durationLabel || '-';
-                          const currentStartText = durationDetail?.startText || '-';
-                          const currentEndText = durationDetail?.endText || '-';
+                          const durationDetail = buildTaskExecutionDurationInfo(row, Date.now());
+                          const taskServiceDuration = buildTaskServiceDurationSummary(row);
+                          const currentDurationLabel = durationDetail.durationLabel || '-';
+                          const currentStartText = durationDetail.startText || '-';
+                          const currentEndText = durationDetail.endText || '-';
                           const statusNode = rawStatus === 'error' ? (
                             <button
                               type="button"
@@ -9525,28 +9607,39 @@ function TableModuleView({
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
                               <div className="group relative inline-flex items-center justify-center">
                                 {statusNode}
-                                <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 mt-2 w-[420px] max-w-[82vw] -translate-x-1/2 rounded-xl border border-brand-border bg-brand-card/95 p-3 text-left opacity-0 shadow-2xl backdrop-blur-xl transition duration-150 group-hover:visible group-hover:opacity-100">
-                                  <div className="text-xs font-black tracking-wide text-brand-text">任务执行时间概览</div>
-                                  <div className="mt-2 rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
-                                    <div className="text-[11px] text-brand-text-muted">当前任务执行时长</div>
-                                    <div className="mt-1 text-sm font-semibold text-brand-text">{currentDurationLabel}</div>
-                                    <div className="mt-1 text-[11px] text-brand-text-muted">开始：{currentStartText}</div>
-                                    <div className="text-[11px] text-brand-text-muted">结束：{currentEndText}</div>
-                                  </div>
-                                  <div className="mt-2 text-[11px] text-brand-text-muted">
-                                    当前页任务共 {taskDurationHoverSummary.allTaskLines.length} 个，已统计 {taskDurationHoverSummary.countedTaskCount} 个可计算时长任务
-                                  </div>
-                                  <div className="text-[11px] text-brand-text-muted">
-                                    总时长：{taskDurationHoverSummary.totalDurationLabel} | 平均：{taskDurationHoverSummary.averageDurationLabel}
-                                  </div>
-                                  <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-brand-border bg-brand-bg/40 p-2 text-[11px] leading-relaxed text-brand-text">
-                                    {taskDurationHoverSummary.allTaskLines.length > 0 ? (
-                                      taskDurationHoverSummary.allTaskLines.map((line, lineIndex) => (
-                                        <div key={`${lineIndex}-${line}`} className="font-mono break-all">{line}</div>
-                                      ))
-                                    ) : (
-                                      <div className="text-brand-text-muted">暂无任务执行时间数据</div>
-                                    )}
+                                <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[420px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
+                                  <div className="rounded-xl border border-brand-border bg-brand-card/95 p-3 text-left shadow-2xl backdrop-blur-xl">
+                                    <div className="text-xs font-black tracking-wide text-brand-text">任务执行时间概览</div>
+                                    <div className="mt-2 rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
+                                      <div className="text-[11px] text-brand-text-muted">当前任务执行时长</div>
+                                      <div className="mt-1 text-sm font-semibold text-brand-text">{currentDurationLabel}</div>
+                                      <div className="mt-1 text-[11px] text-brand-text-muted">开始：{currentStartText}</div>
+                                      <div className="text-[11px] text-brand-text-muted">结束：{currentEndText}</div>
+                                    </div>
+                                    <div className="mt-2 text-[11px] text-brand-text-muted">
+                                      已记录子任务阶段 {taskServiceDuration.entries.length} 个，可统计耗时 {taskServiceDuration.countedStageCount} 个
+                                    </div>
+                                    <div className="text-[11px] text-brand-text-muted">
+                                      子任务累计耗时：{taskServiceDuration.totalDurationLabel}
+                                    </div>
+                                    <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-brand-border bg-brand-bg/40 p-2 text-[11px] leading-relaxed text-brand-text">
+                                      {taskServiceDuration.entries.length > 0 ? (
+                                        taskServiceDuration.entries.map((entry, lineIndex) => (
+                                          <React.Fragment key={`${lineIndex}-${entry.stageName}`}>
+                                            <div className="font-mono break-all">
+                                              {`${lineIndex + 1}. ${entry.stageName}：${entry.elapsedLabel}`}
+                                            </div>
+                                            {entry.detail ? (
+                                              <div className="pl-4 text-brand-text-muted break-all">
+                                                {entry.detail}
+                                              </div>
+                                            ) : null}
+                                          </React.Fragment>
+                                        ))
+                                      ) : (
+                                        <div className="text-brand-text-muted">暂无该任务子任务执行时间数据</div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
