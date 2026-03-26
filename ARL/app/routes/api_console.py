@@ -430,7 +430,7 @@ AI_PROVIDER_PRESETS = [
     },
     {
         'id': 'openai',
-        'label': 'OpenAI',
+        'label': 'OpenAI-GPT',
         'base_url': 'https://api.openai.com/v1',
         'default_model': 'gpt-4o-mini',
     },
