@@ -13997,10 +13997,35 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   }, [form.ai_denoise_prompt_ids, form.prompt_templates]);
 
   const isActionBusy = loading || saving || testing;
-  const aiControlMaxWidthClass = 'xl:max-w-[360px]';
-  const aiInputClass = `${CONSOLE_INPUT_CLASS} ${aiControlMaxWidthClass}`;
-  const aiInputMonoClass = `${CONSOLE_INPUT_MONO_CLASS} ${aiControlMaxWidthClass}`;
-  const aiSelectWrapClass = `relative ${aiControlMaxWidthClass}`;
+  const aiInputClass = CONSOLE_INPUT_CLASS;
+  const aiInputMonoClass = CONSOLE_INPUT_MONO_CLASS;
+  const aiSelectWrapClass = 'relative w-full';
+  const aiUploadFilenameClass =
+    'flex-1 h-10 rounded-xl border border-brand-border bg-brand-bg px-3 text-sm text-brand-text-muted flex items-center truncate';
+
+  const clearSopUploadSelection = useCallback(() => {
+    setSopUploadFile(null);
+    if (sopUploadInputRef.current) {
+      sopUploadInputRef.current.value = '';
+    }
+  }, []);
+
+  const handleSopFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setSopUploadFile(null);
+      return;
+    }
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith('.yaml') && !lowerName.endsWith('.yml')) {
+      setError('SOP 文件仅支持 .yaml/.yml');
+      setSopUploadFile(null);
+      event.currentTarget.value = '';
+      return;
+    }
+    setSopUploadFile(file);
+    setError('');
+  }, []);
 
   const resetSensitiveState = useCallback(() => {
     setSensitiveVisible(false);
@@ -14332,6 +14357,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [aiTestDialogOpen, compatDialogOpen, showRestartModal, usageLogDetail]);
 
+  useEffect(() => {
+    clearSopUploadSelection();
+  }, [clearSopUploadSelection, sopUploadModuleId]);
+
   const handleProviderChange = (nextProvider: string) => {
     const providerId = normalizeProviderId(nextProvider);
     setForm((prev) => {
@@ -14540,10 +14569,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setSuccess(`SOP 上传成功：${moduleLabel}${sopFilePath ? `（${sopFilePath}）` : ''}`);
       setShowRestartModal(data?.runtime_refreshed === false);
 
-      setSopUploadFile(null);
-      if (sopUploadInputRef.current) {
-        sopUploadInputRef.current.value = '';
-      }
+      clearSopUploadSelection();
     } catch (err: any) {
       setError(err?.message || 'SOP 上传失败');
     } finally {
@@ -14960,11 +14986,67 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       </div>
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-black tracking-wide text-brand-text">OpenAI 兼容接口管理</div>
+          <button
+            type="button"
+            onClick={() => {
+              setCompatDraft({ name: '', base_url: '', model: '' });
+              setCompatDialogOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+          >
+            添加OpenAI兼容接口
+          </button>
+        </div>
+        <div className="text-xs text-brand-text-muted">
+          可新增第三方 OpenAI 兼容网关。保存后会写入配置，供提供方选择 `OpenAI 兼容接口` 时快速套用。
+        </div>
+        {form.custom_compat_providers.length > 0 ? (
+          <div className="space-y-2">
+            {form.custom_compat_providers.map((item) => (
+              <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold break-all">{item.name}</div>
+                    <div className="text-xs text-brand-text-muted font-mono break-all mt-1">
+                      {item.base_url} | {item.model || '-'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => applyCompatProvider(item.id)}
+                      className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                    >
+                      套用
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeCompatProvider(item.id)}
+                      className="px-3 py-1.5 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs text-brand-text-muted">暂无自定义兼容接口。</div>
+        )}
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
         <div className="text-xs font-black tracking-wide text-brand-text">模型与对话配置</div>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-5 gap-y-4 items-start">
+        <div className="text-[11px] text-brand-text-muted -mt-1">
+          建议先选「当前生效模型」，再调整连接参数与对话参数；右侧模型配置管理用于新增/切换备用模型。
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">AI能力开关</label>
-            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} ${aiControlMaxWidthClass}`}>
+            <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
               <input
                 type="checkbox"
                 checked={form.enable}
@@ -15029,7 +15111,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 xl:col-span-2">
             <label htmlFor="ai-api-key" className="text-xs font-bold text-brand-text-muted block">
               API Key
             </label>
@@ -15059,7 +15141,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
             ) : null}
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 xl:col-span-2">
             <label htmlFor="ai-base-url" className="text-xs font-bold text-brand-text-muted block">
               Base URL
             </label>
@@ -15189,7 +15271,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               className={aiInputClass}
             />
           </div>
-          <div className="space-y-2 xl:col-span-2">
+          <div className="space-y-2 xl:col-span-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-brand-text-muted block">
                 系统提示词（高级可选）
@@ -15215,7 +15297,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               />
             ) : null}
           </div>
-          <div className="space-y-2 xl:col-span-2">
+          <div className="space-y-2 xl:col-span-3">
             <div className="text-xs font-bold text-brand-text-muted">模型配置管理</div>
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3">
               <input
@@ -15285,59 +15367,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">OpenAI 兼容接口管理</div>
-          <button
-            type="button"
-            onClick={() => {
-              setCompatDraft({ name: '', base_url: '', model: '' });
-              setCompatDialogOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
-          >
-            添加OpenAI兼容接口
-          </button>
-        </div>
-        <div className="text-xs text-brand-text-muted">
-          可新增第三方 OpenAI 兼容网关。保存后会写入配置，供提供方选择 `OpenAI 兼容接口` 时快速套用。
-        </div>
-        {form.custom_compat_providers.length > 0 ? (
-          <div className="space-y-2">
-            {form.custom_compat_providers.map((item) => (
-              <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
-                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold break-all">{item.name}</div>
-                    <div className="text-xs text-brand-text-muted font-mono break-all mt-1">
-                      {item.base_url} | {item.model || '-'}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => applyCompatProvider(item.id)}
-                      className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
-                    >
-                      套用
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeCompatProvider(item.id)}
-                      className="px-3 py-1.5 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-xs text-brand-text-muted">暂无自定义兼容接口。</div>
-        )}
-      </div>
-
-      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-black tracking-wide text-brand-text">AI功能开关配置</div>
           <div className="flex flex-wrap items-center gap-2">
             <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
@@ -15402,44 +15431,70 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         <div className="text-xs text-brand-text-muted">
           提示词管理已改为 SOP 管理。仅支持上传 `.yaml/.yml` SOP 文件，不支持页面内在线编辑。内置模块为：站点、目录扫描、SSL证书、URL信息、风险、PoC风险。
         </div>
-        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_auto] gap-3 items-center">
-          <div className="relative">
-            <select
-              value={sopUploadModuleId}
-              onChange={(event) => setSopUploadModuleId(event.target.value as AiDenoiseModuleId)}
-              className={CONSOLE_SELECT_CLASS}
-              disabled={sopUploading}
-            >
-              {aiDenoiseModuleConfigs.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_auto] gap-3 items-end">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-brand-text-muted block">目标模块</label>
+            <div className="relative">
+              <select
+                value={sopUploadModuleId}
+                onChange={(event) => setSopUploadModuleId(event.target.value as AiDenoiseModuleId)}
+                className={CONSOLE_SELECT_CLASS}
+                disabled={sopUploading}
+              >
+                {aiDenoiseModuleConfigs.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="space-y-2">
+            <label htmlFor="ai-sop-upload-input" className="text-xs font-bold text-brand-text-muted block">
+              选择SOP文件（.yaml/.yml）
+            </label>
             <input
+              id="ai-sop-upload-input"
               ref={sopUploadInputRef}
               type="file"
               accept=".yaml,.yml"
-              onChange={(event) => setSopUploadFile(event.target.files?.[0] || null)}
-              className={CONSOLE_FILE_INPUT_CLASS}
+              className="hidden"
+              onClick={(event) => {
+                event.currentTarget.value = '';
+              }}
+              onChange={handleSopFileChange}
               disabled={sopUploading}
             />
+            <div className="flex flex-col lg:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() => sopUploadInputRef.current?.click()}
+                className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center disabled:opacity-60"
+                disabled={sopUploading}
+              >
+                选择文件
+              </button>
+              <div className={aiUploadFilenameClass}>{sopUploadFile?.name || '未选择文件'}</div>
+              <button
+                type="button"
+                onClick={clearSopUploadSelection}
+                className="px-3 py-2 h-10 rounded-xl border border-brand-border text-xs font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition disabled:opacity-60"
+                disabled={sopUploading || !sopUploadFile}
+              >
+                清空
+              </button>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => void uploadAiSop()}
-            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
             disabled={sopUploading}
           >
             <Upload className={`w-4 h-4 ${sopUploading ? 'animate-pulse' : ''}`} />
             {sopUploading ? '上传中...' : '上传SOP'}
           </button>
-        </div>
-        <div className="text-[11px] text-brand-text-muted">
-          {sopUploadFile ? `已选择：${sopUploadFile.name}` : '未选择文件'}
         </div>
 
         <div className="space-y-2">
