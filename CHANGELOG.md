@@ -3,12 +3,12 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-26（v4.3.0 ~ v4.3.8）
+## 2026-03-26（v4.3.0 ~ v4.3.9）
 
-- `[v4.3.8]` 运行配置增量补齐能力落地：新增 `ARL/app/tools/sync_runtime_config.py`，用于在升级后将 `config-docker.yaml` 的新增键自动补齐到运行配置（容器内 `/code/app/config.yaml`，宿主机 `config-runtime.yaml`）；补齐策略为“只补缺失不覆盖用户值”，并支持递归字典、`list[dict{id}]` 按 `id` 增量补齐、文件锁与可选备份
-- `[v4.3.8]` 启动链路接入自动补齐：`web/worker/scheduler` 启动前统一尝试执行运行配置补齐，减少跨主机升级后因 `config-runtime.yaml` 缺少新键导致的新功能不可用问题
-- `[v4.3.8]` 快速升级流程增强：`scripts/quick-build.sh` 在确保运行配置文件存在后新增模板差量同步步骤并更新帮助文案，实现 `quick-build` 一次操作自动补齐配置
-- `[v4.3.8]` 运维与文案优化：新增仓库根目录 `stop.sh` 一键停机脚本（执行 `docker compose down --remove-orphans`，保留数据卷）；前端“配置管理/钉钉集成”文案同步修正为“写入运行配置”，避免误导为写入模板文件
+- `[v4.3.9]` 运行配置增量补齐能力落地：新增 `ARL/app/tools/sync_runtime_config.py`，用于在升级后将 `config-docker.yaml` 的新增键自动补齐到运行配置（容器内 `/code/app/config.yaml`，宿主机 `config-runtime.yaml`）；补齐策略为“只补缺失不覆盖用户值”，并支持递归字典、`list[dict{id}]` 按 `id` 增量补齐、文件锁与可选备份
+- `[v4.3.9]` 启动链路接入自动补齐：`web/worker/scheduler` 启动前统一尝试执行运行配置补齐，减少跨主机升级后因 `config-runtime.yaml` 缺少新键导致的新功能不可用问题
+- `[v4.3.9]` 快速升级流程增强：`scripts/quick-build.sh` 在确保运行配置文件存在后新增模板差量同步步骤并更新帮助文案，实现 `quick-build` 一次操作自动补齐配置
+- `[v4.3.9]` 运维与文案优化：新增仓库根目录 `stop.sh` 一键停机脚本（执行 `docker compose down --remove-orphans`，保留数据卷）；前端“配置管理/钉钉集成”文案同步修正为“写入运行配置”，避免误导为写入模板文件
 
 - `[v4.3.5]` AI 配置改为 SOP 文件化：`config-docker.yaml` 中默认 `PROMPT_TEMPLATES` 由内联 `content` 切换为 `file` 引用（`ai/sop/*.yaml`），并新增 `ARL/docker/ai/sop/` 内置模板目录（`AI报告/误报复核/站点/目录扫描/SSL证书/URL信息/风险/PoC风险`）
 - `[v4.3.5]` 后端新增 SOP 文件读写与安全校验：`api_console` 增加提示词文件路径解析、项目目录越界拦截、YAML 解析与落盘能力；保存 AI 配置时优先把模板内容回写到对应 SOP 文件，配置中保留模板元信息与文件引用，兼容历史仅 `content` 模式
