@@ -2039,7 +2039,7 @@ const modules: ModuleConfig[] = [
   {
     id: 'ai_console',
     label: 'AI管理',
-    description: '管理AI模型、提示词模板、连通性测试与AI报告配置',
+    description: '管理AI模型、SOP模板、连通性测试与AI报告配置',
     group: '系统集成',
     icon: Sparkles,
   },
@@ -10617,7 +10617,7 @@ function TableModuleView({
               ) : null}
               {aiDenoiseDetail.analysis.prompt_name || aiDenoiseDetail.analysis.prompt_id ? (
                 <div className="text-xs text-brand-text-muted">
-                  使用提示词：{aiDenoiseDetail.analysis.prompt_name || aiDenoiseDetail.analysis.prompt_id}
+                  使用SOP：{aiDenoiseDetail.analysis.prompt_name || aiDenoiseDetail.analysis.prompt_id}
                 </div>
               ) : null}
 
@@ -13482,6 +13482,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     scene: string;
     content: string;
     updated_at: string;
+    file?: string;
   };
 
   type AiModelProfile = {
@@ -13598,6 +13599,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       content:
         '你是互联网资产自动化收集系统的安全分析助手。请基于输入数据输出结构化研判：任务概览、关键资产、风险聚类、疑似误报、优先修复建议、复测建议。要求结论可执行、避免夸大风险、避免输出不存在的数据。',
       updated_at: '',
+      file: 'ai/sop/default_ai_report.yaml',
     },
     {
       id: 'default_fp_review',
@@ -13606,6 +13608,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       content:
         '你是安全误报复核助手。请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。',
       updated_at: '',
+      file: 'ai/sop/default_fp_review.yaml',
     },
     {
       id: 'default_ai_denoise_site',
@@ -13614,6 +13617,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       content:
         '你是渗透测试前置研判助手。请基于站点URL、标题、响应头、状态码与指纹信息，判断该站点是否值得优先进入渗透测试，并输出：1) 正常/可疑/危险结论；2) 最可能真实的技术栈/指纹（过滤明显误报）；3) 可直接执行的验证建议（如目录探测、认证边界测试、WAF绕过前置检查）。禁止编造不存在的信息。',
       updated_at: '',
+      file: 'ai/sop/default_ai_denoise_site.yaml',
     },
     {
       id: 'default_ai_denoise_fileleak',
@@ -13622,6 +13626,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       content:
         '你是目录扫描去噪与渗透准备助手。请基于URL路径、状态码、标题、响应体长度判断：正常/可疑/危险，并补充后续渗透验证优先级：1) 是否存在可利用入口（备份/配置/调试/上传）；2) 建议先做哪类验证（鉴权绕过、目录遍历、文件读取、上传执行）；3) 给出2-3条可操作的验证建议。禁止夸大风险，证据不足时明确标注待复核。',
       updated_at: '',
+      file: 'ai/sop/default_ai_denoise_fileleak.yaml',
     },
     {
       id: 'default_ai_denoise_cert',
@@ -13630,6 +13635,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       content:
         '你是证书与传输安全评估助手。请基于证书有效期、签发信息、协议与套件特征，输出结论并判断对渗透测试阶段的影响：1) 是否存在弱协议/弱套件可用于降级或中间人相关测试前置；2) 证书到期与配置缺陷是否影响攻击面稳定性；3) 给出优先整改建议与验证步骤。',
       updated_at: '',
+      file: 'ai/sop/default_ai_denoise_cert.yaml',
     },
     {
       id: 'default_ai_denoise_url',
@@ -13638,6 +13644,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       content:
         '你是URL攻击面去噪助手。请基于URL路径、参数、状态码、标题与上下文，输出安全/可疑/危险结论，并围绕渗透测试准备给出：1) 该URL属于登录、管理、调试、接口还是静态资源；2) 是否值得进一步测试（鉴权、越权、注入、文件读取、重定向等）；3) 明确下一步验证建议与优先级。',
       updated_at: '',
+      file: 'ai/sop/default_ai_denoise_url.yaml',
     },
     {
       id: 'default_ai_denoise_vuln',
@@ -13646,6 +13653,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       content:
         '你是漏洞结果复核助手。请根据风险等级、目标、验证证据与规则上下文判断：可信/疑似误报，并从渗透测试视角输出：1) 哪些漏洞应优先复测；2) 复测前置条件与利用链关键点；3) 若疑似误报，给出最小复核路径。',
       updated_at: '',
+      file: 'ai/sop/default_ai_denoise_vuln.yaml',
     },
     {
       id: 'default_ai_denoise_poc',
@@ -13654,6 +13662,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       content:
         '你是PoC命中结果复核助手。请结合扫描器、规则ID、风险等级、命中URL与验证信息判断可信度，并输出渗透测试可执行建议：1) 是否值得人工复现；2) 复现路径与关键请求点；3) 哪些结果应降权为疑似误报。',
       updated_at: '',
+      file: 'ai/sop/default_ai_denoise_poc.yaml',
     },
   ];
 
@@ -13773,7 +13782,8 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       const id = buildPromptId(String(item?.id || item?.name || fallbackId), index + 1);
       if (seen.has(id)) return;
       const content = String(item?.content || '').trim();
-      if (!content) return;
+      const file = String(item?.file || '').trim();
+      if (!content && !file) return;
       seen.add(id);
       items.push({
         id,
@@ -13781,6 +13791,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         scene: String(item?.scene || 'ai_report_export') || 'ai_report_export',
         content,
         updated_at: String(item?.updated_at || ''),
+        file,
       });
     });
 
@@ -13908,17 +13919,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     base_url: '',
     model: '',
   });
-  const [promptDraft, setPromptDraft] = useState<{
-    name: string;
-    scene: string;
-    content: string;
-  }>({
-    name: '',
-    scene: 'ai_report_export',
-    content: '',
-  });
   const [compatDialogOpen, setCompatDialogOpen] = useState(false);
-  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [sopUploadModuleId, setSopUploadModuleId] = useState<AiDenoiseModuleId>('site');
+  const [sopUploadFile, setSopUploadFile] = useState<File | null>(null);
+  const [sopUploading, setSopUploading] = useState(false);
+  const sopUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [dialogSystemPromptOpen, setDialogSystemPromptOpen] = useState(false);
   const [modelDraft, setModelDraft] = useState<{ name: string; provider: string }>({
     name: '',
@@ -13959,6 +13964,35 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     });
     return map;
   }, [providerPresets]);
+
+  const denoiseSopTemplateMap = useMemo(() => {
+    const promptById = new Map<string, AiPromptTemplate>();
+    form.prompt_templates.forEach((item) => {
+      promptById.set(String(item.id || '').trim(), item);
+    });
+
+    const result: Record<AiDenoiseModuleId, AiPromptTemplate | null> = {
+      site: null,
+      fileleak: null,
+      cert: null,
+      url: null,
+      vuln: null,
+      nuclei_result: null,
+    };
+
+    aiDenoiseModuleConfigs.forEach((configItem) => {
+      const configuredPromptId = String(form.ai_denoise_prompt_ids[configItem.id] || '').trim();
+      const byId = configuredPromptId ? promptById.get(configuredPromptId) || null : null;
+      if (byId) {
+        result[configItem.id] = byId;
+        return;
+      }
+      const byScene = form.prompt_templates.find((item) => item.scene === configItem.scene) || null;
+      result[configItem.id] = byScene;
+    });
+
+    return result;
+  }, [form.ai_denoise_prompt_ids, form.prompt_templates]);
 
   const isActionBusy = loading || saving || testing;
   const aiControlMaxWidthClass = 'xl:max-w-[360px]';
@@ -14271,7 +14305,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   }, [loadAiUsageDashboard]);
 
   useEffect(() => {
-    if (!compatDialogOpen && !promptDialogOpen && !showRestartModal && !aiTestDialogOpen && !usageLogDetail) return;
+    if (!compatDialogOpen && !showRestartModal && !aiTestDialogOpen && !usageLogDetail) return;
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -14287,17 +14321,13 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         setShowRestartModal(false);
         return;
       }
-      if (promptDialogOpen) {
-        setPromptDialogOpen(false);
-        return;
-      }
       if (compatDialogOpen) {
         setCompatDialogOpen(false);
       }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [aiTestDialogOpen, compatDialogOpen, promptDialogOpen, showRestartModal, usageLogDetail]);
+  }, [aiTestDialogOpen, compatDialogOpen, showRestartModal, usageLogDetail]);
 
   const handleProviderChange = (nextProvider: string) => {
     const providerId = normalizeProviderId(nextProvider);
@@ -14468,63 +14498,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setError('');
   };
 
-  const addPromptTemplate = () => {
-    const content = promptDraft.content.trim();
-    if (!content) {
-      setError('请填写提示词内容');
-      return false;
-    }
-    const candidateId = buildPromptId(promptDraft.name, form.prompt_templates.length + 1);
-    if (form.prompt_templates.some((item) => item.id === candidateId)) {
-      setError(`提示词 ID 重复：${candidateId}`);
-      return false;
-    }
-
-    const nowText = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    const nextPrompt: AiPromptTemplate = {
-      id: candidateId,
-      name: promptDraft.name.trim() || candidateId,
-      scene: promptDraft.scene || 'ai_report_export',
-      content,
-      updated_at: nowText,
-    };
-
-    setForm((prev) => ({
-      ...prev,
-      prompt_templates: [...prev.prompt_templates, nextPrompt],
-      active_prompt_id: prev.active_prompt_id || nextPrompt.id,
-    }));
-    setPromptDraft({ name: '', scene: 'ai_report_export', content: '' });
-    setError('');
-    setSuccess(`提示词已新增：${nextPrompt.name}`);
-    return true;
-  };
-
-  const updatePromptTemplateField = (promptId: string, field: keyof AiPromptTemplate, value: string) => {
-    setForm((prev) => ({
-      ...prev,
-      prompt_templates: prev.prompt_templates.map((item) =>
-        item.id === promptId ? { ...item, [field]: value, updated_at: item.updated_at || new Date().toISOString().slice(0, 19).replace('T', ' ') } : item
-      ),
-    }));
-    setError('');
-  };
-
-  const removePromptTemplate = (promptId: string) => {
-    setForm((prev) => {
-      const nextTemplates = prev.prompt_templates.filter((item) => item.id !== promptId);
-      const nextActive = nextTemplates.some((item) => item.id === prev.active_prompt_id)
-        ? prev.active_prompt_id
-        : nextTemplates[0]?.id || '';
-      return {
-        ...prev,
-        prompt_templates: nextTemplates,
-        active_prompt_id: nextActive,
-      };
-    });
-    setError('');
-  };
-
   const updateAiDenoiseModuleEnabled = (moduleId: AiDenoiseModuleId, enabled: boolean) => {
     setForm((prev) => ({
       ...prev,
@@ -14536,15 +14509,43 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setError('');
   };
 
-  const updateAiDenoisePromptId = (moduleId: AiDenoiseModuleId, promptId: string) => {
-    setForm((prev) => ({
-      ...prev,
-      ai_denoise_prompt_ids: {
-        ...prev.ai_denoise_prompt_ids,
-        [moduleId]: promptId,
-      },
-    }));
+  const uploadAiSop = async () => {
+    if (!sopUploadFile) {
+      setError('请先选择要上传的 SOP 文件');
+      return;
+    }
+
+    setSopUploading(true);
     setError('');
+    setSuccess('');
+    try {
+      const formData = new FormData();
+      formData.append('module_id', sopUploadModuleId);
+      formData.append('file', sopUploadFile);
+      const result = await requestApi(token, '/api_console/ai_config/sop/upload/', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = result?.data || {};
+      const normalizedSavedForm = normalizeForm(data?.ai_config || {});
+      setForm(normalizedSavedForm);
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedSavedForm));
+      setConfigPath(String(data?.config_path || configPath));
+      setUpdatedAt(String(data?.saved_at || updatedAt));
+      const moduleLabel = String(data?.module_label || aiDenoiseModuleConfigs.find((item) => item.id === sopUploadModuleId)?.label || sopUploadModuleId);
+      const sopFilePath = String(data?.sop_file || '');
+      setSuccess(`SOP 上传成功：${moduleLabel}${sopFilePath ? `（${sopFilePath}）` : ''}`);
+      setShowRestartModal(data?.runtime_refreshed === false);
+
+      setSopUploadFile(null);
+      if (sopUploadInputRef.current) {
+        sopUploadInputRef.current.value = '';
+      }
+    } catch (err: any) {
+      setError(err?.message || 'SOP 上传失败');
+    } finally {
+      setSopUploading(false);
+    }
   };
 
   const toggleSensitiveDisplay = () => {
@@ -14596,7 +14597,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const saveAiConfig = async () => {
     const payload = buildAiPayload(form);
     if (payload.prompt_templates.length === 0) {
-      setError('请至少保留一条提示词模板');
+      setError('请至少保留一条 SOP 模板');
       return;
     }
 
@@ -14709,7 +14710,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         <div>
           <div className="text-sm font-bold tracking-wide">AI管理</div>
           <div className="text-xs text-brand-text-muted mt-1">
-            统一管理 AI 提供方、对话参数、提示词模板与 OpenAI 兼容接口。可配置多个模型，运行期每次仅使用一个生效模型。
+            统一管理 AI 提供方、对话参数、SOP模板与 OpenAI 兼容接口。可配置多个模型，运行期每次仅使用一个生效模型。
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -14952,7 +14953,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         ) : null}
       </div>
       <div className="text-xs text-amber-300 bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2">
-        提示：AI 去噪分析支持按模块独立开关与提示词绑定。详情页仅展示扫描阶段已落库的分析结果，不会因点击详情而再次触发 AI 调用。
+        提示：AI 去噪分析支持按模块独立开关与 SOP 绑定。详情页仅展示扫描阶段已落库的分析结果，不会因点击详情而再次触发 AI 调用。
       </div>
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
@@ -15346,12 +15347,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </label>
         </div>
         <div className="text-xs text-brand-text-muted">
-          目录扫描、SSL证书、URL信息、风险、PoC风险支持独立开关与提示词绑定；默认开启，可按需单独关闭。
+          站点、目录扫描、SSL证书、URL信息、风险、PoC风险支持独立开关；对应 SOP 在下方「SOP管理」中上传维护。
         </div>
         <div className="space-y-2">
           {aiDenoiseModuleConfigs.map((moduleConfig) => {
             const moduleEnabled = Boolean(form.ai_denoise_modules[moduleConfig.id]);
-            const selectedPromptId = String(form.ai_denoise_prompt_ids[moduleConfig.id] || '');
+            const sopTemplate = denoiseSopTemplateMap[moduleConfig.id];
             return (
               <div
                 key={moduleConfig.id}
@@ -15368,20 +15369,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   />
                   <span className="text-xs font-semibold">{moduleEnabled ? '已开启' : '已关闭'}</span>
                 </label>
-                <div className="relative">
-                  <select
-                    value={selectedPromptId}
-                    onChange={(event) => updateAiDenoisePromptId(moduleConfig.id, event.target.value)}
-                    className={CONSOLE_SELECT_CLASS}
-                    disabled={!form.ai_denoise_enable || !moduleEnabled}
-                  >
-                    {form.prompt_templates.map((item) => (
-                      <option key={`${moduleConfig.id}-${item.id}`} value={item.id}>
-                        {item.name} ({item.scene})
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                <div className="text-xs text-brand-text-muted break-all">
+                  <div>
+                    SOP：{sopTemplate?.name || '-'}{sopTemplate?.scene ? ` (${sopTemplate.scene})` : ''}
+                  </div>
+                  <div className="font-mono mt-1">{sopTemplate?.file || '-'}</div>
                 </div>
               </div>
             );
@@ -15391,74 +15383,78 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">提示词管理</div>
+          <div className="text-xs font-black tracking-wide text-brand-text">SOP管理</div>
+        </div>
+        <div className="text-xs text-brand-text-muted">
+          提示词管理已改为 SOP 管理。仅支持上传 `.yaml/.yml` SOP 文件，不支持页面内在线编辑。内置模块为：站点、目录扫描、SSL证书、URL信息、风险、PoC风险。
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_auto] gap-3 items-center">
+          <div className="relative">
+            <select
+              value={sopUploadModuleId}
+              onChange={(event) => setSopUploadModuleId(event.target.value as AiDenoiseModuleId)}
+              className={CONSOLE_SELECT_CLASS}
+              disabled={sopUploading}
+            >
+              {aiDenoiseModuleConfigs.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              ref={sopUploadInputRef}
+              type="file"
+              accept=".yaml,.yml"
+              onChange={(event) => setSopUploadFile(event.target.files?.[0] || null)}
+              className={CONSOLE_FILE_INPUT_CLASS}
+              disabled={sopUploading}
+            />
+          </div>
           <button
             type="button"
-            onClick={() => {
-              setPromptDraft({ name: '', scene: 'ai_report_export', content: '' });
-              setPromptDialogOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+            onClick={() => void uploadAiSop()}
+            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            disabled={sopUploading}
           >
-            新增提示词
+            <Upload className={`w-4 h-4 ${sopUploading ? 'animate-pulse' : ''}`} />
+            {sopUploading ? '上传中...' : '上传SOP'}
           </button>
         </div>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label htmlFor="ai-active-prompt-id" className="text-xs font-bold text-brand-text-muted block">
-              当前生效提示词
-            </label>
-            <div className={aiSelectWrapClass}>
-              <select
-                id="ai-active-prompt-id"
-                value={form.active_prompt_id}
-                onChange={(event) => setForm((prev) => ({ ...prev, active_prompt_id: event.target.value }))}
-                className={CONSOLE_SELECT_CLASS}
-              >
-                {form.prompt_templates.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} ({item.scene})
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-            </div>
-          </div>
+        <div className="text-[11px] text-brand-text-muted">
+          {sopUploadFile ? `已选择：${sopUploadFile.name}` : '未选择文件'}
         </div>
 
-        <div className="space-y-3">
-          {form.prompt_templates.map((item) => (
-            <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 space-y-2">
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-center">
-                <input
-                  value={item.name}
-                  onChange={(event) => updatePromptTemplateField(item.id, 'name', event.target.value)}
-                  className={CONSOLE_INPUT_CLASS}
-                  placeholder="提示词名称"
-                />
-                <input
-                  value={item.scene}
-                  onChange={(event) => updatePromptTemplateField(item.id, 'scene', event.target.value)}
-                  className={CONSOLE_INPUT_CLASS}
-                  placeholder="场景标识"
-                />
-                <button
-                  type="button"
-                  onClick={() => removePromptTemplate(item.id)}
-                  className="h-10 px-3 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition whitespace-nowrap"
-                >
-                  删除
-                </button>
+        <div className="space-y-2">
+          {aiDenoiseModuleConfigs.map((moduleConfig) => {
+            const template = denoiseSopTemplateMap[moduleConfig.id];
+            return (
+              <div key={moduleConfig.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+                <div className="grid grid-cols-1 xl:grid-cols-[140px_220px_1fr_160px] gap-3 text-xs">
+                  <div>
+                    <div className="text-brand-text-muted">模块</div>
+                    <div className="text-sm font-semibold text-brand-text">{moduleConfig.label}</div>
+                  </div>
+                  <div>
+                    <div className="text-brand-text-muted">SOP模板</div>
+                    <div className="text-brand-text">{template?.name || '-'}</div>
+                    <div className="text-brand-text-muted">{template?.scene || moduleConfig.scene}</div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-brand-text-muted">文件</div>
+                    <div className="font-mono break-all">{template?.file || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-brand-text-muted">更新时间</div>
+                    <div className="font-mono">{template?.updated_at || '-'}</div>
+                  </div>
+                </div>
               </div>
-              <textarea
-                value={item.content}
-                onChange={(event) => updatePromptTemplateField(item.id, 'content', event.target.value)}
-                className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[96px]`}
-                placeholder="提示词内容"
-              />
-              <div className="text-[11px] text-brand-text-muted">更新时间：{item.updated_at || '-'}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -15525,84 +15521,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition"
               >
                 确认添加
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {promptDialogOpen ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setPromptDialogOpen(false);
-          }}
-        >
-          <div
-            className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
-              <div className="text-sm font-black tracking-wide">新增提示词</div>
-              <button
-                type="button"
-                onClick={() => setPromptDialogOpen(false)}
-                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                <input
-                  value={promptDraft.name}
-                  onChange={(event) => setPromptDraft((prev) => ({ ...prev, name: event.target.value }))}
-                  className={CONSOLE_INPUT_CLASS}
-                  placeholder="提示词名称（可选，不填自动生成）"
-                />
-                <div className="relative">
-                  <select
-                    value={promptDraft.scene}
-                    onChange={(event) => setPromptDraft((prev) => ({ ...prev, scene: event.target.value }))}
-                    className={CONSOLE_SELECT_CLASS}
-                  >
-                    <option value="ai_report_export">AI报告导出</option>
-                    <option value="false_positive_review">误报复核</option>
-                    <option value="scan_planner">扫描调度</option>
-                    <option value="ai_denoise_site">AI去噪-站点</option>
-                    <option value="ai_denoise_fileleak">AI去噪-目录扫描</option>
-                    <option value="ai_denoise_cert">AI去噪-SSL证书</option>
-                    <option value="ai_denoise_url">AI去噪-URL信息</option>
-                    <option value="ai_denoise_vuln">AI去噪-风险</option>
-                    <option value="ai_denoise_nuclei_result">AI去噪-PoC风险</option>
-                  </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-                </div>
-              </div>
-              <textarea
-                value={promptDraft.content}
-                onChange={(event) => setPromptDraft((prev) => ({ ...prev, content: event.target.value }))}
-                className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[160px]`}
-                placeholder="输入新增提示词内容"
-              />
-            </div>
-            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
-              <button
-                type="button"
-                onClick={() => setPromptDialogOpen(false)}
-                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const ok = addPromptTemplate();
-                  if (ok) setPromptDialogOpen(false);
-                }}
-                className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition"
-              >
-                确认新增
               </button>
             </div>
           </div>

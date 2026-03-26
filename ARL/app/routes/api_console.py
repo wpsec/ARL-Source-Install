@@ -494,12 +494,191 @@ AI_USAGE_SCENE_LABEL_MAP = {
     'ai_denoise_nuclei_result': 'AI去噪-PoC风险',
 }
 
+AI_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+AI_PROMPT_SOP_DIR = AI_PROJECT_ROOT / 'docker' / 'ai' / 'sop'
+AI_PROMPT_TEMPLATE_FILE_MAP = {
+    'default_ai_report': 'ai/sop/default_ai_report.yaml',
+    'default_fp_review': 'ai/sop/default_fp_review.yaml',
+    'default_ai_denoise_site': 'ai/sop/default_ai_denoise_site.yaml',
+    'default_ai_denoise_fileleak': 'ai/sop/default_ai_denoise_fileleak.yaml',
+    'default_ai_denoise_cert': 'ai/sop/default_ai_denoise_cert.yaml',
+    'default_ai_denoise_url': 'ai/sop/default_ai_denoise_url.yaml',
+    'default_ai_denoise_vuln': 'ai/sop/default_ai_denoise_vuln.yaml',
+    'default_ai_denoise_poc': 'ai/sop/default_ai_denoise_poc.yaml',
+}
+AI_DENOISE_MODULE_PROMPT_ID_MAP = {
+    'site': 'default_ai_denoise_site',
+    'fileleak': 'default_ai_denoise_fileleak',
+    'cert': 'default_ai_denoise_cert',
+    'url': 'default_ai_denoise_url',
+    'vuln': 'default_ai_denoise_vuln',
+    'nuclei_result': 'default_ai_denoise_poc',
+}
+
+
+def _is_path_within_project_root(path_obj: Path, base_dir: Path) -> bool:
+    try:
+        path_obj.resolve().relative_to(base_dir.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _normalize_ai_prompt_template_file_ref(raw_file_ref):
+    return str(raw_file_ref or '').strip().replace('\\', '/')
+
+
+def _resolve_ai_prompt_template_file_path(raw_file_ref):
+    file_ref = _normalize_ai_prompt_template_file_ref(raw_file_ref)
+    if not file_ref:
+        return '', None
+
+    file_path = Path(file_ref)
+    if file_path.is_absolute():
+        resolved = file_path.resolve()
+        return file_ref, resolved
+
+    if file_ref.startswith('docker/'):
+        resolved = (AI_PROJECT_ROOT / file_ref).resolve()
+    elif file_ref.startswith('ai/'):
+        resolved = (AI_PROJECT_ROOT / 'docker' / file_ref).resolve()
+    else:
+        resolved = (AI_PROMPT_SOP_DIR / file_ref).resolve()
+
+    return file_ref, resolved
+
+
+def _extract_ai_prompt_content_from_sop_payload(payload_value):
+    if isinstance(payload_value, str):
+        return payload_value.strip()
+    if isinstance(payload_value, (int, float)):
+        return str(payload_value).strip()
+    if payload_value is None:
+        return ''
+    if isinstance(payload_value, (dict, list)):
+        try:
+            return json.dumps(payload_value, ensure_ascii=False).strip()
+        except Exception:
+            return str(payload_value).strip()
+    return str(payload_value).strip()
+
+
+def _read_ai_prompt_template_payload_from_file(raw_file_ref):
+    file_ref, resolved = _resolve_ai_prompt_template_file_path(raw_file_ref)
+    if not file_ref or resolved is None:
+        return {}
+
+    if not _is_path_within_project_root(resolved, AI_PROJECT_ROOT):
+        logger.warning('skip loading ai prompt template outside project root: %s', file_ref)
+        return {}
+
+    if not resolved.exists() or not resolved.is_file():
+        return {}
+
+    try:
+        text = resolved.read_text(encoding='utf-8')
+    except Exception as exc:
+        logger.warning('load ai prompt template failed: %s (%s)', file_ref, exc)
+        return {}
+
+    payload = {
+        'file': file_ref,
+    }
+    suffix = str(resolved.suffix or '').lower()
+    if suffix in ('.yaml', '.yml'):
+        try:
+            loaded = yaml.safe_load(text)
+        except Exception as exc:
+            logger.warning('parse ai sop yaml failed: %s (%s)', file_ref, exc)
+            loaded = None
+
+        if isinstance(loaded, dict):
+            prompt_id = str(loaded.get('id') or '').strip()
+            name = str(loaded.get('name') or '').strip()
+            scene = str(loaded.get('scene') or '').strip()
+            updated_at = str(loaded.get('updated_at') or '').strip()
+            content = _extract_ai_prompt_content_from_sop_payload(
+                loaded.get('content') if loaded.get('content') is not None else loaded.get('prompt')
+            )
+            if not content:
+                content = _extract_ai_prompt_content_from_sop_payload(loaded.get('sop'))
+            if prompt_id:
+                payload['id'] = prompt_id
+            if name:
+                payload['name'] = name
+            if scene:
+                payload['scene'] = scene
+            if updated_at:
+                payload['updated_at'] = updated_at
+            payload['content'] = content
+            return payload
+
+        if isinstance(loaded, str):
+            payload['content'] = loaded.strip()
+            return payload
+
+    payload['content'] = text.strip()
+    return payload
+
+
+def _read_ai_prompt_template_content_from_file(raw_file_ref):
+    payload = _read_ai_prompt_template_payload_from_file(raw_file_ref)
+    return str(payload.get('content') or '').strip()
+
+
+def _write_ai_prompt_template_content_to_file(raw_file_ref, content, prompt_meta=None):
+    file_ref, resolved = _resolve_ai_prompt_template_file_path(raw_file_ref)
+    prompt_text = str(content or '').strip()
+    if not file_ref or resolved is None or not prompt_text:
+        return False
+
+    if not _is_path_within_project_root(resolved, AI_PROJECT_ROOT):
+        raise ValueError('提示词文件路径超出项目目录')
+
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    suffix = str(resolved.suffix or '').lower()
+    if suffix in ('.yaml', '.yml'):
+        meta = prompt_meta if isinstance(prompt_meta, dict) else {}
+        existing_payload = _read_ai_prompt_template_payload_from_file(file_ref)
+        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        yaml_obj = {}
+        prompt_id = str(meta.get('id') or existing_payload.get('id') or '').strip()
+        prompt_name = str(meta.get('name') or existing_payload.get('name') or '').strip()
+        prompt_scene = str(meta.get('scene') or existing_payload.get('scene') or '').strip()
+        prompt_updated_at = str(meta.get('updated_at') or now_text).strip() or now_text
+        if prompt_id:
+            yaml_obj['id'] = prompt_id
+        if prompt_name:
+            yaml_obj['name'] = prompt_name
+        if prompt_scene:
+            yaml_obj['scene'] = prompt_scene
+        yaml_obj['updated_at'] = prompt_updated_at
+        yaml_obj['content'] = prompt_text
+        yaml_text = yaml.safe_dump(
+            yaml_obj,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+        )
+        resolved.write_text(yaml_text, encoding='utf-8')
+        return True
+
+    resolved.write_text(prompt_text + '\n', encoding='utf-8')
+    return True
+
+
+def _resolve_ai_prompt_template_file(prompt_id, raw_file_ref=''):
+    file_ref = _normalize_ai_prompt_template_file_ref(raw_file_ref)
+    if file_ref:
+        return file_ref
+    return str(AI_PROMPT_TEMPLATE_FILE_MAP.get(str(prompt_id or '').strip()) or '').strip()
+
 
 def _default_ai_prompt_templates():
     """
     默认提示词模板（覆盖 AI 报告与误报复核两类场景）。
     """
-    return [
+    templates = [
         {
             'id': 'default_ai_report',
             'name': '默认AI报告模板',
@@ -602,6 +781,27 @@ def _default_ai_prompt_templates():
             'updated_at': '',
         },
     ]
+
+    for item in templates:
+        if not isinstance(item, dict):
+            continue
+        prompt_id = str(item.get('id') or '').strip()
+        file_ref = _resolve_ai_prompt_template_file(prompt_id, item.get('file'))
+        if not file_ref:
+            continue
+        item['file'] = file_ref
+        file_payload = _read_ai_prompt_template_payload_from_file(file_ref)
+        file_content = str(file_payload.get('content') or '').strip()
+        if not item.get('name') and file_payload.get('name'):
+            item['name'] = str(file_payload.get('name') or '').strip()
+        if not item.get('scene') and file_payload.get('scene'):
+            item['scene'] = str(file_payload.get('scene') or '').strip()
+        if not item.get('updated_at') and file_payload.get('updated_at'):
+            item['updated_at'] = str(file_payload.get('updated_at') or '').strip()
+        if file_content:
+            item['content'] = file_content
+
+    return templates
 
 
 def _normalize_ai_provider_id(raw_provider):
@@ -738,8 +938,18 @@ def _normalize_ai_prompt_templates(raw_templates):
             prompt_id = str(item.get('id') or '').strip()
             name = str(item.get('name') or '').strip()
             scene = str(item.get('scene') or '').strip() or 'ai_report_export'
+            file_ref = _resolve_ai_prompt_template_file(prompt_id, item.get('file'))
+            file_payload = _read_ai_prompt_template_payload_from_file(file_ref) if file_ref else {}
             content = str(item.get('content') or '').strip()
+            if not content and file_ref:
+                content = str(file_payload.get('content') or '').strip()
+            if not name and file_payload.get('name'):
+                name = str(file_payload.get('name') or '').strip()
+            if (not scene or scene == 'ai_report_export') and file_payload.get('scene'):
+                scene = str(file_payload.get('scene') or '').strip() or scene
             updated_at = str(item.get('updated_at') or '').strip()
+            if not updated_at and file_payload.get('updated_at'):
+                updated_at = str(file_payload.get('updated_at') or '').strip()
             if not prompt_id:
                 prompt_id = 'prompt_{}'.format(len(templates) + 1)
             if not name:
@@ -749,15 +959,16 @@ def _normalize_ai_prompt_templates(raw_templates):
             if prompt_id in seen:
                 continue
             seen.add(prompt_id)
-            templates.append(
-                {
-                    'id': prompt_id,
-                    'name': name,
-                    'scene': scene,
-                    'content': content,
-                    'updated_at': updated_at,
-                }
-            )
+            template_item = {
+                'id': prompt_id,
+                'name': name,
+                'scene': scene,
+                'content': content,
+                'updated_at': updated_at,
+            }
+            if file_ref:
+                template_item['file'] = file_ref
+            templates.append(template_item)
 
     default_templates = _default_ai_prompt_templates()
     if not templates:
@@ -1069,6 +1280,104 @@ def _fill_missing_sensitive_ai_fields(ai_config: dict, config_obj: dict):
     return merged_ai_config
 
 
+def _persist_ai_prompt_templates_for_config(prompt_templates, existing_templates):
+    persisted_templates = []
+    existing_template_map = {}
+
+    if isinstance(existing_templates, list):
+        for item in existing_templates:
+            if not isinstance(item, dict):
+                continue
+            template_id = str(item.get('id') or '').strip()
+            if not template_id:
+                continue
+            existing_template_map[template_id] = dict(item)
+
+    for item in prompt_templates or []:
+        if not isinstance(item, dict):
+            continue
+        prompt_id = str(item.get('id') or '').strip()
+        if not prompt_id:
+            continue
+        name = str(item.get('name') or prompt_id).strip()
+        scene = str(item.get('scene') or 'ai_report_export').strip()
+        updated_at = str(item.get('updated_at') or '').strip()
+        content = str(item.get('content') or '').strip()
+        existing_item = existing_template_map.get(prompt_id) or {}
+        file_ref = _resolve_ai_prompt_template_file(
+            prompt_id,
+            item.get('file') or existing_item.get('file'),
+        )
+
+        persisted_item = {
+            'id': prompt_id,
+            'name': name,
+            'scene': scene,
+            'updated_at': updated_at,
+        }
+
+        file_saved = False
+        if file_ref:
+            try:
+                if content:
+                    _write_ai_prompt_template_content_to_file(file_ref, content, prompt_meta=item)
+                persisted_item['file'] = file_ref
+                file_saved = True
+            except Exception as exc:
+                logger.warning('persist ai prompt template to file failed: %s (%s)', file_ref, exc)
+
+        if not file_saved:
+            persisted_item['content'] = content
+
+        persisted_templates.append(persisted_item)
+
+    return persisted_templates
+
+
+def _parse_uploaded_ai_sop_yaml(file_bytes):
+    if not file_bytes:
+        raise ValueError('上传文件为空')
+
+    if len(file_bytes) > 512 * 1024:
+        raise ValueError('SOP 文件过大（最大 512KB）')
+
+    try:
+        text = file_bytes.decode('utf-8')
+    except Exception as exc:
+        raise ValueError('SOP 文件必须为 UTF-8 编码') from exc
+
+    if not text.strip():
+        raise ValueError('SOP 文件内容为空')
+
+    try:
+        loaded = yaml.safe_load(text)
+    except Exception as exc:
+        raise ValueError('SOP YAML 格式错误：{}'.format(exc)) from exc
+
+    parsed = {}
+    if isinstance(loaded, dict):
+        parsed['id'] = str(loaded.get('id') or '').strip()
+        parsed['name'] = str(loaded.get('name') or '').strip()
+        parsed['scene'] = str(loaded.get('scene') or '').strip()
+        parsed['updated_at'] = str(loaded.get('updated_at') or '').strip()
+        content = _extract_ai_prompt_content_from_sop_payload(
+            loaded.get('content') if loaded.get('content') is not None else loaded.get('prompt')
+        )
+        if not content:
+            content = _extract_ai_prompt_content_from_sop_payload(loaded.get('sop'))
+        parsed['content'] = content
+    elif isinstance(loaded, str):
+        parsed['content'] = loaded.strip()
+    else:
+        parsed['content'] = text.strip()
+
+    parsed['content'] = str(parsed.get('content') or '').strip()
+    if not parsed['content']:
+        raise ValueError('SOP YAML 缺少 content 字段或内容为空')
+
+    return parsed
+
+
 def _merge_ai_config(config_obj, ai_config):
     """
     将 AI 管理配置写回完整配置对象。
@@ -1079,6 +1388,7 @@ def _merge_ai_config(config_obj, ai_config):
     if not isinstance(config_obj.get('AI'), dict):
         config_obj['AI'] = {}
     ai_conf = config_obj['AI']
+    existing_prompt_templates = ai_conf.get('PROMPT_TEMPLATES') if isinstance(ai_conf.get('PROMPT_TEMPLATES'), list) else []
 
     model_profiles = _normalize_ai_model_profiles(ai_config.get('model_profiles'), legacy_ai_conf=ai_config)
     active_model_profile_id = str(ai_config.get('active_model_profile_id') or '').strip()
@@ -1115,7 +1425,7 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['DIALOG_LANGUAGE'] = str(ai_config.get('dialog_language') or 'zh-CN').strip()
     ai_conf['DIALOG_CONTEXT_MESSAGES'] = _safe_int(ai_config.get('dialog_context_messages'), 8, min_value=1)
     ai_conf['ACTIVE_PROMPT_ID'] = active_prompt_id
-    ai_conf['PROMPT_TEMPLATES'] = prompt_templates
+    ai_conf['PROMPT_TEMPLATES'] = _persist_ai_prompt_templates_for_config(prompt_templates, existing_prompt_templates)
     ai_conf['CUSTOM_COMPAT_PROVIDERS'] = _normalize_ai_custom_providers(
         ai_config.get('custom_compat_providers')
     )
@@ -5345,6 +5655,128 @@ class ApiConsoleAiConfigTest(ARLResource):
                     'error': str(exc),
                 }
             )
+
+
+@ns.route('/ai_config/sop/upload/')
+class ApiConsoleAiConfigSopUpload(ARLResource):
+    """
+    AI SOP 上传接口（仅支持 YAML）。
+    """
+
+    @auth
+    def post(self):
+        module_id = str(request.form.get('module_id') or '').strip()
+        if module_id not in AI_DENOISE_MODULE_SCENE_MAP:
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': '不支持的 module_id: {}'.format(module_id),
+                }
+            )
+
+        upload_file = request.files.get('file')
+        if upload_file is None:
+            return utils.build_ret(ErrorMsg.Error, {'error': '请上传 SOP 文件（file）'})
+
+        filename = secure_filename(upload_file.filename or '')
+        if not filename:
+            return utils.build_ret(ErrorMsg.Error, {'error': 'SOP 文件名不能为空'})
+        lower_name = filename.lower()
+        if not (lower_name.endswith('.yaml') or lower_name.endswith('.yml')):
+            return utils.build_ret(ErrorMsg.Error, {'error': '仅支持 .yaml 或 .yml 的 SOP 文件'})
+
+        try:
+            sop_payload = _parse_uploaded_ai_sop_yaml(upload_file.read())
+        except Exception as exc:
+            return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
+
+        config_path = _resolve_config_path()
+        prompt_id = str(AI_DENOISE_MODULE_PROMPT_ID_MAP.get(module_id) or '').strip()
+        scene = str(AI_DENOISE_MODULE_SCENE_MAP.get(module_id) or '').strip()
+        module_label = str(AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id)
+        if not prompt_id:
+            return utils.build_ret(ErrorMsg.Error, {'error': '当前模块未配置内置 SOP 模板映射'})
+        sop_file = _resolve_ai_prompt_template_file(prompt_id, '')
+        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        with CONFIG_LOCK:
+            try:
+                config_obj = _load_config_from_file(config_path)
+                ai_config = _extract_ai_config(config_obj)
+                prompt_templates = _normalize_ai_prompt_templates(ai_config.get('prompt_templates'))
+                ai_denoise_prompt_ids = _normalize_ai_denoise_prompt_ids(
+                    ai_config.get('ai_denoise_prompt_ids'),
+                    prompt_templates,
+                )
+
+                target_index = None
+                for index, item in enumerate(prompt_templates):
+                    if str(item.get('id') or '').strip() == prompt_id:
+                        target_index = index
+                        break
+                if target_index is None:
+                    for index, item in enumerate(prompt_templates):
+                        if str(item.get('scene') or '').strip() == scene:
+                            target_index = index
+                            break
+
+                fallback_name = '默认AI去噪-{}'.format(module_label)
+                target_item = {
+                    'id': prompt_id,
+                    'name': str(sop_payload.get('name') or fallback_name).strip() or fallback_name,
+                    'scene': scene,
+                    'content': str(sop_payload.get('content') or '').strip(),
+                    'updated_at': str(sop_payload.get('updated_at') or now_text).strip() or now_text,
+                    'file': sop_file,
+                }
+
+                if target_index is None:
+                    prompt_templates.append(target_item)
+                else:
+                    existing_item = prompt_templates[target_index] if isinstance(prompt_templates[target_index], dict) else {}
+                    prompt_templates[target_index] = {
+                        **existing_item,
+                        **target_item,
+                    }
+
+                ai_denoise_prompt_ids[module_id] = prompt_id
+                ai_config['prompt_templates'] = prompt_templates
+                ai_config['ai_denoise_prompt_ids'] = ai_denoise_prompt_ids
+
+                config_obj = _merge_ai_config(config_obj, ai_config)
+                _ensure_json_like_config(config_obj)
+                backup_path = _backup_config_file(config_path)
+                _atomic_write_yaml(config_path, config_obj)
+                runtime_refreshed = bool(refresh_runtime_config_best_effort(force=True))
+                saved_ai_config_raw = _extract_ai_config(config_obj)
+                saved_ai_config, sensitive_configured = _sanitize_ai_config_for_client(saved_ai_config_raw)
+            except Exception as exc:
+                logger.exception('upload ai sop failed module:%s err:%s', module_id, exc)
+                return utils.build_ret(
+                    ErrorMsg.Error,
+                    {
+                        'error': str(exc),
+                        'config_path': str(config_path),
+                    }
+                )
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                'uploaded': True,
+                'module_id': module_id,
+                'module_label': module_label,
+                'prompt_id': prompt_id,
+                'sop_file': sop_file,
+                'saved_at': now_text,
+                'backup_path': backup_path,
+                'runtime_refreshed': runtime_refreshed,
+                'ai_config': saved_ai_config,
+                'sensitive_configured': sensitive_configured,
+                'provider_presets': AI_PROVIDER_PRESETS,
+                'config_path': str(config_path),
+            }
+        )
 
 
 @ns.route('/ai_usage/stats/')

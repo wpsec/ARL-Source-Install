@@ -3,7 +3,12 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-26（v4.3.0）
+## 2026-03-26（v4.3.0 ~ v4.3.5）
+
+- `[v4.3.5]` AI 配置改为 SOP 文件化：`config-docker.yaml` 中默认 `PROMPT_TEMPLATES` 由内联 `content` 切换为 `file` 引用（`ai/sop/*.yaml`），并新增 `ARL/docker/ai/sop/` 内置模板目录（`AI报告/误报复核/站点/目录扫描/SSL证书/URL信息/风险/PoC风险`）
+- `[v4.3.5]` 后端新增 SOP 文件读写与安全校验：`api_console` 增加提示词文件路径解析、项目目录越界拦截、YAML 解析与落盘能力；保存 AI 配置时优先把模板内容回写到对应 SOP 文件，配置中保留模板元信息与文件引用，兼容历史仅 `content` 模式
+- `[v4.3.5]` AI 管理新增 SOP 上传接口：新增 `/api_console/ai_config/sop/upload/`，支持按模块上传 `.yaml/.yml`（UTF-8、最大 `512KB`），自动校验模块映射并更新 `AI_DENOISE_PROMPT_IDS`，落库前保留配置备份并尝试热刷新运行时配置
+- `[v4.3.5]` 前端 AI 管理切换为 SOP 运维流：界面文案统一由“提示词”改为“SOP”，移除页面内新增/编辑/删除提示词，改为“按模块上传 SOP 文件”；AI 去噪模块面板改为展示当前绑定 SOP 名称、场景、文件路径与更新时间
 
 - `[v4.3.0]` worker 横向扩展落地：`docker-compose` 新增第二个任务容器 `worker_2 (arl_worker_2)`，与 `worker_1` 共同消费 `arltask/arlheavy/arlweb/arlgithub` 队列，实现“同队列多消费者”分担模式，在不新增基础中间件的前提下提升扫描与 AI 去噪阶段吞吐
 - `[v4.3.0]` Worker 服务命名与部署开关优化：服务名统一为 `worker_1/worker_2`；新增 `ARL_WORKER_REPLICAS=1|2` 部署选择能力，`start.sh` 与 `quick-build.sh` 按参数自动启动对应 worker 数量（默认 `2`），`restart.sh` 改为优先重启当前运行中的服务并兼容旧参数 `worker -> worker_1` 映射
