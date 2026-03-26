@@ -13948,6 +13948,8 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [usageLogsUpdatedAt, setUsageLogsUpdatedAt] = useState('');
   const [usageLogStatus, setUsageLogStatus] = useState('');
   const [usageLogScene, setUsageLogScene] = useState('');
+  const [usageLogLimit, setUsageLogLimit] = useState('20');
+  const [usageLogDetail, setUsageLogDetail] = useState<AiUsageLogItem | null>(null);
   const [usageSceneOptions, setUsageSceneOptions] = useState<Array<{ scene: string; scene_label: string }>>([]);
 
   const providerPresetMap = useMemo(() => {
@@ -14132,11 +14134,22 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     };
   }, []);
 
+  const getUsageLogPreviewText = useCallback((rawText: string, maxLength = 70) => {
+    const normalized = String(rawText || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!normalized) return '-';
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, maxLength)}...`;
+  }, []);
+
   const loadAiUsageDashboard = useCallback(async () => {
     setUsageLoading(true);
     setUsageError('');
     try {
-      const logsQuery: Record<string, any> = { limit: 80 };
+      const parsedLimit = Number(usageLogLimit);
+      const logLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : 20;
+      const logsQuery: Record<string, any> = { limit: logLimit };
       if (usageLogStatus) logsQuery.status = usageLogStatus;
       if (usageLogScene) logsQuery.scene = usageLogScene;
       const [statsResult, logsResult] = await Promise.all([
@@ -14207,7 +14220,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     } finally {
       setUsageLoading(false);
     }
-  }, [normalizeAiUsageStatsValue, token, usageLogScene, usageLogStatus]);
+  }, [normalizeAiUsageStatsValue, token, usageLogLimit, usageLogScene, usageLogStatus]);
 
   const loadAiConfig = useCallback(async () => {
     resetSensitiveState();
@@ -14258,10 +14271,14 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   }, [loadAiUsageDashboard]);
 
   useEffect(() => {
-    if (!compatDialogOpen && !promptDialogOpen && !showRestartModal && !aiTestDialogOpen) return;
+    if (!compatDialogOpen && !promptDialogOpen && !showRestartModal && !aiTestDialogOpen && !usageLogDetail) return;
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      if (usageLogDetail) {
+        setUsageLogDetail(null);
+        return;
+      }
       if (aiTestDialogOpen) {
         setAiTestDialogOpen(false);
         return;
@@ -14280,7 +14297,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [aiTestDialogOpen, compatDialogOpen, promptDialogOpen, showRestartModal]);
+  }, [aiTestDialogOpen, compatDialogOpen, promptDialogOpen, showRestartModal, usageLogDetail]);
 
   const handleProviderChange = (nextProvider: string) => {
     const providerId = normalizeProviderId(nextProvider);
@@ -14780,6 +14797,19 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </select>
               <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
+            <div className="relative min-w-[120px]">
+              <select
+                value={usageLogLimit}
+                onChange={(event) => setUsageLogLimit(event.target.value)}
+                className={CONSOLE_SELECT_CLASS}
+                disabled={usageLoading}
+              >
+                <option value="20">最近20条</option>
+                <option value="40">最近40条</option>
+                <option value="80">最近80条</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
             <button
               type="button"
               onClick={() => void loadAiUsageDashboard()}
@@ -14844,17 +14874,18 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <span>最近对话日志（显示最新 {usageLogs.length} / 总计 {usageLogsTotal}）</span>
             <span>{usageLogsUpdatedAt ? `更新时间：${usageLogsUpdatedAt}` : ''}</span>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[520px]">
             <table className="min-w-full text-xs">
-              <thead className="bg-brand-bg/60">
+              <thead className="bg-brand-bg/60 sticky top-0 z-10">
                 <tr>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">时间</th>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">场景</th>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">状态</th>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">模型</th>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">Tokens</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">用户输入</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">AI回复</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">用户输入摘要</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">AI回复摘要</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -14886,15 +14917,26 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                           P {item.prompt_tokens} / C {item.completion_tokens}
                         </div>
                       </td>
-                      <td className="px-3 py-2 max-w-[260px] whitespace-pre-wrap break-all">{item.request_text || '-'}</td>
-                      <td className="px-3 py-2 max-w-[320px] whitespace-pre-wrap break-all">
-                        {item.reply_text || item.error_message || '-'}
+                      <td className="px-3 py-2 max-w-[260px] whitespace-normal break-all text-[11px] leading-5">
+                        {getUsageLogPreviewText(item.request_text, 88)}
+                      </td>
+                      <td className="px-3 py-2 max-w-[300px] whitespace-normal break-all text-[11px] leading-5">
+                        {getUsageLogPreviewText(item.reply_text || item.error_message, 96)}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => setUsageLogDetail(item)}
+                          className="px-2 py-1 rounded-lg border border-brand-border text-[11px] font-semibold hover:bg-brand-bg/70 transition"
+                        >
+                          查看详情
+                        </button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr className="border-t border-brand-border/60">
-                    <td colSpan={7} className="px-3 py-4 text-center text-brand-text-muted">
+                    <td colSpan={8} className="px-3 py-4 text-center text-brand-text-muted">
                       暂无日志记录
                     </td>
                   </tr>
@@ -15593,6 +15635,60 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-brand-accent/20"
               >
                 我知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {usageLogDetail ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setUsageLogDetail(null);
+          }}
+        >
+          <div
+            className="w-full max-w-4xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="text-sm font-black tracking-wide">AI对话日志详情</div>
+              <button
+                type="button"
+                onClick={() => setUsageLogDetail(null)}
+                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-brand-text-muted">
+                <div>时间：{usageLogDetail.created_at || '-'}</div>
+                <div>场景：{usageLogDetail.scene_label || usageLogDetail.scene || '-'}</div>
+                <div>状态：{usageLogDetail.status === 'ok' ? '成功' : usageLogDetail.status === 'skipped' ? '跳过' : '失败'}</div>
+                <div>模型：{usageLogDetail.provider || '-'} / {usageLogDetail.model || '-'}</div>
+                <div>配置：{usageLogDetail.profile || '-'}</div>
+                <div>Tokens：Total {usageLogDetail.total_tokens}（P {usageLogDetail.prompt_tokens} / C {usageLogDetail.completion_tokens}）</div>
+              </div>
+              <div className="space-y-2 rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+                <div className="text-xs font-semibold">用户输入</div>
+                <pre className="max-h-[220px] overflow-auto text-xs rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2 whitespace-pre-wrap break-all">
+                  {usageLogDetail.request_text || '-'}
+                </pre>
+                <div className="text-xs font-semibold pt-1">AI回复</div>
+                <pre className="max-h-[260px] overflow-auto text-xs rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2 whitespace-pre-wrap break-all">
+                  {usageLogDetail.reply_text || usageLogDetail.error_message || '-'}
+                </pre>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+              <button
+                type="button"
+                onClick={() => setUsageLogDetail(null)}
+                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              >
+                关闭
               </button>
             </div>
           </div>
