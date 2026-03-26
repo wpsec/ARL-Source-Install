@@ -159,6 +159,7 @@ AI:
   DIALOG_STYLE: "专业"
   DIALOG_LANGUAGE: "zh-CN"
   DIALOG_CONTEXT_MESSAGES: 8
+  REQUEST_DELAY_MS: 0 # AI 请求延迟（毫秒，0=不延迟）
   ACTIVE_PROMPT_ID: "default_ai_report"
   AI_POC_SCAN_ENABLE: true
   AI_DENOISE_ENABLE: true

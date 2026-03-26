@@ -13519,6 +13519,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     dialog_style: string;
     dialog_language: string;
     dialog_context_messages: number;
+    request_delay_ms: number;
     active_prompt_id: string;
     prompt_templates: AiPromptTemplate[];
     custom_compat_providers: AiCustomCompatProvider[];
@@ -13557,12 +13558,20 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     scene_label?: string;
   };
 
+  type AiUsageErrorReasonItem = {
+    reason: string;
+    count: number;
+  };
+
   type AiUsageStatsPayload = {
     all_time: AiUsageStats;
     last_24h: AiUsageStats;
     last_7d: AiUsageStats;
     by_model: AiUsageByDimensionItem[];
     by_scene: AiUsageByDimensionItem[];
+    avg_elapsed_ms: number;
+    avg_elapsed_sample_count: number;
+    top_error_reasons: AiUsageErrorReasonItem[];
     window_days: number;
     updated_at: string;
   };
@@ -13868,6 +13877,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const activePromptIdRaw = String(rawForm?.active_prompt_id || '').trim();
     const activePromptId = promptIds.includes(activePromptIdRaw) ? activePromptIdRaw : promptIds[0] || '';
     const dialogContextMessages = Number(rawForm?.dialog_context_messages ?? 8);
+    const requestDelayMs = Number(rawForm?.request_delay_ms ?? 0);
     const modelProfiles = normalizeModelProfiles(rawForm?.model_profiles, rawForm);
     const activeModelProfileIdRaw = String(rawForm?.active_model_profile_id || '').trim();
     const activeProfile =
@@ -13895,6 +13905,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       dialog_language: String(rawForm?.dialog_language || 'zh-CN'),
       dialog_context_messages:
         Number.isFinite(dialogContextMessages) && dialogContextMessages > 0 ? dialogContextMessages : 8,
+      request_delay_ms: Number.isFinite(requestDelayMs) && requestDelayMs >= 0 ? Math.floor(requestDelayMs) : 0,
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
@@ -13959,7 +13970,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [usageLogsUpdatedAt, setUsageLogsUpdatedAt] = useState('');
   const [usageLogStatus, setUsageLogStatus] = useState('');
   const [usageLogScene, setUsageLogScene] = useState('');
-  const [usageLogLimit, setUsageLogLimit] = useState('20');
+  const [usageLogLimit, setUsageLogLimit] = useState('10');
   const [usageLogDetail, setUsageLogDetail] = useState<AiUsageLogItem | null>(null);
   const [usageSceneOptions, setUsageSceneOptions] = useState<Array<{ scene: string; scene_label: string }>>([]);
   const [providerConfigDialogOpen, setProviderConfigDialogOpen] = useState(false);
@@ -13977,6 +13988,14 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     base_url: '',
     proxy: '',
   });
+  const closeProviderConfigDialog = useCallback(() => {
+    setProviderConfigDialogOpen(false);
+    setProviderConfigApiKeyEdited(false);
+    setProviderConfigDraft((prev) => ({
+      ...prev,
+      api_key: '',
+    }));
+  }, []);
 
   const providerPresetMap = useMemo(() => {
     const map: Record<string, AiProviderPreset> = {};
@@ -14203,6 +14222,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const timeoutSec = Number(currentForm.timeout_sec);
     const maxTokens = Number(currentForm.max_tokens);
     const dialogContextMessages = Number(currentForm.dialog_context_messages);
+    const requestDelayMs = Number(currentForm.request_delay_ms);
     const temperature = Number(currentForm.temperature);
     const promptTemplates = normalizePromptTemplates(currentForm.prompt_templates);
     const promptIds = promptTemplates.map((item) => item.id);
@@ -14242,7 +14262,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         ...item,
         api_key: String(item.api_key || '').trim(),
       };
-      if (sensitiveVisible || sensitiveEditingModelProfileIds.has(item.id)) {
+      if (sensitiveEditingModelProfileIds.has(item.id)) {
         return normalizedItem;
       }
       const { api_key, ...rest } = normalizedItem;
@@ -14267,6 +14287,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       dialog_language: String(currentForm.dialog_language || 'zh-CN').trim() || 'zh-CN',
       dialog_context_messages:
         Number.isFinite(dialogContextMessages) && dialogContextMessages > 0 ? Math.floor(dialogContextMessages) : 8,
+      request_delay_ms: Number.isFinite(requestDelayMs) && requestDelayMs >= 0 ? Math.floor(requestDelayMs) : 0,
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
@@ -14275,11 +14296,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ai_denoise_modules: normalizeAiDenoiseModules(currentForm.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(currentForm.ai_denoise_prompt_ids, promptTemplates),
     };
-    if (!sensitiveVisible && !sensitiveEditingModelProfileIds.has(normalizedActiveProfile.id)) {
+    if (!sensitiveEditingModelProfileIds.has(normalizedActiveProfile.id)) {
       delete payload.api_key;
     }
     return payload;
-  }, [findActiveModelProfile, sensitiveEditingModelProfileIds, sensitiveVisible]);
+  }, [findActiveModelProfile, sensitiveEditingModelProfileIds]);
 
   const normalizeAiUsageStatsValue = useCallback((rawValue: any): AiUsageStats => {
     const toInt = (value: any) => {
@@ -14311,7 +14332,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     setUsageError('');
     try {
       const parsedLimit = Number(usageLogLimit);
-      const logLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : 20;
+      const logLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : 10;
       const logsQuery: Record<string, any> = { limit: logLimit };
       if (usageLogStatus) logsQuery.status = usageLogStatus;
       if (usageLogScene) logsQuery.scene = usageLogScene;
@@ -14338,6 +14359,20 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               scene: String(item?.scene || ''),
               scene_label: String(item?.scene_label || item?.scene || ''),
             }))
+          : [],
+        avg_elapsed_ms: Number.isFinite(Number(statsData?.avg_elapsed_ms))
+          ? Math.max(0, Math.round(Number(statsData?.avg_elapsed_ms)))
+          : 0,
+        avg_elapsed_sample_count: Number.isFinite(Number(statsData?.avg_elapsed_sample_count))
+          ? Math.max(0, Math.floor(Number(statsData?.avg_elapsed_sample_count)))
+          : 0,
+        top_error_reasons: Array.isArray(statsData?.top_error_reasons)
+          ? statsData.top_error_reasons
+              .map((item: any) => ({
+                reason: String(item?.reason || '').trim(),
+                count: Number.isFinite(Number(item?.count)) ? Math.max(0, Math.floor(Number(item.count))) : 0,
+              }))
+              .filter((item: { reason: string; count: number }) => Boolean(item.reason) && item.count > 0)
           : [],
         window_days: Number(statsData?.window_days || 7) || 7,
         updated_at: String(statsData?.updated_at || ''),
@@ -14451,7 +14486,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         return;
       }
       if (providerConfigDialogOpen) {
-        setProviderConfigDialogOpen(false);
+        closeProviderConfigDialog();
         return;
       }
       if (compatDialogOpen) {
@@ -14460,7 +14495,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [aiTestDialogOpen, compatDialogOpen, providerConfigDialogOpen, showRestartModal, usageLogDetail]);
+  }, [aiTestDialogOpen, closeProviderConfigDialog, compatDialogOpen, providerConfigDialogOpen, showRestartModal, usageLogDetail]);
 
   useEffect(() => {
     clearSopUploadSelection();
@@ -14595,10 +14630,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         return next;
       });
     }
-    setProviderConfigDialogOpen(false);
+    closeProviderConfigDialog();
     setSuccess(`${providerLabel} 配置已更新，点击“保存配置”后生效`);
     setError('');
   }, [
+    closeProviderConfigDialog,
     createProviderProfileForForm,
     providerConfigApiKeyEdited,
     providerConfigDraft.api_key,
@@ -14866,7 +14902,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setSensitiveVisible(true);
       setSensitiveVerifyDialogOpen(false);
       setSensitiveVerifyPassword('');
-      setSuccess('身份验证通过，已按需拉取敏感 key');
+      setSuccess('身份验证通过，已进入 Key 编辑模式（历史 Key 不回显）');
     } catch (err: any) {
       setSensitiveVerifyError(err?.message || '验证失败');
     } finally {
@@ -14985,6 +15021,21 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     ? Boolean(sensitiveConfiguredMap.model_profile_api_keys[providerConfigProfileId])
     : false;
   const showProviderConfigApiKeyRaw = sensitiveVisible || providerConfigApiKeyEdited;
+  const usageRequestCount = usageStats?.all_time?.request_count || 0;
+  const usageSuccessCount = usageStats?.all_time?.success_count || 0;
+  const usageErrorCount = usageStats?.all_time?.error_count || 0;
+  const usageSkipCount = usageStats?.all_time?.skip_count || 0;
+  const usageSuccessRate = usageRequestCount > 0 ? ((usageSuccessCount / usageRequestCount) * 100).toFixed(1) : '0.0';
+  const usageAvgTokens = usageRequestCount > 0 ? Math.round((usageStats?.all_time?.total_tokens || 0) / usageRequestCount) : 0;
+  const usageAvgElapsedMs = usageStats?.avg_elapsed_ms || 0;
+  const usageAvgElapsedSampleCount = usageStats?.avg_elapsed_sample_count || 0;
+  const usageTopModelListText = usageStats?.by_model?.slice(0, 5)
+    .map((item) => `${item.provider || '-'} / ${item.model || '-'} (${item.total_tokens})`)
+    .join('；') || '';
+  const usageTopSceneListText = usageStats?.by_scene?.slice(0, 5)
+    .map((item) => `${item.scene_label || item.scene || '-'} (${item.total_tokens})`)
+    .join('；') || '';
+  const usageTopErrorReasonText = usageStats?.top_error_reasons?.map((item) => `${item.reason} (${item.count})`).join('；') || '';
 
   return (
     <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
@@ -15021,7 +15072,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             disabled={isActionBusy}
           >
             <Eye className="w-4 h-4" />
-            {sensitiveVisible ? '隐藏Key' : '显示Key'}
+            {sensitiveVisible ? '退出Key编辑' : '编辑Key'}
           </button>
           <button
             type="button"
@@ -15087,9 +15138,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 className={CONSOLE_SELECT_CLASS}
                 disabled={usageLoading}
               >
+                <option value="10">最近10条</option>
                 <option value="20">最近20条</option>
                 <option value="40">最近40条</option>
-                <option value="80">最近80条</option>
               </select>
               <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
@@ -15118,23 +15169,23 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
             </div>
             <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
-              <div className="text-xs text-brand-text-muted">近24小时</div>
-              <div className="text-sm font-black">Total {usageStats.last_24h.total_tokens}</div>
+              <div className="text-xs text-brand-text-muted">总体成功率</div>
+              <div className="text-sm font-black">{usageSuccessRate}%</div>
               <div className="text-[11px] text-brand-text-muted">
-                Prompt {usageStats.last_24h.prompt_tokens} / Completion {usageStats.last_24h.completion_tokens}
+                成功 {usageSuccessCount} / 请求 {usageRequestCount}
               </div>
               <div className="text-[11px] text-brand-text-muted">
-                请求 {usageStats.last_24h.request_count} | 成功 {usageStats.last_24h.success_count} | 失败 {usageStats.last_24h.error_count}
+                失败 {usageErrorCount} | 跳过 {usageSkipCount}
               </div>
             </div>
             <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
-              <div className="text-xs text-brand-text-muted">近7天</div>
-              <div className="text-sm font-black">Total {usageStats.last_7d.total_tokens}</div>
+              <div className="text-xs text-brand-text-muted">平均响应耗时</div>
+              <div className="text-sm font-black">{usageAvgElapsedMs} ms</div>
               <div className="text-[11px] text-brand-text-muted">
-                Prompt {usageStats.last_7d.prompt_tokens} / Completion {usageStats.last_7d.completion_tokens}
+                统计样本：{usageAvgElapsedSampleCount}
               </div>
               <div className="text-[11px] text-brand-text-muted">
-                请求 {usageStats.last_7d.request_count} | 成功 {usageStats.last_7d.success_count} | 失败 {usageStats.last_7d.error_count}
+                单次平均Token：{usageAvgTokens}
               </div>
             </div>
           </div>
@@ -15142,13 +15193,21 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <div className="text-xs text-brand-text-muted">暂无 Token 统计数据。</div>
         )}
 
-        {usageStats?.by_model?.length ? (
+        {usageTopModelListText ? (
           <div className="text-[11px] text-brand-text-muted">
-            最近{usageStats.window_days}天高频模型：
-            {usageStats.by_model
-              .slice(0, 5)
-              .map((item) => `${item.provider || '-'} / ${item.model || '-'} (${item.total_tokens})`)
-              .join('；')}
+            最近{usageStats?.window_days || 7}天高频模型Top5：{usageTopModelListText}
+          </div>
+        ) : null}
+
+        {usageTopSceneListText ? (
+          <div className="text-[11px] text-brand-text-muted">
+            最近{usageStats?.window_days || 7}天高消耗场景Top5：{usageTopSceneListText}
+          </div>
+        ) : null}
+
+        {usageTopErrorReasonText ? (
+          <div className="text-[11px] text-brand-text-muted">
+            最近{usageStats?.window_days || 7}天失败原因Top3：{usageTopErrorReasonText}
           </div>
         ) : null}
 
@@ -15400,15 +15459,19 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="ai-dialog-style" className="text-xs font-bold text-brand-text-muted block">
-              回复风格
+            <label htmlFor="ai-request-delay" className="text-xs font-bold text-brand-text-muted block">
+              请求延迟（毫秒）
             </label>
             <input
-              id="ai-dialog-style"
-              value={form.dialog_style}
-              onChange={(event) => setForm((prev) => ({ ...prev, dialog_style: event.target.value }))}
+              id="ai-request-delay"
+              type="number"
+              min={0}
+              value={String(form.request_delay_ms)}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, request_delay_ms: Number(event.target.value || 0) }))
+              }
               className={aiInputClass}
-              placeholder="专业 / 简洁 / 审计导向"
+              placeholder="默认 0（不延迟）"
             />
           </div>
           <div className="space-y-2">
@@ -15446,26 +15509,47 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <div className="space-y-2 xl:col-span-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-brand-text-muted block">
-                系统提示词（高级可选）
+                更多可选参数（默认可不填）
               </label>
               <button
                 type="button"
                 onClick={() => setDialogSystemPromptOpen((prev) => !prev)}
                 className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
               >
-                {dialogSystemPromptOpen ? '收起高级配置' : '展开高级配置'}
+                {dialogSystemPromptOpen ? '收起可选参数' : '展开可选参数'}
               </button>
             </div>
             {dialogSystemPromptOpen ? (
-              <textarea
-                id="ai-dialog-system-prompt"
-                value={form.dialog_system_prompt}
-                onChange={(event) => setForm((prev) => ({ ...prev, dialog_system_prompt: event.target.value }))}
-                className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[100px]`}
-                placeholder="用于统一约束 AI 输出风格与格式（可选）"
-              />
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <label htmlFor="ai-dialog-style" className="text-xs font-bold text-brand-text-muted block">
+                      回复风格
+                    </label>
+                    <input
+                      id="ai-dialog-style"
+                      value={form.dialog_style}
+                      onChange={(event) => setForm((prev) => ({ ...prev, dialog_style: event.target.value }))}
+                      className={aiInputClass}
+                      placeholder="默认：专业"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-brand-text-muted block">
+                    系统提示词
+                  </label>
+                  <textarea
+                    id="ai-dialog-system-prompt"
+                    value={form.dialog_system_prompt}
+                    onChange={(event) => setForm((prev) => ({ ...prev, dialog_system_prompt: event.target.value }))}
+                    className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[100px]`}
+                    placeholder="用于统一约束 AI 输出风格与格式（可选）"
+                  />
+                </div>
+              </div>
             ) : (
-              <div className="text-[11px] text-brand-text-muted">默认留空即可，只有需要统一输出格式时再展开设置。</div>
+              <div className="text-[11px] text-brand-text-muted">默认使用“专业”回复风格，只有需要细调时再展开设置。</div>
             )}
           </div>
         </div>
@@ -15637,7 +15721,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         <div
           className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={(event) => {
-            if (event.target === event.currentTarget) setProviderConfigDialogOpen(false);
+            if (event.target === event.currentTarget) closeProviderConfigDialog();
           }}
         >
           <div
@@ -15653,7 +15737,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
               <button
                 type="button"
-                onClick={() => setProviderConfigDialogOpen(false)}
+                onClick={closeProviderConfigDialog}
                 className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
               >
                 <X className="w-4 h-4" />
@@ -15736,7 +15820,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
               <button
                 type="button"
-                onClick={() => setProviderConfigDialogOpen(false)}
+                onClick={closeProviderConfigDialog}
                 className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
               >
                 取消
@@ -15980,7 +16064,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ) : null}
       <SensitiveRevealVerifyModal
         open={sensitiveVerifyDialogOpen}
-        title="显示 AI Key 需要身份验证"
+        title="进入 AI Key 编辑模式需要身份验证"
         username={sensitiveVerifyUsername}
         password={sensitiveVerifyPassword}
         loading={sensitiveVerifyLoading}

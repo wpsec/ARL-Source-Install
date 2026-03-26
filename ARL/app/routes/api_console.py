@@ -7,6 +7,7 @@
 """
 from datetime import datetime, timedelta
 from pathlib import Path
+from collections import Counter
 import errno
 import json
 import os
@@ -14,6 +15,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 
 import yaml
 from bson import ObjectId
@@ -1199,6 +1201,7 @@ def _extract_ai_config(config_obj):
         'dialog_style': str(ai_conf.get('DIALOG_STYLE') or '专业').strip(),
         'dialog_language': str(ai_conf.get('DIALOG_LANGUAGE') or 'zh-CN').strip(),
         'dialog_context_messages': _safe_int(ai_conf.get('DIALOG_CONTEXT_MESSAGES'), 8, min_value=1),
+        'request_delay_ms': _safe_int(ai_conf.get('REQUEST_DELAY_MS'), 0, min_value=0),
         'active_prompt_id': active_prompt_id,
         'prompt_templates': prompt_templates,
         'custom_compat_providers': _normalize_ai_custom_providers(ai_conf.get('CUSTOM_COMPAT_PROVIDERS')),
@@ -1451,6 +1454,7 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['DIALOG_STYLE'] = str(ai_config.get('dialog_style') or '专业').strip()
     ai_conf['DIALOG_LANGUAGE'] = str(ai_config.get('dialog_language') or 'zh-CN').strip()
     ai_conf['DIALOG_CONTEXT_MESSAGES'] = _safe_int(ai_config.get('dialog_context_messages'), 8, min_value=1)
+    ai_conf['REQUEST_DELAY_MS'] = _safe_int(ai_config.get('request_delay_ms'), 0, min_value=0)
     ai_conf['ACTIVE_PROMPT_ID'] = active_prompt_id
     ai_conf['PROMPT_TEMPLATES'] = _persist_ai_prompt_templates_for_config(prompt_templates, existing_prompt_templates)
     ai_conf['CUSTOM_COMPAT_PROVIDERS'] = _normalize_ai_custom_providers(
@@ -1483,7 +1487,16 @@ def _test_ai_config_connectivity(ai_config):
     model_name = _normalize_ai_model_name(provider_id, active_profile.get('model'))
     profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=5)
+    request_delay_ms = _safe_int(ai_config.get('request_delay_ms'), 0, min_value=0)
+    if request_delay_ms > 30000:
+        request_delay_ms = 30000
     request_text = '你好呀～'
+    request_started_at = time.perf_counter()
+
+    def _sleep_before_chat_request():
+        if request_delay_ms <= 0:
+            return
+        time.sleep(float(request_delay_ms) / 1000.0)
 
     def _extract_reply_text(chat_payload):
         reply_text = ''
@@ -1505,7 +1518,7 @@ def _test_ai_config_connectivity(ai_config):
             reply_text = '（接口已响应，但返回内容为空）'
         return reply_text
 
-    def _build_result(ok, message, detail, status='', usage=None, error_message=''):
+    def _build_result(ok, message, detail, status='', usage=None, error_message='', elapsed_ms=0):
         tested_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         detail_value = detail if isinstance(detail, dict) else {}
         result = {
@@ -1519,6 +1532,9 @@ def _test_ai_config_connectivity(ai_config):
         status_value = str(status or '').strip().lower()
         if status_value not in ('ok', 'error', 'skipped'):
             status_value = 'ok' if ok else 'error'
+        elapsed_value = _normalize_ai_elapsed_ms(elapsed_ms)
+        if elapsed_value <= 0 and status_value in ('ok', 'error'):
+            elapsed_value = _normalize_ai_elapsed_ms(int((time.perf_counter() - request_started_at) * 1000.0))
         log_error = str(error_message or '').strip()
         if status_value == 'error' and not log_error:
             log_error = str(message or '').strip()
@@ -1531,6 +1547,7 @@ def _test_ai_config_connectivity(ai_config):
             request_text=str(detail_value.get('request_text') or request_text),
             reply_text=str(detail_value.get('reply_text') or ''),
             error_message=log_error,
+            elapsed_ms=elapsed_value,
             usage=usage,
             meta={
                 'base_url': base_url,
@@ -1651,6 +1668,7 @@ def _test_ai_config_connectivity(ai_config):
         }
         if request_proxies:
             chat_kwargs['proxies'] = request_proxies
+        _sleep_before_chat_request()
         chat_conn = utils.http_req(chat_url, 'post', **chat_kwargs)
         chat_status_code = int(getattr(chat_conn, 'status_code', 0) or 0)
         try:
@@ -1680,6 +1698,7 @@ def _test_ai_config_connectivity(ai_config):
                 }
                 if request_proxies:
                     retry_kwargs['proxies'] = request_proxies
+                _sleep_before_chat_request()
                 retry_conn = utils.http_req(chat_url, 'post', **retry_kwargs)
                 retry_status_code = int(getattr(retry_conn, 'status_code', 0) or 0)
                 try:
@@ -1793,6 +1812,81 @@ def _normalize_ai_usage_value(value):
     return parsed
 
 
+def _normalize_ai_elapsed_ms(value, max_value=600000):
+    parsed = _safe_int_any(value, 0)
+    if parsed < 0:
+        return 0
+    if max_value and parsed > max_value:
+        return max_value
+    return parsed
+
+
+def _normalize_ai_error_reason(error_message):
+    text = str(error_message or '').strip()
+    if not text:
+        return ''
+    lowered = text.lower()
+
+    if '模型配置不完整' in text:
+        return '模型配置不完整'
+
+    if (
+        'invalid_api_key' in lowered
+        or 'incorrect api key' in lowered
+        or 'unauthorized' in lowered
+        or 'authentication' in lowered
+        or '401' in lowered
+        or '鉴权' in text
+        or '认证' in text
+    ):
+        return '鉴权失败'
+
+    if (
+        'rate limit' in lowered
+        or 'too many requests' in lowered
+        or 'quota' in lowered
+        or '429' in lowered
+        or '限流' in text
+        or '频率限制' in text
+    ):
+        return '频率限制'
+
+    if (
+        'timeout' in lowered
+        or 'timed out' in lowered
+        or 'read timed out' in lowered
+        or 'connect timeout' in lowered
+        or '超时' in text
+    ):
+        return '请求超时'
+
+    if (
+        ('model' in lowered and ('not exist' in lowered or 'not found' in lowered or 'unavailable' in lowered))
+        or ('模型' in text and ('不可用' in text or '不存在' in text))
+    ):
+        return '模型不可用'
+
+    if '返回格式不可解析' in text or 'only output json' in lowered:
+        return '返回格式异常'
+
+    if (
+        'connection' in lowered
+        or 'name or service not known' in lowered
+        or 'dns' in lowered
+        or 'proxy' in lowered
+        or 'ssl' in lowered
+        or '连接' in text
+        or '网络' in text
+        or '代理' in text
+    ):
+        return '网络异常'
+
+    if text.startswith('HTTP '):
+        return 'HTTP错误'
+
+    return _truncate_text(text, 60)
+
+
 def _normalize_ai_usage_dict(raw_usage):
     usage = raw_usage if isinstance(raw_usage, dict) else {}
     prompt_tokens = _normalize_ai_usage_value(usage.get('prompt_tokens'))
@@ -1876,6 +1970,7 @@ def _write_ai_usage_log(
     request_text='',
     reply_text='',
     error_message='',
+    elapsed_ms=0,
     usage=None,
     meta=None
 ):
@@ -1886,6 +1981,10 @@ def _write_ai_usage_log(
         status_text = 'ok'
     usage_value = _normalize_ai_usage_dict(usage)
     meta_value = meta if isinstance(meta, dict) else {}
+    elapsed_value = _normalize_ai_elapsed_ms(elapsed_ms)
+    if elapsed_value <= 0 and isinstance(meta_value, dict):
+        elapsed_value = _normalize_ai_elapsed_ms(meta_value.get('elapsed_ms'))
+    error_reason = _normalize_ai_error_reason(error_message) if status_text == 'error' else ''
 
     record = {
         'created_at': now,
@@ -1899,6 +1998,8 @@ def _write_ai_usage_log(
         'request_text': _truncate_text(request_text, 3200),
         'reply_text': _truncate_text(reply_text, 3200),
         'error_message': _truncate_text(error_message, 320),
+        'error_reason': error_reason,
+        'elapsed_ms': elapsed_value,
         'usage': usage_value,
         'meta': meta_value,
     }
@@ -1935,6 +2036,8 @@ def _serialize_ai_usage_log_record(item):
         'request_text': _truncate_text(item.get('request_text'), 3200),
         'reply_text': _truncate_text(item.get('reply_text'), 3200),
         'error_message': _truncate_text(item.get('error_message'), 320),
+        'error_reason': _normalize_ai_error_reason(item.get('error_reason') or item.get('error_message')),
+        'elapsed_ms': _normalize_ai_elapsed_ms(item.get('elapsed_ms')),
         'prompt_tokens': usage_value.get('prompt_tokens', 0),
         'completion_tokens': usage_value.get('completion_tokens', 0),
         'total_tokens': usage_value.get('total_tokens', 0),
@@ -2978,7 +3081,7 @@ def _build_ai_denoise_context(module_id, item):
     return {'raw': _normalize_item_text(item, 1800)}
 
 
-def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result):
+def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result, request_delay_ms=0):
     provider_id = _normalize_ai_provider_id(active_profile.get('provider') or 'openai')
     base_url = str(active_profile.get('base_url') or '').strip()
     api_key = str(active_profile.get('api_key') or '').strip()
@@ -2988,6 +3091,9 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
     profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
     usage_scene = AI_DENOISE_MODULE_SCENE_MAP.get(module_id) or 'ai_denoise'
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=8)
+    request_delay_ms = _safe_int(request_delay_ms, 0, min_value=0)
+    if request_delay_ms > 30000:
+        request_delay_ms = 30000
     dialogue_records = []
     user_content = ''
     if not base_url or not api_key or not model_name:
@@ -3075,6 +3181,7 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
         def _request_chat_completion(target_model):
             request_payload = dict(request_body)
             request_payload['model'] = str(target_model or '').strip()
+            call_started_at = time.perf_counter()
             request_kwargs = {
                 'headers': headers,
                 'json': request_payload,
@@ -3082,6 +3189,8 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
             }
             if request_proxies:
                 request_kwargs['proxies'] = request_proxies
+            if request_delay_ms > 0:
+                time.sleep(float(request_delay_ms) / 1000.0)
             conn = utils.http_req(request_url, 'post', **request_kwargs)
             status_code = _safe_int_any(getattr(conn, 'status_code', 0), 0)
             payload = {}
@@ -3099,7 +3208,13 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                     if not err_message:
                         err_message = str(payload.get('message') or '').strip()
                 message = err_message or 'HTTP {}'.format(status_code)
-                return False, '', message, _normalize_ai_usage_dict(payload.get('usage') if isinstance(payload, dict) else {})
+                return (
+                    False,
+                    '',
+                    message,
+                    _normalize_ai_usage_dict(payload.get('usage') if isinstance(payload, dict) else {}),
+                    _normalize_ai_elapsed_ms(int((time.perf_counter() - call_started_at) * 1000.0)),
+                )
 
             choices = payload.get('choices', []) if isinstance(payload, dict) else []
             message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
@@ -3117,9 +3232,15 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                                 text_parts.append(text_value)
                     content_text = '\n'.join(text_parts).strip()
             usage = _normalize_ai_usage_dict(payload.get('usage') if isinstance(payload, dict) else {})
-            return True, content_text, '', usage
+            return (
+                True,
+                content_text,
+                '',
+                usage,
+                _normalize_ai_elapsed_ms(int((time.perf_counter() - call_started_at) * 1000.0)),
+            )
 
-        call_ok, content_text, call_message, usage = _request_chat_completion(model_name)
+        call_ok, content_text, call_message, usage, elapsed_ms = _request_chat_completion(model_name)
         if not call_ok and _is_ai_model_unavailable_error(call_message):
             retry_model = _pick_ai_retry_model(provider_id, model_name)
             if retry_model:
@@ -3134,17 +3255,19 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                         max_items=2,
                     )
                 )
-                retry_ok, retry_content_text, retry_message, retry_usage = _request_chat_completion(retry_model)
+                retry_ok, retry_content_text, retry_message, retry_usage, retry_elapsed_ms = _request_chat_completion(retry_model)
                 if retry_ok:
                     model_name = retry_model
                     call_ok = True
                     content_text = retry_content_text
                     call_message = ''
                     usage = retry_usage
+                    elapsed_ms = retry_elapsed_ms
                 else:
                     call_ok = False
                     call_message = retry_message
                     usage = retry_usage
+                    elapsed_ms = retry_elapsed_ms
 
         if not call_ok:
             dialogue_records.extend(
@@ -3162,6 +3285,7 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                 request_text=user_content,
                 reply_text='',
                 error_message=call_message,
+                elapsed_ms=elapsed_ms,
                 usage=usage,
                 meta={
                     'module_id': module_id,
@@ -3190,6 +3314,7 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                 request_text=user_content,
                 reply_text=content_text,
                 error_message='',
+                elapsed_ms=elapsed_ms,
                 usage=usage,
                 meta={
                     'module_id': module_id,
@@ -3224,6 +3349,7 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
                 request_text=user_content,
                 reply_text=content_text,
                 error_message=format_error,
+                elapsed_ms=elapsed_ms,
                 usage=usage,
                 meta={
                     'module_id': module_id,
@@ -3360,6 +3486,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False, pers
         and str(active_profile.get('api_key') or '').strip()
         and str(active_profile.get('model') or '').strip()
     )
+    request_delay_ms = _safe_int(ai_config.get('request_delay_ms'), 0, min_value=0)
 
     # 列表批量分析默认走规则，详情场景（单条）按需尝试模型，避免列表页被外部接口阻塞。
     try_use_ai = bool(
@@ -3588,6 +3715,7 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False, pers
                 ai_prompt=prompt_content,
                 active_profile=active_profile,
                 rule_result=rule_result,
+                request_delay_ms=request_delay_ms,
             )
             if ai_output:
                 final_result = _normalize_ai_denoise_output(module_id, ai_output, rule_result)
@@ -5657,8 +5785,8 @@ class ApiConsoleAiConfigReveal(ARLResource):
 
         try:
             config_obj = _load_config_from_file(config_path)
-            ai_config = _extract_ai_config(config_obj)
-            sensitive_configured = _build_ai_sensitive_configured_map(ai_config)
+            ai_config_raw = _extract_ai_config(config_obj)
+            ai_config, sensitive_configured = _sanitize_ai_config_for_client(ai_config_raw)
         except Exception as exc:
             logger.exception('reveal ai_config failed: %s', exc)
             return utils.build_ret(
@@ -5675,6 +5803,7 @@ class ApiConsoleAiConfigReveal(ARLResource):
                 'revealed': True,
                 'ai_config': ai_config,
                 'sensitive_configured': sensitive_configured,
+                'message': '已进入 Key 编辑模式。为安全起见，系统不会回传历史明文 Key。',
                 'provider_presets': AI_PROVIDER_PRESETS,
                 'config_path': str(config_path),
                 'revealed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -5863,6 +5992,9 @@ class ApiConsoleAiUsageStats(ARLResource):
 
         by_model = []
         by_scene = []
+        avg_elapsed_ms = 0
+        avg_elapsed_sample_count = 0
+        top_error_reasons = []
         try:
             by_model_pipeline = [
                 {'$match': window_query},
@@ -5930,6 +6062,44 @@ class ApiConsoleAiUsageStats(ARLResource):
         except Exception as exc:
             logger.warning('aggregate ai usage by_scene failed: %s', exc)
 
+        try:
+            elapsed_pipeline = [
+                {'$match': {'created_at': {'$gte': now - timedelta(days=window_days)}, 'status': {'$in': ['ok', 'error']}, 'elapsed_ms': {'$gt': 0}}},
+                {
+                    '$group': {
+                        '_id': None,
+                        'avg_elapsed_ms': {'$avg': '$elapsed_ms'},
+                        'sample_count': {'$sum': 1},
+                    }
+                },
+            ]
+            elapsed_items = list(utils.conn_db(AI_USAGE_LOG_COLLECTION).aggregate(elapsed_pipeline))
+            if elapsed_items:
+                elapsed_item = elapsed_items[0] if isinstance(elapsed_items[0], dict) else {}
+                avg_elapsed_ms = _normalize_ai_elapsed_ms(round(float(elapsed_item.get('avg_elapsed_ms') or 0)))
+                avg_elapsed_sample_count = _normalize_ai_usage_value(elapsed_item.get('sample_count'))
+        except Exception as exc:
+            logger.warning('aggregate ai usage elapsed failed: %s', exc)
+
+        try:
+            reason_counter = Counter()
+            error_query = {'created_at': {'$gte': now - timedelta(days=window_days)}, 'status': 'error'}
+            error_cursor = utils.conn_db(AI_USAGE_LOG_COLLECTION).find(
+                error_query,
+                {'error_reason': 1, 'error_message': 1},
+            ).limit(5000)
+            for item in error_cursor:
+                if not isinstance(item, dict):
+                    continue
+                reason = _normalize_ai_error_reason(item.get('error_reason') or item.get('error_message')) or '未知错误'
+                reason_counter[reason] += 1
+            top_error_reasons = [
+                {'reason': reason, 'count': count}
+                for reason, count in reason_counter.most_common(3)
+            ]
+        except Exception as exc:
+            logger.warning('aggregate ai usage top_error_reasons failed: %s', exc)
+
         return utils.build_ret(
             ErrorMsg.Success,
             {
@@ -5938,6 +6108,9 @@ class ApiConsoleAiUsageStats(ARLResource):
                 'last_7d': last_7d,
                 'by_model': by_model,
                 'by_scene': by_scene,
+                'avg_elapsed_ms': avg_elapsed_ms,
+                'avg_elapsed_sample_count': avg_elapsed_sample_count,
+                'top_error_reasons': top_error_reasons,
                 'window_days': window_days,
                 'updated_at': now.strftime('%Y-%m-%d %H:%M:%S'),
             },
