@@ -488,6 +488,8 @@ AI_USAGE_LOG_COLLECTION = 'ai_usage_log'
 AI_USAGE_LOG_MAX_LIMIT = 200
 AI_USAGE_SCENE_LABEL_MAP = {
     'ai_config_test': 'AI测试',
+    'ai_poc_scan_plan': 'AI-POC扫描-计划',
+    'ai_poc_scan_decision': 'AI-POC扫描-决策',
     'ai_denoise_site': 'AI去噪-站点',
     'ai_denoise_fileleak': 'AI去噪-目录扫描',
     'ai_denoise_cert': 'AI去噪-SSL证书',

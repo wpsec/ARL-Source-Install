@@ -2578,6 +2578,7 @@ const TASK_RUNNING_STAGE_LABELS: Record<string, string> = {
   site_identify: '站点识别',
   site_capture: '站点截图',
   file_leak: '目录扫描',
+  ai_poc_scan: 'AI-POC扫描',
   poc_run: 'PoC扫描',
   nuclei_scan: 'Nuclei扫描',
   afrog_scan: 'afrog扫描',
@@ -3121,6 +3122,7 @@ const TASK_SERVICE_STAGE_LABEL_MAP: Record<string, string> = {
   site_spider: '站点爬虫',
   site_capture: '站点截图',
   file_leak: '目录扫描',
+  ai_poc_scan: 'AI-POC扫描',
   nuclei_scan: 'Nuclei扫描',
   afrog: 'afrog扫描',
   afrog_scan: 'afrog扫描',
@@ -3577,6 +3579,7 @@ const fieldLabelMap: Record<string, string> = {
   ssl_cert: 'SSL 证书获取',
   dns_query_plugin: '测绘引擎查询',
   skip_scan_cdn_ip: '跳过CDN',
+  ai_poc_scan: 'AI-POC扫描',
   nuclei_scan: 'nuclei 调用',
   afrog_scan: 'afrog 调用',
   findvhost: 'Host 碰撞',
@@ -15396,7 +15399,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_poc_scan_enable: event.target.checked }))}
                 className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
               />
-              <span className="text-xs font-semibold">启用AIPOC扫描</span>
+              <span className="text-xs font-semibold">启用AI-POC扫描</span>
             </label>
             <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
               <input
@@ -15410,7 +15413,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </div>
         </div>
         <div className="text-xs text-brand-text-muted">
-          AIPOC扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 的候选 PoC；AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
+          AI-POC扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 的候选 PoC；AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
         </div>
         <div className="space-y-2">
           {aiDenoiseModuleConfigs.map((moduleConfig) => {

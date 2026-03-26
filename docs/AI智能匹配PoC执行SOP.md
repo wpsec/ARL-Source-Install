@@ -116,6 +116,41 @@
 - 第一阶段执行层可先用 `-s` 收敛。
 - 后续再做“按候选 PoC 子集执行”（不在本阶段范围）。
 
+### 7.3 索引脚本（已落地）
+
+- 脚本：`ARL/app/tools/build_poc_index.py`
+- 默认输入：
+  - nuclei：`/code/tools/nuclei/nuclei-templates`（容器内）
+  - afrog：`/code/tools/afrog/afrog-pocs`（容器内）
+- 默认输出：`/code/docker/ai/sop/poc_index.json`（容器内）
+- 运行命令：
+
+```bash
+python3 /code/app/tools/build_poc_index.py
+```
+
+可选参数：
+- `--nuclei-dir`：自定义 nuclei 模板目录
+- `--afrog-dir`：自定义 afrog poc 目录
+- `--output`：自定义索引文件路径
+- `--with-reverse-map`：附带反向映射（`tag_to_templates/keyword_to_pocs`，仅排障时建议开启）
+- `--quiet`：静默模式
+
+运行时接入：
+- `ai_poc_scan` 会自动加载索引文件并提取 `token -> tags/keywords` 候选。
+- 默认读取：`/code/docker/ai/sop/poc_index.json`（兼容历史路径 `/code/docker/ai/poc-index/poc_index.json`）。
+- 可通过环境变量 `ARL_AI_POC_INDEX_FILE` 指定索引文件路径。
+
+### 7.4 索引体积与AI选择机制
+
+- 索引文件可以很大（例如数十万行），但**不会整份发送给 AI**。
+- 运行时只做本地检索：
+  - 从 `site/finger/title/http_server/url_hints/wih_hints` 抽取 token；
+  - 在 `token_to_tags/token_to_keywords` 命中并打分；
+  - 仅保留 Top-K 候选（默认 `tags<=48`、`keywords<=48`）。
+- 发送给 AI 的候选再限流（默认 `tags<=64`、`keywords<=64`），保证 prompt 可控。
+- 默认生成“紧凑索引”（仅运行时必要字段）；反向映射只在 `--with-reverse-map` 时输出。
+
 ## 8. AI输出协议（必须严格 JSON）
 
 ```json
@@ -171,10 +206,14 @@
 在 AI 管理页面新增开关并统一命名：
 
 - 页面区块：`AI功能开关配置`（原“AI去噪配置”）
-- 开关1：`启用AIPOC扫描`
+- 开关1：`启用AI-POC扫描`
   - 配置键：`AI.AI_POC_SCAN_ENABLE`
   - 前端字段：`ai_poc_scan_enable`
 - 开关2：`启用AI去噪`（沿用）
+
+触发规则：
+- 不在“新建任务”增加 `AI-POC` 独立勾选项。
+- 仅当任务启用 `nuclei_scan` 或 `afrog_scan`，且 AI 管理中 `AI_POC_SCAN_ENABLE=true` 时，自动执行 `ai_poc_scan` 决策阶段。
 
 建议运行模式（后续可扩展）：
 - `shadow`：只记录建议，不改执行参数
@@ -237,10 +276,3 @@ M4：灰度与评估
 - 输出不可执行参数
 - 用未提供事实做断言
 - 单一弱证据下给高置信度结论
-
-## 15. 更新日志
-
-- 2026-03-26
-  - 新增：AI管理开关设计（`AI_POC_SCAN_ENABLE`）与页面命名调整要求（`AI功能开关配置`）。
-  - 明确：阶段边界“暂不改 `tools/poc/`”，先做调度与策略接入。
-  - 补充：As-Is 现网调用链路、To-Be 三段式架构、alias 体系、JSON 协议、灰度与验收指标。

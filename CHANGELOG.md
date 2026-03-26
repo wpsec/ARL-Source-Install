@@ -3,6 +3,13 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-03-27（v4.3.19）
+
+- `[v4.3.19]` AI-POC 扫描决策阶段落地：`commonTask` 新增 `ai_poc_scan` 预决策流程，在 `nuclei/afrog` 前汇聚站点指纹、标题、Body、URL/WIH 线索与别名命中，按开关自动生成候选 `nuclei tags` 与 `afrog keywords/severity`，并将实际应用参数注入对应扫描调用链路
+- `[v4.3.19]` AI-POC 可观测性增强：任务服务阶段新增 `ai_poc_scan` 计时与决策明细，AI 管理日志新增 `AI-POC扫描-计划/决策` 场景，前端任务阶段与配置文案统一为 `AI-POC扫描`，便于确认“调用了哪些 PoC 候选策略”
+- `[v4.3.19]` PoC 索引能力补齐：新增 `ARL/app/tools/build_poc_index.py`，支持从 `nuclei-templates/afrog-pocs` 构建 `token -> tags/keywords` 索引；运行时优先读取 `/code/docker/ai/sop/poc_index.json`（兼容历史路径并支持 `ARL_AI_POC_INDEX_FILE` 覆盖），避免每次运行全库检索
+- `[v4.3.19]` AI 去噪 PoC 风险触发修复：`run_task_ai_denoise_pipeline` 启动时会先合并已累计的 `pending_modules`，修复并发阶段下 `nuclei_result/vuln` 等模块因状态切换被清空后漏执行的问题
+
 ## 2026-03-26（v4.3.0 ~ v4.3.18）
 
 - `[v4.3.18]` AI 提供方命名区分优化：`AI管理` 中官方 `OpenAI` 提供方名称调整为 `OpenAI-GPT`，与 `OpenAI 兼容接口` 做明确区分，降低用户在模型来源配置时的混淆风险

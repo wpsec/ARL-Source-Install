@@ -307,6 +307,24 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False, modu
         return {"status": "skipped", "reason": "option_disabled", "task_id": task_id_text}
 
     requested_modules = normalize_ai_denoise_modules(modules, default_all=True)
+    current_ai_status = task_doc.get("ai_denoise_status") if isinstance(task_doc.get("ai_denoise_status"), dict) else {}
+    current_pending_modules = normalize_ai_denoise_modules(
+        current_ai_status.get("pending_modules"),
+        default_all=False,
+    )
+    # 任务进入 running 前，可能已有多个阶段把模块合并到了 pending。
+    # 这里需要把 pending 一并纳入本轮执行，避免 nuclei_result/vuln 等模块被“清空 pending”后漏跑。
+    if current_pending_modules:
+        requested_modules = normalize_ai_denoise_modules(
+            requested_modules + current_pending_modules,
+            default_all=False,
+        ) or requested_modules
+        logger.info(
+            "ai denoise consume pending modules task_id:%s trigger:%s pending:%s",
+            task_id_text,
+            str(trigger or "task_done"),
+            ",".join(current_pending_modules),
+        )
 
     _ensure_ai_denoise_result_indexes()
     started_at = utils.curr_date()
