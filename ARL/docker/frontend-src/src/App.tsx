@@ -11245,7 +11245,6 @@ function ApiConsoleView({ token }: { token: string }) {
     setSaving(true);
     setError('');
     setSuccess('');
-    setShowRestartModal(false);
     try {
       const result = await requestApi(token, '/api_console/service_api/', {
         method: 'POST',
@@ -13492,6 +13491,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     base_url: string;
     api_key: string;
     model: string;
+    proxy: string;
     timeout_sec: number;
     temperature: number;
     max_tokens: number;
@@ -13511,6 +13511,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     base_url: string;
     api_key: string;
     model: string;
+    proxy_url: string;
     timeout_sec: number;
     temperature: number;
     max_tokens: number;
@@ -13740,6 +13741,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           base_url: String(item?.base_url || '').trim() || String(preset?.base_url || ''),
           api_key: String(item?.api_key || ''),
           model: String(item?.model || '').trim() || String(preset?.default_model || ''),
+          proxy: String(item?.proxy || item?.proxy_url || '').trim(),
           timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
           temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
           max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 4000,
@@ -13764,6 +13766,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         base_url: String(legacyRawForm?.base_url || '').trim() || String(fallbackPreset?.base_url || ''),
         api_key: String(legacyRawForm?.api_key || ''),
         model: String(legacyRawForm?.model || '').trim() || String(fallbackPreset?.default_model || ''),
+        proxy: String(legacyRawForm?.proxy_url || legacyRawForm?.proxy || '').trim(),
         timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
         temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
         max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 4000,
@@ -13883,6 +13886,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       base_url: String(activeProfile?.base_url || rawForm?.base_url || ''),
       api_key: String(activeProfile?.api_key || rawForm?.api_key || ''),
       model: String(activeProfile?.model || rawForm?.model || ''),
+      proxy_url: String(activeProfile?.proxy || rawForm?.proxy_url || rawForm?.proxy || ''),
       timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
       temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
       max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : 4000,
@@ -13958,6 +13962,21 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [usageLogLimit, setUsageLogLimit] = useState('20');
   const [usageLogDetail, setUsageLogDetail] = useState<AiUsageLogItem | null>(null);
   const [usageSceneOptions, setUsageSceneOptions] = useState<Array<{ scene: string; scene_label: string }>>([]);
+  const [providerConfigDialogOpen, setProviderConfigDialogOpen] = useState(false);
+  const [providerConfigProviderId, setProviderConfigProviderId] = useState('deepseek');
+  const [providerConfigProfileId, setProviderConfigProfileId] = useState('');
+  const [providerConfigApiKeyEdited, setProviderConfigApiKeyEdited] = useState(false);
+  const [providerConfigDraft, setProviderConfigDraft] = useState<{
+    api_key: string;
+    model: string;
+    base_url: string;
+    proxy: string;
+  }>({
+    api_key: '',
+    model: '',
+    base_url: '',
+    proxy: '',
+  });
 
   const providerPresetMap = useMemo(() => {
     const map: Record<string, AiProviderPreset> = {};
@@ -13966,6 +13985,85 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     });
     return map;
   }, [providerPresets]);
+
+  const providerUiMetaMap = useMemo(
+    () =>
+      ({
+        qwen: {
+          logo: 'QW',
+          logoClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40',
+          apiKeyUrl: 'https://bailian.console.aliyun.com/?apiKey=1',
+        },
+        kimi: {
+          logo: 'KM',
+          logoClass: 'bg-sky-500/20 text-sky-300 border-sky-400/40',
+          apiKeyUrl: 'https://platform.moonshot.cn/console/api-keys',
+        },
+        openai: {
+          logo: 'OA',
+          logoClass: 'bg-brand-accent/20 text-brand-accent border-brand-accent/40',
+          apiKeyUrl: 'https://platform.openai.com/api-keys',
+        },
+        glm: {
+          logo: 'GL',
+          logoClass: 'bg-violet-500/20 text-violet-300 border-violet-400/40',
+          apiKeyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
+        },
+        deepseek: {
+          logo: 'DS',
+          logoClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40',
+          apiKeyUrl: 'https://platform.deepseek.com/api_keys',
+        },
+        custom_compatible: {
+          logo: 'API',
+          logoClass: 'bg-amber-500/20 text-amber-300 border-amber-400/40',
+          apiKeyUrl: 'https://platform.openai.com/api-keys',
+        },
+      }) as Record<
+        string,
+        {
+          logo: string;
+          logoClass: string;
+          apiKeyUrl: string;
+        }
+      >,
+    []
+  );
+
+  const providerDisplayOrder = ['qwen', 'kimi', 'openai', 'glm', 'deepseek', 'custom_compatible'];
+
+  const providerCardList = useMemo(() => {
+    const seen = new Set<string>();
+    const ordered: AiProviderPreset[] = [];
+    providerDisplayOrder.forEach((providerId) => {
+      const preset = providerPresetMap[providerId] || defaultProviderPresets.find((item) => item.id === providerId);
+      if (!preset) return;
+      ordered.push(preset);
+      seen.add(providerId);
+    });
+    providerPresets.forEach((item) => {
+      if (!item?.id || seen.has(item.id)) return;
+      ordered.push(item);
+      seen.add(item.id);
+    });
+    return ordered;
+  }, [providerPresetMap, providerPresets]);
+
+  const providerProfileMap = useMemo(() => {
+    const map: Record<string, AiModelProfile> = {};
+    form.model_profiles.forEach((item) => {
+      const providerId = normalizeProviderId(item.provider);
+      if (!providerId) return;
+      if (!map[providerId]) {
+        map[providerId] = item;
+        return;
+      }
+      if (item.id === form.active_model_profile_id) {
+        map[providerId] = item;
+      }
+    });
+    return map;
+  }, [form.active_model_profile_id, form.model_profiles]);
 
   const denoiseSopTemplateMap = useMemo(() => {
     const promptById = new Map<string, AiPromptTemplate>();
@@ -14073,6 +14171,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       base_url: profile.base_url,
       api_key: profile.api_key,
       model: profile.model,
+      proxy_url: profile.proxy,
       timeout_sec: profile.timeout_sec,
       temperature: profile.temperature,
       max_tokens: profile.max_tokens,
@@ -14124,6 +14223,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       base_url: String(currentForm.base_url || '').trim(),
       api_key: String(currentForm.api_key || '').trim(),
       model: String(currentForm.model || '').trim(),
+      proxy: String(currentForm.proxy_url || '').trim(),
       timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? Math.floor(timeoutSec) : 40,
       temperature: Number.isFinite(temperature) && temperature >= 0 ? Number(temperature.toFixed(2)) : 0.2,
       max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? Math.floor(maxTokens) : 4000,
@@ -14158,6 +14258,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       base_url: normalizedActiveProfile.base_url,
       api_key: normalizedActiveProfile.api_key,
       model: normalizedActiveProfile.model,
+      proxy_url: normalizedActiveProfile.proxy,
       timeout_sec: normalizedActiveProfile.timeout_sec,
       temperature: normalizedActiveProfile.temperature,
       max_tokens: normalizedActiveProfile.max_tokens,
@@ -14333,7 +14434,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   }, [loadAiUsageDashboard]);
 
   useEffect(() => {
-    if (!compatDialogOpen && !showRestartModal && !aiTestDialogOpen && !usageLogDetail) return;
+    if (!compatDialogOpen && !providerConfigDialogOpen && !showRestartModal && !aiTestDialogOpen && !usageLogDetail) return;
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -14349,17 +14450,166 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         setShowRestartModal(false);
         return;
       }
+      if (providerConfigDialogOpen) {
+        setProviderConfigDialogOpen(false);
+        return;
+      }
       if (compatDialogOpen) {
         setCompatDialogOpen(false);
       }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [aiTestDialogOpen, compatDialogOpen, showRestartModal, usageLogDetail]);
+  }, [aiTestDialogOpen, compatDialogOpen, providerConfigDialogOpen, showRestartModal, usageLogDetail]);
 
   useEffect(() => {
     clearSopUploadSelection();
   }, [clearSopUploadSelection, sopUploadModuleId]);
+
+  const createProviderProfileForForm = useCallback(
+    (currentForm: AiConfigForm, providerIdRaw: string): AiModelProfile => {
+      const providerId = normalizeProviderId(providerIdRaw);
+      const preset = providerPresetMap[providerId] || defaultProviderPresets.find((item) => item.id === providerId);
+      const profileName = String(preset?.label || providerId || '模型').trim();
+      let fallbackIndex = currentForm.model_profiles.length + 1;
+      let candidateId = buildModelProfileId(`provider_${providerId}`, fallbackIndex);
+      while (currentForm.model_profiles.some((item) => item.id === candidateId)) {
+        fallbackIndex += 1;
+        candidateId = buildModelProfileId(`provider_${providerId}_${fallbackIndex}`, fallbackIndex);
+      }
+      return {
+        id: candidateId,
+        name: profileName,
+        provider: providerId,
+        base_url: String(preset?.base_url || ''),
+        api_key: '',
+        model: String(preset?.default_model || ''),
+        proxy: '',
+        timeout_sec: 40,
+        temperature: 0.2,
+        max_tokens: 4000,
+      };
+    },
+    [providerPresetMap]
+  );
+
+  const setDefaultAiProvider = useCallback(
+    (providerIdRaw: string) => {
+      const providerId = normalizeProviderId(providerIdRaw);
+      setForm((prev) => {
+        const existedProfile = prev.model_profiles.find((item) => normalizeProviderId(item.provider) === providerId);
+        if (existedProfile) {
+          return syncFormWithActiveModel(prev, existedProfile);
+        }
+        const nextProfile = createProviderProfileForForm(prev, providerId);
+        return syncFormWithActiveModel(
+          {
+            ...prev,
+            model_profiles: [...prev.model_profiles, nextProfile],
+          },
+          nextProfile
+        );
+      });
+      setError('');
+      setSuccess('');
+    },
+    [createProviderProfileForForm, syncFormWithActiveModel]
+  );
+
+  const openProviderConfigDialog = useCallback(
+    (providerIdRaw: string) => {
+      const providerId = normalizeProviderId(providerIdRaw);
+      const existingProfile = providerProfileMap[providerId];
+      const nextProfile = existingProfile || createProviderProfileForForm(form, providerId);
+      if (!existingProfile) {
+        setForm((prev) => ({
+          ...prev,
+          model_profiles: [...prev.model_profiles, nextProfile],
+        }));
+      }
+      setProviderConfigProviderId(providerId);
+      setProviderConfigProfileId(nextProfile.id);
+      setProviderConfigApiKeyEdited(false);
+      setProviderConfigDraft({
+        api_key: String(nextProfile.api_key || ''),
+        model: String(nextProfile.model || ''),
+        base_url: String(nextProfile.base_url || ''),
+        proxy: String(nextProfile.proxy || ''),
+      });
+      setProviderConfigDialogOpen(true);
+      setError('');
+    },
+    [createProviderProfileForForm, form, providerProfileMap]
+  );
+
+  const saveProviderConfigDraft = useCallback(() => {
+    const providerId = normalizeProviderId(providerConfigProviderId);
+    const profileId = String(providerConfigProfileId || '').trim();
+    const providerLabel = providerPresetMap[providerId]?.label || providerId;
+    const fallbackPreset = providerPresetMap[providerId] || defaultProviderPresets.find((item) => item.id === providerId);
+    setForm((prev) => {
+      let targetProfile =
+        prev.model_profiles.find((item) => item.id === profileId) ||
+        prev.model_profiles.find((item) => normalizeProviderId(item.provider) === providerId) ||
+        null;
+
+      let nextProfiles = [...prev.model_profiles];
+      if (!targetProfile) {
+        targetProfile = createProviderProfileForForm(prev, providerId);
+        nextProfiles.push(targetProfile);
+      }
+
+      const nextProfile: AiModelProfile = {
+        ...targetProfile,
+        name: String(targetProfile.name || providerLabel || providerId).trim(),
+        provider: providerId,
+        base_url: String(providerConfigDraft.base_url || '').trim() || String(fallbackPreset?.base_url || ''),
+        model: String(providerConfigDraft.model || '').trim() || String(fallbackPreset?.default_model || ''),
+        proxy: String(providerConfigDraft.proxy || '').trim(),
+        api_key: providerConfigApiKeyEdited ? String(providerConfigDraft.api_key || '') : String(targetProfile.api_key || ''),
+      };
+
+      nextProfiles = nextProfiles.map((item) => (item.id === targetProfile?.id ? nextProfile : item));
+      if (
+        targetProfile.id === prev.active_model_profile_id ||
+        normalizeProviderId(prev.provider) === providerId
+      ) {
+        return syncFormWithActiveModel(
+          {
+            ...prev,
+            model_profiles: nextProfiles,
+          },
+          nextProfile
+        );
+      }
+      return {
+        ...prev,
+        model_profiles: nextProfiles,
+      };
+    });
+
+    if (providerConfigApiKeyEdited && profileId) {
+      setSensitiveEditingModelProfileIds((prev) => {
+        const next = new Set(prev);
+        next.add(profileId);
+        return next;
+      });
+    }
+    setProviderConfigDialogOpen(false);
+    setSuccess(`${providerLabel} 配置已更新，点击“保存配置”后生效`);
+    setError('');
+  }, [
+    createProviderProfileForForm,
+    providerConfigApiKeyEdited,
+    providerConfigDraft.api_key,
+    providerConfigDraft.base_url,
+    providerConfigDraft.model,
+    providerConfigDraft.proxy,
+    providerConfigProfileId,
+    providerConfigProviderId,
+    providerPresetMap,
+    syncFormWithActiveModel,
+  ]);
 
   const handleProviderChange = (nextProvider: string) => {
     const providerId = normalizeProviderId(nextProvider);
@@ -14420,6 +14670,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       base_url: String(preset?.base_url || ''),
       api_key: '',
       model: String(preset?.default_model || ''),
+      proxy: '',
       timeout_sec: 40,
       temperature: 0.2,
       max_tokens: 4000,
@@ -14724,14 +14975,16 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     }
   };
 
-  const activeModelProfileId = String(form.active_model_profile_id || '').trim();
-  const activeApiKeyConfigured = activeModelProfileId
-    ? Boolean(sensitiveConfiguredMap.model_profile_api_keys[activeModelProfileId])
-    : Boolean(sensitiveConfiguredMap.api_key);
-  const activeApiKeyEditing = activeModelProfileId
-    ? sensitiveEditingModelProfileIds.has(activeModelProfileId)
+  const providerConfigLabel = providerPresetMap[providerConfigProviderId]?.label || providerConfigProviderId || 'AI';
+  const providerConfigMeta = providerUiMetaMap[providerConfigProviderId] || {
+    logo: 'AI',
+    logoClass: 'bg-brand-bg text-brand-text border-brand-border',
+    apiKeyUrl: '',
+  };
+  const providerConfigApiKeyConfigured = providerConfigProfileId
+    ? Boolean(sensitiveConfiguredMap.model_profile_api_keys[providerConfigProfileId])
     : false;
-  const showActiveApiKeyRaw = sensitiveVisible || activeApiKeyEditing;
+  const showProviderConfigApiKeyRaw = sensitiveVisible || providerConfigApiKeyEdited;
 
   return (
     <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
@@ -14739,7 +14992,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         <div>
           <div className="text-sm font-bold tracking-wide">AI管理</div>
           <div className="text-xs text-brand-text-muted mt-1">
-            统一管理 AI 提供方、对话参数、SOP模板与 OpenAI 兼容接口。可配置多个模型，运行期每次仅使用一个生效模型。
+            统一管理 AI 提供方、默认模型选择、对话参数与 SOP。每家 AI 独立配置，运行期每次仅使用一个默认模型。
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -14987,122 +15240,31 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">OpenAI 兼容接口管理</div>
-          <button
-            type="button"
-            onClick={() => {
-              setCompatDraft({ name: '', base_url: '', model: '' });
-              setCompatDialogOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
-          >
-            添加OpenAI兼容接口
-          </button>
-        </div>
-        <div className="text-xs text-brand-text-muted">
-          可新增第三方 OpenAI 兼容网关。保存后会写入配置，供提供方选择 `OpenAI 兼容接口` 时快速套用。
-        </div>
-        {form.custom_compat_providers.length > 0 ? (
-          <div className="space-y-2">
-            {form.custom_compat_providers.map((item) => (
-              <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
-                <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold break-all">{item.name}</div>
-                    <div className="text-xs text-brand-text-muted font-mono break-all mt-1">
-                      {item.base_url} | {item.model || '-'}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => applyCompatProvider(item.id)}
-                      className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
-                    >
-                      套用
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeCompatProvider(item.id)}
-                      className="px-3 py-1.5 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-xs text-brand-text-muted">暂无自定义兼容接口。</div>
-        )}
-      </div>
-
-      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-        <div className="text-xs font-black tracking-wide text-brand-text">模型与对话配置</div>
-        <div className="text-[11px] text-brand-text-muted -mt-1">
-          建议先选「当前生效模型」，再调整连接参数与对话参数；右侧模型配置管理用于新增/切换备用模型。
-        </div>
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">AI能力开关</label>
-            <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
-              <input
-                type="checkbox"
-                checked={form.enable}
-                onChange={(event) => setForm((prev) => ({ ...prev, enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-              />
-              <span className="font-medium">启用 AI 能力</span>
-            </label>
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="ai-active-model-id" className="text-xs font-bold text-brand-text-muted block">
-              当前生效模型
-            </label>
-            <div className={aiSelectWrapClass}>
-              <select
-                id="ai-active-model-id"
-                value={form.active_model_profile_id}
-                onChange={(event) => selectActiveModelProfile(event.target.value)}
-                className={CONSOLE_SELECT_CLASS}
-              >
-                {form.model_profiles.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} ({providerPresetMap[item.provider]?.label || item.provider})
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="ai-model-profile-name" className="text-xs font-bold text-brand-text-muted block">
-              模型配置名称
-            </label>
+          <div className="text-xs font-black tracking-wide text-brand-text">AI提供方独立配置</div>
+          <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
             <input
-              id="ai-model-profile-name"
-              value={
-                form.model_profiles.find((item) => item.id === form.active_model_profile_id)?.name ||
-                form.custom_provider_name
-              }
-              onChange={(event) => updateActiveModelName(event.target.value)}
-              className={aiInputClass}
-              placeholder="如 主模型 / 备用模型"
+              type="checkbox"
+              checked={form.enable}
+              onChange={(event) => setForm((prev) => ({ ...prev, enable: event.target.checked }))}
+              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
             />
-          </div>
+            <span className="font-medium">启用 AI 能力</span>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[260px_minmax(0,1fr)] gap-3 items-end">
           <div className="space-y-2">
-            <label htmlFor="ai-provider" className="text-xs font-bold text-brand-text-muted block">
-              模型提供方
+            <label htmlFor="ai-default-provider" className="text-xs font-bold text-brand-text-muted block">
+              默认 AI
             </label>
             <div className={aiSelectWrapClass}>
               <select
-                id="ai-provider"
-                value={form.provider}
-                onChange={(event) => handleProviderChange(event.target.value)}
+                id="ai-default-provider"
+                value={normalizeProviderId(form.provider)}
+                onChange={(event) => setDefaultAiProvider(event.target.value)}
                 className={CONSOLE_SELECT_CLASS}
               >
-                {providerPresets.map((provider) => (
+                {providerCardList.map((provider) => (
                   <option key={provider.id} value={provider.id}>
                     {provider.label}
                   </option>
@@ -15111,64 +15273,77 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
           </div>
-          <div className="space-y-2 xl:col-span-2">
-            <label htmlFor="ai-api-key" className="text-xs font-bold text-brand-text-muted block">
-              API Key
-            </label>
-            <input
-              id="ai-api-key"
-              type={showActiveApiKeyRaw ? 'text' : 'password'}
-              value={form.api_key}
-              onChange={(event) => {
-                if (activeModelProfileId && !activeApiKeyEditing) {
-                  setSensitiveEditingModelProfileIds((prev) => {
-                    const next = new Set(prev);
-                    next.add(activeModelProfileId);
-                    return next;
-                  });
-                }
-                updateActiveModelProfile((active) => ({ ...active, api_key: event.target.value }));
-              }}
-              className={aiInputMonoClass}
-              placeholder={
-                activeApiKeyConfigured && !showActiveApiKeyRaw
-                  ? '已配置（留空保持不变，输入新值将覆盖）'
-                  : '可留空，未配置时自动降级不报错'
-              }
-              autoComplete="off"
-            />
-            {activeApiKeyConfigured && !showActiveApiKeyRaw ? (
-              <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
-            ) : null}
+          <div className="text-[11px] text-brand-text-muted">
+            每家 AI 单独配置。点击下方卡片可弹窗设置 `API Key / 分析模型 / API Base URL / 网络代理`。卡片右上角绿色标记表示该提供方已配置 Key。
           </div>
-          <div className="space-y-2 xl:col-span-2">
-            <label htmlFor="ai-base-url" className="text-xs font-bold text-brand-text-muted block">
-              Base URL
-            </label>
-            <input
-              id="ai-base-url"
-              value={form.base_url}
-              onChange={(event) =>
-                updateActiveModelProfile((active) => ({ ...active, base_url: event.target.value }))
-              }
-              className={aiInputMonoClass}
-              placeholder="https://api.openai.com/v1"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="ai-model" className="text-xs font-bold text-brand-text-muted block">
-              模型名称
-            </label>
-            <input
-              id="ai-model"
-              value={form.model}
-              onChange={(event) =>
-                updateActiveModelProfile((active) => ({ ...active, model: event.target.value }))
-              }
-              className={aiInputMonoClass}
-              placeholder="如 gpt-4o-mini / qwen-plus"
-            />
-          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {providerCardList.map((provider) => {
+            const providerId = normalizeProviderId(provider.id);
+            const profile = providerProfileMap[providerId];
+            const profileId = String(profile?.id || '').trim();
+            const configuredByMap = profileId ? Boolean(sensitiveConfiguredMap.model_profile_api_keys[profileId]) : false;
+            const configuredByValue = Boolean(String(profile?.api_key || '').trim());
+            const configured = configuredByMap || configuredByValue;
+            const isDefault = normalizeProviderId(form.provider) === providerId;
+            const providerMeta = providerUiMetaMap[providerId] || {
+              logo: 'AI',
+              logoClass: 'bg-brand-bg text-brand-text border-brand-border',
+              apiKeyUrl: '',
+            };
+            return (
+              <div key={provider.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={`h-10 w-10 rounded-xl border flex items-center justify-center text-[11px] font-black tracking-wide ${providerMeta.logoClass}`}>
+                      {providerMeta.logo}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-black truncate">{provider.label}</div>
+                      <div className="text-[11px] text-brand-text-muted truncate">
+                        {isDefault ? '当前默认 AI' : '可设为默认 AI'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] ${
+                    configured
+                      ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
+                      : 'text-brand-text-muted border-brand-border bg-brand-bg/60'
+                  }`}>
+                    {configured ? <CheckCircle2 className="w-3.5 h-3.5" /> : null}
+                    {configured ? '已配置' : '未配置'}
+                  </div>
+                </div>
+                <div className="text-[11px] text-brand-text-muted space-y-1">
+                  <div className="truncate">分析模型：{profile?.model || provider.default_model || '-'}</div>
+                  <div className="font-mono truncate">API Base URL：{profile?.base_url || provider.base_url || '-'}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDefaultAiProvider(providerId)}
+                    className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                  >
+                    设为默认
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openProviderConfigDialog(providerId)}
+                    className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                  >
+                    配置
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+        <div className="text-xs font-black tracking-wide text-brand-text">AI对话高级参数（可选）</div>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
           <div className="space-y-2">
             <label htmlFor="ai-timeout" className="text-xs font-bold text-brand-text-muted block">
               超时时间（秒）
@@ -15205,9 +15380,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               }
               className={aiInputClass}
             />
-            <div className="text-[11px] text-brand-text-muted">
-              温度越低越稳定（推荐 `0.2`），越高越发散。安全分析与报告场景建议 `0.1~0.3`。
-            </div>
           </div>
           <div className="space-y-2">
             <label htmlFor="ai-max-tokens" className="text-xs font-bold text-brand-text-muted block">
@@ -15284,9 +15456,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 {dialogSystemPromptOpen ? '收起高级配置' : '展开高级配置'}
               </button>
             </div>
-            <div className="text-[11px] text-brand-text-muted">
-              该项用于给模型增加全局约束（例如固定输出结构）。默认留空即可，不影响基础功能。
-            </div>
             {dialogSystemPromptOpen ? (
               <textarea
                 id="ai-dialog-system-prompt"
@@ -15295,72 +15464,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[100px]`}
                 placeholder="用于统一约束 AI 输出风格与格式（可选）"
               />
-            ) : null}
-          </div>
-          <div className="space-y-2 xl:col-span-3">
-            <div className="text-xs font-bold text-brand-text-muted">模型配置管理</div>
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3">
-              <input
-                value={modelDraft.name}
-                onChange={(event) => setModelDraft((prev) => ({ ...prev, name: event.target.value }))}
-                className={CONSOLE_INPUT_CLASS}
-                placeholder="模型配置名称"
-              />
-              <div className="relative">
-                <select
-                  value={modelDraft.provider}
-                  onChange={(event) => setModelDraft((prev) => ({ ...prev, provider: event.target.value }))}
-                  className={CONSOLE_SELECT_CLASS}
-                >
-                  {providerPresets.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-              </div>
-              <button
-                type="button"
-                onClick={addModelProfile}
-                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
-              >
-                新增模型配置
-              </button>
-            </div>
-            <div className="space-y-2 pt-1">
-              {form.model_profiles.map((item) => (
-                <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
-                  <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-bold break-all">
-                        {item.name} {item.id === form.active_model_profile_id ? '(生效中)' : ''}
-                      </div>
-                      <div className="text-xs text-brand-text-muted font-mono break-all mt-1">
-                        {providerPresetMap[item.provider]?.label || item.provider} | {item.base_url || '-'} |
-                        {item.model || '-'}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => selectActiveModelProfile(item.id)}
-                        className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
-                      >
-                        设为生效
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeModelProfile(item.id)}
-                        className="px-3 py-1.5 rounded-lg border border-brand-danger/40 text-xs font-semibold text-brand-danger hover:bg-brand-danger/10 transition"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            ) : (
+              <div className="text-[11px] text-brand-text-muted">默认留空即可，只有需要统一输出格式时再展开设置。</div>
+            )}
           </div>
         </div>
       </div>
@@ -15526,6 +15632,126 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           })}
         </div>
       </div>
+
+      {providerConfigDialogOpen ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setProviderConfigDialogOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`h-8 w-8 rounded-lg border flex items-center justify-center text-[10px] font-black tracking-wide ${providerConfigMeta.logoClass}`}>
+                  {providerConfigMeta.logo}
+                </div>
+                <div className="text-sm font-black tracking-wide truncate">配置 {providerConfigLabel}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProviderConfigDialogOpen(false)}
+                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <div className="space-y-2">
+                <label htmlFor="provider-config-api-key" className="text-xs font-bold text-brand-text-muted block">
+                  API Key
+                </label>
+                <input
+                  id="provider-config-api-key"
+                  type={showProviderConfigApiKeyRaw ? 'text' : 'password'}
+                  value={providerConfigDraft.api_key}
+                  onChange={(event) => {
+                    setProviderConfigApiKeyEdited(true);
+                    setProviderConfigDraft((prev) => ({ ...prev, api_key: event.target.value }));
+                  }}
+                  className={aiInputMonoClass}
+                  placeholder={
+                    providerConfigApiKeyConfigured && !showProviderConfigApiKeyRaw
+                      ? '已配置（留空保持不变，输入新值将覆盖）'
+                      : '请输入 API Key'
+                  }
+                  autoComplete="off"
+                />
+                {providerConfigMeta.apiKeyUrl ? (
+                  <a
+                    href={providerConfigMeta.apiKeyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-brand-accent hover:underline inline-flex items-center gap-1"
+                  >
+                    从{providerConfigLabel}获取 API Key
+                  </a>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="provider-config-model" className="text-xs font-bold text-brand-text-muted block">
+                  分析模型
+                </label>
+                <input
+                  id="provider-config-model"
+                  value={providerConfigDraft.model}
+                  onChange={(event) => setProviderConfigDraft((prev) => ({ ...prev, model: event.target.value }))}
+                  className={aiInputMonoClass}
+                  placeholder="例如 deepseek-chat / qwen-plus / gpt-4o-mini"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="provider-config-base-url" className="text-xs font-bold text-brand-text-muted block">
+                  API Base URL
+                </label>
+                <input
+                  id="provider-config-base-url"
+                  value={providerConfigDraft.base_url}
+                  onChange={(event) => setProviderConfigDraft((prev) => ({ ...prev, base_url: event.target.value }))}
+                  className={aiInputMonoClass}
+                  placeholder="https://api.deepseek.com/v1"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="provider-config-proxy" className="text-xs font-bold text-brand-text-muted block">
+                  网络代理
+                </label>
+                <input
+                  id="provider-config-proxy"
+                  value={providerConfigDraft.proxy}
+                  onChange={(event) => setProviderConfigDraft((prev) => ({ ...prev, proxy: event.target.value }))}
+                  className={aiInputMonoClass}
+                  placeholder="支持 http:// / https:// / socks5://"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+              <button
+                type="button"
+                onClick={() => setProviderConfigDialogOpen(false)}
+                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={saveProviderConfigDraft}
+                className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {compatDialogOpen ? (
         <div

@@ -888,6 +888,27 @@ def _pick_ai_retry_model(provider_id, current_model):
     return default_model
 
 
+def _build_ai_proxy_dict(proxy_url):
+    """
+    构建 requests 代理配置（支持 http/https/socks5）。
+    """
+    value = str(proxy_url or '').strip()
+    if not value:
+        return None
+    lower_value = value.lower()
+    if not (
+        lower_value.startswith('http://')
+        or lower_value.startswith('https://')
+        or lower_value.startswith('socks5://')
+        or lower_value.startswith('socks5h://')
+    ):
+        return None
+    return {
+        'http': value,
+        'https': value,
+    }
+
+
 def _normalize_ai_custom_providers(raw_items):
     """
     规范化 OpenAI 兼容自定义提供方列表。
@@ -998,6 +1019,7 @@ def _default_ai_model_profiles():
             'base_url': str(preset.get('base_url') or ''),
             'api_key': '',
             'model': str(preset.get('default_model') or ''),
+            'proxy': '',
             'timeout_sec': 40,
             'temperature': 0.2,
             'max_tokens': 4000,
@@ -1035,6 +1057,7 @@ def _normalize_ai_model_profiles(raw_profiles, legacy_ai_conf=None):
                     'base_url': base_url,
                     'api_key': str(item.get('api_key') or '').strip(),
                     'model': model,
+                    'proxy': str(item.get('proxy') or item.get('proxy_url') or '').strip(),
                     'timeout_sec': _safe_int(item.get('timeout_sec'), 40, min_value=1),
                     'temperature': _safe_float(item.get('temperature'), 0.2, min_value=0.0),
                     'max_tokens': _safe_int(item.get('max_tokens'), 4000, min_value=1),
@@ -1053,6 +1076,7 @@ def _normalize_ai_model_profiles(raw_profiles, legacy_ai_conf=None):
                 'base_url': str(legacy_ai_conf.get('BASE_URL') or '').strip() or str(provider_preset.get('base_url') or ''),
                 'api_key': str(legacy_ai_conf.get('API_KEY') or '').strip(),
                 'model': str(legacy_ai_conf.get('MODEL') or '').strip() or str(provider_preset.get('default_model') or ''),
+                'proxy': str(legacy_ai_conf.get('PROXY_URL') or legacy_ai_conf.get('PROXY') or '').strip(),
                 'timeout_sec': _safe_int(legacy_ai_conf.get('TIMEOUT_SEC'), 40, min_value=1),
                 'temperature': _safe_float(legacy_ai_conf.get('TEMPERATURE'), 0.2, min_value=0.0),
                 'max_tokens': _safe_int(legacy_ai_conf.get('MAX_TOKENS'), 4000, min_value=1),
@@ -1167,6 +1191,7 @@ def _extract_ai_config(config_obj):
         'base_url': str(active_profile.get('base_url') or '').strip(),
         'api_key': str(active_profile.get('api_key') or '').strip(),
         'model': str(active_profile.get('model') or '').strip(),
+        'proxy_url': str(active_profile.get('proxy') or ai_conf.get('PROXY_URL') or '').strip(),
         'timeout_sec': _safe_int(active_profile.get('timeout_sec'), 40, min_value=1),
         'temperature': _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0),
         'max_tokens': _safe_int(active_profile.get('max_tokens'), 4000, min_value=1),
@@ -1418,6 +1443,7 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['BASE_URL'] = str(active_profile.get('base_url') or '').strip()
     ai_conf['API_KEY'] = str(active_profile.get('api_key') or '').strip()
     ai_conf['MODEL'] = str(active_profile.get('model') or '').strip()
+    ai_conf['PROXY_URL'] = str(active_profile.get('proxy') or '').strip()
     ai_conf['TIMEOUT_SEC'] = _safe_int(active_profile.get('timeout_sec'), 40, min_value=1)
     ai_conf['TEMPERATURE'] = _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0)
     ai_conf['MAX_TOKENS'] = _safe_int(active_profile.get('max_tokens'), 4000, min_value=1)
@@ -1452,6 +1478,8 @@ def _test_ai_config_connectivity(ai_config):
     provider_id = _normalize_ai_provider_id(active_profile.get('provider') or 'openai')
     base_url = str(active_profile.get('base_url') or '').strip()
     api_key = str(active_profile.get('api_key') or '').strip()
+    proxy_url = str(active_profile.get('proxy') or ai_config.get('proxy_url') or ai_config.get('proxy') or '').strip()
+    request_proxies = _build_ai_proxy_dict(proxy_url)
     model_name = _normalize_ai_model_name(provider_id, active_profile.get('model'))
     profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=5)
@@ -1543,7 +1571,13 @@ def _test_ai_config_connectivity(ai_config):
     }
 
     try:
-        conn = utils.http_req(models_url, 'get', headers=headers, timeout=(8, timeout_sec))
+        request_kwargs = {
+            'headers': headers,
+            'timeout': (8, timeout_sec),
+        }
+        if request_proxies:
+            request_kwargs['proxies'] = request_proxies
+        conn = utils.http_req(models_url, 'get', **request_kwargs)
         status_code = int(getattr(conn, 'status_code', 0) or 0)
         try:
             payload = conn.json() if conn is not None else {}
@@ -1610,7 +1644,14 @@ def _test_ai_config_connectivity(ai_config):
             ],
         }
 
-        chat_conn = utils.http_req(chat_url, 'post', headers=headers, json=request_body, timeout=(8, timeout_sec))
+        chat_kwargs = {
+            'headers': headers,
+            'json': request_body,
+            'timeout': (8, timeout_sec),
+        }
+        if request_proxies:
+            chat_kwargs['proxies'] = request_proxies
+        chat_conn = utils.http_req(chat_url, 'post', **chat_kwargs)
         chat_status_code = int(getattr(chat_conn, 'status_code', 0) or 0)
         try:
             chat_payload = chat_conn.json() if chat_conn is not None else {}
@@ -1632,7 +1673,14 @@ def _test_ai_config_connectivity(ai_config):
             if retry_model:
                 retry_body = dict(request_body)
                 retry_body['model'] = retry_model
-                retry_conn = utils.http_req(chat_url, 'post', headers=headers, json=retry_body, timeout=(8, timeout_sec))
+                retry_kwargs = {
+                    'headers': headers,
+                    'json': retry_body,
+                    'timeout': (8, timeout_sec),
+                }
+                if request_proxies:
+                    retry_kwargs['proxies'] = request_proxies
+                retry_conn = utils.http_req(chat_url, 'post', **retry_kwargs)
                 retry_status_code = int(getattr(retry_conn, 'status_code', 0) or 0)
                 try:
                     retry_payload = retry_conn.json() if retry_conn is not None else {}
@@ -2934,6 +2982,8 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
     provider_id = _normalize_ai_provider_id(active_profile.get('provider') or 'openai')
     base_url = str(active_profile.get('base_url') or '').strip()
     api_key = str(active_profile.get('api_key') or '').strip()
+    proxy_url = str(active_profile.get('proxy') or '').strip()
+    request_proxies = _build_ai_proxy_dict(proxy_url)
     model_name = _normalize_ai_model_name(provider_id, active_profile.get('model'))
     profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
     usage_scene = AI_DENOISE_MODULE_SCENE_MAP.get(module_id) or 'ai_denoise'
@@ -3025,7 +3075,14 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result)
         def _request_chat_completion(target_model):
             request_payload = dict(request_body)
             request_payload['model'] = str(target_model or '').strip()
-            conn = utils.http_req(request_url, 'post', headers=headers, json=request_payload, timeout=(8, timeout_sec))
+            request_kwargs = {
+                'headers': headers,
+                'json': request_payload,
+                'timeout': (8, timeout_sec),
+            }
+            if request_proxies:
+                request_kwargs['proxies'] = request_proxies
+            conn = utils.http_req(request_url, 'post', **request_kwargs)
             status_code = _safe_int_any(getattr(conn, 'status_code', 0), 0)
             payload = {}
             try:
