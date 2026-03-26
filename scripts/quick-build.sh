@@ -99,10 +99,10 @@ load_compose_env() {
 load_compose_env
 
 resolve_worker_replicas() {
-    local replicas_raw="${ARL_WORKER_REPLICAS:-1}"
+    local replicas_raw="${ARL_WORKER_REPLICAS:-2}"
     if [ "$replicas_raw" != "1" ] && [ "$replicas_raw" != "2" ]; then
-        echo -e "${YELLOW}[WARN] ARL_WORKER_REPLICAS=$replicas_raw 无效，回退为 1${NC}" >&2
-        replicas_raw="1"
+        echo -e "${YELLOW}[WARN] ARL_WORKER_REPLICAS=$replicas_raw 无效，回退为 2${NC}" >&2
+        replicas_raw="2"
     fi
     echo "$replicas_raw"
 }

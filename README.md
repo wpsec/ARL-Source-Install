@@ -95,7 +95,7 @@ ARL/docker/config-runtime.yaml  # 运行配置（用户实际生效，不进 git
 
 ```plain
 # .env
-ARL_WORKER_REPLICAS=1   # 可选: 1 或 2，默认 1
+ARL_WORKER_REPLICAS=2   # 可选: 1 或 2，默认 2
 ```
 
 - `./start.sh` 与 `./scripts/quick-build.sh` 会自动读取该参数
