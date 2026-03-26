@@ -5,10 +5,11 @@
 
 ## 2026-03-26（v4.3.0）
 
-- `[v4.3.0]` worker 横向扩展落地：`docker-compose` 新增第二个任务容器 `worker_2 (arl_worker_2)`，与 `worker` 共同消费 `arltask/arlheavy/arlweb/arlgithub` 队列，实现“同队列多消费者”分担模式，在不新增基础中间件的前提下提升扫描与 AI 去噪阶段吞吐
-- `[v4.3.0]` 横向扩展首版并发策略：`worker` 与 `worker_2` 均采用保守并发默认值（`task/heavy/web=2`、`github=1`），并分别写入独立日志文件（`arl_worker.log`、`arl_worker_2.log`），避免扩容初期总并发翻倍对 `Mongo/RabbitMQ/Redis` 造成瞬时冲击
+- `[v4.3.0]` worker 横向扩展落地：`docker-compose` 新增第二个任务容器 `worker_2 (arl_worker_2)`，与 `worker_1` 共同消费 `arltask/arlheavy/arlweb/arlgithub` 队列，实现“同队列多消费者”分担模式，在不新增基础中间件的前提下提升扫描与 AI 去噪阶段吞吐
+- `[v4.3.0]` Worker 服务命名与部署开关优化：服务名统一为 `worker_1/worker_2`；新增 `ARL_WORKER_REPLICAS=1|2` 部署选择能力，`start.sh` 与 `quick-build.sh` 按参数自动启动对应 worker 数量（默认 `1`），`restart.sh` 改为优先重启当前运行中的服务并兼容旧参数 `worker -> worker_1` 映射
+- `[v4.3.0]` 横向扩展首版并发策略：`worker_1` 与 `worker_2` 均采用保守并发默认值（`task/heavy/web=2`、`github=1`），并分别写入独立日志文件（`arl_worker.log`、`arl_worker_2.log`），避免扩容初期总并发翻倍对 `Mongo/RabbitMQ/Redis` 造成瞬时冲击
 - `[v4.3.0]` Celery 节点名冲突修复：`start_worker.sh` 中四类队列 worker 名称调整为 `arlgithub@%h/arlheavy@%h/arlweb@%h/arltask@%h`，确保多 worker 容器同时运行时节点名唯一，避免 mailbox 冲突导致的异常退出
-- `[v4.3.0]` Worker 启动恢复职责拆分：`start_worker.sh` 新增 `ARL_WORKER_RECOVER_ON_BOOT` 开关；默认仅主 `worker` 执行“中断任务恢复/孤儿 waiting 重投”，`worker_2` 默认跳过启动恢复，减少双实例并发恢复时的抖动与重复争抢风险
+- `[v4.3.0]` Worker 启动恢复职责拆分：`start_worker.sh` 新增 `ARL_WORKER_RECOVER_ON_BOOT` 开关；默认仅主 `worker_1` 执行“中断任务恢复/孤儿 waiting 重投”，`worker_2` 默认跳过启动恢复，减少双实例并发恢复时的抖动与重复争抢风险
 - `[v4.3.0]` 运维脚本同步：`scripts/quick-build.sh` 的强制重建服务列表新增 `worker_2`；`start.sh/restart.sh` 日志查看提示新增 `worker_2`，便于扩容后的统一运维与排障
 - `[v4.3.0]` 文档补充：`README` 新增“Worker 横向扩展说明”，明确队列竞争消费模型、任务分配机制、重复扫描边界与 MQ 观测命令
 

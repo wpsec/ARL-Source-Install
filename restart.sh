@@ -8,6 +8,9 @@ echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$SCRIPT_DIR/ARL/docker"
+ENV_FILE_ROOT="$SCRIPT_DIR/.env"
+ENV_FILE_DOCKER="$DOCKER_DIR/.env"
+ENV_FILE=""
 
 # 检查docker compose (支持v2和v1)
 if docker compose version &> /dev/null; then
@@ -20,6 +23,25 @@ else
     echo "❌ 错误: Docker Compose 未安装"
     exit 1
 fi
+
+if [ -f "$ENV_FILE_ROOT" ]; then
+    ENV_FILE="$ENV_FILE_ROOT"
+elif [ -f "$ENV_FILE_DOCKER" ]; then
+    ENV_FILE="$ENV_FILE_DOCKER"
+fi
+
+if [ -n "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+fi
+
+WORKER_REPLICAS_RAW="${ARL_WORKER_REPLICAS:-1}"
+if [ "$WORKER_REPLICAS_RAW" != "1" ] && [ "$WORKER_REPLICAS_RAW" != "2" ]; then
+    WORKER_REPLICAS_RAW="1"
+fi
+WORKER_REPLICAS="$WORKER_REPLICAS_RAW"
 
 cd "$DOCKER_DIR"
 
@@ -34,13 +56,41 @@ if [ ! -f "config-runtime.yaml" ]; then
     echo "✓ 已自动创建 config-runtime.yaml（由模板复制）"
 fi
 
+map_service_alias() {
+    local service_name="$1"
+    case "$service_name" in
+        worker)
+            echo "worker_1"
+            ;;
+        *)
+            echo "$service_name"
+            ;;
+    esac
+}
+
 # 可以接收可选的服务参数，如 ./restart.sh web (只重启web)
 if [ $# -eq 0 ]; then
-    echo "正在完整重启所有容器..."
-    $COMPOSE_CMD restart
+    running_services="$($COMPOSE_CMD ps --services --status running | tr '\n' ' ' | xargs || true)"
+    if [ -z "$running_services" ]; then
+        running_services="nginx web worker_1 scheduler"
+        if [ "$WORKER_REPLICAS" = "2" ]; then
+            running_services="$running_services worker_2"
+        fi
+    fi
+    echo "正在重启运行中的容器: $running_services"
+    $COMPOSE_CMD restart $running_services
 else
-    echo "正在重启指定容器: $@"
-    $COMPOSE_CMD restart "$@"
+    mapped_services=""
+    for service_name in "$@"; do
+        mapped_name="$(map_service_alias "$service_name")"
+        if [ "$mapped_name" != "$service_name" ]; then
+            echo "✓ 兼容映射: $service_name -> $mapped_name"
+        fi
+        mapped_services="$mapped_services $mapped_name"
+    done
+    mapped_services="$(echo "$mapped_services" | xargs)"
+    echo "正在重启指定容器: $mapped_services"
+    $COMPOSE_CMD restart $mapped_services
 fi
 
 echo ""
@@ -49,7 +99,9 @@ echo "✓ 重启指令执行完毕"
 echo "========================================="
 echo "查看日志:"
 echo "  $COMPOSE_CMD logs -f web"
-echo "  $COMPOSE_CMD logs -f worker"
-echo "  $COMPOSE_CMD logs -f worker_2"
+echo "  $COMPOSE_CMD logs -f worker_1"
+if [ "$WORKER_REPLICAS" = "2" ]; then
+    echo "  $COMPOSE_CMD logs -f worker_2"
+fi
 echo "  $COMPOSE_CMD logs -f scheduler"
 echo ""

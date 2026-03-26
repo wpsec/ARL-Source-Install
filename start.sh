@@ -58,6 +58,13 @@ fi
 [ -z "$ARL_APP_USER" ] && ARL_APP_USER="admin"
 [ -z "$ARL_APP_PASS" ] && ARL_APP_PASS="arlpass"
 
+WORKER_REPLICAS_RAW="${ARL_WORKER_REPLICAS:-1}"
+if [ "$WORKER_REPLICAS_RAW" != "1" ] && [ "$WORKER_REPLICAS_RAW" != "2" ]; then
+    echo "⚠ ARL_WORKER_REPLICAS=$WORKER_REPLICAS_RAW 无效，回退为 1"
+    WORKER_REPLICAS_RAW="1"
+fi
+WORKER_REPLICAS="$WORKER_REPLICAS_RAW"
+
 cd "$DOCKER_DIR"
 
 # 创建MongoDB数据卷
@@ -106,7 +113,13 @@ elif [ "$1" == "rebuild" ]; then
     $COMPOSE_CMD build --no-cache
 fi
 
-$COMPOSE_CMD up -d
+UP_SERVICES="nginx web worker_1 scheduler"
+if [ "$WORKER_REPLICAS" = "2" ]; then
+    UP_SERVICES="$UP_SERVICES worker_2"
+fi
+
+echo "✓ 本次部署 worker 副本数: $WORKER_REPLICAS (服务: $UP_SERVICES)"
+$COMPOSE_CMD up -d $UP_SERVICES
 
 # 启动后主动同步一次指纹，确保升级后运行中的容器使用最新 tools/finger.json
 if [ -x "$SCRIPT_DIR/scripts/sync-fingerprint.sh" ]; then
@@ -141,8 +154,10 @@ echo "  修改代码后运行: ./quick-build.sh quick"
 echo ""
 echo "查看日志:"
 echo "  $COMPOSE_CMD logs -f web"
-echo "  $COMPOSE_CMD logs -f worker"
-echo "  $COMPOSE_CMD logs -f worker_2"
+echo "  $COMPOSE_CMD logs -f worker_1"
+if [ "$WORKER_REPLICAS" = "2" ]; then
+    echo "  $COMPOSE_CMD logs -f worker_2"
+fi
 echo "  $COMPOSE_CMD logs -f scheduler"
 echo ""
 echo "停止服务:"

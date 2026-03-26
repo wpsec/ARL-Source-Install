@@ -98,6 +98,21 @@ load_compose_env() {
 
 load_compose_env
 
+resolve_worker_replicas() {
+    local replicas_raw="${ARL_WORKER_REPLICAS:-1}"
+    if [ "$replicas_raw" != "1" ] && [ "$replicas_raw" != "2" ]; then
+        echo -e "${YELLOW}[WARN] ARL_WORKER_REPLICAS=$replicas_raw 无效，回退为 1${NC}" >&2
+        replicas_raw="1"
+    fi
+    echo "$replicas_raw"
+}
+
+WORKER_REPLICAS="$(resolve_worker_replicas)"
+WORKER_SERVICE_SET="worker_1"
+if [ "$WORKER_REPLICAS" = "2" ]; then
+    WORKER_SERVICE_SET="$WORKER_SERVICE_SET worker_2"
+fi
+
 # 确保运行期配置文件存在（与 start.sh/restart.sh 保持一致）
 # - config-docker.yaml: 版本模板
 # - config-runtime.yaml: 用户运行配置（升级不覆盖）
@@ -443,7 +458,9 @@ quick_build() {
     ensure_runtime_config_file
     # 强制重建容器，确保使用刚构建的新镜像；
     # 同时重建 nginx，避免其继续使用旧的 arl_web 上游 IP 导致 502
-    $COMPOSE_CMD up -d --force-recreate nginx web worker worker_2 scheduler
+    local recreate_services="nginx web ${WORKER_SERVICE_SET} scheduler"
+    echo -e "${GREEN}✓ 本次重建 worker 副本数: ${WORKER_REPLICAS} (服务: ${recreate_services})${NC}"
+    $COMPOSE_CMD up -d --force-recreate $recreate_services
     sync_fingerprint_after_deploy
     echo -e "${GREEN}✓ 容器重启完成!${NC}"
     echo ""

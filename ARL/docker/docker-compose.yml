@@ -65,10 +65,10 @@ services:
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
       - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
 
-  worker:
+  worker_1:
     # 与 web/scheduler 使用同一镜像标签，确保任务进程和 API 运行环境一致
     image: arl:local
-    container_name: arl_worker
+    container_name: arl_worker_1
     restart: unless-stopped
     depends_on:
       - mongodb
@@ -96,6 +96,7 @@ services:
       - ARL_CELERY_HEAVY_WORKER_CONCURRENCY=2
       - ARL_CELERY_WEB_WORKER_CONCURRENCY=2
       - ARL_CELERY_GITHUB_WORKER_CONCURRENCY=1
+      # 保持主日志文件路径不变，兼容历史仪表盘默认读取路径
       - ARL_SCAN_LOG_FILE=/code/logs/arl_worker.log
       # 启动恢复仅由主 worker 执行，减少多副本同时恢复带来的抖动
       - ARL_WORKER_RECOVER_ON_BOOT=1
@@ -108,7 +109,7 @@ services:
       - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
 
   worker_2:
-    # 第二个 worker 实例：与 worker 共用镜像和队列，承担横向扩展分流
+    # 第二个 worker 实例：与 worker_1 共用镜像和队列，承担横向扩展分流
     image: arl:local
     container_name: arl_worker_2
     restart: unless-stopped
