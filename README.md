@@ -63,6 +63,8 @@ tools/playwright/README.md
   - 用户名：`.env` 中 `ARL_APP_USERNAME`（默认 `admin`）
   - 密码：`.env` 中 `ARL_APP_PASSWORD`（默认 `arlpass`）
   - 说明：仅在 Mongo 数据卷首次初始化时生效。若已存在 `arl_db`，需清理数据卷后重新初始化。
+- 支持1-2个 Worker
+  - 在 .env 中镜像配置
 
 ### 升级
 
@@ -95,14 +97,13 @@ ARL/docker/config-runtime.yaml  # 运行配置（用户实际生效，不进 git
 
 ```plain
 # .env
-ARL_WORKER_REPLICAS=2   # 可选: 1 或 2，默认 2
+ARL_WORKER_REPLICAS=1   # 可选: 1 或 2，默认 1
 ```
 
 - `./start.sh` 与 `./scripts/quick-build.sh` 会自动读取该参数
 - `1`：启动 `worker_1`
 - `2`：启动 `worker_1 + worker_2`
 - 不影响任务重启、停止、重试逻辑（队列与任务状态流转保持不变）
-
 - 不会“按域名固定绑定某个 worker”
 - 实际模型是 Celery/RabbitMQ 的“同队列竞争消费”：谁先空闲，谁先拿下一条消息
 - 同一条 Celery 消息只会被一个 worker 进程消费，不会被两个 worker 同时执行
@@ -153,6 +154,11 @@ docker exec arl_rabbitmq rabbitmqctl list_queues name messages_ready messages_un
 - 配置热刷新、扫描日志聚合、系统监控、任务可观测性增强
 - Celery / RabbitMQ 稳态增强与重任务队列隔离
 
+### AI 降噪与 AI + MCP 渗透
+
+- 根据扫描得到的资产信息进行 AI 降噪与 AI 渗透测试
+- 其它。。。
+
 <!-- 这是一张图片，ocr 内容为： -->
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228172922-d4b58648-0aa2-4371-8381-b3901fbf0bf8.png)
@@ -176,6 +182,20 @@ docker exec arl_rabbitmq rabbitmqctl list_queues name messages_ready messages_un
 <!-- 这是一张图片，ocr 内容为： -->
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228343138-4e70644f-6fcf-4593-b624-92961998900f.png)
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1774513802827-5253f290-e8a3-4dff-8ede-e95f0a959ec6.png)
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1774513825277-58d6c929-3d98-4ff9-bd2c-c4915971969b.png)
+
+<!-- 这是一张图片，ocr 内容为： -->
+
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1774513896707-f7db26c1-ccd1-40a4-88ed-71d8d4ee3517.png)
+
+![]()
 
 <!-- 这是一张图片，ocr 内容为： -->
 
@@ -222,14 +242,64 @@ docker exec arl_rabbitmq rabbitmqctl list_queues name messages_ready messages_un
 
 - 不建议使用nuclei与afrog进行poc扫描，性能太差的机器效果也不好
 
+<!-- 这是一个文本绘图，源码为：flowchart TD
+
+  U[用户/前端] --> N[arl_nginx 入口认证与反代]
+
+N --> W[arl_web: Gunicorn API]
+
+W --> M[(MongoDB: task/asset/result)]
+
+W --> R[(RabbitMQ: Celery queues)]
+
+S[arl_scheduler 定时调度] --> R
+
+R --> Q1[arltask queue]
+
+R --> Q2[arlheavy queue]
+
+R --> Q3[arlweb queue]
+
+R --> Q4[arlgithub queue]
+
+Q1 --> WK1[arl_worker_1]
+
+Q2 --> WK1
+
+Q3 --> WK1
+
+Q4 --> WK1
+
+Q1 --> WK2[arl_worker_2]
+
+Q2 --> WK2
+
+Q3 --> WK2
+
+Q4 --> WK2
+
+WK1 --> SCAN[扫描阶段执行: 域名/IP/站点/目录/漏洞/WIH...]
+
+WK2 --> SCAN
+
+SCAN --> AID[AI 去噪增量任务入队 arlweb]
+
+AID --> WK1
+
+AID --> WK2
+
+WK1 --> M
+
+WK2 --> M
+
+M --> W
+
+W --> U -->
+![](https://cdn.nlark.com/yuque/__mermaid_v3/c4761538d01543e85d19f9792359b89c.svg)
+
 ## Bug？
 
 添加公众号联系我，如果使用的人多，在考虑修复
-
-## 未来计划
-
-- AI 决策调用nuclei、afrog进行poc扫描
-- AI 降低信息泄漏等信息的误报率
 
 ## 更新日志
 
