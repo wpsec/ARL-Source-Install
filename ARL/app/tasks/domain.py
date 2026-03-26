@@ -1951,6 +1951,15 @@ class DomainTask(CommonTask):
             self.domain_brute()
             elapse = time.time() - t1
             self.update_services("domain_brute", elapse)
+
+            # 保底种子：即使开启域名爆破，也要保留用户输入的目标域名本身。
+            # 否则当爆破/插件都无结果时，会出现后续流程空跑（sites=0）。
+            base_domain_info = self.build_single_domain_info(self.base_domain)
+            if base_domain_info and base_domain_info not in self.domain_info_list:
+                self.domain_info_list.append(base_domain_info)
+                if self.task_tag == "task":
+                    self.save_domain_info_list([base_domain_info], source=CollectSource.DOMAIN_BRUTE)
+                self.add_domain_source_map([base_domain_info], CollectSource.DOMAIN_BRUTE)
         else:
             domain_info = self.build_single_domain_info(self.base_domain)
             if domain_info:
