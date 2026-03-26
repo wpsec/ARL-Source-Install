@@ -89,6 +89,33 @@ ARL/docker/config-runtime.yaml  # 运行配置（用户实际生效，不进 git
 
 如果系统 UI 不支持某些配置项，可直接编辑 `config-runtime.yaml`
 
+### Worker 横向扩展说明（v4.3.0）
+
+当前默认拓扑为 `worker + worker_2` 两个扫描容器，共同消费 `arltask / arlheavy / arlweb / arlgithub`。
+
+- 不会“按域名固定绑定某个 worker”
+- 实际模型是 Celery/RabbitMQ 的“同队列竞争消费”：谁先空闲，谁先拿下一条消息
+- 同一条 Celery 消息只会被一个 worker 进程消费，不会被两个 worker 同时执行
+
+任务分配可以这样理解：
+
+1. 创建任务时，系统先决定投递到哪个队列（`arltask`、`arlheavy`、`arlweb`）。
+2. 该队列中的消息由两个 worker 抢占消费。
+3. 某个任务一旦被某个进程拿到，整个主扫描流程在该进程内完成（不是“阶段1在 worker1、阶段2在 worker2”）。
+4. AI 去噪是独立 Celery 任务，按队列再调度；可以由任一可用 worker 执行。
+
+关于“是否会重复扫描同资产”：
+
+- 横向扩容本身不会导致同一条消息重复执行。
+- 可能出现“看起来重复”的主要来源：重复创建同目标任务、手动重启任务、异常恢复重投（极端情况下）。
+- 为降低恢复抖动，默认仅主 `worker` 执行启动恢复（`ARL_WORKER_RECOVER_ON_BOOT=1`），`worker_2` 默认关闭启动恢复（`ARL_WORKER_RECOVER_ON_BOOT=0`）。
+
+建议先用保守并发运行（当前默认 `2/2/2/1`），观察稳定后再升并发。可用以下命令观察 MQ 压力：
+
+```bash
+docker exec arl_rabbitmq rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
+```
+
 ## 二开功能总览
 
 ### 资产发现

@@ -443,7 +443,7 @@ quick_build() {
     ensure_runtime_config_file
     # 强制重建容器，确保使用刚构建的新镜像；
     # 同时重建 nginx，避免其继续使用旧的 arl_web 上游 IP 导致 502
-    $COMPOSE_CMD up -d --force-recreate nginx web worker scheduler
+    $COMPOSE_CMD up -d --force-recreate nginx web worker worker_2 scheduler
     sync_fingerprint_after_deploy
     echo -e "${GREEN}✓ 容器重启完成!${NC}"
     echo ""

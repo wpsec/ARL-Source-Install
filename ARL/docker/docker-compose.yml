@@ -91,7 +91,51 @@ services:
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
+      # 双 worker 横向扩展首版：采用保守并发，避免总并发翻倍过猛压垮基础组件
+      - ARL_CELERY_TASK_WORKER_CONCURRENCY=2
+      - ARL_CELERY_HEAVY_WORKER_CONCURRENCY=2
+      - ARL_CELERY_WEB_WORKER_CONCURRENCY=2
+      - ARL_CELERY_GITHUB_WORKER_CONCURRENCY=1
+      - ARL_SCAN_LOG_FILE=/code/logs/arl_worker.log
+      # 启动恢复仅由主 worker 执行，减少多副本同时恢复带来的抖动
+      - ARL_WORKER_RECOVER_ON_BOOT=1
       # Mongo 启动阶段可能端口已监听但尚未可用，适当放宽客户端超时避免进程误判退出
+      - ARL_MONGO_SERVER_SELECTION_TIMEOUT_MS=30000
+      - ARL_MONGO_CONNECT_TIMEOUT_MS=15000
+      - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain
+      - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
+      - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
+      - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
+
+  worker_2:
+    # 第二个 worker 实例：与 worker 共用镜像和队列，承担横向扩展分流
+    image: arl:local
+    container_name: arl_worker_2
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - rabbitmq
+      - redis
+    volumes:
+      - ./config-runtime.yaml:/code/app/config.yaml
+      - ./image:/code/app/tmp_screenshot
+      - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
+      - ./logs:/code/logs
+      - ./dicts/domain:/code/app/dicts/custom/domain
+      - ./dicts/file_leak:/code/app/dicts/custom/file_leak
+      - ../../tools:/code/tools:ro
+    entrypoint: ["start_worker.sh"]
+    environment:
+      - LANG=en_US.UTF-8
+      - TZ=Asia/Shanghai
+      # 双 worker 横向扩展首版：采用保守并发，避免总并发翻倍过猛压垮基础组件
+      - ARL_CELERY_TASK_WORKER_CONCURRENCY=2
+      - ARL_CELERY_HEAVY_WORKER_CONCURRENCY=2
+      - ARL_CELERY_WEB_WORKER_CONCURRENCY=2
+      - ARL_CELERY_GITHUB_WORKER_CONCURRENCY=1
+      - ARL_SCAN_LOG_FILE=/code/logs/arl_worker_2.log
+      # 第二个 worker 默认跳过启动恢复，仅消费新消息
+      - ARL_WORKER_RECOVER_ON_BOOT=0
       - ARL_MONGO_SERVER_SELECTION_TIMEOUT_MS=30000
       - ARL_MONGO_CONNECT_TIMEOUT_MS=15000
       - ARL_DOMAIN_DICT_CUSTOM_DIR=/code/app/dicts/custom/domain

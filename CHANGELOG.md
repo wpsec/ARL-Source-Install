@@ -3,6 +3,15 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-03-26（v4.3.0）
+
+- `[v4.3.0]` worker 横向扩展落地：`docker-compose` 新增第二个任务容器 `worker_2 (arl_worker_2)`，与 `worker` 共同消费 `arltask/arlheavy/arlweb/arlgithub` 队列，实现“同队列多消费者”分担模式，在不新增基础中间件的前提下提升扫描与 AI 去噪阶段吞吐
+- `[v4.3.0]` 横向扩展首版并发策略：`worker` 与 `worker_2` 均采用保守并发默认值（`task/heavy/web=2`、`github=1`），并分别写入独立日志文件（`arl_worker.log`、`arl_worker_2.log`），避免扩容初期总并发翻倍对 `Mongo/RabbitMQ/Redis` 造成瞬时冲击
+- `[v4.3.0]` Celery 节点名冲突修复：`start_worker.sh` 中四类队列 worker 名称调整为 `arlgithub@%h/arlheavy@%h/arlweb@%h/arltask@%h`，确保多 worker 容器同时运行时节点名唯一，避免 mailbox 冲突导致的异常退出
+- `[v4.3.0]` Worker 启动恢复职责拆分：`start_worker.sh` 新增 `ARL_WORKER_RECOVER_ON_BOOT` 开关；默认仅主 `worker` 执行“中断任务恢复/孤儿 waiting 重投”，`worker_2` 默认跳过启动恢复，减少双实例并发恢复时的抖动与重复争抢风险
+- `[v4.3.0]` 运维脚本同步：`scripts/quick-build.sh` 的强制重建服务列表新增 `worker_2`；`start.sh/restart.sh` 日志查看提示新增 `worker_2`，便于扩容后的统一运维与排障
+- `[v4.3.0]` 文档补充：`README` 新增“Worker 横向扩展说明”，明确队列竞争消费模型、任务分配机制、重复扫描边界与 MQ 观测命令
+
 ## 2026-03-26（v4.2.21）
 
 - `[v4.2.21]` AI 去噪调度改造为“子阶段增量触发”：在保留“任务完成后兜底触发”链路的同时，新增按扫描阶段触发的模块级去噪任务（`ssl_cert/site_saved/site_spider/search_engines/web_info_hunter/file_leak/nuclei_scan/poc_run/weak_brute/findvhost/penetration_test` 对应 `cert/site/url/fileleak/nuclei_result/vuln`），支持“阶段完成即分析、未完成阶段继续等待”；新增 `AI_DENOISE_MODULE_TASK`、`pending_modules` 合并与补偿调度机制，避免并发重复执行与触发丢失

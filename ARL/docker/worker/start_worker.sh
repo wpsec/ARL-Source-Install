@@ -82,6 +82,19 @@ PY
   fi
 }
 
+should_run_startup_recovery() {
+  local flag
+  flag="$(echo "${ARL_WORKER_RECOVER_ON_BOOT:-1}" | tr '[:upper:]' '[:lower:]')"
+  case "$flag" in
+    0|false|no|off)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
 terminate_children() {
   local pids=("$@")
   local pid
@@ -108,7 +121,11 @@ mkdir -p /code/app/tmp
 LOG_FILE_PATH="${ARL_SCAN_LOG_FILE:-/code/logs/arl_worker.log}"
 mkdir -p "$(dirname "${LOG_FILE_PATH}")"
 
-recover_interrupted_tasks
+if should_run_startup_recovery; then
+  recover_interrupted_tasks
+else
+  echo "skip startup recovery because ARL_WORKER_RECOVER_ON_BOOT=${ARL_WORKER_RECOVER_ON_BOOT:-0}"
+fi
 
 GITHUB_CONCURRENCY="$(get_cfg_int CELERY_GITHUB_WORKER_CONCURRENCY 1)"
 HEAVY_CONCURRENCY="$(get_cfg_int CELERY_HEAVY_WORKER_CONCURRENCY 1)"
@@ -120,7 +137,7 @@ echo "start celery github=${GITHUB_CONCURRENCY} heavy=${HEAVY_CONCURRENCY} web=$
 celery -A app.celerytask.celery worker \
   -l info \
   -Q arlgithub \
-  -n arlgithub \
+  -n arlgithub@%h \
   -c "${GITHUB_CONCURRENCY}" \
   -O fair \
   -f "${LOG_FILE_PATH}" &
@@ -129,7 +146,7 @@ GITHUB_PID=$!
 celery -A app.celerytask.celery worker \
   -l info \
   -Q arlheavy \
-  -n arlheavy \
+  -n arlheavy@%h \
   -c "${HEAVY_CONCURRENCY}" \
   -O fair \
   -f "${LOG_FILE_PATH}" &
@@ -138,7 +155,7 @@ HEAVY_PID=$!
 celery -A app.celerytask.celery worker \
   -l info \
   -Q arlweb \
-  -n arlweb \
+  -n arlweb@%h \
   -c "${WEB_CONCURRENCY}" \
   -O fair \
   -f "${LOG_FILE_PATH}" &
@@ -147,7 +164,7 @@ WEB_PID=$!
 celery -A app.celerytask.celery worker \
   -l info \
   -Q arltask \
-  -n arltask \
+  -n arltask@%h \
   -c "${TASK_CONCURRENCY}" \
   -O fair \
   -f "${LOG_FILE_PATH}" &
