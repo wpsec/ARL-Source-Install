@@ -25,6 +25,7 @@ from flask_restx import Resource, Namespace
 from openpyxl import Workbook
 from bson import ObjectId
 import re
+import json
 import os
 from pathlib import Path
 from datetime import datetime
@@ -2859,6 +2860,90 @@ def _extract_vuln_rows(task_ids):
     """
     汇总漏洞明细（合并 vuln 与 nuclei_result），并按关键字段去重
     """
+    def _safe_load_json_dict(raw_text):
+        text = sanitize_excel_value(raw_text).strip()
+        if not text:
+            return {}
+        try:
+            payload = json.loads(text)
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _extract_afrog_rule_id(plugin_name):
+        plugin_text = sanitize_excel_value(plugin_name).strip()
+        if plugin_text.lower().startswith("afrog:"):
+            return sanitize_excel_value(plugin_text.split(":", 1)[1]).strip()
+        return ""
+
+    def _build_afrog_export_detail(item):
+        verify_payload = _safe_load_json_dict(item.get("verify_data", ""))
+        plugin_name = sanitize_excel_value(item.get("plg_name", "")).strip()
+        vuln_name = sanitize_excel_value(item.get("vul_name", "")).strip()
+        severity = sanitize_excel_value(item.get("severity", "")).strip().lower()
+        target = sanitize_excel_value(item.get("target", "")).strip()
+        poc_id = (
+            sanitize_excel_value(verify_payload.get("id", "")).strip()
+            or _extract_afrog_rule_id(plugin_name)
+        )
+
+        references = verify_payload.get("reference", [])
+        if isinstance(references, str):
+            references = [references]
+        if not isinstance(references, list):
+            references = []
+        references = [
+            _truncate_report_text(item_text, 140)
+            for item_text in references
+            if _truncate_report_text(item_text, 140)
+        ][:2]
+
+        parts = ["source=afrog", "poc_id={}".format(poc_id or "-")]
+        if vuln_name:
+            parts.append("name={}".format(_truncate_report_text(vuln_name, 120)))
+        if severity:
+            parts.append("severity={}".format(_truncate_report_text(severity, 24)))
+        if target:
+            parts.append("target={}".format(_truncate_report_text(target, 180)))
+        if references:
+            parts.append("reference={}".format(" ; ".join(references)))
+
+        request_text = _truncate_report_text(verify_payload.get("request"), 180)
+        response_text = _truncate_report_text(verify_payload.get("response"), 180)
+        if request_text:
+            parts.append("request={}".format(request_text))
+        if response_text:
+            parts.append("response={}".format(response_text))
+
+        return _truncate_report_text(" | ".join(parts), 900)
+
+    def _resolve_vuln_detail_text(item):
+        description = sanitize_excel_value(item.get("description", "")).strip()
+        detail = sanitize_excel_value(item.get("detail", "")).strip()
+        verify_data = sanitize_excel_value(item.get("verify_data", "")).strip()
+        vuln_type = sanitize_excel_value(item.get("plg_type", "")).strip().lower()
+        plugin_name = sanitize_excel_value(item.get("plg_name", "")).strip().lower()
+
+        if vuln_type == "afrog" or plugin_name.startswith("afrog"):
+            detail_lower = detail.lower()
+            detail_is_placeholder = (
+                not detail
+                or detail_lower in ("source=afrog", "source=afrog poc_id=-", "source=afrog poc_id=")
+                or (
+                    detail_lower.startswith("source=afrog")
+                    and "poc_id=-" in detail_lower
+                    and len(detail_lower) <= 40
+                )
+            )
+            if detail_is_placeholder:
+                rebuilt = _build_afrog_export_detail(item)
+                if rebuilt:
+                    return rebuilt
+
+            return _truncate_report_text(detail or description or verify_data, 900)
+
+        return _truncate_report_text(description or detail or verify_data, 900)
+
     task_id_list = _normalize_task_id_list(task_ids)
     vuln_ai_lookup = _build_ai_denoise_lookup(task_id_list, "vuln")
     nuclei_ai_lookup = _build_ai_denoise_lookup(task_id_list, "nuclei_result")
@@ -2877,11 +2962,7 @@ def _extract_vuln_rows(task_ids):
             vuln_url = target if str(target).startswith("http") else ""
             plugin = sanitize_excel_value(item.get("plg_name", ""))
             vuln_type = sanitize_excel_value(item.get("plg_type", ""))
-            detail = sanitize_excel_value(
-                item.get("description", "")
-                or item.get("detail", "")
-                or item.get("verify_data", "")
-            )
+            detail = _resolve_vuln_detail_text(item)
 
             dedup_key = (
                 task_id, "npoc", vuln_name, severity, target, vuln_url, plugin, vuln_type

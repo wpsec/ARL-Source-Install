@@ -4,6 +4,7 @@
 import time
 import re
 import os
+import json
 from urllib.parse import urlparse
 from bson import ObjectId
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
@@ -646,6 +647,42 @@ class WebSiteFetch(object):
                 "deferred nuclei_scan still failed and skipped task_id:{}".format(self.task_id)
             )
 
+    @staticmethod
+    def _build_afrog_detail_text(result, target, poc_id):
+        """
+        生成更可读的 afrog 详情，避免导出报告中出现大量固定占位信息。
+        """
+        verify_payload = {}
+        verify_data_text = str(result.get("verify_data", "") or "").strip()
+        if verify_data_text:
+            try:
+                parsed_payload = json.loads(verify_data_text)
+                if isinstance(parsed_payload, dict):
+                    verify_payload = parsed_payload
+            except Exception:
+                verify_payload = {}
+
+        vuln_name = str(result.get("vuln_name", "") or "").strip()
+        severity = str(result.get("severity", "") or "").strip().lower()
+        references = verify_payload.get("reference", [])
+        if isinstance(references, str):
+            references = [references]
+        if not isinstance(references, list):
+            references = []
+        references = [str(item or "").strip() for item in references if str(item or "").strip()][:2]
+
+        parts = ["source=afrog", "poc_id={}".format(poc_id or "-")]
+        if vuln_name:
+            parts.append("name={}".format(vuln_name[:120]))
+        if severity:
+            parts.append("severity={}".format(severity[:24]))
+        if target:
+            parts.append("target={}".format(str(target)[:180]))
+        if references:
+            parts.append("reference={}".format(" ; ".join([item[:140] for item in references])))
+
+        return " | ".join(parts)[:900]
+
     def afrog_scan(self):
         """
         运行 afrog Web 漏洞扫描，并写入 vuln 模块。
@@ -681,6 +718,7 @@ class WebSiteFetch(object):
                 continue
 
             poc_id = str(result.get("poc_id", "") or "").strip()
+            detail_text = self._build_afrog_detail_text(result=result, target=target, poc_id=poc_id)
             item = {
                 "plg_name": "afrog:{}".format(poc_id) if poc_id else "afrog",
                 "plg_type": "afrog",
@@ -689,7 +727,7 @@ class WebSiteFetch(object):
                 "target": target,
                 "severity": str(result.get("severity", "") or "info").strip().lower(),
                 "description": str(result.get("description", "") or "").strip(),
-                "detail": "source=afrog poc_id={}".format(poc_id or "-"),
+                "detail": detail_text,
                 "verify_data": str(result.get("verify_data", "") or "").strip(),
                 "task_id": self.task_id,
                 "save_date": utils.curr_date(),
