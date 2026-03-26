@@ -6483,6 +6483,8 @@ function TableModuleView({
   const keepBottomAfterSizeChangeRef = useRef(false);
   const moduleListStateCacheRef = useRef<Record<string, ModuleListCacheEntry>>({});
   const moduleListLoadedRef = useRef<Record<string, boolean>>({});
+  const latestLoadRowsRequestIdRef = useRef(0);
+  const activeModuleCacheKeyRef = useRef('');
   const taskDetailCountCacheRef = useRef<Record<string, Record<string, number>>>({});
   const taskSchedulePolicyOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
   const taskNameOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
@@ -6501,6 +6503,9 @@ function TableModuleView({
     () => `${module.id}::${activeExternalFilterSignature}`,
     [module.id, activeExternalFilterSignature]
   );
+  useEffect(() => {
+    activeModuleCacheKeyRef.current = moduleCacheKey;
+  }, [moduleCacheKey]);
 
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
@@ -7209,6 +7214,9 @@ function TableModuleView({
       : size;
     const nextOrder = typeof loadOptions.order === 'string' ? loadOptions.order : order;
     const filters = loadOptions.filters || buildFilters();
+    const requestId = latestLoadRowsRequestIdRef.current + 1;
+    latestLoadRowsRequestIdRef.current = requestId;
+    const requestModuleCacheKey = moduleCacheKey;
 
     setLoading(true);
     setError('');
@@ -7231,6 +7239,13 @@ function TableModuleView({
       }
 
       const response = await requestApi(token, module.listPath, { method: 'GET', query });
+      if (
+        requestId !== latestLoadRowsRequestIdRef.current
+        || requestModuleCacheKey !== activeModuleCacheKeyRef.current
+      ) {
+        // 忽略旧模块/旧筛选条件/旧请求的迟到响应，避免列表串数据。
+        return;
+      }
       const normalized = normalizeListData(response);
       setRows(normalized.items);
       setTotal(normalized.total);
@@ -7245,12 +7260,23 @@ function TableModuleView({
         };
       }
     } catch (err: any) {
+      if (
+        requestId !== latestLoadRowsRequestIdRef.current
+        || requestModuleCacheKey !== activeModuleCacheKeyRef.current
+      ) {
+        return;
+      }
       setError(err?.message || '加载失败');
       setRows([]);
       setTotal(0);
       moduleListLoadedRef.current[moduleCacheKey] = true;
     } finally {
-      setLoading(false);
+      if (
+        requestId === latestLoadRowsRequestIdRef.current
+        && requestModuleCacheKey === activeModuleCacheKeyRef.current
+      ) {
+        setLoading(false);
+      }
     }
   }, [
     buildFilters,
@@ -13596,7 +13622,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const defaultProviderPresets: AiProviderPreset[] = [
     { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', default_model: 'qwen-plus' },
     { id: 'kimi', label: 'Kimi', base_url: 'https://api.moonshot.cn/v1', default_model: 'moonshot-v1-8k' },
-    { id: 'openai', label: 'OpenAI', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o-mini' },
+    { id: 'openai', label: 'OpenAI-GPT', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o-mini' },
     { id: 'glm', label: '智谱 GLM', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4-flash' },
     { id: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.com/v1', default_model: 'deepseek-chat' },
     { id: 'custom_compatible', label: 'OpenAI 兼容接口', base_url: '', default_model: '' },
@@ -15097,202 +15123,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">Token用量统计与AI对话日志</div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[120px]">
-              <select
-                value={usageLogStatus}
-                onChange={(event) => setUsageLogStatus(event.target.value)}
-                className={CONSOLE_SELECT_CLASS}
-                disabled={usageLoading}
-              >
-                <option value="">全部状态</option>
-                <option value="ok">成功</option>
-                <option value="error">失败</option>
-                <option value="skipped">跳过</option>
-              </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-            </div>
-            <div className="relative min-w-[180px]">
-              <select
-                value={usageLogScene}
-                onChange={(event) => setUsageLogScene(event.target.value)}
-                className={CONSOLE_SELECT_CLASS}
-                disabled={usageLoading}
-              >
-                <option value="">全部场景</option>
-                {usageSceneOptions.map((item) => (
-                  <option key={item.scene} value={item.scene}>
-                    {item.scene_label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-            </div>
-            <div className="relative min-w-[120px]">
-              <select
-                value={usageLogLimit}
-                onChange={(event) => setUsageLogLimit(event.target.value)}
-                className={CONSOLE_SELECT_CLASS}
-                disabled={usageLoading}
-              >
-                <option value="10">最近10条</option>
-                <option value="20">最近20条</option>
-                <option value="40">最近40条</option>
-              </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-            </div>
-            <button
-              type="button"
-              onClick={() => void loadAiUsageDashboard()}
-              className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
-              disabled={usageLoading}
-            >
-              <RefreshCw className={`w-4 h-4 ${usageLoading ? 'animate-spin' : ''}`} />
-              刷新统计
-            </button>
-          </div>
-        </div>
-
-        {usageStats ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
-              <div className="text-xs text-brand-text-muted">累计总量</div>
-              <div className="text-sm font-black">Total {usageStats.all_time.total_tokens}</div>
-              <div className="text-[11px] text-brand-text-muted">
-                Prompt {usageStats.all_time.prompt_tokens} / Completion {usageStats.all_time.completion_tokens}
-              </div>
-              <div className="text-[11px] text-brand-text-muted">
-                请求 {usageStats.all_time.request_count} | 成功 {usageStats.all_time.success_count} | 失败 {usageStats.all_time.error_count}
-              </div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
-              <div className="text-xs text-brand-text-muted">总体成功率</div>
-              <div className="text-sm font-black">{usageSuccessRate}%</div>
-              <div className="text-[11px] text-brand-text-muted">
-                成功 {usageSuccessCount} / 请求 {usageRequestCount}
-              </div>
-              <div className="text-[11px] text-brand-text-muted">
-                失败 {usageErrorCount} | 跳过 {usageSkipCount}
-              </div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
-              <div className="text-xs text-brand-text-muted">平均响应耗时</div>
-              <div className="text-sm font-black">{usageAvgElapsedMs} ms</div>
-              <div className="text-[11px] text-brand-text-muted">
-                统计样本：{usageAvgElapsedSampleCount}
-              </div>
-              <div className="text-[11px] text-brand-text-muted">
-                单次平均Token：{usageAvgTokens}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-xs text-brand-text-muted">暂无 Token 统计数据。</div>
-        )}
-
-        {usageTopModelListText ? (
-          <div className="text-[11px] text-brand-text-muted">
-            最近{usageStats?.window_days || 7}天高频模型Top5：{usageTopModelListText}
-          </div>
-        ) : null}
-
-        {usageTopSceneListText ? (
-          <div className="text-[11px] text-brand-text-muted">
-            最近{usageStats?.window_days || 7}天高消耗场景Top5：{usageTopSceneListText}
-          </div>
-        ) : null}
-
-        {usageTopErrorReasonText ? (
-          <div className="text-[11px] text-brand-text-muted">
-            最近{usageStats?.window_days || 7}天失败原因Top3：{usageTopErrorReasonText}
-          </div>
-        ) : null}
-
-        <div className="rounded-xl border border-brand-border bg-brand-bg/35 overflow-hidden">
-          <div className="px-3 py-2 text-xs text-brand-text-muted border-b border-brand-border flex items-center justify-between gap-2">
-            <span>最近对话日志（显示最新 {usageLogs.length} / 总计 {usageLogsTotal}）</span>
-            <span>{usageLogsUpdatedAt ? `更新时间：${usageLogsUpdatedAt}` : ''}</span>
-          </div>
-          <div className="overflow-auto max-h-[520px]">
-            <table className="min-w-full text-xs">
-              <thead className="bg-brand-bg/60 sticky top-0 z-10">
-                <tr>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">时间</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">场景</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">状态</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">模型</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">Tokens</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">用户输入摘要</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">AI回复摘要</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usageLogs.length > 0 ? (
-                  usageLogs.map((item) => (
-                    <tr key={item.id || `${item.created_at}-${item.scene}-${item.model}`} className="border-t border-brand-border/60 align-top">
-                      <td className="px-3 py-2 whitespace-nowrap">{item.created_at || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{item.scene_label || item.scene || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded border ${
-                            item.status === 'ok'
-                              ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
-                              : item.status === 'skipped'
-                                ? 'text-amber-300 border-amber-300/40 bg-amber-300/10'
-                                : 'text-brand-danger border-brand-danger/40 bg-brand-danger/10'
-                          }`}
-                        >
-                          {item.status === 'ok' ? '成功' : item.status === 'skipped' ? '跳过' : '失败'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div>{item.provider || '-'}</div>
-                        <div className="text-[11px] text-brand-text-muted">{item.model || '-'}</div>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div>Total {item.total_tokens}</div>
-                        <div className="text-[11px] text-brand-text-muted">
-                          P {item.prompt_tokens} / C {item.completion_tokens}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 max-w-[260px] whitespace-normal break-all text-[11px] leading-5">
-                        {getUsageLogPreviewText(item.request_text, 88)}
-                      </td>
-                      <td className="px-3 py-2 max-w-[300px] whitespace-normal break-all text-[11px] leading-5">
-                        {getUsageLogPreviewText(item.reply_text || item.error_message, 96)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => setUsageLogDetail(item)}
-                          className="px-2 py-1 rounded-lg border border-brand-border text-[11px] font-semibold hover:bg-brand-bg/70 transition"
-                        >
-                          查看详情
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr className="border-t border-brand-border/60">
-                    <td colSpan={8} className="px-3 py-4 text-center text-brand-text-muted">
-                      暂无日志记录
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        {usageError ? (
-          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
-            {usageError}
-          </div>
-        ) : null}
-      </div>
       <div className="text-xs text-amber-300 bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2">
         提示：AI 去噪分析支持按模块独立开关与 SOP 绑定。详情页仅展示扫描阶段已落库的分析结果，不会因点击详情而再次触发 AI 调用。
       </div>
@@ -15715,6 +15545,203 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             );
           })}
         </div>
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-black tracking-wide text-brand-text">Token用量统计与AI对话日志</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[120px]">
+              <select
+                value={usageLogStatus}
+                onChange={(event) => setUsageLogStatus(event.target.value)}
+                className={CONSOLE_SELECT_CLASS}
+                disabled={usageLoading}
+              >
+                <option value="">全部状态</option>
+                <option value="ok">成功</option>
+                <option value="error">失败</option>
+                <option value="skipped">跳过</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+            <div className="relative min-w-[180px]">
+              <select
+                value={usageLogScene}
+                onChange={(event) => setUsageLogScene(event.target.value)}
+                className={CONSOLE_SELECT_CLASS}
+                disabled={usageLoading}
+              >
+                <option value="">全部场景</option>
+                {usageSceneOptions.map((item) => (
+                  <option key={item.scene} value={item.scene}>
+                    {item.scene_label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+            <div className="relative min-w-[120px]">
+              <select
+                value={usageLogLimit}
+                onChange={(event) => setUsageLogLimit(event.target.value)}
+                className={CONSOLE_SELECT_CLASS}
+                disabled={usageLoading}
+              >
+                <option value="10">最近10条</option>
+                <option value="20">最近20条</option>
+                <option value="40">最近40条</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadAiUsageDashboard()}
+              className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={usageLoading}
+            >
+              <RefreshCw className={`w-4 h-4 ${usageLoading ? 'animate-spin' : ''}`} />
+              刷新统计
+            </button>
+          </div>
+        </div>
+
+        {usageStats ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
+              <div className="text-xs text-brand-text-muted">累计总量</div>
+              <div className="text-sm font-black">Total {usageStats.all_time.total_tokens}</div>
+              <div className="text-[11px] text-brand-text-muted">
+                Prompt {usageStats.all_time.prompt_tokens} / Completion {usageStats.all_time.completion_tokens}
+              </div>
+              <div className="text-[11px] text-brand-text-muted">
+                请求 {usageStats.all_time.request_count} | 成功 {usageStats.all_time.success_count} | 失败 {usageStats.all_time.error_count}
+              </div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
+              <div className="text-xs text-brand-text-muted">总体成功率</div>
+              <div className="text-sm font-black">{usageSuccessRate}%</div>
+              <div className="text-[11px] text-brand-text-muted">
+                成功 {usageSuccessCount} / 请求 {usageRequestCount}
+              </div>
+              <div className="text-[11px] text-brand-text-muted">
+                失败 {usageErrorCount} | 跳过 {usageSkipCount}
+              </div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
+              <div className="text-xs text-brand-text-muted">平均响应耗时</div>
+              <div className="text-sm font-black">{usageAvgElapsedMs} ms</div>
+              <div className="text-[11px] text-brand-text-muted">
+                统计样本：{usageAvgElapsedSampleCount}
+              </div>
+              <div className="text-[11px] text-brand-text-muted">
+                单次平均Token：{usageAvgTokens}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-xs text-brand-text-muted">暂无 Token 统计数据。</div>
+        )}
+
+        {usageTopModelListText ? (
+          <div className="text-[11px] text-brand-text-muted">
+            最近{usageStats?.window_days || 7}天高频模型Top5：{usageTopModelListText}
+          </div>
+        ) : null}
+
+        {usageTopSceneListText ? (
+          <div className="text-[11px] text-brand-text-muted">
+            最近{usageStats?.window_days || 7}天高消耗场景Top5：{usageTopSceneListText}
+          </div>
+        ) : null}
+
+        {usageTopErrorReasonText ? (
+          <div className="text-[11px] text-brand-text-muted">
+            最近{usageStats?.window_days || 7}天失败原因Top3：{usageTopErrorReasonText}
+          </div>
+        ) : null}
+
+        <div className="rounded-xl border border-brand-border bg-brand-bg/35 overflow-hidden">
+          <div className="px-3 py-2 text-xs text-brand-text-muted border-b border-brand-border flex items-center justify-between gap-2">
+            <span>最近对话日志（显示最新 {usageLogs.length} / 总计 {usageLogsTotal}）</span>
+            <span>{usageLogsUpdatedAt ? `更新时间：${usageLogsUpdatedAt}` : ''}</span>
+          </div>
+          <div className="overflow-auto max-h-[520px]">
+            <table className="min-w-full text-xs">
+              <thead className="bg-brand-bg/60 sticky top-0 z-10">
+                <tr>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">时间</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">场景</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">状态</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">模型</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">Tokens</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">用户输入摘要</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">AI回复摘要</th>
+                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usageLogs.length > 0 ? (
+                  usageLogs.map((item) => (
+                    <tr key={item.id || `${item.created_at}-${item.scene}-${item.model}`} className="border-t border-brand-border/60 align-top">
+                      <td className="px-3 py-2 whitespace-nowrap">{item.created_at || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{item.scene_label || item.scene || '-'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded border ${
+                            item.status === 'ok'
+                              ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
+                              : item.status === 'skipped'
+                                ? 'text-amber-300 border-amber-300/40 bg-amber-300/10'
+                                : 'text-brand-danger border-brand-danger/40 bg-brand-danger/10'
+                          }`}
+                        >
+                          {item.status === 'ok' ? '成功' : item.status === 'skipped' ? '跳过' : '失败'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div>{item.provider || '-'}</div>
+                        <div className="text-[11px] text-brand-text-muted">{item.model || '-'}</div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div>Total {item.total_tokens}</div>
+                        <div className="text-[11px] text-brand-text-muted">
+                          P {item.prompt_tokens} / C {item.completion_tokens}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 max-w-[260px] whitespace-normal break-all text-[11px] leading-5">
+                        {getUsageLogPreviewText(item.request_text, 88)}
+                      </td>
+                      <td className="px-3 py-2 max-w-[300px] whitespace-normal break-all text-[11px] leading-5">
+                        {getUsageLogPreviewText(item.reply_text || item.error_message, 96)}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => setUsageLogDetail(item)}
+                          className="px-2 py-1 rounded-lg border border-brand-border text-[11px] font-semibold hover:bg-brand-bg/70 transition"
+                        >
+                          查看详情
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr className="border-t border-brand-border/60">
+                    <td colSpan={8} className="px-3 py-4 text-center text-brand-text-muted">
+                      暂无日志记录
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {usageError ? (
+          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+            {usageError}
+          </div>
+        ) : null}
       </div>
 
       {providerConfigDialogOpen ? (
