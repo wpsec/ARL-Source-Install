@@ -13521,6 +13521,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     active_prompt_id: string;
     prompt_templates: AiPromptTemplate[];
     custom_compat_providers: AiCustomCompatProvider[];
+    ai_poc_scan_enable: boolean;
     ai_denoise_enable: boolean;
     ai_denoise_modules: AiDenoiseModules;
     ai_denoise_prompt_ids: AiDenoisePromptIds;
@@ -13893,6 +13894,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
+      ai_poc_scan_enable: rawForm?.ai_poc_scan_enable !== false,
       ai_denoise_enable: rawForm?.ai_denoise_enable !== false,
       ai_denoise_modules: normalizeAiDenoiseModules(rawForm?.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(rawForm?.ai_denoise_prompt_ids, promptTemplates),
@@ -14142,6 +14144,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
+      ai_poc_scan_enable: Boolean(currentForm.ai_poc_scan_enable),
       ai_denoise_enable: Boolean(currentForm.ai_denoise_enable),
       ai_denoise_modules: normalizeAiDenoiseModules(currentForm.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(currentForm.ai_denoise_prompt_ids, promptTemplates),
@@ -15335,19 +15338,30 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
       <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">AI去噪配置</div>
-          <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
-            <input
-              type="checkbox"
-              checked={form.ai_denoise_enable}
-              onChange={(event) => setForm((prev) => ({ ...prev, ai_denoise_enable: event.target.checked }))}
-              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-            />
-            <span className="text-xs font-semibold">启用AI去噪</span>
-          </label>
+          <div className="text-xs font-black tracking-wide text-brand-text">AI功能开关配置</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+              <input
+                type="checkbox"
+                checked={form.ai_poc_scan_enable}
+                onChange={(event) => setForm((prev) => ({ ...prev, ai_poc_scan_enable: event.target.checked }))}
+                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              />
+              <span className="text-xs font-semibold">启用AIPOC扫描</span>
+            </label>
+            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+              <input
+                type="checkbox"
+                checked={form.ai_denoise_enable}
+                onChange={(event) => setForm((prev) => ({ ...prev, ai_denoise_enable: event.target.checked }))}
+                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              />
+              <span className="text-xs font-semibold">启用AI去噪</span>
+            </label>
+          </div>
         </div>
         <div className="text-xs text-brand-text-muted">
-          站点、目录扫描、SSL证书、URL信息、风险、PoC风险支持独立开关；对应 SOP 在下方「SOP管理」中上传维护。
+          AIPOC扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 的候选 PoC；AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
         </div>
         <div className="space-y-2">
           {aiDenoiseModuleConfigs.map((moduleConfig) => {

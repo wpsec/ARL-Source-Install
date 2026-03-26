@@ -155,6 +155,7 @@ AI:
   DIALOG_LANGUAGE: "zh-CN"
   DIALOG_CONTEXT_MESSAGES: 8
   ACTIVE_PROMPT_ID: "default_ai_report"
+  AI_POC_SCAN_ENABLE: true
   AI_DENOISE_ENABLE: true
   AI_DENOISE_MODULES:
     site: true

@@ -1177,6 +1177,7 @@ def _extract_ai_config(config_obj):
         'active_prompt_id': active_prompt_id,
         'prompt_templates': prompt_templates,
         'custom_compat_providers': _normalize_ai_custom_providers(ai_conf.get('CUSTOM_COMPAT_PROVIDERS')),
+        'ai_poc_scan_enable': _safe_bool(ai_conf.get('AI_POC_SCAN_ENABLE'), True),
         'ai_denoise_enable': _safe_bool(ai_conf.get('AI_DENOISE_ENABLE'), True),
         'ai_denoise_modules': ai_denoise_modules,
         'ai_denoise_prompt_ids': ai_denoise_prompt_ids,
@@ -1429,6 +1430,7 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['CUSTOM_COMPAT_PROVIDERS'] = _normalize_ai_custom_providers(
         ai_config.get('custom_compat_providers')
     )
+    ai_conf['AI_POC_SCAN_ENABLE'] = _safe_bool(ai_config.get('ai_poc_scan_enable'), True)
     ai_conf['AI_DENOISE_ENABLE'] = _safe_bool(ai_config.get('ai_denoise_enable'), True)
     ai_conf['AI_DENOISE_MODULES'] = ai_denoise_modules
     ai_conf['AI_DENOISE_PROMPT_IDS'] = ai_denoise_prompt_ids
