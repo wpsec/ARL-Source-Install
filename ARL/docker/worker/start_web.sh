@@ -52,6 +52,11 @@ ensure_python_runtime() {
 
 ensure_python_runtime
 
+echo "Syncing runtime config from template (missing keys only)..."
+if ! PYTHONPATH=/code python3 -m app.tools.sync_runtime_config --quiet; then
+  echo "[WARN] runtime config sync failed, continue startup with existing config"
+fi
+
 echo "Starting gen_crt.sh..."
 gen_crt.sh && echo "gen_crt.sh completed"
 

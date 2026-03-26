@@ -165,7 +165,7 @@ services:
       [
         "sh",
         "-c",
-        "wait-for-it.sh -t 0 mongodb:27017; wait-for-it.sh -t 0 rabbitmq:5672; wait-for-it.sh -t 0 redis:6379; python3 -m app.scheduler",
+        "wait-for-it.sh -t 0 mongodb:27017; wait-for-it.sh -t 0 rabbitmq:5672; wait-for-it.sh -t 0 redis:6379; PYTHONPATH=/code python3 -m app.tools.sync_runtime_config --quiet || true; python3 -m app.scheduler",
       ]
     environment:
       - LANG=en_US.UTF-8

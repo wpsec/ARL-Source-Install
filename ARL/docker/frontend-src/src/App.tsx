@@ -12784,7 +12784,7 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <div>
         <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，写入 config-docker.yaml 后重启生效。</p>
+        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），重启后生效。</p>
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
@@ -15960,7 +15960,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
       <div>
         <h2 className="text-4xl font-black tracking-tight">钉钉集成</h2>
         <p className="text-brand-text-muted mt-2 text-sm">
-          在浏览器中维护钉钉机器人与知识库配置，保存后写入 config-docker.yaml，支持资产报告链接等参数统一管理。
+          在浏览器中维护钉钉机器人与知识库配置，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），支持资产报告链接等参数统一管理。
         </p>
       </div>
 

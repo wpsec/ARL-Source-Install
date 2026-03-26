@@ -114,6 +114,11 @@ terminate_children() {
 
 ensure_python_runtime
 
+echo "Syncing runtime config from template (missing keys only)..."
+if ! PYTHONPATH=/code python3 -m app.tools.sync_runtime_config --quiet; then
+  echo "[WARN] runtime config sync failed, continue startup with existing config"
+fi
+
 wait-for-it.sh -t 0 mongodb:27017
 wait-for-it.sh -t 0 rabbitmq:5672
 wait-for-it.sh -t 0 redis:6379

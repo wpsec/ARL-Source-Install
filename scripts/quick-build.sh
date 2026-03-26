@@ -130,6 +130,31 @@ ensure_runtime_config_file() {
     return 0
 }
 
+# 增量补齐运行期配置（只补缺失，不覆盖已有用户值）
+sync_runtime_config_from_template() {
+    local sync_script="$ROOT_DIR/ARL/app/tools/sync_runtime_config.py"
+    local template_file="$DOCKERFILE_PATH/config-docker.yaml"
+    local runtime_file="$DOCKERFILE_PATH/config-runtime.yaml"
+
+    if [ ! -f "$sync_script" ]; then
+        echo -e "${YELLOW}[WARN] 未找到配置同步脚本，跳过运行配置补齐${NC}"
+        return 0
+    fi
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo -e "${YELLOW}[WARN] 未找到 python3，跳过运行配置补齐${NC}"
+        return 0
+    fi
+
+    if ! python3 "$sync_script" --template "$template_file" --runtime "$runtime_file" --quiet; then
+        echo -e "${RED}错误: 运行配置补齐失败，请先修复配置文件再重试${NC}"
+        return 1
+    fi
+
+    echo -e "${GREEN}✓ 运行配置已完成缺失项补齐（保留用户现有值）${NC}"
+    return 0
+}
+
 # 前端 npm 源配置（可在 .env 中覆盖）
 # 优先级：ARL_FRONTEND_NPM_REGISTRY > NPM_REGISTRY > 默认 npmmirror
 FRONTEND_NPM_REGISTRY="${ARL_FRONTEND_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
@@ -456,6 +481,7 @@ quick_build() {
     echo -e "${YELLOW}正在重启容器以使用新镜像...${NC}"
     cd "$DOCKERFILE_PATH"
     ensure_runtime_config_file
+    sync_runtime_config_from_template
     # 强制重建容器，确保使用刚构建的新镜像；
     # 同时重建 nginx，避免其继续使用旧的 arl_web 上游 IP 导致 502
     local recreate_services="nginx web ${WORKER_SERVICE_SET} scheduler"
@@ -584,6 +610,7 @@ show_help() {
     echo ""
     echo "说明:"
     echo "  - quick命令执行完成后，容器会自动重启并加载新镜像"
+    echo "  - quick命令会自动将 config-docker.yaml 缺失项补齐到 config-runtime.yaml（不覆盖已有值）"
     echo "  - 快速构建会复用之前的系统包缓存，速度更快"
     echo "  - frontend命令只更新前端文件，无需重新构建Docker镜像"
 }
