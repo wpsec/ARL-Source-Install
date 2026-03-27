@@ -27,11 +27,12 @@
 - `[v4.3.19]` PoC 索引能力补齐：新增 `ARL/app/tools/build_poc_index.py`，支持从 `nuclei-templates/afrog-pocs` 构建 `token -> tags/keywords` 索引；运行时优先读取 `/code/docker/ai/sop/poc_index.json`（兼容历史路径并支持 `ARL_AI_POC_INDEX_FILE` 覆盖），避免每次运行全库检索
 - `[v4.3.19]` AI 去噪 PoC 风险触发修复：`run_task_ai_denoise_pipeline` 启动时会先合并已累计的 `pending_modules`，修复并发阶段下 `nuclei_result/vuln` 等模块因状态切换被清空后漏执行的问题
 
-## 2026-03-28（v4.3.26）
+## 2026-03-28（v4.3.26 ~ v4.3.27）
 
 - `[v4.3.26]` AI 管理补齐“思考模型”配置：提供方预设新增 `default_reasoning_model`，前后端模型配置新增 `reasoning_model` 字段并接入读写；DeepSeek 默认展示 `DeepSeek-R1`，配置弹窗与卡片摘要同步显示“分析模型 / 思考模型 / API Base URL”，为后续区分分析模型与思考模型保留数据面
 - `[v4.3.26]` AI 渗透结果页可读性增强：`AI渗透` 列表新增 `详情` 按钮与详情弹窗，集中展示 `目标 / 漏洞URL / 说明 / 知识命中 / 证据片段 / 工具轨迹 / 响应摘要`，修复长文本挤压表格导致下方内容难以查看的问题；同时将 `目标 / 漏洞URL` 改为居中展示并复用超链接渲染
 - `[v4.3.26]` 配置管理新增 `PoC 更新代理`：扫描配置新增 `POC_UPDATE_PROXY` 并接入运行时热刷新、`config-docker.yaml` 模板与前端表单；`更新 Nuclei PoC / 更新 afrog PoC` 接口执行 `git clone/pull` 时自动透传 `http_proxy/https_proxy/all_proxy`，成功提示与失败文案同步展示代理信息，方便受限网络环境下更新 PoC 仓库
+- `[v4.3.27]` AI 管理思考模型改为“全提供方通用”默认策略：`通义千问 / Kimi / OpenAI-GPT / 智谱GLM / DeepSeek` 的 `reasoning_model` 在未单独配置时默认跟随当前分析模型，DeepSeek 继续保留 `DeepSeek-R1` 预置；前后端模型归一化、默认 profile 创建、旧配置回填与弹窗占位文案同步调整，修复“只有 DeepSeek 真正补了思考模型，其它提供方仍为空”的体验问题
 
 ## 2026-03-26（v4.3.0 ~ v4.3.18）
 

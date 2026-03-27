@@ -421,28 +421,28 @@ AI_PROVIDER_PRESETS = [
         'label': '通义千问',
         'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         'default_model': 'qwen-plus',
-        'default_reasoning_model': '',
+        'default_reasoning_model': 'qwen-plus',
     },
     {
         'id': 'kimi',
         'label': 'Kimi',
         'base_url': 'https://api.moonshot.cn/v1',
         'default_model': 'moonshot-v1-8k',
-        'default_reasoning_model': '',
+        'default_reasoning_model': 'moonshot-v1-8k',
     },
     {
         'id': 'openai',
         'label': 'OpenAI-GPT',
         'base_url': 'https://api.openai.com/v1',
         'default_model': 'gpt-4o-mini',
-        'default_reasoning_model': '',
+        'default_reasoning_model': 'gpt-4o-mini',
     },
     {
         'id': 'glm',
         'label': '智谱 GLM',
         'base_url': 'https://open.bigmodel.cn/api/paas/v4',
         'default_model': 'glm-4-flash',
-        'default_reasoning_model': '',
+        'default_reasoning_model': 'glm-4-flash',
     },
     {
         'id': 'deepseek',
@@ -1046,7 +1046,7 @@ def _default_ai_model_profiles():
             'base_url': str(preset.get('base_url') or ''),
             'api_key': '',
             'model': str(preset.get('default_model') or ''),
-            'reasoning_model': str(preset.get('default_reasoning_model') or ''),
+            'reasoning_model': str(preset.get('default_reasoning_model') or preset.get('default_model') or ''),
             'proxy': '',
             'timeout_sec': 40,
             'temperature': 0.2,
@@ -1078,7 +1078,7 @@ def _normalize_ai_model_profiles(raw_profiles, legacy_ai_conf=None):
             model = str(item.get('model') or '').strip() or str(provider_preset.get('default_model') or '')
             reasoning_model = str(item.get('reasoning_model') or '').strip()
             if not reasoning_model:
-                reasoning_model = str(provider_preset.get('default_reasoning_model') or '').strip()
+                reasoning_model = str(provider_preset.get('default_reasoning_model') or model or '').strip()
 
             profiles.append(
                 {
@@ -1108,7 +1108,7 @@ def _normalize_ai_model_profiles(raw_profiles, legacy_ai_conf=None):
                 'base_url': str(legacy_ai_conf.get('BASE_URL') or '').strip() or str(provider_preset.get('base_url') or ''),
                 'api_key': str(legacy_ai_conf.get('API_KEY') or '').strip(),
                 'model': str(legacy_ai_conf.get('MODEL') or '').strip() or str(provider_preset.get('default_model') or ''),
-                'reasoning_model': str(legacy_ai_conf.get('REASONING_MODEL') or '').strip() or str(provider_preset.get('default_reasoning_model') or '').strip(),
+                'reasoning_model': str(legacy_ai_conf.get('REASONING_MODEL') or '').strip() or str(provider_preset.get('default_reasoning_model') or legacy_ai_conf.get('MODEL') or provider_preset.get('default_model') or '').strip(),
                 'proxy': str(legacy_ai_conf.get('PROXY_URL') or legacy_ai_conf.get('PROXY') or '').strip(),
                 'timeout_sec': _safe_int(legacy_ai_conf.get('TIMEOUT_SEC'), 40, min_value=1),
                 'temperature': _safe_float(legacy_ai_conf.get('TEMPERATURE'), 0.2, min_value=0.0),
@@ -1224,7 +1224,7 @@ def _extract_ai_config(config_obj):
         'base_url': str(active_profile.get('base_url') or '').strip(),
         'api_key': str(active_profile.get('api_key') or '').strip(),
         'model': str(active_profile.get('model') or '').strip(),
-        'reasoning_model': str(active_profile.get('reasoning_model') or ai_conf.get('REASONING_MODEL') or '').strip(),
+        'reasoning_model': str(active_profile.get('reasoning_model') or ai_conf.get('REASONING_MODEL') or active_profile.get('model') or '').strip(),
         'proxy_url': str(active_profile.get('proxy') or ai_conf.get('PROXY_URL') or '').strip(),
         'timeout_sec': _safe_int(active_profile.get('timeout_sec'), 40, min_value=1),
         'temperature': _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0),
@@ -1488,7 +1488,7 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['BASE_URL'] = str(active_profile.get('base_url') or '').strip()
     ai_conf['API_KEY'] = str(active_profile.get('api_key') or '').strip()
     ai_conf['MODEL'] = str(active_profile.get('model') or '').strip()
-    ai_conf['REASONING_MODEL'] = str(active_profile.get('reasoning_model') or '').strip()
+    ai_conf['REASONING_MODEL'] = str(active_profile.get('reasoning_model') or active_profile.get('model') or '').strip()
     ai_conf['PROXY_URL'] = str(active_profile.get('proxy') or '').strip()
     ai_conf['TIMEOUT_SEC'] = _safe_int(active_profile.get('timeout_sec'), 40, min_value=1)
     ai_conf['TEMPERATURE'] = _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0)

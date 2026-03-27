@@ -14257,10 +14257,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   };
 
   const defaultProviderPresets: AiProviderPreset[] = [
-    { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', default_model: 'qwen-plus', default_reasoning_model: '' },
-    { id: 'kimi', label: 'Kimi', base_url: 'https://api.moonshot.cn/v1', default_model: 'moonshot-v1-8k', default_reasoning_model: '' },
-    { id: 'openai', label: 'OpenAI-GPT', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o-mini', default_reasoning_model: '' },
-    { id: 'glm', label: '智谱 GLM', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4-flash', default_reasoning_model: '' },
+    { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', default_model: 'qwen-plus', default_reasoning_model: 'qwen-plus' },
+    { id: 'kimi', label: 'Kimi', base_url: 'https://api.moonshot.cn/v1', default_model: 'moonshot-v1-8k', default_reasoning_model: 'moonshot-v1-8k' },
+    { id: 'openai', label: 'OpenAI-GPT', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o-mini', default_reasoning_model: 'gpt-4o-mini' },
+    { id: 'glm', label: '智谱 GLM', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4-flash', default_reasoning_model: 'glm-4-flash' },
     { id: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.com/v1', default_model: 'deepseek-chat', default_reasoning_model: 'DeepSeek-R1' },
     { id: 'custom_compatible', label: 'OpenAI 兼容接口', base_url: '', default_model: '', default_reasoning_model: '' },
   ];
@@ -14413,7 +14413,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           base_url: String(item?.base_url || '').trim() || String(preset?.base_url || ''),
           api_key: String(item?.api_key || ''),
           model: String(item?.model || '').trim() || String(preset?.default_model || ''),
-          reasoning_model: String(item?.reasoning_model || '').trim() || String(preset?.default_reasoning_model || ''),
+          reasoning_model: String(item?.reasoning_model || '').trim() || String(preset?.default_reasoning_model || item?.model || preset?.default_model || ''),
           proxy: String(item?.proxy || item?.proxy_url || '').trim(),
           timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
           temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
@@ -14439,7 +14439,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         base_url: String(legacyRawForm?.base_url || '').trim() || String(fallbackPreset?.base_url || ''),
         api_key: String(legacyRawForm?.api_key || ''),
         model: String(legacyRawForm?.model || '').trim() || String(fallbackPreset?.default_model || ''),
-        reasoning_model: String(legacyRawForm?.reasoning_model || '').trim() || String(fallbackPreset?.default_reasoning_model || ''),
+        reasoning_model: String(legacyRawForm?.reasoning_model || '').trim() || String(fallbackPreset?.default_reasoning_model || legacyRawForm?.model || fallbackPreset?.default_model || ''),
         proxy: String(legacyRawForm?.proxy_url || legacyRawForm?.proxy || '').trim(),
         timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
         temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
@@ -15224,7 +15224,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         base_url: String(preset?.base_url || ''),
         api_key: '',
         model: String(preset?.default_model || ''),
-        reasoning_model: String(preset?.default_reasoning_model || ''),
+        reasoning_model: String(preset?.default_reasoning_model || preset?.default_model || ''),
         proxy: '',
         timeout_sec: 40,
         temperature: 0.2,
@@ -16670,7 +16670,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   value={providerConfigDraft.reasoning_model}
                   onChange={(event) => setProviderConfigDraft((prev) => ({ ...prev, reasoning_model: event.target.value }))}
                   className={aiInputMonoClass}
-                  placeholder="例如 DeepSeek-R1（当前仅保存配置，不自动切换执行链路）"
+                  placeholder="留空时默认跟随分析模型；也可单独填写专用思考模型"
                 />
               </div>
 
