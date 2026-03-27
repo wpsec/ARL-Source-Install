@@ -1637,7 +1637,7 @@ const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'risk_name',
     defaultOrder: '-save_date',
-    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'status', 'save_date'],
+    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'status', 'reason', 'save_date'],
     columnLabels: {
       source_collection: '来源',
       risk_type: '类型',
@@ -1647,6 +1647,7 @@ const modules: ModuleConfig[] = [
       decision: '结论',
       confidence: '置信度',
       status: '状态',
+      reason: '说明',
       save_date: '时间',
     },
     searchFields: [
@@ -1679,6 +1680,7 @@ const modules: ModuleConfig[] = [
           { label: '跳过', value: 'skipped' },
         ],
       },
+      { key: 'reason', label: '说明', placeholder: '请输入说明进行搜索' },
     ],
   },
   {
@@ -3506,6 +3508,42 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
     const scannerType = String(value || '').trim().toLowerCase();
     if (scannerType === 'nuclei') return 'Nuclei';
     if (scannerType === 'afrog') return 'afrog';
+  }
+
+  if (moduleId === 'ai_pen_test') {
+    if (column === 'source_collection') {
+      const sourceText = String(value || '').trim().toLowerCase();
+      const sourceMap: Record<string, string> = {
+        vuln: '风险',
+        nuclei_result: 'PoC风险',
+        wih: 'WIH',
+      };
+      return sourceMap[sourceText] || normalizeValue(value);
+    }
+    if (column === 'decision') {
+      const decisionText = String(value || '').trim().toLowerCase();
+      const decisionMap: Record<string, string> = {
+        verified: '已验证',
+        likely_false_positive: '疑似误报',
+        needs_manual_review: '需人工复核',
+      };
+      return decisionMap[decisionText] || normalizeValue(value);
+    }
+    if (column === 'status') {
+      const statusText = String(value || '').trim().toLowerCase();
+      const statusMap: Record<string, string> = {
+        ok: '成功',
+        error: '异常',
+        skipped: '跳过',
+      };
+      return statusMap[statusText] || normalizeValue(value);
+    }
+    if (column === 'confidence') {
+      const numeric = parseNumericValue(value);
+      if (numeric === null) return '-';
+      if (numeric <= 1) return `${(numeric * 100).toFixed(1)}%`;
+      return `${numeric.toFixed(1)}%`;
+    }
   }
 
   if (moduleId === 'asset_scope' && column === 'scope') {
@@ -8016,6 +8054,7 @@ function TableModuleView({
     if (moduleId === 'service' && ['ip_port', 'service_info.product'].includes(column)) return true;
     if (moduleId === 'vuln' && column === 'credential') return true;
     if (moduleId === 'nuclei_result' && ['vuln_url', 'verify_data'].includes(column)) return true;
+    if (moduleId === 'ai_pen_test' && ['target', 'vuln_url', 'reason'].includes(column)) return true;
     if (moduleId === 'waf_host' && column === 'hit_rule') return true;
     if (moduleId === 'wih' && ['content', 'source', 'site'].includes(column)) return true;
     if (moduleId === 'github_result' && ['path', 'human_content'].includes(column)) return true;
@@ -9759,6 +9798,38 @@ function TableModuleView({
                               {sensitive ? (
                                 <div className="mt-2 text-[11px] font-black text-brand-danger">敏感信息</div>
                               ) : null}
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'ai_pen_test' && column === 'decision') {
+                          const decisionText = String(row?.decision || '').trim().toLowerCase();
+                          const displayText = formatModuleCellValue(module.id, column, row);
+                          const tagClass =
+                            decisionText === 'verified'
+                              ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-success/60 bg-brand-success/15 text-brand-success text-xs font-bold'
+                              : decisionText === 'likely_false_positive'
+                                ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-warning/60 bg-brand-warning/15 text-brand-warning text-xs font-bold'
+                                : 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/50 text-brand-text-muted text-xs font-bold';
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span className={tagClass}>{displayText}</span>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'ai_pen_test' && column === 'status') {
+                          const statusText = String(row?.status || '').trim().toLowerCase();
+                          const displayText = formatModuleCellValue(module.id, column, row);
+                          const tagClass =
+                            statusText === 'ok'
+                              ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-success/60 bg-brand-success/15 text-brand-success text-xs font-bold'
+                              : statusText === 'error'
+                                ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-danger/60 bg-brand-danger/15 text-brand-danger text-xs font-bold'
+                                : 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/50 text-brand-text-muted text-xs font-bold';
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span className={tagClass}>{displayText}</span>
                             </td>
                           );
                         }
@@ -13617,6 +13688,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     custom_compat_providers: AiCustomCompatProvider[];
     ai_poc_scan_enable: boolean;
     ai_denoise_enable: boolean;
+    ai_pen_test_enable: boolean;
+    ai_pen_mcp_enable: boolean;
+    ai_pen_mcp_max_tool_calls: number;
+    ai_pen_mcp_timeout_sec: number;
     ai_denoise_modules: AiDenoiseModules;
     ai_denoise_prompt_ids: AiDenoisePromptIds;
   };
@@ -13970,6 +14045,8 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const activePromptId = promptIds.includes(activePromptIdRaw) ? activePromptIdRaw : promptIds[0] || '';
     const dialogContextMessages = Number(rawForm?.dialog_context_messages ?? 8);
     const requestDelayMs = Number(rawForm?.request_delay_ms ?? 0);
+    const aiPenMcpMaxToolCalls = Number(rawForm?.ai_pen_mcp_max_tool_calls ?? 3);
+    const aiPenMcpTimeoutSec = Number(rawForm?.ai_pen_mcp_timeout_sec ?? 12);
     const modelProfiles = normalizeModelProfiles(rawForm?.model_profiles, rawForm);
     const activeModelProfileIdRaw = String(rawForm?.active_model_profile_id || '').trim();
     const activeProfile =
@@ -14003,6 +14080,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
       ai_poc_scan_enable: rawForm?.ai_poc_scan_enable !== false,
       ai_denoise_enable: rawForm?.ai_denoise_enable !== false,
+      ai_pen_test_enable: rawForm?.ai_pen_test_enable !== false,
+      ai_pen_mcp_enable: rawForm?.ai_pen_mcp_enable !== false,
+      ai_pen_mcp_max_tool_calls:
+        Number.isFinite(aiPenMcpMaxToolCalls) && aiPenMcpMaxToolCalls > 0 ? Math.floor(aiPenMcpMaxToolCalls) : 3,
+      ai_pen_mcp_timeout_sec:
+        Number.isFinite(aiPenMcpTimeoutSec) && aiPenMcpTimeoutSec > 0 ? Math.floor(aiPenMcpTimeoutSec) : 12,
       ai_denoise_modules: normalizeAiDenoiseModules(rawForm?.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(rawForm?.ai_denoise_prompt_ids, promptTemplates),
     };
@@ -14385,6 +14468,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
       ai_poc_scan_enable: Boolean(currentForm.ai_poc_scan_enable),
       ai_denoise_enable: Boolean(currentForm.ai_denoise_enable),
+      ai_pen_test_enable: Boolean(currentForm.ai_pen_test_enable),
+      ai_pen_mcp_enable: Boolean(currentForm.ai_pen_mcp_enable),
+      ai_pen_mcp_max_tool_calls: Math.max(1, Math.min(8, Math.floor(Number(currentForm.ai_pen_mcp_max_tool_calls) || 3))),
+      ai_pen_mcp_timeout_sec: Math.max(1, Math.min(60, Math.floor(Number(currentForm.ai_pen_mcp_timeout_sec) || 12))),
       ai_denoise_modules: normalizeAiDenoiseModules(currentForm.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(currentForm.ai_denoise_prompt_ids, promptTemplates),
     };
@@ -15458,6 +15545,25 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
               <input
                 type="checkbox"
+                checked={form.ai_pen_test_enable}
+                onChange={(event) => setForm((prev) => ({ ...prev, ai_pen_test_enable: event.target.checked }))}
+                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              />
+              <span className="text-xs font-semibold">启用AI渗透测试</span>
+            </label>
+            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+              <input
+                type="checkbox"
+                checked={form.ai_pen_mcp_enable}
+                onChange={(event) => setForm((prev) => ({ ...prev, ai_pen_mcp_enable: event.target.checked }))}
+                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                disabled={!form.ai_pen_test_enable}
+              />
+              <span className="text-xs font-semibold">启用AI渗透-MCP</span>
+            </label>
+            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+              <input
+                type="checkbox"
                 checked={form.ai_poc_scan_enable}
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_poc_scan_enable: event.target.checked }))}
                 className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
@@ -15476,7 +15582,49 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </div>
         </div>
         <div className="text-xs text-brand-text-muted">
-          AI-POC扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 的候选 PoC；AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
+          AI渗透测试用于对风险/PoC/WIH结果做二次验证；开启 MCP 后会自动执行“重放 + Payload 探针”工具链。AI-POC 扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 候选 PoC。AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <label htmlFor="ai-pen-mcp-max-tool-calls" className="text-xs font-bold text-brand-text-muted block">
+              AI渗透-MCP最大工具调用次数
+            </label>
+            <input
+              id="ai-pen-mcp-max-tool-calls"
+              type="number"
+              min={1}
+              max={8}
+              value={String(form.ai_pen_mcp_max_tool_calls)}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  ai_pen_mcp_max_tool_calls: Math.max(1, Math.min(8, Number(event.target.value || 0) || 1)),
+                }))
+              }
+              className={aiInputClass}
+              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-pen-mcp-timeout-sec" className="text-xs font-bold text-brand-text-muted block">
+              AI渗透-MCP工具超时（秒）
+            </label>
+            <input
+              id="ai-pen-mcp-timeout-sec"
+              type="number"
+              min={1}
+              max={60}
+              value={String(form.ai_pen_mcp_timeout_sec)}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  ai_pen_mcp_timeout_sec: Math.max(1, Math.min(60, Number(event.target.value || 0) || 1)),
+                }))
+              }
+              className={aiInputClass}
+              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable}
+            />
+          </div>
         </div>
         <div className="space-y-2">
           {aiDenoiseModuleConfigs.map((moduleConfig) => {

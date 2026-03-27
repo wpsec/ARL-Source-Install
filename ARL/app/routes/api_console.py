@@ -490,6 +490,8 @@ AI_USAGE_SCENE_LABEL_MAP = {
     'ai_config_test': 'AI测试',
     'ai_poc_scan_plan': 'AI-POC扫描-计划',
     'ai_poc_scan_decision': 'AI-POC扫描-决策',
+    'ai_pen_test_plan': 'AI渗透测试-计划',
+    'ai_pen_test_exec': 'AI渗透测试-执行',
     'ai_denoise_site': 'AI去噪-站点',
     'ai_denoise_fileleak': 'AI去噪-目录扫描',
     'ai_denoise_cert': 'AI去噪-SSL证书',
@@ -1209,6 +1211,10 @@ def _extract_ai_config(config_obj):
         'custom_compat_providers': _normalize_ai_custom_providers(ai_conf.get('CUSTOM_COMPAT_PROVIDERS')),
         'ai_poc_scan_enable': _safe_bool(ai_conf.get('AI_POC_SCAN_ENABLE'), True),
         'ai_denoise_enable': _safe_bool(ai_conf.get('AI_DENOISE_ENABLE'), True),
+        'ai_pen_test_enable': _safe_bool(ai_conf.get('AI_PEN_TEST_ENABLE'), True),
+        'ai_pen_mcp_enable': _safe_bool(ai_conf.get('AI_PEN_MCP_ENABLE'), True),
+        'ai_pen_mcp_max_tool_calls': _safe_int(ai_conf.get('AI_PEN_MCP_MAX_TOOL_CALLS'), 3, min_value=1),
+        'ai_pen_mcp_timeout_sec': _safe_int(ai_conf.get('AI_PEN_MCP_TIMEOUT_SEC'), 12, min_value=1),
         'ai_denoise_modules': ai_denoise_modules,
         'ai_denoise_prompt_ids': ai_denoise_prompt_ids,
     }
@@ -1464,6 +1470,16 @@ def _merge_ai_config(config_obj, ai_config):
     )
     ai_conf['AI_POC_SCAN_ENABLE'] = _safe_bool(ai_config.get('ai_poc_scan_enable'), True)
     ai_conf['AI_DENOISE_ENABLE'] = _safe_bool(ai_config.get('ai_denoise_enable'), True)
+    ai_conf['AI_PEN_TEST_ENABLE'] = _safe_bool(ai_config.get('ai_pen_test_enable'), True)
+    ai_conf['AI_PEN_MCP_ENABLE'] = _safe_bool(ai_config.get('ai_pen_mcp_enable'), True)
+    ai_conf['AI_PEN_MCP_MAX_TOOL_CALLS'] = max(
+        1,
+        min(8, _safe_int(ai_config.get('ai_pen_mcp_max_tool_calls'), 3, min_value=1)),
+    )
+    ai_conf['AI_PEN_MCP_TIMEOUT_SEC'] = max(
+        1,
+        min(60, _safe_int(ai_config.get('ai_pen_mcp_timeout_sec'), 12, min_value=1)),
+    )
     ai_conf['AI_DENOISE_MODULES'] = ai_denoise_modules
     ai_conf['AI_DENOISE_PROMPT_IDS'] = ai_denoise_prompt_ids
 

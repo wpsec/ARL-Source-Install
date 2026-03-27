@@ -6,7 +6,7 @@ import re
 import os
 import json
 import hashlib
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit
 from bson import ObjectId
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
 from app import utils
@@ -127,9 +127,24 @@ class WebSiteFetch(object):
     AI_PEN_TEST_MAX_CASES = 80
     AI_PEN_TEST_SOURCE_LIMIT = 260
     AI_PEN_TEST_FETCH_TIMEOUT = (5.1, 10.1)
+    AI_PEN_TEST_MCP_MAX_TOOL_CALLS = 3
+    AI_PEN_TEST_MCP_TIMEOUT_SEC = 12
     AI_PEN_TEST_BODY_MAX = 8192
     AI_PEN_TEST_EVIDENCE_MAX = 280
     AI_PEN_TEST_ERROR_MAX = 180
+    AI_PEN_TEST_SENSITIVE_RECORD_TYPES = (
+        "api_key",
+        "access_key",
+        "secret_key",
+        "client_secret",
+        "private_key",
+        "token",
+        "jwt",
+        "authorization",
+        "password",
+        "passwd",
+        "credential",
+    )
     AI_POC_ALIAS_HINTS = {
         "alibaba": ["alibaba", "aliyun", "阿里", "阿里云"],
         "tencent": ["tencent", "qcloud", "腾讯", "腾讯云"],
@@ -1567,6 +1582,43 @@ class WebSiteFetch(object):
         except Exception as e:
             logger.warning("task_id:{} write ai_poc usage log failed err:{}".format(self.task_id, e))
 
+    def _write_ai_pen_test_usage_log(
+        self,
+        *,
+        scene="ai_pen_test_exec",
+        status="ok",
+        provider="local",
+        model="rule-lite",
+        profile="ai-pen-test",
+        request_text="",
+        reply_text="",
+        error_message="",
+        elapsed_ms=0,
+        meta=None,
+    ):
+        """
+        写入 AI 管理中的 AI 渗透测试执行日志（当前阶段为规则/验证引擎，token 计数固定为 0）。
+        """
+        try:
+            from app.routes import api_console as api_console_module
+            write_func = getattr(api_console_module, "_write_ai_usage_log", None)
+            if callable(write_func):
+                write_func(
+                    scene=scene,
+                    provider=str(provider or "local"),
+                    model=str(model or "rule-lite"),
+                    profile=str(profile or "ai-pen-test"),
+                    status=status,
+                    request_text=request_text,
+                    reply_text=reply_text,
+                    error_message=error_message,
+                    elapsed_ms=elapsed_ms,
+                    usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    meta=meta if isinstance(meta, dict) else {},
+                )
+        except Exception as e:
+            logger.warning("task_id:{} write ai_pen_test usage log failed err:{}".format(self.task_id, e))
+
     def run_ai_poc_scan_plan(self):
         """
         AI-POC 预扫描决策：
@@ -2134,6 +2186,145 @@ class WebSiteFetch(object):
             return default_value
         return text[:64]
 
+    @staticmethod
+    def _safe_int_value(value, default_value=0):
+        try:
+            return int(value)
+        except Exception:
+            return int(default_value)
+
+    @classmethod
+    def _build_ai_pen_runtime_settings(cls, ai_config: dict):
+        config_obj = ai_config if isinstance(ai_config, dict) else {}
+        ai_pen_enable = bool(config_obj.get("ai_pen_test_enable", True))
+        mcp_enable = bool(config_obj.get("ai_pen_mcp_enable", True))
+        max_tool_calls = cls._safe_int_value(config_obj.get("ai_pen_mcp_max_tool_calls"), cls.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)
+        timeout_sec = cls._safe_int_value(config_obj.get("ai_pen_mcp_timeout_sec"), cls.AI_PEN_TEST_MCP_TIMEOUT_SEC)
+        if max_tool_calls < 1:
+            max_tool_calls = 1
+        if max_tool_calls > 8:
+            max_tool_calls = 8
+        if timeout_sec < 1:
+            timeout_sec = 1
+        if timeout_sec > 60:
+            timeout_sec = 60
+
+        connect_timeout = float(cls.AI_PEN_TEST_FETCH_TIMEOUT[0] if isinstance(cls.AI_PEN_TEST_FETCH_TIMEOUT, tuple) else 5.1)
+        read_timeout = float(timeout_sec) + 0.1
+        if read_timeout < connect_timeout:
+            read_timeout = connect_timeout
+
+        return {
+            "ai_pen_enable": ai_pen_enable,
+            "mcp_enable": mcp_enable,
+            "max_tool_calls": max_tool_calls,
+            "timeout_sec": timeout_sec,
+            "timeout": (connect_timeout, read_timeout),
+        }
+
+    @staticmethod
+    def _contains_evidence(evidence_seed: str, body_text: str) -> bool:
+        seed_text = str(evidence_seed or "").strip().lower()
+        body_check_text = str(body_text or "").lower()
+        if not seed_text or not body_check_text:
+            return False
+        if len(seed_text) >= 12:
+            return seed_text in body_check_text
+        # 证据过短时降低误命中概率，仅做弱匹配。
+        return len(seed_text) >= 6 and seed_text in body_check_text
+
+    @staticmethod
+    def _build_probe_url_with_payload(target_url: str, payload: str):
+        url_text = str(target_url or "").strip()
+        payload_text = str(payload or "").strip()
+        if not url_text or not payload_text:
+            return url_text
+
+        try:
+            parsed = urlsplit(url_text)
+            query_items = parse_qsl(parsed.query, keep_blank_values=True)
+            if query_items:
+                first_key = str(query_items[0][0] or "").strip() or "id"
+                query_items[0] = (first_key, payload_text)
+            else:
+                query_items.append(("arl_probe", payload_text))
+            updated_query = urlencode(query_items, doseq=True)
+            return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment))
+        except Exception:
+            return url_text
+
+    @classmethod
+    def _is_sensitive_wih_record(cls, record_type: str, content: str):
+        record_type_text = str(record_type or "").strip().lower()
+        content_text = str(content or "").strip().lower()
+        if not record_type_text and not content_text:
+            return False
+
+        if record_type_text in cls.AI_PEN_TEST_SENSITIVE_RECORD_TYPES:
+            return True
+        if record_type_text.endswith("_key") or record_type_text.endswith("_token"):
+            return True
+        if record_type_text.startswith("trufflehog_"):
+            return True
+
+        merged = "{} {}".format(record_type_text, content_text)
+        sensitive_tokens = (
+            "api_key",
+            "access_key",
+            "secret_key",
+            "client_secret",
+            "private_key",
+            "authorization",
+            "bearer",
+            "password",
+            "passwd",
+            "credential",
+            "jwt",
+            "token",
+        )
+        return any(token in merged for token in sensitive_tokens)
+
+    @classmethod
+    def _classify_ai_pen_risk_type(cls, raw_type: str, risk_name: str, source_module: str = ""):
+        type_text = str(raw_type or "").strip().lower()
+        name_text = str(risk_name or "").strip().lower()
+        source_text = str(source_module or "").strip().lower()
+        merged = " ".join([type_text, name_text, source_text]).strip()
+        if not merged:
+            return "unknown"
+
+        if "jwt" in merged:
+            return "jwt"
+        if "idor" in merged or "越权" in merged or "horizontal" in merged or "vertical" in merged:
+            return "idor"
+        if "ssrf" in merged:
+            return "ssrf"
+        if "csrf" in merged:
+            return "csrf"
+        if "xss" in merged:
+            return "xss"
+        if "sql" in merged and "inject" in merged:
+            return "sqli"
+        if ("command" in merged or "cmd" in merged or "rce" in merged) and "inject" in merged:
+            return "cmdi"
+        if "ldap" in merged and "inject" in merged:
+            return "ldapi"
+        if "xxe" in merged or "xml external" in merged:
+            return "xxe"
+        if "upload" in merged or "文件上传" in merged:
+            return "file_upload"
+        if "read" in merged or "download" in merged or "traversal" in merged or "文件读取" in merged:
+            return "file_read"
+        if "websocket" in merged or "ws://" in merged or "wss://" in merged:
+            return "websocket"
+        if "swagger" in merged or "openapi" in merged or "postman" in merged:
+            return "api_doc"
+        if "secret" in merged or "key" in merged or "token" in merged or "credential" in merged:
+            return "sensitive_info"
+        if "nuclei" in source_text or "afrog" in source_text:
+            return "poc_scan"
+        return cls._normalize_risk_type(type_text, default_value="unknown")
+
     def _build_ai_pen_payload_hint(self, risk_type: str, risk_name: str):
         merged = "{} {}".format(str(risk_type or ""), str(risk_name or "")).lower()
         if "xss" in merged:
@@ -2189,7 +2380,11 @@ class WebSiteFetch(object):
             for row in vuln_cursor:
                 target = str(row.get("target", "") or "").strip()
                 vul_name = str(row.get("vul_name", "") or "").strip()
-                risk_type = self._normalize_risk_type(row.get("plg_type"), default_value="vuln")
+                risk_type = self._classify_ai_pen_risk_type(
+                    raw_type=row.get("plg_type"),
+                    risk_name=vul_name,
+                    source_module=row.get("app_name"),
+                )
                 evidence_seed = str(
                     row.get("verify_data")
                     or row.get("description")
@@ -2233,7 +2428,11 @@ class WebSiteFetch(object):
                 target = str(row.get("target", "") or "").strip()
                 preferred_url = vuln_url if self._is_http_target(vuln_url) else target
                 scanner_type = str(row.get("scanner_type", "") or "").strip().lower()
-                risk_type = scanner_type or "poc_scan"
+                risk_type = self._classify_ai_pen_risk_type(
+                    raw_type=scanner_type or "poc_scan",
+                    risk_name=str(row.get("vuln_name", "") or "").strip(),
+                    source_module=scanner_type,
+                )
                 _append_candidate(
                     {
                         "source_collection": "nuclei_result",
@@ -2258,6 +2457,11 @@ class WebSiteFetch(object):
                 max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
             ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
             for row in wih_cursor:
+                record_type = str(row.get("record_type", "") or "").strip()
+                content = str(row.get("content", "") or "").strip()
+                if not self._is_sensitive_wih_record(record_type, content):
+                    continue
+
                 source_url = str(row.get("source", "") or "").strip()
                 site_url = str(row.get("site", "") or "").strip()
                 target = source_url if self._is_http_target(source_url) else site_url
@@ -2268,10 +2472,14 @@ class WebSiteFetch(object):
                         "source_module": "wih",
                         "target": target or site_url or source_url,
                         "vuln_url": target if self._is_http_target(target) else "",
-                        "risk_type": "sensitive_info",
-                        "risk_name": "WIH-{}".format(str(row.get("record_type", "") or "info").strip() or "info"),
+                        "risk_type": self._classify_ai_pen_risk_type(
+                            raw_type=record_type or "sensitive_info",
+                            risk_name=content,
+                            source_module="wih",
+                        ),
+                        "risk_name": "WIH-{}".format(record_type or "info"),
                         "severity": "info",
-                        "evidence_seed": str(row.get("content", "") or "").strip(),
+                        "evidence_seed": content,
                     }
                 )
         except Exception as e:
@@ -2291,7 +2499,10 @@ class WebSiteFetch(object):
                 score += 12
             elif severity == "medium":
                 score += 6
-            if any(keyword in risk_type for keyword in ("xss", "sql", "command", "jwt", "ssrf", "idor", "upload")):
+            if any(
+                keyword in risk_type
+                for keyword in ("xss", "sql", "sqli", "command", "cmdi", "jwt", "ssrf", "idor", "upload", "file_read")
+            ):
                 score += 16
             return score
 
@@ -2304,7 +2515,23 @@ class WebSiteFetch(object):
         )
         return candidates
 
-    def _verify_ai_pen_candidate(self, candidate: dict):
+    def _verify_ai_pen_candidate(self, candidate: dict, mcp_settings=None):
+        settings = mcp_settings if isinstance(mcp_settings, dict) else {}
+        mcp_enable = bool(settings.get("mcp_enable", True))
+        max_tool_calls = self._safe_int_value(settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)
+        timeout_value = settings.get("timeout")
+        if (
+            isinstance(timeout_value, (list, tuple))
+            and len(timeout_value) >= 2
+            and timeout_value[0]
+            and timeout_value[1]
+        ):
+            timeout_tuple = (float(timeout_value[0]), float(timeout_value[1]))
+        else:
+            timeout_tuple = self.AI_PEN_TEST_FETCH_TIMEOUT
+        if max_tool_calls < 1:
+            max_tool_calls = 1
+
         target_url = str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
         risk_type = str(candidate.get("risk_type", "") or "").strip()
         risk_name = str(candidate.get("risk_name", "") or "").strip()
@@ -2326,28 +2553,96 @@ class WebSiteFetch(object):
                 "tool_trace": "collect_context_only",
             }
 
+        tool_trace_parts = []
         try:
             response = utils.http_req(
                 target_url,
                 "get",
-                timeout=self.AI_PEN_TEST_FETCH_TIMEOUT,
+                timeout=timeout_tuple,
                 allow_redirects=True,
                 waf_guard=self.waf_guard,
                 waf_module="ai_pen_test",
             )
+            tool_trace_parts.append("http_fetch(get,url={})".format(target_url[:220]))
+            tool_calls = 1
             status_code = int(getattr(response, "status_code", 0) or 0)
+            header_obj = getattr(response, "headers", {}) or {}
+            if str(header_obj.get("X-ARL-WAF-SMART-SKIP", "")).strip() == "1":
+                waf_name = str(header_obj.get("X-ARL-WAF-NAME", "") or "").strip()
+                waf_reason = str(header_obj.get("X-ARL-WAF-SMART-SKIP-REASON", "") or "").strip()
+                reason_parts = ["WAF 智能跳过"]
+                if waf_name:
+                    reason_parts.append("厂商:{}".format(waf_name))
+                if waf_reason:
+                    reason_parts.append("原因:{}".format(self._clip_text(waf_reason, 80)))
+                return {
+                    "status": "skipped",
+                    "decision": "needs_manual_review",
+                    "confidence": 0.32,
+                    "reason": " | ".join(reason_parts),
+                    "payload_type": payload_type,
+                    "payload": payload,
+                    "verification_step": "waf_smart_skip",
+                    "evidence_snippet": evidence_seed,
+                    "http_status": status_code,
+                    "response_hash_diff": "",
+                    "tool_trace": "http_fetch(skip_by_waf,url={})".format(target_url[:220]),
+                }
+
             body_text = ""
             try:
                 body_text = str(getattr(response, "text", "") or "")
             except Exception:
                 body_text = ""
 
-            body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
-            body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest() if body_excerpt else ""
+            base_body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
+            base_body_md5 = hashlib.md5(base_body_excerpt.encode("utf-8", "ignore")).hexdigest() if base_body_excerpt else ""
+            evidence_hit = self._contains_evidence(evidence_seed, base_body_excerpt)
 
-            evidence_hit = False
-            if evidence_seed and body_excerpt:
-                evidence_hit = evidence_seed in body_excerpt
+            probe_status = 0
+            probe_body_excerpt = ""
+            probe_body_md5 = ""
+            payload_reflect_hit = False
+            probe_error = ""
+            payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "jwt_probe", "ssrf_probe", "replay"}
+
+            if mcp_enable and tool_calls < max_tool_calls and payload and payload_type in payload_probe_types:
+                probe_url = self._build_probe_url_with_payload(target_url, payload)
+                if probe_url and probe_url != target_url:
+                    try:
+                        probe_resp = utils.http_req(
+                            probe_url,
+                            "get",
+                            timeout=timeout_tuple,
+                            allow_redirects=True,
+                            waf_guard=self.waf_guard,
+                            waf_module="ai_pen_test",
+                        )
+                        tool_calls += 1
+                        tool_trace_parts.append("payload_probe(get,url={})".format(probe_url[:220]))
+                        probe_status = int(getattr(probe_resp, "status_code", 0) or 0)
+                        probe_headers = getattr(probe_resp, "headers", {}) or {}
+                        if str(probe_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
+                            try:
+                                probe_body_text = str(getattr(probe_resp, "text", "") or "")
+                            except Exception:
+                                probe_body_text = ""
+                            probe_body_excerpt = probe_body_text[: self.AI_PEN_TEST_BODY_MAX]
+                            probe_body_md5 = (
+                                hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
+                                if probe_body_excerpt
+                                else ""
+                            )
+                            if self._contains_evidence(evidence_seed, probe_body_excerpt):
+                                evidence_hit = True
+                            payload_text = str(payload or "").strip().lower()
+                            if payload_text and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
+                                payload_reflect_hit = True
+                        else:
+                            tool_trace_parts.append("payload_probe(skip_by_waf)")
+                    except Exception as probe_exc:
+                        probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
+                        tool_trace_parts.append("payload_probe(error)")
 
             decision = "needs_manual_review"
             confidence = 0.56
@@ -2356,6 +2651,14 @@ class WebSiteFetch(object):
                 decision = "verified"
                 confidence = 0.82
                 reason = "响应中命中风险证据片段，验证通过"
+            elif payload_reflect_hit:
+                decision = "needs_manual_review"
+                confidence = 0.74
+                reason = "Payload 在响应中回显，疑似存在可利用注入点"
+            elif probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
+                decision = "needs_manual_review"
+                confidence = 0.66
+                reason = "Payload 探针前后响应差异明显，建议人工复核"
             elif status_code >= 500 or status_code == 404:
                 decision = "likely_false_positive"
                 confidence = 0.66
@@ -2364,10 +2667,21 @@ class WebSiteFetch(object):
                 decision = "needs_manual_review"
                 confidence = 0.48
                 reason = "目标受访问控制保护（{}），建议结合登录态复核".format(status_code)
+            if probe_error:
+                reason = "{}；探针异常：{}".format(reason, probe_error)
 
             evidence_snippet = evidence_seed
             if not evidence_snippet:
-                evidence_snippet = self._clip_text(body_excerpt, self.AI_PEN_TEST_EVIDENCE_MAX)
+                evidence_source = probe_body_excerpt or base_body_excerpt
+                evidence_snippet = self._clip_text(evidence_source, self.AI_PEN_TEST_EVIDENCE_MAX)
+
+            verification_step = "http_fetch_replay"
+            if mcp_enable and max_tool_calls > 1:
+                verification_step = "mcp_http_probe"
+
+            response_hash_diff = base_body_md5
+            if probe_body_md5:
+                response_hash_diff = "base:{} | probe:{}".format(base_body_md5[:16], probe_body_md5[:16])
 
             return {
                 "status": "ok",
@@ -2376,11 +2690,11 @@ class WebSiteFetch(object):
                 "reason": reason,
                 "payload_type": payload_type,
                 "payload": payload,
-                "verification_step": "http_fetch_replay",
+                "verification_step": verification_step,
                 "evidence_snippet": evidence_snippet,
-                "http_status": status_code,
-                "response_hash_diff": body_md5,
-                "tool_trace": "http_fetch(get, url={})".format(target_url[:220]),
+                "http_status": probe_status or status_code,
+                "response_hash_diff": response_hash_diff,
+                "tool_trace": " | ".join(tool_trace_parts)[:500],
             }
         except Exception as e:
             return {
@@ -2394,7 +2708,7 @@ class WebSiteFetch(object):
                 "evidence_snippet": evidence_seed,
                 "http_status": 0,
                 "response_hash_diff": "",
-                "tool_trace": "http_fetch(error)",
+                "tool_trace": "http_fetch(error,url={})".format(target_url[:220]),
             }
 
     def run_ai_penetration_test(self):
@@ -2404,10 +2718,69 @@ class WebSiteFetch(object):
         - 执行轻量 HTTP 二次验证
         - 产出 ai_pen_test_result，支撑任务详情“AI渗透”页签
         """
+        started_at = time.time()
+        ai_config = self._load_ai_runtime_config()
+        runtime_settings = self._build_ai_pen_runtime_settings(ai_config)
+        ai_pen_enable = bool(runtime_settings.get("ai_pen_enable", True))
+        mcp_enable = bool(runtime_settings.get("mcp_enable", True))
+        mcp_max_tool_calls = self._safe_int_value(
+            runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS
+        )
+        mcp_timeout_sec = self._safe_int_value(
+            runtime_settings.get("timeout_sec"), self.AI_PEN_TEST_MCP_TIMEOUT_SEC
+        )
+        runtime_provider = "local-mcp" if mcp_enable else "local"
+        runtime_model = "mcp-rule-lite" if mcp_enable else "rule-lite"
+        runtime_profile = "ai-pen-test-mcp" if mcp_enable else "ai-pen-test"
+
+        if not ai_pen_enable:
+            summary_text = "ai_pen_enable=false | candidates=0 | selected=0 | saved=0 | verified=0 | likely_fp=0 | error=0"
+            logger.info("task_id:{} skip ai_pen_test, runtime disabled".format(self.task_id))
+            self._write_ai_pen_test_usage_log(
+                scene="ai_pen_test_plan",
+                status="skipped",
+                provider=runtime_provider,
+                model=runtime_model,
+                profile=runtime_profile,
+                request_text="AI渗透测试计划",
+                reply_text=summary_text,
+                elapsed_ms=int((time.time() - started_at) * 1000.0),
+                meta={
+                    "task_id": self.task_id,
+                    "ai_pen_enable": ai_pen_enable,
+                    "mcp_enable": mcp_enable,
+                    "mcp_max_tool_calls": mcp_max_tool_calls,
+                    "mcp_timeout_sec": mcp_timeout_sec,
+                    "candidate_count": 0,
+                },
+            )
+            return
+
         self._ensure_ai_pen_test_indexes()
         candidates = self._build_ai_pen_test_candidates()
         if not candidates:
             logger.info("task_id:{} skip ai_pen_test, no candidates".format(self.task_id))
+            self._write_ai_pen_test_usage_log(
+                scene="ai_pen_test_plan",
+                status="skipped",
+                provider=runtime_provider,
+                model=runtime_model,
+                profile=runtime_profile,
+                request_text="AI渗透测试计划",
+                reply_text="candidates=0 | selected=0 | saved=0 | verified=0 | likely_fp=0 | error=0 | mcp={} | max_tool_calls={} | timeout_sec={}".format(
+                    "on" if mcp_enable else "off",
+                    mcp_max_tool_calls,
+                    mcp_timeout_sec,
+                ),
+                elapsed_ms=int((time.time() - started_at) * 1000.0),
+                meta={
+                    "task_id": self.task_id,
+                    "candidate_count": 0,
+                    "mcp_enable": mcp_enable,
+                    "mcp_max_tool_calls": mcp_max_tool_calls,
+                    "mcp_timeout_sec": mcp_timeout_sec,
+                },
+            )
             return
 
         max_cases = self.AI_PEN_TEST_MAX_CASES
@@ -2428,7 +2801,7 @@ class WebSiteFetch(object):
 
         collection = utils.conn_db("ai_pen_test_result")
         for candidate in selected_candidates:
-            verify_result = self._verify_ai_pen_candidate(candidate)
+            verify_result = self._verify_ai_pen_candidate(candidate, mcp_settings=runtime_settings)
             now_text = utils.curr_date()
 
             status = str(verify_result.get("status", "skipped") or "skipped").strip().lower()
@@ -2475,8 +2848,8 @@ class WebSiteFetch(object):
                 "confidence": float("{:.4f}".format(confidence)),
                 "reason": str(verify_result.get("reason", "") or "").strip(),
                 "status": status,
-                "model": "rule-lite",
-                "provider": "local",
+                "model": runtime_model,
+                "provider": runtime_provider,
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
                 "update_date": now_text,
             }
@@ -2495,16 +2868,69 @@ class WebSiteFetch(object):
             )
             saved_count += 1
 
+        elapsed_ms = int((time.time() - started_at) * 1000.0)
+        summary_text = "candidates={} | selected={} | saved={} | verified={} | likely_fp={} | error={} | mcp={} | max_tool_calls={} | timeout_sec={}".format(
+            len(candidates),
+            len(selected_candidates),
+            saved_count,
+            verified_count,
+            false_positive_count,
+            error_count,
+            "on" if mcp_enable else "off",
+            mcp_max_tool_calls,
+            mcp_timeout_sec,
+        )
         logger.info(
-            "task_id:{} ai_pen_test done candidates:{} selected:{} saved:{} verified:{} likely_fp:{} error:{}".format(
-                self.task_id,
-                len(candidates),
-                len(selected_candidates),
-                saved_count,
-                verified_count,
-                false_positive_count,
-                error_count,
+            "task_id:{} ai_pen_test done {} elapsed_ms:{}".format(
+                self.task_id, summary_text, elapsed_ms
             )
+        )
+        self._write_ai_pen_test_usage_log(
+            scene="ai_pen_test_plan",
+            status="ok",
+            provider=runtime_provider,
+            model=runtime_model,
+            profile=runtime_profile,
+            request_text="AI渗透测试计划",
+            reply_text=summary_text,
+            elapsed_ms=elapsed_ms,
+            meta={
+                "task_id": self.task_id,
+                "ai_pen_enable": ai_pen_enable,
+                "mcp_enable": mcp_enable,
+                "mcp_max_tool_calls": mcp_max_tool_calls,
+                "mcp_timeout_sec": mcp_timeout_sec,
+                "candidate_count": len(candidates),
+                "selected_count": len(selected_candidates),
+                "saved_count": saved_count,
+                "verified_count": verified_count,
+                "likely_false_positive_count": false_positive_count,
+                "error_count": error_count,
+            },
+        )
+        exec_status = "error" if (len(selected_candidates) > 0 and error_count >= len(selected_candidates)) else "ok"
+        self._write_ai_pen_test_usage_log(
+            scene="ai_pen_test_exec",
+            status=exec_status,
+            provider=runtime_provider,
+            model=runtime_model,
+            profile=runtime_profile,
+            request_text="AI渗透测试执行",
+            reply_text=summary_text,
+            elapsed_ms=elapsed_ms,
+            meta={
+                "task_id": self.task_id,
+                "ai_pen_enable": ai_pen_enable,
+                "mcp_enable": mcp_enable,
+                "mcp_max_tool_calls": mcp_max_tool_calls,
+                "mcp_timeout_sec": mcp_timeout_sec,
+                "candidate_count": len(candidates),
+                "selected_count": len(selected_candidates),
+                "saved_count": saved_count,
+                "verified_count": verified_count,
+                "likely_false_positive_count": false_positive_count,
+                "error_count": error_count,
+            },
         )
 
     def run_func(self, name: str, func: callable):

@@ -163,6 +163,10 @@ AI:
   ACTIVE_PROMPT_ID: "default_ai_report"
   AI_POC_SCAN_ENABLE: true
   AI_DENOISE_ENABLE: true
+  AI_PEN_TEST_ENABLE: true # AI渗透测试总开关（任务勾选 ai_penetration_test 后仍受该项控制）
+  AI_PEN_MCP_ENABLE: true # 启用后自动执行基础 MCP 工具链（重放 + Payload 探针）
+  AI_PEN_MCP_MAX_TOOL_CALLS: 3 # 单条候选最多工具调用次数
+  AI_PEN_MCP_TIMEOUT_SEC: 12 # MCP 工具请求超时（秒）
   AI_DENOISE_MODULES:
     site: true
     fileleak: true
