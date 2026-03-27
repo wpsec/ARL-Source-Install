@@ -806,6 +806,7 @@ const modules: ModuleConfig[] = [
               afrog_scan: false,
               web_info_hunter: false,
               penetration_test: false,
+              ai_penetration_test: false,
               waf_bypass: false,
               smart_skip_waf: false,
             },
@@ -4951,6 +4952,7 @@ function ActionDialog({
     { key: 'site_config.afrog_scan', label: 'afrog 调用' },
     { key: 'site_config.web_info_hunter', label: 'WIH 调用' },
     { key: 'site_config.penetration_test', label: '渗透测试' },
+    { key: 'site_config.ai_penetration_test', label: 'AI渗透测试' },
     { key: 'site_config.waf_bypass', label: 'WAF绕过' },
     { key: 'site_config.smart_skip_waf', label: '跳过WAF' },
   ];
