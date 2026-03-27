@@ -5,7 +5,9 @@ import time
 import re
 import os
 import json
+import base64
 import hashlib
+import hmac
 from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit
 from bson import ObjectId
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
@@ -132,6 +134,26 @@ class WebSiteFetch(object):
     AI_PEN_TEST_BODY_MAX = 8192
     AI_PEN_TEST_EVIDENCE_MAX = 280
     AI_PEN_TEST_ERROR_MAX = 180
+    AI_PEN_JWT_WEAK_SECRET_CANDIDATES = (
+        "secret",
+        "jwt",
+        "token",
+        "changeme",
+        "password",
+        "admin",
+        "admin123",
+        "123456",
+        "12345678",
+        "qwerty",
+        "test",
+        "default",
+        "public",
+        "private",
+        "access_token",
+        "jwt_secret",
+        "jwtsecret",
+        "api_secret",
+    )
     AI_PEN_TEST_SENSITIVE_RECORD_TYPES = (
         "api_key",
         "access_key",
@@ -2325,6 +2347,55 @@ class WebSiteFetch(object):
             logger.warning("ensure ai_pen_test indexes failed err:{}".format(e))
 
     @staticmethod
+    def _build_source_id_filter(source_id: str):
+        source_text = str(source_id or "").strip()
+        if not source_text:
+            return {}
+        try:
+            return {"_id": ObjectId(source_text)}
+        except Exception:
+            return {"_id": source_text}
+
+    def _sync_ai_pen_result_to_source(
+            self,
+            source_collection: str,
+            source_id: str,
+            decision: str,
+            confidence: float,
+            status: str,
+            reason: str,
+            verification_step: str,
+            payload_type: str,
+            update_date: str,
+    ):
+        source_name = str(source_collection or "").strip().lower()
+        if source_name not in {"vuln", "nuclei_result", "wih", "site", "url"}:
+            return
+
+        source_filter = self._build_source_id_filter(source_id)
+        if not source_filter:
+            return
+
+        source_filter["task_id"] = self.task_id
+        update_fields = {
+            "ai_pen_status": str(status or "").strip(),
+            "ai_pen_decision": str(decision or "").strip(),
+            "ai_pen_confidence": float("{:.4f}".format(float(confidence or 0.0))),
+            "ai_pen_reason": self._clip_text(reason, 500),
+            "ai_pen_verification_step": str(verification_step or "").strip(),
+            "ai_pen_payload_type": str(payload_type or "").strip(),
+            "ai_pen_update_date": str(update_date or "").strip(),
+        }
+        try:
+            utils.conn_db(source_name).update_one(source_filter, {"$set": update_fields}, upsert=False)
+        except Exception as e:
+            logger.warning(
+                "task_id:{} sync ai_pen result to source failed collection:{} source_id:{} err:{}".format(
+                    self.task_id, source_name, source_id, e
+                )
+            )
+
+    @staticmethod
     def _clip_text(value, max_len=220):
         text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
         if len(text) <= max_len:
@@ -2417,6 +2488,273 @@ class WebSiteFetch(object):
         except Exception:
             return url_text
 
+    @staticmethod
+    def _build_idor_probe_url(target_url: str):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return url_text
+
+        try:
+            parsed = urlsplit(url_text)
+            query_items = parse_qsl(parsed.query, keep_blank_values=True)
+            id_keys = {"id", "uid", "user_id", "userid", "account_id", "order_id", "doc_id"}
+            changed = False
+            if query_items:
+                updated_items = []
+                for key, value in query_items:
+                    key_text = str(key or "").strip().lower()
+                    value_text = str(value or "").strip()
+                    if (key_text in id_keys or key_text.endswith("_id")) and value_text.isdigit():
+                        updated_items.append((key, str(int(value_text) + 1)))
+                        changed = True
+                    elif not changed and value_text.isdigit():
+                        updated_items.append((key, str(int(value_text) + 1)))
+                        changed = True
+                    else:
+                        updated_items.append((key, value))
+                if changed:
+                    updated_query = urlencode(updated_items, doseq=True)
+                    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment))
+
+            path_text = str(parsed.path or "")
+            match = re.search(r"(\d+)(/?$)", path_text)
+            if match:
+                number_text = match.group(1)
+                next_number = str(int(number_text) + 1)
+                new_path = "{}{}{}".format(path_text[: match.start(1)], next_number, path_text[match.end(1):])
+                return urlunsplit((parsed.scheme, parsed.netloc, new_path, parsed.query, parsed.fragment))
+            return url_text
+        except Exception:
+            return url_text
+
+    @staticmethod
+    def _build_api_doc_probe_targets(target_url: str, max_count=4):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return []
+
+        try:
+            parsed = urlsplit(url_text)
+            base = "{}://{}".format(parsed.scheme, parsed.netloc)
+            candidate_paths = [
+                "/swagger-ui/index.html",
+                "/swagger-ui.html",
+                "/swagger.json",
+                "/v3/api-docs",
+                "/v2/api-docs",
+                "/openapi.json",
+            ]
+            targets = []
+            seen = set()
+            for path in candidate_paths:
+                full_url = "{}{}".format(base, path)
+                if full_url in seen:
+                    continue
+                seen.add(full_url)
+                targets.append(full_url)
+                if len(targets) >= max(1, int(max_count or 1)):
+                    break
+            return targets
+        except Exception:
+            return []
+
+    @staticmethod
+    def _looks_like_api_doc_response(url_text: str, body_text: str, headers=None):
+        """
+        轻量判断响应是否命中 API 文档（Swagger/OpenAPI）。
+        """
+        url_lower = str(url_text or "").strip().lower()
+        body_lower = str(body_text or "").strip().lower()
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+
+        if not body_lower and not content_type:
+            return False
+
+        url_markers = ("swagger", "openapi", "api-docs", "postman")
+        body_markers = (
+            '"openapi"',
+            '"swagger"',
+            "swagger-ui",
+            "api-docs",
+            '"paths"',
+            "openapi:",
+        )
+
+        if any(marker in content_type for marker in ("application/openapi+json", "application/swagger+json")):
+            return True
+        if any(marker in body_lower for marker in body_markers):
+            return True
+        if any(marker in url_lower for marker in url_markers):
+            return "html" in content_type or "json" in content_type
+        return False
+
+    @staticmethod
+    def _extract_jwt_candidates(*text_values, max_count=3):
+        """
+        从输入文本中提取疑似 JWT token。
+        """
+        token_pattern = re.compile(r"\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
+        seen = set()
+        tokens = []
+        for value in text_values:
+            text = str(value or "")
+            if not text:
+                continue
+            for token in token_pattern.findall(text):
+                token_text = str(token or "").strip()
+                if not token_text or token_text in seen:
+                    continue
+                seen.add(token_text)
+                tokens.append(token_text)
+                if len(tokens) >= max(1, int(max_count or 1)):
+                    return tokens
+        return tokens
+
+    @staticmethod
+    def _jwt_b64url_decode(part_text: str):
+        text = str(part_text or "").strip()
+        if not text:
+            return ""
+        padding = "=" * ((4 - len(text) % 4) % 4)
+        try:
+            return base64.urlsafe_b64decode((text + padding).encode("utf-8")).decode("utf-8", "ignore")
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _jwt_b64url_encode(raw_bytes: bytes):
+        content = raw_bytes if isinstance(raw_bytes, (bytes, bytearray)) else b""
+        return base64.urlsafe_b64encode(bytes(content)).decode("utf-8").rstrip("=")
+
+    @classmethod
+    def _parse_jwt_header(cls, token: str):
+        token_text = str(token or "").strip()
+        parts = token_text.split(".")
+        if len(parts) != 3:
+            return {}
+        header_json = cls._jwt_b64url_decode(parts[0])
+        if not header_json:
+            return {}
+        try:
+            header_obj = json.loads(header_json)
+            if isinstance(header_obj, dict):
+                return header_obj
+            return {}
+        except Exception:
+            return {}
+
+    @classmethod
+    def _build_jwt_none_token(cls, token: str):
+        """
+        复用原 token payload 构造 alg=none token。
+        """
+        token_text = str(token or "").strip()
+        parts = token_text.split(".")
+        if len(parts) != 3:
+            return ""
+
+        payload_part = str(parts[1] or "").strip()
+        if not payload_part:
+            return ""
+
+        none_header = {"alg": "none", "typ": "JWT"}
+        try:
+            header_b64 = base64.urlsafe_b64encode(
+                json.dumps(none_header, separators=(",", ":")).encode("utf-8")
+            ).decode("utf-8").rstrip("=")
+        except Exception:
+            return ""
+
+        return "{}.{}.".format(header_b64, payload_part)
+
+    @classmethod
+    def _jwt_try_weak_hmac_secret(cls, token: str, extra_secrets=None, max_count=64):
+        """
+        对 HS256/HS384/HS512 token 执行弱密钥快速校验。
+        """
+        token_text = str(token or "").strip()
+        if not token_text:
+            return ""
+
+        parts = token_text.split(".")
+        if len(parts) != 3:
+            return ""
+
+        jwt_header = cls._parse_jwt_header(token_text)
+        alg_text = str(jwt_header.get("alg", "") or "").strip().upper()
+        digest_map = {
+            "HS256": hashlib.sha256,
+            "HS384": hashlib.sha384,
+            "HS512": hashlib.sha512,
+        }
+        digest_func = digest_map.get(alg_text)
+        if digest_func is None:
+            return ""
+
+        unsigned = "{}.{}".format(parts[0], parts[1])
+        sign_part = str(parts[2] or "").strip()
+        if not unsigned or not sign_part:
+            return ""
+
+        candidate_secrets = []
+        seen = set()
+        for item in cls.AI_PEN_JWT_WEAK_SECRET_CANDIDATES:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            candidate_secrets.append(text)
+
+        if isinstance(extra_secrets, (list, tuple, set)):
+            for item in extra_secrets:
+                text = str(item or "").strip()
+                if not text or text in seen:
+                    continue
+                seen.add(text)
+                candidate_secrets.append(text)
+
+        test_count = max(1, int(max_count or 1))
+        for secret in candidate_secrets[:test_count]:
+            try:
+                sign_bytes = hmac.new(
+                    secret.encode("utf-8"),
+                    unsigned.encode("utf-8"),
+                    digest_func,
+                ).digest()
+                expected_part = cls._jwt_b64url_encode(sign_bytes)
+                if hmac.compare_digest(expected_part, sign_part):
+                    return secret
+            except Exception:
+                continue
+        return ""
+
+    @staticmethod
+    def _build_websocket_handshake_url(target_url: str):
+        """
+        构造用于 WebSocket 握手探测的 http(s) URL（requests 不支持 ws(s) scheme）。
+        """
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return ""
+
+        try:
+            parsed = urlsplit(url_text)
+            scheme = str(parsed.scheme or "").lower()
+            if scheme == "ws":
+                scheme = "http"
+            elif scheme == "wss":
+                scheme = "https"
+            elif scheme not in {"http", "https"}:
+                return ""
+
+            path_text = str(parsed.path or "").strip()
+            if not path_text:
+                path_text = "/ws"
+            return urlunsplit((scheme, parsed.netloc, path_text, parsed.query, parsed.fragment))
+        except Exception:
+            return ""
+
     @classmethod
     def _is_sensitive_wih_record(cls, record_type: str, content: str):
         record_type_text = str(record_type or "").strip().lower()
@@ -2503,6 +2841,10 @@ class WebSiteFetch(object):
             return "ssrf_probe", "http://127.0.0.1/"
         if "idor" in merged or "越权" in merged:
             return "idor_probe", "id=1 -> id=2"
+        if "swagger" in merged or "openapi" in merged or "postman" in merged or "api_doc" in merged:
+            return "api_doc_probe", "/v3/api-docs"
+        if "websocket" in merged or "socket.io" in merged or "sockjs" in merged:
+            return "websocket_probe", "ws_handshake"
         if "upload" in merged or "文件上传" in merged:
             return "upload_probe", "filename=shell.php"
         return "replay", ""
@@ -2649,12 +2991,212 @@ class WebSiteFetch(object):
         except Exception as e:
             logger.warning("task_id:{} build ai_pen candidates from wih failed err:{}".format(self.task_id, e))
 
+        # 4) 站点线索(site)：用于补充 API 文档暴露/WebSocket 入口验证。
+        try:
+            api_doc_keywords = ("swagger", "openapi", "api-docs", "knife4j", "redoc", "postman")
+            websocket_keywords = ("websocket", "socket.io", "sockjs", "ws://", "wss://")
+            jwt_keywords = ("jwt", "json web token", "oauth2", "openid", "oidc")
+            site_cursor = utils.conn_db("site").find(
+                {"task_id": self.task_id},
+                {"_id": 1, "site": 1, "title": 1, "http_server": 1, "finger": 1, "status": 1},
+                max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
+            ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
+            for row in site_cursor:
+                site_url = str(row.get("site", "") or "").strip()
+                if not self._is_http_target(site_url):
+                    continue
+
+                title_text = str(row.get("title", "") or "").strip()
+                server_text = str(row.get("http_server", "") or "").strip()
+                status_code = int(row.get("status", 0) or 0)
+                finger_names = []
+                for finger_item in (row.get("finger", []) or []):
+                    if isinstance(finger_item, dict):
+                        name_text = str(finger_item.get("name", "") or "").strip()
+                        if name_text:
+                            finger_names.append(name_text)
+
+                merged_text = " ".join(
+                    [
+                        site_url.lower(),
+                        title_text.lower(),
+                        server_text.lower(),
+                        " ".join([str(x).lower() for x in finger_names]),
+                    ]
+                )
+                matched_keywords = []
+                risk_type = ""
+                risk_name = ""
+                severity = "info"
+                if any(keyword in merged_text for keyword in api_doc_keywords):
+                    matched_keywords = [keyword for keyword in api_doc_keywords if keyword in merged_text][:4]
+                    risk_type = "api_doc"
+                    risk_name = "站点疑似暴露API文档"
+                    severity = "medium"
+                elif any(keyword in merged_text for keyword in websocket_keywords):
+                    matched_keywords = [keyword for keyword in websocket_keywords if keyword in merged_text][:4]
+                    risk_type = "websocket"
+                    risk_name = "站点疑似存在WebSocket入口"
+                    severity = "low"
+                elif any(keyword in merged_text for keyword in jwt_keywords):
+                    matched_keywords = [keyword for keyword in jwt_keywords if keyword in merged_text][:4]
+                    risk_type = "jwt"
+                    risk_name = "站点疑似存在JWT鉴权链路"
+                    severity = "low"
+
+                if not risk_type:
+                    continue
+
+                evidence_parts = []
+                if title_text:
+                    evidence_parts.append("title={}".format(title_text[:90]))
+                if server_text:
+                    evidence_parts.append("server={}".format(server_text[:64]))
+                if matched_keywords:
+                    evidence_parts.append("keywords={}".format(",".join(matched_keywords)))
+                if status_code:
+                    evidence_parts.append("status={}".format(status_code))
+                if finger_names:
+                    evidence_parts.append("finger={}".format(",".join(finger_names[:4])))
+                evidence_seed = " | ".join(evidence_parts)
+
+                _append_candidate(
+                    {
+                        "source_collection": "site",
+                        "source_id": row.get("_id"),
+                        "source_module": "site",
+                        "target": site_url,
+                        "vuln_url": site_url,
+                        "risk_type": risk_type,
+                        "risk_name": risk_name,
+                        "severity": severity,
+                        "evidence_seed": evidence_seed,
+                    }
+                )
+        except Exception as e:
+            logger.warning("task_id:{} build ai_pen candidates from site failed err:{}".format(self.task_id, e))
+
+        # 5) URL 线索(url)：用于补充 IDOR/API 文档/WebSocket 场景验证。
+        try:
+            api_doc_keywords = ("swagger", "openapi", "api-docs", "knife4j", "redoc", "postman")
+            websocket_keywords = ("websocket", "socket.io", "sockjs", "/ws", "/websocket")
+            id_keys = {"id", "uid", "user_id", "userid", "account_id", "order_id", "doc_id"}
+            jwt_token_keys = {"token", "jwt", "access_token", "id_token", "refresh_token", "authorization", "auth", "bearer"}
+            url_cursor = utils.conn_db("url").find(
+                {"task_id": self.task_id},
+                {"_id": 1, "url": 1, "title": 1, "status_code": 1, "source": 1},
+                max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
+            ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
+            for row in url_cursor:
+                raw_url = str(row.get("url", "") or "").strip()
+                if not self._is_http_target(raw_url):
+                    continue
+
+                lower_url = raw_url.lower()
+                title_text = str(row.get("title", "") or "").strip()
+                source_text = str(row.get("source", "") or "").strip().lower()
+                status_code = int(row.get("status_code", 0) or 0)
+                parsed = urlsplit(raw_url)
+                query_items = parse_qsl(parsed.query, keep_blank_values=True)
+
+                matched_keywords = []
+                risk_type = ""
+                risk_name = ""
+                severity = "info"
+                if any(keyword in lower_url or keyword in title_text.lower() for keyword in api_doc_keywords):
+                    matched_keywords = [
+                        keyword for keyword in api_doc_keywords
+                        if keyword in lower_url or keyword in title_text.lower()
+                    ][:4]
+                    risk_type = "api_doc"
+                    risk_name = "URL疑似暴露API文档"
+                    severity = "medium"
+                elif any(keyword in lower_url for keyword in websocket_keywords):
+                    matched_keywords = [keyword for keyword in websocket_keywords if keyword in lower_url][:4]
+                    risk_type = "websocket"
+                    risk_name = "URL疑似WebSocket入口"
+                    severity = "low"
+                else:
+                    jwt_token_hit = False
+                    for key, value in query_items:
+                        key_text = str(key or "").strip().lower()
+                        value_text = str(value or "").strip()
+                        if key_text not in jwt_token_keys:
+                            continue
+                        if "." in value_text and len(value_text) >= 24 and value_text.count(".") == 2:
+                            risk_type = "jwt"
+                            risk_name = "URL疑似JWT令牌参数"
+                            severity = "medium"
+                            matched_keywords = [key_text]
+                            jwt_token_hit = True
+                            break
+                        if "jwt" in key_text and len(value_text) >= 16:
+                            risk_type = "jwt"
+                            risk_name = "URL疑似JWT参数"
+                            severity = "low"
+                            matched_keywords = [key_text]
+                            jwt_token_hit = True
+                            break
+
+                    numeric_idor = False
+                    if not risk_type:
+                        for key, value in query_items:
+                            key_text = str(key or "").strip().lower()
+                            value_text = str(value or "").strip()
+                            if (key_text in id_keys or key_text.endswith("_id")) and value_text.isdigit():
+                                numeric_idor = True
+                                matched_keywords = [key_text]
+                                break
+
+                        if numeric_idor:
+                            risk_type = "idor"
+                            risk_name = "URL参数越权探测"
+                            severity = "medium"
+                        elif re.search(r"/\d+($|/)", str(parsed.path or "")) and any(
+                            token in lower_url for token in ("/user/", "/users/", "/account/", "/order/", "/api/")
+                        ):
+                            risk_type = "idor"
+                            risk_name = "路径ID越权探测"
+                            severity = "low"
+                            matched_keywords = ["path_numeric_id"]
+
+                if not risk_type:
+                    continue
+
+                evidence_parts = ["url={}".format(raw_url[:180])]
+                if title_text:
+                    evidence_parts.append("title={}".format(title_text[:90]))
+                if source_text:
+                    evidence_parts.append("source={}".format(source_text))
+                if status_code:
+                    evidence_parts.append("status={}".format(status_code))
+                if matched_keywords:
+                    evidence_parts.append("keywords={}".format(",".join(matched_keywords)))
+
+                _append_candidate(
+                    {
+                        "source_collection": "url",
+                        "source_id": row.get("_id"),
+                        "source_module": source_text or "url",
+                        "target": raw_url,
+                        "vuln_url": raw_url,
+                        "risk_type": risk_type,
+                        "risk_name": risk_name,
+                        "severity": severity,
+                        "evidence_seed": " | ".join(evidence_parts),
+                    }
+                )
+        except Exception as e:
+            logger.warning("task_id:{} build ai_pen candidates from url failed err:{}".format(self.task_id, e))
+
         def _risk_score(item):
             score = 0
             risk_type = str(item.get("risk_type", "") or "").lower()
             severity = str(item.get("severity", "") or "").lower()
             if str(item.get("source_collection", "") or "") == "nuclei_result":
                 score += 15
+            elif str(item.get("source_collection", "") or "") in {"site", "url"}:
+                score += 5
             if self._is_http_target(item.get("vuln_url", "")):
                 score += 20
             if str(item.get("evidence_seed", "") or "").strip():
@@ -2665,7 +3207,7 @@ class WebSiteFetch(object):
                 score += 6
             if any(
                 keyword in risk_type
-                for keyword in ("xss", "sql", "sqli", "command", "cmdi", "jwt", "ssrf", "idor", "upload", "file_read")
+                for keyword in ("xss", "sql", "sqli", "command", "cmdi", "jwt", "ssrf", "idor", "upload", "file_read", "api_doc", "websocket")
             ):
                 score += 16
             return score
@@ -2767,62 +3309,328 @@ class WebSiteFetch(object):
             probe_body_excerpt = ""
             probe_body_md5 = ""
             payload_reflect_hit = False
+            idor_diff_hit = False
+            api_doc_hit = False
+            api_doc_hit_url = ""
+            api_doc_probe_count = 0
+            jwt_token_found = ""
+            jwt_alg_text = ""
+            jwt_alg_none_hit = False
+            jwt_none_probe_hit = False
+            jwt_weak_secret = ""
+            websocket_upgrade_hit = False
+            websocket_upgrade_hint = False
             probe_error = ""
-            payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "jwt_probe", "ssrf_probe", "replay"}
+            payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "replay"}
 
-            if mcp_enable and tool_calls < max_tool_calls and payload and payload_type in payload_probe_types:
-                probe_url = self._build_probe_url_with_payload(target_url, payload)
-                if probe_url and probe_url != target_url:
-                    try:
-                        probe_resp = utils.http_req(
-                            probe_url,
-                            "get",
-                            timeout=timeout_tuple,
-                            allow_redirects=True,
-                            waf_guard=self.waf_guard,
-                            waf_module="ai_pen_test",
-                        )
-                        tool_calls += 1
-                        tool_trace_parts.append("payload_probe(get,url={})".format(probe_url[:220]))
-                        probe_status = int(getattr(probe_resp, "status_code", 0) or 0)
-                        probe_headers = getattr(probe_resp, "headers", {}) or {}
-                        if str(probe_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
+            if mcp_enable and tool_calls < max_tool_calls:
+                if payload and payload_type in payload_probe_types:
+                    probe_url = self._build_probe_url_with_payload(target_url, payload)
+                    if probe_url and probe_url != target_url:
+                        try:
+                            probe_resp = utils.http_req(
+                                probe_url,
+                                "get",
+                                timeout=timeout_tuple,
+                                allow_redirects=True,
+                                waf_guard=self.waf_guard,
+                                waf_module="ai_pen_test",
+                            )
+                            tool_calls += 1
+                            tool_trace_parts.append("payload_probe(get,url={})".format(probe_url[:220]))
+                            probe_status = int(getattr(probe_resp, "status_code", 0) or 0)
+                            probe_headers = getattr(probe_resp, "headers", {}) or {}
+                            if str(probe_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
+                                try:
+                                    probe_body_text = str(getattr(probe_resp, "text", "") or "")
+                                except Exception:
+                                    probe_body_text = ""
+                                probe_body_excerpt = probe_body_text[: self.AI_PEN_TEST_BODY_MAX]
+                                probe_body_md5 = (
+                                    hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
+                                    if probe_body_excerpt
+                                    else ""
+                                )
+                                if self._contains_evidence(evidence_seed, probe_body_excerpt):
+                                    evidence_hit = True
+                                payload_text = str(payload or "").strip().lower()
+                                if payload_text and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
+                                    payload_reflect_hit = True
+                            else:
+                                tool_trace_parts.append("payload_probe(skip_by_waf)")
+                        except Exception as probe_exc:
+                            probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
+                            tool_trace_parts.append("payload_probe(error)")
+                elif payload_type == "idor_probe":
+                    idor_url = self._build_idor_probe_url(target_url)
+                    if idor_url and idor_url != target_url:
+                        try:
+                            idor_resp = utils.http_req(
+                                idor_url,
+                                "get",
+                                timeout=timeout_tuple,
+                                allow_redirects=True,
+                                waf_guard=self.waf_guard,
+                                waf_module="ai_pen_test",
+                            )
+                            tool_calls += 1
+                            tool_trace_parts.append("idor_probe(get,url={})".format(idor_url[:220]))
+                            probe_status = int(getattr(idor_resp, "status_code", 0) or 0)
+                            idor_headers = getattr(idor_resp, "headers", {}) or {}
+                            if str(idor_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
+                                try:
+                                    idor_body_text = str(getattr(idor_resp, "text", "") or "")
+                                except Exception:
+                                    idor_body_text = ""
+                                probe_body_excerpt = idor_body_text[: self.AI_PEN_TEST_BODY_MAX]
+                                probe_body_md5 = (
+                                    hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
+                                    if probe_body_excerpt
+                                    else ""
+                                )
+                                if self._contains_evidence(evidence_seed, probe_body_excerpt):
+                                    evidence_hit = True
+                                if probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
+                                    idor_diff_hit = True
+                            else:
+                                tool_trace_parts.append("idor_probe(skip_by_waf)")
+                        except Exception as probe_exc:
+                            probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
+                            tool_trace_parts.append("idor_probe(error)")
+                    else:
+                        tool_trace_parts.append("idor_probe(skip_no_mutation)")
+                elif payload_type == "api_doc_probe":
+                    remain_calls = max(1, max_tool_calls - tool_calls)
+                    doc_targets = self._build_api_doc_probe_targets(target_url, max_count=remain_calls)
+                    if not doc_targets:
+                        tool_trace_parts.append("api_doc_probe(skip_no_target)")
+                    for doc_url in doc_targets:
+                        if tool_calls >= max_tool_calls:
+                            break
+                        try:
+                            doc_resp = utils.http_req(
+                                doc_url,
+                                "get",
+                                timeout=timeout_tuple,
+                                allow_redirects=True,
+                                waf_guard=self.waf_guard,
+                                waf_module="ai_pen_test",
+                            )
+                            tool_calls += 1
+                            api_doc_probe_count += 1
+                            tool_trace_parts.append("api_doc_probe(get,url={})".format(doc_url[:220]))
+                            doc_status = int(getattr(doc_resp, "status_code", 0) or 0)
+                            if not probe_status:
+                                probe_status = doc_status
+
+                            doc_headers = getattr(doc_resp, "headers", {}) or {}
+                            if str(doc_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() == "1":
+                                tool_trace_parts.append("api_doc_probe(skip_by_waf,url={})".format(doc_url[:180]))
+                                continue
+
                             try:
-                                probe_body_text = str(getattr(probe_resp, "text", "") or "")
+                                doc_body_text = str(getattr(doc_resp, "text", "") or "")
                             except Exception:
-                                probe_body_text = ""
-                            probe_body_excerpt = probe_body_text[: self.AI_PEN_TEST_BODY_MAX]
-                            probe_body_md5 = (
-                                hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
-                                if probe_body_excerpt
+                                doc_body_text = ""
+                            doc_body_excerpt = doc_body_text[: self.AI_PEN_TEST_BODY_MAX]
+                            doc_body_md5 = (
+                                hashlib.md5(doc_body_excerpt.encode("utf-8", "ignore")).hexdigest()
+                                if doc_body_excerpt
                                 else ""
                             )
-                            if self._contains_evidence(evidence_seed, probe_body_excerpt):
+                            if doc_body_excerpt:
+                                probe_body_excerpt = doc_body_excerpt
+                            if doc_body_md5:
+                                probe_body_md5 = doc_body_md5
+                            if self._contains_evidence(evidence_seed, doc_body_excerpt):
                                 evidence_hit = True
-                            payload_text = str(payload or "").strip().lower()
-                            if payload_text and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
-                                payload_reflect_hit = True
-                        else:
-                            tool_trace_parts.append("payload_probe(skip_by_waf)")
-                    except Exception as probe_exc:
-                        probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
-                        tool_trace_parts.append("payload_probe(error)")
+                            if self._looks_like_api_doc_response(doc_url, doc_body_excerpt, doc_headers):
+                                api_doc_hit = True
+                                api_doc_hit_url = doc_url
+                                break
+                        except Exception as probe_exc:
+                            if not probe_error:
+                                probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
+                            tool_trace_parts.append("api_doc_probe(error,url={})".format(str(doc_url)[:180]))
+                elif payload_type == "jwt_probe":
+                    jwt_candidates = self._extract_jwt_candidates(
+                        evidence_seed,
+                        base_body_excerpt,
+                        target_url,
+                        max_count=2,
+                    )
+                    if jwt_candidates:
+                        jwt_token_found = str(jwt_candidates[0] or "").strip()
+                        jwt_header_obj = self._parse_jwt_header(jwt_token_found)
+                        jwt_alg_text = str(jwt_header_obj.get("alg", "") or "").strip().lower()
+                        if jwt_alg_text == "none":
+                            jwt_alg_none_hit = True
+                            tool_trace_parts.append("jwt_probe(found_alg_none)")
+
+                        if jwt_alg_text in {"hs256", "hs384", "hs512"}:
+                            extra_secrets = []
+                            host_text = str(urlsplit(target_url).hostname or "").strip().lower()
+                            if host_text:
+                                extra_secrets.append(host_text)
+                                for token in re.split(r"[^a-z0-9]+", host_text):
+                                    token = str(token or "").strip()
+                                    if len(token) >= 4:
+                                        extra_secrets.append(token)
+                            jwt_weak_secret = self._jwt_try_weak_hmac_secret(
+                                jwt_token_found,
+                                extra_secrets=extra_secrets,
+                                max_count=64,
+                            )
+                            if jwt_weak_secret:
+                                tool_trace_parts.append("jwt_probe(weak_secret={})".format(jwt_weak_secret[:32]))
+
+                        none_token = self._build_jwt_none_token(jwt_token_found)
+                        if none_token and tool_calls < max_tool_calls:
+                            try:
+                                jwt_headers = {"Authorization": "Bearer {}".format(none_token)}
+                                jwt_resp = utils.http_req(
+                                    target_url,
+                                    "get",
+                                    timeout=timeout_tuple,
+                                    allow_redirects=True,
+                                    headers=jwt_headers,
+                                    waf_guard=self.waf_guard,
+                                    waf_module="ai_pen_test",
+                                )
+                                tool_calls += 1
+                                tool_trace_parts.append("jwt_probe(auth_none,url={})".format(target_url[:220]))
+                                probe_status = int(getattr(jwt_resp, "status_code", 0) or 0)
+                                jwt_resp_headers = getattr(jwt_resp, "headers", {}) or {}
+                                if str(jwt_resp_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
+                                    try:
+                                        jwt_body_text = str(getattr(jwt_resp, "text", "") or "")
+                                    except Exception:
+                                        jwt_body_text = ""
+                                    probe_body_excerpt = jwt_body_text[: self.AI_PEN_TEST_BODY_MAX]
+                                    probe_body_md5 = (
+                                        hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
+                                        if probe_body_excerpt
+                                        else ""
+                                    )
+                                    if self._contains_evidence(evidence_seed, probe_body_excerpt):
+                                        evidence_hit = True
+                                    if (
+                                        probe_status == status_code
+                                        and probe_body_md5
+                                        and base_body_md5
+                                        and probe_body_md5 == base_body_md5
+                                        and probe_status not in (401, 403)
+                                    ):
+                                        jwt_none_probe_hit = True
+                                else:
+                                    tool_trace_parts.append("jwt_probe(skip_by_waf)")
+                            except Exception as probe_exc:
+                                if not probe_error:
+                                    probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
+                                tool_trace_parts.append("jwt_probe(error)")
+                    else:
+                        tool_trace_parts.append("jwt_probe(skip_no_token)")
+                elif payload_type == "websocket_probe":
+                    ws_probe_url = self._build_websocket_handshake_url(target_url)
+                    if not ws_probe_url:
+                        tool_trace_parts.append("websocket_probe(skip_invalid_target)")
+                    elif tool_calls < max_tool_calls:
+                        try:
+                            ws_headers = {
+                                "Connection": "Upgrade",
+                                "Upgrade": "websocket",
+                                "Sec-WebSocket-Version": "13",
+                                "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+                            }
+                            ws_resp = utils.http_req(
+                                ws_probe_url,
+                                "get",
+                                timeout=timeout_tuple,
+                                allow_redirects=False,
+                                headers=ws_headers,
+                                waf_guard=self.waf_guard,
+                                waf_module="ai_pen_test",
+                            )
+                            tool_calls += 1
+                            tool_trace_parts.append("websocket_probe(handshake,url={})".format(ws_probe_url[:220]))
+                            probe_status = int(getattr(ws_resp, "status_code", 0) or 0)
+                            ws_resp_headers = getattr(ws_resp, "headers", {}) or {}
+                            ws_upgrade_header = str(ws_resp_headers.get("Upgrade", "") or "").strip().lower()
+                            ws_version_hint = str(ws_resp_headers.get("Sec-WebSocket-Version", "") or "").strip()
+
+                            if str(ws_resp_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
+                                try:
+                                    ws_body_text = str(getattr(ws_resp, "text", "") or "")
+                                except Exception:
+                                    ws_body_text = ""
+                                probe_body_excerpt = ws_body_text[: self.AI_PEN_TEST_BODY_MAX]
+                                probe_body_md5 = (
+                                    hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
+                                    if probe_body_excerpt
+                                    else ""
+                                )
+                                if probe_status == 101 and "websocket" in ws_upgrade_header:
+                                    websocket_upgrade_hit = True
+                                elif probe_status in (400, 426) and ("websocket" in ws_upgrade_header or ws_version_hint):
+                                    websocket_upgrade_hint = True
+                            else:
+                                tool_trace_parts.append("websocket_probe(skip_by_waf)")
+                        except Exception as probe_exc:
+                            if not probe_error:
+                                probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
+                            tool_trace_parts.append("websocket_probe(error)")
 
             decision = "needs_manual_review"
             confidence = 0.56
-            reason = "目标可访问，已完成 HTTP 重放验证"
+            reason = "目标可访问，已完成 HTTP 验证"
             if evidence_hit:
                 decision = "verified"
                 confidence = 0.82
                 reason = "响应中命中风险证据片段，验证通过"
+            elif payload_type == "jwt_probe" and jwt_weak_secret:
+                decision = "verified"
+                confidence = 0.93
+                reason = "JWT 使用弱密钥签名（secret={}），可被离线伪造".format(jwt_weak_secret[:32])
+            elif payload_type == "jwt_probe" and jwt_alg_none_hit:
+                decision = "verified"
+                confidence = 0.90
+                reason = "JWT Header 使用 alg=none，存在未签名令牌风险"
+            elif payload_type == "jwt_probe" and jwt_none_probe_hit:
+                decision = "needs_manual_review"
+                confidence = 0.80
+                reason = "JWT none-token 重放与基线响应一致，疑似存在签名校验缺陷"
+            elif payload_type == "jwt_probe" and jwt_token_found:
+                decision = "needs_manual_review"
+                confidence = 0.64
+                reason = "发现疑似 JWT 令牌（alg={}），建议结合登录态进一步验证".format(jwt_alg_text or "-")
+            elif payload_type == "websocket_probe" and websocket_upgrade_hit:
+                decision = "verified"
+                confidence = 0.86
+                reason = "WebSocket 握手返回 101 且 Upgrade=websocket，入口验证通过"
+            elif payload_type == "websocket_probe" and websocket_upgrade_hint:
+                decision = "needs_manual_review"
+                confidence = 0.70
+                reason = "WebSocket 握手返回特征状态码（400/426）与版本提示，疑似存在可用入口"
+            elif payload_type == "api_doc_probe" and api_doc_hit:
+                decision = "verified"
+                confidence = 0.86
+                reason = "发现公开 API 文档端点 {}，可继续进行参数验证".format(api_doc_hit_url[:180])
             elif payload_reflect_hit:
                 decision = "needs_manual_review"
                 confidence = 0.74
                 reason = "Payload 在响应中回显，疑似存在可利用注入点"
+            elif payload_type == "idor_probe" and idor_diff_hit:
+                decision = "needs_manual_review"
+                confidence = 0.78
+                reason = "ID 参数变异后响应差异明显，疑似存在越权风险"
             elif probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
                 decision = "needs_manual_review"
                 confidence = 0.66
                 reason = "Payload 探针前后响应差异明显，建议人工复核"
+            elif payload_type == "api_doc_probe" and api_doc_probe_count > 0 and not api_doc_hit:
+                decision = "likely_false_positive"
+                confidence = 0.60
+                reason = "已探测 {} 个常见 API 文档端点，暂未命中暴露特征".format(api_doc_probe_count)
             elif status_code >= 500 or status_code == 404:
                 decision = "likely_false_positive"
                 confidence = 0.66
@@ -2840,12 +3648,22 @@ class WebSiteFetch(object):
                 evidence_snippet = self._clip_text(evidence_source, self.AI_PEN_TEST_EVIDENCE_MAX)
 
             verification_step = "http_fetch_replay"
-            if mcp_enable and max_tool_calls > 1:
+            if mcp_enable and max_tool_calls > 1 and payload_type == "idor_probe":
+                verification_step = "mcp_idor_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "api_doc_probe":
+                verification_step = "mcp_api_doc_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "jwt_probe":
+                verification_step = "mcp_jwt_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "websocket_probe":
+                verification_step = "mcp_websocket_probe"
+            elif mcp_enable and max_tool_calls > 1:
                 verification_step = "mcp_http_probe"
 
             response_hash_diff = base_body_md5
             if probe_body_md5:
                 response_hash_diff = "base:{} | probe:{}".format(base_body_md5[:16], probe_body_md5[:16])
+            if payload_type == "api_doc_probe" and api_doc_hit_url:
+                response_hash_diff = "{} | api_doc:{}".format(response_hash_diff, api_doc_hit_url[:120]).strip(" |")
 
             return {
                 "status": "ok",
@@ -2878,7 +3696,7 @@ class WebSiteFetch(object):
     def run_ai_penetration_test(self):
         """
         AI 渗透测试第一阶段（M1）：
-        - 汇聚 vuln / nuclei_result / wih 候选
+        - 汇聚 vuln / nuclei_result / wih / site / url 候选
         - 执行轻量 HTTP 二次验证
         - 产出 ai_pen_test_result，支撑任务详情“AI渗透”页签
         """
@@ -2969,6 +3787,12 @@ class WebSiteFetch(object):
 
         # 有知识命中的候选优先进入执行窗口（同分保留原有风险优先顺序）。
         candidates.sort(key=lambda item: -int(item.get("knowledge_score", 0) or 0))
+        source_counter = {}
+        for candidate in candidates:
+            source_name = str(candidate.get("source_collection", "") or "").strip().lower()
+            if not source_name:
+                source_name = "unknown"
+            source_counter[source_name] = source_counter.get(source_name, 0) + 1
 
         max_cases = self.AI_PEN_TEST_MAX_CASES
         try:
@@ -3055,11 +3879,25 @@ class WebSiteFetch(object):
                 },
                 upsert=True,
             )
+            self._sync_ai_pen_result_to_source(
+                source_collection=source_collection,
+                source_id=source_id,
+                decision=decision,
+                confidence=confidence,
+                status=status,
+                reason=str(verify_result.get("reason", "") or "").strip(),
+                verification_step=str(verify_result.get("verification_step", "") or "").strip(),
+                payload_type=str(verify_result.get("payload_type", "") or "").strip(),
+                update_date=now_text,
+            )
             saved_count += 1
 
         elapsed_ms = int((time.time() - started_at) * 1000.0)
         knowledge_tokens_preview = ",".join(sorted(list(knowledge_hit_tokens_set))[:16]) or "-"
-        summary_text = "candidates={} | selected={} | saved={} | verified={} | likely_fp={} | error={} | mcp={} | max_tool_calls={} | timeout_sec={} | index_loaded={} | index_tokens={}".format(
+        source_counter_text = ",".join(
+            ["{}:{}".format(name, source_counter[name]) for name in sorted(source_counter.keys())]
+        ) or "-"
+        summary_text = "candidates={} | selected={} | saved={} | verified={} | likely_fp={} | error={} | mcp={} | max_tool_calls={} | timeout_sec={} | sources={} | index_loaded={} | index_tokens={}".format(
             len(candidates),
             len(selected_candidates),
             saved_count,
@@ -3069,6 +3907,7 @@ class WebSiteFetch(object):
             "on" if mcp_enable else "off",
             mcp_max_tool_calls,
             mcp_timeout_sec,
+            source_counter_text,
             "true" if knowledge_loaded else "false",
             knowledge_tokens_preview,
         )
@@ -3092,6 +3931,7 @@ class WebSiteFetch(object):
                 "mcp_enable": mcp_enable,
                 "mcp_max_tool_calls": mcp_max_tool_calls,
                 "mcp_timeout_sec": mcp_timeout_sec,
+                "source_counter": source_counter,
                 "knowledge_index_loaded": knowledge_loaded,
                 "knowledge_index_path": knowledge_path,
                 "knowledge_index_token_count": knowledge_index_token_count,
@@ -3120,6 +3960,7 @@ class WebSiteFetch(object):
                 "mcp_enable": mcp_enable,
                 "mcp_max_tool_calls": mcp_max_tool_calls,
                 "mcp_timeout_sec": mcp_timeout_sec,
+                "source_counter": source_counter,
                 "knowledge_index_loaded": knowledge_loaded,
                 "knowledge_index_path": knowledge_path,
                 "knowledge_index_token_count": knowledge_index_token_count,

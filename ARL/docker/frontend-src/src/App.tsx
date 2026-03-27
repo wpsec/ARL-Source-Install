@@ -1431,7 +1431,7 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'vul_name',
-    columns: ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date', 'ai_analysis'],
+    columns: ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date', 'ai_pen_decision', 'ai_analysis'],
     columnLabels: {
       vul_name: '风险名称',
       plg_type: '类别',
@@ -1439,6 +1439,7 @@ const modules: ModuleConfig[] = [
       target: '目标',
       credential: '凭证',
       save_date: '发现时间',
+      ai_pen_decision: 'AI渗透',
       ai_analysis: 'AI分析',
     },
     searchFields: [
@@ -1452,6 +1453,18 @@ const modules: ModuleConfig[] = [
       },
       { key: 'app_name', label: '应用名', placeholder: '请输入应用名进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+      {
+        key: 'ai_pen_decision',
+        label: 'AI渗透',
+        placeholder: '请选择AI渗透结论',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '已验证', value: 'verified' },
+          { label: '疑似误报', value: 'likely_false_positive' },
+          { label: '需人工复核', value: 'needs_manual_review' },
+        ],
+      },
       {
         key: 'ai_analysis',
         label: 'AI分析',
@@ -1482,7 +1495,7 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'vuln_name',
-    columns: ['scanner_type', 'rule_id', 'target', 'vuln_url', 'vuln_name', 'vuln_severity', 'save_date', 'verify_data', 'ai_analysis'],
+    columns: ['scanner_type', 'rule_id', 'target', 'vuln_url', 'vuln_name', 'vuln_severity', 'save_date', 'verify_data', 'ai_pen_decision', 'ai_analysis'],
     columnLabels: {
       scanner_type: '扫描器',
       rule_id: '规则ID',
@@ -1492,6 +1505,7 @@ const modules: ModuleConfig[] = [
       vuln_severity: '风险等级',
       save_date: '保存时间',
       verify_data: '验证信息',
+      ai_pen_decision: 'AI渗透',
       ai_analysis: 'AI分析',
     },
     searchFields: [
@@ -1510,6 +1524,18 @@ const modules: ModuleConfig[] = [
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
       { key: 'vuln_url', label: '风险URL', placeholder: '请输入风险URL进行搜索' },
       { key: 'vuln_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
+      {
+        key: 'ai_pen_decision',
+        label: 'AI渗透',
+        placeholder: '请选择AI渗透结论',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '已验证', value: 'verified' },
+          { label: '疑似误报', value: 'likely_false_positive' },
+          { label: '需人工复核', value: 'needs_manual_review' },
+        ],
+      },
       {
         key: 'ai_analysis',
         label: 'AI分析',
@@ -1637,7 +1663,7 @@ const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'risk_name',
     defaultOrder: '-save_date',
-    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'status', 'reason', 'save_date'],
+    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'knowledge_hit_tokens', 'reason', 'tool_trace', 'save_date'],
     columnLabels: {
       source_collection: '来源',
       risk_type: '类型',
@@ -1646,8 +1672,12 @@ const modules: ModuleConfig[] = [
       vuln_url: '漏洞URL',
       decision: '结论',
       confidence: '置信度',
+      verification_step: '验证阶段',
+      payload_type: '探针类型',
       status: '状态',
+      knowledge_hit_tokens: '知识命中',
       reason: '说明',
+      tool_trace: '工具轨迹',
       save_date: '时间',
     },
     searchFields: [
@@ -1656,6 +1686,8 @@ const modules: ModuleConfig[] = [
       { key: 'risk_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
       { key: 'vuln_url', label: '漏洞URL', placeholder: '请输入漏洞URL进行搜索' },
+      { key: 'verification_step', label: '验证阶段', placeholder: '请输入验证阶段进行搜索' },
+      { key: 'payload_type', label: '探针类型', placeholder: '请输入探针类型进行搜索' },
       {
         key: 'decision',
         label: '结论',
@@ -3504,6 +3536,16 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
     return normalizeValue(row?.verify_obj);
   }
 
+  if ((moduleId === 'vuln' || moduleId === 'nuclei_result') && column === 'ai_pen_decision') {
+    const decisionText = String(value || '').trim().toLowerCase();
+    const decisionMap: Record<string, string> = {
+      verified: '已验证',
+      likely_false_positive: '疑似误报',
+      needs_manual_review: '需人工复核',
+    };
+    return decisionMap[decisionText] || normalizeValue(value);
+  }
+
   if (moduleId === 'nuclei_result' && column === 'scanner_type') {
     const scannerType = String(value || '').trim().toLowerCase();
     if (scannerType === 'nuclei') return 'Nuclei';
@@ -3517,6 +3559,8 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
         vuln: '风险',
         nuclei_result: 'PoC风险',
         wih: 'WIH',
+        site: '站点线索',
+        url: 'URL线索',
       };
       return sourceMap[sourceText] || normalizeValue(value);
     }
@@ -3543,6 +3587,44 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
       if (numeric === null) return '-';
       if (numeric <= 1) return `${(numeric * 100).toFixed(1)}%`;
       return `${numeric.toFixed(1)}%`;
+    }
+    if (column === 'verification_step') {
+      const stepText = String(value || '').trim().toLowerCase();
+      const stepMap: Record<string, string> = {
+        collect_context_only: '仅归档上下文',
+        waf_smart_skip: 'WAF智能跳过',
+        http_fetch_replay: 'HTTP重放',
+        mcp_http_probe: 'MCP-HTTP探针',
+        mcp_idor_probe: 'MCP-IDOR探针',
+        mcp_api_doc_probe: 'MCP-API文档探针',
+        mcp_jwt_probe: 'MCP-JWT探针',
+        mcp_websocket_probe: 'MCP-WebSocket探针',
+      };
+      return stepMap[stepText] || normalizeValue(value);
+    }
+    if (column === 'payload_type') {
+      const payloadText = String(value || '').trim().toLowerCase();
+      const payloadMap: Record<string, string> = {
+        replay: '重放',
+        xss_probe: 'XSS探针',
+        sqli_probe: 'SQL注入探针',
+        cmdi_probe: '命令注入探针',
+        jwt_probe: 'JWT探针',
+        ssrf_probe: 'SSRF探针',
+        idor_probe: 'IDOR探针',
+        api_doc_probe: 'API文档探针',
+        websocket_probe: 'WebSocket探针',
+        upload_probe: '上传探针',
+      };
+      return payloadMap[payloadText] || normalizeValue(value);
+    }
+    if (column === 'knowledge_hit_tokens') {
+      const rawTokens = Array.isArray(value) ? value : (value ? [value] : []);
+      const tokens = rawTokens
+        .map((item) => String(item || '').trim())
+        .filter((item) => item);
+      if (tokens.length === 0) return '-';
+      return tokens.join('\n');
     }
   }
 
@@ -8054,7 +8136,7 @@ function TableModuleView({
     if (moduleId === 'service' && ['ip_port', 'service_info.product'].includes(column)) return true;
     if (moduleId === 'vuln' && column === 'credential') return true;
     if (moduleId === 'nuclei_result' && ['vuln_url', 'verify_data'].includes(column)) return true;
-    if (moduleId === 'ai_pen_test' && ['target', 'vuln_url', 'reason'].includes(column)) return true;
+    if (moduleId === 'ai_pen_test' && ['target', 'vuln_url', 'knowledge_hit_tokens', 'reason', 'tool_trace'].includes(column)) return true;
     if (moduleId === 'waf_host' && column === 'hit_rule') return true;
     if (moduleId === 'wih' && ['content', 'source', 'site'].includes(column)) return true;
     if (moduleId === 'github_result' && ['path', 'human_content'].includes(column)) return true;
@@ -9811,6 +9893,24 @@ function TableModuleView({
                               : decisionText === 'likely_false_positive'
                                 ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-warning/60 bg-brand-warning/15 text-brand-warning text-xs font-bold'
                                 : 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/50 text-brand-text-muted text-xs font-bold';
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span className={tagClass}>{displayText}</span>
+                            </td>
+                          );
+                        }
+
+                        if ((module.id === 'vuln' || module.id === 'nuclei_result') && column === 'ai_pen_decision') {
+                          const decisionText = String(row?.ai_pen_decision || '').trim().toLowerCase();
+                          const displayText = formatModuleCellValue(module.id, column, row);
+                          const tagClass =
+                            decisionText === 'verified'
+                              ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-success/60 bg-brand-success/15 text-brand-success text-xs font-bold'
+                              : decisionText === 'likely_false_positive'
+                                ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-warning/60 bg-brand-warning/15 text-brand-warning text-xs font-bold'
+                                : decisionText === 'needs_manual_review'
+                                  ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/50 text-brand-text-muted text-xs font-bold'
+                                  : 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/45 text-brand-text-muted text-xs font-bold';
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
                               <span className={tagClass}>{displayText}</span>
