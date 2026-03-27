@@ -31,6 +31,7 @@ POC_ARCHIVE_SUBDIR="${ARL_POC_ARCHIVE_SUBDIR:-}"
 POC_GIT_REPO="${ARL_POC_GIT_REPO:-}"
 POC_GIT_REF="${ARL_POC_GIT_REF:-}"
 POC_GIT_SUBDIR="${ARL_POC_GIT_SUBDIR:-}"
+MANUAL_TIPS_PRINTED=0
 
 sanitize_positive_int() {
   local value="$1"
@@ -69,6 +70,28 @@ is_poc_ready() {
   local file_count
   file_count="$(count_poc_files)"
   [ "$file_count" -ge "$POC_MIN_FILES" ]
+}
+
+print_manual_download_tips() {
+  if [ "$MANUAL_TIPS_PRINTED" = "1" ]; then
+    return 0
+  fi
+  MANUAL_TIPS_PRINTED=1
+  echo "[INFO] 可手工下载三类 PoC 文库到 $POC_DIR："
+  echo "[INFO] 建议目录结构："
+  echo "[INFO]   $POC_DIR/POC"
+  echo "[INFO]   $POC_DIR/vulhub"
+  echo "[INFO]   $POC_DIR/PoC-in-GitHub"
+  echo "[INFO]   1) POC: https://github.com/eeeeeeeeee-code/POC"
+  echo "[INFO]      -> 目录: $POC_DIR/POC"
+  echo "[INFO]   2) vulhub: https://github.com/vulhub/vulhub"
+  echo "[INFO]      -> 目录: $POC_DIR/vulhub"
+  echo "[INFO]   3) PoC-in-GitHub: https://github.com/nomi-sec/PoC-in-GitHub"
+  echo "[INFO]      -> 目录: $POC_DIR/PoC-in-GitHub"
+  echo "[INFO] 示例命令："
+  echo "[INFO]   git clone --depth 1 https://github.com/eeeeeeeeee-code/POC.git \"$POC_DIR/POC\""
+  echo "[INFO]   git clone --depth 1 https://github.com/vulhub/vulhub.git \"$POC_DIR/vulhub\""
+  echo "[INFO]   git clone --depth 1 https://github.com/nomi-sec/PoC-in-GitHub.git \"$POC_DIR/PoC-in-GitHub\""
 }
 
 copy_tree() {
@@ -154,10 +177,17 @@ sync_from_local_archive() {
   local archive_path
   archive_path="$(resolve_path "$POC_ARCHIVE_PATH_RAW")"
   [ -n "$archive_path" ] || return 1
-  [ -f "$archive_path" ] || return 1
+  if [ ! -f "$archive_path" ]; then
+    echo "[WARN] 本地压缩包不存在，跳过: $archive_path"
+    return 1
+  fi
 
   echo "[INFO] 尝试从本地压缩包同步 PoC: $archive_path"
-  extract_archive_to_poc "$archive_path"
+  if ! extract_archive_to_poc "$archive_path"; then
+    echo "[WARN] 本地压缩包同步失败: $archive_path"
+    return 1
+  fi
+  return 0
 }
 
 sync_from_remote_archive() {
@@ -175,9 +205,12 @@ sync_from_remote_archive() {
     if wget -q -O "$tmp_archive" "$POC_ARCHIVE_URL"; then
       download_ok=1
     fi
+  else
+    echo "[WARN] 系统未安装 curl/wget，无法下载远程压缩包: $POC_ARCHIVE_URL"
   fi
 
   if [ "$download_ok" -ne 1 ]; then
+    echo "[WARN] 远程压缩包下载失败: $POC_ARCHIVE_URL"
     rm -f "$tmp_archive" >/dev/null 2>&1 || true
     return 1
   fi
@@ -188,13 +221,17 @@ sync_from_remote_archive() {
     return 0
   fi
 
+  echo "[WARN] 远程压缩包解压/导入失败: $POC_ARCHIVE_URL"
   rm -f "$tmp_archive" >/dev/null 2>&1 || true
   return 1
 }
 
 sync_from_git_repo() {
   [ -n "$POC_GIT_REPO" ] || return 1
-  command -v git >/dev/null 2>&1 || return 1
+  if ! command -v git >/dev/null 2>&1; then
+    echo "[WARN] 系统未安装 git，无法从仓库同步: $POC_GIT_REPO"
+    return 1
+  fi
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
@@ -208,6 +245,7 @@ sync_from_git_repo() {
 
   echo "[INFO] 尝试从 Git 仓库同步 PoC: $POC_GIT_REPO"
   if ! "${clone_cmd[@]}" >/dev/null 2>&1; then
+    echo "[WARN] Git 克隆失败: $POC_GIT_REPO"
     rm -rf "$tmp_dir" >/dev/null 2>&1 || true
     return 1
   fi
@@ -218,6 +256,7 @@ sync_from_git_repo() {
   fi
 
   if [ ! -d "$src_dir" ]; then
+    echo "[WARN] Git 仓库子目录不存在: $src_dir"
     rm -rf "$tmp_dir" >/dev/null 2>&1 || true
     return 1
   fi
@@ -237,11 +276,13 @@ finalize_result() {
 
   if [ "$POC_REQUIRED" = "1" ]; then
     echo "[ERROR] PoC 文库不可用且 ARL_POC_REQUIRED=1，终止。目录: $POC_DIR"
+    print_manual_download_tips
     return 1
   fi
 
   echo "[WARN] PoC 文库不可用（files=$count, required_min=$POC_MIN_FILES），将以降级模式继续。"
   echo "[WARN] 可在 .env 配置 ARL_POC_ARCHIVE_URL / ARL_POC_GIT_REPO 以实现自动补齐。"
+  print_manual_download_tips
   return 0
 }
 
@@ -273,6 +314,14 @@ fi
 if sync_from_git_repo && is_poc_ready; then
   finalize_result
   exit $?
+fi
+
+if ! is_poc_ready; then
+  echo "[WARN] PoC 文库自动同步失败，请用户自行下载后放入以下目录："
+  echo "[WARN]   $POC_DIR/POC"
+  echo "[WARN]   $POC_DIR/vulhub"
+  echo "[WARN]   $POC_DIR/PoC-in-GitHub"
+  print_manual_download_tips
 fi
 
 finalize_result
