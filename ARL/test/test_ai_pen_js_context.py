@@ -83,6 +83,53 @@ WebSiteFetch = _load_common_task_module().WebSiteFetch
 
 
 class TestAiPenJsContext(unittest.TestCase):
+    def test_collect_ai_pen_knowledge_hits_returns_structured_fields(self):
+        original_loader = WebSiteFetch._load_ai_pen_knowledge_index_data
+        try:
+            WebSiteFetch._load_ai_pen_knowledge_index_data = classmethod(
+                lambda cls: (
+                    {
+                        "token_index": {
+                            "swagger": {
+                                "count": 3,
+                                "sources": {"poc_library": 3},
+                                "samples": ["poc_library:wpoc/示例/漏洞.md"],
+                                "product_labels": [{"name": "Seeyon", "count": 2}],
+                                "vuln_types": [{"name": "api_doc", "count": 2}],
+                                "entry_paths": ["/swagger-ui/index.html"],
+                                "verify_actions": ["get /swagger-ui/index.html"],
+                                "record_refs": [
+                                    {
+                                        "source": "poc_library",
+                                        "path": "wpoc/示例/漏洞.md",
+                                        "title": "示例漏洞",
+                                        "product_labels": ["Seeyon"],
+                                        "vuln_types": ["api_doc"],
+                                        "entry_paths": ["/swagger-ui/index.html"],
+                                        "verify_actions": ["get /swagger-ui/index.html"],
+                                    }
+                                ],
+                            }
+                        }
+                    },
+                    "/tmp/fake_index.json",
+                )
+            )
+            task = WebSiteFetch.__new__(WebSiteFetch)
+            hit_info = task._collect_ai_pen_knowledge_hits(
+                {
+                    "risk_name": "站点疑似暴露Swagger API文档",
+                    "target": "https://example.com/swagger-ui/index.html",
+                }
+            )
+        finally:
+            WebSiteFetch._load_ai_pen_knowledge_index_data = original_loader
+
+        self.assertIn("swagger", hit_info.get("hit_tokens", []))
+        self.assertIn("Seeyon", hit_info.get("hit_product_labels", []))
+        self.assertIn("api_doc", hit_info.get("hit_vuln_types", []))
+        self.assertIn("/swagger-ui/index.html", hit_info.get("hit_entry_paths", []))
+
     def test_route_hint_marks_js_sensitive_context(self):
         route_hint = WebSiteFetch._build_ai_pen_route_hint(
             {

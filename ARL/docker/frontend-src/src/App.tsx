@@ -11319,6 +11319,73 @@ function TableModuleView({
                 </div>
               </div>
 
+              {(Array.isArray(aiPenDetail.row?.knowledge_hit_product_labels) && aiPenDetail.row.knowledge_hit_product_labels.length > 0)
+                || (Array.isArray(aiPenDetail.row?.knowledge_hit_vuln_types) && aiPenDetail.row.knowledge_hit_vuln_types.length > 0)
+                || (Array.isArray(aiPenDetail.row?.knowledge_hit_entry_paths) && aiPenDetail.row.knowledge_hit_entry_paths.length > 0)
+                || (Array.isArray(aiPenDetail.row?.knowledge_hit_verify_actions) && aiPenDetail.row.knowledge_hit_verify_actions.length > 0) ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">知识画像</div>
+
+                  {Array.isArray(aiPenDetail.row?.knowledge_hit_product_labels) && aiPenDetail.row.knowledge_hit_product_labels.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">产品/组件</div>
+                      <div className="flex flex-wrap gap-2">
+                        {aiPenDetail.row.knowledge_hit_product_labels.map((item: any, index: number) => (
+                          <span
+                            key={`${index}-${item}`}
+                            className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                          >
+                            {String(item || '').trim() || '-'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {Array.isArray(aiPenDetail.row?.knowledge_hit_vuln_types) && aiPenDetail.row.knowledge_hit_vuln_types.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">漏洞类型</div>
+                      <div className="flex flex-wrap gap-2">
+                        {aiPenDetail.row.knowledge_hit_vuln_types.map((item: any, index: number) => (
+                          <span
+                            key={`${index}-${item}`}
+                            className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                          >
+                            {String(item || '').trim() || '-'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {Array.isArray(aiPenDetail.row?.knowledge_hit_entry_paths) && aiPenDetail.row.knowledge_hit_entry_paths.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">入口路径</div>
+                      <div className="space-y-1">
+                        {aiPenDetail.row.knowledge_hit_entry_paths.map((item: any, index: number) => (
+                          <div key={`${index}-${item}`} className="font-mono break-all text-sm">
+                            {index + 1}. {String(item || '').trim() || '-'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {Array.isArray(aiPenDetail.row?.knowledge_hit_verify_actions) && aiPenDetail.row.knowledge_hit_verify_actions.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">建议验证动作</div>
+                      <div className="space-y-1">
+                        {aiPenDetail.row.knowledge_hit_verify_actions.map((item: any, index: number) => (
+                          <div key={`${index}-${item}`} className="break-all text-sm">
+                            {index + 1}. {String(item || '').trim() || '-'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
                 <div className="text-xs font-black tracking-wide text-brand-text">证据片段</div>
                 <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">

@@ -165,6 +165,11 @@ def _build_candidate_from_result(item: dict):
         "evidence_seed": str(item.get("evidence_snippet", "") or "").strip(),
         "knowledge_hit_tokens": list(item.get("knowledge_hit_tokens", []) or []),
         "knowledge_hit_samples": list(item.get("knowledge_hit_samples", []) or []),
+        "knowledge_hit_product_labels": list(item.get("knowledge_hit_product_labels", []) or []),
+        "knowledge_hit_vuln_types": list(item.get("knowledge_hit_vuln_types", []) or []),
+        "knowledge_hit_entry_paths": list(item.get("knowledge_hit_entry_paths", []) or []),
+        "knowledge_hit_verify_actions": list(item.get("knowledge_hit_verify_actions", []) or []),
+        "knowledge_hit_record_refs": list(item.get("knowledge_hit_record_refs", []) or []),
     }
 
 
@@ -234,6 +239,11 @@ def _retry_records(result_docs):
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
                 "external_tool_runs": list(verify_result.get("external_tool_runs", []) or [])[:3],
                 "external_tool_hit": bool(verify_result.get("external_tool_hit")),
+                "knowledge_hit_product_labels": list(item.get("knowledge_hit_product_labels", []) or []),
+                "knowledge_hit_vuln_types": list(item.get("knowledge_hit_vuln_types", []) or []),
+                "knowledge_hit_entry_paths": list(item.get("knowledge_hit_entry_paths", []) or []),
+                "knowledge_hit_verify_actions": list(item.get("knowledge_hit_verify_actions", []) or []),
+                "knowledge_hit_record_refs": list(item.get("knowledge_hit_record_refs", []) or [])[:4],
                 "model": "mcp-rule-lite" if bool(runtime_settings.get("mcp_enable", True)) else "rule-lite",
                 "provider": "local-mcp" if bool(runtime_settings.get("mcp_enable", True)) else "local",
                 "update_date": now_text,

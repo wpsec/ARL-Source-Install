@@ -1147,10 +1147,76 @@ class WebSiteFetch(object):
                     samples.append(sample_text[:200])
                 if len(samples) >= 8:
                     break
+            product_labels = []
+            for label_item in item.get("product_labels", []) if isinstance(item.get("product_labels"), list) else []:
+                if not isinstance(label_item, dict):
+                    continue
+                label_name = str(label_item.get("name") or "").strip()
+                if not label_name:
+                    continue
+                product_labels.append(
+                    {
+                        "name": label_name[:64],
+                        "count": max(0, cls._safe_int_value(label_item.get("count"), 0)),
+                    }
+                )
+                if len(product_labels) >= 8:
+                    break
+            vuln_types = []
+            for vuln_item in item.get("vuln_types", []) if isinstance(item.get("vuln_types"), list) else []:
+                if not isinstance(vuln_item, dict):
+                    continue
+                vuln_name = str(vuln_item.get("name") or "").strip()
+                if not vuln_name:
+                    continue
+                vuln_types.append(
+                    {
+                        "name": vuln_name[:32],
+                        "count": max(0, cls._safe_int_value(vuln_item.get("count"), 0)),
+                    }
+                )
+                if len(vuln_types) >= 8:
+                    break
+            entry_paths = []
+            for path_item in item.get("entry_paths", []) if isinstance(item.get("entry_paths"), list) else []:
+                path_text = str(path_item or "").strip()
+                if path_text:
+                    entry_paths.append(path_text[:180])
+                if len(entry_paths) >= 6:
+                    break
+            verify_actions = []
+            for action_item in item.get("verify_actions", []) if isinstance(item.get("verify_actions"), list) else []:
+                action_text = str(action_item or "").strip()
+                if action_text:
+                    verify_actions.append(action_text[:120])
+                if len(verify_actions) >= 4:
+                    break
+            record_refs = []
+            for ref_item in item.get("record_refs", []) if isinstance(item.get("record_refs"), list) else []:
+                if not isinstance(ref_item, dict):
+                    continue
+                record_refs.append(
+                    {
+                        "source": str(ref_item.get("source") or "").strip()[:32],
+                        "path": str(ref_item.get("path") or "").strip()[:220],
+                        "title": str(ref_item.get("title") or "").strip()[:120],
+                        "product_labels": [str(x or "").strip()[:64] for x in list(ref_item.get("product_labels", []) or [])[:3] if str(x or "").strip()],
+                        "vuln_types": [str(x or "").strip()[:32] for x in list(ref_item.get("vuln_types", []) or [])[:6] if str(x or "").strip()],
+                        "entry_paths": [str(x or "").strip()[:180] for x in list(ref_item.get("entry_paths", []) or [])[:4] if str(x or "").strip()],
+                        "verify_actions": [str(x or "").strip()[:120] for x in list(ref_item.get("verify_actions", []) or [])[:4] if str(x or "").strip()],
+                    }
+                )
+                if len(record_refs) >= 4:
+                    break
             normalized_token_index[token] = {
                 "count": max(0, count),
                 "sources": normalized_sources,
                 "samples": samples,
+                "product_labels": product_labels,
+                "vuln_types": vuln_types,
+                "entry_paths": entry_paths,
+                "verify_actions": verify_actions,
+                "record_refs": record_refs,
             }
 
         normalized_data = {
@@ -1169,6 +1235,11 @@ class WebSiteFetch(object):
             "path": index_path,
             "hit_tokens": [],
             "hit_samples": [],
+            "hit_product_labels": [],
+            "hit_vuln_types": [],
+            "hit_entry_paths": [],
+            "hit_verify_actions": [],
+            "hit_record_refs": [],
             "score": 0,
             "index_token_count": 0,
         }
@@ -1207,6 +1278,11 @@ class WebSiteFetch(object):
 
         matched_tokens = []
         sample_hits = []
+        product_label_hits = []
+        vuln_type_hits = []
+        entry_path_hits = []
+        verify_action_hits = []
+        record_ref_hits = []
         for token in normalized_tokens:
             lookup_tokens = [token]
             compact = self._normalize_ai_poc_index_token(token.replace("-", "").replace("_", "").replace(".", ""))
@@ -1228,12 +1304,56 @@ class WebSiteFetch(object):
                     sample_hits.append(sample_text[:200])
                 if len(sample_hits) >= 6:
                     break
+            for label_item in item.get("product_labels", []) if isinstance(item.get("product_labels"), list) else []:
+                if not isinstance(label_item, dict):
+                    continue
+                label_name = str(label_item.get("name") or "").strip()
+                if label_name and label_name not in product_label_hits:
+                    product_label_hits.append(label_name[:64])
+                if len(product_label_hits) >= 6:
+                    break
+            for vuln_item in item.get("vuln_types", []) if isinstance(item.get("vuln_types"), list) else []:
+                if not isinstance(vuln_item, dict):
+                    continue
+                vuln_name = str(vuln_item.get("name") or "").strip()
+                if vuln_name and vuln_name not in vuln_type_hits:
+                    vuln_type_hits.append(vuln_name[:32])
+                if len(vuln_type_hits) >= 6:
+                    break
+            for path_item in item.get("entry_paths", []) if isinstance(item.get("entry_paths"), list) else []:
+                path_text = str(path_item or "").strip()
+                if path_text and path_text not in entry_path_hits:
+                    entry_path_hits.append(path_text[:180])
+                if len(entry_path_hits) >= 6:
+                    break
+            for action_item in item.get("verify_actions", []) if isinstance(item.get("verify_actions"), list) else []:
+                action_text = str(action_item or "").strip()
+                if action_text and action_text not in verify_action_hits:
+                    verify_action_hits.append(action_text[:120])
+                if len(verify_action_hits) >= 4:
+                    break
+            for ref_item in item.get("record_refs", []) if isinstance(item.get("record_refs"), list) else []:
+                if not isinstance(ref_item, dict):
+                    continue
+                ref_key = "{}|{}".format(str(ref_item.get("source") or "").strip(), str(ref_item.get("path") or "").strip())
+                if ref_key and all(
+                    "{}|{}".format(str(old.get("source") or "").strip(), str(old.get("path") or "").strip()) != ref_key
+                    for old in record_ref_hits
+                ):
+                    record_ref_hits.append(ref_item)
+                if len(record_ref_hits) >= 4:
+                    break
             if len(matched_tokens) >= 12:
                 break
 
-        score = min(12, len(matched_tokens) * 2)
+        score = min(20, len(matched_tokens) * 2 + len(product_label_hits) + len(entry_path_hits))
         result["hit_tokens"] = matched_tokens
         result["hit_samples"] = sample_hits
+        result["hit_product_labels"] = product_label_hits
+        result["hit_vuln_types"] = vuln_type_hits
+        result["hit_entry_paths"] = entry_path_hits
+        result["hit_verify_actions"] = verify_action_hits
+        result["hit_record_refs"] = record_ref_hits
         result["score"] = score
         return result
 
@@ -3279,6 +3399,7 @@ class WebSiteFetch(object):
             str(item.get("target", "") or "").strip(),
             str(item.get("vuln_url", "") or "").strip(),
             str(item.get("evidence_seed", "") or "").strip(),
+            " ".join([str(x or "").strip() for x in list(item.get("knowledge_hit_product_labels", []) or [])[:8]]),
             str(extra_text or "").strip(),
         ]
         raw_parts.extend([str(token or "").strip() for token in list(item.get("knowledge_hit_tokens", []) or [])[:24]])
@@ -3423,6 +3544,11 @@ class WebSiteFetch(object):
                 "evidence_seed": self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX),
                 "knowledge_hit_tokens": list(candidate.get("knowledge_hit_tokens", []) or [])[:20],
                 "knowledge_hit_samples": list(candidate.get("knowledge_hit_samples", []) or [])[:6],
+                "knowledge_hit_product_labels": list(candidate.get("knowledge_hit_product_labels", []) or [])[:8],
+                "knowledge_hit_vuln_types": list(candidate.get("knowledge_hit_vuln_types", []) or [])[:8],
+                "knowledge_hit_entry_paths": list(candidate.get("knowledge_hit_entry_paths", []) or [])[:8],
+                "knowledge_hit_verify_actions": list(candidate.get("knowledge_hit_verify_actions", []) or [])[:6],
+                "knowledge_hit_record_refs": list(candidate.get("knowledge_hit_record_refs", []) or [])[:4],
                 "route_hint": route_hint,
                 "product_hints": product_hints,
                 "js_asset_target": bool(
@@ -5857,6 +5983,11 @@ class WebSiteFetch(object):
             hit_info = self._collect_ai_pen_knowledge_hits(candidate)
             candidate["knowledge_hit_tokens"] = list(hit_info.get("hit_tokens", []) or [])
             candidate["knowledge_hit_samples"] = list(hit_info.get("hit_samples", []) or [])
+            candidate["knowledge_hit_product_labels"] = list(hit_info.get("hit_product_labels", []) or [])
+            candidate["knowledge_hit_vuln_types"] = list(hit_info.get("hit_vuln_types", []) or [])
+            candidate["knowledge_hit_entry_paths"] = list(hit_info.get("hit_entry_paths", []) or [])
+            candidate["knowledge_hit_verify_actions"] = list(hit_info.get("hit_verify_actions", []) or [])
+            candidate["knowledge_hit_record_refs"] = list(hit_info.get("hit_record_refs", []) or [])
             candidate["knowledge_score"] = int(hit_info.get("score", 0) or 0)
             if bool(hit_info.get("loaded")):
                 knowledge_loaded = True
@@ -6011,6 +6142,11 @@ class WebSiteFetch(object):
                 "profile": record_profile,
                 "knowledge_hit_tokens": list(candidate.get("knowledge_hit_tokens", []) or []),
                 "knowledge_hit_samples": list(candidate.get("knowledge_hit_samples", []) or []),
+                "knowledge_hit_product_labels": list(candidate.get("knowledge_hit_product_labels", []) or []),
+                "knowledge_hit_vuln_types": list(candidate.get("knowledge_hit_vuln_types", []) or []),
+                "knowledge_hit_entry_paths": list(candidate.get("knowledge_hit_entry_paths", []) or []),
+                "knowledge_hit_verify_actions": list(candidate.get("knowledge_hit_verify_actions", []) or []),
+                "knowledge_hit_record_refs": list(candidate.get("knowledge_hit_record_refs", []) or [])[:4],
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
                 "external_tool_runs": external_tool_runs,
                 "external_tool_hit": external_tool_hit,
