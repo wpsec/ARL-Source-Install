@@ -1230,7 +1230,7 @@ def _extract_ai_config(config_obj):
         'ai_pen_mcp_enable': _safe_bool(ai_conf.get('AI_PEN_MCP_ENABLE'), True),
         'ai_pen_mcp_max_tool_calls': _safe_int(ai_conf.get('AI_PEN_MCP_MAX_TOOL_CALLS'), 3, min_value=1),
         'ai_pen_mcp_timeout_sec': _safe_int(ai_conf.get('AI_PEN_MCP_TIMEOUT_SEC'), 12, min_value=1),
-        'ai_pen_external_enable': _safe_bool(ai_conf.get('AI_PEN_EXTERNAL_ENABLE'), False),
+        'ai_pen_external_enable': _safe_bool(ai_conf.get('AI_PEN_EXTERNAL_ENABLE'), True),
         'ai_pen_external_tools': str(ai_conf.get('AI_PEN_EXTERNAL_TOOLS') or 'sqlmap,httpx').strip(),
         'ai_pen_external_timeout_sec': _safe_int(ai_conf.get('AI_PEN_EXTERNAL_TIMEOUT_SEC'), 45, min_value=1),
         'ai_pen_external_max_runs': _safe_int(ai_conf.get('AI_PEN_EXTERNAL_MAX_RUNS'), 1, min_value=1),
@@ -1501,7 +1501,7 @@ def _merge_ai_config(config_obj, ai_config):
         1,
         min(60, _safe_int(ai_config.get('ai_pen_mcp_timeout_sec'), 12, min_value=1)),
     )
-    ai_conf['AI_PEN_EXTERNAL_ENABLE'] = _safe_bool(ai_config.get('ai_pen_external_enable'), False)
+    ai_conf['AI_PEN_EXTERNAL_ENABLE'] = _safe_bool(ai_config.get('ai_pen_external_enable'), True)
     ai_pen_external_tools = ai_config.get('ai_pen_external_tools')
     if isinstance(ai_pen_external_tools, (list, tuple, set)):
         ai_pen_external_tools = ",".join(

@@ -167,8 +167,8 @@ AI:
   AI_PEN_MCP_ENABLE: true # 启用后自动执行基础 MCP 工具链（重放 + Payload 探针）
   AI_PEN_MCP_MAX_TOOL_CALLS: 3 # 单条候选最多工具调用次数
   AI_PEN_MCP_TIMEOUT_SEC: 12 # MCP 工具请求超时（秒）
-  AI_PEN_EXTERNAL_ENABLE: false # 启用 AI渗透外部工具白名单执行器（sqlmap/httpx 等，默认关闭）
-  AI_PEN_EXTERNAL_TOOLS: "sqlmap,httpx" # 外部工具白名单（逗号分隔），不含 nuclei
+  AI_PEN_EXTERNAL_ENABLE: true # 启用 AI渗透外部工具白名单执行器（sqlmap/httpx 等，默认开启）
+  AI_PEN_EXTERNAL_TOOLS: "sqlmap,httpx" # 外部工具白名单（按工具说明文件中的 id）
   AI_PEN_EXTERNAL_TIMEOUT_SEC: 45 # 外部工具单次执行超时（秒）
   AI_PEN_EXTERNAL_MAX_RUNS: 1 # 单条候选最多执行外部工具数量
   AI_PEN_AI_PLANNER_ENABLE: true # 启用 AI 规划器（关闭后仅执行规则/MCP验证）
@@ -335,6 +335,8 @@ ARL:
   # AI渗透外部执行器二进制路径（按需安装）
   SQLMAP_BIN: "sqlmap"
   HTTPX_BIN: "httpx"
+  # AI渗透外部工具说明目录（用户可放置 *.yaml/*.json，供 AI 识别并调用）
+  AI_PEN_EXTERNAL_TOOL_DIR: "/code/tools/ai_pen_tools"
   # afrog 模糊搜索关键词（逗号分隔，为空表示不过滤）
   AFROG_SEARCH_KEYWORDS: ""
   # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）

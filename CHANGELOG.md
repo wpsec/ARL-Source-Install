@@ -3,7 +3,11 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-27（v4.3.19 ~ v4.3.24）
+## 2026-03-27（v4.3.19 ~ v4.3.25）
+
+- `[v4.3.25]` AI 渗透外部工具执行器升级为“可扩展框架”：`commonTask` 新增外部工具说明文件加载机制（`yaml/json`），支持用户在 `tools/ai_pen_tools` 目录按清单定义工具 `id/match/exec/result`，并通过 `AI_PEN_EXTERNAL_TOOLS` 白名单启用；运行时支持内置 `sqlmap/httpx` 与同名覆盖，匹配逻辑新增 `risk_name` 参与命中，`api_doc` 关键词命中修正，提升外部工具策略可维护性与命中稳定性
+- `[v4.3.25]` AI 管理默认开关统一：`启用AI渗透测试 / 启用AI渗透-MCP / 启用AI渗透-外部工具白名单执行器 / 启用AI渗透-AI规划` 全部默认开启；后端配置默认值、API 读写默认值、前端表单默认值、`config-docker.yaml` 模板保持一致，降低新部署环境首次配置成本
+- `[v4.3.25]` 文档补齐：新增 `tools/ai_pen_tools/README.md` 与示例模板（`sqlmap.yaml.example/httpx.yaml.example`），并新增 `docs/AI渗透外部工具接入说明.md`；总 `README` 补充“AI 渗透外部工具扩展说明”，明确容器目录 `/code/tools/ai_pen_tools` 与宿主机目录 `tools/ai_pen_tools` 映射关系、接入步骤与验证方式
 
 - `[v4.3.24]` AI渗透测试接入“外部 MCP 工具白名单执行器”：在 `AI管理` 新增 `AI_PEN_EXTERNAL_ENABLE / AI_PEN_EXTERNAL_TOOLS / AI_PEN_EXTERNAL_TIMEOUT_SEC / AI_PEN_EXTERNAL_MAX_RUNS` 配置与前端开关，后端 `run_ai_penetration_test` 验证链路新增外部工具执行阶段（当前支持 `sqlmap/httpx`），并将执行轨迹、命中结果回写到 `ai_pen_test_result`（`external_tool_runs/external_tool_hit`）与任务日志元数据；同时补齐 `SQLMAP_BIN/HTTPX_BIN` 配置项与运行时热刷新，明确 `nuclei` 仍归属 AI-POC 扫描链路，不进入 AI渗透外部执行器
 

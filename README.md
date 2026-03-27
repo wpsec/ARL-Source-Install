@@ -157,7 +157,27 @@ docker exec arl_rabbitmq rabbitmqctl list_queues name messages_ready messages_un
 ### AI 降噪与 AI + MCP 渗透
 
 - 根据扫描得到的资产信息进行 AI 降噪与 AI 渗透测试
-- 其它。。。
+- AI 渗透默认能力开关（AI管理）：
+  - `启用AI渗透测试`
+  - `启用AI渗透-MCP`
+  - `启用AI渗透-外部工具白名单执行器`
+  - `启用AI渗透-AI规划`
+
+### AI 渗透外部工具扩展说明
+
+支持用户自行扩展 AI 渗透外部工具，不再绑定固定工具列表。
+
+- 容器内目录：`/code/tools/ai_pen_tools`
+- 宿主机目录：`<项目根>/tools/ai_pen_tools`
+- 说明文件格式：`*.yaml / *.yml / *.json`
+- 运行白名单：`AI.AI_PEN_EXTERNAL_TOOLS`（逗号分隔工具 `id`）
+
+接入步骤：
+
+1. 将工具二进制放到容器可访问路径（建议放在宿主机 `tools/` 并挂载到 `/code/tools`）。
+2. 在 `tools/ai_pen_tools/` 新增工具说明文件（示例见 `sqlmap.yaml.example`、`httpx.yaml.example`）。
+3. 在 AI 管理里把工具 `id` 加入 `AI_PEN_EXTERNAL_TOOLS`。
+4. 执行 AI 渗透测试任务，通过 `AI渗透` 结果中的 `external_tool_runs` 与 `tool_trace` 验证命中情况。
 
 <!-- 这是一张图片，ocr 内容为： -->
 

@@ -5,6 +5,7 @@ import time
 import re
 import os
 import json
+import yaml
 import subprocess
 import base64
 import hashlib
@@ -154,6 +155,8 @@ class WebSiteFetch(object):
         "sqlmap",
         "httpx",
     )
+    AI_PEN_EXTERNAL_TOOL_DIR_ENV_KEY = "ARL_AI_PEN_EXTERNAL_TOOL_DIR"
+    AI_PEN_EXTERNAL_TOOL_DIR_REL_PATH = os.path.join("tools", "ai_pen_tools")
     AI_PEN_EXTERNAL_RESULT_MAX = 3
     AI_PEN_JWT_WEAK_SECRET_CANDIDATES = (
         "secret",
@@ -285,6 +288,11 @@ class WebSiteFetch(object):
         "path": "",
         "mtime": 0.0,
         "data": {},
+    }
+    _AI_PEN_EXTERNAL_TOOL_CACHE = {
+        "path": "",
+        "stamp": "",
+        "tools": {},
     }
     _AI_PEN_TEST_INDEX_READY = False
 
@@ -2565,8 +2573,7 @@ class WebSiteFetch(object):
         return cls._normalize_ai_pen_payload_type("", fallback_type=fallback_type)
 
     @classmethod
-    def _normalize_ai_pen_external_tools(cls, value, max_count=4):
-        allow_set = set([str(item).strip().lower() for item in cls.AI_PEN_EXTERNAL_TOOL_REGISTRY])
+    def _normalize_ai_pen_external_tools(cls, value, max_count=12):
         items = []
         if isinstance(value, str):
             items = re.split(r"[,\s]+", value)
@@ -2579,13 +2586,264 @@ class WebSiteFetch(object):
             tool = str(item or "").strip().lower()
             if not tool or tool in seen:
                 continue
-            if tool not in allow_set:
+            if not re.match(r"^[a-z0-9][a-z0-9_-]{0,63}$", tool):
                 continue
             seen.add(tool)
             result.append(tool)
             if len(result) >= max_count:
                 break
         return result
+
+    @classmethod
+    def _resolve_ai_pen_external_tool_dir_path(cls) -> str:
+        env_dir = str(os.environ.get(cls.AI_PEN_EXTERNAL_TOOL_DIR_ENV_KEY, "") or "").strip()
+        if env_dir:
+            return os.path.abspath(env_dir)
+
+        cfg_dir = str(getattr(Config, "AI_PEN_EXTERNAL_TOOL_DIR", "") or "").strip()
+        if cfg_dir:
+            return os.path.abspath(cfg_dir)
+
+        current_dir = os.path.abspath(os.path.dirname(__file__))
+        return os.path.abspath(
+            os.path.join(current_dir, os.pardir, os.pardir, cls.AI_PEN_EXTERNAL_TOOL_DIR_REL_PATH)
+        )
+
+    @staticmethod
+    def _parse_ai_pen_external_manifest_file(file_path: str):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                if str(file_path).lower().endswith(".json"):
+                    return json.load(f)
+                return yaml.safe_load(f)
+        except Exception as e:
+            logger.warning("load ai pen external tool manifest failed path:{} err:{}".format(file_path, e))
+            return None
+
+    @classmethod
+    def _normalize_ai_pen_external_manifest(cls, raw_item):
+        if not isinstance(raw_item, dict):
+            return {}
+
+        tool_id = str(raw_item.get("id") or raw_item.get("tool_id") or "").strip().lower()
+        if not tool_id or not re.match(r"^[a-z0-9][a-z0-9_-]{0,63}$", tool_id):
+            return {}
+
+        enabled = bool(raw_item.get("enabled", True))
+
+        exec_obj = raw_item.get("exec") if isinstance(raw_item.get("exec"), dict) else {}
+        exec_bin = str(exec_obj.get("bin") or raw_item.get("bin") or "").strip()
+
+        args_template = exec_obj.get("args_template")
+        if args_template is None:
+            args_template = raw_item.get("args_template")
+        if isinstance(args_template, str):
+            args_template = [item for item in re.split(r"\s+", args_template.strip()) if item]
+        elif not isinstance(args_template, list):
+            args_template = []
+        normalized_args = [str(item or "").strip() for item in args_template if str(item or "").strip()]
+
+        timeout_sec = cls._safe_int_value(exec_obj.get("timeout_sec", raw_item.get("timeout_sec", 45)), 45)
+        if timeout_sec < 5:
+            timeout_sec = 5
+        if timeout_sec > 300:
+            timeout_sec = 300
+
+        match_obj = raw_item.get("match") if isinstance(raw_item.get("match"), dict) else {}
+        payload_types = cls._normalize_ai_pen_external_tools(match_obj.get("payload_types", []), max_count=24)
+        risk_types = cls._normalize_ai_pen_external_tools(match_obj.get("risk_types", []), max_count=24)
+        risk_keywords = []
+        for keyword in match_obj.get("risk_keywords", []) if isinstance(match_obj.get("risk_keywords"), list) else []:
+            kw = str(keyword or "").strip().lower()
+            if kw and kw not in risk_keywords:
+                risk_keywords.append(kw[:80])
+            if len(risk_keywords) >= 48:
+                break
+        requires_query = bool(match_obj.get("requires_query", False))
+
+        result_obj = raw_item.get("result") if isinstance(raw_item.get("result"), dict) else {}
+        success_regex = []
+        for pattern in result_obj.get("success_regex", []) if isinstance(result_obj.get("success_regex"), list) else []:
+            p = str(pattern or "").strip()
+            if p:
+                success_regex.append(p[:240])
+            if len(success_regex) >= 24:
+                break
+        negative_regex = []
+        for pattern in result_obj.get("negative_regex", []) if isinstance(result_obj.get("negative_regex"), list) else []:
+            p = str(pattern or "").strip()
+            if p:
+                negative_regex.append(p[:240])
+            if len(negative_regex) >= 24:
+                break
+
+        hit_decision = cls._normalize_ai_pen_decision(result_obj.get("hit_decision"), default_value="verified")
+        hit_confidence = cls._clamp_ai_pen_confidence(result_obj.get("hit_confidence"), 0.90)
+        hit_reason = cls._clip_text(result_obj.get("hit_reason", ""), 120)
+
+        negative_decision = cls._normalize_ai_pen_decision(
+            result_obj.get("negative_decision"), default_value="likely_false_positive"
+        )
+        negative_confidence = cls._clamp_ai_pen_confidence(result_obj.get("negative_confidence"), 0.65)
+        negative_reason = cls._clip_text(result_obj.get("negative_reason", ""), 120)
+
+        verification_step = str(
+            result_obj.get("verification_step") or "mcp_external_{}".format(tool_id)
+        ).strip()[:64]
+        config_bin_key = str(raw_item.get("config_bin_key") or "").strip()
+
+        return {
+            "id": tool_id,
+            "enabled": enabled,
+            "description": cls._clip_text(raw_item.get("description", ""), 240),
+            "exec_bin": exec_bin,
+            "args_template": normalized_args,
+            "timeout_sec": timeout_sec,
+            "match_payload_types": payload_types,
+            "match_risk_types": risk_types,
+            "match_risk_keywords": risk_keywords,
+            "requires_query": requires_query,
+            "success_regex": success_regex,
+            "negative_regex": negative_regex,
+            "hit_decision": hit_decision,
+            "hit_confidence": hit_confidence,
+            "hit_reason": hit_reason,
+            "negative_decision": negative_decision,
+            "negative_confidence": negative_confidence,
+            "negative_reason": negative_reason,
+            "verification_step": verification_step,
+            "config_bin_key": config_bin_key,
+        }
+
+    @classmethod
+    def _built_in_ai_pen_external_manifests(cls):
+        builtin_items = [
+            {
+                "id": "sqlmap",
+                "enabled": True,
+                "description": "SQL 注入探测工具",
+                "config_bin_key": "SQLMAP_BIN",
+                "exec": {
+                    "bin": "sqlmap",
+                    "timeout_sec": 45,
+                    "args_template": [
+                        "-u", "{target_url}",
+                        "--batch",
+                        "--smart",
+                        "--random-agent",
+                        "--level", "1",
+                        "--risk", "1",
+                        "--threads", "1",
+                        "--timeout", "10",
+                        "--retries", "0",
+                        "--disable-coloring",
+                    ],
+                },
+                "match": {
+                    "payload_types": ["sqli_probe"],
+                    "risk_keywords": ["sqli", "sql"],
+                    "requires_query": True,
+                },
+                "result": {
+                    "success_regex": [
+                        "is vulnerable",
+                        "identified the following injection point",
+                        "sql injection vulnerability",
+                        "parameter ['\\\"]",
+                        "injectable",
+                    ],
+                    "negative_regex": [
+                        "all tested parameters do not appear to be injectable",
+                        "does not seem to be injectable",
+                        "not injectable",
+                        "no parameter\\(s\\) found for testing",
+                    ],
+                    "hit_decision": "verified",
+                    "hit_confidence": 0.94,
+                    "hit_reason": "sqlmap 命中注入特征",
+                    "negative_decision": "likely_false_positive",
+                    "negative_confidence": 0.68,
+                    "negative_reason": "sqlmap 未发现可注入参数",
+                    "verification_step": "mcp_external_sqlmap",
+                },
+            },
+            {
+                "id": "httpx",
+                "enabled": True,
+                "description": "HTTP 协议特征探测工具",
+                "config_bin_key": "HTTPX_BIN",
+                "exec": {
+                    "bin": "httpx",
+                    "timeout_sec": 30,
+                    "args_template": ["-u", "{target_url}", "-silent", "-status-code", "-title"],
+                },
+                "match": {
+                    "payload_types": ["websocket_probe", "api_doc_probe"],
+                    "risk_types": ["websocket", "api_doc"],
+                    "risk_keywords": ["websocket", "api_doc", "swagger", "openapi", "api-docs"],
+                },
+                "result": {
+                    "hit_decision": "needs_manual_review",
+                    "hit_confidence": 0.72,
+                    "verification_step": "mcp_external_httpx",
+                },
+            },
+        ]
+
+        normalized = {}
+        for item in builtin_items:
+            manifest = cls._normalize_ai_pen_external_manifest(item)
+            if manifest and manifest.get("id"):
+                normalized[manifest["id"]] = manifest
+        return normalized
+
+    @classmethod
+    def _load_ai_pen_external_tool_manifests(cls):
+        tool_dir = cls._resolve_ai_pen_external_tool_dir_path()
+        file_paths = []
+        if os.path.isdir(tool_dir):
+            for name in sorted(os.listdir(tool_dir)):
+                lower_name = str(name or "").lower()
+                if not (lower_name.endswith(".yaml") or lower_name.endswith(".yml") or lower_name.endswith(".json")):
+                    continue
+                full_path = os.path.join(tool_dir, name)
+                if os.path.isfile(full_path):
+                    file_paths.append(full_path)
+
+        stamp_items = [tool_dir]
+        for path in file_paths:
+            try:
+                stat_obj = os.stat(path)
+                stamp_items.append("{}:{}:{}".format(path, int(stat_obj.st_mtime), int(stat_obj.st_size)))
+            except Exception:
+                stamp_items.append("{}:0:0".format(path))
+        stamp = "|".join(stamp_items)
+
+        cache = cls._AI_PEN_EXTERNAL_TOOL_CACHE if isinstance(cls._AI_PEN_EXTERNAL_TOOL_CACHE, dict) else {}
+        cached_tools = cache.get("tools")
+        if cache.get("path") == tool_dir and cache.get("stamp") == stamp and isinstance(cached_tools, dict):
+            return cached_tools, tool_dir
+
+        manifests = cls._built_in_ai_pen_external_manifests()
+        for file_path in file_paths:
+            parsed = cls._parse_ai_pen_external_manifest_file(file_path)
+            if parsed is None:
+                continue
+            items = parsed if isinstance(parsed, list) else [parsed]
+            for raw_item in items:
+                manifest = cls._normalize_ai_pen_external_manifest(raw_item)
+                if not manifest:
+                    continue
+                if not manifest.get("enabled", True):
+                    continue
+                manifests[manifest.get("id")] = manifest
+
+        cls._AI_PEN_EXTERNAL_TOOL_CACHE = {
+            "path": tool_dir,
+            "stamp": stamp,
+            "tools": manifests,
+        }
+        return manifests, tool_dir
 
     @staticmethod
     def _resolve_executable_path(preferred_path: str, fallback_name: str):
@@ -2598,28 +2856,74 @@ class WebSiteFetch(object):
                 return resolved
         return ""
 
-    @staticmethod
-    def _contains_sqlmap_positive_evidence(output_text: str) -> bool:
-        output = str(output_text or "").lower()
-        positive_hints = (
-            "is vulnerable",
-            "identified the following injection point",
-            "sql injection vulnerability",
-            "parameter '",
-            "injectable",
-        )
-        return any(hint in output for hint in positive_hints)
+    @classmethod
+    def _render_ai_pen_external_args(cls, args_template, context: dict):
+        if not isinstance(args_template, list):
+            return []
+        safe_context = {}
+        for key, value in (context or {}).items():
+            safe_context[str(key)] = str(value or "")
+        rendered = []
+        for item in args_template:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            try:
+                next_text = text.format(**safe_context)
+            except Exception:
+                next_text = text
+            if next_text:
+                rendered.append(next_text)
+        return rendered
 
     @staticmethod
-    def _contains_sqlmap_negative_evidence(output_text: str) -> bool:
-        output = str(output_text or "").lower()
-        negative_hints = (
-            "all tested parameters do not appear to be injectable",
-            "does not seem to be injectable",
-            "not injectable",
-            "no parameter(s) found for testing",
-        )
-        return any(hint in output for hint in negative_hints)
+    def _match_ai_pen_external_output_regex(output_text: str, patterns) -> bool:
+        output = str(output_text or "")
+        if not output or not isinstance(patterns, list):
+            return False
+        output_lower = output.lower()
+        for pattern in patterns:
+            text = str(pattern or "").strip()
+            if not text:
+                continue
+            try:
+                if re.search(text, output, flags=re.IGNORECASE):
+                    return True
+            except re.error:
+                if text.lower() in output_lower:
+                    return True
+        return False
+
+    @classmethod
+    def _match_ai_pen_external_tool(
+            cls,
+            manifest: dict,
+            *,
+            risk_text: str,
+            risk_name_text: str,
+            payload_text: str,
+            target_url: str,
+    ) -> bool:
+        payload_rules = manifest.get("match_payload_types", []) if isinstance(manifest, dict) else []
+        if payload_rules and payload_text not in payload_rules:
+            return False
+
+        risk_rules = manifest.get("match_risk_types", []) if isinstance(manifest, dict) else []
+        if risk_rules and risk_text not in risk_rules:
+            return False
+
+        keyword_rules = manifest.get("match_risk_keywords", []) if isinstance(manifest, dict) else []
+        if keyword_rules:
+            merged = "{} {} {}".format(risk_text, risk_name_text, payload_text).strip().lower()
+            if not any(str(keyword or "").strip().lower() in merged for keyword in keyword_rules):
+                return False
+
+        if bool(manifest.get("requires_query", False)):
+            parsed = urlsplit(target_url)
+            if not str(parsed.query or "").strip():
+                return False
+
+        return True
 
     def _run_external_command(self, command, timeout_sec=60):
         command_list = command if isinstance(command, list) else []
@@ -2674,6 +2978,7 @@ class WebSiteFetch(object):
             *,
             target_url: str,
             risk_type: str,
+            risk_name: str,
             payload_type: str,
             base_decision: str,
             base_confidence: float,
@@ -2703,7 +3008,23 @@ class WebSiteFetch(object):
                 "tool_hit": False,
             }
 
+        manifests, manifest_dir = self._load_ai_pen_external_tool_manifests()
+        if not manifests:
+            return {
+                "decision": base_decision,
+                "confidence": base_confidence,
+                "reason": "未加载到外部工具说明文件",
+                "verification_step": "",
+                "tool_trace": "external(skip_no_manifest)",
+                "tool_runs": [],
+                "tool_hit": False,
+            }
+
         timeout_sec = self._safe_int_value(runtime_settings.get("external_timeout_sec"), 45)
+        if timeout_sec < 5:
+            timeout_sec = 5
+        if timeout_sec > 300:
+            timeout_sec = 300
         max_runs = self._safe_int_value(runtime_settings.get("external_max_runs"), 1)
         if max_runs < 1:
             max_runs = 1
@@ -2711,39 +3032,35 @@ class WebSiteFetch(object):
             max_runs = 8
 
         risk_text = str(risk_type or "").strip().lower()
+        risk_name_text = str(risk_name or "").strip().lower()
         payload_text = str(payload_type or "").strip().lower()
-        candidate_tools = []
-        if payload_text == "sqli_probe" or "sqli" in risk_text or "sql" in risk_text:
-            candidate_tools.append("sqlmap")
-        if payload_text in {"websocket_probe", "api_doc_probe"} or risk_text in {"websocket", "api_doc"}:
-            candidate_tools.append("httpx")
-
-        if not candidate_tools:
-            return {
-                "decision": base_decision,
-                "confidence": base_confidence,
-                "reason": "",
-                "verification_step": "",
-                "tool_trace": "",
-                "tool_runs": [],
-                "tool_hit": False,
-            }
-
-        run_tools = []
-        for tool_name in candidate_tools:
-            if tool_name not in allow_tools:
+        tool_trace_parts = []
+        run_manifests = []
+        for tool_name in allow_tools:
+            manifest = manifests.get(tool_name) if isinstance(manifests, dict) else None
+            if not isinstance(manifest, dict):
+                tool_trace_parts.append("{}(skip_not_registered)".format(tool_name))
                 continue
-            run_tools.append(tool_name)
-            if len(run_tools) >= max_runs:
+            if not self._match_ai_pen_external_tool(
+                manifest,
+                risk_text=risk_text,
+                risk_name_text=risk_name_text,
+                payload_text=payload_text,
+                target_url=target_url,
+            ):
+                tool_trace_parts.append("{}(skip_not_matched)".format(tool_name))
+                continue
+            run_manifests.append(manifest)
+            if len(run_manifests) >= max_runs:
                 break
 
-        if not run_tools:
+        if not run_manifests:
             return {
                 "decision": base_decision,
                 "confidence": base_confidence,
-                "reason": "候选外部工具不在白名单内",
+                "reason": "外部工具白名单未命中当前风险类型",
                 "verification_step": "",
-                "tool_trace": "external(skip_not_allowlisted)",
+                "tool_trace": "external(skip_not_matched) @ {}".format(manifest_dir),
                 "tool_runs": [],
                 "tool_hit": False,
             }
@@ -2752,131 +3069,123 @@ class WebSiteFetch(object):
         confidence = self._clamp_ai_pen_confidence(base_confidence, 0.5)
         reason_parts = []
         tool_runs = []
-        tool_trace_parts = []
         hit = False
         verification_step = ""
 
-        for tool_name in run_tools:
-            if tool_name == "sqlmap":
-                parsed = urlsplit(target_url)
-                if not str(parsed.query or "").strip():
-                    tool_trace_parts.append("sqlmap(skip_no_query)")
-                    continue
+        command_context = {
+            "target_url": target_url,
+            "risk_type": risk_text,
+            "risk_name": risk_name_text,
+            "payload_type": payload_text,
+            "task_id": self.task_id,
+        }
 
-                sqlmap_bin = self._resolve_executable_path(
-                    getattr(Config, "SQLMAP_BIN", "sqlmap"),
-                    "sqlmap",
-                )
-                if not sqlmap_bin:
-                    tool_trace_parts.append("sqlmap(skip_not_found)")
-                    tool_runs.append({
-                        "tool": "sqlmap",
-                        "status": "skipped",
-                        "message": "binary_not_found",
-                        "elapsed_ms": 0,
-                    })
-                    continue
+        for manifest in run_manifests:
+            tool_name = str(manifest.get("id") or "").strip().lower()
+            if not tool_name:
+                continue
 
-                sqlmap_cmd = [
-                    sqlmap_bin,
-                    "-u", target_url,
-                    "--batch",
-                    "--smart",
-                    "--random-agent",
-                    "--level", "1",
-                    "--risk", "1",
-                    "--threads", "1",
-                    "--timeout", "10",
-                    "--retries", "0",
-                    "--disable-coloring",
-                ]
-                run_ret = self._run_external_command(sqlmap_cmd, timeout_sec=timeout_sec)
-                output_text = "{}\n{}".format(run_ret.get("stdout", ""), run_ret.get("stderr", ""))
-                return_code = int(run_ret.get("return_code", -1) or -1)
-                elapsed_ms = int(run_ret.get("elapsed_ms", 0) or 0)
+            preferred_bin = str(manifest.get("exec_bin") or "").strip()
+            cfg_bin_key = str(manifest.get("config_bin_key") or "").strip()
+            if cfg_bin_key:
+                cfg_bin_value = str(getattr(Config, cfg_bin_key, "") or "").strip()
+                if cfg_bin_value:
+                    preferred_bin = cfg_bin_value
 
-                run_status = "ok" if bool(run_ret.get("ok")) else "error"
-                run_message = "exit={}".format(return_code)
-                if run_status == "ok":
-                    if self._contains_sqlmap_positive_evidence(output_text):
-                        decision = "verified"
-                        confidence = max(confidence, 0.94)
-                        hit = True
-                        verification_step = "mcp_external_sqlmap"
-                        reason_parts.append("sqlmap 命中注入特征")
-                        run_message = "positive"
-                    elif self._contains_sqlmap_negative_evidence(output_text):
-                        if decision != "verified":
-                            decision = "likely_false_positive"
-                            confidence = max(confidence, 0.68)
-                        reason_parts.append("sqlmap 未发现可注入参数")
-                        run_message = "negative"
-                    else:
-                        run_message = "inconclusive"
-                else:
-                    run_message = self._clip_text(run_ret.get("stderr", ""), 100) or "error"
-
+            binary_path = self._resolve_executable_path(preferred_bin, tool_name)
+            if not binary_path:
+                tool_trace_parts.append("{}(skip_not_found)".format(tool_name))
                 tool_runs.append({
-                    "tool": "sqlmap",
-                    "status": run_status,
-                    "message": run_message,
-                    "elapsed_ms": elapsed_ms,
+                    "tool": tool_name,
+                    "status": "skipped",
+                    "message": "binary_not_found",
+                    "elapsed_ms": 0,
                 })
-                tool_trace_parts.append("sqlmap({})".format(run_message))
-            elif tool_name == "httpx":
-                httpx_bin = self._resolve_executable_path(
-                    getattr(Config, "HTTPX_BIN", "httpx"),
-                    "httpx",
+                continue
+
+            args = self._render_ai_pen_external_args(manifest.get("args_template", []), command_context)
+            command = [binary_path]
+            command.extend(args)
+
+            manifest_timeout = self._safe_int_value(manifest.get("timeout_sec", timeout_sec), timeout_sec)
+            if manifest_timeout < 5:
+                manifest_timeout = 5
+            if manifest_timeout > timeout_sec:
+                manifest_timeout = timeout_sec
+
+            run_ret = self._run_external_command(command, timeout_sec=manifest_timeout)
+            output_text = "{}\n{}".format(run_ret.get("stdout", ""), run_ret.get("stderr", ""))
+            output_lower = output_text.lower()
+            return_code = int(run_ret.get("return_code", -1) or -1)
+            elapsed_ms = int(run_ret.get("elapsed_ms", 0) or 0)
+
+            run_status = "ok" if bool(run_ret.get("ok")) else "error"
+            run_message = "exit={}".format(return_code)
+            positive_hit = False
+            negative_hit = False
+            if run_status == "ok":
+                positive_hit = self._match_ai_pen_external_output_regex(
+                    output_text, manifest.get("success_regex", [])
                 )
-                if not httpx_bin:
-                    tool_trace_parts.append("httpx(skip_not_found)")
-                    tool_runs.append({
-                        "tool": "httpx",
-                        "status": "skipped",
-                        "message": "binary_not_found",
-                        "elapsed_ms": 0,
-                    })
-                    continue
-                httpx_cmd = [
-                    httpx_bin,
-                    "-u", target_url,
-                    "-silent",
-                    "-status-code",
-                    "-title",
-                ]
-                run_ret = self._run_external_command(httpx_cmd, timeout_sec=timeout_sec)
-                output_text = "{}\n{}".format(run_ret.get("stdout", ""), run_ret.get("stderr", ""))
-                output_lower = output_text.lower()
-                return_code = int(run_ret.get("return_code", -1) or -1)
-                elapsed_ms = int(run_ret.get("elapsed_ms", 0) or 0)
-                run_status = "ok" if bool(run_ret.get("ok")) else "error"
-                run_message = "exit={}".format(return_code)
-                if run_status == "ok":
-                    if (" 101 " in output_lower or "websocket" in output_lower) and payload_text == "websocket_probe":
-                        if decision != "verified":
-                            decision = "needs_manual_review"
-                        confidence = max(confidence, 0.72)
-                        verification_step = verification_step or "mcp_external_httpx"
-                        reason_parts.append("httpx 返回 WebSocket 相关特征")
+                negative_hit = self._match_ai_pen_external_output_regex(
+                    output_text, manifest.get("negative_regex", [])
+                )
+
+                if not positive_hit and tool_name == "httpx":
+                    if payload_text == "websocket_probe" and (" 101 " in output_lower or "websocket" in output_lower):
+                        positive_hit = True
                         run_message = "websocket_hint"
-                    elif payload_text == "api_doc_probe" and any(token in output_lower for token in ("swagger", "openapi", "api-docs")):
-                        if decision != "verified":
-                            decision = "needs_manual_review"
-                        confidence = max(confidence, 0.70)
-                        verification_step = verification_step or "mcp_external_httpx"
-                        reason_parts.append("httpx 返回 API 文档相关特征")
+                    elif payload_text == "api_doc_probe" and any(
+                        token in output_lower for token in ("swagger", "openapi", "api-docs")
+                    ):
+                        positive_hit = True
                         run_message = "api_doc_hint"
-                    else:
-                        run_message = "ok"
+
+                if positive_hit:
+                    next_decision = self._normalize_ai_pen_decision(
+                        manifest.get("hit_decision"), default_value="verified"
+                    )
+                    if next_decision == "verified" or decision != "verified":
+                        decision = next_decision
+                    confidence = max(
+                        confidence,
+                        self._clamp_ai_pen_confidence(manifest.get("hit_confidence"), 0.90)
+                    )
+                    reason_text = self._clip_text(manifest.get("hit_reason", ""), 120)
+                    if not reason_text:
+                        reason_text = "{} 命中特征".format(tool_name)
+                    reason_parts.append(reason_text)
+                    verification_step = verification_step or str(manifest.get("verification_step") or "").strip()
+                    run_message = run_message if run_message != "exit={}".format(return_code) else "positive"
+                    hit = True
+                elif negative_hit:
+                    if decision != "verified":
+                        decision = self._normalize_ai_pen_decision(
+                            manifest.get("negative_decision"),
+                            default_value="likely_false_positive",
+                        )
+                    confidence = max(
+                        confidence,
+                        self._clamp_ai_pen_confidence(manifest.get("negative_confidence"), 0.65)
+                    )
+                    reason_text = self._clip_text(manifest.get("negative_reason", ""), 120)
+                    if not reason_text:
+                        reason_text = "{} 未命中风险特征".format(tool_name)
+                    reason_parts.append(reason_text)
+                    verification_step = verification_step or str(manifest.get("verification_step") or "").strip()
+                    run_message = "negative"
                 else:
-                    run_message = self._clip_text(run_ret.get("stderr", ""), 100) or "error"
-                tool_runs.append({
-                    "tool": "httpx",
-                    "status": run_status,
-                    "message": run_message,
-                    "elapsed_ms": elapsed_ms,
-                })
-                tool_trace_parts.append("httpx({})".format(run_message))
+                    run_message = "inconclusive"
+            else:
+                run_message = self._clip_text(run_ret.get("stderr", ""), 100) or "error"
+
+            tool_runs.append({
+                "tool": tool_name,
+                "status": run_status,
+                "message": run_message,
+                "elapsed_ms": elapsed_ms,
+            })
+            tool_trace_parts.append("{}({})".format(tool_name, run_message))
 
         if len(tool_runs) > self.AI_PEN_EXTERNAL_RESULT_MAX:
             tool_runs = tool_runs[: self.AI_PEN_EXTERNAL_RESULT_MAX]
@@ -2886,7 +3195,7 @@ class WebSiteFetch(object):
             "confidence": confidence,
             "reason": "；".join([item for item in reason_parts if item])[:220],
             "verification_step": verification_step,
-            "tool_trace": " | ".join(tool_trace_parts)[:260],
+            "tool_trace": " | ".join(tool_trace_parts)[:260] or "external(ok) @ {}".format(manifest_dir),
             "tool_runs": tool_runs,
             "tool_hit": hit,
         }
@@ -4484,6 +4793,7 @@ class WebSiteFetch(object):
             external_ret = self._run_ai_pen_external_tools(
                 target_url=target_url,
                 risk_type=risk_type,
+                risk_name=risk_name,
                 payload_type=payload_type,
                 base_decision=decision,
                 base_confidence=confidence,

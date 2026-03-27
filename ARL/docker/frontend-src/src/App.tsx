@@ -14322,7 +14322,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ai_denoise_enable: rawForm?.ai_denoise_enable !== false,
       ai_pen_test_enable: rawForm?.ai_pen_test_enable !== false,
       ai_pen_mcp_enable: rawForm?.ai_pen_mcp_enable !== false,
-      ai_pen_external_enable: rawForm?.ai_pen_external_enable === true,
+      ai_pen_external_enable: rawForm?.ai_pen_external_enable !== false,
       ai_pen_ai_planner_enable: rawForm?.ai_pen_ai_planner_enable !== false,
       ai_pen_mcp_max_tool_calls:
         Number.isFinite(aiPenMcpMaxToolCalls) && aiPenMcpMaxToolCalls > 0 ? Math.floor(aiPenMcpMaxToolCalls) : 3,

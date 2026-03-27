@@ -1,0 +1,22 @@
+id: httpx
+enabled: true
+description: HTTP 协议特征探测工具（示例，可覆盖内置）
+config_bin_key: HTTPX_BIN
+exec:
+  bin: httpx
+  timeout_sec: 30
+  args_template:
+    - "-u"
+    - "{target_url}"
+    - "-silent"
+    - "-status-code"
+    - "-title"
+match:
+  payload_types: ["websocket_probe", "api_doc_probe"]
+  risk_types: ["websocket", "api_doc"]
+  risk_keywords: ["websocket", "api_doc", "swagger", "openapi", "api-docs"]
+result:
+  hit_decision: needs_manual_review
+  hit_confidence: 0.72
+  hit_reason: "httpx 返回协议/文档特征"
+  verification_step: mcp_external_httpx

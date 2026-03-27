@@ -414,6 +414,8 @@ def refresh_runtime_config_best_effort(force=False):
             Config.SQLMAP_BIN = str(arl_conf.get("SQLMAP_BIN") or "").strip()
         if arl_conf.get("HTTPX_BIN") is not None:
             Config.HTTPX_BIN = str(arl_conf.get("HTTPX_BIN") or "").strip()
+        if arl_conf.get("AI_PEN_EXTERNAL_TOOL_DIR") is not None:
+            Config.AI_PEN_EXTERNAL_TOOL_DIR = str(arl_conf.get("AI_PEN_EXTERNAL_TOOL_DIR") or "").strip()
 
         if ai_conf.get("AI_PEN_EXTERNAL_ENABLE") is not None:
             Config.AI_PEN_MCP_EXTERNAL_ENABLE = _safe_runtime_bool(
@@ -462,6 +464,9 @@ def refresh_runtime_config_best_effort(force=False):
         Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
         Config.SQLMAP_BIN = env_str("ARL_SQLMAP_BIN", Config.SQLMAP_BIN).strip()
         Config.HTTPX_BIN = env_str("ARL_HTTPX_BIN", Config.HTTPX_BIN).strip()
+        Config.AI_PEN_EXTERNAL_TOOL_DIR = env_str(
+            "ARL_AI_PEN_EXTERNAL_TOOL_DIR", Config.AI_PEN_EXTERNAL_TOOL_DIR
+        ).strip()
         Config.AI_PEN_MCP_EXTERNAL_ENABLE = env_bool(
             "ARL_AI_PEN_MCP_EXTERNAL_ENABLE", Config.AI_PEN_MCP_EXTERNAL_ENABLE
         )
@@ -604,8 +609,10 @@ class Config(object):
     # AI渗透外部执行器工具路径
     SQLMAP_BIN = "sqlmap"
     HTTPX_BIN = "httpx"
+    # AI渗透外部工具说明目录（用户可在该目录追加 *.yaml/*.json 定义）
+    AI_PEN_EXTERNAL_TOOL_DIR = os.path.join(project_root, "tools", "ai_pen_tools")
     # AI渗透外部执行器默认配置（AI 配置缺失时兜底）
-    AI_PEN_MCP_EXTERNAL_ENABLE = False
+    AI_PEN_MCP_EXTERNAL_ENABLE = True
     AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = "sqlmap,httpx"
     AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = 45
     AI_PEN_MCP_EXTERNAL_MAX_RUNS = 1
@@ -1216,6 +1223,9 @@ try:
     if y["ARL"].get("HTTPX_BIN") is not None:
         Config.HTTPX_BIN = str(y["ARL"]["HTTPX_BIN"] or "").strip()
 
+    if y["ARL"].get("AI_PEN_EXTERNAL_TOOL_DIR") is not None:
+        Config.AI_PEN_EXTERNAL_TOOL_DIR = str(y["ARL"]["AI_PEN_EXTERNAL_TOOL_DIR"] or "").strip()
+
     if y.get("AI"):
         ai_conf = y.get("AI") or {}
         if ai_conf.get("AI_PEN_EXTERNAL_ENABLE") is not None:
@@ -1720,6 +1730,9 @@ try:
     Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
     Config.SQLMAP_BIN = env_str("ARL_SQLMAP_BIN", Config.SQLMAP_BIN).strip()
     Config.HTTPX_BIN = env_str("ARL_HTTPX_BIN", Config.HTTPX_BIN).strip()
+    Config.AI_PEN_EXTERNAL_TOOL_DIR = env_str(
+        "ARL_AI_PEN_EXTERNAL_TOOL_DIR", Config.AI_PEN_EXTERNAL_TOOL_DIR
+    ).strip()
     Config.AI_PEN_MCP_EXTERNAL_ENABLE = env_bool(
         "ARL_AI_PEN_MCP_EXTERNAL_ENABLE", Config.AI_PEN_MCP_EXTERNAL_ENABLE
     )
