@@ -37,6 +37,7 @@ _WEB_HEAVY_OPTION_KEYS = (
     "afrog_scan",
     "web_info_hunter",
     "penetration_test",
+    "ai_penetration_test",
 )
 
 

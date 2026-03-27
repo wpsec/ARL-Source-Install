@@ -196,6 +196,7 @@ class ARLAssetDomain(ARLResource):
             'site_capture': False,  # 站点截图
             'file_leak': False,  # 文件泄露检测
             'afrog_scan': False,  # afrog 漏洞扫描
+            'ai_penetration_test': False,  # AI 渗透测试
             'alt_dns': False,  # DNS字典智能生成
             'site_spider': False,  # 站点爬虫
             'search_engines': False,  # 搜索引擎

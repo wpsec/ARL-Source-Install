@@ -5,6 +5,7 @@ import time
 import re
 import os
 import json
+import hashlib
 from urllib.parse import urlparse
 from bson import ObjectId
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
@@ -123,6 +124,12 @@ class WebSiteFetch(object):
     AI_POC_INDEX_MAX_CANDIDATE_KEYWORDS = 48
     AI_POC_AI_INPUT_MAX_TAGS = 64
     AI_POC_AI_INPUT_MAX_KEYWORDS = 64
+    AI_PEN_TEST_MAX_CASES = 80
+    AI_PEN_TEST_SOURCE_LIMIT = 260
+    AI_PEN_TEST_FETCH_TIMEOUT = (5.1, 10.1)
+    AI_PEN_TEST_BODY_MAX = 8192
+    AI_PEN_TEST_EVIDENCE_MAX = 280
+    AI_PEN_TEST_ERROR_MAX = 180
     AI_POC_ALIAS_HINTS = {
         "alibaba": ["alibaba", "aliyun", "阿里", "阿里云"],
         "tencent": ["tencent", "qcloud", "腾讯", "腾讯云"],
@@ -214,6 +221,7 @@ class WebSiteFetch(object):
         "mtime": 0.0,
         "data": {},
     }
+    _AI_PEN_TEST_INDEX_READY = False
 
     def __init__(self, task_id: str, sites: list, options: dict, scope_domain: list = None):
         self.task_id = task_id
@@ -2079,6 +2087,426 @@ class WebSiteFetch(object):
             )
         )
 
+    @classmethod
+    def _ensure_ai_pen_test_indexes(cls):
+        """
+        确保 ai_pen_test_result 集合索引存在（幂等）。
+        """
+        if cls._AI_PEN_TEST_INDEX_READY:
+            return
+
+        try:
+            collection = utils.conn_db("ai_pen_test_result")
+            collection.create_index(
+                [("task_id", 1), ("source_collection", 1), ("source_id", 1)],
+                unique=True,
+                background=True,
+            )
+            collection.create_index([("task_id", 1), ("save_date", -1)], background=True)
+            collection.create_index([("task_id", 1), ("decision", 1)], background=True)
+            cls._AI_PEN_TEST_INDEX_READY = True
+        except Exception as e:
+            logger.warning("ensure ai_pen_test indexes failed err:{}".format(e))
+
+    @staticmethod
+    def _clip_text(value, max_len=220):
+        text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+        if len(text) <= max_len:
+            return text
+        return "{}...".format(text[:max_len])
+
+    @staticmethod
+    def _is_http_target(value: str) -> bool:
+        text = str(value or "").strip().lower()
+        return text.startswith("http://") or text.startswith("https://")
+
+    @staticmethod
+    def _normalize_object_id(value) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return text
+
+    @staticmethod
+    def _normalize_risk_type(value, default_value="unknown"):
+        text = str(value or "").strip().lower()
+        if not text:
+            return default_value
+        return text[:64]
+
+    def _build_ai_pen_payload_hint(self, risk_type: str, risk_name: str):
+        merged = "{} {}".format(str(risk_type or ""), str(risk_name or "")).lower()
+        if "xss" in merged:
+            return "xss_probe", "<svg/onload=alert(1)>"
+        if "sql" in merged:
+            return "sqli_probe", "' OR '1'='1"
+        if "cmd" in merged or "command" in merged:
+            return "cmdi_probe", ";id"
+        if "jwt" in merged:
+            return "jwt_probe", '{"alg":"none"}'
+        if "ssrf" in merged:
+            return "ssrf_probe", "http://127.0.0.1/"
+        if "idor" in merged or "越权" in merged:
+            return "idor_probe", "id=1 -> id=2"
+        if "upload" in merged or "文件上传" in merged:
+            return "upload_probe", "filename=shell.php"
+        return "replay", ""
+
+    def _build_ai_pen_test_candidates(self):
+        candidates = []
+        seen = set()
+
+        def _append_candidate(item):
+            if not isinstance(item, dict):
+                return
+            source_collection = str(item.get("source_collection", "") or "").strip().lower()
+            source_id = self._normalize_object_id(item.get("source_id"))
+            if not source_collection or not source_id:
+                return
+            dedupe_key = "{}:{}".format(source_collection, source_id)
+            if dedupe_key in seen:
+                return
+            seen.add(dedupe_key)
+            candidates.append(item)
+
+        # 1) 风险(vuln)结果
+        try:
+            vuln_cursor = utils.conn_db("vuln").find(
+                {"task_id": self.task_id},
+                {
+                    "_id": 1,
+                    "target": 1,
+                    "plg_type": 1,
+                    "vul_name": 1,
+                    "severity": 1,
+                    "verify_data": 1,
+                    "description": 1,
+                    "detail": 1,
+                    "app_name": 1,
+                },
+                max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
+            ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
+            for row in vuln_cursor:
+                target = str(row.get("target", "") or "").strip()
+                vul_name = str(row.get("vul_name", "") or "").strip()
+                risk_type = self._normalize_risk_type(row.get("plg_type"), default_value="vuln")
+                evidence_seed = str(
+                    row.get("verify_data")
+                    or row.get("description")
+                    or row.get("detail")
+                    or ""
+                ).strip()
+                _append_candidate(
+                    {
+                        "source_collection": "vuln",
+                        "source_id": row.get("_id"),
+                        "source_module": str(row.get("app_name", "") or "").strip().lower(),
+                        "target": target,
+                        "vuln_url": target if self._is_http_target(target) else "",
+                        "risk_type": risk_type,
+                        "risk_name": vul_name or "风险验证",
+                        "severity": str(row.get("severity", "") or "").strip().lower(),
+                        "evidence_seed": evidence_seed,
+                    }
+                )
+        except Exception as e:
+            logger.warning("task_id:{} build ai_pen candidates from vuln failed err:{}".format(self.task_id, e))
+
+        # 2) PoC 风险结果(nuclei_result)
+        try:
+            nuclei_cursor = utils.conn_db("nuclei_result").find(
+                {"task_id": self.task_id},
+                {
+                    "_id": 1,
+                    "target": 1,
+                    "vuln_url": 1,
+                    "scanner_type": 1,
+                    "vuln_name": 1,
+                    "vuln_severity": 1,
+                    "verify_data": 1,
+                    "detail": 1,
+                },
+                max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
+            ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
+            for row in nuclei_cursor:
+                vuln_url = str(row.get("vuln_url", "") or "").strip()
+                target = str(row.get("target", "") or "").strip()
+                preferred_url = vuln_url if self._is_http_target(vuln_url) else target
+                scanner_type = str(row.get("scanner_type", "") or "").strip().lower()
+                risk_type = scanner_type or "poc_scan"
+                _append_candidate(
+                    {
+                        "source_collection": "nuclei_result",
+                        "source_id": row.get("_id"),
+                        "source_module": scanner_type or "nuclei",
+                        "target": target,
+                        "vuln_url": preferred_url if self._is_http_target(preferred_url) else "",
+                        "risk_type": self._normalize_risk_type(risk_type, default_value="poc_scan"),
+                        "risk_name": str(row.get("vuln_name", "") or "").strip() or "PoC风险验证",
+                        "severity": str(row.get("vuln_severity", "") or "").strip().lower(),
+                        "evidence_seed": str(row.get("verify_data") or row.get("detail") or "").strip(),
+                    }
+                )
+        except Exception as e:
+            logger.warning("task_id:{} build ai_pen candidates from nuclei_result failed err:{}".format(self.task_id, e))
+
+        # 3) WIH 信息线索
+        try:
+            wih_cursor = utils.conn_db("wih").find(
+                {"task_id": self.task_id},
+                {"_id": 1, "record_type": 1, "content": 1, "source": 1, "site": 1},
+                max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
+            ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
+            for row in wih_cursor:
+                source_url = str(row.get("source", "") or "").strip()
+                site_url = str(row.get("site", "") or "").strip()
+                target = source_url if self._is_http_target(source_url) else site_url
+                _append_candidate(
+                    {
+                        "source_collection": "wih",
+                        "source_id": row.get("_id"),
+                        "source_module": "wih",
+                        "target": target or site_url or source_url,
+                        "vuln_url": target if self._is_http_target(target) else "",
+                        "risk_type": "sensitive_info",
+                        "risk_name": "WIH-{}".format(str(row.get("record_type", "") or "info").strip() or "info"),
+                        "severity": "info",
+                        "evidence_seed": str(row.get("content", "") or "").strip(),
+                    }
+                )
+        except Exception as e:
+            logger.warning("task_id:{} build ai_pen candidates from wih failed err:{}".format(self.task_id, e))
+
+        def _risk_score(item):
+            score = 0
+            risk_type = str(item.get("risk_type", "") or "").lower()
+            severity = str(item.get("severity", "") or "").lower()
+            if str(item.get("source_collection", "") or "") == "nuclei_result":
+                score += 15
+            if self._is_http_target(item.get("vuln_url", "")):
+                score += 20
+            if str(item.get("evidence_seed", "") or "").strip():
+                score += 8
+            if severity in ("critical", "high"):
+                score += 12
+            elif severity == "medium":
+                score += 6
+            if any(keyword in risk_type for keyword in ("xss", "sql", "command", "jwt", "ssrf", "idor", "upload")):
+                score += 16
+            return score
+
+        candidates.sort(
+            key=lambda item: (
+                -_risk_score(item),
+                str(item.get("source_collection", "")),
+                str(item.get("source_id", "")),
+            )
+        )
+        return candidates
+
+    def _verify_ai_pen_candidate(self, candidate: dict):
+        target_url = str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
+        risk_type = str(candidate.get("risk_type", "") or "").strip()
+        risk_name = str(candidate.get("risk_name", "") or "").strip()
+        evidence_seed = self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX)
+        payload_type, payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
+
+        if not self._is_http_target(target_url):
+            return {
+                "status": "skipped",
+                "decision": "needs_manual_review",
+                "confidence": 0.35,
+                "reason": "缺少可访问的 HTTP 目标，当前阶段仅完成上下文归档",
+                "payload_type": payload_type,
+                "payload": payload,
+                "verification_step": "collect_context_only",
+                "evidence_snippet": evidence_seed,
+                "http_status": 0,
+                "response_hash_diff": "",
+                "tool_trace": "collect_context_only",
+            }
+
+        try:
+            response = utils.http_req(
+                target_url,
+                "get",
+                timeout=self.AI_PEN_TEST_FETCH_TIMEOUT,
+                allow_redirects=True,
+                waf_guard=self.waf_guard,
+                waf_module="ai_pen_test",
+            )
+            status_code = int(getattr(response, "status_code", 0) or 0)
+            body_text = ""
+            try:
+                body_text = str(getattr(response, "text", "") or "")
+            except Exception:
+                body_text = ""
+
+            body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
+            body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest() if body_excerpt else ""
+
+            evidence_hit = False
+            if evidence_seed and body_excerpt:
+                evidence_hit = evidence_seed in body_excerpt
+
+            decision = "needs_manual_review"
+            confidence = 0.56
+            reason = "目标可访问，已完成 HTTP 重放验证"
+            if evidence_hit:
+                decision = "verified"
+                confidence = 0.82
+                reason = "响应中命中风险证据片段，验证通过"
+            elif status_code >= 500 or status_code == 404:
+                decision = "likely_false_positive"
+                confidence = 0.66
+                reason = "目标返回异常状态码 {}，当前证据不足".format(status_code)
+            elif status_code in (401, 403):
+                decision = "needs_manual_review"
+                confidence = 0.48
+                reason = "目标受访问控制保护（{}），建议结合登录态复核".format(status_code)
+
+            evidence_snippet = evidence_seed
+            if not evidence_snippet:
+                evidence_snippet = self._clip_text(body_excerpt, self.AI_PEN_TEST_EVIDENCE_MAX)
+
+            return {
+                "status": "ok",
+                "decision": decision,
+                "confidence": confidence,
+                "reason": reason,
+                "payload_type": payload_type,
+                "payload": payload,
+                "verification_step": "http_fetch_replay",
+                "evidence_snippet": evidence_snippet,
+                "http_status": status_code,
+                "response_hash_diff": body_md5,
+                "tool_trace": "http_fetch(get, url={})".format(target_url[:220]),
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "decision": "needs_manual_review",
+                "confidence": 0.30,
+                "reason": "HTTP 验证失败: {}".format(self._clip_text(e, self.AI_PEN_TEST_ERROR_MAX)),
+                "payload_type": payload_type,
+                "payload": payload,
+                "verification_step": "http_fetch_replay",
+                "evidence_snippet": evidence_seed,
+                "http_status": 0,
+                "response_hash_diff": "",
+                "tool_trace": "http_fetch(error)",
+            }
+
+    def run_ai_penetration_test(self):
+        """
+        AI 渗透测试第一阶段（M1）：
+        - 汇聚 vuln / nuclei_result / wih 候选
+        - 执行轻量 HTTP 二次验证
+        - 产出 ai_pen_test_result，支撑任务详情“AI渗透”页签
+        """
+        self._ensure_ai_pen_test_indexes()
+        candidates = self._build_ai_pen_test_candidates()
+        if not candidates:
+            logger.info("task_id:{} skip ai_pen_test, no candidates".format(self.task_id))
+            return
+
+        max_cases = self.AI_PEN_TEST_MAX_CASES
+        try:
+            configured_max = int(self.options.get("ai_pen_test_max_cases", 0) or 0)
+            if configured_max > 0:
+                max_cases = min(configured_max, 300)
+        except Exception:
+            max_cases = self.AI_PEN_TEST_MAX_CASES
+        if max_cases < 1:
+            max_cases = self.AI_PEN_TEST_MAX_CASES
+
+        selected_candidates = candidates[:max_cases]
+        saved_count = 0
+        verified_count = 0
+        false_positive_count = 0
+        error_count = 0
+
+        collection = utils.conn_db("ai_pen_test_result")
+        for candidate in selected_candidates:
+            verify_result = self._verify_ai_pen_candidate(candidate)
+            now_text = utils.curr_date()
+
+            status = str(verify_result.get("status", "skipped") or "skipped").strip().lower()
+            decision = str(verify_result.get("decision", "needs_manual_review") or "needs_manual_review").strip().lower()
+            if decision not in {"verified", "likely_false_positive", "needs_manual_review"}:
+                decision = "needs_manual_review"
+
+            if decision == "verified":
+                verified_count += 1
+            elif decision == "likely_false_positive":
+                false_positive_count += 1
+            if status == "error":
+                error_count += 1
+
+            confidence = verify_result.get("confidence", 0.0)
+            try:
+                confidence = float(confidence)
+            except Exception:
+                confidence = 0.0
+            confidence = max(0.0, min(1.0, confidence))
+
+            source_collection = str(candidate.get("source_collection", "") or "").strip()
+            source_id = self._normalize_object_id(candidate.get("source_id"))
+            if not source_collection or not source_id:
+                continue
+
+            set_fields = {
+                "task_id": self.task_id,
+                "source_collection": source_collection,
+                "source_id": source_id,
+                "source_module": str(candidate.get("source_module", "") or "").strip(),
+                "target": str(candidate.get("target", "") or "").strip(),
+                "vuln_url": str(candidate.get("vuln_url", "") or "").strip(),
+                "risk_type": str(candidate.get("risk_type", "") or "").strip(),
+                "risk_name": str(candidate.get("risk_name", "") or "").strip(),
+                "severity": str(candidate.get("severity", "") or "").strip(),
+                "payload_type": str(verify_result.get("payload_type", "") or "").strip(),
+                "payload": str(verify_result.get("payload", "") or "").strip(),
+                "verification_step": str(verify_result.get("verification_step", "") or "").strip(),
+                "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
+                "http_status": int(verify_result.get("http_status", 0) or 0),
+                "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
+                "decision": decision,
+                "confidence": float("{:.4f}".format(confidence)),
+                "reason": str(verify_result.get("reason", "") or "").strip(),
+                "status": status,
+                "model": "rule-lite",
+                "provider": "local",
+                "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
+                "update_date": now_text,
+            }
+
+            collection.update_one(
+                {
+                    "task_id": self.task_id,
+                    "source_collection": source_collection,
+                    "source_id": source_id,
+                },
+                {
+                    "$set": set_fields,
+                    "$setOnInsert": {"save_date": now_text},
+                },
+                upsert=True,
+            )
+            saved_count += 1
+
+        logger.info(
+            "task_id:{} ai_pen_test done candidates:{} selected:{} saved:{} verified:{} likely_fp:{} error:{}".format(
+                self.task_id,
+                len(candidates),
+                len(selected_candidates),
+                saved_count,
+                verified_count,
+                false_positive_count,
+                error_count,
+            )
+        )
+
     def run_func(self, name: str, func: callable):
         logger.info("start run {}, {}".format(name, self.__str__()))
         self.base_update_task.update_task_field("status", name)
@@ -2390,6 +2818,10 @@ class WebSiteFetch(object):
         # nuclei 首次因 Mongo 超时延后时，在本任务末尾补跑一次。
         if self._nuclei_deferred_retry_needed:
             self.run_deferred_nuclei_scan()
+
+        """ *** AI 渗透测试（后验证阶段） """
+        if self.options.get(WebSiteFetchOption.AI_PENETRATION_TEST):
+            self.run_func(WebSiteFetchStatus.AI_PEN_TEST, self.run_ai_penetration_test)
 
         self._save_waf_skip_summary()
 

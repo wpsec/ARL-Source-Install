@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronsUpDown,
+  Crosshair,
   Cpu,
   Database,
   Download,
@@ -171,6 +172,7 @@ const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
   fileleak: ['url'],
   vuln: ['target'],
   nuclei_result: ['vuln_url'],
+  ai_pen_test: ['target', 'vuln_url'],
   wih: ['content', 'source', 'site'],
 };
 const TABLE_HEADER_FREEZE_MODULE_IDS = new Set([
@@ -194,6 +196,7 @@ const TABLE_HEADER_FREEZE_MODULE_IDS = new Set([
   'stat_finger',
   'wih',
   'waf_host',
+  'ai_pen_test',
   'cip',
 ]);
 const AI_ANALYSIS_SEARCH_OPTIONS: Array<{ label: string; value: string }> = [
@@ -387,6 +390,7 @@ const modules: ModuleConfig[] = [
           findvhost: false,
           web_info_hunter: false,
           penetration_test: false,
+          ai_penetration_test: false,
           waf_bypass: false,
           smart_skip_waf: false,
           ai_denoise: true,
@@ -1623,6 +1627,61 @@ const modules: ModuleConfig[] = [
     ],
   },
   {
+    id: 'ai_pen_test',
+    label: 'AI渗透',
+    description: 'AI 渗透测试验证结果',
+    group: '风险与规则',
+    icon: Crosshair,
+    listPath: '/ai_pen_test/',
+    rowIdKey: '_id',
+    showIndex: true,
+    quickFilterKey: 'risk_name',
+    defaultOrder: '-save_date',
+    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'status', 'save_date'],
+    columnLabels: {
+      source_collection: '来源',
+      risk_type: '类型',
+      risk_name: '风险名称',
+      target: '目标',
+      vuln_url: '漏洞URL',
+      decision: '结论',
+      confidence: '置信度',
+      status: '状态',
+      save_date: '时间',
+    },
+    searchFields: [
+      { key: 'source_collection', label: '来源', placeholder: '请输入来源进行搜索' },
+      { key: 'risk_type', label: '类型', placeholder: '请输入类型进行搜索' },
+      { key: 'risk_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
+      { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+      { key: 'vuln_url', label: '漏洞URL', placeholder: '请输入漏洞URL进行搜索' },
+      {
+        key: 'decision',
+        label: '结论',
+        placeholder: '请选择结论',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '已验证', value: 'verified' },
+          { label: '疑似误报', value: 'likely_false_positive' },
+          { label: '需人工复核', value: 'needs_manual_review' },
+        ],
+      },
+      {
+        key: 'status',
+        label: '状态',
+        placeholder: '请选择状态',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '成功', value: 'ok' },
+          { label: '异常', value: 'error' },
+          { label: '跳过', value: 'skipped' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'poc',
     label: 'PoC管理',
     description: 'PoC / brute 插件管理',
@@ -2058,6 +2117,7 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'stat_finger', label: '指纹统计' },
   { id: 'wih', label: 'WIH' },
   { id: 'waf_host', label: 'WAF识别' },
+  { id: 'ai_pen_test', label: 'AI渗透' },
 ];
 
 function getDefaultModulePageSize(moduleId: string, filters?: JsonValue): number {
@@ -2584,6 +2644,7 @@ const TASK_RUNNING_STAGE_LABELS: Record<string, string> = {
   afrog_scan: 'afrog扫描',
   web_info_hunter: 'WIH扫描',
   penetration_test: '渗透测试',
+  ai_pen_test: 'AI渗透测试',
   nuclei_scan_retry: 'Nuclei补跑',
 };
 
@@ -3135,6 +3196,7 @@ const TASK_SERVICE_STAGE_LABEL_MAP: Record<string, string> = {
   weak_brute: '弱口令爆破',
   penetration_scan: '渗透测试',
   cloud_security_scan: '云安全扫描',
+  ai_pen_test: 'AI渗透测试',
   waf_smart_skip: 'WAF智能跳过',
   waf_observe: 'WAF识别观察',
 };
@@ -3585,6 +3647,7 @@ const fieldLabelMap: Record<string, string> = {
   findvhost: 'Host 碰撞',
   web_info_hunter: 'WIH 调用',
   penetration_test: '渗透测试',
+  ai_penetration_test: 'AI渗透测试',
   waf_bypass: 'WAF绕过',
   smart_skip_waf: '跳过WAF',
   ai_denoise: 'AI去噪分析',
@@ -4621,7 +4684,7 @@ function ActionDialog({
       },
       {
         title: 'Web与风险',
-        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'penetration_test', 'waf_bypass', 'smart_skip_waf', 'ai_denoise', 'dingding_notify'],
+        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'penetration_test', 'ai_penetration_test', 'waf_bypass', 'smart_skip_waf', 'ai_denoise', 'dingding_notify'],
       },
     ];
     return sections
@@ -9011,7 +9074,7 @@ function TableModuleView({
           ))}
         </div>
       ) : null}
-      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih', 'waf_host'].includes(module.id) ? (
+      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih', 'waf_host', 'ai_pen_test'].includes(module.id) ? (
         <div className="flex items-center gap-2">
           {hasExternalFilters ? (
             <button
@@ -16704,6 +16767,8 @@ function MainShell() {
     reversed.nuclei_result = 'assets';
     reversed.stat_finger = 'assets';
     reversed.wih = 'assets';
+    reversed.waf_host = 'assets';
+    reversed.ai_pen_test = 'assets';
     reversed.github_result = 'github_mgmt';
     reversed.github_monitor_result = 'github_monitor';
     return reversed;

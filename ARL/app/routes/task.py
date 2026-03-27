@@ -114,6 +114,7 @@ base_search_task_fields = {
     'options.findvhost': fields.Boolean(description="是否开启虚拟主机碰撞检测"),
     'options.web_info_hunter': fields.Boolean(description="是否开启WebInfoHunter（JS信息收集）"),
     'options.penetration_test': fields.Boolean(description="是否开启Web专项渗透测试"),
+    'options.ai_penetration_test': fields.Boolean(description="是否开启AI渗透测试"),
     'options.waf_bypass': fields.Boolean(description="是否开启WAF绕过（仅渗透测试）"),
     'options.smart_skip_waf': fields.Boolean(description="是否开启跳过WAF"),
     'options.ai_denoise': fields.Boolean(description="是否开启AI去噪分析"),
@@ -155,6 +156,7 @@ add_task_fields = ns.model('AddTask', {
     "findvhost": fields.Boolean(example=False, default=False, description="虚拟主机碰撞"),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="WebInfoHunter JS信息收集"),
     "penetration_test": fields.Boolean(example=False, default=False, description="Web专项渗透测试"),
+    "ai_penetration_test": fields.Boolean(example=False, default=False, description="AI渗透测试"),
     "waf_bypass": fields.Boolean(example=False, default=False, description="WAF绕过（仅渗透测试）"),
     "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),
     "ai_denoise": fields.Boolean(example=True, default=True, description="AI去噪分析"),
@@ -493,10 +495,12 @@ class DeleteTask(ARLResource):
             utils.conn_db('task').delete_many({'_id': ObjectId(task_id)})
             # AI 去噪结果与任务强关联，任务删除时一并清理。
             utils.conn_db('ai_denoise_result').delete_many({'task_id': task_id})
+            # AI 渗透测试结果与任务强关联，任务删除时一并清理。
+            utils.conn_db('ai_pen_test_result').delete_many({'task_id': task_id})
             
             # 相关资产数据表列表
             table_list = ["cert", "domain", "fileleak","ip", "service",
-                          "site", "url", "vuln", "cip", "npoc_service", "wih", "nuclei_result", "stat_finger"]
+                          "site", "url", "vuln", "cip", "npoc_service", "wih", "nuclei_result", "stat_finger", "ai_pen_test_result"]
 
             # 如果选择删除任务数据，则删除所有相关资产
             if del_task_data_flag:

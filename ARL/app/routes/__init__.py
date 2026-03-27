@@ -646,5 +646,6 @@ from .dingtalk_api import ns as dingtalk_api_ns              # 钉钉开放平�
 from .nuclei_result import ns as nuclei_result_ns            # Nuclei 扫描结果
 from .wih import ns as wih_ns                                # WIH
 from .waf_host import ns as waf_host_ns                      # WAF 识别结果
+from .ai_pen_test import ns as ai_pen_test_ns                # AI 渗透测试结果
 from .assetWih import ns as asset_wih_ns                     # 资产 WIH
 from .api_console import ns as api_console_ns                # 配置中心
