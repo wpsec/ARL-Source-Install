@@ -3573,6 +3573,168 @@ class WebSiteFetch(object):
         return len(seed_text) >= 6 and seed_text in body_check_text
 
     @staticmethod
+    def _is_js_asset_target(target_url: str, headers=None):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return False
+
+        try:
+            parsed = urlsplit(url_text)
+            path_text = str(parsed.path or "").strip().lower()
+        except Exception:
+            path_text = str(target_url or "").strip().lower()
+
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        if "javascript" in content_type or "ecmascript" in content_type:
+            return True
+        if path_text.endswith((".js", ".mjs", ".cjs")):
+            return True
+        return any(token in path_text for token in ("/_nuxt/", "/static/js/", "/assets/")) and ".json" not in path_text
+
+    @classmethod
+    def _extract_js_context_snippet(cls, body_text: str, anchor_text: str = "", fallback_keywords=None):
+        content = str(body_text or "")
+        if not content:
+            return ""
+
+        candidates = []
+        anchor = str(anchor_text or "").strip()
+        if anchor:
+            candidates.append(anchor)
+            # 从证据片段里抽取更容易命中的关键 token，避免因前后文被裁剪导致无法定位。
+            for token in re.findall(r"[A-Za-z0-9_./:+-]{6,80}", anchor):
+                token_text = str(token or "").strip()
+                if token_text and token_text not in candidates:
+                    candidates.append(token_text)
+
+        if isinstance(fallback_keywords, (list, tuple, set)):
+            for item in fallback_keywords:
+                token_text = str(item or "").strip()
+                if token_text and token_text not in candidates:
+                    candidates.append(token_text)
+
+        content_lower = content.lower()
+        for candidate in candidates:
+            if len(candidate) < 4:
+                continue
+            idx = content_lower.find(candidate.lower())
+            if idx < 0:
+                continue
+            start = max(0, idx - 140)
+            end = min(len(content), idx + max(len(candidate), 32) + 140)
+            return cls._clip_text(content[start:end], cls.AI_PEN_TEST_EVIDENCE_MAX)
+
+        return cls._clip_text(content[: min(len(content), cls.AI_PEN_TEST_EVIDENCE_MAX)], cls.AI_PEN_TEST_EVIDENCE_MAX)
+
+    @classmethod
+    def _analyze_ai_pen_js_context(cls, target_url: str, body_text: str, headers, risk_type: str, payload_type: str, evidence_seed: str):
+        if not cls._is_js_asset_target(target_url, headers=headers):
+            return {}
+
+        content = str(body_text or "")
+        if not content:
+            return {}
+
+        risk_type_text = str(risk_type or "").strip().lower()
+        payload_type_text = str(payload_type or "").strip().lower()
+        content_lower = content.lower()
+
+        try:
+            path_lower = str(urlsplit(str(target_url or "").strip()).path or "").strip().lower()
+        except Exception:
+            path_lower = str(target_url or "").strip().lower()
+
+        framework_like = any(
+            token in content_lower
+            for token in ("__webpack_require__", "webpackjson", "window.__nuxt__", "definecomponent(", "__vite__", "push([")
+        ) or any(token in path_lower for token in ("/_nuxt/", ".chunk.", "/assets/", "/static/js/"))
+
+        if risk_type_text == "sensitive_info":
+            secret_pattern = re.compile(
+                r"(?i)(api[_-]?key|access[_-]?key|secret(?:[_-]?key)?|client[_-]?secret|private[_-]?key|authorization|token)"
+                r"\s*['\"]?\s*[:=]\s*['\"]([A-Za-z0-9_./:=+~-]{16,256})['\"]"
+            )
+            secret_match = secret_pattern.search(content)
+            if secret_match:
+                secret_name = str(secret_match.group(1) or "").strip().lower()
+                secret_value = str(secret_match.group(2) or "").strip()
+                if secret_value and not secret_value.lower().startswith(("http://", "https://")) and "${" not in secret_value:
+                    context_snippet = cls._extract_js_context_snippet(content, secret_match.group(0), fallback_keywords=[secret_name])
+                    high_conf_tokens = ("private_key", "private-key", "client_secret", "secret_key", "access_key")
+                    if any(token in secret_name for token in high_conf_tokens):
+                        return {
+                            "decision": "verified",
+                            "confidence": 0.90,
+                            "reason": "JS 上下文发现硬编码 {} 字面量，疑似真实敏感信息泄露".format(secret_name),
+                            "context_snippet": context_snippet,
+                            "tool_trace": "js_context(secret_literal)",
+                        }
+                    return {
+                        "decision": "needs_manual_review",
+                        "confidence": 0.76,
+                        "reason": "JS 上下文发现硬编码 {} 字面量，需人工确认是否为真实凭据".format(secret_name),
+                        "context_snippet": context_snippet,
+                        "tool_trace": "js_context(secret_literal)",
+                    }
+
+            context_snippet = cls._extract_js_context_snippet(
+                content,
+                evidence_seed,
+                fallback_keywords=["secret", "token", "key", "authorization", "localstorage", "sessionstorage"],
+            )
+            context_lower = str(context_snippet or "").lower()
+            template_noise = (
+                bool(re.search(r"(?i)(token|key|secret)\s*[:=]\s*['\"]?\s*\+", context_snippet))
+                or "localstorage[" in context_lower
+                or "sessionstorage[" in context_lower
+                or "location.host" in context_lower
+                or "webcustomize.title" in context_lower
+            )
+            if template_noise:
+                return {
+                    "decision": "likely_false_positive",
+                    "confidence": 0.80,
+                    "reason": "JS 上下文显示命中片段更像变量拼接或本地存储逻辑，未发现硬编码敏感值",
+                    "context_snippet": context_snippet,
+                    "tool_trace": "js_context(secret_noise)",
+                }
+
+        if risk_type_text == "xss" or payload_type_text == "xss_probe":
+            sink_tokens = ("innerhtml", "outerhtml", "document.write", "insertadjacenthtml", ".html(", "eval(", "new function(", "srcdoc")
+            source_tokens = (
+                "location.search",
+                "location.hash",
+                "document.url",
+                "document.cookie",
+                "window.name",
+                "localstorage",
+                "sessionstorage",
+                "postmessage",
+            )
+            has_sink = any(token in content_lower for token in sink_tokens)
+            has_source = any(token in content_lower for token in source_tokens)
+            context_snippet = cls._extract_js_context_snippet(content, evidence_seed, fallback_keywords=list(sink_tokens) + list(source_tokens))
+            if has_sink and has_source:
+                return {
+                    "decision": "needs_manual_review",
+                    "confidence": 0.77,
+                    "reason": "JS 上下文同时出现用户输入源与危险 DOM sink，需人工确认是否存在可控链路",
+                    "context_snippet": context_snippet,
+                    "tool_trace": "js_context(dom_chain)",
+                }
+            if (not has_sink) and framework_like:
+                return {
+                    "decision": "likely_false_positive",
+                    "confidence": 0.78,
+                    "reason": "JS 上下文未发现危险 DOM sink，当前更像框架构建产物或静态加载代码",
+                    "context_snippet": context_snippet,
+                    "tool_trace": "js_context(dom_static)",
+                }
+
+        return {}
+
+    @staticmethod
     def _build_probe_url_with_payload(target_url: str, payload: str):
         url_text = str(target_url or "").strip()
         payload_text = str(payload or "").strip()
@@ -4764,13 +4926,41 @@ class WebSiteFetch(object):
                 decision = "needs_manual_review"
                 confidence = 0.48
                 reason = "目标受访问控制保护（{}），建议结合登录态复核".format(status_code)
-            if probe_error:
-                reason = "{}；探针异常：{}".format(reason, probe_error)
 
             evidence_snippet = evidence_seed
             if not evidence_snippet:
                 evidence_source = probe_body_excerpt or base_body_excerpt
                 evidence_snippet = self._clip_text(evidence_source, self.AI_PEN_TEST_EVIDENCE_MAX)
+
+            js_context_ret = self._analyze_ai_pen_js_context(
+                target_url=target_url,
+                body_text=body_text,
+                headers=header_obj,
+                risk_type=risk_type,
+                payload_type=payload_type,
+                evidence_seed=evidence_seed,
+            )
+            if isinstance(js_context_ret, dict) and js_context_ret:
+                js_trace = str(js_context_ret.get("tool_trace", "") or "").strip()
+                if js_trace:
+                    tool_trace_parts.append(js_trace)
+                js_context_snippet = self._clip_text(
+                    js_context_ret.get("context_snippet", ""),
+                    self.AI_PEN_TEST_EVIDENCE_MAX,
+                )
+                if js_context_snippet:
+                    evidence_snippet = js_context_snippet
+                js_reason = self._clip_text(js_context_ret.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
+                if js_reason:
+                    reason = "{}；JS上下文：{}".format(reason, js_reason) if reason else "JS上下文：{}".format(js_reason)
+                js_decision = self._normalize_ai_pen_decision(js_context_ret.get("decision"), default_value="")
+                if js_decision:
+                    decision = js_decision
+                    confidence = self._clamp_ai_pen_confidence(js_context_ret.get("confidence"), confidence)
+
+            if probe_error:
+                reason = "{}；探针异常：{}".format(reason, probe_error)
+            reason = self._clip_text(reason, self.AI_PEN_TEST_REASON_MAX)
 
             verification_step = "http_fetch_replay"
             if mcp_enable and max_tool_calls > 1 and payload_type == "idor_probe":
