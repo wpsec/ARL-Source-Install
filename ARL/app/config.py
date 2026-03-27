@@ -410,6 +410,8 @@ def refresh_runtime_config_best_effort(force=False):
 
         if arl_conf.get("AFROG_SEVERITY") is not None:
             Config.AFROG_SEVERITY = str(arl_conf.get("AFROG_SEVERITY") or "").strip().lower()
+        if arl_conf.get("POC_UPDATE_PROXY") is not None:
+            Config.POC_UPDATE_PROXY = str(arl_conf.get("POC_UPDATE_PROXY") or "").strip()
         if arl_conf.get("SQLMAP_BIN") is not None:
             Config.SQLMAP_BIN = str(arl_conf.get("SQLMAP_BIN") or "").strip()
         if arl_conf.get("HTTPX_BIN") is not None:
@@ -462,6 +464,7 @@ def refresh_runtime_config_best_effort(force=False):
         Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
         Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
         Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
+        Config.POC_UPDATE_PROXY = env_str("ARL_POC_UPDATE_PROXY", Config.POC_UPDATE_PROXY).strip()
         Config.SQLMAP_BIN = env_str("ARL_SQLMAP_BIN", Config.SQLMAP_BIN).strip()
         Config.HTTPX_BIN = env_str("ARL_HTTPX_BIN", Config.HTTPX_BIN).strip()
         Config.AI_PEN_EXTERNAL_TOOL_DIR = env_str(
@@ -594,6 +597,8 @@ class Config(object):
     AFROG_SEARCH_KEYWORDS = ""
     # afrog 严重级别过滤（info/low/medium/high/critical，逗号分隔）
     AFROG_SEVERITY = ""
+    # 更新 nuclei/afrog PoC 仓库时使用的代理（仅影响 git clone/pull）
+    POC_UPDATE_PROXY = ""
     # afrog 扫描并发（-c）
     AFROG_CONCURRENCY = 30
     # afrog 每秒请求上限（-rl）
@@ -1181,6 +1186,8 @@ try:
 
     if y["ARL"].get("AFROG_SEVERITY") is not None:
         Config.AFROG_SEVERITY = str(y["ARL"]["AFROG_SEVERITY"] or "").strip().lower()
+    if y["ARL"].get("POC_UPDATE_PROXY") is not None:
+        Config.POC_UPDATE_PROXY = str(y["ARL"]["POC_UPDATE_PROXY"] or "").strip()
 
     if y["ARL"].get("AFROG_CONCURRENCY") is not None:
         Config.AFROG_CONCURRENCY = safe_positive_int(
@@ -1728,6 +1735,7 @@ try:
     Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
     Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
     Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
+    Config.POC_UPDATE_PROXY = env_str("ARL_POC_UPDATE_PROXY", Config.POC_UPDATE_PROXY).strip()
     Config.SQLMAP_BIN = env_str("ARL_SQLMAP_BIN", Config.SQLMAP_BIN).strip()
     Config.HTTPX_BIN = env_str("ARL_HTTPX_BIN", Config.HTTPX_BIN).strip()
     Config.AI_PEN_EXTERNAL_TOOL_DIR = env_str(

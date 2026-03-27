@@ -332,6 +332,8 @@ ARL:
   AFROG_BIN: "/code/tools/afrog/afrog"
   # afrog PoC 目录（默认 tools/afrog/afrog-pocs）
   AFROG_POCS_DIR: "/code/tools/afrog/afrog-pocs"
+  # 更新 Nuclei/afrog PoC 仓库时使用的代理（仅影响 git clone/pull）
+  POC_UPDATE_PROXY: ""
   # AI渗透外部执行器二进制路径（按需安装）
   SQLMAP_BIN: "sqlmap"
   HTTPX_BIN: "httpx"

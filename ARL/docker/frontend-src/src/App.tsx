@@ -1664,7 +1664,7 @@ const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'risk_name',
     defaultOrder: '-save_date',
-    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'knowledge_hit_tokens', 'reason', 'tool_trace', 'save_date'],
+    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'knowledge_hit_tokens', 'reason', 'tool_trace', 'detail_action', 'save_date'],
     columnLabels: {
       source_collection: '来源',
       risk_type: '类型',
@@ -1679,6 +1679,7 @@ const modules: ModuleConfig[] = [
       knowledge_hit_tokens: '知识命中',
       reason: '说明',
       tool_trace: '工具轨迹',
+      detail_action: '详情',
       save_date: '时间',
     },
     searchFields: [
@@ -6681,6 +6682,11 @@ function TableModuleView({
     rowTitle: string;
     analysis: AiDenoiseResultItem;
   } | null>(null);
+  const [aiPenDetail, setAiPenDetail] = useState<{
+    rowId: string;
+    rowTitle: string;
+    row: any;
+  } | null>(null);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
   const [taskReportExportMenu, setTaskReportExportMenu] = useState('');
@@ -7019,6 +7025,7 @@ function TableModuleView({
     setScreenshotPreview(null);
     setAiDenoiseResultMap({});
     setAiDenoiseDetail(null);
+    setAiPenDetail(null);
   }, [module.id]);
 
   const renderTextWithHyperlink = useCallback((value: string): React.ReactNode => {
@@ -7081,6 +7088,17 @@ function TableModuleView({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [aiDenoiseDetail]);
+
+  useEffect(() => {
+    if (!aiPenDetail) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setAiPenDetail(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [aiPenDetail]);
 
   useEffect(() => {
     if (!keepBottomAfterSizeChangeRef.current || loading) return;
@@ -7960,6 +7978,21 @@ function TableModuleView({
     buildAiDenoiseRowKey,
     buildAiDenoiseRowTitle,
   ]);
+  const closeAiPenDetail = useCallback(() => {
+    setAiPenDetail(null);
+  }, []);
+  const openAiPenDetail = useCallback((row: any, rowIndex: number) => {
+    const rowId = getRowId(row) || `${rowIndex}`;
+    const titleParts = [
+      normalizeValueNoTruncate(row?.risk_name),
+      normalizeValueNoTruncate(row?.target),
+    ].filter((item) => item && item !== '-');
+    setAiPenDetail({
+      rowId,
+      rowTitle: titleParts.length > 0 ? titleParts.join(' | ') : `AI渗透记录 #${rowIndex + 1}`,
+      row,
+    });
+  }, [getRowId]);
 
   useEffect(() => {
     if (!aiDenoiseModuleId) {
@@ -10065,6 +10098,38 @@ function TableModuleView({
                           );
                         }
 
+                        if (module.id === 'ai_pen_test' && (column === 'target' || column === 'vuln_url')) {
+                          const targetRaw = normalizeValueNoTruncate(row?.target);
+                          const vulnUrlRaw = normalizeValueNoTruncate(row?.vuln_url);
+                          const displayText =
+                            column === 'vuln_url'
+                              ? ((vulnUrlRaw && vulnUrlRaw !== '-' ? vulnUrlRaw : targetRaw) || '-')
+                              : (targetRaw || '-');
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[320px] max-w-[760px]">
+                              <div className="min-h-[24px] flex items-center justify-center whitespace-pre-wrap break-all leading-relaxed text-center">
+                                {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
+                                  ? renderTextWithHyperlink(displayText)
+                                  : displayText}
+                              </div>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'ai_pen_test' && column === 'detail_action') {
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <button
+                                type="button"
+                                onClick={() => openAiPenDetail(row, rowIndex)}
+                                className="inline-flex items-center justify-center rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-1.5 text-xs font-semibold text-brand-accent hover:bg-brand-bg/80 transition"
+                              >
+                                查看详情
+                              </button>
+                            </td>
+                          );
+                        }
+
                         if (module.id === 'nuclei_result' && column === 'vuln_url') {
                           const vulnUrlRaw = normalizeValueNoTruncate(row?.vuln_url);
                           const targetRaw = normalizeValueNoTruncate(row?.target);
@@ -11114,6 +11179,176 @@ function TableModuleView({
               <button
                 type="button"
                 onClick={closeAiDenoiseDetail}
+                className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {aiPenDetail ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeAiPenDetail}
+        >
+          <div
+            className="w-full max-w-5xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <h4 className="text-lg font-black">AI渗透详情</h4>
+                <p className="text-xs text-brand-text-muted">仅展示扫描阶段已落库结果，不会因查看详情再次触发 AI 或探针执行。</p>
+                <p className="text-sm font-semibold break-all">{aiPenDetail.rowTitle || '-'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAiPenDetail}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                title="关闭"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[72vh] overflow-auto">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  来源：{formatModuleCellValue('ai_pen_test', 'source_collection', aiPenDetail.row)}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  类型：{normalizeValue(aiPenDetail.row?.risk_type)}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  结论：{formatModuleCellValue('ai_pen_test', 'decision', aiPenDetail.row)}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  状态：{formatModuleCellValue('ai_pen_test', 'status', aiPenDetail.row)}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  验证阶段：{formatModuleCellValue('ai_pen_test', 'verification_step', aiPenDetail.row)}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  探针类型：{formatModuleCellValue('ai_pen_test', 'payload_type', aiPenDetail.row)}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  置信度：{formatModuleCellValue('ai_pen_test', 'confidence', aiPenDetail.row)}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  时间：{normalizeValue(aiPenDetail.row?.save_date)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-black tracking-wide text-brand-text">目标</div>
+                    {normalizeValueNoTruncate(aiPenDetail.row?.target) !== '-' ? (
+                      <button
+                        type="button"
+                        onClick={() => void copyTextToClipboard(normalizeValueNoTruncate(aiPenDetail.row?.target), '目标')}
+                        className="text-xs font-semibold text-brand-accent hover:underline"
+                      >
+                        复制
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="text-sm break-all leading-relaxed text-center">
+                    {renderTextWithHyperlink(normalizeValueNoTruncate(aiPenDetail.row?.target))}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-black tracking-wide text-brand-text">漏洞URL</div>
+                    {normalizeValueNoTruncate(aiPenDetail.row?.vuln_url) !== '-' ? (
+                      <button
+                        type="button"
+                        onClick={() => void copyTextToClipboard(normalizeValueNoTruncate(aiPenDetail.row?.vuln_url), '漏洞URL')}
+                        className="text-xs font-semibold text-brand-accent hover:underline"
+                      >
+                        复制
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="text-sm break-all leading-relaxed text-center">
+                    {renderTextWithHyperlink(
+                      normalizeValueNoTruncate(aiPenDetail.row?.vuln_url) !== '-'
+                        ? normalizeValueNoTruncate(aiPenDetail.row?.vuln_url)
+                        : normalizeValueNoTruncate(aiPenDetail.row?.target)
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                <div className="text-xs font-black tracking-wide text-brand-text">说明</div>
+                <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                  {normalizeValueNoTruncate(aiPenDetail.row?.reason)}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-brand-text">知识命中</div>
+                  {Array.isArray(aiPenDetail.row?.knowledge_hit_tokens) && aiPenDetail.row.knowledge_hit_tokens.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {aiPenDetail.row.knowledge_hit_tokens
+                        .map((item: any) => String(item || '').trim())
+                        .filter((item: string) => item)
+                        .map((item: string, index: number) => (
+                          <span
+                            key={`${index}-${item}`}
+                            className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-brand-text-muted">暂无知识命中</div>
+                  )}
+                </div>
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-brand-text">响应摘要</div>
+                  <div className="space-y-1 text-sm leading-relaxed">
+                    <div>HTTP 状态码：{normalizeValue(aiPenDetail.row?.http_status)}</div>
+                    <div>响应差异：{normalizeValue(aiPenDetail.row?.response_hash_diff)}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                <div className="text-xs font-black tracking-wide text-brand-text">证据片段</div>
+                <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                  {normalizeValueNoTruncate(aiPenDetail.row?.evidence_snippet)}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">工具轨迹</div>
+                  {normalizeValueNoTruncate(aiPenDetail.row?.tool_trace) !== '-' ? (
+                    <button
+                      type="button"
+                      onClick={() => void copyTextToClipboard(normalizeValueNoTruncate(aiPenDetail.row?.tool_trace), '工具轨迹')}
+                      className="text-xs font-semibold text-brand-accent hover:underline"
+                    >
+                      复制
+                    </button>
+                  ) : null}
+                </div>
+                <div className="text-sm whitespace-pre-wrap break-all leading-relaxed font-mono">
+                  {normalizeValueNoTruncate(aiPenDetail.row?.tool_trace)}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-brand-border bg-brand-bg/30 flex justify-end">
+              <button
+                type="button"
+                onClick={closeAiPenDetail}
                 className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
               >
                 关闭
@@ -12618,6 +12853,7 @@ function ConfigConsoleView({ token }: { token: string }) {
   const [nucleiBulkSize, setNucleiBulkSize] = useState(30);
   const [afrogConcurrency, setAfrogConcurrency] = useState(30);
   const [afrogRateLimit, setAfrogRateLimit] = useState(30);
+  const [pocUpdateProxy, setPocUpdateProxy] = useState('');
   const [urlfinderUrlProbeEnable, setUrlfinderUrlProbeEnable] = useState(true);
   const [urlfinderUrlProbeMaxTargets, setUrlfinderUrlProbeMaxTargets] = useState(800);
   const [urlfinderUrlProbeConcurrency, setUrlfinderUrlProbeConcurrency] = useState(20);
@@ -12825,6 +13061,7 @@ function ConfigConsoleView({ token }: { token: string }) {
       setNucleiBulkSize(Number(scanConfig.nuclei_bulk_size || 30));
       setAfrogConcurrency(Number(scanConfig.afrog_concurrency || 30));
       setAfrogRateLimit(Number(scanConfig.afrog_rate_limit || 30));
+      setPocUpdateProxy(String(scanConfig.poc_update_proxy || ''));
       setUrlfinderUrlProbeEnable(Boolean(scanConfig.urlfinder_url_probe_enable ?? true));
       setUrlfinderUrlProbeMaxTargets(Number(scanConfig.urlfinder_url_probe_max_targets || 800));
       setUrlfinderUrlProbeConcurrency(Number(scanConfig.urlfinder_url_probe_concurrency || 20));
@@ -12985,6 +13222,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             nuclei_bulk_size: Math.floor(nucleiBulkSize),
             afrog_concurrency: Math.floor(afrogConcurrency),
             afrog_rate_limit: Math.floor(afrogRateLimit),
+            poc_update_proxy: String(pocUpdateProxy || '').trim(),
             urlfinder_url_probe_enable: Boolean(urlfinderUrlProbeEnable),
             urlfinder_url_probe_max_targets: Math.floor(urlfinderUrlProbeMaxTargets),
             urlfinder_url_probe_concurrency: Math.floor(urlfinderUrlProbeConcurrency),
@@ -13024,6 +13262,7 @@ function ConfigConsoleView({ token }: { token: string }) {
       setNucleiBulkSize(Number(savedConfig.nuclei_bulk_size || nucleiBulkSize));
       setAfrogConcurrency(Number(savedConfig.afrog_concurrency || afrogConcurrency));
       setAfrogRateLimit(Number(savedConfig.afrog_rate_limit || afrogRateLimit));
+      setPocUpdateProxy(String(savedConfig.poc_update_proxy || pocUpdateProxy));
       setUrlfinderUrlProbeEnable(Boolean(savedConfig.urlfinder_url_probe_enable ?? urlfinderUrlProbeEnable));
       setUrlfinderUrlProbeMaxTargets(Number(savedConfig.urlfinder_url_probe_max_targets || urlfinderUrlProbeMaxTargets));
       setUrlfinderUrlProbeConcurrency(Number(savedConfig.urlfinder_url_probe_concurrency || urlfinderUrlProbeConcurrency));
@@ -13146,11 +13385,13 @@ function ConfigConsoleView({ token }: { token: string }) {
       const commit = String(data?.commit || '').trim();
       const commitSubject = String(data?.commit_subject || '').trim();
       const backupPath = String(data?.backup_path || '').trim();
+      const proxy = String(data?.proxy || '').trim();
       const commitShort = commit ? commit.slice(0, 12) : '-';
       const summary = [
         branch ? `分支: ${branch}` : '',
         `commit: ${commitShort}`,
         commitSubject ? `说明: ${commitSubject}` : '',
+        proxy ? `代理: ${proxy}` : '',
         repoDir ? `目录: ${repoDir}` : '',
         backupPath ? `备份: ${backupPath}` : '',
       ]
@@ -13161,7 +13402,10 @@ function ConfigConsoleView({ token }: { token: string }) {
       setSuccess(`${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新成功（${summary}）`);
     } catch (err: any) {
       const baseMsg = err?.message || `${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新失败`;
-      setError(`${baseMsg}。因为是从 GitHub 拉取，如果容易超时，建议尝试前往所在目录通过 Git 命令或离线包手动更新。`);
+      const proxyHint = String(pocUpdateProxy || '').trim()
+        ? '当前已带代理重试，如仍失败请检查代理可达性或仓库连通性。'
+        : '如网络受限，可先在“PoC 更新代理”中配置 http/https/socks5 代理后重试。';
+      setError(`${baseMsg}。因为是从 GitHub 拉取，${proxyHint}`);
     } finally {
       if (isNuclei) {
         setNucleiPocUpdating(false);
@@ -13235,6 +13479,19 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
         <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
           PoC 更新说明：按钮会调用 git 同步远端仓库（nuclei: projectdiscovery/nuclei-templates，afrog: zan8in/afrog-pocs）。
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-3 items-center rounded-xl border border-brand-border bg-brand-bg/25 px-3 py-3">
+          <div className="space-y-1">
+            <div className="text-xs font-black tracking-wide text-brand-text">PoC 更新代理</div>
+            <div className="text-[11px] text-brand-text-muted">仅作用于 Nuclei / afrog PoC 仓库更新时的 `git clone/pull`。</div>
+          </div>
+          <input
+            type="text"
+            value={pocUpdateProxy}
+            onChange={(event) => setPocUpdateProxy(event.target.value)}
+            className={compactFieldInputClass}
+            placeholder="支持 http:// / https:// / socks5://"
+          />
         </div>
 
         {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
@@ -13860,6 +14117,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     label: string;
     base_url?: string;
     default_model?: string;
+    default_reasoning_model?: string;
   };
 
   type AiCustomCompatProvider = {
@@ -13885,6 +14143,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     base_url: string;
     api_key: string;
     model: string;
+    reasoning_model: string;
     proxy: string;
     timeout_sec: number;
     temperature: number;
@@ -13998,12 +14257,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   };
 
   const defaultProviderPresets: AiProviderPreset[] = [
-    { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', default_model: 'qwen-plus' },
-    { id: 'kimi', label: 'Kimi', base_url: 'https://api.moonshot.cn/v1', default_model: 'moonshot-v1-8k' },
-    { id: 'openai', label: 'OpenAI-GPT', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o-mini' },
-    { id: 'glm', label: '智谱 GLM', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4-flash' },
-    { id: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.com/v1', default_model: 'deepseek-chat' },
-    { id: 'custom_compatible', label: 'OpenAI 兼容接口', base_url: '', default_model: '' },
+    { id: 'qwen', label: '通义千问', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', default_model: 'qwen-plus', default_reasoning_model: '' },
+    { id: 'kimi', label: 'Kimi', base_url: 'https://api.moonshot.cn/v1', default_model: 'moonshot-v1-8k', default_reasoning_model: '' },
+    { id: 'openai', label: 'OpenAI-GPT', base_url: 'https://api.openai.com/v1', default_model: 'gpt-4o-mini', default_reasoning_model: '' },
+    { id: 'glm', label: '智谱 GLM', base_url: 'https://open.bigmodel.cn/api/paas/v4', default_model: 'glm-4-flash', default_reasoning_model: '' },
+    { id: 'deepseek', label: 'DeepSeek', base_url: 'https://api.deepseek.com/v1', default_model: 'deepseek-chat', default_reasoning_model: 'DeepSeek-R1' },
+    { id: 'custom_compatible', label: 'OpenAI 兼容接口', base_url: '', default_model: '', default_reasoning_model: '' },
   ];
 
   const defaultPromptTemplates: AiPromptTemplate[] = [
@@ -14154,6 +14413,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           base_url: String(item?.base_url || '').trim() || String(preset?.base_url || ''),
           api_key: String(item?.api_key || ''),
           model: String(item?.model || '').trim() || String(preset?.default_model || ''),
+          reasoning_model: String(item?.reasoning_model || '').trim() || String(preset?.default_reasoning_model || ''),
           proxy: String(item?.proxy || item?.proxy_url || '').trim(),
           timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
           temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
@@ -14179,6 +14439,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         base_url: String(legacyRawForm?.base_url || '').trim() || String(fallbackPreset?.base_url || ''),
         api_key: String(legacyRawForm?.api_key || ''),
         model: String(legacyRawForm?.model || '').trim() || String(fallbackPreset?.default_model || ''),
+        reasoning_model: String(legacyRawForm?.reasoning_model || '').trim() || String(fallbackPreset?.default_reasoning_model || ''),
         proxy: String(legacyRawForm?.proxy_url || legacyRawForm?.proxy || '').trim(),
         timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec : 40,
         temperature: Number.isFinite(temperature) && temperature >= 0 ? temperature : 0.2,
@@ -14408,11 +14669,13 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const [providerConfigDraft, setProviderConfigDraft] = useState<{
     api_key: string;
     model: string;
+    reasoning_model: string;
     base_url: string;
     proxy: string;
   }>({
     api_key: '',
     model: '',
+    reasoning_model: '',
     base_url: '',
     proxy: '',
   });
@@ -14671,6 +14934,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       base_url: String(currentForm.base_url || '').trim(),
       api_key: String(currentForm.api_key || '').trim(),
       model: String(currentForm.model || '').trim(),
+      reasoning_model: String(
+        profiles.find((item) => item.id === activeModelProfileId)?.reasoning_model || ''
+      ).trim(),
       proxy: String(currentForm.proxy_url || '').trim(),
       timeout_sec: Number.isFinite(timeoutSec) && timeoutSec > 0 ? Math.floor(timeoutSec) : 40,
       temperature: Number.isFinite(temperature) && temperature >= 0 ? Number(temperature.toFixed(2)) : 0.2,
@@ -14706,6 +14972,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       base_url: normalizedActiveProfile.base_url,
       api_key: normalizedActiveProfile.api_key,
       model: normalizedActiveProfile.model,
+      reasoning_model: normalizedActiveProfile.reasoning_model,
       proxy_url: normalizedActiveProfile.proxy,
       timeout_sec: normalizedActiveProfile.timeout_sec,
       temperature: normalizedActiveProfile.temperature,
@@ -14957,6 +15224,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         base_url: String(preset?.base_url || ''),
         api_key: '',
         model: String(preset?.default_model || ''),
+        reasoning_model: String(preset?.default_reasoning_model || ''),
         proxy: '',
         timeout_sec: 40,
         temperature: 0.2,
@@ -15006,6 +15274,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setProviderConfigDraft({
         api_key: String(nextProfile.api_key || ''),
         model: String(nextProfile.model || ''),
+        reasoning_model: String(nextProfile.reasoning_model || ''),
         base_url: String(nextProfile.base_url || ''),
         proxy: String(nextProfile.proxy || ''),
       });
@@ -15038,6 +15307,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         provider: providerId,
         base_url: String(providerConfigDraft.base_url || '').trim() || String(fallbackPreset?.base_url || ''),
         model: String(providerConfigDraft.model || '').trim() || String(fallbackPreset?.default_model || ''),
+        reasoning_model: String(providerConfigDraft.reasoning_model || '').trim(),
         proxy: String(providerConfigDraft.proxy || '').trim(),
         api_key: providerConfigApiKeyEdited ? String(providerConfigDraft.api_key || '') : String(targetProfile.api_key || ''),
       };
@@ -15078,6 +15348,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     providerConfigDraft.api_key,
     providerConfigDraft.base_url,
     providerConfigDraft.model,
+    providerConfigDraft.reasoning_model,
     providerConfigDraft.proxy,
     providerConfigProfileId,
     providerConfigProviderId,
@@ -15618,6 +15889,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 </div>
                 <div className="text-[11px] text-brand-text-muted space-y-1">
                   <div className="truncate">分析模型：{profile?.model || provider.default_model || '-'}</div>
+                  <div className="truncate">思考模型：{profile?.reasoning_model || provider.default_reasoning_model || '-'}</div>
                   <div className="font-mono truncate">API Base URL：{profile?.base_url || provider.base_url || '-'}</div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -16386,6 +16658,19 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   onChange={(event) => setProviderConfigDraft((prev) => ({ ...prev, model: event.target.value }))}
                   className={aiInputMonoClass}
                   placeholder="例如 deepseek-chat / qwen-plus / gpt-4o-mini"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="provider-config-reasoning-model" className="text-xs font-bold text-brand-text-muted block">
+                  思考模型
+                </label>
+                <input
+                  id="provider-config-reasoning-model"
+                  value={providerConfigDraft.reasoning_model}
+                  onChange={(event) => setProviderConfigDraft((prev) => ({ ...prev, reasoning_model: event.target.value }))}
+                  className={aiInputMonoClass}
+                  placeholder="例如 DeepSeek-R1（当前仅保存配置，不自动切换执行链路）"
                 />
               </div>
 

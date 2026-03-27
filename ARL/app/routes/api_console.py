@@ -421,36 +421,42 @@ AI_PROVIDER_PRESETS = [
         'label': '通义千问',
         'base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         'default_model': 'qwen-plus',
+        'default_reasoning_model': '',
     },
     {
         'id': 'kimi',
         'label': 'Kimi',
         'base_url': 'https://api.moonshot.cn/v1',
         'default_model': 'moonshot-v1-8k',
+        'default_reasoning_model': '',
     },
     {
         'id': 'openai',
         'label': 'OpenAI-GPT',
         'base_url': 'https://api.openai.com/v1',
         'default_model': 'gpt-4o-mini',
+        'default_reasoning_model': '',
     },
     {
         'id': 'glm',
         'label': '智谱 GLM',
         'base_url': 'https://open.bigmodel.cn/api/paas/v4',
         'default_model': 'glm-4-flash',
+        'default_reasoning_model': '',
     },
     {
         'id': 'deepseek',
         'label': 'DeepSeek',
         'base_url': 'https://api.deepseek.com/v1',
         'default_model': 'deepseek-chat',
+        'default_reasoning_model': 'DeepSeek-R1',
     },
     {
         'id': 'custom_compatible',
         'label': 'OpenAI 兼容接口',
         'base_url': '',
         'default_model': '',
+        'default_reasoning_model': '',
     },
 ]
 AI_PROVIDER_PRESET_MAP = {item.get('id'): item for item in AI_PROVIDER_PRESETS}
@@ -1040,6 +1046,7 @@ def _default_ai_model_profiles():
             'base_url': str(preset.get('base_url') or ''),
             'api_key': '',
             'model': str(preset.get('default_model') or ''),
+            'reasoning_model': str(preset.get('default_reasoning_model') or ''),
             'proxy': '',
             'timeout_sec': 40,
             'temperature': 0.2,
@@ -1069,6 +1076,9 @@ def _normalize_ai_model_profiles(raw_profiles, legacy_ai_conf=None):
             provider_preset = AI_PROVIDER_PRESET_MAP.get(provider_id, {})
             base_url = str(item.get('base_url') or '').strip() or str(provider_preset.get('base_url') or '')
             model = str(item.get('model') or '').strip() or str(provider_preset.get('default_model') or '')
+            reasoning_model = str(item.get('reasoning_model') or '').strip()
+            if not reasoning_model:
+                reasoning_model = str(provider_preset.get('default_reasoning_model') or '').strip()
 
             profiles.append(
                 {
@@ -1078,6 +1088,7 @@ def _normalize_ai_model_profiles(raw_profiles, legacy_ai_conf=None):
                     'base_url': base_url,
                     'api_key': str(item.get('api_key') or '').strip(),
                     'model': model,
+                    'reasoning_model': reasoning_model,
                     'proxy': str(item.get('proxy') or item.get('proxy_url') or '').strip(),
                     'timeout_sec': _safe_int(item.get('timeout_sec'), 40, min_value=1),
                     'temperature': _safe_float(item.get('temperature'), 0.2, min_value=0.0),
@@ -1097,6 +1108,7 @@ def _normalize_ai_model_profiles(raw_profiles, legacy_ai_conf=None):
                 'base_url': str(legacy_ai_conf.get('BASE_URL') or '').strip() or str(provider_preset.get('base_url') or ''),
                 'api_key': str(legacy_ai_conf.get('API_KEY') or '').strip(),
                 'model': str(legacy_ai_conf.get('MODEL') or '').strip() or str(provider_preset.get('default_model') or ''),
+                'reasoning_model': str(legacy_ai_conf.get('REASONING_MODEL') or '').strip() or str(provider_preset.get('default_reasoning_model') or '').strip(),
                 'proxy': str(legacy_ai_conf.get('PROXY_URL') or legacy_ai_conf.get('PROXY') or '').strip(),
                 'timeout_sec': _safe_int(legacy_ai_conf.get('TIMEOUT_SEC'), 40, min_value=1),
                 'temperature': _safe_float(legacy_ai_conf.get('TEMPERATURE'), 0.2, min_value=0.0),
@@ -1212,6 +1224,7 @@ def _extract_ai_config(config_obj):
         'base_url': str(active_profile.get('base_url') or '').strip(),
         'api_key': str(active_profile.get('api_key') or '').strip(),
         'model': str(active_profile.get('model') or '').strip(),
+        'reasoning_model': str(active_profile.get('reasoning_model') or ai_conf.get('REASONING_MODEL') or '').strip(),
         'proxy_url': str(active_profile.get('proxy') or ai_conf.get('PROXY_URL') or '').strip(),
         'timeout_sec': _safe_int(active_profile.get('timeout_sec'), 40, min_value=1),
         'temperature': _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0),
@@ -1475,6 +1488,7 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['BASE_URL'] = str(active_profile.get('base_url') or '').strip()
     ai_conf['API_KEY'] = str(active_profile.get('api_key') or '').strip()
     ai_conf['MODEL'] = str(active_profile.get('model') or '').strip()
+    ai_conf['REASONING_MODEL'] = str(active_profile.get('reasoning_model') or '').strip()
     ai_conf['PROXY_URL'] = str(active_profile.get('proxy') or '').strip()
     ai_conf['TIMEOUT_SEC'] = _safe_int(active_profile.get('timeout_sec'), 40, min_value=1)
     ai_conf['TEMPERATURE'] = _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0)
@@ -4040,14 +4054,35 @@ def _normalize_git_remote_url(remote_url: str) -> str:
     return url.lower()
 
 
-def _run_git_command(git_bin: str, args: list, cwd: Path = None, timeout: int = POC_REPO_UPDATE_TIMEOUT_SEC):
+def _build_poc_update_proxy_env(proxy_url: str):
+    proxy_text = str(proxy_url or '').strip()
+    if not proxy_text:
+        return {}
+
+    env_patch = {
+        'http_proxy': proxy_text,
+        'https_proxy': proxy_text,
+        'all_proxy': proxy_text,
+        'HTTP_PROXY': proxy_text,
+        'HTTPS_PROXY': proxy_text,
+        'ALL_PROXY': proxy_text,
+    }
+    return env_patch
+
+
+def _run_git_command(git_bin: str, args: list, cwd: Path = None, timeout: int = POC_REPO_UPDATE_TIMEOUT_SEC, env_extra=None):
     """
     执行 git 命令并返回 (rc, stdout, stderr)。
     """
     command = [git_bin] + list(args or [])
+    runtime_env = None
+    if isinstance(env_extra, dict) and env_extra:
+        runtime_env = os.environ.copy()
+        runtime_env.update({str(key): str(value) for key, value in env_extra.items() if value is not None})
     completed = subprocess.run(
         command,
         cwd=str(cwd) if cwd else None,
+        env=runtime_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
@@ -4167,7 +4202,7 @@ def _collect_repo_head(git_bin: str, repo_dir: Path):
     }
 
 
-def _sync_poc_repo(repo_type: str, repo_url: str):
+def _sync_poc_repo(repo_type: str, repo_url: str, proxy_url: str = ''):
     """
     使用 git 更新 PoC 仓库：
     - 已存在 git 仓库：fetch + pull
@@ -4179,6 +4214,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
 
     repo_dir = _resolve_poc_repo_dir(repo_type)
     repo_dir.parent.mkdir(parents=True, exist_ok=True)
+    git_env = _build_poc_update_proxy_env(proxy_url)
 
     operations = []
     current_remote = ''
@@ -4209,6 +4245,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
             git_bin,
             ['clone', '--depth', '1', repo_url, str(repo_dir)],
             timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
+            env_extra=git_env,
         )
         operations.append('clone')
         if rc != 0:
@@ -4219,6 +4256,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
             ['remote', 'get-url', 'origin'],
             cwd=repo_dir,
             timeout=30,
+            env_extra=git_env,
         )
         if rc == 0:
             current_remote = str(stdout or '').strip()
@@ -4234,6 +4272,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
                     ['remote', 'set-url', 'origin', repo_url],
                     cwd=repo_dir,
                     timeout=30,
+                    env_extra=git_env,
                 )
                 operations.append('set-origin-url')
             else:
@@ -4242,6 +4281,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
                     ['remote', 'add', 'origin', repo_url],
                     cwd=repo_dir,
                     timeout=30,
+                    env_extra=git_env,
                 )
                 operations.append('add-origin')
             if rc != 0:
@@ -4254,6 +4294,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
             ['fetch', 'origin', '--prune'],
             cwd=repo_dir,
             timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
+            env_extra=git_env,
         )
         operations.append('fetch')
         if rc != 0:
@@ -4266,6 +4307,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
             ['rev-parse', '--abbrev-ref', 'HEAD'],
             cwd=repo_dir,
             timeout=30,
+            env_extra=git_env,
         )
         current_branch = str(current_branch or '').strip() if rc == 0 else ''
         if (not current_branch) or current_branch == 'HEAD':
@@ -4274,6 +4316,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
                 ['checkout', branch],
                 cwd=repo_dir,
                 timeout=60,
+                env_extra=git_env,
             )
             if rc != 0:
                 rc, stdout, stderr = _run_git_command(
@@ -4281,6 +4324,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
                     ['checkout', '-b', branch, '--track', 'origin/{}'.format(branch)],
                     cwd=repo_dir,
                     timeout=60,
+                    env_extra=git_env,
                 )
             operations.append('checkout')
             if rc != 0:
@@ -4291,6 +4335,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
             ['pull', '--ff-only', 'origin', branch],
             cwd=repo_dir,
             timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
+            env_extra=git_env,
         )
         operations.append('pull')
         if rc != 0:
@@ -4298,7 +4343,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
 
     head = _collect_repo_head(git_bin, repo_dir)
     if not current_remote:
-        rc, stdout, _ = _run_git_command(git_bin, ['remote', 'get-url', 'origin'], cwd=repo_dir, timeout=30)
+        rc, stdout, _ = _run_git_command(git_bin, ['remote', 'get-url', 'origin'], cwd=repo_dir, timeout=30, env_extra=git_env)
         if rc == 0:
             current_remote = str(stdout or '').strip()
 
@@ -4314,6 +4359,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str):
         'repo_created': bool(not repo_exists),
         'remote_changed': remote_changed,
         'backup_path': backup_path,
+        'proxy': str(proxy_url or '').strip(),
     }
 
 
@@ -5195,6 +5241,7 @@ def _extract_scan_config(config_obj):
         arl_config.get('AFROG_RATE_LIMIT'),
         Config.AFROG_RATE_LIMIT
     )
+    poc_update_proxy = str(arl_config.get('POC_UPDATE_PROXY') or getattr(Config, 'POC_UPDATE_PROXY', '') or '').strip()
     urlfinder_url_probe_enable = _safe_bool(
         arl_config.get('URLFINDER_URL_PROBE_ENABLE'),
         Config.URLFINDER_URL_PROBE_ENABLE
@@ -5247,6 +5294,7 @@ def _extract_scan_config(config_obj):
         'nuclei_bulk_size': nuclei_bulk_size,
         'afrog_concurrency': afrog_concurrency,
         'afrog_rate_limit': afrog_rate_limit,
+        'poc_update_proxy': poc_update_proxy,
         'urlfinder_url_probe_enable': urlfinder_url_probe_enable,
         'urlfinder_url_probe_max_targets': urlfinder_url_probe_max_targets,
         'urlfinder_url_probe_concurrency': urlfinder_url_probe_concurrency,
@@ -5354,6 +5402,7 @@ def _merge_scan_config(config_obj, scan_config):
         scan_config.get('afrog_rate_limit'),
         Config.AFROG_RATE_LIMIT
     )
+    poc_update_proxy = str(scan_config.get('poc_update_proxy') or '').strip()
     urlfinder_url_probe_enable = _safe_bool(
         scan_config.get('urlfinder_url_probe_enable'),
         Config.URLFINDER_URL_PROBE_ENABLE
@@ -5409,6 +5458,7 @@ def _merge_scan_config(config_obj, scan_config):
     config_obj['ARL']['NUCLEI_BULK_SIZE'] = nuclei_bulk_size
     config_obj['ARL']['AFROG_CONCURRENCY'] = afrog_concurrency
     config_obj['ARL']['AFROG_RATE_LIMIT'] = afrog_rate_limit
+    config_obj['ARL']['POC_UPDATE_PROXY'] = poc_update_proxy
     config_obj['ARL']['URLFINDER_URL_PROBE_ENABLE'] = urlfinder_url_probe_enable
     config_obj['ARL']['URLFINDER_URL_PROBE_MAX_TARGETS'] = urlfinder_url_probe_max_targets
     config_obj['ARL']['URLFINDER_URL_PROBE_CONCURRENCY'] = urlfinder_url_probe_concurrency
@@ -6432,7 +6482,11 @@ class ApiConsoleNucleiPocUpdate(ARLResource):
     def post(self):
         try:
             with CONFIG_LOCK:
-                update_info = _sync_poc_repo('nuclei', NUCLEI_TEMPLATE_REPO_URL)
+                update_info = _sync_poc_repo(
+                    'nuclei',
+                    NUCLEI_TEMPLATE_REPO_URL,
+                    proxy_url=str(getattr(Config, 'POC_UPDATE_PROXY', '') or '').strip(),
+                )
         except Exception as exc:
             logger.exception('update nuclei poc failed: %s', exc)
             return utils.build_ret(
@@ -6464,7 +6518,11 @@ class ApiConsoleAfrogPocUpdate(ARLResource):
     def post(self):
         try:
             with CONFIG_LOCK:
-                update_info = _sync_poc_repo('afrog', AFROG_POC_REPO_URL)
+                update_info = _sync_poc_repo(
+                    'afrog',
+                    AFROG_POC_REPO_URL,
+                    proxy_url=str(getattr(Config, 'POC_UPDATE_PROXY', '') or '').strip(),
+                )
         except Exception as exc:
             logger.exception('update afrog poc failed: %s', exc)
             return utils.build_ret(
