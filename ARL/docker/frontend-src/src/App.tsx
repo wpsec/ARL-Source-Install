@@ -15976,27 +15976,27 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           }}
         >
           <div
-            className="w-full max-w-4xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            className="w-full max-w-4xl max-h-[92vh] bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
-              <div className="text-sm font-black tracking-wide">AI对话日志详情</div>
+              <div className="text-sm font-black tracking-wide min-w-0 break-all">AI对话日志详情</div>
               <button
                 type="button"
                 onClick={() => setUsageLogDetail(null)}
-                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
+                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="p-5 space-y-3 overflow-y-auto min-h-0">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-brand-text-muted">
-                <div>时间：{usageLogDetail.created_at || '-'}</div>
-                <div>场景：{usageLogDetail.scene_label || usageLogDetail.scene || '-'}</div>
-                <div>状态：{usageLogDetail.status === 'ok' ? '成功' : usageLogDetail.status === 'skipped' ? '跳过' : '失败'}</div>
-                <div>模型：{usageLogDetail.provider || '-'} / {usageLogDetail.model || '-'}</div>
-                <div>配置：{usageLogDetail.profile || '-'}</div>
-                <div>Tokens：Total {usageLogDetail.total_tokens}（P {usageLogDetail.prompt_tokens} / C {usageLogDetail.completion_tokens}）</div>
+                <div className="break-all">时间：{usageLogDetail.created_at || '-'}</div>
+                <div className="break-all">场景：{usageLogDetail.scene_label || usageLogDetail.scene || '-'}</div>
+                <div className="break-all">状态：{usageLogDetail.status === 'ok' ? '成功' : usageLogDetail.status === 'skipped' ? '跳过' : '失败'}</div>
+                <div className="break-all">模型：{usageLogDetail.provider || '-'} / {usageLogDetail.model || '-'}</div>
+                <div className="break-all">配置：{usageLogDetail.profile || '-'}</div>
+                <div className="break-all">Tokens：Total {usageLogDetail.total_tokens}（P {usageLogDetail.prompt_tokens} / C {usageLogDetail.completion_tokens}）</div>
               </div>
               <div className="space-y-2 rounded-xl border border-brand-border bg-brand-bg/35 p-3">
                 <div className="text-xs font-semibold">用户输入</div>
