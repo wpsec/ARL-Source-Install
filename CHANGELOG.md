@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-27（v4.3.19 ~ v4.3.22）
+## 2026-03-27（v4.3.19 ~ v4.3.23）
+
+- `[v4.3.23]` AI渗透测试接入 `tools/poc` 知识索引命中增强：运行时自动加载 `ai_pen_knowledge_index`（支持 `ARL_AI_PEN_KNOWLEDGE_INDEX_FILE` 覆盖），候选验证阶段按命中 token 提升优先级，并将命中 token/样例路径写入 `ai_pen_test_result` 与 `ai_pen_test_plan/exec` 日志元数据，提升“为何优先验证该目标”的可解释性
 
 - `[v4.3.22]` AI 渗透测试接入最小 MCP 执行链：新增 `AI_PEN_TEST_ENABLE / AI_PEN_MCP_ENABLE / AI_PEN_MCP_MAX_TOOL_CALLS / AI_PEN_MCP_TIMEOUT_SEC` 配置并贯通前后端，`AI管理` 可直接开关与调参；`run_ai_penetration_test` 增强为“基线重放 + Payload 探针”双阶段验证，支持证据命中、回显检测、响应差异判断与 WAF 智能跳过标注，结果与 AI 日志同步记录 MCP 运行参数
 - `[v4.3.22]` AI 渗透知识索引脚本新增：新增 `ARL/app/tools/build_ai_pen_knowledge_index.py`，支持从 `tools/poc/POC / vulhub / PoC-in-GitHub` 构建轻量 token 索引并默认输出到 `ARL/docker/ai/sop/ai_pen_knowledge_index.json`，为后续 AI+MCP 渗透验证提供可检索语料底座

@@ -231,7 +231,14 @@ class WebSiteFetch(object):
     AI_POC_INDEX_ENV_KEY = "ARL_AI_POC_INDEX_FILE"
     AI_POC_INDEX_REL_PATH = os.path.join("docker", "ai", "sop", "poc_index.json")
     AI_POC_INDEX_REL_PATH_LEGACY = os.path.join("docker", "ai", "poc-index", "poc_index.json")
+    AI_PEN_KNOWLEDGE_INDEX_ENV_KEY = "ARL_AI_PEN_KNOWLEDGE_INDEX_FILE"
+    AI_PEN_KNOWLEDGE_INDEX_REL_PATH = os.path.join("docker", "ai", "sop", "ai_pen_knowledge_index.json")
     _AI_POC_INDEX_CACHE = {
+        "path": "",
+        "mtime": 0.0,
+        "data": {},
+    }
+    _AI_PEN_KNOWLEDGE_INDEX_CACHE = {
         "path": "",
         "mtime": 0.0,
         "data": {},
@@ -999,6 +1006,163 @@ class WebSiteFetch(object):
         }
         cls._AI_POC_INDEX_CACHE = {"path": index_path, "mtime": mtime, "data": normalized_data}
         return normalized_data, index_path
+
+    @classmethod
+    def _resolve_ai_pen_knowledge_index_path(cls) -> str:
+        env_path = str(os.environ.get(cls.AI_PEN_KNOWLEDGE_INDEX_ENV_KEY, "") or "").strip()
+        if env_path:
+            return os.path.abspath(env_path)
+
+        current_dir = os.path.abspath(os.path.dirname(__file__))
+        primary_path = os.path.abspath(
+            os.path.join(current_dir, os.pardir, os.pardir, cls.AI_PEN_KNOWLEDGE_INDEX_REL_PATH)
+        )
+        return primary_path
+
+    @classmethod
+    def _load_ai_pen_knowledge_index_data(cls):
+        index_path = cls._resolve_ai_pen_knowledge_index_path()
+        if not index_path or not os.path.isfile(index_path):
+            return {}, ""
+
+        try:
+            mtime = float(os.path.getmtime(index_path))
+        except Exception:
+            mtime = 0.0
+
+        cache = cls._AI_PEN_KNOWLEDGE_INDEX_CACHE if isinstance(cls._AI_PEN_KNOWLEDGE_INDEX_CACHE, dict) else {}
+        cached_data = cache.get("data")
+        if (
+            cache.get("path") == index_path
+            and float(cache.get("mtime", 0.0) or 0.0) == mtime
+            and isinstance(cached_data, dict)
+            and cached_data
+        ):
+            return cached_data, index_path
+
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                raw_data = json.load(f)
+        except Exception as e:
+            logger.warning("load ai pen knowledge index failed path:{} err:{}".format(index_path, e))
+            return {}, index_path
+
+        if not isinstance(raw_data, dict):
+            return {}, index_path
+
+        token_index = raw_data.get("token_index") if isinstance(raw_data.get("token_index"), dict) else {}
+        normalized_token_index = {}
+        for key, value in token_index.items():
+            token = cls._normalize_ai_poc_index_token(key)
+            if not token:
+                continue
+            item = value if isinstance(value, dict) else {}
+            count = cls._safe_int_value(item.get("count"), 0)
+            sources = item.get("sources") if isinstance(item.get("sources"), dict) else {}
+            normalized_sources = {}
+            for source_key, source_count in sources.items():
+                source_text = str(source_key or "").strip()
+                if not source_text:
+                    continue
+                source_num = cls._safe_int_value(source_count, 0)
+                if source_num > 0:
+                    normalized_sources[source_text] = source_num
+            samples = []
+            for sample in item.get("samples", []) if isinstance(item.get("samples"), list) else []:
+                sample_text = str(sample or "").strip()
+                if sample_text:
+                    samples.append(sample_text[:200])
+                if len(samples) >= 8:
+                    break
+            normalized_token_index[token] = {
+                "count": max(0, count),
+                "sources": normalized_sources,
+                "samples": samples,
+            }
+
+        normalized_data = {
+            "version": str(raw_data.get("version", "") or "").strip(),
+            "generated_at": str(raw_data.get("generated_at", "") or "").strip(),
+            "summary": raw_data.get("summary") if isinstance(raw_data.get("summary"), dict) else {},
+            "token_index": normalized_token_index,
+        }
+        cls._AI_PEN_KNOWLEDGE_INDEX_CACHE = {"path": index_path, "mtime": mtime, "data": normalized_data}
+        return normalized_data, index_path
+
+    def _collect_ai_pen_knowledge_hits(self, candidate: dict):
+        index_data, index_path = self._load_ai_pen_knowledge_index_data()
+        result = {
+            "loaded": bool(index_data),
+            "path": index_path,
+            "hit_tokens": [],
+            "hit_samples": [],
+            "score": 0,
+            "index_token_count": 0,
+        }
+        token_index = index_data.get("token_index") if isinstance(index_data, dict) else {}
+        if not isinstance(token_index, dict) or not token_index:
+            return result
+
+        result["index_token_count"] = len(token_index)
+        token_source = []
+        token_source.extend(
+            self._extract_ascii_tokens(
+                " ".join(
+                    [
+                        str(candidate.get("risk_type", "") or ""),
+                        str(candidate.get("risk_name", "") or ""),
+                        str(candidate.get("source_module", "") or ""),
+                        str(candidate.get("target", "") or ""),
+                        str(candidate.get("vuln_url", "") or ""),
+                        str(candidate.get("evidence_seed", "") or ""),
+                    ]
+                ),
+                max_tokens=120,
+            )
+        )
+
+        normalized_tokens = []
+        seen_tokens = set()
+        for token in token_source:
+            normalized = self._normalize_ai_poc_index_token(token)
+            if not normalized or normalized in seen_tokens:
+                continue
+            seen_tokens.add(normalized)
+            normalized_tokens.append(normalized)
+            if len(normalized_tokens) >= 80:
+                break
+
+        matched_tokens = []
+        sample_hits = []
+        for token in normalized_tokens:
+            lookup_tokens = [token]
+            compact = self._normalize_ai_poc_index_token(token.replace("-", "").replace("_", "").replace(".", ""))
+            if compact and compact not in lookup_tokens:
+                lookup_tokens.append(compact)
+
+            item = None
+            for lookup in lookup_tokens:
+                if lookup in token_index:
+                    item = token_index.get(lookup)
+                    break
+            if not isinstance(item, dict):
+                continue
+
+            matched_tokens.append(token)
+            for sample in item.get("samples", []) if isinstance(item.get("samples"), list) else []:
+                sample_text = str(sample or "").strip()
+                if sample_text and sample_text not in sample_hits:
+                    sample_hits.append(sample_text[:200])
+                if len(sample_hits) >= 6:
+                    break
+            if len(matched_tokens) >= 12:
+                break
+
+        score = min(12, len(matched_tokens) * 2)
+        result["hit_tokens"] = matched_tokens
+        result["hit_samples"] = sample_hits
+        result["score"] = score
+        return result
 
     def _collect_ai_poc_index_candidates(self, context_payload: dict, alias_hits: list):
         index_data, index_path = self._load_ai_poc_index_data()
@@ -2783,6 +2947,29 @@ class WebSiteFetch(object):
             )
             return
 
+        knowledge_loaded = False
+        knowledge_path = ""
+        knowledge_index_token_count = 0
+        knowledge_hit_tokens_set = set()
+        for candidate in candidates:
+            hit_info = self._collect_ai_pen_knowledge_hits(candidate)
+            candidate["knowledge_hit_tokens"] = list(hit_info.get("hit_tokens", []) or [])
+            candidate["knowledge_hit_samples"] = list(hit_info.get("hit_samples", []) or [])
+            candidate["knowledge_score"] = int(hit_info.get("score", 0) or 0)
+            if bool(hit_info.get("loaded")):
+                knowledge_loaded = True
+            if hit_info.get("path"):
+                knowledge_path = str(hit_info.get("path") or "")
+            if int(hit_info.get("index_token_count", 0) or 0) > knowledge_index_token_count:
+                knowledge_index_token_count = int(hit_info.get("index_token_count", 0) or 0)
+            for token in candidate.get("knowledge_hit_tokens", []):
+                token_text = str(token or "").strip()
+                if token_text:
+                    knowledge_hit_tokens_set.add(token_text)
+
+        # 有知识命中的候选优先进入执行窗口（同分保留原有风险优先顺序）。
+        candidates.sort(key=lambda item: -int(item.get("knowledge_score", 0) or 0))
+
         max_cases = self.AI_PEN_TEST_MAX_CASES
         try:
             configured_max = int(self.options.get("ai_pen_test_max_cases", 0) or 0)
@@ -2850,6 +3037,8 @@ class WebSiteFetch(object):
                 "status": status,
                 "model": runtime_model,
                 "provider": runtime_provider,
+                "knowledge_hit_tokens": list(candidate.get("knowledge_hit_tokens", []) or []),
+                "knowledge_hit_samples": list(candidate.get("knowledge_hit_samples", []) or []),
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
                 "update_date": now_text,
             }
@@ -2869,7 +3058,8 @@ class WebSiteFetch(object):
             saved_count += 1
 
         elapsed_ms = int((time.time() - started_at) * 1000.0)
-        summary_text = "candidates={} | selected={} | saved={} | verified={} | likely_fp={} | error={} | mcp={} | max_tool_calls={} | timeout_sec={}".format(
+        knowledge_tokens_preview = ",".join(sorted(list(knowledge_hit_tokens_set))[:16]) or "-"
+        summary_text = "candidates={} | selected={} | saved={} | verified={} | likely_fp={} | error={} | mcp={} | max_tool_calls={} | timeout_sec={} | index_loaded={} | index_tokens={}".format(
             len(candidates),
             len(selected_candidates),
             saved_count,
@@ -2879,6 +3069,8 @@ class WebSiteFetch(object):
             "on" if mcp_enable else "off",
             mcp_max_tool_calls,
             mcp_timeout_sec,
+            "true" if knowledge_loaded else "false",
+            knowledge_tokens_preview,
         )
         logger.info(
             "task_id:{} ai_pen_test done {} elapsed_ms:{}".format(
@@ -2900,6 +3092,10 @@ class WebSiteFetch(object):
                 "mcp_enable": mcp_enable,
                 "mcp_max_tool_calls": mcp_max_tool_calls,
                 "mcp_timeout_sec": mcp_timeout_sec,
+                "knowledge_index_loaded": knowledge_loaded,
+                "knowledge_index_path": knowledge_path,
+                "knowledge_index_token_count": knowledge_index_token_count,
+                "knowledge_hit_tokens": sorted(list(knowledge_hit_tokens_set))[:80],
                 "candidate_count": len(candidates),
                 "selected_count": len(selected_candidates),
                 "saved_count": saved_count,
@@ -2924,6 +3120,10 @@ class WebSiteFetch(object):
                 "mcp_enable": mcp_enable,
                 "mcp_max_tool_calls": mcp_max_tool_calls,
                 "mcp_timeout_sec": mcp_timeout_sec,
+                "knowledge_index_loaded": knowledge_loaded,
+                "knowledge_index_path": knowledge_path,
+                "knowledge_index_token_count": knowledge_index_token_count,
+                "knowledge_hit_tokens": sorted(list(knowledge_hit_tokens_set))[:80],
                 "candidate_count": len(candidates),
                 "selected_count": len(selected_candidates),
                 "saved_count": saved_count,

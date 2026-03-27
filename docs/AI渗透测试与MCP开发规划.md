@@ -180,6 +180,11 @@ SOP/提示词配置：
 默认输出：
 - `ARL/docker/ai/sop/ai_pen_knowledge_index.json`
 
+运行时读取规则（已落地）：
+- 默认读取：`/code/docker/ai/sop/ai_pen_knowledge_index.json`
+- 可通过环境变量覆盖：`ARL_AI_PEN_KNOWLEDGE_INDEX_FILE`
+- 若文件不存在则自动降级为“无知识索引模式”，不影响任务执行
+
 示例命令：
 
 ```bash
