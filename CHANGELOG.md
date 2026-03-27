@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-27（v4.3.19 ~ v4.3.23）
+## 2026-03-27（v4.3.19 ~ v4.3.24）
+
+- `[v4.3.24]` AI渗透测试接入“外部 MCP 工具白名单执行器”：在 `AI管理` 新增 `AI_PEN_EXTERNAL_ENABLE / AI_PEN_EXTERNAL_TOOLS / AI_PEN_EXTERNAL_TIMEOUT_SEC / AI_PEN_EXTERNAL_MAX_RUNS` 配置与前端开关，后端 `run_ai_penetration_test` 验证链路新增外部工具执行阶段（当前支持 `sqlmap/httpx`），并将执行轨迹、命中结果回写到 `ai_pen_test_result`（`external_tool_runs/external_tool_hit`）与任务日志元数据；同时补齐 `SQLMAP_BIN/HTTPX_BIN` 配置项与运行时热刷新，明确 `nuclei` 仍归属 AI-POC 扫描链路，不进入 AI渗透外部执行器
 
 - `[v4.3.23]` AI渗透测试接入 `tools/poc` 知识索引命中增强：运行时自动加载 `ai_pen_knowledge_index`（支持 `ARL_AI_PEN_KNOWLEDGE_INDEX_FILE` 覆盖），候选验证阶段按命中 token 提升优先级，并将命中 token/样例路径写入 `ai_pen_test_result` 与 `ai_pen_test_plan/exec` 日志元数据，提升“为何优先验证该目标”的可解释性
 

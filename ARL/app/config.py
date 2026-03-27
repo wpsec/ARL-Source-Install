@@ -208,6 +208,9 @@ def refresh_runtime_config_best_effort(force=False):
         arl_conf = loaded.get("ARL", {})
         if not isinstance(arl_conf, dict):
             arl_conf = {}
+        ai_conf = loaded.get("AI", {})
+        if not isinstance(ai_conf, dict):
+            ai_conf = {}
 
         fofa_conf = loaded.get("FOFA", {})
         if isinstance(fofa_conf, dict):
@@ -407,6 +410,29 @@ def refresh_runtime_config_best_effort(force=False):
 
         if arl_conf.get("AFROG_SEVERITY") is not None:
             Config.AFROG_SEVERITY = str(arl_conf.get("AFROG_SEVERITY") or "").strip().lower()
+        if arl_conf.get("SQLMAP_BIN") is not None:
+            Config.SQLMAP_BIN = str(arl_conf.get("SQLMAP_BIN") or "").strip()
+        if arl_conf.get("HTTPX_BIN") is not None:
+            Config.HTTPX_BIN = str(arl_conf.get("HTTPX_BIN") or "").strip()
+
+        if ai_conf.get("AI_PEN_EXTERNAL_ENABLE") is not None:
+            Config.AI_PEN_MCP_EXTERNAL_ENABLE = _safe_runtime_bool(
+                ai_conf.get("AI_PEN_EXTERNAL_ENABLE"), Config.AI_PEN_MCP_EXTERNAL_ENABLE
+            )
+        if ai_conf.get("AI_PEN_EXTERNAL_TOOLS") is not None:
+            Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = str(ai_conf.get("AI_PEN_EXTERNAL_TOOLS") or "").strip()
+        if ai_conf.get("AI_PEN_EXTERNAL_TIMEOUT_SEC") is not None:
+            Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = safe_positive_int(
+                ai_conf.get("AI_PEN_EXTERNAL_TIMEOUT_SEC"),
+                Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC,
+                min_value=5,
+            )
+        if ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS") is not None:
+            Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS = safe_positive_int(
+                ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS"),
+                Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
+                min_value=1,
+            )
 
         # 保持环境变量覆盖优先级（与启动阶段一致）
         for key_name in positive_keys:
@@ -434,6 +460,24 @@ def refresh_runtime_config_best_effort(force=False):
         Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
         Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
         Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
+        Config.SQLMAP_BIN = env_str("ARL_SQLMAP_BIN", Config.SQLMAP_BIN).strip()
+        Config.HTTPX_BIN = env_str("ARL_HTTPX_BIN", Config.HTTPX_BIN).strip()
+        Config.AI_PEN_MCP_EXTERNAL_ENABLE = env_bool(
+            "ARL_AI_PEN_MCP_EXTERNAL_ENABLE", Config.AI_PEN_MCP_EXTERNAL_ENABLE
+        )
+        Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = env_str(
+            "ARL_AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS", Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS
+        ).strip()
+        Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = safe_positive_int(
+            env_int("ARL_AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC),
+            Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC,
+            min_value=5,
+        )
+        Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS = safe_positive_int(
+            env_int("ARL_AI_PEN_MCP_EXTERNAL_MAX_RUNS", Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS),
+            Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
+            min_value=1,
+        )
         dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
         if dns_resolvers_env:
             Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]
@@ -557,6 +601,14 @@ class Config(object):
     AFROG_STAGE_TIMEOUT_SEC = 0
     # afrog 阶段最多扫描目标数（0=不限制）
     AFROG_STAGE_MAX_TARGETS = 0
+    # AI渗透外部执行器工具路径
+    SQLMAP_BIN = "sqlmap"
+    HTTPX_BIN = "httpx"
+    # AI渗透外部执行器默认配置（AI 配置缺失时兜底）
+    AI_PEN_MCP_EXTERNAL_ENABLE = False
+    AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = "sqlmap,httpx"
+    AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = 45
+    AI_PEN_MCP_EXTERNAL_MAX_RUNS = 1
     # TruffleHog 可执行文件路径（优先使用 tools 目录）
     TRUFFLEHOG_BIN = os.path.join(project_root, "tools", "TruffleHog", "trufflehog")
     # 是否启用 TruffleHog JS 二次扫描
@@ -1158,6 +1210,35 @@ try:
             min_value=0,
         )
 
+    if y["ARL"].get("SQLMAP_BIN") is not None:
+        Config.SQLMAP_BIN = str(y["ARL"]["SQLMAP_BIN"] or "").strip()
+
+    if y["ARL"].get("HTTPX_BIN") is not None:
+        Config.HTTPX_BIN = str(y["ARL"]["HTTPX_BIN"] or "").strip()
+
+    if y.get("AI"):
+        ai_conf = y.get("AI") or {}
+        if ai_conf.get("AI_PEN_EXTERNAL_ENABLE") is not None:
+            Config.AI_PEN_MCP_EXTERNAL_ENABLE = safe_bool(
+                ai_conf.get("AI_PEN_EXTERNAL_ENABLE"), Config.AI_PEN_MCP_EXTERNAL_ENABLE
+            )
+        if ai_conf.get("AI_PEN_EXTERNAL_TOOLS") is not None:
+            Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = str(
+                ai_conf.get("AI_PEN_EXTERNAL_TOOLS") or ""
+            ).strip()
+        if ai_conf.get("AI_PEN_EXTERNAL_TIMEOUT_SEC") is not None:
+            Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = safe_positive_int(
+                ai_conf.get("AI_PEN_EXTERNAL_TIMEOUT_SEC"),
+                Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC,
+                min_value=5,
+            )
+        if ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS") is not None:
+            Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS = safe_positive_int(
+                ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS"),
+                Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
+                min_value=1,
+            )
+
     if y["ARL"].get("WIH_RULE_PATH"):
         Config.WIH_RULE_PATH = str(y["ARL"]["WIH_RULE_PATH"]).strip()
 
@@ -1637,6 +1718,24 @@ try:
     Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
     Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
     Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
+    Config.SQLMAP_BIN = env_str("ARL_SQLMAP_BIN", Config.SQLMAP_BIN).strip()
+    Config.HTTPX_BIN = env_str("ARL_HTTPX_BIN", Config.HTTPX_BIN).strip()
+    Config.AI_PEN_MCP_EXTERNAL_ENABLE = env_bool(
+        "ARL_AI_PEN_MCP_EXTERNAL_ENABLE", Config.AI_PEN_MCP_EXTERNAL_ENABLE
+    )
+    Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = env_str(
+        "ARL_AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS", Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS
+    ).strip()
+    Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC),
+        Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC,
+        min_value=5,
+    )
+    Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS = safe_positive_int(
+        env_int("ARL_AI_PEN_MCP_EXTERNAL_MAX_RUNS", Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS),
+        Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
+        min_value=1,
+    )
     Config.AFROG_CONCURRENCY = safe_positive_int(
         env_int("ARL_AFROG_CONCURRENCY", Config.AFROG_CONCURRENCY),
         Config.AFROG_CONCURRENCY

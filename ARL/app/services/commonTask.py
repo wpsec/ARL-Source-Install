@@ -5,6 +5,7 @@ import time
 import re
 import os
 import json
+import subprocess
 import base64
 import hashlib
 import hmac
@@ -131,9 +132,29 @@ class WebSiteFetch(object):
     AI_PEN_TEST_FETCH_TIMEOUT = (5.1, 10.1)
     AI_PEN_TEST_MCP_MAX_TOOL_CALLS = 3
     AI_PEN_TEST_MCP_TIMEOUT_SEC = 12
+    AI_PEN_TEST_AI_PLAN_MAX_CASES = 24
     AI_PEN_TEST_BODY_MAX = 8192
     AI_PEN_TEST_EVIDENCE_MAX = 280
     AI_PEN_TEST_ERROR_MAX = 180
+    AI_PEN_TEST_REASON_MAX = 420
+    AI_PEN_TEST_PAYLOAD_MAX = 220
+    AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES = (
+        "xss_probe",
+        "sqli_probe",
+        "cmdi_probe",
+        "ssrf_probe",
+        "idor_probe",
+        "api_doc_probe",
+        "jwt_probe",
+        "websocket_probe",
+        "upload_probe",
+        "replay",
+    )
+    AI_PEN_EXTERNAL_TOOL_REGISTRY = (
+        "sqlmap",
+        "httpx",
+    )
+    AI_PEN_EXTERNAL_RESULT_MAX = 3
     AI_PEN_JWT_WEAK_SECRET_CANDIDATES = (
         "secret",
         "jwt",
@@ -1780,10 +1801,11 @@ class WebSiteFetch(object):
         reply_text="",
         error_message="",
         elapsed_ms=0,
+        usage=None,
         meta=None,
     ):
         """
-        写入 AI 管理中的 AI 渗透测试执行日志（当前阶段为规则/验证引擎，token 计数固定为 0）。
+        写入 AI 管理中的 AI 渗透测试日志（支持真实 AI token 统计）。
         """
         try:
             from app.routes import api_console as api_console_module
@@ -1799,7 +1821,7 @@ class WebSiteFetch(object):
                     reply_text=reply_text,
                     error_message=error_message,
                     elapsed_ms=elapsed_ms,
-                    usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    usage=usage if isinstance(usage, dict) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                     meta=meta if isinstance(meta, dict) else {},
                 )
         except Exception as e:
@@ -2433,8 +2455,26 @@ class WebSiteFetch(object):
         config_obj = ai_config if isinstance(ai_config, dict) else {}
         ai_pen_enable = bool(config_obj.get("ai_pen_test_enable", True))
         mcp_enable = bool(config_obj.get("ai_pen_mcp_enable", True))
+        ai_planner_enable = bool(config_obj.get("ai_pen_ai_planner_enable", True))
         max_tool_calls = cls._safe_int_value(config_obj.get("ai_pen_mcp_max_tool_calls"), cls.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)
         timeout_sec = cls._safe_int_value(config_obj.get("ai_pen_mcp_timeout_sec"), cls.AI_PEN_TEST_MCP_TIMEOUT_SEC)
+        ai_plan_max_cases = cls._safe_int_value(
+            config_obj.get("ai_pen_ai_plan_max_cases"), cls.AI_PEN_TEST_AI_PLAN_MAX_CASES
+        )
+        external_enable = bool(
+            config_obj.get("ai_pen_external_enable", getattr(Config, "AI_PEN_MCP_EXTERNAL_ENABLE", False))
+        )
+        external_tools = cls._normalize_ai_pen_external_tools(
+            config_obj.get("ai_pen_external_tools", getattr(Config, "AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS", "sqlmap,httpx"))
+        )
+        external_timeout_sec = cls._safe_int_value(
+            config_obj.get("ai_pen_external_timeout_sec", getattr(Config, "AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", 45)),
+            getattr(Config, "AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", 45),
+        )
+        external_max_runs = cls._safe_int_value(
+            config_obj.get("ai_pen_external_max_runs", getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 1)),
+            getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 1),
+        )
         if max_tool_calls < 1:
             max_tool_calls = 1
         if max_tool_calls > 8:
@@ -2443,6 +2483,18 @@ class WebSiteFetch(object):
             timeout_sec = 1
         if timeout_sec > 60:
             timeout_sec = 60
+        if ai_plan_max_cases < 1:
+            ai_plan_max_cases = cls.AI_PEN_TEST_AI_PLAN_MAX_CASES
+        if ai_plan_max_cases > 120:
+            ai_plan_max_cases = 120
+        if external_timeout_sec < 5:
+            external_timeout_sec = 5
+        if external_timeout_sec > 300:
+            external_timeout_sec = 300
+        if external_max_runs < 1:
+            external_max_runs = 1
+        if external_max_runs > 8:
+            external_max_runs = 8
 
         connect_timeout = float(cls.AI_PEN_TEST_FETCH_TIMEOUT[0] if isinstance(cls.AI_PEN_TEST_FETCH_TIMEOUT, tuple) else 5.1)
         read_timeout = float(timeout_sec) + 0.1
@@ -2452,10 +2504,753 @@ class WebSiteFetch(object):
         return {
             "ai_pen_enable": ai_pen_enable,
             "mcp_enable": mcp_enable,
+            "ai_planner_enable": ai_planner_enable,
             "max_tool_calls": max_tool_calls,
             "timeout_sec": timeout_sec,
+            "ai_plan_max_cases": ai_plan_max_cases,
+            "external_enable": external_enable,
+            "external_tools": external_tools,
+            "external_timeout_sec": external_timeout_sec,
+            "external_max_runs": external_max_runs,
             "timeout": (connect_timeout, read_timeout),
         }
+
+    @staticmethod
+    def _normalize_ai_pen_decision(value: str, default_value="needs_manual_review"):
+        decision = str(value or "").strip().lower()
+        if decision in {"verified", "likely_false_positive", "needs_manual_review"}:
+            return decision
+        return default_value
+
+    @classmethod
+    def _normalize_ai_pen_payload_type(cls, value: str, fallback_type="replay"):
+        payload_type = str(value or "").strip().lower()
+        if payload_type in cls.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES:
+            return payload_type
+        fallback_text = str(fallback_type or "").strip().lower()
+        if fallback_text in cls.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES:
+            return fallback_text
+        if fallback_text:
+            return fallback_text
+        return ""
+
+    @classmethod
+    def _infer_ai_pen_payload_type_from_actions(cls, actions, fallback_type="replay"):
+        action_texts = []
+        if isinstance(actions, str):
+            action_texts = [actions]
+        elif isinstance(actions, (list, tuple, set)):
+            action_texts = [str(item or "") for item in actions]
+        merged = " ".join([str(item or "").lower() for item in action_texts])
+        if not merged:
+            return cls._normalize_ai_pen_payload_type("", fallback_type=fallback_type)
+        if any(token in merged for token in ("xss", "dom", "script")):
+            return "xss_probe"
+        if any(token in merged for token in ("sql", "sqli", "union", "or 1=1")):
+            return "sqli_probe"
+        if any(token in merged for token in ("cmd", "command", "rce", "shell")):
+            return "cmdi_probe"
+        if any(token in merged for token in ("ssrf", "127.0.0.1", "metadata")):
+            return "ssrf_probe"
+        if any(token in merged for token in ("idor", "越权", "user_id", "account_id", "id=")):
+            return "idor_probe"
+        if any(token in merged for token in ("swagger", "openapi", "api-docs", "postman")):
+            return "api_doc_probe"
+        if any(token in merged for token in ("jwt", "alg=none", "authorization", "bearer")):
+            return "jwt_probe"
+        if any(token in merged for token in ("websocket", "ws://", "wss://", "socket.io", "handshake")):
+            return "websocket_probe"
+        if any(token in merged for token in ("upload", "multipart", "filename")):
+            return "upload_probe"
+        return cls._normalize_ai_pen_payload_type("", fallback_type=fallback_type)
+
+    @classmethod
+    def _normalize_ai_pen_external_tools(cls, value, max_count=4):
+        allow_set = set([str(item).strip().lower() for item in cls.AI_PEN_EXTERNAL_TOOL_REGISTRY])
+        items = []
+        if isinstance(value, str):
+            items = re.split(r"[,\s]+", value)
+        elif isinstance(value, (list, tuple, set)):
+            items = [str(item or "") for item in value]
+
+        result = []
+        seen = set()
+        for item in items:
+            tool = str(item or "").strip().lower()
+            if not tool or tool in seen:
+                continue
+            if tool not in allow_set:
+                continue
+            seen.add(tool)
+            result.append(tool)
+            if len(result) >= max_count:
+                break
+        return result
+
+    @staticmethod
+    def _resolve_executable_path(preferred_path: str, fallback_name: str):
+        for candidate in [preferred_path, fallback_name]:
+            text = str(candidate or "").strip()
+            if not text:
+                continue
+            resolved = utils.resolve_executable(text)
+            if resolved:
+                return resolved
+        return ""
+
+    @staticmethod
+    def _contains_sqlmap_positive_evidence(output_text: str) -> bool:
+        output = str(output_text or "").lower()
+        positive_hints = (
+            "is vulnerable",
+            "identified the following injection point",
+            "sql injection vulnerability",
+            "parameter '",
+            "injectable",
+        )
+        return any(hint in output for hint in positive_hints)
+
+    @staticmethod
+    def _contains_sqlmap_negative_evidence(output_text: str) -> bool:
+        output = str(output_text or "").lower()
+        negative_hints = (
+            "all tested parameters do not appear to be injectable",
+            "does not seem to be injectable",
+            "not injectable",
+            "no parameter(s) found for testing",
+        )
+        return any(hint in output for hint in negative_hints)
+
+    def _run_external_command(self, command, timeout_sec=60):
+        command_list = command if isinstance(command, list) else []
+        if not command_list:
+            return {
+                "ok": False,
+                "return_code": -1,
+                "stdout": "",
+                "stderr": "empty command",
+                "elapsed_ms": 0,
+            }
+
+        timeout_value = max(5, min(300, self._safe_int_value(timeout_sec, 60)))
+        started_at = time.perf_counter()
+        try:
+            process = subprocess.run(
+                command_list,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout_value,
+            )
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000.0)
+            return {
+                "ok": True,
+                "return_code": int(process.returncode),
+                "stdout": str(process.stdout or ""),
+                "stderr": str(process.stderr or ""),
+                "elapsed_ms": elapsed_ms,
+            }
+        except subprocess.TimeoutExpired as e:
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000.0)
+            return {
+                "ok": False,
+                "return_code": -2,
+                "stdout": str(getattr(e, "stdout", "") or ""),
+                "stderr": "timeout",
+                "elapsed_ms": elapsed_ms,
+            }
+        except Exception as e:
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000.0)
+            return {
+                "ok": False,
+                "return_code": -3,
+                "stdout": "",
+                "stderr": self._clip_text(e, self.AI_PEN_TEST_ERROR_MAX),
+                "elapsed_ms": elapsed_ms,
+            }
+
+    def _run_ai_pen_external_tools(
+            self,
+            *,
+            target_url: str,
+            risk_type: str,
+            payload_type: str,
+            base_decision: str,
+            base_confidence: float,
+            settings: dict,
+    ):
+        runtime_settings = settings if isinstance(settings, dict) else {}
+        if not bool(runtime_settings.get("external_enable", False)):
+            return {
+                "decision": base_decision,
+                "confidence": base_confidence,
+                "reason": "",
+                "verification_step": "",
+                "tool_trace": "",
+                "tool_runs": [],
+                "tool_hit": False,
+            }
+
+        allow_tools = self._normalize_ai_pen_external_tools(runtime_settings.get("external_tools", []))
+        if not allow_tools:
+            return {
+                "decision": base_decision,
+                "confidence": base_confidence,
+                "reason": "外部工具白名单为空，已跳过",
+                "verification_step": "",
+                "tool_trace": "external(skip_no_allowlist)",
+                "tool_runs": [],
+                "tool_hit": False,
+            }
+
+        timeout_sec = self._safe_int_value(runtime_settings.get("external_timeout_sec"), 45)
+        max_runs = self._safe_int_value(runtime_settings.get("external_max_runs"), 1)
+        if max_runs < 1:
+            max_runs = 1
+        if max_runs > 8:
+            max_runs = 8
+
+        risk_text = str(risk_type or "").strip().lower()
+        payload_text = str(payload_type or "").strip().lower()
+        candidate_tools = []
+        if payload_text == "sqli_probe" or "sqli" in risk_text or "sql" in risk_text:
+            candidate_tools.append("sqlmap")
+        if payload_text in {"websocket_probe", "api_doc_probe"} or risk_text in {"websocket", "api_doc"}:
+            candidate_tools.append("httpx")
+
+        if not candidate_tools:
+            return {
+                "decision": base_decision,
+                "confidence": base_confidence,
+                "reason": "",
+                "verification_step": "",
+                "tool_trace": "",
+                "tool_runs": [],
+                "tool_hit": False,
+            }
+
+        run_tools = []
+        for tool_name in candidate_tools:
+            if tool_name not in allow_tools:
+                continue
+            run_tools.append(tool_name)
+            if len(run_tools) >= max_runs:
+                break
+
+        if not run_tools:
+            return {
+                "decision": base_decision,
+                "confidence": base_confidence,
+                "reason": "候选外部工具不在白名单内",
+                "verification_step": "",
+                "tool_trace": "external(skip_not_allowlisted)",
+                "tool_runs": [],
+                "tool_hit": False,
+            }
+
+        decision = self._normalize_ai_pen_decision(base_decision, default_value="needs_manual_review")
+        confidence = self._clamp_ai_pen_confidence(base_confidence, 0.5)
+        reason_parts = []
+        tool_runs = []
+        tool_trace_parts = []
+        hit = False
+        verification_step = ""
+
+        for tool_name in run_tools:
+            if tool_name == "sqlmap":
+                parsed = urlsplit(target_url)
+                if not str(parsed.query or "").strip():
+                    tool_trace_parts.append("sqlmap(skip_no_query)")
+                    continue
+
+                sqlmap_bin = self._resolve_executable_path(
+                    getattr(Config, "SQLMAP_BIN", "sqlmap"),
+                    "sqlmap",
+                )
+                if not sqlmap_bin:
+                    tool_trace_parts.append("sqlmap(skip_not_found)")
+                    tool_runs.append({
+                        "tool": "sqlmap",
+                        "status": "skipped",
+                        "message": "binary_not_found",
+                        "elapsed_ms": 0,
+                    })
+                    continue
+
+                sqlmap_cmd = [
+                    sqlmap_bin,
+                    "-u", target_url,
+                    "--batch",
+                    "--smart",
+                    "--random-agent",
+                    "--level", "1",
+                    "--risk", "1",
+                    "--threads", "1",
+                    "--timeout", "10",
+                    "--retries", "0",
+                    "--disable-coloring",
+                ]
+                run_ret = self._run_external_command(sqlmap_cmd, timeout_sec=timeout_sec)
+                output_text = "{}\n{}".format(run_ret.get("stdout", ""), run_ret.get("stderr", ""))
+                return_code = int(run_ret.get("return_code", -1) or -1)
+                elapsed_ms = int(run_ret.get("elapsed_ms", 0) or 0)
+
+                run_status = "ok" if bool(run_ret.get("ok")) else "error"
+                run_message = "exit={}".format(return_code)
+                if run_status == "ok":
+                    if self._contains_sqlmap_positive_evidence(output_text):
+                        decision = "verified"
+                        confidence = max(confidence, 0.94)
+                        hit = True
+                        verification_step = "mcp_external_sqlmap"
+                        reason_parts.append("sqlmap 命中注入特征")
+                        run_message = "positive"
+                    elif self._contains_sqlmap_negative_evidence(output_text):
+                        if decision != "verified":
+                            decision = "likely_false_positive"
+                            confidence = max(confidence, 0.68)
+                        reason_parts.append("sqlmap 未发现可注入参数")
+                        run_message = "negative"
+                    else:
+                        run_message = "inconclusive"
+                else:
+                    run_message = self._clip_text(run_ret.get("stderr", ""), 100) or "error"
+
+                tool_runs.append({
+                    "tool": "sqlmap",
+                    "status": run_status,
+                    "message": run_message,
+                    "elapsed_ms": elapsed_ms,
+                })
+                tool_trace_parts.append("sqlmap({})".format(run_message))
+            elif tool_name == "httpx":
+                httpx_bin = self._resolve_executable_path(
+                    getattr(Config, "HTTPX_BIN", "httpx"),
+                    "httpx",
+                )
+                if not httpx_bin:
+                    tool_trace_parts.append("httpx(skip_not_found)")
+                    tool_runs.append({
+                        "tool": "httpx",
+                        "status": "skipped",
+                        "message": "binary_not_found",
+                        "elapsed_ms": 0,
+                    })
+                    continue
+                httpx_cmd = [
+                    httpx_bin,
+                    "-u", target_url,
+                    "-silent",
+                    "-status-code",
+                    "-title",
+                ]
+                run_ret = self._run_external_command(httpx_cmd, timeout_sec=timeout_sec)
+                output_text = "{}\n{}".format(run_ret.get("stdout", ""), run_ret.get("stderr", ""))
+                output_lower = output_text.lower()
+                return_code = int(run_ret.get("return_code", -1) or -1)
+                elapsed_ms = int(run_ret.get("elapsed_ms", 0) or 0)
+                run_status = "ok" if bool(run_ret.get("ok")) else "error"
+                run_message = "exit={}".format(return_code)
+                if run_status == "ok":
+                    if (" 101 " in output_lower or "websocket" in output_lower) and payload_text == "websocket_probe":
+                        if decision != "verified":
+                            decision = "needs_manual_review"
+                        confidence = max(confidence, 0.72)
+                        verification_step = verification_step or "mcp_external_httpx"
+                        reason_parts.append("httpx 返回 WebSocket 相关特征")
+                        run_message = "websocket_hint"
+                    elif payload_text == "api_doc_probe" and any(token in output_lower for token in ("swagger", "openapi", "api-docs")):
+                        if decision != "verified":
+                            decision = "needs_manual_review"
+                        confidence = max(confidence, 0.70)
+                        verification_step = verification_step or "mcp_external_httpx"
+                        reason_parts.append("httpx 返回 API 文档相关特征")
+                        run_message = "api_doc_hint"
+                    else:
+                        run_message = "ok"
+                else:
+                    run_message = self._clip_text(run_ret.get("stderr", ""), 100) or "error"
+                tool_runs.append({
+                    "tool": "httpx",
+                    "status": run_status,
+                    "message": run_message,
+                    "elapsed_ms": elapsed_ms,
+                })
+                tool_trace_parts.append("httpx({})".format(run_message))
+
+        if len(tool_runs) > self.AI_PEN_EXTERNAL_RESULT_MAX:
+            tool_runs = tool_runs[: self.AI_PEN_EXTERNAL_RESULT_MAX]
+
+        return {
+            "decision": decision,
+            "confidence": confidence,
+            "reason": "；".join([item for item in reason_parts if item])[:220],
+            "verification_step": verification_step,
+            "tool_trace": " | ".join(tool_trace_parts)[:260],
+            "tool_runs": tool_runs,
+            "tool_hit": hit,
+        }
+
+    @staticmethod
+    def _clamp_ai_pen_confidence(value, default_value=0.5):
+        try:
+            confidence = float(value)
+        except Exception:
+            confidence = float(default_value)
+        if confidence < 0.0:
+            return 0.0
+        if confidence > 1.0:
+            return 1.0
+        return confidence
+
+    def _resolve_ai_pen_prompt_content(self, ai_config: dict):
+        fallback_prompt = (
+            "你是AI渗透测试助手。请结合风险类型、URL、参数、响应特征与知识命中，"
+            "评估该结果可信度并给出下一步验证建议。输出JSON对象，字段包含："
+            "decision/confidence/reason/payload_type/payload/evidence/next_actions。"
+            "decision 仅允许 verified、likely_false_positive、needs_manual_review。"
+        )
+        config_obj = ai_config if isinstance(ai_config, dict) else {}
+        prompt_templates = config_obj.get("prompt_templates")
+        if not isinstance(prompt_templates, list):
+            return fallback_prompt
+
+        for item in prompt_templates:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("id") or "").strip() == "default_ai_pen_test":
+                content = str(item.get("content") or "").strip()
+                if content:
+                    return content
+
+        for item in prompt_templates:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("scene") or "").strip() == "ai_pen_test_plan":
+                content = str(item.get("content") or "").strip()
+                if content:
+                    return content
+        return fallback_prompt
+
+    def _call_ai_pen_planner(self, ai_config: dict, candidate: dict, runtime_settings: dict, prompt_content: str):
+        """
+        调用 AI 规划当前候选项的验证动作（真实 AI，不阻断主流程）。
+        """
+        result = {
+            "ok": False,
+            "status": "skipped",
+            "message": "ai_pen planner disabled",
+            "provider": "-",
+            "model": "-",
+            "profile": "-",
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "elapsed_ms": 0,
+            "request_text": "",
+            "reply_text": "",
+            "output": {},
+        }
+        try:
+            from app.routes import api_console as api_console_module
+
+            normalize_profiles = getattr(api_console_module, "_normalize_ai_model_profiles", None)
+            pick_active = getattr(api_console_module, "_pick_active_ai_model_profile", None)
+            normalize_provider = getattr(api_console_module, "_normalize_ai_provider_id", None)
+            normalize_model_name = getattr(api_console_module, "_normalize_ai_model_name", None)
+            build_proxy_dict = getattr(api_console_module, "_build_ai_proxy_dict", None)
+            safe_int = getattr(api_console_module, "_safe_int", None)
+            safe_float = getattr(api_console_module, "_safe_float", None)
+            is_model_unavailable = getattr(api_console_module, "_is_ai_model_unavailable_error", None)
+            pick_retry_model = getattr(api_console_module, "_pick_ai_retry_model", None)
+            extract_json_obj = getattr(api_console_module, "_extract_json_object_from_text", None)
+            normalize_usage = getattr(api_console_module, "_normalize_ai_usage_dict", None)
+            if not (
+                callable(normalize_profiles)
+                and callable(pick_active)
+                and callable(normalize_provider)
+                and callable(normalize_model_name)
+                and callable(build_proxy_dict)
+                and callable(safe_int)
+                and callable(safe_float)
+                and callable(is_model_unavailable)
+                and callable(pick_retry_model)
+                and callable(extract_json_obj)
+                and callable(normalize_usage)
+            ):
+                result["message"] = "ai helper missing"
+                return result
+
+            model_profiles = normalize_profiles(ai_config.get("model_profiles"), legacy_ai_conf=ai_config)
+            active_model_profile_id = str(ai_config.get("active_model_profile_id") or "").strip()
+            active_profile = pick_active(model_profiles, active_model_profile_id)
+            provider_id = normalize_provider(active_profile.get("provider") or "openai")
+            model_name = normalize_model_name(provider_id, active_profile.get("model"))
+            base_url = str(active_profile.get("base_url") or "").strip()
+            api_key = str(active_profile.get("api_key") or "").strip()
+            profile_name = str(active_profile.get("name") or active_profile.get("id") or "").strip()
+            proxy_url = str(active_profile.get("proxy") or ai_config.get("proxy_url") or "").strip()
+            request_proxies = build_proxy_dict(proxy_url)
+            timeout_sec = safe_int(active_profile.get("timeout_sec"), 40, min_value=8)
+            request_delay_ms = safe_int(ai_config.get("request_delay_ms"), 0, min_value=0)
+            if request_delay_ms > 30000:
+                request_delay_ms = 30000
+
+            result["provider"] = provider_id
+            result["model"] = model_name
+            result["profile"] = profile_name
+            if not base_url or not api_key or not model_name:
+                result["message"] = "模型配置不完整"
+                return result
+
+            risk_type = str(candidate.get("risk_type", "") or "").strip()
+            risk_name = str(candidate.get("risk_name", "") or "").strip()
+            default_payload_type, default_payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
+            request_obj = {
+                "task_id": str(self.task_id),
+                "target": str(candidate.get("target", "") or "").strip(),
+                "vuln_url": str(candidate.get("vuln_url", "") or "").strip(),
+                "source_collection": str(candidate.get("source_collection", "") or "").strip(),
+                "source_module": str(candidate.get("source_module", "") or "").strip(),
+                "risk_type": risk_type,
+                "risk_name": risk_name,
+                "severity": str(candidate.get("severity", "") or "").strip(),
+                "evidence_seed": self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX),
+                "knowledge_hit_tokens": list(candidate.get("knowledge_hit_tokens", []) or [])[:20],
+                "knowledge_hit_samples": list(candidate.get("knowledge_hit_samples", []) or [])[:6],
+                "default_payload_type": default_payload_type,
+                "default_payload": default_payload,
+                "mcp_enable": bool(runtime_settings.get("mcp_enable", True)),
+                "mcp_max_tool_calls": self._safe_int_value(
+                    runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS
+                ),
+                "supported_payload_types": list(self.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES),
+                "output_schema": {
+                    "decision": "verified|likely_false_positive|needs_manual_review",
+                    "confidence": "0~1 float",
+                    "reason": "string",
+                    "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe|upload_probe|replay",
+                    "payload": "string",
+                    "evidence": ["string"],
+                    "next_actions": ["string"],
+                },
+            }
+            request_text = json.dumps(request_obj, ensure_ascii=False)
+            result["request_text"] = request_text
+
+            system_prompt = str(prompt_content or "").strip()
+            if not system_prompt:
+                system_prompt = self._resolve_ai_pen_prompt_content(ai_config)
+            system_prompt = (
+                "{}\n\n输出要求：仅返回 JSON 对象，不要 Markdown；"
+                "decision 只能是 verified/likely_false_positive/needs_manual_review。"
+            ).format(system_prompt)
+
+            request_url = "{}/chat/completions".format(base_url.rstrip("/"))
+            headers = {
+                "Authorization": "Bearer {}".format(api_key),
+                "Content-Type": "application/json",
+            }
+            request_body = {
+                "model": model_name,
+                "temperature": min(max(safe_float(active_profile.get("temperature"), 0.15, min_value=0.0), 0.0), 1.0),
+                "max_tokens": max(500, min(safe_int(active_profile.get("max_tokens"), 1200, min_value=256), 2400)),
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": request_text},
+                ],
+            }
+
+            def _chat_with_model(target_model):
+                started_at = time.perf_counter()
+                call_body = dict(request_body)
+                call_body["model"] = str(target_model or "").strip()
+                kwargs = {
+                    "headers": headers,
+                    "json": call_body,
+                    "timeout": (8, timeout_sec),
+                }
+                if request_proxies:
+                    kwargs["proxies"] = request_proxies
+                if request_delay_ms > 0:
+                    time.sleep(float(request_delay_ms) / 1000.0)
+                conn = utils.http_req(request_url, "post", **kwargs)
+                status_code = int(getattr(conn, "status_code", 0) or 0)
+                payload = {}
+                try:
+                    payload = conn.json() if conn is not None else {}
+                except Exception:
+                    payload = {}
+
+                elapsed_ms = int((time.perf_counter() - started_at) * 1000.0)
+                usage = normalize_usage(payload.get("usage") if isinstance(payload, dict) else {})
+
+                if status_code != 200:
+                    err_message = ""
+                    if isinstance(payload, dict):
+                        error_obj = payload.get("error")
+                        if isinstance(error_obj, dict):
+                            err_message = str(error_obj.get("message") or "").strip()
+                        if not err_message:
+                            err_message = str(payload.get("message") or "").strip()
+                    return {
+                        "ok": False,
+                        "status_code": status_code,
+                        "message": err_message or "HTTP {}".format(status_code),
+                        "usage": usage,
+                        "elapsed_ms": elapsed_ms,
+                        "reply_text": "",
+                    }
+
+                reply_text = ""
+                choices = payload.get("choices", []) if isinstance(payload, dict) else []
+                message_obj = choices[0].get("message") if isinstance(choices, list) and choices else {}
+                if isinstance(message_obj, dict):
+                    content_obj = message_obj.get("content")
+                    if isinstance(content_obj, str):
+                        reply_text = content_obj.strip()
+                    elif isinstance(content_obj, list):
+                        text_parts = []
+                        for fragment in content_obj:
+                            if isinstance(fragment, dict) and str(fragment.get("type") or "").strip() == "text":
+                                text_value = str(fragment.get("text") or "").strip()
+                                if text_value:
+                                    text_parts.append(text_value)
+                        reply_text = "\n".join(text_parts).strip()
+                return {
+                    "ok": True,
+                    "status_code": status_code,
+                    "message": "",
+                    "usage": usage,
+                    "elapsed_ms": elapsed_ms,
+                    "reply_text": reply_text,
+                }
+
+            call_ret = _chat_with_model(model_name)
+            if (not call_ret.get("ok")) and is_model_unavailable(call_ret.get("message", "")):
+                retry_model = pick_retry_model(provider_id, model_name)
+                if retry_model:
+                    retry_ret = _chat_with_model(retry_model)
+                    if retry_ret.get("ok"):
+                        model_name = retry_model
+                        result["model"] = model_name
+                        call_ret = retry_ret
+                    else:
+                        call_ret = retry_ret
+
+            result["usage"] = call_ret.get("usage", result["usage"])
+            result["elapsed_ms"] = int(call_ret.get("elapsed_ms", 0) or 0)
+            result["reply_text"] = str(call_ret.get("reply_text", "") or "")
+            if not call_ret.get("ok"):
+                result["status"] = "error"
+                result["message"] = str(call_ret.get("message", "") or "ai request failed")
+                return result
+
+            parsed = extract_json_obj(result["reply_text"])
+            if not isinstance(parsed, dict):
+                result["status"] = "error"
+                result["message"] = "AI 返回格式不可解析"
+                return result
+
+            ai_decision = self._normalize_ai_pen_decision(parsed.get("decision"), default_value="")
+            ai_confidence = self._clamp_ai_pen_confidence(parsed.get("confidence"), 0.55)
+            ai_actions = self._normalize_ai_poc_keywords(parsed.get("next_actions"), max_count=4)
+            ai_payload_type = self._normalize_ai_pen_payload_type(
+                parsed.get("payload_type"),
+                fallback_type="",
+            )
+            if not ai_payload_type:
+                ai_payload_type = self._infer_ai_pen_payload_type_from_actions(
+                    ai_actions,
+                    fallback_type=default_payload_type,
+                )
+            if not ai_payload_type:
+                ai_payload_type = default_payload_type
+            ai_payload = str(parsed.get("payload") or "").strip()[: self.AI_PEN_TEST_PAYLOAD_MAX]
+            if not ai_payload and ai_payload_type and ai_payload_type != "replay":
+                inferred_payload_type, inferred_payload = self._build_ai_pen_payload_hint(ai_payload_type, risk_name)
+                if inferred_payload_type == ai_payload_type and inferred_payload:
+                    ai_payload = str(inferred_payload)[: self.AI_PEN_TEST_PAYLOAD_MAX]
+            ai_reason = self._clip_text(parsed.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
+            ai_evidence = self._normalize_ai_poc_keywords(parsed.get("evidence"), max_count=8)
+
+            result["ok"] = True
+            result["status"] = "ok"
+            result["message"] = ""
+            result["output"] = {
+                "decision": ai_decision or "needs_manual_review",
+                "confidence": ai_confidence,
+                "reason": ai_reason,
+                "payload_type": ai_payload_type,
+                "payload": ai_payload,
+                "evidence": ai_evidence,
+                "next_actions": ai_actions,
+            }
+            return result
+        except Exception as e:
+            result["status"] = "error"
+            result["message"] = str(e)
+            return result
+
+    def _merge_ai_pen_result_with_ai_plan(self, verify_result: dict, ai_plan_result: dict):
+        merged = dict(verify_result or {})
+        plan_ret = ai_plan_result if isinstance(ai_plan_result, dict) else {}
+        plan_status = str(plan_ret.get("status", "skipped") or "skipped").strip().lower()
+        plan_ok = bool(plan_ret.get("ok")) and plan_status == "ok"
+        plan_output = plan_ret.get("output") if isinstance(plan_ret.get("output"), dict) else {}
+
+        merged["ai_status"] = plan_status
+        merged["ai_plan_reason"] = ""
+        merged["ai_plan_decision"] = ""
+        merged["ai_plan_confidence"] = 0.0
+        merged["ai_plan_actions"] = []
+        if not plan_ok:
+            return merged
+
+        ai_decision = self._normalize_ai_pen_decision(plan_output.get("decision"), default_value="")
+        ai_confidence = self._clamp_ai_pen_confidence(plan_output.get("confidence"), 0.55)
+        ai_reason = self._clip_text(plan_output.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
+        ai_actions = self._normalize_ai_poc_keywords(plan_output.get("next_actions"), max_count=4)
+
+        merged["ai_plan_reason"] = ai_reason
+        merged["ai_plan_decision"] = ai_decision
+        merged["ai_plan_confidence"] = ai_confidence
+        merged["ai_plan_actions"] = ai_actions
+
+        base_decision = self._normalize_ai_pen_decision(merged.get("decision"), default_value="needs_manual_review")
+        base_confidence = self._clamp_ai_pen_confidence(merged.get("confidence"), 0.5)
+        status = str(merged.get("status", "ok") or "ok").strip().lower()
+
+        if ai_reason:
+            base_reason = str(merged.get("reason", "") or "").strip()
+            if base_reason:
+                merged["reason"] = "{}；AI研判：{}".format(base_reason, ai_reason)
+            else:
+                merged["reason"] = "AI研判：{}".format(ai_reason)
+
+        if status != "ok" or not ai_decision:
+            return merged
+
+        if ai_decision == base_decision:
+            merged["confidence"] = max(base_confidence, min(0.99, ai_confidence))
+            return merged
+
+        if {ai_decision, base_decision} == {"verified", "likely_false_positive"}:
+            merged["decision"] = "needs_manual_review"
+            merged["confidence"] = max(0.62, min(0.9, (base_confidence + ai_confidence) / 2.0))
+            merged["reason"] = "{}；AI与MCP探针结论冲突，转人工复核".format(
+                str(merged.get("reason", "") or "").strip()
+            ).strip("；")
+            return merged
+
+        if base_decision == "needs_manual_review" and ai_decision in {"verified", "likely_false_positive"} and ai_confidence >= 0.82:
+            merged["decision"] = ai_decision
+            merged["confidence"] = max(base_confidence, min(0.96, ai_confidence * 0.92))
+            return merged
+
+        if ai_decision == "needs_manual_review":
+            merged["decision"] = "needs_manual_review"
+            merged["confidence"] = max(base_confidence, min(0.88, ai_confidence))
+            return merged
+        return merged
 
     @staticmethod
     def _contains_evidence(evidence_seed: str, body_text: str) -> bool:
@@ -3221,8 +4016,9 @@ class WebSiteFetch(object):
         )
         return candidates
 
-    def _verify_ai_pen_candidate(self, candidate: dict, mcp_settings=None):
+    def _verify_ai_pen_candidate(self, candidate: dict, mcp_settings=None, ai_plan=None):
         settings = mcp_settings if isinstance(mcp_settings, dict) else {}
+        plan_obj = ai_plan if isinstance(ai_plan, dict) else {}
         mcp_enable = bool(settings.get("mcp_enable", True))
         max_tool_calls = self._safe_int_value(settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)
         timeout_value = settings.get("timeout")
@@ -3243,6 +4039,12 @@ class WebSiteFetch(object):
         risk_name = str(candidate.get("risk_name", "") or "").strip()
         evidence_seed = self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX)
         payload_type, payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
+        ai_plan_payload_type = self._normalize_ai_pen_payload_type(plan_obj.get("payload_type"), fallback_type=payload_type)
+        ai_plan_payload = str(plan_obj.get("payload", "") or "").strip()[: self.AI_PEN_TEST_PAYLOAD_MAX]
+        if ai_plan_payload_type:
+            payload_type = ai_plan_payload_type
+        if ai_plan_payload:
+            payload = ai_plan_payload
 
         if not self._is_http_target(target_url):
             return {
@@ -3257,9 +4059,21 @@ class WebSiteFetch(object):
                 "http_status": 0,
                 "response_hash_diff": "",
                 "tool_trace": "collect_context_only",
+                "external_tool_runs": [],
+                "external_tool_hit": False,
             }
 
         tool_trace_parts = []
+        if plan_obj:
+            plan_trace_parts = []
+            if str(plan_obj.get("decision", "") or "").strip():
+                plan_trace_parts.append("decision={}".format(str(plan_obj.get("decision", "")).strip()))
+            if payload_type:
+                plan_trace_parts.append("payload_type={}".format(payload_type))
+            if payload:
+                plan_trace_parts.append("payload={}".format(str(payload)[:80]))
+            if plan_trace_parts:
+                tool_trace_parts.append("ai_plan({})".format(",".join(plan_trace_parts)))
         try:
             response = utils.http_req(
                 target_url,
@@ -3293,6 +4107,8 @@ class WebSiteFetch(object):
                     "http_status": status_code,
                     "response_hash_diff": "",
                     "tool_trace": "http_fetch(skip_by_waf,url={})".format(target_url[:220]),
+                    "external_tool_runs": [],
+                    "external_tool_hit": False,
                 }
 
             body_text = ""
@@ -3665,6 +4481,35 @@ class WebSiteFetch(object):
             if payload_type == "api_doc_probe" and api_doc_hit_url:
                 response_hash_diff = "{} | api_doc:{}".format(response_hash_diff, api_doc_hit_url[:120]).strip(" |")
 
+            external_ret = self._run_ai_pen_external_tools(
+                target_url=target_url,
+                risk_type=risk_type,
+                payload_type=payload_type,
+                base_decision=decision,
+                base_confidence=confidence,
+                settings=settings,
+            )
+            if isinstance(external_ret, dict):
+                decision = self._normalize_ai_pen_decision(
+                    external_ret.get("decision"),
+                    default_value=decision,
+                )
+                confidence = self._clamp_ai_pen_confidence(external_ret.get("confidence"), confidence)
+                external_reason = self._clip_text(external_ret.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
+                if external_reason:
+                    if reason:
+                        reason = "{}；{}".format(reason, external_reason)
+                    else:
+                        reason = external_reason
+                external_step = str(external_ret.get("verification_step", "") or "").strip()
+                if external_step:
+                    verification_step = external_step
+                external_trace = str(external_ret.get("tool_trace", "") or "").strip()
+                if external_trace:
+                    tool_trace_parts.append(external_trace)
+            else:
+                external_ret = {}
+
             return {
                 "status": "ok",
                 "decision": decision,
@@ -3677,6 +4522,8 @@ class WebSiteFetch(object):
                 "http_status": probe_status or status_code,
                 "response_hash_diff": response_hash_diff,
                 "tool_trace": " | ".join(tool_trace_parts)[:500],
+                "external_tool_runs": list(external_ret.get("tool_runs", []) or [])[: self.AI_PEN_EXTERNAL_RESULT_MAX],
+                "external_tool_hit": bool(external_ret.get("tool_hit")),
             }
         except Exception as e:
             return {
@@ -3691,6 +4538,8 @@ class WebSiteFetch(object):
                 "http_status": 0,
                 "response_hash_diff": "",
                 "tool_trace": "http_fetch(error,url={})".format(target_url[:220]),
+                "external_tool_runs": [],
+                "external_tool_hit": False,
             }
 
     def run_ai_penetration_test(self):
@@ -3705,18 +4554,39 @@ class WebSiteFetch(object):
         runtime_settings = self._build_ai_pen_runtime_settings(ai_config)
         ai_pen_enable = bool(runtime_settings.get("ai_pen_enable", True))
         mcp_enable = bool(runtime_settings.get("mcp_enable", True))
+        ai_planner_enable = bool(runtime_settings.get("ai_planner_enable", True))
         mcp_max_tool_calls = self._safe_int_value(
             runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS
         )
         mcp_timeout_sec = self._safe_int_value(
             runtime_settings.get("timeout_sec"), self.AI_PEN_TEST_MCP_TIMEOUT_SEC
         )
+        ai_plan_max_cases = self._safe_int_value(
+            runtime_settings.get("ai_plan_max_cases"), self.AI_PEN_TEST_AI_PLAN_MAX_CASES
+        )
+        external_enable = bool(runtime_settings.get("external_enable", False))
+        external_tools = self._normalize_ai_pen_external_tools(runtime_settings.get("external_tools", []))
+        external_timeout_sec = self._safe_int_value(
+            runtime_settings.get("external_timeout_sec"), getattr(Config, "AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", 45)
+        )
+        external_max_runs = self._safe_int_value(
+            runtime_settings.get("external_max_runs"), getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 1)
+        )
         runtime_provider = "local-mcp" if mcp_enable else "local"
         runtime_model = "mcp-rule-lite" if mcp_enable else "rule-lite"
         runtime_profile = "ai-pen-test-mcp" if mcp_enable else "ai-pen-test"
+        ai_prompt_content = self._resolve_ai_pen_prompt_content(ai_config)
+        ai_plan_usage_total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        ai_plan_call_count = 0
+        ai_plan_ok_count = 0
+        ai_plan_error_count = 0
+        ai_plan_skip_count = 0
+        ai_plan_error_samples = []
 
         if not ai_pen_enable:
-            summary_text = "ai_pen_enable=false | candidates=0 | selected=0 | saved=0 | verified=0 | likely_fp=0 | error=0"
+            summary_text = "ai_pen_enable=false | candidates=0 | selected=0 | saved=0 | verified=0 | likely_fp=0 | error=0 | ai_plan_calls=0 | external={}".format(
+                "on" if external_enable else "off"
+            )
             logger.info("task_id:{} skip ai_pen_test, runtime disabled".format(self.task_id))
             self._write_ai_pen_test_usage_log(
                 scene="ai_pen_test_plan",
@@ -3727,12 +4597,19 @@ class WebSiteFetch(object):
                 request_text="AI渗透测试计划",
                 reply_text=summary_text,
                 elapsed_ms=int((time.time() - started_at) * 1000.0),
+                usage=ai_plan_usage_total,
                 meta={
                     "task_id": self.task_id,
                     "ai_pen_enable": ai_pen_enable,
                     "mcp_enable": mcp_enable,
+                    "ai_planner_enable": ai_planner_enable,
                     "mcp_max_tool_calls": mcp_max_tool_calls,
                     "mcp_timeout_sec": mcp_timeout_sec,
+                    "ai_plan_max_cases": ai_plan_max_cases,
+                    "external_enable": external_enable,
+                    "external_tools": external_tools,
+                    "external_timeout_sec": external_timeout_sec,
+                    "external_max_runs": external_max_runs,
                     "candidate_count": 0,
                 },
             )
@@ -3749,18 +4626,27 @@ class WebSiteFetch(object):
                 model=runtime_model,
                 profile=runtime_profile,
                 request_text="AI渗透测试计划",
-                reply_text="candidates=0 | selected=0 | saved=0 | verified=0 | likely_fp=0 | error=0 | mcp={} | max_tool_calls={} | timeout_sec={}".format(
+                reply_text="candidates=0 | selected=0 | saved=0 | verified=0 | likely_fp=0 | error=0 | mcp={} | max_tool_calls={} | timeout_sec={} | ai_plan_calls=0 | external={} | external_tools={}".format(
                     "on" if mcp_enable else "off",
                     mcp_max_tool_calls,
                     mcp_timeout_sec,
+                    "on" if external_enable else "off",
+                    ",".join(external_tools) or "-",
                 ),
                 elapsed_ms=int((time.time() - started_at) * 1000.0),
+                usage=ai_plan_usage_total,
                 meta={
                     "task_id": self.task_id,
                     "candidate_count": 0,
                     "mcp_enable": mcp_enable,
+                    "ai_planner_enable": ai_planner_enable,
                     "mcp_max_tool_calls": mcp_max_tool_calls,
                     "mcp_timeout_sec": mcp_timeout_sec,
+                    "ai_plan_max_cases": ai_plan_max_cases,
+                    "external_enable": external_enable,
+                    "external_tools": external_tools,
+                    "external_timeout_sec": external_timeout_sec,
+                    "external_max_runs": external_max_runs,
                 },
             )
             return
@@ -3809,16 +4695,62 @@ class WebSiteFetch(object):
         verified_count = 0
         false_positive_count = 0
         error_count = 0
+        external_tool_runs_total = 0
+        external_tool_hit_count = 0
 
         collection = utils.conn_db("ai_pen_test_result")
         for candidate in selected_candidates:
-            verify_result = self._verify_ai_pen_candidate(candidate, mcp_settings=runtime_settings)
+            ai_plan_result = {
+                "ok": False,
+                "status": "skipped",
+                "message": "planner_budget_exhausted",
+                "provider": "-",
+                "model": "-",
+                "profile": "-",
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "elapsed_ms": 0,
+                "request_text": "",
+                "reply_text": "",
+                "output": {},
+            }
+            if ai_planner_enable and ai_plan_call_count < ai_plan_max_cases:
+                ai_plan_result = self._call_ai_pen_planner(
+                    ai_config=ai_config,
+                    candidate=candidate,
+                    runtime_settings=runtime_settings,
+                    prompt_content=ai_prompt_content,
+                )
+                ai_plan_call_count += 1
+                ai_plan_status = str(ai_plan_result.get("status", "skipped") or "skipped").strip().lower()
+                ai_usage = ai_plan_result.get("usage") if isinstance(ai_plan_result.get("usage"), dict) else {}
+                ai_plan_usage_total["prompt_tokens"] += self._safe_int_value(ai_usage.get("prompt_tokens"), 0)
+                ai_plan_usage_total["completion_tokens"] += self._safe_int_value(ai_usage.get("completion_tokens"), 0)
+                ai_plan_usage_total["total_tokens"] += self._safe_int_value(ai_usage.get("total_tokens"), 0)
+                if bool(ai_plan_result.get("ok")) and ai_plan_status == "ok":
+                    ai_plan_ok_count += 1
+                elif ai_plan_status == "error":
+                    ai_plan_error_count += 1
+                    ai_error_text = self._clip_text(ai_plan_result.get("message", ""), 120)
+                    if ai_error_text:
+                        ai_plan_error_samples.append(ai_error_text)
+                else:
+                    ai_plan_skip_count += 1
+            else:
+                ai_plan_skip_count += 1
+                if not ai_planner_enable:
+                    ai_plan_result["message"] = "planner_disabled"
+
+            ai_plan_output = ai_plan_result.get("output") if isinstance(ai_plan_result.get("output"), dict) else {}
+            verify_result = self._verify_ai_pen_candidate(
+                candidate,
+                mcp_settings=runtime_settings,
+                ai_plan=ai_plan_output,
+            )
+            verify_result = self._merge_ai_pen_result_with_ai_plan(verify_result, ai_plan_result)
             now_text = utils.curr_date()
 
             status = str(verify_result.get("status", "skipped") or "skipped").strip().lower()
-            decision = str(verify_result.get("decision", "needs_manual_review") or "needs_manual_review").strip().lower()
-            if decision not in {"verified", "likely_false_positive", "needs_manual_review"}:
-                decision = "needs_manual_review"
+            decision = self._normalize_ai_pen_decision(verify_result.get("decision"), default_value="needs_manual_review")
 
             if decision == "verified":
                 verified_count += 1
@@ -3827,17 +4759,32 @@ class WebSiteFetch(object):
             if status == "error":
                 error_count += 1
 
-            confidence = verify_result.get("confidence", 0.0)
-            try:
-                confidence = float(confidence)
-            except Exception:
-                confidence = 0.0
-            confidence = max(0.0, min(1.0, confidence))
+            confidence = self._clamp_ai_pen_confidence(verify_result.get("confidence"), 0.0)
+            external_tool_runs = list(verify_result.get("external_tool_runs", []) or [])
+            if len(external_tool_runs) > self.AI_PEN_EXTERNAL_RESULT_MAX:
+                external_tool_runs = external_tool_runs[: self.AI_PEN_EXTERNAL_RESULT_MAX]
+            external_tool_runs_total += len(external_tool_runs)
+            external_tool_hit = bool(verify_result.get("external_tool_hit"))
+            if external_tool_hit:
+                external_tool_hit_count += 1
 
             source_collection = str(candidate.get("source_collection", "") or "").strip()
             source_id = self._normalize_object_id(candidate.get("source_id"))
             if not source_collection or not source_id:
                 continue
+
+            record_provider = str(ai_plan_result.get("provider", "") or "").strip()
+            record_model = str(ai_plan_result.get("model", "") or "").strip()
+            record_profile = str(ai_plan_result.get("profile", "") or "").strip()
+            if not record_provider or record_provider == "-":
+                record_provider = runtime_provider
+            if not record_model or record_model == "-":
+                record_model = runtime_model
+            if not record_profile or record_profile == "-":
+                record_profile = runtime_profile
+            runtime_provider = record_provider
+            runtime_model = record_model
+            runtime_profile = record_profile
 
             set_fields = {
                 "task_id": self.task_id,
@@ -3859,11 +4806,25 @@ class WebSiteFetch(object):
                 "confidence": float("{:.4f}".format(confidence)),
                 "reason": str(verify_result.get("reason", "") or "").strip(),
                 "status": status,
-                "model": runtime_model,
-                "provider": runtime_provider,
+                "model": record_model,
+                "provider": record_provider,
+                "profile": record_profile,
                 "knowledge_hit_tokens": list(candidate.get("knowledge_hit_tokens", []) or []),
                 "knowledge_hit_samples": list(candidate.get("knowledge_hit_samples", []) or []),
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
+                "external_tool_runs": external_tool_runs,
+                "external_tool_hit": external_tool_hit,
+                "ai_status": str(verify_result.get("ai_status", "") or "").strip(),
+                "ai_plan_decision": self._normalize_ai_pen_decision(
+                    verify_result.get("ai_plan_decision"), default_value=""
+                ),
+                "ai_plan_confidence": float(
+                    "{:.4f}".format(self._clamp_ai_pen_confidence(verify_result.get("ai_plan_confidence"), 0.0))
+                ),
+                "ai_plan_reason": self._clip_text(verify_result.get("ai_plan_reason", ""), self.AI_PEN_TEST_REASON_MAX),
+                "ai_plan_actions": list(verify_result.get("ai_plan_actions", []) or [])[:4],
+                "ai_plan_request": self._clip_text(ai_plan_result.get("request_text", ""), 2600),
+                "ai_plan_reply": self._clip_text(ai_plan_result.get("reply_text", ""), 2600),
                 "update_date": now_text,
             }
 
@@ -3897,7 +4858,7 @@ class WebSiteFetch(object):
         source_counter_text = ",".join(
             ["{}:{}".format(name, source_counter[name]) for name in sorted(source_counter.keys())]
         ) or "-"
-        summary_text = "candidates={} | selected={} | saved={} | verified={} | likely_fp={} | error={} | mcp={} | max_tool_calls={} | timeout_sec={} | sources={} | index_loaded={} | index_tokens={}".format(
+        summary_text = "candidates={} | selected={} | saved={} | verified={} | likely_fp={} | error={} | mcp={} | ai_planner={} | max_tool_calls={} | timeout_sec={} | external={} | external_tools={} | external_runs={} | external_hits={} | ai_plan_calls={} | ai_plan_ok={} | ai_plan_error={} | ai_tokens={} | sources={} | index_loaded={} | index_tokens={}".format(
             len(candidates),
             len(selected_candidates),
             saved_count,
@@ -3905,8 +4866,17 @@ class WebSiteFetch(object):
             false_positive_count,
             error_count,
             "on" if mcp_enable else "off",
+            "on" if ai_planner_enable else "off",
             mcp_max_tool_calls,
             mcp_timeout_sec,
+            "on" if external_enable else "off",
+            ",".join(external_tools) or "-",
+            external_tool_runs_total,
+            external_tool_hit_count,
+            ai_plan_call_count,
+            ai_plan_ok_count,
+            ai_plan_error_count,
+            ai_plan_usage_total.get("total_tokens", 0),
             source_counter_text,
             "true" if knowledge_loaded else "false",
             knowledge_tokens_preview,
@@ -3916,21 +4886,42 @@ class WebSiteFetch(object):
                 self.task_id, summary_text, elapsed_ms
             )
         )
+        plan_log_status = "ok"
+        if ai_plan_call_count <= 0:
+            plan_log_status = "skipped"
+        elif ai_plan_ok_count <= 0 and ai_plan_error_count > 0:
+            plan_log_status = "error"
         self._write_ai_pen_test_usage_log(
             scene="ai_pen_test_plan",
-            status="ok",
+            status=plan_log_status,
             provider=runtime_provider,
             model=runtime_model,
             profile=runtime_profile,
             request_text="AI渗透测试计划",
             reply_text=summary_text,
             elapsed_ms=elapsed_ms,
+            usage=ai_plan_usage_total,
             meta={
                 "task_id": self.task_id,
                 "ai_pen_enable": ai_pen_enable,
                 "mcp_enable": mcp_enable,
+                "ai_planner_enable": ai_planner_enable,
                 "mcp_max_tool_calls": mcp_max_tool_calls,
                 "mcp_timeout_sec": mcp_timeout_sec,
+                "external_enable": external_enable,
+                "external_tools": external_tools,
+                "external_timeout_sec": external_timeout_sec,
+                "external_max_runs": external_max_runs,
+                "external_tool_runs_total": external_tool_runs_total,
+                "external_tool_hit_count": external_tool_hit_count,
+                "ai_plan_max_cases": ai_plan_max_cases,
+                "ai_plan_call_count": ai_plan_call_count,
+                "ai_plan_ok_count": ai_plan_ok_count,
+                "ai_plan_error_count": ai_plan_error_count,
+                "ai_plan_skip_count": ai_plan_skip_count,
+                "ai_plan_error_samples": ai_plan_error_samples[:6],
+                "ai_plan_usage": dict(ai_plan_usage_total),
+                "ai_prompt_content_preview": self._clip_text(ai_prompt_content, 380),
                 "source_counter": source_counter,
                 "knowledge_index_loaded": knowledge_loaded,
                 "knowledge_index_path": knowledge_path,
@@ -3945,6 +4936,8 @@ class WebSiteFetch(object):
             },
         )
         exec_status = "error" if (len(selected_candidates) > 0 and error_count >= len(selected_candidates)) else "ok"
+        if ai_plan_call_count > 0 and ai_plan_ok_count == 0 and ai_plan_error_count >= ai_plan_call_count:
+            exec_status = "error"
         self._write_ai_pen_test_usage_log(
             scene="ai_pen_test_exec",
             status=exec_status,
@@ -3954,12 +4947,27 @@ class WebSiteFetch(object):
             request_text="AI渗透测试执行",
             reply_text=summary_text,
             elapsed_ms=elapsed_ms,
+            usage=ai_plan_usage_total,
             meta={
                 "task_id": self.task_id,
                 "ai_pen_enable": ai_pen_enable,
                 "mcp_enable": mcp_enable,
+                "ai_planner_enable": ai_planner_enable,
                 "mcp_max_tool_calls": mcp_max_tool_calls,
                 "mcp_timeout_sec": mcp_timeout_sec,
+                "external_enable": external_enable,
+                "external_tools": external_tools,
+                "external_timeout_sec": external_timeout_sec,
+                "external_max_runs": external_max_runs,
+                "external_tool_runs_total": external_tool_runs_total,
+                "external_tool_hit_count": external_tool_hit_count,
+                "ai_plan_max_cases": ai_plan_max_cases,
+                "ai_plan_call_count": ai_plan_call_count,
+                "ai_plan_ok_count": ai_plan_ok_count,
+                "ai_plan_error_count": ai_plan_error_count,
+                "ai_plan_skip_count": ai_plan_skip_count,
+                "ai_plan_error_samples": ai_plan_error_samples[:6],
+                "ai_plan_usage": dict(ai_plan_usage_total),
                 "source_counter": source_counter,
                 "knowledge_index_loaded": knowledge_loaded,
                 "knowledge_index_path": knowledge_path,

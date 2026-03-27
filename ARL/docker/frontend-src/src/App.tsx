@@ -1714,6 +1714,41 @@ const modules: ModuleConfig[] = [
       },
       { key: 'reason', label: '说明', placeholder: '请输入说明进行搜索' },
     ],
+    actions: [
+      {
+        id: 'ai_pen_retry_single',
+        label: '重试所选',
+        method: 'POST',
+        path: '/ai_pen_test/retry/',
+        selectedField: 'result_id',
+        selectionMode: 'single',
+        payloadTemplate: {
+          result_id: '',
+        },
+      },
+      {
+        id: 'ai_pen_retry_batch',
+        label: '批量重试',
+        method: 'POST',
+        path: '/ai_pen_test/retry/',
+        selectedField: 'result_ids',
+        selectionMode: 'multiple',
+        payloadTemplate: {
+          result_ids: [],
+        },
+      },
+      {
+        id: 'ai_pen_delete_batch',
+        label: '批量删除',
+        method: 'POST',
+        path: '/ai_pen_test/delete/',
+        selectedField: 'result_ids',
+        selectionMode: 'multiple',
+        payloadTemplate: {
+          result_ids: [],
+        },
+      },
+    ],
   },
   {
     id: 'poc',
@@ -8367,6 +8402,79 @@ function TableModuleView({
     }
   };
 
+  const resolveAiPenTaskId = () => {
+    const filters = buildFilters();
+    const taskIdFromFilter = String((filters.task_id ?? '') || '').trim();
+    if (taskIdFromFilter) return taskIdFromFilter;
+
+    const selectedTaskIds = Array.from(
+      new Set(
+        displayRows
+          .filter((row) => {
+            const rowId = getRowId(row);
+            return rowId ? selectedIds.includes(rowId) : false;
+          })
+          .map((row) => String(row?.task_id || '').trim())
+          .filter((value) => value)
+      )
+    );
+
+    if (selectedTaskIds.length === 1) {
+      return selectedTaskIds[0];
+    }
+    if (selectedTaskIds.length > 1) {
+      throw new Error('所选记录包含多个 task_id，请先按 task_id 过滤后再重跑');
+    }
+    throw new Error('请先在筛选条件填写 task_id，或勾选同一任务下的 AI渗透记录');
+  };
+
+  const runAiPenBatchRun = async () => {
+    if (module.id !== 'ai_pen_test') return;
+    try {
+      setError('');
+      const taskId = resolveAiPenTaskId();
+      const result = await requestApi(token, '/ai_pen_test/batch_run/', {
+        method: 'POST',
+        body: { task_id: taskId },
+      });
+      const detail = Array.isArray(result?.data?.details) ? result.data.details[0] : null;
+      const beforeCount = Number(detail?.before_count || 0);
+      const afterCount = Number(detail?.after_count || 0);
+      const deltaCount = Number(detail?.delta || 0);
+      setSuccess(
+        `AI渗透重跑完成 task_id=${taskId}（执行前 ${beforeCount}，执行后 ${afterCount}，新增/变化 ${deltaCount}）`
+      );
+      await loadRows({ forceRefresh: true });
+    } catch (err: any) {
+      setError(err?.message || 'AI渗透按任务重跑失败');
+    }
+  };
+
+  const runAiPenStats = async () => {
+    if (module.id !== 'ai_pen_test') return;
+    try {
+      setError('');
+      const filters = buildFilters();
+      const taskId = String((filters.task_id ?? '') || '').trim();
+      const query: JsonValue = taskId ? { task_id: taskId } : {};
+      const result = await requestApi(token, '/ai_pen_test/stats/', {
+        method: 'GET',
+        query,
+      });
+      const statsData = result?.data || {};
+      const total = Number(statsData?.total || 0);
+      const decisionSummary = Array.isArray(statsData?.decision)
+        ? statsData.decision.slice(0, 3).map((item: any) => `${item.name || '-'}:${Number(item.count || 0)}`).join(' | ')
+        : '-';
+      const statusSummary = Array.isArray(statsData?.status)
+        ? statsData.status.slice(0, 3).map((item: any) => `${item.name || '-'}:${Number(item.count || 0)}`).join(' | ')
+        : '-';
+      setSuccess(`AI渗透统计：total=${total} | decision=${decisionSummary} | status=${statusSummary}`);
+    } catch (err: any) {
+      setError(err?.message || 'AI渗透统计查询失败');
+    }
+  };
+
   const copyTextToClipboard = useCallback(async (rawText: string, label = '内容') => {
     const text = String(rawText || '').trim();
     if (!text) {
@@ -9446,6 +9554,27 @@ function TableModuleView({
                 >
                   <Download className="w-4 h-4" />
                   导出关联域名
+                </button>
+              ) : null}
+              {module.id === 'ai_pen_test' ? (
+                <button
+                  onClick={() => void runAiPenBatchRun()}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  disabled={loading}
+                  title="优先使用筛选条件中的 task_id；若未筛选，则使用已勾选记录的 task_id"
+                >
+                  <Play className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  按任务重跑
+                </button>
+              ) : null}
+              {module.id === 'ai_pen_test' ? (
+                <button
+                  onClick={() => void runAiPenStats()}
+                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  disabled={loading}
+                >
+                  <Activity className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  统计
                 </button>
               ) : null}
             </div>
@@ -13790,8 +13919,14 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     ai_denoise_enable: boolean;
     ai_pen_test_enable: boolean;
     ai_pen_mcp_enable: boolean;
+    ai_pen_external_enable: boolean;
+    ai_pen_ai_planner_enable: boolean;
     ai_pen_mcp_max_tool_calls: number;
     ai_pen_mcp_timeout_sec: number;
+    ai_pen_external_tools: string;
+    ai_pen_external_timeout_sec: number;
+    ai_pen_external_max_runs: number;
+    ai_pen_ai_plan_max_cases: number;
     ai_denoise_modules: AiDenoiseModules;
     ai_denoise_prompt_ids: AiDenoisePromptIds;
   };
@@ -14147,6 +14282,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const requestDelayMs = Number(rawForm?.request_delay_ms ?? 0);
     const aiPenMcpMaxToolCalls = Number(rawForm?.ai_pen_mcp_max_tool_calls ?? 3);
     const aiPenMcpTimeoutSec = Number(rawForm?.ai_pen_mcp_timeout_sec ?? 12);
+    const aiPenExternalTimeoutSec = Number(rawForm?.ai_pen_external_timeout_sec ?? 45);
+    const aiPenExternalMaxRuns = Number(rawForm?.ai_pen_external_max_runs ?? 1);
+    const aiPenAiPlanMaxCases = Number(rawForm?.ai_pen_ai_plan_max_cases ?? 24);
     const modelProfiles = normalizeModelProfiles(rawForm?.model_profiles, rawForm);
     const activeModelProfileIdRaw = String(rawForm?.active_model_profile_id || '').trim();
     const activeProfile =
@@ -14182,10 +14320,23 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ai_denoise_enable: rawForm?.ai_denoise_enable !== false,
       ai_pen_test_enable: rawForm?.ai_pen_test_enable !== false,
       ai_pen_mcp_enable: rawForm?.ai_pen_mcp_enable !== false,
+      ai_pen_external_enable: rawForm?.ai_pen_external_enable === true,
+      ai_pen_ai_planner_enable: rawForm?.ai_pen_ai_planner_enable !== false,
       ai_pen_mcp_max_tool_calls:
         Number.isFinite(aiPenMcpMaxToolCalls) && aiPenMcpMaxToolCalls > 0 ? Math.floor(aiPenMcpMaxToolCalls) : 3,
       ai_pen_mcp_timeout_sec:
         Number.isFinite(aiPenMcpTimeoutSec) && aiPenMcpTimeoutSec > 0 ? Math.floor(aiPenMcpTimeoutSec) : 12,
+      ai_pen_external_tools: String(rawForm?.ai_pen_external_tools || 'sqlmap,httpx').trim() || 'sqlmap,httpx',
+      ai_pen_external_timeout_sec:
+        Number.isFinite(aiPenExternalTimeoutSec) && aiPenExternalTimeoutSec > 0
+          ? Math.floor(aiPenExternalTimeoutSec)
+          : 45,
+      ai_pen_external_max_runs:
+        Number.isFinite(aiPenExternalMaxRuns) && aiPenExternalMaxRuns > 0
+          ? Math.floor(aiPenExternalMaxRuns)
+          : 1,
+      ai_pen_ai_plan_max_cases:
+        Number.isFinite(aiPenAiPlanMaxCases) && aiPenAiPlanMaxCases > 0 ? Math.floor(aiPenAiPlanMaxCases) : 24,
       ai_denoise_modules: normalizeAiDenoiseModules(rawForm?.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(rawForm?.ai_denoise_prompt_ids, promptTemplates),
     };
@@ -14570,8 +14721,14 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ai_denoise_enable: Boolean(currentForm.ai_denoise_enable),
       ai_pen_test_enable: Boolean(currentForm.ai_pen_test_enable),
       ai_pen_mcp_enable: Boolean(currentForm.ai_pen_mcp_enable),
+      ai_pen_external_enable: Boolean(currentForm.ai_pen_external_enable),
+      ai_pen_ai_planner_enable: Boolean(currentForm.ai_pen_ai_planner_enable),
       ai_pen_mcp_max_tool_calls: Math.max(1, Math.min(8, Math.floor(Number(currentForm.ai_pen_mcp_max_tool_calls) || 3))),
       ai_pen_mcp_timeout_sec: Math.max(1, Math.min(60, Math.floor(Number(currentForm.ai_pen_mcp_timeout_sec) || 12))),
+      ai_pen_external_tools: String(currentForm.ai_pen_external_tools || 'sqlmap,httpx').trim().slice(0, 180) || 'sqlmap,httpx',
+      ai_pen_external_timeout_sec: Math.max(5, Math.min(300, Math.floor(Number(currentForm.ai_pen_external_timeout_sec) || 45))),
+      ai_pen_external_max_runs: Math.max(1, Math.min(8, Math.floor(Number(currentForm.ai_pen_external_max_runs) || 1))),
+      ai_pen_ai_plan_max_cases: Math.max(1, Math.min(120, Math.floor(Number(currentForm.ai_pen_ai_plan_max_cases) || 24))),
       ai_denoise_modules: normalizeAiDenoiseModules(currentForm.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(currentForm.ai_denoise_prompt_ids, promptTemplates),
     };
@@ -15664,6 +15821,26 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
               <input
                 type="checkbox"
+                checked={form.ai_pen_external_enable}
+                onChange={(event) => setForm((prev) => ({ ...prev, ai_pen_external_enable: event.target.checked }))}
+                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable}
+              />
+              <span className="text-xs font-semibold">启用AI渗透-外部工具白名单执行器</span>
+            </label>
+            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+              <input
+                type="checkbox"
+                checked={form.ai_pen_ai_planner_enable}
+                onChange={(event) => setForm((prev) => ({ ...prev, ai_pen_ai_planner_enable: event.target.checked }))}
+                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                disabled={!form.ai_pen_test_enable}
+              />
+              <span className="text-xs font-semibold">启用AI渗透-AI规划</span>
+            </label>
+            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+              <input
+                type="checkbox"
                 checked={form.ai_poc_scan_enable}
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_poc_scan_enable: event.target.checked }))}
                 className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
@@ -15682,9 +15859,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </div>
         </div>
         <div className="text-xs text-brand-text-muted">
-          AI渗透测试用于对风险/PoC/WIH结果做二次验证；开启 MCP 后会自动执行“重放 + Payload 探针”工具链。AI-POC 扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 候选 PoC。AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
+          AI渗透测试用于对风险/PoC/WIH结果做二次验证；开启 AI规划 后会先由模型生成验证计划，开启 MCP 后会自动执行“重放 + Payload 探针”工具链；开启外部工具白名单后可调用 `sqlmap/httpx` 等进行补充验证（不包含 nuclei，nuclei 属于 AI-POC 扫描能力）。AI-POC 扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 候选 PoC。AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
         </div>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
           <div className="space-y-2">
             <label htmlFor="ai-pen-mcp-max-tool-calls" className="text-xs font-bold text-brand-text-muted block">
               AI渗透-MCP最大工具调用次数
@@ -15723,6 +15900,85 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               }
               className={aiInputClass}
               disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-pen-ai-plan-max-cases" className="text-xs font-bold text-brand-text-muted block">
+              AI渗透-AI规划候选上限
+            </label>
+            <input
+              id="ai-pen-ai-plan-max-cases"
+              type="number"
+              min={1}
+              max={120}
+              value={String(form.ai_pen_ai_plan_max_cases)}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  ai_pen_ai_plan_max_cases: Math.max(1, Math.min(120, Number(event.target.value || 0) || 1)),
+                }))
+              }
+              className={aiInputClass}
+              disabled={!form.ai_pen_test_enable || !form.ai_pen_ai_planner_enable}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-pen-external-tools" className="text-xs font-bold text-brand-text-muted block">
+              外部工具白名单（逗号分隔）
+            </label>
+            <input
+              id="ai-pen-external-tools"
+              type="text"
+              value={String(form.ai_pen_external_tools)}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  ai_pen_external_tools: event.target.value,
+                }))
+              }
+              className={aiInputClass}
+              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable || !form.ai_pen_external_enable}
+              placeholder="sqlmap,httpx"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-pen-external-timeout-sec" className="text-xs font-bold text-brand-text-muted block">
+              外部工具超时（秒）
+            </label>
+            <input
+              id="ai-pen-external-timeout-sec"
+              type="number"
+              min={5}
+              max={300}
+              value={String(form.ai_pen_external_timeout_sec)}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  ai_pen_external_timeout_sec: Math.max(5, Math.min(300, Number(event.target.value || 0) || 5)),
+                }))
+              }
+              className={aiInputClass}
+              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable || !form.ai_pen_external_enable}
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-pen-external-max-runs" className="text-xs font-bold text-brand-text-muted block">
+              外部工具单条候选最大执行数
+            </label>
+            <input
+              id="ai-pen-external-max-runs"
+              type="number"
+              min={1}
+              max={8}
+              value={String(form.ai_pen_external_max_runs)}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  ai_pen_external_max_runs: Math.max(1, Math.min(8, Number(event.target.value || 0) || 1)),
+                }))
+              }
+              className={aiInputClass}
+              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable || !form.ai_pen_external_enable}
             />
           </div>
         </div>
