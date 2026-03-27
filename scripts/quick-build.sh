@@ -240,6 +240,20 @@ sync_fingerprint_after_deploy() {
     echo -e "${GREEN}✓ 指纹同步已转为后台低优先级执行（延迟启动，日志: $log_file）${NC}"
 }
 
+sync_poc_library_if_needed() {
+    local sync_script="$ROOT_DIR/scripts/sync-poc-library.sh"
+    if [ ! -x "$sync_script" ]; then
+        echo -e "${YELLOW}[WARN] 未找到可执行的 PoC 文库同步脚本，跳过自动补齐${NC}"
+        return 0
+    fi
+    if "$sync_script"; then
+        echo -e "${GREEN}✓ PoC 文库检查完成${NC}"
+        return 0
+    fi
+    echo -e "${RED}错误: PoC 文库自动同步失败，请检查 .env 中 ARL_POC_* 配置${NC}"
+    return 1
+}
+
 run_docker_build() {
     local dockerfile="$1"
     local image_tag="$2"
@@ -463,6 +477,7 @@ quick_build() {
     show_build_info "快速构建"
     echo -e "${YELLOW}提示: 只重建代码层，复用系统包缓存，前端由 Dockerfile 多阶段构建${NC}"
     echo ""
+    sync_poc_library_if_needed
     check_tools_layout
     
     # 统一使用 docker build 生成镜像，避免 docker-compose(v1) 旧服务名导致构建失败
@@ -499,6 +514,7 @@ full_build() {
     show_build_info "完整构建 (15-30 分钟)"
     echo -e "${YELLOW}提示: 完整重建所有层（包含前端源码编译）${NC}"
     echo ""
+    sync_poc_library_if_needed
     check_tools_layout
     
     run_docker_build "$DOCKERFILE_PATH/Dockerfile" "${DEFAULT_IMAGE_TAG}" "1"
@@ -514,6 +530,7 @@ clean_build() {
     show_build_info "清空缓存完整构建 (20-35 分钟)"
     echo -e "${YELLOW}提示: 删除所有构建缓存，从零开始（包含前端构建缓存）${NC}"
     echo ""
+    sync_poc_library_if_needed
     check_tools_layout
     
     # 删除 dangling images
@@ -571,6 +588,7 @@ tag_build() {
     show_build_info "标记版本构建"
     echo -e "${YELLOW}提示: 快速构建后将 ${DEFAULT_IMAGE_TAG} 标记为 arl:$VERSION${NC}"
     echo ""
+    sync_poc_library_if_needed
     check_tools_layout
     
     # tag 模式复用 quick 的离线回退逻辑，降低网络不稳定导致的失败
@@ -611,6 +629,7 @@ show_help() {
     echo "说明:"
     echo "  - quick命令执行完成后，容器会自动重启并加载新镜像"
     echo "  - quick命令会自动将 config-docker.yaml 缺失项补齐到 config-runtime.yaml（不覆盖已有值）"
+    echo "  - quick/full/clean/tag 会自动检查并补齐 tools/poc 文库（按 .env 的 ARL_POC_* 配置）"
     echo "  - 快速构建会复用之前的系统包缓存，速度更快"
     echo "  - frontend命令只更新前端文件，无需重新构建Docker镜像"
 }

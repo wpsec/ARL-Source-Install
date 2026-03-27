@@ -99,6 +99,18 @@ else
 fi
 echo "✓ 配置文件已准备"
 
+# 自动检查/补齐 PoC 文库，避免首次部署额外手工步骤
+if [ -x "$SCRIPT_DIR/scripts/sync-poc-library.sh" ]; then
+    if "$SCRIPT_DIR/scripts/sync-poc-library.sh"; then
+        echo "✓ PoC 文库检查完成"
+    else
+        echo "❌ PoC 文库自动同步失败，请检查 .env 中的 ARL_POC_* 配置"
+        exit 1
+    fi
+else
+    echo "⚠ 未找到 PoC 文库同步脚本，跳过自动补齐"
+fi
+
 # 启动服务
 echo ""
 echo "启动服务..."
