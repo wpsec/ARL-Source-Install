@@ -11326,6 +11326,107 @@ function TableModuleView({
                 </div>
               </div>
 
+              {(aiPenDetail.row?.api_surface_summary && typeof aiPenDetail.row.api_surface_summary === 'object')
+                || (aiPenDetail.row?.api_doc_summary && typeof aiPenDetail.row.api_doc_summary === 'object') ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
+                  {(() => {
+                    const apiSurfaceSummary =
+                      aiPenDetail.row?.api_surface_summary && typeof aiPenDetail.row.api_surface_summary === 'object'
+                        ? aiPenDetail.row.api_surface_summary
+                        : aiPenDetail.row?.api_doc_summary || {};
+                    return (
+                      <>
+                  <div className="text-xs font-black tracking-wide text-brand-text">接口结构摘要</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 text-sm leading-relaxed">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">接口数量</div>
+                      <div className="mt-1">{normalizeValue(apiSurfaceSummary?.path_count)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">鉴权相关接口数</div>
+                      <div className="mt-1">{normalizeValue(apiSurfaceSummary?.auth_path_count)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">安全方案数</div>
+                      <div className="mt-1">{normalizeValue(apiSurfaceSummary?.security_scheme_count)}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">示例接口</div>
+                      {Array.isArray(apiSurfaceSummary?.sample_paths) && apiSurfaceSummary.sample_paths.length > 0 ? (
+                        <div className="space-y-1">
+                          {apiSurfaceSummary.sample_paths.map((item: any, index: number) => (
+                            <div key={`${index}-${item}`} className="font-mono break-all">
+                              {index + 1}. {String(item || '').trim() || '-'}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">参数摘要</div>
+                      {Array.isArray(apiSurfaceSummary?.parameter_names) && apiSurfaceSummary.parameter_names.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {apiSurfaceSummary.parameter_names.map((item: any, index: number) => (
+                            <span
+                              key={`${index}-${item}`}
+                              className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                            >
+                              {String(item || '').trim() || '-'}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">鉴权相关接口</div>
+                    {Array.isArray(apiSurfaceSummary?.auth_paths) && apiSurfaceSummary.auth_paths.length > 0 ? (
+                      <div className="space-y-1">
+                        {apiSurfaceSummary.auth_paths.map((item: any, index: number) => (
+                          <div key={`${index}-${item}`} className="font-mono break-all">
+                            {index + 1}. {String(item || '').trim() || '-'}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-brand-text-muted">暂无</div>
+                    )}
+                  </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">JS提取接口样例</div>
+                      {Array.isArray(apiSurfaceSummary?.sample_interfaces) && apiSurfaceSummary.sample_interfaces.length > 0 ? (
+                        <div className="space-y-2">
+                          {apiSurfaceSummary.sample_interfaces.map((item: any, index: number) => (
+                            <div key={`${index}-${item?.method}-${item?.path}`} className="rounded-md border border-brand-border bg-brand-bg/60 px-2.5 py-2">
+                              <div className="font-mono break-all">
+                                {String(item?.method || 'GET').toUpperCase()} {String(item?.path || '').trim() || '-'}
+                              </div>
+                              <div className="mt-1 text-[11px] text-brand-text-muted">
+                                参数：{Array.isArray(item?.params) && item.params.length > 0 ? item.params.join(', ') : '-'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                  </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              ) : null}
+
               <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-xs font-black tracking-wide text-brand-text">工具轨迹</div>

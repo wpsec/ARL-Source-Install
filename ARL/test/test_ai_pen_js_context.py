@@ -115,6 +115,82 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("tenant", summary.get("parameter_names", []))
         self.assertIn("username", summary.get("parameter_names", []))
 
+    def test_api_doc_summary_text_contains_structure(self):
+        summary_text = WebSiteFetch._format_api_doc_summary_text(
+            {
+                "path_count": 2,
+                "sample_paths": ["/api/login", "/api/user/{id}"],
+                "auth_path_count": 1,
+                "auth_paths": ["/api/login"],
+                "parameter_names": ["tenant", "username", "password"],
+                "security_scheme_count": 1,
+            }
+        )
+
+        self.assertIn("paths=2", summary_text)
+        self.assertIn("auth_paths=1", summary_text)
+        self.assertIn("securitySchemes=1", summary_text)
+        self.assertIn("/api/login", summary_text)
+        self.assertIn("tenant", summary_text)
+
+    def test_extract_js_api_targets_collects_method_and_params(self):
+        targets = WebSiteFetch._extract_js_api_targets(
+            "https://example.com/static/app.js",
+            """
+            fetch('/api/search?scene=web', {
+              method: 'POST',
+              body: JSON.stringify({ keyword: query, page: currentPage })
+            });
+            axios.get('/api/user/detail', { params: { id: userId, profile: mode } });
+            """
+        )
+
+        target_map = {item["url"]: item for item in targets}
+        self.assertIn("https://example.com/api/search?scene=web", target_map)
+        self.assertEqual("POST", target_map["https://example.com/api/search?scene=web"]["method"])
+        self.assertIn("keyword", target_map["https://example.com/api/search?scene=web"]["params"])
+        self.assertIn("https://example.com/api/user/detail", target_map)
+        self.assertIn("id", target_map["https://example.com/api/user/detail"]["params"])
+
+    def test_normalize_js_api_target_keeps_query_param_names(self):
+        target = WebSiteFetch._normalize_js_api_target(
+            "https://example.com/static/app.js",
+            "/api/search?scene=web",
+            "POST",
+            ["keyword", "page"],
+            "js_api_extract",
+        )
+
+        self.assertEqual("https://example.com/api/search?scene=web", target.get("url"))
+        self.assertIn("scene", target.get("params", []))
+        self.assertIn("keyword", target.get("params", []))
+
+    def test_api_surface_summary_merges_api_doc_and_js_targets(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            api_doc_summary={
+                "path_count": 2,
+                "sample_paths": ["/api/login", "/api/user/{id}"],
+                "auth_path_count": 1,
+                "auth_paths": ["/api/login"],
+                "parameter_names": ["tenant", "username", "password"],
+                "security_scheme_count": 1,
+            },
+            js_api_targets=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/api/order/detail?id=1",
+                    "params": ["id", "token"],
+                    "source": "js_api_extract",
+                }
+            ],
+        )
+
+        self.assertEqual(2, summary.get("path_count"))
+        self.assertEqual(1, summary.get("js_api_count"))
+        self.assertGreaterEqual(summary.get("object_id_like_count", 0), 1)
+        self.assertGreaterEqual(summary.get("security_scheme_count", 0), 1)
+        self.assertIn("token", summary.get("parameter_names", []))
+
     def test_sensitive_info_js_noise_is_downgraded(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(
             target_url="https://example.com/_nuxt/app.js",

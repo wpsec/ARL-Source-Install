@@ -10,7 +10,7 @@ import subprocess
 import base64
 import hashlib
 import hmac
-from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit, urljoin
 from bson import ObjectId
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
 from app import utils
@@ -140,6 +140,8 @@ class WebSiteFetch(object):
     AI_PEN_TEST_REASON_MAX = 420
     AI_PEN_TEST_PAYLOAD_MAX = 220
     AI_PEN_PRODUCT_HINT_MAX = 8
+    AI_PEN_JS_REQUEST_WINDOW_SIZE = 800
+    AI_PEN_JS_MAX_API_TARGETS = 20
     AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES = (
         "xss_probe",
         "sqli_probe",
@@ -203,6 +205,14 @@ class WebSiteFetch(object):
         "jeecg": ("jeecg", "jeewms"),
         "oa": ("oa", "office", "协同办公"),
     }
+    AI_PEN_AUTH_PATH_KEYWORDS = ("login", "auth", "token", "oauth", "signin", "session", "user", "me", "current")
+    AI_PEN_OBJECT_ID_PARAM_HINTS = {
+        "id", "uid", "userid", "user_id", "memberid", "member_id", "accountid", "account_id",
+        "customerid", "customer_id", "profileid", "profile_id", "tenantid", "tenant_id",
+        "orgid", "org_id", "deptid", "dept_id", "employeeid", "employee_id",
+    }
+    AI_PEN_UPLOAD_HINTS = ("upload", "multipart", "file", "image", "avatar", "attachment", "import")
+    AI_PEN_DOWNLOAD_HINTS = ("download", "export", "file", "attachment", "template", "report")
     AI_POC_ALIAS_HINTS = {
         "alibaba": ["alibaba", "aliyun", "阿里", "阿里云"],
         "tencent": ["tencent", "qcloud", "腾讯", "腾讯云"],
@@ -4091,6 +4101,433 @@ class WebSiteFetch(object):
         return " | ".join(parts)
 
     @staticmethod
+    def _extract_js_api_param_names(snippet: str):
+        param_names = []
+        seen = set()
+        text = str(snippet or "")
+
+        def append_name(name_text: str):
+            name = str(name_text or "").strip()
+            lowered = name.lower()
+            if not name or lowered in seen:
+                return
+            if lowered in {
+                "method", "headers", "body", "url", "type", "data", "params", "timeout",
+                "responsetype", "mode", "credentials", "cache", "redirect", "signal",
+                "content-type", "accept", "authorization",
+            }:
+                return
+            seen.add(lowered)
+            param_names.append(name)
+
+        capture_patterns = (
+            r"params\s*:\s*\{([^}]{1,300})\}",
+            r"data\s*:\s*\{([^}]{1,300})\}",
+            r"body\s*:\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)",
+            r"body\s*:\s*\{([^}]{1,300})\}",
+            r"send\s*\(\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)\s*\)",
+            r"new\s+URLSearchParams\s*\(\s*\{([^}]{1,300})\}\s*\)",
+        )
+        key_patterns = (
+            r"[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:",
+            r"\b([A-Za-z_][\w.-]{0,63})\s*:",
+        )
+
+        for pattern in capture_patterns:
+            for match in re.finditer(pattern, text, flags=re.I | re.S):
+                inner_text = str(match.group(1) or "")
+                for key_pattern in key_patterns:
+                    for inner_match in re.finditer(key_pattern, inner_text):
+                        append_name(inner_match.group(1))
+
+        for match in re.finditer(r"\.append\s*\(\s*[\"']([A-Za-z_][\w.-]{0,63})[\"']", text, flags=re.I):
+            append_name(match.group(1))
+
+        return param_names[:10]
+
+    @staticmethod
+    def _resolve_js_api_candidate_url(base_url: str, raw_url: str):
+        candidate = str(raw_url or "").strip().strip("\"'`")
+        if not candidate or "javascript:" in candidate.lower():
+            return ""
+        if any(mark in candidate for mark in ("${", "{{", "}}")):
+            return ""
+
+        base_parsed = urlsplit(str(base_url or "").strip())
+        origin = "{}://{}".format(base_parsed.scheme, base_parsed.netloc) if base_parsed.scheme and base_parsed.netloc else ""
+        if candidate.startswith(("http://", "https://")):
+            return candidate
+        if candidate.startswith("//") and base_parsed.scheme:
+            return "{}:{}".format(base_parsed.scheme, candidate)
+        if candidate.startswith(("./", "../", "/")):
+            return urljoin("{}{}".format(origin, base_parsed.path or "/"), candidate)
+        if re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./?-]+$", candidate):
+            return urljoin("{}/".format(origin) if origin else str(base_url or ""), candidate)
+        return ""
+
+    @classmethod
+    def _normalize_js_api_target(cls, base_url: str, raw_url: str, method: str, params, source: str):
+        resolved = cls._resolve_js_api_candidate_url(base_url, raw_url)
+        if not cls._is_http_target(resolved):
+            return {}
+
+        param_names = []
+        seen = set()
+
+        def append_param(name_text):
+            key_text = str(name_text or "").strip()
+            lowered = key_text.lower()
+            if not key_text or lowered in seen:
+                return
+            seen.add(lowered)
+            param_names.append(key_text)
+
+        try:
+            parsed_query = str(urlsplit(resolved).query or "").strip()
+            if parsed_query:
+                for item in parsed_query.split("&"):
+                    key_text = str(item.split("=", 1)[0] or "").strip()
+                    append_param(key_text)
+        except Exception:
+            pass
+
+        for item in list(params or []):
+            append_param(item)
+
+        method_name = str(method or "GET").strip().upper() or "GET"
+        if method_name not in {"GET", "POST"}:
+            return {}
+
+        return {
+            "method": method_name,
+            "url": resolved,
+            "params": param_names[:10],
+            "source": str(source or "").strip() or "js_api_extract",
+        }
+
+    @classmethod
+    def _extract_js_api_targets(cls, base_url: str, content: str):
+        targets = []
+        seen = set()
+        merged_content = str(content or "")
+
+        def request_window(start_index: int):
+            start = max(0, int(start_index or 0))
+            end = min(len(merged_content), start + 800)
+            snippet = merged_content[start:end]
+            close_candidates = []
+            for token in (");", "})", "};", "\n\n"):
+                pos = snippet.find(token)
+                if pos >= 0:
+                    close_candidates.append(pos + len(token))
+            if close_candidates:
+                snippet = snippet[: min(close_candidates)]
+            return snippet
+
+        def append_target(raw_url: str, method_name: str, params, source="js_api_extract"):
+            target = cls._normalize_js_api_target(base_url, raw_url, method_name, params, source)
+            if not target:
+                return
+            dedupe_key = "{}|{}|{}".format(
+                str(target.get("method") or "").strip(),
+                str(target.get("url") or "").strip(),
+                ",".join(list(target.get("params", []) or [])),
+            )
+            if dedupe_key in seen:
+                return
+            seen.add(dedupe_key)
+            targets.append(target)
+
+        for match in re.finditer(r"fetch\s*\(\s*([\"'`])([^\"'`]+)\1", merged_content, flags=re.I):
+            raw_url = str(match.group(2) or "").strip()
+            window = request_window(match.start())
+            method_match = re.search(r"method\s*:\s*[\"']([A-Za-z]+)[\"']", window, flags=re.I)
+            method_name = str(method_match.group(1) or "GET").strip().upper() if method_match else "GET"
+            append_target(raw_url, method_name, cls._extract_js_api_param_names(window))
+
+        for match in re.finditer(r"axios\.(get|post|put|delete|patch)\s*\(\s*([\"'`])([^\"'`]+)\2", merged_content, flags=re.I):
+            method_name = str(match.group(1) or "GET").strip().upper()
+            raw_url = str(match.group(3) or "").strip()
+            window = request_window(match.start())
+            append_target(raw_url, method_name, cls._extract_js_api_param_names(window))
+
+        for match in re.finditer(r"\$\.ajax\s*\(\s*\{", merged_content, flags=re.I):
+            window = request_window(match.start())
+            url_match = re.search(r"url\s*:\s*([\"'`])([^\"'`]+)\1", window, flags=re.I)
+            if not url_match:
+                continue
+            method_match = re.search(r"(?:type|method)\s*:\s*[\"']([A-Za-z]+)[\"']", window, flags=re.I)
+            method_name = str(method_match.group(1) or "GET").strip().upper() if method_match else "GET"
+            append_target(str(url_match.group(2) or "").strip(), method_name, cls._extract_js_api_param_names(window))
+
+        for match in re.finditer(r"\.open\s*\(\s*([\"'])(GET|POST|PUT|PATCH|DELETE)\1\s*,\s*([\"'`])([^\"'`]+)\3", merged_content, flags=re.I):
+            method_name = str(match.group(2) or "GET").strip().upper()
+            raw_url = str(match.group(4) or "").strip()
+            window = request_window(match.start())
+            append_target(raw_url, method_name, cls._extract_js_api_param_names(window))
+
+        targets.sort(key=lambda item: (-len(item.get("params", [])), str(item.get("url", "") or "")))
+        return targets[:20]
+
+    @classmethod
+    def _build_api_surface_summary(cls, api_doc_summary=None, js_api_targets=None):
+        doc_summary = api_doc_summary if isinstance(api_doc_summary, dict) else {}
+        js_targets = list(js_api_targets or [])
+
+        parameter_names = []
+        parameter_seen = set()
+        auth_paths = [str(item or "").strip() for item in list(doc_summary.get("auth_paths", []) or []) if str(item or "").strip()]
+        sample_interfaces = []
+
+        auth_like_count = cls._safe_int_value(doc_summary.get("auth_path_count"), 0)
+        object_id_like_count = 0
+        upload_like_count = 0
+        download_like_count = 0
+
+        for item in js_targets:
+            if not isinstance(item, dict):
+                continue
+            method_name = str(item.get("method") or "GET").strip().upper()
+            url_text = str(item.get("url") or "").strip()
+            params = [str(param or "").strip() for param in list(item.get("params", []) or []) if str(param or "").strip()]
+            source_text = str(item.get("source") or "").strip()
+            path_text = str(urlsplit(url_text).path or "").strip()
+            path_lower = path_text.lower()
+
+            if any(token in path_lower for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
+                auth_like_count += 1
+                if path_text and path_text not in auth_paths:
+                    auth_paths.append(path_text)
+            if any(param.lower() in cls.AI_PEN_OBJECT_ID_PARAM_HINTS or param.lower().endswith("_id") for param in params):
+                object_id_like_count += 1
+            if any(token in path_lower for token in cls.AI_PEN_UPLOAD_HINTS) or any("file" in param.lower() for param in params):
+                upload_like_count += 1
+            if any(token in path_lower for token in cls.AI_PEN_DOWNLOAD_HINTS):
+                download_like_count += 1
+
+            for param in params:
+                lowered = param.lower()
+                if lowered not in parameter_seen:
+                    parameter_seen.add(lowered)
+                    parameter_names.append(param)
+
+            if len(sample_interfaces) < 6:
+                sample_interfaces.append(
+                    {
+                        "method": method_name,
+                        "path": path_text or url_text,
+                        "params": params[:6],
+                        "source": source_text or "js_api_extract",
+                    }
+                )
+
+        path_count = max(cls._safe_int_value(doc_summary.get("path_count"), 0), len(js_targets))
+        security_scheme_count = cls._safe_int_value(doc_summary.get("security_scheme_count"), 0)
+        if any(token.lower() in {"authorization", "token"} for token in parameter_seen):
+            security_scheme_count = max(security_scheme_count, 1)
+
+        sample_paths = [str(item or "").strip() for item in list(doc_summary.get("sample_paths", []) or []) if str(item or "").strip()]
+        if not sample_paths:
+            sample_paths = [str(item.get("path") or "").strip() for item in sample_interfaces if str(item.get("path") or "").strip()]
+
+        return {
+            "path_count": path_count,
+            "sample_paths": sample_paths[:6],
+            "auth_path_count": auth_like_count,
+            "auth_paths": auth_paths[:6],
+            "parameter_names": parameter_names[:12] or list(doc_summary.get("parameter_names", []) or [])[:12],
+            "security_scheme_count": security_scheme_count,
+            "object_id_like_count": object_id_like_count,
+            "upload_like_count": upload_like_count,
+            "download_like_count": download_like_count,
+            "js_api_count": len(js_targets),
+            "sample_interfaces": sample_interfaces[:6],
+            "source_types": [item for item in ["api_doc" if doc_summary else "", "js" if js_targets else ""] if item],
+        }
+
+    @classmethod
+    def _format_api_surface_summary_text(cls, summary: dict):
+        if not isinstance(summary, dict) or not summary:
+            return ""
+
+        parts = []
+        for key_name, alias in (
+            ("path_count", "paths"),
+            ("auth_path_count", "auth_paths"),
+            ("security_scheme_count", "securitySchemes"),
+            ("object_id_like_count", "object_id"),
+            ("upload_like_count", "upload"),
+            ("download_like_count", "download"),
+            ("js_api_count", "js_api"),
+        ):
+            value = cls._safe_int_value(summary.get(key_name), 0)
+            if value > 0:
+                parts.append("{}={}".format(alias, value))
+
+        sample_paths = [str(item or "").strip() for item in list(summary.get("sample_paths", []) or [])[:3] if str(item or "").strip()]
+        if sample_paths:
+            parts.append("sample={}".format(",".join(sample_paths)))
+
+        parameter_names = [str(item or "").strip() for item in list(summary.get("parameter_names", []) or [])[:6] if str(item or "").strip()]
+        if parameter_names:
+            parts.append("params={}".format(",".join(parameter_names)))
+
+        return " | ".join(parts)
+
+    @staticmethod
+    def _extract_js_api_param_names(snippet: str):
+        param_names = []
+        seen = set()
+        text = str(snippet or "")
+
+        def append_name(name_text: str):
+            name = str(name_text or "").strip()
+            lowered = name.lower()
+            if not name or lowered in seen:
+                return
+            if lowered in {
+                "method", "headers", "body", "url", "type", "data", "params", "timeout",
+                "responsetype", "mode", "credentials", "cache", "redirect", "signal",
+                "content-type", "accept", "authorization",
+            }:
+                return
+            seen.add(lowered)
+            param_names.append(name)
+
+        capture_patterns = (
+            r"params\s*:\s*\{([^}]{1,300})\}",
+            r"data\s*:\s*\{([^}]{1,300})\}",
+            r"body\s*:\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)",
+            r"body\s*:\s*\{([^}]{1,300})\}",
+            r"send\s*\(\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)\s*\)",
+            r"new\s+URLSearchParams\s*\(\s*\{([^}]{1,300})\}\s*\)",
+        )
+        key_patterns = (
+            r"[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:",
+            r"\b([A-Za-z_][\w.-]{0,63})\s*:",
+        )
+
+        for pattern in capture_patterns:
+            for match in re.finditer(pattern, text, flags=re.I | re.S):
+                inner_text = str(match.group(1) or "")
+                for key_pattern in key_patterns:
+                    for inner_match in re.finditer(key_pattern, inner_text):
+                        append_name(inner_match.group(1))
+
+        for match in re.finditer(r"\.append\s*\(\s*[\"']([A-Za-z_][\w.-]{0,63})[\"']", text, flags=re.I):
+            append_name(match.group(1))
+
+        return param_names[:10]
+
+
+    @classmethod
+    def _build_api_surface_summary(cls, api_doc_summary=None, js_api_targets=None):
+        doc_summary = api_doc_summary if isinstance(api_doc_summary, dict) else {}
+        js_targets = list(js_api_targets or [])
+
+        sample_interfaces = []
+        parameter_names = []
+        parameter_seen = set()
+        auth_paths = [str(item or "").strip() for item in list(doc_summary.get("auth_paths", []) or []) if str(item or "").strip()]
+
+        auth_like_count = cls._safe_int_value(doc_summary.get("auth_path_count"), 0)
+        object_id_like_count = 0
+        upload_like_count = 0
+        download_like_count = 0
+
+        for item in js_targets:
+            if not isinstance(item, dict):
+                continue
+            method_name = str(item.get("method") or "GET").strip().upper()
+            url_text = str(item.get("url") or "").strip()
+            params = [str(param or "").strip() for param in list(item.get("params", []) or []) if str(param or "").strip()]
+            source_text = str(item.get("source") or "").strip()
+            parsed = urlsplit(url_text)
+            path_text = str(parsed.path or "").strip()
+            path_lower = path_text.lower()
+
+            if any(token in path_lower for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
+                auth_like_count += 1
+                if path_text and path_text not in auth_paths:
+                    auth_paths.append(path_text)
+
+            if any(param.lower() in cls.AI_PEN_OBJECT_ID_PARAM_HINTS or param.lower().endswith("_id") for param in params):
+                object_id_like_count += 1
+            if any(token in path_lower for token in cls.AI_PEN_UPLOAD_HINTS) or any("file" in param.lower() for param in params):
+                upload_like_count += 1
+            if any(token in path_lower for token in cls.AI_PEN_DOWNLOAD_HINTS):
+                download_like_count += 1
+
+            for param in params:
+                lowered = param.lower()
+                if lowered not in parameter_seen:
+                    parameter_seen.add(lowered)
+                    parameter_names.append(param)
+
+            if len(sample_interfaces) < 6:
+                sample_interfaces.append(
+                    {
+                        "method": method_name,
+                        "path": path_text or url_text,
+                        "params": params[:6],
+                        "source": source_text or "js_api_extract",
+                    }
+                )
+
+        path_count = max(cls._safe_int_value(doc_summary.get("path_count"), 0), len(sample_interfaces))
+        security_scheme_count = cls._safe_int_value(doc_summary.get("security_scheme_count"), 0)
+        if any(token.lower() in {"authorization", "token"} for token in parameter_seen):
+            security_scheme_count = max(security_scheme_count, 1)
+
+        sample_paths = [str(item or "").strip() for item in list(doc_summary.get("sample_paths", []) or []) if str(item or "").strip()]
+        if not sample_paths:
+            sample_paths = [str(item.get("path") or "").strip() for item in sample_interfaces if str(item.get("path") or "").strip()]
+
+        return {
+            "path_count": path_count,
+            "sample_paths": sample_paths[:6],
+            "auth_path_count": auth_like_count,
+            "auth_paths": auth_paths[:6],
+            "parameter_names": parameter_names[:12],
+            "security_scheme_count": security_scheme_count,
+            "object_id_like_count": object_id_like_count,
+            "upload_like_count": upload_like_count,
+            "download_like_count": download_like_count,
+            "js_api_count": len(js_targets),
+            "sample_interfaces": sample_interfaces[:6],
+            "source_types": [item for item in ["api_doc" if doc_summary else "", "js" if js_targets else ""] if item],
+        }
+
+    @classmethod
+    def _format_api_surface_summary_text(cls, summary: dict):
+        if not isinstance(summary, dict) or not summary:
+            return ""
+
+        parts = []
+        for key_name in (
+            "path_count",
+            "auth_path_count",
+            "security_scheme_count",
+            "object_id_like_count",
+            "upload_like_count",
+            "download_like_count",
+            "js_api_count",
+        ):
+            value = cls._safe_int_value(summary.get(key_name), 0)
+            if value > 0:
+                parts.append("{}={}".format(key_name.replace("_count", ""), value))
+
+        sample_paths = [str(item or "").strip() for item in list(summary.get("sample_paths", []) or [])[:3] if str(item or "").strip()]
+        if sample_paths:
+            parts.append("sample={}".format(",".join(sample_paths)))
+
+        parameter_names = [str(item or "").strip() for item in list(summary.get("parameter_names", []) or [])[:6] if str(item or "").strip()]
+        if parameter_names:
+            parts.append("params={}".format(",".join(parameter_names)))
+
+        return " | ".join(parts)
+
+    @staticmethod
     def _extract_jwt_candidates(*text_values, max_count=3):
         """
         从输入文本中提取疑似 JWT token。
@@ -4753,21 +5190,23 @@ class WebSiteFetch(object):
             payload = ai_plan_payload
 
         if not self._is_http_target(target_url):
-            return {
-                "status": "skipped",
-                "decision": "needs_manual_review",
-                "confidence": 0.35,
+                return {
+                    "status": "skipped",
+                    "decision": "needs_manual_review",
+                    "confidence": 0.35,
                 "reason": "缺少可访问的 HTTP 目标，当前阶段仅完成上下文归档",
                 "payload_type": payload_type,
                 "payload": payload,
                 "verification_step": "collect_context_only",
-                "evidence_snippet": evidence_seed,
-                "http_status": 0,
-                "response_hash_diff": "",
-                "tool_trace": "collect_context_only",
-                "external_tool_runs": [],
-                "external_tool_hit": False,
-            }
+                    "evidence_snippet": evidence_seed,
+                    "http_status": 0,
+                    "response_hash_diff": "",
+                    "api_doc_summary": {},
+                    "api_surface_summary": {},
+                    "tool_trace": "collect_context_only",
+                    "external_tool_runs": [],
+                    "external_tool_hit": False,
+                }
 
         tool_trace_parts = []
         if plan_obj:
@@ -4812,6 +5251,8 @@ class WebSiteFetch(object):
                     "evidence_snippet": evidence_seed,
                     "http_status": status_code,
                     "response_hash_diff": "",
+                    "api_doc_summary": {},
+                    "api_surface_summary": {},
                     "tool_trace": "http_fetch(skip_by_waf,url={})".format(target_url[:220]),
                     "external_tool_runs": [],
                     "external_tool_hit": False,
@@ -4822,6 +5263,7 @@ class WebSiteFetch(object):
                 body_text = str(getattr(response, "text", "") or "")
             except Exception:
                 body_text = ""
+            js_api_targets = self._extract_js_api_targets(target_url, body_text) if self._is_js_asset_target(target_url, headers=header_obj) else []
 
             base_body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
             base_body_md5 = hashlib.md5(base_body_excerpt.encode("utf-8", "ignore")).hexdigest() if base_body_excerpt else ""
@@ -4836,6 +5278,7 @@ class WebSiteFetch(object):
             api_doc_hit_url = ""
             api_doc_probe_count = 0
             api_doc_summary = {}
+            api_surface_summary = self._build_api_surface_summary(api_doc_summary=api_doc_summary, js_api_targets=js_api_targets)
             jwt_token_found = ""
             jwt_alg_text = ""
             jwt_alg_none_hit = False
@@ -4971,6 +5414,10 @@ class WebSiteFetch(object):
                                 api_doc_hit = True
                                 api_doc_hit_url = doc_url
                                 api_doc_summary = self._extract_api_doc_summary(doc_body_excerpt)
+                                api_surface_summary = self._build_api_surface_summary(
+                                    api_doc_summary=api_doc_summary,
+                                    js_api_targets=js_api_targets,
+                                )
                                 break
                         except Exception as probe_exc:
                             if not probe_error:
@@ -5139,9 +5586,9 @@ class WebSiteFetch(object):
                 decision = "verified"
                 confidence = 0.86
                 reason = "发现公开 API 文档端点 {}，可继续进行参数验证".format(api_doc_hit_url[:180])
-                api_doc_summary_text = self._format_api_doc_summary_text(api_doc_summary)
-                if api_doc_summary_text:
-                    reason = "{}；文档结构：{}".format(reason, api_doc_summary_text)
+                api_surface_summary_text = self._format_api_surface_summary_text(api_surface_summary)
+                if api_surface_summary_text:
+                    reason = "{}；接口结构：{}".format(reason, api_surface_summary_text)
             elif payload_reflect_hit:
                 decision = "needs_manual_review"
                 confidence = 0.74
@@ -5171,10 +5618,10 @@ class WebSiteFetch(object):
             if not evidence_snippet:
                 evidence_source = probe_body_excerpt or base_body_excerpt
                 evidence_snippet = self._clip_text(evidence_source, self.AI_PEN_TEST_EVIDENCE_MAX)
-            if payload_type == "api_doc_probe":
-                api_doc_summary_text = self._format_api_doc_summary_text(api_doc_summary)
-                if api_doc_summary_text:
-                    evidence_snippet = self._clip_text(api_doc_summary_text, self.AI_PEN_TEST_EVIDENCE_MAX)
+            if payload_type == "api_doc_probe" or js_api_targets:
+                api_surface_summary_text = self._format_api_surface_summary_text(api_surface_summary)
+                if api_surface_summary_text:
+                    evidence_snippet = self._clip_text(api_surface_summary_text, self.AI_PEN_TEST_EVIDENCE_MAX)
 
             js_context_ret = self._analyze_ai_pen_js_context(
                 target_url=target_url,
@@ -5223,9 +5670,9 @@ class WebSiteFetch(object):
                 response_hash_diff = "base:{} | probe:{}".format(base_body_md5[:16], probe_body_md5[:16])
             if payload_type == "api_doc_probe" and api_doc_hit_url:
                 response_hash_diff = "{} | api_doc:{}".format(response_hash_diff, api_doc_hit_url[:120]).strip(" |")
-                api_doc_summary_text = self._format_api_doc_summary_text(api_doc_summary)
-                if api_doc_summary_text:
-                    response_hash_diff = "{} | {}".format(response_hash_diff, api_doc_summary_text[:180]).strip(" |")
+            api_surface_summary_text = self._format_api_surface_summary_text(api_surface_summary)
+            if api_surface_summary_text:
+                response_hash_diff = "{} | {}".format(response_hash_diff, api_surface_summary_text[:180]).strip(" |")
 
             external_ret = self._run_ai_pen_external_tools(
                 target_url=target_url,
@@ -5268,6 +5715,8 @@ class WebSiteFetch(object):
                 "evidence_snippet": evidence_snippet,
                 "http_status": probe_status or status_code,
                 "response_hash_diff": response_hash_diff,
+                "api_doc_summary": api_doc_summary if isinstance(api_doc_summary, dict) else {},
+                "api_surface_summary": api_surface_summary if isinstance(api_surface_summary, dict) else {},
                 "tool_trace": " | ".join(tool_trace_parts)[:500],
                 "external_tool_runs": list(external_ret.get("tool_runs", []) or [])[: self.AI_PEN_EXTERNAL_RESULT_MAX],
                 "external_tool_hit": bool(external_ret.get("tool_hit")),
@@ -5284,6 +5733,8 @@ class WebSiteFetch(object):
                 "evidence_snippet": evidence_seed,
                 "http_status": 0,
                 "response_hash_diff": "",
+                "api_doc_summary": {},
+                "api_surface_summary": {},
                 "tool_trace": "http_fetch(error,url={})".format(target_url[:220]),
                 "external_tool_runs": [],
                 "external_tool_hit": False,
@@ -5549,6 +6000,8 @@ class WebSiteFetch(object):
                 "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
                 "http_status": int(verify_result.get("http_status", 0) or 0),
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
+                "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
+                "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
                 "decision": decision,
                 "confidence": float("{:.4f}".format(confidence)),
                 "reason": str(verify_result.get("reason", "") or "").strip(),

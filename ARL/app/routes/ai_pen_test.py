@@ -229,6 +229,8 @@ def _retry_records(result_docs):
                 "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
                 "http_status": int(verify_result.get("http_status", 0) or 0),
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
+                "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
+                "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
                 "external_tool_runs": list(verify_result.get("external_tool_runs", []) or [])[:3],
                 "external_tool_hit": bool(verify_result.get("external_tool_hit")),

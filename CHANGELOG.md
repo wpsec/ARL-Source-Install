@@ -27,7 +27,7 @@
 - `[v4.3.19]` PoC 索引能力补齐：新增 `ARL/app/tools/build_poc_index.py`，支持从 `nuclei-templates/afrog-pocs` 构建 `token -> tags/keywords` 索引；运行时优先读取 `/code/docker/ai/sop/poc_index.json`（兼容历史路径并支持 `ARL_AI_POC_INDEX_FILE` 覆盖），避免每次运行全库检索
 - `[v4.3.19]` AI 去噪 PoC 风险触发修复：`run_task_ai_denoise_pipeline` 启动时会先合并已累计的 `pending_modules`，修复并发阶段下 `nuclei_result/vuln` 等模块因状态切换被清空后漏执行的问题
 
-## 2026-03-28（v4.3.26 ~ v4.3.30）
+## 2026-03-28（v4.3.26 ~ v4.3.31）
 
 - `[v4.3.26]` AI 管理补齐“思考模型”配置：提供方预设新增 `default_reasoning_model`，前后端模型配置新增 `reasoning_model` 字段并接入读写；DeepSeek 默认展示 `DeepSeek-R1`，配置弹窗与卡片摘要同步显示“分析模型 / 思考模型 / API Base URL”，为后续区分分析模型与思考模型保留数据面
 - `[v4.3.26]` AI 渗透结果页可读性增强：`AI渗透` 列表新增 `详情` 按钮与详情弹窗，集中展示 `目标 / 漏洞URL / 说明 / 知识命中 / 证据片段 / 工具轨迹 / 响应摘要`，修复长文本挤压表格导致下方内容难以查看的问题；同时将 `目标 / 漏洞URL` 改为居中展示并复用超链接渲染
@@ -37,6 +37,7 @@
 - `[v4.3.29]` AI+MCP 渗透编排增强：`commonTask` 新增 `route_hint/product_hints` 与 `API文档结构摘要` 能力，AI planner 请求体现在会携带 `js_sensitive_context/js_dom_context/api_doc_structure/jwt_token_first/websocket_handshake/structured_id_mutation` 等路由提示、产品线索与结论门槛；运行时对真实 API 文档命中补充 `paths/auth_paths/parameter_names/securitySchemes` 摘要并回写到 `reason/evidence_snippet/response_hash_diff`，让 AI+MCP 更像“基于上下文做验证”而不是只做通用重放
 - `[v4.3.29]` AI渗透 SOP 升级：`ARL/docker/ai/sop/default_ai_pen_test.yaml` 新增“上下文先行、PoC知识仅作提示、JS误报抑制、API文档结构化优先”的运行时约束，并明确 `verified/needs_manual_review/likely_false_positive` 三档证据标准，减少 planner 因提示词过于泛化而做出激进判断
 - `[v4.3.30]` AI渗透编排 Skill 初版：新增 `ARL/docker/ai/skills/ai-pen-orchestrator/`，以中文为主沉淀 `SKILL.md + routing/evidence-criteria/product-playbooks/false-positive-rules` 四类参考文件，用于统一 AI渗透测试后续开发中的候选路由、证据标准、产品画像与误报抑制方法论，降低“规则、SOP、代码三处各说各话”的维护成本
+- `[v4.3.31]` 结构化接口消费增强：AI渗透验证链将 `API文档摘要` 扩展为统一的 `api_surface_summary`，开始同时消费 `Swagger/OpenAPI` 与 `JS` 中提取出的接口面（`method/url/params/source`），补充 `auth/object_id/upload/download` 风格统计；`AI渗透详情` 新增“接口结构摘要 + JS提取接口样例”展示，帮助用户确认即使目标没有标准 API 文档，前端暴露出的接口与参数也已被结构化纳入验证输入
 
 ## 2026-03-26（v4.3.0 ~ v4.3.18）
 
