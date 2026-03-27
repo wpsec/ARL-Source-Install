@@ -83,6 +83,38 @@ WebSiteFetch = _load_common_task_module().WebSiteFetch
 
 
 class TestAiPenJsContext(unittest.TestCase):
+    def test_route_hint_marks_js_sensitive_context(self):
+        route_hint = WebSiteFetch._build_ai_pen_route_hint(
+            {
+                "target": "https://example.com/_nuxt/app.js",
+                "risk_type": "sensitive_info",
+            }
+        )
+
+        self.assertEqual("js_sensitive_context", route_hint)
+
+    def test_product_hints_collect_swagger_and_seeyon(self):
+        hints = WebSiteFetch._collect_ai_pen_product_hints(
+            {
+                "target": "https://oa.example.com/seeyon/swagger-ui/index.html",
+                "risk_name": "站点疑似暴露API文档",
+                "knowledge_hit_tokens": ["swagger", "seeyon"],
+            }
+        )
+
+        self.assertIn("swagger", hints)
+        self.assertIn("seeyon", hints)
+
+    def test_api_doc_summary_extracts_paths_and_params(self):
+        summary = WebSiteFetch._extract_api_doc_summary(
+            '{"openapi":"3.0.0","paths":{"/api/login":{"post":{"parameters":[{"name":"tenant"}],"requestBody":{"content":{"application/json":{"schema":{"properties":{"username":{},"password":{}}}}}}}},"/api/user/{id}":{"get":{"parameters":[{"name":"id"}]}}},"components":{"securitySchemes":{"BearerAuth":{"type":"http","scheme":"bearer"}}}}'
+        )
+
+        self.assertEqual(2, summary.get("path_count"))
+        self.assertGreaterEqual(summary.get("security_scheme_count", 0), 1)
+        self.assertIn("tenant", summary.get("parameter_names", []))
+        self.assertIn("username", summary.get("parameter_names", []))
+
     def test_sensitive_info_js_noise_is_downgraded(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(
             target_url="https://example.com/_nuxt/app.js",

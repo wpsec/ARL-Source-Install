@@ -139,6 +139,7 @@ class WebSiteFetch(object):
     AI_PEN_TEST_ERROR_MAX = 180
     AI_PEN_TEST_REASON_MAX = 420
     AI_PEN_TEST_PAYLOAD_MAX = 220
+    AI_PEN_PRODUCT_HINT_MAX = 8
     AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES = (
         "xss_probe",
         "sqli_probe",
@@ -191,6 +192,17 @@ class WebSiteFetch(object):
         "passwd",
         "credential",
     )
+    AI_PEN_EXTRA_PRODUCT_HINTS = {
+        "swagger": ("swagger", "openapi", "api-docs", "postman"),
+        "nuxt": ("_nuxt", "nuxt", "__nuxt__"),
+        "webpack": ("webpack", "__webpack_require__", "webpackjson"),
+        "seeyon": ("seeyon", "致远oa", "致远", "m1server", "m3server"),
+        "tongda": ("tongda", "通达oa", "office anywhere"),
+        "ecology": ("ecology", "e-cology", "泛微", "weaver"),
+        "ruoyi": ("ruoyi", "若依", "ry-ui"),
+        "jeecg": ("jeecg", "jeewms"),
+        "oa": ("oa", "office", "协同办公"),
+    }
     AI_POC_ALIAS_HINTS = {
         "alibaba": ["alibaba", "aliyun", "阿里", "阿里云"],
         "tencent": ["tencent", "qcloud", "腾讯", "腾讯云"],
@@ -3214,10 +3226,15 @@ class WebSiteFetch(object):
 
     def _resolve_ai_pen_prompt_content(self, ai_config: dict):
         fallback_prompt = (
-            "你是AI渗透测试助手。请结合风险类型、URL、参数、响应特征与知识命中，"
-            "评估该结果可信度并给出下一步验证建议。输出JSON对象，字段包含："
-            "decision/confidence/reason/payload_type/payload/evidence/next_actions。"
+            "你是AI渗透测试助手，目标是做可控的二次验证与误报收敛，不是盲目利用。"
+            "请优先遵守“上下文先行、证据驱动、PoC知识仅作提示不作证明”。"
+            "请结合风险类型、URL、参数、响应特征、产品线索、知识命中与路由提示，"
+            "评估该结果可信度并给出下一步验证建议。"
+            "输出JSON对象，字段包含：decision/confidence/reason/payload_type/payload/evidence/next_actions。"
             "decision 仅允许 verified、likely_false_positive、needs_manual_review。"
+            "若为静态JS场景，请区分硬编码字面量与变量拼接/本地存储噪声；"
+            "若为API文档场景，请优先围绕文档结构、路径和参数做验证建议；"
+            "若证据不足，必须保持 needs_manual_review，禁止编造不存在的事实。"
         )
         config_obj = ai_config if isinstance(ai_config, dict) else {}
         prompt_templates = config_obj.get("prompt_templates")
@@ -3240,6 +3257,75 @@ class WebSiteFetch(object):
                 if content:
                     return content
         return fallback_prompt
+
+    @classmethod
+    def _collect_ai_pen_product_hints(cls, candidate: dict, extra_text: str = ""):
+        item = candidate if isinstance(candidate, dict) else {}
+        raw_parts = [
+            str(item.get("source_collection", "") or "").strip(),
+            str(item.get("source_module", "") or "").strip(),
+            str(item.get("risk_type", "") or "").strip(),
+            str(item.get("risk_name", "") or "").strip(),
+            str(item.get("target", "") or "").strip(),
+            str(item.get("vuln_url", "") or "").strip(),
+            str(item.get("evidence_seed", "") or "").strip(),
+            str(extra_text or "").strip(),
+        ]
+        raw_parts.extend([str(token or "").strip() for token in list(item.get("knowledge_hit_tokens", []) or [])[:24]])
+        merged = " ".join([part for part in raw_parts if part]).strip().lower()
+        if not merged:
+            return []
+
+        hints = []
+        seen = set()
+
+        def append_hint(name: str):
+            hint = str(name or "").strip().lower()
+            if not hint or hint in seen:
+                return
+            seen.add(hint)
+            hints.append(hint)
+
+        for canonical_name, alias_list in cls.AI_POC_ALIAS_HINTS.items():
+            hint_tokens = [str(canonical_name or "").strip()] + list(alias_list or [])
+            for token in hint_tokens:
+                token_text = str(token or "").strip().lower()
+                if token_text and token_text in merged:
+                    append_hint(canonical_name)
+                    break
+
+        for canonical_name, alias_list in cls.AI_PEN_EXTRA_PRODUCT_HINTS.items():
+            for token in alias_list:
+                token_text = str(token or "").strip().lower()
+                if token_text and token_text in merged:
+                    append_hint(canonical_name)
+                    break
+
+        return hints[: cls.AI_PEN_PRODUCT_HINT_MAX]
+
+    @classmethod
+    def _build_ai_pen_route_hint(cls, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+        risk_type = str(item.get("risk_type", "") or "").strip().lower()
+
+        if cls._is_js_asset_target(target_url):
+            if risk_type == "sensitive_info":
+                return "js_sensitive_context"
+            if risk_type == "xss":
+                return "js_dom_context"
+            return "js_static_context"
+        if risk_type == "api_doc":
+            return "api_doc_structure"
+        if risk_type == "jwt":
+            return "jwt_token_first"
+        if risk_type == "websocket":
+            return "websocket_handshake"
+        if risk_type == "idor":
+            return "structured_id_mutation"
+        if risk_type in {"sqli", "cmdi", "ssrf"}:
+            return "low_side_effect_probe"
+        return "http_replay_then_context"
 
     def _call_ai_pen_planner(self, ai_config: dict, candidate: dict, runtime_settings: dict, prompt_content: str):
         """
@@ -3313,6 +3399,8 @@ class WebSiteFetch(object):
             risk_type = str(candidate.get("risk_type", "") or "").strip()
             risk_name = str(candidate.get("risk_name", "") or "").strip()
             default_payload_type, default_payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
+            route_hint = self._build_ai_pen_route_hint(candidate)
+            product_hints = self._collect_ai_pen_product_hints(candidate)
             request_obj = {
                 "task_id": str(self.task_id),
                 "target": str(candidate.get("target", "") or "").strip(),
@@ -3325,12 +3413,42 @@ class WebSiteFetch(object):
                 "evidence_seed": self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX),
                 "knowledge_hit_tokens": list(candidate.get("knowledge_hit_tokens", []) or [])[:20],
                 "knowledge_hit_samples": list(candidate.get("knowledge_hit_samples", []) or [])[:6],
+                "route_hint": route_hint,
+                "product_hints": product_hints,
+                "js_asset_target": bool(
+                    self._is_js_asset_target(
+                        str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
+                    )
+                ),
                 "default_payload_type": default_payload_type,
                 "default_payload": default_payload,
                 "mcp_enable": bool(runtime_settings.get("mcp_enable", True)),
                 "mcp_max_tool_calls": self._safe_int_value(
                     runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS
                 ),
+                "decision_guidelines": {
+                    "verified": [
+                        "真实暴露且结构明确的API文档",
+                        "真实硬编码敏感值/凭据字面量",
+                        "明确的JWT签名缺陷或弱密钥",
+                        "明确的WebSocket握手成功",
+                    ],
+                    "needs_manual_review": [
+                        "路线正确但证据尚未闭环",
+                        "响应差异明显但鉴权或语义上下文不足",
+                        "JS中出现source->sink链路但未完全确认可控性",
+                    ],
+                    "likely_false_positive": [
+                        "仅命中关键词，没有真实字面量或结构性证据",
+                        "构建产物/变量拼接/本地存储噪声",
+                        "Swagger关键词存在但没有真实文档结构",
+                    ],
+                },
+                "false_positive_focus": {
+                    "js_sensitive_info": "区分硬编码字面量与 token+变量/localStorage/sessionStorage 噪声",
+                    "dom_xss": "静态JS必须同时关注用户输入源与危险sink；纯框架bundle优先降权",
+                    "api_doc": "URL包含swagger/openapi不等于真实文档暴露，优先看 paths/securitySchemes/参数结构",
+                },
                 "supported_payload_types": list(self.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES),
                 "output_schema": {
                     "decision": "verified|likely_false_positive|needs_manual_review",
@@ -3854,6 +3972,123 @@ class WebSiteFetch(object):
         if any(marker in url_lower for marker in url_markers):
             return "html" in content_type or "json" in content_type
         return False
+
+    @classmethod
+    def _extract_api_doc_summary(cls, body_text: str):
+        text = str(body_text or "").strip()
+        if not text:
+            return {}
+
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return {}
+
+        if not isinstance(parsed, dict):
+            return {}
+
+        paths_obj = parsed.get("paths")
+        if not isinstance(paths_obj, dict):
+            return {}
+
+        path_list = [str(key or "").strip() for key in list(paths_obj.keys()) if str(key or "").strip()]
+        path_list = path_list[:120]
+        sample_paths = path_list[:4]
+
+        auth_keywords = ("login", "auth", "token", "oauth", "signin", "session", "user", "me", "current")
+        auth_paths = []
+        parameter_names = []
+        parameter_seen = set()
+
+        for path_text in path_list:
+            path_lower = path_text.lower()
+            if any(token in path_lower for token in auth_keywords):
+                auth_paths.append(path_text)
+
+            path_item = paths_obj.get(path_text)
+            if not isinstance(path_item, dict):
+                continue
+
+            for op_obj in path_item.values():
+                if not isinstance(op_obj, dict):
+                    continue
+                for parameter in op_obj.get("parameters", []) or []:
+                    if not isinstance(parameter, dict):
+                        continue
+                    name_text = str(parameter.get("name") or "").strip()
+                    if name_text and name_text not in parameter_seen:
+                        parameter_seen.add(name_text)
+                        parameter_names.append(name_text)
+                        if len(parameter_names) >= 10:
+                            break
+                if len(parameter_names) >= 10:
+                    break
+
+                request_body = op_obj.get("requestBody")
+                if isinstance(request_body, dict):
+                    content_obj = request_body.get("content")
+                    if isinstance(content_obj, dict):
+                        for media_obj in content_obj.values():
+                            if not isinstance(media_obj, dict):
+                                continue
+                            schema_obj = media_obj.get("schema")
+                            if not isinstance(schema_obj, dict):
+                                continue
+                            props_obj = schema_obj.get("properties")
+                            if not isinstance(props_obj, dict):
+                                continue
+                            for key in props_obj.keys():
+                                key_text = str(key or "").strip()
+                                if key_text and key_text not in parameter_seen:
+                                    parameter_seen.add(key_text)
+                                    parameter_names.append(key_text)
+                                    if len(parameter_names) >= 10:
+                                        break
+                            if len(parameter_names) >= 10:
+                                break
+                        if len(parameter_names) >= 10:
+                            break
+            if len(parameter_names) >= 10:
+                break
+
+        components_obj = parsed.get("components")
+        security_obj = components_obj.get("securitySchemes") if isinstance(components_obj, dict) else {}
+        security_scheme_count = len(security_obj) if isinstance(security_obj, dict) else 0
+
+        return {
+            "path_count": len(path_list),
+            "sample_paths": sample_paths,
+            "auth_path_count": len(auth_paths),
+            "auth_paths": auth_paths[:3],
+            "parameter_names": parameter_names[:10],
+            "security_scheme_count": int(security_scheme_count or 0),
+        }
+
+    @classmethod
+    def _format_api_doc_summary_text(cls, summary: dict):
+        if not isinstance(summary, dict) or not summary:
+            return ""
+
+        parts = []
+        path_count = cls._safe_int_value(summary.get("path_count"), 0)
+        if path_count > 0:
+            parts.append("paths={}".format(path_count))
+        auth_path_count = cls._safe_int_value(summary.get("auth_path_count"), 0)
+        if auth_path_count > 0:
+            parts.append("auth_paths={}".format(auth_path_count))
+        security_scheme_count = cls._safe_int_value(summary.get("security_scheme_count"), 0)
+        if security_scheme_count > 0:
+            parts.append("securitySchemes={}".format(security_scheme_count))
+
+        sample_paths = [str(item or "").strip() for item in list(summary.get("sample_paths", []) or [])[:3] if str(item or "").strip()]
+        if sample_paths:
+            parts.append("sample={}".format(",".join(sample_paths)))
+
+        parameter_names = [str(item or "").strip() for item in list(summary.get("parameter_names", []) or [])[:6] if str(item or "").strip()]
+        if parameter_names:
+            parts.append("params={}".format(",".join(parameter_names)))
+
+        return " | ".join(parts)
 
     @staticmethod
     def _extract_jwt_candidates(*text_values, max_count=3):
@@ -4600,6 +4835,7 @@ class WebSiteFetch(object):
             api_doc_hit = False
             api_doc_hit_url = ""
             api_doc_probe_count = 0
+            api_doc_summary = {}
             jwt_token_found = ""
             jwt_alg_text = ""
             jwt_alg_none_hit = False
@@ -4734,6 +4970,7 @@ class WebSiteFetch(object):
                             if self._looks_like_api_doc_response(doc_url, doc_body_excerpt, doc_headers):
                                 api_doc_hit = True
                                 api_doc_hit_url = doc_url
+                                api_doc_summary = self._extract_api_doc_summary(doc_body_excerpt)
                                 break
                         except Exception as probe_exc:
                             if not probe_error:
@@ -4902,6 +5139,9 @@ class WebSiteFetch(object):
                 decision = "verified"
                 confidence = 0.86
                 reason = "发现公开 API 文档端点 {}，可继续进行参数验证".format(api_doc_hit_url[:180])
+                api_doc_summary_text = self._format_api_doc_summary_text(api_doc_summary)
+                if api_doc_summary_text:
+                    reason = "{}；文档结构：{}".format(reason, api_doc_summary_text)
             elif payload_reflect_hit:
                 decision = "needs_manual_review"
                 confidence = 0.74
@@ -4931,6 +5171,10 @@ class WebSiteFetch(object):
             if not evidence_snippet:
                 evidence_source = probe_body_excerpt or base_body_excerpt
                 evidence_snippet = self._clip_text(evidence_source, self.AI_PEN_TEST_EVIDENCE_MAX)
+            if payload_type == "api_doc_probe":
+                api_doc_summary_text = self._format_api_doc_summary_text(api_doc_summary)
+                if api_doc_summary_text:
+                    evidence_snippet = self._clip_text(api_doc_summary_text, self.AI_PEN_TEST_EVIDENCE_MAX)
 
             js_context_ret = self._analyze_ai_pen_js_context(
                 target_url=target_url,
@@ -4979,6 +5223,9 @@ class WebSiteFetch(object):
                 response_hash_diff = "base:{} | probe:{}".format(base_body_md5[:16], probe_body_md5[:16])
             if payload_type == "api_doc_probe" and api_doc_hit_url:
                 response_hash_diff = "{} | api_doc:{}".format(response_hash_diff, api_doc_hit_url[:120]).strip(" |")
+                api_doc_summary_text = self._format_api_doc_summary_text(api_doc_summary)
+                if api_doc_summary_text:
+                    response_hash_diff = "{} | {}".format(response_hash_diff, api_doc_summary_text[:180]).strip(" |")
 
             external_ret = self._run_ai_pen_external_tools(
                 target_url=target_url,
