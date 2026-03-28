@@ -3,6 +3,12 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-03-29（v4.3.42）
+
+- `[v4.3.42]` 任务资产范围守卫统一落地：新增 `ARL/app/services/task_scope_guard.py`，收敛 `host/url` 归一化与范围判断逻辑（`normalize_scope_host/host_in_scope/url_in_scope`），并提供 `load_task_scope_context` 从“当前任务目标 + 同名历史任务目标 + 已沉淀 site/url/domain”聚合 `allowed_hosts/allowed_flds`，作为 WIH/PoC/AI 渗透等链路的统一范围基线
+- `[v4.3.42]` 扫描结果与情报入库链路范围收口：`commonTask` 与 `WebSiteFetch` 接入任务级 scope cache，`nuclei/afrog/risk_cruising` 结果、`WIH` 记录升级风险、`AI渗透` 候选聚合、`page_url_set` 更新等流程新增“仅保留任务范围内目标”的过滤，修复跨站点/跨域噪声结果进入当前任务的问题
+- `[v4.3.42]` 任务侧扫描执行补齐范围校验：`DomainTask` 的 `run_risk_cruising` 与 `find_vhost` 结果新增 URL 范围判定；`cloud_security_scan` 与 `penetration_scan` 改为复用统一 `task_scope_guard` 判定主机范围，并在云存储目标加入前增加 scope 拦截，减少越界探测与无关结果写入
+
 ## 2026-03-27（v4.3.19 ~ v4.3.25）
 
 - `[v4.3.25]` AI 渗透外部工具执行器升级为“可扩展框架”：`commonTask` 新增外部工具说明文件加载机制（`yaml/json`），支持用户在 `tools/ai_pen_tools` 目录按清单定义工具 `id/match/exec/result`，并通过 `AI_PEN_EXTERNAL_TOOLS` 白名单启用；运行时支持内置 `sqlmap/httpx` 与同名覆盖，匹配逻辑新增 `risk_name` 参与命中，`api_doc` 关键词命中修正，提升外部工具策略可维护性与命中稳定性

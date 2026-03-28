@@ -2124,6 +2124,9 @@ class DomainTask(CommonTask):
         targets += list(self.npoc_service_target_set)
         result = run_risk_cruising(targets=targets, plugins=plugins)
         for item in result:
+            target = str(item.get("target", "") or item.get("url", "") or "").strip()
+            if target and not self._url_in_task_scope(target, seed_sites=self.site_list, scope_domains=[self.base_domain]):
+                continue
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
             utils.conn_db('vuln').insert_one(item)
@@ -2136,6 +2139,8 @@ class DomainTask(CommonTask):
         ips = find_public_ip_by_task_id(self.task_id)
         results = find_vhost(ips=ips, domains=domains)
         for result in results:
+            if not self._url_in_task_scope(result.get("url", ""), seed_sites=self.site_list, scope_domains=[self.base_domain]):
+                continue
             save_item = dict()
             save_item["plg_name"] = "FindVhost"
             save_item["plg_type"] = "scan"

@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 from app import utils
 from app.services.penetration_request_policy import PenetrationRequestPolicy
+from app.services.task_scope_guard import load_task_scope_context, host_in_scope
 
 logger = utils.get_logger()
 
@@ -202,8 +203,9 @@ class PenetrationScanService(object):
         self.sites = list(sites or [])
         self.page_url_set = set(page_url_set or [])
         self.waf_guard = waf_guard
-        self.allowed_hosts = self._collect_allowed_hosts()
-        self.allowed_flds = self._collect_allowed_flds()
+        scope_context = load_task_scope_context(task_id=self.task_id, seed_sites=self.sites)
+        self.allowed_hosts = set(scope_context.get("allowed_hosts", []) or [])
+        self.allowed_flds = set(scope_context.get("allowed_flds", []) or [])
         self.dns_policy_cache = {}
         self.baseline_cache = {}
         self.finding_hash_set = set()
@@ -238,23 +240,7 @@ class PenetrationScanService(object):
         return flds
 
     def _host_in_scope(self, host: str) -> bool:
-        host = self._normalize_host(host)
-        if not host:
-            return False
-
-        if host in self.allowed_hosts:
-            return True
-
-        for item in self.allowed_hosts:
-            if host.endswith("." + item):
-                return True
-
-        parsed = utils.domain_parsed(host)
-        fld = str(parsed.get("fld", "") if parsed else "").strip().lower()
-        if fld and fld in self.allowed_flds:
-            return True
-
-        return False
+        return host_in_scope(host, self.allowed_hosts, self.allowed_flds)
 
     @staticmethod
     def _is_http_url(value: str) -> bool:

@@ -20,6 +20,7 @@ from app.modules import CollectSource, WebSiteFetchStatus, WebSiteFetchOption
 from app.services.nuclei_scan import nuclei_scan, NucleiScan
 from app.services.afrog_scan import run_afrog_scan
 from app.services.waf_guard import WAFSmartSkipGuard
+from app.services.task_scope_guard import load_task_scope_context, host_in_scope, url_in_scope
 from app.services import run_risk_cruising, BaseUpdateTask
 logger = utils.get_logger()
 
@@ -28,6 +29,25 @@ logger = utils.get_logger()
 class CommonTask(object):
     def __init__(self, task_id):
         self.task_id = task_id
+        self._task_scope_context_cache = None
+
+    def _get_task_scope_context(self, seed_sites=None, scope_domains=None):
+        if isinstance(self._task_scope_context_cache, dict) and self._task_scope_context_cache:
+            return self._task_scope_context_cache
+        self._task_scope_context_cache = load_task_scope_context(
+            task_id=self.task_id,
+            seed_sites=seed_sites,
+            scope_domains=scope_domains,
+        )
+        return self._task_scope_context_cache
+
+    def _url_in_task_scope(self, value: str, seed_sites=None, scope_domains=None) -> bool:
+        context = self._get_task_scope_context(seed_sites=seed_sites, scope_domains=scope_domains)
+        return url_in_scope(value, context.get("allowed_hosts", []), context.get("allowed_flds", []))
+
+    def _host_in_task_scope(self, value: str, seed_sites=None, scope_domains=None) -> bool:
+        context = self._get_task_scope_context(seed_sites=seed_sites, scope_domains=scope_domains)
+        return host_in_scope(value, context.get("allowed_hosts", []), context.get("allowed_flds", []))
 
     def insert_task_stat(self):
         query = {
@@ -432,6 +452,7 @@ class WebSiteFetch(object):
         }
         self.ai_pen_browser_intel_cache = {}
         self.ai_pen_task_graph_context_cache = {}
+        self._task_scope_context_cache = None
 
     def _filter_waf_blocked_targets(self, targets, stage_name="") -> list:
         target_list = list(targets or [])
@@ -643,6 +664,24 @@ class WebSiteFetch(object):
         return "<WebSiteFetch> task_id:{}, sites: {}, available_sites:{}".format(
             self.task_id, len(self.sites), len(self.available_sites))
 
+    def _get_task_scope_context(self):
+        if isinstance(self._task_scope_context_cache, dict) and self._task_scope_context_cache:
+            return self._task_scope_context_cache
+        self._task_scope_context_cache = load_task_scope_context(
+            task_id=self.task_id,
+            seed_sites=self.sites,
+            scope_domains=self.scope_domain,
+        )
+        return self._task_scope_context_cache
+
+    def _url_in_task_scope(self, value: str) -> bool:
+        context = self._get_task_scope_context()
+        return url_in_scope(value, context.get("allowed_hosts", []), context.get("allowed_flds", []))
+
+    def _host_in_task_scope(self, value: str) -> bool:
+        context = self._get_task_scope_context()
+        return host_in_scope(value, context.get("allowed_hosts", []), context.get("allowed_flds", []))
+
     def save_site_info(self):
         for site_info in self.site_info_list:
             curr_site = site_info["site"]
@@ -777,6 +816,8 @@ class WebSiteFetch(object):
 
         result = run_risk_cruising(plugins=plugins, targets=poc_targets)
         for item in result:
+            if not self._scan_result_in_task_scope(item, target_keys=("target", "url")):
+                continue
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
             utils.conn_db('vuln').insert_one(item)
@@ -2366,6 +2407,8 @@ class WebSiteFetch(object):
 
         scan_results = nuclei_scan(nuclei_targets, scan_profile=scan_profile)
         for item in scan_results:
+            if not self._scan_result_in_task_scope(item, target_keys=("vuln_url", "target")):
+                continue
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
             utils.conn_db('nuclei_result').insert_one(item)
@@ -2477,6 +2520,8 @@ class WebSiteFetch(object):
             target = str(result.get("target", "") or "").strip()
             if not target:
                 continue
+            if not self._scan_result_in_task_scope(result, target_keys=("target",)):
+                continue
 
             poc_id = str(result.get("poc_id", "") or "").strip()
             detail_text = self._build_afrog_detail_text(result=result, target=target, poc_id=poc_id)
@@ -2533,6 +2578,8 @@ class WebSiteFetch(object):
         for result in all_findings:
             target = str(result.get("url", "") or "").strip()
             if not target:
+                continue
+            if not self._scan_result_in_task_scope(result, target_keys=("url",)):
                 continue
 
             item = {
@@ -5772,6 +5819,8 @@ class WebSiteFetch(object):
             ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
             for row in vuln_cursor:
                 target = str(row.get("target", "") or "").strip()
+                if self._is_http_target(target) and not self._url_in_task_scope(target):
+                    continue
                 vul_name = str(row.get("vul_name", "") or "").strip()
                 risk_type = self._classify_ai_pen_risk_type(
                     raw_type=row.get("plg_type"),
@@ -5820,6 +5869,8 @@ class WebSiteFetch(object):
                 vuln_url = str(row.get("vuln_url", "") or "").strip()
                 target = str(row.get("target", "") or "").strip()
                 preferred_url = vuln_url if self._is_http_target(vuln_url) else target
+                if self._is_http_target(preferred_url) and not self._url_in_task_scope(preferred_url):
+                    continue
                 scanner_type = str(row.get("scanner_type", "") or "").strip().lower()
                 risk_type = self._classify_ai_pen_risk_type(
                     raw_type=scanner_type or "poc_scan",
@@ -5858,6 +5909,8 @@ class WebSiteFetch(object):
                 source_url = str(row.get("source", "") or "").strip()
                 site_url = str(row.get("site", "") or "").strip()
                 target = source_url if self._is_http_target(source_url) else site_url
+                if self._is_http_target(target) and not self._url_in_task_scope(target):
+                    continue
                 _append_candidate(
                     {
                         "source_collection": "wih",
@@ -5892,6 +5945,8 @@ class WebSiteFetch(object):
             for row in site_cursor:
                 site_url = str(row.get("site", "") or "").strip()
                 if not self._is_http_target(site_url):
+                    continue
+                if not self._url_in_task_scope(site_url):
                     continue
 
                 title_text = str(row.get("title", "") or "").strip()
@@ -5984,6 +6039,8 @@ class WebSiteFetch(object):
             for row in url_cursor:
                 raw_url = str(row.get("url", "") or "").strip()
                 if not self._is_http_target(raw_url):
+                    continue
+                if not self._url_in_task_scope(raw_url):
                     continue
 
                 lower_url = raw_url.lower()
@@ -7284,7 +7341,7 @@ class WebSiteFetch(object):
     def update_page_url_set(self):
         from app.helpers import get_url_by_task_id
         # page_url_set 从数据库读取搜索引擎爬取到的URL
-        urls = get_url_by_task_id(self.task_id)
+        urls = [url for url in get_url_by_task_id(self.task_id) if self._url_in_task_scope(url)]
         self.page_url_set |= set(urls)
 
         for u in self.page_url_set:
@@ -7321,6 +7378,54 @@ class WebSiteFetch(object):
         """
         text = str(value or "").strip().lower()
         return text.startswith("http://") or text.startswith("https://")
+
+    def _extract_scope_urls_from_wih_record(self, record) -> list:
+        record_type = str(getattr(record, "recordType", "") or "").strip().lower()
+        content = str(getattr(record, "content", "") or "").strip()
+        source = str(getattr(record, "source", "") or "").strip()
+        site = str(getattr(record, "site", "") or "").strip()
+        candidates = []
+        for value in (content, source, site):
+            if self._is_http_url(value) and value not in candidates:
+                candidates.append(value)
+
+        if record_type == "page_form":
+            match = re.match(r"^\s*([A-Za-z]+)\s+(\S+?)(?:\s+\[([^\]]*)\])?\s*$", content)
+            if match:
+                action_url = str(match.group(2) or "").strip()
+                if self._is_http_url(action_url) and action_url not in candidates:
+                    candidates.append(action_url)
+        elif record_type == "api_doc_endpoint":
+            match = re.match(r"^\s*([A-Za-z]+)\s+(\S+)\s*$", content)
+            if match:
+                endpoint_url = str(match.group(2) or "").strip()
+                if self._is_http_url(endpoint_url) and endpoint_url not in candidates:
+                    candidates.append(endpoint_url)
+
+        return candidates
+
+    def _wih_record_in_task_scope(self, record) -> bool:
+        for value in self._extract_scope_urls_from_wih_record(record):
+            if not self._url_in_task_scope(value):
+                return False
+
+        record_type = str(getattr(record, "recordType", "") or "").strip().lower()
+        content = str(getattr(record, "content", "") or "").strip()
+        if record_type == "domain" and content:
+            return self._host_in_task_scope(content)
+        return True
+
+    def _scan_result_in_task_scope(self, result: dict, target_keys=None) -> bool:
+        item = result if isinstance(result, dict) else {}
+        keys = list(target_keys or ("target", "url", "vuln_url"))
+        for key in keys:
+            value = str(item.get(key, "") or "").strip()
+            if not value:
+                continue
+            if self._is_http_url(value):
+                return self._url_in_task_scope(value)
+            return self._host_in_task_scope(value)
+        return False
 
     def _should_promote_wih_to_risk(self, record) -> bool:
         """
@@ -7390,6 +7495,8 @@ class WebSiteFetch(object):
         """
         if not self._should_promote_wih_to_risk(record):
             return None
+        if not self._wih_record_in_task_scope(record):
+            return None
 
         record_type = str(getattr(record, "recordType", "") or "").strip()
         content_raw = str(getattr(record, "content", "") or "").strip()
@@ -7417,6 +7524,8 @@ class WebSiteFetch(object):
             app_name = "wih"
 
         target = source if self._is_http_url(source) else (site or source or "-")
+        if self._is_http_url(target) and not self._url_in_task_scope(target):
+            return None
         detail = "record_type={} source={} site={}".format(record_type or "-", source or "-", site or "-")
         severity = self._infer_wih_risk_severity(normalized_type, content_raw)
 
@@ -7515,6 +7624,8 @@ class WebSiteFetch(object):
         for record in records:
             # 先判断记录是否已经存在
             if record.fnv_hash in self.wih_record_set:
+                continue
+            if not self._wih_record_in_task_scope(record):
                 continue
 
             self.add_wih_domain_set(record)

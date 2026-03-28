@@ -14,6 +14,7 @@ from typing import Dict, List
 from urllib.parse import urlparse, urlunparse
 
 from app import utils
+from app.services.task_scope_guard import load_task_scope_context, host_in_scope
 
 logger = utils.get_logger()
 
@@ -189,8 +190,9 @@ class CloudSecurityScanService(object):
         self.sites = list(sites or [])
         self.page_url_set = set(page_url_set or [])
         self.waf_guard = waf_guard
-        self.allowed_hosts = self._collect_allowed_hosts()
-        self.allowed_flds = self._collect_allowed_flds()
+        scope_context = load_task_scope_context(task_id=self.task_id, seed_sites=self.sites)
+        self.allowed_hosts = set(scope_context.get("allowed_hosts", []) or [])
+        self.allowed_flds = set(scope_context.get("allowed_flds", []) or [])
         self.dns_policy_cache = {}
         self.finding_hash_set = set()
         self.wih_records_cache = None
@@ -238,20 +240,7 @@ class CloudSecurityScanService(object):
         return flds
 
     def _host_in_scope(self, host: str) -> bool:
-        host = self._normalize_host(host)
-        if not host:
-            return False
-        if host in self.allowed_hosts:
-            return True
-        for item in self.allowed_hosts:
-            if host.endswith("." + item):
-                return True
-
-        parsed = utils.domain_parsed(host)
-        fld = str(parsed.get("fld", "") if parsed else "").strip().lower()
-        if fld and fld in self.allowed_flds:
-            return True
-        return False
+        return host_in_scope(host, self.allowed_hosts, self.allowed_flds)
 
     def _pick_record_target(self, source: str, site: str) -> str:
         source_text = str(source or "").strip()
@@ -527,6 +516,8 @@ class CloudSecurityScanService(object):
 
             normalized = self._normalize_bucket_url(candidate, provider_key=provider_key)
             if not normalized or normalized in target_set:
+                return
+            if not self._host_in_scope(normalized):
                 return
 
             allow_scan, policy_detail = utils.check_dns_policy_for_url(normalized, cache_map=self.dns_policy_cache)
