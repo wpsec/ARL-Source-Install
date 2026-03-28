@@ -94,7 +94,7 @@ class TestAiPenJsContext(unittest.TestCase):
                                 "count": 3,
                                 "sources": {"poc_library": 3},
                                 "samples": ["poc_library:wpoc/示例/漏洞.md"],
-                                "product_labels": [{"name": "Seeyon", "count": 2}],
+                                "product_labels": [{"name": "Admin Portal", "count": 2}],
                                 "vuln_types": [{"name": "api_doc", "count": 2}],
                                 "entry_paths": ["/swagger-ui/index.html"],
                                 "verify_actions": ["get /swagger-ui/index.html"],
@@ -103,7 +103,7 @@ class TestAiPenJsContext(unittest.TestCase):
                                         "source": "poc_library",
                                         "path": "wpoc/示例/漏洞.md",
                                         "title": "示例漏洞",
-                                        "product_labels": ["Seeyon"],
+                                        "product_labels": ["Admin Portal"],
                                         "vuln_types": ["api_doc"],
                                         "entry_paths": ["/swagger-ui/index.html"],
                                         "verify_actions": ["get /swagger-ui/index.html"],
@@ -126,7 +126,7 @@ class TestAiPenJsContext(unittest.TestCase):
             WebSiteFetch._load_ai_pen_knowledge_index_data = original_loader
 
         self.assertIn("swagger", hit_info.get("hit_tokens", []))
-        self.assertIn("Seeyon", hit_info.get("hit_product_labels", []))
+        self.assertIn("Admin Portal", hit_info.get("hit_product_labels", []))
         self.assertIn("api_doc", hit_info.get("hit_vuln_types", []))
         self.assertIn("/swagger-ui/index.html", hit_info.get("hit_entry_paths", []))
 
@@ -140,17 +140,17 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("js_sensitive_context", route_hint)
 
-    def test_product_hints_collect_swagger_and_seeyon(self):
-        hints = WebSiteFetch._collect_ai_pen_product_hints(
+    def test_product_hints_collect_generic_surface_families(self):
+        hints = WebSiteFetch._collect_ai_pen_surface_hints(
             {
-                "target": "https://oa.example.com/seeyon/swagger-ui/index.html",
+                "target": "https://oa.example.com/swagger-ui/index.html",
                 "risk_name": "站点疑似暴露API文档",
-                "knowledge_hit_tokens": ["swagger", "seeyon"],
+                "knowledge_hit_tokens": ["swagger", "dashboard", "office"],
             }
         )
 
-        self.assertIn("swagger", hints)
-        self.assertIn("seeyon", hints)
+        self.assertIn("api_doc_surface", hints)
+        self.assertIn("admin_office_portal", hints)
 
     def test_api_doc_summary_extracts_paths_and_params(self):
         summary = WebSiteFetch._extract_api_doc_summary(

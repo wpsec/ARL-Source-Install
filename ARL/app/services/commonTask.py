@@ -194,16 +194,57 @@ class WebSiteFetch(object):
         "passwd",
         "credential",
     )
-    AI_PEN_EXTRA_PRODUCT_HINTS = {
-        "swagger": ("swagger", "openapi", "api-docs", "postman"),
-        "nuxt": ("_nuxt", "nuxt", "__nuxt__"),
-        "webpack": ("webpack", "__webpack_require__", "webpackjson"),
-        "seeyon": ("seeyon", "致远oa", "致远", "m1server", "m3server"),
-        "tongda": ("tongda", "通达oa", "office anywhere"),
-        "ecology": ("ecology", "e-cology", "泛微", "weaver"),
-        "ruoyi": ("ruoyi", "若依", "ry-ui"),
-        "jeecg": ("jeecg", "jeewms"),
-        "oa": ("oa", "office", "协同办公"),
+    AI_PEN_EXTRA_SURFACE_HINTS = {
+        "api_doc_surface": ("swagger", "openapi", "api-docs", "postman", "knife4j", "redoc"),
+        "js_bundler_app": ("_nuxt", "nuxt", "__nuxt__", "webpack", "__webpack_require__", "webpackjson", "__vite__"),
+        "admin_office_portal": ("admin", "console", "dashboard", "backend", "manage", "panel", "oa", "office", "协同办公", "工作台", "审批", "流程"),
+        "token_auth_flow": ("jwt", "bearer", "oauth", "openid", "access_token", "authorization", "id_token", "refresh_token"),
+    }
+    AI_PEN_CAPABILITY_PROFILES = {
+        "api_doc_surface": {
+            "priority": 100,
+            "route_hint": "api_doc_structure",
+            "preferred_payload_type": "api_doc_probe",
+            "focus_paths": ["auth_paths", "sample_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先从 API 文档中筛选鉴权相关、对象ID风格、上传/下载接口",
+                "优先围绕 securitySchemes、鉴权相关接口和高价值参数做低副作用验证",
+            ],
+        },
+        "admin_office_portal": {
+            "priority": 90,
+            "route_hint": "admin_portal_context",
+            "preferred_payload_type": "replay",
+            "focus_paths": ["auth_paths", "sample_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先关注管理后台、办公门户、工作流入口、文档暴露与文件处理能力",
+                "若接口结构存在对象ID参数，优先安排越权/鉴权边界验证建议",
+            ],
+        },
+        "js_bundler_app": {
+            "priority": 88,
+            "route_hint": "js_static_context",
+            "preferred_payload_type": "replay",
+            "focus_paths": ["sample_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先分析静态JS中提取出的接口、参数和鉴权线索，而不是只看构建产物关键词",
+                "优先区分真实接口暴露与前端框架运行时代码噪声",
+            ],
+        },
+        "token_auth_flow": {
+            "priority": 84,
+            "route_hint": "jwt_token_first",
+            "preferred_payload_type": "jwt_probe",
+            "focus_paths": ["auth_paths", "sample_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先确认 token 是否真实存在，再考虑 alg、签名方式与重放行为",
+                "若 API 文档或 JS 提取接口包含 token/auth 参数，优先围绕这些入口做验证建议",
+            ],
+        },
     }
     AI_PEN_AUTH_PATH_KEYWORDS = ("login", "auth", "token", "oauth", "signin", "session", "user", "me", "current")
     AI_PEN_OBJECT_ID_PARAM_HINTS = {
@@ -3389,7 +3430,7 @@ class WebSiteFetch(object):
         return fallback_prompt
 
     @classmethod
-    def _collect_ai_pen_product_hints(cls, candidate: dict, extra_text: str = ""):
+    def _collect_ai_pen_surface_hints(cls, candidate: dict, extra_text: str = ""):
         item = candidate if isinstance(candidate, dict) else {}
         raw_parts = [
             str(item.get("source_collection", "") or "").strip(),
@@ -3425,7 +3466,7 @@ class WebSiteFetch(object):
                     append_hint(canonical_name)
                     break
 
-        for canonical_name, alias_list in cls.AI_PEN_EXTRA_PRODUCT_HINTS.items():
+        for canonical_name, alias_list in cls.AI_PEN_EXTRA_SURFACE_HINTS.items():
             for token in alias_list:
                 token_text = str(token or "").strip().lower()
                 if token_text and token_text in merged:
@@ -3433,6 +3474,13 @@ class WebSiteFetch(object):
                     break
 
         return hints[: cls.AI_PEN_PRODUCT_HINT_MAX]
+
+    @classmethod
+    def _collect_ai_pen_product_hints(cls, candidate: dict, extra_text: str = ""):
+        """
+        兼容旧调用名，内部统一走通用 surface_hints。
+        """
+        return cls._collect_ai_pen_surface_hints(candidate, extra_text=extra_text)
 
     @classmethod
     def _build_ai_pen_route_hint(cls, candidate: dict):
@@ -3457,6 +3505,71 @@ class WebSiteFetch(object):
         if risk_type in {"sqli", "cmdi", "ssrf"}:
             return "low_side_effect_probe"
         return "http_replay_then_context"
+
+    @classmethod
+    def _select_ai_pen_capability_profile(cls, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        route_hint = str(item.get("route_hint") or cls._build_ai_pen_route_hint(item) or "").strip()
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        knowledge_products = [str(x or "").strip().lower() for x in list(item.get("knowledge_hit_product_labels", []) or []) if str(x or "").strip()]
+        surface_hints = [str(x or "").strip().lower() for x in list(item.get("surface_hints", []) or []) if str(x or "").strip()]
+        risk_type = str(item.get("risk_type", "") or "").strip().lower()
+
+        score_map = {}
+
+        def bump(profile_name: str, score: int):
+            if not profile_name:
+                return
+            score_map[profile_name] = score_map.get(profile_name, 0) + int(score or 0)
+
+        for product in knowledge_products + surface_hints:
+            if product in {"swagger", "openapi", "api_doc", "api_doc_surface"}:
+                bump("api_doc_surface", 60)
+            if product in {"nuxt", "webpack", "js_bundler_app"}:
+                bump("js_bundler_app", 45)
+            if product in {"jwt", "token_auth_flow"}:
+                bump("token_auth_flow", 50)
+            if product in {"admin_office_portal", "oa", "office", "admin", "console", "dashboard", "portal"}:
+                bump("admin_office_portal", 42)
+
+        if route_hint == "api_doc_structure":
+            bump("api_doc_surface", 40)
+        if route_hint == "js_static_context":
+            bump("js_bundler_app", 25)
+        if route_hint == "jwt_token_first":
+            bump("token_auth_flow", 35)
+
+        if cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0) > 0:
+            bump("api_doc_surface", 12)
+            bump("token_auth_flow", 8)
+        if cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0) > 0:
+            bump("api_doc_surface", 10)
+            bump("admin_office_portal", 10)
+        if cls._safe_int_value(api_surface_summary.get("js_api_count"), 0) > 0:
+            bump("js_bundler_app", 10)
+        if cls._safe_int_value(api_surface_summary.get("object_id_like_count"), 0) > 0:
+            bump("admin_office_portal", 8)
+
+        if risk_type == "jwt":
+            bump("token_auth_flow", 30)
+        if risk_type == "api_doc":
+            bump("api_doc_surface", 30)
+
+        best_name = ""
+        best_score = 0
+        for profile_name, profile in cls.AI_PEN_CAPABILITY_PROFILES.items():
+            total_score = score_map.get(profile_name, 0) + int(profile.get("priority", 0) or 0)
+            if total_score > best_score:
+                best_name = profile_name
+                best_score = total_score
+
+        if not best_name:
+            return {}
+
+        capability_profile = dict(cls.AI_PEN_CAPABILITY_PROFILES.get(best_name) or {})
+        capability_profile["name"] = best_name
+        capability_profile["score"] = best_score
+        return capability_profile
 
     def _call_ai_pen_planner(self, ai_config: dict, candidate: dict, runtime_settings: dict, prompt_content: str):
         """
@@ -3531,7 +3644,11 @@ class WebSiteFetch(object):
             risk_name = str(candidate.get("risk_name", "") or "").strip()
             default_payload_type, default_payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
             route_hint = self._build_ai_pen_route_hint(candidate)
-            product_hints = self._collect_ai_pen_product_hints(candidate)
+            enriched_candidate = dict(candidate or {})
+            enriched_candidate["route_hint"] = route_hint
+            surface_hints = self._collect_ai_pen_surface_hints(candidate)
+            enriched_candidate["surface_hints"] = surface_hints
+            capability_profile = self._select_ai_pen_capability_profile(enriched_candidate)
             request_obj = {
                 "task_id": str(self.task_id),
                 "target": str(candidate.get("target", "") or "").strip(),
@@ -3550,7 +3667,8 @@ class WebSiteFetch(object):
                 "knowledge_hit_verify_actions": list(candidate.get("knowledge_hit_verify_actions", []) or [])[:6],
                 "knowledge_hit_record_refs": list(candidate.get("knowledge_hit_record_refs", []) or [])[:4],
                 "route_hint": route_hint,
-                "product_hints": product_hints,
+                "surface_hints": surface_hints,
+                "capability_profile": capability_profile,
                 "js_asset_target": bool(
                     self._is_js_asset_target(
                         str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
@@ -4545,114 +4663,6 @@ class WebSiteFetch(object):
 
         return param_names[:10]
 
-
-    @classmethod
-    def _build_api_surface_summary(cls, api_doc_summary=None, js_api_targets=None):
-        doc_summary = api_doc_summary if isinstance(api_doc_summary, dict) else {}
-        js_targets = list(js_api_targets or [])
-
-        sample_interfaces = []
-        parameter_names = []
-        parameter_seen = set()
-        auth_paths = [str(item or "").strip() for item in list(doc_summary.get("auth_paths", []) or []) if str(item or "").strip()]
-
-        auth_like_count = cls._safe_int_value(doc_summary.get("auth_path_count"), 0)
-        object_id_like_count = 0
-        upload_like_count = 0
-        download_like_count = 0
-
-        for item in js_targets:
-            if not isinstance(item, dict):
-                continue
-            method_name = str(item.get("method") or "GET").strip().upper()
-            url_text = str(item.get("url") or "").strip()
-            params = [str(param or "").strip() for param in list(item.get("params", []) or []) if str(param or "").strip()]
-            source_text = str(item.get("source") or "").strip()
-            parsed = urlsplit(url_text)
-            path_text = str(parsed.path or "").strip()
-            path_lower = path_text.lower()
-
-            if any(token in path_lower for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
-                auth_like_count += 1
-                if path_text and path_text not in auth_paths:
-                    auth_paths.append(path_text)
-
-            if any(param.lower() in cls.AI_PEN_OBJECT_ID_PARAM_HINTS or param.lower().endswith("_id") for param in params):
-                object_id_like_count += 1
-            if any(token in path_lower for token in cls.AI_PEN_UPLOAD_HINTS) or any("file" in param.lower() for param in params):
-                upload_like_count += 1
-            if any(token in path_lower for token in cls.AI_PEN_DOWNLOAD_HINTS):
-                download_like_count += 1
-
-            for param in params:
-                lowered = param.lower()
-                if lowered not in parameter_seen:
-                    parameter_seen.add(lowered)
-                    parameter_names.append(param)
-
-            if len(sample_interfaces) < 6:
-                sample_interfaces.append(
-                    {
-                        "method": method_name,
-                        "path": path_text or url_text,
-                        "params": params[:6],
-                        "source": source_text or "js_api_extract",
-                    }
-                )
-
-        path_count = max(cls._safe_int_value(doc_summary.get("path_count"), 0), len(sample_interfaces))
-        security_scheme_count = cls._safe_int_value(doc_summary.get("security_scheme_count"), 0)
-        if any(token.lower() in {"authorization", "token"} for token in parameter_seen):
-            security_scheme_count = max(security_scheme_count, 1)
-
-        sample_paths = [str(item or "").strip() for item in list(doc_summary.get("sample_paths", []) or []) if str(item or "").strip()]
-        if not sample_paths:
-            sample_paths = [str(item.get("path") or "").strip() for item in sample_interfaces if str(item.get("path") or "").strip()]
-
-        return {
-            "path_count": path_count,
-            "sample_paths": sample_paths[:6],
-            "auth_path_count": auth_like_count,
-            "auth_paths": auth_paths[:6],
-            "parameter_names": parameter_names[:12],
-            "security_scheme_count": security_scheme_count,
-            "object_id_like_count": object_id_like_count,
-            "upload_like_count": upload_like_count,
-            "download_like_count": download_like_count,
-            "js_api_count": len(js_targets),
-            "sample_interfaces": sample_interfaces[:6],
-            "source_types": [item for item in ["api_doc" if doc_summary else "", "js" if js_targets else ""] if item],
-        }
-
-    @classmethod
-    def _format_api_surface_summary_text(cls, summary: dict):
-        if not isinstance(summary, dict) or not summary:
-            return ""
-
-        parts = []
-        for key_name in (
-            "path_count",
-            "auth_path_count",
-            "security_scheme_count",
-            "object_id_like_count",
-            "upload_like_count",
-            "download_like_count",
-            "js_api_count",
-        ):
-            value = cls._safe_int_value(summary.get(key_name), 0)
-            if value > 0:
-                parts.append("{}={}".format(key_name.replace("_count", ""), value))
-
-        sample_paths = [str(item or "").strip() for item in list(summary.get("sample_paths", []) or [])[:3] if str(item or "").strip()]
-        if sample_paths:
-            parts.append("sample={}".format(",".join(sample_paths)))
-
-        parameter_names = [str(item or "").strip() for item in list(summary.get("parameter_names", []) or [])[:6] if str(item or "").strip()]
-        if parameter_names:
-            parts.append("params={}".format(",".join(parameter_names)))
-
-        return " | ".join(parts)
-
     @staticmethod
     def _extract_jwt_candidates(*text_values, max_count=3):
         """
@@ -5308,6 +5318,10 @@ class WebSiteFetch(object):
         risk_name = str(candidate.get("risk_name", "") or "").strip()
         evidence_seed = self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX)
         payload_type, payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
+        route_hint = str(candidate.get("route_hint") or self._build_ai_pen_route_hint(candidate) or "").strip()
+        capability_candidate = dict(candidate or {})
+        capability_candidate["route_hint"] = route_hint
+        capability_profile = self._select_ai_pen_capability_profile(capability_candidate)
         ai_plan_payload_type = self._normalize_ai_pen_payload_type(plan_obj.get("payload_type"), fallback_type=payload_type)
         ai_plan_payload = str(plan_obj.get("payload", "") or "").strip()[: self.AI_PEN_TEST_PAYLOAD_MAX]
         if ai_plan_payload_type:
@@ -5316,23 +5330,25 @@ class WebSiteFetch(object):
             payload = ai_plan_payload
 
         if not self._is_http_target(target_url):
-                return {
-                    "status": "skipped",
-                    "decision": "needs_manual_review",
-                    "confidence": 0.35,
+            return {
+                "status": "skipped",
+                "decision": "needs_manual_review",
+                "confidence": 0.35,
                 "reason": "缺少可访问的 HTTP 目标，当前阶段仅完成上下文归档",
                 "payload_type": payload_type,
                 "payload": payload,
                 "verification_step": "collect_context_only",
-                    "evidence_snippet": evidence_seed,
-                    "http_status": 0,
-                    "response_hash_diff": "",
-                    "api_doc_summary": {},
-                    "api_surface_summary": {},
-                    "tool_trace": "collect_context_only",
-                    "external_tool_runs": [],
-                    "external_tool_hit": False,
-                }
+                "evidence_snippet": evidence_seed,
+                "http_status": 0,
+                "response_hash_diff": "",
+                "api_doc_summary": {},
+                "api_surface_summary": {},
+                "route_hint": route_hint,
+                "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
+                "tool_trace": "collect_context_only",
+                "external_tool_runs": [],
+                "external_tool_hit": False,
+            }
 
         tool_trace_parts = []
         if plan_obj:
@@ -5379,6 +5395,8 @@ class WebSiteFetch(object):
                     "response_hash_diff": "",
                     "api_doc_summary": {},
                     "api_surface_summary": {},
+                    "route_hint": route_hint,
+                    "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                     "tool_trace": "http_fetch(skip_by_waf,url={})".format(target_url[:220]),
                     "external_tool_runs": [],
                     "external_tool_hit": False,
@@ -5843,6 +5861,8 @@ class WebSiteFetch(object):
                 "response_hash_diff": response_hash_diff,
                 "api_doc_summary": api_doc_summary if isinstance(api_doc_summary, dict) else {},
                 "api_surface_summary": api_surface_summary if isinstance(api_surface_summary, dict) else {},
+                "route_hint": route_hint,
+                "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                 "tool_trace": " | ".join(tool_trace_parts)[:500],
                 "external_tool_runs": list(external_ret.get("tool_runs", []) or [])[: self.AI_PEN_EXTERNAL_RESULT_MAX],
                 "external_tool_hit": bool(external_ret.get("tool_hit")),
@@ -5861,6 +5881,8 @@ class WebSiteFetch(object):
                 "response_hash_diff": "",
                 "api_doc_summary": {},
                 "api_surface_summary": {},
+                "route_hint": route_hint,
+                "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                 "tool_trace": "http_fetch(error,url={})".format(target_url[:220]),
                 "external_tool_runs": [],
                 "external_tool_hit": False,
@@ -6133,6 +6155,8 @@ class WebSiteFetch(object):
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
                 "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
                 "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
+                "route_hint": str(verify_result.get("route_hint", "") or "").strip(),
+                "capability_profile": dict(verify_result.get("capability_profile") or {}) if isinstance(verify_result.get("capability_profile"), dict) else {},
                 "decision": decision,
                 "confidence": float("{:.4f}".format(confidence)),
                 "reason": str(verify_result.get("reason", "") or "").strip(),
