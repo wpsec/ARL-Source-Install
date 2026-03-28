@@ -38,17 +38,26 @@ def extract_host(value: str) -> str:
     if not text:
         return ""
 
-    parsed = urlparse(text)
-    host = str(parsed.hostname or "").strip().lower().rstrip(".")
-    if host:
-        return host
+    try:
+        parsed = urlparse(text)
+        host = str(parsed.hostname or "").strip().lower().rstrip(".")
+        if host:
+            return host
+    except Exception:
+        pass
 
-    parsed = urlparse("//{}".format(text))
-    return str(parsed.hostname or "").strip().lower().rstrip(".")
+    try:
+        parsed = urlparse("//{}".format(text))
+        return str(parsed.hostname or "").strip().lower().rstrip(".")
+    except Exception:
+        return ""
 
 
 def safe_site(url: str) -> str:
-    parsed = urlparse(str(url or "").strip())
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except Exception:
+        return ""
     if parsed.scheme and parsed.netloc:
         return "{}://{}".format(parsed.scheme, parsed.netloc)
     return ""
@@ -65,7 +74,10 @@ def is_js_url(value: str) -> bool:
         return False
     if ".js" in text or text.endswith(".mjs"):
         return True
-    path = urlparse(text).path.lower()
+    try:
+        path = urlparse(text).path.lower()
+    except Exception:
+        return False
     return path.endswith(".js") or path.endswith(".mjs")
 
 
@@ -109,15 +121,22 @@ def normalize_in_scope_url(base_url: str, value: str, allowed_hosts: Set[str], a
     if not candidate:
         return ""
 
-    if candidate.startswith("http://") or candidate.startswith("https://"):
-        normalized = candidate
-    elif candidate.startswith("//"):
-        scheme = urlparse(str(base_url or "")).scheme or "https"
-        normalized = "{}:{}".format(scheme, candidate)
-    else:
-        normalized = urljoin(str(base_url or "").strip(), candidate)
+    try:
+        if candidate.startswith("http://") or candidate.startswith("https://"):
+            normalized = candidate
+        elif candidate.startswith("//"):
+            try:
+                scheme = urlparse(str(base_url or "")).scheme or "https"
+            except Exception:
+                scheme = "https"
+            normalized = "{}:{}".format(scheme, candidate)
+        else:
+            normalized = urljoin(str(base_url or "").strip(), candidate)
 
-    parsed = urlparse(normalized)
+        parsed = urlparse(normalized)
+    except Exception:
+        return ""
+
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return ""
 

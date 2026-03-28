@@ -27,7 +27,7 @@
 - `[v4.3.19]` PoC 索引能力补齐：新增 `ARL/app/tools/build_poc_index.py`，支持从 `nuclei-templates/afrog-pocs` 构建 `token -> tags/keywords` 索引；运行时优先读取 `/code/docker/ai/sop/poc_index.json`（兼容历史路径并支持 `ARL_AI_POC_INDEX_FILE` 覆盖），避免每次运行全库检索
 - `[v4.3.19]` AI 去噪 PoC 风险触发修复：`run_task_ai_denoise_pipeline` 启动时会先合并已累计的 `pending_modules`，修复并发阶段下 `nuclei_result/vuln` 等模块因状态切换被清空后漏执行的问题
 
-## 2026-03-28（v4.3.26 ~ v4.3.40）
+## 2026-03-28（v4.3.26 ~ v4.3.41）
 
 - `[v4.3.26]` AI 管理补齐“思考模型”配置：提供方预设新增 `default_reasoning_model`，前后端模型配置新增 `reasoning_model` 字段并接入读写；DeepSeek 默认展示 `DeepSeek-R1`，配置弹窗与卡片摘要同步显示“分析模型 / 思考模型 / API Base URL”，为后续区分分析模型与思考模型保留数据面
 - `[v4.3.26]` AI 渗透结果页可读性增强：`AI渗透` 列表新增 `详情` 按钮与详情弹窗，集中展示 `目标 / 漏洞URL / 说明 / 知识命中 / 证据片段 / 工具轨迹 / 响应摘要`，修复长文本挤压表格导致下方内容难以查看的问题；同时将 `目标 / 漏洞URL` 改为居中展示并复用超链接渲染
@@ -48,6 +48,7 @@
 - `[v4.3.38]` AI渗透结果对齐与报告补齐：`AI渗透详情` 新增“ARL 与 AI 对话记录 / 渗透测试记录”，可直接查看 `ai_plan_request / ai_plan_reply / ai_plan_actions / verification_step / payload / external_tool_runs`；资产搜索页隐藏 `指纹统计` 模块，减轻页面拥挤；`Excel` 导出与钉钉知识库报告同步新增 `AI渗透测试` 工作表/章节，保证页面、导出报告、知识库三条链路展示一致
 - `[v4.3.39]` 导出报告改为异步任务，彻底规避大报告同步导出导致的 `504 Gateway Time-out`：`export` 新增 `job` 创建/查询/下载接口，前端报告导出改为“创建任务 -> 轮询状态 -> 完成后下载”；后台通过 Celery `arlweb` 队列异步生成 `excel/html/ai_markdown` 报告并写入共享导出目录，`Workbook` 结果直接落盘而非先整份转字节串，降低大报告场景下的请求时长与内存峰值；同时补齐 `export_job` 索引、共享导出目录配置与 `web/worker` 挂载，避免继续依赖提高 nginx/gunicorn 超时来硬扛导出
 - `[v4.3.40]` AI渗透对话记录可读性增强：`AI渗透详情` 中的 `ARL请求摘要 / AI回复摘要` 不再直接展示原始 JSON，而是优先解析为“目标、风险类型、路由提示、能力画像、结论、置信度、原因、关键证据、下一步动作”等结构化可读文本；`Excel` 导出的 `AI渗透测试` 工作表同步采用同样的友好摘要逻辑，仅在解析失败时回退原文，降低用户在页面和报告中阅读原始 JSON 的负担
+- `[v4.3.41]` `web_info_hunter/urlfinder_extract` 容错修复：针对 JS/页面文本中误提取出的畸形 URL 候选（如 NFKC 非法 netloc、残缺 IPv6 URL），为 `urlfinder_extract` 与 `web_info_intel_utils` 的 URL 解析/归一化逻辑补充异常保护，策略改为“跳过单条脏候选，继续处理其它正常 URL/JS”，避免 `domain_task / web_info_hunter` 因单条异常字符串导致整个任务失败
 
 ## 2026-03-26（v4.3.0 ~ v4.3.18）
 

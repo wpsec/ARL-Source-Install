@@ -8,11 +8,15 @@ try:
     from app.services.api_doc_scan import run_api_doc_scan
     from app.services.js_intel_scan import run_js_intel_scan
     from app.services.page_intel_scan import run_page_intel_scan
+    from app.services.urlfinder_extract import run_urlfinder_extract
+    from app.services.web_info_intel_utils import normalize_in_scope_url
 except Exception as exc:
     WihRecord = None
     run_api_doc_scan = None
     run_js_intel_scan = None
     run_page_intel_scan = None
+    run_urlfinder_extract = None
+    normalize_in_scope_url = None
     IMPORT_ERROR = exc
 
 
@@ -25,6 +29,32 @@ class _FakeResponse:
 
 @unittest.skipIf(IMPORT_ERROR is not None, "requires web intel test dependencies: {}".format(IMPORT_ERROR))
 class TestWebInfoIntel(unittest.TestCase):
+    def test_normalize_in_scope_url_skips_malformed_netloc_and_ipv6(self):
+        allowed_hosts = {"example.com"}
+
+        malformed_netloc = normalize_in_scope_url(
+            "https://example.com/static/app.js",
+            "https://:前缀吗？/x.js",
+            allowed_hosts,
+            allow_js=True,
+        )
+        malformed_ipv6 = normalize_in_scope_url(
+            "https://example.com/static/app.js",
+            "http://[::1/x.js",
+            allowed_hosts,
+            allow_js=True,
+        )
+        normal_url = normalize_in_scope_url(
+            "https://example.com/static/app.js",
+            "/api/user/list",
+            allowed_hosts,
+            allow_js=False,
+        )
+
+        self.assertEqual("", malformed_netloc)
+        self.assertEqual("", malformed_ipv6)
+        self.assertEqual("https://example.com/api/user/list", normal_url)
+
     @patch("app.services.page_intel_scan.utils.check_dns_policy_for_url")
     @patch("app.services.page_intel_scan.utils.http_req")
     def test_page_intel_extracts_links_forms_scripts_and_domains(self, mock_http_req, mock_dns_policy):
@@ -159,6 +189,43 @@ class TestWebInfoIntel(unittest.TestCase):
         self.assertIn(("api_doc_url", "https://example.com/postman.json"), result_map)
         self.assertIn(("api_doc_endpoint", "GET https://example.com/api/users"), result_map)
         self.assertIn(("urlfinder_url", "https://example.com/api/users"), result_map)
+
+    @patch("app.services.urlfinder_extract.utils.check_dns_policy_for_url")
+    @patch("app.services.urlfinder_extract.utils.http_req")
+    def test_urlfinder_extract_skips_malformed_urls_without_crashing(self, mock_http_req, mock_dns_policy):
+        mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
+
+        def _http_req(url, *args, **kwargs):
+            if url == "https://example.com":
+                return _FakeResponse(
+                    """
+                    <html>
+                      <body>
+                        <script src="/static/app.js"></script>
+                      </body>
+                    </html>
+                    """,
+                    content_type="text/html",
+                )
+            if url == "https://example.com/static/app.js":
+                return _FakeResponse(
+                    """
+                    const good = "/api/users";
+                    const bad1 = "https://:前缀吗？/foo";
+                    const bad2 = "http://[::1/foo";
+                    """,
+                    content_type="application/javascript",
+                )
+            raise AssertionError("unexpected url {}".format(url))
+
+        mock_http_req.side_effect = _http_req
+
+        results = run_urlfinder_extract(["https://example.com"], [])
+        result_map = {(item.recordType, item.content) for item in results}
+
+        self.assertIn(("urlfinder_js", "https://example.com/static/app.js"), result_map)
+        self.assertIn(("urlfinder_url", "https://example.com/api/users"), result_map)
+        self.assertFalse(any("前缀吗" in item.content for item in results))
 
 
 if __name__ == "__main__":

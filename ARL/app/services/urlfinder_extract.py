@@ -122,13 +122,19 @@ class UrlfinderExtractService:
         if not text:
             return ""
 
-        parsed = urlparse(text)
-        host = str(parsed.hostname or "").strip().lower().rstrip(".")
-        if host:
-            return host
+        try:
+            parsed = urlparse(text)
+            host = str(parsed.hostname or "").strip().lower().rstrip(".")
+            if host:
+                return host
+        except Exception:
+            pass
 
-        parsed = urlparse("//{}".format(text))
-        return str(parsed.hostname or "").strip().lower().rstrip(".")
+        try:
+            parsed = urlparse("//{}".format(text))
+            return str(parsed.hostname or "").strip().lower().rstrip(".")
+        except Exception:
+            return ""
 
     def _collect_allowed_hosts(self) -> Set[str]:
         hosts: Set[str] = set()
@@ -160,7 +166,10 @@ class UrlfinderExtractService:
 
     @staticmethod
     def _safe_site(url: str) -> str:
-        parsed = urlparse(str(url or ""))
+        try:
+            parsed = urlparse(str(url or ""))
+        except Exception:
+            return ""
         if parsed.scheme and parsed.netloc:
             return "{}://{}".format(parsed.scheme, parsed.netloc)
         return ""
@@ -172,7 +181,10 @@ class UrlfinderExtractService:
             return False
         if ".js" in text:
             return True
-        path = urlparse(text).path.lower()
+        try:
+            path = urlparse(text).path.lower()
+        except Exception:
+            return False
         return path.endswith(".js")
 
     def _normalize_url(self, base_url: str, value: str) -> str:
@@ -180,15 +192,23 @@ class UrlfinderExtractService:
         if not candidate:
             return ""
 
-        if candidate.startswith("http://") or candidate.startswith("https://"):
-            normalized = candidate
-        elif candidate.startswith("//"):
-            scheme = urlparse(base_url).scheme or "https"
-            normalized = "{}:{}".format(scheme, candidate)
-        else:
-            normalized = urljoin(base_url, candidate)
+        try:
+            if candidate.startswith("http://") or candidate.startswith("https://"):
+                normalized = candidate
+            elif candidate.startswith("//"):
+                try:
+                    scheme = urlparse(base_url).scheme or "https"
+                except Exception:
+                    scheme = "https"
+                normalized = "{}:{}".format(scheme, candidate)
+            else:
+                normalized = urljoin(base_url, candidate)
 
-        parsed = urlparse(normalized)
+            parsed = urlparse(normalized)
+        except Exception:
+            logger.debug("urlfinder skip malformed candidate base:%s raw:%s", base_url, candidate[:160])
+            return ""
+
         if parsed.scheme not in ("http", "https"):
             return ""
         if not parsed.netloc:
@@ -225,7 +245,10 @@ class UrlfinderExtractService:
             if keyword in lower_url:
                 return True
 
-        path = urlparse(lower_url).path or ""
+        try:
+            path = urlparse(lower_url).path or ""
+        except Exception:
+            return True
         for suffix in self.STATIC_SUFFIXES:
             if path.endswith(suffix):
                 return True
