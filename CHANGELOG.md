@@ -8,6 +8,8 @@
 - `[v4.3.42]` 任务资产范围守卫统一落地：新增 `ARL/app/services/task_scope_guard.py`，收敛 `host/url` 归一化与范围判断逻辑（`normalize_scope_host/host_in_scope/url_in_scope`），并提供 `load_task_scope_context` 从“当前任务目标 + 同名历史任务目标 + 已沉淀 site/url/domain”聚合 `allowed_hosts/allowed_flds`，作为 WIH/PoC/AI 渗透等链路的统一范围基线
 - `[v4.3.42]` 扫描结果与情报入库链路范围收口：`commonTask` 与 `WebSiteFetch` 接入任务级 scope cache，`nuclei/afrog/risk_cruising` 结果、`WIH` 记录升级风险、`AI渗透` 候选聚合、`page_url_set` 更新等流程新增“仅保留任务范围内目标”的过滤，修复跨站点/跨域噪声结果进入当前任务的问题
 - `[v4.3.42]` 任务侧扫描执行补齐范围校验：`DomainTask` 的 `run_risk_cruising` 与 `find_vhost` 结果新增 URL 范围判定；`cloud_security_scan` 与 `penetration_scan` 改为复用统一 `task_scope_guard` 判定主机范围，并在云存储目标加入前增加 scope 拦截，减少越界探测与无关结果写入
+- `[v4.3.42]` 报告一致性修复：钉钉知识库写入任务导出时，单任务场景改为复用单任务导出链路（`export_arl`），多任务继续走批量导出（`export_merge_tasks`），避免“知识库报告与导出报告口径不一致”的问题
+- `[v4.3.42]` AI渗透列表列精简：`AI渗透` 列表默认隐藏 `知识命中 / 说明 / 工具轨迹` 三列，保留在 `AI渗透详情` 中查看，提升列表横向可读性与操作效率
 
 ## 2026-03-27（v4.3.19 ~ v4.3.25）
 

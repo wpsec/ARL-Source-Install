@@ -1666,7 +1666,7 @@ const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'risk_name',
     defaultOrder: '-save_date',
-    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'knowledge_hit_tokens', 'reason', 'tool_trace', 'detail_action', 'save_date'],
+    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'detail_action', 'save_date'],
     columnLabels: {
       source_collection: '来源',
       risk_type: '类型',
@@ -1678,9 +1678,6 @@ const modules: ModuleConfig[] = [
       verification_step: '验证阶段',
       payload_type: '探针类型',
       status: '状态',
-      knowledge_hit_tokens: '知识命中',
-      reason: '说明',
-      tool_trace: '工具轨迹',
       detail_action: '详情',
       save_date: '时间',
     },
@@ -1716,7 +1713,6 @@ const modules: ModuleConfig[] = [
           { label: '跳过', value: 'skipped' },
         ],
       },
-      { key: 'reason', label: '说明', placeholder: '请输入说明进行搜索' },
     ],
     actions: [
       {
@@ -13255,6 +13251,17 @@ function ApiConsoleView({ token }: { token: string }) {
           </div>
         </div>
 
+        {error ? (
+          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        ) : null}
+        {success ? (
+          <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+            {success}
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
           <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
             <span className="text-brand-text-muted">配置文件:</span>
@@ -13269,9 +13276,6 @@ function ApiConsoleView({ token }: { token: string }) {
         <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
           提示：保存后会写入配置文件，建议重启 `web` 与 `worker` 容器让 API 插件配置立即生效。
         </div>
-
-        {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
-        {success ? <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">{success}</div> : null}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -14291,6 +14295,17 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
         </div>
 
+        {error ? (
+          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        ) : null}
+        {success ? (
+          <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+            {success}
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
           <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
             <span className="text-brand-text-muted">配置文件:</span>
@@ -14321,9 +14336,6 @@ function ConfigConsoleView({ token }: { token: string }) {
             placeholder="支持 http:// / https:// / socks5://"
           />
         </div>
-
-        {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
-        {success ? <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">{success}</div> : null}
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
@@ -16243,6 +16255,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       base_url: String(preset?.base_url || ''),
       api_key: '',
       model: String(preset?.default_model || ''),
+      reasoning_model: String(preset?.default_reasoning_model || preset?.default_model || ''),
       proxy: '',
       timeout_sec: 40,
       temperature: 0.2,
@@ -16622,6 +16635,17 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </button>
         </div>
       </div>
+
+      {error ? (
+        <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+          {error}
+        </div>
+      ) : null}
+      {success ? (
+        <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+          {success}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
         <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
@@ -17790,16 +17814,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         onUsernameChange={setSensitiveVerifyUsername}
         onPasswordChange={setSensitiveVerifyPassword}
       />
-      {error ? (
-        <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
-          {error}
-        </div>
-      ) : null}
-      {success ? (
-        <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
-          {success}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -18064,6 +18078,17 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </div>
         </div>
 
+        {error ? (
+          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        ) : null}
+        {success ? (
+          <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+            {success}
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
           <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
             <span className="text-brand-text-muted">配置文件:</span>
@@ -18078,9 +18103,6 @@ function DingtalkIntegrationView({ token }: { token: string }) {
         <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
           提示：保存后 `web` 端调试会立即生效；扫描任务通知建议重启 `worker` 容器后完全生效。
         </div>
-
-        {error ? <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div> : null}
-        {success ? <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">{success}</div> : null}
       </div>
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">

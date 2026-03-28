@@ -2310,11 +2310,16 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
         }
 
     try:
-        from app.routes.export import export_merge_tasks, build_task_export_summary
+        from app.routes.export import export_merge_tasks, export_arl, build_task_export_summary
 
-        excel_bytes = export_merge_tasks(normalized_task_ids)
+        if len(normalized_task_ids) == 1:
+            excel_bytes = export_arl(normalized_task_ids[0])
+            if not excel_bytes:
+                return False, {"error": "export task failed", "detail": "empty export content"}
+        else:
+            excel_bytes = export_merge_tasks(normalized_task_ids)
     except Exception as e:
-        return False, {"error": "export merge tasks failed", "detail": str(e)}
+        return False, {"error": "export tasks failed", "detail": str(e)}
     export_summary = {}
     try:
         export_summary = build_task_export_summary(normalized_task_ids)
