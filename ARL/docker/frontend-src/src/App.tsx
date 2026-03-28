@@ -11364,11 +11364,239 @@ function TableModuleView({
                             <div className="mt-1 text-[11px] text-brand-text-muted">
                               字段：{String(item?.fields || '').trim() || '-'}
                             </div>
+                            {(String(item?.enctype || '').trim() || String(item?.has_file_input || '').trim()) ? (
+                              <div className="mt-1 text-[11px] text-brand-text-muted">
+                                enctype：{String(item?.enctype || '').trim() || '-'}
+                                {' / '}
+                                文件输入：{String(item?.has_file_input || '').trim() === 'true' ? '是' : '否'}
+                              </div>
+                            ) : null}
+                            {(String(item?.has_password_input || '').trim() || String(item?.has_captcha_hint || '').trim() || String(item?.submit_text || '').trim()) ? (
+                              <div className="mt-1 text-[11px] text-brand-text-muted">
+                                密码输入：{String(item?.has_password_input || '').trim() === 'true' ? '是' : '否'}
+                                {' / '}
+                                验证码提示：{String(item?.has_captcha_hint || '').trim() === 'true' ? '是' : '否'}
+                                {String(item?.submit_text || '').trim() ? (
+                                  <>
+                                    {' / '}
+                                    提交文案：{String(item?.submit_text || '').trim()}
+                                  </>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         ))}
                       </div>
                     </div>
                   ) : null}
+                </div>
+              ) : null}
+
+              {aiPenDetail.row?.login_surface_summary && typeof aiPenDetail.row.login_surface_summary === 'object' ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">登录面黑盒摘要</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">登录页提示</div>
+                      <div className="mt-1">{aiPenDetail.row.login_surface_summary?.login_page_hint ? '是' : '否'}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">认证表单 / 密码表单</div>
+                      <div className="mt-1">
+                        {normalizeValue(aiPenDetail.row.login_surface_summary?.auth_form_count)} /
+                        {normalizeValue(aiPenDetail.row.login_surface_summary?.password_form_count)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">验证码表单</div>
+                      <div className="mt-1">{normalizeValue(aiPenDetail.row.login_surface_summary?.captcha_form_count)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">运行时认证接口 / 接口面认证路径</div>
+                      <div className="mt-1">
+                        {normalizeValue(aiPenDetail.row.login_surface_summary?.auth_runtime_call_count)} /
+                        {normalizeValue(aiPenDetail.row.login_surface_summary?.auth_api_path_count)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">表单动作</div>
+                      {Array.isArray(aiPenDetail.row.login_surface_summary?.form_actions) && aiPenDetail.row.login_surface_summary.form_actions.length > 0 ? (
+                        <div className="space-y-1">
+                          {aiPenDetail.row.login_surface_summary.form_actions.map((item: any, index: number) => (
+                            <div key={`${index}-${item}`} className="font-mono break-all text-sm">
+                              {String(item || '').trim() || '-'}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">认证相关运行时路径</div>
+                      {Array.isArray(aiPenDetail.row.login_surface_summary?.runtime_auth_paths) && aiPenDetail.row.login_surface_summary.runtime_auth_paths.length > 0 ? (
+                        <div className="space-y-1">
+                          {aiPenDetail.row.login_surface_summary.runtime_auth_paths.map((item: any, index: number) => (
+                            <div key={`${index}-${item}`} className="font-mono break-all text-sm">
+                              {String(item || '').trim() || '-'}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">密码字段</div>
+                      {Array.isArray(aiPenDetail.row.login_surface_summary?.password_fields) && aiPenDetail.row.login_surface_summary.password_fields.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {aiPenDetail.row.login_surface_summary.password_fields.map((item: any, index: number) => (
+                            <span key={`${index}-${item}`} className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold">
+                              {String(item || '').trim() || '-'}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">验证码字段 / 指示器</div>
+                      <div className="flex flex-wrap gap-2">
+                        {Array.isArray(aiPenDetail.row.login_surface_summary?.captcha_fields) && aiPenDetail.row.login_surface_summary.captcha_fields.length > 0 ? (
+                          aiPenDetail.row.login_surface_summary.captcha_fields.map((item: any, index: number) => (
+                            <span key={`captcha-${index}-${item}`} className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold">
+                              {String(item || '').trim() || '-'}
+                            </span>
+                          ))
+                        ) : null}
+                        {Array.isArray(aiPenDetail.row.login_surface_summary?.indicators) && aiPenDetail.row.login_surface_summary.indicators.length > 0 ? (
+                          aiPenDetail.row.login_surface_summary.indicators.map((item: any, index: number) => (
+                            <span key={`indicator-${index}-${item}`} className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold">
+                              {String(item || '').trim() || '-'}
+                            </span>
+                          ))
+                        ) : null}
+                        {(!Array.isArray(aiPenDetail.row.login_surface_summary?.captcha_fields) || aiPenDetail.row.login_surface_summary.captcha_fields.length === 0)
+                          && (!Array.isArray(aiPenDetail.row.login_surface_summary?.indicators) || aiPenDetail.row.login_surface_summary.indicators.length === 0) ? (
+                          <div className="text-brand-text-muted">暂无</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {aiPenDetail.row?.task_ai_pen_graph_context && typeof aiPenDetail.row.task_ai_pen_graph_context === 'object' ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">任务级图谱上下文</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">候选数</div>
+                      <div className="mt-1">{normalizeValue(aiPenDetail.row.task_ai_pen_graph_context?.candidate_count)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">来源分布</div>
+                      {Array.isArray(aiPenDetail.row.task_ai_pen_graph_context?.source_mix) && aiPenDetail.row.task_ai_pen_graph_context.source_mix.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {aiPenDetail.row.task_ai_pen_graph_context.source_mix.map((item: any, index: number) => (
+                            <span
+                              key={`${index}-${item?.name}`}
+                              className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2 py-0.5 text-[11px] font-semibold"
+                            >
+                              {String(item?.name || '-').trim()}:{normalizeValue(item?.count)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">路线分布</div>
+                      {Array.isArray(aiPenDetail.row.task_ai_pen_graph_context?.route_mix) && aiPenDetail.row.task_ai_pen_graph_context.route_mix.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {aiPenDetail.row.task_ai_pen_graph_context.route_mix.map((item: any, index: number) => (
+                            <span
+                              key={`${index}-${item?.name}`}
+                              className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2 py-0.5 text-[11px] font-semibold"
+                            >
+                              {String(item?.name || '-').trim()}:{normalizeValue(item?.count)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">情报层分布</div>
+                      {Array.isArray(aiPenDetail.row.task_ai_pen_graph_context?.layer_mix) && aiPenDetail.row.task_ai_pen_graph_context.layer_mix.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {aiPenDetail.row.task_ai_pen_graph_context.layer_mix.map((item: any, index: number) => {
+                            const nameText = String(item?.name || '').trim();
+                            const label = nameText === 'static_surface'
+                              ? '静态情报'
+                              : nameText === 'knowledge_index'
+                                ? '文库知识'
+                                : nameText === 'browser_runtime'
+                                  ? '浏览器运行时'
+                                  : nameText || '-';
+                            return (
+                              <span
+                                key={`${index}-${nameText}`}
+                                className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2 py-0.5 text-[11px] font-semibold"
+                              >
+                                {label}:{normalizeValue(item?.count)}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">任务级核心路径</div>
+                      {Array.isArray(aiPenDetail.row.task_ai_pen_graph_context?.top_paths) && aiPenDetail.row.task_ai_pen_graph_context.top_paths.length > 0 ? (
+                        <div className="space-y-1">
+                          {aiPenDetail.row.task_ai_pen_graph_context.top_paths.slice(0, 8).map((item: any, index: number) => (
+                            <div key={`${index}-${item}`} className="font-mono break-all text-sm">
+                              {index + 1}. {String(item || '').trim() || '-'}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">任务级核心参数</div>
+                      {Array.isArray(aiPenDetail.row.task_ai_pen_graph_context?.top_params) && aiPenDetail.row.task_ai_pen_graph_context.top_params.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {aiPenDetail.row.task_ai_pen_graph_context.top_params.slice(0, 12).map((item: any, index: number) => (
+                            <span
+                              key={`${index}-${item}`}
+                              className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                            >
+                              {String(item || '').trim() || '-'}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-brand-text-muted">暂无</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ) : null}
 

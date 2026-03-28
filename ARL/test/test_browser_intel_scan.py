@@ -39,7 +39,17 @@ class TestBrowserIntelScan(unittest.TestCase):
 
             def evaluate(self, script):
                 if "querySelectorAll('form')" in script:
-                    return [{"action": "/login", "method": "POST", "fields": "username,password"}]
+                    return [{
+                        "action": "/login",
+                        "method": "POST",
+                        "enctype": "multipart/form-data",
+                        "has_file_input": "true",
+                        "has_password_input": "true",
+                        "password_fields": "password",
+                        "has_captcha_hint": "true",
+                        "submit_text": "登录",
+                        "fields": "username,password,captcha,file",
+                    }]
                 return [{"src": "/static/app.js"}]
 
         class FakeContext:
@@ -80,6 +90,10 @@ class TestBrowserIntelScan(unittest.TestCase):
         self.assertEqual(1, item.get("browser_surface_summary", {}).get("runtime_api_count"))
         self.assertEqual(1, len(item.get("runtime_api_calls", [])))
         self.assertEqual(1, len(item.get("dom_form_summary", [])))
+        self.assertEqual("multipart/form-data", item.get("dom_form_summary", [])[0].get("enctype"))
+        self.assertEqual("true", item.get("dom_form_summary", [])[0].get("has_file_input"))
+        self.assertEqual("true", item.get("dom_form_summary", [])[0].get("has_password_input"))
+        self.assertEqual("true", item.get("dom_form_summary", [])[0].get("has_captcha_hint"))
 
 
 if __name__ == "__main__":

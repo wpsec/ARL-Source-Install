@@ -199,6 +199,8 @@ class WebSiteFetch(object):
         "js_bundler_app": ("_nuxt", "nuxt", "__nuxt__", "webpack", "__webpack_require__", "webpackjson", "__vite__"),
         "admin_office_portal": ("admin", "console", "dashboard", "backend", "manage", "panel", "oa", "office", "协同办公", "工作台", "审批", "流程"),
         "token_auth_flow": ("jwt", "bearer", "oauth", "openid", "access_token", "authorization", "id_token", "refresh_token"),
+        "file_handling_surface": ("upload", "download", "attachment", "export", "template", "multipart", "avatar", "import", "附件", "上传", "下载", "导出", "模板"),
+        "login_entry_surface": ("login", "signin", "sign-in", "sso", "cas", "passport", "认证", "登录", "统一身份认证", "单点登录"),
     }
     AI_PEN_CAPABILITY_PROFILES = {
         "api_doc_surface": {
@@ -245,8 +247,32 @@ class WebSiteFetch(object):
                 "若 API 文档或 JS 提取接口包含 token/auth 参数，优先围绕这些入口做验证建议",
             ],
         },
+        "file_handling_surface": {
+            "priority": 82,
+            "route_hint": "file_handling_context",
+            "preferred_payload_type": "upload_probe",
+            "focus_paths": ["sample_paths", "auth_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先区分发现文件处理入口与已证明任意文件读写，避免把导出/附件功能直接判成漏洞",
+                "优先围绕 multipart 表单、下载响应头、导出/附件路径和文件参数做低副作用验证",
+            ],
+        },
+        "login_entry_surface": {
+            "priority": 80,
+            "route_hint": "login_entry_context",
+            "preferred_payload_type": "replay",
+            "focus_paths": ["auth_paths", "sample_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先识别登录表单、验证码/风控线索、认证相关接口与运行时 token/session 路径",
+                "优先补足黑盒登录前上下文，不将登录页本身直接判定为漏洞",
+            ],
+        },
     }
     AI_PEN_AUTH_PATH_KEYWORDS = ("login", "auth", "token", "oauth", "signin", "session", "user", "me", "current")
+    AI_PEN_LOGIN_PAGE_KEYWORDS = ("login", "signin", "sign-in", "sso", "cas", "passport", "登录", "认证", "统一身份认证", "单点登录")
+    AI_PEN_CAPTCHA_HINTS = ("captcha", "verifycode", "verification", "checkcode", "validatecode", "randcode", "yzm", "图形码", "验证码")
     AI_PEN_OBJECT_ID_PARAM_HINTS = {
         "id", "uid", "userid", "user_id", "memberid", "member_id", "accountid", "account_id",
         "customerid", "customer_id", "profileid", "profile_id", "tenantid", "tenant_id",
@@ -405,6 +431,7 @@ class WebSiteFetch(object):
             "raw_ai_reply": "",
         }
         self.ai_pen_browser_intel_cache = {}
+        self.ai_pen_task_graph_context_cache = {}
 
     def _filter_waf_blocked_targets(self, targets, stage_name="") -> list:
         target_list = list(targets or [])
@@ -3406,6 +3433,8 @@ class WebSiteFetch(object):
             "decision 仅允许 verified、likely_false_positive、needs_manual_review。"
             "若为静态JS场景，请区分硬编码字面量与变量拼接/本地存储噪声；"
             "若为API文档场景，请优先围绕文档结构、路径和参数做验证建议；"
+            "若为文件处理场景，请区分发现上传/下载/导出入口与已证明任意文件读写；"
+            "若为登录页场景，请区分发现认证入口与已证明存在认证缺陷；"
             "若证据不足，必须保持 needs_manual_review，禁止编造不存在的事实。"
         )
         config_obj = ai_config if isinstance(ai_config, dict) else {}
@@ -3488,6 +3517,11 @@ class WebSiteFetch(object):
         item = candidate if isinstance(candidate, dict) else {}
         target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
         risk_type = str(item.get("risk_type", "") or "").strip().lower()
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        browser_surface_summary = item.get("browser_surface_summary") if isinstance(item.get("browser_surface_summary"), dict) else {}
+        dom_form_summary = list(item.get("dom_form_summary", []) or [])
+        page_title = str(browser_surface_summary.get("page_title") or "").strip().lower()
+        page_url_text = str(browser_surface_summary.get("page_url") or target_url or "").strip().lower()
 
         if cls._is_js_asset_target(target_url):
             if risk_type == "sensitive_info":
@@ -3495,6 +3529,10 @@ class WebSiteFetch(object):
             if risk_type == "xss":
                 return "js_dom_context"
             return "js_static_context"
+        if risk_type == "login_surface":
+            return "login_entry_context"
+        if risk_type in {"file_upload", "file_read"}:
+            return "file_handling_context"
         if risk_type == "api_doc":
             return "api_doc_structure"
         if risk_type == "jwt":
@@ -3503,6 +3541,20 @@ class WebSiteFetch(object):
             return "websocket_handshake"
         if risk_type == "idor":
             return "structured_id_mutation"
+        if (
+            cls._safe_int_value(api_surface_summary.get("upload_like_count"), 0) > 0
+            or cls._safe_int_value(api_surface_summary.get("download_like_count"), 0) > 0
+        ):
+            return "file_handling_context"
+        if any(token in page_title or token in page_url_text for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS):
+            return "login_entry_context"
+        for form_item in dom_form_summary:
+            if not isinstance(form_item, dict):
+                continue
+            fields_text = str(form_item.get("fields") or "").strip().lower()
+            has_password = str(form_item.get("has_password_input") or "").strip().lower() in {"1", "true", "yes"}
+            if has_password or "password" in fields_text or "passwd" in fields_text:
+                return "login_entry_context"
         if risk_type in {"sqli", "cmdi", "ssrf"}:
             return "low_side_effect_probe"
         return "http_replay_then_context"
@@ -3570,9 +3622,9 @@ class WebSiteFetch(object):
 
         if source_collection == "site":
             return True
-        if route_hint in {"api_doc_structure", "jwt_token_first", "structured_id_mutation", "http_replay_then_context"}:
+        if route_hint in {"api_doc_structure", "jwt_token_first", "structured_id_mutation", "http_replay_then_context", "login_entry_context"}:
             return True
-        return risk_type in {"api_doc", "jwt", "idor", "websocket"}
+        return risk_type in {"api_doc", "jwt", "idor", "websocket", "login_surface"}
 
     def _collect_ai_pen_browser_intel(self, candidate: dict):
         item = candidate if isinstance(candidate, dict) else {}
@@ -3612,6 +3664,7 @@ class WebSiteFetch(object):
         route_hint = str(item.get("route_hint") or cls._build_ai_pen_route_hint(item) or "").strip()
         api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
         knowledge_products = [str(x or "").strip().lower() for x in list(item.get("knowledge_hit_product_labels", []) or []) if str(x or "").strip()]
+        knowledge_vuln_types = [str(x or "").strip().lower() for x in list(item.get("knowledge_hit_vuln_types", []) or []) if str(x or "").strip()]
         surface_hints = [str(x or "").strip().lower() for x in list(item.get("surface_hints", []) or []) if str(x or "").strip()]
         risk_type = str(item.get("risk_type", "") or "").strip().lower()
 
@@ -3631,6 +3684,10 @@ class WebSiteFetch(object):
                 bump("token_auth_flow", 50)
             if product in {"admin_office_portal", "oa", "office", "admin", "console", "dashboard", "portal"}:
                 bump("admin_office_portal", 42)
+            if product in {"file_handling_surface", "upload", "download", "attachment", "export", "template"}:
+                bump("file_handling_surface", 38)
+            if product in {"login_entry_surface", "login", "signin", "sso", "cas", "passport"}:
+                bump("login_entry_surface", 40)
 
         if route_hint == "api_doc_structure":
             bump("api_doc_surface", 40)
@@ -3638,6 +3695,10 @@ class WebSiteFetch(object):
             bump("js_bundler_app", 25)
         if route_hint == "jwt_token_first":
             bump("token_auth_flow", 35)
+        if route_hint == "file_handling_context":
+            bump("file_handling_surface", 40)
+        if route_hint == "login_entry_context":
+            bump("login_entry_surface", 42)
 
         if cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0) > 0:
             bump("api_doc_surface", 12)
@@ -3649,11 +3710,24 @@ class WebSiteFetch(object):
             bump("js_bundler_app", 10)
         if cls._safe_int_value(api_surface_summary.get("object_id_like_count"), 0) > 0:
             bump("admin_office_portal", 8)
+        if (
+            cls._safe_int_value(api_surface_summary.get("upload_like_count"), 0) > 0
+            or cls._safe_int_value(api_surface_summary.get("download_like_count"), 0) > 0
+        ):
+            bump("file_handling_surface", 36)
+
+        for vuln_type in knowledge_vuln_types:
+            if vuln_type in {"file_upload", "file_read", "fileleak"}:
+                bump("file_handling_surface", 28)
 
         if risk_type == "jwt":
             bump("token_auth_flow", 30)
         if risk_type == "api_doc":
             bump("api_doc_surface", 30)
+        if risk_type in {"file_upload", "file_read"}:
+            bump("file_handling_surface", 32)
+        if risk_type == "login_surface":
+            bump("login_entry_surface", 32)
 
         best_name = ""
         best_score = 0
@@ -3773,6 +3847,8 @@ class WebSiteFetch(object):
                 "runtime_api_calls": list(candidate.get("runtime_api_calls", []) or [])[:8],
                 "dom_form_summary": list(candidate.get("dom_form_summary", []) or [])[:4],
                 "task_ai_pen_graph_summary": dict(candidate.get("task_ai_pen_graph_summary") or {}) if isinstance(candidate.get("task_ai_pen_graph_summary"), dict) else {},
+                "task_ai_pen_graph_context": dict(candidate.get("task_ai_pen_graph_context") or {}) if isinstance(candidate.get("task_ai_pen_graph_context"), dict) else {},
+                "login_surface_summary": dict(candidate.get("login_surface_summary") or {}) if isinstance(candidate.get("login_surface_summary"), dict) else {},
                 "js_asset_target": bool(
                     self._is_js_asset_target(
                         str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
@@ -3795,6 +3871,8 @@ class WebSiteFetch(object):
                         "路线正确但证据尚未闭环",
                         "响应差异明显但鉴权或语义上下文不足",
                         "JS中出现source->sink链路但未完全确认可控性",
+                        "发现上传/下载/导出/附件入口，但仅能证明文件处理能力，尚不能证明任意文件读写",
+                        "发现登录入口、验证码或认证相关接口，但仅能证明存在认证测试面",
                     ],
                     "likely_false_positive": [
                         "仅命中关键词，没有真实字面量或结构性证据",
@@ -3806,6 +3884,8 @@ class WebSiteFetch(object):
                     "js_sensitive_info": "区分硬编码字面量与 token+变量/localStorage/sessionStorage 噪声",
                     "dom_xss": "静态JS必须同时关注用户输入源与危险sink；纯框架bundle优先降权",
                     "api_doc": "URL包含swagger/openapi不等于真实文档暴露，优先看 paths/securitySchemes/参数结构",
+                    "file_handling": "发现上传/下载/导出/附件入口不等于已证明任意文件读写，优先保守裁决并给出低副作用下一步",
+                    "login_surface": "发现登录表单、验证码或 auth 接口不等于存在漏洞，优先整理黑盒认证面上下文与后续验证建议",
                 },
                 "supported_payload_types": list(self.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES),
                 "output_schema": {
@@ -4208,6 +4288,210 @@ class WebSiteFetch(object):
                     "tool_trace": "js_context(dom_static)",
                 }
 
+        return {}
+
+    @classmethod
+    def _analyze_ai_pen_file_context(
+        cls,
+        target_url: str,
+        body_text: str,
+        headers,
+        risk_type: str,
+        payload_type: str,
+        evidence_seed: str,
+        api_surface_summary=None,
+        browser_surface_summary=None,
+        runtime_api_calls=None,
+        dom_form_summary=None,
+    ):
+        risk_type_text = str(risk_type or "").strip().lower()
+        payload_type_text = str(payload_type or "").strip().lower()
+        summary = api_surface_summary if isinstance(api_surface_summary, dict) else {}
+        browser_summary = browser_surface_summary if isinstance(browser_surface_summary, dict) else {}
+        runtime_calls = list(runtime_api_calls or [])
+        forms = list(dom_form_summary or [])
+        header_obj = headers if isinstance(headers, dict) else {}
+
+        upload_like_count = cls._safe_int_value(summary.get("upload_like_count"), 0)
+        download_like_count = cls._safe_int_value(summary.get("download_like_count"), 0)
+        if payload_type_text != "upload_probe" and risk_type_text not in {"file_upload", "file_read"} and upload_like_count < 1 and download_like_count < 1:
+            return {}
+
+        content = str(body_text or "")
+        content_lower = content.lower()
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        content_disposition = str(header_obj.get("Content-Disposition", "") or "").strip().lower()
+        try:
+            path_lower = str(urlsplit(str(target_url or "").strip()).path or "").strip().lower()
+        except Exception:
+            path_lower = str(target_url or "").strip().lower()
+
+        sample_paths = [str(x or "").strip() for x in list(summary.get("sample_paths", []) or []) if str(x or "").strip()]
+        runtime_paths = cls._extract_runtime_api_paths(runtime_calls)
+        upload_path_hits = [item for item in sample_paths + runtime_paths if any(token in str(item).lower() for token in cls.AI_PEN_UPLOAD_HINTS)][:6]
+        download_path_hits = [item for item in sample_paths + runtime_paths if any(token in str(item).lower() for token in cls.AI_PEN_DOWNLOAD_HINTS)][:6]
+
+        file_form_hits = []
+        multipart_form_hits = 0
+        for item in forms:
+            if not isinstance(item, dict):
+                continue
+            action_text = str(item.get("action") or "").strip()
+            enctype_text = str(item.get("enctype") or "").strip().lower()
+            has_file_input = str(item.get("has_file_input") or "").strip().lower() in {"1", "true", "yes"}
+            field_text = str(item.get("fields") or "").strip().lower()
+            if "multipart/form-data" in enctype_text:
+                multipart_form_hits += 1
+            if has_file_input or any(token in field_text for token in ("file", "image", "avatar", "attachment")):
+                if action_text:
+                    file_form_hits.append(action_text[:180])
+
+        html_upload_signal = (
+            'type="file"' in content_lower
+            or "type='file'" in content_lower
+            or "multipart/form-data" in content_lower
+            or "el-upload" in content_lower
+            or "uploadify" in content_lower
+            or "dropzone" in content_lower
+        )
+        attachment_signal = "attachment" in content_disposition
+        downloadable_content_signal = any(
+            token in content_type
+            for token in (
+                "application/octet-stream",
+                "application/pdf",
+                "application/zip",
+                "application/x-rar",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument",
+                "text/csv",
+            )
+        )
+        weak_path_signal = any(token in path_lower for token in cls.AI_PEN_UPLOAD_HINTS + cls.AI_PEN_DOWNLOAD_HINTS)
+
+        fallback_keywords = list(cls.AI_PEN_UPLOAD_HINTS) + list(cls.AI_PEN_DOWNLOAD_HINTS) + ["multipart/form-data", "attachment", "type=file"]
+        context_snippet = cls._extract_js_context_snippet(content, evidence_seed, fallback_keywords=fallback_keywords)
+        if not context_snippet:
+            if file_form_hits:
+                context_snippet = cls._clip_text("form_action={}".format(file_form_hits[0]), cls.AI_PEN_TEST_EVIDENCE_MAX)
+            elif upload_path_hits:
+                context_snippet = cls._clip_text("upload_path={}".format(upload_path_hits[0]), cls.AI_PEN_TEST_EVIDENCE_MAX)
+            elif download_path_hits:
+                context_snippet = cls._clip_text("download_path={}".format(download_path_hits[0]), cls.AI_PEN_TEST_EVIDENCE_MAX)
+            elif attachment_signal:
+                context_snippet = cls._clip_text(content_disposition, cls.AI_PEN_TEST_EVIDENCE_MAX)
+            elif downloadable_content_signal:
+                context_snippet = cls._clip_text(content_type, cls.AI_PEN_TEST_EVIDENCE_MAX)
+
+        upload_signal_score = 0
+        if upload_like_count > 0:
+            upload_signal_score += 2
+        if upload_path_hits:
+            upload_signal_score += 2
+        if file_form_hits:
+            upload_signal_score += 3
+        if multipart_form_hits > 0:
+            upload_signal_score += 2
+        if html_upload_signal:
+            upload_signal_score += 2
+
+        download_signal_score = 0
+        if download_like_count > 0:
+            download_signal_score += 2
+        if download_path_hits:
+            download_signal_score += 2
+        if attachment_signal:
+            download_signal_score += 3
+        if downloadable_content_signal:
+            download_signal_score += 2
+
+        if download_signal_score >= 5:
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.80,
+                "reason": "发现明确的下载/导出响应特征，建议继续围绕附件名、对象ID和导出参数做黑盒验证",
+                "context_snippet": context_snippet,
+                "tool_trace": "file_context(download_surface)",
+            }
+        if upload_signal_score >= 5:
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.78,
+                "reason": "发现上传表单或 multipart 入口特征，建议继续围绕文件名、后缀、Content-Type 做低副作用验证",
+                "context_snippet": context_snippet,
+                "tool_trace": "file_context(upload_surface)",
+            }
+        if upload_signal_score >= 2 or download_signal_score >= 2 or weak_path_signal:
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.66,
+                "reason": "发现文件处理相关路径或参数线索，但证据尚不足以证明存在任意文件读写风险",
+                "context_snippet": context_snippet,
+                "tool_trace": "file_context(file_hint)",
+            }
+        if risk_type_text in {"file_upload", "file_read"} or payload_type_text == "upload_probe":
+            return {
+                "decision": "likely_false_positive",
+                "confidence": 0.62,
+                "reason": "当前未观察到稳定的上传/下载/导出结构特征，仅凭现有线索不足以确认文件处理风险",
+                "context_snippet": context_snippet,
+                "tool_trace": "file_context(no_surface)",
+            }
+        return {}
+
+    @classmethod
+    def _analyze_ai_pen_login_surface(
+        cls,
+        target_url: str,
+        risk_type: str,
+        login_surface_summary=None,
+    ):
+        summary = login_surface_summary if isinstance(login_surface_summary, dict) else {}
+        risk_type_text = str(risk_type or "").strip().lower()
+        if risk_type_text != "login_surface" and not summary:
+            return {}
+
+        password_form_count = cls._safe_int_value(summary.get("password_form_count"), 0)
+        captcha_form_count = cls._safe_int_value(summary.get("captcha_form_count"), 0)
+        auth_runtime_call_count = cls._safe_int_value(summary.get("auth_runtime_call_count"), 0)
+        auth_api_path_count = cls._safe_int_value(summary.get("auth_api_path_count"), 0)
+        indicators = [str(item or "").strip() for item in list(summary.get("indicators", []) or []) if str(item or "").strip()]
+        form_actions = [str(item or "").strip() for item in list(summary.get("form_actions", []) or []) if str(item or "").strip()]
+        runtime_auth_paths = [str(item or "").strip() for item in list(summary.get("runtime_auth_paths", []) or []) if str(item or "").strip()]
+
+        if password_form_count > 0 or auth_runtime_call_count > 0 or auth_api_path_count > 0 or indicators:
+            reason_parts = ["发现登录入口或认证链路线索"]
+            if password_form_count > 0:
+                reason_parts.append("密码表单={}".format(password_form_count))
+            if captcha_form_count > 0:
+                reason_parts.append("验证码线索={}".format(captcha_form_count))
+            if auth_runtime_call_count > 0:
+                reason_parts.append("运行时认证接口={}".format(auth_runtime_call_count))
+            if auth_api_path_count > 0:
+                reason_parts.append("认证相关接口={}".format(auth_api_path_count))
+            if form_actions:
+                reason_parts.append("表单动作={}".format(",".join(form_actions[:2])))
+            elif runtime_auth_paths:
+                reason_parts.append("认证路径={}".format(",".join(runtime_auth_paths[:2])))
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.74 if (password_form_count > 0 or auth_runtime_call_count > 0) else 0.66,
+                "reason": "；".join(reason_parts),
+                "context_snippet": cls._clip_text(
+                    ",".join(form_actions[:2] or runtime_auth_paths[:2] or indicators[:3]),
+                    cls.AI_PEN_TEST_EVIDENCE_MAX,
+                ),
+                "tool_trace": "login_surface(context)",
+            }
+
+        if risk_type_text == "login_surface":
+            return {
+                "decision": "likely_false_positive",
+                "confidence": 0.60,
+                "reason": "当前未观察到稳定的登录表单、认证接口或验证码线索，暂不足以认定为有效登录入口",
+                "context_snippet": cls._clip_text(str(target_url or ""), cls.AI_PEN_TEST_EVIDENCE_MAX),
+                "tool_trace": "login_surface(no_signal)",
+            }
         return {}
 
     @staticmethod
@@ -4813,6 +5097,113 @@ class WebSiteFetch(object):
         }
 
     @classmethod
+    def _build_ai_pen_login_surface_summary(cls, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        browser_surface_summary = item.get("browser_surface_summary") if isinstance(item.get("browser_surface_summary"), dict) else {}
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        runtime_api_calls = list(item.get("runtime_api_calls", []) or [])
+        dom_form_summary = list(item.get("dom_form_summary", []) or [])
+
+        page_title = str(browser_surface_summary.get("page_title") or "").strip()
+        page_url = str(browser_surface_summary.get("page_url") or item.get("target") or item.get("vuln_url") or "").strip()
+        merged_text = " ".join(
+            [
+                page_title.lower(),
+                page_url.lower(),
+                str(item.get("risk_name") or "").strip().lower(),
+                str(item.get("evidence_seed") or "").strip().lower(),
+            ]
+        ).strip()
+
+        auth_form_count = 0
+        password_form_count = 0
+        captcha_form_count = 0
+        form_actions = []
+        password_fields = []
+        captcha_fields = []
+        seen_actions = set()
+        seen_password_fields = set()
+        seen_captcha_fields = set()
+
+        for form_item in dom_form_summary:
+            if not isinstance(form_item, dict):
+                continue
+            action_text = str(form_item.get("action") or "").strip()
+            fields = [str(field or "").strip() for field in str(form_item.get("fields") or "").split(",") if str(field or "").strip()]
+            lower_fields = [field.lower() for field in fields]
+            has_password = str(form_item.get("has_password_input") or "").strip().lower() in {"1", "true", "yes"} or any(
+                token in lower_fields for token in ("password", "passwd", "pwd")
+            )
+            has_captcha = str(form_item.get("has_captcha_hint") or "").strip().lower() in {"1", "true", "yes"} or any(
+                any(keyword in field for keyword in cls.AI_PEN_CAPTCHA_HINTS) for field in lower_fields
+            )
+            if has_password:
+                password_form_count += 1
+                auth_form_count += 1
+            if has_captcha:
+                captcha_form_count += 1
+            if has_password or has_captcha:
+                if action_text and action_text not in seen_actions:
+                    seen_actions.add(action_text)
+                    form_actions.append(action_text[:180])
+            for field in fields:
+                lowered = field.lower()
+                if lowered in {"password", "passwd", "pwd"} and lowered not in seen_password_fields:
+                    seen_password_fields.add(lowered)
+                    password_fields.append(field[:60])
+                if any(keyword in lowered for keyword in cls.AI_PEN_CAPTCHA_HINTS) and lowered not in seen_captcha_fields:
+                    seen_captcha_fields.add(lowered)
+                    captcha_fields.append(field[:60])
+
+        runtime_auth_paths = []
+        runtime_captcha_paths = []
+        seen_runtime_auth = set()
+        seen_runtime_captcha = set()
+        for path_text in cls._extract_runtime_api_paths(runtime_api_calls):
+            lowered = str(path_text or "").strip().lower()
+            if not lowered:
+                continue
+            if any(token in lowered for token in cls.AI_PEN_AUTH_PATH_KEYWORDS) and lowered not in seen_runtime_auth:
+                seen_runtime_auth.add(lowered)
+                runtime_auth_paths.append(path_text[:180])
+            if any(token in lowered for token in cls.AI_PEN_CAPTCHA_HINTS) and lowered not in seen_runtime_captcha:
+                seen_runtime_captcha.add(lowered)
+                runtime_captcha_paths.append(path_text[:180])
+
+        auth_api_paths = [str(item or "").strip()[:180] for item in list(api_surface_summary.get("auth_paths", []) or []) if str(item or "").strip()]
+        login_page_hint = any(token in merged_text for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS)
+
+        indicators = []
+        if login_page_hint:
+            indicators.append("login_keyword")
+        if password_form_count > 0:
+            indicators.append("password_form")
+        if captcha_form_count > 0 or runtime_captcha_paths:
+            indicators.append("captcha_hint")
+        if runtime_auth_paths:
+            indicators.append("auth_runtime_api")
+        if auth_api_paths:
+            indicators.append("auth_api_surface")
+
+        return {
+            "page_title": page_title[:160],
+            "page_url": page_url[:240],
+            "login_page_hint": bool(login_page_hint),
+            "auth_form_count": int(auth_form_count),
+            "password_form_count": int(password_form_count),
+            "captcha_form_count": int(captcha_form_count),
+            "auth_runtime_call_count": len(runtime_auth_paths),
+            "auth_api_path_count": len(auth_api_paths),
+            "form_actions": form_actions[:6],
+            "runtime_auth_paths": runtime_auth_paths[:6],
+            "runtime_captcha_paths": runtime_captcha_paths[:4],
+            "auth_api_paths": auth_api_paths[:6],
+            "password_fields": password_fields[:6],
+            "captcha_fields": captcha_fields[:6],
+            "indicators": indicators[:8],
+        }
+
+    @classmethod
     def _build_ai_pen_graph_summary(cls, candidate: dict):
         item = candidate if isinstance(candidate, dict) else {}
         api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
@@ -4898,6 +5289,147 @@ class WebSiteFetch(object):
             "knowledge_vuln_types": knowledge_vuln_types[:6],
             "intel_layers": intel_layers,
         }
+
+    @classmethod
+    def _build_task_ai_pen_graph_context(cls, candidates):
+        candidate_list = [item for item in list(candidates or []) if isinstance(item, dict)]
+        source_counter = {}
+        route_counter = {}
+        layer_counter = {}
+        feature_presence = {
+            "auth_surface_candidates": 0,
+            "object_ref_candidates": 0,
+            "file_candidates": 0,
+            "browser_runtime_candidates": 0,
+            "knowledge_guided_candidates": 0,
+            "login_surface_candidates": 0,
+        }
+
+        top_paths = []
+        top_params = []
+        auth_paths = []
+        runtime_targets = []
+        knowledge_vuln_types = []
+        seen_paths = set()
+        seen_params = set()
+        seen_auth_paths = set()
+        seen_runtime_targets = set()
+        seen_vuln_types = set()
+
+        def _append_limited(target_list, seen_set, raw_value, max_count=8, lower=False, clip=180):
+            text = str(raw_value or "").strip()
+            if not text:
+                return
+            cache_key = text.lower() if lower else text
+            if cache_key in seen_set:
+                return
+            seen_set.add(cache_key)
+            target_list.append(text[:clip])
+
+        def _build_top_counts(counter_obj: dict, max_count=6):
+            results = []
+            for name_text, count in sorted(counter_obj.items(), key=lambda item: (-int(item[1] or 0), str(item[0]))):
+                name = str(name_text or "").strip()
+                if not name:
+                    continue
+                results.append({"name": name, "count": int(count or 0)})
+                if len(results) >= max_count:
+                    break
+            return results
+
+        for item in candidate_list:
+            source_name = str(item.get("source_collection", "") or "").strip().lower() or "unknown"
+            source_counter[source_name] = source_counter.get(source_name, 0) + 1
+
+            route_hint = str(item.get("route_hint") or cls._build_ai_pen_route_hint(item) or "").strip()
+            if route_hint:
+                route_counter[route_hint] = route_counter.get(route_hint, 0) + 1
+
+            graph_summary = item.get("task_ai_pen_graph_summary") if isinstance(item.get("task_ai_pen_graph_summary"), dict) else {}
+            if not graph_summary:
+                graph_summary = cls._build_ai_pen_graph_summary(item)
+
+            for layer_name in list(graph_summary.get("intel_layers", {}).get("active_layers", []) or []):
+                layer_text = str(layer_name or "").strip()
+                if layer_text:
+                    layer_counter[layer_text] = layer_counter.get(layer_text, 0) + 1
+
+            for path_text in list(graph_summary.get("top_paths", []) or []):
+                _append_limited(top_paths, seen_paths, path_text, max_count=12, clip=180)
+                if len(top_paths) >= 12:
+                    break
+            for param_text in list(graph_summary.get("top_params", []) or []):
+                _append_limited(top_params, seen_params, param_text, max_count=16, lower=True, clip=80)
+                if len(top_params) >= 16:
+                    break
+            for auth_path in list(graph_summary.get("auth_cluster", {}).get("top_auth_paths", []) or []):
+                _append_limited(auth_paths, seen_auth_paths, auth_path, max_count=8, clip=180)
+                if len(auth_paths) >= 8:
+                    break
+            for vuln_type in list(graph_summary.get("knowledge_vuln_types", []) or []):
+                _append_limited(knowledge_vuln_types, seen_vuln_types, vuln_type, max_count=8, lower=True, clip=60)
+                if len(knowledge_vuln_types) >= 8:
+                    break
+
+            browser_surface_summary = item.get("browser_surface_summary") if isinstance(item.get("browser_surface_summary"), dict) else {}
+            runtime_target = str(
+                browser_surface_summary.get("page_url")
+                or item.get("target")
+                or item.get("vuln_url")
+                or ""
+            ).strip()
+            if runtime_target and (
+                browser_surface_summary
+                or list(item.get("runtime_api_calls", []) or [])
+                or list(item.get("dom_form_summary", []) or [])
+            ):
+                _append_limited(runtime_targets, seen_runtime_targets, runtime_target, max_count=6, clip=220)
+
+            auth_cluster = graph_summary.get("auth_cluster") if isinstance(graph_summary.get("auth_cluster"), dict) else {}
+            object_cluster = graph_summary.get("object_ref_cluster") if isinstance(graph_summary.get("object_ref_cluster"), dict) else {}
+            file_cluster = graph_summary.get("file_cluster") if isinstance(graph_summary.get("file_cluster"), dict) else {}
+            if cls._safe_int_value(auth_cluster.get("auth_path_count"), 0) > 0 or cls._safe_int_value(auth_cluster.get("security_scheme_count"), 0) > 0:
+                feature_presence["auth_surface_candidates"] += 1
+            if cls._safe_int_value(object_cluster.get("object_id_like_count"), 0) > 0:
+                feature_presence["object_ref_candidates"] += 1
+            if (
+                cls._safe_int_value(file_cluster.get("upload_like_count"), 0) > 0
+                or cls._safe_int_value(file_cluster.get("download_like_count"), 0) > 0
+            ):
+                feature_presence["file_candidates"] += 1
+            if cls._safe_int_value(graph_summary.get("browser_runtime_call_count"), 0) > 0 or cls._safe_int_value(graph_summary.get("dom_form_count"), 0) > 0:
+                feature_presence["browser_runtime_candidates"] += 1
+            if list(item.get("knowledge_hit_tokens", []) or []) or list(item.get("knowledge_hit_entry_paths", []) or []):
+                feature_presence["knowledge_guided_candidates"] += 1
+            login_surface_summary = item.get("login_surface_summary") if isinstance(item.get("login_surface_summary"), dict) else {}
+            if not login_surface_summary:
+                login_surface_summary = cls._build_ai_pen_login_surface_summary(item)
+            if (
+                bool(login_surface_summary.get("login_page_hint"))
+                or cls._safe_int_value(login_surface_summary.get("password_form_count"), 0) > 0
+                or cls._safe_int_value(login_surface_summary.get("auth_runtime_call_count"), 0) > 0
+            ):
+                feature_presence["login_surface_candidates"] += 1
+
+        return {
+            "candidate_count": len(candidate_list),
+            "source_mix": _build_top_counts(source_counter, max_count=6),
+            "route_mix": _build_top_counts(route_counter, max_count=6),
+            "layer_mix": _build_top_counts(layer_counter, max_count=4),
+            "top_paths": top_paths[:12],
+            "top_params": top_params[:16],
+            "auth_paths": auth_paths[:8],
+            "runtime_targets": runtime_targets[:6],
+            "knowledge_vuln_types": knowledge_vuln_types[:8],
+            "feature_presence": feature_presence,
+        }
+
+    def _get_task_ai_pen_graph_context(self, candidates):
+        if isinstance(self.ai_pen_task_graph_context_cache, dict) and self.ai_pen_task_graph_context_cache:
+            return dict(self.ai_pen_task_graph_context_cache)
+        context = self._build_task_ai_pen_graph_context(candidates)
+        self.ai_pen_task_graph_context_cache = dict(context or {})
+        return dict(self.ai_pen_task_graph_context_cache)
 
     @staticmethod
     def _extract_js_api_param_names(snippet: str):
@@ -5351,6 +5883,7 @@ class WebSiteFetch(object):
             api_doc_keywords = ("swagger", "openapi", "api-docs", "knife4j", "redoc", "postman")
             websocket_keywords = ("websocket", "socket.io", "sockjs", "ws://", "wss://")
             jwt_keywords = ("jwt", "json web token", "oauth2", "openid", "oidc")
+            login_keywords = self.AI_PEN_LOGIN_PAGE_KEYWORDS
             site_cursor = utils.conn_db("site").find(
                 {"task_id": self.task_id},
                 {"_id": 1, "site": 1, "title": 1, "http_server": 1, "finger": 1, "status": 1},
@@ -5398,6 +5931,11 @@ class WebSiteFetch(object):
                     risk_type = "jwt"
                     risk_name = "站点疑似存在JWT鉴权链路"
                     severity = "low"
+                elif any(keyword in merged_text for keyword in login_keywords):
+                    matched_keywords = [keyword for keyword in login_keywords if keyword in merged_text][:4]
+                    risk_type = "login_surface"
+                    risk_name = "站点疑似登录入口"
+                    severity = "low"
 
                 if not risk_type:
                     continue
@@ -5437,6 +5975,7 @@ class WebSiteFetch(object):
             websocket_keywords = ("websocket", "socket.io", "sockjs", "/ws", "/websocket")
             id_keys = {"id", "uid", "user_id", "userid", "account_id", "order_id", "doc_id"}
             jwt_token_keys = {"token", "jwt", "access_token", "id_token", "refresh_token", "authorization", "auth", "bearer"}
+            login_keywords = self.AI_PEN_LOGIN_PAGE_KEYWORDS
             url_cursor = utils.conn_db("url").find(
                 {"task_id": self.task_id},
                 {"_id": 1, "url": 1, "title": 1, "status_code": 1, "source": 1},
@@ -5470,6 +6009,14 @@ class WebSiteFetch(object):
                     matched_keywords = [keyword for keyword in websocket_keywords if keyword in lower_url][:4]
                     risk_type = "websocket"
                     risk_name = "URL疑似WebSocket入口"
+                    severity = "low"
+                elif any(keyword in lower_url or keyword in title_text.lower() for keyword in login_keywords):
+                    matched_keywords = [
+                        keyword for keyword in login_keywords
+                        if keyword in lower_url or keyword in title_text.lower()
+                    ][:4]
+                    risk_type = "login_surface"
+                    risk_name = "URL疑似登录入口"
                     severity = "low"
                 else:
                     jwt_token_hit = False
@@ -5602,6 +6149,8 @@ class WebSiteFetch(object):
         runtime_api_calls = list(candidate.get("runtime_api_calls", []) or [])[:16]
         dom_form_summary = list(candidate.get("dom_form_summary", []) or [])[:8]
         task_ai_pen_graph_summary = dict(candidate.get("task_ai_pen_graph_summary") or {}) if isinstance(candidate.get("task_ai_pen_graph_summary"), dict) else {}
+        task_ai_pen_graph_context = dict(candidate.get("task_ai_pen_graph_context") or {}) if isinstance(candidate.get("task_ai_pen_graph_context"), dict) else {}
+        login_surface_summary = dict(candidate.get("login_surface_summary") or {}) if isinstance(candidate.get("login_surface_summary"), dict) else {}
         payload_type, payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
         route_hint = str(candidate.get("route_hint") or self._build_ai_pen_route_hint(candidate) or "").strip()
         capability_candidate = dict(candidate or {})
@@ -5632,6 +6181,8 @@ class WebSiteFetch(object):
                 "runtime_api_calls": runtime_api_calls,
                 "dom_form_summary": dom_form_summary,
                 "task_ai_pen_graph_summary": task_ai_pen_graph_summary,
+                "task_ai_pen_graph_context": task_ai_pen_graph_context,
+                "login_surface_summary": login_surface_summary,
                 "route_hint": route_hint,
                 "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                 "tool_trace": "collect_context_only",
@@ -5688,6 +6239,8 @@ class WebSiteFetch(object):
                     "runtime_api_calls": runtime_api_calls,
                     "dom_form_summary": dom_form_summary,
                     "task_ai_pen_graph_summary": task_ai_pen_graph_summary,
+                    "task_ai_pen_graph_context": task_ai_pen_graph_context,
+                    "login_surface_summary": login_surface_summary,
                     "route_hint": route_hint,
                     "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                     "tool_trace": "http_fetch(skip_by_waf,url={})".format(target_url[:220]),
@@ -6086,6 +6639,59 @@ class WebSiteFetch(object):
                     decision = js_decision
                     confidence = self._clamp_ai_pen_confidence(js_context_ret.get("confidence"), confidence)
 
+            file_context_ret = self._analyze_ai_pen_file_context(
+                target_url=target_url,
+                body_text=body_text,
+                headers=header_obj,
+                risk_type=risk_type,
+                payload_type=payload_type,
+                evidence_seed=evidence_seed,
+                api_surface_summary=api_surface_summary,
+                browser_surface_summary=browser_surface_summary,
+                runtime_api_calls=runtime_api_calls,
+                dom_form_summary=dom_form_summary,
+            )
+            if isinstance(file_context_ret, dict) and file_context_ret:
+                file_trace = str(file_context_ret.get("tool_trace", "") or "").strip()
+                if file_trace:
+                    tool_trace_parts.append(file_trace)
+                file_context_snippet = self._clip_text(
+                    file_context_ret.get("context_snippet", ""),
+                    self.AI_PEN_TEST_EVIDENCE_MAX,
+                )
+                if file_context_snippet:
+                    evidence_snippet = file_context_snippet
+                file_reason = self._clip_text(file_context_ret.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
+                if file_reason:
+                    reason = "{}；文件处理上下文：{}".format(reason, file_reason) if reason else "文件处理上下文：{}".format(file_reason)
+                file_decision = self._normalize_ai_pen_decision(file_context_ret.get("decision"), default_value="")
+                if file_decision:
+                    decision = file_decision
+                    confidence = self._clamp_ai_pen_confidence(file_context_ret.get("confidence"), confidence)
+
+            login_context_ret = self._analyze_ai_pen_login_surface(
+                target_url=target_url,
+                risk_type=risk_type,
+                login_surface_summary=login_surface_summary,
+            )
+            if isinstance(login_context_ret, dict) and login_context_ret:
+                login_trace = str(login_context_ret.get("tool_trace", "") or "").strip()
+                if login_trace:
+                    tool_trace_parts.append(login_trace)
+                login_context_snippet = self._clip_text(
+                    login_context_ret.get("context_snippet", ""),
+                    self.AI_PEN_TEST_EVIDENCE_MAX,
+                )
+                if login_context_snippet:
+                    evidence_snippet = login_context_snippet
+                login_reason = self._clip_text(login_context_ret.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
+                if login_reason:
+                    reason = "{}；登录面上下文：{}".format(reason, login_reason) if reason else "登录面上下文：{}".format(login_reason)
+                login_decision = self._normalize_ai_pen_decision(login_context_ret.get("decision"), default_value="")
+                if login_decision:
+                    decision = login_decision
+                    confidence = self._clamp_ai_pen_confidence(login_context_ret.get("confidence"), confidence)
+
             if probe_error:
                 reason = "{}；探针异常：{}".format(reason, probe_error)
             reason = self._clip_text(reason, self.AI_PEN_TEST_REASON_MAX)
@@ -6099,6 +6705,8 @@ class WebSiteFetch(object):
                 verification_step = "mcp_jwt_probe"
             elif mcp_enable and max_tool_calls > 1 and payload_type == "websocket_probe":
                 verification_step = "mcp_websocket_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "upload_probe":
+                verification_step = "mcp_file_probe"
             elif mcp_enable and max_tool_calls > 1:
                 verification_step = "mcp_http_probe"
 
@@ -6158,6 +6766,8 @@ class WebSiteFetch(object):
                 "runtime_api_calls": runtime_api_calls,
                 "dom_form_summary": dom_form_summary,
                 "task_ai_pen_graph_summary": task_ai_pen_graph_summary,
+                "task_ai_pen_graph_context": task_ai_pen_graph_context,
+                "login_surface_summary": login_surface_summary,
                 "route_hint": route_hint,
                 "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                 "tool_trace": " | ".join(tool_trace_parts)[:500],
@@ -6182,6 +6792,8 @@ class WebSiteFetch(object):
                 "runtime_api_calls": runtime_api_calls,
                 "dom_form_summary": dom_form_summary,
                 "task_ai_pen_graph_summary": task_ai_pen_graph_summary,
+                "task_ai_pen_graph_context": task_ai_pen_graph_context,
+                "login_surface_summary": login_surface_summary,
                 "route_hint": route_hint,
                 "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                 "tool_trace": "http_fetch(error,url={})".format(target_url[:220]),
@@ -6316,6 +6928,7 @@ class WebSiteFetch(object):
             candidate["runtime_api_calls"] = list(browser_intel.get("runtime_api_calls", []) or [])[:16]
             candidate["dom_form_summary"] = list(browser_intel.get("dom_form_summary", []) or [])[:8]
             candidate["task_ai_pen_graph_summary"] = self._build_ai_pen_graph_summary(candidate)
+            candidate["login_surface_summary"] = self._build_ai_pen_login_surface_summary(candidate)
             candidate["knowledge_score"] = int(hit_info.get("score", 0) or 0)
             if bool(hit_info.get("loaded")):
                 knowledge_loaded = True
@@ -6348,6 +6961,10 @@ class WebSiteFetch(object):
             max_cases = self.AI_PEN_TEST_MAX_CASES
 
         selected_candidates = candidates[:max_cases]
+        task_ai_pen_graph_context = self._get_task_ai_pen_graph_context(selected_candidates)
+        for candidate in selected_candidates:
+            candidate["task_ai_pen_graph_context"] = dict(task_ai_pen_graph_context or {})
+
         saved_count = 0
         verified_count = 0
         false_positive_count = 0
@@ -6465,6 +7082,8 @@ class WebSiteFetch(object):
                 "runtime_api_calls": list(verify_result.get("runtime_api_calls", []) or [])[:16],
                 "dom_form_summary": list(verify_result.get("dom_form_summary", []) or [])[:8],
                 "task_ai_pen_graph_summary": dict(verify_result.get("task_ai_pen_graph_summary") or {}) if isinstance(verify_result.get("task_ai_pen_graph_summary"), dict) else {},
+                "task_ai_pen_graph_context": dict(verify_result.get("task_ai_pen_graph_context") or {}) if isinstance(verify_result.get("task_ai_pen_graph_context"), dict) else {},
+                "login_surface_summary": dict(verify_result.get("login_surface_summary") or {}) if isinstance(verify_result.get("login_surface_summary"), dict) else {},
                 "route_hint": str(verify_result.get("route_hint", "") or "").strip(),
                 "capability_profile": dict(verify_result.get("capability_profile") or {}) if isinstance(verify_result.get("capability_profile"), dict) else {},
                 "decision": decision,

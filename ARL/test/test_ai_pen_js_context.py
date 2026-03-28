@@ -141,6 +141,38 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("js_sensitive_context", route_hint)
 
+    def test_route_hint_marks_file_handling_context(self):
+        route_hint = WebSiteFetch._build_ai_pen_route_hint(
+            {
+                "target": "https://example.com/api/export/report",
+                "risk_type": "file_read",
+            }
+        )
+
+        self.assertEqual("file_handling_context", route_hint)
+
+    def test_route_hint_marks_login_entry_context(self):
+        route_hint = WebSiteFetch._build_ai_pen_route_hint(
+            {
+                "target": "https://example.com/login",
+                "risk_type": "login_surface",
+                "browser_surface_summary": {
+                    "page_title": "统一身份认证登录",
+                    "page_url": "https://example.com/login",
+                },
+                "dom_form_summary": [
+                    {
+                        "action": "/login",
+                        "method": "POST",
+                        "has_password_input": "true",
+                        "fields": "username,password,captcha",
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual("login_entry_context", route_hint)
+
     def test_product_hints_collect_generic_surface_families(self):
         hints = WebSiteFetch._collect_ai_pen_surface_hints(
             {
@@ -152,6 +184,38 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertIn("api_doc_surface", hints)
         self.assertIn("admin_office_portal", hints)
+
+    def test_capability_profile_prefers_file_handling_surface(self):
+        profile = WebSiteFetch._select_ai_pen_capability_profile(
+            {
+                "target": "https://example.com/api/export/report",
+                "risk_type": "file_read",
+                "route_hint": "file_handling_context",
+                "api_surface_summary": {
+                    "download_like_count": 2,
+                    "upload_like_count": 0,
+                    "sample_paths": ["/api/export/report"],
+                    "parameter_names": ["reportId"],
+                },
+                "surface_hints": ["file_handling_surface"],
+            }
+        )
+
+        self.assertEqual("file_handling_surface", profile.get("name"))
+        self.assertEqual("upload_probe", profile.get("preferred_payload_type"))
+
+    def test_capability_profile_prefers_login_entry_surface(self):
+        profile = WebSiteFetch._select_ai_pen_capability_profile(
+            {
+                "target": "https://example.com/login",
+                "risk_type": "login_surface",
+                "route_hint": "login_entry_context",
+                "surface_hints": ["login_entry_surface"],
+            }
+        )
+
+        self.assertEqual("login_entry_surface", profile.get("name"))
+        self.assertEqual("replay", profile.get("preferred_payload_type"))
 
     def test_api_doc_summary_extracts_paths_and_params(self):
         summary = WebSiteFetch._extract_api_doc_summary(
@@ -283,6 +347,152 @@ class TestAiPenJsContext(unittest.TestCase):
             "runtime_enrichment",
             summary.get("intel_layers", {}).get("runtime_layer", {}).get("role"),
         )
+
+    def test_task_ai_pen_graph_context_aggregates_candidates(self):
+        context = WebSiteFetch._build_task_ai_pen_graph_context(
+            [
+                {
+                    "source_collection": "site",
+                    "route_hint": "api_doc_structure",
+                    "knowledge_hit_tokens": ["swagger"],
+                    "task_ai_pen_graph_summary": {
+                        "top_paths": ["/api/login", "/api/user/{id}"],
+                        "top_params": ["id", "token"],
+                        "auth_cluster": {
+                            "auth_path_count": 1,
+                            "security_scheme_count": 1,
+                            "top_auth_paths": ["/api/login"],
+                        },
+                        "object_ref_cluster": {"object_id_like_count": 1},
+                        "file_cluster": {"upload_like_count": 0, "download_like_count": 1},
+                        "browser_runtime_call_count": 0,
+                        "dom_form_count": 0,
+                        "knowledge_vuln_types": ["api_doc"],
+                        "intel_layers": {"active_layers": ["static_surface", "knowledge_index"]},
+                    },
+                },
+                {
+                    "source_collection": "wih",
+                    "route_hint": "http_replay_then_context",
+                    "runtime_api_calls": [{"method": "GET", "url": "https://example.com/api/me", "status": "200"}],
+                    "browser_surface_summary": {"page_url": "https://example.com/dashboard"},
+                    "task_ai_pen_graph_summary": {
+                        "top_paths": ["/api/me"],
+                        "top_params": ["username"],
+                        "auth_cluster": {
+                            "auth_path_count": 0,
+                            "security_scheme_count": 0,
+                            "top_auth_paths": [],
+                        },
+                        "object_ref_cluster": {"object_id_like_count": 0},
+                        "file_cluster": {"upload_like_count": 0, "download_like_count": 0},
+                        "browser_runtime_call_count": 1,
+                        "dom_form_count": 1,
+                        "knowledge_vuln_types": ["idor"],
+                        "intel_layers": {"active_layers": ["static_surface", "browser_runtime"]},
+                    },
+                },
+            ]
+        )
+
+        self.assertEqual(2, context.get("candidate_count"))
+        self.assertIn("/api/login", context.get("top_paths", []))
+        self.assertIn("token", context.get("top_params", []))
+        self.assertTrue(any(item.get("name") == "site" for item in context.get("source_mix", [])))
+        self.assertTrue(any(item.get("name") == "api_doc_structure" for item in context.get("route_mix", [])))
+        self.assertTrue(any(item.get("name") == "browser_runtime" for item in context.get("layer_mix", [])))
+        self.assertGreaterEqual(context.get("feature_presence", {}).get("auth_surface_candidates", 0), 1)
+        self.assertIn("https://example.com/dashboard", context.get("runtime_targets", []))
+
+    def test_file_context_detects_upload_surface_from_forms(self):
+        result = WebSiteFetch._analyze_ai_pen_file_context(
+            target_url="https://example.com/upload",
+            body_text='<form enctype="multipart/form-data"><input type="file" name="file"></form>',
+            headers={"Content-Type": "text/html"},
+            risk_type="file_upload",
+            payload_type="upload_probe",
+            evidence_seed="upload",
+            api_surface_summary={"upload_like_count": 1, "download_like_count": 0},
+            browser_surface_summary={"page_url": "https://example.com/upload"},
+            runtime_api_calls=[],
+            dom_form_summary=[{"action": "/upload", "method": "POST", "enctype": "multipart/form-data", "has_file_input": "true", "fields": "file"}],
+        )
+
+        self.assertEqual("needs_manual_review", result.get("decision"))
+        self.assertIn("上传表单", str(result.get("reason") or ""))
+
+    def test_file_context_detects_download_surface_from_headers(self):
+        result = WebSiteFetch._analyze_ai_pen_file_context(
+            target_url="https://example.com/export/report",
+            body_text="",
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": 'attachment; filename="report.xlsx"',
+            },
+            risk_type="file_read",
+            payload_type="replay",
+            evidence_seed="download",
+            api_surface_summary={"upload_like_count": 0, "download_like_count": 1},
+            browser_surface_summary={},
+            runtime_api_calls=[],
+            dom_form_summary=[],
+        )
+
+        self.assertEqual("needs_manual_review", result.get("decision"))
+        self.assertIn("下载/导出响应特征", str(result.get("reason") or ""))
+
+    def test_login_surface_summary_detects_password_and_captcha(self):
+        summary = WebSiteFetch._build_ai_pen_login_surface_summary(
+            {
+                "target": "https://example.com/login",
+                "browser_surface_summary": {
+                    "page_title": "统一身份认证登录",
+                    "page_url": "https://example.com/login",
+                },
+                "runtime_api_calls": [
+                    {"method": "POST", "url": "https://example.com/api/auth/login", "status": "200"},
+                    {"method": "GET", "url": "https://example.com/api/captcha", "status": "200"},
+                ],
+                "dom_form_summary": [
+                    {
+                        "action": "/login",
+                        "method": "POST",
+                        "has_password_input": "true",
+                        "password_fields": "password",
+                        "has_captcha_hint": "true",
+                        "fields": "username,password,captcha",
+                    }
+                ],
+                "api_surface_summary": {
+                    "auth_paths": ["/api/auth/login"],
+                },
+            }
+        )
+
+        self.assertTrue(summary.get("login_page_hint"))
+        self.assertEqual(1, summary.get("password_form_count"))
+        self.assertEqual(1, summary.get("captcha_form_count"))
+        self.assertGreaterEqual(summary.get("auth_runtime_call_count", 0), 1)
+        self.assertIn("/login", summary.get("form_actions", []))
+
+    def test_login_surface_analysis_is_passive_and_conservative(self):
+        result = WebSiteFetch._analyze_ai_pen_login_surface(
+            target_url="https://example.com/login",
+            risk_type="login_surface",
+            login_surface_summary={
+                "login_page_hint": True,
+                "password_form_count": 1,
+                "captcha_form_count": 1,
+                "auth_runtime_call_count": 1,
+                "auth_api_path_count": 1,
+                "form_actions": ["/login"],
+                "runtime_auth_paths": ["/api/auth/login"],
+                "indicators": ["login_keyword", "password_form", "captcha_hint"],
+            },
+        )
+
+        self.assertEqual("needs_manual_review", result.get("decision"))
+        self.assertIn("登录入口或认证链路线索", str(result.get("reason") or ""))
 
     def test_should_collect_browser_intel_for_page_style_api_doc_target(self):
         original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)

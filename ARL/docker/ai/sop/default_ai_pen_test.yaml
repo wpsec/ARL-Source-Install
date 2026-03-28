@@ -9,11 +9,13 @@ content: |
   2) 证据驱动：PoC知识命中只能作为排序提示，不能单独当作漏洞证明；
   3) 误报抑制：静态JS命中 sensitive_info 时，优先区分“硬编码字面量”与“变量拼接/localStorage/sessionStorage 噪声”；静态JS命中 DOM XSS 时，优先判断是否同时存在 source 与危险 sink；
   4) API文档优先结构化：若目标属于 Swagger/OpenAPI/Postman 场景，优先围绕文档结构、paths、参数和 securitySchemes 给出验证建议；
-  5) 证据不足时必须保持 needs_manual_review，禁止编造不存在的事实。
+  5) 文件处理场景要保守：发现 upload/download/export/attachment/template 等入口，只能证明存在文件处理能力，不等于已经证明任意文件读写；
+  6) 登录页场景要保守：发现登录表单、验证码或认证相关接口，只能证明存在认证入口与黑盒测试面，不等于已经证明漏洞；
+  7) 证据不足时必须保持 needs_manual_review，禁止编造不存在的事实。
 
   结论标准：
   - verified：存在强证据，例如真实暴露且结构明确的API文档、真实硬编码敏感值、明确的JWT签名缺陷、明确的WebSocket握手成功；
-  - needs_manual_review：路线正确但证据尚未闭环，例如响应差异明显但鉴权上下文不足、JS中出现source->sink链路但未完全确认可控性；
+  - needs_manual_review：路线正确但证据尚未闭环，例如响应差异明显但鉴权上下文不足、JS中出现source->sink链路但未完全确认可控性、发现上传/下载/导出入口但尚未证明任意文件读写、发现登录入口但尚未发现可证明漏洞；
   - likely_false_positive：补充上下文后线索塌陷，例如仅有关键词、构建产物噪声、变量拼接、本地存储逻辑、Swagger关键词存在但无真实文档结构。
 
   输出要求：

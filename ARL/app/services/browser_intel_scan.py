@@ -53,10 +53,34 @@ class BrowserIntelScan(BaseThread):
             () => Array.from(document.querySelectorAll('form')).slice(0, 8).map((form) => {
               const action = form.getAttribute('action') || location.href;
               const method = (form.getAttribute('method') || 'GET').toUpperCase();
+              const enctype = (form.getAttribute('enctype') || '').trim();
+              const hasFileInput = form.querySelector('input[type="file"]') ? 'true' : 'false';
+              const passwordInputs = Array.from(form.querySelectorAll('input[type="password"][name], input[type="password"]'))
+                .map((el) => (el.getAttribute('name') || '').trim()).filter(Boolean).slice(0, 6);
+              const fieldNameList = Array.from(
+                form.querySelectorAll('input[name], textarea[name], select[name]')
+              ).map((el) => (el.getAttribute('name') || '').trim()).filter(Boolean).slice(0, 12);
+              const lowerFields = fieldNameList.map((item) => item.toLowerCase());
+              const hasCaptchaHint = lowerFields.some((item) =>
+                ['captcha', 'verifycode', 'verification', 'checkcode', 'validatecode', 'randcode', 'yzm'].some((keyword) => item.includes(keyword))
+              ) ? 'true' : 'false';
+              const submitText = Array.from(form.querySelectorAll('button, input[type="submit"]')).map((el) => {
+                return ((el.textContent || el.getAttribute('value') || '') + '').trim();
+              }).filter(Boolean).slice(0, 2).join(' | ');
               const fields = Array.from(
                 form.querySelectorAll('input[name], textarea[name], select[name]')
               ).map((el) => (el.getAttribute('name') || '').trim()).filter(Boolean).slice(0, 12);
-              return { action, method, fields: fields.join(',') };
+              return {
+                action,
+                method,
+                enctype,
+                has_file_input: hasFileInput,
+                has_password_input: passwordInputs.length > 0 ? 'true' : 'false',
+                password_fields: passwordInputs.join(','),
+                has_captcha_hint: hasCaptchaHint,
+                submit_text: submitText,
+                fields: fields.join(','),
+              };
             })
             """
         )
