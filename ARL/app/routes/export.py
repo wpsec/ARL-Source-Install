@@ -152,6 +152,34 @@ CERT_EXPORT_PROJECTION = {
     "domains": 1,
     "cert": 1,
 }
+AI_PEN_TEST_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "source_collection": 1,
+    "source_module": 1,
+    "risk_type": 1,
+    "risk_name": 1,
+    "target": 1,
+    "vuln_url": 1,
+    "decision": 1,
+    "confidence": 1,
+    "status": 1,
+    "verification_step": 1,
+    "payload_type": 1,
+    "payload": 1,
+    "reason": 1,
+    "tool_trace": 1,
+    "ai_status": 1,
+    "ai_plan_decision": 1,
+    "ai_plan_confidence": 1,
+    "ai_plan_reason": 1,
+    "ai_plan_actions": 1,
+    "ai_plan_request": 1,
+    "ai_plan_reply": 1,
+    "external_tool_hit": 1,
+    "external_tool_runs": 1,
+    "save_date": 1,
+    "update_date": 1,
+}
 AI_DENOISE_RESULT_EXPORT_PROJECTION = {
     "task_id": 1,
     "module_id": 1,
@@ -1516,6 +1544,16 @@ def get_cert_data(task_id):
     ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
+def get_ai_pen_test_data(task_id):
+    """
+    获取任务的 AI 渗透测试结果。
+    """
+    return utils.conn_db('ai_pen_test_result').find(
+        {'task_id': task_id},
+        projection=AI_PEN_TEST_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+
+
 def get_ai_denoise_result_data(task_ids):
     """
     获取任务范围内 AI 去噪落库结果。
@@ -2401,6 +2439,154 @@ def _build_stat_finger_sheet(wb, task_ids, apply_style=True):
     ws.append(["finger", "数量"])
 
     for row in _extract_stat_finger_rows(task_ids):
+        ws.append(row)
+
+    if apply_style:
+        set_sheet_style(ws)
+
+
+def _extract_ai_pen_rows(task_ids):
+    """
+    汇总 AI 渗透测试导出行。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    rows = []
+    dedup_keys = set()
+
+    for task_id in task_id_list:
+        for item in get_ai_pen_test_data(task_id):
+            source_collection = sanitize_excel_value(item.get("source_collection", "")).strip()
+            risk_type = sanitize_excel_value(item.get("risk_type", "")).strip()
+            risk_name = sanitize_excel_value(item.get("risk_name", "")).strip()
+            target = sanitize_excel_value(item.get("target", "")).strip()
+            vuln_url = sanitize_excel_value(item.get("vuln_url", "")).strip()
+            decision = sanitize_excel_value(item.get("decision", "")).strip()
+            status = sanitize_excel_value(item.get("status", "")).strip()
+            verification_step = sanitize_excel_value(item.get("verification_step", "")).strip()
+            payload_type = sanitize_excel_value(item.get("payload_type", "")).strip()
+            payload = sanitize_excel_value(item.get("payload", "")).strip()
+            confidence = sanitize_excel_value(item.get("confidence", "")).strip()
+            reason = _truncate_report_text(item.get("reason", ""), 800)
+            tool_trace = _truncate_report_text(item.get("tool_trace", ""), 600)
+            ai_plan_request = _truncate_report_text(item.get("ai_plan_request", ""), 1200)
+            ai_plan_reply = _truncate_report_text(item.get("ai_plan_reply", ""), 1200)
+            ai_plan_actions = " \r\n".join(
+                [sanitize_excel_value(x).strip() for x in (item.get("ai_plan_actions") or []) if sanitize_excel_value(x).strip()]
+            )
+            external_tool_runs = []
+            for run_item in (item.get("external_tool_runs") or []):
+                if not isinstance(run_item, dict):
+                    continue
+                tool_name = sanitize_excel_value(run_item.get("tool", "")).strip()
+                tool_status = sanitize_excel_value(run_item.get("status", "")).strip()
+                tool_message = sanitize_excel_value(run_item.get("message", "")).strip()
+                if tool_name or tool_status or tool_message:
+                    external_tool_runs.append("{} [{}] {}".format(tool_name or "-", tool_status or "-", tool_message or "-").strip())
+            external_tool_text = " \r\n".join(external_tool_runs)
+            ai_plan_text = _truncate_report_text(
+                "decision={}; confidence={}; reason={}".format(
+                    sanitize_excel_value(item.get("ai_plan_decision", "")).strip() or "-",
+                    sanitize_excel_value(item.get("ai_plan_confidence", "")).strip() or "-",
+                    sanitize_excel_value(item.get("ai_plan_reason", "")).strip() or "-",
+                ),
+                600,
+            )
+            save_date = sanitize_excel_value(item.get("save_date") or item.get("update_date") or "").strip()
+
+            dedup_key = (
+                task_id,
+                source_collection,
+                risk_type,
+                risk_name,
+                target,
+                vuln_url,
+                decision,
+                verification_step,
+                payload_type,
+            )
+            if dedup_key in dedup_keys:
+                continue
+            dedup_keys.add(dedup_key)
+
+            rows.append([
+                source_collection,
+                risk_type,
+                risk_name,
+                target,
+                vuln_url,
+                decision,
+                confidence,
+                status,
+                verification_step,
+                payload_type,
+                payload,
+                reason,
+                tool_trace,
+                ai_plan_text,
+                ai_plan_actions,
+                ai_plan_request,
+                ai_plan_reply,
+                sanitize_excel_value("是" if bool(item.get("external_tool_hit")) else "否"),
+                external_tool_text,
+                save_date,
+            ])
+
+    return rows
+
+
+def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
+    """
+    在导出工作簿中新增 AI 渗透测试工作表。
+    """
+    ws = wb.create_sheet(title="AI渗透测试")
+    for key, width in {
+        "A": 12.0,
+        "B": 14.0,
+        "C": 26.0,
+        "D": 34.0,
+        "E": 52.0,
+        "F": 14.0,
+        "G": 10.0,
+        "H": 10.0,
+        "I": 18.0,
+        "J": 14.0,
+        "K": 24.0,
+        "L": 72.0,
+        "M": 72.0,
+        "N": 52.0,
+        "O": 42.0,
+        "P": 80.0,
+        "Q": 80.0,
+        "R": 12.0,
+        "S": 64.0,
+        "T": 21.0,
+    }.items():
+        ws.column_dimensions[key].width = width
+
+    ws.append([
+        "来源",
+        "风险类型",
+        "风险名称",
+        "目标",
+        "漏洞URL",
+        "结论",
+        "置信度",
+        "状态",
+        "验证阶段",
+        "探针类型",
+        "Payload",
+        "说明",
+        "工具轨迹",
+        "AI规划摘要",
+        "AI规划动作",
+        "ARL请求摘要",
+        "AI回复摘要",
+        "外部工具命中",
+        "外部工具记录",
+        "时间",
+    ])
+
+    for row in _extract_ai_pen_rows(task_ids):
         ws.append(row)
 
     if apply_style:
@@ -4054,6 +4240,12 @@ class SaveTask(object):
         """
         _build_nuclei_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
+    def build_ai_pen_xl(self):
+        """
+        构建 AI 渗透测试工作表。
+        """
+        _build_ai_pen_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
+
     def build_stat_finger_xl(self):
         """
         构建指纹统计工作表。
@@ -4161,6 +4353,7 @@ class SaveTask(object):
         self.build_waf_xl()
         self.build_vuln_xl()
         self.build_nuclei_xl()
+        self.build_ai_pen_xl()
         self.build_stat_finger_xl()
         self.build_statist()
 
@@ -4508,6 +4701,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     _build_waf_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_vuln_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_nuclei_sheet(wb, valid_task_ids, apply_style=apply_style)
+    _build_ai_pen_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_stat_finger_sheet(wb, valid_task_ids, apply_style=apply_style)
 
     # 资产统计（与单任务导出同结构）

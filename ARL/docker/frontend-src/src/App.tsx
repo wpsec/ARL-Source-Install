@@ -95,6 +95,7 @@ type ModuleConfig = {
   description: string;
   group: string;
   icon: React.ComponentType<{ className?: string }>;
+  hidden?: boolean;
   listPath?: string;
   rowIdKey?: string;
   defaultOrder?: string;
@@ -1407,6 +1408,7 @@ const modules: ModuleConfig[] = [
     description: '识别指纹统计',
     group: '资产数据',
     icon: Activity,
+    hidden: true,
     listPath: '/stat_finger/',
     rowIdKey: '_id',
     showIndex: true,
@@ -2185,11 +2187,12 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'url', label: 'URL信息' },
   { id: 'vuln', label: '风险' },
   { id: 'nuclei_result', label: 'PoC风险' },
-  { id: 'stat_finger', label: '指纹统计' },
   { id: 'wih', label: 'WIH' },
   { id: 'waf_host', label: 'WAF识别' },
   { id: 'ai_pen_test', label: 'AI渗透' },
 ];
+
+const visibleModules = modules.filter((module) => !module.hidden);
 
 function getDefaultModulePageSize(moduleId: string, filters?: JsonValue): number {
   const isTaskDetailModule = TASK_DETAIL_TABS.some((tab) => tab.id === moduleId);
@@ -3877,13 +3880,13 @@ function applyPathTemplate(path: string, payload: JsonValue): string {
 }
 
 function getModuleById(id: string): ModuleConfig {
-  return modules.find((module) => module.id === id) || modules[0];
+  return visibleModules.find((module) => module.id === id) || visibleModules[0];
 }
 
 function resolveStoredModuleId(moduleId: string | null | undefined): string {
   const normalized = String(moduleId || '').trim();
   if (!normalized) return 'dashboard';
-  return modules.some((module) => module.id === normalized) ? normalized : 'dashboard';
+  return visibleModules.some((module) => module.id === normalized) ? normalized : 'dashboard';
 }
 
 function LoginView({
@@ -11913,6 +11916,111 @@ function TableModuleView({
                       </>
                     );
                   })()}
+                </div>
+              ) : null}
+
+              {(normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_request) !== '-')
+                || (normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_reply) !== '-')
+                || (Array.isArray(aiPenDetail.row?.ai_plan_actions) && aiPenDetail.row.ai_plan_actions.length > 0) ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">ARL 与 AI 对话记录</div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[11px] font-black tracking-wide text-brand-text-muted">ARL 请求摘要</div>
+                        {normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_request) !== '-' ? (
+                          <button
+                            type="button"
+                            onClick={() => void copyTextToClipboard(normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_request), 'ARL请求摘要')}
+                            className="text-xs font-semibold text-brand-accent hover:underline"
+                          >
+                            复制
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed font-mono">
+                        {normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_request)}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[11px] font-black tracking-wide text-brand-text-muted">AI 回复摘要</div>
+                        {normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_reply) !== '-' ? (
+                          <button
+                            type="button"
+                            onClick={() => void copyTextToClipboard(normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_reply), 'AI回复摘要')}
+                            className="text-xs font-semibold text-brand-accent hover:underline"
+                          >
+                            复制
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed font-mono">
+                        {normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_reply)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {Array.isArray(aiPenDetail.row?.ai_plan_actions) && aiPenDetail.row.ai_plan_actions.length > 0 ? (
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">AI 规划动作</div>
+                      <div className="space-y-1">
+                        {aiPenDetail.row.ai_plan_actions.map((item: any, index: number) => (
+                          <div key={`${index}-${item}`} className="break-all text-sm">
+                            {index + 1}. {String(item || '').trim() || '-'}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {(Array.isArray(aiPenDetail.row?.external_tool_runs) && aiPenDetail.row.external_tool_runs.length > 0)
+                || normalizeValueNoTruncate(aiPenDetail.row?.tool_trace) !== '-'
+                || normalizeValueNoTruncate(aiPenDetail.row?.verification_step) !== '-'
+                || normalizeValueNoTruncate(aiPenDetail.row?.payload) !== '-' ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">渗透测试记录</div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">验证阶段</div>
+                      <div className="mt-1">{normalizeValue(aiPenDetail.row?.verification_step)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">探针类型</div>
+                      <div className="mt-1">{normalizeValue(aiPenDetail.row?.payload_type)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Payload</div>
+                      <div className="mt-1 break-all font-mono">{normalizeValue(aiPenDetail.row?.payload)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">外部工具命中</div>
+                      <div className="mt-1">{aiPenDetail.row?.external_tool_hit ? '是' : '否'}</div>
+                    </div>
+                  </div>
+
+                  {Array.isArray(aiPenDetail.row?.external_tool_runs) && aiPenDetail.row.external_tool_runs.length > 0 ? (
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">外部工具执行记录</div>
+                      <div className="space-y-2">
+                        {aiPenDetail.row.external_tool_runs.map((item: any, index: number) => (
+                          <div key={`${index}-${item?.tool}-${item?.status}`} className="rounded-md border border-brand-border bg-brand-bg/60 px-2.5 py-2">
+                            <div className="font-mono break-all">
+                              {String(item?.tool || '-').trim()} [{String(item?.status || '-').trim()}]
+                            </div>
+                            <div className="mt-1 text-[11px] text-brand-text-muted break-all">
+                              {String(item?.message || '-').trim() || '-'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
