@@ -2738,6 +2738,85 @@ def _extract_ai_pen_rows(task_ids):
     """
     汇总 AI 渗透测试导出行。
     """
+    def _parse_json_object(value):
+        text = sanitize_excel_value(value).strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
+    def _format_ai_plan_request_text(value):
+        parsed = _parse_json_object(value)
+        if not parsed:
+            return _truncate_report_text(value, 1200)
+        lines = []
+
+        def append(label, raw):
+            text = sanitize_excel_value(raw).strip()
+            if not text:
+                return
+            lines.append("{}: {}".format(label, text))
+
+        append("目标", parsed.get("target", ""))
+        append("漏洞URL", parsed.get("vuln_url", ""))
+        append("来源", parsed.get("source_collection", ""))
+        append("来源模块", parsed.get("source_module", ""))
+        append("风险类型", parsed.get("risk_type", ""))
+        append("风险名称", parsed.get("risk_name", ""))
+        append("严重级别", parsed.get("severity", ""))
+        append("路由提示", parsed.get("route_hint", ""))
+        append("默认探针类型", parsed.get("default_payload_type", ""))
+        append("默认Payload", parsed.get("default_payload", ""))
+        capability_profile = parsed.get("capability_profile", {})
+        if isinstance(capability_profile, dict):
+            append("能力画像", capability_profile.get("name", ""))
+        surface_hints = [sanitize_excel_value(x).strip() for x in (parsed.get("surface_hints") or []) if sanitize_excel_value(x).strip()]
+        if surface_hints:
+            lines.append("能力线索: {}".format(", ".join(surface_hints[:8])))
+        browser_surface_summary = parsed.get("browser_surface_summary", {})
+        if isinstance(browser_surface_summary, dict):
+            append("页面标题", browser_surface_summary.get("page_title", ""))
+            append("页面URL", browser_surface_summary.get("page_url", ""))
+        login_surface_summary = parsed.get("login_surface_summary", {})
+        if isinstance(login_surface_summary, dict):
+            if bool(login_surface_summary.get("login_page_hint")):
+                lines.append("登录页提示: 是")
+            append("密码表单数", login_surface_summary.get("password_form_count", ""))
+            append("验证码表单数", login_surface_summary.get("captcha_form_count", ""))
+        return _truncate_report_text("\n".join(lines), 1200)
+
+    def _format_ai_plan_reply_text(value):
+        parsed = _parse_json_object(value)
+        if not parsed:
+            return _truncate_report_text(value, 1200)
+        lines = []
+
+        def append(label, raw):
+            text = sanitize_excel_value(raw).strip()
+            if not text:
+                return
+            lines.append("{}: {}".format(label, text))
+
+        append("结论", parsed.get("decision", ""))
+        append("置信度", parsed.get("confidence", ""))
+        append("原因", parsed.get("reason", ""))
+        append("探针类型", parsed.get("payload_type", ""))
+        append("Payload", parsed.get("payload", ""))
+        evidence_list = [sanitize_excel_value(x).strip() for x in (parsed.get("evidence") or []) if sanitize_excel_value(x).strip()]
+        if evidence_list:
+            lines.append("关键证据:")
+            for idx, item in enumerate(evidence_list[:6], 1):
+                lines.append("{}. {}".format(idx, item))
+        next_actions = [sanitize_excel_value(x).strip() for x in (parsed.get("next_actions") or []) if sanitize_excel_value(x).strip()]
+        if next_actions:
+            lines.append("下一步动作:")
+            for idx, item in enumerate(next_actions[:6], 1):
+                lines.append("{}. {}".format(idx, item))
+        return _truncate_report_text("\n".join(lines), 1200)
+
     task_id_list = _normalize_task_id_list(task_ids)
     rows = []
     dedup_keys = set()
@@ -2757,8 +2836,8 @@ def _extract_ai_pen_rows(task_ids):
             confidence = sanitize_excel_value(item.get("confidence", "")).strip()
             reason = _truncate_report_text(item.get("reason", ""), 800)
             tool_trace = _truncate_report_text(item.get("tool_trace", ""), 600)
-            ai_plan_request = _truncate_report_text(item.get("ai_plan_request", ""), 1200)
-            ai_plan_reply = _truncate_report_text(item.get("ai_plan_reply", ""), 1200)
+            ai_plan_request = _format_ai_plan_request_text(item.get("ai_plan_request", ""))
+            ai_plan_reply = _format_ai_plan_reply_text(item.get("ai_plan_reply", ""))
             ai_plan_actions = " \r\n".join(
                 [sanitize_excel_value(x).strip() for x in (item.get("ai_plan_actions") or []) if sanitize_excel_value(x).strip()]
             )

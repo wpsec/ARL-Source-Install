@@ -2620,6 +2620,105 @@ function normalizeValueNoTruncate(value: any): string {
   return String(value);
 }
 
+function tryParseJsonObject(value: any): Record<string, any> | null {
+  const text = String(value ?? '').trim();
+  if (!text || text === '-') return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatAiPlanRequestText(value: any): string {
+  const parsed = tryParseJsonObject(value);
+  if (!parsed) return normalizeValueNoTruncate(value);
+
+  const lines: string[] = [];
+  const append = (label: string, raw: any) => {
+    const text = normalizeValueNoTruncate(raw);
+    if (!text || text === '-') return;
+    lines.push(`${label}: ${text}`);
+  };
+
+  append('目标', parsed.target);
+  append('漏洞URL', parsed.vuln_url);
+  append('来源', parsed.source_collection);
+  append('来源模块', parsed.source_module);
+  append('风险类型', parsed.risk_type);
+  append('风险名称', parsed.risk_name);
+  append('严重级别', parsed.severity);
+  append('路由提示', parsed.route_hint);
+  append('默认探针类型', parsed.default_payload_type);
+  append('默认Payload', parsed.default_payload);
+
+  if (Array.isArray(parsed.surface_hints) && parsed.surface_hints.length > 0) {
+    lines.push(`能力线索: ${parsed.surface_hints.map((item: any) => String(item || '').trim()).filter(Boolean).join(', ')}`);
+  }
+  if (parsed.capability_profile && typeof parsed.capability_profile === 'object') {
+    append('能力画像', parsed.capability_profile?.name);
+  }
+  if (Array.isArray(parsed.knowledge_hit_vuln_types) && parsed.knowledge_hit_vuln_types.length > 0) {
+    lines.push(`知识漏洞类型: ${parsed.knowledge_hit_vuln_types.map((item: any) => String(item || '').trim()).filter(Boolean).join(', ')}`);
+  }
+  if (parsed.browser_surface_summary && typeof parsed.browser_surface_summary === 'object') {
+    append('页面标题', parsed.browser_surface_summary?.page_title);
+    append('页面URL', parsed.browser_surface_summary?.page_url);
+  }
+  if (parsed.task_ai_pen_graph_context && typeof parsed.task_ai_pen_graph_context === 'object') {
+    append('任务候选数', parsed.task_ai_pen_graph_context?.candidate_count);
+  }
+  if (parsed.login_surface_summary && typeof parsed.login_surface_summary === 'object') {
+    append('登录页提示', parsed.login_surface_summary?.login_page_hint ? '是' : '');
+    append('密码表单数', parsed.login_surface_summary?.password_form_count);
+    append('验证码表单数', parsed.login_surface_summary?.captcha_form_count);
+  }
+
+  return lines.join('\n') || normalizeValueNoTruncate(value);
+}
+
+function formatAiPlanReplyText(value: any): string {
+  const parsed = tryParseJsonObject(value);
+  if (!parsed) return normalizeValueNoTruncate(value);
+
+  const lines: string[] = [];
+  const append = (label: string, raw: any) => {
+    const text = normalizeValueNoTruncate(raw);
+    if (!text || text === '-') return;
+    lines.push(`${label}: ${text}`);
+  };
+
+  append('结论', parsed.decision);
+  append('置信度', parsed.confidence);
+  append('原因', parsed.reason);
+  append('探针类型', parsed.payload_type);
+  append('Payload', parsed.payload);
+
+  if (Array.isArray(parsed.evidence) && parsed.evidence.length > 0) {
+    lines.push('关键证据:');
+    parsed.evidence
+      .map((item: any) => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, 6)
+      .forEach((item: string, index: number) => {
+        lines.push(`${index + 1}. ${item}`);
+      });
+  }
+  if (Array.isArray(parsed.next_actions) && parsed.next_actions.length > 0) {
+    lines.push('下一步动作:');
+    parsed.next_actions
+      .map((item: any) => String(item || '').trim())
+      .filter(Boolean)
+      .slice(0, 6)
+      .forEach((item: string, index: number) => {
+        lines.push(`${index + 1}. ${item}`);
+      });
+  }
+
+  return lines.join('\n') || normalizeValueNoTruncate(value);
+}
+
 const WIH_SENSITIVE_RECORD_TYPE_SET = new Set([
   'app_key',
   'api_key',
@@ -11971,7 +12070,7 @@ function TableModuleView({
                         ) : null}
                       </div>
                       <div className="text-sm whitespace-pre-wrap break-all leading-relaxed font-mono">
-                        {normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_request)}
+                        {formatAiPlanRequestText(aiPenDetail.row?.ai_plan_request)}
                       </div>
                     </div>
 
@@ -11989,7 +12088,7 @@ function TableModuleView({
                         ) : null}
                       </div>
                       <div className="text-sm whitespace-pre-wrap break-all leading-relaxed font-mono">
-                        {normalizeValueNoTruncate(aiPenDetail.row?.ai_plan_reply)}
+                        {formatAiPlanReplyText(aiPenDetail.row?.ai_plan_reply)}
                       </div>
                     </div>
                   </div>
