@@ -20,7 +20,7 @@
 - 包含样式和格式化
 """
 
-from flask import make_response, request
+from flask import make_response, request, send_file
 from flask_restx import Resource, Namespace
 from openpyxl import Workbook
 from bson import ObjectId
@@ -28,7 +28,7 @@ import re
 import json
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import Counter
 from html import escape
 import ipaddress
@@ -40,6 +40,8 @@ from openpyxl.utils import get_column_letter
 from app.utils import get_logger, auth
 from app.utils.tls_policy import get_ssl_security_compliance
 from app import utils
+from app.config import Config
+from app.modules import CeleryAction
 from urllib.parse import quote, urlparse
 
 ns = Namespace('export', description="任务报告导出接口")
@@ -47,6 +49,10 @@ ns = Namespace('export', description="任务报告导出接口")
 logger = get_logger()
 
 MONGO_EXPORT_BATCH_SIZE = 500
+EXPORT_JOB_STATUS_QUEUED = "queued"
+EXPORT_JOB_STATUS_RUNNING = "running"
+EXPORT_JOB_STATUS_DONE = "done"
+EXPORT_JOB_STATUS_ERROR = "error"
 TASK_EXPORT_PROJECTION = {
     "_id": 1,
     "target": 1,
@@ -269,6 +275,200 @@ def build_export_response(file_content, filename, content_type):
     response.headers['Content-Type'] = content_type
     response.headers["Content-Disposition"] = "attachment; filename={}".format(quote(filename))
     return response
+
+
+def _resolve_export_job_dir() -> Path:
+    export_dir = Path(getattr(Config, "EXPORT_REPORT_DIR", "") or "")
+    if not export_dir:
+        export_dir = Path(__file__).resolve().parents[1] / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    return export_dir
+
+
+def _get_export_job_collection():
+    return utils.conn_db("export_job")
+
+
+def _ensure_export_job_indexes():
+    try:
+        collection = _get_export_job_collection()
+        collection.create_index("created_at", background=True)
+        collection.create_index("status", background=True)
+        collection.create_index("expire_at", expireAfterSeconds=0, background=True)
+    except Exception as exc:
+        logger.warning("ensure export_job indexes failed: %s", exc)
+
+
+def _cleanup_stale_export_files():
+    export_dir = _resolve_export_job_dir()
+    keep_days = max(1, int(getattr(Config, "EXPORT_REPORT_KEEP_DAYS", 3) or 3))
+    expire_before = datetime.utcnow() - timedelta(days=keep_days)
+    try:
+        for item in export_dir.iterdir():
+            if not item.is_file():
+                continue
+            try:
+                modified_at = datetime.utcfromtimestamp(item.stat().st_mtime)
+            except Exception:
+                modified_at = datetime.utcnow()
+            if modified_at < expire_before:
+                try:
+                    item.unlink()
+                except Exception:
+                    continue
+    except Exception as exc:
+        logger.warning("cleanup stale export files failed: %s", exc)
+
+
+def _build_export_content(task_ids, export_format):
+    fmt = normalize_export_format(export_format)
+    task_id_list = _normalize_task_id_list(task_ids)
+    if not task_id_list:
+        raise ValueError("task_ids is empty")
+
+    if len(task_id_list) == 1:
+        task_id = task_id_list[0]
+        task_data = get_task_data(task_id)
+        if not task_data:
+            raise ValueError("task not found")
+        target = sanitize_excel_value(task_data.get("target", "")).strip() or task_id
+        target_name = target.replace("/", "_")[:20]
+        if fmt == "html":
+            return export_arl_html(task_id), "ARL资产导出报告_{}.html".format(target_name), "text/html; charset=utf-8"
+        if fmt == "ai_markdown":
+            return export_arl_ai_markdown(task_id), "ARL_AI分析报告_{}.md".format(target_name), "text/markdown; charset=utf-8"
+        return build_single_task_workbook(task_id, apply_style=True), "ARL资产导出报告_{}.xlsx".format(target_name), "application/octet-stream"
+
+    first_task = get_task_data(task_id_list[0])
+    if not first_task:
+        raise ValueError("task not found")
+    task_name = sanitize_excel_value(first_task.get("name", "未知")).strip()[:20] or "未知"
+    if fmt == "html":
+        return export_merge_tasks_html(task_id_list), "ARL批量导出报告_{}.html".format(task_name), "text/html; charset=utf-8"
+    if fmt == "ai_markdown":
+        return export_merge_tasks_ai_markdown(task_id_list), "ARL_AI分析报告_{}.md".format(task_name), "text/markdown; charset=utf-8"
+    return build_merge_tasks_workbook(task_id_list, apply_style=True), "ARL批量导出报告_{}.xlsx".format(task_name), "application/octet-stream"
+
+
+def _write_export_job_file(job_id: str, filename: str, file_content):
+    export_dir = _resolve_export_job_dir()
+    safe_name = re.sub(r'[^A-Za-z0-9._-]+', "_", str(filename or "arl-export.bin")).strip("._") or "arl-export.bin"
+    suffix = Path(safe_name).suffix or ".bin"
+    file_name = "{}_{}{}".format(str(job_id), Path(safe_name).stem[:48] or "report", suffix)
+    file_path = export_dir / file_name
+    tmp_path = export_dir / "{}.part".format(file_name)
+
+    if hasattr(file_content, "save") and callable(getattr(file_content, "save", None)):
+        file_content.save(str(tmp_path))
+        tmp_path.replace(file_path)
+        return file_path, int(file_path.stat().st_size or 0)
+
+    if isinstance(file_content, str):
+        file_bytes = file_content.encode("utf-8")
+    else:
+        file_bytes = bytes(file_content or b"")
+
+    with tmp_path.open("wb") as file_obj:
+        file_obj.write(file_bytes)
+    tmp_path.replace(file_path)
+    return file_path, len(file_bytes)
+
+
+def run_export_report_job(job_id: str):
+    job_id_text = str(job_id or "").strip()
+    if not job_id_text:
+        raise ValueError("job_id missing")
+
+    _ensure_export_job_indexes()
+    collection = _get_export_job_collection()
+    now_text = utils.curr_date()
+    collection.update_one(
+        {"_id": ObjectId(job_id_text)},
+        {"$set": {"status": EXPORT_JOB_STATUS_RUNNING, "started_at": now_text, "updated_at": now_text}},
+    )
+
+    job_doc = collection.find_one({"_id": ObjectId(job_id_text)})
+    if not job_doc:
+        raise ValueError("export job not found")
+
+    task_ids = _normalize_task_id_list(job_doc.get("task_ids", []))
+    export_format = normalize_export_format(job_doc.get("format", "excel"))
+    file_content, filename, content_type = _build_export_content(task_ids, export_format)
+    file_path, file_size = _write_export_job_file(job_id_text, filename, file_content)
+
+    completed_text = utils.curr_date()
+    expire_at = datetime.utcnow() + timedelta(days=max(1, int(getattr(Config, "EXPORT_REPORT_KEEP_DAYS", 3) or 3)))
+    collection.update_one(
+        {"_id": ObjectId(job_id_text)},
+        {
+            "$set": {
+                "status": EXPORT_JOB_STATUS_DONE,
+                "filename": filename,
+                "content_type": content_type,
+                "file_path": str(file_path),
+                "file_size": int(file_size or 0),
+                "completed_at": completed_text,
+                "updated_at": completed_text,
+                "expire_at": expire_at,
+            }
+        },
+    )
+    return {
+        "job_id": job_id_text,
+        "filename": filename,
+        "content_type": content_type,
+        "file_size": int(file_size or 0),
+    }
+
+
+def enqueue_export_report_job(task_ids, export_format="excel"):
+    normalized_task_ids = _normalize_task_id_list(task_ids)
+    if not normalized_task_ids:
+        raise ValueError("task_ids is empty")
+
+    _ensure_export_job_indexes()
+    _cleanup_stale_export_files()
+
+    first_task = get_task_data(normalized_task_ids[0])
+    if not first_task:
+        raise ValueError("task not found")
+
+    now_text = utils.curr_date()
+    expire_at = datetime.utcnow() + timedelta(days=max(1, int(getattr(Config, "EXPORT_REPORT_KEEP_DAYS", 3) or 3)))
+    doc = {
+        "task_ids": normalized_task_ids,
+        "format": normalize_export_format(export_format),
+        "status": EXPORT_JOB_STATUS_QUEUED,
+        "created_at": now_text,
+        "updated_at": now_text,
+        "expire_at": expire_at,
+        "task_name": sanitize_excel_value(first_task.get("name", "未知")).strip(),
+        "task_target": sanitize_excel_value(first_task.get("target", "")).strip(),
+        "task_count": len(normalized_task_ids),
+    }
+    insert_ret = _get_export_job_collection().insert_one(doc)
+    job_id_text = str(insert_ret.inserted_id)
+
+    from app import celerytask
+
+    celery_id = str(
+        celerytask.arl_task_web.delay(
+            options={
+                "celery_action": CeleryAction.EXPORT_REPORT_TASK,
+                "data": {"job_id": job_id_text},
+            }
+        )
+    )
+    _get_export_job_collection().update_one(
+        {"_id": insert_ret.inserted_id},
+        {"$set": {"celery_id": celery_id}},
+    )
+    return {
+        "job_id": job_id_text,
+        "status": EXPORT_JOB_STATUS_QUEUED,
+        "celery_id": celery_id,
+        "task_count": len(normalized_task_ids),
+    }
 
 
 def _resolve_export_config_path() -> Path:
@@ -1296,6 +1496,95 @@ class ARLBatchExcel(Resource):
         except Exception as e:
             logger.exception("批量导出失败: {}".format(str(e)))
             return {"error": "导出失败: {}".format(str(e))}, 500
+
+
+@ns.route('/job')
+class ARLExportJobCreate(Resource):
+    """异步报告导出任务创建接口"""
+
+    @auth
+    def post(self):
+        try:
+            data = request.get_json(silent=True) or {}
+            task_ids = data.get("task_ids")
+            task_id = data.get("task_id")
+            export_format = normalize_export_format(data.get("format", "excel"))
+            if not task_ids and task_id:
+                task_ids = [task_id]
+            if not isinstance(task_ids, list) or not task_ids:
+                return {"error": "task_ids 必须是非空列表"}, 400
+
+            job_info = enqueue_export_report_job(task_ids, export_format=export_format)
+            return {"code": 200, "data": job_info, "message": "export job queued"}
+        except ValueError as exc:
+            return {"error": str(exc)}, 400
+        except Exception as exc:
+            logger.exception("create export job failed: %s", exc)
+            return {"error": "创建导出任务失败: {}".format(str(exc))}, 500
+
+
+@ns.route('/job/<string:job_id>')
+class ARLExportJobStatus(Resource):
+    """异步报告导出任务状态接口"""
+
+    @auth
+    def get(self, job_id):
+        normalized_job_id = str(job_id or "").strip()
+        if not normalized_job_id:
+            return {"error": "job_id 不能为空"}, 400
+        try:
+            job_doc = _get_export_job_collection().find_one({"_id": ObjectId(normalized_job_id)})
+        except Exception:
+            return {"error": "无效的 job_id"}, 400
+        if not job_doc:
+            return {"error": "导出任务不存在"}, 404
+
+        data = {
+            "job_id": normalized_job_id,
+            "status": str(job_doc.get("status", "") or "").strip(),
+            "format": str(job_doc.get("format", "") or "").strip(),
+            "filename": str(job_doc.get("filename", "") or "").strip(),
+            "file_size": int(job_doc.get("file_size", 0) or 0),
+            "error": str(job_doc.get("error", "") or "").strip(),
+            "created_at": str(job_doc.get("created_at", "") or "").strip(),
+            "updated_at": str(job_doc.get("updated_at", "") or "").strip(),
+            "started_at": str(job_doc.get("started_at", "") or "").strip(),
+            "completed_at": str(job_doc.get("completed_at", "") or "").strip(),
+            "task_count": int(job_doc.get("task_count", 0) or 0),
+        }
+        return {"code": 200, "data": data}
+
+
+@ns.route('/job/<string:job_id>/download')
+class ARLExportJobDownload(Resource):
+    """异步报告导出任务下载接口"""
+
+    @auth
+    def get(self, job_id):
+        normalized_job_id = str(job_id or "").strip()
+        if not normalized_job_id:
+            return {"error": "job_id 不能为空"}, 400
+        try:
+            job_doc = _get_export_job_collection().find_one({"_id": ObjectId(normalized_job_id)})
+        except Exception:
+            return {"error": "无效的 job_id"}, 400
+        if not job_doc:
+            return {"error": "导出任务不存在"}, 404
+        if str(job_doc.get("status", "") or "").strip() != EXPORT_JOB_STATUS_DONE:
+            return {"error": "导出任务未完成"}, 409
+
+        file_path = str(job_doc.get("file_path", "") or "").strip()
+        filename = str(job_doc.get("filename", "") or "").strip()
+        content_type = str(job_doc.get("content_type", "") or "").strip() or "application/octet-stream"
+        if not file_path or not os.path.isfile(file_path):
+            return {"error": "导出文件不存在或已过期"}, 410
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=filename or os.path.basename(file_path),
+            mimetype=content_type,
+        )
 
 
 

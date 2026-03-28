@@ -27,7 +27,7 @@
 - `[v4.3.19]` PoC 索引能力补齐：新增 `ARL/app/tools/build_poc_index.py`，支持从 `nuclei-templates/afrog-pocs` 构建 `token -> tags/keywords` 索引；运行时优先读取 `/code/docker/ai/sop/poc_index.json`（兼容历史路径并支持 `ARL_AI_POC_INDEX_FILE` 覆盖），避免每次运行全库检索
 - `[v4.3.19]` AI 去噪 PoC 风险触发修复：`run_task_ai_denoise_pipeline` 启动时会先合并已累计的 `pending_modules`，修复并发阶段下 `nuclei_result/vuln` 等模块因状态切换被清空后漏执行的问题
 
-## 2026-03-28（v4.3.26 ~ v4.3.38）
+## 2026-03-28（v4.3.26 ~ v4.3.39）
 
 - `[v4.3.26]` AI 管理补齐“思考模型”配置：提供方预设新增 `default_reasoning_model`，前后端模型配置新增 `reasoning_model` 字段并接入读写；DeepSeek 默认展示 `DeepSeek-R1`，配置弹窗与卡片摘要同步显示“分析模型 / 思考模型 / API Base URL”，为后续区分分析模型与思考模型保留数据面
 - `[v4.3.26]` AI 渗透结果页可读性增强：`AI渗透` 列表新增 `详情` 按钮与详情弹窗，集中展示 `目标 / 漏洞URL / 说明 / 知识命中 / 证据片段 / 工具轨迹 / 响应摘要`，修复长文本挤压表格导致下方内容难以查看的问题；同时将 `目标 / 漏洞URL` 改为居中展示并复用超链接渲染
@@ -46,6 +46,7 @@
 - `[v4.3.36]` AI渗透任务级图谱上下文复用：`commonTask` 新增 `task_ai_pen_graph_context`，将单候选 `graph_summary` 聚合为任务级共享上下文（候选数、来源分布、路线分布、情报层分布、任务级核心路径/参数、认证/对象引用/文件处理存在性），并在 AI planner、结果落库、重试链与前端详情中统一复用；同时新增 `docs/AI渗透测试能力清单.md`，以“已具备 / 部分具备 / 未具备”方式盘点当前能力边界
 - `[v4.3.37]` 黑盒能力补强：文件处理与登录页分析进入 AI渗透主链。`commonTask` 新增 `file_handling_surface/login_entry_surface` 能力画像与对应上下文分析，对 `upload/download/export/attachment/template` 入口、`multipart` 表单、下载响应头、登录表单、密码输入、验证码/风控线索、认证相关运行时接口做保守识别与低副作用裁决；`browser_intel_scan` 表单摘要新增 `enctype/has_file_input/has_password_input/password_fields/has_captcha_hint/submit_text`，前端 `AI渗透详情` 新增“登录面黑盒摘要”并增强 DOM 表单展示，SOP 默认模板同步补充“文件处理/登录入口不等于已证明漏洞”的约束
 - `[v4.3.38]` AI渗透结果对齐与报告补齐：`AI渗透详情` 新增“ARL 与 AI 对话记录 / 渗透测试记录”，可直接查看 `ai_plan_request / ai_plan_reply / ai_plan_actions / verification_step / payload / external_tool_runs`；资产搜索页隐藏 `指纹统计` 模块，减轻页面拥挤；`Excel` 导出与钉钉知识库报告同步新增 `AI渗透测试` 工作表/章节，保证页面、导出报告、知识库三条链路展示一致
+- `[v4.3.39]` 导出报告改为异步任务，彻底规避大报告同步导出导致的 `504 Gateway Time-out`：`export` 新增 `job` 创建/查询/下载接口，前端报告导出改为“创建任务 -> 轮询状态 -> 完成后下载”；后台通过 Celery `arlweb` 队列异步生成 `excel/html/ai_markdown` 报告并写入共享导出目录，`Workbook` 结果直接落盘而非先整份转字节串，降低大报告场景下的请求时长与内存峰值；同时补齐 `export_job` 索引、共享导出目录配置与 `web/worker` 挂载，避免继续依赖提高 nginx/gunicorn 超时来硬扛导出
 
 ## 2026-03-26（v4.3.0 ~ v4.3.18）
 

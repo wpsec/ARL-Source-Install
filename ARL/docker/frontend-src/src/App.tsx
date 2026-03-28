@@ -2429,6 +2429,10 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
   return data;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function truncateText(value: string, max = 120): string {
   if (value.length <= max) return value;
   return `${value.slice(0, max)}...`;
@@ -9056,20 +9060,51 @@ function TableModuleView({
     }
 
     const formatLabel = TASK_REPORT_EXPORT_LABELS[format] || '表格';
-    setSuccess(`正在导出${formatLabel}报告，请稍候...`);
+    setSuccess(`正在创建${formatLabel}导出任务，请稍候...`);
     try {
-      await requestApi(token, '/export/batch', {
-        method: 'POST',
-        body: {
-          task_ids: taskIds,
-          format,
-        },
-        download: true,
-      });
+      await createExportJobAndDownload(taskIds, format);
       setSuccess(`${formatLabel}报告导出成功`);
     } catch (err: any) {
       setError(err?.message || '报告导出失败');
     }
+  };
+
+  const waitForExportJob = async (jobId: string, timeoutMs = 30 * 60 * 1000, intervalMs = 2000) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const result = await requestApi(token, `/export/job/${jobId}`, {
+        method: 'GET',
+      });
+      const data = result?.data || {};
+      const status = String(data?.status || '').trim().toLowerCase();
+      if (status === 'done') {
+        return data;
+      }
+      if (status === 'error') {
+        throw new Error(String(data?.error || '导出任务执行失败').trim() || '导出任务执行失败');
+      }
+      await sleep(intervalMs);
+    }
+    throw new Error('导出任务等待超时，请稍后在服务器侧检查导出状态');
+  };
+
+  const createExportJobAndDownload = async (taskIds: string[], format: TaskReportExportFormat) => {
+    const createResult = await requestApi(token, '/export/job', {
+      method: 'POST',
+      body: {
+        task_ids: taskIds,
+        format,
+      },
+    });
+    const jobId = String(createResult?.data?.job_id || '').trim();
+    if (!jobId) {
+      throw new Error('创建导出任务失败，未返回 job_id');
+    }
+    await waitForExportJob(jobId);
+    await requestApi(token, `/export/job/${jobId}/download`, {
+      method: 'GET',
+      download: true,
+    });
   };
 
   const stopAndDeleteSelectedTasks = async () => {
@@ -9208,13 +9243,9 @@ function TableModuleView({
     markTaskRowActionPending(taskId, 'export');
     setError('');
     const formatLabel = TASK_REPORT_EXPORT_LABELS[format] || '表格';
-    setSuccess(`正在导出${formatLabel}报告，请稍候...`);
+    setSuccess(`正在创建${formatLabel}导出任务，请稍候...`);
     try {
-      await requestApi(token, `/export/${taskId}`, {
-        method: 'GET',
-        query: { format },
-        download: true,
-      });
+      await createExportJobAndDownload([taskId], format);
       setSuccess(`${formatLabel}报告导出成功`);
     } catch (err: any) {
       setError(err?.message || '导出失败');

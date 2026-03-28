@@ -191,6 +191,9 @@ class CeleryAction:
     """扫描阶段 AI 去噪模块增量任务"""
     AI_DENOISE_MODULE_TASK = "ai_denoise_module_task"
 
+    """异步报告导出任务"""
+    EXPORT_REPORT_TASK = "export_report_task"
+
 
 error_map = {
     'CeleryIdNotFound': {

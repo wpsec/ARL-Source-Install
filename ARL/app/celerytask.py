@@ -768,6 +768,7 @@ def run_task(options):
         CeleryAction.ASSET_WIH_UPDATE: asset_wih_update_task,
         CeleryAction.AI_DENOISE_TASK: run_ai_denoise_task,
         CeleryAction.AI_DENOISE_MODULE_TASK: run_ai_denoise_task,
+        CeleryAction.EXPORT_REPORT_TASK: run_export_report_task,
     }
     
     start_time = time.time()
@@ -1133,6 +1134,31 @@ def run_ai_denoise_task(options):
             )
     except Exception as exc:
         logger.exception("run ai_denoise task failed task_id:%s err:%s", task_id, exc)
+
+
+def run_export_report_task(options):
+    job_id = str(options.get("job_id", "") or "").strip()
+    if not job_id:
+        return
+    try:
+        from app.routes.export import run_export_report_job
+        run_export_report_job(job_id)
+    except Exception as exc:
+        logger.exception("run export report task failed job_id:%s err:%s", job_id, exc)
+        try:
+            from app.routes.export import _get_export_job_collection, EXPORT_JOB_STATUS_ERROR
+            _get_export_job_collection().update_one(
+                {"_id": ObjectId(job_id)},
+                {
+                    "$set": {
+                        "status": EXPORT_JOB_STATUS_ERROR,
+                        "error": str(exc),
+                        "updated_at": utils.curr_date(),
+                    }
+                },
+            )
+        except Exception:
+            pass
 
 
 def fofa_task(options):

@@ -556,6 +556,11 @@ class Config(object):
     TMP_PATH = os.path.join(basedir, 'tmp')
     # 幂等创建，避免多进程/多线程并发导入时触发 FileExistsError
     os.makedirs(TMP_PATH, exist_ok=True)
+    # 异步报告导出文件目录（web/worker 共享）
+    EXPORT_REPORT_DIR = os.path.join(basedir, 'exports')
+    os.makedirs(EXPORT_REPORT_DIR, exist_ok=True)
+    # 异步报告导出文件保留天数
+    EXPORT_REPORT_KEEP_DAYS = 3
     
     # massdns工具路径，用于高速DNS查询
     MASSDNS_BIN = os.path.join(basedir, 'tools/massdns')

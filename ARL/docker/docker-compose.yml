@@ -44,6 +44,7 @@ services:
       # - config-runtime.yaml 作为用户运行配置（不进 git，升级不覆盖）
       - ./config-runtime.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
+      - ./exports:/code/app/exports
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
       # 共享 worker 扫描日志，供仪表盘“实时扫描日志”读取
       - ./logs:/code/logs:ro
@@ -80,6 +81,7 @@ services:
       # - config-runtime.yaml 作为用户运行配置（不进 git，升级不覆盖）
       - ./config-runtime.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
+      - ./exports:/code/app/exports
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
       # 将 worker 日志落到宿主机，供 web 仪表盘读取
       - ./logs:/code/logs
@@ -120,6 +122,7 @@ services:
     volumes:
       - ./config-runtime.yaml:/code/app/config.yaml
       - ./image:/code/app/tmp_screenshot
+      - ./exports:/code/app/exports
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
       - ./logs:/code/logs
       - ./dicts/domain:/code/app/dicts/custom/domain
