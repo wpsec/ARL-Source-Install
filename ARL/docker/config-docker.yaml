@@ -297,7 +297,7 @@ ARL:
   # 可选：自定义 Chromium 可执行路径（为空使用 Playwright 内置浏览器）
   PLAYWRIGHT_CHROMIUM_BIN: ""
   # 是否启用浏览器情报采集（仅高价值站点使用，默认关闭）
-  BROWSER_INTEL_ENABLE: false
+  BROWSER_INTEL_ENABLE: true # 浏览器情报采集默认开启；仅在 AI渗透测试链路中按高价值目标触发
   # 浏览器情报单次最多目标数
   BROWSER_INTEL_MAX_TARGETS: 8
   # 浏览器情报并发

@@ -75,6 +75,8 @@ class TestBrowserIntelScan(unittest.TestCase):
         item = result.get("https://example.com", {})
 
         self.assertEqual("Example Dashboard", item.get("browser_surface_summary", {}).get("page_title"))
+        self.assertEqual("runtime_enrichment", item.get("browser_surface_summary", {}).get("source_role"))
+        self.assertEqual("passive", item.get("browser_surface_summary", {}).get("interaction_level"))
         self.assertEqual(1, item.get("browser_surface_summary", {}).get("runtime_api_count"))
         self.assertEqual(1, len(item.get("runtime_api_calls", [])))
         self.assertEqual(1, len(item.get("dom_form_summary", [])))

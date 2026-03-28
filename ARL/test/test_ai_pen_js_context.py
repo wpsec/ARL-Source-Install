@@ -254,6 +254,10 @@ class TestAiPenJsContext(unittest.TestCase):
                     "upload_like_count": 1,
                     "download_like_count": 1,
                 },
+                "browser_surface_summary": {
+                    "source_role": "runtime_enrichment",
+                    "script_count": 2,
+                },
                 "runtime_api_calls": [
                     {"method": "GET", "url": "https://example.com/api/me", "status": "200"},
                     {"method": "POST", "url": "https://example.com/api/login", "status": "200"},
@@ -273,11 +277,19 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("auth_cluster", summary)
         self.assertIn("object_ref_cluster", summary)
         self.assertIn("file_cluster", summary)
+        self.assertIn("intel_layers", summary)
+        self.assertIn("browser_runtime", summary.get("intel_layers", {}).get("active_layers", []))
+        self.assertEqual(
+            "runtime_enrichment",
+            summary.get("intel_layers", {}).get("runtime_layer", {}).get("role"),
+        )
 
     def test_should_collect_browser_intel_for_page_style_api_doc_target(self):
         original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)
         original_max_targets = getattr(Config, "BROWSER_INTEL_MAX_TARGETS", 8)
+        original_ai_pen_enable = getattr(Config, "AI_PEN_TEST_ENABLE", True)
         try:
+            Config.AI_PEN_TEST_ENABLE = True
             Config.BROWSER_INTEL_ENABLE = True
             Config.BROWSER_INTEL_MAX_TARGETS = 8
             task = WebSiteFetch.__new__(WebSiteFetch)
@@ -291,14 +303,71 @@ class TestAiPenJsContext(unittest.TestCase):
                 }
             )
         finally:
+            Config.AI_PEN_TEST_ENABLE = original_ai_pen_enable
             Config.BROWSER_INTEL_ENABLE = original_enable
             Config.BROWSER_INTEL_MAX_TARGETS = original_max_targets
 
         self.assertTrue(result)
 
+    def test_should_not_collect_browser_intel_when_ai_pen_disabled(self):
+        original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)
+        original_ai_pen_enable = getattr(Config, "AI_PEN_TEST_ENABLE", True)
+        try:
+            Config.AI_PEN_TEST_ENABLE = False
+            Config.BROWSER_INTEL_ENABLE = True
+            task = WebSiteFetch.__new__(WebSiteFetch)
+            task.ai_pen_browser_intel_cache = {}
+            task.waf_guard = None
+            result = task._should_collect_ai_pen_browser_intel(
+                {
+                    "target": "https://example.com/swagger-ui/index.html",
+                    "risk_type": "api_doc",
+                    "source_collection": "site",
+                }
+            )
+        finally:
+            Config.AI_PEN_TEST_ENABLE = original_ai_pen_enable
+            Config.BROWSER_INTEL_ENABLE = original_enable
+
+        self.assertFalse(result)
+
+    def test_should_not_collect_browser_intel_when_static_context_is_sufficient(self):
+        original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)
+        original_max_targets = getattr(Config, "BROWSER_INTEL_MAX_TARGETS", 8)
+        original_ai_pen_enable = getattr(Config, "AI_PEN_TEST_ENABLE", True)
+        try:
+            Config.AI_PEN_TEST_ENABLE = True
+            Config.BROWSER_INTEL_ENABLE = True
+            Config.BROWSER_INTEL_MAX_TARGETS = 8
+            task = WebSiteFetch.__new__(WebSiteFetch)
+            task.ai_pen_browser_intel_cache = {}
+            task.waf_guard = None
+            result = task._should_collect_ai_pen_browser_intel(
+                {
+                    "target": "https://example.com/swagger-ui/index.html",
+                    "risk_type": "api_doc",
+                    "source_collection": "site",
+                    "api_surface_summary": {
+                        "path_count": 8,
+                        "auth_path_count": 2,
+                        "security_scheme_count": 1,
+                        "js_api_count": 7,
+                        "parameter_names": ["id", "token", "userId", "file", "page", "size"],
+                    },
+                }
+            )
+        finally:
+            Config.AI_PEN_TEST_ENABLE = original_ai_pen_enable
+            Config.BROWSER_INTEL_ENABLE = original_enable
+            Config.BROWSER_INTEL_MAX_TARGETS = original_max_targets
+
+        self.assertFalse(result)
+
     def test_should_not_collect_browser_intel_for_js_asset(self):
         original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)
+        original_ai_pen_enable = getattr(Config, "AI_PEN_TEST_ENABLE", True)
         try:
+            Config.AI_PEN_TEST_ENABLE = True
             Config.BROWSER_INTEL_ENABLE = True
             task = WebSiteFetch.__new__(WebSiteFetch)
             task.ai_pen_browser_intel_cache = {}
@@ -310,6 +379,7 @@ class TestAiPenJsContext(unittest.TestCase):
                 }
             )
         finally:
+            Config.AI_PEN_TEST_ENABLE = original_ai_pen_enable
             Config.BROWSER_INTEL_ENABLE = original_enable
 
         self.assertFalse(result)

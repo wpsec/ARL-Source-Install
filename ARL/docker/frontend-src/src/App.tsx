@@ -11289,14 +11289,16 @@ function TableModuleView({
                 </div>
               </div>
 
-              {(aiPenDetail.row?.browser_surface_summary && typeof aiPenDetail.row.browser_surface_summary === 'object')
+              {((aiPenDetail.row?.browser_surface_summary
+                && typeof aiPenDetail.row.browser_surface_summary === 'object'
+                && Object.keys(aiPenDetail.row.browser_surface_summary).length > 0))
                 || (Array.isArray(aiPenDetail.row?.runtime_api_calls) && aiPenDetail.row.runtime_api_calls.length > 0)
                 || (Array.isArray(aiPenDetail.row?.dom_form_summary) && aiPenDetail.row.dom_form_summary.length > 0) ? (
                 <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
                   <div className="text-xs font-black tracking-wide text-brand-text">浏览器情报摘要</div>
 
                   {aiPenDetail.row?.browser_surface_summary && typeof aiPenDetail.row.browser_surface_summary === 'object' ? (
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 text-sm leading-relaxed">
+                    <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
                       <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
                         <div className="text-[11px] font-black tracking-wide text-brand-text-muted">页面标题</div>
                         <div className="mt-1 break-all">{normalizeValue(aiPenDetail.row.browser_surface_summary?.page_title)}</div>
@@ -11304,6 +11306,22 @@ function TableModuleView({
                       <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
                         <div className="text-[11px] font-black tracking-wide text-brand-text-muted">最终页面URL</div>
                         <div className="mt-1 break-all">{normalizeValue(aiPenDetail.row.browser_surface_summary?.page_url)}</div>
+                      </div>
+                      <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                        <div className="text-[11px] font-black tracking-wide text-brand-text-muted">情报角色</div>
+                        <div className="mt-1">
+                          {aiPenDetail.row.browser_surface_summary?.source_role === 'runtime_enrichment'
+                            ? '运行时补充'
+                            : normalizeValue(aiPenDetail.row.browser_surface_summary?.source_role)}
+                          {String(aiPenDetail.row.browser_surface_summary?.interaction_level || '').trim() ? (
+                            <span className="text-brand-text-muted">
+                              {' / '}
+                              {aiPenDetail.row.browser_surface_summary?.interaction_level === 'passive'
+                                ? '被动采集'
+                                : normalizeValue(aiPenDetail.row.browser_surface_summary?.interaction_level)}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
                         <div className="text-[11px] font-black tracking-wide text-brand-text-muted">表单/脚本/运行时请求</div>
@@ -11357,7 +11375,7 @@ function TableModuleView({
               {aiPenDetail.row?.task_ai_pen_graph_summary && typeof aiPenDetail.row.task_ai_pen_graph_summary === 'object' ? (
                 <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
                   <div className="text-xs font-black tracking-wide text-brand-text">认知图谱摘要</div>
-                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 text-sm leading-relaxed">
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
                     <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
                       <div className="text-[11px] font-black tracking-wide text-brand-text-muted">节点数</div>
                       <div className="mt-1">{normalizeValue(aiPenDetail.row.task_ai_pen_graph_summary?.node_count)}</div>
@@ -11372,6 +11390,33 @@ function TableModuleView({
                         {normalizeValue(aiPenDetail.row.task_ai_pen_graph_summary?.browser_runtime_call_count)} /
                         {normalizeValue(aiPenDetail.row.task_ai_pen_graph_summary?.dom_form_count)}
                       </div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">情报层</div>
+                      {Array.isArray(aiPenDetail.row.task_ai_pen_graph_summary?.intel_layers?.active_layers) && aiPenDetail.row.task_ai_pen_graph_summary.intel_layers.active_layers.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {aiPenDetail.row.task_ai_pen_graph_summary.intel_layers.active_layers.map((item: any, index: number) => {
+                            const text = String(item || '').trim();
+                            const label = text === 'static_surface'
+                              ? '静态情报'
+                              : text === 'knowledge_index'
+                                ? '文库知识'
+                                : text === 'browser_runtime'
+                                  ? '浏览器运行时'
+                                  : text || '-';
+                            return (
+                              <span
+                                key={`${index}-${text}`}
+                                className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2 py-0.5 text-[11px] font-semibold"
+                              >
+                                {label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-brand-text-muted">暂无</div>
+                      )}
                     </div>
                   </div>
 

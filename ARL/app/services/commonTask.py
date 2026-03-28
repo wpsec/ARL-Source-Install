@@ -3531,8 +3531,30 @@ class WebSiteFetch(object):
             return False
         return True
 
+    @classmethod
+    def _is_ai_pen_browser_intel_enabled(cls):
+        return bool(getattr(Config, "AI_PEN_TEST_ENABLE", True)) and bool(getattr(Config, "BROWSER_INTEL_ENABLE", True))
+
+    @classmethod
+    def _browser_intel_static_context_sufficient(cls, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        path_count = cls._safe_int_value(api_surface_summary.get("path_count"), 0)
+        auth_path_count = cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0)
+        security_scheme_count = cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0)
+        js_api_count = cls._safe_int_value(api_surface_summary.get("js_api_count"), 0)
+        parameter_count = len(list(api_surface_summary.get("parameter_names", []) or []))
+
+        if path_count >= 6:
+            return True
+        if auth_path_count >= 2 and security_scheme_count > 0:
+            return True
+        if js_api_count >= 6 and parameter_count >= 6:
+            return True
+        return False
+
     def _should_collect_ai_pen_browser_intel(self, candidate: dict):
-        if not bool(getattr(Config, "BROWSER_INTEL_ENABLE", False)):
+        if not self._is_ai_pen_browser_intel_enabled():
             return False
 
         item = candidate if isinstance(candidate, dict) else {}
@@ -3543,6 +3565,8 @@ class WebSiteFetch(object):
         route_hint = str(item.get("route_hint") or self._build_ai_pen_route_hint(item) or "").strip().lower()
         source_collection = str(item.get("source_collection", "") or "").strip().lower()
         risk_type = str(item.get("risk_type", "") or "").strip().lower()
+        if self._browser_intel_static_context_sufficient(item):
+            return False
 
         if source_collection == "site":
             return True
@@ -4742,14 +4766,61 @@ class WebSiteFetch(object):
         return results
 
     @classmethod
-    def _build_ai_pen_graph_summary(cls, candidate: dict):
+    def _build_ai_pen_intel_layers_summary(cls, candidate: dict):
         item = candidate if isinstance(candidate, dict) else {}
         api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
         browser_surface_summary = item.get("browser_surface_summary") if isinstance(item.get("browser_surface_summary"), dict) else {}
         runtime_api_calls = list(item.get("runtime_api_calls", []) or [])
         dom_form_summary = list(item.get("dom_form_summary", []) or [])
+        knowledge_hit_tokens = [str(x or "").strip() for x in list(item.get("knowledge_hit_tokens", []) or []) if str(x or "").strip()]
         knowledge_entry_paths = [str(x or "").strip() for x in list(item.get("knowledge_hit_entry_paths", []) or []) if str(x or "").strip()]
         knowledge_vuln_types = [str(x or "").strip() for x in list(item.get("knowledge_hit_vuln_types", []) or []) if str(x or "").strip()]
+        parameter_names = [str(x or "").strip() for x in list(api_surface_summary.get("parameter_names", []) or []) if str(x or "").strip()]
+        browser_role = str(browser_surface_summary.get("source_role") or "").strip()
+
+        static_layer = {
+            "context_ready": bool(cls._browser_intel_static_context_sufficient(item)),
+            "api_path_count": cls._safe_int_value(api_surface_summary.get("path_count"), 0),
+            "auth_path_count": cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0),
+            "security_scheme_count": cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0),
+            "js_api_count": cls._safe_int_value(api_surface_summary.get("js_api_count"), 0),
+            "param_count": len(parameter_names[:24]),
+        }
+        runtime_layer = {
+            "used": bool(runtime_api_calls or dom_form_summary or browser_surface_summary),
+            "role": browser_role[:64],
+            "runtime_api_count": min(16, len(runtime_api_calls)),
+            "dom_form_count": min(8, len(dom_form_summary)),
+            "script_count": cls._safe_int_value(browser_surface_summary.get("script_count"), 0),
+        }
+        knowledge_layer = {
+            "token_count": min(24, len(knowledge_hit_tokens)),
+            "entry_path_count": min(16, len(knowledge_entry_paths)),
+            "vuln_type_count": min(12, len(knowledge_vuln_types)),
+        }
+
+        active_layers = ["static_surface"]
+        if knowledge_layer["token_count"] or knowledge_layer["entry_path_count"] or knowledge_layer["vuln_type_count"]:
+            active_layers.append("knowledge_index")
+        if runtime_layer["used"]:
+            active_layers.append("browser_runtime")
+
+        return {
+            "active_layers": active_layers,
+            "static_layer": static_layer,
+            "runtime_layer": runtime_layer,
+            "knowledge_layer": knowledge_layer,
+        }
+
+    @classmethod
+    def _build_ai_pen_graph_summary(cls, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        runtime_api_calls = list(item.get("runtime_api_calls", []) or [])
+        dom_form_summary = list(item.get("dom_form_summary", []) or [])
+        knowledge_entry_paths = [str(x or "").strip() for x in list(item.get("knowledge_hit_entry_paths", []) or []) if str(x or "").strip()]
+        knowledge_vuln_types = [str(x or "").strip() for x in list(item.get("knowledge_hit_vuln_types", []) or []) if str(x or "").strip()]
+        intel_layers = cls._build_ai_pen_intel_layers_summary(item)
 
         top_paths = []
         seen_paths = set()
@@ -4825,6 +4896,7 @@ class WebSiteFetch(object):
             "browser_runtime_call_count": min(16, len(runtime_api_calls)),
             "dom_form_count": min(8, len(dom_form_summary)),
             "knowledge_vuln_types": knowledge_vuln_types[:6],
+            "intel_layers": intel_layers,
         }
 
     @staticmethod

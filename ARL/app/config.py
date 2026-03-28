@@ -673,8 +673,8 @@ class Config(object):
     PLAYWRIGHT_WAIT_MS = 1000
     # Playwright Chromium 可执行路径（为空时使用内置浏览器）
     PLAYWRIGHT_CHROMIUM_BIN = ""
-    # 是否启用浏览器情报采集（仅高价值站点使用，默认关闭）
-    BROWSER_INTEL_ENABLE = False
+    # 是否启用浏览器情报采集（AI渗透测试开启时默认跟随启用，仅高价值站点使用）
+    BROWSER_INTEL_ENABLE = True
     # 浏览器情报单次最多采集目标数
     BROWSER_INTEL_MAX_TARGETS = 8
     # 浏览器情报并发

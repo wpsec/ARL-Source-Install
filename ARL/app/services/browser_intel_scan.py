@@ -130,6 +130,9 @@ class BrowserIntelScan(BaseThread):
                 dom_form_summary = self._normalize_records(self._collect_form_summary(page), max_items=8)
                 script_items = self._normalize_records(self._collect_script_summary(page), max_items=16)
                 browser_surface_summary = {
+                    "source_role": "runtime_enrichment",
+                    "interaction_level": "passive",
+                    "capture_scope": "scripts_forms_runtime_api",
                     "page_title": str(page.title() or "").strip()[:160],
                     "page_url": str(page.url or "").strip()[:240],
                     "form_count": len(dom_form_summary),
