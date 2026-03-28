@@ -170,6 +170,10 @@ def _build_candidate_from_result(item: dict):
         "knowledge_hit_entry_paths": list(item.get("knowledge_hit_entry_paths", []) or []),
         "knowledge_hit_verify_actions": list(item.get("knowledge_hit_verify_actions", []) or []),
         "knowledge_hit_record_refs": list(item.get("knowledge_hit_record_refs", []) or []),
+        "browser_surface_summary": dict(item.get("browser_surface_summary") or {}) if isinstance(item.get("browser_surface_summary"), dict) else {},
+        "runtime_api_calls": list(item.get("runtime_api_calls", []) or []),
+        "dom_form_summary": list(item.get("dom_form_summary", []) or []),
+        "task_ai_pen_graph_summary": dict(item.get("task_ai_pen_graph_summary") or {}) if isinstance(item.get("task_ai_pen_graph_summary"), dict) else {},
     }
 
 
@@ -236,6 +240,10 @@ def _retry_records(result_docs):
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
                 "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
                 "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
+                "browser_surface_summary": dict(verify_result.get("browser_surface_summary") or {}) if isinstance(verify_result.get("browser_surface_summary"), dict) else {},
+                "runtime_api_calls": list(verify_result.get("runtime_api_calls", []) or [])[:16],
+                "dom_form_summary": list(verify_result.get("dom_form_summary", []) or [])[:8],
+                "task_ai_pen_graph_summary": dict(verify_result.get("task_ai_pen_graph_summary") or {}) if isinstance(verify_result.get("task_ai_pen_graph_summary"), dict) else {},
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
                 "external_tool_runs": list(verify_result.get("external_tool_runs", []) or [])[:3],
                 "external_tool_hit": bool(verify_result.get("external_tool_hit")),

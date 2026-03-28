@@ -23,6 +23,7 @@ from .autoTag import auto_tag
 from .githubSearch import github_search
 from .infoHunter import run_wih
 from .page_intel_scan import run_page_intel_scan
+from .browser_intel_scan import run_browser_intel_scan
 from .api_doc_scan import run_api_doc_scan
 from .js_intel_scan import run_js_intel_scan
 from .urlfinder_extract import run_urlfinder_extract

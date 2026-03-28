@@ -80,6 +80,7 @@ def _load_common_task_module():
 
 
 WebSiteFetch = _load_common_task_module().WebSiteFetch
+Config = sys.modules["app.config"].Config
 
 
 class TestAiPenJsContext(unittest.TestCase):
@@ -237,6 +238,81 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertGreaterEqual(summary.get("object_id_like_count", 0), 1)
         self.assertGreaterEqual(summary.get("security_scheme_count", 0), 1)
         self.assertIn("token", summary.get("parameter_names", []))
+
+    def test_ai_pen_graph_summary_is_small_and_structured(self):
+        summary = WebSiteFetch._build_ai_pen_graph_summary(
+            {
+                "target": "https://example.com",
+                "api_surface_summary": {
+                    "path_count": 3,
+                    "sample_paths": ["/api/login", "/api/user/{id}", "/api/export"],
+                    "auth_path_count": 1,
+                    "auth_paths": ["/api/login"],
+                    "parameter_names": ["id", "token", "file"],
+                    "security_scheme_count": 1,
+                    "object_id_like_count": 1,
+                    "upload_like_count": 1,
+                    "download_like_count": 1,
+                },
+                "runtime_api_calls": [
+                    {"method": "GET", "url": "https://example.com/api/me", "status": "200"},
+                    {"method": "POST", "url": "https://example.com/api/login", "status": "200"},
+                ],
+                "dom_form_summary": [
+                    {"action": "/login", "method": "POST", "fields": "username,password"},
+                ],
+                "knowledge_hit_vuln_types": ["api_doc", "idor"],
+                "knowledge_hit_entry_paths": ["/api/login"],
+            }
+        )
+
+        self.assertGreater(summary.get("node_count", 0), 0)
+        self.assertGreaterEqual(summary.get("edge_count", 0), 0)
+        self.assertIn("/api/login", summary.get("top_paths", []))
+        self.assertIn("token", summary.get("top_params", []))
+        self.assertIn("auth_cluster", summary)
+        self.assertIn("object_ref_cluster", summary)
+        self.assertIn("file_cluster", summary)
+
+    def test_should_collect_browser_intel_for_page_style_api_doc_target(self):
+        original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)
+        original_max_targets = getattr(Config, "BROWSER_INTEL_MAX_TARGETS", 8)
+        try:
+            Config.BROWSER_INTEL_ENABLE = True
+            Config.BROWSER_INTEL_MAX_TARGETS = 8
+            task = WebSiteFetch.__new__(WebSiteFetch)
+            task.ai_pen_browser_intel_cache = {}
+            task.waf_guard = None
+            result = task._should_collect_ai_pen_browser_intel(
+                {
+                    "target": "https://example.com/swagger-ui/index.html",
+                    "risk_type": "api_doc",
+                    "source_collection": "site",
+                }
+            )
+        finally:
+            Config.BROWSER_INTEL_ENABLE = original_enable
+            Config.BROWSER_INTEL_MAX_TARGETS = original_max_targets
+
+        self.assertTrue(result)
+
+    def test_should_not_collect_browser_intel_for_js_asset(self):
+        original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)
+        try:
+            Config.BROWSER_INTEL_ENABLE = True
+            task = WebSiteFetch.__new__(WebSiteFetch)
+            task.ai_pen_browser_intel_cache = {}
+            task.waf_guard = None
+            result = task._should_collect_ai_pen_browser_intel(
+                {
+                    "target": "https://example.com/_nuxt/app.js",
+                    "risk_type": "sensitive_info",
+                }
+            )
+        finally:
+            Config.BROWSER_INTEL_ENABLE = original_enable
+
+        self.assertFalse(result)
 
     def test_sensitive_info_js_noise_is_downgraded(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(

@@ -27,7 +27,7 @@
 - `[v4.3.19]` PoC 索引能力补齐：新增 `ARL/app/tools/build_poc_index.py`，支持从 `nuclei-templates/afrog-pocs` 构建 `token -> tags/keywords` 索引；运行时优先读取 `/code/docker/ai/sop/poc_index.json`（兼容历史路径并支持 `ARL_AI_POC_INDEX_FILE` 覆盖），避免每次运行全库检索
 - `[v4.3.19]` AI 去噪 PoC 风险触发修复：`run_task_ai_denoise_pipeline` 启动时会先合并已累计的 `pending_modules`，修复并发阶段下 `nuclei_result/vuln` 等模块因状态切换被清空后漏执行的问题
 
-## 2026-03-28（v4.3.26 ~ v4.3.33）
+## 2026-03-28（v4.3.26 ~ v4.3.34）
 
 - `[v4.3.26]` AI 管理补齐“思考模型”配置：提供方预设新增 `default_reasoning_model`，前后端模型配置新增 `reasoning_model` 字段并接入读写；DeepSeek 默认展示 `DeepSeek-R1`，配置弹窗与卡片摘要同步显示“分析模型 / 思考模型 / API Base URL”，为后续区分分析模型与思考模型保留数据面
 - `[v4.3.26]` AI 渗透结果页可读性增强：`AI渗透` 列表新增 `详情` 按钮与详情弹窗，集中展示 `目标 / 漏洞URL / 说明 / 知识命中 / 证据片段 / 工具轨迹 / 响应摘要`，修复长文本挤压表格导致下方内容难以查看的问题；同时将 `目标 / 漏洞URL` 改为居中展示并复用超链接渲染
@@ -40,6 +40,7 @@
 - `[v4.3.31]` 结构化接口消费增强：AI渗透验证链将 `API文档摘要` 扩展为统一的 `api_surface_summary`，开始同时消费 `Swagger/OpenAPI` 与 `JS` 中提取出的接口面（`method/url/params/source`），补充 `auth/object_id/upload/download` 风格统计；`AI渗透详情` 新增“接口结构摘要 + JS提取接口样例”展示，帮助用户确认即使目标没有标准 API 文档，前端暴露出的接口与参数也已被结构化纳入验证输入
 - `[v4.3.32]` PoC 文库结构化二期：`build_ai_pen_knowledge_index.py` 从 `tools/poc/POC` 语料中进一步提炼 `product_labels / vuln_types / entry_paths / verify_actions / record_refs` 等结构化知识，运行时 `AI渗透` 候选命中新增对应字段并参与 planner 输入与详情展示；`AI渗透详情` 新增“知识画像”区域，直接展示知识命中的产品组件、漏洞类型、入口路径与建议验证动作，让 `PoC 文库` 从“只命中 token 的参考语料”升级为“可解释的验证知识源”
 - `[v4.3.33]` AI渗透能力模型去产品特判化：`commonTask` 中原本偏向具体产品名的 `product_hints/playbook` 逻辑收敛为通用系统家族/能力画像（如 `api_doc_surface/js_bundler_app/token_auth_flow/admin_office_portal`），不再将用户举例的某些产品直接写死为运行时优先对象；同时清理重复 helper 定义并同步更新测试与 Skill 参考文档，使后续能力建设更贴近 `OWASP / PortSwigger` 风格的基础能力矩阵
+- `[v4.3.34]` 浏览器情报采集层与认知图谱最小版本接入：新增 `browser_intel_scan` 服务并补齐 `BROWSER_INTEL_*` 配置，基于 Playwright 对高价值页面目标做低侵入采集，输出 `browser_surface_summary / runtime_api_calls / dom_form_summary`；`AI渗透` 验证链按条件补充浏览器视角，并新增 `task_ai_pen_graph_summary` 摘要字段（节点数、边数、核心路径/参数、auth/object_ref/file cluster），前端 `AI渗透详情` 同步新增“浏览器情报摘要 / 认知图谱摘要”区块，为后续图谱化推理与认证上下文接入打基础
 
 ## 2026-03-26（v4.3.0 ~ v4.3.18）
 

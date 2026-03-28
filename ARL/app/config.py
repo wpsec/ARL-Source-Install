@@ -673,6 +673,16 @@ class Config(object):
     PLAYWRIGHT_WAIT_MS = 1000
     # Playwright Chromium 可执行路径（为空时使用内置浏览器）
     PLAYWRIGHT_CHROMIUM_BIN = ""
+    # 是否启用浏览器情报采集（仅高价值站点使用，默认关闭）
+    BROWSER_INTEL_ENABLE = False
+    # 浏览器情报单次最多采集目标数
+    BROWSER_INTEL_MAX_TARGETS = 8
+    # 浏览器情报并发
+    BROWSER_INTEL_CONCURRENCY = 2
+    # 浏览器情报导航超时（毫秒）
+    BROWSER_INTEL_TIMEOUT_MS = 12000
+    # 导航后额外等待（毫秒）
+    BROWSER_INTEL_WAIT_MS = 800
     # 网页截图JS脚本路径（PhantomJS）
     SCREENSHOT_JS = os.path.join(basedir, 'tools/screenshot.js')
     # 截图文件存储目录
@@ -1104,6 +1114,24 @@ try:
         )
     if y["ARL"].get("PLAYWRIGHT_CHROMIUM_BIN"):
         Config.PLAYWRIGHT_CHROMIUM_BIN = str(y["ARL"]["PLAYWRIGHT_CHROMIUM_BIN"]).strip()
+    if y["ARL"].get("BROWSER_INTEL_ENABLE") is not None:
+        Config.BROWSER_INTEL_ENABLE = bool(y["ARL"]["BROWSER_INTEL_ENABLE"])
+    if y["ARL"].get("BROWSER_INTEL_MAX_TARGETS") is not None:
+        Config.BROWSER_INTEL_MAX_TARGETS = safe_positive_int(
+            int(y["ARL"]["BROWSER_INTEL_MAX_TARGETS"]), Config.BROWSER_INTEL_MAX_TARGETS
+        )
+    if y["ARL"].get("BROWSER_INTEL_CONCURRENCY") is not None:
+        Config.BROWSER_INTEL_CONCURRENCY = safe_positive_int(
+            int(y["ARL"]["BROWSER_INTEL_CONCURRENCY"]), Config.BROWSER_INTEL_CONCURRENCY
+        )
+    if y["ARL"].get("BROWSER_INTEL_TIMEOUT_MS") is not None:
+        Config.BROWSER_INTEL_TIMEOUT_MS = safe_positive_int(
+            int(y["ARL"]["BROWSER_INTEL_TIMEOUT_MS"]), Config.BROWSER_INTEL_TIMEOUT_MS
+        )
+    if y["ARL"].get("BROWSER_INTEL_WAIT_MS") is not None:
+        Config.BROWSER_INTEL_WAIT_MS = safe_positive_int(
+            int(y["ARL"]["BROWSER_INTEL_WAIT_MS"]), Config.BROWSER_INTEL_WAIT_MS
+        )
 
     # --- 截图回传配置 ---
     if y["ARL"].get("SCREENSHOT_SYNC_ENABLE") is not None:
@@ -1687,6 +1715,23 @@ try:
     Config.PLAYWRIGHT_CHROMIUM_BIN = env_str(
         "ARL_PLAYWRIGHT_CHROMIUM_BIN", Config.PLAYWRIGHT_CHROMIUM_BIN
     ).strip()
+    Config.BROWSER_INTEL_ENABLE = env_bool("ARL_BROWSER_INTEL_ENABLE", Config.BROWSER_INTEL_ENABLE)
+    Config.BROWSER_INTEL_MAX_TARGETS = safe_positive_int(
+        env_int("ARL_BROWSER_INTEL_MAX_TARGETS", Config.BROWSER_INTEL_MAX_TARGETS),
+        Config.BROWSER_INTEL_MAX_TARGETS
+    )
+    Config.BROWSER_INTEL_CONCURRENCY = safe_positive_int(
+        env_int("ARL_BROWSER_INTEL_CONCURRENCY", Config.BROWSER_INTEL_CONCURRENCY),
+        Config.BROWSER_INTEL_CONCURRENCY
+    )
+    Config.BROWSER_INTEL_TIMEOUT_MS = safe_positive_int(
+        env_int("ARL_BROWSER_INTEL_TIMEOUT_MS", Config.BROWSER_INTEL_TIMEOUT_MS),
+        Config.BROWSER_INTEL_TIMEOUT_MS
+    )
+    Config.BROWSER_INTEL_WAIT_MS = safe_positive_int(
+        env_int("ARL_BROWSER_INTEL_WAIT_MS", Config.BROWSER_INTEL_WAIT_MS),
+        Config.BROWSER_INTEL_WAIT_MS
+    )
     if Config.SCREENSHOT_ENGINE not in ["playwright", "phantomjs", "auto"]:
         Config.SCREENSHOT_ENGINE = "playwright"
     Config.SCREENSHOT_SYNC_ENABLE = env_bool("ARL_SCREENSHOT_SYNC_ENABLE", Config.SCREENSHOT_SYNC_ENABLE)

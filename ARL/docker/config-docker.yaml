@@ -296,6 +296,16 @@ ARL:
   PLAYWRIGHT_WAIT_MS: 1000
   # 可选：自定义 Chromium 可执行路径（为空使用 Playwright 内置浏览器）
   PLAYWRIGHT_CHROMIUM_BIN: ""
+  # 是否启用浏览器情报采集（仅高价值站点使用，默认关闭）
+  BROWSER_INTEL_ENABLE: false
+  # 浏览器情报单次最多目标数
+  BROWSER_INTEL_MAX_TARGETS: 8
+  # 浏览器情报并发
+  BROWSER_INTEL_CONCURRENCY: 2
+  # 浏览器情报导航超时（毫秒）
+  BROWSER_INTEL_TIMEOUT_MS: 12000
+  # 浏览器情报导航后额外等待（毫秒）
+  BROWSER_INTEL_WAIT_MS: 800
   # PhantomJS 单站点截图超时（秒）
   PHANTOMJS_TIMEOUT_SEC: 30
   # K8s 内部服务地址（示例：https://arl-web）

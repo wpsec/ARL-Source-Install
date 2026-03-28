@@ -404,6 +404,7 @@ class WebSiteFetch(object):
             "evidence": [],
             "raw_ai_reply": "",
         }
+        self.ai_pen_browser_intel_cache = {}
 
     def _filter_waf_blocked_targets(self, targets, stage_name="") -> list:
         target_list = list(targets or [])
@@ -3506,6 +3507,81 @@ class WebSiteFetch(object):
             return "low_side_effect_probe"
         return "http_replay_then_context"
 
+    @staticmethod
+    def _is_browser_intel_candidate_url(target_url: str):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return False
+        if not WebSiteFetch._is_http_target(url_text):
+            return False
+        if WebSiteFetch._is_js_asset_target(url_text):
+            return False
+
+        try:
+            parsed = urlsplit(url_text)
+            path_text = str(parsed.path or "").strip().lower()
+        except Exception:
+            path_text = str(url_text or "").strip().lower()
+
+        static_suffix = (
+            ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
+            ".woff", ".woff2", ".ttf", ".map", ".pdf", ".zip", ".rar", ".txt", ".json",
+        )
+        if path_text.endswith(static_suffix):
+            return False
+        return True
+
+    def _should_collect_ai_pen_browser_intel(self, candidate: dict):
+        if not bool(getattr(Config, "BROWSER_INTEL_ENABLE", False)):
+            return False
+
+        item = candidate if isinstance(candidate, dict) else {}
+        target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+        if not self._is_browser_intel_candidate_url(target_url):
+            return False
+
+        route_hint = str(item.get("route_hint") or self._build_ai_pen_route_hint(item) or "").strip().lower()
+        source_collection = str(item.get("source_collection", "") or "").strip().lower()
+        risk_type = str(item.get("risk_type", "") or "").strip().lower()
+
+        if source_collection == "site":
+            return True
+        if route_hint in {"api_doc_structure", "jwt_token_first", "structured_id_mutation", "http_replay_then_context"}:
+            return True
+        return risk_type in {"api_doc", "jwt", "idor", "websocket"}
+
+    def _collect_ai_pen_browser_intel(self, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+        if not target_url:
+            return {}
+        if not self._should_collect_ai_pen_browser_intel(item):
+            return {}
+
+        cache_key = str(target_url)
+        if cache_key in self.ai_pen_browser_intel_cache:
+            return dict(self.ai_pen_browser_intel_cache.get(cache_key) or {})
+
+        current_count = len(self.ai_pen_browser_intel_cache)
+        max_targets = max(1, int(getattr(Config, "BROWSER_INTEL_MAX_TARGETS", 8) or 8))
+        if current_count >= max_targets:
+            return {}
+
+        if self.waf_guard:
+            host = self.waf_guard._extract_host(target_url)
+            if host and self.waf_guard.is_blocked_host(host):
+                return {}
+
+        try:
+            result_map = services.run_browser_intel_scan([target_url], concurrency=1) or {}
+            intel = result_map.get(target_url) if isinstance(result_map, dict) else {}
+            normalized = intel if isinstance(intel, dict) else {}
+            self.ai_pen_browser_intel_cache[cache_key] = normalized
+            return dict(normalized)
+        except Exception as e:
+            logger.warning("task_id:{} collect ai_pen browser intel failed url:{} err:{}".format(self.task_id, target_url, e))
+            return {}
+
     @classmethod
     def _select_ai_pen_capability_profile(cls, candidate: dict):
         item = candidate if isinstance(candidate, dict) else {}
@@ -3669,6 +3745,10 @@ class WebSiteFetch(object):
                 "route_hint": route_hint,
                 "surface_hints": surface_hints,
                 "capability_profile": capability_profile,
+                "browser_surface_summary": dict(candidate.get("browser_surface_summary") or {}) if isinstance(candidate.get("browser_surface_summary"), dict) else {},
+                "runtime_api_calls": list(candidate.get("runtime_api_calls", []) or [])[:8],
+                "dom_form_summary": list(candidate.get("dom_form_summary", []) or [])[:4],
+                "task_ai_pen_graph_summary": dict(candidate.get("task_ai_pen_graph_summary") or {}) if isinstance(candidate.get("task_ai_pen_graph_summary"), dict) else {},
                 "js_asset_target": bool(
                     self._is_js_asset_target(
                         str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
@@ -4619,6 +4699,135 @@ class WebSiteFetch(object):
         return " | ".join(parts)
 
     @staticmethod
+    def _extract_form_field_names(dom_form_summary):
+        results = []
+        seen = set()
+        for item in dom_form_summary or []:
+            if not isinstance(item, dict):
+                continue
+            fields_text = str(item.get("fields") or "").strip()
+            if not fields_text:
+                continue
+            for field_name in fields_text.split(","):
+                text = str(field_name or "").strip()
+                lowered = text.lower()
+                if not text or lowered in seen:
+                    continue
+                seen.add(lowered)
+                results.append(text)
+                if len(results) >= 12:
+                    return results
+        return results
+
+    @staticmethod
+    def _extract_runtime_api_paths(runtime_api_calls):
+        results = []
+        seen = set()
+        for item in runtime_api_calls or []:
+            if not isinstance(item, dict):
+                continue
+            url_text = str(item.get("url") or "").strip()
+            if not url_text:
+                continue
+            try:
+                parsed = urlsplit(url_text)
+                path_text = "{}{}".format(str(parsed.path or "").strip(), ("?" + parsed.query) if parsed.query else "")
+            except Exception:
+                path_text = url_text
+            if path_text and path_text not in seen:
+                seen.add(path_text)
+                results.append(path_text[:180])
+            if len(results) >= 8:
+                break
+        return results
+
+    @classmethod
+    def _build_ai_pen_graph_summary(cls, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        browser_surface_summary = item.get("browser_surface_summary") if isinstance(item.get("browser_surface_summary"), dict) else {}
+        runtime_api_calls = list(item.get("runtime_api_calls", []) or [])
+        dom_form_summary = list(item.get("dom_form_summary", []) or [])
+        knowledge_entry_paths = [str(x or "").strip() for x in list(item.get("knowledge_hit_entry_paths", []) or []) if str(x or "").strip()]
+        knowledge_vuln_types = [str(x or "").strip() for x in list(item.get("knowledge_hit_vuln_types", []) or []) if str(x or "").strip()]
+
+        top_paths = []
+        seen_paths = set()
+        for path_text in (
+            list(api_surface_summary.get("sample_paths", []) or [])
+            + cls._extract_runtime_api_paths(runtime_api_calls)
+            + knowledge_entry_paths
+        ):
+            text = str(path_text or "").strip()
+            if not text or text in seen_paths:
+                continue
+            seen_paths.add(text)
+            top_paths.append(text[:180])
+            if len(top_paths) >= 8:
+                break
+
+        top_params = []
+        seen_params = set()
+        for name_text in (
+            list(api_surface_summary.get("parameter_names", []) or [])
+            + cls._extract_form_field_names(dom_form_summary)
+        ):
+            text = str(name_text or "").strip()
+            lowered = text.lower()
+            if not text or lowered in seen_params:
+                continue
+            seen_params.add(lowered)
+            top_params.append(text[:80])
+            if len(top_params) >= 12:
+                break
+
+        auth_cluster = {
+            "auth_path_count": cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0),
+            "security_scheme_count": cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0),
+            "top_auth_paths": [str(x or "").strip()[:180] for x in list(api_surface_summary.get("auth_paths", []) or [])[:4] if str(x or "").strip()],
+        }
+        object_ref_cluster = {
+            "object_id_like_count": cls._safe_int_value(api_surface_summary.get("object_id_like_count"), 0),
+            "object_ref_params": [text for text in top_params if text.lower().endswith("_id") or text.lower() in cls.AI_PEN_OBJECT_ID_PARAM_HINTS][:6],
+        }
+        file_cluster = {
+            "upload_like_count": cls._safe_int_value(api_surface_summary.get("upload_like_count"), 0),
+            "download_like_count": cls._safe_int_value(api_surface_summary.get("download_like_count"), 0),
+        }
+
+        node_count = 0
+        for value in (
+            1 if str(item.get("target") or item.get("vuln_url") or "").strip() else 0,
+            len(top_paths),
+            len(top_params),
+            min(8, len(runtime_api_calls)),
+            min(6, len(dom_form_summary)),
+            min(6, len(knowledge_vuln_types)),
+        ):
+            node_count += int(value or 0)
+
+        edge_count = min(
+            32,
+            max(0, len(top_paths) - 1)
+            + max(0, len(top_params) - 1)
+            + min(12, len(runtime_api_calls))
+            + min(8, len(dom_form_summary)),
+        )
+
+        return {
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "top_paths": top_paths,
+            "top_params": top_params,
+            "auth_cluster": auth_cluster,
+            "object_ref_cluster": object_ref_cluster,
+            "file_cluster": file_cluster,
+            "browser_runtime_call_count": min(16, len(runtime_api_calls)),
+            "dom_form_count": min(8, len(dom_form_summary)),
+            "knowledge_vuln_types": knowledge_vuln_types[:6],
+        }
+
+    @staticmethod
     def _extract_js_api_param_names(snippet: str):
         param_names = []
         seen = set()
@@ -5317,6 +5526,10 @@ class WebSiteFetch(object):
         risk_type = str(candidate.get("risk_type", "") or "").strip()
         risk_name = str(candidate.get("risk_name", "") or "").strip()
         evidence_seed = self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX)
+        browser_surface_summary = dict(candidate.get("browser_surface_summary") or {}) if isinstance(candidate.get("browser_surface_summary"), dict) else {}
+        runtime_api_calls = list(candidate.get("runtime_api_calls", []) or [])[:16]
+        dom_form_summary = list(candidate.get("dom_form_summary", []) or [])[:8]
+        task_ai_pen_graph_summary = dict(candidate.get("task_ai_pen_graph_summary") or {}) if isinstance(candidate.get("task_ai_pen_graph_summary"), dict) else {}
         payload_type, payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
         route_hint = str(candidate.get("route_hint") or self._build_ai_pen_route_hint(candidate) or "").strip()
         capability_candidate = dict(candidate or {})
@@ -5343,6 +5556,10 @@ class WebSiteFetch(object):
                 "response_hash_diff": "",
                 "api_doc_summary": {},
                 "api_surface_summary": {},
+                "browser_surface_summary": browser_surface_summary,
+                "runtime_api_calls": runtime_api_calls,
+                "dom_form_summary": dom_form_summary,
+                "task_ai_pen_graph_summary": task_ai_pen_graph_summary,
                 "route_hint": route_hint,
                 "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                 "tool_trace": "collect_context_only",
@@ -5395,6 +5612,10 @@ class WebSiteFetch(object):
                     "response_hash_diff": "",
                     "api_doc_summary": {},
                     "api_surface_summary": {},
+                    "browser_surface_summary": browser_surface_summary,
+                    "runtime_api_calls": runtime_api_calls,
+                    "dom_form_summary": dom_form_summary,
+                    "task_ai_pen_graph_summary": task_ai_pen_graph_summary,
                     "route_hint": route_hint,
                     "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                     "tool_trace": "http_fetch(skip_by_waf,url={})".format(target_url[:220]),
@@ -5861,6 +6082,10 @@ class WebSiteFetch(object):
                 "response_hash_diff": response_hash_diff,
                 "api_doc_summary": api_doc_summary if isinstance(api_doc_summary, dict) else {},
                 "api_surface_summary": api_surface_summary if isinstance(api_surface_summary, dict) else {},
+                "browser_surface_summary": browser_surface_summary,
+                "runtime_api_calls": runtime_api_calls,
+                "dom_form_summary": dom_form_summary,
+                "task_ai_pen_graph_summary": task_ai_pen_graph_summary,
                 "route_hint": route_hint,
                 "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                 "tool_trace": " | ".join(tool_trace_parts)[:500],
@@ -5881,6 +6106,10 @@ class WebSiteFetch(object):
                 "response_hash_diff": "",
                 "api_doc_summary": {},
                 "api_surface_summary": {},
+                "browser_surface_summary": browser_surface_summary,
+                "runtime_api_calls": runtime_api_calls,
+                "dom_form_summary": dom_form_summary,
+                "task_ai_pen_graph_summary": task_ai_pen_graph_summary,
                 "route_hint": route_hint,
                 "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
                 "tool_trace": "http_fetch(error,url={})".format(target_url[:220]),
@@ -6010,6 +6239,11 @@ class WebSiteFetch(object):
             candidate["knowledge_hit_entry_paths"] = list(hit_info.get("hit_entry_paths", []) or [])
             candidate["knowledge_hit_verify_actions"] = list(hit_info.get("hit_verify_actions", []) or [])
             candidate["knowledge_hit_record_refs"] = list(hit_info.get("hit_record_refs", []) or [])
+            browser_intel = self._collect_ai_pen_browser_intel(candidate)
+            candidate["browser_surface_summary"] = dict(browser_intel.get("browser_surface_summary") or {}) if isinstance(browser_intel.get("browser_surface_summary"), dict) else {}
+            candidate["runtime_api_calls"] = list(browser_intel.get("runtime_api_calls", []) or [])[:16]
+            candidate["dom_form_summary"] = list(browser_intel.get("dom_form_summary", []) or [])[:8]
+            candidate["task_ai_pen_graph_summary"] = self._build_ai_pen_graph_summary(candidate)
             candidate["knowledge_score"] = int(hit_info.get("score", 0) or 0)
             if bool(hit_info.get("loaded")):
                 knowledge_loaded = True
@@ -6155,6 +6389,10 @@ class WebSiteFetch(object):
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
                 "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
                 "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
+                "browser_surface_summary": dict(verify_result.get("browser_surface_summary") or {}) if isinstance(verify_result.get("browser_surface_summary"), dict) else {},
+                "runtime_api_calls": list(verify_result.get("runtime_api_calls", []) or [])[:16],
+                "dom_form_summary": list(verify_result.get("dom_form_summary", []) or [])[:8],
+                "task_ai_pen_graph_summary": dict(verify_result.get("task_ai_pen_graph_summary") or {}) if isinstance(verify_result.get("task_ai_pen_graph_summary"), dict) else {},
                 "route_hint": str(verify_result.get("route_hint", "") or "").strip(),
                 "capability_profile": dict(verify_result.get("capability_profile") or {}) if isinstance(verify_result.get("capability_profile"), dict) else {},
                 "decision": decision,
