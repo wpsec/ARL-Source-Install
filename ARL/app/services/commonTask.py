@@ -20,6 +20,7 @@ from app.modules import CollectSource, WebSiteFetchStatus, WebSiteFetchOption
 from app.services.nuclei_scan import nuclei_scan, NucleiScan
 from app.services.afrog_scan import run_afrog_scan
 from app.services.waf_guard import WAFSmartSkipGuard
+from app.services.ai_pen_mcp_runtime import AiPenMcpRuntime
 from app.services.task_scope_guard import load_task_scope_context, host_in_scope, url_in_scope
 from app.services import run_risk_cruising, BaseUpdateTask
 logger = utils.get_logger()
@@ -153,6 +154,7 @@ class WebSiteFetch(object):
     AI_PEN_TEST_FETCH_TIMEOUT = (5.1, 10.1)
     AI_PEN_TEST_MCP_MAX_TOOL_CALLS = 3
     AI_PEN_TEST_MCP_TIMEOUT_SEC = 12
+    AI_PEN_MCP_RUNTIME_VERSION = "p0-local-v1"
     AI_PEN_TEST_AI_PLAN_MAX_CASES = 24
     AI_PEN_TEST_BODY_MAX = 8192
     AI_PEN_TEST_EVIDENCE_MAX = 280
@@ -3947,7 +3949,7 @@ class WebSiteFetch(object):
                     "decision": "verified|likely_false_positive|needs_manual_review",
                     "confidence": "0~1 float",
                     "reason": "string",
-                    "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe|upload_probe|replay",
+                    "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|weak_password_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe|upload_probe|replay",
                     "payload": "string",
                     "evidence": ["string"],
                     "next_actions": ["string"],
@@ -6401,9 +6403,34 @@ class WebSiteFetch(object):
         is_weak_password_case = (risk_type_text == "weak_password") or (
             str(payload_type or "").strip().lower() == "weak_password_probe"
         )
+        runtime_timeout_sec = self._safe_int_value(
+            settings.get("timeout_sec"),
+            self.AI_PEN_TEST_MCP_TIMEOUT_SEC,
+        )
+        if runtime_timeout_sec < 1:
+            runtime_timeout_sec = self.AI_PEN_TEST_MCP_TIMEOUT_SEC
+
+        def _with_runtime_artifacts(base_payload, trace_parts, current_status, current_decision):
+            payload_obj = dict(base_payload or {})
+            trace_list = trace_parts if isinstance(trace_parts, list) else []
+            runtime_obj = AiPenMcpRuntime.build_artifacts_from_tool_trace(
+                tool_trace_parts=trace_list,
+                max_tool_calls=max_tool_calls,
+                timeout_sec=runtime_timeout_sec,
+                status=current_status,
+                decision=current_decision,
+                runtime_version=self.AI_PEN_MCP_RUNTIME_VERSION,
+            )
+            payload_obj["agent_trace"] = list(runtime_obj.get("agent_trace", []) or [])
+            payload_obj["tool_calls"] = list(runtime_obj.get("tool_calls", []) or [])
+            payload_obj["tool_results"] = list(runtime_obj.get("tool_results", []) or [])
+            payload_obj["stop_reason"] = str(runtime_obj.get("stop_reason", "") or "")
+            payload_obj["budget_used"] = dict(runtime_obj.get("budget_used") or {})
+            payload_obj["runtime_version"] = str(runtime_obj.get("runtime_version", "") or "")
+            return payload_obj
 
         if not self._is_http_target(target_url):
-            return {
+            return _with_runtime_artifacts({
                 "status": "skipped",
                 "decision": "needs_manual_review",
                 "confidence": 0.35,
@@ -6431,7 +6458,7 @@ class WebSiteFetch(object):
                 "tool_trace": "collect_context_only",
                 "external_tool_runs": [],
                 "external_tool_hit": False,
-            }
+            }, ["collect_context_only"], "skipped", "needs_manual_review")
 
         tool_trace_parts = []
         if plan_obj:
@@ -6465,7 +6492,7 @@ class WebSiteFetch(object):
                     reason_parts.append("厂商:{}".format(waf_name))
                 if waf_reason:
                     reason_parts.append("原因:{}".format(self._clip_text(waf_reason, 80)))
-                return {
+                return _with_runtime_artifacts({
                     "status": "skipped",
                     "decision": "needs_manual_review",
                     "confidence": 0.32,
@@ -6493,7 +6520,7 @@ class WebSiteFetch(object):
                     "tool_trace": "http_fetch(skip_by_waf,url={})".format(target_url[:220]),
                     "external_tool_runs": [],
                     "external_tool_hit": False,
-                }
+                }, ["http_fetch(skip_by_waf,url={})".format(target_url[:220])], "skipped", "needs_manual_review")
 
             body_text = ""
             try:
@@ -7041,7 +7068,7 @@ class WebSiteFetch(object):
             if is_sqli_case and bool(external_ret.get("tool_hit")) and decision == "verified":
                 sqli_proof_type = "external_tool"
 
-            return {
+            return _with_runtime_artifacts({
                 "status": "ok",
                 "decision": decision,
                 "confidence": confidence,
@@ -7069,9 +7096,9 @@ class WebSiteFetch(object):
                 "tool_trace": " | ".join(tool_trace_parts)[:500],
                 "external_tool_runs": list(external_ret.get("tool_runs", []) or [])[: self.AI_PEN_EXTERNAL_RESULT_MAX],
                 "external_tool_hit": bool(external_ret.get("tool_hit")),
-            }
+            }, tool_trace_parts, "ok", decision)
         except Exception as e:
-            return {
+            return _with_runtime_artifacts({
                 "status": "error",
                 "decision": "needs_manual_review",
                 "confidence": 0.30,
@@ -7099,7 +7126,7 @@ class WebSiteFetch(object):
                 "tool_trace": "http_fetch(error,url={})".format(target_url[:220]),
                 "external_tool_runs": [],
                 "external_tool_hit": False,
-            }
+            }, ["http_fetch(error,url={})".format(target_url[:220])], "error", "needs_manual_review")
 
     def run_ai_penetration_test(self):
         """
@@ -7401,6 +7428,12 @@ class WebSiteFetch(object):
                 "knowledge_hit_verify_actions": list(candidate.get("knowledge_hit_verify_actions", []) or []),
                 "knowledge_hit_record_refs": list(candidate.get("knowledge_hit_record_refs", []) or [])[:4],
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
+                "agent_trace": list(verify_result.get("agent_trace", []) or [])[:16],
+                "tool_calls": list(verify_result.get("tool_calls", []) or [])[:16],
+                "tool_results": list(verify_result.get("tool_results", []) or [])[:16],
+                "stop_reason": str(verify_result.get("stop_reason", "") or "").strip(),
+                "budget_used": dict(verify_result.get("budget_used") or {}) if isinstance(verify_result.get("budget_used"), dict) else {},
+                "runtime_version": str(verify_result.get("runtime_version", "") or "").strip(),
                 "external_tool_runs": external_tool_runs,
                 "external_tool_hit": external_tool_hit,
                 "ai_status": str(verify_result.get("ai_status", "") or "").strip(),

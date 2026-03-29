@@ -45,6 +45,24 @@ def _load_common_task_module():
     waf_guard_module = types.ModuleType("app.services.waf_guard")
     waf_guard_module.WAFSmartSkipGuard = object
 
+    ai_pen_runtime_module = types.ModuleType("app.services.ai_pen_mcp_runtime")
+    ai_pen_runtime_module.AiPenMcpRuntime = type(
+        "AiPenMcpRuntime",
+        (),
+        {
+            "build_artifacts_from_tool_trace": staticmethod(
+                lambda **kwargs: {
+                    "agent_trace": [],
+                    "tool_calls": [],
+                    "tool_results": [],
+                    "stop_reason": "final_decision",
+                    "budget_used": {},
+                    "runtime_version": "p0-local-v1",
+                }
+            )
+        },
+    )
+
     task_scope_guard_module = types.ModuleType("app.services.task_scope_guard")
     task_scope_guard_module.load_task_scope_context = lambda *args, **kwargs: {
         "allowed_hosts": [],
@@ -71,6 +89,7 @@ def _load_common_task_module():
     sys.modules["app.services.nuclei_scan"] = nuclei_scan_module
     sys.modules["app.services.afrog_scan"] = afrog_scan_module
     sys.modules["app.services.waf_guard"] = waf_guard_module
+    sys.modules["app.services.ai_pen_mcp_runtime"] = ai_pen_runtime_module
     sys.modules["app.services.task_scope_guard"] = task_scope_guard_module
     sys.modules["bson"] = bson_module
     sys.modules["pymongo"] = pymongo_module
