@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-30（v4.3.60 ~ v4.3.63）
+## 2026-03-30（v4.3.60 ~ v4.3.64）
+
+- `[v4.3.64]` 前端请求链路新增“后端就绪探测”启动保护：`requestApi` 在遇到 `502/503/504`（常见于系统升级或刚启动阶段 `nginx bad gateway`）时，会先对 `/api/` 执行短周期就绪探测并在就绪后自动重试原请求；若探测期内仍未就绪，则统一返回“系统正在启动中，后端服务尚未就绪，请稍后重试”的友好提示，避免用户看到原始 `HTTP 502: 502 Bad Gateway nginx/1.14.1` 页面级报错
 
 - `[v4.3.63]` AI渗透测试工作台二次优化：`AI调用与思考` 区域新增“结构化摘要 + 完整对话流程”展示，提升 `ai_plan_request/ai_plan_reply` 的可读性并减少原始 JSON 直出；`MCP` 区域新增调用时间线（按 turn 串联 `agent_trace/tool_calls/tool_results`）与原始记录并排查看，补齐“从计划到工具执行结果”的可追溯链路
 - `[v4.3.63]` AI渗透结果新增 `Request 请求包` 数据面：后端 `commonTask/_verify_ai_pen_candidate` 增加 `request_method/request_url/request_path/request_headers/request_body/request_packet` 结构化字段并随 `retry`/落库同步；请求包按 `payload_type + verification_step + tool_trace` 自动推断方法与内容，兼容 `GET/POST/PUT/PATCH` 及 `upload/websocket/jwt/api_doc` 等探针场景，前端详情同步改为“Request请求包 + Payload原始值”双视图

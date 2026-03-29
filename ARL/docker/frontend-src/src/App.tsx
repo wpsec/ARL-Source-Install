@@ -2301,6 +2301,8 @@ function normalizeRowIdValue(value: any): string {
 
 async function requestApi(token: string, path: string, options: ApiRequestOptions = {}) {
   const method = options.method ?? 'GET';
+  const isGatewayNotReadyStatus = (status: number) => [502, 503, 504].includes(status);
+  const backendNotReadyMessage = '系统正在启动中，后端服务尚未就绪，请稍后重试。';
   const buildFetchOptions = (): RequestInit => {
     const headers: Record<string, string> = {};
     if (token) {
@@ -2324,14 +2326,50 @@ async function requestApi(token: string, path: string, options: ApiRequestOption
     return fetchOptions;
   };
 
-  const primaryPath = path.startsWith('/') ? path : `/${path}`;
-  const fallbackPath = toggleTrailingSlash(primaryPath);
-  const primaryUrl = buildUrl(primaryPath, options.query);
+  const performRequestWithFallback = async (): Promise<Response> => {
+    const primaryPath = path.startsWith('/') ? path : `/${path}`;
+    const fallbackPath = toggleTrailingSlash(primaryPath);
+    const primaryUrl = buildUrl(primaryPath, options.query);
 
-  let response = await fetch(primaryUrl, buildFetchOptions());
-  if ((response.status === 404 || response.status === 405) && fallbackPath && fallbackPath !== primaryPath) {
-    const fallbackUrl = buildUrl(fallbackPath, options.query);
-    response = await fetch(fallbackUrl, buildFetchOptions());
+    let response = await fetch(primaryUrl, buildFetchOptions());
+    if ((response.status === 404 || response.status === 405) && fallbackPath && fallbackPath !== primaryPath) {
+      const fallbackUrl = buildUrl(fallbackPath, options.query);
+      response = await fetch(fallbackUrl, buildFetchOptions());
+    }
+    return response;
+  };
+
+  const waitBackendReady = async (maxAttempts = 8, intervalMs = 1200): Promise<boolean> => {
+    const probeUrl = buildUrl('/');
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const probeResp = await fetch(probeUrl, {
+          method: 'GET',
+          credentials: 'same-origin',
+        });
+        if (!isGatewayNotReadyStatus(probeResp.status)) {
+          return true;
+        }
+      } catch {
+        // ignore probe error and continue retry
+      }
+      if (attempt < maxAttempts - 1) {
+        await sleep(intervalMs);
+      }
+    }
+    return false;
+  };
+
+  let response = await performRequestWithFallback();
+  if (isGatewayNotReadyStatus(response.status)) {
+    const ready = await waitBackendReady();
+    if (!ready) {
+      throw new Error(backendNotReadyMessage);
+    }
+    response = await performRequestWithFallback();
+    if (isGatewayNotReadyStatus(response.status)) {
+      throw new Error(backendNotReadyMessage);
+    }
   }
 
   if (options.download) {
@@ -13218,82 +13256,83 @@ function AiPenAssetWorkspaceView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
-          <div className="text-xs font-black tracking-wide text-brand-text-muted">总记录</div>
-          <div className="text-2xl font-black">{statsLoading ? '...' : stats.total}</div>
-        </div>
-        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
-          <div className="text-xs font-black tracking-wide text-brand-text-muted">已验证</div>
-          <div className="text-2xl font-black text-emerald-300">{statsLoading ? '...' : verifiedCount}</div>
-        </div>
-        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
-          <div className="text-xs font-black tracking-wide text-brand-text-muted">疑似误报</div>
-          <div className="text-2xl font-black text-amber-300">{statsLoading ? '...' : likelyFpCount}</div>
-        </div>
-        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
-          <div className="text-xs font-black tracking-wide text-brand-text-muted">需人工复核 / 异常</div>
-          <div className="text-2xl font-black">{statsLoading ? '...' : `${manualReviewCount} / ${errorCount}`}</div>
-        </div>
-        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
-          <div className="text-xs font-black tracking-wide text-brand-text-muted">主要类型 / 主要来源</div>
-          <div className="text-sm leading-relaxed">
-            <div>{topRiskType}</div>
-            <div className="text-brand-text-muted mt-1">{topSource}</div>
-          </div>
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusPill text={`总记录 ${statsLoading ? '...' : stats.total}`} type="info" />
+        <StatusPill text={`已验证 ${statsLoading ? '...' : verifiedCount}`} type="success" />
+        <StatusPill text={`疑似误报 ${statsLoading ? '...' : likelyFpCount}`} type="info" />
+        <StatusPill text={`人工复核/异常 ${statsLoading ? '...' : `${manualReviewCount}/${errorCount}`}`} type="error" />
+        <StatusPill text={`主要类型 ${topRiskType}`} type="info" />
+        <StatusPill text={`主要来源 ${topSource}`} type="info" />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-        <div className="xl:col-span-2 bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+        <div className="xl:col-span-5 bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-brand-border flex items-center justify-between">
             <div className="text-sm font-black">进入 AI 渗透测试的资产</div>
             <div className="text-xs text-brand-text-muted">{loading ? '加载中...' : `共 ${total} 条`}</div>
           </div>
-          <div className="max-h-[70vh] overflow-auto p-3 space-y-2">
-            {rows.length > 0 ? (
-              rows.map((row, index) => {
-                const rowId = normalizeRowIdValue(row?._id);
-                const active = rowId && rowId === selectedRowId;
-                return (
-                  <button
-                    key={rowId || `ai-pen-row-${index}`}
-                    type="button"
-                    onClick={() => rowId && setSelectedRowId(rowId)}
-                    className={`w-full text-left rounded-xl border px-3 py-3 transition ${
-                      active
-                        ? 'border-brand-accent bg-brand-accent/10'
-                        : 'border-brand-border bg-brand-bg/35 hover:bg-brand-bg/60'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="font-semibold break-all">
-                        {normalizeValueNoTruncate(row?.risk_name) !== '-' ? normalizeValueNoTruncate(row?.risk_name) : '-'}
-                      </div>
-                      <div className="text-xs text-brand-text-muted shrink-0">{normalizeValue(row?.save_date)}</div>
-                    </div>
-                    <div className="text-sm text-brand-text-muted mt-1 break-all">
-                      {normalizeValueNoTruncate(row?.target) !== '-' ? normalizeValueNoTruncate(row?.target) : normalizeValueNoTruncate(row?.vuln_url)}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[11px] font-semibold">
-                        {formatSource(row?.source_collection)}
-                      </span>
-                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${renderDecisionBadgeClass(row?.decision)}`}>
-                        {formatDecision(row?.decision)}
-                      </span>
-                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${renderStatusBadgeClass(row?.status)}`}>
-                        {formatStatus(row?.status)}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="text-sm text-brand-text-muted px-2 py-8 text-center">
-                {loading ? '正在加载...' : '暂无数据'}
-              </div>
-            )}
+          <div className="max-h-[70vh] overflow-auto">
+            <table className="w-full border-collapse text-sm md:text-[15px]">
+              <thead className="bg-brand-bg/40 border-b border-brand-border">
+                <tr>
+                  <th className="px-3 py-2.5 text-xs font-black text-brand-text-muted whitespace-nowrap text-center">风险名称</th>
+                  <th className="px-3 py-2.5 text-xs font-black text-brand-text-muted whitespace-nowrap text-center">目标</th>
+                  <th className="px-3 py-2.5 text-xs font-black text-brand-text-muted whitespace-nowrap text-center">来源</th>
+                  <th className="px-3 py-2.5 text-xs font-black text-brand-text-muted whitespace-nowrap text-center">结论</th>
+                  <th className="px-3 py-2.5 text-xs font-black text-brand-text-muted whitespace-nowrap text-center">状态</th>
+                  <th className="px-3 py-2.5 text-xs font-black text-brand-text-muted whitespace-nowrap text-center">时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length > 0 ? rows.map((row, index) => {
+                  const rowId = normalizeRowIdValue(row?._id);
+                  const active = rowId && rowId === selectedRowId;
+                  const targetText = normalizeValueNoTruncate(row?.target) !== '-' ? normalizeValueNoTruncate(row?.target) : normalizeValueNoTruncate(row?.vuln_url);
+                  return (
+                    <tr
+                      key={rowId || `ai-pen-row-${index}`}
+                      onClick={() => rowId && setSelectedRowId(rowId)}
+                      className={`cursor-pointer border-b border-brand-border/60 transition ${
+                        active ? 'bg-brand-accent/10' : 'hover:bg-white/5'
+                      }`}
+                    >
+                      <td className="px-3 py-2.5 align-middle text-sm whitespace-pre-wrap break-all text-center leading-relaxed min-w-[180px] max-w-[280px]">
+                        <span className={`font-semibold ${active ? 'text-brand-accent' : 'text-brand-text'}`}>
+                          {normalizeValueNoTruncate(row?.risk_name)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 align-middle text-sm whitespace-pre-wrap break-all text-center leading-relaxed min-w-[220px] max-w-[360px]">
+                        {targetText}
+                      </td>
+                      <td className="px-3 py-2.5 align-middle text-center">
+                        <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[11px] font-semibold">
+                          {formatSource(row?.source_collection)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 align-middle text-center">
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${renderDecisionBadgeClass(row?.decision)}`}>
+                          {formatDecision(row?.decision)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 align-middle text-center">
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${renderStatusBadgeClass(row?.status)}`}>
+                          {formatStatus(row?.status)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 align-middle text-sm whitespace-nowrap text-center">
+                        {normalizeValue(row?.save_date)}
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td className="px-3 py-8 text-center text-sm text-brand-text-muted" colSpan={6}>
+                      {loading ? '正在加载...' : '暂无数据'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
           <div className="px-4 py-3 border-t border-brand-border flex flex-wrap items-center justify-between gap-3 text-sm">
             <div className="flex items-center gap-2">
@@ -13341,7 +13380,7 @@ function AiPenAssetWorkspaceView({
           </div>
         </div>
 
-        <div className="xl:col-span-3 bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
+        <div className="xl:col-span-7 bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-brand-border flex flex-wrap items-center justify-between gap-2">
             <div className="font-black">执行链路详情</div>
             <div className="flex flex-wrap gap-2">
