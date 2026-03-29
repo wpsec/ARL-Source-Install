@@ -1658,9 +1658,9 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'ai_pen_test',
-    label: 'AI渗透',
-    description: 'AI 渗透测试验证结果',
-    group: '风险与规则',
+    label: 'AI渗透测试',
+    description: '进入 AI 渗透测试的资产与完整链路记录',
+    group: '资产数据',
     icon: Crosshair,
     listPath: '/ai_pen_test/',
     rowIdKey: '_id',
@@ -2186,7 +2186,7 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'nuclei_result', label: 'PoC风险' },
   { id: 'wih', label: 'WIH' },
   { id: 'waf_host', label: 'WAF识别' },
-  { id: 'ai_pen_test', label: 'AI渗透' },
+  { id: 'ai_pen_test', label: 'AI渗透测试' },
 ];
 
 const visibleModules = modules.filter((module) => !module.hidden);
@@ -12478,6 +12478,866 @@ function TableModuleView({
   );
 }
 
+function AiPenAssetWorkspaceView({
+  token,
+  onOpenModule,
+  externalFilters,
+  onClearExternalFilters,
+}: {
+  token: string;
+  onOpenModule: (moduleId: string, nextFilters?: JsonValue) => void;
+  externalFilters?: JsonValue;
+  onClearExternalFilters?: () => void;
+}) {
+  type AiPenStatsItem = { name: string; count: number };
+  type AiPenStatsPayload = {
+    total: number;
+    decision: AiPenStatsItem[];
+    status: AiPenStatsItem[];
+    source_collection: AiPenStatsItem[];
+    risk_type: AiPenStatsItem[];
+    verification_step: AiPenStatsItem[];
+  };
+  type AiPenSearchForm = {
+    task_id: string;
+    target: string;
+    risk_name: string;
+    source_collection: string;
+    decision: string;
+    status: string;
+  };
+
+  const emptySearchForm: AiPenSearchForm = {
+    task_id: '',
+    target: '',
+    risk_name: '',
+    source_collection: '',
+    decision: '',
+    status: '',
+  };
+  const emptyStats: AiPenStatsPayload = {
+    total: 0,
+    decision: [],
+    status: [],
+    source_collection: [],
+    risk_type: [],
+    verification_step: [],
+  };
+
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [searchForm, setSearchForm] = useState<AiPenSearchForm>(emptySearchForm);
+  const [appliedSearch, setAppliedSearch] = useState<AiPenSearchForm>(emptySearchForm);
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [selectedRowId, setSelectedRowId] = useState('');
+  const [stats, setStats] = useState<AiPenStatsPayload>(emptyStats);
+
+  const activeExternalFilters = useMemo(
+    () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
+    [externalFilters]
+  );
+  const hasExternalFilters = useMemo(() => Object.keys(activeExternalFilters).length > 0, [activeExternalFilters]);
+  const activeExternalFilterSignature = useMemo(() => {
+    const entries = Object.entries(activeExternalFilters).sort((a, b) => a[0].localeCompare(b[0]));
+    return JSON.stringify(entries);
+  }, [activeExternalFilters]);
+  const selectedRow = useMemo(
+    () => rows.find((item) => normalizeRowIdValue(item?._id) === selectedRowId) || null,
+    [rows, selectedRowId]
+  );
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / size) || 1), [size, total]);
+
+  const decisionLabelMap: Record<string, string> = {
+    verified: '已验证',
+    likely_false_positive: '疑似误报',
+    needs_manual_review: '需人工复核',
+  };
+  const statusLabelMap: Record<string, string> = {
+    ok: '成功',
+    error: '异常',
+    skipped: '跳过',
+  };
+  const sourceLabelMap: Record<string, string> = {
+    vuln: '风险',
+    nuclei_result: 'PoC风险',
+    wih: 'WIH',
+    site: '站点线索',
+    url: 'URL线索',
+  };
+  const verificationStepLabelMap: Record<string, string> = {
+    collect_context_only: '仅归档上下文',
+    waf_smart_skip: 'WAF智能跳过',
+    http_fetch_replay: 'HTTP重放',
+    mcp_http_probe: 'MCP-HTTP探针',
+    mcp_idor_probe: 'MCP-IDOR探针',
+    mcp_api_doc_probe: 'MCP-API文档探针',
+    mcp_jwt_probe: 'MCP-JWT探针',
+    mcp_websocket_probe: 'MCP-WebSocket探针',
+  };
+  const payloadTypeLabelMap: Record<string, string> = {
+    replay: '重放',
+    xss_probe: 'XSS探针',
+    sqli_probe: 'SQL注入探针',
+    cmdi_probe: '命令注入探针',
+    jwt_probe: 'JWT探针',
+    ssrf_probe: 'SSRF探针',
+    idor_probe: 'IDOR探针',
+    api_doc_probe: 'API文档探针',
+    websocket_probe: 'WebSocket探针',
+    upload_probe: '上传探针',
+  };
+
+  const formatDecision = useCallback(
+    (value: any) => decisionLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
+    [decisionLabelMap]
+  );
+  const formatStatus = useCallback(
+    (value: any) => statusLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
+    [statusLabelMap]
+  );
+  const formatSource = useCallback(
+    (value: any) => sourceLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
+    [sourceLabelMap]
+  );
+  const formatVerificationStep = useCallback(
+    (value: any) => verificationStepLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
+    [verificationStepLabelMap]
+  );
+  const formatPayloadType = useCallback(
+    (value: any) => payloadTypeLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
+    [payloadTypeLabelMap]
+  );
+  const formatConfidence = useCallback((value: any) => {
+    const numeric = parseNumericValue(value);
+    if (numeric === null) return '-';
+    if (numeric <= 1) return `${(numeric * 100).toFixed(1)}%`;
+    return `${numeric.toFixed(1)}%`;
+  }, []);
+  const getStatsCount = useCallback((items: AiPenStatsItem[], key: string) => {
+    const row = items.find((item) => String(item?.name || '').trim().toLowerCase() === key);
+    return Number(row?.count || 0);
+  }, []);
+  const renderRecordSummary = useCallback((value: any) => {
+    if (value === null || value === undefined) return '-';
+    if (typeof value === 'string') return value.trim() || '-';
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }, []);
+  const copyToClipboard = useCallback(async (rawText: any, label = '内容') => {
+    const text = String(rawText || '').trim();
+    if (!text) {
+      setError(`没有可复制的${label}`);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setError('');
+      setSuccess(`${label}已复制到剪贴板`);
+    } catch (err: any) {
+      setError(err?.message || `${label}复制失败`);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => setSuccess(''), 2600);
+    return () => window.clearTimeout(timer);
+  }, [success]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeExternalFilterSignature]);
+
+  const buildSearchQuery = useCallback((form: AiPenSearchForm): JsonValue => {
+    const query: JsonValue = {};
+    Object.entries(form).forEach(([key, value]) => {
+      const text = String(value || '').trim();
+      if (!text) return;
+      query[key] = text;
+    });
+    return query;
+  }, []);
+
+  const loadRows = useCallback(async () => {
+    setLoading(true);
+    try {
+      const query = {
+        page,
+        size,
+        order: '-save_date',
+        ...activeExternalFilters,
+        ...buildSearchQuery(appliedSearch),
+      };
+      const response = await requestApi(token, '/ai_pen_test/', { method: 'GET', query });
+      const normalized = normalizeListData(response);
+      const nextRows = normalized.items || [];
+      setRows(nextRows);
+      setTotal(Number(normalized.total || 0));
+      setSelectedRowId((currentId) => {
+        if (currentId && nextRows.some((item) => normalizeRowIdValue(item?._id) === currentId)) {
+          return currentId;
+        }
+        return normalizeRowIdValue(nextRows[0]?._id);
+      });
+      setError('');
+    } catch (err: any) {
+      setRows([]);
+      setTotal(0);
+      setSelectedRowId('');
+      setError(err?.message || 'AI渗透测试资产加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [activeExternalFilters, appliedSearch, buildSearchQuery, page, size, token]);
+
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const fallbackTaskId = String(activeExternalFilters.task_id || '').trim();
+      const queryTaskId = String(appliedSearch.task_id || fallbackTaskId || '').trim();
+      const query: JsonValue = queryTaskId ? { task_id: queryTaskId } : {};
+      const result = await requestApi(token, '/ai_pen_test/stats/', { method: 'GET', query });
+      const data = result?.data && typeof result.data === 'object' ? result.data : result;
+      setStats({
+        total: Number(data?.total || 0),
+        decision: Array.isArray(data?.decision) ? data.decision : [],
+        status: Array.isArray(data?.status) ? data.status : [],
+        source_collection: Array.isArray(data?.source_collection) ? data.source_collection : [],
+        risk_type: Array.isArray(data?.risk_type) ? data.risk_type : [],
+        verification_step: Array.isArray(data?.verification_step) ? data.verification_step : [],
+      });
+    } catch {
+      setStats(emptyStats);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [activeExternalFilters.task_id, appliedSearch.task_id, token]);
+
+  useEffect(() => {
+    void loadRows();
+  }, [loadRows]);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
+
+  const runRetrySelected = async () => {
+    const resultId = normalizeRowIdValue(selectedRow?._id);
+    if (!resultId) {
+      setError('请先选择一条 AI渗透测试资产记录');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      setError('');
+      const result = await requestApi(token, '/ai_pen_test/retry/', {
+        method: 'POST',
+        body: { result_id: resultId },
+      });
+      const retryCount = Number(result?.data?.retry_count || 0);
+      setSuccess(`重试完成，已提交 ${retryCount} 条记录`);
+      await Promise.all([loadRows(), loadStats()]);
+    } catch (err: any) {
+      setError(err?.message || '重试失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const runBatchByTask = async () => {
+    const taskId = String(selectedRow?.task_id || '').trim();
+    if (!taskId) {
+      setError('当前记录缺少 task_id，无法按任务重跑');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      setError('');
+      const result = await requestApi(token, '/ai_pen_test/batch_run/', {
+        method: 'POST',
+        body: { task_id: taskId },
+      });
+      const detail = Array.isArray(result?.data?.details) ? result.data.details[0] : null;
+      const beforeCount = Number(detail?.before_count || 0);
+      const afterCount = Number(detail?.after_count || 0);
+      const deltaCount = Number(detail?.delta || 0);
+      setSuccess(`任务重跑完成（执行前 ${beforeCount}，执行后 ${afterCount}，新增/变化 ${deltaCount}）`);
+      await Promise.all([loadRows(), loadStats()]);
+    } catch (err: any) {
+      setError(err?.message || '按任务重跑失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const onSearchSubmit = () => {
+    setPage(1);
+    setAppliedSearch({ ...searchForm });
+  };
+
+  const onSearchReset = () => {
+    setSearchForm(emptySearchForm);
+    setAppliedSearch(emptySearchForm);
+    setPage(1);
+  };
+
+  const renderDecisionBadgeClass = (value: any): string => {
+    const key = String(value || '').trim().toLowerCase();
+    if (key === 'verified') return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300';
+    if (key === 'likely_false_positive') return 'border-amber-500/40 bg-amber-500/15 text-amber-300';
+    return 'border-brand-border bg-brand-bg/65 text-brand-text';
+  };
+  const renderStatusBadgeClass = (value: any): string => {
+    const key = String(value || '').trim().toLowerCase();
+    if (key === 'ok') return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300';
+    if (key === 'error') return 'border-red-500/40 bg-red-500/15 text-red-300';
+    return 'border-brand-border bg-brand-bg/65 text-brand-text-muted';
+  };
+  const verifiedCount = getStatsCount(stats.decision, 'verified');
+  const likelyFpCount = getStatsCount(stats.decision, 'likely_false_positive');
+  const manualReviewCount = getStatsCount(stats.decision, 'needs_manual_review');
+  const errorCount = getStatsCount(stats.status, 'error');
+  const topRiskType = stats.risk_type[0]?.name ? `${stats.risk_type[0].name} (${stats.risk_type[0].count})` : '-';
+  const topSource = stats.source_collection[0]?.name ? `${formatSource(stats.source_collection[0].name)} (${stats.source_collection[0].count})` : '-';
+
+  return (
+    <div className="p-8 space-y-6">
+      <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+        <div className="space-y-2">
+          <h2 className="text-4xl font-black tracking-tight">AI渗透测试</h2>
+          <p className="text-brand-text-muted text-sm">
+            展示进入 AI 渗透测试的资产，并按完整链路查看 AI 思考、MCP 调用记录、工具轨迹与最终 Payload。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill text={`当前记录 ${rows.length} 条`} type="info" />
+          {success ? <StatusPill text={success} type="success" /> : null}
+          {error ? <StatusPill text={error} type="error" /> : null}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {TASK_DETAIL_TABS.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => onOpenModule(item.id, hasExternalFilters ? activeExternalFilters : undefined)}
+            className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
+              item.id === 'ai_pen_test'
+                ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
+                : 'border-brand-border bg-brand-bg/35 text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {hasExternalFilters ? (
+        <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => onOpenModule('task')}
+              className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
+              title="返回任务管理"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              返回任务管理
+            </button>
+            <span className="text-xs font-semibold text-brand-text">查看筛选条件:</span>
+            {Object.entries(activeExternalFilters).map(([key, value]) => (
+              <span
+                key={key}
+                title={`${key}=${String(value ?? '')}`}
+                className="text-xs px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/60 font-mono max-w-[42rem] whitespace-pre-wrap break-all leading-relaxed"
+              >
+                {formatExternalFilterChipText(key, value)}
+              </span>
+            ))}
+            {onClearExternalFilters ? (
+              <button
+                onClick={onClearExternalFilters}
+                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+              >
+                清除筛选
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">任务ID</label>
+            <input
+              value={searchForm.task_id}
+              onChange={(event) => setSearchForm((prev) => ({ ...prev, task_id: event.target.value }))}
+              className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm"
+              placeholder="按 task_id 过滤"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">目标资产</label>
+            <input
+              value={searchForm.target}
+              onChange={(event) => setSearchForm((prev) => ({ ...prev, target: event.target.value }))}
+              className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm"
+              placeholder="目标 / URL"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">风险名称</label>
+            <input
+              value={searchForm.risk_name}
+              onChange={(event) => setSearchForm((prev) => ({ ...prev, risk_name: event.target.value }))}
+              className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm"
+              placeholder="风险名称"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">来源</label>
+            <div className="relative">
+              <select
+                value={searchForm.source_collection}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, source_collection: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                <option value="vuln">风险</option>
+                <option value="nuclei_result">PoC风险</option>
+                <option value="wih">WIH</option>
+                <option value="site">站点线索</option>
+                <option value="url">URL线索</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">结论</label>
+            <div className="relative">
+              <select
+                value={searchForm.decision}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, decision: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                <option value="verified">已验证</option>
+                <option value="likely_false_positive">疑似误报</option>
+                <option value="needs_manual_review">需人工复核</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">状态</label>
+            <div className="relative">
+              <select
+                value={searchForm.status}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, status: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                <option value="ok">成功</option>
+                <option value="error">异常</option>
+                <option value="skipped">跳过</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={onSearchSubmit}
+            className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+            disabled={loading}
+          >
+            <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            搜索
+          </button>
+          <button
+            onClick={onSearchReset}
+            className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+            disabled={loading}
+          >
+            <RefreshCw className="w-4 h-4" />
+            重置
+          </button>
+          <button
+            onClick={() => {
+              void Promise.all([loadRows(), loadStats()]);
+            }}
+            className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+            disabled={loading || statsLoading}
+          >
+            <Activity className={`w-4 h-4 ${(loading || statsLoading) ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
+          <div className="text-xs font-black tracking-wide text-brand-text-muted">总记录</div>
+          <div className="text-2xl font-black">{statsLoading ? '...' : stats.total}</div>
+        </div>
+        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
+          <div className="text-xs font-black tracking-wide text-brand-text-muted">已验证</div>
+          <div className="text-2xl font-black text-emerald-300">{statsLoading ? '...' : verifiedCount}</div>
+        </div>
+        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
+          <div className="text-xs font-black tracking-wide text-brand-text-muted">疑似误报</div>
+          <div className="text-2xl font-black text-amber-300">{statsLoading ? '...' : likelyFpCount}</div>
+        </div>
+        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
+          <div className="text-xs font-black tracking-wide text-brand-text-muted">需人工复核 / 异常</div>
+          <div className="text-2xl font-black">{statsLoading ? '...' : `${manualReviewCount} / ${errorCount}`}</div>
+        </div>
+        <div className="rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-1">
+          <div className="text-xs font-black tracking-wide text-brand-text-muted">主要类型 / 主要来源</div>
+          <div className="text-sm leading-relaxed">
+            <div>{topRiskType}</div>
+            <div className="text-brand-text-muted mt-1">{topSource}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
+        <div className="xl:col-span-2 bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-brand-border flex items-center justify-between">
+            <div className="text-sm font-black">进入 AI 渗透测试的资产</div>
+            <div className="text-xs text-brand-text-muted">{loading ? '加载中...' : `共 ${total} 条`}</div>
+          </div>
+          <div className="max-h-[70vh] overflow-auto p-3 space-y-2">
+            {rows.length > 0 ? (
+              rows.map((row, index) => {
+                const rowId = normalizeRowIdValue(row?._id);
+                const active = rowId && rowId === selectedRowId;
+                return (
+                  <button
+                    key={rowId || `ai-pen-row-${index}`}
+                    type="button"
+                    onClick={() => rowId && setSelectedRowId(rowId)}
+                    className={`w-full text-left rounded-xl border px-3 py-3 transition ${
+                      active
+                        ? 'border-brand-accent bg-brand-accent/10'
+                        : 'border-brand-border bg-brand-bg/35 hover:bg-brand-bg/60'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-semibold break-all">
+                        {normalizeValueNoTruncate(row?.risk_name) !== '-' ? normalizeValueNoTruncate(row?.risk_name) : '-'}
+                      </div>
+                      <div className="text-xs text-brand-text-muted shrink-0">{normalizeValue(row?.save_date)}</div>
+                    </div>
+                    <div className="text-sm text-brand-text-muted mt-1 break-all">
+                      {normalizeValueNoTruncate(row?.target) !== '-' ? normalizeValueNoTruncate(row?.target) : normalizeValueNoTruncate(row?.vuln_url)}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[11px] font-semibold">
+                        {formatSource(row?.source_collection)}
+                      </span>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${renderDecisionBadgeClass(row?.decision)}`}>
+                        {formatDecision(row?.decision)}
+                      </span>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${renderStatusBadgeClass(row?.status)}`}>
+                        {formatStatus(row?.status)}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="text-sm text-brand-text-muted px-2 py-8 text-center">
+                {loading ? '正在加载...' : '暂无数据'}
+              </div>
+            )}
+          </div>
+          <div className="px-4 py-3 border-t border-brand-border flex flex-wrap items-center justify-between gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-brand-text-muted">每页</span>
+              <div className="relative">
+                <select
+                  value={String(size)}
+                  onChange={(event) => {
+                    const nextSize = Math.max(1, Number(event.target.value || 20));
+                    setSize(nextSize);
+                    setPage(1);
+                  }}
+                  className={`${UNIFIED_SELECT_CLASS} h-8 text-xs pr-8`}
+                >
+                  {[10, 20, 30, 50].map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-brand-text pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page <= 1 || loading}
+                className="px-2.5 py-1.5 rounded-lg border border-brand-border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-bg/70 transition"
+                title="上一页"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-xs text-brand-text-muted min-w-[84px] text-center">
+                {page} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={page >= totalPages || loading}
+                className="px-2.5 py-1.5 rounded-lg border border-brand-border disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-bg/70 transition"
+                title="下一页"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="xl:col-span-3 bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-brand-border flex flex-wrap items-center justify-between gap-2">
+            <div className="font-black">执行链路详情</div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => selectedRow && void copyToClipboard(selectedRow?.payload, 'Payload')}
+                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                disabled={!selectedRow || actionLoading}
+              >
+                复制Payload
+              </button>
+              <button
+                onClick={() => void runRetrySelected()}
+                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                disabled={!selectedRow || actionLoading}
+              >
+                重试该资产
+              </button>
+              <button
+                onClick={() => void runBatchByTask()}
+                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                disabled={!selectedRow || actionLoading}
+              >
+                按任务重跑
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 max-h-[70vh] overflow-auto space-y-4">
+            {selectedRow ? (
+              <>
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
+                  <div className="text-sm font-black break-all">
+                    {normalizeValueNoTruncate(selectedRow?.risk_name) !== '-' ? normalizeValueNoTruncate(selectedRow?.risk_name) : '-'}
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2 space-y-1">
+                      <div className="text-xs font-black tracking-wide text-brand-text-muted">目标资产</div>
+                      <div className="break-all">{normalizeValueNoTruncate(selectedRow?.target)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2 space-y-1">
+                      <div className="text-xs font-black tracking-wide text-brand-text-muted">漏洞URL</div>
+                      <div className="break-all">{normalizeValueNoTruncate(selectedRow?.vuln_url)}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                      来源：{formatSource(selectedRow?.source_collection)}
+                    </span>
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${renderDecisionBadgeClass(selectedRow?.decision)}`}>
+                      结论：{formatDecision(selectedRow?.decision)}
+                    </span>
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${renderStatusBadgeClass(selectedRow?.status)}`}>
+                      状态：{formatStatus(selectedRow?.status)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                      验证阶段：{formatVerificationStep(selectedRow?.verification_step)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                      探针类型：{formatPayloadType(selectedRow?.payload_type)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                      置信度：{formatConfidence(selectedRow?.confidence)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                      时间：{normalizeValue(selectedRow?.save_date)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">AI调用与思考</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">ARL 请求摘要</div>
+                      <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
+                        {formatAiPlanRequestText(selectedRow?.ai_plan_request)}
+                      </pre>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">AI 回复摘要</div>
+                      <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
+                        {formatAiPlanReplyText(selectedRow?.ai_plan_reply)}
+                      </pre>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">AI 规划动作</div>
+                    {Array.isArray(selectedRow?.ai_plan_actions) && selectedRow.ai_plan_actions.length > 0 ? (
+                      <div className="space-y-1 text-sm">
+                        {selectedRow.ai_plan_actions.map((item: any, index: number) => (
+                          <div key={`${index}-${item}`} className="break-all">{index + 1}. {String(item || '').trim() || '-'}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-brand-text-muted">暂无规划动作</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">MCP 与工具调用记录</div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">工具轨迹</div>
+                    <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-64 overflow-auto">
+                      {normalizeValueNoTruncate(selectedRow?.tool_trace)}
+                    </pre>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">MCP 工具调用（tool_calls）</div>
+                      {Array.isArray(selectedRow?.tool_calls) && selectedRow.tool_calls.length > 0 ? (
+                        <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
+                          {selectedRow.tool_calls.slice(0, 20).map((item: any) => renderRecordSummary(item)).join('\n\n')}
+                        </pre>
+                      ) : (
+                        <div className="text-sm text-brand-text-muted">暂无工具调用</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">工具结果（tool_results）</div>
+                      {Array.isArray(selectedRow?.tool_results) && selectedRow.tool_results.length > 0 ? (
+                        <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
+                          {selectedRow.tool_results.slice(0, 20).map((item: any) => renderRecordSummary(item)).join('\n\n')}
+                        </pre>
+                      ) : (
+                        <div className="text-sm text-brand-text-muted">暂无工具结果</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Agent轨迹（agent_trace）</div>
+                      {Array.isArray(selectedRow?.agent_trace) && selectedRow.agent_trace.length > 0 ? (
+                        <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
+                          {selectedRow.agent_trace.slice(0, 20).map((item: any) => renderRecordSummary(item)).join('\n\n')}
+                        </pre>
+                      ) : (
+                        <div className="text-sm text-brand-text-muted">暂无 Agent 轨迹</div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">外部工具执行记录</div>
+                      {Array.isArray(selectedRow?.external_tool_runs) && selectedRow.external_tool_runs.length > 0 ? (
+                        <div className="space-y-2 max-h-56 overflow-auto">
+                          {selectedRow.external_tool_runs.map((item: any, index: number) => (
+                            <div key={`${index}-${item?.tool}-${item?.status}`} className="rounded-md border border-brand-border bg-brand-bg/65 px-2.5 py-2">
+                              <div className="text-sm font-mono break-all">
+                                {String(item?.tool || '-').trim()} [{String(item?.status || '-').trim()}]
+                              </div>
+                              <div className="mt-1 text-xs text-brand-text-muted break-all">
+                                {String(item?.message || '-').trim() || '-'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-brand-text-muted">暂无外部工具执行记录</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">最终 Payload 与结论</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 text-sm">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Payload 类型</div>
+                      <div className="mt-1">{formatPayloadType(selectedRow?.payload_type)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">运行版本</div>
+                      <div className="mt-1">{normalizeValue(selectedRow?.runtime_version)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">停止原因</div>
+                      <div className="mt-1">{normalizeValue(selectedRow?.stop_reason)}</div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Payload</div>
+                    <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-64 overflow-auto">
+                      {normalizeValueNoTruncate(selectedRow?.payload)}
+                    </pre>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">结论说明</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(selectedRow?.reason)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">证据片段</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(selectedRow?.evidence_snippet)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">知识命中</div>
+                    {Array.isArray(selectedRow?.knowledge_hit_tokens) && selectedRow.knowledge_hit_tokens.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedRow.knowledge_hit_tokens.map((item: any, index: number) => (
+                          <span
+                            key={`${index}-${item}`}
+                            className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                          >
+                            {String(item || '').trim() || '-'}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-brand-text-muted">暂无知识命中</div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-brand-text-muted text-center py-16">
+                请在左侧选择一条资产记录，查看完整 AI 渗透链路。
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ApiConsoleView({ token }: { token: string }) {
   type ServiceApiForm = {
     fofa_url: string;
@@ -17907,7 +18767,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           }}
         >
           <div
-            className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            className="w-full max-w-2xl max-h-[92vh] bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
@@ -17920,7 +18780,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="p-5 space-y-3 overflow-y-auto min-h-0">
               <div
                 className={`text-xs rounded-lg px-3 py-2 border ${
                   testResult.ok
@@ -17940,7 +18800,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
               <div className="space-y-2 rounded-xl border border-brand-border bg-brand-bg/35 p-3">
                 <div className="text-xs font-semibold">用户发送</div>
-                <div className="text-sm rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2">
+                <div className="text-sm rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2 whitespace-pre-wrap break-all">
                   {testResult.request_text || '你好呀～'}
                 </div>
                 <div className="text-xs font-semibold pt-1">AI回复</div>
@@ -17951,7 +18811,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               {testResult.detail ? (
                 <details className="text-xs text-brand-text-muted">
                   <summary className="cursor-pointer select-none">调试详情</summary>
-                  <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-[11px] bg-brand-bg/45 border border-brand-border rounded-lg p-3">
+                  <pre className="mt-2 max-h-[300px] overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] bg-brand-bg/45 border border-brand-border rounded-lg p-3">
                     {testResult.detail}
                   </pre>
                 </details>
@@ -18820,12 +19680,21 @@ function MainShell() {
         {activeModule.id === 'config_console' ? <ConfigConsoleView token={token} /> : null}
         {activeModule.id === 'ai_console' ? <ConfigAiManagementPanel token={token} /> : null}
         {activeModule.id === 'dingtalk_api' ? <DingtalkIntegrationView token={token} /> : null}
+        {activeModule.id === 'ai_pen_test' ? (
+          <AiPenAssetWorkspaceView
+            token={token}
+            onOpenModule={openModule}
+            externalFilters={activeExternalFilters}
+            onClearExternalFilters={clearActiveExternalFilters}
+          />
+        ) : null}
         {activeModule.id !== 'dashboard' &&
         activeModule.id !== 'system_monitor' &&
         activeModule.id !== 'api_console' &&
         activeModule.id !== 'config_console' &&
         activeModule.id !== 'ai_console' &&
-        activeModule.id !== 'dingtalk_api' ? (
+        activeModule.id !== 'dingtalk_api' &&
+        activeModule.id !== 'ai_pen_test' ? (
           <TableModuleView
             module={activeModule}
             token={token}
