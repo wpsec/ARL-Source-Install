@@ -161,6 +161,7 @@ class WebSiteFetch(object):
     AI_PEN_TEST_ERROR_MAX = 180
     AI_PEN_TEST_REASON_MAX = 420
     AI_PEN_TEST_PAYLOAD_MAX = 220
+    AI_PEN_TEST_REQUEST_PACKET_MAX = 2600
     AI_PEN_PRODUCT_HINT_MAX = 8
     AI_PEN_JS_REQUEST_WINDOW_SIZE = 800
     AI_PEN_JS_MAX_API_TARGETS = 20
@@ -2694,6 +2695,13 @@ class WebSiteFetch(object):
         return "{}...".format(text[:max_len])
 
     @staticmethod
+    def _clip_multiline_text(value, max_len=220):
+        text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if len(text) <= max_len:
+            return text
+        return "{}...".format(text[:max_len])
+
+    @staticmethod
     def _is_http_target(value: str) -> bool:
         text = str(value or "").strip().lower()
         return text.startswith("http://") or text.startswith("https://")
@@ -3812,6 +3820,7 @@ class WebSiteFetch(object):
             "elapsed_ms": 0,
             "request_text": "",
             "reply_text": "",
+            "messages": [],
             "output": {},
         }
         try:
@@ -3965,6 +3974,17 @@ class WebSiteFetch(object):
                 "{}\n\n输出要求：仅返回 JSON 对象，不要 Markdown；"
                 "decision 只能是 verified/likely_false_positive/needs_manual_review。"
             ).format(system_prompt)
+            conversation_messages = [
+                {
+                    "role": "system",
+                    "content": self._clip_multiline_text(system_prompt, 3200),
+                },
+                {
+                    "role": "user",
+                    "content": self._clip_multiline_text(request_text, 3200),
+                },
+            ]
+            result["messages"] = conversation_messages
 
             request_url = "{}/chat/completions".format(base_url.rstrip("/"))
             headers = {
@@ -4061,6 +4081,13 @@ class WebSiteFetch(object):
             result["usage"] = call_ret.get("usage", result["usage"])
             result["elapsed_ms"] = int(call_ret.get("elapsed_ms", 0) or 0)
             result["reply_text"] = str(call_ret.get("reply_text", "") or "")
+            if result["reply_text"]:
+                result["messages"] = conversation_messages + [
+                    {
+                        "role": "assistant",
+                        "content": self._clip_multiline_text(result["reply_text"], 3200),
+                    }
+                ]
             if not call_ret.get("ok"):
                 result["status"] = "error"
                 result["message"] = str(call_ret.get("message", "") or "ai request failed")
@@ -4690,6 +4717,157 @@ class WebSiteFetch(object):
                 "tool_trace": "login_surface(no_signal)",
             }
         return {}
+
+    @staticmethod
+    def _extract_ai_pen_trace_method_and_url(tool_trace_parts, fallback_url: str):
+        traces = tool_trace_parts if isinstance(tool_trace_parts, list) else []
+        for item in reversed(traces):
+            text = str(item or "").strip()
+            if not text:
+                continue
+            match = re.search(
+                r"\((get|post|put|patch|delete|head|options|trace|connect)\s*,\s*url=([^)]+)\)",
+                text,
+                re.I,
+            )
+            if not match:
+                continue
+            method_text = str(match.group(1) or "").strip().upper()
+            url_text = str(match.group(2) or "").strip()
+            if method_text and url_text:
+                return method_text, url_text
+        return "", str(fallback_url or "").strip()
+
+    @classmethod
+    def _infer_ai_pen_request_method(cls, payload_type: str, verification_step: str, tool_trace_parts, fallback="GET"):
+        method_text, _ = cls._extract_ai_pen_trace_method_and_url(tool_trace_parts, "")
+        if method_text:
+            return method_text
+
+        payload_text = str(payload_type or "").strip().lower()
+        step_text = str(verification_step or "").strip().lower()
+        if payload_text == "upload_probe":
+            return "POST"
+        if payload_text == "websocket_probe":
+            return "GET"
+        if step_text.startswith("mcp_external_"):
+            return "GET"
+        return str(fallback or "GET").strip().upper() or "GET"
+
+    @classmethod
+    def _build_ai_pen_request_packet(
+        cls,
+        target_url: str,
+        payload_type: str,
+        payload: str,
+        verification_step: str = "",
+        tool_trace_parts=None,
+    ):
+        fallback_url = str(target_url or "").strip()
+        trace_method, trace_url = cls._extract_ai_pen_trace_method_and_url(tool_trace_parts, fallback_url)
+        method = cls._infer_ai_pen_request_method(
+            payload_type=payload_type,
+            verification_step=verification_step,
+            tool_trace_parts=tool_trace_parts,
+            fallback=trace_method or "GET",
+        )
+        request_url = str(trace_url or fallback_url).strip()
+        if not request_url:
+            return {
+                "method": method,
+                "url": "",
+                "path": "/",
+                "host": "",
+                "headers": {},
+                "body": "",
+                "raw": "",
+            }
+
+        payload_text = str(payload or "").strip()
+        payload_type_text = str(payload_type or "").strip().lower()
+        method_upper = str(method or "GET").strip().upper()
+        get_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "replay"}
+        if method_upper == "GET" and payload_text and payload_type_text in get_probe_types:
+            request_url = cls._build_probe_url_with_payload(request_url, payload_text)
+        elif payload_type_text == "idor_probe":
+            request_url = cls._build_idor_probe_url(request_url)
+
+        parsed = None
+        try:
+            parsed = urlsplit(request_url)
+        except Exception:
+            parsed = None
+        if (not parsed) or (not parsed.netloc and parsed.path):
+            try:
+                parsed = urlsplit("http://{}".format(str(request_url).lstrip("/")))
+            except Exception:
+                parsed = None
+
+        scheme = str(getattr(parsed, "scheme", "") or "http").strip().lower()
+        netloc = str(getattr(parsed, "netloc", "") or "").strip()
+        host_text = netloc or str(getattr(parsed, "hostname", "") or "").strip()
+        path_text = str(getattr(parsed, "path", "") or "").strip() or "/"
+        query_text = str(getattr(parsed, "query", "") or "").strip()
+        full_path = "{}?{}".format(path_text, query_text) if query_text else path_text
+        safe_url = request_url
+        if netloc:
+            safe_url = urlunsplit((scheme, netloc, path_text, query_text, str(getattr(parsed, "fragment", "") or "")))
+
+        headers = {
+            "Host": host_text or "-",
+            "User-Agent": "ARL-AI-Pen/1.0",
+            "Accept": "*/*",
+            "Connection": "close",
+        }
+        body_text = ""
+
+        if payload_type_text == "jwt_probe" and payload_text:
+            headers["Authorization"] = "Bearer {}".format(payload_text[:220])
+        if payload_type_text == "websocket_probe":
+            headers["Connection"] = "Upgrade"
+            headers["Upgrade"] = "websocket"
+            headers["Sec-WebSocket-Version"] = "13"
+            headers["Sec-WebSocket-Key"] = "ArlAiPenProbe=="
+        if payload_type_text == "api_doc_probe":
+            headers["Accept"] = "application/json, */*"
+
+        if method_upper in {"POST", "PUT", "PATCH"}:
+            if payload_type_text == "upload_probe":
+                boundary = "----ARLAIPENBOUNDARY"
+                headers["Content-Type"] = "multipart/form-data; boundary={}".format(boundary)
+                if payload_text:
+                    upload_content = payload_text
+                else:
+                    upload_content = "arl-ai-pen-probe"
+                body_text = (
+                    "--{0}\r\n"
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"probe.txt\"\r\n"
+                    "Content-Type: text/plain\r\n\r\n"
+                    "{1}\r\n"
+                    "--{0}--\r\n"
+                ).format(boundary, upload_content)
+            else:
+                headers["Content-Type"] = "application/x-www-form-urlencoded"
+                body_text = "arl_probe={}".format(payload_text or "probe")
+            headers["Content-Length"] = str(len(body_text.encode("utf-8", "ignore")))
+
+        packet_lines = ["{} {} HTTP/1.1".format(method_upper, full_path)]
+        for key, value in headers.items():
+            packet_lines.append("{}: {}".format(key, value))
+        packet_lines.append("")
+        if body_text:
+            packet_lines.append(body_text)
+        raw_packet = "\r\n".join(packet_lines)
+
+        return {
+            "method": method_upper,
+            "url": safe_url,
+            "path": full_path,
+            "host": host_text,
+            "headers": headers,
+            "body": body_text,
+            "raw": cls._clip_multiline_text(raw_packet, cls.AI_PEN_TEST_REQUEST_PACKET_MAX),
+        }
 
     @staticmethod
     def _build_probe_url_with_payload(target_url: str, payload: str):
@@ -6427,6 +6605,26 @@ class WebSiteFetch(object):
             payload_obj["stop_reason"] = str(runtime_obj.get("stop_reason", "") or "")
             payload_obj["budget_used"] = dict(runtime_obj.get("budget_used") or {})
             payload_obj["runtime_version"] = str(runtime_obj.get("runtime_version", "") or "")
+            request_packet_obj = self._build_ai_pen_request_packet(
+                target_url=target_url,
+                payload_type=str(payload_obj.get("payload_type", "") or payload_type),
+                payload=str(payload_obj.get("payload", "") or payload),
+                verification_step=str(payload_obj.get("verification_step", "") or ""),
+                tool_trace_parts=trace_list,
+            )
+            payload_obj["request_method"] = str(request_packet_obj.get("method", "") or "").strip()
+            payload_obj["request_url"] = str(request_packet_obj.get("url", "") or "").strip()
+            payload_obj["request_path"] = str(request_packet_obj.get("path", "") or "").strip()
+            payload_obj["request_headers"] = (
+                dict(request_packet_obj.get("headers") or {})
+                if isinstance(request_packet_obj.get("headers"), dict)
+                else {}
+            )
+            payload_obj["request_body"] = str(request_packet_obj.get("body", "") or "").strip()
+            payload_obj["request_packet"] = self._clip_multiline_text(
+                request_packet_obj.get("raw", ""),
+                self.AI_PEN_TEST_REQUEST_PACKET_MAX,
+            )
             return payload_obj
 
         if not self._is_http_target(target_url):
@@ -7399,6 +7597,12 @@ class WebSiteFetch(object):
                 "severity": str(candidate.get("severity", "") or "").strip(),
                 "payload_type": str(verify_result.get("payload_type", "") or "").strip(),
                 "payload": str(verify_result.get("payload", "") or "").strip(),
+                "request_method": str(verify_result.get("request_method", "") or "").strip(),
+                "request_url": str(verify_result.get("request_url", "") or "").strip(),
+                "request_path": str(verify_result.get("request_path", "") or "").strip(),
+                "request_headers": dict(verify_result.get("request_headers") or {}) if isinstance(verify_result.get("request_headers"), dict) else {},
+                "request_body": self._clip_multiline_text(verify_result.get("request_body", ""), self.AI_PEN_TEST_REQUEST_PACKET_MAX),
+                "request_packet": self._clip_multiline_text(verify_result.get("request_packet", ""), self.AI_PEN_TEST_REQUEST_PACKET_MAX),
                 "verification_step": str(verify_result.get("verification_step", "") or "").strip(),
                 "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
                 "http_status": int(verify_result.get("http_status", 0) or 0),
@@ -7447,6 +7651,7 @@ class WebSiteFetch(object):
                 "ai_plan_actions": list(verify_result.get("ai_plan_actions", []) or [])[:4],
                 "ai_plan_request": self._clip_text(ai_plan_result.get("request_text", ""), 2600),
                 "ai_plan_reply": self._clip_text(ai_plan_result.get("reply_text", ""), 2600),
+                "ai_plan_messages": list(ai_plan_result.get("messages", []) or [])[:8],
                 "update_date": now_text,
             }
 

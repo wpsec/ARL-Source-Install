@@ -172,6 +172,10 @@ AI_PEN_TEST_EXPORT_PROJECTION = {
     "verification_step": 1,
     "payload_type": 1,
     "payload": 1,
+    "request_method": 1,
+    "request_url": 1,
+    "request_path": 1,
+    "request_packet": 1,
     "reason": 1,
     "tool_trace": 1,
     "agent_trace": 1,
@@ -2839,6 +2843,7 @@ def _extract_ai_pen_rows(task_ids):
             verification_step = sanitize_excel_value(item.get("verification_step", "")).strip()
             payload_type = sanitize_excel_value(item.get("payload_type", "")).strip()
             payload = sanitize_excel_value(item.get("payload", "")).strip()
+            request_packet = _truncate_report_text(item.get("request_packet", ""), 1200)
             confidence = sanitize_excel_value(item.get("confidence", "")).strip()
             reason = _truncate_report_text(item.get("reason", ""), 800)
             tool_trace = _truncate_report_text(item.get("tool_trace", ""), 600)
@@ -2894,6 +2899,7 @@ def _extract_ai_pen_rows(task_ids):
                 verification_step,
                 payload_type,
                 payload,
+                request_packet,
                 reason,
                 tool_trace,
                 ai_plan_text,
@@ -2927,13 +2933,14 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "K": 24.0,
         "L": 72.0,
         "M": 72.0,
-        "N": 52.0,
-        "O": 42.0,
-        "P": 80.0,
+        "N": 72.0,
+        "O": 52.0,
+        "P": 42.0,
         "Q": 80.0,
-        "R": 12.0,
-        "S": 64.0,
-        "T": 21.0,
+        "R": 80.0,
+        "S": 12.0,
+        "T": 64.0,
+        "U": 21.0,
     }.items():
         ws.column_dimensions[key].width = width
 
@@ -2949,6 +2956,7 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "验证阶段",
         "探针类型",
         "Payload",
+        "Request请求包",
         "说明",
         "工具轨迹",
         "AI规划摘要",

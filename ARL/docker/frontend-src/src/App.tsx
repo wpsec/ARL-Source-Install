@@ -2617,15 +2617,169 @@ function normalizeValueNoTruncate(value: any): string {
   return String(value);
 }
 
+function tryExtractJsonObjectText(raw: string): string {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  const fenced = text.match(/```(?:json)?\s*([\s\S]+?)\s*```/i);
+  if (fenced && fenced[1]) return fenced[1].trim();
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return text.slice(firstBrace, lastBrace + 1).trim();
+  }
+  return text;
+}
+
 function tryParseJsonObject(value: any): Record<string, any> | null {
   const text = String(value ?? '').trim();
   if (!text || text === '-') return null;
-  try {
-    const parsed = JSON.parse(text);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
+  const candidates = [text, tryExtractJsonObjectText(text)];
+  for (const candidate of candidates) {
+    const sample = String(candidate || '').trim();
+    if (!sample) continue;
+    try {
+      const parsed = JSON.parse(sample);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, any>;
+      }
+    } catch {
+      // ignore
+    }
   }
+  return null;
+}
+
+function normalizeAiPlanMessages(row: any): Array<{ role: string; content: string }> {
+  const messages: Array<{ role: string; content: string }> = [];
+  const fromRow = Array.isArray(row?.ai_plan_messages) ? row.ai_plan_messages : [];
+  fromRow.forEach((item: any) => {
+    const role = String(item?.role || '').trim().toLowerCase();
+    const content = String(item?.content || '').trim();
+    if (!role || !content) return;
+    messages.push({ role, content });
+  });
+  if (messages.length > 0) return messages;
+
+  const requestText = String(row?.ai_plan_request || '').trim();
+  const replyText = String(row?.ai_plan_reply || '').trim();
+  if (requestText) {
+    messages.push({ role: 'user', content: requestText });
+  }
+  if (replyText) {
+    messages.push({ role: 'assistant', content: replyText });
+  }
+  return messages;
+}
+
+function inferAiPenRequestMethod(row: any): string {
+  const directMethod = String(row?.request_method || '').trim().toUpperCase();
+  if (directMethod) return directMethod;
+
+  const payloadType = String(row?.payload_type || '').trim().toLowerCase();
+  const verificationStep = String(row?.verification_step || '').trim().toLowerCase();
+  if (payloadType === 'upload_probe') return 'POST';
+  if (payloadType === 'websocket_probe') return 'GET';
+  if (verificationStep.startsWith('mcp_external_')) return 'GET';
+  return 'GET';
+}
+
+function buildAiPenRequestPacketFallback(row: any): {
+  method: string;
+  requestUrl: string;
+  requestPath: string;
+  requestPacket: string;
+} {
+  const method = inferAiPenRequestMethod(row);
+  const targetUrlRaw = String(row?.request_url || row?.vuln_url || row?.target || '').trim();
+  if (!targetUrlRaw) {
+    return {
+      method,
+      requestUrl: '',
+      requestPath: '/',
+      requestPacket: '',
+    };
+  }
+
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(targetUrlRaw);
+  } catch {
+    try {
+      parsed = new URL(`http://${targetUrlRaw.replace(/^\/+/, '')}`);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  const payloadType = String(row?.payload_type || '').trim().toLowerCase();
+  const payload = String(row?.payload || '').trim();
+  let pathText = parsed ? `${parsed.pathname || '/'}${parsed.search || ''}` : '/';
+  let requestUrl = parsed ? parsed.toString() : targetUrlRaw;
+  let body = '';
+  const headers: Array<[string, string]> = [
+    ['Host', parsed?.host || '-'],
+    ['User-Agent', 'ARL-AI-Pen/1.0'],
+    ['Accept', '*/*'],
+    ['Connection', 'close'],
+  ];
+
+  if (method === 'GET' && payload && ['xss_probe', 'sqli_probe', 'cmdi_probe', 'ssrf_probe', 'replay'].includes(payloadType)) {
+    if (parsed) {
+      if (parsed.searchParams.size > 0) {
+        const firstKey = Array.from(parsed.searchParams.keys())[0] || 'arl_probe';
+        parsed.searchParams.set(firstKey, payload);
+      } else {
+        parsed.searchParams.set('arl_probe', payload);
+      }
+      pathText = `${parsed.pathname || '/'}${parsed.search || ''}`;
+      requestUrl = parsed.toString();
+    }
+  }
+
+  if (payloadType === 'jwt_probe' && payload) {
+    headers.push(['Authorization', `Bearer ${payload.slice(0, 220)}`]);
+  }
+  if (payloadType === 'websocket_probe') {
+    headers[3] = ['Connection', 'Upgrade'];
+    headers.push(['Upgrade', 'websocket']);
+    headers.push(['Sec-WebSocket-Version', '13']);
+    headers.push(['Sec-WebSocket-Key', 'ArlAiPenProbe==']);
+  }
+  if (payloadType === 'api_doc_probe') {
+    headers[2] = ['Accept', 'application/json, */*'];
+  }
+
+  if (['POST', 'PUT', 'PATCH'].includes(method)) {
+    if (payloadType === 'upload_probe') {
+      const boundary = '----ARLAIPENBOUNDARY';
+      const uploadBody = payload || 'arl-ai-pen-probe';
+      body =
+        `--${boundary}\r\n` +
+        'Content-Disposition: form-data; name="file"; filename="probe.txt"\r\n' +
+        'Content-Type: text/plain\r\n\r\n' +
+        `${uploadBody}\r\n` +
+        `--${boundary}--\r\n`;
+      headers.push(['Content-Type', `multipart/form-data; boundary=${boundary}`]);
+    } else {
+      body = `arl_probe=${payload || 'probe'}`;
+      headers.push(['Content-Type', 'application/x-www-form-urlencoded']);
+    }
+    headers.push(['Content-Length', String(new TextEncoder().encode(body).length)]);
+  }
+
+  const packetLines: string[] = [`${method} ${pathText || '/'} HTTP/1.1`];
+  headers.forEach(([key, value]) => {
+    packetLines.push(`${key}: ${value}`);
+  });
+  packetLines.push('');
+  if (body) packetLines.push(body);
+
+  return {
+    method,
+    requestUrl,
+    requestPath: pathText || '/',
+    requestPacket: packetLines.join('\r\n'),
+  };
 }
 
 function formatAiPlanRequestText(value: any): string {
@@ -12808,6 +12962,85 @@ function AiPenAssetWorkspaceView({
   const errorCount = getStatsCount(stats.status, 'error');
   const topRiskType = stats.risk_type[0]?.name ? `${stats.risk_type[0].name} (${stats.risk_type[0].count})` : '-';
   const topSource = stats.source_collection[0]?.name ? `${formatSource(stats.source_collection[0].name)} (${stats.source_collection[0].count})` : '-';
+  const aiDialogueMessages = useMemo(() => normalizeAiPlanMessages(selectedRow), [selectedRow]);
+  const requestPacketData = useMemo(() => {
+    if (!selectedRow) {
+      return {
+        method: '',
+        requestUrl: '',
+        requestPath: '',
+        requestPacket: '',
+      };
+    }
+    const rowPacket = String(selectedRow?.request_packet || '').trim();
+    if (rowPacket) {
+      return {
+        method: String(selectedRow?.request_method || inferAiPenRequestMethod(selectedRow)).trim().toUpperCase(),
+        requestUrl: String(selectedRow?.request_url || selectedRow?.vuln_url || selectedRow?.target || '').trim(),
+        requestPath: String(selectedRow?.request_path || '').trim(),
+        requestPacket: rowPacket,
+      };
+    }
+    return buildAiPenRequestPacketFallback(selectedRow);
+  }, [selectedRow]);
+  const toolTimeline = useMemo(() => {
+    if (!selectedRow) return [];
+    const callList = Array.isArray(selectedRow?.tool_calls) ? selectedRow.tool_calls : [];
+    const resultList = Array.isArray(selectedRow?.tool_results) ? selectedRow.tool_results : [];
+    const traceList = Array.isArray(selectedRow?.agent_trace) ? selectedRow.agent_trace : [];
+    const turnSet = new Set<number>();
+    callList.forEach((item: any, index: number) => {
+      const turn = Number(item?.turn || index + 1);
+      if (Number.isFinite(turn) && turn > 0) turnSet.add(turn);
+    });
+    resultList.forEach((item: any, index: number) => {
+      const turn = Number(item?.turn || index + 1);
+      if (Number.isFinite(turn) && turn > 0) turnSet.add(turn);
+    });
+    traceList.forEach((item: any, index: number) => {
+      const turn = Number(item?.turn || index + 1);
+      if (Number.isFinite(turn) && turn > 0) turnSet.add(turn);
+    });
+    const turns = Array.from(turnSet).sort((a, b) => a - b);
+    return turns.map((turn) => {
+      const call = callList.find((item: any) => Number(item?.turn || 0) === turn) || null;
+      const result = resultList.find((item: any) => Number(item?.turn || 0) === turn) || null;
+      const trace = traceList.find((item: any) => Number(item?.turn || 0) === turn) || null;
+      return {
+        turn,
+        tool: String(call?.tool || result?.tool || trace?.tool || '-').trim() || '-',
+        params: call?.params || {},
+        status: String(result?.status || trace?.status || '-').trim().toLowerCase(),
+        message: String(result?.message || '').trim(),
+        summary: String(trace?.summary || '').trim(),
+        result: result?.result,
+      };
+    });
+  }, [selectedRow]);
+  const getDialogueRoleLabel = useCallback((role: string): string => {
+    const text = String(role || '').trim().toLowerCase();
+    if (text === 'system') return '系统提示';
+    if (text === 'user') return 'ARL请求';
+    if (text === 'assistant') return 'AI回复';
+    if (text === 'tool') return '工具';
+    return text || '未知角色';
+  }, []);
+  const getDialogueRoleClass = useCallback((role: string): string => {
+    const text = String(role || '').trim().toLowerCase();
+    if (text === 'system') return 'border-brand-border bg-brand-bg/60 text-brand-text-muted';
+    if (text === 'user') return 'border-brand-accent/35 bg-brand-accent/10 text-brand-text';
+    if (text === 'assistant') return 'border-emerald-400/35 bg-emerald-400/10 text-brand-text';
+    if (text === 'tool') return 'border-brand-warning/35 bg-brand-warning/10 text-brand-text';
+    return 'border-brand-border bg-brand-bg/60 text-brand-text';
+  }, []);
+  const getTimelineStatusClass = useCallback((status: string): string => {
+    const text = String(status || '').trim().toLowerCase();
+    if (text === 'ok') return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300';
+    if (text === 'error') return 'border-red-500/40 bg-red-500/15 text-red-300';
+    if (text === 'skipped') return 'border-amber-500/40 bg-amber-500/15 text-amber-300';
+    if (text === 'blocked') return 'border-brand-warning/40 bg-brand-warning/15 text-brand-warning';
+    return 'border-brand-border bg-brand-bg/65 text-brand-text-muted';
+  }, []);
 
   return (
     <div className="p-8 space-y-6">
@@ -13113,11 +13346,11 @@ function AiPenAssetWorkspaceView({
             <div className="font-black">执行链路详情</div>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => selectedRow && void copyToClipboard(selectedRow?.payload, 'Payload')}
+                onClick={() => selectedRow && void copyToClipboard(requestPacketData.requestPacket, 'Request请求包')}
                 className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
                 disabled={!selectedRow || actionLoading}
               >
-                复制Payload
+                复制请求包
               </button>
               <button
                 onClick={() => void runRetrySelected()}
@@ -13182,17 +13415,39 @@ function AiPenAssetWorkspaceView({
                   <div className="text-xs font-black tracking-wide text-brand-text">AI调用与思考</div>
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">ARL 请求摘要</div>
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">ARL 请求摘要（结构化）</div>
                       <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
                         {formatAiPlanRequestText(selectedRow?.ai_plan_request)}
                       </pre>
                     </div>
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">AI 回复摘要</div>
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">AI 回复摘要（结构化）</div>
                       <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
                         {formatAiPlanReplyText(selectedRow?.ai_plan_reply)}
                       </pre>
                     </div>
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">AI 对话流程</div>
+                    {aiDialogueMessages.length > 0 ? (
+                      <div className="space-y-2 max-h-72 overflow-auto">
+                        {aiDialogueMessages.map((item, index) => (
+                          <div
+                            key={`${index}-${item.role}`}
+                            className={`rounded-xl border px-3 py-2 ${getDialogueRoleClass(item.role)}`}
+                          >
+                            <div className="text-[11px] font-black tracking-wide mb-1">
+                              {index + 1}. {getDialogueRoleLabel(item.role)}
+                            </div>
+                            <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono">
+                              {String(item.content || '').trim() || '-'}
+                            </pre>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-brand-text-muted">暂无完整对话记录</div>
+                    )}
                   </div>
                   <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
                     <div className="text-[11px] font-black tracking-wide text-brand-text-muted">AI 规划动作</div>
@@ -13209,87 +13464,136 @@ function AiPenAssetWorkspaceView({
                 </div>
 
                 <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
-                  <div className="text-xs font-black tracking-wide text-brand-text">MCP 与工具调用记录</div>
+                  <div className="text-xs font-black tracking-wide text-brand-text">MCP 与工具调用流程</div>
                   <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
                     <div className="text-[11px] font-black tracking-wide text-brand-text-muted">工具轨迹</div>
                     <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-64 overflow-auto">
                       {normalizeValueNoTruncate(selectedRow?.tool_trace)}
                     </pre>
                   </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">调用时间线</div>
+                    {toolTimeline.length > 0 ? (
+                      <div className="space-y-2 max-h-72 overflow-auto">
+                        {toolTimeline.map((item) => (
+                          <div key={`timeline-turn-${item.turn}`} className="rounded-xl border border-brand-border bg-brand-bg/65 px-3 py-3 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2 py-0.5 text-[11px] font-black">
+                                TURN {item.turn}
+                              </span>
+                              <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2 py-0.5 text-[11px] font-semibold">
+                                {item.tool || '-'}
+                              </span>
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getTimelineStatusClass(item.status)}`}>
+                                {item.status || '-'}
+                              </span>
+                            </div>
+                            {item.summary ? (
+                              <div className="text-xs text-brand-text-muted break-all">摘要：{item.summary}</div>
+                            ) : null}
+                            {item.message ? (
+                              <div className="text-xs text-brand-text-muted break-all">消息：{item.message}</div>
+                            ) : null}
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                              <div className="rounded-lg border border-brand-border bg-brand-bg/70 px-2.5 py-2">
+                                <div className="text-[11px] font-black tracking-wide text-brand-text-muted mb-1">请求参数</div>
+                                <pre className="text-[11px] whitespace-pre-wrap break-all leading-relaxed font-mono max-h-40 overflow-auto">
+                                  {renderRecordSummary(item.params)}
+                                </pre>
+                              </div>
+                              <div className="rounded-lg border border-brand-border bg-brand-bg/70 px-2.5 py-2">
+                                <div className="text-[11px] font-black tracking-wide text-brand-text-muted mb-1">执行结果</div>
+                                <pre className="text-[11px] whitespace-pre-wrap break-all leading-relaxed font-mono max-h-40 overflow-auto">
+                                  {renderRecordSummary(item.result)}
+                                </pre>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-brand-text-muted">暂无时间线记录</div>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">MCP 工具调用（tool_calls）</div>
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">原始 tool_calls</div>
                       {Array.isArray(selectedRow?.tool_calls) && selectedRow.tool_calls.length > 0 ? (
                         <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
                           {selectedRow.tool_calls.slice(0, 20).map((item: any) => renderRecordSummary(item)).join('\n\n')}
                         </pre>
                       ) : (
-                        <div className="text-sm text-brand-text-muted">暂无工具调用</div>
+                        <div className="text-sm text-brand-text-muted">暂无</div>
                       )}
                     </div>
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">工具结果（tool_results）</div>
-                      {Array.isArray(selectedRow?.tool_results) && selectedRow.tool_results.length > 0 ? (
-                        <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
-                          {selectedRow.tool_results.slice(0, 20).map((item: any) => renderRecordSummary(item)).join('\n\n')}
-                        </pre>
-                      ) : (
-                        <div className="text-sm text-brand-text-muted">暂无工具结果</div>
-                      )}
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">原始 tool_results / agent_trace</div>
+                      <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
+                        {[
+                          `tool_results=${renderRecordSummary(selectedRow?.tool_results)}`,
+                          `agent_trace=${renderRecordSummary(selectedRow?.agent_trace)}`,
+                        ].join('\n\n')}
+                      </pre>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Agent轨迹（agent_trace）</div>
-                      {Array.isArray(selectedRow?.agent_trace) && selectedRow.agent_trace.length > 0 ? (
-                        <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-56 overflow-auto">
-                          {selectedRow.agent_trace.slice(0, 20).map((item: any) => renderRecordSummary(item)).join('\n\n')}
-                        </pre>
-                      ) : (
-                        <div className="text-sm text-brand-text-muted">暂无 Agent 轨迹</div>
-                      )}
-                    </div>
-                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">外部工具执行记录</div>
-                      {Array.isArray(selectedRow?.external_tool_runs) && selectedRow.external_tool_runs.length > 0 ? (
-                        <div className="space-y-2 max-h-56 overflow-auto">
-                          {selectedRow.external_tool_runs.map((item: any, index: number) => (
-                            <div key={`${index}-${item?.tool}-${item?.status}`} className="rounded-md border border-brand-border bg-brand-bg/65 px-2.5 py-2">
-                              <div className="text-sm font-mono break-all">
-                                {String(item?.tool || '-').trim()} [{String(item?.status || '-').trim()}]
-                              </div>
-                              <div className="mt-1 text-xs text-brand-text-muted break-all">
-                                {String(item?.message || '-').trim() || '-'}
-                              </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">外部工具执行记录</div>
+                    {Array.isArray(selectedRow?.external_tool_runs) && selectedRow.external_tool_runs.length > 0 ? (
+                      <div className="space-y-2 max-h-56 overflow-auto">
+                        {selectedRow.external_tool_runs.map((item: any, index: number) => (
+                          <div key={`${index}-${item?.tool}-${item?.status}`} className="rounded-md border border-brand-border bg-brand-bg/65 px-2.5 py-2">
+                            <div className="text-sm font-mono break-all">
+                              {String(item?.tool || '-').trim()} [{String(item?.status || '-').trim()}]
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-sm text-brand-text-muted">暂无外部工具执行记录</div>
-                      )}
-                    </div>
+                            <div className="mt-1 text-xs text-brand-text-muted break-all">
+                              {String(item?.message || '-').trim() || '-'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-brand-text-muted">暂无外部工具执行记录</div>
+                    )}
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
-                  <div className="text-xs font-black tracking-wide text-brand-text">最终 Payload 与结论</div>
-                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 text-sm">
+                  <div className="text-xs font-black tracking-wide text-brand-text">请求包与最终结论</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">请求方法</div>
+                      <div className="mt-1">{normalizeValue(requestPacketData.method)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2 xl:col-span-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">请求URL</div>
+                      <div className="mt-1 break-all">{normalizeValueNoTruncate(requestPacketData.requestUrl)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">请求路径</div>
+                      <div className="mt-1 break-all">{normalizeValueNoTruncate(requestPacketData.requestPath || '/')}</div>
+                    </div>
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
                       <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Payload 类型</div>
                       <div className="mt-1">{formatPayloadType(selectedRow?.payload_type)}</div>
                     </div>
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">运行版本</div>
-                      <div className="mt-1">{normalizeValue(selectedRow?.runtime_version)}</div>
-                    </div>
-                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
                       <div className="text-[11px] font-black tracking-wide text-brand-text-muted">停止原因</div>
                       <div className="mt-1">{normalizeValue(selectedRow?.stop_reason)}</div>
                     </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">运行版本</div>
+                      <div className="mt-1">{normalizeValue(selectedRow?.runtime_version)}</div>
+                    </div>
                   </div>
                   <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
-                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Payload</div>
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Request 请求包</div>
                     <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-64 overflow-auto">
+                      {normalizeValueNoTruncate(requestPacketData.requestPacket)}
+                    </pre>
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Payload（探针原始值）</div>
+                    <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-52 overflow-auto">
                       {normalizeValueNoTruncate(selectedRow?.payload)}
                     </pre>
                   </div>

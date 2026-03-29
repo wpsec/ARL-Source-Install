@@ -3,7 +3,11 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-30（v4.3.60 ~ v4.3.62）
+## 2026-03-30（v4.3.60 ~ v4.3.63）
+
+- `[v4.3.63]` AI渗透测试工作台二次优化：`AI调用与思考` 区域新增“结构化摘要 + 完整对话流程”展示，提升 `ai_plan_request/ai_plan_reply` 的可读性并减少原始 JSON 直出；`MCP` 区域新增调用时间线（按 turn 串联 `agent_trace/tool_calls/tool_results`）与原始记录并排查看，补齐“从计划到工具执行结果”的可追溯链路
+- `[v4.3.63]` AI渗透结果新增 `Request 请求包` 数据面：后端 `commonTask/_verify_ai_pen_candidate` 增加 `request_method/request_url/request_path/request_headers/request_body/request_packet` 结构化字段并随 `retry`/落库同步；请求包按 `payload_type + verification_step + tool_trace` 自动推断方法与内容，兼容 `GET/POST/PUT/PATCH` 及 `upload/websocket/jwt/api_doc` 等探针场景，前端详情同步改为“Request请求包 + Payload原始值”双视图
+- `[v4.3.63]` 报告导出补齐 `Request请求包`：`AI渗透测试` 工作表新增请求包列并扩展投影字段，保证页面与导出对齐，便于复现验证链路
 
 - `[v4.3.62]` 资产搜索新增独立 `AI渗透测试` 工作台页面：将 `AI渗透` 模块升级为资产视角入口并归入“资产数据”，保留系统统一视觉风格，页面改为“左侧资产列表 + 右侧完整链路详情”布局；支持查看进入 AI 渗透测试的资产、AI 调用与思考摘要、MCP 工具调用记录（`tool_trace/tool_calls/tool_results/agent_trace/external_tool_runs`）以及最终 `payload/结论/证据`，并补齐筛选、统计、单条重试与按任务重跑交互，提升 AI 渗透结果的可读性与可追溯性
 
