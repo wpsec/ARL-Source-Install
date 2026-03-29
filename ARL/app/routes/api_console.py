@@ -1558,6 +1558,10 @@ def _test_ai_config_connectivity(ai_config):
     proxy_url = str(active_profile.get('proxy') or ai_config.get('proxy_url') or ai_config.get('proxy') or '').strip()
     request_proxies = _build_ai_proxy_dict(proxy_url)
     model_name = _normalize_ai_model_name(provider_id, active_profile.get('model'))
+    reasoning_model_name = _normalize_ai_model_name(
+        provider_id,
+        active_profile.get('reasoning_model') or ai_config.get('reasoning_model') or model_name,
+    )
     profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
     timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=5)
     request_delay_ms = _safe_int(ai_config.get('request_delay_ms'), 0, min_value=0)
@@ -1635,6 +1639,7 @@ def _test_ai_config_connectivity(ai_config):
             message='未配置 API Key，已跳过连通性测试',
             detail={
                 'model': model_name,
+                'reasoning_model': reasoning_model_name,
                 'profile': profile_name,
                 'request_text': request_text,
                 'reply_text': '',
@@ -1647,6 +1652,7 @@ def _test_ai_config_connectivity(ai_config):
             message='未配置 Base URL，已跳过连通性测试',
             detail={
                 'model': model_name,
+                'reasoning_model': reasoning_model_name,
                 'profile': profile_name,
                 'request_text': request_text,
                 'reply_text': '',
@@ -1703,61 +1709,72 @@ def _test_ai_config_connectivity(ai_config):
         if isinstance(models, list) and models:
             first_model = str((models[0] or {}).get('id') or '').strip()
 
-        test_model = model_name or first_model
-        if not test_model:
-            return _build_result(
-                ok=False,
-                message='AI 测试失败：未发现可用模型',
-                detail={
-                    'base_url': base_url,
-                    'model_count': model_count,
-                    'first_model': first_model,
-                    'model': model_name,
-                    'profile': profile_name,
-                    'request_text': request_text,
-                    'reply_text': '',
-                },
-                status='error',
-                error_message='未发现可用模型',
-            )
-
         chat_url = '{}/chat/completions'.format(base_url.rstrip('/'))
-        request_body = {
-            'model': test_model,
-            'temperature': min(max(_safe_float(active_profile.get('temperature'), 0.2, min_value=0.0), 0.0), 1.0),
-            'max_tokens': max(64, min(_safe_int(active_profile.get('max_tokens'), 128, min_value=32), 512)),
-            'messages': [
-                {
-                    'role': 'user',
-                    'content': request_text,
-                }
-            ],
-        }
+        def _run_single_chat_test(test_type: str, preferred_model: str):
+            preferred = str(preferred_model or '').strip()
+            test_model = preferred or first_model
+            base_result = {
+                'type': str(test_type or '').strip(),
+                'configured_model': preferred,
+                'model': str(test_model or '').strip(),
+                'profile': profile_name,
+                'request_text': request_text,
+                'reply_text': '',
+                'status': 'error',
+                'ok': False,
+                'message': '',
+                'status_code': 0,
+                'usage': _normalize_ai_usage_dict({}),
+            }
+            if not test_model:
+                base_result['message'] = '未发现可用模型'
+                return base_result
 
-        chat_kwargs = {
-            'headers': headers,
-            'json': request_body,
-            'timeout': (8, timeout_sec),
-        }
-        if request_proxies:
-            chat_kwargs['proxies'] = request_proxies
-        _sleep_before_chat_request()
-        chat_conn = utils.http_req(chat_url, 'post', **chat_kwargs)
-        chat_status_code = int(getattr(chat_conn, 'status_code', 0) or 0)
-        try:
-            chat_payload = chat_conn.json() if chat_conn is not None else {}
-        except Exception:
-            chat_payload = {}
+            request_body = {
+                'model': test_model,
+                'temperature': min(max(_safe_float(active_profile.get('temperature'), 0.2, min_value=0.0), 0.0), 1.0),
+                'max_tokens': max(64, min(_safe_int(active_profile.get('max_tokens'), 128, min_value=32), 512)),
+                'messages': [
+                    {
+                        'role': 'user',
+                        'content': request_text,
+                    }
+                ],
+            }
+            request_kwargs = {
+                'headers': headers,
+                'json': request_body,
+                'timeout': (8, timeout_sec),
+            }
+            if request_proxies:
+                request_kwargs['proxies'] = request_proxies
+            _sleep_before_chat_request()
+            conn = utils.http_req(chat_url, 'post', **request_kwargs)
+            status_code = int(getattr(conn, 'status_code', 0) or 0)
+            base_result['status_code'] = status_code
+            try:
+                payload = conn.json() if conn is not None else {}
+            except Exception:
+                payload = {}
 
-        if chat_status_code != 200:
+            if status_code == 200:
+                usage = _normalize_ai_usage_dict(payload.get('usage') if isinstance(payload, dict) else {})
+                base_result['status'] = 'ok'
+                base_result['ok'] = True
+                base_result['usage'] = usage
+                base_result['reply_text'] = _extract_reply_text(payload)
+                base_result['message'] = 'ok'
+                return base_result
+
             err_message = ''
-            if isinstance(chat_payload, dict):
-                error_obj = chat_payload.get('error')
+            if isinstance(payload, dict):
+                error_obj = payload.get('error')
                 if isinstance(error_obj, dict):
                     err_message = str(error_obj.get('message') or '').strip()
                 if not err_message:
-                    err_message = str(chat_payload.get('message') or '').strip()
-            err_message = err_message or 'HTTP {}'.format(chat_status_code)
+                    err_message = str(payload.get('message') or '').strip()
+            err_message = err_message or 'HTTP {}'.format(status_code)
+
             retry_model = ''
             if _is_ai_model_unavailable_error(err_message):
                 retry_model = _pick_ai_retry_model(provider_id, test_model)
@@ -1774,65 +1791,101 @@ def _test_ai_config_connectivity(ai_config):
                 _sleep_before_chat_request()
                 retry_conn = utils.http_req(chat_url, 'post', **retry_kwargs)
                 retry_status_code = int(getattr(retry_conn, 'status_code', 0) or 0)
+                base_result['status_code'] = retry_status_code
                 try:
                     retry_payload = retry_conn.json() if retry_conn is not None else {}
                 except Exception:
                     retry_payload = {}
                 if retry_status_code == 200:
-                    retry_reply_text = _extract_reply_text(retry_payload)
                     retry_usage = _normalize_ai_usage_dict(
                         retry_payload.get('usage') if isinstance(retry_payload, dict) else {}
                     )
-                    return _build_result(
-                        ok=True,
-                        message='AI 测试成功（模型已从 {} 自动切换为 {}）'.format(test_model, retry_model),
-                        detail={
-                            'base_url': base_url,
-                            'model_count': model_count,
-                            'first_model': first_model,
-                            'model': retry_model,
-                            'profile': profile_name,
-                            'request_text': request_text,
-                            'reply_text': retry_reply_text,
-                            'usage': retry_usage,
-                        },
-                        status='ok',
-                        usage=retry_usage,
-                    )
-            return _build_result(
-                ok=False,
-                message='AI 测试失败：{}'.format(err_message),
-                detail={
-                    'status_code': chat_status_code,
-                    'base_url': base_url,
-                    'model_count': model_count,
-                    'first_model': first_model,
-                    'model': test_model,
-                    'profile': profile_name,
-                    'request_text': request_text,
-                    'reply_text': '',
-                },
-                status='error',
-                error_message=err_message,
-            )
+                    base_result['status'] = 'ok'
+                    base_result['ok'] = True
+                    base_result['model'] = retry_model
+                    base_result['usage'] = retry_usage
+                    base_result['reply_text'] = _extract_reply_text(retry_payload)
+                    base_result['message'] = '模型已从 {} 自动切换为 {}'.format(test_model, retry_model)
+                    return base_result
+                retry_err_message = ''
+                if isinstance(retry_payload, dict):
+                    retry_error_obj = retry_payload.get('error')
+                    if isinstance(retry_error_obj, dict):
+                        retry_err_message = str(retry_error_obj.get('message') or '').strip()
+                    if not retry_err_message:
+                        retry_err_message = str(retry_payload.get('message') or '').strip()
+                err_message = retry_err_message or 'HTTP {}'.format(retry_status_code)
 
-        usage = _normalize_ai_usage_dict(chat_payload.get('usage') if isinstance(chat_payload, dict) else {})
-        reply_text = _extract_reply_text(chat_payload)
+            base_result['message'] = err_message
+            return base_result
+
+        analysis_test = _run_single_chat_test('analysis', model_name)
+        reasoning_reference = reasoning_model_name or model_name
+        reasoning_same_model = (
+            bool(reasoning_reference)
+            and bool(model_name)
+            and str(reasoning_reference).strip() == str(model_name).strip()
+        )
+        if reasoning_same_model:
+            reasoning_test = dict(analysis_test)
+            reasoning_test['type'] = 'reasoning'
+            reasoning_test['configured_model'] = str(reasoning_reference or '').strip()
+            reasoning_test['message'] = '思考模型与分析模型相同，复用测试结果'
+        else:
+            reasoning_test = _run_single_chat_test('reasoning', reasoning_reference)
+
+        total_usage = _normalize_ai_usage_dict(
+            {
+                'prompt_tokens': _safe_int_any(
+                    analysis_test.get('usage', {}).get('prompt_tokens'),
+                    0,
+                ) + _safe_int_any(reasoning_test.get('usage', {}).get('prompt_tokens'), 0),
+                'completion_tokens': _safe_int_any(
+                    analysis_test.get('usage', {}).get('completion_tokens'),
+                    0,
+                ) + _safe_int_any(reasoning_test.get('usage', {}).get('completion_tokens'), 0),
+                'total_tokens': _safe_int_any(
+                    analysis_test.get('usage', {}).get('total_tokens'),
+                    0,
+                ) + _safe_int_any(reasoning_test.get('usage', {}).get('total_tokens'), 0),
+            }
+        )
+
+        all_ok = bool(analysis_test.get('ok')) and bool(reasoning_test.get('ok'))
+        failed_parts = []
+        if not analysis_test.get('ok'):
+            failed_parts.append('分析模型({})'.format(str(analysis_test.get('message') or 'unknown_error')))
+        if not reasoning_test.get('ok'):
+            failed_parts.append('思考模型({})'.format(str(reasoning_test.get('message') or 'unknown_error')))
+
+        if all_ok:
+            if reasoning_same_model:
+                summary_message = 'AI 测试成功（分析模型与思考模型相同，已完成连通性测试）'
+            else:
+                summary_message = 'AI 测试成功（分析模型 + 思考模型）'
+        else:
+            summary_message = 'AI 测试失败：{}'.format('；'.join(failed_parts)[:240])
+
+        detail = {
+            'base_url': base_url,
+            'model_count': model_count,
+            'first_model': first_model,
+            'model': str(analysis_test.get('model') or model_name),
+            'reasoning_model': str(reasoning_test.get('model') or reasoning_reference),
+            'profile': profile_name,
+            'request_text': request_text,
+            'reply_text': str(analysis_test.get('reply_text') or ''),
+            'usage': total_usage,
+            'analysis_test': analysis_test,
+            'reasoning_test': reasoning_test,
+        }
         return _build_result(
-            ok=True,
-            message='AI 测试成功',
-            detail={
-                'base_url': base_url,
-                'model_count': model_count,
-                'first_model': first_model,
-                'model': test_model,
-                'profile': profile_name,
-                'request_text': request_text,
-                'reply_text': reply_text,
-                'usage': usage,
-            },
-            status='ok',
-            usage=usage,
+            ok=all_ok,
+            message=summary_message,
+            detail=detail,
+            status='ok' if all_ok else 'error',
+            usage=total_usage,
+            error_message='' if all_ok else '；'.join(failed_parts)[:300],
         )
     except Exception as exc:
         message = str(exc)
@@ -1842,6 +1895,7 @@ def _test_ai_config_connectivity(ai_config):
             detail={
                 'base_url': base_url,
                 'model': model_name,
+                'reasoning_model': reasoning_model_name,
                 'profile': profile_name,
                 'request_text': request_text,
                 'reply_text': '',

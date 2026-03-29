@@ -3,9 +3,11 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-29（v4.3.42 ~ v4.3.53）
+## 2026-03-29（v4.3.42 ~ v4.3.55）
 
-- `[v4.3.53]` 任务管理交互与上传体验优化：任务详情返回任务管理后默认恢复离开前滚动位置，修复长列表阅读中断；任务列表“目标”列新增悬浮资产统计（站点/子域名/IP/URL/风险）与 WAF 概览，减少来回切换查看成本；资产搜索 `site/asset_site` 的 `headers` 列默认折叠并支持展开/收起，提升表格可读性；Nginx `client_max_body_size` 提升到 `300M`（内置 Web Nginx 与反向代理 Nginx 同步），修复上传较大字典触发 `413 Request Entity Too Large` 的问题
+- `[v4.3.55]` AI 管理连通性测试修复：`/api_console/ai_config/test/` 从“仅测试分析模型”升级为“分析模型 + 思考模型”双通道测试，返回结果新增 `analysis_test/reasoning_test` 明细与汇总判定；当思考模型与分析模型相同时复用结果并显式提示，避免误判“思考模型未测试”
+- `[v4.3.55]` 文档目录清理收敛：`docs/` 删除重复与历史分散规划文档（含 SSL 基线文档清理），保留 `开发规范.md` 并统一收敛为 `AI渗透测试MCP总体方案.md`，降低文档检索与维护成本
+- `[v4.3.54]` 任务管理交互与上传体验优化：任务详情返回任务管理后默认恢复离开前滚动位置，修复长列表阅读中断；任务列表“目标”列新增悬浮资产统计（站点/子域名/IP/URL/风险）与 WAF 概览，减少来回切换查看成本；资产搜索 `site/asset_site` 的 `headers` 列默认折叠并支持展开/收起，提升表格可读性；Nginx `client_max_body_size` 提升到 `300M`（内置 Web Nginx 与反向代理 Nginx 同步），修复上传较大字典触发 `413 Request Entity Too Large` 的问题
 
 - `[v4.3.42]` 任务资产范围守卫统一落地：新增 `ARL/app/services/task_scope_guard.py`，收敛 `host/url` 归一化与范围判断逻辑（`normalize_scope_host/host_in_scope/url_in_scope`），并提供 `load_task_scope_context` 从“当前任务目标 + 同名历史任务目标 + 已沉淀 site/url/domain”聚合 `allowed_hosts/allowed_flds`，作为 WIH/PoC/AI 渗透等链路的统一范围基线
 - `[v4.3.42]` 扫描结果与情报入库链路范围收口：`commonTask` 与 `WebSiteFetch` 接入任务级 scope cache，`nuclei/afrog/risk_cruising` 结果、`WIH` 记录升级风险、`AI渗透` 候选聚合、`page_url_set` 更新等流程新增“仅保留任务范围内目标”的过滤，修复跨站点/跨域噪声结果进入当前任务的问题
