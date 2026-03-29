@@ -1710,7 +1710,7 @@ def _test_ai_config_connectivity(ai_config):
             first_model = str((models[0] or {}).get('id') or '').strip()
 
         chat_url = '{}/chat/completions'.format(base_url.rstrip('/'))
-        def _run_single_chat_test(test_type: str, preferred_model: str):
+        def _run_single_chat_test(test_type: str, preferred_model: str, allow_model_retry: bool = True):
             preferred = str(preferred_model or '').strip()
             test_model = preferred or first_model
             base_result = {
@@ -1776,7 +1776,7 @@ def _test_ai_config_connectivity(ai_config):
             err_message = err_message or 'HTTP {}'.format(status_code)
 
             retry_model = ''
-            if _is_ai_model_unavailable_error(err_message):
+            if allow_model_retry and _is_ai_model_unavailable_error(err_message):
                 retry_model = _pick_ai_retry_model(provider_id, test_model)
             if retry_model:
                 retry_body = dict(request_body)
@@ -1816,10 +1816,13 @@ def _test_ai_config_connectivity(ai_config):
                         retry_err_message = str(retry_payload.get('message') or '').strip()
                 err_message = retry_err_message or 'HTTP {}'.format(retry_status_code)
 
-            base_result['message'] = err_message
+            if (not allow_model_retry) and _is_ai_model_unavailable_error(err_message):
+                base_result['message'] = '{}（已禁用自动切换模型，请确认当前模型可用）'.format(err_message)
+            else:
+                base_result['message'] = err_message
             return base_result
 
-        analysis_test = _run_single_chat_test('analysis', model_name)
+        analysis_test = _run_single_chat_test('analysis', model_name, allow_model_retry=True)
         reasoning_reference = reasoning_model_name or model_name
         reasoning_same_model = (
             bool(reasoning_reference)
@@ -1832,7 +1835,7 @@ def _test_ai_config_connectivity(ai_config):
             reasoning_test['configured_model'] = str(reasoning_reference or '').strip()
             reasoning_test['message'] = '思考模型与分析模型相同，复用测试结果'
         else:
-            reasoning_test = _run_single_chat_test('reasoning', reasoning_reference)
+            reasoning_test = _run_single_chat_test('reasoning', reasoning_reference, allow_model_retry=False)
 
         total_usage = _normalize_ai_usage_dict(
             {

@@ -45,6 +45,14 @@ def _load_common_task_module():
     waf_guard_module = types.ModuleType("app.services.waf_guard")
     waf_guard_module.WAFSmartSkipGuard = object
 
+    task_scope_guard_module = types.ModuleType("app.services.task_scope_guard")
+    task_scope_guard_module.load_task_scope_context = lambda *args, **kwargs: {
+        "allowed_hosts": [],
+        "allowed_flds": [],
+    }
+    task_scope_guard_module.host_in_scope = lambda *args, **kwargs: True
+    task_scope_guard_module.url_in_scope = lambda *args, **kwargs: True
+
     bson_module = types.ModuleType("bson")
     bson_module.ObjectId = lambda value=None: value
 
@@ -63,6 +71,7 @@ def _load_common_task_module():
     sys.modules["app.services.nuclei_scan"] = nuclei_scan_module
     sys.modules["app.services.afrog_scan"] = afrog_scan_module
     sys.modules["app.services.waf_guard"] = waf_guard_module
+    sys.modules["app.services.task_scope_guard"] = task_scope_guard_module
     sys.modules["bson"] = bson_module
     sys.modules["pymongo"] = pymongo_module
     sys.modules["pymongo.errors"] = pymongo_errors_module
@@ -633,7 +642,7 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("likely_false_positive", result.get("decision"))
         self.assertIn("未发现危险 DOM sink", str(result.get("reason") or ""))
 
-    def test_dom_xss_source_and_sink_keeps_manual_review(self):
+    def test_dom_xss_source_and_sink_without_popup_proof_is_downgraded(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(
             target_url="https://example.com/static/app.js",
             body_text="const hashValue = location.hash; document.body.innerHTML = hashValue;",
@@ -643,8 +652,55 @@ class TestAiPenJsContext(unittest.TestCase):
             evidence_seed="innerHTML",
         )
 
-        self.assertEqual("needs_manual_review", result.get("decision"))
-        self.assertIn("危险 DOM sink", str(result.get("reason") or ""))
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertIn("缺少可触发弹窗", str(result.get("reason") or ""))
+
+    def test_xss_popup_proof_requires_raw_executable_reflection(self):
+        self.assertTrue(
+            WebSiteFetch._has_xss_popup_proof(
+                payload="<svg/onload=alert(1)>",
+                base_body="<html><body>normal</body></html>",
+                probe_body="<html><body><svg/onload=alert(1)></body></html>",
+            )
+        )
+        self.assertFalse(
+            WebSiteFetch._has_xss_popup_proof(
+                payload="<svg/onload=alert(1)>",
+                base_body="<html><body>normal</body></html>",
+                probe_body="<html><body>&lt;svg/onload=alert(1)&gt;</body></html>",
+            )
+        )
+
+    def test_classify_weak_password_risk_type(self):
+        risk_type = WebSiteFetch._classify_ai_pen_risk_type(
+            raw_type="nuclei",
+            risk_name="后台弱口令",
+            source_module="nuclei",
+        )
+        self.assertEqual("weak_password", risk_type)
+
+    def test_weak_password_requires_login_success_proof(self):
+        self.assertTrue(
+            WebSiteFetch._has_weak_password_login_proof(
+                evidence_seed="username=admin password=admin 登录成功",
+                base_body="",
+                probe_body="",
+            )
+        )
+        self.assertFalse(
+            WebSiteFetch._has_weak_password_login_proof(
+                evidence_seed="username=admin password=admin",
+                base_body="",
+                probe_body="",
+            )
+        )
+
+    def test_sqli_error_based_proof_is_detected(self):
+        proof_type = WebSiteFetch._detect_sqli_proof_type(
+            base_body="normal page",
+            probe_body="You have an error in your SQL syntax near '' at line 1",
+        )
+        self.assertEqual("error_based", proof_type)
 
 
 if __name__ == "__main__":

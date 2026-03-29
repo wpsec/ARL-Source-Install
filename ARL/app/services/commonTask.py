@@ -167,6 +167,7 @@ class WebSiteFetch(object):
         "sqli_probe",
         "cmdi_probe",
         "ssrf_probe",
+        "weak_password_probe",
         "idor_probe",
         "api_doc_probe",
         "jwt_probe",
@@ -2814,6 +2815,8 @@ class WebSiteFetch(object):
             return "xss_probe"
         if any(token in merged for token in ("sql", "sqli", "union", "or 1=1")):
             return "sqli_probe"
+        if any(token in merged for token in ("weak password", "default password", "default credential", "弱口令", "弱密码", "默认密码", "默认口令", "登录成功")):
+            return "weak_password_probe"
         if any(token in merged for token in ("cmd", "command", "rce", "shell")):
             return "cmdi_probe"
         if any(token in merged for token in ("ssrf", "127.0.0.1", "metadata")):
@@ -3911,6 +3914,9 @@ class WebSiteFetch(object):
                     "verified": [
                         "真实暴露且结构明确的API文档",
                         "真实硬编码敏感值/凭据字面量",
+                        "XSS 需具备可执行脚本/弹窗证据，而非仅关键词或静态链路",
+                        "弱口令需具备可复现登录成功证据（账号+密码+成功响应）",
+                        "SQL 注入需具备可复现利用证据（如报错注入/时间盲注/布尔盲注）",
                         "明确的JWT签名缺陷或弱密钥",
                         "明确的WebSocket握手成功",
                     ],
@@ -3929,7 +3935,9 @@ class WebSiteFetch(object):
                 },
                 "false_positive_focus": {
                     "js_sensitive_info": "区分硬编码字面量与 token+变量/localStorage/sessionStorage 噪声",
-                    "dom_xss": "静态JS必须同时关注用户输入源与危险sink；纯框架bundle优先降权",
+                    "dom_xss": "仅有 source->sink 不等于可利用，缺少可触发弹窗证据时应降权",
+                    "weak_password": "必须有登录成功证据（账号/密码/成功响应），否则不判定为有效弱口令",
+                    "sqli": "仅有关键字或响应差异不等于 SQL 注入成立，优先寻找报错/时间/布尔证据",
                     "api_doc": "URL包含swagger/openapi不等于真实文档暴露，优先看 paths/securitySchemes/参数结构",
                     "file_handling": "发现上传/下载/导出/附件入口不等于已证明任意文件读写，优先保守裁决并给出低副作用下一步",
                     "login_surface": "发现登录表单、验证码或 auth 接口不等于存在漏洞，优先整理黑盒认证面上下文与后续验证建议",
@@ -4130,6 +4138,25 @@ class WebSiteFetch(object):
         base_decision = self._normalize_ai_pen_decision(merged.get("decision"), default_value="needs_manual_review")
         base_confidence = self._clamp_ai_pen_confidence(merged.get("confidence"), 0.5)
         status = str(merged.get("status", "ok") or "ok").strip().lower()
+        risk_type_text = str(merged.get("risk_type", "") or "").strip().lower()
+        payload_type_text = str(merged.get("payload_type", "") or "").strip().lower()
+        xss_popup_proof = bool(merged.get("xss_popup_proof"))
+        weak_password_login_proof = bool(merged.get("weak_password_login_proof"))
+        sqli_proof_type = str(merged.get("sqli_proof_type", "") or "").strip().lower()
+
+        def _verified_proof_guard_reason():
+            if (risk_type_text == "xss" or payload_type_text == "xss_probe") and (not xss_popup_proof):
+                return "XSS 缺少可触发弹窗的执行证据，禁止直接判定为 verified"
+            if (risk_type_text == "weak_password" or payload_type_text == "weak_password_probe") and (not weak_password_login_proof):
+                return "弱口令缺少登录成功证据，禁止直接判定为 verified"
+            if (risk_type_text == "sqli" or payload_type_text == "sqli_probe") and sqli_proof_type not in {
+                "error_based",
+                "time_based",
+                "boolean_based",
+                "external_tool",
+            }:
+                return "SQL 注入缺少可复现利用证据，禁止直接判定为 verified"
+            return ""
 
         if ai_reason:
             base_reason = str(merged.get("reason", "") or "").strip()
@@ -4140,6 +4167,17 @@ class WebSiteFetch(object):
 
         if status != "ok" or not ai_decision:
             return merged
+
+        proof_guard_reason = _verified_proof_guard_reason()
+        if proof_guard_reason and base_decision == "verified":
+            merged["decision"] = "needs_manual_review"
+            merged["confidence"] = max(0.62, min(0.86, base_confidence))
+            merged["reason"] = "{}；{}".format(str(merged.get("reason", "") or "").strip(), proof_guard_reason).strip("；")
+            base_decision = "needs_manual_review"
+
+        if proof_guard_reason and ai_decision == "verified":
+            ai_decision = "needs_manual_review"
+            merged["reason"] = "{}；{}".format(str(merged.get("reason", "") or "").strip(), proof_guard_reason).strip("；")
 
         if ai_decision == base_decision:
             merged["confidence"] = max(base_confidence, min(0.99, ai_confidence))
@@ -4174,6 +4212,106 @@ class WebSiteFetch(object):
             return seed_text in body_check_text
         # 证据过短时降低误命中概率，仅做弱匹配。
         return len(seed_text) >= 6 and seed_text in body_check_text
+
+    @staticmethod
+    def _contains_sql_error_signature(text: str) -> bool:
+        content = str(text or "").lower()
+        if not content:
+            return False
+        patterns = (
+            r"you have an error in your sql syntax",
+            r"warning:\s*mysql",
+            r"sql syntax.*mysql",
+            r"sqlstate\[[0-9a-z]+\]",
+            r"mysql_fetch",
+            r"microsoft ole db provider for sql server",
+            r"unclosed quotation mark",
+            r"quoted string not properly terminated",
+            r"postgresql.*error",
+            r"pg_query\(",
+            r"ora-\d{5}",
+            r"sqlite_error",
+            r"near \".*\": syntax error",
+            r"database error",
+        )
+        return any(re.search(pattern, content) for pattern in patterns)
+
+    @classmethod
+    def _detect_sqli_proof_type(cls, base_body: str, probe_body: str) -> str:
+        probe_has_error = cls._contains_sql_error_signature(probe_body)
+        if not probe_has_error:
+            return ""
+        base_has_error = cls._contains_sql_error_signature(base_body)
+        if probe_has_error and (not base_has_error):
+            return "error_based"
+        return ""
+
+    @staticmethod
+    def _has_xss_popup_proof(payload: str, base_body: str, probe_body: str) -> bool:
+        payload_text = str(payload or "").strip().lower()
+        probe_text = str(probe_body or "").lower()
+        base_text = str(base_body or "").lower()
+        if not probe_text:
+            return False
+
+        popup_tokens = (
+            "<script>alert(",
+            "onerror=alert(",
+            "onload=alert(",
+            "javascript:alert(",
+            "<svg/onload=alert(",
+            "<img src=x onerror=alert(",
+        )
+        escaped_tokens = ("&lt;script", "&lt;svg", "&#x3c;script", "&#x3c;svg")
+
+        has_popup_signature = any(token in probe_text for token in popup_tokens)
+        has_escaped_only = (not has_popup_signature) and any(token in probe_text for token in escaped_tokens)
+        if has_escaped_only:
+            return False
+
+        payload_reflected = bool(payload_text and payload_text in probe_text and payload_text not in base_text)
+        marker_hit = any(token in probe_text and token not in base_text for token in popup_tokens)
+        return payload_reflected and marker_hit
+
+    @staticmethod
+    def _has_weak_password_login_proof(evidence_seed: str, base_body: str, probe_body: str) -> bool:
+        merged_text = " ".join(
+            [
+                str(evidence_seed or "").lower(),
+                str(base_body or "").lower(),
+                str(probe_body or "").lower(),
+            ]
+        )
+        if not merged_text.strip():
+            return False
+
+        success_tokens = (
+            "login success",
+            "logged in",
+            "authentication success",
+            "auth success",
+            "登录成功",
+            "登陆成功",
+            "认证成功",
+            "弱口令验证成功",
+            "default credential works",
+            "账号密码正确",
+        )
+        credential_tokens = (
+            "username",
+            "password",
+            "passwd",
+            "credential",
+            "账号",
+            "密码",
+            "admin/admin",
+            "admin:admin",
+            "root/root",
+            "root:root",
+        )
+        return any(token in merged_text for token in success_tokens) and any(
+            token in merged_text for token in credential_tokens
+        )
 
     @staticmethod
     def _is_js_asset_target(target_url: str, headers=None):
@@ -4319,10 +4457,20 @@ class WebSiteFetch(object):
             has_source = any(token in content_lower for token in source_tokens)
             context_snippet = cls._extract_js_context_snippet(content, evidence_seed, fallback_keywords=list(sink_tokens) + list(source_tokens))
             if has_sink and has_source:
+                popup_tokens = ("alert(", "confirm(", "prompt(", "onerror=alert(", "onload=alert(", "javascript:alert(")
+                has_popup_hint = any(token in content_lower for token in popup_tokens)
+                if has_popup_hint:
+                    return {
+                        "decision": "needs_manual_review",
+                        "confidence": 0.72,
+                        "reason": "JS 上下文存在 source->sink 且出现弹窗调用片段，建议在浏览器中复现可控输入链路",
+                        "context_snippet": context_snippet,
+                        "tool_trace": "js_context(dom_chain_popup_hint)",
+                    }
                 return {
-                    "decision": "needs_manual_review",
-                    "confidence": 0.77,
-                    "reason": "JS 上下文同时出现用户输入源与危险 DOM sink，需人工确认是否存在可控链路",
+                    "decision": "likely_false_positive",
+                    "confidence": 0.76,
+                    "reason": "JS 上下文虽出现 source->sink，但缺少可触发弹窗的执行证据，当前不判定为可利用 XSS",
                     "context_snippet": context_snippet,
                     "tool_trace": "js_context(dom_chain)",
                 }
@@ -5731,6 +5879,20 @@ class WebSiteFetch(object):
 
         if "jwt" in merged:
             return "jwt"
+        if any(
+            token in merged
+            for token in (
+                "weak password",
+                "weakpass",
+                "default password",
+                "default credential",
+                "弱口令",
+                "弱密码",
+                "默认口令",
+                "默认密码",
+            )
+        ):
+            return "weak_password"
         if "idor" in merged or "越权" in merged or "horizontal" in merged or "vertical" in merged:
             return "idor"
         if "ssrf" in merged:
@@ -5767,6 +5929,20 @@ class WebSiteFetch(object):
             return "xss_probe", "<svg/onload=alert(1)>"
         if "sql" in merged:
             return "sqli_probe", "' OR '1'='1"
+        if any(
+            token in merged
+            for token in (
+                "weak password",
+                "weakpass",
+                "default password",
+                "default credential",
+                "弱口令",
+                "弱密码",
+                "默认口令",
+                "默认密码",
+            )
+        ):
+            return "weak_password_probe", "username=admin&password=admin"
         if "cmd" in merged or "command" in merged:
             return "cmdi_probe", ";id"
         if "jwt" in merged:
@@ -6200,6 +6376,7 @@ class WebSiteFetch(object):
 
         target_url = str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
         risk_type = str(candidate.get("risk_type", "") or "").strip()
+        risk_type_text = self._normalize_risk_type(risk_type, default_value="unknown")
         risk_name = str(candidate.get("risk_name", "") or "").strip()
         evidence_seed = self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX)
         browser_surface_summary = dict(candidate.get("browser_surface_summary") or {}) if isinstance(candidate.get("browser_surface_summary"), dict) else {}
@@ -6219,6 +6396,11 @@ class WebSiteFetch(object):
             payload_type = ai_plan_payload_type
         if ai_plan_payload:
             payload = ai_plan_payload
+        is_xss_case = (risk_type_text == "xss") or (str(payload_type or "").strip().lower() == "xss_probe")
+        is_sqli_case = (risk_type_text == "sqli") or (str(payload_type or "").strip().lower() == "sqli_probe")
+        is_weak_password_case = (risk_type_text == "weak_password") or (
+            str(payload_type or "").strip().lower() == "weak_password_probe"
+        )
 
         if not self._is_http_target(target_url):
             return {
@@ -6226,12 +6408,16 @@ class WebSiteFetch(object):
                 "decision": "needs_manual_review",
                 "confidence": 0.35,
                 "reason": "缺少可访问的 HTTP 目标，当前阶段仅完成上下文归档",
+                "risk_type": risk_type_text,
                 "payload_type": payload_type,
                 "payload": payload,
                 "verification_step": "collect_context_only",
                 "evidence_snippet": evidence_seed,
                 "http_status": 0,
                 "response_hash_diff": "",
+                "xss_popup_proof": False,
+                "sqli_proof_type": "",
+                "weak_password_login_proof": False,
                 "api_doc_summary": {},
                 "api_surface_summary": {},
                 "browser_surface_summary": browser_surface_summary,
@@ -6284,12 +6470,16 @@ class WebSiteFetch(object):
                     "decision": "needs_manual_review",
                     "confidence": 0.32,
                     "reason": " | ".join(reason_parts),
+                    "risk_type": risk_type_text,
                     "payload_type": payload_type,
                     "payload": payload,
                     "verification_step": "waf_smart_skip",
                     "evidence_snippet": evidence_seed,
                     "http_status": status_code,
                     "response_hash_diff": "",
+                    "xss_popup_proof": False,
+                    "sqli_proof_type": "",
+                    "weak_password_login_proof": False,
                     "api_doc_summary": {},
                     "api_surface_summary": {},
                     "browser_surface_summary": browser_surface_summary,
@@ -6601,7 +6791,49 @@ class WebSiteFetch(object):
             decision = "needs_manual_review"
             confidence = 0.56
             reason = "目标可访问，已完成 HTTP 验证"
-            if evidence_hit:
+            xss_popup_proof = False
+            sqli_proof_type = ""
+            weak_password_login_proof = False
+            if is_xss_case:
+                xss_popup_proof = self._has_xss_popup_proof(payload, base_body_excerpt, probe_body_excerpt)
+            if is_sqli_case:
+                sqli_proof_type = self._detect_sqli_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
+            if is_weak_password_case:
+                weak_password_login_proof = self._has_weak_password_login_proof(
+                    evidence_seed,
+                    base_body_excerpt,
+                    probe_body_excerpt,
+                )
+
+            if is_xss_case and xss_popup_proof:
+                decision = "verified"
+                confidence = 0.90
+                reason = "XSS 探针命中可执行弹窗特征，具备可利用证据"
+            elif is_xss_case and payload_reflect_hit:
+                decision = "likely_false_positive"
+                confidence = 0.68
+                reason = "仅发现 payload 回显，缺少可触发弹窗的执行证据"
+            elif is_xss_case and self._is_js_asset_target(target_url, headers=header_obj):
+                decision = "likely_false_positive"
+                confidence = 0.74
+                reason = "目标为静态 JS 资源，当前未验证到可执行弹窗链路"
+            elif is_weak_password_case and weak_password_login_proof:
+                decision = "verified"
+                confidence = 0.91
+                reason = "命中账号/口令与登录成功证据，弱口令可复现"
+            elif is_weak_password_case:
+                decision = "likely_false_positive"
+                confidence = 0.70
+                reason = "弱口令线索缺少登录成功证据，当前不判定为可利用风险"
+            elif is_sqli_case and sqli_proof_type == "error_based":
+                decision = "verified"
+                confidence = 0.88
+                reason = "探针触发 SQL 报错注入特征，可复现"
+            elif is_sqli_case and (probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5):
+                decision = "needs_manual_review"
+                confidence = 0.72
+                reason = "SQL 探针前后响应差异明显，疑似布尔/时间盲注，需人工复核"
+            elif evidence_hit and not (is_xss_case or is_sqli_case or is_weak_password_case):
                 decision = "verified"
                 confidence = 0.82
                 reason = "响应中命中风险证据片段，验证通过"
@@ -6806,17 +7038,24 @@ class WebSiteFetch(object):
             else:
                 external_ret = {}
 
+            if is_sqli_case and bool(external_ret.get("tool_hit")) and decision == "verified":
+                sqli_proof_type = "external_tool"
+
             return {
                 "status": "ok",
                 "decision": decision,
                 "confidence": confidence,
                 "reason": reason,
+                "risk_type": risk_type_text,
                 "payload_type": payload_type,
                 "payload": payload,
                 "verification_step": verification_step,
                 "evidence_snippet": evidence_snippet,
                 "http_status": probe_status or status_code,
                 "response_hash_diff": response_hash_diff,
+                "xss_popup_proof": xss_popup_proof,
+                "sqli_proof_type": sqli_proof_type,
+                "weak_password_login_proof": weak_password_login_proof,
                 "api_doc_summary": api_doc_summary if isinstance(api_doc_summary, dict) else {},
                 "api_surface_summary": api_surface_summary if isinstance(api_surface_summary, dict) else {},
                 "browser_surface_summary": browser_surface_summary,
@@ -6837,12 +7076,16 @@ class WebSiteFetch(object):
                 "decision": "needs_manual_review",
                 "confidence": 0.30,
                 "reason": "HTTP 验证失败: {}".format(self._clip_text(e, self.AI_PEN_TEST_ERROR_MAX)),
+                "risk_type": risk_type_text,
                 "payload_type": payload_type,
                 "payload": payload,
                 "verification_step": "http_fetch_replay",
                 "evidence_snippet": evidence_seed,
                 "http_status": 0,
                 "response_hash_diff": "",
+                "xss_popup_proof": False,
+                "sqli_proof_type": "",
+                "weak_password_login_proof": False,
                 "api_doc_summary": {},
                 "api_surface_summary": {},
                 "browser_surface_summary": browser_surface_summary,
