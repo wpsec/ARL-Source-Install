@@ -117,6 +117,7 @@ type ModuleListCacheEntry = {
   order: string;
   quickFilter: string;
   searchForm: JsonValue;
+  scrollTop?: number;
 };
 
 type LoadRowsOptions = {
@@ -2935,6 +2936,43 @@ function getTaskTypeLabel(rawType: any): string {
   return mapping[normalized] || normalizeValue(rawType);
 }
 
+function extractTaskStatisticCounts(row: any): {
+  siteCnt: number;
+  domainCnt: number;
+  ipCnt: number;
+  urlCnt: number;
+  vulnCnt: number;
+  hasAny: boolean;
+} {
+  const stat = row?.statistic;
+  if (!stat || typeof stat !== 'object' || Array.isArray(stat)) {
+    return {
+      siteCnt: 0,
+      domainCnt: 0,
+      ipCnt: 0,
+      urlCnt: 0,
+      vulnCnt: 0,
+      hasAny: false,
+    };
+  }
+
+  const siteCnt = Number(stat.site_cnt || 0);
+  const domainCnt = Number(stat.domain_cnt || 0);
+  const ipCnt = Number(stat.ip_cnt || 0);
+  const urlCnt = Number(stat.url_cnt || 0);
+  const vulnCnt = Number(stat.vuln_cnt || 0);
+  const hasAny = [siteCnt, domainCnt, ipCnt, urlCnt, vulnCnt].some((item) => Number(item || 0) > 0);
+
+  return {
+    siteCnt,
+    domainCnt,
+    ipCnt,
+    urlCnt,
+    vulnCnt,
+    hasAny,
+  };
+}
+
 function buildTaskStatisticSummary(row: any): string {
   const stat = row?.statistic;
   const wafSummary = row?.waf_skip_summary && typeof row.waf_skip_summary === 'object' ? row.waf_skip_summary : {};
@@ -2949,10 +2987,7 @@ function buildTaskStatisticSummary(row: any): string {
     }
     return '-';
   }
-  const siteCnt = Number(stat.site_cnt || 0);
-  const domainCnt = Number(stat.domain_cnt || 0);
-  const ipCnt = Number(stat.ip_cnt || 0);
-  const vulnCnt = Number(stat.vuln_cnt || 0);
+  const { siteCnt, domainCnt, ipCnt, vulnCnt } = extractTaskStatisticCounts(row);
   let summary = `站点:${siteCnt} 域名:${domainCnt} IP:${ipCnt} 风险:${vulnCnt}`;
   if (wafDetectedHostCount > 0 || wafBlockedHostCount > 0 || wafSkipRequestCount > 0 || wafBypassHostCount > 0) {
     summary += ` WAF识别:主机${wafDetectedHostCount}/跳过${wafBlockedHostCount}/绕过${wafBypassHostCount}/请求${wafSkipRequestCount}`;
@@ -6767,6 +6802,7 @@ function TableModuleView({
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
+  const [expandedSiteHeaderRows, setExpandedSiteHeaderRows] = useState<Record<string, boolean>>({});
   const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
   const [hyperlinkEnabled, setHyperlinkEnabled] = useState(false);
   const [tableHeaderFreezeEnabled, setTableHeaderFreezeEnabled] = useState(false);
@@ -6812,6 +6848,7 @@ function TableModuleView({
   const deleteConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const tableRootRef = useRef<HTMLDivElement | null>(null);
   const keepBottomAfterSizeChangeRef = useRef(false);
+  const pendingRestoreScrollTopRef = useRef<number | null>(null);
   const moduleListStateCacheRef = useRef<Record<string, ModuleListCacheEntry>>({});
   const moduleListLoadedRef = useRef<Record<string, boolean>>({});
   const latestLoadRowsRequestIdRef = useRef(0);
@@ -7079,6 +7116,9 @@ function TableModuleView({
       setQuickFilter(String(cachedState.quickFilter || ''));
       setSearchForm(cachedState.searchForm ? deepClone(cachedState.searchForm) : buildDefaultSearchForm());
       setShouldInitialLoad(Boolean(hasList) && !Boolean(moduleListLoadedRef.current[moduleCacheKey]));
+      pendingRestoreScrollTopRef.current = Number.isFinite(Number(cachedState.scrollTop))
+        ? Math.max(0, Number(cachedState.scrollTop))
+        : null;
     } else {
       setRows([]);
       setTotal(0);
@@ -7088,6 +7128,7 @@ function TableModuleView({
       setQuickFilter('');
       setSearchForm(buildDefaultSearchForm());
       setShouldInitialLoad(Boolean(hasList));
+      pendingRestoreScrollTopRef.current = null;
     }
     setLoading(false);
     setSelectedIds([]);
@@ -7095,6 +7136,7 @@ function TableModuleView({
 
   useEffect(() => {
     if (!hasList) return;
+    const existingScrollTop = moduleListStateCacheRef.current[moduleCacheKey]?.scrollTop;
     moduleListStateCacheRef.current[moduleCacheKey] = {
       rows,
       total,
@@ -7103,8 +7145,30 @@ function TableModuleView({
       order,
       quickFilter,
       searchForm: searchForm ? deepClone(searchForm) : {},
+      scrollTop: Number.isFinite(Number(existingScrollTop)) ? Number(existingScrollTop) : 0,
     };
   }, [hasList, moduleCacheKey, order, page, quickFilter, rows, searchForm, size, total]);
+
+  useEffect(() => {
+    return () => {
+      if (!hasList) return;
+      const container = resolveScrollableContainer();
+      if (!container) return;
+      const currentState = moduleListStateCacheRef.current[moduleCacheKey] || {
+        rows,
+        total,
+        page,
+        size,
+        order,
+        quickFilter,
+        searchForm: searchForm ? deepClone(searchForm) : {},
+      };
+      moduleListStateCacheRef.current[moduleCacheKey] = {
+        ...currentState,
+        scrollTop: Math.max(0, Number(container.scrollTop || 0)),
+      };
+    };
+  }, [hasList, moduleCacheKey, order, page, quickFilter, resolveScrollableContainer, rows, searchForm, size, total]);
 
   useEffect(() => {
     setRiskDialogOpen(false);
@@ -7117,6 +7181,7 @@ function TableModuleView({
     setExpandedScopeRows({});
     setExpandedTaskScheduleTargetRows({});
     setExpandedTaskOptionRows({});
+    setExpandedSiteHeaderRows({});
     setExpandedSiteFingerRows({});
     setTaskRowPendingActionMap({});
     setTaskStopAndDeleteLoading(false);
@@ -7213,6 +7278,20 @@ function TableModuleView({
     });
     return () => window.cancelAnimationFrame(rafId);
   }, [loading, rows, total, size, resolveScrollableContainer]);
+
+  useEffect(() => {
+    if (loading) return;
+    const targetScrollTop = pendingRestoreScrollTopRef.current;
+    if (targetScrollTop === null) return;
+    const rafId = window.requestAnimationFrame(() => {
+      const container = resolveScrollableContainer();
+      if (container) {
+        container.scrollTop = Math.max(0, targetScrollTop);
+      }
+      pendingRestoreScrollTopRef.current = null;
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [loading, moduleCacheKey, resolveScrollableContainer, rows]);
 
   const closeDeleteConfirmDialog = useCallback((confirmed: boolean) => {
     const resolver = deleteConfirmResolverRef.current;
@@ -10346,15 +10425,69 @@ function TableModuleView({
                         }
 
                         if (module.id === 'task' && column === 'target') {
+                          const { siteCnt, domainCnt, ipCnt, urlCnt, vulnCnt, hasAny } = extractTaskStatisticCounts(row);
+                          const wafSummary = row?.waf_skip_summary && typeof row.waf_skip_summary === 'object'
+                            ? row.waf_skip_summary
+                            : {};
+                          const wafDetectedHostCount = Number(wafSummary?.detected_host_count || 0);
+                          const wafBlockedHostCount = Number(wafSummary?.blocked_host_count || 0);
+                          const wafBypassHostCount = Number(wafSummary?.bypass_success_host_count || 0);
+                          const wafSkipRequestCount = Number(wafSummary?.skip_request_count || 0);
+                          const hasWafSummary = (
+                            wafDetectedHostCount > 0
+                            || wafBlockedHostCount > 0
+                            || wafBypassHostCount > 0
+                            || wafSkipRequestCount > 0
+                          );
+                          const showTaskTargetStatTooltip = hasAny || hasWafSummary;
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[220px] max-w-[560px]">
-                              <button
-                                onClick={() => openTaskLocalView(id)}
-                                className="text-brand-accent hover:underline font-mono whitespace-pre-wrap break-all text-center inline-block w-full leading-relaxed"
-                                title="点击查看该任务详情"
-                              >
-                                {formatModuleCellValue(module.id, column, row)}
-                              </button>
+                              <div className="group relative inline-flex items-center justify-center w-full">
+                                <button
+                                  onClick={() => openTaskLocalView(id)}
+                                  className="text-brand-accent hover:underline font-mono whitespace-pre-wrap break-all text-center inline-block w-full leading-relaxed"
+                                  title="点击查看该任务详情"
+                                >
+                                  {formatModuleCellValue(module.id, column, row)}
+                                </button>
+                                {showTaskTargetStatTooltip ? (
+                                  <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[320px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
+                                    <div className="rounded-xl border border-brand-border bg-brand-card/95 p-3 text-left shadow-2xl backdrop-blur-xl">
+                                      <div className="text-xs font-black tracking-wide text-brand-text">任务资产统计</div>
+                                      <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
+                                          <div className="text-brand-text-muted">站点</div>
+                                          <div className="mt-1 text-sm font-semibold text-brand-text">{siteCnt}</div>
+                                        </div>
+                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
+                                          <div className="text-brand-text-muted">子域名</div>
+                                          <div className="mt-1 text-sm font-semibold text-brand-text">{domainCnt}</div>
+                                        </div>
+                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
+                                          <div className="text-brand-text-muted">IP</div>
+                                          <div className="mt-1 text-sm font-semibold text-brand-text">{ipCnt}</div>
+                                        </div>
+                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
+                                          <div className="text-brand-text-muted">URL</div>
+                                          <div className="mt-1 text-sm font-semibold text-brand-text">{urlCnt}</div>
+                                        </div>
+                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2 col-span-2">
+                                          <div className="text-brand-text-muted">风险</div>
+                                          <div className="mt-1 text-sm font-semibold text-brand-text">{vulnCnt}</div>
+                                        </div>
+                                      </div>
+                                      {hasWafSummary ? (
+                                        <div className="mt-2 rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2 text-[11px]">
+                                          <div className="text-brand-text-muted">WAF识别概览</div>
+                                          <div className="mt-1 text-brand-text break-all">
+                                            主机 {wafDetectedHostCount} / 跳过 {wafBlockedHostCount} / 绕过 {wafBypassHostCount} / 请求 {wafSkipRequestCount}
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
                             </td>
                           );
                         }
@@ -10445,6 +10578,44 @@ function TableModuleView({
                               <span className="inline-block min-w-[19ch] font-mono tabular-nums">
                                 {formatModuleCellValue(module.id, column, row)}
                               </span>
+                            </td>
+                          );
+                        }
+
+                        if ((module.id === 'asset_site' || module.id === 'site') && column === 'headers') {
+                          const headerText = formatModuleCellValue(module.id, column, row);
+                          const headerLines = String(headerText || '')
+                            .split(/\r?\n/)
+                            .map((item) => item.trim())
+                            .filter((item) => item && item !== '-');
+                          const collapseThreshold = 3;
+                          const shouldCollapse = headerLines.length > collapseThreshold;
+                          const siteHeaderExpandKey = id || `site-header-row-${page}-${rowIndex}`;
+                          const isExpanded = Boolean(expandedSiteHeaderRows[siteHeaderExpandKey]);
+                          const renderedText = shouldCollapse && !isExpanded
+                            ? `${headerLines.slice(0, collapseThreshold).join('\n')}\n...`
+                            : (headerLines.length > 0 ? headerLines.join('\n') : '-');
+
+                          return (
+                            <td
+                              key={column}
+                              className="px-4 py-3 align-middle text-sm text-center whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
+                            >
+                              <div>{renderedText}</div>
+                              {shouldCollapse ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedSiteHeaderRows((prev) => ({
+                                      ...prev,
+                                      [siteHeaderExpandKey]: !isExpanded,
+                                    }))
+                                  }
+                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                >
+                                  {isExpanded ? '收起' : '展开'}
+                                </button>
+                              ) : null}
                             </td>
                           );
                         }
