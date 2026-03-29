@@ -10,6 +10,7 @@ import subprocess
 import base64
 import hashlib
 import hmac
+from types import SimpleNamespace
 from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit, urljoin
 from bson import ObjectId
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
@@ -20,7 +21,7 @@ from app.modules import CollectSource, WebSiteFetchStatus, WebSiteFetchOption
 from app.services.nuclei_scan import nuclei_scan, NucleiScan
 from app.services.afrog_scan import run_afrog_scan
 from app.services.waf_guard import WAFSmartSkipGuard
-from app.services.ai_pen_mcp_runtime import AiPenMcpRuntime
+from app.services.ai_pen_mcp_runtime import AiPenMcpRuntime, ToolSchema
 from app.services.task_scope_guard import load_task_scope_context, host_in_scope, url_in_scope
 from app.services import run_risk_cruising, BaseUpdateTask
 logger = utils.get_logger()
@@ -6588,17 +6589,194 @@ class WebSiteFetch(object):
         if runtime_timeout_sec < 1:
             runtime_timeout_sec = self.AI_PEN_TEST_MCP_TIMEOUT_SEC
 
-        def _with_runtime_artifacts(base_payload, trace_parts, current_status, current_decision):
+        # 使用统一 MCP Runtime 管理探针调用审计，避免仅依赖 tool_trace 字符串回填。
+        runtime = AiPenMcpRuntime(
+            max_turns=max_tool_calls,
+            max_tool_calls=max_tool_calls,
+            timeout_sec=runtime_timeout_sec,
+            runtime_version=self.AI_PEN_MCP_RUNTIME_VERSION,
+        )
+        runtime_context = {
+            "task_id": str(self.task_id or ""),
+            "target_url": target_url,
+            "risk_type": risk_type_text,
+            "risk_name": risk_name,
+        }
+
+        common_input_schema = {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string"},
+                "method": {"type": "string"},
+                "allow_redirects": {"type": "boolean"},
+                "headers": {"type": "object"},
+            },
+            "required": ["url"],
+        }
+
+        def _build_runtime_http_executor(default_method="get", default_allow_redirects=True):
+            def _executor(_context, params):
+                params_obj = params if isinstance(params, dict) else {}
+                req_url = str(params_obj.get("url") or "").strip()
+                req_method = str(params_obj.get("method") or default_method or "get").strip().lower() or "get"
+                allow_redirects = params_obj.get("allow_redirects")
+                if not isinstance(allow_redirects, bool):
+                    allow_redirects = bool(default_allow_redirects)
+                req_headers = params_obj.get("headers")
+                req_headers_obj = req_headers if isinstance(req_headers, dict) else None
+
+                if not req_url:
+                    return {"status": "error", "message": "missing_url", "response": {}}
+
+                try:
+                    resp = utils.http_req(
+                        req_url,
+                        req_method,
+                        timeout=timeout_tuple,
+                        allow_redirects=allow_redirects,
+                        headers=req_headers_obj,
+                        waf_guard=self.waf_guard,
+                        waf_module="ai_pen_test",
+                    )
+                    status_code = int(getattr(resp, "status_code", 0) or 0)
+                    response_headers = {}
+                    raw_headers = getattr(resp, "headers", {}) or {}
+                    if hasattr(raw_headers, "items"):
+                        for header_key, header_value in raw_headers.items():
+                            key_text = str(header_key or "").strip()
+                            if not key_text:
+                                continue
+                            response_headers[key_text] = str(header_value or "")[:240]
+                    try:
+                        body_text = str(getattr(resp, "text", "") or "")
+                    except Exception:
+                        body_text = ""
+                    body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
+                    body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest() if body_excerpt else ""
+                    return {
+                        "status": "ok",
+                        "message": "ok",
+                        "response": {
+                            "url": req_url,
+                            "method": req_method,
+                            "status_code": status_code,
+                            "headers": response_headers,
+                            "body_text": body_excerpt,
+                            "body_md5": body_md5,
+                        },
+                    }
+                except Exception as req_exc:
+                    return {
+                        "status": "error",
+                        "message": self._clip_text(req_exc, self.AI_PEN_TEST_ERROR_MAX),
+                        "response": {},
+                    }
+
+            return _executor
+
+        runtime.register_tool(
+            ToolSchema(
+                name="http_fetch",
+                description="基础 HTTP 获取探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="payload_probe",
+                description="Payload 探针请求",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="idor_probe",
+                description="IDOR 参数变异探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="api_doc_probe",
+                description="API 文档发现探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="jwt_probe",
+                description="JWT 鉴权探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="websocket_probe",
+                description="WebSocket 握手探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=False),
+            )
+        )
+
+        def _runtime_http_req(tool_name, req_url, summary="", method="get", allow_redirects=True, headers=None):
+            params = {
+                "url": str(req_url or "").strip(),
+                "method": str(method or "get").strip().lower() or "get",
+                "allow_redirects": bool(allow_redirects),
+            }
+            if isinstance(headers, dict) and headers:
+                params["headers"] = headers
+            call_ret = runtime.invoke(
+                tool_name=tool_name,
+                params=params,
+                context=runtime_context,
+                summary=summary,
+            )
+            result_obj = call_ret.get("result") if isinstance(call_ret, dict) else {}
+            if not isinstance(result_obj, dict):
+                result_obj = {}
+            status_text = str(call_ret.get("status", "") or result_obj.get("status", "") or "ok").strip().lower()
+            if status_text == "blocked":
+                raise RuntimeError("{} blocked by runtime budget".format(tool_name))
+            if status_text == "error":
+                err_text = str(result_obj.get("message") or call_ret.get("message") or "").strip()
+                raise RuntimeError(err_text or "{} failed".format(tool_name))
+            response_obj = result_obj.get("response") if isinstance(result_obj.get("response"), dict) else {}
+            return SimpleNamespace(
+                status_code=int(response_obj.get("status_code", 0) or 0),
+                headers=dict(response_obj.get("headers") or {}),
+                text=str(response_obj.get("body_text", "") or ""),
+                url=str(response_obj.get("url", "") or req_url or ""),
+            )
+
+        def _with_runtime_artifacts(base_payload, trace_parts, current_status, current_decision, runtime_result=None):
             payload_obj = dict(base_payload or {})
             trace_list = trace_parts if isinstance(trace_parts, list) else []
-            runtime_obj = AiPenMcpRuntime.build_artifacts_from_tool_trace(
-                tool_trace_parts=trace_list,
-                max_tool_calls=max_tool_calls,
-                timeout_sec=runtime_timeout_sec,
-                status=current_status,
-                decision=current_decision,
-                runtime_version=self.AI_PEN_MCP_RUNTIME_VERSION,
-            )
+            runtime_obj = runtime_result if isinstance(runtime_result, dict) else {}
+            if not runtime_obj:
+                runtime_obj = AiPenMcpRuntime.build_artifacts_from_tool_trace(
+                    tool_trace_parts=trace_list,
+                    max_tool_calls=max_tool_calls,
+                    timeout_sec=runtime_timeout_sec,
+                    status=current_status,
+                    decision=current_decision,
+                    runtime_version=self.AI_PEN_MCP_RUNTIME_VERSION,
+                )
+            current_stop_reason = str(runtime_obj.get("stop_reason", "") or "").strip()
+            if not current_stop_reason or current_stop_reason == "final_decision":
+                if str(current_status or "").strip().lower() == "error":
+                    runtime_obj["stop_reason"] = "error"
+                elif str(current_status or "").strip().lower() == "skipped":
+                    runtime_obj["stop_reason"] = "manual_required"
+                elif str(current_decision or "").strip().lower() == "needs_manual_review":
+                    runtime_obj["stop_reason"] = "manual_required"
+                else:
+                    runtime_obj["stop_reason"] = current_stop_reason or "final_decision"
             payload_obj["agent_trace"] = list(runtime_obj.get("agent_trace", []) or [])
             payload_obj["tool_calls"] = list(runtime_obj.get("tool_calls", []) or [])
             payload_obj["tool_results"] = list(runtime_obj.get("tool_results", []) or [])
@@ -6670,13 +6848,12 @@ class WebSiteFetch(object):
             if plan_trace_parts:
                 tool_trace_parts.append("ai_plan({})".format(",".join(plan_trace_parts)))
         try:
-            response = utils.http_req(
+            response = _runtime_http_req(
+                "http_fetch",
                 target_url,
-                "get",
-                timeout=timeout_tuple,
+                summary="基础页面获取",
+                method="get",
                 allow_redirects=True,
-                waf_guard=self.waf_guard,
-                waf_module="ai_pen_test",
             )
             tool_trace_parts.append("http_fetch(get,url={})".format(target_url[:220]))
             tool_calls = 1
@@ -6718,7 +6895,7 @@ class WebSiteFetch(object):
                     "tool_trace": "http_fetch(skip_by_waf,url={})".format(target_url[:220]),
                     "external_tool_runs": [],
                     "external_tool_hit": False,
-                }, ["http_fetch(skip_by_waf,url={})".format(target_url[:220])], "skipped", "needs_manual_review")
+                }, ["http_fetch(skip_by_waf,url={})".format(target_url[:220])], "skipped", "needs_manual_review", runtime_result=runtime.build_result())
 
             body_text = ""
             try:
@@ -6756,13 +6933,12 @@ class WebSiteFetch(object):
                     probe_url = self._build_probe_url_with_payload(target_url, payload)
                     if probe_url and probe_url != target_url:
                         try:
-                            probe_resp = utils.http_req(
+                            probe_resp = _runtime_http_req(
+                                "payload_probe",
                                 probe_url,
-                                "get",
-                                timeout=timeout_tuple,
+                                summary="payload 探针重放",
+                                method="get",
                                 allow_redirects=True,
-                                waf_guard=self.waf_guard,
-                                waf_module="ai_pen_test",
                             )
                             tool_calls += 1
                             tool_trace_parts.append("payload_probe(get,url={})".format(probe_url[:220]))
@@ -6793,13 +6969,12 @@ class WebSiteFetch(object):
                     idor_url = self._build_idor_probe_url(target_url)
                     if idor_url and idor_url != target_url:
                         try:
-                            idor_resp = utils.http_req(
+                            idor_resp = _runtime_http_req(
+                                "idor_probe",
                                 idor_url,
-                                "get",
-                                timeout=timeout_tuple,
+                                summary="IDOR 参数变异探针",
+                                method="get",
                                 allow_redirects=True,
-                                waf_guard=self.waf_guard,
-                                waf_module="ai_pen_test",
                             )
                             tool_calls += 1
                             tool_trace_parts.append("idor_probe(get,url={})".format(idor_url[:220]))
@@ -6836,13 +7011,12 @@ class WebSiteFetch(object):
                         if tool_calls >= max_tool_calls:
                             break
                         try:
-                            doc_resp = utils.http_req(
+                            doc_resp = _runtime_http_req(
+                                "api_doc_probe",
                                 doc_url,
-                                "get",
-                                timeout=timeout_tuple,
+                                summary="API 文档路径探测",
+                                method="get",
                                 allow_redirects=True,
-                                waf_guard=self.waf_guard,
-                                waf_module="ai_pen_test",
                             )
                             tool_calls += 1
                             api_doc_probe_count += 1
@@ -6921,14 +7095,13 @@ class WebSiteFetch(object):
                         if none_token and tool_calls < max_tool_calls:
                             try:
                                 jwt_headers = {"Authorization": "Bearer {}".format(none_token)}
-                                jwt_resp = utils.http_req(
+                                jwt_resp = _runtime_http_req(
+                                    "jwt_probe",
                                     target_url,
-                                    "get",
-                                    timeout=timeout_tuple,
+                                    summary="JWT none token 重放",
+                                    method="get",
                                     allow_redirects=True,
                                     headers=jwt_headers,
-                                    waf_guard=self.waf_guard,
-                                    waf_module="ai_pen_test",
                                 )
                                 tool_calls += 1
                                 tool_trace_parts.append("jwt_probe(auth_none,url={})".format(target_url[:220]))
@@ -6975,14 +7148,13 @@ class WebSiteFetch(object):
                                 "Sec-WebSocket-Version": "13",
                                 "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
                             }
-                            ws_resp = utils.http_req(
+                            ws_resp = _runtime_http_req(
+                                "websocket_probe",
                                 ws_probe_url,
-                                "get",
-                                timeout=timeout_tuple,
+                                summary="WebSocket 握手探针",
+                                method="get",
                                 allow_redirects=False,
                                 headers=ws_headers,
-                                waf_guard=self.waf_guard,
-                                waf_module="ai_pen_test",
                             )
                             tool_calls += 1
                             tool_trace_parts.append("websocket_probe(handshake,url={})".format(ws_probe_url[:220]))
@@ -7294,7 +7466,7 @@ class WebSiteFetch(object):
                 "tool_trace": " | ".join(tool_trace_parts)[:500],
                 "external_tool_runs": list(external_ret.get("tool_runs", []) or [])[: self.AI_PEN_EXTERNAL_RESULT_MAX],
                 "external_tool_hit": bool(external_ret.get("tool_hit")),
-            }, tool_trace_parts, "ok", decision)
+            }, tool_trace_parts, "ok", decision, runtime_result=runtime.build_result())
         except Exception as e:
             return _with_runtime_artifacts({
                 "status": "error",
@@ -7324,7 +7496,7 @@ class WebSiteFetch(object):
                 "tool_trace": "http_fetch(error,url={})".format(target_url[:220]),
                 "external_tool_runs": [],
                 "external_tool_hit": False,
-            }, ["http_fetch(error,url={})".format(target_url[:220])], "error", "needs_manual_review")
+            }, ["http_fetch(error,url={})".format(target_url[:220])], "error", "needs_manual_review", runtime_result=runtime.build_result())
 
     def run_ai_penetration_test(self):
         """

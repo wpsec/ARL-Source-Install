@@ -2680,6 +2680,18 @@ function tryParseJsonObject(value: any): Record<string, any> | null {
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         return parsed as Record<string, any>;
       }
+      if (typeof parsed === 'string') {
+        const innerText = tryExtractJsonObjectText(parsed);
+        if (!innerText) continue;
+        try {
+          const innerParsed = JSON.parse(innerText);
+          if (innerParsed && typeof innerParsed === 'object' && !Array.isArray(innerParsed)) {
+            return innerParsed as Record<string, any>;
+          }
+        } catch {
+          // ignore inner parse error
+        }
+      }
     } catch {
       // ignore
     }
@@ -2906,6 +2918,28 @@ function formatAiPlanReplyText(value: any): string {
   }
 
   return lines.join('\n') || normalizeValueNoTruncate(value);
+}
+
+function formatAiDialogueContent(role: string, content: any): string {
+  const roleText = String(role || '').trim().toLowerCase();
+  const rawText = normalizeValueNoTruncate(content);
+  if (!rawText || rawText === '-') return '-';
+
+  if (roleText === 'user') {
+    return formatAiPlanRequestText(rawText);
+  }
+  if (roleText === 'assistant') {
+    return formatAiPlanReplyText(rawText);
+  }
+
+  const parsed = tryParseJsonObject(rawText);
+  if (!parsed) return rawText;
+
+  const entries = Object.entries(parsed).slice(0, 24);
+  if (entries.length === 0) return rawText;
+  return entries
+    .map(([key, value]) => `${key}: ${normalizeValueNoTruncate(value)}`)
+    .join('\n');
 }
 
 const WIH_SENSITIVE_RECORD_TYPE_SET = new Set([
@@ -13385,6 +13419,13 @@ function AiPenAssetWorkspaceView({
             <div className="font-black">执行链路详情</div>
             <div className="flex flex-wrap gap-2">
               <button
+                onClick={() => selectedRow && void copyToClipboard(requestPacketData.requestUrl, '请求URL')}
+                className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                disabled={!selectedRow || actionLoading}
+              >
+                复制URL
+              </button>
+              <button
                 onClick={() => selectedRow && void copyToClipboard(requestPacketData.requestPacket, 'Request请求包')}
                 className="px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
                 disabled={!selectedRow || actionLoading}
@@ -13479,7 +13520,7 @@ function AiPenAssetWorkspaceView({
                               {index + 1}. {getDialogueRoleLabel(item.role)}
                             </div>
                             <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono">
-                              {String(item.content || '').trim() || '-'}
+                              {formatAiDialogueContent(item.role, item.content)}
                             </pre>
                           </div>
                         ))}
@@ -13625,7 +13666,27 @@ function AiPenAssetWorkspaceView({
                     </div>
                   </div>
                   <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
-                    <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Request 请求包</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Request 请求包</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void copyToClipboard(requestPacketData.requestUrl, '请求URL')}
+                          className="text-xs font-semibold text-brand-accent hover:underline"
+                          disabled={!requestPacketData.requestUrl}
+                        >
+                          复制URL
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void copyToClipboard(requestPacketData.requestPacket, 'Request请求包')}
+                          className="text-xs font-semibold text-brand-accent hover:underline"
+                          disabled={!requestPacketData.requestPacket}
+                        >
+                          复制请求包
+                        </button>
+                      </div>
+                    </div>
                     <pre className="text-xs whitespace-pre-wrap break-all leading-relaxed font-mono max-h-64 overflow-auto">
                       {normalizeValueNoTruncate(requestPacketData.requestPacket)}
                     </pre>

@@ -3,7 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-30（v4.3.60 ~ v4.3.64）
+## 2026-03-30（v4.3.60 ~ v4.3.65）
+
+- `[v4.3.65]` AI渗透 MCP 探针执行链继续按方案推进：`commonTask._verify_ai_pen_candidate` 新增内置工具注册（`http_fetch/payload_probe/idor_probe/api_doc_probe/jwt_probe/websocket_probe`）并统一走 `AiPenMcpRuntime` 调用，探针审计结果优先复用 runtime 真实产出的 `agent_trace/tool_calls/tool_results`，不再仅由 `tool_trace` 字符串反推，补齐 P0 阶段“统一工具协议 + 预算治理 + 可追溯调用记录”的落地深度
+- `[v4.3.65]` AI渗透测试工作台细节增强：详情面板新增 `复制URL/复制请求包` 快捷操作；`ARL 与 AI 对话记录` 支持解析“字符串包裹 JSON”并按角色进行结构化格式化展示，减少对话区原始 JSON 嵌套文本带来的阅读负担
 
 - `[v4.3.64]` 前端请求链路新增“后端就绪探测”启动保护：`requestApi` 在遇到 `502/503/504`（常见于系统升级或刚启动阶段 `nginx bad gateway`）时，会先对 `/api/` 执行短周期就绪探测并在就绪后自动重试原请求；若探测期内仍未就绪，则统一返回“系统正在启动中，后端服务尚未就绪，请稍后重试”的友好提示，避免用户看到原始 `HTTP 502: 502 Bad Gateway nginx/1.14.1` 页面级报错
 
