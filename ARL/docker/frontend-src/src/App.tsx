@@ -11815,6 +11815,44 @@ function TableModuleView({
                 </div>
               </div>
 
+              {aiPenDetail.row?.js_context_summary && typeof aiPenDetail.row.js_context_summary === 'object' && Object.keys(aiPenDetail.row.js_context_summary).length > 0 ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">JS上下文摘要</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Key 类型</div>
+                      <div className="mt-1 break-all">{normalizeValue(aiPenDetail.row.js_context_summary?.key_type)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">组件线索</div>
+                      <div className="mt-1 break-all">{normalizeValue(aiPenDetail.row.js_context_summary?.component_hint)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">应用线索</div>
+                      <div className="mt-1 break-all">{normalizeValue(aiPenDetail.row.js_context_summary?.application_hint)}</div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">噪声类型</div>
+                      <div className="mt-1 break-all">
+                        {String(aiPenDetail.row.js_context_summary?.noise_kind || '').trim() === 'header_keyword_in_bundle'
+                          ? 'HTTP头关键字命中前端代码'
+                          : String(aiPenDetail.row.js_context_summary?.noise_kind || '').trim() === 'secret_template_noise'
+                            ? '变量拼接/本地存储噪声'
+                            : normalizeValue(aiPenDetail.row.js_context_summary?.noise_kind)}
+                      </div>
+                    </div>
+                  </div>
+                  {normalizeValueNoTruncate(aiPenDetail.row.js_context_summary?.summary_text) !== '-' ? (
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">上下文归因</div>
+                      <div className="mt-1 text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(aiPenDetail.row.js_context_summary?.summary_text)}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               {((aiPenDetail.row?.browser_surface_summary
                 && typeof aiPenDetail.row.browser_surface_summary === 'object'
                 && Object.keys(aiPenDetail.row.browser_surface_summary).length > 0))
@@ -12763,6 +12801,9 @@ function AiPenAssetWorkspaceView({
   const [total, setTotal] = useState(0);
   const [selectedRowId, setSelectedRowId] = useState('');
   const [stats, setStats] = useState<AiPenStatsPayload>(emptyStats);
+  const [taskDetailCounts, setTaskDetailCounts] = useState<Record<string, number>>({});
+  const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
+  const taskDetailCountCacheRef = useRef<Record<string, Record<string, number>>>({});
 
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
@@ -12773,6 +12814,10 @@ function AiPenAssetWorkspaceView({
     const entries = Object.entries(activeExternalFilters).sort((a, b) => a[0].localeCompare(b[0]));
     return JSON.stringify(entries);
   }, [activeExternalFilters]);
+  const taskDetailCountCacheKey = useMemo(
+    () => `ai_pen_workspace_count::${activeExternalFilterSignature}`,
+    [activeExternalFilterSignature]
+  );
   const selectedRow = useMemo(
     () => rows.find((item) => normalizeRowIdValue(item?._id) === selectedRowId) || null,
     [rows, selectedRowId]
@@ -12865,7 +12910,19 @@ function AiPenAssetWorkspaceView({
       return;
     }
     try {
-      await navigator.clipboard.writeText(text);
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'readonly');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
       setError('');
       setSuccess(`${label}已复制到剪贴板`);
     } catch (err: any) {
@@ -12882,6 +12939,55 @@ function AiPenAssetWorkspaceView({
   useEffect(() => {
     setPage(1);
   }, [activeExternalFilterSignature]);
+
+  useEffect(() => {
+    const cached = taskDetailCountCacheRef.current[taskDetailCountCacheKey];
+    if (cached) {
+      setTaskDetailCounts(cached);
+      setTaskDetailCountLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadTaskDetailCounts = async () => {
+      setTaskDetailCountLoading(true);
+      try {
+        const requests = TASK_DETAIL_TABS.map(async (tab) => {
+          const tabModule = getModuleById(tab.id);
+          if (!tabModule.listPath) return [tab.id, 0] as const;
+          const response = await requestApi(token, tabModule.listPath, {
+            method: 'GET',
+            query: {
+              page: 1,
+              size: 1,
+              ...activeExternalFilters,
+            },
+          });
+          const normalized = normalizeListData(response);
+          return [tab.id, Number(normalized.total || 0)] as const;
+        });
+
+        const entries = await Promise.all(requests);
+        if (cancelled) return;
+        const nextCounts: Record<string, number> = {};
+        entries.forEach(([id, count]) => {
+          nextCounts[id] = count;
+        });
+        taskDetailCountCacheRef.current[taskDetailCountCacheKey] = nextCounts;
+        setTaskDetailCounts(nextCounts);
+      } catch {
+        if (cancelled) return;
+        setTaskDetailCounts({});
+      } finally {
+        if (!cancelled) setTaskDetailCountLoading(false);
+      }
+    };
+
+    void loadTaskDetailCounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeExternalFilters, taskDetailCountCacheKey, token]);
 
   const buildSearchQuery = useCallback((form: AiPenSearchForm): JsonValue => {
     const query: JsonValue = {};
@@ -13141,7 +13247,13 @@ function AiPenAssetWorkspaceView({
                 : 'border-brand-border bg-brand-bg/35 text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
             }`}
           >
-            {item.label}
+            {`${item.label} - ${
+              typeof taskDetailCounts[item.id] === 'number'
+                ? taskDetailCounts[item.id]
+                : taskDetailCountLoading
+                  ? '...'
+                  : 0
+            }`}
           </button>
         ))}
       </div>

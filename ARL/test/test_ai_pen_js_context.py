@@ -62,6 +62,7 @@ def _load_common_task_module():
             )
         },
     )
+    ai_pen_runtime_module.ToolSchema = object
 
     task_scope_guard_module = types.ModuleType("app.services.task_scope_guard")
     task_scope_guard_module.load_task_scope_context = lambda *args, **kwargs: {
@@ -648,6 +649,28 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("verified", result.get("decision"))
         self.assertIn("硬编码", str(result.get("reason") or ""))
 
+    def test_sensitive_info_hardcoded_secret_infers_component_and_application(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/umi.6b38f726.js",
+            body_text=(
+                'const secret_key = "AbCdEf1234567890ZXCVBNMqwerty";'
+                'function getRouter(){return history;}'
+                'const sign = hmac(secret_key);'
+                'const loginUrl = "/passport/login";'
+            ),
+            headers={"Content-Type": "application/javascript"},
+            risk_type="sensitive_info",
+            payload_type="replay",
+            evidence_seed="secret_key",
+        )
+
+        summary = result.get("js_context_summary") if isinstance(result.get("js_context_summary"), dict) else {}
+        self.assertEqual("verified", result.get("decision"))
+        self.assertIn("应用签名/加密密钥", str(result.get("reason") or ""))
+        self.assertEqual("应用签名/加密密钥", summary.get("key_type"))
+        self.assertEqual("UMI/React Router 路由组件", summary.get("component_hint"))
+        self.assertEqual("认证/登录应用", summary.get("application_hint"))
+
     def test_dom_xss_framework_chunk_without_sink_is_downgraded(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(
             target_url="https://example.com/_nuxt/chunk-vendors.js",
@@ -673,6 +696,23 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("likely_false_positive", result.get("decision"))
         self.assertIn("缺少可触发弹窗", str(result.get("reason") or ""))
+
+    def test_generic_js_header_keyword_noise_is_downgraded(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/umi.6b38f726.js",
+            body_text=(
+                "Location:mt,getAction:_t,getRouter:rt,getSearch:Pt,getHash:rn,"
+                "createMatchSelector:On}},ea=ga,la=function(){}"
+            ),
+            headers={"Content-Type": "application/javascript"},
+            risk_type="cmdi",
+            payload_type="cmdi_probe",
+            evidence_seed="Location:mt,getAction",
+        )
+
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertIn("Location", str(result.get("reason") or ""))
+        self.assertIn("无关", str(result.get("reason") or ""))
 
     def test_xss_popup_proof_requires_raw_executable_reflection(self):
         self.assertTrue(

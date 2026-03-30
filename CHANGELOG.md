@@ -3,7 +3,13 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-30（v4.3.60 ~ v4.3.65）
+## 2026-03-30（v4.3.60 ~ v4.3.67）
+
+- `[v4.3.67]` AI渗透 JS 上下文归因增强：`commonTask` 新增统一 `js_context_summary` 采集与缓存能力，针对 `secret_key/client_secret/access_key/private_key` 等敏感信息命中补充 `Key类型 / 组件线索 / 应用线索 / 上下文摘要`，并将这些信息同时注入 AI planner 请求、验证结果落库与详情页展示，支持把“这是哪类 key、像哪个组件/哪个应用”的上下文直接给到 AI 和用户
+- `[v4.3.67]` AI渗透 JS 构建产物误报收敛继续加强：针对 `arl_probe` 命中 `.js` 静态资源、`Location/Set-Cookie/Content-Type` 等 HTTP 头关键字实际落在前端 bundle 键名/变量中的场景，新增 `header_keyword_in_bundle / bundle_noise / secret_template_noise` 规则降噪，统一下调为 `likely_false_positive` 并在原因中明确标注“与 HTTP 响应头注入无关”，修复 `umi.*.js` 等前端框架代码被误判为可利用风险的问题
+
+- `[v4.3.66]` AI渗透测试工作台修复“复制请求包/复制URL”在部分环境报错 `Cannot read properties of undefined (reading 'writeText')`：复制逻辑改为“优先 `navigator.clipboard.writeText`，不可用时自动降级 `document.execCommand('copy')`”，恢复在非安全上下文或受限浏览器下的可复制能力
+- `[v4.3.66]` AI渗透测试资产视图补回任务详情模块统计数：顶部 `站点/子域名/IP/SSL证书/服务/目录扫描/URL信息/风险/PoC风险/WIH/WAF识别/AI渗透测试` 页签恢复显示 `label - count`，并按当前筛选条件拉取总数，修复“进入 AI渗透测试后统计数消失”的问题
 
 - `[v4.3.65]` AI渗透 MCP 探针执行链继续按方案推进：`commonTask._verify_ai_pen_candidate` 新增内置工具注册（`http_fetch/payload_probe/idor_probe/api_doc_probe/jwt_probe/websocket_probe`）并统一走 `AiPenMcpRuntime` 调用，探针审计结果优先复用 runtime 真实产出的 `agent_trace/tool_calls/tool_results`，不再仅由 `tool_trace` 字符串反推，补齐 P0 阶段“统一工具协议 + 预算治理 + 可追溯调用记录”的落地深度
 - `[v4.3.65]` AI渗透测试工作台细节增强：详情面板新增 `复制URL/复制请求包` 快捷操作；`ARL 与 AI 对话记录` 支持解析“字符串包裹 JSON”并按角色进行结构化格式化展示，减少对话区原始 JSON 嵌套文本带来的阅读负担
