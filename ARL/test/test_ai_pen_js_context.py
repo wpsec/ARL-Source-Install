@@ -651,6 +651,27 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("role", list(summary.get("sensitive_hits", [])))
         self.assertEqual("user_id", summary.get("mutation_key"))
 
+    def test_idor_diff_summary_text_and_score(self):
+        summary = WebSiteFetch._build_idor_diff_summary(
+            base_status=200,
+            base_body='{"code":0,"data":{"id":100}}',
+            probe_status=403,
+            probe_body='{"code":403,"msg":"forbidden"}',
+            probe_target={
+                "mutation_key": "id",
+                "mutation_from": "100",
+                "mutation_to": "101",
+                "mutation_kind": "numeric",
+            },
+        )
+
+        summary_text = WebSiteFetch._format_idor_diff_summary_text(summary)
+        score = WebSiteFetch._score_idor_diff_summary(summary)
+
+        self.assertIn("mutation=id:100->101", summary_text)
+        self.assertIn("status_changed=1", summary_text)
+        self.assertGreaterEqual(score, 6)
+
     def test_api_surface_summary_merges_api_doc_and_js_targets(self):
         summary = WebSiteFetch._build_api_surface_summary(
             api_doc_summary={
@@ -814,6 +835,51 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("needs_manual_review", result.get("decision"))
         self.assertIn("下载/导出响应特征", str(result.get("reason") or ""))
+
+    def test_file_context_verifies_upload_probe_from_runtime_response(self):
+        result = WebSiteFetch._analyze_ai_pen_file_context(
+            target_url="https://example.com/api/upload",
+            body_text="",
+            headers={"Content-Type": "application/json"},
+            risk_type="file_upload",
+            payload_type="upload_probe",
+            evidence_seed="arl-safe-upload.txt",
+            api_surface_summary={"upload_like_count": 1, "download_like_count": 0},
+            browser_surface_summary={},
+            runtime_api_calls=[],
+            dom_form_summary=[],
+            probe_status=200,
+            probe_headers={"Content-Type": "application/json"},
+            probe_body_text='{"code":0,"name":"arl-safe-upload.txt","url":"/download/arl-safe-upload.txt"}',
+            payload="arl-safe-upload.txt",
+        )
+
+        self.assertEqual("verified", result.get("decision"))
+        self.assertEqual("file_context(upload_verified)", result.get("tool_trace"))
+
+    def test_file_context_verifies_download_probe_from_runtime_response(self):
+        result = WebSiteFetch._analyze_ai_pen_file_context(
+            target_url="https://example.com/api/export",
+            body_text="",
+            headers={"Content-Type": "text/html"},
+            risk_type="file_read",
+            payload_type="file_probe",
+            evidence_seed="download",
+            api_surface_summary={"upload_like_count": 0, "download_like_count": 1},
+            browser_surface_summary={},
+            runtime_api_calls=[],
+            dom_form_summary=[],
+            probe_status=200,
+            probe_headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": "attachment; filename=report.csv",
+            },
+            probe_body_text="",
+            payload="",
+        )
+
+        self.assertEqual("verified", result.get("decision"))
+        self.assertEqual("file_context(download_verified)", result.get("tool_trace"))
 
     def test_login_surface_summary_detects_password_and_captcha(self):
         summary = WebSiteFetch._build_ai_pen_login_surface_summary(
