@@ -3,7 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-30（v4.3.60 ~ v4.3.67）
+## 2026-03-30（v4.3.60 ~ v4.5.0）
+
+- `[v4.5.0]` AI渗透高价值目标提取从“少量固定示例”扩展为“通用高价值家族”能力：`AI渗透` 候选源新增纳入 `目录扫描(fileleak)`，并对 `site/url/fileleak` 统一引入状态码优先与高价值目标识别，重点覆盖 `接口说明/Schema`、`管理/诊断端点`、`认证入口`、`文件处理入口`、`敏感文件/配置端点` 等多类目标；执行窗口按 `知识命中 + 高价值优先级 + 状态码` 共同排序，不再只围绕个别 `api-docs/actuator/env` 示例路径构建候选
+- `[v4.5.0]` AI渗透执行链升级为“AI 单次规划 + runtime 多步 tool plan 执行”：planner 现可输出 `tool_plan`，运行时会按统一工具协议顺序执行多步探针并汇总结果，再回写到 `agent_trace/tool_calls/tool_results` 与结果详情；当前已支持围绕高价值 URL 做多步验证链，但仍保留任务范围约束和低副作用原则，为后续真正的“逐轮结果回喂模型再决策”式 Agent loop 继续铺路
 
 - `[v4.3.67]` AI渗透 JS 上下文归因增强：`commonTask` 新增统一 `js_context_summary` 采集与缓存能力，针对 `secret_key/client_secret/access_key/private_key` 等敏感信息命中补充 `Key类型 / 组件线索 / 应用线索 / 上下文摘要`，并将这些信息同时注入 AI planner 请求、验证结果落库与详情页展示，支持把“这是哪类 key、像哪个组件/哪个应用”的上下文直接给到 AI 和用户
 - `[v4.3.67]` AI渗透 JS 构建产物误报收敛继续加强：针对 `arl_probe` 命中 `.js` 静态资源、`Location/Set-Cookie/Content-Type` 等 HTTP 头关键字实际落在前端 bundle 键名/变量中的场景，新增 `header_keyword_in_bundle / bundle_noise / secret_template_noise` 规则降噪，统一下调为 `likely_false_positive` 并在原因中明确标注“与 HTTP 响应头注入无关”，修复 `umi.*.js` 等前端框架代码被误判为可利用风险的问题

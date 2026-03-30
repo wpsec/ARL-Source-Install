@@ -74,6 +74,11 @@ ARL/app/dicts/kscan_fingerprint.local.json
 # Runtime config (local persistent config, do not track)
 ARL/docker/config-runtime.yaml
 ARL/docker/config-runtime.yaml.bak.*
+ARL/docker/ai/sop/poc_index.json
+ARL/docker/ai/sop/ai_pen_knowledge_index.json
+
+# Local optional PoC knowledge libraries
+tools/poc/
 
 # Test coverage
 htmlcov/

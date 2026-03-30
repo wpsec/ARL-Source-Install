@@ -12838,6 +12838,7 @@ function AiPenAssetWorkspaceView({
     vuln: '风险',
     nuclei_result: 'PoC风险',
     wih: 'WIH',
+    fileleak: '目录扫描',
     site: '站点线索',
     url: 'URL线索',
   };
@@ -12850,6 +12851,7 @@ function AiPenAssetWorkspaceView({
     mcp_api_doc_probe: 'MCP-API文档探针',
     mcp_jwt_probe: 'MCP-JWT探针',
     mcp_websocket_probe: 'MCP-WebSocket探针',
+    mcp_file_probe: 'MCP-文件探针',
   };
   const payloadTypeLabelMap: Record<string, string> = {
     replay: '重放',

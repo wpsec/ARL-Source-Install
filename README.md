@@ -43,6 +43,20 @@ tools/playwright/README.md
 
 只在 x86 环境做了测试，arm 没有做测试，不知道兼不兼容
 
+### POC 知识库
+
+https://github.com/eeeeeeeeee-code/POC
+
+https://github.com/nomi-sec/PoC-in-GitHub
+
+https://github.com/vulhub/vulhub
+
+是给AI分析做参考的，可自行下载到这个目录，不下也行
+
+```plain
+/项目目录/ARL-Source-Install/tools/poc
+```
+
 ### 密码修改
 
 忘记系统账户密码
@@ -100,33 +114,6 @@ ARL/docker/config-runtime.yaml  # 运行配置（用户实际生效，不进 git
 ARL_WORKER_REPLICAS=1   # 可选: 1 或 2，默认 1
 ```
 
-- `./start.sh` 与 `./scripts/quick-build.sh` 会自动读取该参数
-- `1`：启动 `worker_1`
-- `2`：启动 `worker_1 + worker_2`
-- 不影响任务重启、停止、重试逻辑（队列与任务状态流转保持不变）
-- 不会“按域名固定绑定某个 worker”
-- 实际模型是 Celery/RabbitMQ 的“同队列竞争消费”：谁先空闲，谁先拿下一条消息
-- 同一条 Celery 消息只会被一个 worker 进程消费，不会被两个 worker 同时执行
-
-任务分配可以这样理解：
-
-1. 创建任务时，系统先决定投递到哪个队列（`arltask`、`arlheavy`、`arlweb`）。
-2. 该队列中的消息由可用 worker 抢占消费（1个或2个，取决于部署参数）。
-3. 某个任务一旦被某个进程拿到，整个主扫描流程在该进程内完成（不是“阶段1在 worker1、阶段2在 worker2”）。
-4. AI 去噪是独立 Celery 任务，按队列再调度；可以由任一可用 worker 执行。
-
-关于“是否会重复扫描同资产”：
-
-- 横向扩容本身不会导致同一条消息重复执行。
-- 可能出现“看起来重复”的主要来源：重复创建同目标任务、手动重启任务、异常恢复重投（极端情况下）。
-- 为降低恢复抖动，默认仅主 `worker_1` 执行启动恢复（`ARL_WORKER_RECOVER_ON_BOOT=1`），`worker_2` 默认关闭启动恢复（`ARL_WORKER_RECOVER_ON_BOOT=0`）。
-
-建议先用保守并发运行（当前默认 `2/2/2/1`），观察稳定后再升并发。可用以下命令观察 MQ 压力：
-
-```bash
-docker exec arl_rabbitmq rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers
-```
-
 ## 二开功能总览
 
 ### 资产发现
@@ -143,7 +130,7 @@ docker exec arl_rabbitmq rabbitmqctl list_queues name messages_ready messages_un
 - 渗透测试模块：SQL 注入、XSS、LFI、RCE、XXE、SSTI、SSRF 等主动测试
 - DOM XSS 轻量静态分析与 JS 参数提取
 - WAF 观测、命中证据、有限试探绕过与失败后跳过
-- 云安全只读检测：凭证泄露、存储桶遍历、可接管、ACL / Policy 泄露
+- ~~云安全只读检测：凭证泄露、存储桶遍历、可接管、ACL / Policy 泄露~~
 
 ### 平台化增强
 
@@ -262,59 +249,7 @@ docker exec arl_rabbitmq rabbitmqctl list_queues name messages_ready messages_un
 
 - 不建议使用nuclei与afrog进行poc扫描，性能太差的机器效果也不好
 
-<!-- 这是一个文本绘图，源码为：flowchart TD
 
-  U[用户/前端] --> N[arl_nginx 入口认证与反代]
-
-N --> W[arl_web: Gunicorn API]
-
-W --> M[(MongoDB: task/asset/result)]
-
-W --> R[(RabbitMQ: Celery queues)]
-
-S[arl_scheduler 定时调度] --> R
-
-R --> Q1[arltask queue]
-
-R --> Q2[arlheavy queue]
-
-R --> Q3[arlweb queue]
-
-R --> Q4[arlgithub queue]
-
-Q1 --> WK1[arl_worker_1]
-
-Q2 --> WK1
-
-Q3 --> WK1
-
-Q4 --> WK1
-
-Q1 --> WK2[arl_worker_2]
-
-Q2 --> WK2
-
-Q3 --> WK2
-
-Q4 --> WK2
-
-WK1 --> SCAN[扫描阶段执行: 域名/IP/站点/目录/漏洞/WIH...]
-
-WK2 --> SCAN
-
-SCAN --> AID[AI 去噪增量任务入队 arlweb]
-
-AID --> WK1
-
-AID --> WK2
-
-WK1 --> M
-
-WK2 --> M
-
-M --> W
-
-W --> U -->
 ![](https://cdn.nlark.com/yuque/__mermaid_v3/c4761538d01543e85d19f9792359b89c.svg)
 
 ## Bug？

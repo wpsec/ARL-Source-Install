@@ -179,6 +179,14 @@ class WebSiteFetch(object):
         "upload_probe",
         "replay",
     )
+    AI_PEN_RUNTIME_TOOL_NAMES = (
+        "http_fetch",
+        "payload_probe",
+        "idor_probe",
+        "api_doc_probe",
+        "jwt_probe",
+        "websocket_probe",
+    )
     AI_PEN_EXTERNAL_TOOL_REGISTRY = (
         "sqlmap",
         "httpx",
@@ -219,6 +227,7 @@ class WebSiteFetch(object):
         "passwd",
         "credential",
     )
+    AI_PEN_SUCCESS_STATUS_SET = {200, 201, 202, 203, 204, 206}
     AI_PEN_EXTRA_SURFACE_HINTS = {
         "api_doc_surface": ("swagger", "openapi", "api-docs", "postman", "knife4j", "redoc"),
         "js_bundler_app": ("_nuxt", "nuxt", "__nuxt__", "webpack", "__webpack_require__", "webpackjson", "__vite__"),
@@ -3939,6 +3948,12 @@ class WebSiteFetch(object):
             surface_hints = self._collect_ai_pen_surface_hints(candidate, extra_text=js_context_text)
             enriched_candidate["surface_hints"] = surface_hints
             capability_profile = self._select_ai_pen_capability_profile(enriched_candidate)
+            inferred_tool_plan = self._infer_ai_pen_tool_plan(
+                candidate=candidate,
+                payload_type=default_payload_type,
+                payload=default_payload,
+                max_steps=max(2, self._safe_int_value(runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)),
+            )
             request_obj = {
                 "task_id": str(self.task_id),
                 "target": str(candidate.get("target", "") or "").strip(),
@@ -3969,6 +3984,7 @@ class WebSiteFetch(object):
                 "js_context_snippet": self._clip_text(js_context_summary.get("context_snippet", ""), self.AI_PEN_TEST_EVIDENCE_MAX)
                 if isinstance(js_context_summary, dict)
                 else "",
+                "inferred_tool_plan": list(inferred_tool_plan or []),
                 "js_asset_target": bool(
                     self._is_js_asset_target(
                         str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
@@ -4013,6 +4029,7 @@ class WebSiteFetch(object):
                     "login_surface": "发现登录表单、验证码或 auth 接口不等于存在漏洞，优先整理黑盒认证面上下文与后续验证建议",
                 },
                 "supported_payload_types": list(self.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES),
+                "supported_tools": list(self.AI_PEN_RUNTIME_TOOL_NAMES),
                 "output_schema": {
                     "decision": "verified|likely_false_positive|needs_manual_review",
                     "confidence": "0~1 float",
@@ -4021,6 +4038,13 @@ class WebSiteFetch(object):
                     "payload": "string",
                     "evidence": ["string"],
                     "next_actions": ["string"],
+                    "tool_plan": [
+                        {
+                            "tool": "http_fetch|payload_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe",
+                            "params": {"url": "string", "method": "get|post", "allow_redirects": True, "headers": {"Header": "Value"}},
+                            "summary": "string",
+                        }
+                    ],
                 },
             }
             request_text = json.dumps(request_obj, ensure_ascii=False)
@@ -4032,6 +4056,8 @@ class WebSiteFetch(object):
             system_prompt = (
                 "{}\n\n输出要求：仅返回 JSON 对象，不要 Markdown；"
                 "decision 只能是 verified/likely_false_positive/needs_manual_review。"
+                "如果需要多轮验证，可返回 tool_plan，按顺序列出要调用的工具与 URL；"
+                "tool_plan 只能使用 supported_tools 中的工具，且不得越过当前 target/vuln_url 同任务范围。"
             ).format(system_prompt)
             conversation_messages = [
                 {
@@ -4179,6 +4205,13 @@ class WebSiteFetch(object):
                     ai_payload = str(inferred_payload)[: self.AI_PEN_TEST_PAYLOAD_MAX]
             ai_reason = self._clip_text(parsed.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
             ai_evidence = self._normalize_ai_poc_keywords(parsed.get("evidence"), max_count=8)
+            ai_tool_plan = self._normalize_ai_pen_tool_plan(
+                parsed.get("tool_plan"),
+                default_url=str(candidate.get("vuln_url") or candidate.get("target") or "").strip(),
+                max_steps=max(2, self._safe_int_value(runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)),
+            )
+            if not ai_tool_plan:
+                ai_tool_plan = list(inferred_tool_plan or [])
 
             result["ok"] = True
             result["status"] = "ok"
@@ -4191,6 +4224,7 @@ class WebSiteFetch(object):
                 "payload": ai_payload,
                 "evidence": ai_evidence,
                 "next_actions": ai_actions,
+                "tool_plan": ai_tool_plan,
             }
             return result
         except Exception as e:
@@ -4210,6 +4244,7 @@ class WebSiteFetch(object):
         merged["ai_plan_decision"] = ""
         merged["ai_plan_confidence"] = 0.0
         merged["ai_plan_actions"] = []
+        merged["ai_plan_tool_plan"] = []
         if not plan_ok:
             return merged
 
@@ -4217,11 +4252,17 @@ class WebSiteFetch(object):
         ai_confidence = self._clamp_ai_pen_confidence(plan_output.get("confidence"), 0.55)
         ai_reason = self._clip_text(plan_output.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
         ai_actions = self._normalize_ai_poc_keywords(plan_output.get("next_actions"), max_count=4)
+        ai_tool_plan = self._normalize_ai_pen_tool_plan(
+            plan_output.get("tool_plan"),
+            default_url=str(merged.get("request_url") or merged.get("vuln_url") or merged.get("target") or "").strip(),
+            max_steps=max(2, self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS),
+        )
 
         merged["ai_plan_reason"] = ai_reason
         merged["ai_plan_decision"] = ai_decision
         merged["ai_plan_confidence"] = ai_confidence
         merged["ai_plan_actions"] = ai_actions
+        merged["ai_plan_tool_plan"] = ai_tool_plan
 
         base_decision = self._normalize_ai_pen_decision(merged.get("decision"), default_value="needs_manual_review")
         base_confidence = self._clamp_ai_pen_confidence(merged.get("confidence"), 0.5)
@@ -6464,6 +6505,526 @@ class WebSiteFetch(object):
             return "upload_probe", "filename=shell.php"
         return "replay", ""
 
+    @classmethod
+    def _is_ai_pen_success_status(cls, status_code) -> bool:
+        return cls._safe_int_value(status_code, 0) in cls.AI_PEN_SUCCESS_STATUS_SET
+
+    @classmethod
+    def _build_ai_pen_high_value_url_candidate(
+        cls,
+        source_collection: str,
+        source_id,
+        target_url: str,
+        status_code=0,
+        title_text: str = "",
+        source_text: str = "",
+        site_url: str = "",
+        content_length=0,
+    ):
+        raw_url = str(target_url or "").strip()
+        if not cls._is_http_target(raw_url):
+            return None
+
+        lower_url = raw_url.lower()
+        title_lower = str(title_text or "").strip().lower()
+        source_lower = str(source_text or "").strip().lower()
+        site_text = str(site_url or "").strip()
+        status_value = cls._safe_int_value(status_code, 0)
+        success_like = cls._is_ai_pen_success_status(status_value)
+        privileged_like = status_value in {401, 403}
+
+        if status_value in {404, 500, 502, 503, 504}:
+            return None
+
+        matched_keywords = []
+        risk_type = ""
+        risk_name = ""
+        severity = "info"
+        priority_score = 0
+        high_value_reason = ""
+
+        api_doc_tokens = (
+            "/v3/api-docs",
+            "/v2/api-docs",
+            "/api-docs",
+            "/swagger-resources",
+            "/swagger-ui",
+            "/openapi",
+            "/redoc",
+            "/knife4j",
+            "/postman",
+        )
+        config_tokens = (
+            "/actuator/env",
+            "/api/actuator/env",
+            "/env",
+            "/actuator/configprops",
+            "/configprops",
+            "/actuator/beans",
+            "/actuator/mappings",
+            "/actuator/conditions",
+            "/actuator/heapdump",
+            "/heapdump",
+            "/actuator/loggers",
+        )
+        manage_tokens = (
+            "/actuator",
+            "/jolokia",
+            "/druid",
+            "/prometheus",
+            "/metrics",
+            "/mappings",
+            "/beans",
+            "/conditions",
+            "/loggers",
+        )
+        auth_tokens = (
+            "/login",
+            "/signin",
+            "/sign-in",
+            "/sso",
+            "/cas",
+            "/passport",
+            "/oauth",
+            "/token",
+            "/auth/login",
+            "/api/login",
+            "/connect/token",
+        )
+        file_surface_tokens = (
+            "/upload",
+            "/import",
+            "/download",
+            "/export",
+            "/attachment",
+            "/template",
+            "/avatar",
+            "/report",
+        )
+        file_tokens = (
+            "/.env",
+            "/.git/config",
+            "/application.yml",
+            "/application.yaml",
+            "/bootstrap.yml",
+            "/bootstrap.yaml",
+            "/application-prod.yml",
+            "/application-dev.yml",
+            "/web.config",
+            "/config.php",
+        )
+
+        if any(token in lower_url for token in api_doc_tokens) or any(token in title_lower for token in ("swagger", "openapi", "knife4j", "redoc")):
+            matched_keywords = [token for token in api_doc_tokens if token in lower_url][:4] or ["api-docs"]
+            risk_type = "api_doc"
+            risk_name = "高价值接口说明/Schema端点"
+            severity = "high" if success_like else "medium"
+            priority_score = 60 if success_like else 28
+            high_value_reason = "api_doc_endpoint"
+        elif any(token in lower_url for token in config_tokens):
+            matched_keywords = [token for token in config_tokens if token in lower_url][:4]
+            risk_type = "sensitive_info"
+            risk_name = "高价值配置/环境信息端点"
+            severity = "high" if success_like else "medium"
+            priority_score = 64 if success_like else 30
+            high_value_reason = "config_env_endpoint"
+        elif any(token in lower_url for token in manage_tokens):
+            matched_keywords = [token for token in manage_tokens if token in lower_url][:4]
+            risk_type = "sensitive_info"
+            risk_name = "高价值管理/诊断端点"
+            severity = "high" if success_like else "medium"
+            priority_score = 52 if success_like else 24
+            high_value_reason = "manage_debug_endpoint"
+        elif any(token in lower_url for token in file_surface_tokens):
+            matched_keywords = [token for token in file_surface_tokens if token in lower_url][:4]
+            if any(token in lower_url for token in ("/upload", "/import", "/avatar")):
+                risk_type = "file_upload"
+            else:
+                risk_type = "file_read"
+            risk_name = "高价值文件处理入口"
+            severity = "medium" if success_like else "low"
+            priority_score = 42 if success_like else 18
+            high_value_reason = "file_surface_endpoint"
+        elif any(token in lower_url for token in auth_tokens):
+            matched_keywords = [token for token in auth_tokens if token in lower_url][:4]
+            risk_type = "login_surface"
+            risk_name = "高价值认证入口"
+            severity = "medium" if success_like else "low"
+            priority_score = 38 if success_like else 16
+            high_value_reason = "auth_entry_endpoint"
+        elif any(token in lower_url for token in file_tokens):
+            matched_keywords = [token for token in file_tokens if token in lower_url][:4]
+            risk_type = "sensitive_info"
+            risk_name = "高价值敏感文件/配置端点"
+            severity = "high" if success_like else "medium"
+            priority_score = 58 if success_like else 26
+            high_value_reason = "sensitive_file_endpoint"
+
+        if not risk_type:
+            return None
+        if not success_like and not privileged_like:
+            return None
+
+        evidence_parts = ["url={}".format(raw_url[:180])]
+        if title_text:
+            evidence_parts.append("title={}".format(str(title_text)[:90]))
+        if site_text:
+            evidence_parts.append("site={}".format(site_text[:120]))
+        if source_lower:
+            evidence_parts.append("source={}".format(source_lower[:48]))
+        if status_value:
+            evidence_parts.append("status={}".format(status_value))
+        if content_length:
+            evidence_parts.append("content_length={}".format(cls._safe_int_value(content_length, 0)))
+        if matched_keywords:
+            evidence_parts.append("keywords={}".format(",".join(matched_keywords[:4])))
+
+        return {
+            "source_collection": str(source_collection or "").strip(),
+            "source_id": source_id,
+            "source_module": str(source_text or source_collection or "").strip().lower(),
+            "target": raw_url,
+            "vuln_url": raw_url,
+            "risk_type": risk_type,
+            "risk_name": risk_name,
+            "severity": severity,
+            "evidence_seed": " | ".join(evidence_parts),
+            "status_code_hint": status_value,
+            "priority_score": priority_score,
+            "high_value_target": True,
+            "high_value_reason": high_value_reason,
+        }
+
+    @classmethod
+    def _looks_like_sensitive_config_response(cls, url_text: str, body_text: str, headers=None):
+        lower_url = str(url_text or "").strip().lower()
+        if not lower_url:
+            return False
+        if not any(
+            token in lower_url
+            for token in (
+                "/actuator/env",
+                "/api/actuator/env",
+                "/env",
+                "/actuator/configprops",
+                "/configprops",
+                "/actuator/beans",
+                "/actuator/mappings",
+                "/actuator/conditions",
+                "/actuator/heapdump",
+                "/heapdump",
+                "/actuator/loggers",
+            )
+        ):
+            return False
+        if any(token in lower_url for token in ("/actuator/health", "/health", "/actuator/info", "/info")):
+            return False
+
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        text = str(body_text or "").strip()
+        lower_text = text.lower()
+
+        if any(token in lower_url for token in ("/heapdump", "/actuator/heapdump")):
+            return any(token in content_type for token in ("application/octet-stream", "application/x-hprof"))
+
+        if not text or text[:1] not in "{[":
+            return False
+
+        markers = (
+            "propertysources",
+            "activeprofiles",
+            "applicationconfig:",
+            "systemproperties",
+            "local.server.port",
+            "spring.datasource",
+            "\"contexts\"",
+            "\"beans\"",
+            "\"mappings\"",
+            "\"conditions\"",
+            "\"loggers\"",
+        )
+        return any(marker in lower_text for marker in markers)
+
+    @classmethod
+    def _extract_sensitive_config_summary(cls, body_text: str):
+        text = str(body_text or "").strip()
+        if not text:
+            return ""
+        lower_text = text.lower()
+        summary_parts = []
+        if "propertysources" in lower_text:
+            summary_parts.append("propertySources")
+        if "activeprofiles" in lower_text:
+            summary_parts.append("activeProfiles")
+        if "systemproperties" in lower_text:
+            summary_parts.append("systemProperties")
+        if "\"beans\"" in lower_text:
+            summary_parts.append("beans")
+        if "\"mappings\"" in lower_text:
+            summary_parts.append("mappings")
+        if "\"conditions\"" in lower_text:
+            summary_parts.append("conditions")
+        if "\"loggers\"" in lower_text:
+            summary_parts.append("loggers")
+        if "spring.datasource" in lower_text:
+            summary_parts.append("spring.datasource")
+        return cls._clip_text(",".join(summary_parts[:6]), cls.AI_PEN_TEST_EVIDENCE_MAX)
+
+    @classmethod
+    def _normalize_ai_pen_tool_plan(cls, value, default_url: str = "", max_steps: int = 4):
+        if not isinstance(value, list):
+            return []
+
+        steps = []
+        seen = set()
+        allowed_tools = set(cls.AI_PEN_RUNTIME_TOOL_NAMES)
+        allowed_methods = {"get", "post", "put", "patch", "delete", "head", "options"}
+        safe_default_url = str(default_url or "").strip()
+
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            tool_name = str(item.get("tool") or item.get("name") or "").strip()
+            if tool_name not in allowed_tools:
+                continue
+
+            params = {}
+            raw_params = item.get("params")
+            if isinstance(raw_params, dict):
+                params.update(raw_params)
+            for key in ("url", "method", "allow_redirects", "headers"):
+                if key not in params and key in item:
+                    params[key] = item.get(key)
+
+            url_text = str(params.get("url") or safe_default_url).strip()
+            if not url_text:
+                continue
+            method_text = str(params.get("method") or "").strip().lower()
+            if method_text and method_text not in allowed_methods:
+                method_text = ""
+            allow_redirects = params.get("allow_redirects")
+            headers_obj = params.get("headers") if isinstance(params.get("headers"), dict) else {}
+            safe_headers = {}
+            for header_key, header_value in headers_obj.items():
+                key_text = str(header_key or "").strip()
+                if not key_text:
+                    continue
+                safe_headers[key_text] = str(header_value or "")[:240]
+
+            summary = str(item.get("summary") or item.get("reason") or item.get("goal") or "").strip()[:120]
+            step = {
+                "tool": tool_name,
+                "params": {
+                    "url": url_text,
+                },
+                "summary": summary,
+            }
+            if method_text:
+                step["params"]["method"] = method_text
+            if isinstance(allow_redirects, bool):
+                step["params"]["allow_redirects"] = allow_redirects
+            if safe_headers:
+                step["params"]["headers"] = safe_headers
+
+            cache_key = json.dumps(step, ensure_ascii=False, sort_keys=True)
+            if cache_key in seen:
+                continue
+            seen.add(cache_key)
+            steps.append(step)
+            if len(steps) >= max(1, int(max_steps or 1)):
+                break
+        return steps
+
+    @classmethod
+    def _infer_ai_pen_tool_plan(cls, candidate: dict, payload_type: str, payload: str, max_steps: int = 4):
+        item = candidate if isinstance(candidate, dict) else {}
+        target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+        if not target_url:
+            return []
+
+        plan = []
+        payload_type_text = str(payload_type or "").strip().lower()
+        lower_target = target_url.lower()
+
+        if payload_type_text == "api_doc_probe":
+            for doc_url in cls._build_api_doc_probe_targets(target_url, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "api_doc_probe",
+                        "params": {
+                            "url": doc_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "多轮探测 API 文档入口",
+                    }
+                )
+            return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
+        if any(
+            token in lower_target
+            for token in (
+                "/actuator/env",
+                "/api/actuator/env",
+                "/env",
+                "/actuator/configprops",
+                "/configprops",
+                "/actuator/beans",
+                "/actuator/mappings",
+                "/actuator/conditions",
+                "/actuator/loggers",
+            )
+        ):
+            plan.append(
+                {
+                    "tool": "http_fetch",
+                    "params": {
+                        "url": target_url,
+                        "method": "get",
+                        "allow_redirects": True,
+                    },
+                    "summary": "复测高价值配置/环境端点",
+                }
+            )
+            return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
+        if payload_type_text == "websocket_probe":
+            ws_url = cls._build_websocket_handshake_url(target_url)
+            if ws_url:
+                plan.append(
+                    {
+                        "tool": "websocket_probe",
+                        "params": {
+                            "url": ws_url,
+                            "method": "get",
+                            "allow_redirects": False,
+                            "headers": {
+                                "Connection": "Upgrade",
+                                "Upgrade": "websocket",
+                                "Sec-WebSocket-Version": "13",
+                                "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+                            },
+                        },
+                        "summary": "复测 WebSocket 握手入口",
+                    }
+                )
+        elif payload_type_text == "jwt_probe":
+            plan.append(
+                {
+                    "tool": "jwt_probe",
+                    "params": {
+                        "url": target_url,
+                        "method": "get",
+                        "allow_redirects": True,
+                    },
+                    "summary": "复测 JWT 鉴权入口",
+                }
+            )
+        return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
+    def _execute_ai_pen_tool_plan(
+        self,
+        runtime,
+        runtime_context: dict,
+        tool_plan,
+        target_url: str,
+        evidence_seed: str,
+        js_api_targets=None,
+    ):
+        plan_items = list(tool_plan or [])
+        observation = {
+            "trace_parts": [],
+            "probe_status": 0,
+            "probe_body_excerpt": "",
+            "probe_body_md5": "",
+            "evidence_hit": False,
+            "api_doc_hit": False,
+            "api_doc_hit_url": "",
+            "api_doc_summary": {},
+            "api_surface_summary": {},
+            "config_exposure_hit": False,
+            "config_exposure_url": "",
+            "config_exposure_summary": "",
+            "websocket_upgrade_hit": False,
+            "websocket_upgrade_hint": False,
+            "error": "",
+        }
+        if not plan_items:
+            return observation
+
+        start_idx = len(list(getattr(runtime, "tool_results", []) or []))
+        runtime.run_plan(plan_items, context=runtime_context)
+        result_items = list(getattr(runtime, "tool_results", []) or [])[start_idx:]
+
+        for item in result_items:
+            if not isinstance(item, dict):
+                continue
+            tool_name = str(item.get("tool", "") or "").strip()
+            status_text = str(item.get("status", "") or "").strip().lower()
+            result_obj = item.get("result") if isinstance(item.get("result"), dict) else {}
+            response_obj = result_obj.get("response") if isinstance(result_obj.get("response"), dict) else {}
+            url_text = str(response_obj.get("url", "") or "").strip()
+            summary_text = "agent_plan({},{})".format(tool_name or "-", status_text or "unknown")
+            if url_text:
+                summary_text = "agent_plan({},status={},url={})".format(tool_name or "-", status_text or "unknown", url_text[:220])
+            observation["trace_parts"].append(summary_text)
+
+            if status_text != "ok":
+                if not observation["error"]:
+                    observation["error"] = self._clip_text(
+                        item.get("message") or result_obj.get("message") or "",
+                        self.AI_PEN_TEST_ERROR_MAX,
+                    )
+                continue
+
+            if not url_text:
+                continue
+
+            if self._is_http_target(url_text) and not self._url_in_task_scope(url_text):
+                observation["trace_parts"].append("agent_plan(skip_out_of_scope,url={})".format(url_text[:180]))
+                continue
+
+            status_code = int(response_obj.get("status_code", 0) or 0)
+            headers = dict(response_obj.get("headers") or {}) if isinstance(response_obj.get("headers"), dict) else {}
+            body_excerpt = str(response_obj.get("body_text", "") or "")[: self.AI_PEN_TEST_BODY_MAX]
+            body_md5 = str(response_obj.get("body_md5", "") or "").strip()
+            if body_excerpt and not body_md5:
+                body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest()
+
+            if not observation["probe_status"]:
+                observation["probe_status"] = status_code
+            if body_excerpt:
+                observation["probe_body_excerpt"] = body_excerpt
+            if body_md5:
+                observation["probe_body_md5"] = body_md5
+            if self._contains_evidence(evidence_seed, body_excerpt):
+                observation["evidence_hit"] = True
+
+            if self._looks_like_api_doc_response(url_text, body_excerpt, headers):
+                observation["api_doc_hit"] = True
+                observation["api_doc_hit_url"] = url_text
+                observation["api_doc_summary"] = self._extract_api_doc_summary(body_excerpt)
+                observation["api_surface_summary"] = self._build_api_surface_summary(
+                    api_doc_summary=observation["api_doc_summary"],
+                    js_api_targets=js_api_targets or [],
+                )
+
+            if self._looks_like_sensitive_config_response(url_text, body_excerpt, headers):
+                observation["config_exposure_hit"] = True
+                observation["config_exposure_url"] = url_text
+                observation["config_exposure_summary"] = self._extract_sensitive_config_summary(body_excerpt)
+
+            ws_upgrade_header = str(headers.get("Upgrade", "") or "").strip().lower()
+            ws_version_hint = str(headers.get("Sec-WebSocket-Version", "") or "").strip()
+            if tool_name == "websocket_probe":
+                if status_code == 101 and "websocket" in ws_upgrade_header:
+                    observation["websocket_upgrade_hit"] = True
+                elif status_code in (400, 426) and ("websocket" in ws_upgrade_header or ws_version_hint):
+                    observation["websocket_upgrade_hint"] = True
+
+        return observation
+
     def _build_ai_pen_test_candidates(self):
         candidates = []
         seen = set()
@@ -6630,9 +7191,22 @@ class WebSiteFetch(object):
                 if not self._url_in_task_scope(site_url):
                     continue
 
+                status_code = int(row.get("status", 0) or 0)
+                high_value_candidate = self._build_ai_pen_high_value_url_candidate(
+                    source_collection="site",
+                    source_id=row.get("_id"),
+                    target_url=site_url,
+                    status_code=status_code,
+                    title_text=str(row.get("title", "") or "").strip(),
+                    source_text="site",
+                    site_url=site_url,
+                )
+                if high_value_candidate:
+                    _append_candidate(high_value_candidate)
+                    continue
+
                 title_text = str(row.get("title", "") or "").strip()
                 server_text = str(row.get("http_server", "") or "").strip()
-                status_code = int(row.get("status", 0) or 0)
                 finger_names = []
                 for finger_item in (row.get("finger", []) or []):
                     if isinstance(finger_item, dict):
@@ -6700,6 +7274,8 @@ class WebSiteFetch(object):
                         "risk_name": risk_name,
                         "severity": severity,
                         "evidence_seed": evidence_seed,
+                        "status_code_hint": status_code,
+                        "priority_score": 18 if self._is_ai_pen_success_status(status_code) else (8 if status_code in {401, 403} else 0),
                     }
                 )
         except Exception as e:
@@ -6724,10 +7300,22 @@ class WebSiteFetch(object):
                 if not self._url_in_task_scope(raw_url):
                     continue
 
-                lower_url = raw_url.lower()
                 title_text = str(row.get("title", "") or "").strip()
                 source_text = str(row.get("source", "") or "").strip().lower()
                 status_code = int(row.get("status_code", 0) or 0)
+                high_value_candidate = self._build_ai_pen_high_value_url_candidate(
+                    source_collection="url",
+                    source_id=row.get("_id"),
+                    target_url=raw_url,
+                    status_code=status_code,
+                    title_text=title_text,
+                    source_text=source_text or "url",
+                )
+                if high_value_candidate:
+                    _append_candidate(high_value_candidate)
+                    continue
+
+                lower_url = raw_url.lower()
                 parsed = urlsplit(raw_url)
                 query_items = parse_qsl(parsed.query, keep_blank_values=True)
 
@@ -6824,10 +7412,41 @@ class WebSiteFetch(object):
                         "risk_name": risk_name,
                         "severity": severity,
                         "evidence_seed": " | ".join(evidence_parts),
+                        "status_code_hint": status_code,
+                        "priority_score": 22 if self._is_ai_pen_success_status(status_code) else (10 if status_code in {401, 403} else 0),
                     }
                 )
         except Exception as e:
             logger.warning("task_id:{} build ai_pen candidates from url failed err:{}".format(self.task_id, e))
+
+        # 6) 目录扫描(fileleak)：优先提取状态码 200 的高价值端点/敏感文件。
+        try:
+            fileleak_cursor = utils.conn_db("fileleak").find(
+                {"task_id": self.task_id},
+                {"_id": 1, "url": 1, "site": 1, "title": 1, "status_code": 1, "content_length": 1},
+                max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
+            ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
+            for row in fileleak_cursor:
+                raw_url = str(row.get("url", "") or "").strip()
+                if not self._is_http_target(raw_url):
+                    continue
+                if not self._url_in_task_scope(raw_url):
+                    continue
+                status_code = int(row.get("status_code", 0) or 0)
+                candidate = self._build_ai_pen_high_value_url_candidate(
+                    source_collection="fileleak",
+                    source_id=row.get("_id"),
+                    target_url=raw_url,
+                    status_code=status_code,
+                    title_text=str(row.get("title", "") or "").strip(),
+                    source_text="fileleak",
+                    site_url=str(row.get("site", "") or "").strip(),
+                    content_length=row.get("content_length", 0),
+                )
+                if candidate:
+                    _append_candidate(candidate)
+        except Exception as e:
+            logger.warning("task_id:{} build ai_pen candidates from fileleak failed err:{}".format(self.task_id, e))
 
         def _risk_score(item):
             score = 0
@@ -6835,12 +7454,24 @@ class WebSiteFetch(object):
             severity = str(item.get("severity", "") or "").lower()
             if str(item.get("source_collection", "") or "") == "nuclei_result":
                 score += 15
+            elif str(item.get("source_collection", "") or "") == "fileleak":
+                score += 12
             elif str(item.get("source_collection", "") or "") in {"site", "url"}:
                 score += 5
             if self._is_http_target(item.get("vuln_url", "")):
                 score += 20
             if str(item.get("evidence_seed", "") or "").strip():
                 score += 8
+            status_code = self._safe_int_value(item.get("status_code_hint"), 0)
+            if self._is_ai_pen_success_status(status_code):
+                score += 14
+            elif status_code in {401, 403}:
+                score += 6
+            elif status_code >= 500 or status_code == 404:
+                score -= 8
+            if bool(item.get("high_value_target")):
+                score += 24
+            score += self._safe_int_value(item.get("priority_score"), 0)
             if severity in ("critical", "high"):
                 score += 12
             elif severity == "medium":
@@ -6901,6 +7532,18 @@ class WebSiteFetch(object):
             payload_type = ai_plan_payload_type
         if ai_plan_payload:
             payload = ai_plan_payload
+        ai_plan_tool_plan = self._normalize_ai_pen_tool_plan(
+            plan_obj.get("tool_plan"),
+            default_url=target_url,
+            max_steps=max(2, max_tool_calls),
+        )
+        if not ai_plan_tool_plan:
+            ai_plan_tool_plan = self._infer_ai_pen_tool_plan(
+                candidate=candidate,
+                payload_type=payload_type,
+                payload=payload,
+                max_steps=max(2, max_tool_calls),
+            )
         is_xss_case = (risk_type_text == "xss") or (str(payload_type or "").strip().lower() == "xss_probe")
         is_sqli_case = (risk_type_text == "sqli") or (str(payload_type or "").strip().lower() == "sqli_probe")
         is_weak_password_case = (risk_type_text == "weak_password") or (
@@ -7169,6 +7812,8 @@ class WebSiteFetch(object):
                 plan_trace_parts.append("payload_type={}".format(payload_type))
             if payload:
                 plan_trace_parts.append("payload={}".format(str(payload)[:80]))
+            if ai_plan_tool_plan:
+                plan_trace_parts.append("tool_plan_steps={}".format(len(ai_plan_tool_plan)))
             if plan_trace_parts:
                 tool_trace_parts.append("ai_plan({})".format(",".join(plan_trace_parts)))
         try:
@@ -7242,6 +7887,9 @@ class WebSiteFetch(object):
             api_doc_probe_count = 0
             api_doc_summary = {}
             api_surface_summary = self._build_api_surface_summary(api_doc_summary=api_doc_summary, js_api_targets=js_api_targets)
+            config_exposure_hit = False
+            config_exposure_url = ""
+            config_exposure_summary = ""
             jwt_token_found = ""
             jwt_alg_text = ""
             jwt_alg_none_hit = False
@@ -7252,6 +7900,35 @@ class WebSiteFetch(object):
             probe_error = ""
             payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "replay"}
 
+            if mcp_enable and ai_plan_tool_plan and len(runtime.tool_calls) < max_tool_calls:
+                plan_observation = self._execute_ai_pen_tool_plan(
+                    runtime=runtime,
+                    runtime_context=runtime_context,
+                    tool_plan=ai_plan_tool_plan,
+                    target_url=target_url,
+                    evidence_seed=evidence_seed,
+                    js_api_targets=js_api_targets,
+                )
+                tool_trace_parts.extend(list(plan_observation.get("trace_parts", []) or []))
+                probe_status = int(plan_observation.get("probe_status", 0) or 0) or probe_status
+                probe_body_excerpt = str(plan_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
+                probe_body_md5 = str(plan_observation.get("probe_body_md5", "") or "") or probe_body_md5
+                evidence_hit = bool(plan_observation.get("evidence_hit")) or evidence_hit
+                api_doc_hit = bool(plan_observation.get("api_doc_hit")) or api_doc_hit
+                api_doc_hit_url = str(plan_observation.get("api_doc_hit_url", "") or "") or api_doc_hit_url
+                if isinstance(plan_observation.get("api_doc_summary"), dict) and plan_observation.get("api_doc_summary"):
+                    api_doc_summary = dict(plan_observation.get("api_doc_summary") or {})
+                if isinstance(plan_observation.get("api_surface_summary"), dict) and plan_observation.get("api_surface_summary"):
+                    api_surface_summary = dict(plan_observation.get("api_surface_summary") or {})
+                config_exposure_hit = bool(plan_observation.get("config_exposure_hit")) or config_exposure_hit
+                config_exposure_url = str(plan_observation.get("config_exposure_url", "") or "") or config_exposure_url
+                config_exposure_summary = str(plan_observation.get("config_exposure_summary", "") or "") or config_exposure_summary
+                websocket_upgrade_hit = bool(plan_observation.get("websocket_upgrade_hit")) or websocket_upgrade_hit
+                websocket_upgrade_hint = bool(plan_observation.get("websocket_upgrade_hint")) or websocket_upgrade_hint
+                if (not probe_error) and str(plan_observation.get("error", "") or "").strip():
+                    probe_error = self._clip_text(plan_observation.get("error", ""), self.AI_PEN_TEST_ERROR_MAX)
+
+            tool_calls = len(list(runtime.tool_calls or []))
             if mcp_enable and tool_calls < max_tool_calls:
                 if payload and payload_type in payload_probe_types:
                     probe_url = self._build_probe_url_with_payload(target_url, payload)
@@ -7589,6 +8266,12 @@ class WebSiteFetch(object):
                 api_surface_summary_text = self._format_api_surface_summary_text(api_surface_summary)
                 if api_surface_summary_text:
                     reason = "{}；接口结构：{}".format(reason, api_surface_summary_text)
+            elif config_exposure_hit:
+                decision = "verified"
+                confidence = 0.87
+                reason = "发现公开高价值配置/环境端点 {}".format((config_exposure_url or target_url)[:180])
+                if config_exposure_summary:
+                    reason = "{}；配置摘要：{}".format(reason, config_exposure_summary)
             elif payload_reflect_hit:
                 decision = "needs_manual_review"
                 confidence = 0.74
@@ -7971,8 +8654,15 @@ class WebSiteFetch(object):
                 if token_text:
                     knowledge_hit_tokens_set.add(token_text)
 
-        # 有知识命中的候选优先进入执行窗口（同分保留原有风险优先顺序）。
-        candidates.sort(key=lambda item: -int(item.get("knowledge_score", 0) or 0))
+        # 有知识命中的候选优先进入执行窗口；同分时继续按高价值与状态优先级排序。
+        candidates.sort(
+            key=lambda item: (
+                -int(item.get("knowledge_score", 0) or 0),
+                -int(item.get("priority_score", 0) or 0),
+                str(item.get("source_collection", "")),
+                str(item.get("source_id", "")),
+            )
+        )
         source_counter = {}
         for candidate in candidates:
             source_name = str(candidate.get("source_collection", "") or "").strip().lower()
@@ -8155,6 +8845,7 @@ class WebSiteFetch(object):
                 ),
                 "ai_plan_reason": self._clip_text(verify_result.get("ai_plan_reason", ""), self.AI_PEN_TEST_REASON_MAX),
                 "ai_plan_actions": list(verify_result.get("ai_plan_actions", []) or [])[:4],
+                "ai_plan_tool_plan": list(verify_result.get("ai_plan_tool_plan", []) or [])[:8],
                 "ai_plan_request": self._clip_text(ai_plan_result.get("request_text", ""), 2600),
                 "ai_plan_reply": self._clip_text(ai_plan_result.get("reply_text", ""), 2600),
                 "ai_plan_messages": list(ai_plan_result.get("messages", []) or [])[:8],

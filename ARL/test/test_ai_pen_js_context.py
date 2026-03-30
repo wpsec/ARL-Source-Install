@@ -202,6 +202,99 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("login_entry_context", route_hint)
 
+    def test_high_value_url_candidate_detects_api_docs(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd799439011",
+            target_url="https://api-docs.example.test:9090/api/v2/api-docs",
+            status_code=200,
+            title_text="OpenAPI",
+            source_text="url",
+        )
+
+        self.assertEqual("api_doc", candidate.get("risk_type"))
+        self.assertEqual("高价值接口说明/Schema端点", candidate.get("risk_name"))
+        self.assertTrue(bool(candidate.get("high_value_target")))
+        self.assertGreater(int(candidate.get("priority_score", 0) or 0), 0)
+
+    def test_high_value_url_candidate_detects_actuator_env(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="fileleak",
+            source_id="507f1f77bcf86cd799439012",
+            target_url="https://config.example.test:10443/api/actuator/env",
+            status_code=200,
+            title_text="Spring Boot",
+            source_text="fileleak",
+        )
+
+        self.assertEqual("sensitive_info", candidate.get("risk_type"))
+        self.assertEqual("高价值配置/环境信息端点", candidate.get("risk_name"))
+        self.assertTrue(bool(candidate.get("high_value_target")))
+
+    def test_high_value_url_candidate_detects_management_endpoint(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd799439019",
+            target_url="https://example.com/actuator/prometheus",
+            status_code=200,
+            title_text="Prometheus",
+            source_text="url",
+        )
+
+        self.assertEqual("sensitive_info", candidate.get("risk_type"))
+        self.assertEqual("高价值管理/诊断端点", candidate.get("risk_name"))
+        self.assertTrue(bool(candidate.get("high_value_target")))
+
+    def test_high_value_url_candidate_detects_auth_entry(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd799439020",
+            target_url="https://example.com/passport/login",
+            status_code=200,
+            title_text="登录",
+            source_text="url",
+        )
+
+        self.assertEqual("login_surface", candidate.get("risk_type"))
+        self.assertEqual("高价值认证入口", candidate.get("risk_name"))
+
+    def test_high_value_url_candidate_detects_file_surface(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd799439021",
+            target_url="https://example.com/api/export/report",
+            status_code=200,
+            title_text="导出报表",
+            source_text="url",
+        )
+
+        self.assertEqual("file_read", candidate.get("risk_type"))
+        self.assertEqual("高价值文件处理入口", candidate.get("risk_name"))
+
+    def test_sensitive_config_response_detects_actuator_env_json(self):
+        self.assertTrue(
+            WebSiteFetch._looks_like_sensitive_config_response(
+                "https://config.example.test:10443/api/actuator/env",
+                '{"activeProfiles":["prod"],"propertySources":[{"name":"systemProperties"}]}',
+                headers={"Content-Type": "application/json"},
+            )
+        )
+
+    def test_normalize_ai_pen_tool_plan_filters_unsupported_steps(self):
+        plan = WebSiteFetch._normalize_ai_pen_tool_plan(
+            [
+                {"tool": "http_fetch", "url": "https://example.com/api/v2/api-docs", "summary": "fetch"},
+                {"tool": "rm -rf", "url": "https://evil.example.com", "summary": "bad"},
+                {"tool": "api_doc_probe", "params": {"url": "https://example.com/v3/api-docs", "method": "get"}},
+            ],
+            default_url="https://example.com/",
+            max_steps=4,
+        )
+
+        self.assertEqual(2, len(plan))
+        self.assertEqual("http_fetch", plan[0].get("tool"))
+        self.assertEqual("api_doc_probe", plan[1].get("tool"))
+
     def test_product_hints_collect_generic_surface_families(self):
         hints = WebSiteFetch._collect_ai_pen_surface_hints(
             {

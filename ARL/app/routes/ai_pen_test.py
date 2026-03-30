@@ -25,7 +25,7 @@ logger = get_logger()
 
 base_search_fields = {
     "task_id": fields.String(description="任务ID"),
-    "source_collection": fields.String(description="来源集合(vuln/nuclei_result/wih/site/url)"),
+    "source_collection": fields.String(description="来源集合(vuln/nuclei_result/wih/fileleak/site/url)"),
     "risk_type": fields.String(description="风险类型"),
     "risk_name": fields.String(description="风险名称"),
     "target": fields.String(description="目标"),
@@ -176,6 +176,8 @@ def _build_candidate_from_result(item: dict):
         "task_ai_pen_graph_summary": dict(item.get("task_ai_pen_graph_summary") or {}) if isinstance(item.get("task_ai_pen_graph_summary"), dict) else {},
         "task_ai_pen_graph_context": dict(item.get("task_ai_pen_graph_context") or {}) if isinstance(item.get("task_ai_pen_graph_context"), dict) else {},
         "login_surface_summary": dict(item.get("login_surface_summary") or {}) if isinstance(item.get("login_surface_summary"), dict) else {},
+        "priority_score": int(item.get("priority_score", 0) or 0),
+        "status_code_hint": int(item.get("status_code_hint", 0) or 0),
     }
 
 
@@ -211,7 +213,12 @@ def _retry_records(result_docs):
         for item in items:
             retry_count += 1
             candidate = _build_candidate_from_result(item)
-            verify_result = runner._verify_ai_pen_candidate(candidate, mcp_settings=runtime_settings)
+            ai_plan = {
+                "payload_type": str(item.get("payload_type", "") or "").strip(),
+                "payload": str(item.get("payload", "") or "").strip(),
+                "tool_plan": list(item.get("ai_plan_tool_plan", []) or []),
+            }
+            verify_result = runner._verify_ai_pen_candidate(candidate, mcp_settings=runtime_settings, ai_plan=ai_plan)
 
             status = _normalize_status(verify_result.get("status"))
             decision = _normalize_decision(verify_result.get("decision"))
@@ -263,6 +270,7 @@ def _retry_records(result_docs):
                 "runtime_version": str(verify_result.get("runtime_version", "") or "").strip(),
                 "external_tool_runs": list(verify_result.get("external_tool_runs", []) or [])[:3],
                 "external_tool_hit": bool(verify_result.get("external_tool_hit")),
+                "ai_plan_tool_plan": list(item.get("ai_plan_tool_plan", []) or [])[:8],
                 "knowledge_hit_product_labels": list(item.get("knowledge_hit_product_labels", []) or []),
                 "knowledge_hit_vuln_types": list(item.get("knowledge_hit_vuln_types", []) or []),
                 "knowledge_hit_entry_paths": list(item.get("knowledge_hit_entry_paths", []) or []),
