@@ -9119,6 +9119,16 @@ class WebSiteFetch(object):
                 payload=payload,
                 max_steps=max(2, max_tool_calls),
             )
+        tool_plan_preview_parts = []
+        for step_item in list(ai_plan_tool_plan or [])[:4]:
+            if not isinstance(step_item, dict):
+                continue
+            tool_name = str(step_item.get("tool") or "").strip() or "unknown"
+            step_url = str(dict(step_item.get("params") or {}).get("url") or "").strip()
+            if step_url:
+                tool_plan_preview_parts.append("{}@{}".format(tool_name, step_url[:90]))
+            else:
+                tool_plan_preview_parts.append(tool_name)
         is_xss_case = (risk_type_text == "xss") or (str(payload_type or "").strip().lower() == "xss_probe")
         is_sqli_case = (risk_type_text == "sqli") or (str(payload_type or "").strip().lower() == "sqli_probe")
         is_weak_password_case = (risk_type_text == "weak_password") or (
@@ -9130,6 +9140,24 @@ class WebSiteFetch(object):
         )
         if runtime_timeout_sec < 1:
             runtime_timeout_sec = self.AI_PEN_TEST_MCP_TIMEOUT_SEC
+        logger.info(
+            "task_id:{} ai_pen verify start source={}:{} target:{} risk_type:{} payload_type:{} route_hint:{} capability:{} "
+            "mcp:{} agent_loop:{} max_tool_calls:{} tool_plan_steps:{} tool_plan_preview:{}".format(
+                self.task_id,
+                str(candidate.get("source_collection", "") or "").strip()[:40] or "-",
+                str(candidate.get("source_id", "") or "").strip()[:32] or "-",
+                target_url[:180],
+                risk_type_text,
+                payload_type,
+                route_hint[:48],
+                str(capability_profile.get("name", "") or "").strip()[:48] or "-",
+                "on" if mcp_enable else "off",
+                "on" if agent_loop_enable else "off",
+                max_tool_calls,
+                len(list(ai_plan_tool_plan or [])),
+                self._clip_text(",".join(tool_plan_preview_parts) or "-", 260),
+            )
+        )
 
         # 使用统一 MCP Runtime 管理探针调用审计，避免仅依赖 tool_trace 字符串回填。
         runtime = AiPenMcpRuntime(
@@ -9840,6 +9868,25 @@ class WebSiteFetch(object):
                 payload_text = str(payload or "").strip().lower()
                 if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
                     payload_reflect_hit = True
+                logger.info(
+                    "task_id:{} ai_pen verify main_plan target:{} payload_type:{} stop_reason:{} probe_status:{} "
+                    "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} error:{}".format(
+                        self.task_id,
+                        target_url[:180],
+                        payload_type,
+                        agent_loop_stop_reason or "-",
+                        probe_status,
+                        self._clip_text(
+                            json.dumps(dict(plan_observation.get("tool_counts") or {}), ensure_ascii=False, sort_keys=True),
+                            180,
+                        ),
+                        int(bool(evidence_hit)),
+                        int(bool(api_doc_hit)),
+                        int(bool(graphql_hit)),
+                        len(idor_probe_responses),
+                        self._clip_text(probe_error, 120) if probe_error else "-",
+                    )
+                )
             tool_calls = len(list(runtime.tool_calls or []))
             if mcp_enable and tool_calls < max_tool_calls and agent_loop_stop_reason not in {"final_decision", "manual_required"}:
                 if payload_type == "jwt_probe":
@@ -9990,6 +10037,24 @@ class WebSiteFetch(object):
                         payload_text = str(payload or "").strip().lower()
                         if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
                             payload_reflect_hit = True
+                        logger.info(
+                            "task_id:{} ai_pen verify fallback_plan target:{} payload_type:{} probe_status:{} "
+                            "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} error:{}".format(
+                                self.task_id,
+                                target_url[:180],
+                                payload_type,
+                                probe_status,
+                                self._clip_text(
+                                    json.dumps(dict(fallback_observation.get("tool_counts") or {}), ensure_ascii=False, sort_keys=True),
+                                    180,
+                                ),
+                                int(bool(evidence_hit)),
+                                int(bool(api_doc_hit)),
+                                int(bool(graphql_hit)),
+                                len(idor_probe_responses),
+                                self._clip_text(probe_error, 120) if probe_error else "-",
+                            )
+                        )
                     elif payload_type == "weak_password_probe" and login_probe_context:
                         if bool(login_probe_context.get("captcha_required")):
                             tool_trace_parts.append("weak_password_probe(skip_captcha)")
@@ -10042,6 +10107,16 @@ class WebSiteFetch(object):
                         probe_body_excerpt = str(response_item.get("body_text", "") or "") or probe_body_excerpt
                         probe_body_md5 = str(response_item.get("body_md5", "") or "") or probe_body_md5
                 idor_diff_hit = bool(idor_diff_summary.get("material_change"))
+                logger.info(
+                    "task_id:{} ai_pen idor summary target:{} probes:{} best_score:{} diff_hit:{} summary:{}".format(
+                        self.task_id,
+                        target_url[:180],
+                        len(idor_probe_responses),
+                        best_idor_score,
+                        int(bool(idor_diff_hit)),
+                        self._clip_text(self._format_idor_diff_summary_text(idor_diff_summary), 220) or "-",
+                    )
+                )
             if is_weak_password_case:
                 if credential_probe_count > 0 and not login_success_hit:
                     login_analysis = self._analyze_ai_pen_login_success(
@@ -10380,6 +10455,25 @@ class WebSiteFetch(object):
                 confidence = max(0.62, min(0.86, confidence))
                 reason = "{}；{}".format(reason, proof_guard_reason).strip("；")
 
+            logger.info(
+                "task_id:{} ai_pen verify done target:{} payload_type:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
+                "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} external_hit:{} stop_reason:{} reason:{}".format(
+                    self.task_id,
+                    target_url[:180],
+                    payload_type,
+                    decision,
+                    float(confidence or 0.0),
+                    verification_step,
+                    probe_status or status_code,
+                    len(list(runtime.tool_calls or [])),
+                    idor_probe_count,
+                    api_doc_probe_count,
+                    int(bool(external_ret.get("tool_hit"))),
+                    agent_loop_stop_reason or "-",
+                    self._clip_text(reason, 220),
+                )
+            )
+
             return _with_runtime_artifacts({
                 "status": "ok",
                 "decision": decision,
@@ -10411,6 +10505,14 @@ class WebSiteFetch(object):
                 "external_tool_hit": bool(external_ret.get("tool_hit")),
             }, tool_trace_parts, "ok", decision, runtime_result=runtime.build_result())
         except Exception as e:
+            logger.warning(
+                "task_id:{} ai_pen verify exception target:{} payload_type:{} err:{}".format(
+                    self.task_id,
+                    target_url[:180],
+                    str(payload_type or "").strip()[:48],
+                    self._clip_text(e, self.AI_PEN_TEST_ERROR_MAX),
+                )
+            )
             return _with_runtime_artifacts({
                 "status": "error",
                 "decision": "needs_manual_review",
@@ -10612,6 +10714,25 @@ class WebSiteFetch(object):
         task_ai_pen_graph_context = self._get_task_ai_pen_graph_context(selected_candidates)
         for candidate in selected_candidates:
             candidate["task_ai_pen_graph_context"] = dict(task_ai_pen_graph_context or {})
+        selected_preview = []
+        for candidate in selected_candidates[:6]:
+            selected_preview.append(
+                "{}:{}:{}@{}".format(
+                    str(candidate.get("source_collection", "") or "").strip()[:16] or "unknown",
+                    str(candidate.get("risk_type", "") or "").strip()[:18] or "unknown",
+                    str(candidate.get("payload_type", "") or "").strip()[:18] or "auto",
+                    str(candidate.get("target") or candidate.get("vuln_url") or "").strip()[:80],
+                )
+            )
+        logger.info(
+            "task_id:{} ai_pen candidate window total:{} selected:{} max_cases:{} preview:{}".format(
+                self.task_id,
+                len(candidates),
+                len(selected_candidates),
+                max_cases,
+                self._clip_text(",".join(selected_preview) or "-", 420),
+            )
+        )
 
         saved_count = 0
         verified_count = 0
@@ -10621,7 +10742,23 @@ class WebSiteFetch(object):
         external_tool_hit_count = 0
 
         collection = utils.conn_db("ai_pen_test_result")
-        for candidate in selected_candidates:
+        for candidate_index, candidate in enumerate(selected_candidates, start=1):
+            candidate_target = str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
+            logger.info(
+                "task_id:{} ai_pen candidate start {}/{} source={}:{} target:{} risk_type:{} risk_name:{} "
+                "priority:{} knowledge_score:{}".format(
+                    self.task_id,
+                    candidate_index,
+                    len(selected_candidates),
+                    str(candidate.get("source_collection", "") or "").strip()[:24] or "-",
+                    str(candidate.get("source_id", "") or "").strip()[:32] or "-",
+                    candidate_target[:180],
+                    str(candidate.get("risk_type", "") or "").strip()[:32] or "-",
+                    str(candidate.get("risk_name", "") or "").strip()[:48] or "-",
+                    self._safe_int_value(candidate.get("priority_score"), 0),
+                    self._safe_int_value(candidate.get("knowledge_score"), 0),
+                )
+            )
             ai_plan_result = {
                 "ok": False,
                 "status": "skipped",
@@ -10661,8 +10798,23 @@ class WebSiteFetch(object):
                 ai_plan_skip_count += 1
                 if not ai_planner_enable:
                     ai_plan_result["message"] = "planner_disabled"
-
+            ai_plan_status = str(ai_plan_result.get("status", "skipped") or "skipped").strip().lower()
+            ai_plan_message = self._clip_text(ai_plan_result.get("message", ""), 120)
             ai_plan_output = ai_plan_result.get("output") if isinstance(ai_plan_result.get("output"), dict) else {}
+            ai_plan_tool_steps = len(list(ai_plan_output.get("tool_plan", []) or []))
+            logger.info(
+                "task_id:{} ai_pen candidate planner {}/{} status:{} ok:{} payload_type:{} tool_steps:{} message:{}".format(
+                    self.task_id,
+                    candidate_index,
+                    len(selected_candidates),
+                    ai_plan_status,
+                    int(bool(ai_plan_result.get("ok"))),
+                    str(ai_plan_output.get("payload_type", "") or "").strip()[:32] or "-",
+                    ai_plan_tool_steps,
+                    ai_plan_message or "-",
+                )
+            )
+
             verify_result = self._verify_ai_pen_candidate(
                 candidate,
                 mcp_settings=runtime_settings,
@@ -10697,6 +10849,15 @@ class WebSiteFetch(object):
             source_collection = str(candidate.get("source_collection", "") or "").strip()
             source_id = self._normalize_object_id(candidate.get("source_id"))
             if not source_collection or not source_id:
+                logger.warning(
+                    "task_id:{} ai_pen candidate skip save {}/{} source={}:{} missing source identifier".format(
+                        self.task_id,
+                        candidate_index,
+                        len(selected_candidates),
+                        source_collection[:24] or "-",
+                        str(candidate.get("source_id", "") or "").strip()[:32] or "-",
+                    )
+                )
                 continue
 
             record_provider = str(ai_plan_result.get("provider", "") or "").strip()
@@ -10808,6 +10969,25 @@ class WebSiteFetch(object):
                 update_date=now_text,
             )
             saved_count += 1
+            logger.info(
+                "task_id:{} ai_pen candidate done {}/{} source={}:{} decision:{} status:{} confidence:{:.4f} "
+                "verification_step:{} payload_type:{} http_status:{} tool_calls:{} external_hit:{} ai_plan_status:{}".format(
+                    self.task_id,
+                    candidate_index,
+                    len(selected_candidates),
+                    source_collection[:24],
+                    str(source_id)[:32],
+                    decision,
+                    status,
+                    confidence,
+                    str(verify_result.get("verification_step", "") or "").strip()[:48] or "-",
+                    str(verify_result.get("payload_type", "") or "").strip()[:32] or "-",
+                    self._safe_int_value(verify_result.get("http_status"), 0),
+                    len(list(verify_result.get("tool_calls", []) or [])),
+                    int(bool(external_tool_hit)),
+                    ai_plan_status,
+                )
+            )
 
         elapsed_ms = int((time.time() - started_at) * 1000.0)
         knowledge_tokens_preview = ",".join(sorted(list(knowledge_hit_tokens_set))[:16]) or "-"
