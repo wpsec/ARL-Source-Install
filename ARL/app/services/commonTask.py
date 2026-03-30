@@ -172,6 +172,8 @@ class WebSiteFetch(object):
         "sqli_probe",
         "cmdi_probe",
         "ssrf_probe",
+        "ssti_probe",
+        "xxe_probe",
         "weak_password_probe",
         "idor_probe",
         "api_doc_probe",
@@ -180,15 +182,32 @@ class WebSiteFetch(object):
         "websocket_probe",
         "file_probe",
         "upload_probe",
+        "config_probe",
         "replay",
     )
     AI_PEN_RUNTIME_TOOL_NAMES = (
         "http_fetch",
+        "head_probe",
+        "extract_links",
+        "extract_forms",
+        "extract_headers",
         "session_start",
+        "session_request",
+        "follow_redirect",
+        "cookie_jar_update",
+        "extract_csrf_token",
         "login_probe",
         "credential_probe",
         "detect_login_success",
+        "logout_probe",
+        "token_replay",
         "payload_probe",
+        "xss_probe",
+        "sqli_probe",
+        "ssrf_probe",
+        "ssti_probe",
+        "xxe_probe",
+        "cmdi_probe",
         "idor_probe",
         "api_doc_probe",
         "graphql_probe",
@@ -196,6 +215,7 @@ class WebSiteFetch(object):
         "websocket_probe",
         "file_probe",
         "upload_probe",
+        "config_probe",
     )
     AI_PEN_EXTERNAL_TOOL_REGISTRY = (
         "sqlmap",
@@ -7475,6 +7495,8 @@ class WebSiteFetch(object):
             return "idor"
         if "ssrf" in merged:
             return "ssrf"
+        if "ssti" in merged or ("template" in merged and "inject" in merged):
+            return "ssti"
         if "csrf" in merged:
             return "csrf"
         if "xss" in merged:
@@ -7487,6 +7509,8 @@ class WebSiteFetch(object):
             return "ldapi"
         if "xxe" in merged or "xml external" in merged:
             return "xxe"
+        if any(token in merged for token in ("actuator/env", "configprops", "mappings", "beans", "conditions", "loggers")):
+            return "sensitive_info"
         if "upload" in merged or "文件上传" in merged:
             return "file_upload"
         if "read" in merged or "download" in merged or "traversal" in merged or "文件读取" in merged:
@@ -7529,12 +7553,37 @@ class WebSiteFetch(object):
             return "jwt_probe", '{"alg":"none"}'
         if "ssrf" in merged:
             return "ssrf_probe", "http://127.0.0.1/"
+        if "ssti" in merged or ("template" in merged and "inject" in merged):
+            return "ssti_probe", "{{7*7}}"
+        if "xxe" in merged or "xml external" in merged:
+            return "xxe_probe", '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><root>&xxe;</root>'
         if "idor" in merged or "越权" in merged:
             return "idor_probe", "id=1 -> id=2"
         if "graphql" in merged or "graphiql" in merged:
             return "graphql_probe", '{"query":"query { __typename }"}'
         if "swagger" in merged or "openapi" in merged or "postman" in merged or "api_doc" in merged:
             return "api_doc_probe", "/v3/api-docs"
+        if any(
+            token in merged
+            for token in (
+                "actuator/env",
+                "configprops",
+                "mappings",
+                "beans",
+                "conditions",
+                "loggers",
+                "heapdump",
+                "prometheus",
+                "metrics",
+                "env",
+                "配置",
+                "环境",
+                "诊断",
+                "管理",
+                "敏感信息",
+            )
+        ):
+            return "config_probe", ""
         if "websocket" in merged or "socket.io" in merged or "sockjs" in merged:
             return "websocket_probe", "ws_handshake"
         if "upload" in merged or "文件上传" in merged:
@@ -7845,7 +7894,22 @@ class WebSiteFetch(object):
             raw_params = item.get("params")
             if isinstance(raw_params, dict):
                 params.update(raw_params)
-            for key in ("url", "method", "allow_redirects", "headers", "session_key", "prepare_url", "login_url", "form_data", "json_data", "file_field", "file_name", "file_content", "file_content_type"):
+            for key in (
+                "url",
+                "method",
+                "allow_redirects",
+                "headers",
+                "cookies",
+                "session_key",
+                "prepare_url",
+                "login_url",
+                "form_data",
+                "json_data",
+                "file_field",
+                "file_name",
+                "file_content",
+                "file_content_type",
+            ):
                 if key not in params and key in item:
                     params[key] = item.get(key)
 
@@ -7878,6 +7942,15 @@ class WebSiteFetch(object):
                 step["params"]["allow_redirects"] = allow_redirects
             if safe_headers:
                 step["params"]["headers"] = safe_headers
+            cookies_obj = params.get("cookies") if isinstance(params.get("cookies"), dict) else {}
+            safe_cookies = {}
+            for cookie_key, cookie_value in cookies_obj.items():
+                key_text = str(cookie_key or "").strip()
+                if not key_text:
+                    continue
+                safe_cookies[key_text[:80]] = str(cookie_value or "")[:240]
+            if safe_cookies:
+                step["params"]["cookies"] = safe_cookies
             session_key = str(params.get("session_key") or "").strip()
             if session_key:
                 step["params"]["session_key"] = session_key[:64]
@@ -8011,7 +8084,7 @@ class WebSiteFetch(object):
                 )
             return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
-        if any(
+        if payload_type_text == "config_probe" or any(
             token in lower_target
             for token in (
                 "/actuator/env",
@@ -8027,7 +8100,7 @@ class WebSiteFetch(object):
         ):
             plan.append(
                 {
-                    "tool": "http_fetch",
+                    "tool": "config_probe",
                     "params": {
                         "url": target_url,
                         "method": "get",
@@ -8091,12 +8164,13 @@ class WebSiteFetch(object):
             return []
 
         plan = []
-        if payload_type_text in {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "replay"} and payload_text:
+        if payload_type_text in {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "replay"} and payload_text:
             probe_url = cls._build_probe_url_with_payload(url_text, payload_text)
             if probe_url and probe_url != url_text:
+                probe_tool_name = "payload_probe" if payload_type_text == "replay" else payload_type_text
                 plan.append(
                     {
-                        "tool": "payload_probe",
+                        "tool": probe_tool_name,
                         "params": {
                             "url": probe_url,
                             "method": "get",
@@ -8204,6 +8278,18 @@ class WebSiteFetch(object):
                         "summary": "fallback 文件下载/导出接口确认探针",
                     }
                 )
+        elif payload_type_text == "config_probe":
+            plan.append(
+                {
+                    "tool": "config_probe",
+                    "params": {
+                        "url": url_text,
+                        "method": "get",
+                        "allow_redirects": True,
+                    },
+                    "summary": "fallback 配置/环境暴露探针",
+                }
+            )
         elif payload_type_text == "weak_password_probe":
             login_context = cls._build_ai_pen_login_probe_context(
                 target_url=url_text,
@@ -8222,6 +8308,32 @@ class WebSiteFetch(object):
                     form_data = dict(login_context.get("hidden_fields") or {})
                     form_data[str(login_context.get("username_field") or "username")] = str(credential_item.get("username") or "")
                     form_data[str(login_context.get("password_field") or "password")] = str(credential_item.get("password") or "")
+                    if max(1, int(max_steps or 1)) >= 4:
+                        plan.append(
+                            {
+                                "tool": "session_start",
+                                "params": {
+                                    "url": str(login_context.get("login_url") or url_text),
+                                    "session_key": "weak_password",
+                                    "method": "get",
+                                    "allow_redirects": True,
+                                },
+                                "summary": "fallback 初始化弱口令验证会话",
+                            }
+                        )
+                    if max(1, int(max_steps or 1)) >= 3:
+                        plan.append(
+                            {
+                                "tool": "extract_csrf_token",
+                                "params": {
+                                    "url": str(login_context.get("login_url") or url_text),
+                                    "session_key": "weak_password",
+                                    "method": "get",
+                                    "allow_redirects": True,
+                                },
+                                "summary": "fallback 提取 CSRF Token",
+                            }
+                        )
                     plan.append(
                         {
                             "tool": "credential_probe",
@@ -9051,7 +9163,24 @@ class WebSiteFetch(object):
                 score += 6
             if any(
                 keyword in risk_type
-                for keyword in ("xss", "sql", "sqli", "command", "cmdi", "jwt", "ssrf", "idor", "upload", "file_read", "api_doc", "websocket")
+                for keyword in (
+                    "xss",
+                    "sql",
+                    "sqli",
+                    "command",
+                    "cmdi",
+                    "jwt",
+                    "ssrf",
+                    "ssti",
+                    "xxe",
+                    "idor",
+                    "upload",
+                    "file_read",
+                    "api_doc",
+                    "websocket",
+                    "sensitive",
+                    "config",
+                )
             ):
                 score += 16
             return score
@@ -9180,6 +9309,7 @@ class WebSiteFetch(object):
                 "method": {"type": "string"},
                 "allow_redirects": {"type": "boolean"},
                 "headers": {"type": "object"},
+                "cookies": {"type": "object"},
                 "session_key": {"type": "string"},
                 "prepare_url": {"type": "string"},
                 "login_url": {"type": "string"},
@@ -9253,6 +9383,7 @@ class WebSiteFetch(object):
             req_method="get",
             allow_redirects=True,
             headers=None,
+            cookies=None,
             form_data=None,
             json_data=None,
             file_field="",
@@ -9288,6 +9419,15 @@ class WebSiteFetch(object):
                 request_kwargs["data"] = form_data
             if isinstance(json_data, dict) and json_data:
                 request_kwargs["json"] = json_data
+            if isinstance(cookies, dict) and cookies:
+                safe_cookies = {}
+                for cookie_key, cookie_value in cookies.items():
+                    key_text = str(cookie_key or "").strip()
+                    if not key_text:
+                        continue
+                    safe_cookies[key_text[:80]] = str(cookie_value or "")[:240]
+                if safe_cookies:
+                    request_kwargs["cookies"] = safe_cookies
             upload_field = str(file_field or "").strip()
             if upload_field:
                 request_kwargs["files"] = {
@@ -9312,6 +9452,7 @@ class WebSiteFetch(object):
             req_method="get",
             allow_redirects=True,
             headers=None,
+            cookies=None,
             form_data=None,
             json_data=None,
             file_field="",
@@ -9329,6 +9470,7 @@ class WebSiteFetch(object):
                 req_method=req_method,
                 allow_redirects=allow_redirects,
                 headers=headers,
+                cookies=cookies,
                 form_data=form_data,
                 json_data=json_data,
                 file_field=file_field,
@@ -9371,6 +9513,8 @@ class WebSiteFetch(object):
                     allow_redirects = bool(default_allow_redirects)
                 req_headers = params_obj.get("headers")
                 req_headers_obj = req_headers if isinstance(req_headers, dict) else {}
+                req_cookies = params_obj.get("cookies")
+                req_cookies_obj = req_cookies if isinstance(req_cookies, dict) else {}
                 session_key = str(params_obj.get("session_key") or "").strip()
                 form_data = params_obj.get("form_data") if isinstance(params_obj.get("form_data"), dict) else {}
                 json_data = params_obj.get("json_data") if isinstance(params_obj.get("json_data"), dict) else {}
@@ -9390,6 +9534,7 @@ class WebSiteFetch(object):
                             req_method="get",
                             allow_redirects=True,
                             headers=req_headers_obj,
+                            cookies=req_cookies_obj,
                             session_key=session_key,
                         )
                         prepared_response = dict(session_store.get(session_key, {}).get("last_response") or {})
@@ -9412,6 +9557,7 @@ class WebSiteFetch(object):
                         req_method=req_method,
                         allow_redirects=allow_redirects,
                         headers=req_headers_obj,
+                        cookies=req_cookies_obj,
                         form_data=form_data,
                         json_data=json_data,
                         file_field=file_field,
@@ -9457,6 +9603,240 @@ class WebSiteFetch(object):
 
             return _executor
 
+        def _build_extract_csrf_executor():
+            def _executor(_context, params):
+                params_obj = params if isinstance(params, dict) else {}
+                req_url = str(params_obj.get("url") or params_obj.get("prepare_url") or params_obj.get("login_url") or "").strip()
+                session_key = str(params_obj.get("session_key") or "").strip() or "default"
+                req_headers = params_obj.get("headers") if isinstance(params_obj.get("headers"), dict) else {}
+                if not req_url:
+                    return {"status": "error", "message": "missing_url", "response": {}, "analysis": {}}
+
+                runtime_ret = _execute_runtime_request(
+                    req_url=req_url,
+                    req_method="get",
+                    allow_redirects=True,
+                    headers=req_headers,
+                    session_key=session_key,
+                )
+                status_text = str(runtime_ret.get("status", "") or "").strip().lower()
+                response_obj = dict(runtime_ret.get("response") or {}) if isinstance(runtime_ret.get("response"), dict) else {}
+                if status_text != "ok":
+                    return {
+                        "status": status_text or "error",
+                        "message": str(runtime_ret.get("message") or "csrf_prepare_failed"),
+                        "response": response_obj,
+                        "analysis": {},
+                    }
+
+                body_text = str(response_obj.get("body_text", "") or "")
+                login_context = self._build_ai_pen_login_probe_context(
+                    target_url=req_url,
+                    body_text=body_text,
+                )
+                hidden_fields = dict(login_context.get("hidden_fields") or {})
+                csrf_field = str(login_context.get("csrf_field") or "").strip()
+                csrf_value = str(hidden_fields.get(csrf_field) or "")[:180] if csrf_field else ""
+                analysis = {
+                    "csrf_field": csrf_field,
+                    "csrf_value": csrf_value,
+                    "submit_url": str(login_context.get("submit_url") or req_url),
+                    "method": str(login_context.get("method") or "post").lower(),
+                    "captcha_required": bool(login_context.get("captcha_required")),
+                    "hidden_fields": hidden_fields,
+                }
+                return {
+                    "status": "ok",
+                    "message": "csrf_extracted" if csrf_field else "csrf_not_found",
+                    "response": response_obj,
+                    "analysis": analysis,
+                }
+
+            return _executor
+
+        def _build_extract_links_executor():
+            def _executor(_context, params):
+                params_obj = params if isinstance(params, dict) else {}
+                req_url = str(params_obj.get("url") or "").strip()
+                req_headers = params_obj.get("headers") if isinstance(params_obj.get("headers"), dict) else {}
+                if not req_url:
+                    return {"status": "error", "message": "missing_url", "response": {}, "analysis": {}}
+                runtime_ret = _execute_runtime_request(
+                    req_url=req_url,
+                    req_method="get",
+                    allow_redirects=True,
+                    headers=req_headers,
+                )
+                status_text = str(runtime_ret.get("status", "") or "").strip().lower()
+                response_obj = dict(runtime_ret.get("response") or {}) if isinstance(runtime_ret.get("response"), dict) else {}
+                if status_text != "ok":
+                    return {
+                        "status": status_text or "error",
+                        "message": str(runtime_ret.get("message") or "extract_links_failed"),
+                        "response": response_obj,
+                        "analysis": {},
+                    }
+                body_text = str(response_obj.get("body_text", "") or "")
+                links = []
+                seen_links = set()
+                for match in re.finditer(r'(?is)\bhref\s*=\s*["\']([^"\']+)["\']', body_text):
+                    href_value = str(match.group(1) or "").strip()
+                    if not href_value:
+                        continue
+                    abs_link = urljoin(req_url, href_value)
+                    if abs_link in seen_links:
+                        continue
+                    seen_links.add(abs_link)
+                    links.append(abs_link[:220])
+                    if len(links) >= 30:
+                        break
+                return {
+                    "status": "ok",
+                    "message": "extract_links_ok",
+                    "response": response_obj,
+                    "analysis": {
+                        "link_count": len(links),
+                        "links": links,
+                    },
+                }
+
+            return _executor
+
+        def _build_extract_forms_executor():
+            def _executor(_context, params):
+                params_obj = params if isinstance(params, dict) else {}
+                req_url = str(params_obj.get("url") or "").strip()
+                req_headers = params_obj.get("headers") if isinstance(params_obj.get("headers"), dict) else {}
+                if not req_url:
+                    return {"status": "error", "message": "missing_url", "response": {}, "analysis": {}}
+                runtime_ret = _execute_runtime_request(
+                    req_url=req_url,
+                    req_method="get",
+                    allow_redirects=True,
+                    headers=req_headers,
+                )
+                status_text = str(runtime_ret.get("status", "") or "").strip().lower()
+                response_obj = dict(runtime_ret.get("response") or {}) if isinstance(runtime_ret.get("response"), dict) else {}
+                if status_text != "ok":
+                    return {
+                        "status": status_text or "error",
+                        "message": str(runtime_ret.get("message") or "extract_forms_failed"),
+                        "response": response_obj,
+                        "analysis": {},
+                    }
+                body_text = str(response_obj.get("body_text", "") or "")
+                forms = []
+                for match in re.finditer(r"(?is)<form\b([^>]*)>(.*?)</form>", body_text):
+                    attrs_text = str(match.group(1) or "")
+                    inner_text = str(match.group(2) or "")
+                    action_text = self._extract_html_attr_value(attrs_text, "action")
+                    method_text = self._extract_html_attr_value(attrs_text, "method") or "get"
+                    enctype_text = self._extract_html_attr_value(attrs_text, "enctype")
+                    forms.append(
+                        {
+                            "action": urljoin(req_url, action_text) if action_text else req_url,
+                            "method": method_text.lower(),
+                            "enctype": enctype_text.lower(),
+                            "has_password_input": bool(re.search(r'(?is)<input\b[^>]*\btype\s*=\s*["\']password["\']', inner_text)),
+                            "has_file_input": bool(re.search(r'(?is)<input\b[^>]*\btype\s*=\s*["\']file["\']', inner_text)),
+                        }
+                    )
+                    if len(forms) >= 12:
+                        break
+                return {
+                    "status": "ok",
+                    "message": "extract_forms_ok",
+                    "response": response_obj,
+                    "analysis": {
+                        "form_count": len(forms),
+                        "forms": forms,
+                    },
+                }
+
+            return _executor
+
+        def _build_extract_headers_executor():
+            def _executor(_context, params):
+                params_obj = params if isinstance(params, dict) else {}
+                req_url = str(params_obj.get("url") or "").strip()
+                req_headers = params_obj.get("headers") if isinstance(params_obj.get("headers"), dict) else {}
+                if not req_url:
+                    return {"status": "error", "message": "missing_url", "response": {}, "analysis": {}}
+                runtime_ret = _execute_runtime_request(
+                    req_url=req_url,
+                    req_method="head",
+                    allow_redirects=True,
+                    headers=req_headers,
+                )
+                status_text = str(runtime_ret.get("status", "") or "").strip().lower()
+                response_obj = dict(runtime_ret.get("response") or {}) if isinstance(runtime_ret.get("response"), dict) else {}
+                if status_text != "ok":
+                    return {
+                        "status": status_text or "error",
+                        "message": str(runtime_ret.get("message") or "extract_headers_failed"),
+                        "response": response_obj,
+                        "analysis": {},
+                    }
+                header_obj = dict(response_obj.get("headers") or {}) if isinstance(response_obj.get("headers"), dict) else {}
+                focus_headers = {}
+                for key_name in ("Content-Type", "Content-Length", "Server", "X-Powered-By", "Location", "Set-Cookie"):
+                    value_text = str(header_obj.get(key_name, "") or "").strip()
+                    if value_text:
+                        focus_headers[key_name] = value_text[:180]
+                return {
+                    "status": "ok",
+                    "message": "extract_headers_ok",
+                    "response": response_obj,
+                    "analysis": {
+                        "header_count": len(header_obj),
+                        "focus_headers": focus_headers,
+                    },
+                }
+
+            return _executor
+
+        def _build_cookie_jar_update_executor():
+            def _executor(_context, params):
+                params_obj = params if isinstance(params, dict) else {}
+                session_key = str(params_obj.get("session_key") or "").strip() or "default"
+                cookie_map = {}
+                if isinstance(params_obj.get("cookies"), dict):
+                    cookie_map.update(params_obj.get("cookies") or {})
+                if isinstance(params_obj.get("form_data"), dict):
+                    cookie_map.update(params_obj.get("form_data") or {})
+                if isinstance(params_obj.get("json_data"), dict):
+                    cookie_map.update(params_obj.get("json_data") or {})
+                if not cookie_map:
+                    return {"status": "error", "message": "missing_cookies", "response": {}, "analysis": {}}
+
+                session_bucket = session_store.setdefault(
+                    session_key,
+                    {"session": requests.Session(), "last_response": {}},
+                )
+                session_obj = session_bucket["session"]
+                changed_names = []
+                for cookie_key, cookie_value in cookie_map.items():
+                    key_text = str(cookie_key or "").strip()
+                    if not key_text:
+                        continue
+                    session_obj.cookies.set(key_text[:80], str(cookie_value or "")[:240])
+                    changed_names.append(key_text[:80])
+                    if len(changed_names) >= 20:
+                        break
+                response_obj = dict(session_bucket.get("last_response") or {}) if isinstance(session_bucket.get("last_response"), dict) else {}
+                return {
+                    "status": "ok",
+                    "message": "cookie_jar_updated",
+                    "response": response_obj,
+                    "analysis": {
+                        "session_key": session_key,
+                        "cookie_count": len(list(session_obj.cookies.keys())),
+                        "updated_cookie_names": changed_names,
+                    },
+                }
+
+            return _executor
+
         runtime.register_tool(
             ToolSchema(
                 name="http_fetch",
@@ -9467,10 +9847,74 @@ class WebSiteFetch(object):
         )
         runtime.register_tool(
             ToolSchema(
+                name="head_probe",
+                description="基础 HEAD 请求探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="head", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="extract_links",
+                description="提取页面链接关系",
+                input_schema=common_input_schema,
+                execute=_build_extract_links_executor(),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="extract_forms",
+                description="提取页面表单结构",
+                input_schema=common_input_schema,
+                execute=_build_extract_forms_executor(),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="extract_headers",
+                description="提取关键响应头",
+                input_schema=common_input_schema,
+                execute=_build_extract_headers_executor(),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
                 name="session_start",
                 description="初始化登录会话",
                 input_schema=common_input_schema,
                 execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="session_request",
+                description="会话内请求执行器",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="follow_redirect",
+                description="跟随重定向获取最终页面",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="cookie_jar_update",
+                description="更新会话 Cookie Jar",
+                input_schema=common_input_schema,
+                execute=_build_cookie_jar_update_executor(),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="extract_csrf_token",
+                description="提取登录页 CSRF token",
+                input_schema=common_input_schema,
+                execute=_build_extract_csrf_executor(),
             )
         )
         runtime.register_tool(
@@ -9499,8 +9943,72 @@ class WebSiteFetch(object):
         )
         runtime.register_tool(
             ToolSchema(
+                name="logout_probe",
+                description="退出登录状态探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="token_replay",
+                description="认证令牌重放探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
                 name="payload_probe",
                 description="Payload 探针请求",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="xss_probe",
+                description="XSS 探针请求",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="sqli_probe",
+                description="SQLi 探针请求",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="ssrf_probe",
+                description="SSRF 探针请求",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="ssti_probe",
+                description="SSTI 探针请求",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="xxe_probe",
+                description="XXE 探针请求",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="cmdi_probe",
+                description="命令注入探针请求",
                 input_schema=common_input_schema,
                 execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
             )
@@ -9527,6 +10035,14 @@ class WebSiteFetch(object):
                 description="GraphQL 入口确认探针",
                 input_schema=common_input_schema,
                 execute=_build_runtime_http_executor(default_method="post", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="config_probe",
+                description="配置/环境暴露探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
             )
         )
         runtime.register_tool(
@@ -9769,6 +10285,7 @@ class WebSiteFetch(object):
             api_doc_hit = False
             api_doc_hit_url = ""
             api_doc_probe_count = 0
+            config_probe_count = 0
             api_doc_summary = {}
             api_surface_summary = self._build_api_surface_summary(api_doc_summary=api_doc_summary, js_api_targets=js_api_targets)
             graphql_hit = False
@@ -9791,7 +10308,7 @@ class WebSiteFetch(object):
             agent_loop_final_decision = {}
             agent_loop_stop_reason = ""
             probe_error = ""
-            payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "replay"}
+            payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "replay"}
 
             if mcp_enable and len(runtime.tool_calls) < max_tool_calls and (ai_plan_tool_plan or agent_loop_enable):
                 if agent_loop_enable:
@@ -9842,6 +10359,10 @@ class WebSiteFetch(object):
                     graphql_summary = dict(plan_observation.get("graphql_summary") or {})
                 api_doc_probe_count += self._safe_int_value(
                     dict(plan_observation.get("tool_counts") or {}).get("api_doc_probe"),
+                    0,
+                )
+                config_probe_count += self._safe_int_value(
+                    dict(plan_observation.get("tool_counts") or {}).get("config_probe"),
                     0,
                 )
                 idor_probe_count += self._safe_int_value(
@@ -10014,6 +10535,10 @@ class WebSiteFetch(object):
                             graphql_summary = dict(fallback_observation.get("graphql_summary") or {})
                         api_doc_probe_count += self._safe_int_value(
                             dict(fallback_observation.get("tool_counts") or {}).get("api_doc_probe"),
+                            0,
+                        )
+                        config_probe_count += self._safe_int_value(
+                            dict(fallback_observation.get("tool_counts") or {}).get("config_probe"),
                             0,
                         )
                         idor_probe_count += self._safe_int_value(
@@ -10250,6 +10775,10 @@ class WebSiteFetch(object):
                 decision = "likely_false_positive"
                 confidence = 0.60
                 reason = "已探测 {} 个常见 API 文档端点，暂未命中暴露特征".format(api_doc_probe_count)
+            elif payload_type == "config_probe" and config_probe_count > 0 and not config_exposure_hit:
+                decision = "likely_false_positive"
+                confidence = 0.60
+                reason = "已探测 {} 个配置/环境端点，暂未命中高价值暴露特征".format(config_probe_count)
             elif payload_type == "graphql_probe":
                 decision = "likely_false_positive"
                 confidence = 0.60
@@ -10398,6 +10927,8 @@ class WebSiteFetch(object):
                 verification_step = "mcp_websocket_probe"
             elif mcp_enable and max_tool_calls > 1 and payload_type == "upload_probe":
                 verification_step = "mcp_file_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "config_probe":
+                verification_step = "mcp_config_probe"
             elif mcp_enable and max_tool_calls > 1:
                 verification_step = "mcp_http_probe"
 
@@ -10457,7 +10988,7 @@ class WebSiteFetch(object):
 
             logger.info(
                 "task_id:{} ai_pen verify done target:{} payload_type:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
-                "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} external_hit:{} stop_reason:{} reason:{}".format(
+                "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} config_probe_count:{} external_hit:{} stop_reason:{} reason:{}".format(
                     self.task_id,
                     target_url[:180],
                     payload_type,
@@ -10468,6 +10999,7 @@ class WebSiteFetch(object):
                     len(list(runtime.tool_calls or [])),
                     idor_probe_count,
                     api_doc_probe_count,
+                    config_probe_count,
                     int(bool(external_ret.get("tool_hit"))),
                     agent_loop_stop_reason or "-",
                     self._clip_text(reason, 220),
