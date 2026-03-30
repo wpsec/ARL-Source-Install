@@ -1,320 +1,399 @@
 # AI渗透测试MCP总体方案
 
-## 1. 总目标与边界
+## 1. 目标定位
 
-- 核心目标：找到可复现的漏洞入口、风险入口
-- 输出对象：给渗透测试/红队工程师可继续深挖的高价值入口
-- 明确边界：不做自动化后渗透、不做横向移动、不做高风险攻击链自动扩展
+- 目标版本：`v4.5.0`
+- 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
+- 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
+- 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
 
-## 2. ARL AI MCP
+一句话目标：
 
-1. 模型支持多轮 `tool_call`，不是一次性建议。
-2. 运行时存在闭环：`调用工具 -> 回填结果 -> 再决策`。
-3. 工具采用统一注册协议，不允许散落在 `if/else` 硬编码。
-4. 每次任务有预算与治理：调用预算、超时、并发、审计日志、可回放轨迹。
-5. 最终输出兼容现有结论结构：`decision/confidence/reason`，并可追溯每一步证据。
+- `以 PortSwigger 方法论为能力下限，以 Agent MCP 为执行架构，以低副作用验证为默认模式。`
 
-## 3. 架构改造主线
+## 2. 当前问题与根因
 
-### 3.1 抽离 MCP Runtime（核心）
+当前 AI 渗透测试已具备：
 
-新增模块：`ai_pen_mcp_runtime`
+- 候选汇聚
+- 统一工具注册
+- MCP 审计产物（`agent_trace/tool_calls/tool_results/stop_reason/budget_used`）
+- 基础 HTTP/IDOR/API 文档/JWT/WebSocket 验证
+- 浏览器情报补充
 
-职责：
+但仍存在典型“假 Agent MCP”问题：
 
-- 执行 agent loop
-- 管理工具注册与调用
-- 管理预算、超时、重试、审计
-- 产出完整轨迹
+1. `commonTask` 仍然主导大部分执行逻辑
+2. planner 更像“给建议”，不是“每轮决策的大脑”
+3. runtime 更像“带审计的工具执行器”，不是“多轮推理闭环”
+4. 登录、会话、CSRF、验证码、认证状态并没有形成真正工具链
+5. 弱口令能力没有接到 AI 渗透 Agent 主链，只在传统 `weak_brute` / 其他链路中存在
 
-输入：
+## 3. 能力下限：按 PortSwigger 体系定义
 
-- 候选目标（candidate）
-- 任务上下文（task/site/url/vuln/nuclei_result/wih）
-- 工具集（tool registry）
-- 预算配置（max turns/max tool calls/timeout/concurrency）
+AI 渗透测试至少要覆盖以下能力族：
 
-输出：
+1. 站点与接口面建图
+   - `site / url / fileleak / wih / js / browser runtime / API 文档` 统一建图
 
-- `decision/confidence/reason`
-- `steps`
-- `tool_calls`
-- `tool_results`
-- `stop_reason`
-- `budget_used`
+2. 登录与会话
+   - 登录表单识别
+   - CSRF 提取
+   - Cookie / Redirect / Session 状态维护
+   - 登录成功/失败/锁定识别
+   - 最小弱口令验证
 
-替换点：
+3. 访问控制
+   - 未授权访问
+   - 水平越权
+   - 垂直越权
+   - 对象引用缺陷
 
-- 替换 `commonTask._verify_ai_pen_candidate` 当前硬编码执行流程
+4. 输入类注入
+   - XSS
+   - DOM XSS
+   - SQLi
+   - SSTI
+   - 命令执行
 
-### 3.2 统一工具协议
+5. 服务端间接访问
+   - SSRF
+   - XXE
+   - 文件读取
+   - 路径穿越
 
-统一 Tool Schema：
+6. 文件处理
+   - 上传
+   - 下载
+   - 导出
+   - 模板
+   - 附件
 
-- `name`
-- `description`
-- `input_schema`
-- `execute(context, params) -> ToolResult`
+7. Token / 认证协议
+   - JWT
+   - OAuth/OIDC 入口
+   - 认证接口重放
+   - Token 相关弱点
 
-内置探针统一工具化：
+8. 实时通道
+   - WebSocket
+   - SockJS / Socket.IO
+
+9. 配置与敏感暴露
+   - `actuator/env`
+   - `configprops`
+   - `beans`
+   - `mappings`
+   - 调试接口
+   - 敏感文件/配置泄露
+
+10. Web 安全策略
+   - CORS
+   - Cache
+   - Header 安全策略
+   - 暴露型错误配置
+
+## 4. 架构目标：从“假 MCP”升级为“真 Agent MCP”
+
+目标状态必须满足：
+
+1. 模型每轮决定下一步，而不是代码写死
+2. 工具结果必须回喂模型继续推理
+3. runtime 持有会话状态，而不是一次性请求
+4. 登录、认证、API、文件处理都走统一工具协议
+5. `commonTask` 只负责候选准备和落库，不再主导执行分支
+6. 每轮轨迹可回放、可解释、可人工接管
+
+### 4.1 当前“假 MCP”的表现
+
+- `runtime` 有 `ToolSchema`，但执行入口仍由 `commonTask._verify_ai_pen_candidate` 的分支驱动
+- planner 可以给出 `payload/next_actions/tool_plan`，但执行链并不完全由模型控制
+- 结果更多是“代码判定后附带 AI 文案”，而不是“多轮模型-工具闭环”
+
+### 4.2 真 Agent MCP 的目标流程
+
+每一轮固定为：
+
+1. 读取候选上下文、历史观察、会话状态
+2. 模型输出：
+   - `tool_call`
+   - `reason`
+   - `expected_signal`
+   - `stop_if`
+3. runtime 校验工具参数与安全边界
+4. 执行工具
+5. 将标准化结果回填 memory
+6. 模型继续下一轮
+7. 直到：
+   - `final_decision`
+   - `manual_required`
+   - `budget_exhausted`
+   - `guardrail_blocked`
+   - `timeout`
+
+## 5. 工具分层设计
+
+### 5.1 采集层
 
 - `http_fetch`
-- `payload_probe`
+- `head_probe`
+- `extract_links`
+- `extract_forms`
+- `extract_headers`
+
+### 5.2 会话层
+
+- `session_start`
+- `session_request`
+- `follow_redirect`
+- `cookie_jar_update`
+- `extract_csrf_token`
+
+### 5.3 认证层
+
+- `login_probe`
+- `credential_probe`
+- `detect_login_success`
+- `logout_probe`
+- `token_replay`
+
+### 5.4 业务验证层
+
 - `idor_probe`
 - `api_doc_probe`
-- `jwt_probe`
+- `file_probe`
+- `upload_probe`
+- `graphql_probe`
 - `websocket_probe`
+- `config_probe`
 
-外部工具纳入同一协议：
+### 5.5 利用证据层
 
-- `sqlmap`
-- `httpx`
-- 未来扩展工具（来自白名单目录）
+- `xss_probe`
+- `sqli_probe`
+- `ssrf_probe`
+- `ssti_probe`
+- `xxe_probe`
+- `cmdi_probe`
 
-迁移点：
+## 6. 高价值目标发现策略
 
-- 将 `_run_ai_pen_external_tools` 迁入 runtime tool registry 调用链
+高价值目标不能只靠少量示例路径，而应按“目标家族”识别：
 
-### 3.3 模型调用模式升级为 Agent Turn
+1. 接口说明 / Schema 家族
+   - `swagger/openapi/api-docs/redoc/knife4j/graphql schema`
 
-从“单次 planner”升级为“可循环决策”：
+2. 管理 / 诊断家族
+   - `actuator/jolokia/prometheus/metrics/configprops/mappings/beans/conditions/loggers`
 
-1. 模型返回 `tool_call`
-2. runtime 执行工具
-3. 回填标准化结果
-4. 模型继续决策
-5. 直到完成或预算耗尽
+3. 认证入口家族
+   - `login/signin/passport/sso/cas/oauth/token/auth/login/connect/token`
 
-停止条件：
+4. 文件处理家族
+   - `upload/import/download/export/attachment/template/avatar/report`
 
-- `final_decision`
-- `budget_exhausted`
-- `timeout`
-- `guardrail_blocked`
-- `manual_required`
+5. 敏感文件 / 配置家族
+   - `.env/.git/config/application.yml/bootstrap.yml/web.config/config.php`
 
-### 3.4 数据模型与审计
+候选排序统一依据：
 
-集合：`ai_pen_test_result` 增补字段：
+- 任务范围
+- 状态码优先（优先 `200/201/206`）
+- 路径价值
+- 认证/文件/对象引用/配置暴露信号
+- 知识命中
+- 浏览器运行时信号
 
-- `agent_trace`
-- `tool_calls`
-- `tool_results`
-- `stop_reason`
-- `budget_used`
-- `runtime_version`
+## 7. 登录与弱口令：为什么现在没用 `ARL/docker/dicts/dict`
 
-兼容策略：
+当前仓库中确实存在弱口令字典：
 
-- 保留 `tool_trace` 作为摘要，避免报表改动过大
-- 保持现有 `decision/confidence/reason/status` 字段语义
+- [user.txt](/Users/eric.sy.wu/Documents/Github/newui/ARL-Source-Install/ARL/docker/dicts/dict/user.txt)
+- [pass.txt](/Users/eric.sy.wu/Documents/Github/newui/ARL-Source-Install/ARL/docker/dicts/dict/pass.txt)
 
-### 3.5 前端展示
+但它**目前没有接入 AI 渗透 Agent 主链**，原因不是“没有字典”，而是架构上尚未完成以下能力：
 
-任务详情 `AI渗透` 详情弹窗扩展：
+1. 没有 `login_probe / credential_probe / detect_login_success` 工具
+2. 没有会话层，无法稳定维护 Cookie / CSRF / Redirect
+3. 没有验证码/风控识别后的止损策略
+4. 没有最小凭证集与大字典分级治理
+5. 没有把“登录入口识别”升级成“登录验证链”
 
-- 新增 “Agent轨迹” 时间线
-- 展示每轮思考动作、调用工具、结果摘要、停止原因
-- 支持折叠查看原始 `tool_call/tool_result`
+也就是说：
 
-## 4. 安全与治理
+- `ARL/docker/dicts/dict` 不是没价值
+- 而是**当前 AI 渗透执行链还没有真正能安全消费它的工具层**
 
-### 4.1 调用边界
+### 7.1 正确接入方式
 
-- 工具白名单机制
-- 参数 JSON Schema 校验
-- 目标范围限制（仅任务 scope）
-- 出网限制（域名/IP allowlist）
-- 禁止访问内网保留地址及元数据地址
+弱口令字典不能直接粗暴接入 Agent 主链，而应分层：
 
-### 4.2 运行治理
+#### 第一层：最小默认凭证集
 
-- 单工具超时
-- 总预算（turn/call/time）
-- 并发上限
-- 失败重试策略（退避）
-- 高频失败自动熔断
+用途：
 
-### 4.3 高风险工具分级
+- 默认低副作用验证
+- 面向无验证码、无明显锁定、无高风险风控登录面
 
-- `sqlmap` 等高风险工具单独开关
-- 按任务级/租户级设置风险等级
-- 默认低侵入模式，必要时人工确认升级
+来源：
 
-## 5. 分阶段上线
+- 产品默认凭证
+- 极小用户名/密码组合
+- AI 从产品画像推测出的高置信默认口令
 
-### P0：本地 MCP runtime + 内置探针工具化
+#### 第二层：受控字典集
 
-交付：
+来源：
 
-- `ai_pen_mcp_runtime` 基础 loop
-- 内置探针全部按统一协议注册
-- 兼容原落库与页面
+- `ARL/docker/dicts/dict/user.txt`
+- `ARL/docker/dicts/dict/pass.txt`
 
-验收：
+用途：
 
-- 至少支持 2 轮以上 tool_call 闭环
-- 失败可回退现有规则链路
+- 仅在满足以下条件时启用：
+  - 人工显式开启
+  - 风险级别允许
+  - 目标无验证码 / 无明显锁定
+  - 速率、次数、并发受控
 
-### P1：外部工具协议统一 + 轨迹落库 + 前端轨迹展示
-
-交付：
-
-- `sqlmap/httpx` 纳入统一 tool registry
-- `agent_trace/tool_calls/tool_results` 落库
-- 前端“Agent轨迹”时间线
-
-验收：
-
-- 支持任务级回放
-- 单次任务完整审计可追溯
-
-### P2：标准 MCP Server 可选接入
-
-交付：
-
-- 支持对接标准 MCP Server
-- 支持第三方工具生态扩展
-
-验收：
-
-- 第三方工具可按统一协议纳管
-- 安全边界与预算治理不被绕过
-
-## 6. 能力矩阵
-
-AI渗透能力应按“基础能力矩阵 -> 场景映射 -> 产品偏置 -> 文库增强”的顺序构建。
-
-基础能力建议保持以下 profile：
-
-- `api_surface_analysis`
-- `authn_session_analysis`
-- `authz_object_reference_analysis`
-- `token_jwt_analysis`
-- `client_side_input_flow_analysis`
-- `server_side_injection_analysis`
-- `file_handling_analysis`
-- `realtime_channel_analysis`
-- 等等
+#### 第三层：禁止默认启用的大规模爆破
 
 原则：
 
-- 产品画像只做优先级偏置，不主导验证主链
-- PoC 文库只做知识增强，不直接决定结论
+- 不进入默认 AI 渗透自动链
+- 必须人工确认
+- 必须有严格节流与熔断
 
-## 7. 浏览器增强与认知图谱
+### 7.2 接入原则
 
-### 7.1 浏览器增强策略
+字典接入必须满足：
 
-执行分层：
+1. 每站点最大尝试数限制
+2. 每轮退避
+3. 命中锁定/验证码/风控即停止
+4. 全程审计
+5. 默认仅跑最小默认凭证集，不直接跑全量字典
 
-- 第一层：HTTP 轻量验证（默认）
-- 第二层：浏览器增强（高价值目标触发）
+## 8. 分阶段实施计划
 
-浏览器增强仅做低侵入采集：
+### 阶段 A：真 Agent Loop
 
-- 资源树
-- JS 清单
-- 运行时 XHR/fetch 请求
-- DOM 表单摘要
+目标：
 
-不做：
+- 把控制权从 `commonTask` 挪到 runtime
 
-- 激进反检测对抗
-- 自动绕验证码
-- 高风险交互攻击
+交付：
 
-### 7.2 认知图谱最小化落地
+- `AiPenMcpRuntime.run_agent_loop`
+- 模型每轮输出 `tool_call/final_decision/manual_required`
+- 工具结果回喂模型
 
-先做任务级 JSON 图谱摘要，不强依赖图数据库。
+验收：
 
-建议产物：
+- 至少支持 3 轮真实闭环
+- 执行路径不再主要由 `if/else` 写死
 
-- `task_ai_pen_graph_summary`
-- `node_count/edge_count`
-- `top_paths/top_params`
-- `auth_cluster/file_cluster/object_ref_cluster`
+### 阶段 B：Session / Login 能力
 
-作用：
+目标：
 
-- 给 planner/verifier 提供多点关联推理上下文
-- 不再仅靠“单条风险”线性判断
+- 打通真正的登录入口验证链
 
-## 8. AI 调度与误报抑制（整合）
+交付：
 
-### 8.1 AI 智能调度（PoC）
+- `session_start`
+- `session_request`
+- `extract_csrf_token`
+- `login_probe`
+- `credential_probe`
+- `detect_login_success`
 
-采用 `Rule First + AI Re-rank`：
+验收：
 
-1. 规则召回候选（防漏）
-2. AI 在候选池内重排（防幻觉）
-3. 白名单和预算约束执行（防失控）
+- 能识别登录成功/失败/锁定/验证码阻断
+- 能以最小默认凭证集做低副作用验证
 
-约束：
+### 阶段 C：PortSwigger 核心能力包
 
-- AI 不得捏造 tag/keyword/template
-- 证据不足必须保守策略
-- AI 异常必须 fail-open 回退
+目标：
 
-### 8.2 误报抑制
+- 达到 PortSwigger 核心能力下限
 
-- 信息泄漏：格式+语义+作用域联合判定
-- 渗透结果：差分复验与最小复现证据
-- 无证据默认 `manual_review`
+优先能力：
 
-建议统一字段：
+1. 登录/会话
+2. API/OpenAPI/GraphQL
+3. JWT/认证链
+4. IDOR/访问控制
+5. 文件处理
+6. SQLi
+7. XSS/DOM XSS
+8. SSRF/SSTI/XXE
 
-- `ai_decision`
-- `ai_confidence`
-- `ai_reason`
-- `review_status`
-- `review_version`
-- `evidence_pack`
+验收：
 
-## 9. 容器与 Worker 架构优化（整合）
+- 每类至少 1 条标准化主动验证链
+- 每类至少 1 套“成立证据”标准
 
-### 9.1 当前痛点
+### 阶段 D：高价值目标通用化
 
-- 单 worker 容器多队列多进程混跑，资源互抢
-- `arlweb` 同时承载 web 重任务与 AI 相关任务，排队冲突明显
+目标：
 
-### 9.2 推荐路线
+- 不依赖个别示例路径
 
-Phase A（低风险）：
+交付：
 
-- 按队列拆 worker 容器（`arltask/arlheavy/arlweb/arlgithub`）
+- `site/url/fileleak/wih/js/runtime` 统一高价值目标提取器
+- 按目标家族排序
 
-Phase B（重点）：
+### 阶段 E：结果与轨迹产品化
 
-- 新增 `arlai` 队列，AI任务独立消费者 `worker_ai`
+目标：
 
-Phase C（中长期）：
+- 用户看得懂 Agent 为什么这样测
 
-- `worker_poc/worker_capture/worker_intel` 深度解耦
-- 按队列弹性扩缩容
+交付：
 
-验收指标示例：
+- Agent 时间线
+- 工具调用树
+- 请求/响应证据对照
+- 会话状态摘要
+- 支持沿用历史 session/tool_plan 重试
 
-- `arlweb` backlog 峰值下降 >= 30%
-- AI 结果落库延迟下降 >= 40%
-- 主任务后 10 分钟 AI 落库覆盖率 >= 95%
+### 阶段 F：基准靶场与回归
 
-## 10. 实施清单（按优先级）
+目标：
 
-### 第一优先级（立即执行）
+- 建立真正可量化的 Agent 能力评估
 
-1. 落地 `ai_pen_mcp_runtime` 与统一 Tool Schema
-2. 内置探针工具化并接入 agent loop
-3. 增加预算/超时/审计/回放基础能力
+交付：
 
-### 第二优先级（短期）
+- 登录/默认口令靶场
+- JWT 靶场
+- API 文档靶场
+- Actuator / 配置暴露靶场
+- IDOR / SQLi / XSS / 文件处理 / SSRF 靶场
 
-1. 外部工具协议统一
-2. 轨迹落库与前端时间线
-3. AI 调度与误报抑制统一字段
+验收：
 
-### 第三优先级（中期）
+- 每次升级可量化：
+  - 覆盖率
+  - 误报率
+  - 成功率
+  - 平均轮数
+  - 平均工具调用数
 
-1. 浏览器增强与图谱摘要深度融合
-2. `arlai` 队列与 worker 独立扩缩容
-3. 标准 MCP Server 对接
+## 9. 结论
+
+真正要解决的，不是“再多加几个工具”，而是：
+
+- 把 `AI渗透` 从“规则驱动 + AI装饰”升级为“模型驱动 + 工具闭环”
+- 把 `ARL/docker/dicts/dict` 从“仓库里存在的文件”升级为“Agent 可安全消费的受控资源”
+- 把“少量固定示例路径”升级为“通用高价值目标家族”
+
+最终标准：
+
+- `PortSwigger 能力下限`
+- `Agent MCP 真闭环`
+- `会话/认证可打`
+- `弱口令字典可受控接入`

@@ -10,6 +10,7 @@ import subprocess
 import base64
 import hashlib
 import hmac
+import requests
 from types import SimpleNamespace
 from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit, urljoin
 from bson import ObjectId
@@ -181,6 +182,10 @@ class WebSiteFetch(object):
     )
     AI_PEN_RUNTIME_TOOL_NAMES = (
         "http_fetch",
+        "session_start",
+        "login_probe",
+        "credential_probe",
+        "detect_login_success",
         "payload_probe",
         "idor_probe",
         "api_doc_probe",
@@ -307,6 +312,60 @@ class WebSiteFetch(object):
     AI_PEN_AUTH_PATH_KEYWORDS = ("login", "auth", "token", "oauth", "signin", "session", "user", "me", "current")
     AI_PEN_LOGIN_PAGE_KEYWORDS = ("login", "signin", "sign-in", "sso", "cas", "passport", "登录", "认证", "统一身份认证", "单点登录")
     AI_PEN_CAPTCHA_HINTS = ("captcha", "verifycode", "verification", "checkcode", "validatecode", "randcode", "yzm", "图形码", "验证码")
+    AI_PEN_CSRF_FIELD_HINTS = ("csrf", "token", "_token", "authenticity", "xsrf", "nonce")
+    AI_PEN_LOGIN_SUCCESS_KEYWORDS = (
+        "login success",
+        "logged in",
+        "welcome",
+        "dashboard",
+        "sign out",
+        "logout",
+        "退出登录",
+        "欢迎您",
+        "控制台",
+        "工作台",
+        "后台首页",
+    )
+    AI_PEN_LOGIN_FAILURE_KEYWORDS = (
+        "invalid password",
+        "invalid username",
+        "login failed",
+        "incorrect password",
+        "bad credentials",
+        "wrong password",
+        "authentication failed",
+        "用户名或密码错误",
+        "账号或密码错误",
+        "密码错误",
+        "登录失败",
+        "认证失败",
+    )
+    AI_PEN_LOGIN_BLOCK_KEYWORDS = (
+        "captcha",
+        "验证码",
+        "locked",
+        "lockout",
+        "too many attempts",
+        "try again later",
+        "账户锁定",
+        "账号锁定",
+        "频繁",
+    )
+    AI_PEN_MINIMAL_DEFAULT_CREDENTIALS = (
+        ("admin", "admin"),
+        ("admin", "123456"),
+        ("admin", "admin123"),
+        ("guest", "guest"),
+        ("test", "test"),
+    )
+    AI_PEN_PRODUCT_DEFAULT_CREDENTIALS = {
+        "rabbitmq": (("guest", "guest"),),
+        "minio": (("minioadmin", "minioadmin"),),
+        "grafana": (("admin", "admin"),),
+        "nacos": (("nacos", "nacos"),),
+        "tomcat": (("tomcat", "tomcat"),),
+        "jenkins": (("admin", "admin"),),
+    }
     AI_PEN_OBJECT_ID_PARAM_HINTS = {
         "id", "uid", "userid", "user_id", "memberid", "member_id", "accountid", "account_id",
         "customerid", "customer_id", "profileid", "profile_id", "tenantid", "tenant_id",
@@ -4373,20 +4432,6 @@ class WebSiteFetch(object):
         weak_password_login_proof = bool(merged.get("weak_password_login_proof"))
         sqli_proof_type = str(merged.get("sqli_proof_type", "") or "").strip().lower()
 
-        def _verified_proof_guard_reason():
-            if (risk_type_text == "xss" or payload_type_text == "xss_probe") and (not xss_popup_proof):
-                return "XSS 缺少可触发弹窗的执行证据，禁止直接判定为 verified"
-            if (risk_type_text == "weak_password" or payload_type_text == "weak_password_probe") and (not weak_password_login_proof):
-                return "弱口令缺少登录成功证据，禁止直接判定为 verified"
-            if (risk_type_text == "sqli" or payload_type_text == "sqli_probe") and sqli_proof_type not in {
-                "error_based",
-                "time_based",
-                "boolean_based",
-                "external_tool",
-            }:
-                return "SQL 注入缺少可复现利用证据，禁止直接判定为 verified"
-            return ""
-
         if ai_reason:
             base_reason = str(merged.get("reason", "") or "").strip()
             if base_reason:
@@ -4397,7 +4442,13 @@ class WebSiteFetch(object):
         if status != "ok" or not ai_decision:
             return merged
 
-        proof_guard_reason = _verified_proof_guard_reason()
+        proof_guard_reason = self._get_ai_pen_verified_proof_guard_reason(
+            risk_type_text=risk_type_text,
+            payload_type_text=payload_type_text,
+            xss_popup_proof=xss_popup_proof,
+            weak_password_login_proof=weak_password_login_proof,
+            sqli_proof_type=sqli_proof_type,
+        )
         if proof_guard_reason and base_decision == "verified":
             merged["decision"] = "needs_manual_review"
             merged["confidence"] = max(0.62, min(0.86, base_confidence))
@@ -4441,6 +4492,30 @@ class WebSiteFetch(object):
             return seed_text in body_check_text
         # 证据过短时降低误命中概率，仅做弱匹配。
         return len(seed_text) >= 6 and seed_text in body_check_text
+
+    @staticmethod
+    def _get_ai_pen_verified_proof_guard_reason(
+        risk_type_text: str,
+        payload_type_text: str,
+        xss_popup_proof: bool = False,
+        weak_password_login_proof: bool = False,
+        sqli_proof_type: str = "",
+    ) -> str:
+        if (str(risk_type_text or "").strip().lower() == "xss" or str(payload_type_text or "").strip().lower() == "xss_probe") and (not xss_popup_proof):
+            return "XSS 缺少可触发弹窗的执行证据，禁止直接判定为 verified"
+        if (
+            str(risk_type_text or "").strip().lower() == "weak_password"
+            or str(payload_type_text or "").strip().lower() == "weak_password_probe"
+        ) and (not weak_password_login_proof):
+            return "弱口令缺少登录成功证据，禁止直接判定为 verified"
+        if (str(risk_type_text or "").strip().lower() == "sqli" or str(payload_type_text or "").strip().lower() == "sqli_probe") and str(sqli_proof_type or "").strip().lower() not in {
+            "error_based",
+            "time_based",
+            "boolean_based",
+            "external_tool",
+        }:
+            return "SQL 注入缺少可复现利用证据，禁止直接判定为 verified"
+        return ""
 
     @staticmethod
     def _contains_sql_error_signature(text: str) -> bool:
@@ -5869,6 +5944,325 @@ class WebSiteFetch(object):
         return results
 
     @staticmethod
+    def _extract_html_attr_value(raw_text: str, attr_name: str):
+        text = str(raw_text or "")
+        attr = str(attr_name or "").strip()
+        if not text or not attr:
+            return ""
+
+        pattern = r'(?is)\b{}\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))'.format(re.escape(attr))
+        match = re.search(pattern, text)
+        if not match:
+            return ""
+        for group_id in (1, 2, 3):
+            value = str(match.group(group_id) or "").strip()
+            if value:
+                return value
+        return ""
+
+    @classmethod
+    def _extract_html_login_form_candidate(cls, target_url: str, body_text: str):
+        content = str(body_text or "")
+        if not content:
+            return {}
+
+        best_form = {}
+        best_score = -1
+        for match in re.finditer(r"(?is)<form\b([^>]*)>(.*?)</form>", content):
+            attrs_text = str(match.group(1) or "")
+            inner_html = str(match.group(2) or "")
+            action_text = cls._extract_html_attr_value(attrs_text, "action")
+            method_text = cls._extract_html_attr_value(attrs_text, "method").lower() or "post"
+            enctype_text = cls._extract_html_attr_value(attrs_text, "enctype").lower()
+            merged_form_text = "{} {}".format(attrs_text, inner_html).lower()
+
+            visible_fields = []
+            hidden_fields = {}
+            username_field = ""
+            password_field = ""
+            csrf_field = ""
+            captcha_required = False
+            score = 0
+
+            if any(token in merged_form_text for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS):
+                score += 2
+
+            for input_match in re.finditer(r"(?is)<input\b([^>]*)>", inner_html):
+                input_attrs = str(input_match.group(1) or "")
+                field_name = cls._extract_html_attr_value(input_attrs, "name") or cls._extract_html_attr_value(input_attrs, "id")
+                field_type = (cls._extract_html_attr_value(input_attrs, "type") or "text").strip().lower() or "text"
+                field_value = cls._extract_html_attr_value(input_attrs, "value")
+                lowered_name = str(field_name or "").strip().lower()
+
+                if field_type == "password":
+                    password_field = field_name or password_field or "password"
+                    score += 5
+                    continue
+
+                if field_type == "hidden":
+                    if field_name:
+                        hidden_fields[field_name] = field_value[:180]
+                        if any(token in lowered_name for token in cls.AI_PEN_CSRF_FIELD_HINTS):
+                            csrf_field = field_name
+                    continue
+
+                if field_name:
+                    visible_fields.append(field_name)
+                    if (not username_field) and any(token in lowered_name for token in ("user", "name", "account", "login", "email", "mobile", "phone")):
+                        username_field = field_name
+                    if any(token in lowered_name for token in cls.AI_PEN_CAPTCHA_HINTS):
+                        captcha_required = True
+
+            if password_field and (not username_field):
+                for field_name in visible_fields:
+                    lowered_name = str(field_name or "").strip().lower()
+                    if any(token in lowered_name for token in ("user", "name", "account", "login", "email", "mobile", "phone")):
+                        username_field = field_name
+                        break
+
+            if captcha_required:
+                score -= 1
+            if action_text:
+                score += 1
+
+            if password_field and score > best_score:
+                best_score = score
+                best_form = {
+                    "login_url": str(target_url or "").strip(),
+                    "submit_url": urljoin(str(target_url or "").strip(), action_text) if action_text else str(target_url or "").strip(),
+                    "form_action": action_text,
+                    "method": method_text,
+                    "enctype": enctype_text,
+                    "username_field": username_field or "username",
+                    "password_field": password_field or "password",
+                    "csrf_field": csrf_field,
+                    "captcha_required": bool(captcha_required),
+                    "hidden_fields": hidden_fields,
+                    "fields": visible_fields[:12],
+                }
+        return best_form
+
+    @classmethod
+    def _build_ai_pen_login_probe_context(
+        cls,
+        target_url: str,
+        body_text: str = "",
+        dom_form_summary=None,
+        login_surface_summary=None,
+    ):
+        dom_forms = list(dom_form_summary or [])
+        summary = login_surface_summary if isinstance(login_surface_summary, dict) else {}
+        html_form = cls._extract_html_login_form_candidate(target_url, body_text)
+
+        form_actions = [str(item or "").strip() for item in list(summary.get("form_actions", []) or []) if str(item or "").strip()]
+        summary_fields = cls._extract_form_field_names(dom_forms)
+        has_password_form = bool(html_form.get("password_field")) or cls._safe_int_value(summary.get("password_form_count"), 0) > 0
+        captcha_required = bool(html_form.get("captcha_required")) or cls._safe_int_value(summary.get("captcha_form_count"), 0) > 0
+
+        candidate_fields = []
+        for field_name in list(html_form.get("fields", []) or []) + summary_fields:
+            field_text = str(field_name or "").strip()
+            if field_text and field_text not in candidate_fields:
+                candidate_fields.append(field_text)
+
+        def pick_field(existing_value: str, default_value: str, keywords):
+            if str(existing_value or "").strip():
+                return str(existing_value or "").strip()
+            for field_name in candidate_fields:
+                lowered_name = field_name.lower()
+                if any(token in lowered_name for token in keywords):
+                    return field_name
+            return default_value
+
+        username_field = pick_field(html_form.get("username_field"), "username", ("user", "name", "account", "login", "email", "mobile", "phone"))
+        password_field = pick_field(html_form.get("password_field"), "password", ("password", "passwd", "pwd"))
+        csrf_field = pick_field(html_form.get("csrf_field"), "", cls.AI_PEN_CSRF_FIELD_HINTS)
+
+        login_url = str(target_url or "").strip()
+        submit_url = str(html_form.get("submit_url") or "").strip()
+        form_action = str(html_form.get("form_action") or "").strip()
+        method_text = str(html_form.get("method") or "").strip().lower() or "post"
+        enctype_text = str(html_form.get("enctype") or "").strip().lower()
+        hidden_fields = dict(html_form.get("hidden_fields") or {}) if isinstance(html_form.get("hidden_fields"), dict) else {}
+
+        if not submit_url and form_actions:
+            form_action = str(form_actions[0] or "").strip()
+            submit_url = urljoin(login_url, form_action)
+        if not submit_url and has_password_form:
+            submit_url = login_url
+
+        if not has_password_form or not submit_url:
+            return {}
+
+        return {
+            "login_url": login_url,
+            "submit_url": submit_url,
+            "form_action": form_action,
+            "method": method_text,
+            "enctype": enctype_text,
+            "username_field": username_field,
+            "password_field": password_field,
+            "csrf_field": csrf_field,
+            "captcha_required": bool(captcha_required),
+            "hidden_fields": hidden_fields,
+            "fields": candidate_fields[:12],
+        }
+
+    @classmethod
+    def _parse_ai_pen_payload_credentials(cls, payload: str):
+        payload_text = str(payload or "").strip()
+        if not payload_text:
+            return {}
+
+        username = ""
+        password = ""
+        for key, value in parse_qsl(payload_text, keep_blank_values=True):
+            key_text = str(key or "").strip().lower()
+            value_text = str(value or "").strip()
+            if not value_text:
+                continue
+            if (not username) and any(token == key_text or token in key_text for token in ("username", "user", "account", "login", "email")):
+                username = value_text
+            elif (not password) and any(token == key_text or token in key_text for token in ("password", "passwd", "pwd")):
+                password = value_text
+        if username and password:
+            return {"username": username, "password": password}
+        return {}
+
+    @classmethod
+    def _build_ai_pen_minimal_default_credentials(cls, candidate: dict = None, payload: str = "", max_count: int = 3):
+        item = candidate if isinstance(candidate, dict) else {}
+        result = []
+        seen = set()
+
+        def append_pair(username: str, password: str, source: str):
+            user_text = str(username or "").strip()
+            pass_text = str(password or "").strip()
+            if not user_text or not pass_text:
+                return
+            cache_key = "{}\0{}".format(user_text, pass_text)
+            if cache_key in seen:
+                return
+            seen.add(cache_key)
+            result.append(
+                {
+                    "username": user_text[:80],
+                    "password": pass_text[:80],
+                    "source": str(source or "").strip()[:48],
+                }
+            )
+
+        payload_credentials = cls._parse_ai_pen_payload_credentials(payload)
+        if payload_credentials:
+            append_pair(payload_credentials.get("username"), payload_credentials.get("password"), "payload_hint")
+
+        merged_text = " ".join(
+            [
+                str(item.get("target") or "").strip().lower(),
+                str(item.get("risk_name") or "").strip().lower(),
+                " ".join([str(x or "").strip().lower() for x in list(item.get("knowledge_hit_tokens", []) or [])[:16]]),
+                " ".join([str(x or "").strip().lower() for x in list(item.get("knowledge_hit_product_labels", []) or [])[:8]]),
+                " ".join([str(x or "").strip().lower() for x in list(item.get("surface_hints", []) or [])[:8]]),
+            ]
+        ).strip()
+        for product_name, credential_pairs in cls.AI_PEN_PRODUCT_DEFAULT_CREDENTIALS.items():
+            if product_name in merged_text:
+                for username, password in credential_pairs:
+                    append_pair(username, password, "product_default")
+                    if len(result) >= max(1, int(max_count or 1)):
+                        return result[: max(1, int(max_count or 1))]
+
+        for username, password in cls.AI_PEN_MINIMAL_DEFAULT_CREDENTIALS:
+            append_pair(username, password, "minimal_default")
+            if len(result) >= max(1, int(max_count or 1)):
+                break
+        return result[: max(1, int(max_count or 1))]
+
+    @classmethod
+    def _analyze_ai_pen_login_success(cls, login_url: str, response_summary, base_body_text: str = ""):
+        response_obj = response_summary if isinstance(response_summary, dict) else {}
+        headers = response_obj.get("headers") if isinstance(response_obj.get("headers"), dict) else {}
+        body_text = str(response_obj.get("body_text") or "").strip()
+        body_lower = body_text.lower()
+        base_lower = str(base_body_text or "").strip().lower()
+        final_url = str(response_obj.get("url") or login_url or "").strip()
+        history_urls = [str(item or "").strip() for item in list(response_obj.get("history_urls", []) or []) if str(item or "").strip()]
+        cookie_names = [str(item or "").strip() for item in list(response_obj.get("cookie_names", []) or []) if str(item or "").strip()]
+        location_value = str(headers.get("Location") or headers.get("location") or "").strip()
+
+        try:
+            login_path = str(urlsplit(str(login_url or "")).path or "").strip().lower()
+        except Exception:
+            login_path = str(login_url or "").strip().lower()
+        try:
+            final_path = str(urlsplit(final_url).path or "").strip().lower()
+        except Exception:
+            final_path = final_url.lower()
+
+        login_like_tokens = cls.AI_PEN_LOGIN_PAGE_KEYWORDS
+        if any(token in body_lower and token not in base_lower for token in cls.AI_PEN_LOGIN_BLOCK_KEYWORDS):
+            return {
+                "success": False,
+                "blocked": True,
+                "reason": "登录流程出现验证码或锁定提示，默认停止弱口令验证",
+                "final_url": final_url,
+            }
+
+        if any(token in body_lower and token not in base_lower for token in cls.AI_PEN_LOGIN_FAILURE_KEYWORDS):
+            return {
+                "success": False,
+                "blocked": False,
+                "reason": "登录响应出现失败提示，当前凭证未验证通过",
+                "final_url": final_url,
+            }
+
+        if any(token in body_lower and token not in base_lower for token in cls.AI_PEN_LOGIN_SUCCESS_KEYWORDS):
+            return {
+                "success": True,
+                "blocked": False,
+                "reason": "登录响应出现成功/进入后台关键词",
+                "final_url": final_url,
+            }
+
+        if location_value:
+            resolved_location = urljoin(final_url or login_url, location_value)
+            try:
+                location_path = str(urlsplit(resolved_location).path or "").strip().lower()
+            except Exception:
+                location_path = resolved_location.lower()
+            if location_path and location_path != login_path and not any(token in location_path for token in login_like_tokens):
+                return {
+                    "success": True,
+                    "blocked": False,
+                    "reason": "登录后发生非登录页跳转",
+                    "final_url": resolved_location,
+                }
+
+        if history_urls and final_path and final_path != login_path and not any(token in final_path for token in login_like_tokens):
+            return {
+                "success": True,
+                "blocked": False,
+                "reason": "登录后进入非登录页路径",
+                "final_url": final_url,
+            }
+
+        if cookie_names and final_path and final_path != login_path and not any(token in final_path for token in login_like_tokens):
+            if any(token in " ".join(cookie_names).lower() for token in ("session", "auth", "token", "jwt", "sid")):
+                return {
+                    "success": True,
+                    "blocked": False,
+                    "reason": "登录后获得鉴权 Cookie 且页面已离开登录路径",
+                    "final_url": final_url,
+                }
+
+        return {
+            "success": False,
+            "blocked": False,
+            "reason": "未观察到稳定的登录成功信号",
+            "final_url": final_url,
+        }
+
+    @staticmethod
     def _extract_runtime_api_paths(runtime_api_calls):
         results = []
         seen = set()
@@ -6893,7 +7287,7 @@ class WebSiteFetch(object):
             raw_params = item.get("params")
             if isinstance(raw_params, dict):
                 params.update(raw_params)
-            for key in ("url", "method", "allow_redirects", "headers"):
+            for key in ("url", "method", "allow_redirects", "headers", "session_key", "prepare_url", "login_url", "form_data"):
                 if key not in params and key in item:
                     params[key] = item.get(key)
 
@@ -6926,6 +7320,24 @@ class WebSiteFetch(object):
                 step["params"]["allow_redirects"] = allow_redirects
             if safe_headers:
                 step["params"]["headers"] = safe_headers
+            session_key = str(params.get("session_key") or "").strip()
+            if session_key:
+                step["params"]["session_key"] = session_key[:64]
+            prepare_url = str(params.get("prepare_url") or "").strip()
+            if prepare_url:
+                step["params"]["prepare_url"] = prepare_url[:240]
+            login_url = str(params.get("login_url") or "").strip()
+            if login_url:
+                step["params"]["login_url"] = login_url[:240]
+            form_data_obj = params.get("form_data") if isinstance(params.get("form_data"), dict) else {}
+            safe_form_data = {}
+            for form_key, form_value in form_data_obj.items():
+                key_text = str(form_key or "").strip()
+                if not key_text:
+                    continue
+                safe_form_data[key_text[:64]] = str(form_value or "")[:180]
+            if safe_form_data:
+                step["params"]["form_data"] = safe_form_data
 
             cache_key = json.dumps(step, ensure_ascii=False, sort_keys=True)
             if cache_key in seen:
@@ -7023,6 +7435,133 @@ class WebSiteFetch(object):
             )
         return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
+    @classmethod
+    def _build_ai_pen_fallback_tool_plan(
+        cls,
+        target_url: str,
+        payload_type: str,
+        payload: str,
+        max_steps: int = 4,
+        candidate: dict = None,
+        body_text: str = "",
+        dom_form_summary=None,
+        login_surface_summary=None,
+    ):
+        url_text = str(target_url or "").strip()
+        payload_type_text = str(payload_type or "").strip().lower()
+        payload_text = str(payload or "").strip()
+        if not url_text:
+            return []
+
+        plan = []
+        if payload_type_text in {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "replay"} and payload_text:
+            probe_url = cls._build_probe_url_with_payload(url_text, payload_text)
+            if probe_url and probe_url != url_text:
+                plan.append(
+                    {
+                        "tool": "payload_probe",
+                        "params": {
+                            "url": probe_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback payload 探针重放",
+                    }
+                )
+        elif payload_type_text == "idor_probe":
+            idor_url = cls._build_idor_probe_url(url_text)
+            if idor_url and idor_url != url_text:
+                plan.append(
+                    {
+                        "tool": "idor_probe",
+                        "params": {
+                            "url": idor_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback IDOR 参数变异探针",
+                    }
+                )
+        elif payload_type_text == "api_doc_probe":
+            for doc_url in cls._build_api_doc_probe_targets(url_text, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "api_doc_probe",
+                        "params": {
+                            "url": doc_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback API 文档路径探测",
+                    }
+                )
+        elif payload_type_text == "weak_password_probe":
+            login_context = cls._build_ai_pen_login_probe_context(
+                target_url=url_text,
+                body_text=body_text,
+                dom_form_summary=dom_form_summary,
+                login_surface_summary=login_surface_summary,
+            )
+            if login_context and (not bool(login_context.get("captcha_required"))):
+                credential_candidates = cls._build_ai_pen_minimal_default_credentials(
+                    candidate=candidate,
+                    payload=payload_text,
+                    max_count=1,
+                )
+                if credential_candidates:
+                    credential_item = credential_candidates[0]
+                    form_data = dict(login_context.get("hidden_fields") or {})
+                    form_data[str(login_context.get("username_field") or "username")] = str(credential_item.get("username") or "")
+                    form_data[str(login_context.get("password_field") or "password")] = str(credential_item.get("password") or "")
+                    plan.append(
+                        {
+                            "tool": "credential_probe",
+                            "params": {
+                                "url": str(login_context.get("submit_url") or url_text),
+                                "prepare_url": str(login_context.get("login_url") or url_text),
+                                "login_url": str(login_context.get("login_url") or url_text),
+                                "session_key": "weak_password",
+                                "method": str(login_context.get("method") or "post"),
+                                "allow_redirects": True,
+                                "form_data": form_data,
+                            },
+                            "summary": "fallback 默认口令低副作用验证",
+                        }
+                    )
+                    if max(1, int(max_steps or 1)) > 1:
+                        plan.append(
+                            {
+                                "tool": "detect_login_success",
+                                "params": {
+                                    "url": str(login_context.get("submit_url") or url_text),
+                                    "login_url": str(login_context.get("login_url") or url_text),
+                                    "session_key": "weak_password",
+                                },
+                                "summary": "fallback 登录成功判定",
+                            }
+                        )
+        elif payload_type_text == "websocket_probe":
+            ws_probe_url = cls._build_websocket_handshake_url(url_text)
+            if ws_probe_url:
+                plan.append(
+                    {
+                        "tool": "websocket_probe",
+                        "params": {
+                            "url": ws_probe_url,
+                            "method": "get",
+                            "allow_redirects": False,
+                            "headers": {
+                                "Connection": "Upgrade",
+                                "Upgrade": "websocket",
+                                "Sec-WebSocket-Version": "13",
+                                "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+                            },
+                        },
+                        "summary": "fallback WebSocket 握手探针",
+                    }
+                )
+        return cls._normalize_ai_pen_tool_plan(plan, default_url=url_text, max_steps=max_steps)
+
     @staticmethod
     def _normalize_ai_pen_agent_action(value: str, default_value="manual_required"):
         action = str(value or "").strip().lower()
@@ -7067,7 +7606,10 @@ class WebSiteFetch(object):
     def _collect_ai_pen_runtime_observation(cls, result_items, evidence_seed: str, js_api_targets=None):
         observation = {
             "trace_parts": [],
+            "tool_counts": {},
             "probe_status": 0,
+            "probe_url": "",
+            "probe_headers": {},
             "probe_body_excerpt": "",
             "probe_body_md5": "",
             "evidence_hit": False,
@@ -7080,6 +7622,9 @@ class WebSiteFetch(object):
             "config_exposure_summary": "",
             "websocket_upgrade_hit": False,
             "websocket_upgrade_hint": False,
+            "login_success_hit": False,
+            "login_success_reason": "",
+            "login_blocked_reason": "",
             "error": "",
         }
         if not result_items:
@@ -7093,6 +7638,8 @@ class WebSiteFetch(object):
             result_obj = item.get("result") if isinstance(item.get("result"), dict) else {}
             response_obj = result_obj.get("response") if isinstance(result_obj.get("response"), dict) else {}
             url_text = str(response_obj.get("url", "") or "").strip()
+            if tool_name:
+                observation["tool_counts"][tool_name] = int(observation["tool_counts"].get(tool_name, 0) or 0) + 1
             summary_text = "agent_plan({},{})".format(tool_name or "-", status_text or "unknown")
             if url_text:
                 summary_text = "agent_plan({},status={},url={})".format(tool_name or "-", status_text or "unknown", url_text[:220])
@@ -7118,6 +7665,10 @@ class WebSiteFetch(object):
 
             if not observation["probe_status"]:
                 observation["probe_status"] = status_code
+            if url_text:
+                observation["probe_url"] = url_text
+            if headers:
+                observation["probe_headers"] = dict(headers)
             if body_excerpt:
                 observation["probe_body_excerpt"] = body_excerpt
             if body_md5:
@@ -7146,6 +7697,20 @@ class WebSiteFetch(object):
                     observation["websocket_upgrade_hit"] = True
                 elif status_code in (400, 426) and ("websocket" in ws_upgrade_header or ws_version_hint):
                     observation["websocket_upgrade_hint"] = True
+
+            if tool_name == "detect_login_success":
+                analysis_obj = result_obj.get("analysis") if isinstance(result_obj.get("analysis"), dict) else {}
+                if bool(analysis_obj.get("success")):
+                    observation["login_success_hit"] = True
+                    observation["login_success_reason"] = cls._clip_text(
+                        analysis_obj.get("reason", ""),
+                        cls.AI_PEN_TEST_REASON_MAX,
+                    )
+                elif bool(analysis_obj.get("blocked")) and not observation["login_blocked_reason"]:
+                    observation["login_blocked_reason"] = cls._clip_text(
+                        analysis_obj.get("reason", ""),
+                        cls.AI_PEN_TEST_REASON_MAX,
+                    )
 
         return observation
 
@@ -7858,9 +8423,142 @@ class WebSiteFetch(object):
                 "method": {"type": "string"},
                 "allow_redirects": {"type": "boolean"},
                 "headers": {"type": "object"},
+                "session_key": {"type": "string"},
+                "prepare_url": {"type": "string"},
+                "login_url": {"type": "string"},
+                "form_data": {"type": "object"},
             },
             "required": ["url"],
         }
+        session_store = {}
+
+        def _build_runtime_response(resp, req_url: str, req_method: str, session_obj=None):
+            status_code = int(getattr(resp, "status_code", 0) or 0)
+            response_headers = {}
+            raw_headers = getattr(resp, "headers", {}) or {}
+            if hasattr(raw_headers, "items"):
+                for header_key, header_value in raw_headers.items():
+                    key_text = str(header_key or "").strip()
+                    if not key_text:
+                        continue
+                    response_headers[key_text] = str(header_value or "")[:240]
+            try:
+                body_text = str(getattr(resp, "text", "") or "")
+            except Exception:
+                body_text = ""
+            body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
+            body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest() if body_excerpt else ""
+
+            history_urls = []
+            history_status_codes = []
+            for history_item in list(getattr(resp, "history", []) or [])[:4]:
+                history_url = str(getattr(history_item, "url", "") or "").strip()
+                if history_url:
+                    history_urls.append(history_url[:220])
+                history_status_codes.append(int(getattr(history_item, "status_code", 0) or 0))
+
+            cookie_names = []
+            seen_cookie_names = set()
+            cookie_jar = getattr(session_obj, "cookies", None)
+            if cookie_jar is not None and hasattr(cookie_jar, "keys"):
+                for cookie_name in list(cookie_jar.keys())[:8]:
+                    name_text = str(cookie_name or "").strip()
+                    lowered_name = name_text.lower()
+                    if not name_text or lowered_name in seen_cookie_names:
+                        continue
+                    seen_cookie_names.add(lowered_name)
+                    cookie_names.append(name_text[:60])
+
+            return {
+                "status": "ok",
+                "message": "ok",
+                "response": {
+                    "request_url": req_url,
+                    "url": str(getattr(resp, "url", "") or req_url or ""),
+                    "method": str(req_method or "").strip().lower(),
+                    "status_code": status_code,
+                    "headers": response_headers,
+                    "body_text": body_excerpt,
+                    "body_md5": body_md5,
+                    "history_urls": history_urls,
+                    "history_status_codes": history_status_codes,
+                    "cookie_names": cookie_names,
+                },
+            }
+
+        def _prepare_runtime_request(req_url, req_method="get", allow_redirects=True, headers=None, form_data=None):
+            headers_obj = dict(headers or {}) if isinstance(headers, dict) else {}
+            headers_obj.setdefault("User-Agent", "Mozilla/5.0")
+            headers_obj.setdefault("Cache-Control", "max-age=0")
+
+            if self.waf_guard:
+                should_skip, detail = self.waf_guard.should_skip(req_url, module="ai_pen_test")
+                if should_skip:
+                    return {}, self.waf_guard.build_skip_response(req_url, detail)
+
+                headers_obj, waf_delay, _ = self.waf_guard.prepare_request(
+                    req_url,
+                    module="ai_pen_test",
+                    method=req_method,
+                    headers=headers_obj,
+                )
+                if waf_delay > 0:
+                    time.sleep(waf_delay)
+
+            request_kwargs = {
+                "verify": False,
+                "timeout": timeout_tuple,
+                "allow_redirects": bool(allow_redirects),
+                "headers": headers_obj,
+            }
+            if isinstance(form_data, dict) and form_data:
+                request_kwargs["data"] = form_data
+
+            if Config.PROXY_URL:
+                request_kwargs["proxies"] = {
+                    "https": Config.PROXY_URL,
+                    "http": Config.PROXY_URL,
+                }
+            else:
+                request_kwargs["proxies"] = {"http": None, "https": None}
+            return request_kwargs, None
+
+        def _execute_runtime_request(req_url, req_method="get", allow_redirects=True, headers=None, form_data=None, session_key=""):
+            if not req_url:
+                return {"status": "error", "message": "missing_url", "response": {}}
+
+            req_method = str(req_method or "get").strip().lower() or "get"
+            request_kwargs, skip_response = _prepare_runtime_request(
+                req_url=req_url,
+                req_method=req_method,
+                allow_redirects=allow_redirects,
+                headers=headers,
+                form_data=form_data,
+            )
+            if skip_response is not None:
+                session_obj = None
+                if session_key:
+                    session_obj = dict(session_store.get(session_key) or {}).get("session")
+                return _build_runtime_response(skip_response, req_url, req_method, session_obj=session_obj)
+
+            session_obj = None
+            if session_key:
+                session_bucket = session_store.setdefault(
+                    str(session_key or "").strip() or "default",
+                    {"session": requests.Session(), "last_response": {}},
+                )
+                session_obj = session_bucket["session"]
+                resp = session_obj.request(req_method, req_url, **request_kwargs)
+            else:
+                resp = requests.request(req_method, req_url, **request_kwargs)
+
+            if self.waf_guard:
+                self.waf_guard.observe_response(req_url, resp, module="ai_pen_test")
+
+            result = _build_runtime_response(resp, req_url, req_method, session_obj=session_obj)
+            if session_key:
+                session_store[str(session_key or "").strip() or "default"]["last_response"] = dict(result.get("response") or {})
+            return result
 
         def _build_runtime_http_executor(default_method="get", default_allow_redirects=True):
             def _executor(_context, params):
@@ -7871,48 +8569,46 @@ class WebSiteFetch(object):
                 if not isinstance(allow_redirects, bool):
                     allow_redirects = bool(default_allow_redirects)
                 req_headers = params_obj.get("headers")
-                req_headers_obj = req_headers if isinstance(req_headers, dict) else None
+                req_headers_obj = req_headers if isinstance(req_headers, dict) else {}
+                session_key = str(params_obj.get("session_key") or "").strip()
+                form_data = params_obj.get("form_data") if isinstance(params_obj.get("form_data"), dict) else {}
+                prepare_url = str(params_obj.get("prepare_url") or "").strip()
 
                 if not req_url:
                     return {"status": "error", "message": "missing_url", "response": {}}
 
                 try:
-                    resp = utils.http_req(
-                        req_url,
-                        req_method,
-                        timeout=timeout_tuple,
+                    if prepare_url and session_key:
+                        _execute_runtime_request(
+                            req_url=prepare_url,
+                            req_method="get",
+                            allow_redirects=True,
+                            headers=req_headers_obj,
+                            session_key=session_key,
+                        )
+                        prepared_response = dict(session_store.get(session_key, {}).get("last_response") or {})
+                        prepared_body = str(prepared_response.get("body_text") or "")
+                        prepared_context = self._build_ai_pen_login_probe_context(
+                            target_url=prepare_url,
+                            body_text=prepared_body,
+                        )
+                        if prepared_context:
+                            merged_form_data = dict(prepared_context.get("hidden_fields") or {})
+                            merged_form_data.update(form_data)
+                            form_data = merged_form_data
+                            if req_method == "get":
+                                req_method = str(prepared_context.get("method") or req_method).strip().lower() or req_method
+                            if not req_url:
+                                req_url = str(prepared_context.get("submit_url") or prepare_url)
+
+                    return _execute_runtime_request(
+                        req_url=req_url,
+                        req_method=req_method,
                         allow_redirects=allow_redirects,
                         headers=req_headers_obj,
-                        waf_guard=self.waf_guard,
-                        waf_module="ai_pen_test",
+                        form_data=form_data,
+                        session_key=session_key,
                     )
-                    status_code = int(getattr(resp, "status_code", 0) or 0)
-                    response_headers = {}
-                    raw_headers = getattr(resp, "headers", {}) or {}
-                    if hasattr(raw_headers, "items"):
-                        for header_key, header_value in raw_headers.items():
-                            key_text = str(header_key or "").strip()
-                            if not key_text:
-                                continue
-                            response_headers[key_text] = str(header_value or "")[:240]
-                    try:
-                        body_text = str(getattr(resp, "text", "") or "")
-                    except Exception:
-                        body_text = ""
-                    body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
-                    body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest() if body_excerpt else ""
-                    return {
-                        "status": "ok",
-                        "message": "ok",
-                        "response": {
-                            "url": req_url,
-                            "method": req_method,
-                            "status_code": status_code,
-                            "headers": response_headers,
-                            "body_text": body_excerpt,
-                            "body_md5": body_md5,
-                        },
-                    }
                 except Exception as req_exc:
                     return {
                         "status": "error",
@@ -7922,12 +8618,72 @@ class WebSiteFetch(object):
 
             return _executor
 
+        def _build_detect_login_success_executor():
+            def _executor(_context, params):
+                params_obj = params if isinstance(params, dict) else {}
+                session_key = str(params_obj.get("session_key") or "").strip() or "default"
+                login_url = str(params_obj.get("login_url") or params_obj.get("url") or "").strip()
+                session_bucket = session_store.get(session_key) if isinstance(session_store.get(session_key), dict) else {}
+                last_response = dict(session_bucket.get("last_response") or {})
+                if not last_response:
+                    return {
+                        "status": "error",
+                        "message": "missing_login_response",
+                        "response": {},
+                        "analysis": {},
+                    }
+
+                analysis = self._analyze_ai_pen_login_success(
+                    login_url=login_url,
+                    response_summary=last_response,
+                )
+                return {
+                    "status": "ok",
+                    "message": str(analysis.get("reason") or "").strip(),
+                    "response": last_response,
+                    "analysis": analysis,
+                }
+
+            return _executor
+
         runtime.register_tool(
             ToolSchema(
                 name="http_fetch",
                 description="基础 HTTP 获取探针",
                 input_schema=common_input_schema,
                 execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="session_start",
+                description="初始化登录会话",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="login_probe",
+                description="登录页探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="credential_probe",
+                description="默认口令登录探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="post", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="detect_login_success",
+                description="登录成功/阻断判定",
+                input_schema=common_input_schema,
+                execute=_build_detect_login_success_executor(),
             )
         )
         runtime.register_tool(
@@ -8157,8 +8913,16 @@ class WebSiteFetch(object):
             base_body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
             base_body_md5 = hashlib.md5(base_body_excerpt.encode("utf-8", "ignore")).hexdigest() if base_body_excerpt else ""
             evidence_hit = self._contains_evidence(evidence_seed, base_body_excerpt)
+            login_probe_context = self._build_ai_pen_login_probe_context(
+                target_url=target_url,
+                body_text=body_text,
+                dom_form_summary=dom_form_summary,
+                login_surface_summary=login_surface_summary,
+            )
 
             probe_status = 0
+            probe_url = ""
+            probe_headers = {}
             probe_body_excerpt = ""
             probe_body_md5 = ""
             payload_reflect_hit = False
@@ -8178,6 +8942,10 @@ class WebSiteFetch(object):
             jwt_weak_secret = ""
             websocket_upgrade_hit = False
             websocket_upgrade_hint = False
+            credential_probe_count = 0
+            login_success_hit = False
+            login_success_reason = ""
+            login_blocked_reason = ""
             agent_loop_final_decision = {}
             agent_loop_stop_reason = ""
             probe_error = ""
@@ -8208,6 +8976,8 @@ class WebSiteFetch(object):
                     )
                 tool_trace_parts.extend(list(plan_observation.get("trace_parts", []) or []))
                 probe_status = int(plan_observation.get("probe_status", 0) or 0) or probe_status
+                probe_url = str(plan_observation.get("probe_url", "") or "") or probe_url
+                probe_headers = dict(plan_observation.get("probe_headers") or {}) or probe_headers
                 probe_body_excerpt = str(plan_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
                 probe_body_md5 = str(plan_observation.get("probe_body_md5", "") or "") or probe_body_md5
                 evidence_hit = bool(plan_observation.get("evidence_hit")) or evidence_hit
@@ -8217,150 +8987,36 @@ class WebSiteFetch(object):
                     api_doc_summary = dict(plan_observation.get("api_doc_summary") or {})
                 if isinstance(plan_observation.get("api_surface_summary"), dict) and plan_observation.get("api_surface_summary"):
                     api_surface_summary = dict(plan_observation.get("api_surface_summary") or {})
+                api_doc_probe_count += self._safe_int_value(
+                    dict(plan_observation.get("tool_counts") or {}).get("api_doc_probe"),
+                    0,
+                )
                 config_exposure_hit = bool(plan_observation.get("config_exposure_hit")) or config_exposure_hit
                 config_exposure_url = str(plan_observation.get("config_exposure_url", "") or "") or config_exposure_url
                 config_exposure_summary = str(plan_observation.get("config_exposure_summary", "") or "") or config_exposure_summary
                 websocket_upgrade_hit = bool(plan_observation.get("websocket_upgrade_hit")) or websocket_upgrade_hit
                 websocket_upgrade_hint = bool(plan_observation.get("websocket_upgrade_hint")) or websocket_upgrade_hint
+                credential_probe_count += self._safe_int_value(
+                    dict(plan_observation.get("tool_counts") or {}).get("credential_probe"),
+                    0,
+                )
+                login_success_hit = bool(plan_observation.get("login_success_hit")) or login_success_hit
+                login_success_reason = str(plan_observation.get("login_success_reason", "") or "") or login_success_reason
+                login_blocked_reason = str(plan_observation.get("login_blocked_reason", "") or "") or login_blocked_reason
                 if isinstance(plan_observation.get("final_decision"), dict) and plan_observation.get("final_decision"):
                     agent_loop_final_decision = dict(plan_observation.get("final_decision") or {})
                 agent_loop_stop_reason = str(plan_observation.get("stop_reason", "") or "").strip()
                 if (not probe_error) and str(plan_observation.get("error", "") or "").strip():
                     probe_error = self._clip_text(plan_observation.get("error", ""), self.AI_PEN_TEST_ERROR_MAX)
+                payload_text = str(payload or "").strip().lower()
+                if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
+                    payload_reflect_hit = True
+                if payload_type == "idor_probe" and probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
+                    idor_diff_hit = True
 
             tool_calls = len(list(runtime.tool_calls or []))
             if mcp_enable and tool_calls < max_tool_calls and agent_loop_stop_reason not in {"final_decision", "manual_required"}:
-                if payload and payload_type in payload_probe_types:
-                    probe_url = self._build_probe_url_with_payload(target_url, payload)
-                    if probe_url and probe_url != target_url:
-                        try:
-                            probe_resp = _runtime_http_req(
-                                "payload_probe",
-                                probe_url,
-                                summary="payload 探针重放",
-                                method="get",
-                                allow_redirects=True,
-                            )
-                            tool_calls += 1
-                            tool_trace_parts.append("payload_probe(get,url={})".format(probe_url[:220]))
-                            probe_status = int(getattr(probe_resp, "status_code", 0) or 0)
-                            probe_headers = getattr(probe_resp, "headers", {}) or {}
-                            if str(probe_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
-                                try:
-                                    probe_body_text = str(getattr(probe_resp, "text", "") or "")
-                                except Exception:
-                                    probe_body_text = ""
-                                probe_body_excerpt = probe_body_text[: self.AI_PEN_TEST_BODY_MAX]
-                                probe_body_md5 = (
-                                    hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
-                                    if probe_body_excerpt
-                                    else ""
-                                )
-                                if self._contains_evidence(evidence_seed, probe_body_excerpt):
-                                    evidence_hit = True
-                                payload_text = str(payload or "").strip().lower()
-                                if payload_text and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
-                                    payload_reflect_hit = True
-                            else:
-                                tool_trace_parts.append("payload_probe(skip_by_waf)")
-                        except Exception as probe_exc:
-                            probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
-                            tool_trace_parts.append("payload_probe(error)")
-                elif payload_type == "idor_probe":
-                    idor_url = self._build_idor_probe_url(target_url)
-                    if idor_url and idor_url != target_url:
-                        try:
-                            idor_resp = _runtime_http_req(
-                                "idor_probe",
-                                idor_url,
-                                summary="IDOR 参数变异探针",
-                                method="get",
-                                allow_redirects=True,
-                            )
-                            tool_calls += 1
-                            tool_trace_parts.append("idor_probe(get,url={})".format(idor_url[:220]))
-                            probe_status = int(getattr(idor_resp, "status_code", 0) or 0)
-                            idor_headers = getattr(idor_resp, "headers", {}) or {}
-                            if str(idor_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
-                                try:
-                                    idor_body_text = str(getattr(idor_resp, "text", "") or "")
-                                except Exception:
-                                    idor_body_text = ""
-                                probe_body_excerpt = idor_body_text[: self.AI_PEN_TEST_BODY_MAX]
-                                probe_body_md5 = (
-                                    hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
-                                    if probe_body_excerpt
-                                    else ""
-                                )
-                                if self._contains_evidence(evidence_seed, probe_body_excerpt):
-                                    evidence_hit = True
-                                if probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
-                                    idor_diff_hit = True
-                            else:
-                                tool_trace_parts.append("idor_probe(skip_by_waf)")
-                        except Exception as probe_exc:
-                            probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
-                            tool_trace_parts.append("idor_probe(error)")
-                    else:
-                        tool_trace_parts.append("idor_probe(skip_no_mutation)")
-                elif payload_type == "api_doc_probe":
-                    remain_calls = max(1, max_tool_calls - tool_calls)
-                    doc_targets = self._build_api_doc_probe_targets(target_url, max_count=remain_calls)
-                    if not doc_targets:
-                        tool_trace_parts.append("api_doc_probe(skip_no_target)")
-                    for doc_url in doc_targets:
-                        if tool_calls >= max_tool_calls:
-                            break
-                        try:
-                            doc_resp = _runtime_http_req(
-                                "api_doc_probe",
-                                doc_url,
-                                summary="API 文档路径探测",
-                                method="get",
-                                allow_redirects=True,
-                            )
-                            tool_calls += 1
-                            api_doc_probe_count += 1
-                            tool_trace_parts.append("api_doc_probe(get,url={})".format(doc_url[:220]))
-                            doc_status = int(getattr(doc_resp, "status_code", 0) or 0)
-                            if not probe_status:
-                                probe_status = doc_status
-
-                            doc_headers = getattr(doc_resp, "headers", {}) or {}
-                            if str(doc_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() == "1":
-                                tool_trace_parts.append("api_doc_probe(skip_by_waf,url={})".format(doc_url[:180]))
-                                continue
-
-                            try:
-                                doc_body_text = str(getattr(doc_resp, "text", "") or "")
-                            except Exception:
-                                doc_body_text = ""
-                            doc_body_excerpt = doc_body_text[: self.AI_PEN_TEST_BODY_MAX]
-                            doc_body_md5 = (
-                                hashlib.md5(doc_body_excerpt.encode("utf-8", "ignore")).hexdigest()
-                                if doc_body_excerpt
-                                else ""
-                            )
-                            if doc_body_excerpt:
-                                probe_body_excerpt = doc_body_excerpt
-                            if doc_body_md5:
-                                probe_body_md5 = doc_body_md5
-                            if self._contains_evidence(evidence_seed, doc_body_excerpt):
-                                evidence_hit = True
-                            if self._looks_like_api_doc_response(doc_url, doc_body_excerpt, doc_headers):
-                                api_doc_hit = True
-                                api_doc_hit_url = doc_url
-                                api_doc_summary = self._extract_api_doc_summary(doc_body_excerpt)
-                                api_surface_summary = self._build_api_surface_summary(
-                                    api_doc_summary=api_doc_summary,
-                                    js_api_targets=js_api_targets,
-                                )
-                                break
-                        except Exception as probe_exc:
-                            if not probe_error:
-                                probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
-                            tool_trace_parts.append("api_doc_probe(error,url={})".format(str(doc_url)[:180]))
-                elif payload_type == "jwt_probe":
+                if payload_type == "jwt_probe":
                     jwt_candidates = self._extract_jwt_candidates(
                         evidence_seed,
                         base_body_excerpt,
@@ -8437,54 +9093,77 @@ class WebSiteFetch(object):
                                 tool_trace_parts.append("jwt_probe(error)")
                     else:
                         tool_trace_parts.append("jwt_probe(skip_no_token)")
-                elif payload_type == "websocket_probe":
-                    ws_probe_url = self._build_websocket_handshake_url(target_url)
-                    if not ws_probe_url:
+                else:
+                    remain_calls = max(1, max_tool_calls - tool_calls)
+                    fallback_tool_plan = self._build_ai_pen_fallback_tool_plan(
+                        target_url=target_url,
+                        payload_type=payload_type,
+                        payload=payload,
+                        max_steps=remain_calls,
+                        candidate=candidate,
+                        body_text=body_text,
+                        dom_form_summary=dom_form_summary,
+                        login_surface_summary=login_surface_summary,
+                    )
+                    if fallback_tool_plan:
+                        fallback_observation = self._execute_ai_pen_tool_plan(
+                            runtime=runtime,
+                            runtime_context=runtime_context,
+                            tool_plan=fallback_tool_plan,
+                            target_url=target_url,
+                            evidence_seed=evidence_seed,
+                            js_api_targets=js_api_targets,
+                        )
+                        tool_calls = len(list(runtime.tool_calls or []))
+                        tool_trace_parts.extend(list(fallback_observation.get("trace_parts", []) or []))
+                        probe_status = int(fallback_observation.get("probe_status", 0) or 0) or probe_status
+                        probe_url = str(fallback_observation.get("probe_url", "") or "") or probe_url
+                        probe_headers = dict(fallback_observation.get("probe_headers") or {}) or probe_headers
+                        probe_body_excerpt = str(fallback_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
+                        probe_body_md5 = str(fallback_observation.get("probe_body_md5", "") or "") or probe_body_md5
+                        evidence_hit = bool(fallback_observation.get("evidence_hit")) or evidence_hit
+                        api_doc_hit = bool(fallback_observation.get("api_doc_hit")) or api_doc_hit
+                        api_doc_hit_url = str(fallback_observation.get("api_doc_hit_url", "") or "") or api_doc_hit_url
+                        if isinstance(fallback_observation.get("api_doc_summary"), dict) and fallback_observation.get("api_doc_summary"):
+                            api_doc_summary = dict(fallback_observation.get("api_doc_summary") or {})
+                        if isinstance(fallback_observation.get("api_surface_summary"), dict) and fallback_observation.get("api_surface_summary"):
+                            api_surface_summary = dict(fallback_observation.get("api_surface_summary") or {})
+                        api_doc_probe_count += self._safe_int_value(
+                            dict(fallback_observation.get("tool_counts") or {}).get("api_doc_probe"),
+                            0,
+                        )
+                        config_exposure_hit = bool(fallback_observation.get("config_exposure_hit")) or config_exposure_hit
+                        config_exposure_url = str(fallback_observation.get("config_exposure_url", "") or "") or config_exposure_url
+                        config_exposure_summary = str(fallback_observation.get("config_exposure_summary", "") or "") or config_exposure_summary
+                        websocket_upgrade_hit = bool(fallback_observation.get("websocket_upgrade_hit")) or websocket_upgrade_hit
+                        websocket_upgrade_hint = bool(fallback_observation.get("websocket_upgrade_hint")) or websocket_upgrade_hint
+                        credential_probe_count += self._safe_int_value(
+                            dict(fallback_observation.get("tool_counts") or {}).get("credential_probe"),
+                            0,
+                        )
+                        login_success_hit = bool(fallback_observation.get("login_success_hit")) or login_success_hit
+                        login_success_reason = str(fallback_observation.get("login_success_reason", "") or "") or login_success_reason
+                        login_blocked_reason = str(fallback_observation.get("login_blocked_reason", "") or "") or login_blocked_reason
+                        if (not probe_error) and str(fallback_observation.get("error", "") or "").strip():
+                            probe_error = self._clip_text(fallback_observation.get("error", ""), self.AI_PEN_TEST_ERROR_MAX)
+                        payload_text = str(payload or "").strip().lower()
+                        if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
+                            payload_reflect_hit = True
+                        if payload_type == "idor_probe" and probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
+                            idor_diff_hit = True
+                    elif payload_type == "weak_password_probe" and login_probe_context:
+                        if bool(login_probe_context.get("captcha_required")):
+                            tool_trace_parts.append("weak_password_probe(skip_captcha)")
+                        else:
+                            tool_trace_parts.append("weak_password_probe(skip_no_credential)")
+                    elif payload_type == "idor_probe":
+                        tool_trace_parts.append("idor_probe(skip_no_mutation)")
+                    elif payload_type == "api_doc_probe":
+                        tool_trace_parts.append("api_doc_probe(skip_no_target)")
+                    elif payload_type == "websocket_probe":
                         tool_trace_parts.append("websocket_probe(skip_invalid_target)")
-                    elif tool_calls < max_tool_calls:
-                        try:
-                            ws_headers = {
-                                "Connection": "Upgrade",
-                                "Upgrade": "websocket",
-                                "Sec-WebSocket-Version": "13",
-                                "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
-                            }
-                            ws_resp = _runtime_http_req(
-                                "websocket_probe",
-                                ws_probe_url,
-                                summary="WebSocket 握手探针",
-                                method="get",
-                                allow_redirects=False,
-                                headers=ws_headers,
-                            )
-                            tool_calls += 1
-                            tool_trace_parts.append("websocket_probe(handshake,url={})".format(ws_probe_url[:220]))
-                            probe_status = int(getattr(ws_resp, "status_code", 0) or 0)
-                            ws_resp_headers = getattr(ws_resp, "headers", {}) or {}
-                            ws_upgrade_header = str(ws_resp_headers.get("Upgrade", "") or "").strip().lower()
-                            ws_version_hint = str(ws_resp_headers.get("Sec-WebSocket-Version", "") or "").strip()
-
-                            if str(ws_resp_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
-                                try:
-                                    ws_body_text = str(getattr(ws_resp, "text", "") or "")
-                                except Exception:
-                                    ws_body_text = ""
-                                probe_body_excerpt = ws_body_text[: self.AI_PEN_TEST_BODY_MAX]
-                                probe_body_md5 = (
-                                    hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
-                                    if probe_body_excerpt
-                                    else ""
-                                )
-                                if probe_status == 101 and "websocket" in ws_upgrade_header:
-                                    websocket_upgrade_hit = True
-                                elif probe_status in (400, 426) and ("websocket" in ws_upgrade_header or ws_version_hint):
-                                    websocket_upgrade_hint = True
-                            else:
-                                tool_trace_parts.append("websocket_probe(skip_by_waf)")
-                        except Exception as probe_exc:
-                            if not probe_error:
-                                probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
-                            tool_trace_parts.append("websocket_probe(error)")
+                    elif payload_type == "weak_password_probe":
+                        tool_trace_parts.append("weak_password_probe(skip_no_login_form)")
 
             decision = "needs_manual_review"
             confidence = 0.56
@@ -8497,7 +9176,22 @@ class WebSiteFetch(object):
             if is_sqli_case:
                 sqli_proof_type = self._detect_sqli_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
             if is_weak_password_case:
-                weak_password_login_proof = self._has_weak_password_login_proof(
+                if credential_probe_count > 0 and not login_success_hit:
+                    login_analysis = self._analyze_ai_pen_login_success(
+                        login_url=str(login_probe_context.get("login_url") or target_url),
+                        response_summary={
+                            "url": probe_url or target_url,
+                            "headers": probe_headers,
+                            "body_text": probe_body_excerpt,
+                        },
+                        base_body_text=base_body_excerpt,
+                    )
+                    login_success_hit = bool(login_analysis.get("success")) or login_success_hit
+                    login_success_reason = str(login_analysis.get("reason", "") or "") or login_success_reason
+                    if (not login_blocked_reason) and bool(login_analysis.get("blocked")):
+                        login_blocked_reason = str(login_analysis.get("reason", "") or "")
+
+                weak_password_login_proof = bool(login_success_hit) or self._has_weak_password_login_proof(
                     evidence_seed,
                     base_body_excerpt,
                     probe_body_excerpt,
@@ -8518,11 +9212,23 @@ class WebSiteFetch(object):
             elif is_weak_password_case and weak_password_login_proof:
                 decision = "verified"
                 confidence = 0.91
-                reason = "命中账号/口令与登录成功证据，弱口令可复现"
+                reason = login_success_reason or "命中账号/口令与登录成功证据，弱口令可复现"
+            elif is_weak_password_case and login_blocked_reason:
+                decision = "needs_manual_review"
+                confidence = 0.64
+                reason = login_blocked_reason
+            elif is_weak_password_case and bool(login_probe_context.get("captcha_required")) and credential_probe_count < 1:
+                decision = "needs_manual_review"
+                confidence = 0.62
+                reason = "登录入口存在验证码或风控线索，默认未执行弱口令验证"
+            elif is_weak_password_case and credential_probe_count < 1:
+                decision = "needs_manual_review"
+                confidence = 0.60
+                reason = "未识别到可稳定复用的登录表单/认证入口，当前未执行默认口令验证"
             elif is_weak_password_case:
                 decision = "likely_false_positive"
                 confidence = 0.70
-                reason = "弱口令线索缺少登录成功证据，当前不判定为可利用风险"
+                reason = "默认口令验证未命中登录成功信号，当前不判定为可利用弱口令"
             elif is_sqli_case and sqli_proof_type == "error_based":
                 decision = "verified"
                 confidence = 0.88
@@ -8600,11 +9306,23 @@ class WebSiteFetch(object):
             agent_decision = self._normalize_ai_pen_decision(agent_loop_final_decision.get("decision"), default_value="")
             agent_confidence = self._clamp_ai_pen_confidence(agent_loop_final_decision.get("confidence"), 0.55)
             agent_reason = self._clip_text(agent_loop_final_decision.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
-            if decision == "needs_manual_review" and agent_decision in {"needs_manual_review", "likely_false_positive"}:
+            agent_proof_guard_reason = self._get_ai_pen_verified_proof_guard_reason(
+                risk_type_text=risk_type_text,
+                payload_type_text=payload_type,
+                xss_popup_proof=xss_popup_proof,
+                weak_password_login_proof=weak_password_login_proof,
+                sqli_proof_type=sqli_proof_type,
+            )
+            if decision == "needs_manual_review" and agent_decision == "verified" and agent_confidence >= 0.9 and not agent_proof_guard_reason:
+                decision = "verified"
+                confidence = max(confidence, min(0.94, agent_confidence * 0.9))
+            elif decision == "needs_manual_review" and agent_decision in {"needs_manual_review", "likely_false_positive"}:
                 decision = agent_decision
                 confidence = max(confidence, min(0.88, agent_confidence))
             if agent_reason:
                 reason = "{}；Agent裁决：{}".format(reason, agent_reason) if reason else "Agent裁决：{}".format(agent_reason)
+            if agent_decision == "verified" and agent_proof_guard_reason:
+                reason = "{}；{}".format(reason, agent_proof_guard_reason).strip("；")
 
             js_context_summary = {}
             evidence_snippet = evidence_seed
@@ -8762,6 +9480,18 @@ class WebSiteFetch(object):
 
             if is_sqli_case and bool(external_ret.get("tool_hit")) and decision == "verified":
                 sqli_proof_type = "external_tool"
+
+            proof_guard_reason = self._get_ai_pen_verified_proof_guard_reason(
+                risk_type_text=risk_type_text,
+                payload_type_text=payload_type,
+                xss_popup_proof=xss_popup_proof,
+                weak_password_login_proof=weak_password_login_proof,
+                sqli_proof_type=sqli_proof_type,
+            )
+            if decision == "verified" and proof_guard_reason:
+                decision = "needs_manual_review"
+                confidence = max(0.62, min(0.86, confidence))
+                reason = "{}；{}".format(reason, proof_guard_reason).strip("；")
 
             return _with_runtime_artifacts({
                 "status": "ok",

@@ -322,6 +322,98 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(observation.get("evidence_hit")))
         self.assertIn("username", list(observation.get("api_doc_summary", {}).get("parameter_names", [])))
 
+    def test_collect_ai_pen_runtime_observation_detects_login_success(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 2,
+                    "tool": "detect_login_success",
+                    "status": "ok",
+                    "result": {
+                        "analysis": {
+                            "success": True,
+                            "reason": "登录后进入非登录页路径",
+                        },
+                        "response": {
+                            "url": "https://example.com/dashboard",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "text/html"},
+                            "body_text": "<html>dashboard</html>",
+                            "body_md5": "def456",
+                        },
+                    },
+                }
+            ],
+            evidence_seed="login",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("login_success_hit")))
+        self.assertIn("非登录页路径", str(observation.get("login_success_reason") or ""))
+
+    def test_build_ai_pen_fallback_tool_plan_for_api_doc(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/app/index",
+            payload_type="api_doc_probe",
+            payload="",
+            max_steps=3,
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertEqual("api_doc_probe", plan[0].get("tool"))
+        self.assertLessEqual(len(plan), 3)
+
+    def test_build_ai_pen_fallback_tool_plan_for_payload_probe(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/search?q=test",
+            payload_type="xss_probe",
+            payload="<svg/onload=alert(1)>",
+            max_steps=2,
+        )
+
+        self.assertEqual(1, len(plan))
+        self.assertEqual("payload_probe", plan[0].get("tool"))
+        self.assertIn("%3Csvg%2Fonload%3Dalert%281%29%3E", str(plan[0].get("params", {}).get("url", "")))
+
+    def test_build_ai_pen_fallback_tool_plan_for_weak_password(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/login",
+            payload_type="weak_password_probe",
+            payload="username=admin&password=admin",
+            max_steps=3,
+            candidate={"target": "https://example.com/login", "risk_type": "weak_password"},
+            body_text=(
+                '<form action="/doLogin" method="post">'
+                '<input type="hidden" name="csrf_token" value="abc123" />'
+                '<input type="text" name="username" />'
+                '<input type="password" name="password" />'
+                '</form>'
+            ),
+            dom_form_summary=[],
+            login_surface_summary={"password_form_count": 1, "captcha_form_count": 0},
+        )
+
+        self.assertEqual(2, len(plan))
+        self.assertEqual("credential_probe", plan[0].get("tool"))
+        self.assertEqual("detect_login_success", plan[1].get("tool"))
+        self.assertEqual("https://example.com/doLogin", plan[0].get("params", {}).get("url"))
+        self.assertEqual("admin", plan[0].get("params", {}).get("form_data", {}).get("username"))
+        self.assertEqual("abc123", plan[0].get("params", {}).get("form_data", {}).get("csrf_token"))
+
+    def test_build_ai_pen_fallback_tool_plan_skips_weak_password_when_captcha_present(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/login",
+            payload_type="weak_password_probe",
+            payload="username=admin&password=admin",
+            max_steps=3,
+            candidate={"target": "https://example.com/login", "risk_type": "weak_password"},
+            body_text='<form action="/doLogin"><input type="text" name="username" /><input type="password" name="password" /></form>',
+            dom_form_summary=[],
+            login_surface_summary={"password_form_count": 1, "captcha_form_count": 1},
+        )
+
+        self.assertEqual([], plan)
+
     def test_product_hints_collect_generic_surface_families(self):
         hints = WebSiteFetch._collect_ai_pen_surface_hints(
             {
@@ -643,6 +735,43 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("needs_manual_review", result.get("decision"))
         self.assertIn("登录入口或认证链路线索", str(result.get("reason") or ""))
 
+    def test_login_probe_context_extracts_form_fields_from_html(self):
+        context = WebSiteFetch._build_ai_pen_login_probe_context(
+            target_url="https://example.com/login",
+            body_text=(
+                '<form action="/auth/login" method="post">'
+                '<input type="hidden" name="_token" value="csrf-1" />'
+                '<input type="text" name="email" />'
+                '<input type="password" name="passwd" />'
+                '</form>'
+            ),
+            dom_form_summary=[],
+            login_surface_summary={"password_form_count": 1, "captcha_form_count": 0},
+        )
+
+        self.assertEqual("https://example.com/auth/login", context.get("submit_url"))
+        self.assertEqual("email", context.get("username_field"))
+        self.assertEqual("passwd", context.get("password_field"))
+        self.assertEqual("_token", context.get("csrf_field"))
+        self.assertFalse(bool(context.get("captcha_required")))
+
+    def test_analyze_ai_pen_login_success_detects_redirect_to_dashboard(self):
+        result = WebSiteFetch._analyze_ai_pen_login_success(
+            login_url="https://example.com/login",
+            response_summary={
+                "url": "https://example.com/dashboard",
+                "headers": {"Content-Type": "text/html"},
+                "body_text": "<html>dashboard</html>",
+                "history_urls": ["https://example.com/login"],
+                "cookie_names": ["SESSIONID"],
+            },
+            base_body_text="<html><title>Login</title></html>",
+        )
+
+        self.assertTrue(bool(result.get("success")))
+        self.assertTrue(bool(str(result.get("reason") or "").strip()))
+        self.assertEqual("https://example.com/dashboard", result.get("final_url"))
+
     def test_should_collect_browser_intel_for_page_style_api_doc_target(self):
         original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)
         original_max_targets = getattr(Config, "BROWSER_INTEL_MAX_TARGETS", 8)
@@ -880,6 +1009,26 @@ class TestAiPenJsContext(unittest.TestCase):
             probe_body="You have an error in your SQL syntax near '' at line 1",
         )
         self.assertEqual("error_based", proof_type)
+
+    def test_verified_proof_guard_blocks_missing_xss_proof(self):
+        reason = WebSiteFetch._get_ai_pen_verified_proof_guard_reason(
+            risk_type_text="xss",
+            payload_type_text="xss_probe",
+            xss_popup_proof=False,
+            weak_password_login_proof=False,
+            sqli_proof_type="",
+        )
+        self.assertIn("XSS", reason)
+
+    def test_verified_proof_guard_allows_external_sqli_proof(self):
+        reason = WebSiteFetch._get_ai_pen_verified_proof_guard_reason(
+            risk_type_text="sqli",
+            payload_type_text="sqli_probe",
+            xss_popup_proof=False,
+            weak_password_login_proof=False,
+            sqli_proof_type="external_tool",
+        )
+        self.assertEqual("", reason)
 
 
 if __name__ == "__main__":

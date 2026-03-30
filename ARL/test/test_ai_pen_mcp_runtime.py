@@ -139,6 +139,69 @@ class TestAiPenMcpRuntime(unittest.TestCase):
         self.assertEqual("verified", result.get("final_output", {}).get("decision"))
         self.assertTrue(any(item.get("action") == "agent_turn" for item in result.get("agent_trace", [])))
 
+    def test_runtime_run_agent_loop_supports_three_turn_closed_loop(self):
+        runtime = AiPenMcpRuntime(max_turns=4, max_tool_calls=4, timeout_sec=12)
+
+        def _http_fetch(_ctx, params):
+            return {
+                "status": "ok",
+                "message": "fetched",
+                "response": {
+                    "url": params.get("url"),
+                    "status_code": 200,
+                    "body_text": params.get("url"),
+                },
+            }
+
+        runtime.register_tool(
+            ToolSchema(
+                name="http_fetch",
+                description="获取目标响应",
+                input_schema={"type": "object"},
+                execute=_http_fetch,
+            )
+        )
+
+        def _decide_next(state):
+            tool_calls = list(state.get("tool_calls", []) or [])
+            if len(tool_calls) == 0:
+                return {
+                    "action": "tool_call",
+                    "tool_call": {
+                        "tool": "http_fetch",
+                        "params": {"url": "https://example.com/"},
+                        "summary": "第一轮基线抓取",
+                    },
+                }
+            if len(tool_calls) == 1:
+                return {
+                    "action": "tool_call",
+                    "tool_call": {
+                        "tool": "http_fetch",
+                        "params": {"url": "https://example.com/v3/api-docs"},
+                        "summary": "第二轮补 API 文档观察",
+                    },
+                }
+            return {
+                "action": "final_decision",
+                "final_decision": {
+                    "decision": "needs_manual_review",
+                    "confidence": 0.8,
+                    "reason": "已完成 2 轮工具验证，进入人工复核",
+                    "payload_type": "api_doc_probe",
+                    "payload": "",
+                    "evidence": ["baseline", "api-docs"],
+                    "next_actions": ["复核 paths 与鉴权要求"],
+                },
+            }
+
+        result = runtime.run_agent_loop(_decide_next, context={"task_id": "demo-task"})
+
+        self.assertEqual("final_decision", result.get("stop_reason"))
+        self.assertEqual(3, result.get("budget_used", {}).get("turns"))
+        self.assertEqual(2, len(result.get("tool_calls", [])))
+        self.assertEqual("needs_manual_review", result.get("final_output", {}).get("decision"))
+
 
 if __name__ == "__main__":
     unittest.main()
