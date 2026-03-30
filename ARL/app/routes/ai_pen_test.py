@@ -203,7 +203,9 @@ def _retry_records(result_docs):
     for task_id, items in grouped.items():
         try:
             runner = _build_runner(task_id)
-            runtime_settings = runner._build_ai_pen_runtime_settings(runner._load_ai_runtime_config())
+            ai_config = runner._load_ai_runtime_config()
+            runtime_settings = runner._build_ai_pen_runtime_settings(ai_config)
+            ai_prompt_content = runner._resolve_ai_pen_prompt_content(ai_config)
         except Exception as exc:
             logger.warning("build ai pen runner failed task_id:%s err:%s", task_id, exc)
             error_count += len(items)
@@ -218,7 +220,15 @@ def _retry_records(result_docs):
                 "payload": str(item.get("payload", "") or "").strip(),
                 "tool_plan": list(item.get("ai_plan_tool_plan", []) or []),
             }
-            verify_result = runner._verify_ai_pen_candidate(candidate, mcp_settings=runtime_settings, ai_plan=ai_plan)
+            verify_result = runner._verify_ai_pen_candidate(
+                candidate,
+                mcp_settings=runtime_settings,
+                ai_plan=ai_plan,
+                planner_context={
+                    "ai_config": ai_config,
+                    "prompt_content": ai_prompt_content,
+                },
+            )
 
             status = _normalize_status(verify_result.get("status"))
             decision = _normalize_decision(verify_result.get("decision"))

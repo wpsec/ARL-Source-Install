@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 
 ToolExecutor = Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]
+AgentDecider = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
 @dataclass
@@ -59,6 +60,8 @@ class AiPenMcpRuntime:
         self.tool_calls: List[Dict[str, Any]] = []
         self.tool_results: List[Dict[str, Any]] = []
         self.stop_reason: str = ""
+        self.final_output: Dict[str, Any] = {}
+        self.turn_count: int = 0
         self._started_at = time.perf_counter()
 
     def register_tool(self, schema: ToolSchema):
@@ -210,7 +213,135 @@ class AiPenMcpRuntime:
             if not tool_name:
                 continue
             turns += 1
+            self.turn_count += 1
             self.invoke(tool_name=tool_name, params=params, context=context_obj, summary=summary)
+
+        if not self.stop_reason:
+            self.stop_reason = "final_decision"
+        return self.build_result()
+
+    def run_agent_loop(
+        self,
+        decide_next: AgentDecider,
+        context: Optional[Dict[str, Any]] = None,
+        memory: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        运行受预算约束的 Agent Loop：
+        - decide_next 接收当前上下文/历史工具结果
+        - 返回 tool_call / final_decision / manual_required
+        """
+        context_obj = context if isinstance(context, dict) else {}
+        memory_obj = memory if isinstance(memory, dict) else {}
+        last_tool_result: Dict[str, Any] = {}
+
+        while True:
+            if self.turn_count >= self.max_turns:
+                self.stop_reason = "budget_exhausted"
+                break
+            elapsed = time.perf_counter() - self._started_at
+            if elapsed >= float(self.timeout_sec):
+                self.stop_reason = "timeout"
+                break
+
+            self.turn_count += 1
+            turn_id = self.turn_count
+            state = {
+                "turn": turn_id,
+                "max_turns": int(self.max_turns),
+                "max_tool_calls": int(self.max_tool_calls),
+                "available_tools": self.list_tools(),
+                "context": dict(context_obj),
+                "memory": dict(memory_obj),
+                "agent_trace": list(self.agent_trace),
+                "tool_calls": list(self.tool_calls),
+                "tool_results": list(self.tool_results),
+                "last_tool_result": dict(last_tool_result) if isinstance(last_tool_result, dict) else {},
+            }
+
+            try:
+                decision = decide_next(state)
+            except Exception as exc:
+                self.stop_reason = "error"
+                self.agent_trace.append(
+                    {
+                        "turn": turn_id,
+                        "action": "agent_turn",
+                        "status": "error",
+                        "summary": "agent_turn exception: {}".format(str(exc)[:180]),
+                    }
+                )
+                break
+
+            decision_obj = decision if isinstance(decision, dict) else {}
+            action = str(decision_obj.get("action") or "").strip().lower()
+            if not action:
+                if isinstance(decision_obj.get("tool_call"), dict):
+                    action = "tool_call"
+                elif isinstance(decision_obj.get("final_decision"), dict):
+                    action = "final_decision"
+                else:
+                    action = "manual_required"
+            if action not in {"tool_call", "final_decision", "manual_required"}:
+                action = "manual_required"
+
+            reason_text = str(decision_obj.get("reason") or "").strip()
+            expected_signal = str(decision_obj.get("expected_signal") or "").strip()
+            stop_if = str(decision_obj.get("stop_if") or "").strip()
+            final_decision = decision_obj.get("final_decision") if isinstance(decision_obj.get("final_decision"), dict) else {}
+
+            trace_item = {
+                "turn": turn_id,
+                "action": "agent_turn",
+                "decision": action,
+                "status": "ok",
+                "summary": reason_text or action,
+            }
+            if expected_signal:
+                trace_item["expected_signal"] = expected_signal[:180]
+            if stop_if:
+                trace_item["stop_if"] = stop_if[:180]
+
+            if action == "tool_call":
+                tool_call = decision_obj.get("tool_call") if isinstance(decision_obj.get("tool_call"), dict) else {}
+                tool_name = str(tool_call.get("tool") or decision_obj.get("tool") or "").strip()
+                params = tool_call.get("params") if isinstance(tool_call.get("params"), dict) else {}
+                summary = str(tool_call.get("summary") or decision_obj.get("summary") or reason_text or "").strip()
+                if not tool_name:
+                    action = "manual_required"
+                else:
+                    trace_item["tool"] = tool_name
+                    if summary:
+                        trace_item["summary"] = summary[:180]
+                    self.agent_trace.append(trace_item)
+                    last_tool_result = self.invoke(
+                        tool_name=tool_name,
+                        params=params,
+                        context=context_obj,
+                        summary=summary,
+                    )
+                    if str(last_tool_result.get("status") or "").strip().lower() == "blocked":
+                        self.stop_reason = self.stop_reason or "budget_exhausted"
+                        break
+                    continue
+
+            if action == "final_decision":
+                self.stop_reason = "final_decision"
+                self.final_output = dict(final_decision)
+                trace_item["status"] = "final_decision"
+                if final_decision:
+                    trace_item["final_decision"] = dict(final_decision)
+                self.agent_trace.append(trace_item)
+                break
+
+            self.stop_reason = "manual_required"
+            if final_decision:
+                self.final_output = dict(final_decision)
+            trace_item["status"] = "manual_required"
+            if final_decision:
+                trace_item["final_decision"] = dict(final_decision)
+            self.agent_trace.append(trace_item)
+            break
 
         if not self.stop_reason:
             self.stop_reason = "final_decision"
@@ -223,8 +354,9 @@ class AiPenMcpRuntime:
             "tool_calls": list(self.tool_calls),
             "tool_results": list(self.tool_results),
             "stop_reason": str(self.stop_reason or "final_decision"),
+            "final_output": dict(self.final_output) if isinstance(self.final_output, dict) else {},
             "budget_used": {
-                "turns": len(self.agent_trace),
+                "turns": max(0, int(self.turn_count or 0)),
                 "tool_calls": len(self.tool_calls),
                 "max_turns": int(self.max_turns),
                 "max_tool_calls": int(self.max_tool_calls),

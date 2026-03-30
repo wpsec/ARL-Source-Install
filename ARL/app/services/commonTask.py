@@ -2744,6 +2744,7 @@ class WebSiteFetch(object):
         ai_pen_enable = bool(config_obj.get("ai_pen_test_enable", True))
         mcp_enable = bool(config_obj.get("ai_pen_mcp_enable", True))
         ai_planner_enable = bool(config_obj.get("ai_pen_ai_planner_enable", True))
+        agent_loop_enable = bool(config_obj.get("ai_pen_agent_loop_enable", ai_planner_enable and mcp_enable))
         max_tool_calls = cls._safe_int_value(config_obj.get("ai_pen_mcp_max_tool_calls"), cls.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)
         timeout_sec = cls._safe_int_value(config_obj.get("ai_pen_mcp_timeout_sec"), cls.AI_PEN_TEST_MCP_TIMEOUT_SEC)
         ai_plan_max_cases = cls._safe_int_value(
@@ -2793,6 +2794,7 @@ class WebSiteFetch(object):
             "ai_pen_enable": ai_pen_enable,
             "mcp_enable": mcp_enable,
             "ai_planner_enable": ai_planner_enable,
+            "agent_loop_enable": agent_loop_enable,
             "max_tool_calls": max_tool_calls,
             "timeout_sec": timeout_sec,
             "ai_plan_max_cases": ai_plan_max_cases,
@@ -3867,7 +3869,14 @@ class WebSiteFetch(object):
         capability_profile["score"] = best_score
         return capability_profile
 
-    def _call_ai_pen_planner(self, ai_config: dict, candidate: dict, runtime_settings: dict, prompt_content: str):
+    def _call_ai_pen_planner(
+        self,
+        ai_config: dict,
+        candidate: dict,
+        runtime_settings: dict,
+        prompt_content: str,
+        agent_loop_context=None,
+    ):
         """
         调用 AI 规划当前候选项的验证动作（真实 AI，不阻断主流程）。
         """
@@ -3885,6 +3894,8 @@ class WebSiteFetch(object):
             "messages": [],
             "output": {},
         }
+        agent_loop_ctx = agent_loop_context if isinstance(agent_loop_context, dict) else {}
+        agent_loop_mode = bool(agent_loop_ctx)
         try:
             from app.routes import api_console as api_console_module
 
@@ -4047,18 +4058,62 @@ class WebSiteFetch(object):
                     ],
                 },
             }
+            if agent_loop_mode:
+                request_obj["agent_loop"] = {
+                    "turn": self._safe_int_value(agent_loop_ctx.get("turn"), 0),
+                    "max_turns": self._safe_int_value(agent_loop_ctx.get("max_turns"), 0),
+                    "available_tools": list(agent_loop_ctx.get("available_tools", []) or [])[:8],
+                    "seed_tool_plan_remaining": list(agent_loop_ctx.get("seed_tool_plan_remaining", []) or [])[:4],
+                    "recent_tool_results": list(agent_loop_ctx.get("recent_tool_results", []) or [])[:4],
+                    "last_tool_result": list(agent_loop_ctx.get("last_tool_result", []) or [])[:1],
+                    "current_stop_reason": str(agent_loop_ctx.get("current_stop_reason", "") or "").strip(),
+                }
+                request_obj["supported_actions"] = ["tool_call", "final_decision", "manual_required"]
+                request_obj["output_schema"] = {
+                    "action": "tool_call|final_decision|manual_required",
+                    "reason": "string",
+                    "expected_signal": "string",
+                    "stop_if": "string",
+                    "tool_call": {
+                        "tool": "http_fetch|payload_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe",
+                        "params": {"url": "string", "method": "get|post", "allow_redirects": True, "headers": {"Header": "Value"}},
+                        "summary": "string",
+                    },
+                    "final_decision": {
+                        "decision": "verified|likely_false_positive|needs_manual_review",
+                        "confidence": "0~1 float",
+                        "reason": "string",
+                        "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|weak_password_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe|upload_probe|replay",
+                        "payload": "string",
+                        "evidence": ["string"],
+                        "next_actions": ["string"],
+                    },
+                }
             request_text = json.dumps(request_obj, ensure_ascii=False)
             result["request_text"] = request_text
 
             system_prompt = str(prompt_content or "").strip()
             if not system_prompt:
                 system_prompt = self._resolve_ai_pen_prompt_content(ai_config)
-            system_prompt = (
-                "{}\n\n输出要求：仅返回 JSON 对象，不要 Markdown；"
-                "decision 只能是 verified/likely_false_positive/needs_manual_review。"
-                "如果需要多轮验证，可返回 tool_plan，按顺序列出要调用的工具与 URL；"
-                "tool_plan 只能使用 supported_tools 中的工具，且不得越过当前 target/vuln_url 同任务范围。"
-            ).format(system_prompt)
+            if agent_loop_mode:
+                system_prompt = (
+                    "{}\n\n当前处于 Agent Loop 模式。"
+                    "你必须在每一轮只做一个决定："
+                    "1) 若需要继续验证，返回 action=tool_call，并只给出一个 tool_call；"
+                    "2) 若证据已足够，返回 action=final_decision；"
+                    "3) 若需要登录态、验证码处理、人工判断或预算已不适合继续，返回 action=manual_required。"
+                    "禁止一次返回多个 tool_call。"
+                    "tool_call 只能使用 supported_tools 中的工具，且不得越过当前 target/vuln_url 同任务范围。"
+                    "final_decision.decision 只能是 verified/likely_false_positive/needs_manual_review。"
+                    "仅返回 JSON 对象，不要 Markdown。"
+                ).format(system_prompt)
+            else:
+                system_prompt = (
+                    "{}\n\n输出要求：仅返回 JSON 对象，不要 Markdown；"
+                    "decision 只能是 verified/likely_false_positive/needs_manual_review。"
+                    "如果需要多轮验证，可返回 tool_plan，按顺序列出要调用的工具与 URL；"
+                    "tool_plan 只能使用 supported_tools 中的工具，且不得越过当前 target/vuln_url 同任务范围。"
+                ).format(system_prompt)
             conversation_messages = [
                 {
                     "role": "system",
@@ -4184,11 +4239,12 @@ class WebSiteFetch(object):
                 result["message"] = "AI 返回格式不可解析"
                 return result
 
-            ai_decision = self._normalize_ai_pen_decision(parsed.get("decision"), default_value="")
-            ai_confidence = self._clamp_ai_pen_confidence(parsed.get("confidence"), 0.55)
-            ai_actions = self._normalize_ai_poc_keywords(parsed.get("next_actions"), max_count=4)
+            parsed_final = parsed.get("final_decision") if agent_loop_mode and isinstance(parsed.get("final_decision"), dict) else parsed
+            ai_decision = self._normalize_ai_pen_decision(parsed_final.get("decision"), default_value="")
+            ai_confidence = self._clamp_ai_pen_confidence(parsed_final.get("confidence"), 0.55)
+            ai_actions = self._normalize_ai_poc_keywords(parsed_final.get("next_actions"), max_count=4)
             ai_payload_type = self._normalize_ai_pen_payload_type(
-                parsed.get("payload_type"),
+                parsed_final.get("payload_type"),
                 fallback_type="",
             )
             if not ai_payload_type:
@@ -4198,13 +4254,13 @@ class WebSiteFetch(object):
                 )
             if not ai_payload_type:
                 ai_payload_type = default_payload_type
-            ai_payload = str(parsed.get("payload") or "").strip()[: self.AI_PEN_TEST_PAYLOAD_MAX]
+            ai_payload = str(parsed_final.get("payload") or "").strip()[: self.AI_PEN_TEST_PAYLOAD_MAX]
             if not ai_payload and ai_payload_type and ai_payload_type != "replay":
                 inferred_payload_type, inferred_payload = self._build_ai_pen_payload_hint(ai_payload_type, risk_name)
                 if inferred_payload_type == ai_payload_type and inferred_payload:
                     ai_payload = str(inferred_payload)[: self.AI_PEN_TEST_PAYLOAD_MAX]
-            ai_reason = self._clip_text(parsed.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
-            ai_evidence = self._normalize_ai_poc_keywords(parsed.get("evidence"), max_count=8)
+            ai_reason = self._clip_text(parsed_final.get("reason", "") or parsed.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
+            ai_evidence = self._normalize_ai_poc_keywords(parsed_final.get("evidence"), max_count=8)
             ai_tool_plan = self._normalize_ai_pen_tool_plan(
                 parsed.get("tool_plan"),
                 default_url=str(candidate.get("vuln_url") or candidate.get("target") or "").strip(),
@@ -4212,6 +4268,50 @@ class WebSiteFetch(object):
             )
             if not ai_tool_plan:
                 ai_tool_plan = list(inferred_tool_plan or [])
+
+            if agent_loop_mode:
+                action = self._normalize_ai_pen_agent_action(
+                    parsed.get("action"),
+                    default_value="tool_call" if isinstance(parsed.get("tool_call"), dict) else "final_decision",
+                )
+                tool_call_obj = {}
+                if isinstance(parsed.get("tool_call"), dict):
+                    normalized_tool_calls = self._normalize_ai_pen_tool_plan(
+                        [parsed.get("tool_call")],
+                        default_url=str(candidate.get("vuln_url") or candidate.get("target") or "").strip(),
+                        max_steps=1,
+                    )
+                    if normalized_tool_calls:
+                        tool_call_obj = dict(normalized_tool_calls[0] or {})
+                elif ai_tool_plan:
+                    tool_call_obj = dict(ai_tool_plan[0] or {})
+                final_decision_obj = {
+                    "decision": ai_decision or "needs_manual_review",
+                    "confidence": ai_confidence,
+                    "reason": ai_reason,
+                    "payload_type": ai_payload_type,
+                    "payload": ai_payload,
+                    "evidence": ai_evidence,
+                    "next_actions": ai_actions,
+                }
+                result["ok"] = True
+                result["status"] = "ok"
+                result["message"] = ""
+                result["output"] = {
+                    "action": action,
+                    "reason": ai_reason,
+                    "expected_signal": self._clip_text(parsed.get("expected_signal", ""), 160),
+                    "stop_if": self._clip_text(parsed.get("stop_if", ""), 160),
+                    "tool_call": tool_call_obj,
+                    "final_decision": final_decision_obj,
+                    "decision": final_decision_obj["decision"],
+                    "confidence": final_decision_obj["confidence"],
+                    "payload_type": final_decision_obj["payload_type"],
+                    "payload": final_decision_obj["payload"],
+                    "evidence": list(final_decision_obj.get("evidence", []) or []),
+                    "next_actions": list(final_decision_obj.get("next_actions", []) or []),
+                }
+                return result
 
             result["ok"] = True
             result["status"] = "ok"
@@ -6923,16 +7023,48 @@ class WebSiteFetch(object):
             )
         return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
-    def _execute_ai_pen_tool_plan(
-        self,
-        runtime,
-        runtime_context: dict,
-        tool_plan,
-        target_url: str,
-        evidence_seed: str,
-        js_api_targets=None,
-    ):
-        plan_items = list(tool_plan or [])
+    @staticmethod
+    def _normalize_ai_pen_agent_action(value: str, default_value="manual_required"):
+        action = str(value or "").strip().lower()
+        if action in {"tool_call", "final_decision", "manual_required"}:
+            return action
+        return str(default_value or "manual_required").strip().lower() or "manual_required"
+
+    @classmethod
+    def _summarize_ai_pen_tool_results_for_agent(cls, tool_results, max_items: int = 4):
+        result = []
+        items = list(tool_results or [])
+        for item in items[-max(1, int(max_items or 1)):]:
+            if not isinstance(item, dict):
+                continue
+            result_item = item.get("result") if isinstance(item.get("result"), dict) else {}
+            response_obj = result_item.get("response") if isinstance(result_item.get("response"), dict) else {}
+            summary = {
+                "turn": cls._safe_int_value(item.get("turn"), 0),
+                "tool": str(item.get("tool") or "").strip()[:48],
+                "status": str(item.get("status") or "").strip()[:24],
+                "message": cls._clip_text(item.get("message") or result_item.get("message") or "", 120),
+            }
+            if response_obj:
+                response_summary = {
+                    "url": str(response_obj.get("url") or "").strip()[:220],
+                    "status_code": cls._safe_int_value(response_obj.get("status_code"), 0),
+                    "body_excerpt": cls._clip_text(response_obj.get("body_text") or "", 260),
+                }
+                header_obj = response_obj.get("headers") if isinstance(response_obj.get("headers"), dict) else {}
+                selected_headers = {}
+                for header_name in ("Content-Type", "Location", "Upgrade", "WWW-Authenticate"):
+                    header_value = str(header_obj.get(header_name, "") or "").strip()
+                    if header_value:
+                        selected_headers[header_name] = header_value[:180]
+                if selected_headers:
+                    response_summary["headers"] = selected_headers
+                summary["response"] = response_summary
+            result.append(summary)
+        return result
+
+    @classmethod
+    def _collect_ai_pen_runtime_observation(cls, result_items, evidence_seed: str, js_api_targets=None):
         observation = {
             "trace_parts": [],
             "probe_status": 0,
@@ -6950,12 +7082,8 @@ class WebSiteFetch(object):
             "websocket_upgrade_hint": False,
             "error": "",
         }
-        if not plan_items:
+        if not result_items:
             return observation
-
-        start_idx = len(list(getattr(runtime, "tool_results", []) or []))
-        runtime.run_plan(plan_items, context=runtime_context)
-        result_items = list(getattr(runtime, "tool_results", []) or [])[start_idx:]
 
         for item in result_items:
             if not isinstance(item, dict):
@@ -6972,22 +7100,18 @@ class WebSiteFetch(object):
 
             if status_text != "ok":
                 if not observation["error"]:
-                    observation["error"] = self._clip_text(
+                    observation["error"] = cls._clip_text(
                         item.get("message") or result_obj.get("message") or "",
-                        self.AI_PEN_TEST_ERROR_MAX,
+                        cls.AI_PEN_TEST_ERROR_MAX,
                     )
                 continue
 
             if not url_text:
                 continue
 
-            if self._is_http_target(url_text) and not self._url_in_task_scope(url_text):
-                observation["trace_parts"].append("agent_plan(skip_out_of_scope,url={})".format(url_text[:180]))
-                continue
-
             status_code = int(response_obj.get("status_code", 0) or 0)
             headers = dict(response_obj.get("headers") or {}) if isinstance(response_obj.get("headers"), dict) else {}
-            body_excerpt = str(response_obj.get("body_text", "") or "")[: self.AI_PEN_TEST_BODY_MAX]
+            body_excerpt = str(response_obj.get("body_text", "") or "")[: cls.AI_PEN_TEST_BODY_MAX]
             body_md5 = str(response_obj.get("body_md5", "") or "").strip()
             if body_excerpt and not body_md5:
                 body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest()
@@ -6998,22 +7122,22 @@ class WebSiteFetch(object):
                 observation["probe_body_excerpt"] = body_excerpt
             if body_md5:
                 observation["probe_body_md5"] = body_md5
-            if self._contains_evidence(evidence_seed, body_excerpt):
+            if cls._contains_evidence(evidence_seed, body_excerpt):
                 observation["evidence_hit"] = True
 
-            if self._looks_like_api_doc_response(url_text, body_excerpt, headers):
+            if cls._looks_like_api_doc_response(url_text, body_excerpt, headers):
                 observation["api_doc_hit"] = True
                 observation["api_doc_hit_url"] = url_text
-                observation["api_doc_summary"] = self._extract_api_doc_summary(body_excerpt)
-                observation["api_surface_summary"] = self._build_api_surface_summary(
+                observation["api_doc_summary"] = cls._extract_api_doc_summary(body_excerpt)
+                observation["api_surface_summary"] = cls._build_api_surface_summary(
                     api_doc_summary=observation["api_doc_summary"],
                     js_api_targets=js_api_targets or [],
                 )
 
-            if self._looks_like_sensitive_config_response(url_text, body_excerpt, headers):
+            if cls._looks_like_sensitive_config_response(url_text, body_excerpt, headers):
                 observation["config_exposure_hit"] = True
                 observation["config_exposure_url"] = url_text
-                observation["config_exposure_summary"] = self._extract_sensitive_config_summary(body_excerpt)
+                observation["config_exposure_summary"] = cls._extract_sensitive_config_summary(body_excerpt)
 
             ws_upgrade_header = str(headers.get("Upgrade", "") or "").strip().lower()
             ws_version_hint = str(headers.get("Sec-WebSocket-Version", "") or "").strip()
@@ -7023,6 +7147,161 @@ class WebSiteFetch(object):
                 elif status_code in (400, 426) and ("websocket" in ws_upgrade_header or ws_version_hint):
                     observation["websocket_upgrade_hint"] = True
 
+        return observation
+
+    def _execute_ai_pen_tool_plan(
+        self,
+        runtime,
+        runtime_context: dict,
+        tool_plan,
+        target_url: str,
+        evidence_seed: str,
+        js_api_targets=None,
+    ):
+        plan_items = list(tool_plan or [])
+        if not plan_items:
+            return self._collect_ai_pen_runtime_observation([], evidence_seed=evidence_seed, js_api_targets=js_api_targets)
+
+        start_idx = len(list(getattr(runtime, "tool_results", []) or []))
+        runtime.run_plan(plan_items, context=runtime_context)
+        result_items = list(getattr(runtime, "tool_results", []) or [])[start_idx:]
+        return self._collect_ai_pen_runtime_observation(
+            result_items,
+            evidence_seed=evidence_seed,
+            js_api_targets=js_api_targets,
+        )
+
+    def _execute_ai_pen_agent_loop(
+        self,
+        runtime,
+        runtime_context: dict,
+        candidate: dict,
+        runtime_settings: dict,
+        ai_config: dict,
+        prompt_content: str,
+        initial_tool_plan,
+        target_url: str,
+        evidence_seed: str,
+        js_api_targets=None,
+    ):
+        seed_steps = list(initial_tool_plan or [])
+        observation = self._collect_ai_pen_runtime_observation([], evidence_seed=evidence_seed, js_api_targets=js_api_targets)
+        if not ai_config:
+            return observation
+
+        trace_start = len(list(getattr(runtime, "agent_trace", []) or []))
+        result_start = len(list(getattr(runtime, "tool_results", []) or []))
+        runtime_settings_obj = runtime_settings if isinstance(runtime_settings, dict) else {}
+
+        def _decide_next(state: dict):
+            state_obj = state if isinstance(state, dict) else {}
+            turn_id = self._safe_int_value(state_obj.get("turn"), 0)
+            tool_results = list(state_obj.get("tool_results", []) or [])
+            last_tool_result = state_obj.get("last_tool_result") if isinstance(state_obj.get("last_tool_result"), dict) else {}
+
+            if turn_id == 1 and seed_steps:
+                return {
+                    "action": "tool_call",
+                    "reason": "沿用初始 AI 规划作为 Agent 首轮动作",
+                    "expected_signal": "先补目标低副作用上下文，再决定是否继续",
+                    "tool_call": dict(seed_steps.pop(0) or {}),
+                }
+
+            agent_loop_context = {
+                "turn": turn_id,
+                "max_turns": self._safe_int_value(state_obj.get("max_turns"), 0),
+                "available_tools": list(state_obj.get("available_tools", []) or []),
+                "seed_tool_plan_remaining": list(seed_steps or [])[:4],
+                "recent_tool_results": self._summarize_ai_pen_tool_results_for_agent(tool_results, max_items=4),
+                "last_tool_result": self._summarize_ai_pen_tool_results_for_agent([last_tool_result], max_items=1),
+                "current_stop_reason": str(getattr(runtime, "stop_reason", "") or "").strip(),
+            }
+            planner_ret = self._call_ai_pen_planner(
+                ai_config=ai_config,
+                candidate=candidate,
+                runtime_settings=runtime_settings_obj,
+                prompt_content=prompt_content,
+                agent_loop_context=agent_loop_context,
+            )
+            output = planner_ret.get("output") if isinstance(planner_ret.get("output"), dict) else {}
+            planner_status = str(planner_ret.get("status", "") or "").strip().lower()
+            planner_ok = bool(planner_ret.get("ok")) and planner_status == "ok"
+            if planner_ok:
+                action = self._normalize_ai_pen_agent_action(
+                    output.get("action"),
+                    default_value="tool_call" if isinstance(output.get("tool_call"), dict) else "final_decision",
+                )
+                tool_call = output.get("tool_call") if isinstance(output.get("tool_call"), dict) else {}
+                final_decision = output.get("final_decision") if isinstance(output.get("final_decision"), dict) else {}
+                if action == "tool_call" and tool_call:
+                    return {
+                        "action": "tool_call",
+                        "reason": str(output.get("reason") or "").strip(),
+                        "expected_signal": str(output.get("expected_signal") or "").strip(),
+                        "stop_if": str(output.get("stop_if") or "").strip(),
+                        "tool_call": tool_call,
+                    }
+                if action in {"final_decision", "manual_required"}:
+                    return {
+                        "action": action,
+                        "reason": str(output.get("reason") or "").strip(),
+                        "expected_signal": str(output.get("expected_signal") or "").strip(),
+                        "stop_if": str(output.get("stop_if") or "").strip(),
+                        "final_decision": final_decision,
+                    }
+
+            if seed_steps:
+                return {
+                    "action": "tool_call",
+                    "reason": "Agent 未给出可执行动作，回退到剩余 seed tool plan",
+                    "tool_call": dict(seed_steps.pop(0) or {}),
+                }
+
+            return {
+                "action": "manual_required",
+                "reason": self._clip_text(planner_ret.get("message", "") or "agent_loop_no_action", 160),
+                "final_decision": {
+                    "decision": "needs_manual_review",
+                    "confidence": 0.6,
+                    "reason": self._clip_text(
+                        planner_ret.get("message", "") or "Agent 未返回可执行动作，当前停止自动验证",
+                        self.AI_PEN_TEST_REASON_MAX,
+                    ),
+                    "payload_type": "",
+                    "payload": "",
+                    "evidence": [],
+                    "next_actions": [],
+                },
+            }
+
+        runtime_result = runtime.run_agent_loop(_decide_next, context=runtime_context)
+        result_items = list(getattr(runtime, "tool_results", []) or [])[result_start:]
+        observation = self._collect_ai_pen_runtime_observation(
+            result_items,
+            evidence_seed=evidence_seed,
+            js_api_targets=js_api_targets,
+        )
+        trace_items = list(getattr(runtime, "agent_trace", []) or [])[trace_start:]
+        for item in trace_items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("action", "") or "").strip() != "agent_turn":
+                continue
+            action_text = self._normalize_ai_pen_agent_action(item.get("decision"), default_value="manual_required")
+            tool_text = str(item.get("tool", "") or "").strip()
+            summary_text = "agent_turn(action={})".format(action_text)
+            if tool_text:
+                summary_text = "agent_turn(action={},tool={})".format(action_text, tool_text[:48])
+            observation["trace_parts"].append(summary_text)
+        observation["trace_parts"].append(
+            "agent_loop(stop={})".format(str(runtime_result.get("stop_reason", "") or "final_decision").strip())
+        )
+        observation["final_decision"] = (
+            dict(runtime_result.get("final_output") or {})
+            if isinstance(runtime_result.get("final_output"), dict)
+            else {}
+        )
+        observation["stop_reason"] = str(runtime_result.get("stop_reason", "") or "").strip()
         return observation
 
     def _build_ai_pen_test_candidates(self):
@@ -7492,10 +7771,12 @@ class WebSiteFetch(object):
         )
         return candidates
 
-    def _verify_ai_pen_candidate(self, candidate: dict, mcp_settings=None, ai_plan=None):
+    def _verify_ai_pen_candidate(self, candidate: dict, mcp_settings=None, ai_plan=None, planner_context=None):
         settings = mcp_settings if isinstance(mcp_settings, dict) else {}
         plan_obj = ai_plan if isinstance(ai_plan, dict) else {}
+        planner_context_obj = planner_context if isinstance(planner_context, dict) else {}
         mcp_enable = bool(settings.get("mcp_enable", True))
+        agent_loop_enable = bool(settings.get("agent_loop_enable", False)) and bool(planner_context_obj.get("ai_config"))
         max_tool_calls = self._safe_int_value(settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)
         timeout_value = settings.get("timeout")
         if (
@@ -7897,18 +8178,34 @@ class WebSiteFetch(object):
             jwt_weak_secret = ""
             websocket_upgrade_hit = False
             websocket_upgrade_hint = False
+            agent_loop_final_decision = {}
+            agent_loop_stop_reason = ""
             probe_error = ""
             payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "replay"}
 
-            if mcp_enable and ai_plan_tool_plan and len(runtime.tool_calls) < max_tool_calls:
-                plan_observation = self._execute_ai_pen_tool_plan(
-                    runtime=runtime,
-                    runtime_context=runtime_context,
-                    tool_plan=ai_plan_tool_plan,
-                    target_url=target_url,
-                    evidence_seed=evidence_seed,
-                    js_api_targets=js_api_targets,
-                )
+            if mcp_enable and len(runtime.tool_calls) < max_tool_calls and (ai_plan_tool_plan or agent_loop_enable):
+                if agent_loop_enable:
+                    plan_observation = self._execute_ai_pen_agent_loop(
+                        runtime=runtime,
+                        runtime_context=runtime_context,
+                        candidate=candidate,
+                        runtime_settings=settings,
+                        ai_config=planner_context_obj.get("ai_config") if isinstance(planner_context_obj.get("ai_config"), dict) else {},
+                        prompt_content=str(planner_context_obj.get("prompt_content", "") or ""),
+                        initial_tool_plan=ai_plan_tool_plan,
+                        target_url=target_url,
+                        evidence_seed=evidence_seed,
+                        js_api_targets=js_api_targets,
+                    )
+                else:
+                    plan_observation = self._execute_ai_pen_tool_plan(
+                        runtime=runtime,
+                        runtime_context=runtime_context,
+                        tool_plan=ai_plan_tool_plan,
+                        target_url=target_url,
+                        evidence_seed=evidence_seed,
+                        js_api_targets=js_api_targets,
+                    )
                 tool_trace_parts.extend(list(plan_observation.get("trace_parts", []) or []))
                 probe_status = int(plan_observation.get("probe_status", 0) or 0) or probe_status
                 probe_body_excerpt = str(plan_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
@@ -7925,11 +8222,14 @@ class WebSiteFetch(object):
                 config_exposure_summary = str(plan_observation.get("config_exposure_summary", "") or "") or config_exposure_summary
                 websocket_upgrade_hit = bool(plan_observation.get("websocket_upgrade_hit")) or websocket_upgrade_hit
                 websocket_upgrade_hint = bool(plan_observation.get("websocket_upgrade_hint")) or websocket_upgrade_hint
+                if isinstance(plan_observation.get("final_decision"), dict) and plan_observation.get("final_decision"):
+                    agent_loop_final_decision = dict(plan_observation.get("final_decision") or {})
+                agent_loop_stop_reason = str(plan_observation.get("stop_reason", "") or "").strip()
                 if (not probe_error) and str(plan_observation.get("error", "") or "").strip():
                     probe_error = self._clip_text(plan_observation.get("error", ""), self.AI_PEN_TEST_ERROR_MAX)
 
             tool_calls = len(list(runtime.tool_calls or []))
-            if mcp_enable and tool_calls < max_tool_calls:
+            if mcp_enable and tool_calls < max_tool_calls and agent_loop_stop_reason not in {"final_decision", "manual_required"}:
                 if payload and payload_type in payload_probe_types:
                     probe_url = self._build_probe_url_with_payload(target_url, payload)
                     if probe_url and probe_url != target_url:
@@ -8297,6 +8597,15 @@ class WebSiteFetch(object):
                 confidence = 0.48
                 reason = "目标受访问控制保护（{}），建议结合登录态复核".format(status_code)
 
+            agent_decision = self._normalize_ai_pen_decision(agent_loop_final_decision.get("decision"), default_value="")
+            agent_confidence = self._clamp_ai_pen_confidence(agent_loop_final_decision.get("confidence"), 0.55)
+            agent_reason = self._clip_text(agent_loop_final_decision.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
+            if decision == "needs_manual_review" and agent_decision in {"needs_manual_review", "likely_false_positive"}:
+                decision = agent_decision
+                confidence = max(confidence, min(0.88, agent_confidence))
+            if agent_reason:
+                reason = "{}；Agent裁决：{}".format(reason, agent_reason) if reason else "Agent裁决：{}".format(agent_reason)
+
             js_context_summary = {}
             evidence_snippet = evidence_seed
             if not evidence_snippet:
@@ -8397,7 +8706,9 @@ class WebSiteFetch(object):
             reason = self._clip_text(reason, self.AI_PEN_TEST_REASON_MAX)
 
             verification_step = "http_fetch_replay"
-            if mcp_enable and max_tool_calls > 1 and payload_type == "idor_probe":
+            if agent_loop_enable and agent_loop_stop_reason:
+                verification_step = "mcp_agent_loop"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "idor_probe":
                 verification_step = "mcp_idor_probe"
             elif mcp_enable and max_tool_calls > 1 and payload_type == "api_doc_probe":
                 verification_step = "mcp_api_doc_probe"
@@ -8739,6 +9050,10 @@ class WebSiteFetch(object):
                 candidate,
                 mcp_settings=runtime_settings,
                 ai_plan=ai_plan_output,
+                planner_context={
+                    "ai_config": ai_config,
+                    "prompt_content": ai_prompt_content,
+                },
             )
             verify_result = self._merge_ai_pen_result_with_ai_plan(verify_result, ai_plan_result)
             now_text = utils.curr_date()

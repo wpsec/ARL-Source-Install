@@ -295,6 +295,33 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("http_fetch", plan[0].get("tool"))
         self.assertEqual("api_doc_probe", plan[1].get("tool"))
 
+    def test_collect_ai_pen_runtime_observation_detects_api_doc(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "api_doc_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/v3/api-docs",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body_text": '{"openapi":"3.0.1","paths":{"/login":{"post":{"parameters":[{"name":"username"}]}}}}',
+                            "body_md5": "abc123",
+                        }
+                    },
+                }
+            ],
+            evidence_seed="openapi",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("api_doc_hit")))
+        self.assertEqual("https://example.com/v3/api-docs", observation.get("api_doc_hit_url"))
+        self.assertTrue(bool(observation.get("evidence_hit")))
+        self.assertIn("username", list(observation.get("api_doc_summary", {}).get("parameter_names", [])))
+
     def test_product_hints_collect_generic_surface_families(self):
         hints = WebSiteFetch._collect_ai_pen_surface_hints(
             {

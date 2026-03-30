@@ -3,7 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-30（v4.3.60 ~ v4.5.0）
+## 2026-03-30（v4.3.60 ~ v4.5.1）
+
+- `[v4.5.1]` AI渗透阶段 A 的“真 Agent Loop”骨架落地：`AiPenMcpRuntime` 新增 `run_agent_loop` 与 `final_output/turn_count` 审计字段，运行时不再只能顺序执行静态 `tool_plan`，而是开始支持按轮次输出 `tool_call / final_decision / manual_required`，为后续把控制权从 `commonTask` 继续迁移到 runtime 提供最小闭环基础
+- `[v4.5.1]` AI渗透验证链接入“规划结果回喂后的多轮决策”通道：`commonTask._call_ai_pen_planner` 新增 `agent_loop_context` 输入模式，`_verify_ai_pen_candidate` 与重试链开始支持 `seed tool_plan + 观察回填 + 下一轮决策` 的 Agent 执行流，并新增 `mcp_agent_loop` 步骤标识与回归测试；当前仍保留本地证据规则兜底，确保在引入多轮决策时不放松 `verified` 证据门槛
 
 - `[v4.5.0]` AI渗透高价值目标提取从“少量固定示例”扩展为“通用高价值家族”能力：`AI渗透` 候选源新增纳入 `目录扫描(fileleak)`，并对 `site/url/fileleak` 统一引入状态码优先与高价值目标识别，重点覆盖 `接口说明/Schema`、`管理/诊断端点`、`认证入口`、`文件处理入口`、`敏感文件/配置端点` 等多类目标；执行窗口按 `知识命中 + 高价值优先级 + 状态码` 共同排序，不再只围绕个别 `api-docs/actuator/env` 示例路径构建候选
 - `[v4.5.0]` AI渗透执行链升级为“AI 单次规划 + runtime 多步 tool plan 执行”：planner 现可输出 `tool_plan`，运行时会按统一工具协议顺序执行多步探针并汇总结果，再回写到 `agent_trace/tool_calls/tool_results` 与结果详情；当前已支持围绕高价值 URL 做多步验证链，但仍保留任务范围约束和低副作用原则，为后续真正的“逐轮结果回喂模型再决策”式 Agent loop 继续铺路
