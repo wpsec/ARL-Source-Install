@@ -428,6 +428,19 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("payload_probe", plan[0].get("tool"))
         self.assertIn("%3Csvg%2Fonload%3Dalert%281%29%3E", str(plan[0].get("params", {}).get("url", "")))
 
+    def test_build_ai_pen_fallback_tool_plan_for_idor_uses_multiple_targets(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/api/user/detail?id=100&order_id=200",
+            payload_type="idor_probe",
+            payload="id=1 -> id=2",
+            max_steps=3,
+        )
+
+        self.assertEqual(2, len(plan))
+        self.assertTrue(all(item.get("tool") == "idor_probe" for item in plan))
+        self.assertIn("id=101", str(plan[0].get("params", {}).get("url", "")))
+        self.assertIn("order_id=201", str(plan[1].get("params", {}).get("url", "")))
+
     def test_build_ai_pen_fallback_tool_plan_for_weak_password(self):
         plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
             target_url="https://example.com/login",
@@ -490,6 +503,25 @@ class TestAiPenJsContext(unittest.TestCase):
                     "upload_like_count": 0,
                     "sample_paths": ["/api/export/report"],
                     "parameter_names": ["reportId"],
+                },
+                "surface_hints": ["file_handling_surface"],
+            }
+        )
+
+        self.assertEqual("file_handling_surface", profile.get("name"))
+        self.assertEqual("file_probe", profile.get("preferred_payload_type"))
+
+    def test_capability_profile_prefers_upload_probe_for_file_upload_context(self):
+        profile = WebSiteFetch._select_ai_pen_capability_profile(
+            {
+                "target": "https://example.com/api/upload/avatar",
+                "risk_type": "file_upload",
+                "route_hint": "file_handling_context",
+                "api_surface_summary": {
+                    "download_like_count": 0,
+                    "upload_like_count": 3,
+                    "sample_paths": ["/api/upload/avatar"],
+                    "parameter_names": ["file", "userId"],
                 },
                 "surface_hints": ["file_handling_surface"],
             }
@@ -583,6 +615,41 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("https://example.com/api/search?scene=web", target.get("url"))
         self.assertIn("scene", target.get("params", []))
         self.assertIn("keyword", target.get("params", []))
+
+    def test_build_idor_probe_targets_supports_query_and_path_tokens(self):
+        query_targets = WebSiteFetch._build_idor_probe_targets(
+            "https://example.com/api/user/detail?user_id=100",
+            max_count=3,
+        )
+        path_targets = WebSiteFetch._build_idor_probe_targets(
+            "https://example.com/api/orders/507f1f77bcf86cd799439011",
+            max_count=3,
+        )
+
+        self.assertEqual("https://example.com/api/user/detail?user_id=101", query_targets[0].get("url"))
+        self.assertEqual("user_id", query_targets[0].get("mutation_key"))
+        self.assertEqual("numeric", query_targets[0].get("mutation_kind"))
+        self.assertIn("507f1f77bcf86cd799439011", path_targets[0].get("mutation_from"))
+        self.assertEqual("object_id", path_targets[0].get("mutation_kind"))
+
+    def test_build_idor_diff_summary_marks_sensitive_fields(self):
+        summary = WebSiteFetch._build_idor_diff_summary(
+            base_status=200,
+            base_body='{"code":0,"data":{"id":100}}',
+            probe_status=200,
+            probe_body='{"code":0,"data":{"id":101,"email":"user@example.com","role":"admin"}}',
+            probe_target={
+                "mutation_key": "user_id",
+                "mutation_from": "100",
+                "mutation_to": "101",
+                "mutation_kind": "numeric",
+            },
+        )
+
+        self.assertTrue(bool(summary.get("material_change")))
+        self.assertIn("email", list(summary.get("sensitive_hits", [])))
+        self.assertIn("role", list(summary.get("sensitive_hits", [])))
+        self.assertEqual("user_id", summary.get("mutation_key"))
 
     def test_api_surface_summary_merges_api_doc_and_js_targets(self):
         summary = WebSiteFetch._build_api_surface_summary(

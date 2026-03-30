@@ -178,6 +178,7 @@ class WebSiteFetch(object):
         "graphql_probe",
         "jwt_probe",
         "websocket_probe",
+        "file_probe",
         "upload_probe",
         "replay",
     )
@@ -193,6 +194,8 @@ class WebSiteFetch(object):
         "graphql_probe",
         "jwt_probe",
         "websocket_probe",
+        "file_probe",
+        "upload_probe",
     )
     AI_PEN_EXTERNAL_TOOL_REGISTRY = (
         "sqlmap",
@@ -327,6 +330,22 @@ class WebSiteFetch(object):
     AI_PEN_LOGIN_PAGE_KEYWORDS = ("login", "signin", "sign-in", "sso", "cas", "passport", "登录", "认证", "统一身份认证", "单点登录")
     AI_PEN_CAPTCHA_HINTS = ("captcha", "verifycode", "verification", "checkcode", "validatecode", "randcode", "yzm", "图形码", "验证码")
     AI_PEN_CSRF_FIELD_HINTS = ("csrf", "token", "_token", "authenticity", "xsrf", "nonce")
+    AI_PEN_IDOR_SENSITIVE_MARKERS = (
+        "email",
+        "mobile",
+        "phone",
+        "username",
+        "realname",
+        "nickname",
+        "tenant",
+        "role",
+        "permission",
+        "isadmin",
+        "address",
+        "department",
+        "orderno",
+        "invoice",
+    )
     AI_PEN_LOGIN_SUCCESS_KEYWORDS = (
         "login success",
         "logged in",
@@ -3949,6 +3968,13 @@ class WebSiteFetch(object):
         capability_profile = dict(cls.AI_PEN_CAPABILITY_PROFILES.get(best_name) or {})
         capability_profile["name"] = best_name
         capability_profile["score"] = best_score
+        if best_name == "file_handling_surface":
+            upload_like_count = cls._safe_int_value(api_surface_summary.get("upload_like_count"), 0)
+            download_like_count = cls._safe_int_value(api_surface_summary.get("download_like_count"), 0)
+            if risk_type == "file_read" or download_like_count > upload_like_count:
+                capability_profile["preferred_payload_type"] = "file_probe"
+            else:
+                capability_profile["preferred_payload_type"] = "upload_probe"
         return capability_profile
 
     def _call_ai_pen_planner(
@@ -5091,6 +5117,10 @@ class WebSiteFetch(object):
         browser_surface_summary=None,
         runtime_api_calls=None,
         dom_form_summary=None,
+        probe_status=0,
+        probe_headers=None,
+        probe_body_text="",
+        payload="",
     ):
         risk_type_text = str(risk_type or "").strip().lower()
         payload_type_text = str(payload_type or "").strip().lower()
@@ -5099,16 +5129,23 @@ class WebSiteFetch(object):
         runtime_calls = list(runtime_api_calls or [])
         forms = list(dom_form_summary or [])
         header_obj = headers if isinstance(headers, dict) else {}
+        probe_header_obj = probe_headers if isinstance(probe_headers, dict) else {}
 
         upload_like_count = cls._safe_int_value(summary.get("upload_like_count"), 0)
         download_like_count = cls._safe_int_value(summary.get("download_like_count"), 0)
-        if payload_type_text != "upload_probe" and risk_type_text not in {"file_upload", "file_read"} and upload_like_count < 1 and download_like_count < 1:
+        if payload_type_text not in {"upload_probe", "file_probe"} and risk_type_text not in {"file_upload", "file_read"} and upload_like_count < 1 and download_like_count < 1:
             return {}
 
         content = str(body_text or "")
         content_lower = content.lower()
         content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
         content_disposition = str(header_obj.get("Content-Disposition", "") or "").strip().lower()
+        active_header_obj = probe_header_obj if probe_header_obj else header_obj
+        active_body_text = str(probe_body_text or content or "")
+        active_body_lower = active_body_text.lower()
+        active_content_type = str(active_header_obj.get("Content-Type", "") or "").strip().lower()
+        active_content_disposition = str(active_header_obj.get("Content-Disposition", "") or "").strip().lower()
+        probe_status_value = cls._safe_int_value(probe_status, 0)
         try:
             path_lower = str(urlsplit(str(target_url or "").strip()).path or "").strip().lower()
         except Exception:
@@ -5155,10 +5192,54 @@ class WebSiteFetch(object):
                 "text/csv",
             )
         )
+        active_attachment_signal = "attachment" in active_content_disposition
+        active_downloadable_content_signal = any(
+            token in active_content_type
+            for token in (
+                "application/octet-stream",
+                "application/pdf",
+                "application/zip",
+                "application/x-rar",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument",
+                "text/csv",
+            )
+        )
         weak_path_signal = any(token in path_lower for token in cls.AI_PEN_UPLOAD_HINTS + cls.AI_PEN_DOWNLOAD_HINTS)
+        upload_probe_filename = str(payload or "").strip().lower()
+        upload_response_signal = (
+            payload_type_text == "upload_probe"
+            and cls._is_ai_pen_success_status(probe_status_value)
+            and (
+                (upload_probe_filename and upload_probe_filename in active_body_lower)
+                or any(
+                    token in active_body_lower
+                    for token in (
+                        '"success":true',
+                        '"code":0',
+                        '"uploaded"',
+                        '"upload"',
+                        '"fileurl"',
+                        '"downloadurl"',
+                        '"attachmentid"',
+                        '"filepath"',
+                    )
+                )
+                or (
+                    "json" in active_content_type
+                    and any(token in active_body_lower for token in ('"url"', '"path"', '"id"', '"name"'))
+                )
+                or bool(str(active_header_obj.get("Location", "") or "").strip())
+            )
+        )
+        download_probe_signal = (
+            payload_type_text == "file_probe"
+            and cls._is_ai_pen_success_status(probe_status_value)
+            and (active_attachment_signal or active_downloadable_content_signal)
+        )
 
         fallback_keywords = list(cls.AI_PEN_UPLOAD_HINTS) + list(cls.AI_PEN_DOWNLOAD_HINTS) + ["multipart/form-data", "attachment", "type=file"]
-        context_snippet = cls._extract_js_context_snippet(content, evidence_seed, fallback_keywords=fallback_keywords)
+        context_snippet = cls._extract_js_context_snippet(active_body_text or content, evidence_seed or payload, fallback_keywords=fallback_keywords)
         if not context_snippet:
             if file_form_hits:
                 context_snippet = cls._clip_text("form_action={}".format(file_form_hits[0]), cls.AI_PEN_TEST_EVIDENCE_MAX)
@@ -5166,10 +5247,27 @@ class WebSiteFetch(object):
                 context_snippet = cls._clip_text("upload_path={}".format(upload_path_hits[0]), cls.AI_PEN_TEST_EVIDENCE_MAX)
             elif download_path_hits:
                 context_snippet = cls._clip_text("download_path={}".format(download_path_hits[0]), cls.AI_PEN_TEST_EVIDENCE_MAX)
-            elif attachment_signal:
-                context_snippet = cls._clip_text(content_disposition, cls.AI_PEN_TEST_EVIDENCE_MAX)
-            elif downloadable_content_signal:
-                context_snippet = cls._clip_text(content_type, cls.AI_PEN_TEST_EVIDENCE_MAX)
+            elif active_attachment_signal or attachment_signal:
+                context_snippet = cls._clip_text(active_content_disposition or content_disposition, cls.AI_PEN_TEST_EVIDENCE_MAX)
+            elif active_downloadable_content_signal or downloadable_content_signal:
+                context_snippet = cls._clip_text(active_content_type or content_type, cls.AI_PEN_TEST_EVIDENCE_MAX)
+
+        if upload_response_signal:
+            return {
+                "decision": "verified",
+                "confidence": 0.84,
+                "reason": "无害静态文件上传探针返回成功特征，确认该接口可接收文件上传请求",
+                "context_snippet": context_snippet,
+                "tool_trace": "file_context(upload_verified)",
+            }
+        if download_probe_signal:
+            return {
+                "decision": "verified",
+                "confidence": 0.82,
+                "reason": "文件探针返回 attachment/binary 响应，确认该接口为下载/导出类文件接口",
+                "context_snippet": context_snippet,
+                "tool_trace": "file_context(download_verified)",
+            }
 
         upload_signal_score = 0
         if upload_like_count > 0:
@@ -5461,43 +5559,187 @@ class WebSiteFetch(object):
             return url_text
 
     @staticmethod
-    def _build_idor_probe_url(target_url: str):
+    def _mutate_idor_like_value(value_text: str):
+        text = str(value_text or "").strip()
+        if not text:
+            return {}
+
+        if text.isdigit():
+            next_number = str(int(text) + 1)
+            if len(text) > 1 and text.startswith("0"):
+                next_number = next_number.zfill(len(text))
+            return {"value": next_number, "kind": "numeric"}
+
+        if re.fullmatch(r"[0-9a-fA-F]{24}", text):
+            last_char = text[-1].lower()
+            next_char = "1" if last_char != "1" else "2"
+            return {"value": "{}{}".format(text[:-1], next_char), "kind": "object_id"}
+
+        if re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", text):
+            last_char = text[-1].lower()
+            next_char = "1" if last_char != "1" else "2"
+            return {"value": "{}{}".format(text[:-1], next_char), "kind": "uuid"}
+
+        return {}
+
+    @classmethod
+    def _build_idor_probe_targets(cls, target_url: str, max_count=3):
         url_text = str(target_url or "").strip()
         if not url_text:
-            return url_text
+            return []
 
         try:
             parsed = urlsplit(url_text)
             query_items = parse_qsl(parsed.query, keep_blank_values=True)
             id_keys = {"id", "uid", "user_id", "userid", "account_id", "order_id", "doc_id"}
-            changed = False
+            targets = []
+            seen = set()
+
+            def append_target(next_url: str, mutation_key: str, mutation_from: str, mutation_to: str, mutation_kind: str):
+                url_candidate = str(next_url or "").strip()
+                if (not url_candidate) or url_candidate == url_text or url_candidate in seen:
+                    return
+                seen.add(url_candidate)
+                targets.append(
+                    {
+                        "url": url_candidate,
+                        "mutation_key": str(mutation_key or "").strip()[:64],
+                        "mutation_from": str(mutation_from or "").strip()[:80],
+                        "mutation_to": str(mutation_to or "").strip()[:80],
+                        "mutation_kind": str(mutation_kind or "").strip()[:32],
+                    }
+                )
+
             if query_items:
-                updated_items = []
-                for key, value in query_items:
+                for index, (key, value) in enumerate(query_items):
                     key_text = str(key or "").strip().lower()
                     value_text = str(value or "").strip()
-                    if (key_text in id_keys or key_text.endswith("_id")) and value_text.isdigit():
-                        updated_items.append((key, str(int(value_text) + 1)))
-                        changed = True
-                    elif not changed and value_text.isdigit():
-                        updated_items.append((key, str(int(value_text) + 1)))
-                        changed = True
-                    else:
-                        updated_items.append((key, value))
-                if changed:
+                    mutation = cls._mutate_idor_like_value(value_text)
+                    if not mutation:
+                        continue
+                    if not ((key_text in id_keys) or key_text.endswith("_id") or key_text in cls.AI_PEN_OBJECT_ID_PARAM_HINTS):
+                        continue
+                    updated_items = list(query_items)
+                    updated_items[index] = (key, mutation.get("value"))
                     updated_query = urlencode(updated_items, doseq=True)
-                    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment))
+                    append_target(
+                        urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment)),
+                        mutation_key=key,
+                        mutation_from=value_text,
+                        mutation_to=mutation.get("value", ""),
+                        mutation_kind=mutation.get("kind", ""),
+                    )
+                    if len(targets) >= max(1, int(max_count or 1)):
+                        return targets
 
             path_text = str(parsed.path or "")
-            match = re.search(r"(\d+)(/?$)", path_text)
+            match = re.search(r"(\d+|[0-9a-fA-F]{24}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/?$)", path_text)
             if match:
-                number_text = match.group(1)
-                next_number = str(int(number_text) + 1)
-                new_path = "{}{}{}".format(path_text[: match.start(1)], next_number, path_text[match.end(1):])
-                return urlunsplit((parsed.scheme, parsed.netloc, new_path, parsed.query, parsed.fragment))
-            return url_text
+                token_text = str(match.group(1) or "").strip()
+                mutation = cls._mutate_idor_like_value(token_text)
+                if mutation:
+                    new_path = "{}{}{}".format(path_text[: match.start(1)], mutation.get("value", ""), path_text[match.end(1):])
+                    append_target(
+                        urlunsplit((parsed.scheme, parsed.netloc, new_path, parsed.query, parsed.fragment)),
+                        mutation_key="path",
+                        mutation_from=token_text,
+                        mutation_to=mutation.get("value", ""),
+                        mutation_kind=mutation.get("kind", ""),
+                    )
+            return targets[: max(1, int(max_count or 1))]
         except Exception:
-            return url_text
+            return []
+
+    @classmethod
+    def _build_idor_probe_url(cls, target_url: str):
+        targets = cls._build_idor_probe_targets(target_url, max_count=1)
+        if targets:
+            return str(targets[0].get("url") or target_url).strip()
+        return str(target_url or "").strip()
+
+    @classmethod
+    def _build_idor_diff_summary(cls, base_status: int, base_body: str, probe_status: int, probe_body: str, probe_target=None):
+        target_obj = probe_target if isinstance(probe_target, dict) else {}
+        base_text = str(base_body or "")
+        probe_text = str(probe_body or "")
+        base_lower = base_text.lower()
+        probe_lower = probe_text.lower()
+        sensitive_hits = []
+
+        for marker in cls.AI_PEN_IDOR_SENSITIVE_MARKERS:
+            marker_text = str(marker or "").strip().lower()
+            if marker_text and (marker_text in probe_lower) and (marker_text not in base_lower):
+                sensitive_hits.append(marker_text)
+                if len(sensitive_hits) >= 6:
+                    break
+
+        status_changed = int(base_status or 0) != int(probe_status or 0)
+        body_changed = bool(str(base_body or "")) != bool(str(probe_body or "")) or (str(base_body or "") != str(probe_body or ""))
+        length_delta = abs(len(probe_text) - len(base_text))
+        material_change = body_changed and (status_changed or length_delta >= 24 or bool(sensitive_hits))
+
+        return {
+            "mutation_key": str(target_obj.get("mutation_key") or "").strip(),
+            "mutation_from": str(target_obj.get("mutation_from") or "").strip(),
+            "mutation_to": str(target_obj.get("mutation_to") or "").strip(),
+            "mutation_kind": str(target_obj.get("mutation_kind") or "").strip(),
+            "status_changed": bool(status_changed),
+            "body_changed": bool(body_changed),
+            "length_delta": int(length_delta),
+            "sensitive_hits": sensitive_hits[:6],
+            "material_change": bool(material_change),
+        }
+
+    @classmethod
+    def _format_idor_diff_summary_text(cls, summary: dict):
+        if not isinstance(summary, dict) or not summary:
+            return ""
+
+        parts = []
+        mutation_key = str(summary.get("mutation_key") or "").strip()
+        mutation_from = str(summary.get("mutation_from") or "").strip()
+        mutation_to = str(summary.get("mutation_to") or "").strip()
+        mutation_kind = str(summary.get("mutation_kind") or "").strip()
+        if mutation_key or mutation_from or mutation_to:
+            parts.append(
+                "mutation={}:{}->{}".format(
+                    mutation_key or "id",
+                    mutation_from or "-",
+                    mutation_to or "-",
+                )
+            )
+        if mutation_kind:
+            parts.append("kind={}".format(mutation_kind))
+        if bool(summary.get("status_changed")):
+            parts.append("status_changed=1")
+        if bool(summary.get("body_changed")):
+            parts.append("body_changed=1")
+        length_delta = cls._safe_int_value(summary.get("length_delta"), 0)
+        if length_delta > 0:
+            parts.append("length_delta={}".format(length_delta))
+        sensitive_hits = [str(item or "").strip() for item in list(summary.get("sensitive_hits", []) or [])[:4] if str(item or "").strip()]
+        if sensitive_hits:
+            parts.append("fields={}".format(",".join(sensitive_hits)))
+        return " | ".join(parts)
+
+    @classmethod
+    def _score_idor_diff_summary(cls, summary: dict):
+        if not isinstance(summary, dict):
+            return 0
+        score = 0
+        if bool(summary.get("status_changed")):
+            score += 4
+        if bool(summary.get("material_change")):
+            score += 4
+        if bool(summary.get("body_changed")):
+            score += 2
+        score += min(6, len(list(summary.get("sensitive_hits", []) or [])) * 2)
+        length_delta = cls._safe_int_value(summary.get("length_delta"), 0)
+        if length_delta >= 120:
+            score += 2
+        elif length_delta >= 32:
+            score += 1
+        return score
 
     @staticmethod
     def _build_api_doc_probe_targets(target_url: str, max_count=4):
@@ -6273,6 +6515,136 @@ class WebSiteFetch(object):
             "hidden_fields": hidden_fields,
             "fields": candidate_fields[:12],
         }
+
+    @classmethod
+    def _extract_html_upload_form_candidate(cls, target_url: str, body_text: str):
+        content = str(body_text or "")
+        if not content:
+            return {}
+
+        best_form = {}
+        best_score = -1
+        for match in re.finditer(r"(?is)<form\b([^>]*)>(.*?)</form>", content):
+            attrs_text = str(match.group(1) or "")
+            inner_html = str(match.group(2) or "")
+            action_text = cls._extract_html_attr_value(attrs_text, "action")
+            method_text = cls._extract_html_attr_value(attrs_text, "method").lower() or "post"
+            enctype_text = cls._extract_html_attr_value(attrs_text, "enctype").lower()
+            hidden_fields = {}
+            file_field = ""
+            field_names = []
+            score = 0
+
+            if "multipart/form-data" in enctype_text:
+                score += 3
+
+            for input_match in re.finditer(r"(?is)<input\b([^>]*)>", inner_html):
+                input_attrs = str(input_match.group(1) or "")
+                field_name = cls._extract_html_attr_value(input_attrs, "name") or cls._extract_html_attr_value(input_attrs, "id")
+                field_type = (cls._extract_html_attr_value(input_attrs, "type") or "text").strip().lower() or "text"
+                field_value = cls._extract_html_attr_value(input_attrs, "value")
+                lowered_name = str(field_name or "").strip().lower()
+
+                if field_type == "hidden" and field_name:
+                    hidden_fields[field_name] = field_value[:180]
+                    continue
+                if field_name:
+                    field_names.append(field_name)
+                if field_type == "file" or any(token in lowered_name for token in ("file", "image", "avatar", "attachment")):
+                    file_field = field_name or file_field or "file"
+                    score += 5
+
+            if file_field and score > best_score:
+                best_score = score
+                best_form = {
+                    "probe_type": "upload",
+                    "probe_url": urljoin(str(target_url or "").strip(), action_text) if action_text else str(target_url or "").strip(),
+                    "submit_url": urljoin(str(target_url or "").strip(), action_text) if action_text else str(target_url or "").strip(),
+                    "form_action": action_text,
+                    "method": method_text,
+                    "enctype": enctype_text,
+                    "file_field": file_field or "file",
+                    "hidden_fields": hidden_fields,
+                    "fields": field_names[:12],
+                }
+        return best_form
+
+    @classmethod
+    def _build_ai_pen_file_probe_context(
+        cls,
+        target_url: str,
+        risk_type: str = "",
+        body_text: str = "",
+        api_surface_summary=None,
+        dom_form_summary=None,
+    ):
+        url_text = str(target_url or "").strip()
+        risk_type_text = str(risk_type or "").strip().lower()
+        summary = api_surface_summary if isinstance(api_surface_summary, dict) else {}
+        forms = list(dom_form_summary or [])
+        upload_form = cls._extract_html_upload_form_candidate(url_text, body_text)
+
+        file_form_hits = []
+        for form_item in forms:
+            if not isinstance(form_item, dict):
+                continue
+            action_text = str(form_item.get("action") or "").strip()
+            enctype_text = str(form_item.get("enctype") or "").strip().lower()
+            has_file_input = str(form_item.get("has_file_input") or "").strip().lower() in {"1", "true", "yes"}
+            fields = [str(field or "").strip() for field in str(form_item.get("fields") or "").split(",") if str(field or "").strip()]
+            if has_file_input or "multipart/form-data" in enctype_text:
+                file_field = "file"
+                for field_name in fields:
+                    lowered_name = field_name.lower()
+                    if any(token in lowered_name for token in ("file", "image", "avatar", "attachment")):
+                        file_field = field_name
+                        break
+                file_form_hits.append(
+                    {
+                        "probe_type": "upload",
+                        "probe_url": urljoin(url_text, action_text) if action_text else url_text,
+                        "submit_url": urljoin(url_text, action_text) if action_text else url_text,
+                        "form_action": action_text,
+                        "method": str(form_item.get("method") or "post").strip().lower() or "post",
+                        "enctype": enctype_text,
+                        "file_field": file_field,
+                        "hidden_fields": {},
+                        "fields": fields[:12],
+                    }
+                )
+
+        if upload_form:
+            return upload_form
+        if file_form_hits:
+            return file_form_hits[0]
+
+        try:
+            path_lower = str(urlsplit(url_text).path or "").strip().lower()
+        except Exception:
+            path_lower = url_text.lower()
+
+        upload_like_count = cls._safe_int_value(summary.get("upload_like_count"), 0)
+        download_like_count = cls._safe_int_value(summary.get("download_like_count"), 0)
+        if risk_type_text == "file_upload" or upload_like_count > 0 or any(token in path_lower for token in cls.AI_PEN_UPLOAD_HINTS):
+            return {
+                "probe_type": "upload",
+                "probe_url": url_text,
+                "submit_url": url_text,
+                "method": "post",
+                "enctype": "multipart/form-data",
+                "file_field": "file",
+                "hidden_fields": {},
+                "fields": ["file"],
+            }
+
+        if risk_type_text == "file_read" or download_like_count > 0 or any(token in path_lower for token in cls.AI_PEN_DOWNLOAD_HINTS):
+            return {
+                "probe_type": "download",
+                "probe_url": url_text,
+                "method": "get",
+            }
+
+        return {}
 
     @classmethod
     def _parse_ai_pen_payload_credentials(cls, payload: str):
@@ -7166,7 +7538,9 @@ class WebSiteFetch(object):
         if "websocket" in merged or "socket.io" in merged or "sockjs" in merged:
             return "websocket_probe", "ws_handshake"
         if "upload" in merged or "文件上传" in merged:
-            return "upload_probe", "filename=shell.php"
+            return "upload_probe", "arl-safe-upload.txt"
+        if any(token in merged for token in ("download", "export", "attachment", "template", "文件读取", "导出", "附件", "模板")):
+            return "file_probe", ""
         return "replay", ""
 
     @classmethod
@@ -7471,7 +7845,7 @@ class WebSiteFetch(object):
             raw_params = item.get("params")
             if isinstance(raw_params, dict):
                 params.update(raw_params)
-            for key in ("url", "method", "allow_redirects", "headers", "session_key", "prepare_url", "login_url", "form_data", "json_data"):
+            for key in ("url", "method", "allow_redirects", "headers", "session_key", "prepare_url", "login_url", "form_data", "json_data", "file_field", "file_name", "file_content", "file_content_type"):
                 if key not in params and key in item:
                     params[key] = item.get(key)
 
@@ -7535,6 +7909,10 @@ class WebSiteFetch(object):
                 safe_json_data[key_text[:64]] = value_text
             if safe_json_data:
                 step["params"]["json_data"] = safe_json_data
+            for field_name in ("file_field", "file_name", "file_content", "file_content_type"):
+                field_value = str(params.get(field_name) or "").strip()
+                if field_value:
+                    step["params"][field_name] = field_value[:180]
 
             cache_key = json.dumps(step, ensure_ascii=False, sort_keys=True)
             if cache_key in seen:
@@ -7589,6 +7967,46 @@ class WebSiteFetch(object):
                             },
                         },
                         "summary": "低副作用确认 GraphQL 入口",
+                    }
+                )
+            return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
+        if payload_type_text in {"file_probe", "upload_probe"}:
+            file_probe_context = cls._build_ai_pen_file_probe_context(
+                target_url=target_url,
+                risk_type=str(item.get("risk_type") or ""),
+                body_text="",
+                api_surface_summary=item.get("api_surface_summary"),
+                dom_form_summary=item.get("dom_form_summary"),
+            )
+            probe_type = str(file_probe_context.get("probe_type") or "").strip().lower()
+            if payload_type_text == "upload_probe" or probe_type == "upload":
+                plan.append(
+                    {
+                        "tool": "upload_probe",
+                        "params": {
+                            "url": str(file_probe_context.get("probe_url") or target_url),
+                            "method": "post",
+                            "allow_redirects": True,
+                            "form_data": dict(file_probe_context.get("hidden_fields") or {}),
+                            "file_field": str(file_probe_context.get("file_field") or "file"),
+                            "file_name": str(payload or "arl-safe-upload.txt")[:80],
+                            "file_content": "ARL_SAFE_UPLOAD_PROBE",
+                            "file_content_type": "text/plain",
+                        },
+                        "summary": "无害静态文件上传探针",
+                    }
+                )
+            elif payload_type_text == "file_probe" or probe_type == "download":
+                plan.append(
+                    {
+                        "tool": "file_probe",
+                        "params": {
+                            "url": str(file_probe_context.get("probe_url") or target_url),
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "文件下载/导出接口确认探针",
                     }
                 )
             return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
@@ -7688,8 +8106,11 @@ class WebSiteFetch(object):
                     }
                 )
         elif payload_type_text == "idor_probe":
-            idor_url = cls._build_idor_probe_url(url_text)
-            if idor_url and idor_url != url_text:
+            idor_targets = cls._build_idor_probe_targets(url_text, max_count=max_steps)
+            for target in idor_targets:
+                idor_url = str(target.get("url") or "").strip()
+                if not idor_url or idor_url == url_text:
+                    continue
                 plan.append(
                     {
                         "tool": "idor_probe",
@@ -7698,9 +8119,20 @@ class WebSiteFetch(object):
                             "method": "get",
                             "allow_redirects": True,
                         },
-                        "summary": "fallback IDOR 参数变异探针",
+                        "summary": "fallback IDOR 参数变异探针 {}".format(
+                            cls._format_idor_diff_summary_text(
+                                {
+                                    "mutation_key": target.get("mutation_key"),
+                                    "mutation_from": target.get("mutation_from"),
+                                    "mutation_to": target.get("mutation_to"),
+                                    "mutation_kind": target.get("mutation_kind"),
+                                }
+                            ) or ""
+                        ).strip(),
                     }
                 )
+                if len(plan) >= max(1, int(max_steps or 1)):
+                    break
         elif payload_type_text == "api_doc_probe":
             for doc_url in cls._build_api_doc_probe_targets(url_text, max_count=max_steps):
                 plan.append(
@@ -7732,6 +8164,44 @@ class WebSiteFetch(object):
                             },
                         },
                         "summary": "fallback GraphQL 入口探测",
+                    }
+                )
+        elif payload_type_text in {"file_probe", "upload_probe"}:
+            file_probe_context = cls._build_ai_pen_file_probe_context(
+                target_url=url_text,
+                risk_type=str(candidate.get("risk_type") or "") if isinstance(candidate, dict) else "",
+                body_text=body_text,
+                api_surface_summary=candidate.get("api_surface_summary") if isinstance(candidate, dict) else None,
+                dom_form_summary=dom_form_summary,
+            )
+            probe_type = str(file_probe_context.get("probe_type") or "").strip().lower()
+            if payload_type_text == "upload_probe" or probe_type == "upload":
+                plan.append(
+                    {
+                        "tool": "upload_probe",
+                        "params": {
+                            "url": str(file_probe_context.get("probe_url") or url_text),
+                            "method": "post",
+                            "allow_redirects": True,
+                            "form_data": dict(file_probe_context.get("hidden_fields") or {}),
+                            "file_field": str(file_probe_context.get("file_field") or "file"),
+                            "file_name": str(payload_text or "arl-safe-upload.txt")[:80],
+                            "file_content": "ARL_SAFE_UPLOAD_PROBE",
+                            "file_content_type": "text/plain",
+                        },
+                        "summary": "fallback 无害静态文件上传探针",
+                    }
+                )
+            elif payload_type_text == "file_probe" or probe_type == "download":
+                plan.append(
+                    {
+                        "tool": "file_probe",
+                        "params": {
+                            "url": str(file_probe_context.get("probe_url") or url_text),
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback 文件下载/导出接口确认探针",
                     }
                 )
         elif payload_type_text == "weak_password_probe":
@@ -7846,6 +8316,7 @@ class WebSiteFetch(object):
         observation = {
             "trace_parts": [],
             "tool_counts": {},
+            "responses": [],
             "probe_status": 0,
             "probe_url": "",
             "probe_headers": {},
@@ -7904,6 +8375,17 @@ class WebSiteFetch(object):
             body_md5 = str(response_obj.get("body_md5", "") or "").strip()
             if body_excerpt and not body_md5:
                 body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest()
+            response_summary = {
+                "tool": tool_name,
+                "url": url_text,
+                "status_code": status_code,
+                "headers": headers,
+                "body_text": body_excerpt,
+                "body_md5": body_md5,
+            }
+            observation["responses"].append(response_summary)
+            if len(observation["responses"]) > 8:
+                observation["responses"] = observation["responses"][-8:]
 
             if not observation["probe_status"]:
                 observation["probe_status"] = status_code
@@ -8675,6 +9157,10 @@ class WebSiteFetch(object):
                 "login_url": {"type": "string"},
                 "form_data": {"type": "object"},
                 "json_data": {"type": "object"},
+                "file_field": {"type": "string"},
+                "file_name": {"type": "string"},
+                "file_content": {"type": "string"},
+                "file_content_type": {"type": "string"},
             },
             "required": ["url"],
         }
@@ -8734,7 +9220,18 @@ class WebSiteFetch(object):
                 },
             }
 
-        def _prepare_runtime_request(req_url, req_method="get", allow_redirects=True, headers=None, form_data=None, json_data=None):
+        def _prepare_runtime_request(
+            req_url,
+            req_method="get",
+            allow_redirects=True,
+            headers=None,
+            form_data=None,
+            json_data=None,
+            file_field="",
+            file_name="",
+            file_content="",
+            file_content_type="",
+        ):
             headers_obj = dict(headers or {}) if isinstance(headers, dict) else {}
             headers_obj.setdefault("User-Agent", "Mozilla/5.0")
             headers_obj.setdefault("Cache-Control", "max-age=0")
@@ -8763,6 +9260,15 @@ class WebSiteFetch(object):
                 request_kwargs["data"] = form_data
             if isinstance(json_data, dict) and json_data:
                 request_kwargs["json"] = json_data
+            upload_field = str(file_field or "").strip()
+            if upload_field:
+                request_kwargs["files"] = {
+                    upload_field: (
+                        str(file_name or "arl-safe-upload.txt")[:120],
+                        str(file_content or "ARL_SAFE_UPLOAD_PROBE"),
+                        str(file_content_type or "text/plain")[:80],
+                    )
+                }
 
             if Config.PROXY_URL:
                 request_kwargs["proxies"] = {
@@ -8773,7 +9279,19 @@ class WebSiteFetch(object):
                 request_kwargs["proxies"] = {"http": None, "https": None}
             return request_kwargs, None
 
-        def _execute_runtime_request(req_url, req_method="get", allow_redirects=True, headers=None, form_data=None, json_data=None, session_key=""):
+        def _execute_runtime_request(
+            req_url,
+            req_method="get",
+            allow_redirects=True,
+            headers=None,
+            form_data=None,
+            json_data=None,
+            file_field="",
+            file_name="",
+            file_content="",
+            file_content_type="",
+            session_key="",
+        ):
             if not req_url:
                 return {"status": "error", "message": "missing_url", "response": {}}
 
@@ -8785,6 +9303,10 @@ class WebSiteFetch(object):
                 headers=headers,
                 form_data=form_data,
                 json_data=json_data,
+                file_field=file_field,
+                file_name=file_name,
+                file_content=file_content,
+                file_content_type=file_content_type,
             )
             if skip_response is not None:
                 session_obj = None
@@ -8824,6 +9346,10 @@ class WebSiteFetch(object):
                 session_key = str(params_obj.get("session_key") or "").strip()
                 form_data = params_obj.get("form_data") if isinstance(params_obj.get("form_data"), dict) else {}
                 json_data = params_obj.get("json_data") if isinstance(params_obj.get("json_data"), dict) else {}
+                file_field = str(params_obj.get("file_field") or "").strip()
+                file_name = str(params_obj.get("file_name") or "").strip()
+                file_content = str(params_obj.get("file_content") or "").strip()
+                file_content_type = str(params_obj.get("file_content_type") or "").strip()
                 prepare_url = str(params_obj.get("prepare_url") or "").strip()
 
                 if not req_url:
@@ -8860,6 +9386,10 @@ class WebSiteFetch(object):
                         headers=req_headers_obj,
                         form_data=form_data,
                         json_data=json_data,
+                        file_field=file_field,
+                        file_name=file_name,
+                        file_content=file_content,
+                        file_content_type=file_content_type,
                         session_key=session_key,
                     )
                 except Exception as req_exc:
@@ -8985,6 +9515,22 @@ class WebSiteFetch(object):
                 description="WebSocket 握手探针",
                 input_schema=common_input_schema,
                 execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=False),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="file_probe",
+                description="文件下载/导出接口确认探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="upload_probe",
+                description="无害静态文件上传探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="post", default_allow_redirects=True),
             )
         )
 
@@ -9180,6 +9726,7 @@ class WebSiteFetch(object):
                 dom_form_summary=dom_form_summary,
                 login_surface_summary=login_surface_summary,
             )
+            idor_probe_targets = self._build_idor_probe_targets(target_url, max_count=max(2, max_tool_calls))
 
             probe_status = 0
             probe_url = ""
@@ -9188,6 +9735,9 @@ class WebSiteFetch(object):
             probe_body_md5 = ""
             payload_reflect_hit = False
             idor_diff_hit = False
+            idor_probe_count = 0
+            idor_probe_responses = []
+            idor_diff_summary = {}
             api_doc_hit = False
             api_doc_hit_url = ""
             api_doc_probe_count = 0
@@ -9244,6 +9794,13 @@ class WebSiteFetch(object):
                 probe_headers = dict(plan_observation.get("probe_headers") or {}) or probe_headers
                 probe_body_excerpt = str(plan_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
                 probe_body_md5 = str(plan_observation.get("probe_body_md5", "") or "") or probe_body_md5
+                idor_probe_responses.extend(
+                    [
+                        dict(item or {})
+                        for item in list(plan_observation.get("responses", []) or [])
+                        if isinstance(item, dict) and str(item.get("tool") or "").strip() == "idor_probe"
+                    ]
+                )
                 evidence_hit = bool(plan_observation.get("evidence_hit")) or evidence_hit
                 api_doc_hit = bool(plan_observation.get("api_doc_hit")) or api_doc_hit
                 api_doc_hit_url = str(plan_observation.get("api_doc_hit_url", "") or "") or api_doc_hit_url
@@ -9257,6 +9814,10 @@ class WebSiteFetch(object):
                     graphql_summary = dict(plan_observation.get("graphql_summary") or {})
                 api_doc_probe_count += self._safe_int_value(
                     dict(plan_observation.get("tool_counts") or {}).get("api_doc_probe"),
+                    0,
+                )
+                idor_probe_count += self._safe_int_value(
+                    dict(plan_observation.get("tool_counts") or {}).get("idor_probe"),
                     0,
                 )
                 config_exposure_hit = bool(plan_observation.get("config_exposure_hit")) or config_exposure_hit
@@ -9279,9 +9840,6 @@ class WebSiteFetch(object):
                 payload_text = str(payload or "").strip().lower()
                 if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
                     payload_reflect_hit = True
-                if payload_type == "idor_probe" and probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
-                    idor_diff_hit = True
-
             tool_calls = len(list(runtime.tool_calls or []))
             if mcp_enable and tool_calls < max_tool_calls and agent_loop_stop_reason not in {"final_decision", "manual_required"}:
                 if payload_type == "jwt_probe":
@@ -9389,6 +9947,13 @@ class WebSiteFetch(object):
                         probe_headers = dict(fallback_observation.get("probe_headers") or {}) or probe_headers
                         probe_body_excerpt = str(fallback_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
                         probe_body_md5 = str(fallback_observation.get("probe_body_md5", "") or "") or probe_body_md5
+                        idor_probe_responses.extend(
+                            [
+                                dict(item or {})
+                                for item in list(fallback_observation.get("responses", []) or [])
+                                if isinstance(item, dict) and str(item.get("tool") or "").strip() == "idor_probe"
+                            ]
+                        )
                         evidence_hit = bool(fallback_observation.get("evidence_hit")) or evidence_hit
                         api_doc_hit = bool(fallback_observation.get("api_doc_hit")) or api_doc_hit
                         api_doc_hit_url = str(fallback_observation.get("api_doc_hit_url", "") or "") or api_doc_hit_url
@@ -9402,6 +9967,10 @@ class WebSiteFetch(object):
                             graphql_summary = dict(fallback_observation.get("graphql_summary") or {})
                         api_doc_probe_count += self._safe_int_value(
                             dict(fallback_observation.get("tool_counts") or {}).get("api_doc_probe"),
+                            0,
+                        )
+                        idor_probe_count += self._safe_int_value(
+                            dict(fallback_observation.get("tool_counts") or {}).get("idor_probe"),
                             0,
                         )
                         config_exposure_hit = bool(fallback_observation.get("config_exposure_hit")) or config_exposure_hit
@@ -9421,8 +9990,6 @@ class WebSiteFetch(object):
                         payload_text = str(payload or "").strip().lower()
                         if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
                             payload_reflect_hit = True
-                        if payload_type == "idor_probe" and probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
-                            idor_diff_hit = True
                     elif payload_type == "weak_password_probe" and login_probe_context:
                         if bool(login_probe_context.get("captcha_required")):
                             tool_trace_parts.append("weak_password_probe(skip_captcha)")
@@ -9449,6 +10016,32 @@ class WebSiteFetch(object):
                 xss_popup_proof = self._has_xss_popup_proof(payload, base_body_excerpt, probe_body_excerpt)
             if is_sqli_case:
                 sqli_proof_type = self._detect_sqli_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
+            if payload_type == "idor_probe" and idor_probe_responses:
+                best_idor_score = -1
+                for response_item in idor_probe_responses:
+                    probe_url_text = str(response_item.get("url") or "").strip()
+                    matching_target = None
+                    for target in idor_probe_targets:
+                        if str(target.get("url") or "").strip() == probe_url_text:
+                            matching_target = target
+                            break
+                    candidate_summary = self._build_idor_diff_summary(
+                        base_status=status_code,
+                        base_body=base_body_excerpt,
+                        probe_status=self._safe_int_value(response_item.get("status_code"), 0),
+                        probe_body=str(response_item.get("body_text", "") or ""),
+                        probe_target=matching_target or {},
+                    )
+                    candidate_score = self._score_idor_diff_summary(candidate_summary)
+                    if candidate_score > best_idor_score:
+                        best_idor_score = candidate_score
+                        idor_diff_summary = dict(candidate_summary or {})
+                        probe_status = self._safe_int_value(response_item.get("status_code"), 0) or probe_status
+                        probe_url = probe_url_text or probe_url
+                        probe_headers = dict(response_item.get("headers") or {}) if isinstance(response_item.get("headers"), dict) else probe_headers
+                        probe_body_excerpt = str(response_item.get("body_text", "") or "") or probe_body_excerpt
+                        probe_body_md5 = str(response_item.get("body_md5", "") or "") or probe_body_md5
+                idor_diff_hit = bool(idor_diff_summary.get("material_change"))
             if is_weak_password_case:
                 if credential_probe_count > 0 and not login_success_hit:
                     login_analysis = self._analyze_ai_pen_login_success(
@@ -9565,12 +10158,19 @@ class WebSiteFetch(object):
                 reason = "Payload 在响应中回显，疑似存在可利用注入点"
             elif payload_type == "idor_probe" and idor_diff_hit:
                 decision = "needs_manual_review"
-                confidence = 0.78
-                reason = "ID 参数变异后响应差异明显，疑似存在越权风险"
-            elif probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
+                confidence = 0.80 if list(idor_diff_summary.get("sensitive_hits", []) or []) else 0.76
+                reason = "对象引用参数变异后响应差异明显，疑似存在越权风险"
+                idor_summary_text = self._format_idor_diff_summary_text(idor_diff_summary)
+                if idor_summary_text:
+                    reason = "{}；差异摘要：{}".format(reason, idor_summary_text)
+            elif payload_type != "idor_probe" and probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
                 decision = "needs_manual_review"
                 confidence = 0.66
                 reason = "Payload 探针前后响应差异明显，建议人工复核"
+            elif payload_type == "idor_probe" and idor_probe_count > 0:
+                decision = "likely_false_positive"
+                confidence = 0.60
+                reason = "已尝试 {} 个对象引用变异，暂未观察到稳定的访问控制差异".format(idor_probe_count)
             elif payload_type == "api_doc_probe" and api_doc_probe_count > 0 and not api_doc_hit:
                 decision = "likely_false_positive"
                 confidence = 0.60
