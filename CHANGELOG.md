@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-30（v4.3.60 ~ v4.5.2）
+## 2026-03-30（v4.3.60 ~ v4.5.3）
+
+- `[v4.5.3]` AI渗透新增独立 `GraphQL` 入口发现链：`commonTask` 现将 `/graphql`、`/api/graphql`、`/graphiql`、`/graphql-playground` 等路径纳入高价值目标家族，新增 `graphql_probe` payload/tool/route_hint/capability_profile，并通过一次低副作用 `__typename` 探针确认入口是否真实可访问；运行时可提取 `GraphQL` 响应摘要（如 `typename / introspection / playground`），结果以“发现可接手口子”为目标保守止步，不继续自动深挖 schema 或业务授权链
 
 - `[v4.5.2]` AI渗透弱口令验证从“关键词/证据片段判定”推进到“最小登录会话 + 受控默认口令探针”链路：`commonTask` 新增登录表单抽取、隐藏字段/CSRF 字段复用、最小默认凭证集与登录成功/阻断判定能力，MCP runtime 同步注册 `session_start/login_probe/credential_probe/detect_login_success` 工具；当目标存在可复用登录表单且无明显验证码/锁定时，会执行一次低副作用默认口令验证，否则保守降级为 `needs_manual_review`，避免把“未真正尝试登录”的弱口令线索直接误判为验证失败或有效漏洞
 - `[v4.5.2]` AI渗透执行方案文档继续收敛为“真 Agent MCP”实施口径：`AI渗透测试MCP总体方案` 重写为目标定位、能力下限、架构问题、阶段路线图和受控弱口令接入策略的统一说明，明确 `PortSwigger` 能力下限、登录/会话工具链缺口以及 `ARL/docker/dicts/dict` 只能在会话层与风控止损能力补齐后再受控接入，减少后续实现偏离“低副作用、强审计、可回放”的设计边界

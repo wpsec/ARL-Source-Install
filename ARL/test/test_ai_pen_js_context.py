@@ -271,6 +271,20 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("file_read", candidate.get("risk_type"))
         self.assertEqual("高价值文件处理入口", candidate.get("risk_name"))
 
+    def test_high_value_url_candidate_detects_graphql_surface(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd799439022",
+            target_url="https://example.com/graphql",
+            status_code=200,
+            title_text="GraphQL Playground",
+            source_text="url",
+        )
+
+        self.assertEqual("graphql", candidate.get("risk_type"))
+        self.assertEqual("高价值 GraphQL 入口", candidate.get("risk_name"))
+        self.assertTrue(bool(candidate.get("high_value_target")))
+
     def test_sensitive_config_response_detects_actuator_env_json(self):
         self.assertTrue(
             WebSiteFetch._looks_like_sensitive_config_response(
@@ -322,6 +336,32 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(observation.get("evidence_hit")))
         self.assertIn("username", list(observation.get("api_doc_summary", {}).get("parameter_names", [])))
 
+    def test_collect_ai_pen_runtime_observation_detects_graphql(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "graphql_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/graphql",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body_text": '{"data":{"__typename":"Query"}}',
+                            "body_md5": "ghi789",
+                        }
+                    },
+                }
+            ],
+            evidence_seed="typename",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("graphql_hit")))
+        self.assertEqual("https://example.com/graphql", observation.get("graphql_hit_url"))
+        self.assertEqual("typename", observation.get("graphql_summary", {}).get("mode"))
+
     def test_collect_ai_pen_runtime_observation_detects_login_success(self):
         observation = WebSiteFetch._collect_ai_pen_runtime_observation(
             [
@@ -362,6 +402,19 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(plan))
         self.assertEqual("api_doc_probe", plan[0].get("tool"))
         self.assertLessEqual(len(plan), 3)
+
+    def test_build_ai_pen_fallback_tool_plan_for_graphql(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/app/index",
+            payload_type="graphql_probe",
+            payload='{"query":"query { __typename }"}',
+            max_steps=2,
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertEqual("graphql_probe", plan[0].get("tool"))
+        self.assertEqual("post", plan[0].get("params", {}).get("method"))
+        self.assertEqual("query { __typename }", plan[0].get("params", {}).get("json_data", {}).get("query"))
 
     def test_build_ai_pen_fallback_tool_plan_for_payload_probe(self):
         plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
@@ -444,6 +497,19 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("file_handling_surface", profile.get("name"))
         self.assertEqual("upload_probe", profile.get("preferred_payload_type"))
+
+    def test_capability_profile_prefers_graphql_surface(self):
+        profile = WebSiteFetch._select_ai_pen_capability_profile(
+            {
+                "target": "https://example.com/graphql",
+                "risk_type": "graphql",
+                "route_hint": "graphql_schema_context",
+                "surface_hints": ["graphql_surface"],
+            }
+        )
+
+        self.assertEqual("graphql_surface", profile.get("name"))
+        self.assertEqual("graphql_probe", profile.get("preferred_payload_type"))
 
     def test_capability_profile_prefers_login_entry_surface(self):
         profile = WebSiteFetch._select_ai_pen_capability_profile(

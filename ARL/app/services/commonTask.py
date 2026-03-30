@@ -175,6 +175,7 @@ class WebSiteFetch(object):
         "weak_password_probe",
         "idor_probe",
         "api_doc_probe",
+        "graphql_probe",
         "jwt_probe",
         "websocket_probe",
         "upload_probe",
@@ -189,6 +190,7 @@ class WebSiteFetch(object):
         "payload_probe",
         "idor_probe",
         "api_doc_probe",
+        "graphql_probe",
         "jwt_probe",
         "websocket_probe",
     )
@@ -235,6 +237,7 @@ class WebSiteFetch(object):
     AI_PEN_SUCCESS_STATUS_SET = {200, 201, 202, 203, 204, 206}
     AI_PEN_EXTRA_SURFACE_HINTS = {
         "api_doc_surface": ("swagger", "openapi", "api-docs", "postman", "knife4j", "redoc"),
+        "graphql_surface": ("graphql", "graphiql", "graphql-playground", "apollo", "relay"),
         "js_bundler_app": ("_nuxt", "nuxt", "__nuxt__", "webpack", "__webpack_require__", "webpackjson", "__vite__"),
         "admin_office_portal": ("admin", "console", "dashboard", "backend", "manage", "panel", "oa", "office", "协同办公", "工作台", "审批", "流程"),
         "token_auth_flow": ("jwt", "bearer", "oauth", "openid", "access_token", "authorization", "id_token", "refresh_token"),
@@ -251,6 +254,17 @@ class WebSiteFetch(object):
             "priority_actions": [
                 "优先从 API 文档中筛选鉴权相关、对象ID风格、上传/下载接口",
                 "优先围绕 securitySchemes、鉴权相关接口和高价值参数做低副作用验证",
+            ],
+        },
+        "graphql_surface": {
+            "priority": 96,
+            "route_hint": "graphql_schema_context",
+            "preferred_payload_type": "graphql_probe",
+            "focus_paths": ["sample_paths", "auth_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先确认 GraphQL 入口是否真实可访问，再区分 introspection、playground 与鉴权边界",
+                "若入口可用，优先保留 schema/operation 线索给渗透工程师继续黑盒深挖",
             ],
         },
         "admin_office_portal": {
@@ -3667,6 +3681,8 @@ class WebSiteFetch(object):
             return "file_handling_context"
         if risk_type == "api_doc":
             return "api_doc_structure"
+        if risk_type == "graphql":
+            return "graphql_schema_context"
         if risk_type == "jwt":
             return "jwt_token_first"
         if risk_type == "websocket":
@@ -3861,6 +3877,8 @@ class WebSiteFetch(object):
         for product in knowledge_products + surface_hints:
             if product in {"swagger", "openapi", "api_doc", "api_doc_surface"}:
                 bump("api_doc_surface", 60)
+            if product in {"graphql", "graphiql", "graphql_surface", "apollo"}:
+                bump("graphql_surface", 58)
             if product in {"nuxt", "webpack", "js_bundler_app"}:
                 bump("js_bundler_app", 45)
             if product in {"jwt", "token_auth_flow"}:
@@ -3874,6 +3892,8 @@ class WebSiteFetch(object):
 
         if route_hint == "api_doc_structure":
             bump("api_doc_surface", 40)
+        if route_hint == "graphql_schema_context":
+            bump("graphql_surface", 38)
         if route_hint == "js_static_context":
             bump("js_bundler_app", 25)
         if route_hint == "jwt_token_first":
@@ -3885,6 +3905,7 @@ class WebSiteFetch(object):
 
         if cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0) > 0:
             bump("api_doc_surface", 12)
+            bump("graphql_surface", 8)
             bump("token_auth_flow", 8)
         if cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0) > 0:
             bump("api_doc_surface", 10)
@@ -3907,6 +3928,8 @@ class WebSiteFetch(object):
             bump("token_auth_flow", 30)
         if risk_type == "api_doc":
             bump("api_doc_surface", 30)
+        if risk_type == "graphql":
+            bump("graphql_surface", 32)
         if risk_type in {"file_upload", "file_read"}:
             bump("file_handling_surface", 32)
         if risk_type == "login_surface":
@@ -4104,14 +4127,14 @@ class WebSiteFetch(object):
                     "decision": "verified|likely_false_positive|needs_manual_review",
                     "confidence": "0~1 float",
                     "reason": "string",
-                    "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|weak_password_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe|upload_probe|replay",
+                    "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|weak_password_probe|idor_probe|api_doc_probe|graphql_probe|jwt_probe|websocket_probe|upload_probe|replay",
                     "payload": "string",
                     "evidence": ["string"],
                     "next_actions": ["string"],
                     "tool_plan": [
                         {
-                            "tool": "http_fetch|payload_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe",
-                            "params": {"url": "string", "method": "get|post", "allow_redirects": True, "headers": {"Header": "Value"}},
+                            "tool": "http_fetch|payload_probe|idor_probe|api_doc_probe|graphql_probe|jwt_probe|websocket_probe|session_start|login_probe|credential_probe|detect_login_success",
+                            "params": {"url": "string", "method": "get|post", "allow_redirects": True, "headers": {"Header": "Value"}, "json_data": {"query": "string"}},
                             "summary": "string",
                         }
                     ],
@@ -4134,15 +4157,15 @@ class WebSiteFetch(object):
                     "expected_signal": "string",
                     "stop_if": "string",
                     "tool_call": {
-                        "tool": "http_fetch|payload_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe",
-                        "params": {"url": "string", "method": "get|post", "allow_redirects": True, "headers": {"Header": "Value"}},
+                        "tool": "http_fetch|payload_probe|idor_probe|api_doc_probe|graphql_probe|jwt_probe|websocket_probe|session_start|login_probe|credential_probe|detect_login_success",
+                        "params": {"url": "string", "method": "get|post", "allow_redirects": True, "headers": {"Header": "Value"}, "json_data": {"query": "string"}},
                         "summary": "string",
                     },
                     "final_decision": {
                         "decision": "verified|likely_false_positive|needs_manual_review",
                         "confidence": "0~1 float",
                         "reason": "string",
-                        "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|weak_password_probe|idor_probe|api_doc_probe|jwt_probe|websocket_probe|upload_probe|replay",
+                        "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|weak_password_probe|idor_probe|api_doc_probe|graphql_probe|jwt_probe|websocket_probe|upload_probe|replay",
                         "payload": "string",
                         "evidence": ["string"],
                         "next_actions": ["string"],
@@ -5289,6 +5312,8 @@ class WebSiteFetch(object):
         step_text = str(verification_step or "").strip().lower()
         if payload_text == "upload_probe":
             return "POST"
+        if payload_text == "graphql_probe":
+            return "POST"
         if payload_text == "websocket_probe":
             return "GET"
         if step_text.startswith("mcp_external_"):
@@ -5371,6 +5396,8 @@ class WebSiteFetch(object):
             headers["Sec-WebSocket-Key"] = "ArlAiPenProbe=="
         if payload_type_text == "api_doc_probe":
             headers["Accept"] = "application/json, */*"
+        if payload_type_text == "graphql_probe":
+            headers["Accept"] = "application/json, text/html;q=0.9, */*;q=0.8"
 
         if method_upper in {"POST", "PUT", "PATCH"}:
             if payload_type_text == "upload_probe":
@@ -5387,6 +5414,9 @@ class WebSiteFetch(object):
                     "{1}\r\n"
                     "--{0}--\r\n"
                 ).format(boundary, upload_content)
+            elif payload_type_text == "graphql_probe":
+                headers["Content-Type"] = "application/json"
+                body_text = payload_text or '{"query":"query { __typename }"}'
             else:
                 headers["Content-Type"] = "application/x-www-form-urlencoded"
                 body_text = "arl_probe={}".format(payload_text or "probe")
@@ -5501,6 +5531,45 @@ class WebSiteFetch(object):
             return []
 
     @staticmethod
+    def _build_graphql_probe_targets(target_url: str, max_count=4):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return []
+
+        try:
+            parsed = urlsplit(url_text)
+            base = "{}://{}".format(parsed.scheme, parsed.netloc)
+            lower_path = str(parsed.path or "").strip().lower()
+            candidate_paths = []
+            if lower_path and "graphql" in lower_path:
+                candidate_paths.append(str(parsed.path or "").strip())
+            candidate_paths.extend(
+                [
+                    "/graphql",
+                    "/api/graphql",
+                    "/graphql/console",
+                    "/graphiql",
+                    "/graphql-playground",
+                ]
+            )
+            targets = []
+            seen = set()
+            for path in candidate_paths:
+                path_text = str(path or "").strip()
+                if not path_text:
+                    continue
+                full_url = "{}{}".format(base, path_text)
+                if full_url in seen:
+                    continue
+                seen.add(full_url)
+                targets.append(full_url)
+                if len(targets) >= max(1, int(max_count or 1)):
+                    break
+            return targets
+        except Exception:
+            return []
+
+    @staticmethod
     def _looks_like_api_doc_response(url_text: str, body_text: str, headers=None):
         """
         轻量判断响应是否命中 API 文档（Swagger/OpenAPI）。
@@ -5530,6 +5599,103 @@ class WebSiteFetch(object):
         if any(marker in url_lower for marker in url_markers):
             return "html" in content_type or "json" in content_type
         return False
+
+    @staticmethod
+    def _looks_like_graphql_response(url_text: str, body_text: str, headers=None):
+        url_lower = str(url_text or "").strip().lower()
+        body_lower = str(body_text or "").strip().lower()
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+
+        if not body_lower and not content_type and not url_lower:
+            return False
+
+        json_markers = (
+            '"__schema"',
+            '"__typename"',
+            '"querytype"',
+            '"mutationtype"',
+            'cannot query field',
+            'graphql',
+        )
+        html_markers = (
+            "graphiql",
+            "graphql playground",
+            "apollo sandbox",
+            "graphql voyager",
+        )
+        if any(marker in body_lower for marker in json_markers):
+            return True
+        if '"errors"' in body_lower and "graphql" in url_lower:
+            return True
+        if any(marker in body_lower for marker in html_markers):
+            return True
+        if "graphql" in url_lower and any(token in content_type for token in ("json", "html", "graphql")):
+            return True
+        return False
+
+    @classmethod
+    def _extract_graphql_summary(cls, body_text: str):
+        text = str(body_text or "").strip()
+        if not text:
+            return {}
+
+        lower_text = text.lower()
+        summary = {
+            "mode": "unknown",
+            "introspection_enabled": False,
+            "error_count": 0,
+            "top_level_keys": [],
+        }
+
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+
+        if isinstance(parsed, dict):
+            top_level_keys = [str(key or "").strip() for key in parsed.keys() if str(key or "").strip()]
+            summary["top_level_keys"] = top_level_keys[:6]
+            summary["error_count"] = len(parsed.get("errors", []) or []) if isinstance(parsed.get("errors"), list) else 0
+            if isinstance(parsed.get("data"), dict):
+                summary["mode"] = "json_data"
+            elif summary["error_count"] > 0:
+                summary["mode"] = "json_error"
+
+            merged_json_text = json.dumps(parsed, ensure_ascii=False)[:4096].lower()
+            if any(token in merged_json_text for token in ('"__schema"', '"querytype"', '"mutationtype"', '"subscriptiontype"')):
+                summary["introspection_enabled"] = True
+            elif '"__typename"' in merged_json_text:
+                summary["mode"] = "typename"
+
+            return summary
+
+        if "graphiql" in lower_text:
+            summary["mode"] = "graphiql"
+        elif "graphql playground" in lower_text:
+            summary["mode"] = "playground"
+        elif "apollo sandbox" in lower_text:
+            summary["mode"] = "apollo_sandbox"
+        return summary
+
+    @classmethod
+    def _format_graphql_summary_text(cls, summary: dict):
+        if not isinstance(summary, dict) or not summary:
+            return ""
+
+        parts = []
+        mode_text = str(summary.get("mode") or "").strip()
+        if mode_text:
+            parts.append("mode={}".format(mode_text))
+        if bool(summary.get("introspection_enabled")):
+            parts.append("introspection=enabled")
+        error_count = cls._safe_int_value(summary.get("error_count"), 0)
+        if error_count > 0:
+            parts.append("errors={}".format(error_count))
+        top_level_keys = [str(item or "").strip() for item in list(summary.get("top_level_keys", []) or [])[:4] if str(item or "").strip()]
+        if top_level_keys:
+            parts.append("keys={}".format(",".join(top_level_keys)))
+        return " | ".join(parts)
 
     @classmethod
     def _extract_api_doc_summary(cls, body_text: str):
@@ -6955,6 +7121,8 @@ class WebSiteFetch(object):
             return "file_read"
         if "websocket" in merged or "ws://" in merged or "wss://" in merged:
             return "websocket"
+        if "graphql" in merged or "graphiql" in merged:
+            return "graphql"
         if "swagger" in merged or "openapi" in merged or "postman" in merged:
             return "api_doc"
         if "secret" in merged or "key" in merged or "token" in merged or "credential" in merged:
@@ -6991,6 +7159,8 @@ class WebSiteFetch(object):
             return "ssrf_probe", "http://127.0.0.1/"
         if "idor" in merged or "越权" in merged:
             return "idor_probe", "id=1 -> id=2"
+        if "graphql" in merged or "graphiql" in merged:
+            return "graphql_probe", '{"query":"query { __typename }"}'
         if "swagger" in merged or "openapi" in merged or "postman" in merged or "api_doc" in merged:
             return "api_doc_probe", "/v3/api-docs"
         if "websocket" in merged or "socket.io" in merged or "sockjs" in merged:
@@ -7047,6 +7217,13 @@ class WebSiteFetch(object):
             "/redoc",
             "/knife4j",
             "/postman",
+        )
+        graphql_tokens = (
+            "/graphql",
+            "/api/graphql",
+            "/graphiql",
+            "/graphql-playground",
+            "/graphql/console",
         )
         config_tokens = (
             "/actuator/env",
@@ -7115,6 +7292,13 @@ class WebSiteFetch(object):
             severity = "high" if success_like else "medium"
             priority_score = 60 if success_like else 28
             high_value_reason = "api_doc_endpoint"
+        elif any(token in lower_url for token in graphql_tokens) or any(token in title_lower for token in ("graphql", "graphiql", "apollo")):
+            matched_keywords = [token for token in graphql_tokens if token in lower_url][:4] or ["graphql"]
+            risk_type = "graphql"
+            risk_name = "高价值 GraphQL 入口"
+            severity = "high" if success_like else "medium"
+            priority_score = 58 if success_like else 28
+            high_value_reason = "graphql_endpoint"
         elif any(token in lower_url for token in config_tokens):
             matched_keywords = [token for token in config_tokens if token in lower_url][:4]
             risk_type = "sensitive_info"
@@ -7287,7 +7471,7 @@ class WebSiteFetch(object):
             raw_params = item.get("params")
             if isinstance(raw_params, dict):
                 params.update(raw_params)
-            for key in ("url", "method", "allow_redirects", "headers", "session_key", "prepare_url", "login_url", "form_data"):
+            for key in ("url", "method", "allow_redirects", "headers", "session_key", "prepare_url", "login_url", "form_data", "json_data"):
                 if key not in params and key in item:
                     params[key] = item.get(key)
 
@@ -7338,6 +7522,19 @@ class WebSiteFetch(object):
                 safe_form_data[key_text[:64]] = str(form_value or "")[:180]
             if safe_form_data:
                 step["params"]["form_data"] = safe_form_data
+            json_data_obj = params.get("json_data") if isinstance(params.get("json_data"), dict) else {}
+            safe_json_data = {}
+            for json_key, json_value in json_data_obj.items():
+                key_text = str(json_key or "").strip()
+                if not key_text:
+                    continue
+                if isinstance(json_value, (dict, list)):
+                    value_text = cls._clip_text(json.dumps(json_value, ensure_ascii=False), 400)
+                else:
+                    value_text = str(json_value or "")[:240]
+                safe_json_data[key_text[:64]] = value_text
+            if safe_json_data:
+                step["params"]["json_data"] = safe_json_data
 
             cache_key = json.dumps(step, ensure_ascii=False, sort_keys=True)
             if cache_key in seen:
@@ -7370,6 +7567,28 @@ class WebSiteFetch(object):
                             "allow_redirects": True,
                         },
                         "summary": "多轮探测 API 文档入口",
+                    }
+                )
+            return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
+        if payload_type_text == "graphql_probe":
+            for graphql_url in cls._build_graphql_probe_targets(target_url, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "graphql_probe",
+                        "params": {
+                            "url": graphql_url,
+                            "method": "post",
+                            "allow_redirects": True,
+                            "headers": {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+                            },
+                            "json_data": {
+                                "query": "query { __typename }",
+                            },
+                        },
+                        "summary": "低副作用确认 GraphQL 入口",
                     }
                 )
             return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
@@ -7495,6 +7714,26 @@ class WebSiteFetch(object):
                         "summary": "fallback API 文档路径探测",
                     }
                 )
+        elif payload_type_text == "graphql_probe":
+            for graphql_url in cls._build_graphql_probe_targets(url_text, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "graphql_probe",
+                        "params": {
+                            "url": graphql_url,
+                            "method": "post",
+                            "allow_redirects": True,
+                            "headers": {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+                            },
+                            "json_data": {
+                                "query": "query { __typename }",
+                            },
+                        },
+                        "summary": "fallback GraphQL 入口探测",
+                    }
+                )
         elif payload_type_text == "weak_password_probe":
             login_context = cls._build_ai_pen_login_probe_context(
                 target_url=url_text,
@@ -7617,6 +7856,9 @@ class WebSiteFetch(object):
             "api_doc_hit_url": "",
             "api_doc_summary": {},
             "api_surface_summary": {},
+            "graphql_hit": False,
+            "graphql_hit_url": "",
+            "graphql_summary": {},
             "config_exposure_hit": False,
             "config_exposure_url": "",
             "config_exposure_summary": "",
@@ -7684,6 +7926,11 @@ class WebSiteFetch(object):
                     api_doc_summary=observation["api_doc_summary"],
                     js_api_targets=js_api_targets or [],
                 )
+
+            if cls._looks_like_graphql_response(url_text, body_excerpt, headers):
+                observation["graphql_hit"] = True
+                observation["graphql_hit_url"] = url_text
+                observation["graphql_summary"] = cls._extract_graphql_summary(body_excerpt)
 
             if cls._looks_like_sensitive_config_response(url_text, body_excerpt, headers):
                 observation["config_exposure_hit"] = True
@@ -8427,6 +8674,7 @@ class WebSiteFetch(object):
                 "prepare_url": {"type": "string"},
                 "login_url": {"type": "string"},
                 "form_data": {"type": "object"},
+                "json_data": {"type": "object"},
             },
             "required": ["url"],
         }
@@ -8486,7 +8734,7 @@ class WebSiteFetch(object):
                 },
             }
 
-        def _prepare_runtime_request(req_url, req_method="get", allow_redirects=True, headers=None, form_data=None):
+        def _prepare_runtime_request(req_url, req_method="get", allow_redirects=True, headers=None, form_data=None, json_data=None):
             headers_obj = dict(headers or {}) if isinstance(headers, dict) else {}
             headers_obj.setdefault("User-Agent", "Mozilla/5.0")
             headers_obj.setdefault("Cache-Control", "max-age=0")
@@ -8513,6 +8761,8 @@ class WebSiteFetch(object):
             }
             if isinstance(form_data, dict) and form_data:
                 request_kwargs["data"] = form_data
+            if isinstance(json_data, dict) and json_data:
+                request_kwargs["json"] = json_data
 
             if Config.PROXY_URL:
                 request_kwargs["proxies"] = {
@@ -8523,7 +8773,7 @@ class WebSiteFetch(object):
                 request_kwargs["proxies"] = {"http": None, "https": None}
             return request_kwargs, None
 
-        def _execute_runtime_request(req_url, req_method="get", allow_redirects=True, headers=None, form_data=None, session_key=""):
+        def _execute_runtime_request(req_url, req_method="get", allow_redirects=True, headers=None, form_data=None, json_data=None, session_key=""):
             if not req_url:
                 return {"status": "error", "message": "missing_url", "response": {}}
 
@@ -8534,6 +8784,7 @@ class WebSiteFetch(object):
                 allow_redirects=allow_redirects,
                 headers=headers,
                 form_data=form_data,
+                json_data=json_data,
             )
             if skip_response is not None:
                 session_obj = None
@@ -8572,6 +8823,7 @@ class WebSiteFetch(object):
                 req_headers_obj = req_headers if isinstance(req_headers, dict) else {}
                 session_key = str(params_obj.get("session_key") or "").strip()
                 form_data = params_obj.get("form_data") if isinstance(params_obj.get("form_data"), dict) else {}
+                json_data = params_obj.get("json_data") if isinstance(params_obj.get("json_data"), dict) else {}
                 prepare_url = str(params_obj.get("prepare_url") or "").strip()
 
                 if not req_url:
@@ -8607,6 +8859,7 @@ class WebSiteFetch(object):
                         allow_redirects=allow_redirects,
                         headers=req_headers_obj,
                         form_data=form_data,
+                        json_data=json_data,
                         session_key=session_key,
                     )
                 except Exception as req_exc:
@@ -8708,6 +8961,14 @@ class WebSiteFetch(object):
                 description="API 文档发现探针",
                 input_schema=common_input_schema,
                 execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="graphql_probe",
+                description="GraphQL 入口确认探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="post", default_allow_redirects=True),
             )
         )
         runtime.register_tool(
@@ -8932,6 +9193,9 @@ class WebSiteFetch(object):
             api_doc_probe_count = 0
             api_doc_summary = {}
             api_surface_summary = self._build_api_surface_summary(api_doc_summary=api_doc_summary, js_api_targets=js_api_targets)
+            graphql_hit = False
+            graphql_hit_url = ""
+            graphql_summary = {}
             config_exposure_hit = False
             config_exposure_url = ""
             config_exposure_summary = ""
@@ -8987,6 +9251,10 @@ class WebSiteFetch(object):
                     api_doc_summary = dict(plan_observation.get("api_doc_summary") or {})
                 if isinstance(plan_observation.get("api_surface_summary"), dict) and plan_observation.get("api_surface_summary"):
                     api_surface_summary = dict(plan_observation.get("api_surface_summary") or {})
+                graphql_hit = bool(plan_observation.get("graphql_hit")) or graphql_hit
+                graphql_hit_url = str(plan_observation.get("graphql_hit_url", "") or "") or graphql_hit_url
+                if isinstance(plan_observation.get("graphql_summary"), dict) and plan_observation.get("graphql_summary"):
+                    graphql_summary = dict(plan_observation.get("graphql_summary") or {})
                 api_doc_probe_count += self._safe_int_value(
                     dict(plan_observation.get("tool_counts") or {}).get("api_doc_probe"),
                     0,
@@ -9128,6 +9396,10 @@ class WebSiteFetch(object):
                             api_doc_summary = dict(fallback_observation.get("api_doc_summary") or {})
                         if isinstance(fallback_observation.get("api_surface_summary"), dict) and fallback_observation.get("api_surface_summary"):
                             api_surface_summary = dict(fallback_observation.get("api_surface_summary") or {})
+                        graphql_hit = bool(fallback_observation.get("graphql_hit")) or graphql_hit
+                        graphql_hit_url = str(fallback_observation.get("graphql_hit_url", "") or "") or graphql_hit_url
+                        if isinstance(fallback_observation.get("graphql_summary"), dict) and fallback_observation.get("graphql_summary"):
+                            graphql_summary = dict(fallback_observation.get("graphql_summary") or {})
                         api_doc_probe_count += self._safe_int_value(
                             dict(fallback_observation.get("tool_counts") or {}).get("api_doc_probe"),
                             0,
@@ -9160,6 +9432,8 @@ class WebSiteFetch(object):
                         tool_trace_parts.append("idor_probe(skip_no_mutation)")
                     elif payload_type == "api_doc_probe":
                         tool_trace_parts.append("api_doc_probe(skip_no_target)")
+                    elif payload_type == "graphql_probe":
+                        tool_trace_parts.append("graphql_probe(skip_no_target)")
                     elif payload_type == "websocket_probe":
                         tool_trace_parts.append("websocket_probe(skip_invalid_target)")
                     elif payload_type == "weak_password_probe":
@@ -9272,6 +9546,13 @@ class WebSiteFetch(object):
                 api_surface_summary_text = self._format_api_surface_summary_text(api_surface_summary)
                 if api_surface_summary_text:
                     reason = "{}；接口结构：{}".format(reason, api_surface_summary_text)
+            elif payload_type == "graphql_probe" and graphql_hit:
+                decision = "verified"
+                confidence = 0.84
+                reason = "发现可访问 GraphQL 入口 {}".format((graphql_hit_url or target_url)[:180])
+                graphql_summary_text = self._format_graphql_summary_text(graphql_summary)
+                if graphql_summary_text:
+                    reason = "{}；GraphQL结构：{}".format(reason, graphql_summary_text)
             elif config_exposure_hit:
                 decision = "verified"
                 confidence = 0.87
@@ -9294,6 +9575,10 @@ class WebSiteFetch(object):
                 decision = "likely_false_positive"
                 confidence = 0.60
                 reason = "已探测 {} 个常见 API 文档端点，暂未命中暴露特征".format(api_doc_probe_count)
+            elif payload_type == "graphql_probe":
+                decision = "likely_false_positive"
+                confidence = 0.60
+                reason = "已尝试 GraphQL 最小探针，暂未观察到稳定的 GraphQL 入口响应"
             elif status_code >= 500 or status_code == 404:
                 decision = "likely_false_positive"
                 confidence = 0.66
@@ -9430,6 +9715,8 @@ class WebSiteFetch(object):
                 verification_step = "mcp_idor_probe"
             elif mcp_enable and max_tool_calls > 1 and payload_type == "api_doc_probe":
                 verification_step = "mcp_api_doc_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "graphql_probe":
+                verification_step = "mcp_graphql_probe"
             elif mcp_enable and max_tool_calls > 1 and payload_type == "jwt_probe":
                 verification_step = "mcp_jwt_probe"
             elif mcp_enable and max_tool_calls > 1 and payload_type == "websocket_probe":
