@@ -229,21 +229,209 @@ class InfoHunter(object):
                 return binary_path
         return "wih"
 
-    def _get_target_file(self):
+    def _get_target_file(self, sites=None):
+        site_list = list(sites or self.sites or [])
         with open(self.wih_target_path, "w") as f:
-            for site in self.sites:
+            for site in site_list:
                 site = str(site or "").strip()
                 if site:
                     f.write(site + "\n")
 
-    def _delete_file(self):
+    def _clear_result_file(self):
         try:
-            os.unlink(self.wih_target_path)
-            # 删除结果临时文件
             if os.path.exists(self.wih_result_path):
                 os.unlink(self.wih_result_path)
         except Exception as e:
             logger.warning(e)
+
+    def _delete_file(self):
+        try:
+            if os.path.exists(self.wih_target_path):
+                os.unlink(self.wih_target_path)
+            self._clear_result_file()
+        except Exception as e:
+            logger.warning(e)
+
+    def _initial_batch_size(self) -> int:
+        site_count = len(list(self.sites or []))
+        if site_count <= 0:
+            return 1
+        if site_count <= 12:
+            return site_count
+        return min(48, max(8, int(self.wih_concurrency) * 6))
+
+    @staticmethod
+    def _split_site_batches(sites: list, batch_size: int) -> list:
+        site_list = [str(site or "").strip() for site in list(sites or []) if str(site or "").strip()]
+        if not site_list:
+            return []
+        size = max(1, int(batch_size or 1))
+        return [site_list[idx: idx + size] for idx in range(0, len(site_list), size)]
+
+    def _read_current_result_text(self) -> str:
+        if not os.path.exists(self.wih_result_path):
+            return ""
+        with open(self.wih_result_path, "r", encoding="utf-8", errors="ignore") as f:
+            return str(f.read() or "").strip()
+
+    def _write_aggregate_result_texts(self, result_texts: list):
+        merged_lines = []
+        for item in list(result_texts or []):
+            raw_text = str(item or "").strip()
+            if not raw_text:
+                continue
+            if raw_text.startswith("["):
+                try:
+                    payload = json.loads(raw_text)
+                except Exception:
+                    payload = None
+                if isinstance(payload, list):
+                    for row in payload:
+                        if isinstance(row, dict):
+                            merged_lines.append(json.dumps(row, ensure_ascii=False))
+                    continue
+            merged_lines.append(raw_text)
+        merged_text = "\n".join(merged_lines)
+        if not merged_text:
+            self._clear_result_file()
+            return
+        with open(self.wih_result_path, "w", encoding="utf-8") as f:
+            f.write(merged_text)
+
+    def _run_wih_command(self, command: list, batch_sites: list, command_name: str):
+        try:
+            completed = utils.exec_system(
+                command,
+                timeout=self.wih_timeout_sec,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except subprocess.TimeoutExpired as e:
+            logger.warning(
+                "wih {} timeout:{}s batch_sites:{} cmd:{}".format(
+                    command_name,
+                    self.wih_timeout_sec,
+                    len(list(batch_sites or [])),
+                    " ".join(command),
+                )
+            )
+            return {
+                "ok": False,
+                "timed_out": True,
+                "completed": None,
+                "stderr": "",
+                "stdout": "",
+                "error": str(e),
+            }
+        except Exception as e:
+            logger.warning(
+                "wih {} exception batch_sites:{} err:{} cmd:{}".format(
+                    command_name,
+                    len(list(batch_sites or [])),
+                    e,
+                    " ".join(command),
+                )
+            )
+            return {
+                "ok": False,
+                "timed_out": False,
+                "completed": None,
+                "stderr": "",
+                "stdout": "",
+                "error": str(e),
+            }
+
+        stderr_text = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
+        stdout_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
+        if completed.returncode == 0:
+            return {
+                "ok": True,
+                "timed_out": False,
+                "completed": completed,
+                "stderr": stderr_text,
+                "stdout": stdout_text,
+                "error": "",
+            }
+
+        logger.warning(
+            "wih {} failed rc={} batch_sites={} stderr={} stdout={}".format(
+                command_name,
+                completed.returncode,
+                len(list(batch_sites or [])),
+                stderr_text[:500],
+                stdout_text[:500],
+            )
+        )
+        return {
+            "ok": False,
+            "timed_out": False,
+            "completed": completed,
+            "stderr": stderr_text,
+            "stdout": stdout_text,
+            "error": "",
+        }
+
+    def _exec_wih_batch(self, batch_sites: list, aggregate_result_texts: list, depth: int = 0) -> bool:
+        current_sites = [str(site or "").strip() for site in list(batch_sites or []) if str(site or "").strip()]
+        if not current_sites:
+            return False
+
+        self._clear_result_file()
+        self._get_target_file(current_sites)
+
+        command = self._build_command(minimal=False)
+        logger.info(
+            "run wih batch depth:{} sites:{} timeout:{}s concurrency:{} per_site:{} cmd:{}".format(
+                depth,
+                len(current_sites),
+                self.wih_timeout_sec,
+                self.wih_concurrency,
+                self.wih_concurrency_per_site,
+                " ".join(command),
+            )
+        )
+        primary = self._run_wih_command(command, current_sites, "primary")
+        if primary.get("ok"):
+            raw_text = self._read_current_result_text()
+            if raw_text:
+                aggregate_result_texts.append(raw_text)
+            return True
+
+        if primary.get("timed_out") and len(current_sites) > 1:
+            mid = max(1, len(current_sites) // 2)
+            left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
+            right_ok = self._exec_wih_batch(current_sites[mid:], aggregate_result_texts, depth=depth + 1)
+            return bool(left_ok or right_ok)
+
+        fallback_command = self._build_command(minimal=True)
+        logger.info(
+            "retry wih batch minimal depth:{} sites:{} cmd:{}".format(
+                depth,
+                len(current_sites),
+                " ".join(fallback_command),
+            )
+        )
+        fallback = self._run_wih_command(fallback_command, current_sites, "minimal")
+        if fallback.get("ok"):
+            raw_text = self._read_current_result_text()
+            if raw_text:
+                aggregate_result_texts.append(raw_text)
+            return True
+
+        if fallback.get("timed_out") and len(current_sites) > 1:
+            mid = max(1, len(current_sites) // 2)
+            left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
+            right_ok = self._exec_wih_batch(current_sites[mid:], aggregate_result_texts, depth=depth + 1)
+            return bool(left_ok or right_ok)
+
+        logger.warning(
+            "skip wih batch after failure depth:{} sites:{} sample:{}".format(
+                depth,
+                len(current_sites),
+                ",".join(current_sites[:3]),
+            )
+        )
+        return False
 
     def _load_help_text(self) -> str:
         if self._help_text is not None:
@@ -315,53 +503,37 @@ class InfoHunter(object):
         return command
 
     def exec_wih(self):
-        command = self._build_command(minimal=False)
+        site_list = [str(site or "").strip() for site in sorted(list(self.sites or [])) if str(site or "").strip()]
+        if not site_list:
+            return False
+
+        batch_size = self._initial_batch_size()
+        batches = self._split_site_batches(site_list, batch_size)
+        aggregate_result_texts = []
+        success_batches = 0
+
         logger.info(
-            "run wih command timeout:{}s concurrency:{} per_site:{} cmd:{}".format(
+            "run wih batched total_sites:{} batch_size:{} batches:{} timeout:{}s".format(
+                len(site_list),
+                batch_size,
+                len(batches),
                 self.wih_timeout_sec,
-                self.wih_concurrency,
-                self.wih_concurrency_per_site,
-                " ".join(command),
-            )
-        )
-        completed = utils.exec_system(
-            command,
-            timeout=self.wih_timeout_sec,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-        if completed.returncode == 0:
-            return True
-
-        stderr_text = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
-        stdout_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
-        logger.warning(
-            "wih command failed rc={} stderr={} stdout={}".format(
-                completed.returncode, stderr_text[:500], stdout_text[:500]
             )
         )
 
-        # 失败后回退最小参数集，兼容历史二进制或参数差异。
-        fallback_command = self._build_command(minimal=True)
-        logger.info("retry wih command (minimal): {}".format(" ".join(fallback_command)))
-        fallback_completed = utils.exec_system(
-            fallback_command,
-            timeout=self.wih_timeout_sec,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        if fallback_completed.returncode == 0:
-            return True
+        for batch_sites in batches:
+            if self._exec_wih_batch(batch_sites, aggregate_result_texts, depth=0):
+                success_batches += 1
 
-        fb_stderr = fallback_completed.stderr.decode("utf-8", errors="ignore").strip() if fallback_completed.stderr else ""
-        fb_stdout = fallback_completed.stdout.decode("utf-8", errors="ignore").strip() if fallback_completed.stdout else ""
-        logger.warning(
-            "wih minimal command failed rc={} stderr={} stdout={}".format(
-                fallback_completed.returncode, fb_stderr[:500], fb_stdout[:500]
+        self._write_aggregate_result_texts(aggregate_result_texts)
+        logger.info(
+            "wih batch summary success_batches:{} total_batches:{} result_chunks:{}".format(
+                success_batches,
+                len(batches),
+                len(aggregate_result_texts),
             )
         )
-        return False
+        return success_batches > 0
 
     def check_have_wih(self) -> bool:
         command = [self.wih_bin_path, "--version"]
@@ -497,14 +669,12 @@ class InfoHunter(object):
             logger.warning("not found webInfoHunter binary")
             return []
 
-        self._get_target_file()
-        if not self.exec_wih():
+        try:
+            if not self.exec_wih():
+                return []
+            return self.dump_result()
+        finally:
             self._delete_file()
-            return []
-        results = self.dump_result()
-        self._delete_file()
-
-        return results
 
 
 def run_wih(sites: List[str]) -> List[WihRecord]:

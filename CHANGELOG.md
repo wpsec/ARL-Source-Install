@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-30（v4.3.60 ~ v4.5.3）
+## 2026-03-30（v4.3.60 ~ v4.5.4）
+
+- `[v4.5.4]` `WIH` 执行链修复“大批量目标卡死后整任务异常退出”问题：`InfoHunter.exec_wih` 改为“按站点分批执行 + 超时后二分缩批继续”策略，主命令与最小参数回退都支持在单批超时后继续拆分处理，并将成功批次结果聚合回统一结果文件；当部分目标长时间卡住时，`web_info_hunter` 现在会尽量保留已成功站点的情报结果，而不是在 `7200s` 超时后直接抛出 `TimeoutExpired` 使整任务进入 `error`
 
 - `[v4.5.3]` AI渗透新增独立 `GraphQL` 入口发现链：`commonTask` 现将 `/graphql`、`/api/graphql`、`/graphiql`、`/graphql-playground` 等路径纳入高价值目标家族，新增 `graphql_probe` payload/tool/route_hint/capability_profile，并通过一次低副作用 `__typename` 探针确认入口是否真实可访问；运行时可提取 `GraphQL` 响应摘要（如 `typename / introspection / playground`），结果以“发现可接手口子”为目标保守止步，不继续自动深挖 schema 或业务授权链
 
