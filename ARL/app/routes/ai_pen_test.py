@@ -34,6 +34,8 @@ base_search_fields = {
     "status": fields.String(description="执行状态(ok/error/skipped)"),
     "verification_step": fields.String(description="验证阶段(http_fetch_replay/mcp_http_probe/mcp_idor_probe/mcp_api_doc_probe/mcp_jwt_probe/mcp_websocket_probe)"),
     "payload_type": fields.String(description="探针类型(xss_probe/sqli_probe/idor_probe/api_doc_probe等)"),
+    "tool_plan_source": fields.String(description="工具计划来源(ai_plan/retry_history/inferred)"),
+    "stop_reason": fields.String(description="Agent/MCP 停止原因(final_decision/manual_required/budget_exhausted/timeout/error)"),
     "reason": fields.String(description="验证说明"),
 }
 base_search_fields.update(base_query_fields)
