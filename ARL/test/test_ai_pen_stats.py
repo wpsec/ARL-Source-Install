@@ -202,6 +202,41 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(2.0, metrics["budget_metrics"]["avg_turns"])
         self.assertEqual(1.3333, metrics["budget_metrics"]["avg_tool_calls"])
 
+    def test_build_ai_pen_group_benchmarks_groups_by_risk_type(self):
+        benchmarks = ai_pen_test_module._build_ai_pen_group_benchmarks(
+            [
+                {
+                    "risk_type": "api_doc",
+                    "decision": "verified",
+                    "status": "ok",
+                    "verification_step": "mcp_api_doc_probe",
+                    "budget_used": {"turns": 3, "tool_calls": 2},
+                },
+                {
+                    "risk_type": "api_doc",
+                    "decision": "needs_manual_review",
+                    "status": "error",
+                    "agent_trace": [{"action": "agent_turn"}],
+                    "tool_calls": [{"tool": "http_fetch"}],
+                },
+                {
+                    "risk_type": "jwt",
+                    "decision": "likely_false_positive",
+                    "status": "ok",
+                    "verification_step": "mcp_jwt_probe",
+                    "budget_used": {"turns": 2, "tool_calls": 1},
+                },
+            ],
+            "risk_type",
+        )
+
+        self.assertEqual("api_doc", benchmarks[0]["name"])
+        self.assertEqual(2, benchmarks[0]["total_count"])
+        self.assertEqual(1, benchmarks[0]["verified_count"])
+        self.assertEqual(0.5, benchmarks[0]["success_rate"])
+        self.assertEqual(2.0, benchmarks[0]["avg_turns"])
+        self.assertEqual("jwt", benchmarks[1]["name"])
+
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
             {
@@ -254,6 +289,9 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(2.0, data["quant_metrics"]["budget_metrics"]["avg_turns"])
         self.assertEqual(1.3333, data["quant_metrics"]["budget_metrics"]["avg_tool_calls"])
         self.assertTrue(any(item.get("name") == "api_doc_surface" for item in data.get("high_value_family", [])))
+        self.assertTrue(any(item.get("name") == "api_doc" for item in data["capability_benchmarks"]["risk_type"]))
+        self.assertTrue(any(item.get("name") == "realtime_channel_surface" for item in data["capability_benchmarks"]["high_value_family"]))
+        self.assertTrue(any(item.get("name") == "mcp_websocket_probe" for item in data["capability_benchmarks"]["verification_step"]))
 
 
 if __name__ == "__main__":

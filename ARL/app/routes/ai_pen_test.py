@@ -292,6 +292,56 @@ def _build_ai_pen_quant_metrics(rows, total: int = 0):
     }
 
 
+def _build_ai_pen_group_benchmarks(rows, field_name: str, max_items: int = 12):
+    items = list(rows or [])
+    group_text = str(field_name or "").strip()
+    grouped = defaultdict(list)
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get(group_text) or "").strip()
+        if not name:
+            continue
+        grouped[name].append(item)
+
+    benchmark_rows = []
+    for name, group_rows in grouped.items():
+        total_count = len(group_rows)
+        quant_metrics = _build_ai_pen_quant_metrics(group_rows, total=total_count)
+        benchmark_rows.append(
+            {
+                "name": name,
+                "total_count": total_count,
+                "covered_count": int(quant_metrics["coverage"]["covered_count"]),
+                "verified_count": int(quant_metrics["decision_metrics"]["verified_count"]),
+                "likely_false_positive_count": int(quant_metrics["decision_metrics"]["likely_false_positive_count"]),
+                "needs_manual_review_count": int(quant_metrics["decision_metrics"]["needs_manual_review_count"]),
+                "coverage_rate": float(quant_metrics["coverage"]["coverage_rate"]),
+                "success_rate": float(quant_metrics["decision_metrics"]["success_rate"]),
+                "false_positive_rate": float(quant_metrics["decision_metrics"]["false_positive_rate"]),
+                "manual_review_rate": float(quant_metrics["decision_metrics"]["manual_review_rate"]),
+                "ok_rate": float(quant_metrics["execution_metrics"]["ok_rate"]),
+                "error_rate": float(quant_metrics["execution_metrics"]["error_rate"]),
+                "avg_turns": float(quant_metrics["budget_metrics"]["avg_turns"]),
+                "avg_tool_calls": float(quant_metrics["budget_metrics"]["avg_tool_calls"]),
+                "quant_metrics": quant_metrics,
+            }
+        )
+
+    benchmark_rows.sort(
+        key=lambda item: (
+            -int(item.get("total_count") or 0),
+            -float(item.get("success_rate") or 0.0),
+            -float(item.get("coverage_rate") or 0.0),
+            str(item.get("name") or ""),
+        )
+    )
+    if max_items <= 0:
+        return benchmark_rows
+    return benchmark_rows[:max_items]
+
+
 def _build_candidate_from_result(item: dict, max_steps: int = 4):
     """从历史结果重建候选，并补齐重试所需的会话/工具上下文。"""
     default_url = str(item.get("vuln_url") or item.get("target") or "").strip()
@@ -728,7 +778,9 @@ class StatsAiPenTest(ARLResource):
                 {
                     "decision": 1,
                     "status": 1,
+                    "risk_type": 1,
                     "verification_step": 1,
+                    "high_value_family": 1,
                     "agent_trace": 1,
                     "tool_calls": 1,
                     "budget_used": 1,
@@ -737,6 +789,11 @@ class StatsAiPenTest(ARLResource):
             )
         )
         quant_metrics = _build_ai_pen_quant_metrics(metric_rows, total=total)
+        capability_benchmarks = {
+            "risk_type": _build_ai_pen_group_benchmarks(metric_rows, "risk_type"),
+            "high_value_family": _build_ai_pen_group_benchmarks(metric_rows, "high_value_family"),
+            "verification_step": _build_ai_pen_group_benchmarks(metric_rows, "verification_step"),
+        }
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -752,5 +809,6 @@ class StatsAiPenTest(ARLResource):
                 "tool_plan_source": tool_plan_source,
                 "stop_reason": stop_reason,
                 "quant_metrics": quant_metrics,
+                "capability_benchmarks": capability_benchmarks,
             },
         )

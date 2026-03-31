@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-31（v4.5.10 ~ v4.5.29）
+## 2026-03-31（v4.5.10 ~ v4.5.30）
 
 - `[v4.5.10]` 仪表盘 `资产增长趋势(7日)` 统计口径修复：`/console/dashboard` 的 `asset_trend_7d` 从“累计总量曲线”调整为“按日新增曲线”，并额外保留 `assets_total/vulns_total` 累计字段用于兼容；修复高基数资产下曲线长期近似直线的问题（例如 tooltip 持续显示同一总量值）
 - `[v4.5.10]` 仪表盘当日新增资产统计兼容修复：`new_assets_today` 改为统一复用日统计逻辑，兼容 `save_date` 为 `date/string` 的混合存储，并在 `save_date` 缺失时回退 `update_date`，避免历史数据口径差异导致“新增始终为 0”
@@ -28,6 +28,7 @@
 - `[v4.5.27]` AI渗透 `高价值目标通用化` 主干落地：新增统一 `AI_PEN_HIGH_VALUE_FAMILY_SPECS` 与高价值摘要构造器，融合 `site/url/fileleak/wih/browser/runtime/login` 多层线索生成 `high_value_summary/high_value_family/high_value_family_rank/high_value_keywords`，并接入候选排序、AI planner 输入、重试、导出与统计；同时补齐 `WebSocket` 与多家族聚合回归测试
 - `[v4.5.28]` AI渗透 `阶段 F 量化指标` 数据面落地：`/ai_pen_test/stats/` 在原有分组统计之外新增 `quant_metrics` 摘要，直接输出覆盖率、成功率、误报率、执行状态占比、平均轮数、平均工具调用数，并支持从 `budget_used` 缺失场景回退 `agent_trace/tool_calls` 计算；同步新增独立路由统计回归测试，为后续靶场基线与前台图表复用提供稳定口径
 - `[v4.5.29]` AI渗透方案文档同步：刷新 `docs/AI渗透测试MCP总体方案.md` 当前状态判断，补齐阶段 `A/B/D/E/F` 的真实完成度、已实现能力、未完成缺口与建议优先级，并同步更新高价值目标家族与弱口令受控接入口径，便于后续按阶段继续排期开发
+- `[v4.5.30]` AI渗透 `阶段 F benchmark` 统计增强：`/ai_pen_test/stats/` 新增 `capability_benchmarks`，可按 `risk_type/high_value_family/verification_step` 输出分能力覆盖率、成功率、误报率、平均轮数、平均工具调用数，并统一复用 `quant_metrics` 口径；同步补齐 stats 分组 benchmark 回归测试，并更新方案文档阶段 F 当前状态
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 
