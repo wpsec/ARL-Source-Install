@@ -6058,6 +6058,96 @@ class WebSiteFetch(object):
         except Exception:
             return url_text
 
+    @classmethod
+    def _build_ai_pen_payload_probe_targets(
+        cls,
+        target_url: str,
+        payload: str,
+        preferred_tags=None,
+        parameter_names=None,
+        max_count: int = 3,
+    ):
+        url_text = str(target_url or "").strip()
+        payload_text = str(payload or "").strip()
+        limit = max(1, int(max_count or 1))
+        if not url_text or not payload_text:
+            return []
+
+        try:
+            parsed = urlsplit(url_text)
+            query_items = parse_qsl(parsed.query, keep_blank_values=True)
+        except Exception:
+            query_items = []
+            parsed = None
+
+        preferred_tag_set = {
+            str(tag or "").strip().lower()
+            for tag in list(preferred_tags or [])
+            if str(tag or "").strip()
+        }
+        parameter_name_set = {
+            str(name or "").strip().lower()
+            for name in list(parameter_names or [])
+            if str(name or "").strip()
+        }
+        results = []
+        seen_urls = set()
+
+        def append_target(index: int, reason_text: str = ""):
+            if parsed is None or index < 0 or index >= len(query_items):
+                return
+            key_text = str(query_items[index][0] or "").strip() or "arl_probe"
+            updated_items = list(query_items)
+            updated_items[index] = (key_text, payload_text)
+            updated_query = urlencode(updated_items, doseq=True)
+            next_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment))
+            if not next_url or next_url in seen_urls:
+                return
+            seen_urls.add(next_url)
+            results.append(
+                {
+                    "url": next_url,
+                    "param": key_text[:80],
+                    "reason": str(reason_text or "").strip()[:120],
+                    "tags": cls._tag_ai_pen_parameter_name(key_text),
+                }
+            )
+
+        if query_items:
+            for index, (query_key, _) in enumerate(query_items):
+                key_text = str(query_key or "").strip()
+                lowered_key = key_text.lower()
+                tags = cls._tag_ai_pen_parameter_name(lowered_key)
+                if preferred_tag_set and preferred_tag_set.intersection(tags):
+                    append_target(index, "preferred_tag_match")
+                    if len(results) >= limit:
+                        return results[:limit]
+
+            for index, (query_key, _) in enumerate(query_items):
+                key_text = str(query_key or "").strip()
+                lowered_key = key_text.lower()
+                if lowered_key in parameter_name_set:
+                    append_target(index, "parameter_name_match")
+                    if len(results) >= limit:
+                        return results[:limit]
+
+            if query_items:
+                append_target(0, "first_query_fallback")
+                if len(results) >= limit:
+                    return results[:limit]
+
+        fallback_url = cls._build_probe_url_with_payload(url_text, payload_text)
+        if fallback_url and fallback_url not in seen_urls:
+            results.append(
+                {
+                    "url": fallback_url,
+                    "param": "arl_probe",
+                    "reason": "generic_fallback",
+                    "tags": [],
+                }
+            )
+        return results[:limit]
+
     @staticmethod
     def _mutate_idor_like_value(value_text: str):
         text = str(value_text or "").strip()
@@ -10762,6 +10852,14 @@ class WebSiteFetch(object):
             "ssti_probe": "{{7*7}}",
             "xxe_probe": "<!DOCTYPE xxe>",
         }
+        payload_tag_map = {
+            "sqli_probe": ("input",),
+            "xss_probe": ("input",),
+            "ssrf_probe": ("url", "host"),
+            "cmdi_probe": ("command",),
+            "ssti_probe": ("template",),
+            "xxe_probe": ("xml",),
+        }
         plan = []
 
         for tool_name in tool_priority:
@@ -10926,18 +11024,32 @@ class WebSiteFetch(object):
 
             payload_seed = str(payload_seed_map.get(tool_name, "") or "").strip()
             if tool_name in {"xss_probe", "sqli_probe", "ssrf_probe", "cmdi_probe", "ssti_probe", "xxe_probe"} and payload_seed:
-                probe_url = cls._build_probe_url_with_payload(target_url, payload_seed) or target_url
-                plan.append(
-                    {
-                        "tool": tool_name,
-                        "params": {
-                            "url": probe_url,
-                            "method": "get",
-                            "allow_redirects": True,
-                        },
-                        "summary": str(tool_reason_map.get(tool_name) or "参数标签驱动 {} 探针".format(tool_name)),
-                    }
+                payload_targets = cls._build_ai_pen_payload_probe_targets(
+                    target_url,
+                    payload_seed,
+                    preferred_tags=payload_tag_map.get(tool_name, ()),
+                    parameter_names=parameter_names,
+                    max_count=1,
                 )
+                for target in payload_targets:
+                    target_url_text = str(target.get("url") or "").strip() or target_url
+                    target_param = str(target.get("param") or "").strip()
+                    summary_text = str(tool_reason_map.get(tool_name) or "参数标签驱动 {} 探针".format(tool_name))
+                    if target_param and target_param != "arl_probe":
+                        summary_text = "{} param={}".format(summary_text, target_param)
+                    plan.append(
+                        {
+                            "tool": tool_name,
+                            "params": {
+                                "url": target_url_text,
+                                "method": "get",
+                                "allow_redirects": True,
+                            },
+                            "summary": summary_text[:160],
+                        }
+                    )
+                    if len(plan) >= budget:
+                        break
 
         if not plan and ("input" in param_tags or parameter_names):
             fallback_probe_url = cls._build_probe_url_with_payload(target_url, "' OR '1'='1") or target_url
@@ -11328,14 +11440,39 @@ class WebSiteFetch(object):
         url_text = str(target_url or "").strip()
         payload_type_text = str(payload_type or "").strip().lower()
         payload_text = str(payload or "").strip()
+        item = candidate if isinstance(candidate, dict) else {}
         if not url_text:
             return []
 
         plan = []
         if payload_type_text in {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "replay"} and payload_text:
-            probe_url = cls._build_probe_url_with_payload(url_text, payload_text)
-            if probe_url and probe_url != url_text:
-                probe_tool_name = "payload_probe" if payload_type_text == "replay" else payload_type_text
+            preferred_tags = {
+                "xss_probe": ("input",),
+                "sqli_probe": ("input",),
+                "cmdi_probe": ("command",),
+                "ssrf_probe": ("url", "host"),
+                "ssti_probe": ("template",),
+                "xxe_probe": ("xml",),
+                "replay": (),
+            }
+            api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+            parameter_names = list(api_surface_summary.get("parameter_names", []) or [])
+            payload_targets = cls._build_ai_pen_payload_probe_targets(
+                url_text,
+                payload_text,
+                preferred_tags=preferred_tags.get(payload_type_text, ()),
+                parameter_names=parameter_names,
+                max_count=max_steps,
+            )
+            probe_tool_name = "payload_probe" if payload_type_text == "replay" else payload_type_text
+            for target in payload_targets:
+                probe_url = str(target.get("url") or "").strip()
+                if not probe_url or probe_url == url_text:
+                    continue
+                summary_text = "fallback payload 探针重放"
+                target_param = str(target.get("param") or "").strip()
+                if target_param and target_param != "arl_probe":
+                    summary_text = "{} param={}".format(summary_text, target_param)
                 plan.append(
                     {
                         "tool": probe_tool_name,
@@ -11344,9 +11481,11 @@ class WebSiteFetch(object):
                             "method": "get",
                             "allow_redirects": True,
                         },
-                        "summary": "fallback payload 探针重放",
+                        "summary": summary_text[:160],
                     }
                 )
+                if len(plan) >= max(1, int(max_steps or 1)):
+                    break
         elif payload_type_text == "idor_probe":
             idor_targets = cls._build_idor_probe_targets(url_text, max_count=max_steps)
             for target in idor_targets:

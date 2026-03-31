@@ -2198,6 +2198,19 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("sqli_probe", tools)
         self.assertIn("xss_probe", tools)
 
+    def test_build_ai_pen_payload_probe_targets_prefers_tag_matched_parameter(self):
+        targets = WebSiteFetch._build_ai_pen_payload_probe_targets(
+            "https://example.com/api/user/detail?id=1&redirect=https://a.example&q=test",
+            "http://127.0.0.1/",
+            preferred_tags=["url", "host"],
+            parameter_names=["id", "redirect", "q"],
+            max_count=2,
+        )
+
+        self.assertTrue(bool(targets))
+        self.assertEqual("redirect", str(targets[0].get("param") or ""))
+        self.assertIn("redirect=http%3A%2F%2F127.0.0.1%2F", str(targets[0].get("url") or ""))
+
     def test_infer_tool_plan_for_replay_uses_param_orchestrator_path_traversal(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={
@@ -2235,6 +2248,26 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(plan))
         self.assertEqual("idor_probe", str(plan[0].get("tool") or ""))
         self.assertIn("id=101", str(plan[0].get("params", {}).get("url", "") or ""))
+
+    def test_fallback_tool_plan_for_ssrf_targets_redirect_parameter_first(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/redirect?id=1&redirect=https://safe.example/path",
+            payload_type="ssrf_probe",
+            payload="http://127.0.0.1/",
+            max_steps=2,
+            candidate={
+                "target": "https://example.com/redirect?id=1&redirect=https://safe.example/path",
+                "api_surface_summary": {
+                    "parameter_names": ["id", "redirect"],
+                },
+            },
+            body_text="",
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertEqual("ssrf_probe", str(plan[0].get("tool") or ""))
+        self.assertIn("redirect=http%3A%2F%2F127.0.0.1%2F", str(plan[0].get("params", {}).get("url", "") or ""))
+        self.assertIn("param=redirect", str(plan[0].get("summary") or ""))
 
     def test_build_auth_protocol_probe_targets_covers_openid_family(self):
         targets = WebSiteFetch._build_auth_protocol_probe_targets(
