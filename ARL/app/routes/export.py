@@ -176,6 +176,9 @@ AI_PEN_TEST_EXPORT_PROJECTION = {
     "request_url": 1,
     "request_path": 1,
     "request_packet": 1,
+    "request_template_mode": 1,
+    "request_template_content_type": 1,
+    "request_template_summary": 1,
     "evidence_snippet": 1,
     "http_status": 1,
     "response_hash_diff": 1,
@@ -2854,6 +2857,7 @@ def _extract_ai_pen_rows(task_ids):
             payload_type = sanitize_excel_value(item.get("payload_type", "")).strip()
             payload = sanitize_excel_value(item.get("payload", "")).strip()
             request_packet = _truncate_report_text(item.get("request_packet", ""), 1200)
+            request_template_summary = _truncate_report_text(item.get("request_template_summary", ""), 400)
             confidence = sanitize_excel_value(item.get("confidence", "")).strip()
             reason = _truncate_report_text(item.get("reason", ""), 800)
             tool_trace = _truncate_report_text(item.get("tool_trace", ""), 600)
@@ -2910,6 +2914,7 @@ def _extract_ai_pen_rows(task_ids):
                 payload_type,
                 payload,
                 request_packet,
+                request_template_summary,
                 reason,
                 tool_trace,
                 ai_plan_text,
@@ -2942,15 +2947,16 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "J": 14.0,
         "K": 24.0,
         "L": 72.0,
-        "M": 72.0,
+        "M": 42.0,
         "N": 72.0,
         "O": 52.0,
         "P": 42.0,
         "Q": 80.0,
         "R": 80.0,
-        "S": 12.0,
-        "T": 64.0,
-        "U": 21.0,
+        "S": 80.0,
+        "T": 12.0,
+        "U": 64.0,
+        "V": 21.0,
     }.items():
         ws.column_dimensions[key].width = width
 
@@ -2967,6 +2973,7 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "探针类型",
         "Payload",
         "Request请求包",
+        "请求模板摘要",
         "说明",
         "工具轨迹",
         "AI规划摘要",

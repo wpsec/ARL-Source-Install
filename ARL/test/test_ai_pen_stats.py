@@ -336,6 +336,10 @@ class TestAiPenStats(unittest.TestCase):
                     "confidence": 0.93,
                     "http_status": 200,
                     "session_auth_hit": True,
+                    "request_template_mode": "form_data",
+                    "request_template_content_type": "application/x-www-form-urlencoded",
+                    "request_template_params": ["username", "password"],
+                    "request_template_summary": "mode=form_data | content_type=application/x-www-form-urlencoded | params=username,password",
                     "reason": "登录后访问 dashboard 成功",
                 },
                 {
@@ -359,6 +363,11 @@ class TestAiPenStats(unittest.TestCase):
 
         self.assertEqual("a1", entries[0]["result_id"])
         self.assertEqual("verified", entries[0]["decision"])
+        self.assertEqual("form_data", entries[0]["request_template_mode"])
+        self.assertEqual(
+            "mode=form_data | content_type=application/x-www-form-urlencoded | params=username,password",
+            entries[0]["request_template_summary"],
+        )
         self.assertIn("优先接手", entries[0]["focus_reason"])
         self.assertGreater(entries[0]["priority_score"], entries[1]["priority_score"])
 
@@ -381,6 +390,10 @@ class TestAiPenStats(unittest.TestCase):
                 "risk_name": "API文档入口",
                 "confidence": 0.91,
                 "http_status": 200,
+                "request_template_mode": "json_data",
+                "request_template_content_type": "application/json",
+                "request_template_params": ["query", "page"],
+                "request_template_summary": "mode=json_data | content_type=application/json | params=query,page",
                 "reason": "开放 API schema",
             },
             {
@@ -400,6 +413,9 @@ class TestAiPenStats(unittest.TestCase):
                 "risk_name": "JWT协议入口",
                 "confidence": 0.67,
                 "http_status": 200,
+                "request_template_mode": "query",
+                "request_template_params": ["token"],
+                "request_template_summary": "mode=query | params=token",
                 "reason": "仅协议元数据可访问",
             },
             {
@@ -420,6 +436,10 @@ class TestAiPenStats(unittest.TestCase):
                 "risk_name": "WebSocket入口",
                 "confidence": 0.55,
                 "http_status": 101,
+                "request_template_mode": "body",
+                "request_template_content_type": "application/xml",
+                "request_template_params": ["root"],
+                "request_template_summary": "mode=body | content_type=application/xml | params=root",
                 "reason": "握手存在但语义待确认",
             },
         ]
@@ -442,6 +462,8 @@ class TestAiPenStats(unittest.TestCase):
         self.assertTrue(any(item.get("name") == "api_doc_probe" for item in data["capability_benchmarks"]["payload_type"]))
         self.assertTrue(any(item.get("name") == "realtime_channel_surface" for item in data["capability_benchmarks"]["high_value_family"]))
         self.assertTrue(any(item.get("name") == "mcp_websocket_probe" for item in data["capability_benchmarks"]["verification_step"]))
+        self.assertTrue(any(item.get("name") == "json_data" for item in data["request_template_mode"]))
+        self.assertTrue(any(item.get("name") == "json_data" for item in data["capability_benchmarks"]["request_template_mode"]))
         self.assertEqual(2, data["phase_f_readiness"]["summary"]["covered_count"])
         self.assertEqual(0, data["phase_f_readiness"]["summary"]["partial_count"])
         self.assertEqual(7, data["phase_f_readiness"]["summary"]["missing_count"])
@@ -449,6 +471,11 @@ class TestAiPenStats(unittest.TestCase):
         self.assertTrue("focus_reason" in data["engineer_focus_queue"][0])
         self.assertEqual("r1", data["engineer_focus_entries"][0]["result_id"])
         self.assertEqual("api_doc", data["engineer_focus_entries"][0]["risk_type"])
+        self.assertEqual("json_data", data["engineer_focus_entries"][0]["request_template_mode"])
+        self.assertEqual(
+            "mode=json_data | content_type=application/json | params=query,page",
+            data["engineer_focus_entries"][0]["request_template_summary"],
+        )
         self.assertTrue("focus_reason" in data["engineer_focus_entries"][0])
 
 

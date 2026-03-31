@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.38`（截至 `2026-03-31`）
+- 文档同步版本：`v4.5.40`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -387,7 +387,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - 每类至少 1 条标准化主动验证链
 - 每类至少 1 套“成立证据”标准
 
-当前实现状态（截至 2026-03-31）：
+当前实现状态（截至 2026-04-01）：
 
 - `C-Core（主动验证能力）`：基本完成
   - 已具备：前端 JS / runtime API / 表单字段（含隐藏字段）提取
@@ -401,8 +401,10 @@ AI 渗透测试至少要覆盖以下能力族：
   - 已补能力：`path_traversal_probe / web_policy_probe / socketio_probe / websocket_probe` 已接入主链
   - 已补能力：`parameter_probe_families` 已可把参数标签统一映射为 `IDOR/路径穿越/SSRF/JWT/上传下载/SQLi/XSS` 家族，并驱动低副作用参数编排
   - 已补能力：参数感知 payload 编排已可优先命中 query 参数，并在无 query 时回退利用 `sample_interfaces` 的 `GET/POST` 线索构造真实接口探针
+  - 已补能力：`request_template_mode/content_type/params/summary` 已随验证结果落库，并接入统计、工程师优先入口与导出链，能直接区分 `query/form/json/body` 模板入口
+  - 已补能力：`受控 payload 模板库` 已落地，`SQLi/XSS/SSRF/CMDI/SSTI/XXE` 会按 `request_mode/content_type` 选择受控变体；AI planner 也可回 `payload_variant`，由执行链安全映射到模板 payload
   - 已补能力：已修正 `redirect -> dir` 子串误判，减少 URL 跳转参数被错误打到路径穿越链的噪声
-  - 差距：参数类型标签 -> payload 编排 -> 全链路验证 仍未统一为单引擎
+  - 差距：参数类型标签 -> payload 编排 -> proof/evidence 判定 仍未完全统一为单引擎
   - 差距：`垂直越权` 及部分实时通道深测能力仍需补强
   - 差距：`CORS/Cache/Security Headers/Error Exposure` 虽已有探针，但统一 proof engine 仍未完全收口
 
@@ -479,11 +481,12 @@ AI 渗透测试至少要覆盖以下能力族：
   - 平均轮数
   - 平均工具调用数
 
-当前状态（截至 `2026-03-31`）：
+当前状态（截至 `2026-04-01`）：
 
 - `/ai_pen_test/stats/` 已输出 `quant_metrics`、`capability_benchmarks`、`phase_f_readiness`、`engineer_focus_queue`
 - 已可统计：覆盖率、误报率、成功率、平均轮数、平均工具调用数
 - 已可按 `risk_type / payload_type / high_value_family / verification_step` 查看分能力 benchmark
+- 已可按 `request_template_mode` 查看模板入口分布，并在工程师入口列表中直接查看 `request_template_summary`
 - 已可输出“工程师优先队列”及“具体入口 Top 列表”所需的 readiness/priority 数据面
 - 差距：登录/JWT/API文档/Actuator/IDOR/SQLi/XSS/文件/SSRF 靶场与标注样本尚未建立
 - 结论：`指标数据面已具备，靶场基线未完成`
@@ -503,7 +506,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - `会话/认证可打`
 - `弱口令字典可受控接入`
 
-当前口径结论（截至 `2026-03-31`）：
+当前口径结论（截至 `2026-04-01`）：
 
 - 按阶段 C 最低口径：`已达标，可用`
 - 按整份方案最终口径：`未全部完成`
@@ -514,7 +517,7 @@ AI 渗透测试至少要覆盖以下能力族：
 建议下一步优先级：
 
 1. 阶段 C / 7：完成参数单引擎与受控字典资源封装，继续提升“真漏洞入口”挖掘能力
-   - 当前已完成：参数探针家族、受控字典 preview 资源封装、接口级 payload 编排
-   - 下一步重点：统一 `JSON/body` 参数模板与 proof engine，继续降低误报
+   - 当前已完成：参数探针家族、受控字典 preview 资源封装、接口级 payload 编排、请求模板摘要落库、受控 payload 模板库与 `payload_variant` 选择
+   - 下一步重点：统一 `payload_variant -> proof_type/evidence_summary`，继续降低误报
 2. 阶段 F：建立最小靶场与正负样例集，把误报率和入口价值真正量化
 3. 阶段 A：继续把控制权从 `commonTask` 挪到 runtime，减少执行路径写死

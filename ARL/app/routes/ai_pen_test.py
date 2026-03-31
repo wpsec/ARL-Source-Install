@@ -35,6 +35,8 @@ base_search_fields = {
     "verification_step": fields.String(description="验证阶段(http_fetch_replay/mcp_http_probe/mcp_idor_probe/mcp_api_doc_probe/mcp_jwt_probe/mcp_websocket_probe)"),
     "payload_type": fields.String(description="探针类型(xss_probe/sqli_probe/idor_probe/api_doc_probe等)"),
     "high_value_family": fields.String(description="高价值目标家族(api_doc_surface/token_auth_flow/login_entry_surface等)"),
+    "request_template_mode": fields.String(description="请求模板模式(query/form_data/json_data/body)"),
+    "request_template_content_type": fields.String(description="请求模板Content-Type"),
     "tool_plan_source": fields.String(description="工具计划来源(ai_plan/retry_history/inferred)"),
     "stop_reason": fields.String(description="Agent/MCP 停止原因(final_decision/manual_required/budget_exhausted/timeout/error)"),
     "reason": fields.String(description="验证说明"),
@@ -577,6 +579,27 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
         except Exception:
             confidence = 0.0
 
+        request_template_mode = str(item.get("request_template_mode", "") or "").strip()
+        request_template_content_type = str(item.get("request_template_content_type", "") or "").strip()
+        raw_template_params = item.get("request_template_params")
+        request_template_params = []
+        if not isinstance(raw_template_params, (list, tuple)):
+            raw_template_params = []
+        for param_name in list(raw_template_params or []):
+            param_text = str(param_name or "").strip()
+            if param_text and param_text not in request_template_params:
+                request_template_params.append(param_text)
+        request_template_summary = str(item.get("request_template_summary", "") or "").strip()
+        if not request_template_summary:
+            summary_parts = []
+            if request_template_mode:
+                summary_parts.append("mode={}".format(request_template_mode))
+            if request_template_content_type:
+                summary_parts.append("content_type={}".format(request_template_content_type))
+            if request_template_params:
+                summary_parts.append("params={}".format(",".join(request_template_params[:8])))
+            request_template_summary = " | ".join(summary_parts)
+
         score = int(round(confidence * 30))
         score += min(24, max(0, int(high_value_rank / 4)))
         if decision == "verified":
@@ -605,9 +628,15 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             score += 12
         if bool(item.get("external_tool_hit")):
             score += 8
+        if request_template_mode in {"json_data", "form_data", "body"}:
+            score += 6
+        elif request_template_mode == "query":
+            score += 2
 
         if decision == "verified":
             focus_reason = "已获得较高置信验证结果，建议工程师优先接手"
+        elif request_template_mode in {"json_data", "form_data", "body"} and request_template_summary:
+            focus_reason = "已命中结构化接口模板，适合作为优先复核入口"
         elif bool(item.get("session_auth_hit")):
             focus_reason = "已命中登录后资源访问，具备进一步扩展价值"
         elif str(item.get("high_value_family", "") or "").strip():
@@ -625,6 +654,10 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
                 "payload_type": str(item.get("payload_type", "") or "").strip(),
                 "verification_step": str(item.get("verification_step", "") or "").strip(),
                 "high_value_family": str(item.get("high_value_family", "") or "").strip(),
+                "request_template_mode": request_template_mode,
+                "request_template_content_type": request_template_content_type,
+                "request_template_params": request_template_params[:8],
+                "request_template_summary": request_template_summary,
                 "decision": decision,
                 "status": status,
                 "confidence": float("{:.4f}".format(max(0.0, confidence))),
@@ -778,6 +811,14 @@ def _retry_records(result_docs):
                 "request_headers": dict(verify_result.get("request_headers") or {}) if isinstance(verify_result.get("request_headers"), dict) else {},
                 "request_body": str(verify_result.get("request_body", "") or "").replace("\r\n", "\n").replace("\r", "\n")[:2600],
                 "request_packet": str(verify_result.get("request_packet", "") or "").replace("\r\n", "\n").replace("\r", "\n")[:2600],
+                "request_template_mode": str(verify_result.get("request_template_mode", "") or "").strip(),
+                "request_template_content_type": str(verify_result.get("request_template_content_type", "") or "").strip(),
+                "request_template_params": (
+                    list(verify_result.get("request_template_params", []) or [])[:8]
+                    if isinstance(verify_result.get("request_template_params"), (list, tuple))
+                    else []
+                ),
+                "request_template_summary": str(verify_result.get("request_template_summary", "") or "").strip(),
                 "verification_step": str(verify_result.get("verification_step", "") or "").strip(),
                 "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
                 "http_status": int(verify_result.get("http_status", 0) or 0),
@@ -1077,6 +1118,7 @@ class StatsAiPenTest(ARLResource):
         risk_type = _agg_group("risk_type")
         verification_step = _agg_group("verification_step")
         high_value_family = _agg_group("high_value_family")
+        request_template_mode = _agg_group("request_template_mode")
         tool_plan_source = _agg_group("tool_plan_source")
         stop_reason = _agg_group("stop_reason")
         metric_rows = list(
@@ -1091,6 +1133,10 @@ class StatsAiPenTest(ARLResource):
                     "verification_step": 1,
                     "high_value_family": 1,
                     "high_value_family_rank": 1,
+                    "request_template_mode": 1,
+                    "request_template_content_type": 1,
+                    "request_template_params": 1,
+                    "request_template_summary": 1,
                     "target": 1,
                     "vuln_url": 1,
                     "reason": 1,
@@ -1112,6 +1158,7 @@ class StatsAiPenTest(ARLResource):
             "payload_type": _build_ai_pen_group_benchmarks(metric_rows, "payload_type"),
             "high_value_family": _build_ai_pen_group_benchmarks(metric_rows, "high_value_family"),
             "verification_step": _build_ai_pen_group_benchmarks(metric_rows, "verification_step"),
+            "request_template_mode": _build_ai_pen_group_benchmarks(metric_rows, "request_template_mode"),
         }
         phase_f_readiness = _build_ai_pen_phase_f_readiness(metric_rows)
         engineer_focus_queue = _build_ai_pen_engineer_focus_queue(phase_f_readiness)
@@ -1128,6 +1175,7 @@ class StatsAiPenTest(ARLResource):
                 "risk_type": risk_type,
                 "verification_step": verification_step,
                 "high_value_family": high_value_family,
+                "request_template_mode": request_template_mode,
                 "tool_plan_source": tool_plan_source,
                 "stop_reason": stop_reason,
                 "quant_metrics": quant_metrics,

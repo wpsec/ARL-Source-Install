@@ -959,6 +959,9 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertGreaterEqual(summary.get("security_scheme_count", 0), 1)
         self.assertIn("tenant", summary.get("parameter_names", []))
         self.assertIn("username", summary.get("parameter_names", []))
+        sample_interfaces = list(summary.get("sample_interfaces", []) or [])
+        self.assertTrue(any(item.get("mode") == "json_data" for item in sample_interfaces if isinstance(item, dict)))
+        self.assertTrue(any("application/json" in str(item.get("content_type") or "") for item in sample_interfaces if isinstance(item, dict)))
 
     def test_api_doc_summary_text_contains_structure(self):
         summary_text = WebSiteFetch._format_api_doc_summary_text(
@@ -1178,6 +1181,16 @@ class TestAiPenJsContext(unittest.TestCase):
                 "auth_path_count": 1,
                 "auth_paths": ["/api/login"],
                 "parameter_names": ["tenant", "username", "password"],
+                "sample_interfaces": [
+                    {
+                        "method": "POST",
+                        "path": "/api/login",
+                        "params": ["tenant", "username", "password"],
+                        "mode": "json_data",
+                        "content_type": "application/json",
+                        "source": "api_doc",
+                    }
+                ],
                 "security_scheme_count": 1,
             },
             js_api_targets=[
@@ -1195,6 +1208,7 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertGreaterEqual(summary.get("object_id_like_count", 0), 1)
         self.assertGreaterEqual(summary.get("security_scheme_count", 0), 1)
         self.assertIn("token", summary.get("parameter_names", []))
+        self.assertTrue(any(str(item.get("mode") or "") == "json_data" for item in list(summary.get("sample_interfaces", []) or []) if isinstance(item, dict)))
 
     def test_api_surface_summary_merges_runtime_form_and_hidden_parameters(self):
         summary = WebSiteFetch._build_api_surface_summary(
@@ -1256,12 +1270,31 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("jwt_probe", probe_families)
         self.assertIn("upload_probe", probe_families)
         self.assertIn("sqli_probe", probe_families)
+        self.assertTrue(any(str(item.get("mode") or "") == "form_data" for item in list(summary.get("sample_interfaces", []) or []) if isinstance(item, dict)))
 
     def test_tag_ai_pen_parameter_name_does_not_misclassify_redirect_as_file_path(self):
         tags = WebSiteFetch._tag_ai_pen_parameter_name("redirect")
 
         self.assertIn("url", tags)
         self.assertNotIn("file_path", tags)
+
+    def test_api_surface_summary_marks_runtime_json_interface_mode(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            runtime_api_calls=[
+                {
+                    "method": "POST",
+                    "url": "https://example.com/api/search",
+                    "request_headers": {"Content-Type": "application/json"},
+                    "request_body": '{"q":"alice","page":1}',
+                }
+            ]
+        )
+
+        sample_interfaces = [item for item in list(summary.get("sample_interfaces", []) or []) if isinstance(item, dict)]
+        self.assertTrue(bool(sample_interfaces))
+        self.assertEqual("json_data", str(sample_interfaces[0].get("mode") or ""))
+        self.assertEqual("application/json", str(sample_interfaces[0].get("content_type") or ""))
+        self.assertIn("q", list(sample_interfaces[0].get("params", []) or []))
 
     def test_collect_runtime_observation_merges_runtime_form_and_hidden_into_api_surface(self):
         observation = WebSiteFetch._collect_ai_pen_runtime_observation(
@@ -2043,6 +2076,28 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("web_policy_probe", payload_type)
         self.assertIn("origin=", payload)
 
+    def test_select_ai_pen_controlled_payload_template_prefers_json_variant(self):
+        template = WebSiteFetch._select_ai_pen_controlled_payload_template(
+            payload_type="sqli_probe",
+            request_mode="json_data",
+            content_type="application/json",
+        )
+
+        self.assertEqual("boolean_json_string", str(template.get("variant") or ""))
+        self.assertEqual("\" OR \"1\"=\"1", str(template.get("payload") or ""))
+        self.assertIn("boolean_based", list(template.get("proof_candidates", []) or []))
+
+    def test_select_ai_pen_controlled_payload_template_prefers_xml_body_variant(self):
+        template = WebSiteFetch._select_ai_pen_controlled_payload_template(
+            payload_type="xxe_probe",
+            request_mode="body",
+            content_type="application/xml",
+        )
+
+        self.assertEqual("entity_file_read_hosts", str(template.get("variant") or ""))
+        self.assertIn("etc/hosts", str(template.get("payload") or ""))
+        self.assertIn("entity_file_read", list(template.get("proof_candidates", []) or []))
+
     def test_infer_tool_plan_uses_config_probe_for_actuator_endpoint(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={"target": "https://example.com/actuator/env"},
@@ -2233,6 +2288,83 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("post", str(targets[0].get("method") or ""))
         self.assertEqual("q", str(targets[0].get("param") or ""))
         self.assertEqual("<svg/onload=alert(1)>", str(targets[0].get("form_data", {}).get("q") or ""))
+        self.assertEqual(1, targets[0].get("form_data", {}).get("page"))
+
+    def test_build_ai_pen_sample_interface_payload_targets_supports_json_probe(self):
+        targets = WebSiteFetch._build_ai_pen_sample_interface_payload_targets(
+            "https://example.com/search",
+            "' OR '1'='1",
+            preferred_tags=["input"],
+            api_surface_summary={
+                "sample_interfaces": [
+                    {
+                        "method": "POST",
+                        "path": "/api/search",
+                        "params": ["q", "page"],
+                        "mode": "json_data",
+                        "content_type": "application/json",
+                        "source": "api_doc",
+                    }
+                ]
+            },
+            max_count=1,
+        )
+
+        self.assertTrue(bool(targets))
+        self.assertEqual("post", str(targets[0].get("method") or ""))
+        self.assertEqual("q", str(targets[0].get("param") or ""))
+        self.assertEqual("' OR '1'='1", str(targets[0].get("json_data", {}).get("q") or ""))
+        self.assertEqual("application/json", str(targets[0].get("headers", {}).get("Content-Type") or ""))
+        self.assertEqual(1, targets[0].get("json_data", {}).get("page"))
+
+    def test_build_ai_pen_sample_interface_payload_targets_supports_xml_body_probe(self):
+        payload = '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><root>&xxe;</root>'
+        targets = WebSiteFetch._build_ai_pen_sample_interface_payload_targets(
+            "https://example.com/xml",
+            payload,
+            preferred_tags=["xml"],
+            api_surface_summary={
+                "sample_interfaces": [
+                    {
+                        "method": "POST",
+                        "path": "/api/xml",
+                        "params": ["xml"],
+                        "mode": "body",
+                        "content_type": "application/xml",
+                        "source": "api_doc",
+                    }
+                ]
+            },
+            max_count=1,
+        )
+
+        self.assertTrue(bool(targets))
+        self.assertEqual("post", str(targets[0].get("method") or ""))
+        self.assertEqual("xml", str(targets[0].get("param") or ""))
+        self.assertEqual(payload, str(targets[0].get("body_data") or ""))
+        self.assertEqual("application/xml", str(targets[0].get("headers", {}).get("Content-Type") or ""))
+
+    def test_build_ai_pen_sample_interface_payload_targets_builds_query_scaffold(self):
+        targets = WebSiteFetch._build_ai_pen_sample_interface_payload_targets(
+            "https://example.com/search",
+            "' OR '1'='1",
+            preferred_tags=["input"],
+            api_surface_summary={
+                "sample_interfaces": [
+                    {
+                        "method": "GET",
+                        "path": "/api/search",
+                        "params": ["q", "page"],
+                        "source": "api_doc",
+                    }
+                ]
+            },
+            max_count=1,
+        )
+
+        self.assertTrue(bool(targets))
+        self.assertIn("q=%27+OR+%271%27%3D%271", str(targets[0].get("url") or ""))
+        self.assertIn("page=1", str(targets[0].get("url") or ""))
 
     def test_infer_tool_plan_for_replay_uses_param_orchestrator_path_traversal(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
@@ -2292,6 +2424,36 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("redirect=http%3A%2F%2F127.0.0.1%2F", str(plan[0].get("params", {}).get("url", "") or ""))
         self.assertIn("param=redirect", str(plan[0].get("summary") or ""))
 
+    def test_fallback_tool_plan_for_empty_sqli_payload_uses_controlled_json_variant(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/search",
+            payload_type="sqli_probe",
+            payload="",
+            max_steps=1,
+            candidate={
+                "target": "https://example.com/search",
+                "api_surface_summary": {
+                    "sample_interfaces": [
+                        {
+                            "method": "POST",
+                            "path": "/api/search",
+                            "params": ["q", "page"],
+                            "mode": "json_data",
+                            "content_type": "application/json",
+                            "source": "api_doc",
+                        }
+                    ]
+                },
+            },
+            body_text="",
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertEqual("post", str(plan[0].get("params", {}).get("method") or ""))
+        self.assertEqual("application/json", str(plan[0].get("params", {}).get("headers", {}).get("Content-Type") or ""))
+        self.assertEqual("\" OR \"1\"=\"1", str(plan[0].get("params", {}).get("json_data", {}).get("q") or ""))
+        self.assertIn("variant=boolean_json_string", str(plan[0].get("summary") or ""))
+
     def test_param_orchestrated_tool_plan_uses_post_sample_interface_when_url_has_no_query(self):
         summary = WebSiteFetch._build_api_surface_summary(
             js_api_targets=[
@@ -2316,6 +2478,123 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn(str(plan[0].get("tool") or ""), {"sqli_probe", "xss_probe"})
         self.assertEqual("post", str(plan[0].get("params", {}).get("method") or ""))
         self.assertEqual("<svg/onload=alert(1)>", str(plan[1].get("params", {}).get("form_data", {}).get("q") or ""))
+
+    def test_param_orchestrated_tool_plan_uses_json_sample_interface_when_available(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            api_doc_summary={
+                "path_count": 1,
+                "sample_paths": ["/api/search"],
+                "parameter_names": ["q", "page"],
+                "sample_interfaces": [
+                    {
+                        "method": "POST",
+                        "path": "/api/search",
+                        "params": ["q", "page"],
+                        "mode": "json_data",
+                        "content_type": "application/json",
+                        "source": "api_doc",
+                    }
+                ],
+            }
+        )
+
+        plan = WebSiteFetch._build_ai_pen_param_orchestrated_tool_plan(
+            candidate={
+                "target": "https://example.com/search",
+                "api_surface_summary": summary,
+            },
+            max_steps=2,
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertEqual("post", str(plan[0].get("params", {}).get("method") or ""))
+        self.assertEqual("application/json", str(plan[0].get("params", {}).get("headers", {}).get("Content-Type") or ""))
+        self.assertTrue(bool(plan[0].get("params", {}).get("json_data")))
+        self.assertEqual("1", str(plan[0].get("params", {}).get("json_data", {}).get("page")))
+        self.assertIn("variant=", str(plan[0].get("summary") or ""))
+        self.assertIn("expect=", str(plan[0].get("summary") or ""))
+
+    def test_param_orchestrated_tool_plan_uses_xml_body_sample_interface_when_available(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            api_doc_summary={
+                "path_count": 1,
+                "sample_paths": ["/api/xml"],
+                "parameter_names": ["xml"],
+                "sample_interfaces": [
+                    {
+                        "method": "POST",
+                        "path": "/api/xml",
+                        "params": ["xml"],
+                        "mode": "body",
+                        "content_type": "application/xml",
+                        "source": "api_doc",
+                    }
+                ],
+            }
+        )
+
+        plan = WebSiteFetch._build_ai_pen_param_orchestrated_tool_plan(
+            candidate={
+                "target": "https://example.com/xml",
+                "api_surface_summary": summary,
+            },
+            max_steps=1,
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertEqual("xxe_probe", str(plan[0].get("tool") or ""))
+        self.assertEqual("post", str(plan[0].get("params", {}).get("method") or ""))
+        self.assertEqual("application/xml", str(plan[0].get("params", {}).get("headers", {}).get("Content-Type") or ""))
+        self.assertIn("<!DOCTYPE root", str(plan[0].get("params", {}).get("body_data") or ""))
+        self.assertIn("variant=entity_file_read_hosts", str(plan[0].get("summary") or ""))
+        self.assertIn("proof=entity_file_read", str(plan[0].get("summary") or ""))
+
+    def test_build_ai_pen_request_packet_prefers_tool_call_json_payload(self):
+        packet = WebSiteFetch._build_ai_pen_request_packet(
+            target_url="https://example.com/search",
+            payload_type="sqli_probe",
+            payload="' OR '1'='1",
+            verification_step="mcp_sqli_probe",
+            tool_calls=[
+                {
+                    "tool": "sqli_probe",
+                    "params": {
+                        "url": "https://example.com/api/search",
+                        "method": "post",
+                        "headers": {"Content-Type": "application/json"},
+                        "json_data": {"q": "' OR '1'='1", "page": 1},
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual("POST", str(packet.get("method") or ""))
+        self.assertEqual("application/json", str(packet.get("headers", {}).get("Content-Type") or ""))
+        self.assertIn('"q": "\' OR \'1\'=\'1"', str(packet.get("body") or ""))
+
+    def test_build_ai_pen_request_template_summary_detects_xml_body_mode(self):
+        packet = WebSiteFetch._build_ai_pen_request_packet(
+            target_url="https://example.com/xml",
+            payload_type="xxe_probe",
+            payload='<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><root>&xxe;</root>',
+            verification_step="mcp_xxe_probe",
+            tool_calls=[
+                {
+                    "tool": "xxe_probe",
+                    "params": {
+                        "url": "https://example.com/api/xml",
+                        "method": "post",
+                        "headers": {"Content-Type": "application/xml"},
+                        "body_data": '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><root>&xxe;</root>',
+                    },
+                }
+            ],
+        )
+        summary = WebSiteFetch._build_ai_pen_request_template_summary(packet)
+
+        self.assertEqual("body", str(summary.get("mode") or ""))
+        self.assertEqual("application/xml", str(summary.get("content_type") or ""))
+        self.assertTrue(any(str(item or "").strip().lower() == "root" for item in list(summary.get("param_names", []) or [])))
 
     def test_build_auth_protocol_probe_targets_covers_openid_family(self):
         targets = WebSiteFetch._build_auth_protocol_probe_targets(

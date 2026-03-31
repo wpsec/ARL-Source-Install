@@ -3,6 +3,11 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-04-01（v4.5.10 ~ v4.5.40）
+
+- `[v4.5.40]` AI渗透 `受控 payload 模板库` 主干落地：新增 `xss/sqli/ssrf/cmdi/ssti/xxe` 等探针家族的受控模板目录与模板选择器，会按 `request_mode/content_type` 优先选择更贴近接口形态的 payload 变体（如 `json_data` 优先 `boolean_json_string`、`application/xml` 优先 `entity_file_read_hosts`）；同时 AI planner 请求新增 `controlled_payload_variants`，模型可回 `payload_variant` 由执行链安全映射到受控模板，不再依赖自由 payload 生成
+- `[v4.5.40]` AI渗透 `请求模板摘要` 与工程师视图打通：`request_template_mode/content_type/params/summary` 已随验证结果落库，并接入 `/ai_pen_test/stats/` 的 `request_template_mode` 分组/benchmark、`engineer_focus_entries` 结构化入口视图与导出“请求模板摘要”列，便于直接区分 `query/form/json/body` 入口及优先复核结构化接口
+
 ## 2026-03-31（v4.5.10 ~ v4.5.38）
 
 - `[v4.5.38]` AI渗透 `参数单引擎` 接口级 payload 编排继续推进：新增 `sample_interface` 目标构造，参数驱动编排在当前 URL 无 query 或仅命中通用 fallback 时，会优先利用 `sample_interfaces` 里的 `GET/POST` 线索生成更贴近真实接口的低副作用探针；同时 fallback payload 重放也同步支持接口级参数命中，减少“一律改 arl_probe”带来的噪声
