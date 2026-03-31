@@ -39,6 +39,7 @@ base_search_fields = {
     "proof_type": fields.String(description="统一证据类型"),
     "unauth_access_type": fields.String(description="未授权直访证据类型(unauth_admin_portal/unauth_profile_data等)"),
     "unauth_probe_summary": fields.String(description="未授权复核摘要(targets/blocked/login_wall/health_like等)"),
+    "unauth_negative_type": fields.String(description="未授权负信号类型(auth_blocked/login_wall/guarded_mixed/health_only)"),
     "high_value_family": fields.String(description="高价值目标家族(api_doc_surface/token_auth_flow/login_entry_surface等)"),
     "request_template_mode": fields.String(description="请求模板模式(query/form_data/json_data/body)"),
     "request_template_content_type": fields.String(description="请求模板Content-Type"),
@@ -432,6 +433,35 @@ def _build_ai_pen_group_counts(rows, field_name: str, max_items: int = 20):
     return rows[:max_items]
 
 
+def _build_ai_pen_unauth_negative_summary(rows):
+    items = [item for item in list(rows or []) if isinstance(item, dict)]
+    total_count = len(items)
+    distribution = _build_ai_pen_group_counts(items, "unauth_negative_type", max_items=8)
+    negative_signal_count = sum(int(item.get("count", 0) or 0) for item in distribution)
+    protected_count = sum(
+        int(item.get("count", 0) or 0)
+        for item in distribution
+        if str(item.get("name") or "").strip() in {"auth_blocked", "login_wall", "guarded_mixed"}
+    )
+    health_only_count = sum(
+        int(item.get("count", 0) or 0)
+        for item in distribution
+        if str(item.get("name") or "").strip() == "health_only"
+    )
+    dominant_negative_type = str(distribution[0].get("name") or "").strip() if distribution else ""
+    return {
+        "total_count": total_count,
+        "negative_signal_count": negative_signal_count,
+        "negative_signal_rate": _safe_ratio(negative_signal_count, total_count),
+        "protected_count": protected_count,
+        "protected_rate": _safe_ratio(protected_count, total_count),
+        "health_only_count": health_only_count,
+        "health_only_rate": _safe_ratio(health_only_count, total_count),
+        "dominant_negative_type": dominant_negative_type,
+        "distribution": distribution,
+    }
+
+
 def _classify_ai_pen_proof_family(proof_type, payload_type=""):
     if hasattr(WebSiteFetch, "_classify_ai_pen_proof_family"):
         try:
@@ -522,16 +552,8 @@ def _build_ai_pen_phase_f_readiness(rows):
         conclusive_count = verified_count + likely_fp_count
         conclusive_rate = _safe_ratio(conclusive_count, total_count)
         coverage_rate = float(quant_metrics["coverage"]["coverage_rate"])
-
-        if total_count <= 0:
-            status = "missing"
-            missing_count += 1
-        elif coverage_rate >= 0.8 and conclusive_rate >= 0.5:
-            status = "covered"
-            covered_count += 1
-        else:
-            status = "partial"
-            partial_count += 1
+        unauth_negative_summary = _build_ai_pen_unauth_negative_summary(matched_rows)
+        dominant_unauth_negative_type = str(unauth_negative_summary.get("dominant_negative_type") or "").strip()
 
         priority_score = (
             (verified_count * 12)
@@ -540,13 +562,38 @@ def _build_ai_pen_phase_f_readiness(rows):
             + int(round(conclusive_rate * 10))
             - (likely_fp_count * 4)
         )
+        if total_count <= 0:
+            status = "missing"
+        elif coverage_rate >= 0.8 and conclusive_rate >= 0.5:
+            status = "covered"
+        else:
+            status = "partial"
+        if (
+            status == "covered"
+            and verified_count <= 0
+            and manual_review_count <= 0
+            and dominant_unauth_negative_type in {"auth_blocked", "login_wall", "guarded_mixed", "health_only"}
+        ):
+            status = "partial"
+        if dominant_unauth_negative_type in {"auth_blocked", "login_wall", "guarded_mixed"} and verified_count <= 0:
+            priority_score -= 4 + int(round(float(unauth_negative_summary.get("protected_rate", 0.0) or 0.0) * 12))
+        elif dominant_unauth_negative_type == "health_only" and verified_count <= 0:
+            priority_score -= 2 + int(round(float(unauth_negative_summary.get("health_only_rate", 0.0) or 0.0) * 10))
+        if status == "missing":
+            missing_count += 1
         if status == "covered":
             priority_score += 10
+            covered_count += 1
         elif status == "partial":
             priority_score += 4
+            partial_count += 1
 
         if verified_count > 0:
             focus_reason = "已有 verified 命中，适合作为工程师优先入口"
+        elif dominant_unauth_negative_type in {"auth_blocked", "login_wall", "guarded_mixed"}:
+            focus_reason = "当前更多被鉴权拦截或登录墙阻断，优先级可后置"
+        elif dominant_unauth_negative_type == "health_only":
+            focus_reason = "当前主要命中健康检查/信息端点，建议继续补更高价值管理面"
         elif manual_review_count > 0 and coverage_rate >= 0.8:
             focus_reason = "覆盖充分但仍以人工复核为主，适合继续深挖"
         elif likely_fp_count > 0 and manual_review_count <= 0:
@@ -574,6 +621,10 @@ def _build_ai_pen_phase_f_readiness(rows):
                 "avg_turns": float(quant_metrics["budget_metrics"]["avg_turns"]),
                 "avg_tool_calls": float(quant_metrics["budget_metrics"]["avg_tool_calls"]),
                 "priority_score": priority_score,
+                "dominant_unauth_negative_type": dominant_unauth_negative_type,
+                "negative_signal_count": int(unauth_negative_summary["negative_signal_count"]),
+                "negative_signal_rate": float(unauth_negative_summary["negative_signal_rate"]),
+                "unauth_negative_summary": unauth_negative_summary,
                 "focus_reason": focus_reason,
                 "quant_metrics": quant_metrics,
             }
@@ -615,6 +666,9 @@ def _build_ai_pen_engineer_focus_queue(phase_f_readiness, max_items: int = 6):
                 "false_positive_rate": float(item.get("false_positive_rate", 0.0) or 0.0),
                 "avg_turns": float(item.get("avg_turns", 0.0) or 0.0),
                 "avg_tool_calls": float(item.get("avg_tool_calls", 0.0) or 0.0),
+                "dominant_unauth_negative_type": str(item.get("dominant_unauth_negative_type") or "").strip(),
+                "negative_signal_count": int(item.get("negative_signal_count", 0) or 0),
+                "negative_signal_rate": float(item.get("negative_signal_rate", 0.0) or 0.0),
                 "focus_reason": str(item.get("focus_reason") or "").strip(),
             }
         )
@@ -677,6 +731,7 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
         unauth_access_type = str(item.get("unauth_access_type", "") or "").strip()
         unauth_access_reason = str(item.get("unauth_access_reason", "") or "").strip()
         unauth_probe_summary = str(item.get("unauth_probe_summary", "") or "").strip()
+        unauth_negative_type = str(item.get("unauth_negative_type", "") or "").strip()
         if not proof_family and proof_type:
             proof_family = _classify_ai_pen_proof_family(
                 proof_type,
@@ -737,8 +792,10 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             score += 8
         if unauth_access_type == "unauth_health_endpoint":
             score -= 10
-        if unauth_probe_summary and ("blocked=" in unauth_probe_summary or "login_wall=" in unauth_probe_summary):
+        if unauth_negative_type in {"auth_blocked", "login_wall", "guarded_mixed"}:
             score -= 6
+        elif unauth_negative_type == "health_only":
+            score -= 4
 
         if unauth_access_type == "unauth_health_endpoint":
             focus_reason = "已观察到公开健康检查/信息端点，建议结合敏感管理面继续复核"
@@ -748,8 +805,14 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             focus_reason = "已获得可复核证据（{}），建议工程师优先接手".format(proof_type)
         elif decision == "verified":
             focus_reason = "已获得较高置信验证结果，建议工程师优先接手"
-        elif unauth_probe_summary and ("blocked=" in unauth_probe_summary or "login_wall=" in unauth_probe_summary):
+        elif unauth_negative_type == "auth_blocked":
+            focus_reason = "已完成未授权复核，主要被鉴权拦截"
+        elif unauth_negative_type == "login_wall":
+            focus_reason = "已完成未授权复核，主要回到登录页/登录墙"
+        elif unauth_negative_type == "guarded_mixed":
             focus_reason = "已完成未授权复核，当前更多被鉴权拦截或登录墙阻断"
+        elif unauth_negative_type == "health_only":
+            focus_reason = "已完成未授权复核，当前主要命中健康检查/信息端点"
         elif proof_family == "unauth_access" and (unauth_access_reason or proof_summary):
             focus_reason = "已观察到无登录直访线索，适合作为未授权入口优先复核"
         elif proof_type and proof_summary:
@@ -777,6 +840,7 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
                 "unauth_access_type": unauth_access_type,
                 "unauth_access_reason": unauth_access_reason[:240],
                 "unauth_probe_summary": unauth_probe_summary[:240],
+                "unauth_negative_type": unauth_negative_type,
                 "verification_step": str(item.get("verification_step", "") or "").strip(),
                 "high_value_family": str(item.get("high_value_family", "") or "").strip(),
                 "request_template_mode": request_template_mode,
@@ -964,6 +1028,7 @@ def _retry_records(result_docs):
                 "unauth_access_type": str(verify_result.get("unauth_access_type", "") or "").strip(),
                 "unauth_access_reason": str(verify_result.get("unauth_access_reason", "") or "").strip(),
                 "unauth_probe_summary": str(verify_result.get("unauth_probe_summary", "") or "").strip(),
+                "unauth_negative_type": str(verify_result.get("unauth_negative_type", "") or "").strip(),
                 "proof_signals": (
                     list(verify_result.get("proof_signals", []) or [])[:8]
                     if isinstance(verify_result.get("proof_signals"), (list, tuple))
@@ -1268,6 +1333,7 @@ class StatsAiPenTest(ARLResource):
         payload_variant = _agg_group("payload_variant")
         proof_type = _agg_group("proof_type")
         unauth_access_type = _agg_group("unauth_access_type")
+        unauth_negative_type = _agg_group("unauth_negative_type")
         request_template_mode = _agg_group("request_template_mode")
         tool_plan_source = _agg_group("tool_plan_source")
         stop_reason = _agg_group("stop_reason")
@@ -1296,6 +1362,7 @@ class StatsAiPenTest(ARLResource):
                     "unauth_access_type": 1,
                     "unauth_access_reason": 1,
                     "unauth_probe_summary": 1,
+                    "unauth_negative_type": 1,
                     "proof_signals": 1,
                     "proof_summary": 1,
                     "target": 1,
@@ -1331,6 +1398,7 @@ class StatsAiPenTest(ARLResource):
             "proof_family": _build_ai_pen_group_benchmarks(metric_rows, "proof_family"),
             "proof_type": _build_ai_pen_group_benchmarks(metric_rows, "proof_type"),
             "unauth_access_type": _build_ai_pen_group_benchmarks(metric_rows, "unauth_access_type"),
+            "unauth_negative_type": _build_ai_pen_group_benchmarks(metric_rows, "unauth_negative_type"),
             "high_value_family": _build_ai_pen_group_benchmarks(metric_rows, "high_value_family"),
             "verification_step": _build_ai_pen_group_benchmarks(metric_rows, "verification_step"),
             "request_template_mode": _build_ai_pen_group_benchmarks(metric_rows, "request_template_mode"),
@@ -1338,6 +1406,7 @@ class StatsAiPenTest(ARLResource):
         phase_f_readiness = _build_ai_pen_phase_f_readiness(metric_rows)
         engineer_focus_queue = _build_ai_pen_engineer_focus_queue(phase_f_readiness)
         engineer_focus_entries = _build_ai_pen_engineer_focus_entries(metric_rows)
+        unauth_negative_summary = _build_ai_pen_unauth_negative_summary(metric_rows)
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -1354,6 +1423,7 @@ class StatsAiPenTest(ARLResource):
                 "proof_family": _build_ai_pen_group_counts(metric_rows, "proof_family"),
                 "proof_type": proof_type,
                 "unauth_access_type": unauth_access_type,
+                "unauth_negative_type": unauth_negative_type,
                 "request_template_mode": request_template_mode,
                 "tool_plan_source": tool_plan_source,
                 "stop_reason": stop_reason,
@@ -1362,5 +1432,6 @@ class StatsAiPenTest(ARLResource):
                 "phase_f_readiness": phase_f_readiness,
                 "engineer_focus_queue": engineer_focus_queue,
                 "engineer_focus_entries": engineer_focus_entries,
+                "unauth_negative_summary": unauth_negative_summary,
             },
         )

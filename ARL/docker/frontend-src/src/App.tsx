@@ -62,6 +62,10 @@ declare const __ARL_VERSION__: string;
 
 type HttpMethod = 'GET' | 'POST';
 type JsonValue = Record<string, any>;
+type OpenModuleOptions = {
+  resetScroll?: boolean;
+};
+type OpenModuleHandler = (moduleId: string, nextFilters?: JsonValue, options?: OpenModuleOptions) => void;
 
 type ModuleAction = {
   id: string;
@@ -119,6 +123,14 @@ type ModuleListCacheEntry = {
   searchForm: JsonValue;
   scrollTop?: number;
 };
+
+function buildFilterSignature(filters?: JsonValue): string {
+  if (!filters || typeof filters !== 'object') return '[]';
+  const entries = Object.entries(filters)
+    .filter(([, value]) => value !== undefined)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  return JSON.stringify(entries);
+}
 
 type LoadRowsOptions = {
   page?: number;
@@ -4362,7 +4374,7 @@ function DashboardView({
   onQuickCreateTask,
 }: {
   token: string;
-  onOpenModule: (moduleId: string, nextFilters?: JsonValue) => void;
+  onOpenModule: OpenModuleHandler;
   onQuickCreateTask: () => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -6983,12 +6995,14 @@ function TableModuleView({
   onOpenModule,
   externalFilters,
   onClearExternalFilters,
+  scrollResetToken = 0,
 }: {
   module: ModuleConfig;
   token: string;
-  onOpenModule: (moduleId: string, nextFilters?: JsonValue) => void;
+  onOpenModule: OpenModuleHandler;
   externalFilters?: JsonValue;
   onClearExternalFilters?: () => void;
+  scrollResetToken?: number;
 }) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -7089,10 +7103,7 @@ function TableModuleView({
     [externalFilters]
   );
   const hasExternalFilters = useMemo(() => Object.keys(activeExternalFilters).length > 0, [activeExternalFilters]);
-  const activeExternalFilterSignature = useMemo(() => {
-    const entries = Object.entries(activeExternalFilters).sort((a, b) => a[0].localeCompare(b[0]));
-    return JSON.stringify(entries);
-  }, [activeExternalFilters]);
+  const activeExternalFilterSignature = useMemo(() => buildFilterSignature(activeExternalFilters), [activeExternalFilters]);
   const moduleCacheKey = useMemo(
     () => `${module.id}::${activeExternalFilterSignature}`,
     [module.id, activeExternalFilterSignature]
@@ -7333,6 +7344,7 @@ function TableModuleView({
   useEffect(() => {
     const defaultSize = getDefaultModulePageSize(module.id, activeExternalFilters);
     const cachedState = moduleListStateCacheRef.current[moduleCacheKey];
+    const shouldResetScrollPosition = Number(scrollResetToken || 0) > 0;
     if (cachedState) {
       setRows(cachedState.rows || []);
       setTotal(Number(cachedState.total || 0));
@@ -7342,9 +7354,11 @@ function TableModuleView({
       setQuickFilter(String(cachedState.quickFilter || ''));
       setSearchForm(cachedState.searchForm ? deepClone(cachedState.searchForm) : buildDefaultSearchForm());
       setShouldInitialLoad(Boolean(hasList) && !Boolean(moduleListLoadedRef.current[moduleCacheKey]));
-      pendingRestoreScrollTopRef.current = Number.isFinite(Number(cachedState.scrollTop))
-        ? Math.max(0, Number(cachedState.scrollTop))
-        : null;
+      pendingRestoreScrollTopRef.current = shouldResetScrollPosition
+        ? 0
+        : (Number.isFinite(Number(cachedState.scrollTop))
+            ? Math.max(0, Number(cachedState.scrollTop))
+            : null);
     } else {
       setRows([]);
       setTotal(0);
@@ -7354,11 +7368,11 @@ function TableModuleView({
       setQuickFilter('');
       setSearchForm(buildDefaultSearchForm());
       setShouldInitialLoad(Boolean(hasList));
-      pendingRestoreScrollTopRef.current = null;
+      pendingRestoreScrollTopRef.current = shouldResetScrollPosition ? 0 : null;
     }
     setLoading(false);
     setSelectedIds([]);
-  }, [activeExternalFilters, buildDefaultSearchForm, hasList, module.defaultOrder, module.id, moduleCacheKey]);
+  }, [activeExternalFilters, buildDefaultSearchForm, hasList, module.defaultOrder, module.id, moduleCacheKey, scrollResetToken]);
 
   useEffect(() => {
     if (!hasList) return;
@@ -9776,7 +9790,7 @@ function TableModuleView({
         <div className="flex items-center gap-2">
           {hasExternalFilters ? (
             <button
-              onClick={() => onOpenModule('task')}
+              onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
               className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
               title="返回任务管理"
             >
@@ -10651,6 +10665,8 @@ function TableModuleView({
                         }
 
                         if (module.id === 'task' && column === 'target') {
+                          const targetText = formatModuleCellValue(module.id, column, row);
+                          const copyPayload = normalizeValueNoTruncate(row?.target) || targetText;
                           const { siteCnt, domainCnt, ipCnt, urlCnt, vulnCnt, hasAny } = extractTaskStatisticCounts(row);
                           const wafSummary = row?.waf_skip_summary && typeof row.waf_skip_summary === 'object'
                             ? row.waf_skip_summary
@@ -10668,13 +10684,25 @@ function TableModuleView({
                           const showTaskTargetStatTooltip = hasAny || hasWafSummary;
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[220px] max-w-[560px]">
-                              <div className="group relative inline-flex items-center justify-center w-full">
+                              <div className="group relative flex items-start justify-center w-full gap-2">
                                 <button
+                                  type="button"
                                   onClick={() => openTaskLocalView(id)}
-                                  className="text-brand-accent hover:underline font-mono whitespace-pre-wrap break-all text-center inline-block w-full leading-relaxed"
+                                  className="text-brand-accent hover:underline font-mono whitespace-pre-wrap break-all text-center inline-block flex-1 leading-relaxed"
                                   title="点击查看该任务详情"
                                 >
-                                  {formatModuleCellValue(module.id, column, row)}
+                                  {targetText}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void copyTextToClipboard(copyPayload, '目标');
+                                  }}
+                                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-1 text-xs font-semibold text-brand-accent hover:bg-brand-bg/80 transition"
+                                  title="复制目标"
+                                >
+                                  复制
                                 </button>
                                 {showTaskTargetStatTooltip ? (
                                   <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[320px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
@@ -12749,7 +12777,7 @@ function AiPenAssetWorkspaceView({
   onClearExternalFilters,
 }: {
   token: string;
-  onOpenModule: (moduleId: string, nextFilters?: JsonValue) => void;
+  onOpenModule: OpenModuleHandler;
   externalFilters?: JsonValue;
   onClearExternalFilters?: () => void;
 }) {
@@ -12810,10 +12838,7 @@ function AiPenAssetWorkspaceView({
     [externalFilters]
   );
   const hasExternalFilters = useMemo(() => Object.keys(activeExternalFilters).length > 0, [activeExternalFilters]);
-  const activeExternalFilterSignature = useMemo(() => {
-    const entries = Object.entries(activeExternalFilters).sort((a, b) => a[0].localeCompare(b[0]));
-    return JSON.stringify(entries);
-  }, [activeExternalFilters]);
+  const activeExternalFilterSignature = useMemo(() => buildFilterSignature(activeExternalFilters), [activeExternalFilters]);
   const taskDetailCountCacheKey = useMemo(
     () => `ai_pen_workspace_count::${activeExternalFilterSignature}`,
     [activeExternalFilterSignature]
@@ -13264,7 +13289,7 @@ function AiPenAssetWorkspaceView({
         <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => onOpenModule('task')}
+              onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
               className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
               title="返回任务管理"
             >
@@ -19906,6 +19931,7 @@ function MainShell() {
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
   const [activeModuleId, setActiveModuleId] = useState(() => resolveStoredModuleId(localStorage.getItem(ACTIVE_MODULE_KEY)));
   const [moduleExternalFilters, setModuleExternalFilters] = useState<Record<string, JsonValue>>({});
+  const [moduleScrollResetTokens, setModuleScrollResetTokens] = useState<Record<string, number>>({});
   const [globalAction, setGlobalAction] = useState<ModuleAction | null>(null);
   const [globalActionPayload, setGlobalActionPayload] = useState<JsonValue>({});
   const [globalNotice, setGlobalNotice] = useState('');
@@ -19915,6 +19941,8 @@ function MainShell() {
   const [passwdForm, setPasswdForm] = useState({ old_password: '', new_password: '', check_password: '' });
   const [passwdError, setPasswdError] = useState('');
   const [passwdLoading, setPasswdLoading] = useState(false);
+  const mainScrollRef = useRef<HTMLElement | null>(null);
+  const moduleScrollResetCounterRef = useRef(0);
 
   const activeModule = getModuleById(activeModuleId);
   const viewToModuleMap: Record<string, string> = {
@@ -19963,7 +19991,18 @@ function MainShell() {
     reversed.github_monitor_result = 'github_monitor';
     return reversed;
   }, []);
-  const openModule = useCallback((moduleId: string, nextFilters?: JsonValue) => {
+  const openModule = useCallback<OpenModuleHandler>((moduleId, nextFilters, options) => {
+    if (options?.resetScroll) {
+      const targetModuleCacheKey = `${moduleId}::${buildFilterSignature(nextFilters)}`;
+      moduleScrollResetCounterRef.current += 1;
+      setModuleScrollResetTokens((prev) => ({
+        ...prev,
+        [targetModuleCacheKey]: moduleScrollResetCounterRef.current,
+      }));
+      if (mainScrollRef.current) {
+        mainScrollRef.current.scrollTop = 0;
+      }
+    }
     setActiveModuleId(moduleId);
     setModuleExternalFilters((prev) => {
       const next = { ...prev };
@@ -19978,6 +20017,10 @@ function MainShell() {
   const activeExternalFilters = useMemo(
     () => moduleExternalFilters[activeModuleId] || {},
     [moduleExternalFilters, activeModuleId]
+  );
+  const activeModuleCacheKey = useMemo(
+    () => `${activeModuleId}::${buildFilterSignature(activeExternalFilters)}`,
+    [activeExternalFilters, activeModuleId]
   );
   const clearActiveExternalFilters = useCallback(() => {
     setModuleExternalFilters((prev) => {
@@ -20169,7 +20212,7 @@ function MainShell() {
 
       <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
 
-      <main className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
+      <main ref={mainScrollRef} className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
         <div className="sticky top-0 z-20 px-6 py-4 backdrop-blur-xl bg-brand-bg/45 border-b border-brand-border/60 flex items-center justify-between gap-4">
           <div className="text-xs text-brand-text-muted min-h-[20px]">{globalNotice || ' '}</div>
           <div className="flex items-center gap-2">
@@ -20219,6 +20262,7 @@ function MainShell() {
             onOpenModule={openModule}
             externalFilters={activeExternalFilters}
             onClearExternalFilters={clearActiveExternalFilters}
+            scrollResetToken={moduleScrollResetTokens[activeModuleCacheKey] || 0}
           />
         ) : null}
       </main>

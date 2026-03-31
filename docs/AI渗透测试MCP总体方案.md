@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.49`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.50`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -410,6 +410,7 @@ AI 渗透测试至少要覆盖以下能力族：
   - 已补能力：`replay` 已可自动扩展 `api/me/userinfo/account/current/manage/actuator/admin/dashboard` 等高价值未授权复核目标，并在多响应里自动选择更强的未授权证据，不再只盯最后一个响应
   - 已补能力：`unauth_actuator_surface` 与 `unauth_health_endpoint` 已分层，`actuator/health/info` 这类公开健康检查默认降为 `needs_manual_review`，降低把存活探针当成真入口的噪声
   - 已补能力：`unauth_probe_summary` 已进入结果层，会把一轮未授权复核中的 `targets/success/blocked/login_wall/health_like` 收成摘要，用于解释“为何当前不判未授权”并进一步压低误报
+  - 已补能力：`unauth_negative_type` 已结构化进入结果、统计、导出与工程师优先入口，并已反向驱动 `Phase F readiness` 收紧口径；当某类能力当前只有“鉴权拦截/登录墙/健康检查”负信号而无正向命中时，不再乐观记为 `covered`
   - 已补能力：已修正 `redirect -> dir` 子串误判，减少 URL 跳转参数被错误打到路径穿越链的噪声
   - 差距：参数类型标签 -> payload 编排 -> proof/evidence 判定 主干已通，但 `proof_family` 对最终裁决、误报抑制和阶段 F readiness 的统一驱动仍需继续收口
   - 差距：`未授权访问` 与 `访问控制线索` 的结果分流已具基础，但仍需继续压误报；部分实时通道深测能力仍需补强
@@ -494,6 +495,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - 已可统计：覆盖率、误报率、成功率、平均轮数、平均工具调用数
 - 已可按 `risk_type / payload_type / high_value_family / verification_step` 查看分能力 benchmark
 - 已可按 `request_template_mode` 查看模板入口分布，并在工程师入口列表中直接查看 `request_template_summary`
+- 已可输出 `unauth_negative_type/unauth_negative_summary`，直接区分“被鉴权挡住 / 登录墙 / 只有健康检查面”等未授权负信号
 - 已可输出“工程师优先队列”及“具体入口 Top 列表”所需的 readiness/priority 数据面
 - 差距：登录/JWT/API文档/Actuator/IDOR/SQLi/XSS/文件/SSRF 靶场与标注样本尚未建立
 - 结论：`指标数据面已具备，靶场基线未完成`

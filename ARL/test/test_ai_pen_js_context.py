@@ -2584,6 +2584,32 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual(1, summary.get("health_like_count"))
         self.assertIn("blocked=1", str(summary.get("text") or ""))
 
+    def test_classify_ai_pen_unauth_negative_type(self):
+        self.assertEqual(
+            "auth_blocked",
+            WebSiteFetch._classify_ai_pen_unauth_negative_type(
+                {"probe_count": 2, "blocked_count": 2, "login_wall_count": 0, "success_count": 0}
+            ),
+        )
+        self.assertEqual(
+            "login_wall",
+            WebSiteFetch._classify_ai_pen_unauth_negative_type(
+                {"probe_count": 2, "blocked_count": 0, "login_wall_count": 2, "success_count": 0}
+            ),
+        )
+        self.assertEqual(
+            "guarded_mixed",
+            WebSiteFetch._classify_ai_pen_unauth_negative_type(
+                {"probe_count": 3, "blocked_count": 1, "login_wall_count": 1, "success_count": 1}
+            ),
+        )
+        self.assertEqual(
+            "health_only",
+            WebSiteFetch._classify_ai_pen_unauth_negative_type(
+                {"probe_count": 2, "success_count": 2, "health_like_count": 2}
+            ),
+        )
+
     def test_infer_tool_plan_for_replay_prefers_unauth_http_fetch_targets(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={

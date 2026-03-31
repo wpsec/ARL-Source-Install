@@ -10307,6 +10307,26 @@ class WebSiteFetch(object):
         summary["text"] = " | ".join(parts[:6]).strip()
         return summary
 
+    @classmethod
+    def _classify_ai_pen_unauth_negative_type(cls, summary):
+        item = summary if isinstance(summary, dict) else {}
+        probe_count = cls._safe_int_value(item.get("probe_count"), 0)
+        success_count = cls._safe_int_value(item.get("success_count"), 0)
+        blocked_count = cls._safe_int_value(item.get("blocked_count"), 0)
+        login_wall_count = cls._safe_int_value(item.get("login_wall_count"), 0)
+        health_like_count = cls._safe_int_value(item.get("health_like_count"), 0)
+        if probe_count <= 0:
+            return ""
+        if blocked_count > 0 and login_wall_count <= 0 and success_count <= 0:
+            return "auth_blocked"
+        if login_wall_count > 0 and blocked_count <= 0 and success_count <= 0:
+            return "login_wall"
+        if blocked_count > 0 or login_wall_count > 0:
+            return "guarded_mixed"
+        if success_count > 0 and health_like_count >= success_count:
+            return "health_only"
+        return ""
+
     @staticmethod
     def _extract_runtime_api_paths(runtime_api_calls):
         results = []
@@ -16652,6 +16672,7 @@ class WebSiteFetch(object):
             unauth_access_type = ""
             unauth_access_reason = ""
             unauth_probe_summary = {}
+            unauth_negative_type = ""
             if not bool(session_auth_hit) and not bool(weak_password_login_proof):
                 unauth_access_ret = self._analyze_ai_pen_unauth_access(
                     target_url=probe_url or target_url,
@@ -16675,6 +16696,7 @@ class WebSiteFetch(object):
                     unauth_probe_responses,
                     target_url=target_url,
                 )
+                unauth_negative_type = self._classify_ai_pen_unauth_negative_type(unauth_probe_summary)
 
             if is_xss_case and xss_popup_proof:
                 decision = "verified"
@@ -16864,7 +16886,7 @@ class WebSiteFetch(object):
                 health_like_count = self._safe_int_value(unauth_probe_summary.get("health_like_count"), 0)
                 success_count = self._safe_int_value(unauth_probe_summary.get("success_count"), 0)
                 probe_count = self._safe_int_value(unauth_probe_summary.get("probe_count"), 0)
-                if blocked_count > 0 or login_wall_count > 0:
+                if unauth_negative_type in {"auth_blocked", "login_wall", "guarded_mixed"}:
                     decision = "likely_false_positive"
                     confidence = 0.64 if (blocked_count + login_wall_count) >= 2 else 0.60
                     reason = "已复核 {} 个高价值未授权目标".format(probe_count)
@@ -16873,7 +16895,7 @@ class WebSiteFetch(object):
                     if login_wall_count > 0:
                         reason = "{}，{} 个回到登录页/登录墙".format(reason, login_wall_count)
                     reason = "{}，当前不判定为未授权入口".format(reason)
-                elif success_count > 0 and health_like_count >= success_count:
+                elif unauth_negative_type == "health_only":
                     decision = "needs_manual_review"
                     confidence = 0.58
                     reason = "已复核 {} 个高价值未授权目标，当前返回多为健康检查/信息端点，建议结合更高价值管理面继续复核".format(
@@ -17203,7 +17225,7 @@ class WebSiteFetch(object):
                 "task_id:{} ai_pen verify done target:{} payload_type:{} payload_variant:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
                 "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} config_probe_count:{} path_traversal_probe_count:{} "
                 "web_policy_probe_count:{} socketio_probe_count:{} external_hit:{} stop_reason:{} tool_plan_source:{} "
-                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} request_template:{} proof:{} unauth_probe:{} reason:{}".format(
+                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} request_template:{} proof:{} unauth_probe:{} unauth_negative:{} reason:{}".format(
                     self.task_id,
                     target_url[:180],
                     payload_type,
@@ -17231,6 +17253,7 @@ class WebSiteFetch(object):
                     self._clip_text(str(request_template_preview.get("summary") or "-"), 180),
                     self._clip_text(proof_summary_obj.get("summary", "") or "-", 220),
                     self._clip_text(str(unauth_probe_summary.get("text") or "-"), 180),
+                    unauth_negative_type or "-",
                     self._clip_text(reason, 220),
                 )
             )
@@ -17277,6 +17300,7 @@ class WebSiteFetch(object):
                 "unauth_access_type": unauth_access_type,
                 "unauth_access_reason": unauth_access_reason,
                 "unauth_probe_summary": str(unauth_probe_summary.get("text") or "").strip(),
+                "unauth_negative_type": unauth_negative_type,
                 "idor_diff_hit": idor_diff_hit,
                 "idor_diff_summary": idor_diff_summary if isinstance(idor_diff_summary, dict) else {},
                 "jwt_weak_secret": jwt_weak_secret,
@@ -17746,6 +17770,7 @@ class WebSiteFetch(object):
                 "unauth_access_type": str(verify_result.get("unauth_access_type", "") or "").strip(),
                 "unauth_access_reason": str(verify_result.get("unauth_access_reason", "") or "").strip(),
                 "unauth_probe_summary": str(verify_result.get("unauth_probe_summary", "") or "").strip(),
+                "unauth_negative_type": str(verify_result.get("unauth_negative_type", "") or "").strip(),
                 "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
                 "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
                 "browser_surface_summary": dict(verify_result.get("browser_surface_summary") or {}) if isinstance(verify_result.get("browser_surface_summary"), dict) else {},

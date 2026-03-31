@@ -401,6 +401,27 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual("covered", capability["status"])
         self.assertEqual("未授权/对象访问线索", capability["label"])
 
+    def test_build_ai_pen_phase_f_readiness_surfaces_unauth_negative_summary(self):
+        readiness = ai_pen_test_module._build_ai_pen_phase_f_readiness(
+            [
+                {
+                    "risk_type": "idor",
+                    "payload_type": "idor_probe",
+                    "proof_family": "access_control",
+                    "decision": "likely_false_positive",
+                    "status": "ok",
+                    "unauth_negative_type": "guarded_mixed",
+                    "budget_used": {"turns": 1, "tool_calls": 1},
+                }
+            ]
+        )
+
+        capability = next(item for item in readiness["capabilities"] if item["id"] == "idor_access")
+        self.assertEqual("partial", capability["status"])
+        self.assertEqual("guarded_mixed", capability["dominant_unauth_negative_type"])
+        self.assertEqual(1, capability["negative_signal_count"])
+        self.assertIn("鉴权拦截", capability["focus_reason"])
+
     def test_build_ai_pen_engineer_focus_entries_surfaces_unauth_access_fields(self):
         entries = ai_pen_test_module._build_ai_pen_engineer_focus_entries(
             [
@@ -480,6 +501,7 @@ class TestAiPenStats(unittest.TestCase):
                     "status": "ok",
                     "confidence": 0.64,
                     "http_status": 200,
+                    "unauth_negative_type": "guarded_mixed",
                     "unauth_probe_summary": "targets=4 | blocked=2 | login_wall=1 | sample=https://example.com/admin",
                     "reason": "已复核 4 个高价值未授权目标，2 个被鉴权拦截，1 个回到登录页/登录墙，当前不判定为未授权入口",
                 }
@@ -488,6 +510,54 @@ class TestAiPenStats(unittest.TestCase):
 
         self.assertIn("鉴权拦截", entries[0]["focus_reason"])
         self.assertIn("blocked=2", entries[0]["unauth_probe_summary"])
+        self.assertEqual("guarded_mixed", entries[0]["unauth_negative_type"])
+
+    def test_build_ai_pen_engineer_focus_entries_surfaces_login_wall_negative_type(self):
+        entries = ai_pen_test_module._build_ai_pen_engineer_focus_entries(
+            [
+                {
+                    "_id": "u4",
+                    "target": "https://example.com/",
+                    "vuln_url": "https://example.com/",
+                    "risk_type": "sensitive_info",
+                    "risk_name": "未授权入口复核",
+                    "payload_type": "replay",
+                    "verification_step": "http_fetch_replay",
+                    "decision": "likely_false_positive",
+                    "status": "ok",
+                    "confidence": 0.60,
+                    "http_status": 200,
+                    "unauth_negative_type": "login_wall",
+                    "unauth_probe_summary": "targets=3 | login_wall=2 | sample=https://example.com/login",
+                    "reason": "已复核 3 个高价值未授权目标，2 个回到登录页/登录墙，当前不判定为未授权入口",
+                }
+            ]
+        )
+
+        self.assertEqual("login_wall", entries[0]["unauth_negative_type"])
+        self.assertIn("登录页/登录墙", entries[0]["focus_reason"])
+
+    def test_build_ai_pen_engineer_focus_queue_surfaces_unauth_negative_summary(self):
+        readiness = ai_pen_test_module._build_ai_pen_phase_f_readiness(
+            [
+                {
+                    "risk_type": "idor",
+                    "payload_type": "idor_probe",
+                    "proof_family": "access_control",
+                    "decision": "likely_false_positive",
+                    "status": "ok",
+                    "unauth_negative_type": "guarded_mixed",
+                    "budget_used": {"turns": 1, "tool_calls": 1},
+                }
+            ]
+        )
+
+        queue = ai_pen_test_module._build_ai_pen_engineer_focus_queue(readiness)
+
+        idor_item = next(item for item in queue if item["id"] == "idor_access")
+        self.assertEqual("guarded_mixed", idor_item["dominant_unauth_negative_type"])
+        self.assertEqual(1, idor_item["negative_signal_count"])
+        self.assertIn("阻断", idor_item["focus_reason"])
 
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
@@ -648,6 +718,7 @@ class TestAiPenStats(unittest.TestCase):
                 "proof_type": "unauth_management_surface",
                 "unauth_access_type": "unauth_management_surface",
                 "unauth_access_reason": "高价值管理/配置端点返回成功状态，疑似可未授权直接访问",
+                "unauth_negative_type": "",
                 "proof_signals": ["unauth_access"],
                 "proof_summary": "proof=unauth_management_surface | family=unauth_access | signals=unauth_access",
                 "reason": "高价值管理/配置端点返回成功状态，疑似可未授权直接访问",
@@ -666,6 +737,54 @@ class TestAiPenStats(unittest.TestCase):
         self.assertTrue(any(item.get("name") == "unauth_management_surface" for item in data["capability_benchmarks"]["unauth_access_type"]))
         self.assertEqual("unauth_access", data["engineer_focus_entries"][0]["proof_family"])
         self.assertEqual("unauth_management_surface", data["engineer_focus_entries"][0]["unauth_access_type"])
+
+    def test_stats_route_returns_unauth_negative_type_groups(self):
+        rows = [
+            {
+                "_id": "u5",
+                "task_id": "507f1f77bcf86cd799439011",
+                "decision": "likely_false_positive",
+                "status": "ok",
+                "risk_type": "sensitive_info",
+                "payload_type": "replay",
+                "verification_step": "http_fetch_replay",
+                "high_value_family": "admin_debug_surface",
+                "tool_plan_source": "inferred",
+                "stop_reason": "final_decision",
+                "budget_used": {"turns": 1, "tool_calls": 3},
+                "target": "https://example.com/",
+                "vuln_url": "https://example.com/",
+                "risk_name": "未授权入口复核",
+                "confidence": 0.64,
+                "http_status": 200,
+                "request_template_mode": "query",
+                "request_template_params": [],
+                "request_template_summary": "mode=query",
+                "proof_family": "",
+                "proof_type": "",
+                "unauth_access_type": "",
+                "unauth_access_reason": "",
+                "unauth_negative_type": "guarded_mixed",
+                "unauth_probe_summary": "targets=4 | blocked=2 | login_wall=1 | sample=https://example.com/admin",
+                "proof_signals": [],
+                "proof_summary": "",
+                "reason": "已复核 4 个高价值未授权目标，2 个被鉴权拦截，1 个回到登录页/登录墙，当前不判定为未授权入口",
+            }
+        ]
+
+        ai_pen_test_module.utils.conn_db = lambda _name: _FakeCollection(rows)
+        ai_pen_test_module.StatsAiPenTest.parser = types.SimpleNamespace(
+            parse_args=lambda: {"task_id": "507f1f77bcf86cd799439011"}
+        )
+
+        response = ai_pen_test_module.StatsAiPenTest().get()
+        data = response["data"]
+
+        self.assertTrue(any(item.get("name") == "guarded_mixed" for item in data["unauth_negative_type"]))
+        self.assertTrue(any(item.get("name") == "guarded_mixed" for item in data["capability_benchmarks"]["unauth_negative_type"]))
+        self.assertEqual("guarded_mixed", data["engineer_focus_entries"][0]["unauth_negative_type"])
+        self.assertEqual("guarded_mixed", data["unauth_negative_summary"]["dominant_negative_type"])
+        self.assertEqual(1, data["unauth_negative_summary"]["negative_signal_count"])
 
 
 if __name__ == "__main__":
