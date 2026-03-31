@@ -318,9 +318,54 @@ class TestAiPenStats(unittest.TestCase):
         self.assertIn("verified", queue[0]["focus_reason"])
         self.assertGreater(queue[0]["priority_score"], queue[1]["priority_score"])
 
+    def test_build_ai_pen_engineer_focus_entries_prioritizes_verified_high_value_rows(self):
+        entries = ai_pen_test_module._build_ai_pen_engineer_focus_entries(
+            [
+                {
+                    "_id": "a1",
+                    "target": "https://example.com/login",
+                    "vuln_url": "https://example.com/login",
+                    "risk_type": "weak_password",
+                    "risk_name": "弱口令登录入口",
+                    "payload_type": "weak_password_probe",
+                    "verification_step": "mcp_login_probe",
+                    "high_value_family": "login_entry_surface",
+                    "high_value_family_rank": 72,
+                    "decision": "verified",
+                    "status": "ok",
+                    "confidence": 0.93,
+                    "http_status": 200,
+                    "session_auth_hit": True,
+                    "reason": "登录后访问 dashboard 成功",
+                },
+                {
+                    "_id": "a2",
+                    "target": "https://example.com/api-docs",
+                    "vuln_url": "https://example.com/api-docs",
+                    "risk_type": "api_doc",
+                    "risk_name": "API文档入口",
+                    "payload_type": "api_doc_probe",
+                    "verification_step": "mcp_api_doc_probe",
+                    "high_value_family": "api_doc_surface",
+                    "high_value_family_rank": 96,
+                    "decision": "needs_manual_review",
+                    "status": "ok",
+                    "confidence": 0.61,
+                    "http_status": 200,
+                    "reason": "开放 paths 但需人工确认鉴权",
+                },
+            ]
+        )
+
+        self.assertEqual("a1", entries[0]["result_id"])
+        self.assertEqual("verified", entries[0]["decision"])
+        self.assertIn("优先接手", entries[0]["focus_reason"])
+        self.assertGreater(entries[0]["priority_score"], entries[1]["priority_score"])
+
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
             {
+                "_id": "r1",
                 "task_id": "507f1f77bcf86cd799439011",
                 "decision": "verified",
                 "status": "ok",
@@ -331,8 +376,15 @@ class TestAiPenStats(unittest.TestCase):
                 "tool_plan_source": "ai_plan",
                 "stop_reason": "final_decision",
                 "budget_used": {"turns": 3, "tool_calls": 2},
+                "target": "https://example.com/api-docs",
+                "vuln_url": "https://example.com/api-docs",
+                "risk_name": "API文档入口",
+                "confidence": 0.91,
+                "http_status": 200,
+                "reason": "开放 API schema",
             },
             {
+                "_id": "r2",
                 "task_id": "507f1f77bcf86cd799439011",
                 "decision": "likely_false_positive",
                 "status": "ok",
@@ -343,8 +395,15 @@ class TestAiPenStats(unittest.TestCase):
                 "tool_plan_source": "retry_history",
                 "stop_reason": "manual_required",
                 "budget_used": {"turns": 2, "tool_calls": 1},
+                "target": "https://example.com/.well-known/openid-configuration",
+                "vuln_url": "https://example.com/.well-known/openid-configuration",
+                "risk_name": "JWT协议入口",
+                "confidence": 0.67,
+                "http_status": 200,
+                "reason": "仅协议元数据可访问",
             },
             {
+                "_id": "r3",
                 "task_id": "507f1f77bcf86cd799439011",
                 "decision": "needs_manual_review",
                 "status": "error",
@@ -356,6 +415,12 @@ class TestAiPenStats(unittest.TestCase):
                 "stop_reason": "timeout",
                 "agent_trace": [{"action": "agent_turn"}],
                 "tool_calls": [{"tool": "websocket_probe"}],
+                "target": "https://example.com/ws",
+                "vuln_url": "wss://example.com/ws",
+                "risk_name": "WebSocket入口",
+                "confidence": 0.55,
+                "http_status": 101,
+                "reason": "握手存在但语义待确认",
             },
         ]
 
@@ -382,6 +447,9 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(7, data["phase_f_readiness"]["summary"]["missing_count"])
         self.assertEqual("API文档/GraphQL", data["engineer_focus_queue"][0]["label"])
         self.assertTrue("focus_reason" in data["engineer_focus_queue"][0])
+        self.assertEqual("r1", data["engineer_focus_entries"][0]["result_id"])
+        self.assertEqual("api_doc", data["engineer_focus_entries"][0]["risk_type"])
+        self.assertTrue("focus_reason" in data["engineer_focus_entries"][0])
 
 
 if __name__ == "__main__":

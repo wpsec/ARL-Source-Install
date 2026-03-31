@@ -561,6 +561,94 @@ def _build_ai_pen_engineer_focus_queue(phase_f_readiness, max_items: int = 6):
     return queue[:max_items]
 
 
+def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
+    entries = []
+
+    for item in list(rows or []):
+        if not isinstance(item, dict):
+            continue
+
+        decision = _normalize_decision(item.get("decision"))
+        status = _normalize_status(item.get("status"))
+        high_value_rank = int(item.get("high_value_family_rank", 0) or 0)
+        confidence = 0.0
+        try:
+            confidence = float(item.get("confidence", 0.0) or 0.0)
+        except Exception:
+            confidence = 0.0
+
+        score = int(round(confidence * 30))
+        score += min(24, max(0, int(high_value_rank / 4)))
+        if decision == "verified":
+            score += 40
+        elif decision == "needs_manual_review":
+            score += 18
+        else:
+            score -= 12
+
+        if status == "ok":
+            score += 8
+        elif status == "error":
+            score -= 4
+
+        http_status = 0
+        try:
+            http_status = int(item.get("http_status", 0) or 0)
+        except Exception:
+            http_status = 0
+        if http_status in {200, 201, 206}:
+            score += 6
+        elif http_status in {401, 403}:
+            score -= 4
+
+        if bool(item.get("session_auth_hit")) or bool(item.get("weak_password_login_proof")):
+            score += 12
+        if bool(item.get("external_tool_hit")):
+            score += 8
+
+        if decision == "verified":
+            focus_reason = "已获得较高置信验证结果，建议工程师优先接手"
+        elif bool(item.get("session_auth_hit")):
+            focus_reason = "已命中登录后资源访问，具备进一步扩展价值"
+        elif str(item.get("high_value_family", "") or "").strip():
+            focus_reason = "命中高价值入口家族，适合作为优先复核入口"
+        else:
+            focus_reason = "已有自动化观测结果，适合人工复核"
+
+        entries.append(
+            {
+                "result_id": str(item.get("_id") or "").strip(),
+                "target": str(item.get("target", "") or "").strip(),
+                "vuln_url": str(item.get("vuln_url", "") or "").strip(),
+                "risk_type": str(item.get("risk_type", "") or "").strip(),
+                "risk_name": str(item.get("risk_name", "") or "").strip(),
+                "payload_type": str(item.get("payload_type", "") or "").strip(),
+                "verification_step": str(item.get("verification_step", "") or "").strip(),
+                "high_value_family": str(item.get("high_value_family", "") or "").strip(),
+                "decision": decision,
+                "status": status,
+                "confidence": float("{:.4f}".format(max(0.0, confidence))),
+                "http_status": http_status,
+                "priority_score": score,
+                "reason": str(item.get("reason", "") or "").strip()[:240],
+                "focus_reason": focus_reason,
+            }
+        )
+
+    entries.sort(
+        key=lambda item: (
+            -int(item.get("priority_score") or 0),
+            str(item.get("decision") or "") != "verified",
+            -float(item.get("confidence") or 0.0),
+            str(item.get("risk_type") or ""),
+            str(item.get("vuln_url") or item.get("target") or ""),
+        )
+    )
+    if max_items <= 0:
+        return entries
+    return entries[:max_items]
+
+
 def _build_candidate_from_result(item: dict, max_steps: int = 4):
     """从历史结果重建候选，并补齐重试所需的会话/工具上下文。"""
     default_url = str(item.get("vuln_url") or item.get("target") or "").strip()
@@ -998,9 +1086,19 @@ class StatsAiPenTest(ARLResource):
                     "decision": 1,
                     "status": 1,
                     "risk_type": 1,
+                    "risk_name": 1,
                     "payload_type": 1,
                     "verification_step": 1,
                     "high_value_family": 1,
+                    "high_value_family_rank": 1,
+                    "target": 1,
+                    "vuln_url": 1,
+                    "reason": 1,
+                    "confidence": 1,
+                    "http_status": 1,
+                    "session_auth_hit": 1,
+                    "weak_password_login_proof": 1,
+                    "external_tool_hit": 1,
                     "agent_trace": 1,
                     "tool_calls": 1,
                     "budget_used": 1,
@@ -1017,6 +1115,7 @@ class StatsAiPenTest(ARLResource):
         }
         phase_f_readiness = _build_ai_pen_phase_f_readiness(metric_rows)
         engineer_focus_queue = _build_ai_pen_engineer_focus_queue(phase_f_readiness)
+        engineer_focus_entries = _build_ai_pen_engineer_focus_entries(metric_rows)
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -1035,5 +1134,6 @@ class StatsAiPenTest(ARLResource):
                 "capability_benchmarks": capability_benchmarks,
                 "phase_f_readiness": phase_f_readiness,
                 "engineer_focus_queue": engineer_focus_queue,
+                "engineer_focus_entries": engineer_focus_entries,
             },
         )
