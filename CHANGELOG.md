@@ -9,6 +9,8 @@
 - `[v4.5.10]` 仪表盘当日新增资产统计兼容修复：`new_assets_today` 改为统一复用日统计逻辑，兼容 `save_date` 为 `date/string` 的混合存储，并在 `save_date` 缺失时回退 `update_date`，避免历史数据口径差异导致“新增始终为 0”
 - `[v4.5.11]` AI渗透 `config_probe` 家族化探测增强：新增配置/诊断端点目标生成器，`infer/fallback` 计划从“单 URL 探针”升级为“同域多端点低副作用探测”（如 `actuator/env/configprops/mappings/beans/conditions/loggers`），并在 `/api/*` 目标下优先探测 `/api/actuator/*` 路径，提升高价值配置暴露发现率
 - `[v4.5.11]` AI渗透 `weak_password` 主计划链路增强：`_infer_ai_pen_tool_plan` 新增 `session_start -> extract_csrf_token -> credential_probe -> detect_login_success` 受预算会话链（非仅 fallback），让登录与会话验证更符合 MCP 工具闭环；AI planner 的 `output_schema` 与 `available_tools` 同步改为动态映射当前真实工具/载荷列表，减少模型输出旧工具名导致的执行偏差
+- `[v4.5.12]` AI渗透 `JWT/认证链` 继续收敛到 MCP 工具闭环：`_infer_ai_pen_tool_plan` 与 `_build_ai_pen_fallback_tool_plan` 新增 `token_replay`（`Authorization: Bearer <none-token>`）步骤，`_verify_ai_pen_candidate` 的 JWT none-token 验证改为从 runtime `token_replay` 观测结果统一判定，不再走 runtime 外手写请求分支；同时补齐 JWT tool plan 回归测试，确保 `jwt_probe + token_replay` 在预算内稳定输出
+- `[v4.5.13]` AI渗透 `IDOR/访问控制` 证据标准分级：新增 `_classify_ai_pen_idor_outcome`，将“变异后被 401/403 拒绝”收敛为 `likely_false_positive`（访问控制生效），将“同为成功状态且出现敏感字段差异”的高置信场景提升为 `verified`，其余维持 `needs_manual_review`；并补齐 IDOR 分级判定回归测试，降低“有差异但非越权”噪声
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 

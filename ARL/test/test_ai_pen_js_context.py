@@ -687,6 +687,42 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("status_changed=1", summary_text)
         self.assertGreaterEqual(score, 6)
 
+    def test_classify_ai_pen_idor_outcome_marks_verified_for_sensitive_success_diff(self):
+        summary = WebSiteFetch._build_idor_diff_summary(
+            base_status=200,
+            base_body='{"code":0,"data":{"id":100}}',
+            probe_status=200,
+            probe_body='{"code":0,"data":{"id":101,"email":"user@example.com","role":"admin"}}',
+            probe_target={
+                "mutation_key": "user_id",
+                "mutation_from": "100",
+                "mutation_to": "101",
+                "mutation_kind": "numeric",
+            },
+        )
+        outcome = WebSiteFetch._classify_ai_pen_idor_outcome(200, 200, summary)
+
+        self.assertEqual("verified", outcome.get("decision"))
+        self.assertGreaterEqual(float(outcome.get("confidence", 0) or 0), 0.82)
+
+    def test_classify_ai_pen_idor_outcome_marks_likely_fp_for_forbidden_after_mutation(self):
+        summary = WebSiteFetch._build_idor_diff_summary(
+            base_status=200,
+            base_body='{"code":0,"data":{"id":100}}',
+            probe_status=403,
+            probe_body='{"code":403,"msg":"forbidden"}',
+            probe_target={
+                "mutation_key": "id",
+                "mutation_from": "100",
+                "mutation_to": "101",
+                "mutation_kind": "numeric",
+            },
+        )
+        outcome = WebSiteFetch._classify_ai_pen_idor_outcome(200, 403, summary)
+
+        self.assertEqual("likely_false_positive", outcome.get("decision"))
+        self.assertIn("访问控制生效", str(outcome.get("reason", "")))
+
     def test_api_surface_summary_merges_api_doc_and_js_targets(self):
         summary = WebSiteFetch._build_api_surface_summary(
             api_doc_summary={
@@ -1269,6 +1305,40 @@ class TestAiPenJsContext(unittest.TestCase):
     def test_runtime_tool_registry_contains_session_and_config_tools(self):
         for tool_name in ("session_request", "extract_csrf_token", "token_replay", "config_probe", "xss_probe", "ssti_probe", "xxe_probe"):
             self.assertIn(tool_name, WebSiteFetch.AI_PEN_RUNTIME_TOOL_NAMES)
+
+    def test_infer_tool_plan_for_jwt_adds_token_replay_when_token_present(self):
+        token = "aaaaaaaa.bbbbbbbb.cccccccc"
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={
+                "target": "https://example.com/api/profile",
+                "evidence_seed": "Authorization: Bearer {}".format(token),
+            },
+            payload_type="jwt_probe",
+            payload="",
+            max_steps=3,
+        )
+
+        tools = [str(item.get("tool") or "").strip() for item in plan]
+        self.assertIn("token_replay", tools)
+        replay_step = next(item for item in plan if str(item.get("tool") or "").strip() == "token_replay")
+        auth_header = str(replay_step.get("params", {}).get("headers", {}).get("Authorization", "") or "")
+        self.assertTrue(auth_header.startswith("Bearer "))
+        self.assertTrue(auth_header.endswith("."))
+
+    def test_fallback_tool_plan_for_jwt_includes_token_replay_and_jwt_probe(self):
+        token = "aaaaaaaa.bbbbbbbb.cccccccc"
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/api/profile",
+            payload_type="jwt_probe",
+            payload="",
+            max_steps=3,
+            candidate={"evidence_seed": token},
+            body_text="",
+        )
+
+        tools = [str(item.get("tool") or "").strip() for item in plan]
+        self.assertIn("token_replay", tools)
+        self.assertIn("jwt_probe", tools)
 
     def test_weak_password_requires_login_success_proof(self):
         self.assertTrue(

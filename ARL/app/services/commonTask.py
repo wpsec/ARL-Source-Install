@@ -5763,6 +5763,73 @@ class WebSiteFetch(object):
             score += 1
         return score
 
+    @classmethod
+    def _classify_ai_pen_idor_outcome(cls, base_status: int, probe_status: int, diff_summary: dict):
+        """
+        按“访问控制是否真正绕过”对 IDOR 差异做分级：
+        - 变异后被 401/403 拒绝：倾向访问控制生效（likely_false_positive）
+        - 同为成功状态且出现敏感字段新增：倾向高置信越权（verified）
+        - 其余差异：保守 needs_manual_review
+        """
+        summary = diff_summary if isinstance(diff_summary, dict) else {}
+        if not summary:
+            return {}
+
+        base_status_code = cls._safe_int_value(base_status, 0)
+        probe_status_code = cls._safe_int_value(probe_status, 0)
+        sensitive_hits = [str(item or "").strip() for item in list(summary.get("sensitive_hits", []) or []) if str(item or "").strip()]
+        sensitive_count = len(sensitive_hits)
+        score = cls._score_idor_diff_summary(summary)
+
+        base_success = cls._is_ai_pen_success_status(base_status_code)
+        probe_success = cls._is_ai_pen_success_status(probe_status_code)
+        probe_deny = probe_status_code in {401, 403}
+        base_deny = base_status_code in {401, 403}
+        summary_text = cls._format_idor_diff_summary_text(summary)
+
+        if base_success and probe_deny:
+            reason = "对象引用变异后返回 {}，更像访问控制生效而非越权".format(probe_status_code)
+            if summary_text:
+                reason = "{}；差异摘要：{}".format(reason, summary_text)
+            return {
+                "decision": "likely_false_positive",
+                "confidence": 0.72,
+                "reason": reason,
+                "score": score,
+            }
+
+        if base_success and probe_success and sensitive_count >= 1 and score >= 10:
+            reason = "对象引用变异后仍可访问且出现敏感字段差异，越权证据较强"
+            if summary_text:
+                reason = "{}；差异摘要：{}".format(reason, summary_text)
+            return {
+                "decision": "verified",
+                "confidence": 0.86 if sensitive_count >= 2 else 0.82,
+                "reason": reason,
+                "score": score,
+            }
+
+        if base_deny and probe_success and score >= 8:
+            reason = "对象引用变异后访问状态变化明显，疑似权限边界异常"
+            if summary_text:
+                reason = "{}；差异摘要：{}".format(reason, summary_text)
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.78,
+                "reason": reason,
+                "score": score,
+            }
+
+        reason = "对象引用参数变异后响应差异明显，疑似存在越权风险"
+        if summary_text:
+            reason = "{}；差异摘要：{}".format(reason, summary_text)
+        return {
+            "decision": "needs_manual_review",
+            "confidence": 0.76 if sensitive_count < 1 else 0.80,
+            "reason": reason,
+            "score": score,
+        }
+
     @staticmethod
     def _build_api_doc_probe_targets(target_url: str, max_count=4):
         url_text = str(target_url or "").strip()
@@ -8286,6 +8353,30 @@ class WebSiteFetch(object):
                     }
                 )
         elif payload_type_text == "jwt_probe":
+            jwt_candidates = cls._extract_jwt_candidates(
+                payload,
+                item.get("evidence_seed"),
+                item.get("verify_data"),
+                item.get("target"),
+                target_url,
+                max_count=1,
+            )
+            none_token = cls._build_jwt_none_token(jwt_candidates[0]) if jwt_candidates else ""
+            if none_token:
+                plan.append(
+                    {
+                        "tool": "token_replay",
+                        "params": {
+                            "url": target_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                            "headers": {
+                                "Authorization": "Bearer {}".format(none_token),
+                            },
+                        },
+                        "summary": "JWT none-token 重放探针",
+                    }
+                )
             plan.append(
                 {
                     "tool": "jwt_probe",
@@ -8516,6 +8607,44 @@ class WebSiteFetch(object):
                                 "summary": "fallback 登录成功判定",
                             }
                         )
+        elif payload_type_text == "jwt_probe":
+            candidate_obj = candidate if isinstance(candidate, dict) else {}
+            jwt_candidates = cls._extract_jwt_candidates(
+                payload_text,
+                candidate_obj.get("evidence_seed"),
+                candidate_obj.get("verify_data"),
+                candidate_obj.get("detail"),
+                body_text,
+                url_text,
+                max_count=1,
+            )
+            none_token = cls._build_jwt_none_token(jwt_candidates[0]) if jwt_candidates else ""
+            if none_token:
+                plan.append(
+                    {
+                        "tool": "token_replay",
+                        "params": {
+                            "url": url_text,
+                            "method": "get",
+                            "allow_redirects": True,
+                            "headers": {
+                                "Authorization": "Bearer {}".format(none_token),
+                            },
+                        },
+                        "summary": "fallback JWT none-token 重放探针",
+                    }
+                )
+            plan.append(
+                {
+                    "tool": "jwt_probe",
+                    "params": {
+                        "url": url_text,
+                        "method": "get",
+                        "allow_redirects": True,
+                    },
+                    "summary": "fallback JWT 鉴权入口复测",
+                }
+            )
         elif payload_type_text == "websocket_probe":
             ws_probe_url = cls._build_websocket_handshake_url(url_text)
             if ws_probe_url:
@@ -10465,6 +10594,49 @@ class WebSiteFetch(object):
             probe_error = ""
             payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "replay"}
 
+            # JWT none-token 重放信号统一从 runtime 观测结果里提取，避免绕开 MCP 工具链。
+            def _apply_jwt_none_replay_signal(observation_obj):
+                nonlocal jwt_none_probe_hit, evidence_hit
+                if payload_type != "jwt_probe" or not isinstance(observation_obj, dict):
+                    return
+                replay_response = {}
+                for response_item in reversed(list(observation_obj.get("responses", []) or [])):
+                    if not isinstance(response_item, dict):
+                        continue
+                    if str(response_item.get("tool") or "").strip() == "token_replay":
+                        replay_response = response_item
+                        break
+                if not replay_response:
+                    return
+
+                replay_url = str(replay_response.get("url") or target_url).strip()
+                tool_trace_parts.append("jwt_probe(auth_none,url={})".format((replay_url or target_url)[:220]))
+
+                replay_headers = (
+                    dict(replay_response.get("headers") or {})
+                    if isinstance(replay_response.get("headers"), dict)
+                    else {}
+                )
+                if str(replay_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() == "1":
+                    tool_trace_parts.append("jwt_probe(skip_by_waf)")
+                    return
+
+                replay_body = str(replay_response.get("body_text") or "")
+                replay_status = self._safe_int_value(replay_response.get("status_code"), 0)
+                replay_body_md5 = str(replay_response.get("body_md5") or "").strip()
+                if replay_body and not replay_body_md5:
+                    replay_body_md5 = hashlib.md5(replay_body.encode("utf-8", "ignore")).hexdigest()
+                if replay_body and self._contains_evidence(evidence_seed, replay_body):
+                    evidence_hit = True
+                if (
+                    replay_status == status_code
+                    and replay_body_md5
+                    and base_body_md5
+                    and replay_body_md5 == base_body_md5
+                    and replay_status not in (401, 403)
+                ):
+                    jwt_none_probe_hit = True
+
             if mcp_enable and len(runtime.tool_calls) < max_tool_calls and (ai_plan_tool_plan or agent_loop_enable):
                 if agent_loop_enable:
                     plan_observation = self._execute_ai_pen_agent_loop(
@@ -10544,6 +10716,7 @@ class WebSiteFetch(object):
                 payload_text = str(payload or "").strip().lower()
                 if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
                     payload_reflect_hit = True
+                _apply_jwt_none_replay_signal(plan_observation)
                 logger.info(
                     "task_id:{} ai_pen verify main_plan target:{} payload_type:{} stop_reason:{} probe_status:{} "
                     "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} error:{}".format(
@@ -10569,6 +10742,7 @@ class WebSiteFetch(object):
                     jwt_candidates = self._extract_jwt_candidates(
                         evidence_seed,
                         base_body_excerpt,
+                        probe_body_excerpt,
                         target_url,
                         max_count=2,
                     )
@@ -10596,160 +10770,117 @@ class WebSiteFetch(object):
                             )
                             if jwt_weak_secret:
                                 tool_trace_parts.append("jwt_probe(weak_secret={})".format(jwt_weak_secret[:32]))
-
-                        none_token = self._build_jwt_none_token(jwt_token_found)
-                        if none_token and tool_calls < max_tool_calls:
-                            try:
-                                jwt_headers = {"Authorization": "Bearer {}".format(none_token)}
-                                jwt_resp = _runtime_http_req(
-                                    "jwt_probe",
-                                    target_url,
-                                    summary="JWT none token 重放",
-                                    method="get",
-                                    allow_redirects=True,
-                                    headers=jwt_headers,
-                                )
-                                tool_calls += 1
-                                tool_trace_parts.append("jwt_probe(auth_none,url={})".format(target_url[:220]))
-                                probe_status = int(getattr(jwt_resp, "status_code", 0) or 0)
-                                jwt_resp_headers = getattr(jwt_resp, "headers", {}) or {}
-                                if str(jwt_resp_headers.get("X-ARL-WAF-SMART-SKIP", "")).strip() != "1":
-                                    try:
-                                        jwt_body_text = str(getattr(jwt_resp, "text", "") or "")
-                                    except Exception:
-                                        jwt_body_text = ""
-                                    probe_body_excerpt = jwt_body_text[: self.AI_PEN_TEST_BODY_MAX]
-                                    probe_body_md5 = (
-                                        hashlib.md5(probe_body_excerpt.encode("utf-8", "ignore")).hexdigest()
-                                        if probe_body_excerpt
-                                        else ""
-                                    )
-                                    if self._contains_evidence(evidence_seed, probe_body_excerpt):
-                                        evidence_hit = True
-                                    if (
-                                        probe_status == status_code
-                                        and probe_body_md5
-                                        and base_body_md5
-                                        and probe_body_md5 == base_body_md5
-                                        and probe_status not in (401, 403)
-                                    ):
-                                        jwt_none_probe_hit = True
-                                else:
-                                    tool_trace_parts.append("jwt_probe(skip_by_waf)")
-                            except Exception as probe_exc:
-                                if not probe_error:
-                                    probe_error = self._clip_text(probe_exc, self.AI_PEN_TEST_ERROR_MAX)
-                                tool_trace_parts.append("jwt_probe(error)")
                     else:
                         tool_trace_parts.append("jwt_probe(skip_no_token)")
-                else:
-                    remain_calls = max(1, max_tool_calls - tool_calls)
-                    fallback_tool_plan = self._build_ai_pen_fallback_tool_plan(
+
+                remain_calls = max(1, max_tool_calls - tool_calls)
+                fallback_tool_plan = self._build_ai_pen_fallback_tool_plan(
+                    target_url=target_url,
+                    payload_type=payload_type,
+                    payload=payload,
+                    max_steps=remain_calls,
+                    candidate=candidate,
+                    body_text=body_text,
+                    dom_form_summary=dom_form_summary,
+                    login_surface_summary=login_surface_summary,
+                )
+                if fallback_tool_plan:
+                    fallback_observation = self._execute_ai_pen_tool_plan(
+                        runtime=runtime,
+                        runtime_context=runtime_context,
+                        tool_plan=fallback_tool_plan,
                         target_url=target_url,
-                        payload_type=payload_type,
-                        payload=payload,
-                        max_steps=remain_calls,
-                        candidate=candidate,
-                        body_text=body_text,
-                        dom_form_summary=dom_form_summary,
-                        login_surface_summary=login_surface_summary,
+                        evidence_seed=evidence_seed,
+                        js_api_targets=js_api_targets,
                     )
-                    if fallback_tool_plan:
-                        fallback_observation = self._execute_ai_pen_tool_plan(
-                            runtime=runtime,
-                            runtime_context=runtime_context,
-                            tool_plan=fallback_tool_plan,
-                            target_url=target_url,
-                            evidence_seed=evidence_seed,
-                            js_api_targets=js_api_targets,
+                    tool_calls = len(list(runtime.tool_calls or []))
+                    tool_trace_parts.extend(list(fallback_observation.get("trace_parts", []) or []))
+                    probe_status = int(fallback_observation.get("probe_status", 0) or 0) or probe_status
+                    probe_url = str(fallback_observation.get("probe_url", "") or "") or probe_url
+                    probe_headers = dict(fallback_observation.get("probe_headers") or {}) or probe_headers
+                    probe_body_excerpt = str(fallback_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
+                    probe_body_md5 = str(fallback_observation.get("probe_body_md5", "") or "") or probe_body_md5
+                    idor_probe_responses.extend(
+                        [
+                            dict(item or {})
+                            for item in list(fallback_observation.get("responses", []) or [])
+                            if isinstance(item, dict) and str(item.get("tool") or "").strip() == "idor_probe"
+                        ]
+                    )
+                    evidence_hit = bool(fallback_observation.get("evidence_hit")) or evidence_hit
+                    api_doc_hit = bool(fallback_observation.get("api_doc_hit")) or api_doc_hit
+                    api_doc_hit_url = str(fallback_observation.get("api_doc_hit_url", "") or "") or api_doc_hit_url
+                    if isinstance(fallback_observation.get("api_doc_summary"), dict) and fallback_observation.get("api_doc_summary"):
+                        api_doc_summary = dict(fallback_observation.get("api_doc_summary") or {})
+                    if isinstance(fallback_observation.get("api_surface_summary"), dict) and fallback_observation.get("api_surface_summary"):
+                        api_surface_summary = dict(fallback_observation.get("api_surface_summary") or {})
+                    graphql_hit = bool(fallback_observation.get("graphql_hit")) or graphql_hit
+                    graphql_hit_url = str(fallback_observation.get("graphql_hit_url", "") or "") or graphql_hit_url
+                    if isinstance(fallback_observation.get("graphql_summary"), dict) and fallback_observation.get("graphql_summary"):
+                        graphql_summary = dict(fallback_observation.get("graphql_summary") or {})
+                    api_doc_probe_count += self._safe_int_value(
+                        dict(fallback_observation.get("tool_counts") or {}).get("api_doc_probe"),
+                        0,
+                    )
+                    config_probe_count += self._safe_int_value(
+                        dict(fallback_observation.get("tool_counts") or {}).get("config_probe"),
+                        0,
+                    )
+                    idor_probe_count += self._safe_int_value(
+                        dict(fallback_observation.get("tool_counts") or {}).get("idor_probe"),
+                        0,
+                    )
+                    config_exposure_hit = bool(fallback_observation.get("config_exposure_hit")) or config_exposure_hit
+                    config_exposure_url = str(fallback_observation.get("config_exposure_url", "") or "") or config_exposure_url
+                    config_exposure_summary = str(fallback_observation.get("config_exposure_summary", "") or "") or config_exposure_summary
+                    websocket_upgrade_hit = bool(fallback_observation.get("websocket_upgrade_hit")) or websocket_upgrade_hit
+                    websocket_upgrade_hint = bool(fallback_observation.get("websocket_upgrade_hint")) or websocket_upgrade_hint
+                    credential_probe_count += self._safe_int_value(
+                        dict(fallback_observation.get("tool_counts") or {}).get("credential_probe"),
+                        0,
+                    )
+                    login_success_hit = bool(fallback_observation.get("login_success_hit")) or login_success_hit
+                    login_success_reason = str(fallback_observation.get("login_success_reason", "") or "") or login_success_reason
+                    login_blocked_reason = str(fallback_observation.get("login_blocked_reason", "") or "") or login_blocked_reason
+                    if (not probe_error) and str(fallback_observation.get("error", "") or "").strip():
+                        probe_error = self._clip_text(fallback_observation.get("error", ""), self.AI_PEN_TEST_ERROR_MAX)
+                    payload_text = str(payload or "").strip().lower()
+                    if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
+                        payload_reflect_hit = True
+                    _apply_jwt_none_replay_signal(fallback_observation)
+                    logger.info(
+                        "task_id:{} ai_pen verify fallback_plan target:{} payload_type:{} probe_status:{} "
+                        "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} error:{}".format(
+                            self.task_id,
+                            target_url[:180],
+                            payload_type,
+                            probe_status,
+                            self._clip_text(
+                                json.dumps(dict(fallback_observation.get("tool_counts") or {}), ensure_ascii=False, sort_keys=True),
+                                180,
+                            ),
+                            int(bool(evidence_hit)),
+                            int(bool(api_doc_hit)),
+                            int(bool(graphql_hit)),
+                            len(idor_probe_responses),
+                            self._clip_text(probe_error, 120) if probe_error else "-",
                         )
-                        tool_calls = len(list(runtime.tool_calls or []))
-                        tool_trace_parts.extend(list(fallback_observation.get("trace_parts", []) or []))
-                        probe_status = int(fallback_observation.get("probe_status", 0) or 0) or probe_status
-                        probe_url = str(fallback_observation.get("probe_url", "") or "") or probe_url
-                        probe_headers = dict(fallback_observation.get("probe_headers") or {}) or probe_headers
-                        probe_body_excerpt = str(fallback_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
-                        probe_body_md5 = str(fallback_observation.get("probe_body_md5", "") or "") or probe_body_md5
-                        idor_probe_responses.extend(
-                            [
-                                dict(item or {})
-                                for item in list(fallback_observation.get("responses", []) or [])
-                                if isinstance(item, dict) and str(item.get("tool") or "").strip() == "idor_probe"
-                            ]
-                        )
-                        evidence_hit = bool(fallback_observation.get("evidence_hit")) or evidence_hit
-                        api_doc_hit = bool(fallback_observation.get("api_doc_hit")) or api_doc_hit
-                        api_doc_hit_url = str(fallback_observation.get("api_doc_hit_url", "") or "") or api_doc_hit_url
-                        if isinstance(fallback_observation.get("api_doc_summary"), dict) and fallback_observation.get("api_doc_summary"):
-                            api_doc_summary = dict(fallback_observation.get("api_doc_summary") or {})
-                        if isinstance(fallback_observation.get("api_surface_summary"), dict) and fallback_observation.get("api_surface_summary"):
-                            api_surface_summary = dict(fallback_observation.get("api_surface_summary") or {})
-                        graphql_hit = bool(fallback_observation.get("graphql_hit")) or graphql_hit
-                        graphql_hit_url = str(fallback_observation.get("graphql_hit_url", "") or "") or graphql_hit_url
-                        if isinstance(fallback_observation.get("graphql_summary"), dict) and fallback_observation.get("graphql_summary"):
-                            graphql_summary = dict(fallback_observation.get("graphql_summary") or {})
-                        api_doc_probe_count += self._safe_int_value(
-                            dict(fallback_observation.get("tool_counts") or {}).get("api_doc_probe"),
-                            0,
-                        )
-                        config_probe_count += self._safe_int_value(
-                            dict(fallback_observation.get("tool_counts") or {}).get("config_probe"),
-                            0,
-                        )
-                        idor_probe_count += self._safe_int_value(
-                            dict(fallback_observation.get("tool_counts") or {}).get("idor_probe"),
-                            0,
-                        )
-                        config_exposure_hit = bool(fallback_observation.get("config_exposure_hit")) or config_exposure_hit
-                        config_exposure_url = str(fallback_observation.get("config_exposure_url", "") or "") or config_exposure_url
-                        config_exposure_summary = str(fallback_observation.get("config_exposure_summary", "") or "") or config_exposure_summary
-                        websocket_upgrade_hit = bool(fallback_observation.get("websocket_upgrade_hit")) or websocket_upgrade_hit
-                        websocket_upgrade_hint = bool(fallback_observation.get("websocket_upgrade_hint")) or websocket_upgrade_hint
-                        credential_probe_count += self._safe_int_value(
-                            dict(fallback_observation.get("tool_counts") or {}).get("credential_probe"),
-                            0,
-                        )
-                        login_success_hit = bool(fallback_observation.get("login_success_hit")) or login_success_hit
-                        login_success_reason = str(fallback_observation.get("login_success_reason", "") or "") or login_success_reason
-                        login_blocked_reason = str(fallback_observation.get("login_blocked_reason", "") or "") or login_blocked_reason
-                        if (not probe_error) and str(fallback_observation.get("error", "") or "").strip():
-                            probe_error = self._clip_text(fallback_observation.get("error", ""), self.AI_PEN_TEST_ERROR_MAX)
-                        payload_text = str(payload or "").strip().lower()
-                        if payload_text and payload_type in payload_probe_types and len(payload_text) >= 6 and payload_text in str(probe_body_excerpt or "").lower():
-                            payload_reflect_hit = True
-                        logger.info(
-                            "task_id:{} ai_pen verify fallback_plan target:{} payload_type:{} probe_status:{} "
-                            "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} error:{}".format(
-                                self.task_id,
-                                target_url[:180],
-                                payload_type,
-                                probe_status,
-                                self._clip_text(
-                                    json.dumps(dict(fallback_observation.get("tool_counts") or {}), ensure_ascii=False, sort_keys=True),
-                                    180,
-                                ),
-                                int(bool(evidence_hit)),
-                                int(bool(api_doc_hit)),
-                                int(bool(graphql_hit)),
-                                len(idor_probe_responses),
-                                self._clip_text(probe_error, 120) if probe_error else "-",
-                            )
-                        )
-                    elif payload_type == "weak_password_probe" and login_probe_context:
-                        if bool(login_probe_context.get("captcha_required")):
-                            tool_trace_parts.append("weak_password_probe(skip_captcha)")
-                        else:
-                            tool_trace_parts.append("weak_password_probe(skip_no_credential)")
-                    elif payload_type == "idor_probe":
-                        tool_trace_parts.append("idor_probe(skip_no_mutation)")
-                    elif payload_type == "api_doc_probe":
-                        tool_trace_parts.append("api_doc_probe(skip_no_target)")
-                    elif payload_type == "graphql_probe":
-                        tool_trace_parts.append("graphql_probe(skip_no_target)")
-                    elif payload_type == "websocket_probe":
-                        tool_trace_parts.append("websocket_probe(skip_invalid_target)")
-                    elif payload_type == "weak_password_probe":
-                        tool_trace_parts.append("weak_password_probe(skip_no_login_form)")
+                    )
+                elif payload_type == "weak_password_probe" and login_probe_context:
+                    if bool(login_probe_context.get("captcha_required")):
+                        tool_trace_parts.append("weak_password_probe(skip_captcha)")
+                    else:
+                        tool_trace_parts.append("weak_password_probe(skip_no_credential)")
+                elif payload_type == "idor_probe":
+                    tool_trace_parts.append("idor_probe(skip_no_mutation)")
+                elif payload_type == "api_doc_probe":
+                    tool_trace_parts.append("api_doc_probe(skip_no_target)")
+                elif payload_type == "graphql_probe":
+                    tool_trace_parts.append("graphql_probe(skip_no_target)")
+                elif payload_type == "websocket_probe":
+                    tool_trace_parts.append("websocket_probe(skip_invalid_target)")
+                elif payload_type == "weak_password_probe":
+                    tool_trace_parts.append("weak_password_probe(skip_no_login_form)")
 
             decision = "needs_manual_review"
             confidence = 0.56
@@ -10912,12 +11043,17 @@ class WebSiteFetch(object):
                 confidence = 0.74
                 reason = "Payload 在响应中回显，疑似存在可利用注入点"
             elif payload_type == "idor_probe" and idor_diff_hit:
-                decision = "needs_manual_review"
-                confidence = 0.80 if list(idor_diff_summary.get("sensitive_hits", []) or []) else 0.76
-                reason = "对象引用参数变异后响应差异明显，疑似存在越权风险"
-                idor_summary_text = self._format_idor_diff_summary_text(idor_diff_summary)
-                if idor_summary_text:
-                    reason = "{}；差异摘要：{}".format(reason, idor_summary_text)
+                idor_outcome = self._classify_ai_pen_idor_outcome(
+                    base_status=status_code,
+                    probe_status=probe_status,
+                    diff_summary=idor_diff_summary,
+                )
+                decision = self._normalize_ai_pen_decision(
+                    idor_outcome.get("decision"),
+                    default_value="needs_manual_review",
+                )
+                confidence = self._clamp_ai_pen_confidence(idor_outcome.get("confidence"), 0.76)
+                reason = self._clip_text(idor_outcome.get("reason", ""), self.AI_PEN_TEST_REASON_MAX) or reason
             elif payload_type != "idor_probe" and probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5:
                 decision = "needs_manual_review"
                 confidence = 0.66
