@@ -2,7 +2,8 @@
 
 ## 1. 目标定位
 
-- 目标版本：`v4.5.0`
+- 目标版本：`v4.5.x`
+- 文档同步版本：`v4.5.29`（截至 `2026-03-31`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -18,16 +19,22 @@
 - 候选汇聚
 - 统一工具注册
 - MCP 审计产物（`agent_trace/tool_calls/tool_results/stop_reason/budget_used`）
-- 基础 HTTP/IDOR/API 文档/JWT/WebSocket 验证
+- `run_agent_loop` 本地闭环骨架
+- 基础 HTTP/IDOR/API 文档/JWT/GraphQL/WebSocket/Socket.IO/路径穿越/Web 策略验证
 - 浏览器情报补充
+- 登录/会话/登出验证链
+- 高价值目标家族提取与排序
+- 结果轨迹、导出字段与量化统计数据面
 
 但仍存在典型“假 Agent MCP”问题：
 
 1. `commonTask` 仍然主导大部分执行逻辑
 2. planner 更像“给建议”，不是“每轮决策的大脑”
 3. runtime 更像“带审计的工具执行器”，不是“多轮推理闭环”
-4. 登录、会话、CSRF、验证码、认证状态并没有形成真正工具链
-5. 弱口令能力没有接到 AI 渗透 Agent 主链，只在传统 `weak_brute` / 其他链路中存在
+4. 被动参数提取 -> 参数类型标签 -> payload 编排 -> proof 判定 还没有完全收成单引擎
+5. 前台结果产品化仍偏后端数据面，用户可视化时间线/调用树还未完全收口
+6. 基准靶场与标注回归尚未建完，阶段 F 还没有形成真正的量化基线
+7. `ARL/docker/dicts/dict` 仍是仓库资源，尚未升级为 Agent 可安全消费的受控字典资源
 
 ## 3. 能力下限：按 PortSwigger 体系定义
 
@@ -178,51 +185,72 @@ AI 渗透测试至少要覆盖以下能力族：
 
 ## 6. 高价值目标发现策略
 
-高价值目标不能只靠少量示例路径，而应按“目标家族”识别：
+高价值目标不能只靠少量示例路径，而应按“目标家族”识别。
+
+当前代码已统一为以下家族：
 
 1. 接口说明 / Schema 家族
-   - `swagger/openapi/api-docs/redoc/knife4j/graphql schema`
+   - `swagger/openapi/api-docs/redoc/knife4j`
 
-2. 管理 / 诊断家族
-   - `actuator/jolokia/prometheus/metrics/configprops/mappings/beans/conditions/loggers`
+2. GraphQL 家族
+   - `graphql/graphiql/graphql-playground/apollo`
 
-3. 认证入口家族
+3. 认证协议家族
+   - `openid/jwks/oauth2/token/introspect/userinfo`
+
+4. 配置暴露家族
+   - `actuator/env/configprops/heapdump/loggers`
+
+5. 管理 / 诊断家族
+   - `actuator/jolokia/prometheus/metrics/mappings/beans/conditions`
+
+6. 认证入口家族
    - `login/signin/passport/sso/cas/oauth/token/auth/login/connect/token`
 
-4. 文件处理家族
+7. 文件处理家族
    - `upload/import/download/export/attachment/template/avatar/report`
 
-5. 敏感文件 / 配置家族
+8. 敏感文件 / 配置家族
    - `.env/.git/config/application.yml/bootstrap.yml/web.config/config.php`
+
+9. 路径穿越家族
+   - `../ ..\ %2e%2e etc/passwd win.ini`
+
+10. 实时通道家族
+   - `websocket/ws/wss/socket.io/sockjs/engine.io`
+
+11. Web 策略家族
+   - `cors/cache-control/csp/x-frame-options/hsts`
 
 候选排序统一依据：
 
 - 任务范围
 - 状态码优先（优先 `200/201/206`）
-- 路径价值
+- 高价值家族排名
 - 认证/文件/对象引用/配置暴露信号
 - 知识命中
 - 浏览器运行时信号
+- 高价值关键词与匹配 URL
 
-## 7. 登录与弱口令：为什么现在没用 `ARL/docker/dicts/dict`
+## 7. 登录与弱口令：为什么还没有默认启用 `ARL/docker/dicts/dict` 全量字典
 
 当前仓库中确实存在弱口令字典：
 
 - [user.txt](/Users/eric.sy.wu/Documents/Github/newui/ARL-Source-Install/ARL/docker/dicts/dict/user.txt)
 - [pass.txt](/Users/eric.sy.wu/Documents/Github/newui/ARL-Source-Install/ARL/docker/dicts/dict/pass.txt)
 
-但它**目前没有接入 AI 渗透 Agent 主链**，原因不是“没有字典”，而是架构上尚未完成以下能力：
+但它**还没有作为受控字典集默认接入 AI 渗透 Agent 主链**。原因已经不再是“没有登录工具链”，而是以下能力仍未完全收口：
 
-1. 没有 `login_probe / credential_probe / detect_login_success` 工具
-2. 没有会话层，无法稳定维护 Cookie / CSRF / Redirect
-3. 没有验证码/风控识别后的止损策略
-4. 没有最小凭证集与大字典分级治理
-5. 没有把“登录入口识别”升级成“登录验证链”
+1. `session_start / extract_csrf_token / credential_probe / detect_login_success / session_request / logout_probe` 已具备，但“大字典消费”还没有独立的安全治理层
+2. 验证码/锁定/风控识别已有基础判定，但还没与“受控字典开关、重试预算、节流策略”完全联动
+3. 缺少“人工显式启用 + 站点级最大尝试数 + 速率限制 + 熔断”一整套字典治理协议
+4. 缺少靶场与量化回归来证明“引入受控字典后误报、误伤、副作用可控”
+5. 字典资源仍是仓库文件，不是 runtime 可声明消费的受控资源对象
 
 也就是说：
 
 - `ARL/docker/dicts/dict` 不是没价值
-- 而是**当前 AI 渗透执行链还没有真正能安全消费它的工具层**
+- 而是**当前 AI 渗透执行链只适合跑最小默认凭证集，还不适合默认消费全量字典**
 
 ### 7.1 正确接入方式
 
@@ -293,6 +321,13 @@ AI 渗透测试至少要覆盖以下能力族：
 - 至少支持 3 轮真实闭环
 - 执行路径不再主要由 `if/else` 写死
 
+当前状态（截至 `2026-03-31`）：
+
+- `AiPenMcpRuntime.run_agent_loop` 已落地，且已具备 3 轮闭环测试
+- `agent_trace/tool_calls/tool_results/stop_reason/budget_used` 已可落库与导出
+- 但主控制权仍主要在 `commonTask._verify_ai_pen_candidate`
+- 结论：`部分完成，未达最终验收`
+
 ### 阶段 B：Session / Login 能力
 
 目标：
@@ -312,6 +347,14 @@ AI 渗透测试至少要覆盖以下能力族：
 
 - 能识别登录成功/失败/锁定/验证码阻断
 - 能以最小默认凭证集做低副作用验证
+
+当前状态（截至 `2026-03-31`）：
+
+- 已具备 `session_start / session_request / extract_csrf_token / login_probe / credential_probe / detect_login_success / logout_probe`
+- `weak_password_probe` 已能在预算内自动扩展为登录后会话闭环
+- 已可输出 `session_summary`、认证后资源访问证据、退出有效性证据
+- 受控字典集尚未接入默认自动链
+- 结论：`基本完成`
 
 ### 阶段 C：PortSwigger 核心能力包
 
@@ -346,9 +389,10 @@ AI 渗透测试至少要覆盖以下能力族：
 
 - `C-AutoPassive（被动参数提取 -> AI分析 -> MCP自动测）`：部分完成
   - 已有能力：多源参数汇总（JS/runtime/form/api-doc/hidden）与图谱摘要
+  - 已补能力：`path_traversal_probe / web_policy_probe / socketio_probe / websocket_probe` 已接入主链
   - 差距：参数类型标签 -> payload 编排 -> 全链路验证 仍未统一为单引擎
-  - 差距：`垂直越权/路径穿越/SockJS/Socket.IO` 深测能力仍需补强
-  - 差距：`CORS/Cache/Security Headers/Error Exposure` 的 Web 策略验证尚未体系化
+  - 差距：`垂直越权` 及部分实时通道深测能力仍需补强
+  - 差距：`CORS/Cache/Security Headers/Error Exposure` 虽已有探针，但统一 proof engine 仍未完全收口
 
 - 口径结论：
   - 按阶段 C 最低口径：可用
@@ -371,6 +415,13 @@ AI 渗透测试至少要覆盖以下能力族：
 - `site/url/fileleak/wih/js/runtime` 统一高价值目标提取器
 - 按目标家族排序
 
+当前状态（截至 `2026-03-31`）：
+
+- 已统一为高价值家族提取器，覆盖 `site/url/fileleak/wih/browser/runtime/login`
+- 已输出 `high_value_summary/high_value_family/high_value_family_rank/high_value_keywords`
+- 已接入候选排序、AI planner、重试、导出与统计
+- 结论：`主干完成`
+
 ### 阶段 E：结果与轨迹产品化
 
 目标：
@@ -384,6 +435,14 @@ AI 渗透测试至少要覆盖以下能力族：
 - 请求/响应证据对照
 - 会话状态摘要
 - 支持沿用历史 session/tool_plan 重试
+
+当前状态（截至 `2026-03-31`）：
+
+- 后端数据面已具备：`agent_trace/tool_calls/tool_results/stop_reason/budget_used/session_summary/tool_plan_source`
+- 已支持历史 `session/tool_plan/tool_results` 沿用重试
+- 已补导出字段与 `/ai_pen_test/stats/` 轨迹维度统计
+- 差距：前台仍缺更完整的 Agent 时间线、工具调用树与证据对照产品化呈现
+- 结论：`后端基本到位，前台未完全收口`
 
 ### 阶段 F：基准靶场与回归
 
@@ -408,6 +467,13 @@ AI 渗透测试至少要覆盖以下能力族：
   - 平均轮数
   - 平均工具调用数
 
+当前状态（截至 `2026-03-31`）：
+
+- `/ai_pen_test/stats/` 已输出 `quant_metrics`
+- 已可统计：覆盖率、误报率、成功率、平均轮数、平均工具调用数
+- 差距：登录/JWT/API文档/Actuator/IDOR/SQLi/XSS/文件/SSRF 靶场与标注样本尚未建立
+- 结论：`指标数据面已具备，靶场基线未完成`
+
 ## 9. 结论
 
 真正要解决的，不是“再多加几个工具”，而是：
@@ -422,3 +488,16 @@ AI 渗透测试至少要覆盖以下能力族：
 - `Agent MCP 真闭环`
 - `会话/认证可打`
 - `弱口令字典可受控接入`
+
+当前口径结论（截至 `2026-03-31`）：
+
+- 按阶段 C 最低口径：`已达标，可用`
+- 按整份方案最终口径：`未全部完成`
+- 已接近完成的阶段：`B / C-Core / D / E(后端数据面)`
+- 仍需继续推进的阶段：`A / C-AutoPassive / E(前台产品化) / F`
+
+建议下一步优先级：
+
+1. 阶段 F：先建立最小靶场与正负样例集，真正把 `quant_metrics` 用起来
+2. 阶段 A：继续把控制权从 `commonTask` 挪到 runtime，减少执行路径写死
+3. 阶段 C / 7：完成参数单引擎与受控字典资源封装，为弱口令第二层能力做准备
