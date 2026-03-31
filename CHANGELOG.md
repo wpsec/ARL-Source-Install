@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-01（v4.5.10 ~ v4.5.43）
+## 2026-04-01（v4.5.10 ~ v4.5.45）
+
+- `[v4.5.45]` AI渗透 版本与方案口径同步：对齐 `version.txt` 自动递增后的版本号，统一修正 `CHANGELOG` 与 `AI渗透测试MCP总体方案` 的同步版本，避免版本号、方案状态和代码能力说明出现错位
 
 - `[v4.5.43]` AI渗透 `证据家族与工程师优先级视图` 继续收敛：在统一 `proof_type/proof_summary` 之上新增 `proof_family`（如 `auth_bypass/surface_exposure/realtime_exposure/response_differential/sensitive_disclosure`），并将其接入 `/ai_pen_test/stats/` 的分组与 benchmark、`engineer_focus_entries` 优先级排序和导出表，工程师现在可以直接按“证据家族 + 证据摘要”筛选更值得接手的真入口
 - `[v4.5.41]` AI渗透 `proof_summary` 与细日志主干落地：验证链新增统一 `payload_variant/payload_expected_signal/payload_proof_candidates/proof_type/proof_signals/proof_summary` 摘要，在 `planner -> main_plan -> fallback -> verify done` 各阶段输出更细日志；同时这些字段已随结果落库、重试更新和统计链传递，不再只是运行时临时信息
