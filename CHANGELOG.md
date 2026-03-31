@@ -12,6 +12,7 @@
 - `[v4.5.12]` AI渗透 `JWT/认证链` 继续收敛到 MCP 工具闭环：`_infer_ai_pen_tool_plan` 与 `_build_ai_pen_fallback_tool_plan` 新增 `token_replay`（`Authorization: Bearer <none-token>`）步骤，`_verify_ai_pen_candidate` 的 JWT none-token 验证改为从 runtime `token_replay` 观测结果统一判定，不再走 runtime 外手写请求分支；同时补齐 JWT tool plan 回归测试，确保 `jwt_probe + token_replay` 在预算内稳定输出
 - `[v4.5.13]` AI渗透 `IDOR/访问控制` 证据标准分级：新增 `_classify_ai_pen_idor_outcome`，将“变异后被 401/403 拒绝”收敛为 `likely_false_positive`（访问控制生效），将“同为成功状态且出现敏感字段差异”的高置信场景提升为 `verified`，其余维持 `needs_manual_review`；并补齐 IDOR 分级判定回归测试，降低“有差异但非越权”噪声
 - `[v4.5.14]` AI渗透 `Token/认证协议` 探针链扩展：新增 OAuth/OIDC 协议端点家族化目标生成器（如 `/.well-known/openid-configuration`、`/.well-known/jwks.json`、`/oauth/token`、`/connect/token`），`jwt_probe` 的 infer/fallback 计划由“单 URL 复测”升级为“当前入口 + 协议端点”组合探测；运行时新增认证协议响应识别与摘要提取，在 JWT 分支可对公开可访问的协议端点给出结构化验证结论
+- `[v4.5.15]` AI渗透 `IDOR` 一致性信号增强：`idor_probe` 多响应分析新增一致性统计（`consistency_hits/consistent_sensitive_fields`），评分与差异摘要同步纳入“重复出现的敏感字段差异”信号；当多次对象引用变异都指向同类敏感字段变化时，判定置信度更稳定，减少单次偶发响应差异对结论的干扰
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 

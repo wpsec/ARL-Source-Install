@@ -688,6 +688,28 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("status_changed=1", summary_text)
         self.assertGreaterEqual(score, 6)
 
+    def test_idor_diff_summary_score_boosts_consistency_signal(self):
+        summary = {
+            "mutation_key": "user_id",
+            "mutation_from": "100",
+            "mutation_to": "101",
+            "mutation_kind": "numeric",
+            "status_changed": False,
+            "body_changed": True,
+            "length_delta": 88,
+            "sensitive_hits": ["email", "role"],
+            "material_change": True,
+            "consistency_hits": 2,
+            "consistent_sensitive_fields": ["email", "role"],
+        }
+
+        summary_text = WebSiteFetch._format_idor_diff_summary_text(summary)
+        score = WebSiteFetch._score_idor_diff_summary(summary)
+
+        self.assertIn("consistency=2", summary_text)
+        self.assertIn("consistent_fields=email,role", summary_text)
+        self.assertGreaterEqual(score, 14)
+
     def test_classify_ai_pen_idor_outcome_marks_verified_for_sensitive_success_diff(self):
         summary = WebSiteFetch._build_idor_diff_summary(
             base_status=200,

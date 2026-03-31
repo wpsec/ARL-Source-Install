@@ -5742,6 +5742,16 @@ class WebSiteFetch(object):
         sensitive_hits = [str(item or "").strip() for item in list(summary.get("sensitive_hits", []) or [])[:4] if str(item or "").strip()]
         if sensitive_hits:
             parts.append("fields={}".format(",".join(sensitive_hits)))
+        consistency_hits = cls._safe_int_value(summary.get("consistency_hits"), 0)
+        if consistency_hits > 1:
+            parts.append("consistency={}".format(consistency_hits))
+        consistent_fields = [
+            str(item or "").strip()
+            for item in list(summary.get("consistent_sensitive_fields", []) or [])[:4]
+            if str(item or "").strip()
+        ]
+        if consistent_fields:
+            parts.append("consistent_fields={}".format(",".join(consistent_fields)))
         return " | ".join(parts)
 
     @classmethod
@@ -5761,6 +5771,10 @@ class WebSiteFetch(object):
             score += 2
         elif length_delta >= 32:
             score += 1
+        if cls._safe_int_value(summary.get("consistency_hits"), 0) >= 2:
+            score += 3
+        if list(summary.get("consistent_sensitive_fields", []) or []):
+            score += 2
         return score
 
     @classmethod
@@ -11132,6 +11146,8 @@ class WebSiteFetch(object):
                 sqli_proof_type = self._detect_sqli_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
             if payload_type == "idor_probe" and idor_probe_responses:
                 best_idor_score = -1
+                idor_positive_summaries = []
+                idor_sensitive_counter = {}
                 for response_item in idor_probe_responses:
                     probe_url_text = str(response_item.get("url") or "").strip()
                     matching_target = None
@@ -11146,6 +11162,13 @@ class WebSiteFetch(object):
                         probe_body=str(response_item.get("body_text", "") or ""),
                         probe_target=matching_target or {},
                     )
+                    if bool(candidate_summary.get("material_change")):
+                        idor_positive_summaries.append(candidate_summary)
+                        for sensitive_field in list(candidate_summary.get("sensitive_hits", []) or []):
+                            field_text = str(sensitive_field or "").strip().lower()
+                            if not field_text:
+                                continue
+                            idor_sensitive_counter[field_text] = int(idor_sensitive_counter.get(field_text, 0) or 0) + 1
                     candidate_score = self._score_idor_diff_summary(candidate_summary)
                     if candidate_score > best_idor_score:
                         best_idor_score = candidate_score
@@ -11155,6 +11178,17 @@ class WebSiteFetch(object):
                         probe_headers = dict(response_item.get("headers") or {}) if isinstance(response_item.get("headers"), dict) else probe_headers
                         probe_body_excerpt = str(response_item.get("body_text", "") or "") or probe_body_excerpt
                         probe_body_md5 = str(response_item.get("body_md5", "") or "") or probe_body_md5
+                consistency_hits = len(idor_positive_summaries)
+                if consistency_hits >= 2:
+                    idor_diff_summary["consistency_hits"] = consistency_hits
+                    consistent_fields = [
+                        field_name
+                        for field_name, hit_count in idor_sensitive_counter.items()
+                        if int(hit_count or 0) >= 2
+                    ]
+                    consistent_fields = sorted(consistent_fields)[:4]
+                    if consistent_fields:
+                        idor_diff_summary["consistent_sensitive_fields"] = consistent_fields
                 idor_diff_hit = bool(idor_diff_summary.get("material_change"))
                 logger.info(
                     "task_id:{} ai_pen idor summary target:{} probes:{} best_score:{} diff_hit:{} summary:{}".format(
