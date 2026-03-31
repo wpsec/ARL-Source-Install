@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-31（v4.5.10 ~ v4.5.33）
+## 2026-03-31（v4.5.10 ~ v4.5.34）
+
+- `[v4.5.34]` AI渗透 `受控字典资源` 第一阶段封装：`ARL/docker/dicts/dict/user.txt + pass.txt` 新增 preview/计数加载与缓存能力，登录上下文摘要补充 `controlled_dict_ready/user_count/pass_count` 可观测信息；`weak_password_probe` 的最小默认凭证集开始可按高价值登录面安全引入极小受控 preview 组合（如 `admin/admin`、`root/root`、`admin/123456`），为后续预算/节流/熔断治理版第二层字典能力做准备
 
 - `[v4.5.10]` 仪表盘 `资产增长趋势(7日)` 统计口径修复：`/console/dashboard` 的 `asset_trend_7d` 从“累计总量曲线”调整为“按日新增曲线”，并额外保留 `assets_total/vulns_total` 累计字段用于兼容；修复高基数资产下曲线长期近似直线的问题（例如 tooltip 持续显示同一总量值）
 - `[v4.5.10]` 仪表盘当日新增资产统计兼容修复：`new_assets_today` 改为统一复用日统计逻辑，兼容 `save_date` 为 `date/string` 的混合存储，并在 `save_date` 缺失时回退 `update_date`，避免历史数据口径差异导致“新增始终为 0”

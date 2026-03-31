@@ -4,6 +4,7 @@ import pathlib
 import sys
 import types
 import unittest
+from unittest import mock
 
 
 def _build_logger():
@@ -1541,24 +1542,81 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("登录入口或认证链路线索", str(result.get("reason") or ""))
 
     def test_login_probe_context_extracts_form_fields_from_html(self):
-        context = WebSiteFetch._build_ai_pen_login_probe_context(
-            target_url="https://example.com/login",
-            body_text=(
-                '<form action="/auth/login" method="post">'
-                '<input type="hidden" name="_token" value="csrf-1" />'
-                '<input type="text" name="email" />'
-                '<input type="password" name="passwd" />'
-                '</form>'
-            ),
-            dom_form_summary=[],
-            login_surface_summary={"password_form_count": 1, "captcha_form_count": 0},
-        )
+        with mock.patch.object(
+            WebSiteFetch,
+            "_load_ai_pen_controlled_dict_resource",
+            return_value={"ready": True, "user_count": 2, "pass_count": 3},
+        ):
+            context = WebSiteFetch._build_ai_pen_login_probe_context(
+                target_url="https://example.com/login",
+                body_text=(
+                    '<form action="/auth/login" method="post">'
+                    '<input type="hidden" name="_token" value="csrf-1" />'
+                    '<input type="text" name="email" />'
+                    '<input type="password" name="passwd" />'
+                    '</form>'
+                ),
+                dom_form_summary=[],
+                login_surface_summary={"password_form_count": 1, "captcha_form_count": 0},
+            )
 
         self.assertEqual("https://example.com/auth/login", context.get("submit_url"))
         self.assertEqual("email", context.get("username_field"))
         self.assertEqual("passwd", context.get("password_field"))
         self.assertEqual("_token", context.get("csrf_field"))
         self.assertFalse(bool(context.get("captcha_required")))
+        self.assertTrue(bool(context.get("controlled_dict_ready")))
+        self.assertEqual(2, context.get("controlled_dict_user_count"))
+        self.assertEqual(3, context.get("controlled_dict_pass_count"))
+
+    def test_build_ai_pen_minimal_default_credentials_prefers_safe_controlled_dict_pairs(self):
+        with mock.patch.object(
+            WebSiteFetch,
+            "_load_ai_pen_controlled_dict_resource",
+            return_value={
+                "ready": True,
+                "user_count": 2,
+                "pass_count": 3,
+                "_candidate_usernames": ["admin", "root"],
+                "_candidate_passwords": ["admin", "root", "123456"],
+            },
+        ):
+            credentials = WebSiteFetch._build_ai_pen_minimal_default_credentials(
+                candidate={
+                    "target": "https://example.com/admin/login",
+                    "risk_type": "weak_password",
+                    "risk_name": "Admin Login",
+                    "high_value_family": "auth_entry",
+                },
+                payload="",
+                max_count=3,
+            )
+
+        self.assertGreaterEqual(len(credentials), 2)
+        self.assertEqual("controlled_dict", credentials[0].get("source"))
+        self.assertEqual("admin", credentials[0].get("username"))
+        self.assertEqual("admin", credentials[0].get("password"))
+        self.assertTrue(any(item.get("source") == "controlled_dict" for item in credentials))
+
+    def test_format_ai_pen_login_probe_context_summary_includes_controlled_dict_state(self):
+        summary = WebSiteFetch._format_ai_pen_login_probe_context_summary(
+            {
+                "login_url": "https://example.com/login",
+                "submit_url": "https://example.com/auth/login",
+                "method": "post",
+                "username_field": "username",
+                "password_field": "password",
+                "csrf_field": "_token",
+                "captcha_required": False,
+                "hidden_fields": {"_token": "csrf-1"},
+                "fields": ["username", "password"],
+                "controlled_dict_ready": True,
+                "controlled_dict_user_count": 2,
+                "controlled_dict_pass_count": 3,
+            }
+        )
+
+        self.assertIn("dict=1(2x3)", summary)
 
     def test_analyze_ai_pen_login_success_detects_redirect_to_dashboard(self):
         result = WebSiteFetch._analyze_ai_pen_login_success(

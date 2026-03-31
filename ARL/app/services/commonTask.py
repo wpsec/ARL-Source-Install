@@ -631,6 +631,17 @@ class WebSiteFetch(object):
         "账号锁定",
         "频繁",
     )
+    AI_PEN_CONTROLLED_DICT_DIR = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "docker", "dicts", "dict")
+    )
+    AI_PEN_CONTROLLED_DICT_USER_FILE = os.path.join(AI_PEN_CONTROLLED_DICT_DIR, "user.txt")
+    AI_PEN_CONTROLLED_DICT_PASS_FILE = os.path.join(AI_PEN_CONTROLLED_DICT_DIR, "pass.txt")
+    AI_PEN_CONTROLLED_DICT_PREVIEW_LIMIT = 24
+    AI_PEN_CONTROLLED_DICT_SAFE_USERNAME_HINTS = ("admin", "root", "administrator", "guest", "test")
+    AI_PEN_CONTROLLED_DICT_SAFE_PASSWORD_HINTS = (
+        "admin", "root", "administrator", "guest", "test", "123456", "12345678", "admin123", "password",
+    )
+    AI_PEN_CONTROLLED_DICT_RESOURCE_CACHE = None
     AI_PEN_MINIMAL_DEFAULT_CREDENTIALS = (
         ("admin", "admin"),
         ("admin", "123456"),
@@ -8409,6 +8420,8 @@ class WebSiteFetch(object):
         if not has_password_form or not submit_url:
             return {}
 
+        controlled_dict_resource = cls._load_ai_pen_controlled_dict_resource()
+
         return {
             "login_url": login_url,
             "submit_url": submit_url,
@@ -8421,6 +8434,9 @@ class WebSiteFetch(object):
             "captcha_required": bool(captcha_required),
             "hidden_fields": hidden_fields,
             "fields": candidate_fields[:12],
+            "controlled_dict_ready": bool(controlled_dict_resource.get("ready")),
+            "controlled_dict_user_count": cls._safe_int_value(controlled_dict_resource.get("user_count"), 0),
+            "controlled_dict_pass_count": cls._safe_int_value(controlled_dict_resource.get("pass_count"), 0),
         }
 
     @classmethod
@@ -8704,6 +8720,144 @@ class WebSiteFetch(object):
         return {}
 
     @classmethod
+    def _load_ai_pen_controlled_dict_resource(cls):
+        cached = cls.AI_PEN_CONTROLLED_DICT_RESOURCE_CACHE
+        if isinstance(cached, dict):
+            return dict(cached)
+
+        def read_preview_lines(file_path: str, limit: int = 24):
+            preview = []
+            total = 0
+            if not file_path or not os.path.isfile(file_path):
+                return total, preview
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as handle:
+                    for raw_line in handle:
+                        line_text = str(raw_line or "").strip()
+                        if not line_text:
+                            continue
+                        total += 1
+                        if len(preview) < max(1, int(limit or 1)):
+                            preview.append(line_text[:80])
+            except Exception:
+                return 0, []
+            return total, preview
+
+        user_count, username_preview = read_preview_lines(
+            cls.AI_PEN_CONTROLLED_DICT_USER_FILE,
+            limit=cls.AI_PEN_CONTROLLED_DICT_PREVIEW_LIMIT,
+        )
+        pass_count, password_preview = read_preview_lines(
+            cls.AI_PEN_CONTROLLED_DICT_PASS_FILE,
+            limit=cls.AI_PEN_CONTROLLED_DICT_PREVIEW_LIMIT,
+        )
+        resource = {
+            "loaded": True,
+            "ready": bool(user_count > 0 and pass_count > 0),
+            "user_dict_path": cls.AI_PEN_CONTROLLED_DICT_USER_FILE,
+            "pass_dict_path": cls.AI_PEN_CONTROLLED_DICT_PASS_FILE,
+            "user_count": user_count,
+            "pass_count": pass_count,
+            "username_preview": username_preview,
+            "password_preview": password_preview,
+            "_candidate_usernames": [
+                str(item or "").strip().lower()
+                for item in username_preview
+                if str(item or "").strip()
+            ],
+            "_candidate_passwords": [
+                str(item or "").strip().lower()
+                for item in password_preview
+                if str(item or "").strip()
+            ],
+        }
+        cls.AI_PEN_CONTROLLED_DICT_RESOURCE_CACHE = dict(resource)
+        return dict(resource)
+
+    @classmethod
+    def _build_ai_pen_controlled_dict_candidates(cls, candidate: dict = None, max_count: int = 2):
+        item = candidate if isinstance(candidate, dict) else {}
+        limit = max(0, int(max_count or 0))
+        if limit < 1:
+            return []
+
+        merged_text = " ".join(
+            [
+                str(item.get("target") or "").strip().lower(),
+                str(item.get("risk_type") or "").strip().lower(),
+                str(item.get("risk_name") or "").strip().lower(),
+                str(item.get("high_value_family") or "").strip().lower(),
+                str(item.get("high_value_summary") or "").strip().lower(),
+                " ".join([str(x or "").strip().lower() for x in list(item.get("surface_hints", []) or [])[:12]]),
+                " ".join([str(x or "").strip().lower() for x in list(item.get("knowledge_hit_tokens", []) or [])[:16]]),
+            ]
+        ).strip()
+        if not any(
+            token in merged_text
+            for token in ("admin", "console", "manage", "dashboard", "login", "signin", "auth", "passport", "sso")
+        ):
+            return []
+
+        resource = cls._load_ai_pen_controlled_dict_resource()
+        if not bool(resource.get("ready")):
+            return []
+
+        preview_usernames = list(resource.get("_candidate_usernames", []) or [])
+        preview_passwords = list(resource.get("_candidate_passwords", []) or [])
+        if not preview_usernames or not preview_passwords:
+            return []
+
+        safe_usernames = []
+        safe_passwords = []
+        seen_usernames = set()
+        seen_passwords = set()
+        preview_username_set = set(preview_usernames)
+        preview_password_set = set(preview_passwords)
+        for username_hint in cls.AI_PEN_CONTROLLED_DICT_SAFE_USERNAME_HINTS:
+            hint_text = str(username_hint or "").strip().lower()
+            if hint_text and hint_text in preview_username_set and hint_text not in seen_usernames:
+                seen_usernames.add(hint_text)
+                safe_usernames.append(hint_text)
+        for password_hint in cls.AI_PEN_CONTROLLED_DICT_SAFE_PASSWORD_HINTS:
+            hint_text = str(password_hint or "").strip().lower()
+            if hint_text and hint_text in preview_password_set and hint_text not in seen_passwords:
+                seen_passwords.add(hint_text)
+                safe_passwords.append(hint_text)
+
+        result = []
+        seen_pairs = set()
+
+        def append_pair(username: str, password: str):
+            user_text = str(username or "").strip().lower()
+            pass_text = str(password or "").strip()
+            if not user_text or not pass_text:
+                return
+            cache_key = "{}\0{}".format(user_text, pass_text)
+            if cache_key in seen_pairs:
+                return
+            seen_pairs.add(cache_key)
+            result.append(
+                {
+                    "username": user_text[:80],
+                    "password": pass_text[:80],
+                    "source": "controlled_dict",
+                }
+            )
+
+        for username in safe_usernames:
+            if username in preview_password_set:
+                append_pair(username, username)
+            if len(result) >= limit:
+                return result[:limit]
+
+        for username in safe_usernames:
+            for password in safe_passwords:
+                append_pair(username, password)
+                if len(result) >= limit:
+                    return result[:limit]
+        return result[:limit]
+
+    @classmethod
     def _build_ai_pen_minimal_default_credentials(cls, candidate: dict = None, payload: str = "", max_count: int = 3):
         item = candidate if isinstance(candidate, dict) else {}
         result = []
@@ -8745,6 +8899,11 @@ class WebSiteFetch(object):
                     append_pair(username, password, "product_default")
                     if len(result) >= max(1, int(max_count or 1)):
                         return result[: max(1, int(max_count or 1))]
+
+        for credential in cls._build_ai_pen_controlled_dict_candidates(item, max_count=max(1, int(max_count or 1))):
+            append_pair(credential.get("username"), credential.get("password"), credential.get("source") or "controlled_dict")
+            if len(result) >= max(1, int(max_count or 1)):
+                return result[: max(1, int(max_count or 1))]
 
         for username, password in cls.AI_PEN_MINIMAL_DEFAULT_CREDENTIALS:
             append_pair(username, password, "minimal_default")
@@ -11581,6 +11740,13 @@ class WebSiteFetch(object):
             "captcha={}".format(int(bool(context.get("captcha_required")))),
             "hidden={}".format(len(dict(context.get("hidden_fields") or {}))),
         ]
+        parts.append(
+            "dict={}({}x{})".format(
+                int(bool(context.get("controlled_dict_ready"))),
+                cls._safe_int_value(context.get("controlled_dict_user_count"), 0),
+                cls._safe_int_value(context.get("controlled_dict_pass_count"), 0),
+            )
+        )
         if fields:
             parts.append("fields={}".format(",".join(fields[:6])))
         return " | ".join(parts)
