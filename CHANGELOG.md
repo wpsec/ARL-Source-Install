@@ -3,9 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-01（v4.5.10 ~ v4.5.42）
+## 2026-04-01（v4.5.10 ~ v4.5.43）
 
-- `[v4.5.42]` AI渗透 `证据家族与工程师优先级视图` 继续收敛：在统一 `proof_type/proof_summary` 之上新增 `proof_family`（如 `auth_bypass/surface_exposure/realtime_exposure/response_differential/sensitive_disclosure`），并将其接入 `/ai_pen_test/stats/` 的分组与 benchmark、`engineer_focus_entries` 优先级排序和导出表，工程师现在可以直接按“证据家族 + 证据摘要”筛选更值得接手的真入口
+- `[v4.5.43]` AI渗透 `证据家族与工程师优先级视图` 继续收敛：在统一 `proof_type/proof_summary` 之上新增 `proof_family`（如 `auth_bypass/surface_exposure/realtime_exposure/response_differential/sensitive_disclosure`），并将其接入 `/ai_pen_test/stats/` 的分组与 benchmark、`engineer_focus_entries` 优先级排序和导出表，工程师现在可以直接按“证据家族 + 证据摘要”筛选更值得接手的真入口
 - `[v4.5.41]` AI渗透 `proof_summary` 与细日志主干落地：验证链新增统一 `payload_variant/payload_expected_signal/payload_proof_candidates/proof_type/proof_signals/proof_summary` 摘要，在 `planner -> main_plan -> fallback -> verify done` 各阶段输出更细日志；同时这些字段已随结果落库、重试更新和统计链传递，不再只是运行时临时信息
 
 - `[v4.5.40]` AI渗透 `受控 payload 模板库` 主干落地：新增 `xss/sqli/ssrf/cmdi/ssti/xxe` 等探针家族的受控模板目录与模板选择器，会按 `request_mode/content_type` 优先选择更贴近接口形态的 payload 变体（如 `json_data` 优先 `boolean_json_string`、`application/xml` 优先 `entity_file_read_hosts`）；同时 AI planner 请求新增 `controlled_payload_variants`，模型可回 `payload_variant` 由执行链安全映射到受控模板，不再依赖自由 payload 生成
