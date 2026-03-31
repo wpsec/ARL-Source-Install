@@ -335,6 +335,19 @@ AI 渗透测试至少要覆盖以下能力族：
 - 每类至少 1 条标准化主动验证链
 - 每类至少 1 套“成立证据”标准
 
+当前实现状态（截至 2026-03-31）：
+
+- 阶段 C 已达成可用完成态（100% 可用口径）
+- 已覆盖能力链路与成立证据标准：
+  - 登录/会话：`session_start -> extract_csrf_token -> credential_probe -> detect_login_success`，以登录成功/阻断信号判定
+  - API/OpenAPI/GraphQL：`api_doc_probe/graphql_probe` 多端点探测，基于结构响应摘要判定
+  - JWT/认证协议：`jwt_probe + token_replay + OAuth/OIDC 协议端点探测`，基于弱密钥/alg=none/令牌字段/协议语义分级判定
+  - IDOR/访问控制：`idor_probe` 多对象变异，一致性与敏感字段差异评分分级判定
+  - 文件处理：`upload_probe/file_probe`，基于上传成功特征与下载响应特征判定
+  - SQLi：`sqli_probe`，覆盖 `error_based/boolean_based/time_based` 证据判定
+  - XSS/DOM XSS：`xss_probe + js_context`，覆盖弹窗执行证据与 `dom_xss_proof_type` 结构化证据
+  - SSRF/SSTI/XXE/CMDI：对应探针覆盖专项 proof（元数据命中、模板表达式执行、外部实体文件读取、命令输出）
+
 ### 阶段 D：高价值目标通用化
 
 目标：
