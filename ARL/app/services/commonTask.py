@@ -464,7 +464,7 @@ class WebSiteFetch(object):
             "focus_params": ["parameter_names"],
             "priority_actions": [
                 "优先关注管理后台、办公门户、工作流入口、文档暴露与文件处理能力",
-                "若接口结构存在对象ID参数，优先安排越权/鉴权边界验证建议",
+                "若接口结构存在对象ID参数，优先安排对象访问控制/鉴权边界线索验证建议",
             ],
         },
         "js_bundler_app": {
@@ -5604,13 +5604,13 @@ class WebSiteFetch(object):
             "cmdi_probe": "命令执行",
             "sqli_probe": "SQL 注入",
             "ssrf_probe": "SSRF",
-            "idor_probe": "越权",
+            "idor_probe": "访问控制",
             "replay": "HTTP 回放",
         }.get(payload_type_text) or {
             "cmdi": "命令执行",
             "sqli": "SQL 注入",
             "ssrf": "SSRF",
-            "idor": "越权",
+            "idor": "访问控制",
             "poc_scan": "PoC 命中",
             "unknown": "当前风险",
         }.get(risk_type_text, "当前风险")
@@ -6739,7 +6739,7 @@ class WebSiteFetch(object):
         if admin_hits:
             parts.append("admin_signals={}".format(",".join(admin_hits)))
         if bool(summary.get("vertical_indicator")):
-            parts.append("vertical=1")
+            parts.append("access_control_signal=1")
         consistency_hits = cls._safe_int_value(summary.get("consistency_hits"), 0)
         if consistency_hits > 1:
             parts.append("consistency={}".format(consistency_hits))
@@ -6781,10 +6781,9 @@ class WebSiteFetch(object):
     @classmethod
     def _classify_ai_pen_idor_outcome(cls, base_status: int, probe_status: int, diff_summary: dict):
         """
-        按“访问控制是否真正绕过”对 IDOR 差异做分级：
+        按“未授权访问优先、越权仅保留线索”口径对 IDOR 差异做分级：
         - 变异后被 401/403 拒绝：倾向访问控制生效（likely_false_positive）
-        - 同为成功状态且出现敏感字段新增：倾向高置信越权（verified）
-        - 其余差异：保守 needs_manual_review
+        - 其余对象引用/权限参数差异：仅保留访问控制线索（needs_manual_review）
         """
         summary = diff_summary if isinstance(diff_summary, dict) else {}
         if not summary:
@@ -6808,9 +6807,9 @@ class WebSiteFetch(object):
         )
 
         if base_success and probe_deny:
-            reason = "对象引用变异后返回 {}，更像访问控制生效而非越权".format(probe_status_code)
+            reason = "对象引用变异后返回 {}，更像访问控制生效而非未授权访问".format(probe_status_code)
             if mutation_kind in {"access_control", "access_control_numeric"}:
-                reason = "权限参数变异后返回 {}，更像垂直访问控制生效而非越权".format(probe_status_code)
+                reason = "权限参数变异后返回 {}，更像访问控制生效而非未授权访问".format(probe_status_code)
             if summary_text:
                 reason = "{}；差异摘要：{}".format(reason, summary_text)
             return {
@@ -6821,31 +6820,31 @@ class WebSiteFetch(object):
             }
 
         if base_success and probe_success and vertical_like and score >= 8:
-            reason = "权限参数变异后仍可访问且出现高权限特征，疑似垂直越权可复现"
+            reason = "权限参数变异后仍可访问且出现高权限特征，保留为访问控制线索，需人工复核"
             if summary_text:
                 reason = "{}；差异摘要：{}".format(reason, summary_text)
             return {
-                "decision": "verified",
-                "confidence": 0.88 if len(admin_hits) >= 1 else 0.84,
+                "decision": "needs_manual_review",
+                "confidence": 0.78 if len(admin_hits) >= 1 else 0.74,
                 "reason": reason,
                 "score": score,
             }
 
         if base_success and probe_success and sensitive_count >= 1 and score >= 10:
-            reason = "对象引用变异后仍可访问且出现敏感字段差异，越权证据较强"
+            reason = "对象引用变异后仍可访问且出现敏感字段差异，保留为对象访问控制线索，需人工复核"
             if summary_text:
                 reason = "{}；差异摘要：{}".format(reason, summary_text)
             return {
-                "decision": "verified",
-                "confidence": 0.86 if sensitive_count >= 2 else 0.82,
+                "decision": "needs_manual_review",
+                "confidence": 0.80 if sensitive_count >= 2 else 0.76,
                 "reason": reason,
                 "score": score,
             }
 
         if base_deny and probe_success and score >= 8:
-            reason = "对象引用变异后访问状态变化明显，疑似权限边界异常"
+            reason = "对象引用变异后访问状态变化明显，疑似未授权对象访问线索"
             if mutation_kind in {"access_control", "access_control_numeric"}:
-                reason = "权限参数变异后访问状态变化明显，疑似垂直权限边界异常"
+                reason = "权限参数变异后访问状态变化明显，疑似访问控制边界异常"
             if summary_text:
                 reason = "{}；差异摘要：{}".format(reason, summary_text)
             return {
@@ -6855,7 +6854,7 @@ class WebSiteFetch(object):
                 "score": score,
             }
 
-        reason = "对象引用参数变异后响应差异明显，疑似存在越权风险"
+        reason = "对象引用参数变异后响应差异明显，保留为访问控制线索，需人工复核"
         if summary_text:
             reason = "{}；差异摘要：{}".format(reason, summary_text)
         return {
@@ -9778,6 +9777,85 @@ class WebSiteFetch(object):
             "final_url": final_url,
         }
 
+    @classmethod
+    def _analyze_ai_pen_unauth_access(
+        cls,
+        target_url: str,
+        status_code=0,
+        headers=None,
+        body_text: str = "",
+        high_value_family: str = "",
+        payload_type: str = "",
+    ):
+        url_text = str(target_url or "").strip()
+        if not cls._is_http_target(url_text):
+            return {"hit": False, "proof_type": "", "reason": ""}
+
+        status_value = cls._safe_int_value(status_code, 0)
+        if status_value not in {200, 201, 202, 203, 206}:
+            return {"hit": False, "proof_type": "", "reason": ""}
+
+        header_obj = headers if isinstance(headers, dict) else {}
+        body_lower = str(body_text or "").strip().lower()
+        family_text = str(high_value_family or "").strip().lower()
+        payload_text = str(payload_type or "").strip().lower()
+        content_type = str(header_obj.get("Content-Type") or header_obj.get("content-type") or "").strip().lower()
+
+        try:
+            parsed = urlsplit(url_text)
+            path_text = str(parsed.path or "").strip().lower()
+        except Exception:
+            path_text = url_text.lower()
+
+        if any(token in path_text for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS):
+            return {"hit": False, "proof_type": "", "reason": ""}
+        if any(token in body_lower for token in cls.AI_PEN_LOGIN_FAILURE_KEYWORDS):
+            return {"hit": False, "proof_type": "", "reason": ""}
+        if any(token in body_lower for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS) and not any(
+            token in body_lower for token in ("logout", "dashboard", "workbench", "console")
+        ):
+            return {"hit": False, "proof_type": "", "reason": ""}
+
+        sensitive_hits = [token for token in cls.AI_PEN_IDOR_SENSITIVE_MARKERS if token in body_lower][:4]
+        admin_hits = [token for token in cls.AI_PEN_IDOR_ADMIN_MARKERS if token in body_lower][:4]
+        admin_path_hit = any(token in path_text for token in ("/admin", "/dashboard", "/console", "/manage", "/workbench", "/oa", "/office"))
+        profile_path_hit = any(
+            token in path_text
+            for token in ("/api/me", "/me", "/profile", "/userinfo", "/account/current", "/user/profile", "/api/account/current")
+        )
+
+        if family_text in {"config_exposure_surface", "admin_debug_surface", "sensitive_file_surface"} or payload_text == "config_probe":
+            reason = "高价值管理/配置端点返回成功状态，疑似可未授权直接访问"
+            if path_text:
+                reason = "{}（{}）".format(reason, path_text[:120])
+            return {
+                "hit": True,
+                "proof_type": "unauth_management_surface",
+                "reason": reason,
+            }
+
+        if admin_path_hit and (admin_hits or any(token in body_lower for token in ("dashboard", "workbench", "console", "logout", "tenant", "menu"))):
+            reason = "管理/办公入口返回成功状态且出现后台语义，疑似可未授权直接访问"
+            if path_text:
+                reason = "{}（{}）".format(reason, path_text[:120])
+            return {
+                "hit": True,
+                "proof_type": "unauth_admin_portal",
+                "reason": reason,
+            }
+
+        if profile_path_hit and ("application/json" in content_type or sensitive_hits):
+            reason = "账户/身份接口返回成功状态并带有身份字段，疑似未授权对象访问"
+            if sensitive_hits:
+                reason = "{}（字段：{}）".format(reason, ",".join(sensitive_hits[:3]))
+            return {
+                "hit": True,
+                "proof_type": "unauth_profile_data",
+                "reason": reason,
+            }
+
+        return {"hit": False, "proof_type": "", "reason": ""}
+
     @staticmethod
     def _extract_runtime_api_paths(runtime_api_calls):
         results = []
@@ -11027,9 +11105,11 @@ class WebSiteFetch(object):
             return "active_execution"
         if proof in {"boolean_based", "error_based", "time_based", "template_error", "external_tool"}:
             return "response_differential"
+        if proof in {"unauth_management_surface", "unauth_admin_portal", "unauth_profile_data"}:
+            return "unauth_access"
         if proof in {"login_success", "weak_secret", "alg_none", "signature_bypass"}:
             return "auth_bypass"
-        if proof in {"idor_diff", "idor_vertical_indicator"}:
+        if proof in {"idor_diff", "idor_vertical_indicator", "idor_access_control_signal"}:
             return "access_control"
         if proof in {"api_doc_open", "api_schema_exposed", "graphql_schema_open", "config_exposure", "auth_protocol_open"}:
             return "surface_exposure"
@@ -11117,9 +11197,14 @@ class WebSiteFetch(object):
             idor_summary = item.get("idor_diff_summary") if isinstance(item.get("idor_diff_summary"), dict) else {}
             if bool(item.get("idor_diff_hit")):
                 if bool(idor_summary.get("vertical_indicator")):
-                    proof_type = "idor_vertical_indicator"
+                    proof_type = "idor_access_control_signal"
                 else:
                     proof_type = "idor_diff"
+
+        if not proof_type and bool(item.get("unauth_access_hit")):
+            proof_type = str(item.get("unauth_access_type", "") or "").strip().lower()
+        if bool(item.get("unauth_access_hit")):
+            append_signal("unauth_access")
 
         for field_name in (
             "dom_xss_proof_type",
@@ -11919,7 +12004,7 @@ class WebSiteFetch(object):
                                 "method": "get",
                                 "allow_redirects": True,
                             },
-                            "summary": str(tool_reason_map.get("idor_probe") or "参数标签驱动 IDOR 变异探针"),
+                            "summary": str(tool_reason_map.get("idor_probe") or "参数标签驱动对象访问控制线索探针"),
                         }
                     )
                     if len(plan) >= budget:
@@ -14032,13 +14117,13 @@ class WebSiteFetch(object):
 
                         if numeric_idor:
                             risk_type = "idor"
-                            risk_name = "URL参数越权探测"
+                            risk_name = "URL参数对象访问探测"
                             severity = "medium"
                         elif re.search(r"/\d+($|/)", str(parsed.path or "")) and any(
                             token in lower_url for token in ("/user/", "/users/", "/account/", "/order/", "/api/")
                         ):
                             risk_type = "idor"
-                            risk_name = "路径ID越权探测"
+                            risk_name = "路径ID对象访问探测"
                             severity = "low"
                             matched_keywords = ["path_numeric_id"]
 
@@ -16048,6 +16133,22 @@ class WebSiteFetch(object):
                 if session_auth_hit:
                     weak_password_login_proof = True
 
+            unauth_access_hit = False
+            unauth_access_type = ""
+            unauth_access_reason = ""
+            if not bool(session_auth_hit) and not bool(weak_password_login_proof):
+                unauth_access_ret = self._analyze_ai_pen_unauth_access(
+                    target_url=probe_url or target_url,
+                    status_code=probe_status or status_code,
+                    headers=probe_headers or header_obj,
+                    body_text=probe_body_excerpt or base_body_excerpt,
+                    high_value_family=high_value_family,
+                    payload_type=payload_type,
+                )
+                unauth_access_hit = bool(unauth_access_ret.get("hit"))
+                unauth_access_type = str(unauth_access_ret.get("proof_type", "") or "").strip().lower()
+                unauth_access_reason = str(unauth_access_ret.get("reason", "") or "").strip()
+
             if is_xss_case and xss_popup_proof:
                 decision = "verified"
                 confidence = 0.90
@@ -16217,6 +16318,10 @@ class WebSiteFetch(object):
                 reason = "发现公开高价值配置/环境端点 {}".format((config_exposure_url or target_url)[:180])
                 if config_exposure_summary:
                     reason = "{}；配置摘要：{}".format(reason, config_exposure_summary)
+            elif unauth_access_hit:
+                decision = "verified"
+                confidence = 0.88 if unauth_access_type == "unauth_profile_data" else 0.84
+                reason = unauth_access_reason or "高价值入口未观察到鉴权拦截，疑似可未授权直接访问"
             elif payload_reflect_hit:
                 decision = "needs_manual_review"
                 confidence = 0.74
@@ -16525,6 +16630,8 @@ class WebSiteFetch(object):
                     "config_exposure_hit": config_exposure_hit,
                     "websocket_upgrade_hit": websocket_upgrade_hit,
                     "websocket_upgrade_hint": websocket_upgrade_hint,
+                    "unauth_access_hit": unauth_access_hit,
+                    "unauth_access_type": unauth_access_type,
                     "jwt_weak_secret": jwt_weak_secret,
                     "jwt_alg_none_hit": jwt_alg_none_hit,
                     "jwt_none_probe_hit": jwt_none_probe_hit,
@@ -16608,6 +16715,9 @@ class WebSiteFetch(object):
                 "config_exposure_hit": config_exposure_hit,
                 "websocket_upgrade_hit": websocket_upgrade_hit,
                 "websocket_upgrade_hint": websocket_upgrade_hint,
+                "unauth_access_hit": unauth_access_hit,
+                "unauth_access_type": unauth_access_type,
+                "unauth_access_reason": unauth_access_reason,
                 "idor_diff_hit": idor_diff_hit,
                 "idor_diff_summary": idor_diff_summary if isinstance(idor_diff_summary, dict) else {},
                 "jwt_weak_secret": jwt_weak_secret,

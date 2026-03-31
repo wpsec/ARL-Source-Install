@@ -1119,7 +1119,7 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("consistent_fields=email,role", summary_text)
         self.assertGreaterEqual(score, 14)
 
-    def test_classify_ai_pen_idor_outcome_marks_verified_for_sensitive_success_diff(self):
+    def test_classify_ai_pen_idor_outcome_marks_manual_review_for_sensitive_success_diff(self):
         summary = WebSiteFetch._build_idor_diff_summary(
             base_status=200,
             base_body='{"code":0,"data":{"id":100}}',
@@ -1134,8 +1134,8 @@ class TestAiPenJsContext(unittest.TestCase):
         )
         outcome = WebSiteFetch._classify_ai_pen_idor_outcome(200, 200, summary)
 
-        self.assertEqual("verified", outcome.get("decision"))
-        self.assertGreaterEqual(float(outcome.get("confidence", 0) or 0), 0.82)
+        self.assertEqual("needs_manual_review", outcome.get("decision"))
+        self.assertIn("人工复核", str(outcome.get("reason", "")))
 
     def test_classify_ai_pen_idor_outcome_marks_likely_fp_for_forbidden_after_mutation(self):
         summary = WebSiteFetch._build_idor_diff_summary(
@@ -1155,7 +1155,7 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("likely_false_positive", outcome.get("decision"))
         self.assertIn("访问控制生效", str(outcome.get("reason", "")))
 
-    def test_classify_ai_pen_idor_outcome_marks_verified_for_vertical_access_control_diff(self):
+    def test_classify_ai_pen_idor_outcome_marks_manual_review_for_access_control_diff(self):
         summary = WebSiteFetch._build_idor_diff_summary(
             base_status=200,
             base_body='{"code":0,"data":{"role":"user","menu":["home"]}}',
@@ -1170,8 +1170,8 @@ class TestAiPenJsContext(unittest.TestCase):
         )
         outcome = WebSiteFetch._classify_ai_pen_idor_outcome(200, 200, summary)
 
-        self.assertEqual("verified", outcome.get("decision"))
-        self.assertIn("垂直越权", str(outcome.get("reason", "")))
+        self.assertEqual("needs_manual_review", outcome.get("decision"))
+        self.assertIn("访问控制线索", str(outcome.get("reason", "")))
 
     def test_api_surface_summary_merges_api_doc_and_js_targets(self):
         summary = WebSiteFetch._build_api_surface_summary(
@@ -1678,6 +1678,32 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(str(result.get("reason") or "").strip()))
         self.assertEqual("https://example.com/dashboard", result.get("final_url"))
 
+    def test_analyze_ai_pen_unauth_access_detects_admin_portal(self):
+        result = WebSiteFetch._analyze_ai_pen_unauth_access(
+            target_url="https://example.com/admin/dashboard",
+            status_code=200,
+            headers={"Content-Type": "text/html"},
+            body_text="<html><body>dashboard manage users logout</body></html>",
+            high_value_family="",
+            payload_type="replay",
+        )
+
+        self.assertTrue(bool(result.get("hit")))
+        self.assertEqual("unauth_admin_portal", result.get("proof_type"))
+
+    def test_analyze_ai_pen_unauth_access_detects_profile_api(self):
+        result = WebSiteFetch._analyze_ai_pen_unauth_access(
+            target_url="https://example.com/api/account/current",
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body_text='{"username":"alice","email":"alice@example.com","role":"user"}',
+            high_value_family="",
+            payload_type="replay",
+        )
+
+        self.assertTrue(bool(result.get("hit")))
+        self.assertEqual("unauth_profile_data", result.get("proof_type"))
+
     def test_build_ai_pen_login_followup_targets_prefers_session_and_logout_paths(self):
         targets = WebSiteFetch._build_ai_pen_login_followup_targets(
             target_url="https://example.com/login",
@@ -2130,6 +2156,20 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("login_success", str(summary.get("proof_type") or ""))
         self.assertIn("session_auth", list(summary.get("proof_signals", []) or []))
         self.assertIn("logout_effective", list(summary.get("proof_signals", []) or []))
+
+    def test_build_ai_pen_proof_summary_summarizes_unauth_access(self):
+        summary = WebSiteFetch._build_ai_pen_proof_summary(
+            {
+                "payload_type": "replay",
+                "unauth_access_hit": True,
+                "unauth_access_type": "unauth_profile_data",
+                "request_template_summary": "mode=query | params=user_id",
+            }
+        )
+
+        self.assertEqual("unauth_access", str(summary.get("proof_family") or ""))
+        self.assertEqual("unauth_profile_data", str(summary.get("proof_type") or ""))
+        self.assertIn("unauth_access", list(summary.get("proof_signals", []) or []))
 
     def test_infer_tool_plan_uses_config_probe_for_actuator_endpoint(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(

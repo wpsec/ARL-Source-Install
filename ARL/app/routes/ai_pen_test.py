@@ -82,7 +82,7 @@ AI_PEN_PHASE_F_CAPABILITY_SPECS = (
     },
     {
         "id": "idor_access",
-        "label": "IDOR/访问控制",
+        "label": "未授权/对象访问线索",
         "risk_types": ("idor",),
         "payload_types": ("idor_probe",),
     },
@@ -449,9 +449,11 @@ def _classify_ai_pen_proof_family(proof_type, payload_type=""):
         return "active_execution"
     if proof in {"boolean_based", "error_based", "time_based", "template_error", "external_tool"}:
         return "response_differential"
+    if proof in {"unauth_management_surface", "unauth_admin_portal", "unauth_profile_data"}:
+        return "unauth_access"
     if proof in {"login_success", "weak_secret", "alg_none", "signature_bypass"}:
         return "auth_bypass"
-    if proof in {"idor_diff", "idor_vertical_indicator"}:
+    if proof in {"idor_diff", "idor_vertical_indicator", "idor_access_control_signal"}:
         return "access_control"
     if proof in {"api_doc_open", "api_schema_exposed", "graphql_schema_open", "config_exposure", "auth_protocol_open"}:
         return "surface_exposure"
@@ -714,9 +716,9 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             score += 6
         elif request_template_mode == "query":
             score += 2
-        if proof_family in {"auth_bypass", "active_execution", "access_control", "sensitive_disclosure"}:
+        if proof_family in {"auth_bypass", "active_execution", "sensitive_disclosure", "unauth_access"}:
             score += 8
-        elif proof_family in {"surface_exposure", "realtime_exposure", "policy_misconfig"}:
+        elif proof_family in {"surface_exposure", "realtime_exposure", "policy_misconfig", "access_control"}:
             score += 4
         if proof_type:
             score += 10

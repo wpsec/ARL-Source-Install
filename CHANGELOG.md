@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-01（v4.5.10 ~ v4.5.45）
+## 2026-04-01（v4.5.10 ~ v4.5.46）
+
+- `[v4.5.46]` AI渗透 `未授权直访` 基础链落地：新增高价值 `admin/dashboard/account/current/profile` 路径的无登录直访分析器，命中后会收敛为 `unauth_access` 证据家族（如 `unauth_admin_portal/unauth_profile_data`），并直接参与最终裁决与 proof summary；同时 `IDOR/access_control` 口径继续收紧为“访问控制线索，需人工复核”，不再自动给出越权 `verified`
 
 - `[v4.5.45]` AI渗透 版本与方案口径同步：对齐 `version.txt` 自动递增后的版本号，统一修正 `CHANGELOG` 与 `AI渗透测试MCP总体方案` 的同步版本，避免版本号、方案状态和代码能力说明出现错位
 
