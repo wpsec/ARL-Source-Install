@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.34`（截至 `2026-03-31`）
+- 文档同步版本：`v4.5.35`（截至 `2026-03-31`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -399,6 +399,8 @@ AI 渗透测试至少要覆盖以下能力族：
 - `C-AutoPassive（被动参数提取 -> AI分析 -> MCP自动测）`：部分完成
   - 已有能力：多源参数汇总（JS/runtime/form/api-doc/hidden）与图谱摘要
   - 已补能力：`path_traversal_probe / web_policy_probe / socketio_probe / websocket_probe` 已接入主链
+  - 已补能力：`parameter_probe_families` 已可把参数标签统一映射为 `IDOR/路径穿越/SSRF/JWT/上传下载/SQLi/XSS` 家族，并驱动低副作用参数编排
+  - 已补能力：已修正 `redirect -> dir` 子串误判，减少 URL 跳转参数被错误打到路径穿越链的噪声
   - 差距：参数类型标签 -> payload 编排 -> 全链路验证 仍未统一为单引擎
   - 差距：`垂直越权` 及部分实时通道深测能力仍需补强
   - 差距：`CORS/Cache/Security Headers/Error Exposure` 虽已有探针，但统一 proof engine 仍未完全收口
@@ -511,5 +513,7 @@ AI 渗透测试至少要覆盖以下能力族：
 建议下一步优先级：
 
 1. 阶段 C / 7：完成参数单引擎与受控字典资源封装，继续提升“真漏洞入口”挖掘能力
+   - 当前已完成：参数探针家族与受控字典 preview 资源封装
+   - 下一步重点：统一 payload 变异与 proof engine，继续降低误报
 2. 阶段 F：建立最小靶场与正负样例集，把误报率和入口价值真正量化
 3. 阶段 A：继续把控制权从 `commonTask` 挪到 runtime，减少执行路径写死

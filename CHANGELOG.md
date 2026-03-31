@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-31（v4.5.10 ~ v4.5.34）
+## 2026-03-31（v4.5.10 ~ v4.5.35）
+
+- `[v4.5.35]` AI渗透 `参数单引擎` 第一阶段推进：新增 `parameter_probe_families`，将参数标签统一映射为 `IDOR/路径穿越/SSRF/JWT/上传下载/SQLi/XSS` 探针家族，并让参数编排器优先按家族优先级构建低副作用验证链；同时修正 `redirect` 被 `dir` 子串误判为 `file_path` 的噪声问题，减少把 URL 跳转参数错误排到路径穿越链上的误报
 
 - `[v4.5.34]` AI渗透 `受控字典资源` 第一阶段封装：`ARL/docker/dicts/dict/user.txt + pass.txt` 新增 preview/计数加载与缓存能力，登录上下文摘要补充 `controlled_dict_ready/user_count/pass_count` 可观测信息；`weak_password_probe` 的最小默认凭证集开始可按高价值登录面安全引入极小受控 preview 组合（如 `admin/admin`、`root/root`、`admin/123456`），为后续预算/节流/熔断治理版第二层字典能力做准备
 

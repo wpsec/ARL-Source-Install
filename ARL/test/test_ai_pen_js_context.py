@@ -1252,6 +1252,16 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("csrf_token", param_names)
         self.assertGreaterEqual(summary.get("auth_path_count", 0), 2)
         self.assertGreaterEqual(summary.get("upload_like_count", 0), 1)
+        probe_families = [str(item.get("tool") or "") for item in list(summary.get("parameter_probe_families", []) or [])]
+        self.assertIn("jwt_probe", probe_families)
+        self.assertIn("upload_probe", probe_families)
+        self.assertIn("sqli_probe", probe_families)
+
+    def test_tag_ai_pen_parameter_name_does_not_misclassify_redirect_as_file_path(self):
+        tags = WebSiteFetch._tag_ai_pen_parameter_name("redirect")
+
+        self.assertIn("url", tags)
+        self.assertNotIn("file_path", tags)
 
     def test_collect_runtime_observation_merges_runtime_form_and_hidden_into_api_surface(self):
         observation = WebSiteFetch._collect_ai_pen_runtime_observation(
@@ -2163,6 +2173,30 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(plan))
         self.assertEqual("websocket_probe", str(plan[0].get("tool") or ""))
         self.assertIn("/ws/chat", str(plan[0].get("params", {}).get("url", "") or ""))
+
+    def test_param_orchestrated_tool_plan_uses_parameter_probe_family_priority(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            api_doc_summary={
+                "path_count": 1,
+                "sample_paths": ["/api/user/detail"],
+                "parameter_names": ["id", "redirect", "q"],
+            },
+        )
+
+        plan = WebSiteFetch._build_ai_pen_param_orchestrated_tool_plan(
+            candidate={
+                "target": "https://example.com/api/user/detail?id=1&redirect=https://a.example&q=test",
+                "api_surface_summary": summary,
+            },
+            max_steps=4,
+        )
+
+        tools = [str(item.get("tool") or "") for item in plan]
+        self.assertGreaterEqual(len(tools), 3)
+        self.assertEqual("idor_probe", tools[0])
+        self.assertIn("ssrf_probe", tools[:2])
+        self.assertIn("sqli_probe", tools)
+        self.assertIn("xss_probe", tools)
 
     def test_infer_tool_plan_for_replay_uses_param_orchestrator_path_traversal(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(

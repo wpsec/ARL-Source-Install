@@ -7839,7 +7839,12 @@ class WebSiteFetch(object):
             tags.append("object_id")
         if any(token in lowered for token in ("token", "jwt", "auth", "authorization", "bearer", "session", "csrf")):
             tags.append("auth")
-        if any(token in lowered for token in ("file", "filename", "filepath", "path", "dir", "download", "template", "attachment")):
+        if (
+            any(token in lowered for token in ("file", "filename", "filepath", "path", "download", "template", "attachment"))
+            or lowered in {"dir", "directory"}
+            or lowered.endswith("_dir")
+            or lowered.endswith("directory")
+        ):
             tags.append("file_path")
         if any(token in lowered for token in ("url", "uri", "callback", "redirect", "next", "return")):
             tags.append("url")
@@ -7856,6 +7861,60 @@ class WebSiteFetch(object):
         if (not tags) and any(token in lowered for token in ("name", "title", "query", "q", "search", "keyword")):
             tags.append("input")
         return tags[:4]
+
+    @classmethod
+    def _build_ai_pen_parameter_probe_families(
+        cls,
+        parameter_tag_stats=None,
+        auth_path_count: int = 0,
+        security_scheme_count: int = 0,
+        upload_like_count: int = 0,
+        download_like_count: int = 0,
+    ):
+        tag_stats = parameter_tag_stats if isinstance(parameter_tag_stats, dict) else {}
+        families = []
+
+        def safe_hit(*tag_names):
+            total = 0
+            for tag_name in tag_names:
+                total += cls._safe_int_value(tag_stats.get(tag_name), 0)
+            return total
+
+        def append_family(tool_name: str, hit_count: int, tags, priority: int, reason: str):
+            if hit_count < 1:
+                return
+            families.append(
+                {
+                    "tool": str(tool_name or "").strip(),
+                    "hit_count": int(hit_count or 0),
+                    "priority": int(priority or 0),
+                    "tags": [str(tag or "").strip().lower() for tag in list(tags or []) if str(tag or "").strip()],
+                    "reason": str(reason or "").strip()[:120],
+                }
+            )
+
+        idor_hits = safe_hit("object_id", "access_control")
+        file_path_hits = safe_hit("file_path")
+        ssrf_hits = safe_hit("url", "host")
+        command_hits = safe_hit("command")
+        template_hits = safe_hit("template")
+        xml_hits = safe_hit("xml")
+        auth_hits = safe_hit("auth") + max(auth_path_count, security_scheme_count)
+        input_hits = safe_hit("input")
+
+        append_family("idor_probe", idor_hits, ["object_id", "access_control"], 100, "对象引用与访问控制参数优先走 IDOR")
+        append_family("path_traversal_probe", file_path_hits, ["file_path"], 96, "文件路径参数优先走路径穿越")
+        append_family("ssrf_probe", ssrf_hits, ["url", "host"], 94, "URL/主机参数优先走 SSRF")
+        append_family("cmdi_probe", command_hits, ["command"], 92, "命令型参数优先走 CMDI")
+        append_family("ssti_probe", template_hits, ["template"], 90, "模板型参数优先走 SSTI")
+        append_family("xxe_probe", xml_hits, ["xml"], 88, "XML 参数优先走 XXE")
+        append_family("jwt_probe", auth_hits, ["auth"], 86, "认证参数与鉴权入口优先走 JWT/认证链")
+        append_family("upload_probe", cls._safe_int_value(upload_like_count, 0), ["file_upload"], 84, "上传接口优先走文件上传探针")
+        append_family("file_probe", cls._safe_int_value(download_like_count, 0), ["file_download"], 82, "下载导出接口优先走文件读取探针")
+        append_family("sqli_probe", input_hits, ["input"], 80, "通用输入参数优先走 SQLi")
+        append_family("xss_probe", input_hits, ["input"], 78, "通用输入参数追加低副作用 XSS")
+        families.sort(key=lambda item: (-int(item.get("priority") or 0), -int(item.get("hit_count") or 0), str(item.get("tool") or "")))
+        return families[:10]
 
     @classmethod
     def _build_api_surface_summary(
@@ -8099,6 +8158,13 @@ class WebSiteFetch(object):
             parameter_assets.append({"name": name_text, "tags": tags})
             for tag in tags:
                 parameter_tag_stats[tag] = int(parameter_tag_stats.get(tag, 0) or 0) + 1
+        parameter_probe_families = cls._build_ai_pen_parameter_probe_families(
+            parameter_tag_stats=parameter_tag_stats,
+            auth_path_count=auth_like_count,
+            security_scheme_count=security_scheme_count,
+            upload_like_count=upload_like_count,
+            download_like_count=download_like_count,
+        )
 
         ordered_source_types = []
         for source_name in ("api_doc", "js", "runtime", "form", "hidden"):
@@ -8113,6 +8179,7 @@ class WebSiteFetch(object):
             "parameter_names": final_parameter_names,
             "parameter_assets": parameter_assets[:16],
             "parameter_tag_stats": parameter_tag_stats,
+            "parameter_probe_families": parameter_probe_families,
             "security_scheme_count": security_scheme_count,
             "object_id_like_count": object_id_like_count,
             "upload_like_count": upload_like_count,
@@ -8148,6 +8215,13 @@ class WebSiteFetch(object):
         parameter_names = [str(item or "").strip() for item in list(summary.get("parameter_names", []) or [])[:6] if str(item or "").strip()]
         if parameter_names:
             parts.append("params={}".format(",".join(parameter_names)))
+        probe_families = [
+            str(item.get("tool") or "").strip()
+            for item in list(summary.get("parameter_probe_families", []) or [])[:4]
+            if isinstance(item, dict) and str(item.get("tool") or "").strip()
+        ]
+        if probe_families:
+            parts.append("probe={}".format(",".join(probe_families)))
 
         return " | ".join(parts)
 
@@ -10624,15 +10698,34 @@ class WebSiteFetch(object):
         websocket_hint = bool(route_hint_text == "websocket_handshake" or risk_type_text == "websocket") or any(
             token in realtime_hint_text for token in ("websocket", "ws://", "wss://", "/ws", "/websocket", "upgrade")
         )
+        parameter_probe_families = [
+            item for item in list(api_surface_summary.get("parameter_probe_families", []) or []) if isinstance(item, dict)
+        ]
+        if not parameter_probe_families:
+            parameter_probe_families = cls._build_ai_pen_parameter_probe_families(
+                parameter_tag_stats=api_surface_summary.get("parameter_tag_stats"),
+                auth_path_count=cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0),
+                security_scheme_count=cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0),
+                upload_like_count=upload_like_count,
+                download_like_count=download_like_count,
+            )
 
         tool_priority = []
+        tool_reason_map = {}
 
-        def queue_tool(tool_name):
+        def queue_tool(tool_name, reason_text: str = ""):
             if tool_name not in cls.AI_PEN_RUNTIME_TOOL_NAMES:
                 return
             if tool_name in tool_priority:
+                if reason_text and not str(tool_reason_map.get(tool_name) or "").strip():
+                    tool_reason_map[tool_name] = str(reason_text or "").strip()[:120]
                 return
             tool_priority.append(tool_name)
+            if reason_text:
+                tool_reason_map[tool_name] = str(reason_text or "").strip()[:120]
+
+        for family in parameter_probe_families:
+            queue_tool(str(family.get("tool") or "").strip(), str(family.get("reason") or "").strip())
 
         if "object_id" in param_tags or "access_control" in param_tags:
             queue_tool("idor_probe")
@@ -10689,7 +10782,7 @@ class WebSiteFetch(object):
                                 "method": "get",
                                 "allow_redirects": True,
                             },
-                            "summary": "参数标签驱动 IDOR 变异探针",
+                            "summary": str(tool_reason_map.get("idor_probe") or "参数标签驱动 IDOR 变异探针"),
                         }
                     )
                     if len(plan) >= budget:
@@ -10708,7 +10801,7 @@ class WebSiteFetch(object):
                                 "method": "get",
                                 "allow_redirects": True,
                             },
-                            "summary": "参数标签驱动路径穿越探针",
+                            "summary": str(tool_reason_map.get("path_traversal_probe") or "参数标签驱动路径穿越探针"),
                         }
                     )
                     if len(plan) >= budget:
@@ -10726,7 +10819,7 @@ class WebSiteFetch(object):
                                 "allow_redirects": bool(step.get("allow_redirects", True)),
                                 "headers": dict(step.get("headers") or {}),
                             },
-                            "summary": "参数标签驱动 Web 策略探针",
+                            "summary": str(tool_reason_map.get("web_policy_probe") or "参数标签驱动 Web 策略探针"),
                         }
                     )
                     if len(plan) >= budget:
@@ -10743,7 +10836,7 @@ class WebSiteFetch(object):
                                 "method": "get",
                                 "allow_redirects": True,
                             },
-                            "summary": "参数标签驱动 Socket.IO/SockJS 探针",
+                            "summary": str(tool_reason_map.get("socketio_probe") or "参数标签驱动 Socket.IO/SockJS 探针"),
                         }
                     )
                     if len(plan) >= budget:
@@ -10770,7 +10863,7 @@ class WebSiteFetch(object):
                                     "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
                                 },
                             },
-                            "summary": "参数标签驱动 WebSocket 握手探针",
+                            "summary": str(tool_reason_map.get("websocket_probe") or "参数标签驱动 WebSocket 握手探针"),
                         }
                     )
                     if len(plan) >= budget:
@@ -10800,7 +10893,7 @@ class WebSiteFetch(object):
                                 "file_content": "ARL_SAFE_UPLOAD_PROBE",
                                 "file_content_type": "text/plain",
                             },
-                            "summary": "参数标签驱动上传探针",
+                            "summary": str(tool_reason_map.get("upload_probe") or "参数标签驱动上传探针"),
                         }
                     )
                 else:
@@ -10812,7 +10905,7 @@ class WebSiteFetch(object):
                                 "method": "get",
                                 "allow_redirects": True,
                             },
-                            "summary": "参数标签驱动下载/导出探针",
+                            "summary": str(tool_reason_map.get("file_probe") or "参数标签驱动下载/导出探针"),
                         }
                     )
                 continue
@@ -10826,7 +10919,7 @@ class WebSiteFetch(object):
                             "method": "get",
                             "allow_redirects": True,
                         },
-                        "summary": "参数标签驱动鉴权链探针",
+                        "summary": str(tool_reason_map.get("jwt_probe") or "参数标签驱动鉴权链探针"),
                     }
                 )
                 continue
@@ -10842,7 +10935,7 @@ class WebSiteFetch(object):
                             "method": "get",
                             "allow_redirects": True,
                         },
-                        "summary": "参数标签驱动 {} 探针".format(tool_name),
+                        "summary": str(tool_reason_map.get(tool_name) or "参数标签驱动 {} 探针".format(tool_name)),
                     }
                 )
 
