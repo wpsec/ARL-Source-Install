@@ -164,25 +164,56 @@ def _build_risk_distribution():
     ]
 
 
+def _count_daily_records(collection_name: str, day_start: datetime, day_end: datetime, day_key: str, primary_field="save_date") -> int:
+    """
+    统计单日记录数量：
+    - 兼容时间字段为 `date` 与 `string`
+    - 优先使用 primary_field（默认 save_date）
+    - 当 primary_field 缺失时回退到 update_date，避免历史数据/迁移数据导致趋势全 0
+    """
+    safe_day_key = re.escape(str(day_key or "").strip())
+    if not safe_day_key:
+        return 0
+
+    def _field_daily_query(field_name: str):
+        return {
+            "$or": [
+                {field_name: {"$type": "date", "$gte": day_start, "$lt": day_end}},
+                {field_name: {"$type": "string", "$regex": "^{}".format(safe_day_key)}},
+            ]
+        }
+
+    primary_query = _field_daily_query(primary_field)
+    primary_count = _count_documents(collection_name, primary_query)
+
+    # primary_field 已命中时直接返回，避免与 update_date 双重统计。
+    if primary_count > 0 or primary_field == "update_date":
+        return int(primary_count)
+
+    fallback_query = {
+        "$and": [
+            {
+                "$or": [
+                    {primary_field: {"$exists": False}},
+                    {primary_field: None},
+                    {primary_field: ""},
+                ]
+            },
+            _field_daily_query("update_date"),
+        ]
+    }
+    fallback_count = _count_documents(collection_name, fallback_query)
+    return int(primary_count) + int(fallback_count)
+
+
 def _build_asset_trend_7d(asset_collection="asset_site"):
     """
-    构建最近 7 天资产与漏洞累计增长趋势。
+    构建最近 7 天资产与漏洞增长趋势（按日新增）。
 
-    兼容 save_date 为 date 或 string 两种存储格式，避免趋势图出现全 0 / 断层。
+    返回字段：
+    - assets / vulns: 当日新增
+    - assets_total / vulns_total: 截止当日累计（用于兼容需要累计曲线的场景）
     """
-    def _count_daily(collection_name: str, day_start: datetime, day_end: datetime, day_key: str) -> int:
-        # date 类型记录：按时间范围统计
-        date_count = _count_documents(
-            collection_name,
-            {"save_date": {"$type": "date", "$gte": day_start, "$lt": day_end}},
-        )
-        # string 类型记录：按 YYYY-MM-DD 前缀统计
-        string_count = _count_documents(
-            collection_name,
-            {"save_date": {"$type": "string", "$regex": "^{}".format(day_key)}},
-        )
-        return int(date_count) + int(string_count)
-
     now = datetime.now()
     start = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
     day_keys = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
@@ -195,8 +226,8 @@ def _build_asset_trend_7d(asset_collection="asset_site"):
         day_start = start + timedelta(days=idx)
         day_end = day_start + timedelta(days=1)
         try:
-            asset_count = _count_daily(asset_collection, day_start, day_end, day_key)
-            vuln_count = _count_daily("vuln", day_start, day_end, day_key)
+            asset_count = _count_daily_records(asset_collection, day_start, day_end, day_key, primary_field="save_date")
+            vuln_count = _count_daily_records("vuln", day_start, day_end, day_key, primary_field="save_date")
         except Exception as e:
             logger.debug("build daily trend failed(day=%s): %s", day_key, e)
             asset_count = 0
@@ -213,15 +244,19 @@ def _build_asset_trend_7d(asset_collection="asset_site"):
     vuln_base = max(vuln_total - recent_vuln_total, 0)
 
     trend = []
-    curr_asset = asset_base
-    curr_vuln = vuln_base
+    curr_asset_total = asset_base
+    curr_vuln_total = vuln_base
     for day_key in day_keys:
-        curr_asset += asset_daily_map[day_key]
-        curr_vuln += vuln_daily_map[day_key]
+        daily_asset = int(asset_daily_map[day_key] or 0)
+        daily_vuln = int(vuln_daily_map[day_key] or 0)
+        curr_asset_total += daily_asset
+        curr_vuln_total += daily_vuln
         trend.append({
             "name": day_key[-5:],
-            "assets": curr_asset,
-            "vulns": curr_vuln,
+            "assets": daily_asset,
+            "vulns": daily_vuln,
+            "assets_total": curr_asset_total,
+            "vulns_total": curr_vuln_total,
         })
 
     return trend
@@ -713,8 +748,12 @@ class ARLConsoleDashboard(ARLResource):
         # 优先使用资产组口径；若资产组为空则回退到任务站点口径，避免仪表盘长期显示 0。
         asset_data_source = "asset_site" if asset_site_total_raw > 0 else "site"
         asset_site_total = asset_site_total_raw if asset_site_total_raw > 0 else task_site_total
-        new_assets_today = _count_documents(
-            asset_data_source, {"save_date": {"$gte": today_start}}
+        new_assets_today = _count_daily_records(
+            asset_data_source,
+            today_start,
+            today_start + timedelta(days=1),
+            today_start.strftime("%Y-%m-%d"),
+            primary_field="save_date",
         )
 
         stats = {
