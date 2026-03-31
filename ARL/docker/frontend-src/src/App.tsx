@@ -12782,6 +12782,71 @@ function AiPenAssetWorkspaceView({
   onClearExternalFilters?: () => void;
 }) {
   type AiPenStatsItem = { name: string; count: number };
+  type AiPenReadinessCapability = {
+    id: string;
+    label: string;
+    status: string;
+    total_count?: number;
+    verified_count?: number;
+    likely_false_positive_count?: number;
+    needs_manual_review_count?: number;
+    coverage_rate?: number;
+    success_rate?: number;
+    false_positive_rate?: number;
+    avg_turns?: number;
+    avg_tool_calls?: number;
+    priority_score: number;
+    focus_reason: string;
+    dominant_unauth_negative_type?: string;
+    negative_signal_count?: number;
+    negative_signal_rate?: number;
+  };
+  type AiPenReadinessSummary = {
+    total_capabilities: number;
+    covered_count: number;
+    partial_count: number;
+    missing_count: number;
+  };
+  type AiPenFocusQueueItem = {
+    id: string;
+    label: string;
+    status: string;
+    priority_score: number;
+    focus_reason: string;
+    verified_count: number;
+    needs_manual_review_count: number;
+    likely_false_positive_count: number;
+    coverage_rate?: number;
+    success_rate?: number;
+    false_positive_rate?: number;
+    avg_turns?: number;
+    avg_tool_calls?: number;
+    dominant_unauth_negative_type?: string;
+    negative_signal_count?: number;
+    negative_signal_rate?: number;
+  };
+  type AiPenUnauthOverview = {
+    total_count: number;
+    verified_count: number;
+    needs_manual_review_count: number;
+    negative_signal_count: number;
+    positive_type_distribution: AiPenStatsItem[];
+    negative_type_distribution: AiPenStatsItem[];
+    dominant_positive_type: string;
+    dominant_negative_type: string;
+    recommended_action: string;
+    next_actions: string[];
+    negative_summary?: {
+      total_count?: number;
+      negative_signal_count?: number;
+      negative_signal_rate?: number;
+      protected_count?: number;
+      protected_rate?: number;
+      health_only_count?: number;
+      health_only_rate?: number;
+      dominant_negative_type?: string;
+    };
+  };
   type AiPenStatsPayload = {
     total: number;
     decision: AiPenStatsItem[];
@@ -12789,6 +12854,12 @@ function AiPenAssetWorkspaceView({
     source_collection: AiPenStatsItem[];
     risk_type: AiPenStatsItem[];
     verification_step: AiPenStatsItem[];
+    phase_f_readiness: {
+      summary: AiPenReadinessSummary;
+      capabilities: AiPenReadinessCapability[];
+    };
+    engineer_focus_queue: AiPenFocusQueueItem[];
+    unauth_access_overview: AiPenUnauthOverview;
   };
   type AiPenSearchForm = {
     task_id: string;
@@ -12797,6 +12868,8 @@ function AiPenAssetWorkspaceView({
     source_collection: string;
     decision: string;
     status: string;
+    proof_family: string;
+    unauth_negative_type: string;
   };
 
   const emptySearchForm: AiPenSearchForm = {
@@ -12806,6 +12879,8 @@ function AiPenAssetWorkspaceView({
     source_collection: '',
     decision: '',
     status: '',
+    proof_family: '',
+    unauth_negative_type: '',
   };
   const emptyStats: AiPenStatsPayload = {
     total: 0,
@@ -12814,6 +12889,38 @@ function AiPenAssetWorkspaceView({
     source_collection: [],
     risk_type: [],
     verification_step: [],
+    phase_f_readiness: {
+      summary: {
+        total_capabilities: 0,
+        covered_count: 0,
+        partial_count: 0,
+        missing_count: 0,
+      },
+      capabilities: [],
+    },
+    engineer_focus_queue: [],
+    unauth_access_overview: {
+      total_count: 0,
+      verified_count: 0,
+      needs_manual_review_count: 0,
+      negative_signal_count: 0,
+      positive_type_distribution: [],
+      negative_type_distribution: [],
+      dominant_positive_type: '',
+      dominant_negative_type: '',
+      recommended_action: '',
+      next_actions: [],
+      negative_summary: {
+        total_count: 0,
+        negative_signal_count: 0,
+        negative_signal_rate: 0,
+        protected_count: 0,
+        protected_rate: 0,
+        health_only_count: 0,
+        health_only_rate: 0,
+        dominant_negative_type: '',
+      },
+    },
   };
 
   const [rows, setRows] = useState<any[]>([]);
@@ -12911,11 +13018,92 @@ function AiPenAssetWorkspaceView({
     (value: any) => payloadTypeLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
     [payloadTypeLabelMap]
   );
+  const formatProofFamily = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    const mapping: Record<string, string> = {
+      unauth_access: '未授权访问',
+      auth_bypass: '鉴权绕过',
+      surface_exposure: '暴露面',
+      realtime_exposure: '实时通道',
+      response_differential: '响应差异',
+      sensitive_disclosure: '敏感泄露',
+      access_control: '访问控制线索',
+      policy_misconfig: '策略配置问题',
+      active_execution: '主动执行',
+    };
+    return mapping[text] || normalizeValue(value);
+  }, []);
+  const formatProofType = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    const mapping: Record<string, string> = {
+      unauth_admin_portal: '未授权后台入口',
+      unauth_profile_data: '未授权账户信息',
+      unauth_actuator_surface: '未授权诊断面',
+      unauth_health_endpoint: '公开健康检查端点',
+      login_success: '登录成功',
+      weak_secret: '弱密钥/JWT弱点',
+      api_schema_exposed: 'API Schema 暴露',
+      auth_protocol_open: '认证协议暴露',
+      websocket_upgrade_open: '实时通道开放',
+      boolean_based: '布尔差异',
+      error_based: '报错差异',
+      time_based: '延时差异',
+      external_tool: '外部工具证据',
+      idor_diff: '对象访问差异',
+      idor_access_control_signal: '访问控制线索',
+    };
+    return mapping[text] || normalizeValue(value);
+  }, []);
+  const formatUnauthAccessType = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    const mapping: Record<string, string> = {
+      unauth_admin_portal: '后台/管理入口',
+      unauth_profile_data: '账户/资料接口',
+      unauth_actuator_surface: '诊断/配置面',
+      unauth_health_endpoint: '健康检查/信息端点',
+      unauth_management_surface: '管理/配置面',
+    };
+    return mapping[text] || normalizeValue(value);
+  }, []);
+  const formatRatePercent = useCallback((value: any) => `${Math.round(Number(value || 0) * 100)}%`, []);
+  const formatAiPenDistributionLabel = useCallback((value: any) => {
+    const text = String(value || '').trim();
+    if (!text) return '-';
+    if (text.startsWith('unauth_')) return formatUnauthAccessType(text);
+    if (text === 'auth_blocked') return '鉴权拦截';
+    if (text === 'login_wall') return '登录墙';
+    if (text === 'guarded_mixed') return '混合保护信号';
+    if (text === 'health_only') return '健康检查为主';
+    return formatProofType(text);
+  }, [formatProofType, formatUnauthAccessType]);
   const formatConfidence = useCallback((value: any) => {
     const numeric = parseNumericValue(value);
     if (numeric === null) return '-';
     if (numeric <= 1) return `${(numeric * 100).toFixed(1)}%`;
     return `${numeric.toFixed(1)}%`;
+  }, []);
+  const formatReadinessStatus = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    if (text === 'covered') return '已覆盖';
+    if (text === 'partial') return '部分覆盖';
+    if (text === 'missing') return '缺失';
+    return normalizeValue(value);
+  }, []);
+  const getReadinessStatusClass = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    if (text === 'covered') return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300';
+    if (text === 'partial') return 'border-amber-500/40 bg-amber-500/15 text-amber-300';
+    return 'border-brand-border bg-brand-bg/65 text-brand-text-muted';
+  }, []);
+  const formatUnauthNegativeType = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    const mapping: Record<string, string> = {
+      auth_blocked: '鉴权拦截',
+      login_wall: '登录墙',
+      guarded_mixed: '混合保护信号',
+      health_only: '健康检查为主',
+    };
+    return mapping[text] || normalizeValue(value);
   }, []);
   const getStatsCount = useCallback((items: AiPenStatsItem[], key: string) => {
     const row = items.find((item) => String(item?.name || '').trim().toLowerCase() === key);
@@ -13073,6 +13261,40 @@ function AiPenAssetWorkspaceView({
         source_collection: Array.isArray(data?.source_collection) ? data.source_collection : [],
         risk_type: Array.isArray(data?.risk_type) ? data.risk_type : [],
         verification_step: Array.isArray(data?.verification_step) ? data.verification_step : [],
+        phase_f_readiness: {
+          summary: {
+            total_capabilities: Number(data?.phase_f_readiness?.summary?.total_capabilities || 0),
+            covered_count: Number(data?.phase_f_readiness?.summary?.covered_count || 0),
+            partial_count: Number(data?.phase_f_readiness?.summary?.partial_count || 0),
+            missing_count: Number(data?.phase_f_readiness?.summary?.missing_count || 0),
+          },
+          capabilities: Array.isArray(data?.phase_f_readiness?.capabilities) ? data.phase_f_readiness.capabilities : [],
+        },
+        engineer_focus_queue: Array.isArray(data?.engineer_focus_queue) ? data.engineer_focus_queue : [],
+        unauth_access_overview: {
+          total_count: Number(data?.unauth_access_overview?.total_count || 0),
+          verified_count: Number(data?.unauth_access_overview?.verified_count || 0),
+          needs_manual_review_count: Number(data?.unauth_access_overview?.needs_manual_review_count || 0),
+          negative_signal_count: Number(data?.unauth_access_overview?.negative_signal_count || 0),
+          positive_type_distribution: Array.isArray(data?.unauth_access_overview?.positive_type_distribution) ? data.unauth_access_overview.positive_type_distribution : [],
+          negative_type_distribution: Array.isArray(data?.unauth_access_overview?.negative_type_distribution) ? data.unauth_access_overview.negative_type_distribution : [],
+          dominant_positive_type: String(data?.unauth_access_overview?.dominant_positive_type || '').trim(),
+          dominant_negative_type: String(data?.unauth_access_overview?.dominant_negative_type || '').trim(),
+          recommended_action: String(data?.unauth_access_overview?.recommended_action || '').trim(),
+          next_actions: Array.isArray(data?.unauth_access_overview?.next_actions) ? data.unauth_access_overview.next_actions.map((item: any) => String(item || '').trim()).filter((item: string) => item) : [],
+          negative_summary: data?.unauth_access_overview?.negative_summary && typeof data.unauth_access_overview.negative_summary === 'object'
+            ? {
+                total_count: Number(data?.unauth_access_overview?.negative_summary?.total_count || 0),
+                negative_signal_count: Number(data?.unauth_access_overview?.negative_summary?.negative_signal_count || 0),
+                negative_signal_rate: Number(data?.unauth_access_overview?.negative_summary?.negative_signal_rate || 0),
+                protected_count: Number(data?.unauth_access_overview?.negative_summary?.protected_count || 0),
+                protected_rate: Number(data?.unauth_access_overview?.negative_summary?.protected_rate || 0),
+                health_only_count: Number(data?.unauth_access_overview?.negative_summary?.health_only_count || 0),
+                health_only_rate: Number(data?.unauth_access_overview?.negative_summary?.health_only_rate || 0),
+                dominant_negative_type: String(data?.unauth_access_overview?.negative_summary?.dominant_negative_type || '').trim(),
+              }
+            : emptyStats.unauth_access_overview.negative_summary,
+        },
       });
     } catch {
       setStats(emptyStats);
@@ -13167,6 +13389,19 @@ function AiPenAssetWorkspaceView({
   const errorCount = getStatsCount(stats.status, 'error');
   const topRiskType = stats.risk_type[0]?.name ? `${stats.risk_type[0].name} (${stats.risk_type[0].count})` : '-';
   const topSource = stats.source_collection[0]?.name ? `${formatSource(stats.source_collection[0].name)} (${stats.source_collection[0].count})` : '-';
+  const readinessSummary = stats.phase_f_readiness?.summary || emptyStats.phase_f_readiness.summary;
+  const readinessCapabilities = Array.isArray(stats.phase_f_readiness?.capabilities) ? stats.phase_f_readiness.capabilities : [];
+  const topReadinessCapabilities = [...readinessCapabilities]
+    .sort((a, b) => Number(b?.priority_score || 0) - Number(a?.priority_score || 0))
+    .slice(0, 3);
+  const focusQueueItems = Array.isArray(stats.engineer_focus_queue) ? stats.engineer_focus_queue.slice(0, 6) : [];
+  const unauthOverview = stats.unauth_access_overview || emptyStats.unauth_access_overview;
+  const unauthPositiveDistribution = Array.isArray(unauthOverview.positive_type_distribution)
+    ? unauthOverview.positive_type_distribution.slice(0, 4)
+    : [];
+  const unauthNegativeDistribution = Array.isArray(unauthOverview.negative_type_distribution)
+    ? unauthOverview.negative_type_distribution.slice(0, 4)
+    : [];
   const aiDialogueMessages = useMemo(() => normalizeAiPlanMessages(selectedRow), [selectedRow]);
   const requestPacketData = useMemo(() => {
     if (!selectedRow) {
@@ -13319,7 +13554,7 @@ function AiPenAssetWorkspaceView({
       ) : null}
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-3">
           <div className="space-y-1">
             <label className="text-xs font-bold text-brand-text">任务ID</label>
             <input
@@ -13397,6 +13632,44 @@ function AiPenAssetWorkspaceView({
               <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
           </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">证据家族</label>
+            <div className="relative">
+              <select
+                value={searchForm.proof_family}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, proof_family: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                <option value="unauth_access">未授权访问</option>
+                <option value="auth_bypass">鉴权绕过</option>
+                <option value="surface_exposure">暴露面</option>
+                <option value="realtime_exposure">实时通道</option>
+                <option value="response_differential">响应差异</option>
+                <option value="sensitive_disclosure">敏感泄露</option>
+                <option value="access_control">访问控制线索</option>
+                <option value="policy_misconfig">策略配置问题</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">未授权负信号</label>
+            <div className="relative">
+              <select
+                value={searchForm.unauth_negative_type}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, unauth_negative_type: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                <option value="auth_blocked">鉴权拦截</option>
+                <option value="login_wall">登录墙</option>
+                <option value="guarded_mixed">混合保护信号</option>
+                <option value="health_only">健康检查为主</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -13439,6 +13712,229 @@ function AiPenAssetWorkspaceView({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+        <div className="xl:col-span-4 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black">未授权概览</div>
+            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `样本 ${unauthOverview.total_count}`}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">正向命中</div>
+              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : unauthOverview.verified_count}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">人工复核</div>
+              <div className="mt-1 text-lg font-black text-brand-warning">{statsLoading ? '...' : unauthOverview.needs_manual_review_count}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">负信号</div>
+              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : unauthOverview.negative_signal_count}</div>
+            </div>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">主导正向类型</div>
+              <div className="mt-1 break-all">{statsLoading ? '加载中...' : formatAiPenDistributionLabel(unauthOverview.dominant_positive_type || '暂无')}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">主导负信号</div>
+              <div className="mt-1 break-all">{statsLoading ? '加载中...' : formatUnauthNegativeType(unauthOverview.dominant_negative_type || '暂无')}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">建议动作</div>
+              <div className="mt-1 break-all leading-relaxed">{statsLoading ? '加载中...' : (unauthOverview.recommended_action || '暂无建议')}</div>
+            </div>
+          </div>
+          {unauthOverview.next_actions.length > 0 ? (
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">下一步</div>
+              <div className="space-y-1.5">
+                {unauthOverview.next_actions.slice(0, 3).map((item, index) => (
+                  <div key={`${index}-${item}`} className="text-xs break-all leading-relaxed">{index + 1}. {item}</div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">正向类型分布</div>
+              {unauthPositiveDistribution.length > 0 ? (
+                <div className="space-y-1.5">
+                  {unauthPositiveDistribution.map((item, index) => (
+                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="break-all leading-relaxed">{formatAiPenDistributionLabel(item.name)}</span>
+                      <span className="shrink-0 text-brand-text-muted">{Number(item.count || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无正向未授权命中'}</div>
+              )}
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">负信号分布</div>
+              {unauthNegativeDistribution.length > 0 ? (
+                <div className="space-y-1.5">
+                  {unauthNegativeDistribution.map((item, index) => (
+                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="break-all leading-relaxed">{formatAiPenDistributionLabel(item.name)}</span>
+                      <span className="shrink-0 text-brand-text-muted">{Number(item.count || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无负信号'}</div>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">保护占比</div>
+              <div className="mt-1 text-sm font-black text-brand-text">
+                {statsLoading ? '...' : formatRatePercent(unauthOverview.negative_summary?.protected_rate)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">健康检查占比</div>
+              <div className="mt-1 text-sm font-black text-brand-text">
+                {statsLoading ? '...' : formatRatePercent(unauthOverview.negative_summary?.health_only_rate)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">负信号占比</div>
+              <div className="mt-1 text-sm font-black text-brand-text">
+                {statsLoading ? '...' : formatRatePercent(unauthOverview.negative_summary?.negative_signal_rate)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="xl:col-span-4 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black">阶段F能力就绪度</div>
+            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `总计 ${readinessSummary.total_capabilities}`}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">已覆盖</div>
+              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : readinessSummary.covered_count}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">部分覆盖</div>
+              <div className="mt-1 text-lg font-black text-brand-warning">{statsLoading ? '...' : readinessSummary.partial_count}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">缺失</div>
+              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : readinessSummary.missing_count}</div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {topReadinessCapabilities.length > 0 ? topReadinessCapabilities.map((item) => (
+              <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-semibold">{item.label || '-'}</div>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getReadinessStatusClass(item.status)}`}>
+                    {formatReadinessStatus(item.status)}
+                  </span>
+                </div>
+                <div className="text-xs text-brand-text-muted break-all leading-relaxed">{item.focus_reason || '暂无说明'}</div>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
+                    覆盖率 {formatRatePercent(item.coverage_rate)}
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
+                    命中率 {formatRatePercent(item.success_rate)}
+                  </div>
+                </div>
+                {item.dominant_unauth_negative_type ? (
+                  <div className="text-[11px] text-brand-text-muted">
+                    主导负信号：{formatUnauthNegativeType(item.dominant_unauth_negative_type)} / {Number(item.negative_signal_count || 0)} 条
+                  </div>
+                ) : null}
+              </div>
+            )) : (
+              <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
+                {statsLoading ? '加载中...' : '暂无阶段 F 能力摘要'}
+              </div>
+            )}
+          </div>
+          {readinessCapabilities.length > 0 ? (
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">能力明细</div>
+              <div className="space-y-2 max-h-48 overflow-auto">
+                {readinessCapabilities
+                  .slice()
+                  .sort((a, b) => Number(b?.priority_score || 0) - Number(a?.priority_score || 0))
+                  .map((item) => (
+                    <div key={`readiness-detail-${item.id}`} className="rounded-lg border border-brand-border bg-brand-bg/60 px-3 py-2 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-semibold break-all">{item.label || '-'}</div>
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getReadinessStatusClass(item.status)}`}>
+                          {formatReadinessStatus(item.status)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-[10px] text-brand-text-muted">
+                        <span>verified {Number(item.verified_count || 0)}</span>
+                        <span>manual {Number(item.needs_manual_review_count || 0)}</span>
+                        <span>fp {Number(item.likely_false_positive_count || 0)}</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="xl:col-span-4 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black">工程师优先能力</div>
+            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `Top ${focusQueueItems.length}`}</span>
+          </div>
+          <div className="space-y-2">
+            {focusQueueItems.length > 0 ? focusQueueItems.map((item, index) => (
+              <div key={`${item.id}-${index}`} className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-semibold">{index + 1}. {item.label || '-'}</div>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getReadinessStatusClass(item.status)}`}>
+                    {formatReadinessStatus(item.status)}
+                  </span>
+                </div>
+                <div className="text-xs text-brand-text-muted break-all leading-relaxed">{item.focus_reason || '暂无说明'}</div>
+                <div className="flex flex-wrap gap-2 text-[11px] text-brand-text-muted">
+                  <span>verified {Number(item.verified_count || 0)}</span>
+                  <span>manual {Number(item.needs_manual_review_count || 0)}</span>
+                  <span>fp {Number(item.likely_false_positive_count || 0)}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
+                    覆盖率 {formatRatePercent(item.coverage_rate)}
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
+                    误报率 {formatRatePercent(item.false_positive_rate)}
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
+                    平均轮次 {Number(item.avg_turns || 0).toFixed(1)}
+                  </div>
+                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
+                    平均工具 {Number(item.avg_tool_calls || 0).toFixed(1)}
+                  </div>
+                </div>
+                {item.dominant_unauth_negative_type ? (
+                  <div className="text-[11px] text-brand-text-muted">
+                    主导负信号：{formatUnauthNegativeType(item.dominant_unauth_negative_type)} / 占比 {formatRatePercent(item.negative_signal_rate)}
+                  </div>
+                ) : null}
+              </div>
+            )) : (
+              <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
+                {statsLoading ? '加载中...' : '暂无优先能力'}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         <div className="xl:col-span-5 bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-brand-border flex items-center justify-between">
             <div className="text-sm font-black">进入 AI 渗透测试的资产</div>
@@ -13470,12 +13966,34 @@ function AiPenAssetWorkspaceView({
                       }`}
                     >
                       <td className="px-3 py-2.5 align-middle text-sm whitespace-pre-wrap break-all text-center leading-relaxed min-w-[180px] max-w-[280px]">
-                        <span className={`font-semibold ${active ? 'text-brand-accent' : 'text-brand-text'}`}>
-                          {normalizeValueNoTruncate(row?.risk_name)}
-                        </span>
+                        <div className="space-y-2">
+                          <span className={`font-semibold ${active ? 'text-brand-accent' : 'text-brand-text'}`}>
+                            {normalizeValueNoTruncate(row?.risk_name)}
+                          </span>
+                          <div className="flex flex-wrap items-center justify-center gap-1">
+                            <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[10px] font-semibold">
+                              {formatProofFamily(row?.proof_family)}
+                            </span>
+                            <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[10px] font-semibold">
+                              {formatPayloadType(row?.payload_type)}
+                            </span>
+                            {String(row?.unauth_negative_type || '').trim() ? (
+                              <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[10px] font-semibold">
+                                {formatUnauthNegativeType(row?.unauth_negative_type)}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 align-middle text-sm whitespace-pre-wrap break-all text-center leading-relaxed min-w-[220px] max-w-[360px]">
-                        {targetText}
+                        <div className="space-y-1">
+                          <div>{targetText}</div>
+                          {normalizeValueNoTruncate(row?.vuln_url) !== '-' && normalizeValueNoTruncate(row?.vuln_url) !== targetText ? (
+                            <div className="text-[11px] text-brand-text-muted break-all leading-relaxed">
+                              {normalizeValueNoTruncate(row?.vuln_url)}
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 align-middle text-center">
                         <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[11px] font-semibold">
@@ -13622,11 +14140,59 @@ function AiPenAssetWorkspaceView({
                       探针类型：{formatPayloadType(selectedRow?.payload_type)}
                     </span>
                     <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                      证据家族：{formatProofFamily(selectedRow?.proof_family)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                      证据类型：{formatProofType(selectedRow?.proof_type)}
+                    </span>
+                    {String(selectedRow?.unauth_access_type || '').trim() ? (
+                      <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                        未授权类型：{formatUnauthAccessType(selectedRow?.unauth_access_type)}
+                      </span>
+                    ) : null}
+                    {String(selectedRow?.unauth_negative_type || '').trim() ? (
+                      <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                        未授权负信号：{formatUnauthNegativeType(selectedRow?.unauth_negative_type)}
+                      </span>
+                    ) : null}
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
                       置信度：{formatConfidence(selectedRow?.confidence)}
                     </span>
                     <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
                       时间：{normalizeValue(selectedRow?.save_date)}
                     </span>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
+                  <div className="text-xs font-black tracking-wide text-brand-text">证据概览与未授权判定</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">Proof 摘要</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(selectedRow?.proof_summary)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">请求模板摘要</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(selectedRow?.request_template_summary)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">未授权说明</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(selectedRow?.unauth_access_reason)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">未授权复核摘要</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(selectedRow?.unauth_probe_summary)}
+                      </div>
+                    </div>
                   </div>
                 </div>
 

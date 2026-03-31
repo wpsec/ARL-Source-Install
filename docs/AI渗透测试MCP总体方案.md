@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.52`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.54`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -33,7 +33,7 @@
 2. planner 更像“给建议”，不是“每轮决策的大脑”
 3. runtime 更像“带审计的工具执行器”，不是“多轮推理闭环”
 4. 被动参数提取 -> 参数类型标签 -> payload 编排 -> proof 判定 还没有完全收成单引擎
-5. 结果虽然已可量化，但“工程师优先看什么入口”还需要更强的优先级视图
+5. 结果虽已可量化，且已具备基础工程师优先级视图，但仍需继续和基线/误报抑制联动
 6. 基准靶场与标注回归尚未建完，阶段 F 还没有形成真正的量化基线
 7. `ARL/docker/dicts/dict` 已完成第一阶段资源封装，但尚未升级为“带预算/节流/熔断治理”的受控自动链资源
 
@@ -329,7 +329,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - 至少支持 3 轮真实闭环
 - 执行路径不再主要由 `if/else` 写死
 
-当前状态（截至 `2026-03-31`）：
+当前状态（截至 `2026-04-01`）：
 
 - `AiPenMcpRuntime.run_agent_loop` 已落地，且已具备 3 轮闭环测试
 - `agent_trace/tool_calls/tool_results/stop_reason/budget_used` 已可落库与导出
@@ -463,8 +463,9 @@ AI 渗透测试至少要覆盖以下能力族：
 - 后端数据面已具备：`agent_trace/tool_calls/tool_results/stop_reason/budget_used/session_summary/tool_plan_source`
 - 已支持历史 `session/tool_plan/tool_results` 沿用重试
 - 已补导出字段与 `/ai_pen_test/stats/` 轨迹维度统计
-- 差距：前台仍缺更完整的 Agent 时间线、工具调用树与证据对照产品化呈现
-- 结论：`后端基本到位，前台未完全收口`
+- AI渗透工作台已补：`未授权概览 / 阶段 F 能力就绪度 / 工程师优先能力` 卡片、`证据家族/未授权负信号` 筛选、结果列表行内证据速览、右侧 `proof_summary/request_template_summary/unauth_probe_summary` 证据总览
+- 差距：前台主体已基本到位，但仍可继续补更细的 Agent 时间线组织与靶场基线联动
+- 结论：`前后台主链已基本打通，前台进入收尾优化`
 
 ### 阶段 F：基准靶场与回归
 
@@ -497,7 +498,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - 已可按 `request_template_mode` 查看模板入口分布，并在工程师入口列表中直接查看 `request_template_summary`
 - 已可输出 `unauth_negative_type/unauth_negative_summary`，直接区分“被鉴权挡住 / 登录墙 / 只有健康检查面”等未授权负信号
 - 已可输出 `unauth_access_overview`，在 stats 顶层直接汇总未授权正向命中、负信号主导类型和建议动作
-- 已可输出“工程师优先队列”及“具体入口 Top 列表”所需的 readiness/priority 数据面
+- 已可输出“工程师优先队列”及“具体入口 Top 列表”所需的 readiness/priority 数据面，并在前台工作台直接展示
 - 差距：登录/JWT/API文档/Actuator/IDOR/SQLi/XSS/文件/SSRF 靶场与标注样本尚未建立
 - 结论：`指标数据面已具备，靶场基线未完成`
 
@@ -521,8 +522,8 @@ AI 渗透测试至少要覆盖以下能力族：
 - 按阶段 C 最低口径：`已达标，可用`
 - 按整份方案最终口径：`未全部完成`
 - 按“互联网资产高价值漏洞入口发现器”口径：`已具备基础渗透测试能力，进入持续完善阶段`
-- 已接近完成的阶段：`B / C-Core / D / E(后端数据面)`
-- 仍需继续推进的阶段：`A / C-AutoPassive / E(前台产品化) / F`
+- 已接近完成的阶段：`B / C-Core / D / E`
+- 仍需继续推进的阶段：`A / C-AutoPassive / F`
 
 建议下一步优先级：
 
