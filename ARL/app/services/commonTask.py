@@ -6305,6 +6305,94 @@ class WebSiteFetch(object):
         return " | ".join(parts)
 
     @classmethod
+    def _classify_ai_pen_auth_protocol_outcome(
+        cls,
+        auth_url: str,
+        status_code: int,
+        headers=None,
+        body_text: str = "",
+        summary=None,
+    ):
+        """
+        认证协议端点分级：
+        - 仅 metadata/jwks 可访问：不直接判漏洞（likely_false_positive）
+        - token/introspect/userinfo 在成功状态直接返回 token：高风险（verified）
+        - 其余协议端点可访问：保守 needs_manual_review
+        """
+        url_text = str(auth_url or "").strip()
+        lower_url = url_text.lower()
+        status = cls._safe_int_value(status_code, 0)
+        summary_obj = summary if isinstance(summary, dict) else {}
+        mode_text = str(summary_obj.get("mode") or "").strip().lower()
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        body_lower = str(body_text or "").strip().lower()
+        success_like = cls._is_ai_pen_success_status(status)
+
+        protocol_summary_text = cls._format_auth_protocol_summary_text(summary_obj)
+        token_response_fields = [
+            token
+            for token in ("access_token", "id_token", "refresh_token", "token_type", "expires_in")
+            if '"{}"'.format(token) in body_lower
+        ]
+        sensitive_markers = [
+            marker
+            for marker in ("client_secret", "private_key", "password", "secret_key", "appsecret")
+            if marker in body_lower
+        ]
+        metadata_like = (
+            mode_text in {"openid_configuration", "jwks"}
+            or "openid-configuration" in lower_url
+            or "jwks" in lower_url
+        )
+        token_endpoint_like = any(
+            token in lower_url
+            for token in (
+                "/oauth/token",
+                "/oauth2/token",
+                "/connect/token",
+                "/oauth/introspect",
+                "/oauth2/introspect",
+                "/userinfo",
+            )
+        )
+
+        if status in {401, 403}:
+            reason = "认证协议端点返回 {}，当前更像访问控制生效".format(status)
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "likely_false_positive", "confidence": 0.66, "reason": reason}
+
+        if success_like and sensitive_markers:
+            reason = "认证协议响应中包含敏感字段（{}），疑似存在凭据泄露".format(",".join(sensitive_markers[:3]))
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "verified", "confidence": 0.91, "reason": reason}
+
+        if success_like and token_endpoint_like and token_response_fields:
+            reason = "认证协议端点返回令牌字段（{}），疑似存在无鉴权发放风险".format(",".join(token_response_fields[:4]))
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "verified", "confidence": 0.89, "reason": reason}
+
+        if success_like and metadata_like:
+            reason = "发现可访问 OAuth/OIDC 协议元数据端点，当前仅确认入口暴露，不直接判定漏洞"
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "likely_false_positive", "confidence": 0.62, "reason": reason}
+
+        if success_like and (token_endpoint_like or "json" in content_type):
+            reason = "认证协议端点可访问，但未发现明确令牌泄露证据，建议结合登录态复核"
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "needs_manual_review", "confidence": 0.74, "reason": reason}
+
+        reason = "发现认证协议端点线索，当前证据不足以直接判定风险"
+        if protocol_summary_text:
+            reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+        return {"decision": "needs_manual_review", "confidence": 0.66, "reason": reason}
+
+    @classmethod
     def _extract_api_doc_summary(cls, body_text: str):
         text = str(body_text or "").strip()
         if not text:
@@ -8978,6 +9066,9 @@ class WebSiteFetch(object):
             "auth_protocol_hit": False,
             "auth_protocol_url": "",
             "auth_protocol_summary": {},
+            "auth_protocol_status": 0,
+            "auth_protocol_headers": {},
+            "auth_protocol_body_excerpt": "",
             "config_exposure_hit": False,
             "config_exposure_url": "",
             "config_exposure_summary": "",
@@ -9069,6 +9160,9 @@ class WebSiteFetch(object):
                     body_excerpt,
                     url_text=url_text,
                 )
+                observation["auth_protocol_status"] = status_code
+                observation["auth_protocol_headers"] = dict(headers)
+                observation["auth_protocol_body_excerpt"] = body_excerpt
 
             if cls._looks_like_sensitive_config_response(url_text, body_excerpt, headers):
                 observation["config_exposure_hit"] = True
@@ -10838,6 +10932,9 @@ class WebSiteFetch(object):
             auth_protocol_hit = False
             auth_protocol_url = ""
             auth_protocol_summary = {}
+            auth_protocol_status = 0
+            auth_protocol_headers = {}
+            auth_protocol_body_excerpt = ""
             config_exposure_hit = False
             config_exposure_url = ""
             config_exposure_summary = ""
@@ -10951,6 +11048,13 @@ class WebSiteFetch(object):
                 auth_protocol_url = str(plan_observation.get("auth_protocol_url", "") or "") or auth_protocol_url
                 if isinstance(plan_observation.get("auth_protocol_summary"), dict) and plan_observation.get("auth_protocol_summary"):
                     auth_protocol_summary = dict(plan_observation.get("auth_protocol_summary") or {})
+                auth_protocol_status = self._safe_int_value(plan_observation.get("auth_protocol_status"), 0) or auth_protocol_status
+                if isinstance(plan_observation.get("auth_protocol_headers"), dict) and plan_observation.get("auth_protocol_headers"):
+                    auth_protocol_headers = dict(plan_observation.get("auth_protocol_headers") or {})
+                auth_protocol_body_excerpt = (
+                    str(plan_observation.get("auth_protocol_body_excerpt", "") or "")
+                    or auth_protocol_body_excerpt
+                )
                 api_doc_probe_count += self._safe_int_value(
                     dict(plan_observation.get("tool_counts") or {}).get("api_doc_probe"),
                     0,
@@ -11089,6 +11193,13 @@ class WebSiteFetch(object):
                     auth_protocol_url = str(fallback_observation.get("auth_protocol_url", "") or "") or auth_protocol_url
                     if isinstance(fallback_observation.get("auth_protocol_summary"), dict) and fallback_observation.get("auth_protocol_summary"):
                         auth_protocol_summary = dict(fallback_observation.get("auth_protocol_summary") or {})
+                    auth_protocol_status = self._safe_int_value(fallback_observation.get("auth_protocol_status"), 0) or auth_protocol_status
+                    if isinstance(fallback_observation.get("auth_protocol_headers"), dict) and fallback_observation.get("auth_protocol_headers"):
+                        auth_protocol_headers = dict(fallback_observation.get("auth_protocol_headers") or {})
+                    auth_protocol_body_excerpt = (
+                        str(fallback_observation.get("auth_protocol_body_excerpt", "") or "")
+                        or auth_protocol_body_excerpt
+                    )
                     api_doc_probe_count += self._safe_int_value(
                         dict(fallback_observation.get("tool_counts") or {}).get("api_doc_probe"),
                         0,
@@ -11302,12 +11413,19 @@ class WebSiteFetch(object):
                 confidence = 0.64
                 reason = "发现疑似 JWT 令牌（alg={}），建议结合登录态进一步验证".format(jwt_alg_text or "-")
             elif payload_type == "jwt_probe" and auth_protocol_hit:
-                decision = "verified"
-                confidence = 0.82
-                reason = "发现可访问 OAuth/OIDC 协议端点 {}".format((auth_protocol_url or target_url)[:180])
-                auth_protocol_summary_text = self._format_auth_protocol_summary_text(auth_protocol_summary)
-                if auth_protocol_summary_text:
-                    reason = "{}；协议摘要：{}".format(reason, auth_protocol_summary_text)
+                auth_protocol_outcome = self._classify_ai_pen_auth_protocol_outcome(
+                    auth_url=auth_protocol_url or target_url,
+                    status_code=auth_protocol_status or probe_status,
+                    headers=auth_protocol_headers or probe_headers,
+                    body_text=auth_protocol_body_excerpt,
+                    summary=auth_protocol_summary,
+                )
+                decision = self._normalize_ai_pen_decision(
+                    auth_protocol_outcome.get("decision"),
+                    default_value="needs_manual_review",
+                )
+                confidence = self._clamp_ai_pen_confidence(auth_protocol_outcome.get("confidence"), 0.66)
+                reason = self._clip_text(auth_protocol_outcome.get("reason", ""), self.AI_PEN_TEST_REASON_MAX) or reason
             elif payload_type == "websocket_probe" and websocket_upgrade_hit:
                 decision = "verified"
                 confidence = 0.86

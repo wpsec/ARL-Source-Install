@@ -1350,6 +1350,36 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("openid_configuration", summary.get("mode"))
         self.assertEqual("/oauth/token", summary.get("token_endpoint"))
 
+    def test_classify_auth_protocol_outcome_for_metadata_returns_likely_fp(self):
+        summary = {
+            "mode": "openid_configuration",
+            "issuer": "https://example.com",
+            "token_endpoint": "/oauth/token",
+            "jwks_uri": "/.well-known/jwks.json",
+        }
+        outcome = WebSiteFetch._classify_ai_pen_auth_protocol_outcome(
+            auth_url="https://example.com/.well-known/openid-configuration",
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body_text='{"issuer":"https://example.com","token_endpoint":"https://example.com/oauth/token"}',
+            summary=summary,
+        )
+
+        self.assertEqual("likely_false_positive", outcome.get("decision"))
+        self.assertIn("不直接判定漏洞", str(outcome.get("reason", "")))
+
+    def test_classify_auth_protocol_outcome_for_token_fields_returns_verified(self):
+        outcome = WebSiteFetch._classify_ai_pen_auth_protocol_outcome(
+            auth_url="https://example.com/oauth/token",
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body_text='{"access_token":"abc","token_type":"bearer","expires_in":3600}',
+            summary={"mode": "token_endpoint"},
+        )
+
+        self.assertEqual("verified", outcome.get("decision"))
+        self.assertIn("令牌字段", str(outcome.get("reason", "")))
+
     def test_infer_tool_plan_for_weak_password_uses_session_chain(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={

@@ -14,6 +14,7 @@
 - `[v4.5.14]` AI渗透 `Token/认证协议` 探针链扩展：新增 OAuth/OIDC 协议端点家族化目标生成器（如 `/.well-known/openid-configuration`、`/.well-known/jwks.json`、`/oauth/token`、`/connect/token`），`jwt_probe` 的 infer/fallback 计划由“单 URL 复测”升级为“当前入口 + 协议端点”组合探测；运行时新增认证协议响应识别与摘要提取，在 JWT 分支可对公开可访问的协议端点给出结构化验证结论
 - `[v4.5.15]` AI渗透 `IDOR` 一致性信号增强：`idor_probe` 多响应分析新增一致性统计（`consistency_hits/consistent_sensitive_fields`），评分与差异摘要同步纳入“重复出现的敏感字段差异”信号；当多次对象引用变异都指向同类敏感字段变化时，判定置信度更稳定，减少单次偶发响应差异对结论的干扰
 - `[v4.5.16]` AI渗透 高价值认证目标收敛：高价值 URL 提取新增 OAuth/OIDC 协议端点家族（`/.well-known/openid-configuration`、`jwks`、`oauth2 token/introspect/userinfo`）的专门识别，相关候选统一归类为 `risk_type=jwt` 并优先进入 `jwt_probe` 认证链；同时补齐 OAuth/OIDC 风险分类回归测试，避免协议端点误走普通登录入口链路
+- `[v4.5.17]` AI渗透 认证协议证据分级：新增 `_classify_ai_pen_auth_protocol_outcome`，将“仅 OpenID/JWKS 元数据端点可访问”收敛为 `likely_false_positive`（入口暴露不直接判洞），将“token/introspect/userinfo 成功返回令牌字段或敏感凭据”升级为 `verified`，其余保持 `needs_manual_review`；同步补齐认证协议分级回归测试，降低 JWT 认证链误报
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 
