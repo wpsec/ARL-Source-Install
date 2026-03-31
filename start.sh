@@ -11,6 +11,28 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$SCRIPT_DIR/ARL/docker"
 
+sync_runtime_config_from_template() {
+    local sync_script="$SCRIPT_DIR/ARL/app/tools/sync_runtime_config.py"
+    local template_file="$DOCKER_DIR/config-docker.yaml"
+    local runtime_file="$DOCKER_DIR/config-runtime.yaml"
+
+    if [ ! -f "$sync_script" ]; then
+        echo "⚠ 未找到配置同步脚本，跳过运行配置补齐"
+        return 0
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "⚠ 未找到 python3，跳过运行配置补齐"
+        return 0
+    fi
+    if ! python3 "$sync_script" --template "$template_file" --runtime "$runtime_file" --quiet; then
+        echo "❌ 运行配置补齐失败，请先修复配置文件后重试"
+        return 1
+    fi
+
+    echo "✓ 运行配置已完成缺失项补齐（保留用户现有值）"
+    return 0
+}
+
 # 检查docker compose (支持v2和v1)
 if docker compose version &> /dev/null; then
     COMPOSE_CMD="docker compose"
@@ -97,6 +119,7 @@ if [ ! -f "config-runtime.yaml" ]; then
 else
     echo "✓ 检测到 config-runtime.yaml，将复用用户运行配置"
 fi
+sync_runtime_config_from_template
 echo "✓ 配置文件已准备"
 
 # 自动检查/补齐 PoC 文库，避免首次部署额外手工步骤
