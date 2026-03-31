@@ -4093,6 +4093,8 @@ class WebSiteFetch(object):
                 payload=default_payload,
                 max_steps=max(2, self._safe_int_value(runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS)),
             )
+            payload_schema_hint = "|".join(list(self.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES))
+            tool_schema_hint = "|".join(list(self.AI_PEN_RUNTIME_TOOL_NAMES))
             request_obj = {
                 "task_id": str(self.task_id),
                 "target": str(candidate.get("target", "") or "").strip(),
@@ -4173,13 +4175,13 @@ class WebSiteFetch(object):
                     "decision": "verified|likely_false_positive|needs_manual_review",
                     "confidence": "0~1 float",
                     "reason": "string",
-                    "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|weak_password_probe|idor_probe|api_doc_probe|graphql_probe|jwt_probe|websocket_probe|upload_probe|replay",
+                    "payload_type": payload_schema_hint,
                     "payload": "string",
                     "evidence": ["string"],
                     "next_actions": ["string"],
                     "tool_plan": [
                         {
-                            "tool": "http_fetch|payload_probe|idor_probe|api_doc_probe|graphql_probe|jwt_probe|websocket_probe|session_start|login_probe|credential_probe|detect_login_success",
+                            "tool": tool_schema_hint,
                             "params": {"url": "string", "method": "get|post", "allow_redirects": True, "headers": {"Header": "Value"}, "json_data": {"query": "string"}},
                             "summary": "string",
                         }
@@ -4190,7 +4192,7 @@ class WebSiteFetch(object):
                 request_obj["agent_loop"] = {
                     "turn": self._safe_int_value(agent_loop_ctx.get("turn"), 0),
                     "max_turns": self._safe_int_value(agent_loop_ctx.get("max_turns"), 0),
-                    "available_tools": list(agent_loop_ctx.get("available_tools", []) or [])[:8],
+                    "available_tools": list(agent_loop_ctx.get("available_tools", []) or [])[:24],
                     "seed_tool_plan_remaining": list(agent_loop_ctx.get("seed_tool_plan_remaining", []) or [])[:4],
                     "recent_tool_results": list(agent_loop_ctx.get("recent_tool_results", []) or [])[:4],
                     "last_tool_result": list(agent_loop_ctx.get("last_tool_result", []) or [])[:1],
@@ -4203,7 +4205,7 @@ class WebSiteFetch(object):
                     "expected_signal": "string",
                     "stop_if": "string",
                     "tool_call": {
-                        "tool": "http_fetch|payload_probe|idor_probe|api_doc_probe|graphql_probe|jwt_probe|websocket_probe|session_start|login_probe|credential_probe|detect_login_success",
+                        "tool": tool_schema_hint,
                         "params": {"url": "string", "method": "get|post", "allow_redirects": True, "headers": {"Header": "Value"}, "json_data": {"query": "string"}},
                         "summary": "string",
                     },
@@ -4211,7 +4213,7 @@ class WebSiteFetch(object):
                         "decision": "verified|likely_false_positive|needs_manual_review",
                         "confidence": "0~1 float",
                         "reason": "string",
-                        "payload_type": "xss_probe|sqli_probe|cmdi_probe|ssrf_probe|weak_password_probe|idor_probe|api_doc_probe|graphql_probe|jwt_probe|websocket_probe|upload_probe|replay",
+                        "payload_type": payload_schema_hint,
                         "payload": "string",
                         "evidence": ["string"],
                         "next_actions": ["string"],
@@ -5820,6 +5822,82 @@ class WebSiteFetch(object):
                 path_text = str(path or "").strip()
                 if not path_text:
                     continue
+                full_url = "{}{}".format(base, path_text)
+                if full_url in seen:
+                    continue
+                seen.add(full_url)
+                targets.append(full_url)
+                if len(targets) >= max(1, int(max_count or 1)):
+                    break
+            return targets
+        except Exception:
+            return []
+
+    @staticmethod
+    def _build_config_probe_targets(target_url: str, max_count=4):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return []
+
+        try:
+            parsed = urlsplit(url_text)
+            base = "{}://{}".format(parsed.scheme, parsed.netloc)
+            lower_path = str(parsed.path or "").strip().lower()
+            candidate_paths = []
+            if lower_path and any(
+                token in lower_path
+                for token in (
+                    "/actuator",
+                    "/configprops",
+                    "/mappings",
+                    "/beans",
+                    "/conditions",
+                    "/loggers",
+                    "/jolokia",
+                    "/prometheus",
+                    "/metrics",
+                    "/env",
+                )
+            ):
+                candidate_paths.append(str(parsed.path or "").strip())
+
+            has_api_prefix = ("/api/" in lower_path) or lower_path.startswith("/api")
+            prefixes = ["/api", ""] if has_api_prefix else [""]
+
+            base_paths = [
+                "/actuator/env",
+                "/actuator/configprops",
+                "/actuator/mappings",
+                "/actuator/beans",
+                "/actuator/conditions",
+                "/actuator/loggers",
+                "/actuator/prometheus",
+                "/actuator/metrics",
+                "/actuator",
+                "/env",
+                "/configprops",
+                "/jolokia/list",
+            ]
+
+            for prefix in prefixes:
+                prefix_text = str(prefix or "").strip()
+                for path in base_paths:
+                    path_text = str(path or "").strip()
+                    if not path_text:
+                        continue
+                    if prefix_text and path_text.startswith("/actuator/"):
+                        candidate_paths.append("{}{}".format(prefix_text, path_text))
+                    elif not prefix_text:
+                        candidate_paths.append(path_text)
+
+            targets = []
+            seen = set()
+            for path in candidate_paths:
+                path_text = str(path or "").strip()
+                if not path_text:
+                    continue
+                if not path_text.startswith("/"):
+                    path_text = "/{}".format(path_text)
                 full_url = "{}{}".format(base, path_text)
                 if full_url in seen:
                     continue
@@ -8084,6 +8162,81 @@ class WebSiteFetch(object):
                 )
             return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
+        if payload_type_text == "weak_password_probe":
+            login_context = cls._build_ai_pen_login_probe_context(
+                target_url=target_url,
+                body_text=str(item.get("body_text") or ""),
+                dom_form_summary=item.get("dom_form_summary"),
+                login_surface_summary=item.get("login_surface_summary"),
+            )
+            if login_context and (not bool(login_context.get("captcha_required"))):
+                credential_candidates = cls._build_ai_pen_minimal_default_credentials(
+                    candidate=item,
+                    payload=str(payload or ""),
+                    max_count=1,
+                )
+                if credential_candidates:
+                    credential_item = credential_candidates[0]
+                    form_data = dict(login_context.get("hidden_fields") or {})
+                    form_data[str(login_context.get("username_field") or "username")] = str(credential_item.get("username") or "")
+                    form_data[str(login_context.get("password_field") or "password")] = str(credential_item.get("password") or "")
+
+                    budget = max(1, int(max_steps or 1))
+                    if budget >= 4:
+                        plan.append(
+                            {
+                                "tool": "session_start",
+                                "params": {
+                                    "url": str(login_context.get("login_url") or target_url),
+                                    "session_key": "weak_password",
+                                    "method": "get",
+                                    "allow_redirects": True,
+                                },
+                                "summary": "初始化弱口令验证会话",
+                            }
+                        )
+                    if budget >= 3:
+                        plan.append(
+                            {
+                                "tool": "extract_csrf_token",
+                                "params": {
+                                    "url": str(login_context.get("login_url") or target_url),
+                                    "session_key": "weak_password",
+                                    "method": "get",
+                                    "allow_redirects": True,
+                                },
+                                "summary": "提取登录表单 CSRF Token",
+                            }
+                        )
+                    plan.append(
+                        {
+                            "tool": "credential_probe",
+                            "params": {
+                                "url": str(login_context.get("submit_url") or target_url),
+                                "prepare_url": str(login_context.get("login_url") or target_url),
+                                "login_url": str(login_context.get("login_url") or target_url),
+                                "session_key": "weak_password",
+                                "method": str(login_context.get("method") or "post"),
+                                "allow_redirects": True,
+                                "form_data": form_data,
+                            },
+                            "summary": "默认口令低副作用验证",
+                        }
+                    )
+                    if budget > 1:
+                        plan.append(
+                            {
+                                "tool": "detect_login_success",
+                                "params": {
+                                    "url": str(login_context.get("submit_url") or target_url),
+                                    "login_url": str(login_context.get("login_url") or target_url),
+                                    "session_key": "weak_password",
+                                },
+                                "summary": "登录成功判定",
+                            }
+                        )
+                    return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
         if payload_type_text == "config_probe" or any(
             token in lower_target
             for token in (
@@ -8098,17 +8251,18 @@ class WebSiteFetch(object):
                 "/actuator/loggers",
             )
         ):
-            plan.append(
-                {
-                    "tool": "config_probe",
-                    "params": {
-                        "url": target_url,
-                        "method": "get",
-                        "allow_redirects": True,
-                    },
-                    "summary": "复测高价值配置/环境端点",
-                }
-            )
+            for config_url in cls._build_config_probe_targets(target_url, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "config_probe",
+                        "params": {
+                            "url": config_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "复测高价值配置/环境端点",
+                    }
+                )
             return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
         if payload_type_text == "websocket_probe":
@@ -8279,17 +8433,18 @@ class WebSiteFetch(object):
                     }
                 )
         elif payload_type_text == "config_probe":
-            plan.append(
-                {
-                    "tool": "config_probe",
-                    "params": {
-                        "url": url_text,
-                        "method": "get",
-                        "allow_redirects": True,
-                    },
-                    "summary": "fallback 配置/环境暴露探针",
-                }
-            )
+            for config_url in cls._build_config_probe_targets(url_text, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "config_probe",
+                        "params": {
+                            "url": config_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback 配置/环境暴露探针",
+                    }
+                )
         elif payload_type_text == "weak_password_probe":
             login_context = cls._build_ai_pen_login_probe_context(
                 target_url=url_text,

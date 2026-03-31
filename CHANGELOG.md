@@ -7,6 +7,8 @@
 
 - `[v4.5.10]` 仪表盘 `资产增长趋势(7日)` 统计口径修复：`/console/dashboard` 的 `asset_trend_7d` 从“累计总量曲线”调整为“按日新增曲线”，并额外保留 `assets_total/vulns_total` 累计字段用于兼容；修复高基数资产下曲线长期近似直线的问题（例如 tooltip 持续显示同一总量值）
 - `[v4.5.10]` 仪表盘当日新增资产统计兼容修复：`new_assets_today` 改为统一复用日统计逻辑，兼容 `save_date` 为 `date/string` 的混合存储，并在 `save_date` 缺失时回退 `update_date`，避免历史数据口径差异导致“新增始终为 0”
+- `[v4.5.11]` AI渗透 `config_probe` 家族化探测增强：新增配置/诊断端点目标生成器，`infer/fallback` 计划从“单 URL 探针”升级为“同域多端点低副作用探测”（如 `actuator/env/configprops/mappings/beans/conditions/loggers`），并在 `/api/*` 目标下优先探测 `/api/actuator/*` 路径，提升高价值配置暴露发现率
+- `[v4.5.11]` AI渗透 `weak_password` 主计划链路增强：`_infer_ai_pen_tool_plan` 新增 `session_start -> extract_csrf_token -> credential_probe -> detect_login_success` 受预算会话链（非仅 fallback），让登录与会话验证更符合 MCP 工具闭环；AI planner 的 `output_schema` 与 `available_tools` 同步改为动态映射当前真实工具/载荷列表，减少模型输出旧工具名导致的执行偏差
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 

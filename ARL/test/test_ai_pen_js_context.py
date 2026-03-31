@@ -436,9 +436,10 @@ class TestAiPenJsContext(unittest.TestCase):
             max_steps=2,
         )
 
-        self.assertEqual(1, len(plan))
-        self.assertEqual("config_probe", plan[0].get("tool"))
+        self.assertEqual(2, len(plan))
+        self.assertTrue(all(item.get("tool") == "config_probe" for item in plan))
         self.assertEqual("get", plan[0].get("params", {}).get("method"))
+        self.assertIn("/actuator/env", str(plan[0].get("params", {}).get("url", "")))
 
     def test_build_ai_pen_fallback_tool_plan_for_idor_uses_multiple_targets(self):
         plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
@@ -478,6 +479,7 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("https://example.com/doLogin", plan[1].get("params", {}).get("url"))
         self.assertEqual("admin", plan[1].get("params", {}).get("form_data", {}).get("username"))
         self.assertEqual("abc123", plan[1].get("params", {}).get("form_data", {}).get("csrf_token"))
+        self.assertEqual("weak_password", plan[1].get("params", {}).get("session_key"))
 
     def test_build_ai_pen_fallback_tool_plan_skips_weak_password_when_captcha_present(self):
         plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
@@ -1217,9 +1219,52 @@ class TestAiPenJsContext(unittest.TestCase):
             max_steps=2,
         )
 
-        self.assertEqual(1, len(plan))
+        self.assertEqual(2, len(plan))
         self.assertEqual("config_probe", plan[0].get("tool"))
-        self.assertEqual("https://example.com/actuator/env", plan[0].get("params", {}).get("url"))
+        self.assertTrue(any("/actuator/env" in str(item.get("params", {}).get("url", "")) for item in plan))
+
+    def test_build_config_probe_targets_covers_management_family(self):
+        targets = WebSiteFetch._build_config_probe_targets(
+            "https://example.com/api/actuator/env",
+            max_count=6,
+        )
+
+        self.assertEqual(6, len(targets))
+        self.assertIn("https://example.com/api/actuator/env", targets)
+        self.assertTrue(any(item.endswith("/actuator/configprops") for item in targets))
+        self.assertTrue(any(item.endswith("/api/actuator/configprops") for item in targets))
+
+    def test_infer_tool_plan_for_weak_password_uses_session_chain(self):
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={
+                "target": "https://example.com/login",
+                "risk_type": "weak_password",
+                "dom_form_summary": [
+                    {
+                        "action": "/doLogin",
+                        "method": "POST",
+                        "has_password_input": "true",
+                        "password_fields": "password",
+                        "has_captcha_hint": "false",
+                        "fields": "username,password,csrf_token",
+                    }
+                ],
+                "login_surface_summary": {
+                    "password_form_count": 1,
+                    "captcha_form_count": 0,
+                },
+            },
+            payload_type="weak_password_probe",
+            payload="username=admin&password=admin",
+            max_steps=4,
+        )
+
+        self.assertEqual(4, len(plan))
+        self.assertEqual("session_start", plan[0].get("tool"))
+        self.assertEqual("extract_csrf_token", plan[1].get("tool"))
+        self.assertEqual("credential_probe", plan[2].get("tool"))
+        self.assertEqual("detect_login_success", plan[3].get("tool"))
+        self.assertEqual("weak_password", plan[2].get("params", {}).get("session_key"))
 
     def test_runtime_tool_registry_contains_session_and_config_tools(self):
         for tool_name in ("session_request", "extract_csrf_token", "token_replay", "config_probe", "xss_probe", "ssti_probe", "xxe_probe"):
