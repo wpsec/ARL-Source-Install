@@ -422,6 +422,41 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(1, capability["negative_signal_count"])
         self.assertIn("鉴权拦截", capability["focus_reason"])
 
+    def test_build_ai_pen_unauth_access_overview_distinguishes_positive_and_negative_signals(self):
+        overview = ai_pen_test_module._build_ai_pen_unauth_access_overview(
+            [
+                {
+                    "decision": "verified",
+                    "proof_family": "unauth_access",
+                    "proof_type": "unauth_admin_portal",
+                    "unauth_access_type": "unauth_admin_portal",
+                    "payload_type": "replay",
+                },
+                {
+                    "decision": "needs_manual_review",
+                    "proof_family": "unauth_access",
+                    "proof_type": "unauth_health_endpoint",
+                    "unauth_access_type": "unauth_health_endpoint",
+                    "payload_type": "replay",
+                },
+                {
+                    "decision": "likely_false_positive",
+                    "proof_family": "access_control",
+                    "unauth_negative_type": "guarded_mixed",
+                    "payload_type": "idor_probe",
+                },
+            ]
+        )
+
+        self.assertEqual(3, overview["total_count"])
+        self.assertEqual(1, overview["verified_count"])
+        self.assertEqual(1, overview["needs_manual_review_count"])
+        self.assertEqual(1, overview["negative_signal_count"])
+        self.assertEqual("unauth_admin_portal", overview["dominant_positive_type"])
+        self.assertEqual("guarded_mixed", overview["dominant_negative_type"])
+        self.assertIn("优先复核", overview["recommended_action"])
+        self.assertTrue(any("登录链" in item or "会话" in item for item in overview["next_actions"]))
+
     def test_build_ai_pen_engineer_focus_entries_surfaces_unauth_access_fields(self):
         entries = ai_pen_test_module._build_ai_pen_engineer_focus_entries(
             [
@@ -785,6 +820,8 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual("guarded_mixed", data["engineer_focus_entries"][0]["unauth_negative_type"])
         self.assertEqual("guarded_mixed", data["unauth_negative_summary"]["dominant_negative_type"])
         self.assertEqual(1, data["unauth_negative_summary"]["negative_signal_count"])
+        self.assertEqual("guarded_mixed", data["unauth_access_overview"]["dominant_negative_type"])
+        self.assertIn("会话复核", data["unauth_access_overview"]["recommended_action"])
 
 
 if __name__ == "__main__":

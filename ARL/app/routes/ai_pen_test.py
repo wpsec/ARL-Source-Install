@@ -462,6 +462,71 @@ def _build_ai_pen_unauth_negative_summary(rows):
     }
 
 
+def _build_ai_pen_unauth_access_overview(rows):
+    relevant_rows = []
+    for item in list(rows or []):
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        proof_family = str(normalized.get("proof_family", "") or "").strip()
+        proof_type = str(normalized.get("proof_type", "") or "").strip()
+        if not proof_family and proof_type:
+            proof_family = _classify_ai_pen_proof_family(
+                proof_type,
+                payload_type=normalized.get("payload_type"),
+            )
+            normalized["proof_family"] = proof_family
+        unauth_access_type = str(normalized.get("unauth_access_type", "") or "").strip()
+        unauth_negative_type = str(normalized.get("unauth_negative_type", "") or "").strip()
+        if not unauth_access_type and proof_family == "unauth_access":
+            unauth_access_type = proof_type
+            normalized["unauth_access_type"] = unauth_access_type
+        if proof_family in {"unauth_access", "access_control"} or unauth_access_type or unauth_negative_type:
+            relevant_rows.append(normalized)
+
+    total_count = len(relevant_rows)
+    positive_rows = [
+        item for item in relevant_rows
+        if _normalize_decision(item.get("decision")) == "verified"
+        and str(item.get("proof_family", "") or "").strip() == "unauth_access"
+    ]
+    manual_rows = [
+        item for item in relevant_rows
+        if _normalize_decision(item.get("decision")) == "needs_manual_review"
+        and str(item.get("proof_family", "") or "").strip() == "unauth_access"
+    ]
+    positive_type_distribution = _build_ai_pen_group_counts(positive_rows, "unauth_access_type", max_items=6)
+    negative_summary = _build_ai_pen_unauth_negative_summary(relevant_rows)
+    dominant_positive_type = str(positive_type_distribution[0].get("name") or "").strip() if positive_type_distribution else ""
+    dominant_negative_type = str(negative_summary.get("dominant_negative_type") or "").strip()
+
+    next_actions = []
+    if positive_rows:
+        next_actions.append("优先复核已命中的未授权入口，重点查看 {} 等高价值面".format(dominant_positive_type or "management/profile"))
+    if dominant_negative_type in {"auth_blocked", "login_wall", "guarded_mixed"}:
+        next_actions.append("当前更多被鉴权拦截或登录墙阻断，后续优先补带会话复核与登录链")
+    elif dominant_negative_type == "health_only":
+        next_actions.append("当前主要命中健康检查/信息端点，建议下调优先级并继续补高价值管理面")
+    if manual_rows and not positive_rows:
+        next_actions.append("已有需人工复核的未授权线索，可优先检查管理面、账户信息接口和配置面")
+    if not next_actions and total_count > 0:
+        next_actions.append("当前已有未授权相关样本，但结论仍较分散，建议继续结合高价值路径与认证链复核")
+
+    return {
+        "total_count": total_count,
+        "verified_count": len(positive_rows),
+        "needs_manual_review_count": len(manual_rows),
+        "negative_signal_count": int(negative_summary.get("negative_signal_count", 0) or 0),
+        "positive_type_distribution": positive_type_distribution,
+        "negative_type_distribution": list(negative_summary.get("distribution", []) or []),
+        "dominant_positive_type": dominant_positive_type,
+        "dominant_negative_type": dominant_negative_type,
+        "recommended_action": next_actions[0] if next_actions else "",
+        "next_actions": next_actions[:4],
+        "negative_summary": negative_summary,
+    }
+
+
 def _classify_ai_pen_proof_family(proof_type, payload_type=""):
     if hasattr(WebSiteFetch, "_classify_ai_pen_proof_family"):
         try:
@@ -1407,6 +1472,7 @@ class StatsAiPenTest(ARLResource):
         engineer_focus_queue = _build_ai_pen_engineer_focus_queue(phase_f_readiness)
         engineer_focus_entries = _build_ai_pen_engineer_focus_entries(metric_rows)
         unauth_negative_summary = _build_ai_pen_unauth_negative_summary(metric_rows)
+        unauth_access_overview = _build_ai_pen_unauth_access_overview(metric_rows)
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -1433,5 +1499,6 @@ class StatsAiPenTest(ARLResource):
                 "engineer_focus_queue": engineer_focus_queue,
                 "engineer_focus_entries": engineer_focus_entries,
                 "unauth_negative_summary": unauth_negative_summary,
+                "unauth_access_overview": unauth_access_overview,
             },
         )

@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.50`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.52`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -496,6 +496,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - 已可按 `risk_type / payload_type / high_value_family / verification_step` 查看分能力 benchmark
 - 已可按 `request_template_mode` 查看模板入口分布，并在工程师入口列表中直接查看 `request_template_summary`
 - 已可输出 `unauth_negative_type/unauth_negative_summary`，直接区分“被鉴权挡住 / 登录墙 / 只有健康检查面”等未授权负信号
+- 已可输出 `unauth_access_overview`，在 stats 顶层直接汇总未授权正向命中、负信号主导类型和建议动作
 - 已可输出“工程师优先队列”及“具体入口 Top 列表”所需的 readiness/priority 数据面
 - 差距：登录/JWT/API文档/Actuator/IDOR/SQLi/XSS/文件/SSRF 靶场与标注样本尚未建立
 - 结论：`指标数据面已具备，靶场基线未完成`
