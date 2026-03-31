@@ -1541,6 +1541,28 @@ class TestAiPenJsContext(unittest.TestCase):
         )
         self.assertEqual("error_based", proof_type)
 
+    def test_sqli_boolean_based_proof_is_detected(self):
+        proof_type = WebSiteFetch._detect_sqli_proof_type(
+            base_body='{"code":403,"msg":"forbidden"}',
+            probe_body='{"code":0,"msg":"ok","data":[1,2,3]}',
+            payload="' OR '1'='1",
+            base_status=403,
+            probe_status=200,
+        )
+        self.assertEqual("boolean_based", proof_type)
+
+    def test_sqli_time_based_proof_is_detected(self):
+        proof_type = WebSiteFetch._detect_sqli_proof_type(
+            base_body='{"code":0}',
+            probe_body='{"code":0}',
+            payload="1' AND SLEEP(5)-- ",
+            base_status=200,
+            probe_status=200,
+            base_elapsed_ms=120,
+            probe_elapsed_ms=5300,
+        )
+        self.assertEqual("time_based", proof_type)
+
     def test_ssti_expression_eval_proof_is_detected(self):
         proof_type = WebSiteFetch._detect_ssti_proof_type(
             payload="{{7*7}}",

@@ -4643,9 +4643,50 @@ class WebSiteFetch(object):
         return any(re.search(pattern, content) for pattern in patterns)
 
     @classmethod
-    def _detect_sqli_proof_type(cls, base_body: str, probe_body: str) -> str:
+    def _detect_sqli_proof_type(
+        cls,
+        base_body: str,
+        probe_body: str,
+        payload: str = "",
+        base_status: int = 0,
+        probe_status: int = 0,
+        base_elapsed_ms: int = 0,
+        probe_elapsed_ms: int = 0,
+    ) -> str:
         probe_has_error = cls._contains_sql_error_signature(probe_body)
         if not probe_has_error:
+            base_text = str(base_body or "")
+            probe_text = str(probe_body or "")
+            payload_text = str(payload or "").strip().lower()
+            base_status_code = cls._safe_int_value(base_status, 0)
+            probe_status_code = cls._safe_int_value(probe_status, 0)
+            base_elapsed = cls._safe_int_value(base_elapsed_ms, 0)
+            probe_elapsed = cls._safe_int_value(probe_elapsed_ms, 0)
+
+            time_payload_markers = ("sleep(", "benchmark(", "pg_sleep(", "waitfor delay", "dbms_pipe.receive_message")
+            if any(token in payload_text for token in time_payload_markers):
+                if probe_elapsed >= 3000 and (probe_elapsed - base_elapsed) >= 2800:
+                    return "time_based"
+
+            boolean_payload_markers = (" or ", " and ", "1=1", "1=2", "true", "false", "xor")
+            if any(token in payload_text for token in boolean_payload_markers):
+                if base_status_code and probe_status_code and base_status_code != probe_status_code:
+                    return "boolean_based"
+
+                length_delta = abs(len(probe_text) - len(base_text))
+                if length_delta >= 120:
+                    return "boolean_based"
+
+                base_lower = base_text.lower()
+                probe_lower = probe_text.lower()
+                success_markers = ("welcome", "dashboard", "login success", "\"success\":true", "\"code\":0")
+                fail_markers = ("invalid", "forbidden", "denied", "error", "\"success\":false", "\"code\":403")
+                base_success = any(token in base_lower for token in success_markers)
+                probe_success = any(token in probe_lower for token in success_markers)
+                base_fail = any(token in base_lower for token in fail_markers)
+                probe_fail = any(token in probe_lower for token in fail_markers)
+                if (base_success and probe_fail) or (probe_success and base_fail):
+                    return "boolean_based"
             return ""
         base_has_error = cls._contains_sql_error_signature(base_body)
         if probe_has_error and (not base_has_error):
@@ -9340,6 +9381,7 @@ class WebSiteFetch(object):
             "probe_headers": {},
             "probe_body_excerpt": "",
             "probe_body_md5": "",
+            "probe_elapsed_ms": 0,
             "evidence_hit": False,
             "api_doc_hit": False,
             "api_doc_hit_url": "",
@@ -9403,6 +9445,7 @@ class WebSiteFetch(object):
                 "tool": tool_name,
                 "url": url_text,
                 "status_code": status_code,
+                "elapsed_ms": cls._safe_int_value(response_obj.get("elapsed_ms"), 0),
                 "headers": headers,
                 "body_text": body_excerpt,
                 "body_md5": body_md5,
@@ -9421,6 +9464,8 @@ class WebSiteFetch(object):
                 observation["probe_body_excerpt"] = body_excerpt
             if body_md5:
                 observation["probe_body_md5"] = body_md5
+            if cls._safe_int_value(response_obj.get("elapsed_ms"), 0) > 0:
+                observation["probe_elapsed_ms"] = cls._safe_int_value(response_obj.get("elapsed_ms"), 0)
             if cls._contains_evidence(evidence_seed, body_excerpt):
                 observation["evidence_hit"] = True
 
@@ -10249,6 +10294,13 @@ class WebSiteFetch(object):
 
         def _build_runtime_response(resp, req_url: str, req_method: str, session_obj=None):
             status_code = int(getattr(resp, "status_code", 0) or 0)
+            elapsed_ms = 0
+            try:
+                elapsed_obj = getattr(resp, "elapsed", None)
+                if elapsed_obj is not None and hasattr(elapsed_obj, "total_seconds"):
+                    elapsed_ms = int(float(elapsed_obj.total_seconds() or 0.0) * 1000.0)
+            except Exception:
+                elapsed_ms = 0
             response_headers = {}
             raw_headers = getattr(resp, "headers", {}) or {}
             if hasattr(raw_headers, "items"):
@@ -10292,6 +10344,7 @@ class WebSiteFetch(object):
                     "url": str(getattr(resp, "url", "") or req_url or ""),
                     "method": str(req_method or "").strip().lower(),
                     "status_code": status_code,
+                    "elapsed_ms": max(0, int(elapsed_ms or 0)),
                     "headers": response_headers,
                     "body_text": body_excerpt,
                     "body_md5": body_md5,
@@ -11027,6 +11080,7 @@ class WebSiteFetch(object):
             response_obj = result_obj.get("response") if isinstance(result_obj.get("response"), dict) else {}
             return SimpleNamespace(
                 status_code=int(response_obj.get("status_code", 0) or 0),
+                elapsed_ms=int(response_obj.get("elapsed_ms", 0) or 0),
                 headers=dict(response_obj.get("headers") or {}),
                 text=str(response_obj.get("body_text", "") or ""),
                 url=str(response_obj.get("url", "") or req_url or ""),
@@ -11190,6 +11244,7 @@ class WebSiteFetch(object):
                 body_text = str(getattr(response, "text", "") or "")
             except Exception:
                 body_text = ""
+            base_elapsed_ms = self._safe_int_value(getattr(response, "elapsed_ms", 0), 0)
             js_api_targets = self._extract_js_api_targets(target_url, body_text) if self._is_js_asset_target(target_url, headers=header_obj) else []
 
             base_body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
@@ -11208,6 +11263,7 @@ class WebSiteFetch(object):
             probe_headers = {}
             probe_body_excerpt = ""
             probe_body_md5 = ""
+            probe_elapsed_ms = 0
             payload_reflect_hit = False
             idor_diff_hit = False
             idor_probe_count = 0
@@ -11319,6 +11375,7 @@ class WebSiteFetch(object):
                 probe_headers = dict(plan_observation.get("probe_headers") or {}) or probe_headers
                 probe_body_excerpt = str(plan_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
                 probe_body_md5 = str(plan_observation.get("probe_body_md5", "") or "") or probe_body_md5
+                probe_elapsed_ms = self._safe_int_value(plan_observation.get("probe_elapsed_ms"), 0) or probe_elapsed_ms
                 idor_probe_responses.extend(
                     [
                         dict(item or {})
@@ -11464,6 +11521,7 @@ class WebSiteFetch(object):
                     probe_headers = dict(fallback_observation.get("probe_headers") or {}) or probe_headers
                     probe_body_excerpt = str(fallback_observation.get("probe_body_excerpt", "") or "") or probe_body_excerpt
                     probe_body_md5 = str(fallback_observation.get("probe_body_md5", "") or "") or probe_body_md5
+                    probe_elapsed_ms = self._safe_int_value(fallback_observation.get("probe_elapsed_ms"), 0) or probe_elapsed_ms
                     idor_probe_responses.extend(
                         [
                             dict(item or {})
@@ -11570,7 +11628,15 @@ class WebSiteFetch(object):
             if is_xss_case:
                 xss_popup_proof = self._has_xss_popup_proof(payload, base_body_excerpt, probe_body_excerpt)
             if is_sqli_case:
-                sqli_proof_type = self._detect_sqli_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
+                sqli_proof_type = self._detect_sqli_proof_type(
+                    base_body_excerpt,
+                    probe_body_excerpt or base_body_excerpt,
+                    payload=payload,
+                    base_status=status_code,
+                    probe_status=probe_status,
+                    base_elapsed_ms=base_elapsed_ms,
+                    probe_elapsed_ms=probe_elapsed_ms,
+                )
             if payload_type == "cmdi_probe":
                 cmdi_proof_type = self._detect_cmdi_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
             if payload_type == "ssti_probe":
@@ -11697,6 +11763,14 @@ class WebSiteFetch(object):
                 decision = "verified"
                 confidence = 0.88
                 reason = "探针触发 SQL 报错注入特征，可复现"
+            elif is_sqli_case and sqli_proof_type == "time_based":
+                decision = "verified"
+                confidence = 0.86
+                reason = "SQL 探针触发显著延时差异，疑似时间盲注可复现"
+            elif is_sqli_case and sqli_proof_type == "boolean_based":
+                decision = "verified"
+                confidence = 0.84
+                reason = "SQL 探针触发布尔条件差异特征，疑似布尔盲注可复现"
             elif is_sqli_case and (probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5):
                 decision = "needs_manual_review"
                 confidence = 0.72
