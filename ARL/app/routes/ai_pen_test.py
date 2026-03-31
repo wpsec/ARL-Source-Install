@@ -155,6 +155,143 @@ def _normalize_status(value):
     return "skipped"
 
 
+def _safe_ratio(numerator, denominator):
+    try:
+        numerator_value = float(numerator or 0.0)
+    except Exception:
+        numerator_value = 0.0
+    try:
+        denominator_value = float(denominator or 0.0)
+    except Exception:
+        denominator_value = 0.0
+    if denominator_value <= 0:
+        return 0.0
+    return float("{:.4f}".format(max(0.0, numerator_value / denominator_value)))
+
+
+def _extract_budget_metric(item: dict, metric_name: str):
+    row = item if isinstance(item, dict) else {}
+    budget_used = row.get("budget_used") if isinstance(row.get("budget_used"), dict) else {}
+    try:
+        value = int(budget_used.get(metric_name, 0) or 0)
+    except Exception:
+        value = 0
+    if value > 0:
+        return value
+
+    if metric_name == "turns":
+        turns = 0
+        for trace_item in list(row.get("agent_trace", []) or []):
+            if not isinstance(trace_item, dict):
+                continue
+            if str(trace_item.get("action", "") or "").strip().lower() == "agent_turn":
+                turns += 1
+        return turns
+
+    if metric_name == "tool_calls":
+        return len(list(row.get("tool_calls", []) or []))
+
+    return 0
+
+
+def _is_ai_pen_covered(item: dict):
+    row = item if isinstance(item, dict) else {}
+    status = _normalize_status(row.get("status"))
+    if status in {"ok", "error"}:
+        return True
+    if str(row.get("verification_step", "") or "").strip():
+        return True
+    if _extract_budget_metric(row, "turns") > 0 or _extract_budget_metric(row, "tool_calls") > 0:
+        return True
+    if list(row.get("external_tool_runs", []) or []):
+        return True
+    return False
+
+
+def _build_ai_pen_quant_metrics(rows, total: int = 0):
+    items = list(rows or [])
+    total_count = int(total or 0)
+    if total_count <= 0:
+        total_count = len(items)
+
+    covered_count = 0
+    verified_count = 0
+    likely_fp_count = 0
+    manual_review_count = 0
+    ok_count = 0
+    error_count = 0
+    skipped_count = 0
+    budget_sample_count = 0
+    total_turns = 0
+    total_tool_calls = 0
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        decision = _normalize_decision(item.get("decision"))
+        status = _normalize_status(item.get("status"))
+
+        if decision == "verified":
+            verified_count += 1
+        elif decision == "likely_false_positive":
+            likely_fp_count += 1
+        else:
+            manual_review_count += 1
+
+        if status == "ok":
+            ok_count += 1
+        elif status == "error":
+            error_count += 1
+        else:
+            skipped_count += 1
+
+        if _is_ai_pen_covered(item):
+            covered_count += 1
+
+        turns = _extract_budget_metric(item, "turns")
+        tool_calls = _extract_budget_metric(item, "tool_calls")
+        if turns > 0 or tool_calls > 0:
+            budget_sample_count += 1
+            total_turns += max(0, turns)
+            total_tool_calls += max(0, tool_calls)
+
+    avg_turns = 0.0
+    avg_tool_calls = 0.0
+    if budget_sample_count > 0:
+        avg_turns = float("{:.4f}".format(total_turns / float(budget_sample_count)))
+        avg_tool_calls = float("{:.4f}".format(total_tool_calls / float(budget_sample_count)))
+
+    return {
+        "coverage": {
+            "covered_count": covered_count,
+            "total_count": total_count,
+            "coverage_rate": _safe_ratio(covered_count, total_count),
+        },
+        "decision_metrics": {
+            "verified_count": verified_count,
+            "likely_false_positive_count": likely_fp_count,
+            "needs_manual_review_count": manual_review_count,
+            "success_rate": _safe_ratio(verified_count, total_count),
+            "false_positive_rate": _safe_ratio(likely_fp_count, total_count),
+            "manual_review_rate": _safe_ratio(manual_review_count, total_count),
+        },
+        "execution_metrics": {
+            "ok_count": ok_count,
+            "error_count": error_count,
+            "skipped_count": skipped_count,
+            "ok_rate": _safe_ratio(ok_count, total_count),
+            "error_rate": _safe_ratio(error_count, total_count),
+            "skipped_rate": _safe_ratio(skipped_count, total_count),
+        },
+        "budget_metrics": {
+            "sample_count": budget_sample_count,
+            "avg_turns": avg_turns,
+            "avg_tool_calls": avg_tool_calls,
+        },
+    }
+
+
 def _build_candidate_from_result(item: dict, max_steps: int = 4):
     """从历史结果重建候选，并补齐重试所需的会话/工具上下文。"""
     default_url = str(item.get("vuln_url") or item.get("target") or "").strip()
@@ -585,6 +722,21 @@ class StatsAiPenTest(ARLResource):
         high_value_family = _agg_group("high_value_family")
         tool_plan_source = _agg_group("tool_plan_source")
         stop_reason = _agg_group("stop_reason")
+        metric_rows = list(
+            collection.find(
+                query,
+                {
+                    "decision": 1,
+                    "status": 1,
+                    "verification_step": 1,
+                    "agent_trace": 1,
+                    "tool_calls": 1,
+                    "budget_used": 1,
+                    "external_tool_runs": 1,
+                },
+            )
+        )
+        quant_metrics = _build_ai_pen_quant_metrics(metric_rows, total=total)
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -599,5 +751,6 @@ class StatsAiPenTest(ARLResource):
                 "high_value_family": high_value_family,
                 "tool_plan_source": tool_plan_source,
                 "stop_reason": stop_reason,
+                "quant_metrics": quant_metrics,
             },
         )
