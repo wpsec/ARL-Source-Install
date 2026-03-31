@@ -19,6 +19,7 @@
 - `[v4.5.19]` AI渗透 认证协议探针细化：OAuth/OIDC 端点探测从“统一 GET”升级为“按端点类型自动 method/参数”（如 `token/introspect` 使用 `POST form`、`userinfo` 携带 `Bearer`），并将 `invalid_client/invalid_token/unsupported_grant_type` 等标准鉴权错误收敛为 `likely_false_positive`（鉴权生效），减少认证链探针误报
 - `[v4.5.20]` AI渗透 认证协议语义判定增强：新增 `_extract_auth_protocol_error_semantics`，对 `client 鉴权失败 / token 无效 / scope 不足 / grant 参数错误` 做语义分类并在 `auth_protocol` 分级中统一降噪；同时新增 `userinfo/introspect` 成功响应语义判定（如 `userinfo` 返回身份字段、`active=true/false`）以区分“鉴权生效”与“疑似未鉴权泄露”，提升阶段 C 认证链判定精度
 - `[v4.5.21]` AI渗透 SQLi 证据标准增强：`_detect_sqli_proof_type` 在原 `error_based` 基础上新增 `boolean_based/time_based` 判定（结合布尔条件差异、状态变化与延时特征），并在主决策链中将这两类纳入可利用证据分支；同时运行时观测新增响应耗时字段用于时间盲注判定，补齐对应回归测试
+- `[v4.5.22]` AI渗透 DOM XSS 证据结构化：`js_context` 分析新增 `dom_xss_proof_type`（`source_sink_only/source_sink_popup_hint`）并回写验证结果字段，形成 DOM XSS 的标准化证据描述，避免仅靠泛化 reason 文本；同时补齐 DOM XSS proof type 回归测试，便于后续在阶段 C 完成度核查中直接量化
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 

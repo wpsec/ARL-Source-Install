@@ -1232,6 +1232,24 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("likely_false_positive", result.get("decision"))
         self.assertIn("缺少可触发弹窗", str(result.get("reason") or ""))
+        self.assertEqual("source_sink_only", result.get("dom_xss_proof_type"))
+
+    def test_dom_xss_source_sink_with_popup_hint_has_proof_type(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/static/app.js",
+            body_text=(
+                "const hashValue = location.hash;"
+                "document.body.innerHTML = hashValue;"
+                "if(hashValue){alert(hashValue);}"
+            ),
+            headers={"Content-Type": "application/javascript"},
+            risk_type="xss",
+            payload_type="xss_probe",
+            evidence_seed="<svg/onload=alert(1)>",
+        )
+
+        self.assertEqual("needs_manual_review", result.get("decision"))
+        self.assertEqual("source_sink_popup_hint", result.get("dom_xss_proof_type"))
 
     def test_generic_js_header_keyword_noise_is_downgraded(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(

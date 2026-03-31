@@ -5220,15 +5220,18 @@ class WebSiteFetch(object):
             if not context_snippet:
                 context_snippet = cls._extract_js_context_snippet(content, evidence_seed, fallback_keywords=list(sink_tokens) + list(source_tokens))
             if has_sink and has_source:
+                dom_xss_proof_type = "source_sink_only"
                 popup_tokens = ("alert(", "confirm(", "prompt(", "onerror=alert(", "onload=alert(", "javascript:alert(")
                 has_popup_hint = any(token in content_lower for token in popup_tokens)
                 if has_popup_hint:
+                    dom_xss_proof_type = "source_sink_popup_hint"
                     return _with_summary(
                         {
                             "decision": "needs_manual_review",
                             "confidence": 0.72,
                             "reason": "JS 上下文存在 source->sink 且出现弹窗调用片段，建议在浏览器中复现可控输入链路",
                             "context_snippet": context_snippet,
+                            "dom_xss_proof_type": dom_xss_proof_type,
                             "tool_trace": "js_context(dom_chain_popup_hint)",
                         }
                     )
@@ -5238,6 +5241,7 @@ class WebSiteFetch(object):
                         "confidence": 0.76,
                         "reason": "JS 上下文虽出现 source->sink，但缺少可触发弹窗的执行证据，当前不判定为可利用 XSS",
                         "context_snippet": context_snippet,
+                        "dom_xss_proof_type": dom_xss_proof_type,
                         "tool_trace": "js_context(dom_chain)",
                     }
                 )
@@ -11151,6 +11155,7 @@ class WebSiteFetch(object):
                 "http_status": 0,
                 "response_hash_diff": "",
                 "xss_popup_proof": False,
+                "dom_xss_proof_type": "",
                 "sqli_proof_type": "",
                 "weak_password_login_proof": False,
                 "cmdi_proof_type": "",
@@ -11218,6 +11223,7 @@ class WebSiteFetch(object):
                     "http_status": status_code,
                     "response_hash_diff": "",
                     "xss_popup_proof": False,
+                    "dom_xss_proof_type": "",
                     "sqli_proof_type": "",
                     "weak_password_login_proof": False,
                     "cmdi_proof_type": "",
@@ -11619,6 +11625,7 @@ class WebSiteFetch(object):
             confidence = 0.56
             reason = "目标可访问，已完成 HTTP 验证"
             xss_popup_proof = False
+            dom_xss_proof_type = ""
             sqli_proof_type = ""
             weak_password_login_proof = False
             cmdi_proof_type = ""
@@ -11963,6 +11970,8 @@ class WebSiteFetch(object):
                     self.AI_PEN_TEST_EVIDENCE_MAX,
                 )
                 js_context_summary = dict(js_context_ret.get("js_context_summary") or {}) if isinstance(js_context_ret.get("js_context_summary"), dict) else {}
+                if is_xss_case:
+                    dom_xss_proof_type = str(js_context_ret.get("dom_xss_proof_type", "") or "").strip().lower() or dom_xss_proof_type
                 if js_context_snippet:
                     evidence_snippet = js_context_snippet
                 js_reason = self._clip_text(js_context_ret.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
@@ -12146,6 +12155,7 @@ class WebSiteFetch(object):
                 "http_status": probe_status or status_code,
                 "response_hash_diff": response_hash_diff,
                 "xss_popup_proof": xss_popup_proof,
+                "dom_xss_proof_type": dom_xss_proof_type,
                 "sqli_proof_type": sqli_proof_type,
                 "weak_password_login_proof": weak_password_login_proof,
                 "cmdi_proof_type": cmdi_proof_type,
@@ -12189,6 +12199,7 @@ class WebSiteFetch(object):
                 "http_status": 0,
                 "response_hash_diff": "",
                 "xss_popup_proof": False,
+                "dom_xss_proof_type": "",
                 "sqli_proof_type": "",
                 "weak_password_login_proof": False,
                 "cmdi_proof_type": "",
