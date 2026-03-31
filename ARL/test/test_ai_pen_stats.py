@@ -207,6 +207,7 @@ class TestAiPenStats(unittest.TestCase):
             [
                 {
                     "risk_type": "api_doc",
+                    "payload_type": "api_doc_probe",
                     "decision": "verified",
                     "status": "ok",
                     "verification_step": "mcp_api_doc_probe",
@@ -214,6 +215,7 @@ class TestAiPenStats(unittest.TestCase):
                 },
                 {
                     "risk_type": "api_doc",
+                    "payload_type": "api_doc_probe",
                     "decision": "needs_manual_review",
                     "status": "error",
                     "agent_trace": [{"action": "agent_turn"}],
@@ -221,6 +223,7 @@ class TestAiPenStats(unittest.TestCase):
                 },
                 {
                     "risk_type": "jwt",
+                    "payload_type": "jwt_probe",
                     "decision": "likely_false_positive",
                     "status": "ok",
                     "verification_step": "mcp_jwt_probe",
@@ -237,6 +240,84 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(2.0, benchmarks[0]["avg_turns"])
         self.assertEqual("jwt", benchmarks[1]["name"])
 
+    def test_build_ai_pen_phase_f_readiness_summarizes_core_capabilities(self):
+        readiness = ai_pen_test_module._build_ai_pen_phase_f_readiness(
+            [
+                {
+                    "risk_type": "weak_password",
+                    "payload_type": "weak_password_probe",
+                    "high_value_family": "login_entry_surface",
+                    "decision": "verified",
+                    "status": "ok",
+                    "budget_used": {"turns": 4, "tool_calls": 3},
+                },
+                {
+                    "risk_type": "jwt",
+                    "payload_type": "jwt_probe",
+                    "high_value_family": "token_auth_flow",
+                    "decision": "likely_false_positive",
+                    "status": "ok",
+                    "budget_used": {"turns": 2, "tool_calls": 2},
+                },
+                {
+                    "risk_type": "api_doc",
+                    "payload_type": "api_doc_probe",
+                    "high_value_family": "api_doc_surface",
+                    "decision": "needs_manual_review",
+                    "status": "error",
+                    "agent_trace": [{"action": "agent_turn"}],
+                    "tool_calls": [{"tool": "http_fetch"}],
+                },
+            ]
+        )
+
+        summary = readiness["summary"]
+        self.assertEqual(9, summary["total_capabilities"])
+        self.assertEqual(2, summary["covered_count"])
+        self.assertEqual(1, summary["partial_count"])
+        self.assertEqual(6, summary["missing_count"])
+        self.assertEqual("covered", readiness["capabilities"][0]["status"])
+        self.assertEqual("covered", readiness["capabilities"][1]["status"])
+        self.assertEqual("partial", readiness["capabilities"][2]["status"])
+        self.assertGreater(readiness["capabilities"][0]["priority_score"], readiness["capabilities"][2]["priority_score"])
+
+    def test_build_ai_pen_engineer_focus_queue_prioritizes_verified_entries(self):
+        readiness = ai_pen_test_module._build_ai_pen_phase_f_readiness(
+            [
+                {
+                    "risk_type": "weak_password",
+                    "payload_type": "weak_password_probe",
+                    "high_value_family": "login_entry_surface",
+                    "decision": "verified",
+                    "status": "ok",
+                    "budget_used": {"turns": 4, "tool_calls": 3},
+                },
+                {
+                    "risk_type": "jwt",
+                    "payload_type": "jwt_probe",
+                    "high_value_family": "token_auth_flow",
+                    "decision": "likely_false_positive",
+                    "status": "ok",
+                    "budget_used": {"turns": 2, "tool_calls": 2},
+                },
+                {
+                    "risk_type": "api_doc",
+                    "payload_type": "api_doc_probe",
+                    "high_value_family": "api_doc_surface",
+                    "decision": "needs_manual_review",
+                    "status": "ok",
+                    "budget_used": {"turns": 3, "tool_calls": 2},
+                },
+            ]
+        )
+
+        queue = ai_pen_test_module._build_ai_pen_engineer_focus_queue(readiness)
+
+        self.assertEqual("登录/默认口令", queue[0]["label"])
+        self.assertEqual("covered", queue[0]["status"])
+        self.assertIn("verified", queue[0]["focus_reason"])
+        self.assertGreater(queue[0]["priority_score"], queue[1]["priority_score"])
+
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
             {
@@ -244,6 +325,7 @@ class TestAiPenStats(unittest.TestCase):
                 "decision": "verified",
                 "status": "ok",
                 "risk_type": "api_doc",
+                "payload_type": "api_doc_probe",
                 "verification_step": "mcp_api_doc_probe",
                 "high_value_family": "api_doc_surface",
                 "tool_plan_source": "ai_plan",
@@ -255,6 +337,7 @@ class TestAiPenStats(unittest.TestCase):
                 "decision": "likely_false_positive",
                 "status": "ok",
                 "risk_type": "jwt",
+                "payload_type": "jwt_probe",
                 "verification_step": "mcp_jwt_probe",
                 "high_value_family": "token_auth_flow",
                 "tool_plan_source": "retry_history",
@@ -266,6 +349,7 @@ class TestAiPenStats(unittest.TestCase):
                 "decision": "needs_manual_review",
                 "status": "error",
                 "risk_type": "websocket",
+                "payload_type": "websocket_probe",
                 "verification_step": "mcp_websocket_probe",
                 "high_value_family": "realtime_channel_surface",
                 "tool_plan_source": "inferred",
@@ -290,8 +374,14 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(1.3333, data["quant_metrics"]["budget_metrics"]["avg_tool_calls"])
         self.assertTrue(any(item.get("name") == "api_doc_surface" for item in data.get("high_value_family", [])))
         self.assertTrue(any(item.get("name") == "api_doc" for item in data["capability_benchmarks"]["risk_type"]))
+        self.assertTrue(any(item.get("name") == "api_doc_probe" for item in data["capability_benchmarks"]["payload_type"]))
         self.assertTrue(any(item.get("name") == "realtime_channel_surface" for item in data["capability_benchmarks"]["high_value_family"]))
         self.assertTrue(any(item.get("name") == "mcp_websocket_probe" for item in data["capability_benchmarks"]["verification_step"]))
+        self.assertEqual(2, data["phase_f_readiness"]["summary"]["covered_count"])
+        self.assertEqual(0, data["phase_f_readiness"]["summary"]["partial_count"])
+        self.assertEqual(7, data["phase_f_readiness"]["summary"]["missing_count"])
+        self.assertEqual("API文档/GraphQL", data["engineer_focus_queue"][0]["label"])
+        self.assertTrue("focus_reason" in data["engineer_focus_queue"][0])
 
 
 if __name__ == "__main__":

@@ -46,6 +46,68 @@ stats_search_fields = {
 }
 stats_search_fields.update(base_query_fields)
 
+AI_PEN_PHASE_F_CAPABILITY_SPECS = (
+    {
+        "id": "login_session",
+        "label": "登录/默认口令",
+        "risk_types": ("weak_password", "login_surface"),
+        "payload_types": ("weak_password_probe",),
+        "high_value_families": ("login_entry_surface",),
+    },
+    {
+        "id": "jwt_auth",
+        "label": "JWT/认证链",
+        "risk_types": ("jwt",),
+        "payload_types": ("jwt_probe",),
+        "high_value_families": ("token_auth_flow",),
+    },
+    {
+        "id": "api_doc_graphql",
+        "label": "API文档/GraphQL",
+        "risk_types": ("api_doc", "graphql"),
+        "payload_types": ("api_doc_probe", "graphql_probe"),
+        "high_value_families": ("api_doc_surface", "graphql_surface"),
+    },
+    {
+        "id": "config_exposure",
+        "label": "Actuator/配置暴露",
+        "risk_types": ("sensitive_info",),
+        "payload_types": ("config_probe",),
+        "high_value_families": ("config_exposure_surface", "admin_debug_surface", "sensitive_file_surface"),
+    },
+    {
+        "id": "idor_access",
+        "label": "IDOR/访问控制",
+        "risk_types": ("idor",),
+        "payload_types": ("idor_probe",),
+    },
+    {
+        "id": "sqli",
+        "label": "SQL注入",
+        "risk_types": ("sqli",),
+        "payload_types": ("sqli_probe",),
+    },
+    {
+        "id": "xss",
+        "label": "XSS/DOM XSS",
+        "risk_types": ("xss",),
+        "payload_types": ("xss_probe",),
+    },
+    {
+        "id": "file_handling",
+        "label": "文件处理/路径穿越",
+        "risk_types": ("file_upload", "file_read", "path_traversal"),
+        "payload_types": ("upload_probe", "file_probe", "path_traversal_probe"),
+        "high_value_families": ("file_handling_surface", "path_traversal_surface", "sensitive_file_surface"),
+    },
+    {
+        "id": "ssrf_server_side",
+        "label": "SSRF/XXE/SSTI/CMDI",
+        "risk_types": ("ssrf", "xxe", "ssti", "cmdi"),
+        "payload_types": ("ssrf_probe", "xxe_probe", "ssti_probe", "cmdi_probe"),
+    },
+)
+
 retry_fields = ns.model(
     "AiPenRetryFields",
     {
@@ -340,6 +402,163 @@ def _build_ai_pen_group_benchmarks(rows, field_name: str, max_items: int = 12):
     if max_items <= 0:
         return benchmark_rows
     return benchmark_rows[:max_items]
+
+
+def _normalize_ai_pen_signal_set(values):
+    normalized = set()
+    for item in list(values or []):
+        text = str(item or "").strip().lower()
+        if text:
+            normalized.add(text)
+    return normalized
+
+
+def _match_ai_pen_capability_row(item: dict, capability_spec: dict):
+    row = item if isinstance(item, dict) else {}
+    spec = capability_spec if isinstance(capability_spec, dict) else {}
+
+    signal_pairs = (
+        ("risk_type", "risk_types"),
+        ("payload_type", "payload_types"),
+        ("high_value_family", "high_value_families"),
+        ("verification_step", "verification_steps"),
+    )
+    for row_key, spec_key in signal_pairs:
+        expected_set = _normalize_ai_pen_signal_set(spec.get(spec_key))
+        if not expected_set:
+            continue
+        current_value = str(row.get(row_key) or "").strip().lower()
+        if current_value and current_value in expected_set:
+            return True
+    return False
+
+
+def _build_ai_pen_phase_f_readiness(rows):
+    items = list(rows or [])
+    capabilities = []
+    covered_count = 0
+    partial_count = 0
+    missing_count = 0
+
+    for spec in AI_PEN_PHASE_F_CAPABILITY_SPECS:
+        matched_rows = [item for item in items if _match_ai_pen_capability_row(item, spec)]
+        total_count = len(matched_rows)
+        quant_metrics = _build_ai_pen_quant_metrics(matched_rows, total=total_count)
+        verified_count = int(quant_metrics["decision_metrics"]["verified_count"])
+        likely_fp_count = int(quant_metrics["decision_metrics"]["likely_false_positive_count"])
+        manual_review_count = int(quant_metrics["decision_metrics"]["needs_manual_review_count"])
+        conclusive_count = verified_count + likely_fp_count
+        conclusive_rate = _safe_ratio(conclusive_count, total_count)
+        coverage_rate = float(quant_metrics["coverage"]["coverage_rate"])
+
+        if total_count <= 0:
+            status = "missing"
+            missing_count += 1
+        elif coverage_rate >= 0.8 and conclusive_rate >= 0.5:
+            status = "covered"
+            covered_count += 1
+        else:
+            status = "partial"
+            partial_count += 1
+
+        priority_score = (
+            (verified_count * 12)
+            + (manual_review_count * 4)
+            + int(round(coverage_rate * 20))
+            + int(round(conclusive_rate * 10))
+            - (likely_fp_count * 4)
+        )
+        if status == "covered":
+            priority_score += 10
+        elif status == "partial":
+            priority_score += 4
+
+        if verified_count > 0:
+            focus_reason = "已有 verified 命中，适合作为工程师优先入口"
+        elif manual_review_count > 0 and coverage_rate >= 0.8:
+            focus_reason = "覆盖充分但仍以人工复核为主，适合继续深挖"
+        elif likely_fp_count > 0 and manual_review_count <= 0:
+            focus_reason = "当前更多是防护生效或误报信号，优先级可后置"
+        elif total_count > 0:
+            focus_reason = "已有观测样本，但结论仍不够收敛"
+        else:
+            focus_reason = "尚无有效样本"
+
+        capabilities.append(
+            {
+                "id": str(spec.get("id") or "").strip(),
+                "label": str(spec.get("label") or "").strip(),
+                "status": status,
+                "total_count": total_count,
+                "verified_count": verified_count,
+                "likely_false_positive_count": likely_fp_count,
+                "needs_manual_review_count": manual_review_count,
+                "conclusive_count": conclusive_count,
+                "coverage_rate": coverage_rate,
+                "success_rate": float(quant_metrics["decision_metrics"]["success_rate"]),
+                "false_positive_rate": float(quant_metrics["decision_metrics"]["false_positive_rate"]),
+                "manual_review_rate": float(quant_metrics["decision_metrics"]["manual_review_rate"]),
+                "conclusive_rate": conclusive_rate,
+                "avg_turns": float(quant_metrics["budget_metrics"]["avg_turns"]),
+                "avg_tool_calls": float(quant_metrics["budget_metrics"]["avg_tool_calls"]),
+                "priority_score": priority_score,
+                "focus_reason": focus_reason,
+                "quant_metrics": quant_metrics,
+            }
+        )
+
+    return {
+        "summary": {
+            "total_capabilities": len(AI_PEN_PHASE_F_CAPABILITY_SPECS),
+            "covered_count": covered_count,
+            "partial_count": partial_count,
+            "missing_count": missing_count,
+        },
+        "capabilities": capabilities,
+    }
+
+
+def _build_ai_pen_engineer_focus_queue(phase_f_readiness, max_items: int = 6):
+    readiness_obj = phase_f_readiness if isinstance(phase_f_readiness, dict) else {}
+    capabilities = list(readiness_obj.get("capabilities", []) or [])
+    queue = []
+
+    for item in capabilities:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "").strip().lower()
+        if status == "missing":
+            continue
+        queue.append(
+            {
+                "id": str(item.get("id") or "").strip(),
+                "label": str(item.get("label") or "").strip(),
+                "status": status,
+                "priority_score": int(item.get("priority_score", 0) or 0),
+                "verified_count": int(item.get("verified_count", 0) or 0),
+                "needs_manual_review_count": int(item.get("needs_manual_review_count", 0) or 0),
+                "likely_false_positive_count": int(item.get("likely_false_positive_count", 0) or 0),
+                "coverage_rate": float(item.get("coverage_rate", 0.0) or 0.0),
+                "success_rate": float(item.get("success_rate", 0.0) or 0.0),
+                "false_positive_rate": float(item.get("false_positive_rate", 0.0) or 0.0),
+                "avg_turns": float(item.get("avg_turns", 0.0) or 0.0),
+                "avg_tool_calls": float(item.get("avg_tool_calls", 0.0) or 0.0),
+                "focus_reason": str(item.get("focus_reason") or "").strip(),
+            }
+        )
+
+    queue.sort(
+        key=lambda item: (
+            -int(item.get("priority_score") or 0),
+            -int(item.get("verified_count") or 0),
+            -int(item.get("needs_manual_review_count") or 0),
+            float(item.get("false_positive_rate") or 0.0),
+            str(item.get("label") or ""),
+        )
+    )
+    if max_items <= 0:
+        return queue
+    return queue[:max_items]
 
 
 def _build_candidate_from_result(item: dict, max_steps: int = 4):
@@ -779,6 +998,7 @@ class StatsAiPenTest(ARLResource):
                     "decision": 1,
                     "status": 1,
                     "risk_type": 1,
+                    "payload_type": 1,
                     "verification_step": 1,
                     "high_value_family": 1,
                     "agent_trace": 1,
@@ -791,9 +1011,12 @@ class StatsAiPenTest(ARLResource):
         quant_metrics = _build_ai_pen_quant_metrics(metric_rows, total=total)
         capability_benchmarks = {
             "risk_type": _build_ai_pen_group_benchmarks(metric_rows, "risk_type"),
+            "payload_type": _build_ai_pen_group_benchmarks(metric_rows, "payload_type"),
             "high_value_family": _build_ai_pen_group_benchmarks(metric_rows, "high_value_family"),
             "verification_step": _build_ai_pen_group_benchmarks(metric_rows, "verification_step"),
         }
+        phase_f_readiness = _build_ai_pen_phase_f_readiness(metric_rows)
+        engineer_focus_queue = _build_ai_pen_engineer_focus_queue(phase_f_readiness)
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -810,5 +1033,7 @@ class StatsAiPenTest(ARLResource):
                 "stop_reason": stop_reason,
                 "quant_metrics": quant_metrics,
                 "capability_benchmarks": capability_benchmarks,
+                "phase_f_readiness": phase_f_readiness,
+                "engineer_focus_queue": engineer_focus_queue,
             },
         )

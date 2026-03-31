@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-31（v4.5.10 ~ v4.5.31）
+## 2026-03-31（v4.5.10 ~ v4.5.32）
 
 - `[v4.5.10]` 仪表盘 `资产增长趋势(7日)` 统计口径修复：`/console/dashboard` 的 `asset_trend_7d` 从“累计总量曲线”调整为“按日新增曲线”，并额外保留 `assets_total/vulns_total` 累计字段用于兼容；修复高基数资产下曲线长期近似直线的问题（例如 tooltip 持续显示同一总量值）
 - `[v4.5.10]` 仪表盘当日新增资产统计兼容修复：`new_assets_today` 改为统一复用日统计逻辑，兼容 `save_date` 为 `date/string` 的混合存储，并在 `save_date` 缺失时回退 `update_date`，避免历史数据口径差异导致“新增始终为 0”
@@ -30,6 +30,7 @@
 - `[v4.5.29]` AI渗透方案文档同步：刷新 `docs/AI渗透测试MCP总体方案.md` 当前状态判断，补齐阶段 `A/B/D/E/F` 的真实完成度、已实现能力、未完成缺口与建议优先级，并同步更新高价值目标家族与弱口令受控接入口径，便于后续按阶段继续排期开发
 - `[v4.5.30]` AI渗透 `阶段 F benchmark` 统计增强：`/ai_pen_test/stats/` 新增 `capability_benchmarks`，可按 `risk_type/high_value_family/verification_step` 输出分能力覆盖率、成功率、误报率、平均轮数、平均工具调用数，并统一复用 `quant_metrics` 口径；同步补齐 stats 分组 benchmark 回归测试，并更新方案文档阶段 F 当前状态
 - `[v4.5.31]` 启动脚本运行配置自动补齐：`start.sh` 与 `restart.sh` 在创建或复用 `ARL/docker/config-runtime.yaml` 后，统一调用 `ARL/app/tools/sync_runtime_config.py` 以模板为基准补齐缺失配置项并保留用户现有值；当同步脚本或 `python3` 缺失时会友好跳过，若配置补齐失败则显式中止，避免升级后因新配置项缺失导致运行时异常
+- `[v4.5.32]` AI渗透定位与阶段 F 视图收敛：方案文档将系统定位明确为“互联网资产侧的高价值漏洞入口发现器 + 低副作用验证器”，强调“真漏洞优先、少给水洞”；`/ai_pen_test/stats/` 新增 `phase_f_readiness` 与 `engineer_focus_queue` 所需的优先级/原因字段，可直接按登录、JWT、API 文档、配置暴露、IDOR、SQLi、XSS、文件处理、SSRF 等核心能力判断 `covered/partial/missing` 并给出工程师优先关注顺序；同步补齐对应回归测试
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 
