@@ -1704,6 +1704,69 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(result.get("hit")))
         self.assertEqual("unauth_profile_data", result.get("proof_type"))
 
+    def test_analyze_ai_pen_unauth_access_detects_actuator_surface(self):
+        result = WebSiteFetch._analyze_ai_pen_unauth_access(
+            target_url="https://example.com/actuator/env",
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body_text='{"activeProfiles":["prod"],"propertySources":[{"name":"systemProperties"}]}',
+            high_value_family="config_exposure_surface",
+            payload_type="replay",
+        )
+
+        self.assertTrue(bool(result.get("hit")))
+        self.assertEqual("unauth_actuator_surface", result.get("proof_type"))
+
+    def test_analyze_ai_pen_unauth_access_downgrades_health_endpoint_type(self):
+        result = WebSiteFetch._analyze_ai_pen_unauth_access(
+            target_url="https://example.com/actuator/health",
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body_text='{"status":"UP"}',
+            high_value_family="config_exposure_surface",
+            payload_type="replay",
+        )
+
+        self.assertTrue(bool(result.get("hit")))
+        self.assertEqual("unauth_health_endpoint", result.get("proof_type"))
+
+    def test_analyze_ai_pen_unauth_access_prefers_best_multi_response_hit(self):
+        result = WebSiteFetch._analyze_ai_pen_unauth_access(
+            target_url="https://example.com/",
+            high_value_family="admin_debug_surface",
+            payload_type="replay",
+            response_items=[
+                {
+                    "tool": "http_fetch",
+                    "url": "https://example.com/admin/dashboard",
+                    "status_code": 200,
+                    "headers": {"Content-Type": "text/html"},
+                    "body_text": "<html><body>dashboard manage users logout</body></html>",
+                    "body_md5": "a1",
+                },
+                {
+                    "tool": "http_fetch",
+                    "url": "https://example.com/actuator/health",
+                    "status_code": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body_text": '{"status":"UP"}',
+                    "body_md5": "ah",
+                },
+                {
+                    "tool": "http_fetch",
+                    "url": "https://example.com/api/account/current",
+                    "status_code": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body_text": '{"username":"alice","email":"alice@example.com","role":"user"}',
+                    "body_md5": "a2",
+                },
+            ],
+        )
+
+        self.assertTrue(bool(result.get("hit")))
+        self.assertEqual("unauth_profile_data", result.get("proof_type"))
+        self.assertEqual("https://example.com/api/account/current", result.get("matched_url"))
+
     def test_build_ai_pen_login_followup_targets_prefers_session_and_logout_paths(self):
         targets = WebSiteFetch._build_ai_pen_login_followup_targets(
             target_url="https://example.com/login",
@@ -2457,6 +2520,66 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(all(str(item.get("tool") or "") == "path_traversal_probe" for item in plan))
         self.assertTrue(any("file=" in str(item.get("params", {}).get("url", "")) for item in plan))
 
+    def test_build_ai_pen_unauth_probe_targets_collects_runtime_and_default_paths(self):
+        targets = WebSiteFetch._build_ai_pen_unauth_probe_targets(
+            "https://example.com/",
+            candidate={
+                "target": "https://example.com/",
+                "high_value_family": "admin_debug_surface",
+                "high_value_summary": {
+                    "matched_urls": ["https://example.com/admin/dashboard"],
+                },
+                "runtime_api_calls": [
+                    {"method": "GET", "url": "https://example.com/api/account/current"},
+                ],
+                "api_surface_summary": {
+                    "auth_path_count": 1,
+                    "sample_paths": ["/manage/health"],
+                    "sample_interfaces": [
+                        {"path": "/userinfo"},
+                    ],
+                },
+            },
+            max_count=8,
+        )
+
+        urls = [str(item.get("url") or "") for item in targets]
+        proof_types = [str(item.get("proof_type") or "") for item in targets]
+        self.assertIn("https://example.com/api/account/current", urls)
+        self.assertIn("https://example.com/userinfo", urls)
+        self.assertTrue(any("/actuator" in item or "/manage" in item for item in urls))
+        self.assertIn("unauth_health_endpoint", proof_types)
+
+    def test_infer_tool_plan_for_replay_prefers_unauth_http_fetch_targets(self):
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={
+                "target": "https://example.com/",
+                "high_value_family": "admin_debug_surface",
+                "high_value_summary": {
+                    "matched_urls": ["https://example.com/admin/dashboard"],
+                },
+                "runtime_api_calls": [
+                    {"method": "GET", "url": "https://example.com/api/account/current"},
+                ],
+                "api_surface_summary": {
+                    "auth_path_count": 1,
+                    "sample_paths": ["/manage/health"],
+                    "sample_interfaces": [
+                        {"path": "/userinfo"},
+                    ],
+                },
+            },
+            payload_type="replay",
+            payload="",
+            max_steps=4,
+        )
+
+        urls = [str(item.get("params", {}).get("url", "") or "") for item in plan]
+        self.assertEqual(4, len(plan))
+        self.assertTrue(all(str(item.get("tool") or "") == "http_fetch" for item in plan))
+        self.assertIn("https://example.com/api/account/current", urls)
+        self.assertTrue(any("/actuator" in item or "/manage" in item for item in urls))
+
     def test_fallback_tool_plan_for_replay_uses_param_orchestrator_idor(self):
         plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
             target_url="https://example.com/api/user?id=100",
@@ -2476,6 +2599,32 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(plan))
         self.assertEqual("idor_probe", str(plan[0].get("tool") or ""))
         self.assertIn("id=101", str(plan[0].get("params", {}).get("url", "") or ""))
+
+    def test_fallback_tool_plan_for_replay_prefers_unauth_http_fetch_targets(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/",
+            payload_type="replay",
+            payload="",
+            max_steps=3,
+            candidate={
+                "target": "https://example.com/",
+                "high_value_family": "admin_debug_surface",
+                "runtime_api_calls": [
+                    {"method": "GET", "url": "https://example.com/api/account/current"},
+                ],
+                "api_surface_summary": {
+                    "auth_path_count": 1,
+                    "sample_paths": ["/manage/health"],
+                },
+            },
+            body_text="",
+        )
+
+        urls = [str(item.get("params", {}).get("url", "") or "") for item in plan]
+        self.assertEqual(3, len(plan))
+        self.assertTrue(all(str(item.get("tool") or "") == "http_fetch" for item in plan))
+        self.assertIn("https://example.com/api/account/current", urls)
+        self.assertTrue(any("/actuator" in item or "/manage" in item for item in urls))
 
     def test_fallback_tool_plan_for_ssrf_targets_redirect_parameter_first(self):
         plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(

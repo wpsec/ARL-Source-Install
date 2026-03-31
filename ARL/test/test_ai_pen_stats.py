@@ -434,6 +434,37 @@ class TestAiPenStats(unittest.TestCase):
         self.assertIn("未授权直接访问", entries[0]["unauth_access_reason"])
         self.assertIn("无登录直访", entries[0]["focus_reason"])
 
+    def test_build_ai_pen_engineer_focus_entries_downgrades_health_endpoint_focus(self):
+        entries = ai_pen_test_module._build_ai_pen_engineer_focus_entries(
+            [
+                {
+                    "_id": "u2",
+                    "target": "https://example.com/actuator/health",
+                    "vuln_url": "https://example.com/actuator/health",
+                    "risk_type": "sensitive_info",
+                    "risk_name": "健康检查端点",
+                    "payload_type": "replay",
+                    "verification_step": "http_fetch_replay",
+                    "high_value_family": "admin_debug_surface",
+                    "high_value_family_rank": 86,
+                    "decision": "needs_manual_review",
+                    "status": "ok",
+                    "confidence": 0.72,
+                    "http_status": 200,
+                    "proof_family": "unauth_access",
+                    "proof_type": "unauth_health_endpoint",
+                    "unauth_access_type": "unauth_health_endpoint",
+                    "unauth_access_reason": "健康检查/信息端点返回成功状态，存在公开未授权访问线索",
+                    "proof_signals": ["unauth_access"],
+                    "proof_summary": "proof=unauth_health_endpoint | family=unauth_access | signals=unauth_access",
+                    "reason": "健康检查/信息端点返回成功状态，存在公开未授权访问线索",
+                }
+            ]
+        )
+
+        self.assertEqual("unauth_health_endpoint", entries[0]["unauth_access_type"])
+        self.assertIn("健康检查/信息端点", entries[0]["focus_reason"])
+
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
             {

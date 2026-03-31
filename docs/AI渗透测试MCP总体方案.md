@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.47`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.48`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -407,6 +407,8 @@ AI 渗透测试至少要覆盖以下能力族：
   - 已补能力：已新增 `proof_family` 证据家族（如 `auth_bypass/surface_exposure/realtime_exposure/response_differential/sensitive_disclosure`），工程师可按更高层证据类型快速筛选“更像真入口”的结果
   - 已补能力：高价值 `admin/dashboard/account/current/profile` 路径的无登录直访开始收敛为 `unauth_access` 证据家族，用于优先发现真正值得工程师接手的未授权入口
   - 已补能力：`unauth_access_hit/type/reason` 已进入结果落库、统计、`Phase F readiness`、工程师优先入口与导出链，未授权直访能力已从“验证链命中”推进到“可筛选、可排序、可导出”的结果层
+  - 已补能力：`replay` 已可自动扩展 `api/me/userinfo/account/current/manage/actuator/admin/dashboard` 等高价值未授权复核目标，并在多响应里自动选择更强的未授权证据，不再只盯最后一个响应
+  - 已补能力：`unauth_actuator_surface` 与 `unauth_health_endpoint` 已分层，`actuator/health/info` 这类公开健康检查默认降为 `needs_manual_review`，降低把存活探针当成真入口的噪声
   - 已补能力：已修正 `redirect -> dir` 子串误判，减少 URL 跳转参数被错误打到路径穿越链的噪声
   - 差距：参数类型标签 -> payload 编排 -> proof/evidence 判定 主干已通，但 `proof_family` 对最终裁决、误报抑制和阶段 F readiness 的统一驱动仍需继续收口
   - 差距：`未授权访问` 与 `访问控制线索` 的结果分流已具基础，但仍需继续压误报；部分实时通道深测能力仍需补强

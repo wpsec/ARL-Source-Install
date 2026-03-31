@@ -264,6 +264,90 @@ class WebSiteFetch(object):
         "credential",
     )
     AI_PEN_SUCCESS_STATUS_SET = {200, 201, 202, 203, 204, 206}
+    AI_PEN_UNAUTH_PROFILE_PATH_KEYWORDS = (
+        "/api/me",
+        "/api/user/me",
+        "/me",
+        "/userinfo",
+        "/api/userinfo",
+        "/profile",
+        "/api/profile",
+        "/user/profile",
+        "/account/current",
+        "/api/account/current",
+    )
+    AI_PEN_UNAUTH_ACTUATOR_PATH_KEYWORDS = (
+        "/actuator",
+        "/api/actuator",
+        "/manage",
+        "/management",
+        "/monitor",
+    )
+    AI_PEN_UNAUTH_HEALTH_PATH_KEYWORDS = (
+        "/actuator/health",
+        "/api/actuator/health",
+        "/manage/health",
+        "/management/health",
+        "/actuator/info",
+        "/api/actuator/info",
+        "/manage/info",
+        "/management/info",
+    )
+    AI_PEN_UNAUTH_MANAGEMENT_PATH_KEYWORDS = (
+        "/manage",
+        "/management",
+        "/settings",
+        "/system",
+        "/config",
+    )
+    AI_PEN_UNAUTH_ADMIN_PATH_KEYWORDS = (
+        "/admin",
+        "/dashboard",
+        "/console",
+        "/workbench",
+        "/backend",
+        "/backoffice",
+        "/oa",
+        "/office",
+        "/portal",
+        "/panel",
+    )
+    AI_PEN_UNAUTH_DEFAULT_TARGET_SPECS = (
+        {
+            "source": "default_profile",
+            "paths": (
+                "/api/me",
+                "/userinfo",
+                "/api/userinfo",
+                "/account/current",
+                "/api/account/current",
+                "/profile",
+            ),
+        },
+        {
+            "source": "default_manage",
+            "paths": (
+                "/actuator",
+                "/actuator/health",
+                "/actuator/info",
+                "/actuator/env",
+                "/manage",
+                "/manage/health",
+                "/manage/info",
+                "/management/health",
+            ),
+        },
+        {
+            "source": "default_admin",
+            "paths": (
+                "/admin",
+                "/admin/dashboard",
+                "/dashboard",
+                "/console",
+                "/workbench",
+            ),
+        },
+    )
     AI_PEN_EXTRA_SURFACE_HINTS = {
         "api_doc_surface": ("swagger", "openapi", "api-docs", "postman", "knife4j", "redoc"),
         "graphql_surface": ("graphql", "graphiql", "graphql-playground", "apollo", "relay"),
@@ -9786,75 +9870,377 @@ class WebSiteFetch(object):
         body_text: str = "",
         high_value_family: str = "",
         payload_type: str = "",
+        response_items=None,
     ):
+        def _analyze_single(url_value: str, status_value=0, header_map=None, body_value: str = ""):
+            url_text = str(url_value or "").strip()
+            if not cls._is_http_target(url_text):
+                return {"hit": False, "proof_type": "", "reason": ""}
+
+            status_int = cls._safe_int_value(status_value, 0)
+            if status_int not in {200, 201, 202, 203, 206}:
+                return {"hit": False, "proof_type": "", "reason": ""}
+
+            header_obj = header_map if isinstance(header_map, dict) else {}
+            body_lower = str(body_value or "").strip().lower()
+            family_text = str(high_value_family or "").strip().lower()
+            payload_text = str(payload_type or "").strip().lower()
+            content_type = str(header_obj.get("Content-Type") or header_obj.get("content-type") or "").strip().lower()
+
+            try:
+                parsed = urlsplit(url_text)
+                path_text = str(parsed.path or "").strip().lower()
+            except Exception:
+                path_text = url_text.lower()
+
+            if any(token in path_text for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS):
+                return {"hit": False, "proof_type": "", "reason": ""}
+            if any(token in body_lower for token in cls.AI_PEN_LOGIN_FAILURE_KEYWORDS):
+                return {"hit": False, "proof_type": "", "reason": ""}
+            if any(token in body_lower for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS) and not any(
+                token in body_lower for token in ("logout", "dashboard", "workbench", "console")
+            ):
+                return {"hit": False, "proof_type": "", "reason": ""}
+
+            sensitive_hits = [token for token in cls.AI_PEN_IDOR_SENSITIVE_MARKERS if token in body_lower][:4]
+            admin_hits = [token for token in cls.AI_PEN_IDOR_ADMIN_MARKERS if token in body_lower][:4]
+            admin_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_ADMIN_PATH_KEYWORDS)
+            management_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_MANAGEMENT_PATH_KEYWORDS)
+            actuator_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_ACTUATOR_PATH_KEYWORDS)
+            health_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_HEALTH_PATH_KEYWORDS)
+            profile_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_PROFILE_PATH_KEYWORDS)
+            actuator_hits = [
+                token
+                for token in (
+                    "propertysources",
+                    "activeprofiles",
+                    "components",
+                    "diskspace",
+                    "beans",
+                    "mappings",
+                    "loggers",
+                    "contexts",
+                    "health",
+                    "status",
+                )
+                if token in body_lower
+            ][:4]
+            health_body_hit = (
+                ("application/json" in content_type or "text/plain" in content_type)
+                and any(token in body_lower for token in ('"status"', '"up"', '"down"', '"version"', '"build"'))
+            )
+
+            if health_path_hit and (health_body_hit or "application/json" in content_type):
+                reason = "健康检查/信息端点返回成功状态，存在公开未授权访问线索"
+                if path_text:
+                    reason = "{}（{}）".format(reason, path_text[:120])
+                return {
+                    "hit": True,
+                    "proof_type": "unauth_health_endpoint",
+                    "reason": reason,
+                }
+
+            if actuator_path_hit and ("application/json" in content_type or actuator_hits):
+                reason = "Actuator/管理端点返回成功状态并出现诊断语义，疑似可未授权直接访问"
+                if actuator_hits:
+                    reason = "{}（信号：{}）".format(reason, ",".join(actuator_hits[:3]))
+                if path_text:
+                    reason = "{}（{}）".format(reason, path_text[:120])
+                return {
+                    "hit": True,
+                    "proof_type": "unauth_actuator_surface",
+                    "reason": reason,
+                }
+
+            if (
+                family_text in {"config_exposure_surface", "admin_debug_surface", "sensitive_file_surface"}
+                or payload_text == "config_probe"
+            ) and (actuator_path_hit or management_path_hit or admin_path_hit):
+                reason = "高价值管理/配置端点返回成功状态，疑似可未授权直接访问"
+                if path_text:
+                    reason = "{}（{}）".format(reason, path_text[:120])
+                return {
+                    "hit": True,
+                    "proof_type": "unauth_management_surface",
+                    "reason": reason,
+                }
+
+            if management_path_hit and ("application/json" in content_type or admin_hits or sensitive_hits):
+                reason = "管理/配置接口返回成功状态并出现敏感语义，疑似可未授权直接访问"
+                if sensitive_hits:
+                    reason = "{}（字段：{}）".format(reason, ",".join(sensitive_hits[:3]))
+                if path_text:
+                    reason = "{}（{}）".format(reason, path_text[:120])
+                return {
+                    "hit": True,
+                    "proof_type": "unauth_management_surface",
+                    "reason": reason,
+                }
+
+            if admin_path_hit and (admin_hits or any(token in body_lower for token in ("dashboard", "workbench", "console", "logout", "tenant", "menu"))):
+                reason = "管理/办公入口返回成功状态且出现后台语义，疑似可未授权直接访问"
+                if path_text:
+                    reason = "{}（{}）".format(reason, path_text[:120])
+                return {
+                    "hit": True,
+                    "proof_type": "unauth_admin_portal",
+                    "reason": reason,
+                }
+
+            if profile_path_hit and ("application/json" in content_type or sensitive_hits):
+                reason = "账户/身份接口返回成功状态并带有身份字段，疑似未授权对象访问"
+                if sensitive_hits:
+                    reason = "{}（字段：{}）".format(reason, ",".join(sensitive_hits[:3]))
+                if path_text:
+                    reason = "{}（{}）".format(reason, path_text[:120])
+                return {
+                    "hit": True,
+                    "proof_type": "unauth_profile_data",
+                    "reason": reason,
+                }
+
+            return {"hit": False, "proof_type": "", "reason": ""}
+
+        def _proof_rank(proof_type: str) -> int:
+            proof_text = str(proof_type or "").strip().lower()
+            return {
+                "unauth_profile_data": 130,
+                "unauth_actuator_surface": 120,
+                "unauth_management_surface": 112,
+                "unauth_admin_portal": 104,
+                "unauth_health_endpoint": 60,
+            }.get(proof_text, 0)
+
+        response_list = list(response_items or [])
+        if response_list:
+            best_match = {"hit": False, "proof_type": "", "reason": ""}
+            best_rank = -1
+            for response in response_list:
+                if not isinstance(response, dict):
+                    continue
+                response_url = str(response.get("url") or response.get("request_url") or target_url).strip()
+                match_obj = _analyze_single(
+                    url_value=response_url,
+                    status_value=response.get("status_code"),
+                    header_map=response.get("headers"),
+                    body_value=response.get("body_text"),
+                )
+                if not bool(match_obj.get("hit")):
+                    continue
+                candidate_rank = _proof_rank(match_obj.get("proof_type"))
+                if candidate_rank <= best_rank:
+                    continue
+                best_rank = candidate_rank
+                best_match = dict(match_obj or {})
+                best_match["matched_url"] = response_url
+                best_match["matched_status_code"] = cls._safe_int_value(response.get("status_code"), 0)
+                best_match["matched_headers"] = dict(response.get("headers") or {}) if isinstance(response.get("headers"), dict) else {}
+                best_match["matched_body_text"] = str(response.get("body_text") or "")
+                best_match["matched_body_md5"] = str(response.get("body_md5") or "").strip()
+            if best_match.get("hit"):
+                return best_match
+
+        single_match = _analyze_single(
+            url_value=target_url,
+            status_value=status_code,
+            header_map=headers,
+            body_value=body_text,
+        )
+        if bool(single_match.get("hit")):
+            single_match["matched_url"] = str(target_url or "").strip()
+            single_match["matched_status_code"] = cls._safe_int_value(status_code, 0)
+            single_match["matched_headers"] = dict(headers or {}) if isinstance(headers, dict) else {}
+            single_match["matched_body_text"] = str(body_text or "")
+        return single_match
+
+    @classmethod
+    def _classify_ai_pen_unauth_target_path(cls, path_text: str, high_value_family: str = ""):
+        path_lower = str(path_text or "").strip().lower()
+        if not path_lower or any(token in path_lower for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS):
+            return {}
+        if any(token in path_lower for token in cls.AI_PEN_UNAUTH_PROFILE_PATH_KEYWORDS):
+            return {
+                "proof_type": "unauth_profile_data",
+                "rank": 130,
+                "summary": "未授权身份/账户接口复核",
+            }
+        if any(token in path_lower for token in cls.AI_PEN_UNAUTH_HEALTH_PATH_KEYWORDS):
+            return {
+                "proof_type": "unauth_health_endpoint",
+                "rank": 60,
+                "summary": "未授权健康检查/信息入口复核",
+            }
+        if any(token in path_lower for token in cls.AI_PEN_UNAUTH_ACTUATOR_PATH_KEYWORDS):
+            return {
+                "proof_type": "unauth_actuator_surface",
+                "rank": 120,
+                "summary": "未授权 Actuator/管理接口复核",
+            }
+        if any(token in path_lower for token in cls.AI_PEN_UNAUTH_MANAGEMENT_PATH_KEYWORDS):
+            return {
+                "proof_type": "unauth_management_surface",
+                "rank": 112,
+                "summary": "未授权管理/配置入口复核",
+            }
+        if any(token in path_lower for token in cls.AI_PEN_UNAUTH_ADMIN_PATH_KEYWORDS):
+            return {
+                "proof_type": "unauth_admin_portal",
+                "rank": 104,
+                "summary": "未授权管理/办公入口复核",
+            }
+        return {}
+
+    @classmethod
+    def _build_ai_pen_unauth_probe_targets(cls, target_url: str, candidate: dict = None, max_count: int = 4):
+        item = candidate if isinstance(candidate, dict) else {}
         url_text = str(target_url or "").strip()
         if not cls._is_http_target(url_text):
-            return {"hit": False, "proof_type": "", "reason": ""}
-
-        status_value = cls._safe_int_value(status_code, 0)
-        if status_value not in {200, 201, 202, 203, 206}:
-            return {"hit": False, "proof_type": "", "reason": ""}
-
-        header_obj = headers if isinstance(headers, dict) else {}
-        body_lower = str(body_text or "").strip().lower()
-        family_text = str(high_value_family or "").strip().lower()
-        payload_text = str(payload_type or "").strip().lower()
-        content_type = str(header_obj.get("Content-Type") or header_obj.get("content-type") or "").strip().lower()
+            return []
 
         try:
-            parsed = urlsplit(url_text)
-            path_text = str(parsed.path or "").strip().lower()
+            parsed_base = urlsplit(url_text)
         except Exception:
-            path_text = url_text.lower()
+            return []
+        base_netloc = str(parsed_base.netloc or "").strip().lower()
+        if not base_netloc:
+            return []
 
-        if any(token in path_text for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS):
-            return {"hit": False, "proof_type": "", "reason": ""}
-        if any(token in body_lower for token in cls.AI_PEN_LOGIN_FAILURE_KEYWORDS):
-            return {"hit": False, "proof_type": "", "reason": ""}
-        if any(token in body_lower for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS) and not any(
-            token in body_lower for token in ("logout", "dashboard", "workbench", "console")
-        ):
-            return {"hit": False, "proof_type": "", "reason": ""}
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        high_value_summary = item.get("high_value_summary") if isinstance(item.get("high_value_summary"), dict) else {}
+        login_surface_summary = item.get("login_surface_summary") if isinstance(item.get("login_surface_summary"), dict) else {}
+        high_value_family = str(item.get("high_value_family") or "").strip().lower()
 
-        sensitive_hits = [token for token in cls.AI_PEN_IDOR_SENSITIVE_MARKERS if token in body_lower][:4]
-        admin_hits = [token for token in cls.AI_PEN_IDOR_ADMIN_MARKERS if token in body_lower][:4]
-        admin_path_hit = any(token in path_text for token in ("/admin", "/dashboard", "/console", "/manage", "/workbench", "/oa", "/office"))
-        profile_path_hit = any(
-            token in path_text
-            for token in ("/api/me", "/me", "/profile", "/userinfo", "/account/current", "/user/profile", "/api/account/current")
+        ranked_targets = []
+        seen_urls = set()
+        saw_profile_hint = False
+        saw_manage_hint = False
+        saw_admin_hint = False
+
+        def append_target(raw_value, source_name="context"):
+            nonlocal saw_profile_hint, saw_manage_hint, saw_admin_hint
+            resolved = cls._resolve_ai_pen_high_value_candidate_url(url_text, raw_value)
+            resolved_text = str(resolved or "").strip()
+            if not resolved_text or not cls._is_http_target(resolved_text):
+                return
+            try:
+                parsed_target = urlsplit(resolved_text)
+                target_netloc = str(parsed_target.netloc or "").strip().lower()
+                target_path = str(parsed_target.path or "").strip().lower()
+            except Exception:
+                return
+            if not target_netloc or target_netloc != base_netloc:
+                return
+            if not target_path:
+                target_path = "/"
+            hint_obj = cls._classify_ai_pen_unauth_target_path(
+                path_text=target_path,
+                high_value_family=high_value_family,
+            )
+            if not hint_obj:
+                return
+            lowered_url = resolved_text.lower()
+            if lowered_url in seen_urls:
+                return
+            seen_urls.add(lowered_url)
+            proof_type = str(hint_obj.get("proof_type") or "").strip().lower()
+            if proof_type == "unauth_profile_data":
+                saw_profile_hint = True
+            elif proof_type == "unauth_actuator_surface":
+                saw_manage_hint = True
+            elif proof_type == "unauth_management_surface":
+                saw_manage_hint = True
+            elif proof_type == "unauth_admin_portal":
+                saw_admin_hint = True
+            source_bonus = {
+                "runtime": 18,
+                "api_surface": 14,
+                "login_surface": 12,
+                "matched_url": 10,
+                "target": 8,
+                "default_profile": 4,
+                "default_manage": 3,
+                "default_admin": 2,
+            }.get(str(source_name or "").strip().lower(), 0)
+            ranked_targets.append(
+                {
+                    "url": resolved_text,
+                    "proof_type": proof_type,
+                    "source": str(source_name or "context").strip().lower() or "context",
+                    "summary": str(hint_obj.get("summary") or "未授权高价值入口复核"),
+                    "score": cls._safe_int_value(hint_obj.get("rank"), 0) + source_bonus,
+                }
+            )
+
+        append_target(item.get("vuln_url") or item.get("target") or url_text, "target")
+        for matched_url in list(high_value_summary.get("matched_urls", []) or [])[:8]:
+            append_target(matched_url, "matched_url")
+        for sample_path in list(api_surface_summary.get("sample_paths", []) or [])[:10]:
+            append_target(sample_path, "api_surface")
+        for sample in list(api_surface_summary.get("sample_interfaces", []) or [])[:10]:
+            if isinstance(sample, dict):
+                append_target(sample.get("path"), "api_surface")
+        for auth_path in list(api_surface_summary.get("auth_paths", []) or [])[:8]:
+            append_target(auth_path, "api_surface")
+        for login_path in list(login_surface_summary.get("runtime_auth_paths", []) or [])[:8]:
+            append_target(login_path, "login_surface")
+        for login_path in list(login_surface_summary.get("auth_api_paths", []) or [])[:8]:
+            append_target(login_path, "login_surface")
+        for runtime_call in list(item.get("runtime_api_calls", []) or [])[:12]:
+            if isinstance(runtime_call, dict):
+                append_target(runtime_call.get("url"), "runtime")
+
+        enable_profile_defaults = saw_profile_hint or cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0) > 0 or high_value_family in {
+            "login_entry_surface",
+            "token_auth_flow",
+        }
+        enable_manage_defaults = saw_manage_hint or high_value_family in {
+            "config_exposure_surface",
+            "admin_debug_surface",
+        }
+        enable_admin_defaults = saw_admin_hint or high_value_family in {"admin_debug_surface", "login_entry_surface"}
+
+        for spec in cls.AI_PEN_UNAUTH_DEFAULT_TARGET_SPECS:
+            if not isinstance(spec, dict):
+                continue
+            source_name = str(spec.get("source") or "").strip().lower()
+            if source_name == "default_profile" and not enable_profile_defaults:
+                continue
+            if source_name == "default_manage" and not enable_manage_defaults:
+                continue
+            if source_name == "default_admin" and not enable_admin_defaults:
+                continue
+            for raw_path in list(spec.get("paths", []) or []):
+                append_target(raw_path, source_name)
+
+        ranked_targets.sort(
+            key=lambda target: (
+                -cls._safe_int_value(target.get("score"), 0),
+                str(target.get("url") or ""),
+            )
         )
-
-        if family_text in {"config_exposure_surface", "admin_debug_surface", "sensitive_file_surface"} or payload_text == "config_probe":
-            reason = "高价值管理/配置端点返回成功状态，疑似可未授权直接访问"
-            if path_text:
-                reason = "{}（{}）".format(reason, path_text[:120])
-            return {
-                "hit": True,
-                "proof_type": "unauth_management_surface",
-                "reason": reason,
-            }
-
-        if admin_path_hit and (admin_hits or any(token in body_lower for token in ("dashboard", "workbench", "console", "logout", "tenant", "menu"))):
-            reason = "管理/办公入口返回成功状态且出现后台语义，疑似可未授权直接访问"
-            if path_text:
-                reason = "{}（{}）".format(reason, path_text[:120])
-            return {
-                "hit": True,
-                "proof_type": "unauth_admin_portal",
-                "reason": reason,
-            }
-
-        if profile_path_hit and ("application/json" in content_type or sensitive_hits):
-            reason = "账户/身份接口返回成功状态并带有身份字段，疑似未授权对象访问"
-            if sensitive_hits:
-                reason = "{}（字段：{}）".format(reason, ",".join(sensitive_hits[:3]))
-            return {
-                "hit": True,
-                "proof_type": "unauth_profile_data",
-                "reason": reason,
-            }
-
-        return {"hit": False, "proof_type": "", "reason": ""}
+        selected_targets = []
+        proof_limits = {
+            "unauth_profile_data": 2,
+            "unauth_actuator_surface": 2,
+            "unauth_management_surface": 2,
+            "unauth_admin_portal": 1,
+            "unauth_health_endpoint": 1,
+        }
+        proof_counter = {}
+        for target in ranked_targets:
+            if not isinstance(target, dict):
+                continue
+            proof_type = str(target.get("proof_type") or "").strip().lower()
+            if proof_type:
+                current_count = int(proof_counter.get(proof_type, 0) or 0)
+                allowed_count = int(proof_limits.get(proof_type, 2) or 2)
+                if current_count >= allowed_count:
+                    continue
+                proof_counter[proof_type] = current_count + 1
+            selected_targets.append(target)
+            if len(selected_targets) >= max(1, int(max_count or 1)):
+                break
+        return selected_targets
 
     @staticmethod
     def _extract_runtime_api_paths(runtime_api_calls):
@@ -11105,7 +11491,7 @@ class WebSiteFetch(object):
             return "active_execution"
         if proof in {"boolean_based", "error_based", "time_based", "template_error", "external_tool"}:
             return "response_differential"
-        if proof in {"unauth_management_surface", "unauth_admin_portal", "unauth_profile_data"}:
+        if proof in {"unauth_management_surface", "unauth_admin_portal", "unauth_profile_data", "unauth_actuator_surface", "unauth_health_endpoint"}:
             return "unauth_access"
         if proof in {"login_success", "weak_secret", "alg_none", "signature_bypass"}:
             return "auth_bypass"
@@ -12494,6 +12880,30 @@ class WebSiteFetch(object):
                         )
                     return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
+        if payload_type_text == "replay":
+            for unauth_target in cls._build_ai_pen_unauth_probe_targets(
+                target_url,
+                candidate=item,
+                max_count=max_steps,
+            ):
+                probe_url = str(unauth_target.get("url") or "").strip()
+                if not probe_url:
+                    continue
+                plan.append(
+                    {
+                        "tool": "http_fetch",
+                        "params": {
+                            "url": probe_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": str(unauth_target.get("summary") or "未授权高价值入口复核")[:120],
+                    }
+                )
+            normalized_plan = cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+            if normalized_plan:
+                return normalized_plan
+
         if payload_type_text == "config_probe" or any(
             token in lower_target
             for token in (
@@ -12635,6 +13045,31 @@ class WebSiteFetch(object):
         payload_probe_types = {"xss_probe", "sqli_probe", "cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "replay"}
         api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
         selected_template = {}
+        if payload_type_text == "replay" and not payload_text:
+            for unauth_target in cls._build_ai_pen_unauth_probe_targets(
+                url_text,
+                candidate=item,
+                max_count=max_steps,
+            ):
+                probe_url = str(unauth_target.get("url") or "").strip()
+                if not probe_url:
+                    continue
+                plan.append(
+                    {
+                        "tool": "http_fetch",
+                        "params": {
+                            "url": probe_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback {}".format(
+                            str(unauth_target.get("summary") or "未授权高价值入口复核")
+                        )[:120],
+                    }
+                )
+            normalized_plan = cls._normalize_ai_pen_tool_plan(plan, default_url=url_text, max_steps=max_steps)
+            if normalized_plan:
+                return normalized_plan
         if payload_type_text in payload_probe_types and payload_type_text != "replay":
             selected_template = cls._select_ai_pen_controlled_payload_template(
                 payload_type=payload_type_text,
@@ -15529,6 +15964,7 @@ class WebSiteFetch(object):
             idor_diff_hit = False
             idor_probe_count = 0
             idor_probe_responses = []
+            unauth_probe_responses = []
             idor_diff_summary = {}
             api_doc_hit = False
             api_doc_hit_url = ""
@@ -15669,6 +16105,13 @@ class WebSiteFetch(object):
                         dict(item or {})
                         for item in list(plan_observation.get("responses", []) or [])
                         if isinstance(item, dict) and str(item.get("tool") or "").strip() == "idor_probe"
+                    ]
+                )
+                unauth_probe_responses.extend(
+                    [
+                        dict(item or {})
+                        for item in list(plan_observation.get("responses", []) or [])
+                        if isinstance(item, dict)
                     ]
                 )
                 evidence_hit = bool(plan_observation.get("evidence_hit")) or evidence_hit
@@ -15858,6 +16301,13 @@ class WebSiteFetch(object):
                             dict(item or {})
                             for item in list(fallback_observation.get("responses", []) or [])
                             if isinstance(item, dict) and str(item.get("tool") or "").strip() == "idor_probe"
+                        ]
+                    )
+                    unauth_probe_responses.extend(
+                        [
+                            dict(item or {})
+                            for item in list(fallback_observation.get("responses", []) or [])
+                            if isinstance(item, dict)
                         ]
                     )
                     evidence_hit = bool(fallback_observation.get("evidence_hit")) or evidence_hit
@@ -16144,10 +16594,17 @@ class WebSiteFetch(object):
                     body_text=probe_body_excerpt or base_body_excerpt,
                     high_value_family=high_value_family,
                     payload_type=payload_type,
+                    response_items=unauth_probe_responses,
                 )
                 unauth_access_hit = bool(unauth_access_ret.get("hit"))
                 unauth_access_type = str(unauth_access_ret.get("proof_type", "") or "").strip().lower()
                 unauth_access_reason = str(unauth_access_ret.get("reason", "") or "").strip()
+                probe_url = str(unauth_access_ret.get("matched_url", "") or "") or probe_url
+                probe_status = self._safe_int_value(unauth_access_ret.get("matched_status_code"), 0) or probe_status
+                if isinstance(unauth_access_ret.get("matched_headers"), dict) and unauth_access_ret.get("matched_headers"):
+                    probe_headers = dict(unauth_access_ret.get("matched_headers") or {})
+                probe_body_excerpt = str(unauth_access_ret.get("matched_body_text", "") or "") or probe_body_excerpt
+                probe_body_md5 = str(unauth_access_ret.get("matched_body_md5", "") or "") or probe_body_md5
 
             if is_xss_case and xss_popup_proof:
                 decision = "verified"
@@ -16318,9 +16775,18 @@ class WebSiteFetch(object):
                 reason = "发现公开高价值配置/环境端点 {}".format((config_exposure_url or target_url)[:180])
                 if config_exposure_summary:
                     reason = "{}；配置摘要：{}".format(reason, config_exposure_summary)
+            elif unauth_access_type == "unauth_health_endpoint":
+                decision = "needs_manual_review"
+                confidence = 0.72
+                reason = unauth_access_reason or "健康检查/信息端点可公开访问，建议结合更高价值管理面继续复核"
             elif unauth_access_hit:
                 decision = "verified"
-                confidence = 0.88 if unauth_access_type == "unauth_profile_data" else 0.84
+                if unauth_access_type == "unauth_profile_data":
+                    confidence = 0.88
+                elif unauth_access_type == "unauth_actuator_surface":
+                    confidence = 0.86
+                else:
+                    confidence = 0.84
                 reason = unauth_access_reason or "高价值入口未观察到鉴权拦截，疑似可未授权直接访问"
             elif payload_reflect_hit:
                 decision = "needs_manual_review"

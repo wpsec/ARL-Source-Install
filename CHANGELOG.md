@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-01（v4.5.10 ~ v4.5.46）
+## 2026-04-01（v4.5.10 ~ v4.5.47）
+
+- `[v4.5.48]` AI渗透 `未授权直访` 误报抑制继续收紧：`replay` 现会自动扩展高价值未授权复核目标（如 `api/me/userinfo/account/current/manage/actuator/admin/dashboard`），并在多响应里自动挑选更强的未授权证据；同时新增 `unauth_actuator_surface` 与 `unauth_health_endpoint` 分层，`actuator/health/info` 这类公开健康检查端点默认降为 `needs_manual_review`，避免与真正敏感的管理面同档误报
 
 - `[v4.5.47]` AI渗透 `未授权直访` 结果层打通：`unauth_access_hit/type/reason` 已随验证结果落库，并接入 `/ai_pen_test/stats/` 的 `unauth_access_type` 分组与 benchmark、`Phase F readiness` 能力匹配、`engineer_focus_entries` 优先级排序和导出列，工程师现在可以直接按“未授权类型 + 证据摘要”筛选更值得接手的入口
 

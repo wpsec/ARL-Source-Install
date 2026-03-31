@@ -451,7 +451,7 @@ def _classify_ai_pen_proof_family(proof_type, payload_type=""):
         return "active_execution"
     if proof in {"boolean_based", "error_based", "time_based", "template_error", "external_tool"}:
         return "response_differential"
-    if proof in {"unauth_management_surface", "unauth_admin_portal", "unauth_profile_data"}:
+    if proof in {"unauth_management_surface", "unauth_admin_portal", "unauth_profile_data", "unauth_actuator_surface", "unauth_health_endpoint"}:
         return "unauth_access"
     if proof in {"login_success", "weak_secret", "alg_none", "signature_bypass"}:
         return "auth_bypass"
@@ -733,8 +733,12 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             score += 4
         if unauth_access_type:
             score += 8
+        if unauth_access_type == "unauth_health_endpoint":
+            score -= 10
 
-        if decision == "verified" and proof_family == "unauth_access":
+        if unauth_access_type == "unauth_health_endpoint":
+            focus_reason = "已观察到公开健康检查/信息端点，建议结合敏感管理面继续复核"
+        elif decision == "verified" and proof_family == "unauth_access":
             focus_reason = "已命中无登录直访证据（{}），建议工程师优先接手".format(unauth_access_type or proof_type or "unauth_access")
         elif decision == "verified" and proof_type:
             focus_reason = "已获得可复核证据（{}），建议工程师优先接手".format(proof_type)
