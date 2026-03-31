@@ -573,6 +573,8 @@ class StatsAiPenTest(ARLResource):
         source_collection = _agg_group("source_collection")
         risk_type = _agg_group("risk_type")
         verification_step = _agg_group("verification_step")
+        tool_plan_source = _agg_group("tool_plan_source")
+        stop_reason = _agg_group("stop_reason")
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -584,5 +586,7 @@ class StatsAiPenTest(ARLResource):
                 "source_collection": source_collection,
                 "risk_type": risk_type,
                 "verification_step": verification_step,
+                "tool_plan_source": tool_plan_source,
+                "stop_reason": stop_reason,
             },
         )
