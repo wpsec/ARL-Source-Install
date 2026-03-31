@@ -1400,7 +1400,40 @@ class TestAiPenJsContext(unittest.TestCase):
         )
 
         self.assertEqual("likely_false_positive", outcome.get("decision"))
-        self.assertIn("鉴权生效", str(outcome.get("reason", "")))
+        self.assertIn("生效", str(outcome.get("reason", "")))
+
+    def test_extract_auth_protocol_error_semantics_detects_scope_insufficient(self):
+        semantics = WebSiteFetch._extract_auth_protocol_error_semantics(
+            body_text='{"error":"insufficient_scope","error_description":"scope too narrow"}',
+            headers={"WWW-Authenticate": 'Bearer error="insufficient_scope"'},
+        )
+
+        self.assertEqual("scope_insufficient", semantics.get("category"))
+        self.assertEqual("insufficient_scope", semantics.get("error"))
+
+    def test_classify_auth_protocol_outcome_for_userinfo_with_probe_token_returns_verified(self):
+        outcome = WebSiteFetch._classify_ai_pen_auth_protocol_outcome(
+            auth_url="https://example.com/userinfo",
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body_text='{"sub":"1001","email":"demo@example.com","name":"demo"}',
+            summary={"mode": "token_endpoint"},
+        )
+
+        self.assertEqual("verified", outcome.get("decision"))
+        self.assertIn("userinfo", str(outcome.get("reason", "")).lower())
+
+    def test_classify_auth_protocol_outcome_for_introspect_active_false_returns_likely_fp(self):
+        outcome = WebSiteFetch._classify_ai_pen_auth_protocol_outcome(
+            auth_url="https://example.com/oauth/introspect",
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body_text='{"active":false}',
+            summary={"mode": "token_endpoint"},
+        )
+
+        self.assertEqual("likely_false_positive", outcome.get("decision"))
+        self.assertIn("active=false", str(outcome.get("reason", "")))
 
     def test_infer_tool_plan_for_weak_password_uses_session_chain(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(

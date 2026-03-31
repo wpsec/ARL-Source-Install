@@ -6487,6 +6487,51 @@ class WebSiteFetch(object):
             parts.append("grant_types={}".format(",".join(grant_types)))
         return " | ".join(parts)
 
+    @staticmethod
+    def _extract_auth_protocol_error_semantics(body_text: str, headers=None):
+        body_raw = str(body_text or "")
+        body_lower = body_raw.lower()
+        header_obj = headers if isinstance(headers, dict) else {}
+        www_auth = str(header_obj.get("WWW-Authenticate", "") or "").strip().lower()
+        combined = "{} {}".format(body_lower, www_auth).strip()
+
+        error_code = ""
+        error_desc = ""
+        parsed = None
+        try:
+            parsed = json.loads(body_raw) if body_raw else None
+        except Exception:
+            parsed = None
+        if isinstance(parsed, dict):
+            error_code = str(parsed.get("error") or "").strip().lower()
+            error_desc = str(parsed.get("error_description") or parsed.get("error_description_hint") or "").strip()
+
+        def _contains_any(tokens):
+            return any(token in combined for token in tokens)
+
+        category = ""
+        if error_code in {"invalid_client", "unauthorized_client"} or _contains_any(("invalid_client", "unauthorized_client")):
+            category = "client_auth_failed"
+        elif error_code == "invalid_token" or _contains_any(("invalid_token", "bearer error=\"invalid_token\"")):
+            category = "token_invalid"
+        elif error_code == "insufficient_scope" or _contains_any(("insufficient_scope",)):
+            category = "scope_insufficient"
+        elif error_code == "unsupported_grant_type" or _contains_any(("unsupported_grant_type",)):
+            category = "grant_not_supported"
+        elif error_code == "invalid_grant" or _contains_any(("invalid_grant",)):
+            category = "grant_invalid"
+        elif error_code == "invalid_request" or _contains_any(("invalid_request", "missing parameter", "required parameter")):
+            category = "request_invalid"
+        elif error_code == "access_denied" or _contains_any(("access_denied",)):
+            category = "access_denied"
+
+        return {
+            "category": category,
+            "error": error_code,
+            "error_description": error_desc[:220],
+            "www_authenticate": www_auth[:220],
+        }
+
     @classmethod
     def _classify_ai_pen_auth_protocol_outcome(
         cls,
@@ -6512,6 +6557,10 @@ class WebSiteFetch(object):
         www_auth = str(header_obj.get("WWW-Authenticate", "") or "").strip().lower()
         body_lower = str(body_text or "").strip().lower()
         success_like = cls._is_ai_pen_success_status(status)
+        error_semantics = cls._extract_auth_protocol_error_semantics(body_text, headers=header_obj)
+        error_category = str(error_semantics.get("category") or "").strip().lower()
+        error_code = str(error_semantics.get("error") or "").strip().lower()
+        error_desc = str(error_semantics.get("error_description") or "").strip()
 
         protocol_summary_text = cls._format_auth_protocol_summary_text(summary_obj)
         token_response_fields = [
@@ -6540,27 +6589,33 @@ class WebSiteFetch(object):
                 "/userinfo",
             )
         )
+        introspect_like = any(token in lower_url for token in ("/oauth/introspect", "/oauth2/introspect"))
+        userinfo_like = "/userinfo" in lower_url
 
         if status in {401, 403}:
             reason = "认证协议端点返回 {}，当前更像访问控制生效".format(status)
+            if error_category:
+                reason = "{}（{}）".format(reason, error_category)
             if protocol_summary_text:
                 reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
             return {"decision": "likely_false_positive", "confidence": 0.66, "reason": reason}
 
-        auth_error_markers = (
-            "invalid_client",
-            "invalid_grant",
-            "invalid_token",
-            "unauthorized_client",
-            "unsupported_grant_type",
-            "invalid_request",
-            "insufficient_scope",
-        )
-        if token_endpoint_like and status in {400, 405} and (
-            any(token in body_lower for token in auth_error_markers)
-            or any(token in www_auth for token in ("invalid_token", "bearer", "insufficient_scope"))
-        ):
-            reason = "认证协议端点返回标准鉴权错误（{}），当前更像鉴权生效而非漏洞".format(status)
+        if token_endpoint_like and error_category:
+            semantic_reason_map = {
+                "client_auth_failed": "客户端鉴权失败",
+                "token_invalid": "令牌校验失败",
+                "scope_insufficient": "令牌 scope 不足",
+                "grant_not_supported": "授权类型不支持",
+                "grant_invalid": "授权凭据无效",
+                "request_invalid": "请求参数不合法",
+                "access_denied": "访问被拒绝",
+            }
+            semantic_text = semantic_reason_map.get(error_category, error_category)
+            reason = "认证协议端点返回标准错误（{}），当前更像鉴权/参数校验生效而非漏洞".format(semantic_text)
+            if error_code:
+                reason = "{}（error={}）".format(reason, error_code)
+            if error_desc:
+                reason = "{}（desc={}）".format(reason, cls._clip_text(error_desc, 120))
             if protocol_summary_text:
                 reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
             return {"decision": "likely_false_positive", "confidence": 0.68, "reason": reason}
@@ -6576,6 +6631,24 @@ class WebSiteFetch(object):
             if protocol_summary_text:
                 reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
             return {"decision": "verified", "confidence": 0.89, "reason": reason}
+
+        if success_like and introspect_like and '"active":true' in body_lower:
+            reason = "introspect 端点对探针 token 返回 active=true，疑似存在令牌校验缺陷"
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "verified", "confidence": 0.88, "reason": reason}
+
+        if success_like and introspect_like and '"active":false' in body_lower:
+            reason = "introspect 端点返回 active=false，当前更像令牌校验生效"
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "likely_false_positive", "confidence": 0.67, "reason": reason}
+
+        if success_like and userinfo_like and any('"{}"'.format(field) in body_lower for field in ("sub", "email", "preferred_username", "name", "phone_number")):
+            reason = "userinfo 端点在探针 token 下返回身份字段，疑似存在未鉴权信息泄露"
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "verified", "confidence": 0.86, "reason": reason}
 
         if success_like and metadata_like:
             reason = "发现可访问 OAuth/OIDC 协议元数据端点，当前仅确认入口暴露，不直接判定漏洞"

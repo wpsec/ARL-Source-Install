@@ -17,6 +17,7 @@
 - `[v4.5.17]` AI渗透 认证协议证据分级：新增 `_classify_ai_pen_auth_protocol_outcome`，将“仅 OpenID/JWKS 元数据端点可访问”收敛为 `likely_false_positive`（入口暴露不直接判洞），将“token/introspect/userinfo 成功返回令牌字段或敏感凭据”升级为 `verified`，其余保持 `needs_manual_review`；同步补齐认证协议分级回归测试，降低 JWT 认证链误报
 - `[v4.5.18]` AI渗透 注入类证据标准补齐：新增 `SSTI/CMDI/XXE/SSRF` 专项 proof 检测（如模板表达式执行、`id` 命令输出、外部实体文件读取、元数据返回），并将其接入 `jwt` 之外的主判定链与 `verified` proof guard；同时把这四类从“通用 evidence 命中即可 verified”收敛为“有专项证据才可 verified”，降低阶段 C 快速迭代下的泛化误报
 - `[v4.5.19]` AI渗透 认证协议探针细化：OAuth/OIDC 端点探测从“统一 GET”升级为“按端点类型自动 method/参数”（如 `token/introspect` 使用 `POST form`、`userinfo` 携带 `Bearer`），并将 `invalid_client/invalid_token/unsupported_grant_type` 等标准鉴权错误收敛为 `likely_false_positive`（鉴权生效），减少认证链探针误报
+- `[v4.5.20]` AI渗透 认证协议语义判定增强：新增 `_extract_auth_protocol_error_semantics`，对 `client 鉴权失败 / token 无效 / scope 不足 / grant 参数错误` 做语义分类并在 `auth_protocol` 分级中统一降噪；同时新增 `userinfo/introspect` 成功响应语义判定（如 `userinfo` 返回身份字段、`active=true/false`）以区分“鉴权生效”与“疑似未鉴权泄露”，提升阶段 C 认证链判定精度
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 
