@@ -4502,6 +4502,10 @@ class WebSiteFetch(object):
         xss_popup_proof = bool(merged.get("xss_popup_proof"))
         weak_password_login_proof = bool(merged.get("weak_password_login_proof"))
         sqli_proof_type = str(merged.get("sqli_proof_type", "") or "").strip().lower()
+        cmdi_proof_type = str(merged.get("cmdi_proof_type", "") or "").strip().lower()
+        ssti_proof_type = str(merged.get("ssti_proof_type", "") or "").strip().lower()
+        xxe_proof_type = str(merged.get("xxe_proof_type", "") or "").strip().lower()
+        ssrf_proof_type = str(merged.get("ssrf_proof_type", "") or "").strip().lower()
 
         if ai_reason:
             base_reason = str(merged.get("reason", "") or "").strip()
@@ -4519,6 +4523,10 @@ class WebSiteFetch(object):
             xss_popup_proof=xss_popup_proof,
             weak_password_login_proof=weak_password_login_proof,
             sqli_proof_type=sqli_proof_type,
+            cmdi_proof_type=cmdi_proof_type,
+            ssti_proof_type=ssti_proof_type,
+            xxe_proof_type=xxe_proof_type,
+            ssrf_proof_type=ssrf_proof_type,
         )
         if proof_guard_reason and base_decision == "verified":
             merged["decision"] = "needs_manual_review"
@@ -4571,6 +4579,10 @@ class WebSiteFetch(object):
         xss_popup_proof: bool = False,
         weak_password_login_proof: bool = False,
         sqli_proof_type: str = "",
+        cmdi_proof_type: str = "",
+        ssti_proof_type: str = "",
+        xxe_proof_type: str = "",
+        ssrf_proof_type: str = "",
     ) -> str:
         if (str(risk_type_text or "").strip().lower() == "xss" or str(payload_type_text or "").strip().lower() == "xss_probe") and (not xss_popup_proof):
             return "XSS 缺少可触发弹窗的执行证据，禁止直接判定为 verified"
@@ -4586,6 +4598,25 @@ class WebSiteFetch(object):
             "external_tool",
         }:
             return "SQL 注入缺少可复现利用证据，禁止直接判定为 verified"
+        if (str(risk_type_text or "").strip().lower() == "cmdi" or str(payload_type_text or "").strip().lower() == "cmdi_probe") and str(cmdi_proof_type or "").strip().lower() not in {
+            "id_output",
+            "passwd_disclosure",
+        }:
+            return "命令注入缺少系统命令执行证据，禁止直接判定为 verified"
+        if (str(risk_type_text or "").strip().lower() == "ssti" or str(payload_type_text or "").strip().lower() == "ssti_probe") and str(ssti_proof_type or "").strip().lower() not in {
+            "expression_eval",
+        }:
+            return "SSTI 缺少模板表达式执行证据，禁止直接判定为 verified"
+        if (str(risk_type_text or "").strip().lower() == "xxe" or str(payload_type_text or "").strip().lower() == "xxe_probe") and str(xxe_proof_type or "").strip().lower() not in {
+            "entity_file_read",
+            "passwd_disclosure",
+        }:
+            return "XXE 缺少外部实体文件读取证据，禁止直接判定为 verified"
+        if (str(risk_type_text or "").strip().lower() == "ssrf" or str(payload_type_text or "").strip().lower() == "ssrf_probe") and str(ssrf_proof_type or "").strip().lower() not in {
+            "metadata_disclosure",
+            "local_network_disclosure",
+        }:
+            return "SSRF 缺少服务端请求命中内网/元数据证据，禁止直接判定为 verified"
         return ""
 
     @staticmethod
@@ -4619,6 +4650,107 @@ class WebSiteFetch(object):
         base_has_error = cls._contains_sql_error_signature(base_body)
         if probe_has_error and (not base_has_error):
             return "error_based"
+        return ""
+
+    @staticmethod
+    def _detect_ssti_proof_type(payload: str, base_body: str, probe_body: str) -> str:
+        base_text = str(base_body or "")
+        probe_text = str(probe_body or "")
+        payload_text = str(payload or "").strip()
+        if not probe_text:
+            return ""
+
+        base_lower = base_text.lower()
+        probe_lower = probe_text.lower()
+
+        # 默认 SSTI 探针使用 {{7*7}}，若响应新增 49 且不是原样回显，视为表达式执行证据。
+        if payload_text in {"{{7*7}}", "${7*7}", "#{7*7}"}:
+            if ("49" in probe_text) and ("49" not in base_text) and (payload_text.lower() not in probe_lower):
+                return "expression_eval"
+
+        template_error_markers = (
+            "jinja2.exceptions",
+            "templatesyntaxerror",
+            "freemarker template error",
+            "org.thymeleaf",
+            "mustacheexception",
+            "twig\\error",
+            "template parse error",
+        )
+        if any(token in probe_lower for token in template_error_markers) and (not any(token in base_lower for token in template_error_markers)):
+            return "template_error"
+        return ""
+
+    @staticmethod
+    def _detect_cmdi_proof_type(base_body: str, probe_body: str) -> str:
+        base_text = str(base_body or "")
+        probe_text = str(probe_body or "")
+        if not probe_text:
+            return ""
+
+        base_lower = base_text.lower()
+        probe_lower = probe_text.lower()
+        id_signature = re.search(r"\buid=\d+\([^)]+\)\s+gid=\d+\([^)]+\)", probe_text)
+        if id_signature and (not re.search(r"\buid=\d+\([^)]+\)\s+gid=\d+\([^)]+\)", base_text)):
+            return "id_output"
+
+        passwd_markers = ("root:x:0:0:", "daemon:x:1:1:", "bin:x:2:2:")
+        if any(marker in probe_lower for marker in passwd_markers) and (not any(marker in base_lower for marker in passwd_markers)):
+            return "passwd_disclosure"
+        return ""
+
+    @staticmethod
+    def _detect_xxe_proof_type(base_body: str, probe_body: str) -> str:
+        base_text = str(base_body or "")
+        probe_text = str(probe_body or "")
+        if not probe_text:
+            return ""
+
+        base_lower = base_text.lower()
+        probe_lower = probe_text.lower()
+        passwd_markers = ("root:x:0:0:", "daemon:x:1:1:", "bin:x:2:2:")
+        if any(marker in probe_lower for marker in passwd_markers) and (not any(marker in base_lower for marker in passwd_markers)):
+            return "passwd_disclosure"
+
+        host_markers = ("localhost", "127.0.0.1", "::1", "localhost.localdomain", "ip6-localhost")
+        hit_count = 0
+        for marker in host_markers:
+            if marker in probe_lower and marker not in base_lower:
+                hit_count += 1
+        if hit_count >= 2:
+            return "entity_file_read"
+        return ""
+
+    @staticmethod
+    def _detect_ssrf_proof_type(base_body: str, probe_body: str, headers=None) -> str:
+        base_text = str(base_body or "")
+        probe_text = str(probe_body or "")
+        if not probe_text:
+            return ""
+
+        base_lower = base_text.lower()
+        probe_lower = probe_text.lower()
+        header_obj = headers if isinstance(headers, dict) else {}
+        header_text = " ".join(["{}:{}".format(str(k or ""), str(v or "")) for k, v in header_obj.items()]).lower()
+
+        metadata_markers = (
+            "ami-id",
+            "instance-id",
+            "security-credentials",
+            "metadata.google.internal",
+            "compute metadata",
+            "x-aws-ec2-metadata-token",
+            "ram/security-credentials",
+            "kubernetes.default.svc",
+        )
+        if any(marker in probe_lower for marker in metadata_markers) and (not any(marker in base_lower for marker in metadata_markers)):
+            return "metadata_disclosure"
+        if any(marker in header_text for marker in ("metadata", "x-aws-ec2", "x-google-metadata")):
+            return "metadata_disclosure"
+
+        local_markers = ("127.0.0.1", "localhost", "::1")
+        if any(marker in probe_lower for marker in local_markers) and (not any(marker in base_lower for marker in local_markers)):
+            return "local_network_disclosure"
         return ""
 
     @staticmethod
@@ -10814,6 +10946,10 @@ class WebSiteFetch(object):
                 "xss_popup_proof": False,
                 "sqli_proof_type": "",
                 "weak_password_login_proof": False,
+                "cmdi_proof_type": "",
+                "ssti_proof_type": "",
+                "xxe_proof_type": "",
+                "ssrf_proof_type": "",
                 "api_doc_summary": {},
                 "api_surface_summary": {},
                 "browser_surface_summary": browser_surface_summary,
@@ -10877,6 +11013,10 @@ class WebSiteFetch(object):
                     "xss_popup_proof": False,
                     "sqli_proof_type": "",
                     "weak_password_login_proof": False,
+                    "cmdi_proof_type": "",
+                    "ssti_proof_type": "",
+                    "xxe_proof_type": "",
+                    "ssrf_proof_type": "",
                     "api_doc_summary": {},
                     "api_surface_summary": {},
                     "browser_surface_summary": browser_surface_summary,
@@ -11270,10 +11410,26 @@ class WebSiteFetch(object):
             xss_popup_proof = False
             sqli_proof_type = ""
             weak_password_login_proof = False
+            cmdi_proof_type = ""
+            ssti_proof_type = ""
+            xxe_proof_type = ""
+            ssrf_proof_type = ""
             if is_xss_case:
                 xss_popup_proof = self._has_xss_popup_proof(payload, base_body_excerpt, probe_body_excerpt)
             if is_sqli_case:
                 sqli_proof_type = self._detect_sqli_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
+            if payload_type == "cmdi_probe":
+                cmdi_proof_type = self._detect_cmdi_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
+            if payload_type == "ssti_probe":
+                ssti_proof_type = self._detect_ssti_proof_type(payload, base_body_excerpt, probe_body_excerpt or base_body_excerpt)
+            if payload_type == "xxe_probe":
+                xxe_proof_type = self._detect_xxe_proof_type(base_body_excerpt, probe_body_excerpt or base_body_excerpt)
+            if payload_type == "ssrf_probe":
+                ssrf_proof_type = self._detect_ssrf_proof_type(
+                    base_body_excerpt,
+                    probe_body_excerpt or base_body_excerpt,
+                    headers=probe_headers,
+                )
             if payload_type == "idor_probe" and idor_probe_responses:
                 best_idor_score = -1
                 idor_positive_summaries = []
@@ -11392,7 +11548,36 @@ class WebSiteFetch(object):
                 decision = "needs_manual_review"
                 confidence = 0.72
                 reason = "SQL 探针前后响应差异明显，疑似布尔/时间盲注，需人工复核"
-            elif evidence_hit and not (is_xss_case or is_sqli_case or is_weak_password_case):
+            elif payload_type == "cmdi_probe" and cmdi_proof_type:
+                decision = "verified"
+                confidence = 0.89
+                reason = "命令注入探针触发系统命令输出特征（{}）".format(cmdi_proof_type)
+            elif payload_type == "ssti_probe" and ssti_proof_type == "expression_eval":
+                decision = "verified"
+                confidence = 0.87
+                reason = "SSTI 探针出现模板表达式执行结果，具备可利用证据"
+            elif payload_type == "ssti_probe" and ssti_proof_type == "template_error":
+                decision = "needs_manual_review"
+                confidence = 0.74
+                reason = "SSTI 探针触发模板引擎报错特征，疑似存在模板注入入口"
+            elif payload_type == "xxe_probe" and xxe_proof_type in {"entity_file_read", "passwd_disclosure"}:
+                decision = "verified"
+                confidence = 0.88 if xxe_proof_type == "passwd_disclosure" else 0.84
+                reason = "XXE 探针触发外部实体文件读取特征（{}）".format(xxe_proof_type)
+            elif payload_type == "ssrf_probe" and ssrf_proof_type == "metadata_disclosure":
+                decision = "verified"
+                confidence = 0.88
+                reason = "SSRF 探针命中云/内网元数据返回特征，疑似存在服务端请求伪造"
+            elif payload_type == "ssrf_probe" and ssrf_proof_type == "local_network_disclosure":
+                decision = "needs_manual_review"
+                confidence = 0.80
+                reason = "SSRF 探针出现内网地址返回线索，建议结合回连链路复核"
+            elif evidence_hit and not (
+                is_xss_case
+                or is_sqli_case
+                or is_weak_password_case
+                or payload_type in {"cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe"}
+            ):
                 decision = "verified"
                 confidence = 0.82
                 reason = "响应中命中风险证据片段，验证通过"
@@ -11508,6 +11693,10 @@ class WebSiteFetch(object):
                 xss_popup_proof=xss_popup_proof,
                 weak_password_login_proof=weak_password_login_proof,
                 sqli_proof_type=sqli_proof_type,
+                cmdi_proof_type=cmdi_proof_type,
+                ssti_proof_type=ssti_proof_type,
+                xxe_proof_type=xxe_proof_type,
+                ssrf_proof_type=ssrf_proof_type,
             )
             if decision == "needs_manual_review" and agent_decision == "verified" and agent_confidence >= 0.9 and not agent_proof_guard_reason:
                 decision = "verified"
@@ -11687,6 +11876,10 @@ class WebSiteFetch(object):
                 xss_popup_proof=xss_popup_proof,
                 weak_password_login_proof=weak_password_login_proof,
                 sqli_proof_type=sqli_proof_type,
+                cmdi_proof_type=cmdi_proof_type,
+                ssti_proof_type=ssti_proof_type,
+                xxe_proof_type=xxe_proof_type,
+                ssrf_proof_type=ssrf_proof_type,
             )
             if decision == "verified" and proof_guard_reason:
                 decision = "needs_manual_review"
@@ -11728,6 +11921,10 @@ class WebSiteFetch(object):
                 "xss_popup_proof": xss_popup_proof,
                 "sqli_proof_type": sqli_proof_type,
                 "weak_password_login_proof": weak_password_login_proof,
+                "cmdi_proof_type": cmdi_proof_type,
+                "ssti_proof_type": ssti_proof_type,
+                "xxe_proof_type": xxe_proof_type,
+                "ssrf_proof_type": ssrf_proof_type,
                 "api_doc_summary": api_doc_summary if isinstance(api_doc_summary, dict) else {},
                 "api_surface_summary": api_surface_summary if isinstance(api_surface_summary, dict) else {},
                 "browser_surface_summary": browser_surface_summary,
@@ -11767,6 +11964,10 @@ class WebSiteFetch(object):
                 "xss_popup_proof": False,
                 "sqli_proof_type": "",
                 "weak_password_login_proof": False,
+                "cmdi_proof_type": "",
+                "ssti_proof_type": "",
+                "xxe_proof_type": "",
+                "ssrf_proof_type": "",
                 "api_doc_summary": {},
                 "api_surface_summary": {},
                 "browser_surface_summary": browser_surface_summary,

@@ -1486,6 +1486,36 @@ class TestAiPenJsContext(unittest.TestCase):
         )
         self.assertEqual("error_based", proof_type)
 
+    def test_ssti_expression_eval_proof_is_detected(self):
+        proof_type = WebSiteFetch._detect_ssti_proof_type(
+            payload="{{7*7}}",
+            base_body="normal page",
+            probe_body='{"result":"49"}',
+        )
+        self.assertEqual("expression_eval", proof_type)
+
+    def test_cmdi_id_output_proof_is_detected(self):
+        proof_type = WebSiteFetch._detect_cmdi_proof_type(
+            base_body="normal page",
+            probe_body="uid=1000(www-data) gid=1000(www-data) groups=1000(www-data)",
+        )
+        self.assertEqual("id_output", proof_type)
+
+    def test_xxe_entity_file_read_proof_is_detected(self):
+        proof_type = WebSiteFetch._detect_xxe_proof_type(
+            base_body="normal page",
+            probe_body="127.0.0.1 localhost\n::1 localhost ip6-localhost",
+        )
+        self.assertEqual("entity_file_read", proof_type)
+
+    def test_ssrf_metadata_disclosure_proof_is_detected(self):
+        proof_type = WebSiteFetch._detect_ssrf_proof_type(
+            base_body="normal page",
+            probe_body='{"instance-id":"i-123456"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual("metadata_disclosure", proof_type)
+
     def test_verified_proof_guard_blocks_missing_xss_proof(self):
         reason = WebSiteFetch._get_ai_pen_verified_proof_guard_reason(
             risk_type_text="xss",
@@ -1505,6 +1535,17 @@ class TestAiPenJsContext(unittest.TestCase):
             sqli_proof_type="external_tool",
         )
         self.assertEqual("", reason)
+
+    def test_verified_proof_guard_blocks_missing_ssti_proof(self):
+        reason = WebSiteFetch._get_ai_pen_verified_proof_guard_reason(
+            risk_type_text="ssti",
+            payload_type_text="ssti_probe",
+            xss_popup_proof=False,
+            weak_password_login_proof=False,
+            sqli_proof_type="",
+            ssti_proof_type="",
+        )
+        self.assertIn("SSTI", reason)
 
 
 if __name__ == "__main__":
