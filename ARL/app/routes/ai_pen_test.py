@@ -152,7 +152,18 @@ def _normalize_status(value):
     return "skipped"
 
 
-def _build_candidate_from_result(item: dict):
+def _build_candidate_from_result(item: dict, max_steps: int = 4):
+    """从历史结果重建候选，并补齐重试所需的会话/工具上下文。"""
+    default_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+    history_tool_plan = WebSiteFetch._build_ai_pen_retry_seed_tool_plan(
+        item,
+        default_url=default_url,
+        max_steps=max_steps,
+    )
+    history_tool_result_summary = WebSiteFetch._summarize_ai_pen_tool_results_for_agent(
+        item.get("tool_results"),
+        max_items=4,
+    )
     return {
         "source_collection": str(item.get("source_collection", "") or "").strip(),
         "source_id": str(item.get("source_id", "") or "").strip(),
@@ -176,6 +187,9 @@ def _build_candidate_from_result(item: dict):
         "task_ai_pen_graph_summary": dict(item.get("task_ai_pen_graph_summary") or {}) if isinstance(item.get("task_ai_pen_graph_summary"), dict) else {},
         "task_ai_pen_graph_context": dict(item.get("task_ai_pen_graph_context") or {}) if isinstance(item.get("task_ai_pen_graph_context"), dict) else {},
         "login_surface_summary": dict(item.get("login_surface_summary") or {}) if isinstance(item.get("login_surface_summary"), dict) else {},
+        "history_session_summary": dict(item.get("session_summary") or {}) if isinstance(item.get("session_summary"), dict) else {},
+        "history_tool_plan": history_tool_plan,
+        "history_tool_result_summary": history_tool_result_summary,
         "priority_score": int(item.get("priority_score", 0) or 0),
         "status_code_hint": int(item.get("status_code_hint", 0) or 0),
     }
@@ -214,11 +228,15 @@ def _retry_records(result_docs):
 
         for item in items:
             retry_count += 1
-            candidate = _build_candidate_from_result(item)
+            retry_max_steps = max(
+                2,
+                int(runtime_settings.get("max_tool_calls", WebSiteFetch.AI_PEN_TEST_MCP_MAX_TOOL_CALLS) or WebSiteFetch.AI_PEN_TEST_MCP_MAX_TOOL_CALLS),
+            )
+            candidate = _build_candidate_from_result(item, max_steps=retry_max_steps)
             ai_plan = {
                 "payload_type": str(item.get("payload_type", "") or "").strip(),
                 "payload": str(item.get("payload", "") or "").strip(),
-                "tool_plan": list(item.get("ai_plan_tool_plan", []) or []),
+                "tool_plan": list(candidate.get("history_tool_plan", []) or []),
             }
             verify_result = runner._verify_ai_pen_candidate(
                 candidate,
@@ -271,6 +289,14 @@ def _retry_records(result_docs):
                 "task_ai_pen_graph_summary": dict(verify_result.get("task_ai_pen_graph_summary") or {}) if isinstance(verify_result.get("task_ai_pen_graph_summary"), dict) else {},
                 "task_ai_pen_graph_context": dict(verify_result.get("task_ai_pen_graph_context") or {}) if isinstance(verify_result.get("task_ai_pen_graph_context"), dict) else {},
                 "login_surface_summary": dict(verify_result.get("login_surface_summary") or {}) if isinstance(verify_result.get("login_surface_summary"), dict) else {},
+                "session_summary": dict(verify_result.get("session_summary") or {}) if isinstance(verify_result.get("session_summary"), dict) else {},
+                "weak_password_login_proof": bool(verify_result.get("weak_password_login_proof")),
+                "session_auth_hit": bool(verify_result.get("session_auth_hit")),
+                "session_auth_url": str(verify_result.get("session_auth_url", "") or "").strip(),
+                "session_auth_reason": str(verify_result.get("session_auth_reason", "") or "").strip(),
+                "logout_effective": bool(verify_result.get("logout_effective")),
+                "logout_url": str(verify_result.get("logout_url", "") or "").strip(),
+                "logout_reason": str(verify_result.get("logout_reason", "") or "").strip(),
                 "tool_trace": str(verify_result.get("tool_trace", "") or "").strip(),
                 "agent_trace": list(verify_result.get("agent_trace", []) or [])[:16],
                 "tool_calls": list(verify_result.get("tool_calls", []) or [])[:16],
@@ -278,9 +304,10 @@ def _retry_records(result_docs):
                 "stop_reason": str(verify_result.get("stop_reason", "") or "").strip(),
                 "budget_used": dict(verify_result.get("budget_used") or {}) if isinstance(verify_result.get("budget_used"), dict) else {},
                 "runtime_version": str(verify_result.get("runtime_version", "") or "").strip(),
+                "tool_plan_source": str(verify_result.get("tool_plan_source", "") or "").strip(),
                 "external_tool_runs": list(verify_result.get("external_tool_runs", []) or [])[:3],
                 "external_tool_hit": bool(verify_result.get("external_tool_hit")),
-                "ai_plan_tool_plan": list(item.get("ai_plan_tool_plan", []) or [])[:8],
+                "ai_plan_tool_plan": list(verify_result.get("ai_plan_tool_plan", []) or candidate.get("history_tool_plan", []) or [])[:8],
                 "knowledge_hit_product_labels": list(item.get("knowledge_hit_product_labels", []) or []),
                 "knowledge_hit_vuln_types": list(item.get("knowledge_hit_vuln_types", []) or []),
                 "knowledge_hit_entry_paths": list(item.get("knowledge_hit_entry_paths", []) or []),

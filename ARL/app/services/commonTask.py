@@ -377,6 +377,19 @@ class WebSiteFetch(object):
         },
     }
     AI_PEN_AUTH_PATH_KEYWORDS = ("login", "auth", "token", "oauth", "signin", "session", "user", "me", "current")
+    AI_PEN_LOGIN_PATH_KEYWORDS = ("login", "signin", "sign-in", "sso", "cas", "passport")
+    AI_PEN_SESSION_CHECK_PATH_KEYWORDS = (
+        "me",
+        "profile",
+        "userinfo",
+        "current",
+        "account",
+        "dashboard",
+        "console",
+        "workspace",
+        "home",
+    )
+    AI_PEN_LOGOUT_PATH_KEYWORDS = ("logout", "signout", "sign-out", "logoff", "sign_off", "exit")
     AI_PEN_LOGIN_PAGE_KEYWORDS = ("login", "signin", "sign-in", "sso", "cas", "passport", "登录", "认证", "统一身份认证", "单点登录")
     AI_PEN_CAPTCHA_HINTS = ("captcha", "verifycode", "verification", "checkcode", "validatecode", "randcode", "yzm", "图形码", "验证码")
     AI_PEN_CSRF_FIELD_HINTS = ("csrf", "token", "_token", "authenticity", "xsrf", "nonce")
@@ -395,6 +408,32 @@ class WebSiteFetch(object):
         "department",
         "orderno",
         "invoice",
+    )
+    AI_PEN_IDOR_ADMIN_MARKERS = (
+        '"role":"admin"',
+        '"role":"superadmin"',
+        '"isadmin":true',
+        '"is_admin":true',
+        '"permission":"*"',
+        '"scope":"*"',
+        '"scope":"admin"',
+        "superadmin",
+        "system_admin",
+        "tenant_admin",
+        "manage_users",
+    )
+    AI_PEN_ACCESS_CONTROL_PARAM_HINTS = (
+        "role",
+        "roles",
+        "permission",
+        "permissions",
+        "scope",
+        "privilege",
+        "level",
+        "isadmin",
+        "is_admin",
+        "admin",
+        "acl",
     )
     AI_PEN_LOGIN_SUCCESS_KEYWORDS = (
         "login success",
@@ -4184,6 +4223,9 @@ class WebSiteFetch(object):
                 "task_ai_pen_graph_summary": dict(candidate.get("task_ai_pen_graph_summary") or {}) if isinstance(candidate.get("task_ai_pen_graph_summary"), dict) else {},
                 "task_ai_pen_graph_context": dict(candidate.get("task_ai_pen_graph_context") or {}) if isinstance(candidate.get("task_ai_pen_graph_context"), dict) else {},
                 "login_surface_summary": dict(candidate.get("login_surface_summary") or {}) if isinstance(candidate.get("login_surface_summary"), dict) else {},
+                "history_session_summary": dict(candidate.get("history_session_summary") or {}) if isinstance(candidate.get("history_session_summary"), dict) else {},
+                "history_tool_plan": list(candidate.get("history_tool_plan", []) or [])[:4],
+                "history_tool_results": list(candidate.get("history_tool_result_summary", []) or [])[:4],
                 "js_context_summary": dict(js_context_summary or {}) if isinstance(js_context_summary, dict) else {},
                 "js_context_snippet": self._clip_text(js_context_summary.get("context_snippet", ""), self.AI_PEN_TEST_EVIDENCE_MAX)
                 if isinstance(js_context_summary, dict)
@@ -5868,6 +5910,59 @@ class WebSiteFetch(object):
 
         return {}
 
+    @staticmethod
+    def _mutate_access_control_value(value_text: str):
+        text = str(value_text or "").strip()
+        if not text:
+            return {}
+
+        lowered = text.lower()
+        exact_map = {
+            "guest": "admin",
+            "user": "admin",
+            "viewer": "admin",
+            "member": "admin",
+            "readonly": "admin",
+            "read": "write",
+            "none": "admin",
+            "false": "true",
+            "0": "1",
+            "no": "yes",
+        }
+        if lowered in exact_map:
+            return {"value": exact_map[lowered], "kind": "access_control"}
+
+        if lowered in {"admin", "superadmin", "root", "system", "owner"}:
+            return {}
+
+        if lowered in {"true", "yes", "1"}:
+            return {"value": "2", "kind": "access_control_numeric"}
+
+        if lowered.isdigit():
+            try:
+                return {"value": str(int(lowered) + 1), "kind": "access_control_numeric"}
+            except Exception:
+                return {}
+
+        if "," in text:
+            role_parts = [str(item or "").strip() for item in text.split(",") if str(item or "").strip()]
+            lower_parts = {item.lower() for item in role_parts}
+            if "admin" not in lower_parts and "superadmin" not in lower_parts:
+                role_parts.append("admin")
+                return {"value": ",".join(role_parts), "kind": "access_control"}
+
+        if "|" in text:
+            role_parts = [str(item or "").strip() for item in text.split("|") if str(item or "").strip()]
+            lower_parts = {item.lower() for item in role_parts}
+            if "admin" not in lower_parts and "superadmin" not in lower_parts:
+                role_parts.append("admin")
+                return {"value": "|".join(role_parts), "kind": "access_control"}
+
+        replaced = re.sub(r"\b(user|viewer|guest|member|readonly)\b", "admin", text, flags=re.I)
+        if replaced != text:
+            return {"value": replaced, "kind": "access_control"}
+        return {}
+
     @classmethod
     def _build_idor_probe_targets(cls, target_url: str, max_count=3):
         url_text = str(target_url or "").strip()
@@ -5901,22 +5996,35 @@ class WebSiteFetch(object):
                     key_text = str(key or "").strip().lower()
                     value_text = str(value or "").strip()
                     mutation = cls._mutate_idor_like_value(value_text)
-                    if not mutation:
-                        continue
-                    if not ((key_text in id_keys) or key_text.endswith("_id") or key_text in cls.AI_PEN_OBJECT_ID_PARAM_HINTS):
-                        continue
-                    updated_items = list(query_items)
-                    updated_items[index] = (key, mutation.get("value"))
-                    updated_query = urlencode(updated_items, doseq=True)
-                    append_target(
-                        urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment)),
-                        mutation_key=key,
-                        mutation_from=value_text,
-                        mutation_to=mutation.get("value", ""),
-                        mutation_kind=mutation.get("kind", ""),
-                    )
-                    if len(targets) >= max(1, int(max_count or 1)):
-                        return targets
+                    if mutation and ((key_text in id_keys) or key_text.endswith("_id") or key_text in cls.AI_PEN_OBJECT_ID_PARAM_HINTS):
+                        updated_items = list(query_items)
+                        updated_items[index] = (key, mutation.get("value"))
+                        updated_query = urlencode(updated_items, doseq=True)
+                        append_target(
+                            urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment)),
+                            mutation_key=key,
+                            mutation_from=value_text,
+                            mutation_to=mutation.get("value", ""),
+                            mutation_kind=mutation.get("kind", ""),
+                        )
+                        if len(targets) >= max(1, int(max_count or 1)):
+                            return targets
+
+                    if any(token in key_text for token in cls.AI_PEN_ACCESS_CONTROL_PARAM_HINTS):
+                        access_mutation = cls._mutate_access_control_value(value_text)
+                        if access_mutation:
+                            updated_items = list(query_items)
+                            updated_items[index] = (key, access_mutation.get("value"))
+                            updated_query = urlencode(updated_items, doseq=True)
+                            append_target(
+                                urlunsplit((parsed.scheme, parsed.netloc, parsed.path, updated_query, parsed.fragment)),
+                                mutation_key=key,
+                                mutation_from=value_text,
+                                mutation_to=access_mutation.get("value", ""),
+                                mutation_kind=access_mutation.get("kind", ""),
+                            )
+                            if len(targets) >= max(1, int(max_count or 1)):
+                                return targets
 
             path_text = str(parsed.path or "")
             match = re.search(r"(\d+|[0-9a-fA-F]{24}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/?$)", path_text)
@@ -5951,6 +6059,7 @@ class WebSiteFetch(object):
         base_lower = base_text.lower()
         probe_lower = probe_text.lower()
         sensitive_hits = []
+        admin_hits = []
 
         for marker in cls.AI_PEN_IDOR_SENSITIVE_MARKERS:
             marker_text = str(marker or "").strip().lower()
@@ -5959,10 +6068,19 @@ class WebSiteFetch(object):
                 if len(sensitive_hits) >= 6:
                     break
 
+        for marker in cls.AI_PEN_IDOR_ADMIN_MARKERS:
+            marker_text = str(marker or "").strip().lower()
+            if marker_text and (marker_text in probe_lower) and (marker_text not in base_lower):
+                admin_hits.append(marker_text)
+                if len(admin_hits) >= 6:
+                    break
+
         status_changed = int(base_status or 0) != int(probe_status or 0)
         body_changed = bool(str(base_body or "")) != bool(str(probe_body or "")) or (str(base_body or "") != str(probe_body or ""))
         length_delta = abs(len(probe_text) - len(base_text))
-        material_change = body_changed and (status_changed or length_delta >= 24 or bool(sensitive_hits))
+        mutation_kind = str(target_obj.get("mutation_kind") or "").strip().lower()
+        vertical_indicator = bool(admin_hits) and mutation_kind in {"access_control", "access_control_numeric"}
+        material_change = body_changed and (status_changed or length_delta >= 24 or bool(sensitive_hits) or bool(admin_hits))
 
         return {
             "mutation_key": str(target_obj.get("mutation_key") or "").strip(),
@@ -5973,6 +6091,8 @@ class WebSiteFetch(object):
             "body_changed": bool(body_changed),
             "length_delta": int(length_delta),
             "sensitive_hits": sensitive_hits[:6],
+            "admin_hits": admin_hits[:6],
+            "vertical_indicator": bool(vertical_indicator),
             "material_change": bool(material_change),
         }
 
@@ -6006,6 +6126,11 @@ class WebSiteFetch(object):
         sensitive_hits = [str(item or "").strip() for item in list(summary.get("sensitive_hits", []) or [])[:4] if str(item or "").strip()]
         if sensitive_hits:
             parts.append("fields={}".format(",".join(sensitive_hits)))
+        admin_hits = [str(item or "").strip() for item in list(summary.get("admin_hits", []) or [])[:4] if str(item or "").strip()]
+        if admin_hits:
+            parts.append("admin_signals={}".format(",".join(admin_hits)))
+        if bool(summary.get("vertical_indicator")):
+            parts.append("vertical=1")
         consistency_hits = cls._safe_int_value(summary.get("consistency_hits"), 0)
         if consistency_hits > 1:
             parts.append("consistency={}".format(consistency_hits))
@@ -6030,11 +6155,14 @@ class WebSiteFetch(object):
         if bool(summary.get("body_changed")):
             score += 2
         score += min(6, len(list(summary.get("sensitive_hits", []) or [])) * 2)
+        score += min(6, len(list(summary.get("admin_hits", []) or [])) * 2)
         length_delta = cls._safe_int_value(summary.get("length_delta"), 0)
         if length_delta >= 120:
             score += 2
         elif length_delta >= 32:
             score += 1
+        if bool(summary.get("vertical_indicator")):
+            score += 3
         if cls._safe_int_value(summary.get("consistency_hits"), 0) >= 2:
             score += 3
         if list(summary.get("consistent_sensitive_fields", []) or []):
@@ -6056,6 +6184,7 @@ class WebSiteFetch(object):
         base_status_code = cls._safe_int_value(base_status, 0)
         probe_status_code = cls._safe_int_value(probe_status, 0)
         sensitive_hits = [str(item or "").strip() for item in list(summary.get("sensitive_hits", []) or []) if str(item or "").strip()]
+        admin_hits = [str(item or "").strip() for item in list(summary.get("admin_hits", []) or []) if str(item or "").strip()]
         sensitive_count = len(sensitive_hits)
         score = cls._score_idor_diff_summary(summary)
 
@@ -6064,14 +6193,31 @@ class WebSiteFetch(object):
         probe_deny = probe_status_code in {401, 403}
         base_deny = base_status_code in {401, 403}
         summary_text = cls._format_idor_diff_summary_text(summary)
+        mutation_kind = str(summary.get("mutation_kind") or "").strip().lower()
+        vertical_like = bool(summary.get("vertical_indicator")) or (
+            bool(admin_hits) and mutation_kind in {"access_control", "access_control_numeric"}
+        )
 
         if base_success and probe_deny:
             reason = "对象引用变异后返回 {}，更像访问控制生效而非越权".format(probe_status_code)
+            if mutation_kind in {"access_control", "access_control_numeric"}:
+                reason = "权限参数变异后返回 {}，更像垂直访问控制生效而非越权".format(probe_status_code)
             if summary_text:
                 reason = "{}；差异摘要：{}".format(reason, summary_text)
             return {
                 "decision": "likely_false_positive",
                 "confidence": 0.72,
+                "reason": reason,
+                "score": score,
+            }
+
+        if base_success and probe_success and vertical_like and score >= 8:
+            reason = "权限参数变异后仍可访问且出现高权限特征，疑似垂直越权可复现"
+            if summary_text:
+                reason = "{}；差异摘要：{}".format(reason, summary_text)
+            return {
+                "decision": "verified",
+                "confidence": 0.88 if len(admin_hits) >= 1 else 0.84,
                 "reason": reason,
                 "score": score,
             }
@@ -6089,6 +6235,8 @@ class WebSiteFetch(object):
 
         if base_deny and probe_success and score >= 8:
             reason = "对象引用变异后访问状态变化明显，疑似权限边界异常"
+            if mutation_kind in {"access_control", "access_control_numeric"}:
+                reason = "权限参数变异后访问状态变化明显，疑似垂直权限边界异常"
             if summary_text:
                 reason = "{}；差异摘要：{}".format(reason, summary_text)
             return {
@@ -6323,6 +6471,14 @@ class WebSiteFetch(object):
         seen = set()
         origin = "https://arl-probe.example"
         for candidate_url in candidate_urls:
+            baseline_get_step = {
+                "url": candidate_url,
+                "method": "get",
+                "allow_redirects": True,
+                "headers": {
+                    "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+                },
+            }
             get_step = {
                 "url": candidate_url,
                 "method": "get",
@@ -6342,7 +6498,7 @@ class WebSiteFetch(object):
                     "Access-Control-Request-Headers": "authorization,content-type",
                 },
             }
-            for step in (get_step, options_step):
+            for step in (baseline_get_step, options_step, get_step):
                 cache_key = json.dumps(step, ensure_ascii=False, sort_keys=True)
                 if cache_key in seen:
                     continue
@@ -6369,6 +6525,8 @@ class WebSiteFetch(object):
                 [
                     "/socket.io/?EIO=4&transport=polling&t=arlprobe",
                     "/socket.io/?EIO=3&transport=polling&t=arlprobe",
+                    "/socket.io/?EIO=4&transport=websocket&t=arlprobe",
+                    "/engine.io/?EIO=4&transport=polling&t=arlprobe",
                     "/sockjs/info",
                     "/sockjs-node/info",
                 ]
@@ -6377,6 +6535,8 @@ class WebSiteFetch(object):
                 candidate_paths.extend(
                     [
                         "/api/socket.io/?EIO=4&transport=polling&t=arlprobe",
+                        "/api/socket.io/?EIO=4&transport=websocket&t=arlprobe",
+                        "/api/engine.io/?EIO=4&transport=polling&t=arlprobe",
                         "/api/sockjs/info",
                     ]
                 )
@@ -7055,6 +7215,54 @@ class WebSiteFetch(object):
             "proof_type": proof_type,
         }
 
+    @staticmethod
+    def _web_policy_proof_rank(proof_type: str) -> int:
+        proof = str(proof_type or "").strip().lower()
+        score_map = {
+            "cors_credentialed_wildcard": 5,
+            "cors_credentialed_reflect_origin": 5,
+            "cors_wildcard": 4,
+            "cors_reflect_origin": 4,
+            "error_exposure": 4,
+            "weak_cache_policy": 3,
+            "missing_security_headers": 2,
+            "": 0,
+        }
+        return int(score_map.get(proof, 0) or 0)
+
+    @classmethod
+    def _merge_web_policy_probe_pair(cls, baseline_summary: dict, control_summary: dict):
+        baseline = baseline_summary if isinstance(baseline_summary, dict) else {}
+        control = control_summary if isinstance(control_summary, dict) else {}
+        if not control:
+            return {}
+
+        merged = dict(control)
+        if baseline:
+            merged["baseline_allow_origin"] = str(baseline.get("allow_origin") or "")[:120]
+            merged["baseline_status_code"] = cls._safe_int_value(baseline.get("status_code"), 0)
+            merged["baseline_missing_security_headers"] = [
+                str(item or "").strip()
+                for item in list(baseline.get("missing_security_headers", []) or [])[:6]
+                if str(item or "").strip()
+            ]
+            merged["pair_mode"] = "baseline_control"
+
+            if not str(merged.get("proof_type") or "").strip().lower():
+                baseline_missing = list(merged.get("baseline_missing_security_headers", []) or [])
+                control_missing = [
+                    str(item or "").strip()
+                    for item in list(merged.get("missing_security_headers", []) or [])[:6]
+                    if str(item or "").strip()
+                ]
+                if len(baseline_missing) >= 3 and len(control_missing) >= 3:
+                    merged["proof_type"] = "missing_security_headers"
+                elif bool(merged.get("weak_cache_policy")):
+                    merged["proof_type"] = "weak_cache_policy"
+                elif bool(merged.get("error_exposure")):
+                    merged["proof_type"] = "error_exposure"
+        return merged
+
     @classmethod
     def _classify_ai_pen_web_policy_outcome(cls, summary: dict):
         item = summary if isinstance(summary, dict) else {}
@@ -7102,6 +7310,7 @@ class WebSiteFetch(object):
         lower_body = str(body_text or "").strip().lower()
         header_obj = headers if isinstance(headers, dict) else {}
         content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        upgrade_header = str(header_obj.get("Upgrade", "") or "").strip().lower()
         status_value = int(status_code or 0)
 
         proof_type = ""
@@ -7109,6 +7318,8 @@ class WebSiteFetch(object):
             proof_type = "socketio_polling_open"
         elif "sockjs" in lower_url and '"websocket"' in lower_body and '"origins"' in lower_body:
             proof_type = "sockjs_info_open"
+        elif ("socket.io" in lower_url or "engine.io" in lower_url) and status_value == 101 and "websocket" in upgrade_header:
+            proof_type = "socketio_websocket_upgrade"
         elif ("socket.io" in lower_url or "sockjs" in lower_url) and status_value in {400, 403} and (
             "transport" in lower_body or "engine.io" in lower_body
         ):
@@ -7119,6 +7330,18 @@ class WebSiteFetch(object):
             "status_code": status_value,
             "content_type": content_type[:120],
         }
+
+    @staticmethod
+    def _socketio_proof_rank(proof_type: str) -> int:
+        proof = str(proof_type or "").strip().lower()
+        score_map = {
+            "socketio_polling_open": 4,
+            "sockjs_info_open": 4,
+            "socketio_websocket_upgrade": 3,
+            "transport_hint": 2,
+            "": 0,
+        }
+        return int(score_map.get(proof, 0) or 0)
 
     @classmethod
     def _looks_like_socketio_response(cls, url_text: str, body_text: str, headers=None, status_code: int = 0):
@@ -7131,6 +7354,7 @@ class WebSiteFetch(object):
         return str(summary.get("proof_type") or "").strip().lower() in {
             "socketio_polling_open",
             "sockjs_info_open",
+            "socketio_websocket_upgrade",
             "transport_hint",
         }
 
@@ -7462,19 +7686,75 @@ class WebSiteFetch(object):
         return tags[:4]
 
     @classmethod
-    def _build_api_surface_summary(cls, api_doc_summary=None, js_api_targets=None):
+    def _build_api_surface_summary(
+        cls,
+        api_doc_summary=None,
+        js_api_targets=None,
+        runtime_api_calls=None,
+        dom_form_summary=None,
+    ):
         doc_summary = api_doc_summary if isinstance(api_doc_summary, dict) else {}
         js_targets = list(js_api_targets or [])
+        runtime_calls = list(runtime_api_calls or [])
+        dom_forms = list(dom_form_summary or [])
 
         parameter_names = []
         parameter_seen = set()
         auth_paths = [str(item or "").strip() for item in list(doc_summary.get("auth_paths", []) or []) if str(item or "").strip()]
+        auth_path_seen = {item.lower() for item in auth_paths}
         sample_interfaces = []
+        sample_seen = set()
+        source_type_set = set()
 
         auth_like_count = cls._safe_int_value(doc_summary.get("auth_path_count"), 0)
         object_id_like_count = 0
         upload_like_count = 0
         download_like_count = 0
+
+        if doc_summary:
+            source_type_set.add("api_doc")
+
+        def append_param_name(raw_name, max_count=24):
+            text = str(raw_name or "").strip()
+            lowered = text.lower()
+            if not text or lowered in parameter_seen:
+                return False
+            parameter_seen.add(lowered)
+            parameter_names.append(text)
+            return True
+
+        def append_auth_path(raw_path):
+            path_text = str(raw_path or "").strip()
+            lowered = path_text.lower()
+            if not path_text or lowered in auth_path_seen:
+                return
+            auth_path_seen.add(lowered)
+            auth_paths.append(path_text)
+
+        def append_sample_interface(method_name: str, path_text: str, params, source_text: str):
+            method_text = str(method_name or "GET").strip().upper() or "GET"
+            path_value = str(path_text or "").strip()
+            if not path_value:
+                return
+            param_list = [str(param or "").strip() for param in list(params or []) if str(param or "").strip()]
+            cache_key = "{}|{}|{}|{}".format(method_text, path_value, ",".join(param_list[:8]), str(source_text or "").strip())
+            if cache_key in sample_seen:
+                return
+            sample_seen.add(cache_key)
+            sample_interfaces.append(
+                {
+                    "method": method_text,
+                    "path": path_value[:220],
+                    "params": param_list[:6],
+                    "source": str(source_text or "").strip()[:64] or "surface_merge",
+                }
+            )
+
+        # 统一收敛 api_doc/js/runtime/form/hidden 多源参数，供参数编排器与图谱摘要共用。
+        for doc_param in list(doc_summary.get("parameter_names", []) or []):
+            append_param_name(doc_param)
+            if len(parameter_names) >= 24:
+                break
 
         for item in js_targets:
             if not isinstance(item, dict):
@@ -7486,10 +7766,10 @@ class WebSiteFetch(object):
             path_text = str(urlsplit(url_text).path or "").strip()
             path_lower = path_text.lower()
 
+            source_type_set.add("js")
             if any(token in path_lower for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
                 auth_like_count += 1
-                if path_text and path_text not in auth_paths:
-                    auth_paths.append(path_text)
+                append_auth_path(path_text)
             if any(param.lower() in cls.AI_PEN_OBJECT_ID_PARAM_HINTS or param.lower().endswith("_id") for param in params):
                 object_id_like_count += 1
             if any(token in path_lower for token in cls.AI_PEN_UPLOAD_HINTS) or any("file" in param.lower() for param in params):
@@ -7498,31 +7778,145 @@ class WebSiteFetch(object):
                 download_like_count += 1
 
             for param in params:
-                lowered = param.lower()
-                if lowered not in parameter_seen:
-                    parameter_seen.add(lowered)
-                    parameter_names.append(param)
+                append_param_name(param)
+                if len(parameter_names) >= 24:
+                    break
+            append_sample_interface(
+                method_name=method_name,
+                path_text=path_text or url_text,
+                params=params,
+                source_text=source_text or "js_api_extract",
+            )
 
-            if len(sample_interfaces) < 6:
-                sample_interfaces.append(
-                    {
-                        "method": method_name,
-                        "path": path_text or url_text,
-                        "params": params[:6],
-                        "source": source_text or "js_api_extract",
-                    }
-                )
+        runtime_paths = cls._extract_runtime_api_paths(runtime_calls)
+        runtime_params = cls._extract_runtime_api_param_names(runtime_calls, max_count=24)
+        if runtime_paths or runtime_params:
+            source_type_set.add("runtime")
 
-        path_count = max(cls._safe_int_value(doc_summary.get("path_count"), 0), len(js_targets))
+        for runtime_path in runtime_paths:
+            lower_path = str(runtime_path or "").strip().lower()
+            if not lower_path:
+                continue
+            if any(token in lower_path for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
+                auth_like_count += 1
+                append_auth_path(runtime_path)
+            if any(token in lower_path for token in cls.AI_PEN_UPLOAD_HINTS):
+                upload_like_count += 1
+            if any(token in lower_path for token in cls.AI_PEN_DOWNLOAD_HINTS):
+                download_like_count += 1
+
+        for item in runtime_calls:
+            if not isinstance(item, dict):
+                continue
+            method_name = str(item.get("method") or "GET").strip().upper() or "GET"
+            url_text = str(item.get("url") or "").strip()
+            if not url_text:
+                continue
+            try:
+                parsed = urlsplit(url_text)
+                path_text = str(parsed.path or "").strip() or url_text
+                query_params = [str(key or "").strip() for key, _ in parse_qsl(parsed.query, keep_blank_values=True) if str(key or "").strip()]
+            except Exception:
+                path_text = url_text
+                query_params = []
+            append_sample_interface(
+                method_name=method_name,
+                path_text=path_text,
+                params=query_params,
+                source_text="runtime_api",
+            )
+
+        for param_name in runtime_params:
+            append_param_name(param_name)
+            if len(parameter_names) >= 24:
+                break
+
+        form_fields = cls._extract_form_field_names(dom_forms)
+        hidden_fields = cls._extract_form_hidden_field_names(dom_forms, max_count=24)
+        if form_fields:
+            source_type_set.add("form")
+        if hidden_fields:
+            source_type_set.add("hidden")
+
+        for form_item in dom_forms:
+            if not isinstance(form_item, dict):
+                continue
+            fields = [str(field or "").strip() for field in str(form_item.get("fields") or "").split(",") if str(field or "").strip()]
+            lowered_fields = [field.lower() for field in fields]
+            has_password = str(form_item.get("has_password_input") or "").strip().lower() in {"1", "true", "yes"} or any(
+                token in lowered_fields for token in ("password", "passwd", "pwd")
+            )
+            has_file = str(form_item.get("has_file_input") or "").strip().lower() in {"1", "true", "yes"} or any(
+                "file" in token or "attachment" in token or "avatar" in token for token in lowered_fields
+            )
+            action_text = str(form_item.get("action") or "").strip()
+            try:
+                action_path = str(urlsplit(action_text).path or "").strip()
+            except Exception:
+                action_path = action_text
+            action_lower = action_path.lower()
+
+            if has_password:
+                auth_like_count += 1
+            if has_file:
+                upload_like_count += 1
+            if any(token in action_lower for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
+                append_auth_path(action_path)
+            if any(token in action_lower for token in cls.AI_PEN_DOWNLOAD_HINTS):
+                download_like_count += 1
+
+            append_sample_interface(
+                method_name=str(form_item.get("method") or "POST").strip().upper() or "POST",
+                path_text=action_path or action_text,
+                params=fields,
+                source_text="dom_form",
+            )
+
+        for field_name in form_fields:
+            append_param_name(field_name)
+            if len(parameter_names) >= 24:
+                break
+        for hidden_name in hidden_fields:
+            append_param_name(hidden_name)
+            if len(parameter_names) >= 24:
+                break
+
+        object_id_param_count = 0
+        for param_name in parameter_names:
+            lowered = str(param_name or "").strip().lower()
+            if lowered in cls.AI_PEN_OBJECT_ID_PARAM_HINTS or lowered.endswith("_id"):
+                object_id_param_count += 1
+        if object_id_param_count > object_id_like_count:
+            object_id_like_count = object_id_param_count
+
+        path_count = max(
+            cls._safe_int_value(doc_summary.get("path_count"), 0),
+            len(js_targets),
+            len(runtime_paths),
+            len(sample_interfaces),
+        )
         security_scheme_count = cls._safe_int_value(doc_summary.get("security_scheme_count"), 0)
-        if any(token.lower() in {"authorization", "token"} for token in parameter_seen):
+        if any(token in parameter_seen for token in ("authorization", "token", "access_token", "refresh_token", "id_token", "jwt")):
             security_scheme_count = max(security_scheme_count, 1)
 
         sample_paths = [str(item or "").strip() for item in list(doc_summary.get("sample_paths", []) or []) if str(item or "").strip()]
         if not sample_paths:
             sample_paths = [str(item.get("path") or "").strip() for item in sample_interfaces if str(item.get("path") or "").strip()]
+        else:
+            merged_sample_paths = list(sample_paths)
+            seen_sample_paths = {str(item or "").strip().lower() for item in merged_sample_paths}
+            for sample in sample_interfaces:
+                path_text = str(sample.get("path") or "").strip()
+                lowered = path_text.lower()
+                if not path_text or lowered in seen_sample_paths:
+                    continue
+                seen_sample_paths.add(lowered)
+                merged_sample_paths.append(path_text)
+                if len(merged_sample_paths) >= 8:
+                    break
+            sample_paths = merged_sample_paths
 
-        final_parameter_names = parameter_names[:12] or list(doc_summary.get("parameter_names", []) or [])[:12]
+        final_parameter_names = parameter_names[:16]
         parameter_assets = []
         parameter_tag_stats = {}
         for param_name in final_parameter_names:
@@ -7533,6 +7927,11 @@ class WebSiteFetch(object):
             parameter_assets.append({"name": name_text, "tags": tags})
             for tag in tags:
                 parameter_tag_stats[tag] = int(parameter_tag_stats.get(tag, 0) or 0) + 1
+
+        ordered_source_types = []
+        for source_name in ("api_doc", "js", "runtime", "form", "hidden"):
+            if source_name in source_type_set:
+                ordered_source_types.append(source_name)
 
         return {
             "path_count": path_count,
@@ -7548,7 +7947,7 @@ class WebSiteFetch(object):
             "download_like_count": download_like_count,
             "js_api_count": len(js_targets),
             "sample_interfaces": sample_interfaces[:6],
-            "source_types": [item for item in ["api_doc" if doc_summary else "", "js" if js_targets else ""] if item],
+            "source_types": ordered_source_types,
         }
 
     @classmethod
@@ -7587,10 +7986,15 @@ class WebSiteFetch(object):
         for item in dom_form_summary or []:
             if not isinstance(item, dict):
                 continue
-            fields_text = str(item.get("fields") or "").strip()
-            if not fields_text:
-                continue
-            for field_name in fields_text.split(","):
+            raw_fields = item.get("fields")
+            if isinstance(raw_fields, list):
+                iter_fields = raw_fields
+            else:
+                fields_text = str(raw_fields or "").strip()
+                if not fields_text:
+                    continue
+                iter_fields = fields_text.split(",")
+            for field_name in iter_fields:
                 text = str(field_name or "").strip()
                 lowered = text.lower()
                 if not text or lowered in seen:
@@ -7599,6 +8003,98 @@ class WebSiteFetch(object):
                 results.append(text)
                 if len(results) >= 12:
                     return results
+        return results
+
+    @staticmethod
+    def _extract_form_hidden_field_names(dom_form_summary, max_count=12):
+        results = []
+        seen = set()
+        limit = max(1, int(max_count or 1))
+        for item in dom_form_summary or []:
+            if not isinstance(item, dict):
+                continue
+            hidden_obj = item.get("hidden_fields")
+            if isinstance(hidden_obj, dict):
+                iterable = hidden_obj.keys()
+            elif isinstance(hidden_obj, list):
+                iterable = hidden_obj
+            else:
+                hidden_text = str(hidden_obj or "").strip()
+                iterable = hidden_text.split(",") if hidden_text else []
+            for field_name in iterable:
+                text = str(field_name or "").strip()
+                lowered = text.lower()
+                if not text or lowered in seen:
+                    continue
+                seen.add(lowered)
+                results.append(text)
+                if len(results) >= limit:
+                    return results
+        return results
+
+    @classmethod
+    def _extract_runtime_api_param_names(cls, runtime_api_calls, max_count=16):
+        results = []
+        seen = set()
+        limit = max(1, int(max_count or 1))
+
+        def append_name(raw_name):
+            text = str(raw_name or "").strip()
+            lowered = text.lower()
+            if not text or lowered in seen:
+                return
+            seen.add(lowered)
+            results.append(text)
+
+        def append_from_kv_text(text_value: str):
+            text = str(text_value or "").strip()
+            if not text or "=" not in text:
+                return
+            for key_text, _ in parse_qsl(text, keep_blank_values=True):
+                append_name(key_text)
+                if len(results) >= limit:
+                    return
+
+        for item in runtime_api_calls or []:
+            if not isinstance(item, dict):
+                continue
+
+            url_text = str(item.get("url") or "").strip()
+            if url_text:
+                try:
+                    parsed = urlsplit(url_text)
+                    for key_text, _ in parse_qsl(parsed.query, keep_blank_values=True):
+                        append_name(key_text)
+                        if len(results) >= limit:
+                            return results
+                except Exception:
+                    pass
+
+            for key_name in ("params", "query_params", "form_data", "json_data"):
+                data_obj = item.get(key_name)
+                if isinstance(data_obj, dict):
+                    for field_name in data_obj.keys():
+                        append_name(field_name)
+                        if len(results) >= limit:
+                            return results
+
+            for key_name in ("body", "request_body"):
+                text_value = str(item.get(key_name) or "").strip()
+                if not text_value:
+                    continue
+                append_from_kv_text(text_value)
+                if len(results) >= limit:
+                    return results
+                if text_value.startswith("{") and len(text_value) <= 2400:
+                    try:
+                        body_obj = json.loads(text_value)
+                    except Exception:
+                        body_obj = {}
+                    if isinstance(body_obj, dict):
+                        for field_name in body_obj.keys():
+                            append_name(field_name)
+                            if len(results) >= limit:
+                                return results
         return results
 
     @staticmethod
@@ -7764,6 +8260,135 @@ class WebSiteFetch(object):
             "captcha_required": bool(captcha_required),
             "hidden_fields": hidden_fields,
             "fields": candidate_fields[:12],
+        }
+
+    @classmethod
+    def _build_ai_pen_login_followup_targets(cls, target_url: str, login_context=None, candidate: dict = None):
+        """
+        汇总登录后会话跟进目标，优先选择用户态接口/工作台，再补退出路径。
+        """
+        item = candidate if isinstance(candidate, dict) else {}
+        context = login_context if isinstance(login_context, dict) else {}
+        summary = item.get("login_surface_summary") if isinstance(item.get("login_surface_summary"), dict) else {}
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        runtime_api_calls = list(item.get("runtime_api_calls", []) or [])
+        browser_surface_summary = item.get("browser_surface_summary") if isinstance(item.get("browser_surface_summary"), dict) else {}
+
+        base_url = str(context.get("login_url") or target_url or "").strip()
+        if not cls._is_http_target(base_url):
+            base_url = str(target_url or "").strip()
+        if not cls._is_http_target(base_url):
+            return {"session_targets": [], "logout_targets": []}
+
+        try:
+            parsed_base = urlsplit(base_url)
+            base_origin = "{}://{}".format(parsed_base.scheme, parsed_base.netloc)
+            base_path = str(parsed_base.path or "/").strip() or "/"
+        except Exception:
+            base_origin = ""
+            base_path = "/"
+
+        session_targets = []
+        logout_targets = []
+        seen_session = set()
+        seen_logout = set()
+
+        def _resolve_http_url(raw_value):
+            text = str(raw_value or "").strip()
+            if not text:
+                return ""
+            if text.startswith(("ws://", "wss://")):
+                return ""
+            if text.startswith(("http://", "https://")):
+                return text
+            if text.startswith("//"):
+                return "{}:{}".format(str(urlsplit(base_url).scheme or "https"), text)
+            return urljoin(base_url, text)
+
+        def _append_session_target(raw_value):
+            resolved = _resolve_http_url(raw_value)
+            if not cls._is_http_target(resolved):
+                return
+            try:
+                path_lower = str(urlsplit(resolved).path or "").strip().lower()
+            except Exception:
+                path_lower = resolved.lower()
+            if not path_lower:
+                return
+            if any(token in path_lower for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS):
+                return
+            if any(token in path_lower for token in cls.AI_PEN_CAPTCHA_HINTS):
+                return
+            if any(token in path_lower for token in cls.AI_PEN_LOGOUT_PATH_KEYWORDS):
+                return
+            if not any(token in path_lower for token in cls.AI_PEN_SESSION_CHECK_PATH_KEYWORDS):
+                return
+            if resolved in seen_session:
+                return
+            seen_session.add(resolved)
+            session_targets.append(resolved)
+
+        def _append_logout_target(raw_value):
+            resolved = _resolve_http_url(raw_value)
+            if not cls._is_http_target(resolved):
+                return
+            try:
+                path_lower = str(urlsplit(resolved).path or "").strip().lower()
+            except Exception:
+                path_lower = resolved.lower()
+            if not path_lower or not any(token in path_lower for token in cls.AI_PEN_LOGOUT_PATH_KEYWORDS):
+                return
+            if resolved in seen_logout:
+                return
+            seen_logout.add(resolved)
+            logout_targets.append(resolved)
+
+        for raw_value in list(summary.get("runtime_auth_paths", []) or []):
+            _append_session_target(raw_value)
+            _append_logout_target(raw_value)
+        for raw_value in list(summary.get("auth_api_paths", []) or []):
+            _append_session_target(raw_value)
+            _append_logout_target(raw_value)
+        for raw_value in list(api_surface_summary.get("auth_paths", []) or []):
+            _append_session_target(raw_value)
+            _append_logout_target(raw_value)
+        for raw_value in list(api_surface_summary.get("sample_paths", []) or []):
+            _append_session_target(raw_value)
+            _append_logout_target(raw_value)
+        for sample in list(api_surface_summary.get("sample_interfaces", []) or []):
+            if not isinstance(sample, dict):
+                continue
+            _append_session_target(sample.get("path"))
+            _append_logout_target(sample.get("path"))
+        for raw_value in cls._extract_runtime_api_paths(runtime_api_calls):
+            _append_session_target(raw_value)
+            _append_logout_target(raw_value)
+        _append_session_target(browser_surface_summary.get("page_url"))
+        _append_logout_target(browser_surface_summary.get("page_url"))
+
+        if not session_targets:
+            for default_path in ("/api/me", "/api/user/profile", "/api/account/current", "/dashboard"):
+                _append_session_target("{}{}".format(base_origin, default_path) if base_origin else default_path)
+                if session_targets:
+                    break
+
+        if not logout_targets:
+            parent_path = str(base_path.rsplit("/", 1)[0] or "/").strip() or "/"
+            derived_logout_paths = []
+            if parent_path and parent_path != "/":
+                derived_logout_paths.extend(
+                    [
+                        "{}/logout".format(parent_path.rstrip("/")),
+                        "{}/signout".format(parent_path.rstrip("/")),
+                    ]
+                )
+            derived_logout_paths.extend(["/logout", "/signout"])
+            for logout_path in derived_logout_paths:
+                _append_logout_target("{}{}".format(base_origin, logout_path) if base_origin else logout_path)
+
+        return {
+            "session_targets": session_targets[:3],
+            "logout_targets": logout_targets[:2],
         }
 
     @classmethod
@@ -8047,6 +8672,134 @@ class WebSiteFetch(object):
             "success": False,
             "blocked": False,
             "reason": "未观察到稳定的登录成功信号",
+            "final_url": final_url,
+        }
+
+    @classmethod
+    def _analyze_ai_pen_session_request(cls, login_url: str, response_summary):
+        response_obj = response_summary if isinstance(response_summary, dict) else {}
+        headers = response_obj.get("headers") if isinstance(response_obj.get("headers"), dict) else {}
+        body_text = str(response_obj.get("body_text") or "").strip()
+        body_lower = body_text.lower()
+        status_code = cls._safe_int_value(response_obj.get("status_code"), 0)
+        request_url = str(response_obj.get("request_url") or response_obj.get("url") or "").strip()
+        final_url = str(response_obj.get("url") or request_url or "").strip()
+        content_type = str(headers.get("Content-Type") or headers.get("content-type") or "").strip().lower()
+
+        try:
+            login_path = str(urlsplit(str(login_url or "")).path or "").strip().lower()
+        except Exception:
+            login_path = str(login_url or "").strip().lower()
+        try:
+            request_path = str(urlsplit(request_url).path or "").strip().lower()
+        except Exception:
+            request_path = request_url.lower()
+        try:
+            final_path = str(urlsplit(final_url).path or "").strip().lower()
+        except Exception:
+            final_path = final_url.lower()
+
+        if status_code in {401, 403}:
+            return {
+                "authenticated": False,
+                "reason": "会话跟进请求返回 {}，更像未获得可用登录态".format(status_code),
+                "final_url": final_url,
+            }
+
+        if any(token in body_lower for token in cls.AI_PEN_LOGIN_BLOCK_KEYWORDS):
+            return {
+                "authenticated": False,
+                "reason": "会话跟进请求出现验证码/锁定提示，当前登录态不稳定",
+                "final_url": final_url,
+            }
+
+        login_like_return = (
+            any(token in final_path for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS)
+            or any(token in request_path for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS)
+            or any(token in body_lower for token in cls.AI_PEN_LOGIN_FAILURE_KEYWORDS)
+        )
+        if login_like_return:
+            return {
+                "authenticated": False,
+                "reason": "会话跟进请求回到登录/失败语义页面，未形成稳定会话",
+                "final_url": final_url,
+            }
+
+        identity_markers = [token for token in cls.AI_PEN_IDOR_SENSITIVE_MARKERS if token in body_lower][:4]
+        session_path_hit = any(token in request_path or token in final_path for token in cls.AI_PEN_SESSION_CHECK_PATH_KEYWORDS)
+        json_identity_hit = "application/json" in content_type and any(
+            token in body_lower for token in ('"user"', '"username"', '"email"', '"role"', '"permission"', '"tenant"', '"account"')
+        )
+
+        if status_code in {200, 201, 204} and (session_path_hit or identity_markers or json_identity_hit):
+            reason = "登录后会话可访问认证后路径"
+            if identity_markers:
+                reason = "{}，并返回身份/权限字段".format(reason)
+            elif json_identity_hit:
+                reason = "{}，并返回用户态 JSON 数据".format(reason)
+            return {
+                "authenticated": True,
+                "reason": reason,
+                "final_url": final_url,
+            }
+
+        if status_code in {200, 201, 204} and final_path and final_path != login_path:
+            return {
+                "authenticated": True,
+                "reason": "登录后会话已离开登录路径并保持可访问",
+                "final_url": final_url,
+            }
+
+        return {
+            "authenticated": False,
+            "reason": "未观察到稳定的认证后资源访问信号",
+            "final_url": final_url,
+        }
+
+    @classmethod
+    def _analyze_ai_pen_logout_probe(cls, login_url: str, response_summary):
+        response_obj = response_summary if isinstance(response_summary, dict) else {}
+        headers = response_obj.get("headers") if isinstance(response_obj.get("headers"), dict) else {}
+        body_text = str(response_obj.get("body_text") or "").strip()
+        body_lower = body_text.lower()
+        final_url = str(response_obj.get("url") or login_url or "").strip()
+        location_value = str(headers.get("Location") or headers.get("location") or "").strip()
+
+        try:
+            final_path = str(urlsplit(final_url).path or "").strip().lower()
+        except Exception:
+            final_path = final_url.lower()
+
+        if any(token in final_path for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS):
+            return {
+                "logout_effective": True,
+                "reason": "退出探针后返回登录路径",
+                "final_url": final_url,
+            }
+
+        if any(token in body_lower for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS):
+            return {
+                "logout_effective": True,
+                "reason": "退出探针后页面出现登录语义",
+                "final_url": final_url,
+            }
+
+        if location_value:
+            resolved_location = urljoin(final_url or login_url, location_value)
+            try:
+                location_path = str(urlsplit(resolved_location).path or "").strip().lower()
+            except Exception:
+                location_path = resolved_location.lower()
+            if any(token in location_path for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS):
+                return {
+                    "logout_effective": True,
+                    "reason": "退出探针后重定向回登录路径",
+                    "final_url": resolved_location,
+                }
+
+        return {
+            "logout_effective": False,
+            "reason": "未观察到明确的退出后回到登录页信号",
             "final_url": final_url,
         }
 
@@ -8680,6 +9433,104 @@ class WebSiteFetch(object):
             return urlunsplit((scheme, parsed.netloc, path_text, parsed.query, parsed.fragment))
         except Exception:
             return ""
+
+    @classmethod
+    def _extract_websocket_candidate_paths(cls, candidate: dict):
+        """
+        汇总多源实时通道路径线索，供 websocket/socket.io 编排复用。
+        """
+        item = candidate if isinstance(candidate, dict) else {}
+        summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        runtime_api_calls = list(item.get("runtime_api_calls", []) or [])
+
+        results = []
+        seen = set()
+
+        def append_value(raw_value):
+            text = str(raw_value or "").strip()
+            lowered = text.lower()
+            if not text or lowered in seen:
+                return
+            seen.add(lowered)
+            results.append(text)
+
+        for raw_path in list(summary.get("sample_paths", []) or []):
+            append_value(raw_path)
+        for sample in list(summary.get("sample_interfaces", []) or []):
+            if not isinstance(sample, dict):
+                continue
+            append_value(sample.get("path"))
+        for runtime_path in cls._extract_runtime_api_paths(runtime_api_calls):
+            append_value(runtime_path)
+        return results[:12]
+
+    @classmethod
+    def _build_websocket_probe_targets(cls, target_url: str, candidate_paths=None, max_count=4):
+        """
+        基于目标 URL 与 runtime/sample path 线索构造 WebSocket 握手候选。
+        """
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return []
+
+        realtime_tokens = ("socket", "sockjs", "engine.io", "websocket", "/ws")
+        raw_candidates = []
+        for raw_path in list(candidate_paths or []):
+            text = str(raw_path or "").strip()
+            if text:
+                raw_candidates.append(text)
+
+        try:
+            parsed = urlsplit(url_text)
+            base_origin = ""
+            if str(parsed.scheme or "").strip() and str(parsed.netloc or "").strip():
+                base_scheme = str(parsed.scheme or "").strip()
+                if base_scheme == "ws":
+                    base_scheme = "http"
+                elif base_scheme == "wss":
+                    base_scheme = "https"
+                base_origin = "{}://{}".format(base_scheme, parsed.netloc)
+            path_lower = str(parsed.path or "").strip().lower()
+        except Exception:
+            base_origin = ""
+            path_lower = ""
+
+        target_is_realtime_like = any(token in path_lower for token in realtime_tokens)
+        if target_is_realtime_like:
+            raw_candidates.insert(0, url_text)
+        else:
+            raw_candidates.extend(("/ws", "/websocket", "/socket", "/api/ws", "/api/websocket"))
+            raw_candidates.append(url_text)
+
+        results = []
+        seen = set()
+        for raw_target in raw_candidates:
+            raw_text = str(raw_target or "").strip()
+            if not raw_text:
+                continue
+
+            resolved = raw_text
+            if raw_text.startswith("//"):
+                try:
+                    scheme = str(urlsplit(url_text).scheme or "https").strip() or "https"
+                    resolved = "{}:{}".format(scheme, raw_text)
+                except Exception:
+                    resolved = "https:{}".format(raw_text)
+            elif raw_text.startswith("/"):
+                if not base_origin:
+                    continue
+                resolved = "{}{}".format(base_origin, raw_text)
+            elif not raw_text.startswith(("http://", "https://", "ws://", "wss://")):
+                resolved = urljoin(url_text, raw_text)
+
+            handshake_url = cls._build_websocket_handshake_url(resolved)
+            if not handshake_url or handshake_url in seen:
+                continue
+            seen.add(handshake_url)
+            results.append(handshake_url)
+            if len(results) >= max(1, int(max_count or 1)):
+                break
+        return results
 
     @classmethod
     def _is_sensitive_wih_record(cls, record_type: str, content: str):
@@ -9339,6 +10190,310 @@ class WebSiteFetch(object):
         return steps
 
     @classmethod
+    def _build_ai_pen_param_orchestrated_tool_plan(cls, candidate: dict, max_steps: int = 4):
+        """
+        参数标签驱动编排器：
+        - 在 replay/无明确 payload_type 时，按参数语义自动补齐低副作用探针链。
+        - 仅使用已注册工具，优先覆盖 IDOR/路径穿越/SSRF/文件/策略/实时通道等能力。
+        """
+        item = candidate if isinstance(candidate, dict) else {}
+        target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+        if not target_url:
+            return []
+
+        budget = max(1, int(max_steps or 1))
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        graph_summary = item.get("task_ai_pen_graph_summary") if isinstance(item.get("task_ai_pen_graph_summary"), dict) else {}
+        risk_type_text = str(item.get("risk_type") or "").strip().lower()
+        risk_name_text = str(item.get("risk_name") or "").strip().lower()
+        route_hint_text = str(item.get("route_hint") or "").strip().lower()
+        merged_hint_text = " ".join([risk_type_text, risk_name_text, route_hint_text]).strip().lower()
+        realtime_candidates = cls._extract_websocket_candidate_paths(item)
+        realtime_hint_text = " ".join(
+            [merged_hint_text] + [str(path or "").strip().lower() for path in realtime_candidates]
+        ).strip()
+
+        param_tags = []
+        seen_tags = set()
+
+        def append_tag(raw_tag):
+            tag_text = str(raw_tag or "").strip().lower()
+            if not tag_text or tag_text in seen_tags:
+                return
+            seen_tags.add(tag_text)
+            param_tags.append(tag_text)
+
+        parameter_assets = list(api_surface_summary.get("parameter_assets", []) or [])
+        parameter_names = [str(x or "").strip() for x in list(api_surface_summary.get("parameter_names", []) or []) if str(x or "").strip()]
+        parameter_names.extend(
+            [str(x or "").strip() for x in list(graph_summary.get("top_params", []) or []) if str(x or "").strip()]
+        )
+
+        for asset in parameter_assets:
+            if not isinstance(asset, dict):
+                continue
+            for tag_name in list(asset.get("tags", []) or []):
+                append_tag(tag_name)
+
+        for param_name in parameter_names:
+            for tag_name in cls._tag_ai_pen_parameter_name(param_name):
+                append_tag(tag_name)
+
+        for tag_name in list(graph_summary.get("top_param_tags", []) or []):
+            append_tag(tag_name)
+
+        upload_like_count = cls._safe_int_value(api_surface_summary.get("upload_like_count"), 0)
+        download_like_count = cls._safe_int_value(api_surface_summary.get("download_like_count"), 0)
+        auth_like = (
+            cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0) > 0
+            or cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0) > 0
+        )
+        web_policy_hint = any(token in merged_hint_text for token in cls.AI_PEN_WEB_POLICY_HINTS)
+        socketio_hint = any(
+            token in realtime_hint_text for token in ("socket.io", "sockjs", "engine.io", "realtime_channel_surface")
+        )
+        websocket_hint = bool(route_hint_text == "websocket_handshake" or risk_type_text == "websocket") or any(
+            token in realtime_hint_text for token in ("websocket", "ws://", "wss://", "/ws", "/websocket", "upgrade")
+        )
+
+        tool_priority = []
+
+        def queue_tool(tool_name):
+            if tool_name not in cls.AI_PEN_RUNTIME_TOOL_NAMES:
+                return
+            if tool_name in tool_priority:
+                return
+            tool_priority.append(tool_name)
+
+        if "object_id" in param_tags or "access_control" in param_tags:
+            queue_tool("idor_probe")
+        if "file_path" in param_tags:
+            queue_tool("path_traversal_probe")
+        if "url" in param_tags or "host" in param_tags:
+            queue_tool("ssrf_probe")
+        if "command" in param_tags:
+            queue_tool("cmdi_probe")
+        if "template" in param_tags:
+            queue_tool("ssti_probe")
+        if "xml" in param_tags:
+            queue_tool("xxe_probe")
+        if "input" in param_tags:
+            queue_tool("sqli_probe")
+        if upload_like_count > 0:
+            queue_tool("upload_probe")
+        if download_like_count > 0:
+            queue_tool("file_probe")
+        if auth_like and ("auth" in param_tags):
+            queue_tool("jwt_probe")
+        if web_policy_hint:
+            queue_tool("web_policy_probe")
+        if socketio_hint:
+            queue_tool("socketio_probe")
+        if websocket_hint:
+            queue_tool("websocket_probe")
+
+        payload_seed_map = {
+            "sqli_probe": "' OR '1'='1",
+            "xss_probe": "<svg/onload=alert(1)>",
+            "ssrf_probe": "http://127.0.0.1/",
+            "cmdi_probe": ";id",
+            "ssti_probe": "{{7*7}}",
+            "xxe_probe": "<!DOCTYPE xxe>",
+        }
+        plan = []
+
+        for tool_name in tool_priority:
+            remain = budget - len(plan)
+            if remain <= 0:
+                break
+
+            if tool_name == "idor_probe":
+                for target in cls._build_idor_probe_targets(target_url, max_count=remain):
+                    target_url_text = str(target.get("url") or "").strip()
+                    if not target_url_text:
+                        continue
+                    plan.append(
+                        {
+                            "tool": "idor_probe",
+                            "params": {
+                                "url": target_url_text,
+                                "method": "get",
+                                "allow_redirects": True,
+                            },
+                            "summary": "参数标签驱动 IDOR 变异探针",
+                        }
+                    )
+                    if len(plan) >= budget:
+                        break
+                continue
+
+            if tool_name == "path_traversal_probe":
+                for probe_url in cls._build_path_traversal_probe_targets(target_url, max_count=remain):
+                    if not str(probe_url or "").strip():
+                        continue
+                    plan.append(
+                        {
+                            "tool": "path_traversal_probe",
+                            "params": {
+                                "url": str(probe_url),
+                                "method": "get",
+                                "allow_redirects": True,
+                            },
+                            "summary": "参数标签驱动路径穿越探针",
+                        }
+                    )
+                    if len(plan) >= budget:
+                        break
+                continue
+
+            if tool_name == "web_policy_probe":
+                for step in cls._build_web_policy_probe_steps(target_url, max_count=remain):
+                    plan.append(
+                        {
+                            "tool": "web_policy_probe",
+                            "params": {
+                                "url": str(step.get("url") or target_url),
+                                "method": str(step.get("method") or "get"),
+                                "allow_redirects": bool(step.get("allow_redirects", True)),
+                                "headers": dict(step.get("headers") or {}),
+                            },
+                            "summary": "参数标签驱动 Web 策略探针",
+                        }
+                    )
+                    if len(plan) >= budget:
+                        break
+                continue
+
+            if tool_name == "socketio_probe":
+                for sio_url in cls._build_socketio_probe_targets(target_url, max_count=remain):
+                    plan.append(
+                        {
+                            "tool": "socketio_probe",
+                            "params": {
+                                "url": str(sio_url),
+                                "method": "get",
+                                "allow_redirects": True,
+                            },
+                            "summary": "参数标签驱动 Socket.IO/SockJS 探针",
+                        }
+                    )
+                    if len(plan) >= budget:
+                        break
+                continue
+
+            if tool_name == "websocket_probe":
+                for ws_url in cls._build_websocket_probe_targets(
+                    target_url,
+                    candidate_paths=realtime_candidates,
+                    max_count=remain,
+                ):
+                    plan.append(
+                        {
+                            "tool": "websocket_probe",
+                            "params": {
+                                "url": str(ws_url),
+                                "method": "get",
+                                "allow_redirects": False,
+                                "headers": {
+                                    "Connection": "Upgrade",
+                                    "Upgrade": "websocket",
+                                    "Sec-WebSocket-Version": "13",
+                                    "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+                                },
+                            },
+                            "summary": "参数标签驱动 WebSocket 握手探针",
+                        }
+                    )
+                    if len(plan) >= budget:
+                        break
+                continue
+
+            if tool_name in {"upload_probe", "file_probe"}:
+                file_probe_context = cls._build_ai_pen_file_probe_context(
+                    target_url=target_url,
+                    risk_type=str(item.get("risk_type") or ""),
+                    body_text="",
+                    api_surface_summary=api_surface_summary,
+                    dom_form_summary=item.get("dom_form_summary"),
+                )
+                probe_url = str(file_probe_context.get("probe_url") or target_url).strip() or target_url
+                if tool_name == "upload_probe":
+                    plan.append(
+                        {
+                            "tool": "upload_probe",
+                            "params": {
+                                "url": probe_url,
+                                "method": "post",
+                                "allow_redirects": True,
+                                "form_data": dict(file_probe_context.get("hidden_fields") or {}),
+                                "file_field": str(file_probe_context.get("file_field") or "file"),
+                                "file_name": "arl-safe-upload.txt",
+                                "file_content": "ARL_SAFE_UPLOAD_PROBE",
+                                "file_content_type": "text/plain",
+                            },
+                            "summary": "参数标签驱动上传探针",
+                        }
+                    )
+                else:
+                    plan.append(
+                        {
+                            "tool": "file_probe",
+                            "params": {
+                                "url": probe_url,
+                                "method": "get",
+                                "allow_redirects": True,
+                            },
+                            "summary": "参数标签驱动下载/导出探针",
+                        }
+                    )
+                continue
+
+            if tool_name == "jwt_probe":
+                plan.append(
+                    {
+                        "tool": "jwt_probe",
+                        "params": {
+                            "url": target_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "参数标签驱动鉴权链探针",
+                    }
+                )
+                continue
+
+            payload_seed = str(payload_seed_map.get(tool_name, "") or "").strip()
+            if tool_name in {"xss_probe", "sqli_probe", "ssrf_probe", "cmdi_probe", "ssti_probe", "xxe_probe"} and payload_seed:
+                probe_url = cls._build_probe_url_with_payload(target_url, payload_seed) or target_url
+                plan.append(
+                    {
+                        "tool": tool_name,
+                        "params": {
+                            "url": probe_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "参数标签驱动 {} 探针".format(tool_name),
+                    }
+                )
+
+        if not plan and ("input" in param_tags or parameter_names):
+            fallback_probe_url = cls._build_probe_url_with_payload(target_url, "' OR '1'='1") or target_url
+            plan.append(
+                {
+                    "tool": "sqli_probe",
+                    "params": {
+                        "url": fallback_probe_url,
+                        "method": "get",
+                        "allow_redirects": True,
+                    },
+                    "summary": "参数标签驱动通用注入探针",
+                }
+            )
+
+        return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=budget)
+
+    @classmethod
     def _infer_ai_pen_tool_plan(cls, candidate: dict, payload_type: str, payload: str, max_steps: int = 4):
         item = candidate if isinstance(candidate, dict) else {}
         target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
@@ -9487,6 +10642,11 @@ class WebSiteFetch(object):
                 )
                 if credential_candidates:
                     credential_item = credential_candidates[0]
+                    followup_targets = cls._build_ai_pen_login_followup_targets(
+                        target_url=target_url,
+                        login_context=login_context,
+                        candidate=item,
+                    )
                     form_data = dict(login_context.get("hidden_fields") or {})
                     form_data[str(login_context.get("username_field") or "username")] = str(credential_item.get("username") or "")
                     form_data[str(login_context.get("password_field") or "password")] = str(credential_item.get("password") or "")
@@ -9545,6 +10705,32 @@ class WebSiteFetch(object):
                                 "summary": "登录成功判定",
                             }
                         )
+                    if budget >= 5 and list(followup_targets.get("session_targets", []) or []):
+                        plan.append(
+                            {
+                                "tool": "session_request",
+                                "params": {
+                                    "url": str(list(followup_targets.get("session_targets", []) or [])[0] or target_url),
+                                    "session_key": "weak_password",
+                                    "method": "get",
+                                    "allow_redirects": True,
+                                },
+                                "summary": "登录后会话跟进请求",
+                            }
+                        )
+                    if budget >= 6 and list(followup_targets.get("logout_targets", []) or []):
+                        plan.append(
+                            {
+                                "tool": "logout_probe",
+                                "params": {
+                                    "url": str(list(followup_targets.get("logout_targets", []) or [])[0] or target_url),
+                                    "session_key": "weak_password",
+                                    "method": "get",
+                                    "allow_redirects": True,
+                                },
+                                "summary": "登录后退出探针",
+                            }
+                        )
                     return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
         if payload_type_text == "config_probe" or any(
@@ -9576,8 +10762,12 @@ class WebSiteFetch(object):
             return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
         if payload_type_text == "websocket_probe":
-            ws_url = cls._build_websocket_handshake_url(target_url)
-            if ws_url:
+            websocket_candidates = cls._extract_websocket_candidate_paths(item)
+            for ws_url in cls._build_websocket_probe_targets(
+                target_url,
+                candidate_paths=websocket_candidates,
+                max_count=max_steps,
+            ):
                 plan.append(
                     {
                         "tool": "websocket_probe",
@@ -9595,6 +10785,7 @@ class WebSiteFetch(object):
                         "summary": "复测 WebSocket 握手入口",
                     }
                 )
+            return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
         elif payload_type_text == "jwt_probe":
             jwt_candidates = cls._extract_jwt_candidates(
                 payload,
@@ -9651,7 +10842,14 @@ class WebSiteFetch(object):
                         "summary": "探测 OAuth/OIDC 协议端点",
                     }
                 )
-        return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+        normalized_plan = cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+        if normalized_plan:
+            return normalized_plan
+
+        param_plan = cls._build_ai_pen_param_orchestrated_tool_plan(item, max_steps=max_steps)
+        if param_plan:
+            return param_plan
+        return normalized_plan
 
     @classmethod
     def _build_ai_pen_fallback_tool_plan(
@@ -9854,6 +11052,11 @@ class WebSiteFetch(object):
                 )
                 if credential_candidates:
                     credential_item = credential_candidates[0]
+                    followup_targets = cls._build_ai_pen_login_followup_targets(
+                        target_url=url_text,
+                        login_context=login_context,
+                        candidate=candidate,
+                    )
                     form_data = dict(login_context.get("hidden_fields") or {})
                     form_data[str(login_context.get("username_field") or "username")] = str(credential_item.get("username") or "")
                     form_data[str(login_context.get("password_field") or "password")] = str(credential_item.get("password") or "")
@@ -9908,6 +11111,32 @@ class WebSiteFetch(object):
                                     "session_key": "weak_password",
                                 },
                                 "summary": "fallback 登录成功判定",
+                            }
+                        )
+                    if max(1, int(max_steps or 1)) >= 5 and list(followup_targets.get("session_targets", []) or []):
+                        plan.append(
+                            {
+                                "tool": "session_request",
+                                "params": {
+                                    "url": str(list(followup_targets.get("session_targets", []) or [])[0] or url_text),
+                                    "session_key": "weak_password",
+                                    "method": "get",
+                                    "allow_redirects": True,
+                                },
+                                "summary": "fallback 登录后会话跟进请求",
+                            }
+                        )
+                    if max(1, int(max_steps or 1)) >= 6 and list(followup_targets.get("logout_targets", []) or []):
+                        plan.append(
+                            {
+                                "tool": "logout_probe",
+                                "params": {
+                                    "url": str(list(followup_targets.get("logout_targets", []) or [])[0] or url_text),
+                                    "session_key": "weak_password",
+                                    "method": "get",
+                                    "allow_redirects": True,
+                                },
+                                "summary": "fallback 登录后退出探针",
                             }
                         )
         elif payload_type_text == "jwt_probe":
@@ -9969,8 +11198,12 @@ class WebSiteFetch(object):
                     }
                 )
         elif payload_type_text == "websocket_probe":
-            ws_probe_url = cls._build_websocket_handshake_url(url_text)
-            if ws_probe_url:
+            websocket_candidates = cls._extract_websocket_candidate_paths(candidate)
+            for ws_probe_url in cls._build_websocket_probe_targets(
+                url_text,
+                candidate_paths=websocket_candidates,
+                max_count=max_steps,
+            ):
                 plan.append(
                     {
                         "tool": "websocket_probe",
@@ -9988,7 +11221,12 @@ class WebSiteFetch(object):
                         "summary": "fallback WebSocket 握手探针",
                     }
                 )
-        return cls._normalize_ai_pen_tool_plan(plan, default_url=url_text, max_steps=max_steps)
+        normalized_plan = cls._normalize_ai_pen_tool_plan(plan, default_url=url_text, max_steps=max_steps)
+        if normalized_plan:
+            return normalized_plan
+        if isinstance(candidate, dict):
+            return cls._build_ai_pen_param_orchestrated_tool_plan(candidate, max_steps=max_steps)
+        return normalized_plan
 
     @staticmethod
     def _normalize_ai_pen_agent_action(value: str, default_value="manual_required"):
@@ -10031,7 +11269,172 @@ class WebSiteFetch(object):
         return result
 
     @classmethod
-    def _collect_ai_pen_runtime_observation(cls, result_items, evidence_seed: str, js_api_targets=None):
+    def _build_ai_pen_runtime_session_summary(cls, session_store):
+        """
+        归一化 runtime 会话摘要，便于结果落库、日志打印和重试参考。
+        """
+        summary = {
+            "session_count": 0,
+            "session_keys": [],
+            "cookie_total": 0,
+            "auth_cookie_hit": False,
+            "sessions": [],
+        }
+        if not isinstance(session_store, dict):
+            return summary
+
+        session_items = []
+        cookie_total = 0
+        auth_cookie_hit = False
+        for raw_key, bucket in list(session_store.items())[:4]:
+            if not isinstance(bucket, dict):
+                continue
+            session_key = str(raw_key or "").strip() or "default"
+            session_obj = bucket.get("session")
+            last_response = dict(bucket.get("last_response") or {}) if isinstance(bucket.get("last_response"), dict) else {}
+
+            cookie_names = []
+            seen_cookie_names = set()
+            cookie_jar = getattr(session_obj, "cookies", None)
+            if cookie_jar is not None and hasattr(cookie_jar, "keys"):
+                for cookie_name in list(cookie_jar.keys())[:8]:
+                    name_text = str(cookie_name or "").strip()
+                    lowered_name = name_text.lower()
+                    if not name_text or lowered_name in seen_cookie_names:
+                        continue
+                    seen_cookie_names.add(lowered_name)
+                    cookie_names.append(name_text[:60])
+
+            cookie_count = len(cookie_names)
+            has_auth_cookie = any(
+                token in " ".join([str(name or "").strip().lower() for name in cookie_names])
+                for token in ("session", "auth", "token", "jwt", "sid")
+            )
+            cookie_total += cookie_count
+            auth_cookie_hit = auth_cookie_hit or has_auth_cookie
+            session_items.append(
+                {
+                    "session_key": session_key[:48],
+                    "cookie_names": cookie_names,
+                    "cookie_count": cookie_count,
+                    "auth_cookie_hit": bool(has_auth_cookie),
+                    "last_url": str(last_response.get("url") or last_response.get("request_url") or "").strip()[:220],
+                    "last_status": cls._safe_int_value(last_response.get("status_code"), 0),
+                }
+            )
+
+        summary["session_count"] = len(session_items)
+        summary["session_keys"] = [str(item.get("session_key") or "").strip() for item in session_items if str(item.get("session_key") or "").strip()]
+        summary["cookie_total"] = cookie_total
+        summary["auth_cookie_hit"] = bool(auth_cookie_hit)
+        summary["sessions"] = session_items
+        return summary
+
+    @classmethod
+    def _format_ai_pen_session_summary_text(cls, session_summary):
+        summary_obj = session_summary if isinstance(session_summary, dict) else {}
+        session_count = cls._safe_int_value(summary_obj.get("session_count"), 0)
+        if session_count < 1 and not list(summary_obj.get("sessions", []) or []):
+            return "sessions=0"
+        parts = [
+            "sessions={}".format(session_count or len(list(summary_obj.get("sessions", []) or []))),
+            "cookies={}".format(cls._safe_int_value(summary_obj.get("cookie_total"), 0)),
+            "auth_cookie={}".format(int(bool(summary_obj.get("auth_cookie_hit")))),
+        ]
+        session_keys = [str(item or "").strip() for item in list(summary_obj.get("session_keys", []) or []) if str(item or "").strip()]
+        if session_keys:
+            parts.append("keys={}".format(",".join(session_keys[:3])))
+        session_items = list(summary_obj.get("sessions", []) or [])
+        if session_items and isinstance(session_items[0], dict):
+            first_item = dict(session_items[0] or {})
+            last_url = str(first_item.get("last_url") or "").strip()
+            if last_url:
+                parts.append("last={}".format(cls._clip_text(last_url, 120)))
+            last_status = cls._safe_int_value(first_item.get("last_status"), 0)
+            if last_status:
+                parts.append("last_status={}".format(last_status))
+        return " | ".join(parts)
+
+    @classmethod
+    def _format_ai_pen_login_probe_context_summary(cls, login_context):
+        context = login_context if isinstance(login_context, dict) else {}
+        if not context:
+            return "login_context=none"
+        fields = [str(item or "").strip() for item in list(context.get("fields", []) or []) if str(item or "").strip()]
+        parts = [
+            "login={}".format(cls._clip_text(context.get("login_url", ""), 120) or "-"),
+            "submit={}".format(cls._clip_text(context.get("submit_url", ""), 120) or "-"),
+            "method={}".format(str(context.get("method") or "post").strip().lower() or "post"),
+            "user_field={}".format(str(context.get("username_field") or "username").strip() or "username"),
+            "pass_field={}".format(str(context.get("password_field") or "password").strip() or "password"),
+            "csrf={}".format(str(context.get("csrf_field") or "").strip() or "-"),
+            "captcha={}".format(int(bool(context.get("captcha_required")))),
+            "hidden={}".format(len(dict(context.get("hidden_fields") or {}))),
+        ]
+        if fields:
+            parts.append("fields={}".format(",".join(fields[:6])))
+        return " | ".join(parts)
+
+    @classmethod
+    def _format_ai_pen_followup_targets_summary(cls, followup_targets):
+        targets = followup_targets if isinstance(followup_targets, dict) else {}
+        session_targets = [str(item or "").strip() for item in list(targets.get("session_targets", []) or []) if str(item or "").strip()]
+        logout_targets = [str(item or "").strip() for item in list(targets.get("logout_targets", []) or []) if str(item or "").strip()]
+        parts = [
+            "session_targets={}".format(len(session_targets)),
+            "logout_targets={}".format(len(logout_targets)),
+        ]
+        if session_targets:
+            parts.append("session_first={}".format(cls._clip_text(session_targets[0], 120)))
+        if logout_targets:
+            parts.append("logout_first={}".format(cls._clip_text(logout_targets[0], 120)))
+        return " | ".join(parts)
+
+    @classmethod
+    def _build_ai_pen_retry_seed_tool_plan(cls, history_item: dict, default_url: str = "", max_steps: int = 4):
+        """
+        为重试场景优先沿用历史 AI 计划；若缺失则回退到上次成功执行过的工具链。
+        """
+        item = history_item if isinstance(history_item, dict) else {}
+        normalized_history_plan = cls._normalize_ai_pen_tool_plan(
+            item.get("ai_plan_tool_plan"),
+            default_url=default_url,
+            max_steps=max_steps,
+        )
+        if normalized_history_plan:
+            return normalized_history_plan
+
+        fallback_plan = []
+        for call_item in list(item.get("tool_calls", []) or []):
+            if not isinstance(call_item, dict):
+                continue
+            tool_name = str(call_item.get("tool") or "").strip()
+            if not tool_name or tool_name == "http_fetch":
+                continue
+            params_obj = dict(call_item.get("params") or {}) if isinstance(call_item.get("params"), dict) else {}
+            fallback_plan.append(
+                {
+                    "tool": tool_name,
+                    "params": params_obj,
+                    "summary": "重试沿用历史工具 {}".format(tool_name),
+                }
+            )
+        return cls._normalize_ai_pen_tool_plan(
+            fallback_plan,
+            default_url=default_url,
+            max_steps=max_steps,
+        )
+
+    @classmethod
+    def _collect_ai_pen_runtime_observation(
+        cls,
+        result_items,
+        evidence_seed: str,
+        js_api_targets=None,
+        runtime_api_calls=None,
+        dom_form_summary=None,
+        login_url: str = "",
+    ):
         observation = {
             "trace_parts": [],
             "tool_counts": {},
@@ -10062,9 +11465,14 @@ class WebSiteFetch(object):
             "path_traversal_hit": False,
             "path_traversal_hit_url": "",
             "path_traversal_proof_type": "",
+            "path_traversal_baseline_url": "",
+            "path_traversal_baseline_status": 0,
+            "path_traversal_baseline_md5": "",
             "web_policy_hit": False,
             "web_policy_url": "",
             "web_policy_summary": {},
+            "web_policy_baseline_summary": {},
+            "web_policy_control_summary": {},
             "socketio_hit": False,
             "socketio_hit_url": "",
             "socketio_summary": {},
@@ -10073,10 +11481,34 @@ class WebSiteFetch(object):
             "login_success_hit": False,
             "login_success_reason": "",
             "login_blocked_reason": "",
+            "session_auth_hit": False,
+            "session_auth_url": "",
+            "session_auth_reason": "",
+            "logout_effective": False,
+            "logout_url": "",
+            "logout_reason": "",
             "error": "",
         }
         if not result_items:
             return observation
+
+        path_traversal_baseline_map = {}
+        web_policy_baseline_map = {}
+        web_policy_best_rank = -1
+        socketio_best_rank = -1
+
+        def _path_traversal_origin_key(raw_url: str):
+            url_text = str(raw_url or "").strip()
+            if not url_text:
+                return ""
+            try:
+                parsed = urlsplit(url_text)
+                path_text = str(parsed.path or "/").strip() or "/"
+                if parsed.scheme and parsed.netloc:
+                    return "{}://{}{}".format(parsed.scheme, parsed.netloc, path_text)
+                return path_text
+            except Exception:
+                return str(url_text.split("?", 1)[0] or "").strip()
 
         for item in result_items:
             if not isinstance(item, dict):
@@ -10106,16 +11538,23 @@ class WebSiteFetch(object):
 
             status_code = int(response_obj.get("status_code", 0) or 0)
             headers = dict(response_obj.get("headers") or {}) if isinstance(response_obj.get("headers"), dict) else {}
+            request_headers = (
+                dict(response_obj.get("request_headers") or {})
+                if isinstance(response_obj.get("request_headers"), dict)
+                else {}
+            )
             body_excerpt = str(response_obj.get("body_text", "") or "")[: cls.AI_PEN_TEST_BODY_MAX]
             body_md5 = str(response_obj.get("body_md5", "") or "").strip()
             if body_excerpt and not body_md5:
                 body_md5 = hashlib.md5(body_excerpt.encode("utf-8", "ignore")).hexdigest()
             response_summary = {
                 "tool": tool_name,
+                "request_url": str(response_obj.get("request_url", "") or url_text or "").strip(),
                 "url": url_text,
                 "status_code": status_code,
                 "elapsed_ms": cls._safe_int_value(response_obj.get("elapsed_ms"), 0),
                 "headers": headers,
+                "request_headers": request_headers,
                 "body_text": body_excerpt,
                 "body_md5": body_md5,
             }
@@ -10145,6 +11584,8 @@ class WebSiteFetch(object):
                 observation["api_surface_summary"] = cls._build_api_surface_summary(
                     api_doc_summary=observation["api_doc_summary"],
                     js_api_targets=js_api_targets or [],
+                    runtime_api_calls=runtime_api_calls or [],
+                    dom_form_summary=dom_form_summary or [],
                 )
 
             if cls._looks_like_graphql_response(url_text, body_excerpt, headers):
@@ -10168,10 +11609,30 @@ class WebSiteFetch(object):
                 observation["config_exposure_url"] = url_text
                 observation["config_exposure_summary"] = cls._extract_sensitive_config_summary(body_excerpt)
 
-            if tool_name == "path_traversal_probe" and cls._looks_like_path_traversal_response(url_text, body_excerpt, headers=headers):
-                observation["path_traversal_hit"] = True
-                observation["path_traversal_hit_url"] = url_text
-                observation["path_traversal_proof_type"] = cls._detect_path_traversal_proof_type("", body_excerpt)
+            if tool_name == "path_traversal_probe":
+                origin_key = _path_traversal_origin_key(url_text)
+                baseline_obj = path_traversal_baseline_map.get(origin_key) if origin_key else None
+                if baseline_obj is None:
+                    baseline_obj = {
+                        "url": url_text,
+                        "status_code": status_code,
+                        "body_text": body_excerpt,
+                        "body_md5": body_md5,
+                    }
+                    if origin_key:
+                        path_traversal_baseline_map[origin_key] = baseline_obj
+                    if not str(observation.get("path_traversal_baseline_url") or "").strip():
+                        observation["path_traversal_baseline_url"] = str(url_text or "").strip()
+                        observation["path_traversal_baseline_status"] = int(status_code or 0)
+                        observation["path_traversal_baseline_md5"] = str(body_md5 or "").strip()
+
+                baseline_body = str(baseline_obj.get("body_text") or "")
+                proof_type = cls._detect_path_traversal_proof_type(baseline_body, body_excerpt)
+                if cls._looks_like_path_traversal_response(url_text, body_excerpt, headers=headers):
+                    observation["path_traversal_hit"] = True
+                    observation["path_traversal_hit_url"] = url_text
+                    if proof_type:
+                        observation["path_traversal_proof_type"] = proof_type
 
             if tool_name == "web_policy_probe":
                 web_policy_summary = cls._extract_web_policy_summary(
@@ -10181,8 +11642,40 @@ class WebSiteFetch(object):
                     body_text=body_excerpt,
                 )
                 if isinstance(web_policy_summary, dict) and web_policy_summary:
-                    observation["web_policy_summary"] = web_policy_summary
-                    if str(web_policy_summary.get("proof_type") or "").strip():
+                    request_header_map = {
+                        str(key or "").strip().lower(): str(value or "").strip()
+                        for key, value in request_headers.items()
+                    }
+                    has_origin_request = bool(str(request_header_map.get("origin") or "").strip())
+                    policy_key = _path_traversal_origin_key(url_text) or str(url_text or "").strip()
+
+                    if has_origin_request:
+                        baseline_summary = (
+                            dict(web_policy_baseline_map.get(policy_key) or {})
+                            if policy_key in web_policy_baseline_map
+                            else {}
+                        )
+                        if baseline_summary:
+                            web_policy_summary = cls._merge_web_policy_probe_pair(
+                                baseline_summary=baseline_summary,
+                                control_summary=web_policy_summary,
+                            )
+                        if not (isinstance(observation.get("web_policy_control_summary"), dict) and observation.get("web_policy_control_summary")):
+                            observation["web_policy_control_summary"] = dict(web_policy_summary or {})
+                    else:
+                        if policy_key and policy_key not in web_policy_baseline_map:
+                            web_policy_baseline_map[policy_key] = dict(web_policy_summary or {})
+                        if not (isinstance(observation.get("web_policy_baseline_summary"), dict) and observation.get("web_policy_baseline_summary")):
+                            observation["web_policy_baseline_summary"] = dict(web_policy_summary or {})
+
+                    candidate_rank = cls._web_policy_proof_rank(web_policy_summary.get("proof_type"))
+                    if candidate_rank > web_policy_best_rank:
+                        observation["web_policy_summary"] = dict(web_policy_summary or {})
+                        web_policy_best_rank = candidate_rank
+                    elif not (isinstance(observation.get("web_policy_summary"), dict) and observation.get("web_policy_summary")):
+                        observation["web_policy_summary"] = dict(web_policy_summary or {})
+
+                    if candidate_rank > 0:
                         observation["web_policy_hit"] = True
                         observation["web_policy_url"] = url_text
 
@@ -10194,9 +11687,14 @@ class WebSiteFetch(object):
                     body_text=body_excerpt,
                 )
                 if isinstance(socketio_summary, dict) and socketio_summary:
-                    observation["socketio_summary"] = socketio_summary
-                    proof_type = str(socketio_summary.get("proof_type") or "").strip()
-                    if proof_type:
+                    proof_type = str(socketio_summary.get("proof_type") or "").strip().lower()
+                    candidate_rank = cls._socketio_proof_rank(proof_type)
+                    if candidate_rank > socketio_best_rank:
+                        observation["socketio_summary"] = dict(socketio_summary or {})
+                        socketio_best_rank = candidate_rank
+                    elif not (isinstance(observation.get("socketio_summary"), dict) and observation.get("socketio_summary")):
+                        observation["socketio_summary"] = dict(socketio_summary or {})
+                    if candidate_rank > 0:
                         observation["socketio_hit"] = True
                         observation["socketio_hit_url"] = url_text
 
@@ -10222,6 +11720,32 @@ class WebSiteFetch(object):
                         cls.AI_PEN_TEST_REASON_MAX,
                     )
 
+            if tool_name == "session_request":
+                session_analysis = cls._analyze_ai_pen_session_request(
+                    login_url=login_url or url_text,
+                    response_summary=response_summary,
+                )
+                if bool(session_analysis.get("authenticated")):
+                    observation["session_auth_hit"] = True
+                    observation["session_auth_url"] = str(session_analysis.get("final_url") or url_text)
+                    observation["session_auth_reason"] = cls._clip_text(
+                        session_analysis.get("reason", ""),
+                        cls.AI_PEN_TEST_REASON_MAX,
+                    )
+
+            if tool_name == "logout_probe":
+                logout_analysis = cls._analyze_ai_pen_logout_probe(
+                    login_url=login_url or url_text,
+                    response_summary=response_summary,
+                )
+                if bool(logout_analysis.get("logout_effective")):
+                    observation["logout_effective"] = True
+                    observation["logout_url"] = str(logout_analysis.get("final_url") or url_text)
+                    observation["logout_reason"] = cls._clip_text(
+                        logout_analysis.get("reason", ""),
+                        cls.AI_PEN_TEST_REASON_MAX,
+                    )
+
         return observation
 
     def _execute_ai_pen_tool_plan(
@@ -10232,10 +11756,19 @@ class WebSiteFetch(object):
         target_url: str,
         evidence_seed: str,
         js_api_targets=None,
+        runtime_api_calls=None,
+        dom_form_summary=None,
     ):
         plan_items = list(tool_plan or [])
         if not plan_items:
-            return self._collect_ai_pen_runtime_observation([], evidence_seed=evidence_seed, js_api_targets=js_api_targets)
+            return self._collect_ai_pen_runtime_observation(
+                [],
+                evidence_seed=evidence_seed,
+                js_api_targets=js_api_targets,
+                runtime_api_calls=runtime_api_calls,
+                dom_form_summary=dom_form_summary,
+                login_url=target_url,
+            )
 
         start_idx = len(list(getattr(runtime, "tool_results", []) or []))
         runtime.run_plan(plan_items, context=runtime_context)
@@ -10244,6 +11777,9 @@ class WebSiteFetch(object):
             result_items,
             evidence_seed=evidence_seed,
             js_api_targets=js_api_targets,
+            runtime_api_calls=runtime_api_calls,
+            dom_form_summary=dom_form_summary,
+            login_url=target_url,
         )
 
     def _execute_ai_pen_agent_loop(
@@ -10258,9 +11794,18 @@ class WebSiteFetch(object):
         target_url: str,
         evidence_seed: str,
         js_api_targets=None,
+        runtime_api_calls=None,
+        dom_form_summary=None,
     ):
         seed_steps = list(initial_tool_plan or [])
-        observation = self._collect_ai_pen_runtime_observation([], evidence_seed=evidence_seed, js_api_targets=js_api_targets)
+        observation = self._collect_ai_pen_runtime_observation(
+            [],
+            evidence_seed=evidence_seed,
+            js_api_targets=js_api_targets,
+            runtime_api_calls=runtime_api_calls,
+            dom_form_summary=dom_form_summary,
+            login_url=target_url,
+        )
         if not ai_config:
             return observation
 
@@ -10355,6 +11900,9 @@ class WebSiteFetch(object):
             result_items,
             evidence_seed=evidence_seed,
             js_api_targets=js_api_targets,
+            runtime_api_calls=runtime_api_calls,
+            dom_form_summary=dom_form_summary,
+            login_url=target_url,
         )
         trace_items = list(getattr(runtime, "agent_trace", []) or [])[trace_start:]
         for item in trace_items:
@@ -10894,6 +12442,8 @@ class WebSiteFetch(object):
         task_ai_pen_graph_summary = dict(candidate.get("task_ai_pen_graph_summary") or {}) if isinstance(candidate.get("task_ai_pen_graph_summary"), dict) else {}
         task_ai_pen_graph_context = dict(candidate.get("task_ai_pen_graph_context") or {}) if isinstance(candidate.get("task_ai_pen_graph_context"), dict) else {}
         login_surface_summary = dict(candidate.get("login_surface_summary") or {}) if isinstance(candidate.get("login_surface_summary"), dict) else {}
+        history_session_summary = dict(candidate.get("history_session_summary") or {}) if isinstance(candidate.get("history_session_summary"), dict) else {}
+        history_tool_result_summary = list(candidate.get("history_tool_result_summary", []) or [])[:4]
         payload_type, payload = self._build_ai_pen_payload_hint(risk_type, risk_name)
         route_hint = str(candidate.get("route_hint") or self._build_ai_pen_route_hint(candidate) or "").strip()
         capability_candidate = dict(candidate or {})
@@ -10905,12 +12455,23 @@ class WebSiteFetch(object):
             payload_type = ai_plan_payload_type
         if ai_plan_payload:
             payload = ai_plan_payload
+        history_tool_plan = self._normalize_ai_pen_tool_plan(
+            candidate.get("history_tool_plan"),
+            default_url=target_url,
+            max_steps=max(2, max_tool_calls),
+        )
+        tool_plan_source = "ai_plan"
         ai_plan_tool_plan = self._normalize_ai_pen_tool_plan(
             plan_obj.get("tool_plan"),
             default_url=target_url,
             max_steps=max(2, max_tool_calls),
         )
         if not ai_plan_tool_plan:
+            ai_plan_tool_plan = list(history_tool_plan or [])
+            if ai_plan_tool_plan:
+                tool_plan_source = "retry_history"
+        if not ai_plan_tool_plan:
+            tool_plan_source = "inferred"
             ai_plan_tool_plan = self._infer_ai_pen_tool_plan(
                 candidate=candidate,
                 payload_type=payload_type,
@@ -10940,7 +12501,7 @@ class WebSiteFetch(object):
             runtime_timeout_sec = self.AI_PEN_TEST_MCP_TIMEOUT_SEC
         logger.info(
             "task_id:{} ai_pen verify start source={}:{} target:{} risk_type:{} payload_type:{} route_hint:{} capability:{} "
-            "mcp:{} agent_loop:{} max_tool_calls:{} tool_plan_steps:{} tool_plan_preview:{}".format(
+            "mcp:{} agent_loop:{} max_tool_calls:{} tool_plan_source:{} tool_plan_steps:{} tool_plan_preview:{}".format(
                 self.task_id,
                 str(candidate.get("source_collection", "") or "").strip()[:40] or "-",
                 str(candidate.get("source_id", "") or "").strip()[:32] or "-",
@@ -10952,10 +12513,21 @@ class WebSiteFetch(object):
                 "on" if mcp_enable else "off",
                 "on" if agent_loop_enable else "off",
                 max_tool_calls,
+                tool_plan_source,
                 len(list(ai_plan_tool_plan or [])),
                 self._clip_text(",".join(tool_plan_preview_parts) or "-", 260),
             )
         )
+        if history_tool_plan or history_tool_result_summary or history_session_summary:
+            logger.info(
+                "task_id:{} ai_pen verify retry_context target:{} history_plan_steps:{} history_results:{} history_session:{}".format(
+                    self.task_id,
+                    target_url[:180],
+                    len(list(history_tool_plan or [])),
+                    len(history_tool_result_summary),
+                    self._format_ai_pen_session_summary_text(history_session_summary),
+                )
+            )
 
         # 使用统一 MCP Runtime 管理探针调用审计，避免仅依赖 tool_trace 字符串回填。
         runtime = AiPenMcpRuntime(
@@ -10993,7 +12565,7 @@ class WebSiteFetch(object):
         }
         session_store = {}
 
-        def _build_runtime_response(resp, req_url: str, req_method: str, session_obj=None):
+        def _build_runtime_response(resp, req_url: str, req_method: str, session_obj=None, request_headers=None):
             status_code = int(getattr(resp, "status_code", 0) or 0)
             elapsed_ms = 0
             try:
@@ -11037,6 +12609,14 @@ class WebSiteFetch(object):
                     seen_cookie_names.add(lowered_name)
                     cookie_names.append(name_text[:60])
 
+            request_headers_obj = request_headers if isinstance(request_headers, dict) else {}
+            safe_request_headers = {}
+            for header_key, header_value in request_headers_obj.items():
+                key_text = str(header_key or "").strip()
+                if not key_text:
+                    continue
+                safe_request_headers[key_text] = str(header_value or "")[:240]
+
             return {
                 "status": "ok",
                 "message": "ok",
@@ -11052,6 +12632,7 @@ class WebSiteFetch(object):
                     "history_urls": history_urls,
                     "history_status_codes": history_status_codes,
                     "cookie_names": cookie_names,
+                    "request_headers": safe_request_headers,
                 },
             }
 
@@ -11159,7 +12740,13 @@ class WebSiteFetch(object):
                 session_obj = None
                 if session_key:
                     session_obj = dict(session_store.get(session_key) or {}).get("session")
-                return _build_runtime_response(skip_response, req_url, req_method, session_obj=session_obj)
+                return _build_runtime_response(
+                    skip_response,
+                    req_url,
+                    req_method,
+                    session_obj=session_obj,
+                    request_headers=dict(request_kwargs.get("headers") or {}),
+                )
 
             session_obj = None
             if session_key:
@@ -11175,7 +12762,13 @@ class WebSiteFetch(object):
             if self.waf_guard:
                 self.waf_guard.observe_response(req_url, resp, module="ai_pen_test")
 
-            result = _build_runtime_response(resp, req_url, req_method, session_obj=session_obj)
+            result = _build_runtime_response(
+                resp,
+                req_url,
+                req_method,
+                session_obj=session_obj,
+                request_headers=dict(request_kwargs.get("headers") or {}),
+            )
             if session_key:
                 session_store[str(session_key or "").strip() or "default"]["last_response"] = dict(result.get("response") or {})
             return result
@@ -11840,6 +13433,12 @@ class WebSiteFetch(object):
             payload_obj["stop_reason"] = str(runtime_obj.get("stop_reason", "") or "")
             payload_obj["budget_used"] = dict(runtime_obj.get("budget_used") or {})
             payload_obj["runtime_version"] = str(runtime_obj.get("runtime_version", "") or "")
+            payload_obj["session_summary"] = (
+                dict(payload_obj.get("session_summary") or {})
+                if isinstance(payload_obj.get("session_summary"), dict)
+                else self._build_ai_pen_runtime_session_summary(session_store)
+            )
+            payload_obj["tool_plan_source"] = str(payload_obj.get("tool_plan_source") or tool_plan_source or "").strip()
             request_packet_obj = self._build_ai_pen_request_packet(
                 target_url=target_url,
                 payload_type=str(payload_obj.get("payload_type", "") or payload_type),
@@ -11983,6 +13582,35 @@ class WebSiteFetch(object):
                 dom_form_summary=dom_form_summary,
                 login_surface_summary=login_surface_summary,
             )
+            login_followup_targets = {}
+            if login_probe_context:
+                logger.info(
+                    "task_id:{} ai_pen login_context target:{} summary:{}".format(
+                        self.task_id,
+                        target_url[:180],
+                        self._format_ai_pen_login_probe_context_summary(login_probe_context),
+                    )
+                )
+                if is_weak_password_case:
+                    login_followup_targets = self._build_ai_pen_login_followup_targets(
+                        target_url=target_url,
+                        login_context=login_probe_context,
+                        candidate=candidate,
+                    )
+                    logger.info(
+                        "task_id:{} ai_pen weak_password followup target:{} summary:{}".format(
+                            self.task_id,
+                            target_url[:180],
+                            self._format_ai_pen_followup_targets_summary(login_followup_targets),
+                        )
+                    )
+            elif is_weak_password_case:
+                logger.info(
+                    "task_id:{} ai_pen login_context target:{} summary:login_context=none".format(
+                        self.task_id,
+                        target_url[:180],
+                    )
+                )
             idor_probe_targets = self._build_idor_probe_targets(target_url, max_count=max(2, max_tool_calls))
 
             probe_status = 0
@@ -12001,7 +13629,12 @@ class WebSiteFetch(object):
             api_doc_probe_count = 0
             config_probe_count = 0
             api_doc_summary = {}
-            api_surface_summary = self._build_api_surface_summary(api_doc_summary=api_doc_summary, js_api_targets=js_api_targets)
+            api_surface_summary = self._build_api_surface_summary(
+                api_doc_summary=api_doc_summary,
+                js_api_targets=js_api_targets,
+                runtime_api_calls=runtime_api_calls,
+                dom_form_summary=dom_form_summary,
+            )
             graphql_hit = False
             graphql_hit_url = ""
             graphql_summary = {}
@@ -12037,6 +13670,12 @@ class WebSiteFetch(object):
             login_success_hit = False
             login_success_reason = ""
             login_blocked_reason = ""
+            session_auth_hit = False
+            session_auth_url = ""
+            session_auth_reason = ""
+            logout_effective = False
+            logout_url = ""
+            logout_reason = ""
             agent_loop_final_decision = {}
             agent_loop_stop_reason = ""
             probe_error = ""
@@ -12098,6 +13737,8 @@ class WebSiteFetch(object):
                         target_url=target_url,
                         evidence_seed=evidence_seed,
                         js_api_targets=js_api_targets,
+                        runtime_api_calls=runtime_api_calls,
+                        dom_form_summary=dom_form_summary,
                     )
                 else:
                     plan_observation = self._execute_ai_pen_tool_plan(
@@ -12107,6 +13748,8 @@ class WebSiteFetch(object):
                         target_url=target_url,
                         evidence_seed=evidence_seed,
                         js_api_targets=js_api_targets,
+                        runtime_api_calls=runtime_api_calls,
+                        dom_form_summary=dom_form_summary,
                     )
                 tool_trace_parts.extend(list(plan_observation.get("trace_parts", []) or []))
                 probe_status = int(plan_observation.get("probe_status", 0) or 0) or probe_status
@@ -12191,6 +13834,12 @@ class WebSiteFetch(object):
                 login_success_hit = bool(plan_observation.get("login_success_hit")) or login_success_hit
                 login_success_reason = str(plan_observation.get("login_success_reason", "") or "") or login_success_reason
                 login_blocked_reason = str(plan_observation.get("login_blocked_reason", "") or "") or login_blocked_reason
+                session_auth_hit = bool(plan_observation.get("session_auth_hit")) or session_auth_hit
+                session_auth_url = str(plan_observation.get("session_auth_url", "") or "") or session_auth_url
+                session_auth_reason = str(plan_observation.get("session_auth_reason", "") or "") or session_auth_reason
+                logout_effective = bool(plan_observation.get("logout_effective")) or logout_effective
+                logout_url = str(plan_observation.get("logout_url", "") or "") or logout_url
+                logout_reason = str(plan_observation.get("logout_reason", "") or "") or logout_reason
                 if isinstance(plan_observation.get("final_decision"), dict) and plan_observation.get("final_decision"):
                     agent_loop_final_decision = dict(plan_observation.get("final_decision") or {})
                 agent_loop_stop_reason = str(plan_observation.get("stop_reason", "") or "").strip()
@@ -12202,7 +13851,8 @@ class WebSiteFetch(object):
                 _apply_jwt_none_replay_signal(plan_observation)
                 logger.info(
                     "task_id:{} ai_pen verify main_plan target:{} payload_type:{} stop_reason:{} probe_status:{} "
-                    "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} error:{}".format(
+                    "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} "
+                    "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} error:{} session:{}".format(
                         self.task_id,
                         target_url[:180],
                         payload_type,
@@ -12216,7 +13866,15 @@ class WebSiteFetch(object):
                         int(bool(api_doc_hit)),
                         int(bool(graphql_hit)),
                         len(idor_probe_responses),
+                        int(bool(login_success_hit)),
+                        int(bool(session_auth_hit)),
+                        int(bool(logout_effective)),
+                        int(bool(websocket_upgrade_hit)),
+                        int(bool(websocket_upgrade_hint)),
                         self._clip_text(probe_error, 120) if probe_error else "-",
+                        self._format_ai_pen_session_summary_text(
+                            self._build_ai_pen_runtime_session_summary(session_store)
+                        ),
                     )
                 )
             tool_calls = len(list(runtime.tool_calls or []))
@@ -12275,6 +13933,8 @@ class WebSiteFetch(object):
                         target_url=target_url,
                         evidence_seed=evidence_seed,
                         js_api_targets=js_api_targets,
+                        runtime_api_calls=runtime_api_calls,
+                        dom_form_summary=dom_form_summary,
                     )
                     tool_calls = len(list(runtime.tool_calls or []))
                     tool_trace_parts.extend(list(fallback_observation.get("trace_parts", []) or []))
@@ -12360,6 +14020,12 @@ class WebSiteFetch(object):
                     login_success_hit = bool(fallback_observation.get("login_success_hit")) or login_success_hit
                     login_success_reason = str(fallback_observation.get("login_success_reason", "") or "") or login_success_reason
                     login_blocked_reason = str(fallback_observation.get("login_blocked_reason", "") or "") or login_blocked_reason
+                    session_auth_hit = bool(fallback_observation.get("session_auth_hit")) or session_auth_hit
+                    session_auth_url = str(fallback_observation.get("session_auth_url", "") or "") or session_auth_url
+                    session_auth_reason = str(fallback_observation.get("session_auth_reason", "") or "") or session_auth_reason
+                    logout_effective = bool(fallback_observation.get("logout_effective")) or logout_effective
+                    logout_url = str(fallback_observation.get("logout_url", "") or "") or logout_url
+                    logout_reason = str(fallback_observation.get("logout_reason", "") or "") or logout_reason
                     if (not probe_error) and str(fallback_observation.get("error", "") or "").strip():
                         probe_error = self._clip_text(fallback_observation.get("error", ""), self.AI_PEN_TEST_ERROR_MAX)
                     payload_text = str(payload or "").strip().lower()
@@ -12368,7 +14034,8 @@ class WebSiteFetch(object):
                     _apply_jwt_none_replay_signal(fallback_observation)
                     logger.info(
                         "task_id:{} ai_pen verify fallback_plan target:{} payload_type:{} probe_status:{} "
-                        "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} error:{}".format(
+                        "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} "
+                        "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} error:{} session:{}".format(
                             self.task_id,
                             target_url[:180],
                             payload_type,
@@ -12381,7 +14048,15 @@ class WebSiteFetch(object):
                             int(bool(api_doc_hit)),
                             int(bool(graphql_hit)),
                             len(idor_probe_responses),
+                            int(bool(login_success_hit)),
+                            int(bool(session_auth_hit)),
+                            int(bool(logout_effective)),
+                            int(bool(websocket_upgrade_hit)),
+                            int(bool(websocket_upgrade_hint)),
                             self._clip_text(probe_error, 120) if probe_error else "-",
+                            self._format_ai_pen_session_summary_text(
+                                self._build_ai_pen_runtime_session_summary(session_store)
+                            ),
                         )
                     )
                 elif payload_type == "weak_password_probe" and login_probe_context:
@@ -12543,6 +14218,8 @@ class WebSiteFetch(object):
                     base_body_excerpt,
                     probe_body_excerpt,
                 )
+                if session_auth_hit:
+                    weak_password_login_proof = True
 
             if is_xss_case and xss_popup_proof:
                 decision = "verified"
@@ -12558,8 +14235,10 @@ class WebSiteFetch(object):
                 reason = "目标为静态 JS 资源，当前未验证到可执行弹窗链路"
             elif is_weak_password_case and weak_password_login_proof:
                 decision = "verified"
-                confidence = 0.91
-                reason = login_success_reason or "命中账号/口令与登录成功证据，弱口令可复现"
+                confidence = 0.91 if login_success_hit else 0.89
+                reason = login_success_reason or session_auth_reason or "命中账号/口令与登录成功证据，弱口令可复现"
+                if logout_effective and logout_reason:
+                    reason = "{}；{}".format(reason, logout_reason)
             elif is_weak_password_case and login_blocked_reason:
                 decision = "needs_manual_review"
                 confidence = 0.64
@@ -12576,6 +14255,8 @@ class WebSiteFetch(object):
                 decision = "likely_false_positive"
                 confidence = 0.70
                 reason = "默认口令验证未命中登录成功信号，当前不判定为可利用弱口令"
+                if session_auth_reason:
+                    reason = "{}；会话跟进：{}".format(reason, session_auth_reason)
             elif is_sqli_case and sqli_proof_type == "error_based":
                 decision = "verified"
                 confidence = 0.88
@@ -12626,7 +14307,7 @@ class WebSiteFetch(object):
                     confidence = 0.76
                     reason = "路径穿越探针触发文件读取相关差异，建议结合对象参数继续复核"
             elif payload_type == "socketio_probe" and socketio_hit:
-                if socketio_proof_type in {"socketio_polling_open", "sockjs_info_open"}:
+                if socketio_proof_type in {"socketio_polling_open", "sockjs_info_open", "socketio_websocket_upgrade"}:
                     decision = "verified"
                     confidence = 0.84
                     reason = "发现可访问的 Socket.IO/SockJS 握手或信息端点（{}）".format(socketio_proof_type)
@@ -12982,10 +14663,12 @@ class WebSiteFetch(object):
                 confidence = max(0.62, min(0.86, confidence))
                 reason = "{}；{}".format(reason, proof_guard_reason).strip("；")
 
+            session_summary = self._build_ai_pen_runtime_session_summary(session_store)
             logger.info(
                 "task_id:{} ai_pen verify done target:{} payload_type:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
                 "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} config_probe_count:{} path_traversal_probe_count:{} "
-                "web_policy_probe_count:{} socketio_probe_count:{} external_hit:{} stop_reason:{} reason:{}".format(
+                "web_policy_probe_count:{} socketio_probe_count:{} external_hit:{} stop_reason:{} tool_plan_source:{} "
+                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} reason:{}".format(
                     self.task_id,
                     target_url[:180],
                     payload_type,
@@ -13002,6 +14685,13 @@ class WebSiteFetch(object):
                     socketio_probe_count,
                     int(bool(external_ret.get("tool_hit"))),
                     agent_loop_stop_reason or "-",
+                    tool_plan_source,
+                    int(bool(login_success_hit)),
+                    int(bool(session_auth_hit)),
+                    int(bool(logout_effective)),
+                    int(bool(websocket_upgrade_hit)),
+                    int(bool(websocket_upgrade_hint)),
+                    self._format_ai_pen_session_summary_text(session_summary),
                     self._clip_text(reason, 220),
                 )
             )
@@ -13022,6 +14712,12 @@ class WebSiteFetch(object):
                 "dom_xss_proof_type": dom_xss_proof_type,
                 "sqli_proof_type": sqli_proof_type,
                 "weak_password_login_proof": weak_password_login_proof,
+                "session_auth_hit": session_auth_hit,
+                "session_auth_url": session_auth_url,
+                "session_auth_reason": session_auth_reason,
+                "logout_effective": logout_effective,
+                "logout_url": logout_url,
+                "logout_reason": logout_reason,
                 "cmdi_proof_type": cmdi_proof_type,
                 "ssti_proof_type": ssti_proof_type,
                 "xxe_proof_type": xxe_proof_type,
@@ -13040,6 +14736,8 @@ class WebSiteFetch(object):
                 "login_surface_summary": login_surface_summary,
                 "route_hint": route_hint,
                 "capability_profile": capability_profile if isinstance(capability_profile, dict) else {},
+                "session_summary": session_summary,
+                "tool_plan_source": tool_plan_source,
                 "tool_trace": " | ".join(tool_trace_parts)[:500],
                 "external_tool_runs": list(external_ret.get("tool_runs", []) or [])[: self.AI_PEN_EXTERNAL_RESULT_MAX],
                 "external_tool_hit": bool(external_ret.get("tool_hit")),
@@ -13069,6 +14767,12 @@ class WebSiteFetch(object):
                 "dom_xss_proof_type": "",
                 "sqli_proof_type": "",
                 "weak_password_login_proof": False,
+                "session_auth_hit": False,
+                "session_auth_url": "",
+                "session_auth_reason": "",
+                "logout_effective": False,
+                "logout_url": "",
+                "logout_reason": "",
                 "cmdi_proof_type": "",
                 "ssti_proof_type": "",
                 "xxe_proof_type": "",
@@ -13452,8 +15156,17 @@ class WebSiteFetch(object):
                 "task_ai_pen_graph_summary": dict(verify_result.get("task_ai_pen_graph_summary") or {}) if isinstance(verify_result.get("task_ai_pen_graph_summary"), dict) else {},
                 "task_ai_pen_graph_context": dict(verify_result.get("task_ai_pen_graph_context") or {}) if isinstance(verify_result.get("task_ai_pen_graph_context"), dict) else {},
                 "login_surface_summary": dict(verify_result.get("login_surface_summary") or {}) if isinstance(verify_result.get("login_surface_summary"), dict) else {},
+                "weak_password_login_proof": bool(verify_result.get("weak_password_login_proof")),
+                "session_auth_hit": bool(verify_result.get("session_auth_hit")),
+                "session_auth_url": str(verify_result.get("session_auth_url", "") or "").strip(),
+                "session_auth_reason": str(verify_result.get("session_auth_reason", "") or "").strip(),
+                "logout_effective": bool(verify_result.get("logout_effective")),
+                "logout_url": str(verify_result.get("logout_url", "") or "").strip(),
+                "logout_reason": str(verify_result.get("logout_reason", "") or "").strip(),
                 "route_hint": str(verify_result.get("route_hint", "") or "").strip(),
                 "capability_profile": dict(verify_result.get("capability_profile") or {}) if isinstance(verify_result.get("capability_profile"), dict) else {},
+                "session_summary": dict(verify_result.get("session_summary") or {}) if isinstance(verify_result.get("session_summary"), dict) else {},
+                "tool_plan_source": str(verify_result.get("tool_plan_source", "") or "").strip(),
                 "decision": decision,
                 "confidence": float("{:.4f}".format(confidence)),
                 "reason": str(verify_result.get("reason", "") or "").strip(),
@@ -13519,7 +15232,7 @@ class WebSiteFetch(object):
             saved_count += 1
             logger.info(
                 "task_id:{} ai_pen candidate done {}/{} source={}:{} decision:{} status:{} confidence:{:.4f} "
-                "verification_step:{} payload_type:{} http_status:{} tool_calls:{} external_hit:{} ai_plan_status:{}".format(
+                "verification_step:{} payload_type:{} http_status:{} tool_calls:{} tool_plan_source:{} external_hit:{} ai_plan_status:{}".format(
                     self.task_id,
                     candidate_index,
                     len(selected_candidates),
@@ -13532,6 +15245,7 @@ class WebSiteFetch(object):
                     str(verify_result.get("payload_type", "") or "").strip()[:32] or "-",
                     self._safe_int_value(verify_result.get("http_status"), 0),
                     len(list(verify_result.get("tool_calls", []) or [])),
+                    str(verify_result.get("tool_plan_source", "") or "").strip()[:24] or "-",
                     int(bool(external_tool_hit)),
                     ai_plan_status,
                 )

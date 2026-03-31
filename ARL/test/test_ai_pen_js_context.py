@@ -436,6 +436,66 @@ class TestAiPenJsContext(unittest.TestCase):
             str(observation.get("web_policy_summary", {}).get("proof_type") or ""),
         )
 
+    def test_collect_ai_pen_runtime_observation_web_policy_uses_baseline_control_pair(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "web_policy_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/api/profile",
+                            "status_code": 200,
+                            "request_headers": {"Accept": "application/json"},
+                            "headers": {"Content-Type": "application/json"},
+                            "body_text": '{"ok":true}',
+                        }
+                    },
+                },
+                {
+                    "turn": 2,
+                    "tool": "web_policy_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/api/profile",
+                            "status_code": 200,
+                            "request_headers": {"Origin": "https://arl-probe.example"},
+                            "headers": {
+                                "Content-Type": "application/json",
+                                "Access-Control-Allow-Origin": "*",
+                                "Access-Control-Allow-Credentials": "true",
+                            },
+                            "body_text": '{"ok":true}',
+                        }
+                    },
+                },
+                {
+                    "turn": 3,
+                    "tool": "web_policy_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/api/profile",
+                            "status_code": 204,
+                            "request_headers": {"Access-Control-Request-Method": "GET"},
+                            "headers": {"Content-Type": "text/plain"},
+                            "body_text": "",
+                        }
+                    },
+                },
+            ],
+            evidence_seed="",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("web_policy_hit")))
+        self.assertEqual("cors_credentialed_wildcard", str(observation.get("web_policy_summary", {}).get("proof_type") or ""))
+        self.assertEqual("baseline_control", str(observation.get("web_policy_summary", {}).get("pair_mode") or ""))
+        self.assertTrue(bool(observation.get("web_policy_baseline_summary")))
+        self.assertTrue(bool(observation.get("web_policy_control_summary")))
+
     def test_collect_ai_pen_runtime_observation_detects_socketio(self):
         observation = WebSiteFetch._collect_ai_pen_runtime_observation(
             [
@@ -462,6 +522,130 @@ class TestAiPenJsContext(unittest.TestCase):
             "socketio_polling_open",
             str(observation.get("socketio_summary", {}).get("proof_type") or ""),
         )
+
+    def test_collect_ai_pen_runtime_observation_socketio_keeps_stronger_proof(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "socketio_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/socket.io/?EIO=4&transport=polling&t=arlprobe",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "text/plain; charset=utf-8"},
+                            "body_text": '0{"sid":"abc","upgrades":["websocket"]}',
+                        }
+                    },
+                },
+                {
+                    "turn": 2,
+                    "tool": "socketio_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/socket.io/?EIO=4&transport=websocket&t=arlprobe",
+                            "status_code": 400,
+                            "headers": {"Content-Type": "text/plain; charset=utf-8"},
+                            "body_text": '{"code":3,"message":"transport unknown"}',
+                        }
+                    },
+                },
+            ],
+            evidence_seed="",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("socketio_hit")))
+        self.assertEqual("socketio_polling_open", str(observation.get("socketio_summary", {}).get("proof_type") or ""))
+
+    def test_extract_socketio_summary_detects_websocket_upgrade(self):
+        summary = WebSiteFetch._extract_socketio_summary(
+            url_text="https://example.com/socket.io/?EIO=4&transport=websocket",
+            status_code=101,
+            headers={"Upgrade": "websocket", "Content-Type": "text/plain"},
+            body_text="",
+        )
+        self.assertEqual("socketio_websocket_upgrade", str(summary.get("proof_type") or ""))
+
+    def test_collect_ai_pen_runtime_observation_detects_path_traversal_with_baseline_diff(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "path_traversal_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/download?file=readme.txt",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "text/plain"},
+                            "body_text": "welcome to demo file",
+                        }
+                    },
+                },
+                {
+                    "turn": 2,
+                    "tool": "path_traversal_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/download?file=..%2f..%2f..%2f..%2fetc%2fpasswd",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "text/plain"},
+                            "body_text": "root:x:0:0:root:/root:/bin/bash\nwww-data:x:33:33",
+                        }
+                    },
+                },
+            ],
+            evidence_seed="",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("path_traversal_hit")))
+        self.assertEqual("passwd_disclosure", str(observation.get("path_traversal_proof_type") or ""))
+        self.assertEqual(
+            "https://example.com/download?file=readme.txt",
+            str(observation.get("path_traversal_baseline_url") or ""),
+        )
+
+    def test_collect_ai_pen_runtime_observation_path_traversal_uses_baseline_to_reduce_fp(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "path_traversal_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/download?file=readme.txt",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "text/plain"},
+                            "body_text": "root:x:0:0:root:/root:/bin/bash",
+                        }
+                    },
+                },
+                {
+                    "turn": 2,
+                    "tool": "path_traversal_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/download?file=..%2f..%2f..%2f..%2fetc%2fpasswd",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "text/plain"},
+                            "body_text": "root:x:0:0:root:/root:/bin/bash",
+                        }
+                    },
+                },
+            ],
+            evidence_seed="",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("path_traversal_hit")))
+        self.assertEqual("", str(observation.get("path_traversal_proof_type") or ""))
 
     def test_collect_ai_pen_runtime_observation_detects_login_success(self):
         observation = WebSiteFetch._collect_ai_pen_runtime_observation(
@@ -772,6 +956,17 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("507f1f77bcf86cd799439011", path_targets[0].get("mutation_from"))
         self.assertEqual("object_id", path_targets[0].get("mutation_kind"))
 
+    def test_build_idor_probe_targets_supports_access_control_param_mutation(self):
+        targets = WebSiteFetch._build_idor_probe_targets(
+            "https://example.com/api/project/list?role=user&scope=read",
+            max_count=4,
+        )
+
+        urls = [str(item.get("url") or "") for item in targets]
+        kinds = [str(item.get("mutation_kind") or "") for item in targets]
+        self.assertTrue(any("role=admin" in item for item in urls))
+        self.assertTrue(any(kind in {"access_control", "access_control_numeric"} for kind in kinds))
+
     def test_build_idor_diff_summary_marks_sensitive_fields(self):
         summary = WebSiteFetch._build_idor_diff_summary(
             base_status=200,
@@ -790,6 +985,23 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("email", list(summary.get("sensitive_hits", [])))
         self.assertIn("role", list(summary.get("sensitive_hits", [])))
         self.assertEqual("user_id", summary.get("mutation_key"))
+
+    def test_build_idor_diff_summary_marks_vertical_indicator_for_admin_signal(self):
+        summary = WebSiteFetch._build_idor_diff_summary(
+            base_status=200,
+            base_body='{"code":0,"data":{"role":"user"}}',
+            probe_status=200,
+            probe_body='{"code":0,"data":{"role":"admin","permissions":["manage_users"]}}',
+            probe_target={
+                "mutation_key": "role",
+                "mutation_from": "user",
+                "mutation_to": "admin",
+                "mutation_kind": "access_control",
+            },
+        )
+
+        self.assertTrue(bool(summary.get("vertical_indicator")))
+        self.assertTrue(bool(summary.get("admin_hits")))
 
     def test_idor_diff_summary_text_and_score(self):
         summary = WebSiteFetch._build_idor_diff_summary(
@@ -870,6 +1082,24 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("likely_false_positive", outcome.get("decision"))
         self.assertIn("访问控制生效", str(outcome.get("reason", "")))
 
+    def test_classify_ai_pen_idor_outcome_marks_verified_for_vertical_access_control_diff(self):
+        summary = WebSiteFetch._build_idor_diff_summary(
+            base_status=200,
+            base_body='{"code":0,"data":{"role":"user","menu":["home"]}}',
+            probe_status=200,
+            probe_body='{"code":0,"data":{"role":"admin","menu":["home","admin"],"permissions":["manage_users"]}}',
+            probe_target={
+                "mutation_key": "role",
+                "mutation_from": "user",
+                "mutation_to": "admin",
+                "mutation_kind": "access_control",
+            },
+        )
+        outcome = WebSiteFetch._classify_ai_pen_idor_outcome(200, 200, summary)
+
+        self.assertEqual("verified", outcome.get("decision"))
+        self.assertIn("垂直越权", str(outcome.get("reason", "")))
+
     def test_api_surface_summary_merges_api_doc_and_js_targets(self):
         summary = WebSiteFetch._build_api_surface_summary(
             api_doc_summary={
@@ -895,6 +1125,115 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertGreaterEqual(summary.get("object_id_like_count", 0), 1)
         self.assertGreaterEqual(summary.get("security_scheme_count", 0), 1)
         self.assertIn("token", summary.get("parameter_names", []))
+
+    def test_api_surface_summary_merges_runtime_form_and_hidden_parameters(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            api_doc_summary={
+                "path_count": 2,
+                "sample_paths": ["/api/login", "/api/user/{id}"],
+                "auth_path_count": 1,
+                "auth_paths": ["/api/login"],
+                "parameter_names": ["tenant", "username", "password"],
+                "security_scheme_count": 1,
+            },
+            js_api_targets=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/api/order/detail?id=1",
+                    "params": ["id", "token"],
+                    "source": "js_api_extract",
+                }
+            ],
+            runtime_api_calls=[
+                {
+                    "method": "POST",
+                    "url": "https://example.com/api/auth/login?tenant=corp",
+                    "request_body": "username=alice&password=secret",
+                },
+                {
+                    "method": "GET",
+                    "url": "https://example.com/api/project/list?role=user",
+                },
+            ],
+            dom_form_summary=[
+                {
+                    "action": "/auth/login",
+                    "method": "post",
+                    "has_password_input": "true",
+                    "fields": "username,password,captcha",
+                    "hidden_fields": {"csrf_token": "x", "tenant_id": "corp"},
+                },
+                {
+                    "action": "/api/upload",
+                    "method": "post",
+                    "has_file_input": "true",
+                    "fields": "file,desc",
+                    "hidden_fields": {"upload_token": "1"},
+                },
+            ],
+        )
+
+        source_types = list(summary.get("source_types", []) or [])
+        param_names = list(summary.get("parameter_names", []) or [])
+        self.assertIn("runtime", source_types)
+        self.assertIn("form", source_types)
+        self.assertIn("hidden", source_types)
+        self.assertIn("role", param_names)
+        self.assertIn("csrf_token", param_names)
+        self.assertGreaterEqual(summary.get("auth_path_count", 0), 2)
+        self.assertGreaterEqual(summary.get("upload_like_count", 0), 1)
+
+    def test_collect_runtime_observation_merges_runtime_form_and_hidden_into_api_surface(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "api_doc_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/v3/api-docs",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body_text": '{"openapi":"3.0.1","paths":{"/login":{"post":{"parameters":[{"name":"username"}]}}}}',
+                        }
+                    },
+                }
+            ],
+            evidence_seed="openapi",
+            js_api_targets=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/api/user?id=1",
+                    "params": ["id"],
+                    "source": "js_api_extract",
+                }
+            ],
+            runtime_api_calls=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/api/project/list?role=user",
+                }
+            ],
+            dom_form_summary=[
+                {
+                    "action": "/auth/login",
+                    "method": "post",
+                    "has_password_input": "true",
+                    "fields": "username,password",
+                    "hidden_fields": {"csrf_token": "x"},
+                }
+            ],
+        )
+
+        source_types = list(observation.get("api_surface_summary", {}).get("source_types", []) or [])
+        param_names = list(observation.get("api_surface_summary", {}).get("parameter_names", []) or [])
+        self.assertTrue(bool(observation.get("api_doc_hit")))
+        self.assertIn("runtime", source_types)
+        self.assertIn("form", source_types)
+        self.assertIn("hidden", source_types)
+        self.assertIn("role", param_names)
+        self.assertIn("csrf_token", param_names)
 
     def test_ai_pen_graph_summary_is_small_and_structured(self):
         summary = WebSiteFetch._build_ai_pen_graph_summary(
@@ -1168,6 +1507,117 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(result.get("success")))
         self.assertTrue(bool(str(result.get("reason") or "").strip()))
         self.assertEqual("https://example.com/dashboard", result.get("final_url"))
+
+    def test_build_ai_pen_login_followup_targets_prefers_session_and_logout_paths(self):
+        targets = WebSiteFetch._build_ai_pen_login_followup_targets(
+            target_url="https://example.com/login",
+            login_context={
+                "login_url": "https://example.com/login",
+                "submit_url": "https://example.com/api/auth/login",
+            },
+            candidate={
+                "login_surface_summary": {
+                    "runtime_auth_paths": ["/api/auth/login", "/api/user/profile"],
+                    "auth_api_paths": ["/api/logout"],
+                },
+                "api_surface_summary": {
+                    "sample_paths": ["/api/account/current", "/dashboard"],
+                    "sample_interfaces": [{"path": "/signout"}],
+                },
+                "runtime_api_calls": [
+                    {"method": "GET", "url": "https://example.com/api/me"},
+                ],
+            },
+        )
+
+        session_targets = list(targets.get("session_targets", []) or [])
+        logout_targets = list(targets.get("logout_targets", []) or [])
+        self.assertIn("https://example.com/api/user/profile", session_targets)
+        self.assertTrue(any(item.endswith("/api/logout") or item.endswith("/signout") for item in logout_targets))
+
+    def test_collect_ai_pen_runtime_observation_detects_session_auth_and_logout(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "session_request",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "request_url": "https://example.com/api/me",
+                            "url": "https://example.com/api/me",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body_text": '{"username":"admin","role":"admin"}',
+                        }
+                    },
+                },
+                {
+                    "turn": 2,
+                    "tool": "logout_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "request_url": "https://example.com/logout",
+                            "url": "https://example.com/login",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "text/html"},
+                            "body_text": "<html>统一身份认证登录</html>",
+                        }
+                    },
+                },
+            ],
+            evidence_seed="",
+            js_api_targets=[],
+            login_url="https://example.com/login",
+        )
+
+        self.assertTrue(bool(observation.get("session_auth_hit")))
+        self.assertIn("/api/me", str(observation.get("session_auth_url") or ""))
+        self.assertTrue(bool(observation.get("logout_effective")))
+        self.assertIn("登录", str(observation.get("logout_reason") or ""))
+
+    def test_build_ai_pen_runtime_session_summary_extracts_cookie_state(self):
+        class _CookieJar:
+            def keys(self):
+                return ["SESSIONID", "csrftoken"]
+
+        summary = WebSiteFetch._build_ai_pen_runtime_session_summary(
+            {
+                "weak_password": {
+                    "session": types.SimpleNamespace(cookies=_CookieJar()),
+                    "last_response": {
+                        "url": "https://example.com/dashboard",
+                        "status_code": 200,
+                    },
+                }
+            }
+        )
+
+        self.assertEqual(1, summary.get("session_count"))
+        self.assertEqual(["weak_password"], summary.get("session_keys"))
+        self.assertEqual(2, summary.get("cookie_total"))
+        self.assertTrue(bool(summary.get("auth_cookie_hit")))
+        self.assertIn("/dashboard", str(summary.get("sessions", [])[0].get("last_url") or ""))
+
+    def test_build_ai_pen_retry_seed_tool_plan_falls_back_to_history_tool_calls(self):
+        plan = WebSiteFetch._build_ai_pen_retry_seed_tool_plan(
+            {
+                "target": "https://example.com/login",
+                "tool_calls": [
+                    {"tool": "http_fetch", "params": {"url": "https://example.com/login"}},
+                    {"tool": "session_start", "params": {"url": "https://example.com/login", "session_key": "weak_password"}},
+                    {"tool": "credential_probe", "params": {"url": "https://example.com/doLogin", "method": "post"}},
+                ],
+            },
+            default_url="https://example.com/login",
+            max_steps=3,
+        )
+
+        self.assertEqual(2, len(plan))
+        self.assertEqual("session_start", plan[0].get("tool"))
+        self.assertEqual("credential_probe", plan[1].get("tool"))
+        self.assertIn("重试沿用历史工具", str(plan[0].get("summary") or ""))
 
     def test_should_collect_browser_intel_for_page_style_api_doc_target(self):
         original_enable = getattr(Config, "BROWSER_INTEL_ENABLE", False)
@@ -1503,6 +1953,19 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("options", methods)
         self.assertIn("get", methods)
 
+    def test_build_web_policy_probe_steps_includes_baseline_and_control(self):
+        steps = WebSiteFetch._build_web_policy_probe_steps(
+            "https://example.com/api/profile",
+            max_count=3,
+        )
+
+        self.assertEqual(3, len(steps))
+        first_headers = dict(steps[0].get("headers") or {})
+        second_headers = dict(steps[1].get("headers") or {})
+        self.assertEqual("get", str(steps[0].get("method") or "").lower())
+        self.assertNotIn("Origin", first_headers)
+        self.assertEqual("https://arl-probe.example", str(second_headers.get("Origin") or ""))
+
     def test_infer_tool_plan_for_socketio_uses_socketio_probe(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={"target": "https://example.com/app"},
@@ -1514,6 +1977,103 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual(2, len(plan))
         self.assertTrue(all(str(item.get("tool") or "") == "socketio_probe" for item in plan))
         self.assertTrue(any("/socket.io/" in str(item.get("params", {}).get("url", "") or "") for item in plan))
+
+    def test_build_websocket_probe_targets_prefers_runtime_and_sample_paths(self):
+        targets = WebSiteFetch._build_websocket_probe_targets(
+            "https://example.com/app",
+            candidate_paths=[
+                "/ws/chat",
+                "wss://example.com/realtime",
+            ],
+            max_count=3,
+        )
+
+        self.assertEqual(3, len(targets))
+        self.assertEqual("https://example.com/ws/chat", targets[0])
+        self.assertIn("https://example.com/ws/chat", targets)
+        self.assertIn("https://example.com/realtime", targets)
+        self.assertNotIn("https://example.com/app", targets)
+
+    def test_infer_tool_plan_for_websocket_uses_realtime_candidate_paths(self):
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={
+                "target": "https://example.com/app",
+                "api_surface_summary": {
+                    "sample_paths": ["/ws/chat"],
+                    "sample_interfaces": [{"path": "/websocket"}],
+                },
+                "runtime_api_calls": [
+                    {"method": "GET", "url": "wss://example.com/realtime?token=1"},
+                ],
+            },
+            payload_type="websocket_probe",
+            payload="",
+            max_steps=4,
+        )
+
+        urls = [str(item.get("params", {}).get("url", "") or "") for item in plan]
+        self.assertEqual(4, len(plan))
+        self.assertTrue(all(str(item.get("tool") or "") == "websocket_probe" for item in plan))
+        self.assertIn("https://example.com/ws/chat", urls)
+        self.assertIn("https://example.com/websocket", urls)
+        self.assertTrue(any(item.startswith("https://example.com/realtime") for item in urls))
+
+    def test_param_orchestrated_tool_plan_queues_websocket_probe_from_realtime_hints(self):
+        plan = WebSiteFetch._build_ai_pen_param_orchestrated_tool_plan(
+            candidate={
+                "target": "https://example.com/dashboard",
+                "risk_type": "websocket",
+                "route_hint": "websocket_handshake",
+                "api_surface_summary": {
+                    "sample_paths": ["/ws/chat"],
+                    "parameter_assets": [],
+                    "parameter_names": [],
+                },
+            },
+            max_steps=2,
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertEqual("websocket_probe", str(plan[0].get("tool") or ""))
+        self.assertIn("/ws/chat", str(plan[0].get("params", {}).get("url", "") or ""))
+
+    def test_infer_tool_plan_for_replay_uses_param_orchestrator_path_traversal(self):
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={
+                "target": "https://example.com/download/report",
+                "api_surface_summary": {
+                    "parameter_names": ["file", "download"],
+                    "parameter_assets": [{"name": "file", "tags": ["file_path"]}],
+                },
+            },
+            payload_type="replay",
+            payload="",
+            max_steps=2,
+        )
+
+        self.assertEqual(2, len(plan))
+        self.assertTrue(all(str(item.get("tool") or "") == "path_traversal_probe" for item in plan))
+        self.assertTrue(any("file=" in str(item.get("params", {}).get("url", "")) for item in plan))
+
+    def test_fallback_tool_plan_for_replay_uses_param_orchestrator_idor(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/api/user?id=100",
+            payload_type="replay",
+            payload="",
+            max_steps=2,
+            candidate={
+                "target": "https://example.com/api/user?id=100",
+                "api_surface_summary": {
+                    "parameter_assets": [{"name": "id", "tags": ["object_id"]}],
+                    "parameter_names": ["id"],
+                },
+            },
+            body_text="",
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertEqual("idor_probe", str(plan[0].get("tool") or ""))
+        self.assertIn("id=101", str(plan[0].get("params", {}).get("url", "") or ""))
 
     def test_build_auth_protocol_probe_targets_covers_openid_family(self):
         targets = WebSiteFetch._build_auth_protocol_probe_targets(
@@ -1666,6 +2226,47 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("credential_probe", plan[2].get("tool"))
         self.assertEqual("detect_login_success", plan[3].get("tool"))
         self.assertEqual("weak_password", plan[2].get("params", {}).get("session_key"))
+
+    def test_infer_tool_plan_for_weak_password_extends_to_session_and_logout(self):
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={
+                "target": "https://example.com/login",
+                "risk_type": "weak_password",
+                "runtime_api_calls": [
+                    {"method": "GET", "url": "https://example.com/api/user/profile"},
+                ],
+                "api_surface_summary": {
+                    "auth_paths": ["/api/user/profile", "/api/logout"],
+                },
+                "dom_form_summary": [
+                    {
+                        "action": "/doLogin",
+                        "method": "POST",
+                        "has_password_input": "true",
+                        "password_fields": "password",
+                        "has_captcha_hint": "false",
+                        "fields": "username,password,csrf_token",
+                    }
+                ],
+                "login_surface_summary": {
+                    "password_form_count": 1,
+                    "captcha_form_count": 0,
+                    "runtime_auth_paths": ["/api/user/profile"],
+                    "auth_api_paths": ["/api/logout"],
+                },
+            },
+            payload_type="weak_password_probe",
+            payload="username=admin&password=admin",
+            max_steps=6,
+        )
+
+        tools = [str(item.get("tool") or "") for item in plan]
+        self.assertEqual(
+            ["session_start", "extract_csrf_token", "credential_probe", "detect_login_success", "session_request", "logout_probe"],
+            tools,
+        )
+        self.assertIn("/api/user/profile", str(plan[4].get("params", {}).get("url", "") or ""))
+        self.assertEqual("weak_password", plan[5].get("params", {}).get("session_key"))
 
     def test_infer_tool_plan_for_jwt_extends_to_auth_protocol_targets(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
