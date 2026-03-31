@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-31（v4.5.10）
+## 2026-03-31（v4.5.10 ~ v4.5.23）
 
 - `[v4.5.10]` 仪表盘 `资产增长趋势(7日)` 统计口径修复：`/console/dashboard` 的 `asset_trend_7d` 从“累计总量曲线”调整为“按日新增曲线”，并额外保留 `assets_total/vulns_total` 累计字段用于兼容；修复高基数资产下曲线长期近似直线的问题（例如 tooltip 持续显示同一总量值）
 - `[v4.5.10]` 仪表盘当日新增资产统计兼容修复：`new_assets_today` 改为统一复用日统计逻辑，兼容 `save_date` 为 `date/string` 的混合存储，并在 `save_date` 缺失时回退 `update_date`，避免历史数据口径差异导致“新增始终为 0”
@@ -20,6 +20,8 @@
 - `[v4.5.20]` AI渗透 认证协议语义判定增强：新增 `_extract_auth_protocol_error_semantics`，对 `client 鉴权失败 / token 无效 / scope 不足 / grant 参数错误` 做语义分类并在 `auth_protocol` 分级中统一降噪；同时新增 `userinfo/introspect` 成功响应语义判定（如 `userinfo` 返回身份字段、`active=true/false`）以区分“鉴权生效”与“疑似未鉴权泄露”，提升阶段 C 认证链判定精度
 - `[v4.5.21]` AI渗透 SQLi 证据标准增强：`_detect_sqli_proof_type` 在原 `error_based` 基础上新增 `boolean_based/time_based` 判定（结合布尔条件差异、状态变化与延时特征），并在主决策链中将这两类纳入可利用证据分支；同时运行时观测新增响应耗时字段用于时间盲注判定，补齐对应回归测试
 - `[v4.5.22]` AI渗透 DOM XSS 证据结构化：`js_context` 分析新增 `dom_xss_proof_type`（`source_sink_only/source_sink_popup_hint`）并回写验证结果字段，形成 DOM XSS 的标准化证据描述，避免仅靠泛化 reason 文本；同时补齐 DOM XSS proof type 回归测试，便于后续在阶段 C 完成度核查中直接量化
+- `[v4.5.23]` AI渗透 `C-AutoPassive` 链路补齐第一批：新增 `path_traversal_probe / web_policy_probe / socketio_probe` 三类探针并打通 `risk_type -> payload_hint -> infer/fallback tool_plan -> runtime observation -> decision/proof_guard` 全链路；同时扩展参数资产图（`parameter_assets/parameter_tag_stats`）用于参数类型标签化，强化“参数驱动编排 + 证据分级”执行能力
+- `[v4.5.23]` AI渗透文档与回归同步：`docs/AI渗透测试MCP总体方案.md` 的阶段 C 更新为 `C-Core/C-AutoPassive` 双口径，并新增 `C-AutoPassive=100%` 验收与开发优先级；补齐 `test_ai_pen_js_context.py` 对 `path_traversal/web_policy/socketio` 的计划编排、运行时观测、分类与工具注册回归用例
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 
@@ -69,6 +71,29 @@
 - `[v4.3.42]` 报告一致性修复：钉钉知识库写入任务导出时，单任务场景改为复用单任务导出链路（`export_arl`），多任务继续走批量导出（`export_merge_tasks`），避免“知识库报告与导出报告口径不一致”的问题
 - `[v4.3.42]` AI渗透列表列精简：`AI渗透` 列表默认隐藏 `知识命中 / 说明 / 工具轨迹` 三列，保留在 `AI渗透详情` 中查看，提升列表横向可读性与操作效率
 
+## 2026-03-28（v4.3.26 ~ v4.3.41）
+
+- `[v4.3.26]` AI 管理补齐“思考模型”配置：提供方预设新增 `default_reasoning_model`，前后端模型配置新增 `reasoning_model` 字段并接入读写；DeepSeek 默认展示 `DeepSeek-R1`，配置弹窗与卡片摘要同步显示“分析模型 / 思考模型 / API Base URL”，为后续区分分析模型与思考模型保留数据面
+- `[v4.3.26]` AI 渗透结果页可读性增强：`AI渗透` 列表新增 `详情` 按钮与详情弹窗，集中展示 `目标 / 漏洞URL / 说明 / 知识命中 / 证据片段 / 工具轨迹 / 响应摘要`，修复长文本挤压表格导致下方内容难以查看的问题；同时将 `目标 / 漏洞URL` 改为居中展示并复用超链接渲染
+- `[v4.3.26]` 配置管理新增 `PoC 更新代理`：扫描配置新增 `POC_UPDATE_PROXY` 并接入运行时热刷新、`config-docker.yaml` 模板与前端表单；`更新 Nuclei PoC / 更新 afrog PoC` 接口执行 `git clone/pull` 时自动透传 `http_proxy/https_proxy/all_proxy`，成功提示与失败文案同步展示代理信息，方便受限网络环境下更新 PoC 仓库
+- `[v4.3.27]` AI 管理思考模型改为“全提供方通用”默认策略：`通义千问 / Kimi / OpenAI-GPT / 智谱GLM / DeepSeek` 的 `reasoning_model` 在未单独配置时默认跟随当前分析模型，DeepSeek 继续保留 `DeepSeek-R1` 预置；前后端模型归一化、默认 profile 创建、旧配置回填与弹窗占位文案同步调整，修复“只有 DeepSeek 真正补了思考模型，其它提供方仍为空”的体验问题
+- `[v4.3.28]` AI 渗透 JS 误报收敛增强：`commonTask._verify_ai_pen_candidate` 新增 `.js` 静态上下文分析分支，对 `sensitive_info / DOM XSS` 命中补充“硬编码字面量、变量拼接、本地存储、框架构建产物、source->sink` 等上下文判断；可将 `Nuxt/Webpack` 构建产物与变量拼接类线索降为 `likely_false_positive`，对真实硬编码敏感值提升为 `verified/needs_manual_review`，并将 `JS上下文` 证据回写到 `reason/evidence_snippet/tool_trace`
+- `[v4.3.29]` AI+MCP 渗透编排增强：`commonTask` 新增 `route_hint/product_hints` 与 `API文档结构摘要` 能力，AI planner 请求体现在会携带 `js_sensitive_context/js_dom_context/api_doc_structure/jwt_token_first/websocket_handshake/structured_id_mutation` 等路由提示、产品线索与结论门槛；运行时对真实 API 文档命中补充 `paths/auth_paths/parameter_names/securitySchemes` 摘要并回写到 `reason/evidence_snippet/response_hash_diff`，让 AI+MCP 更像“基于上下文做验证”而不是只做通用重放
+- `[v4.3.29]` AI渗透 SOP 升级：`ARL/docker/ai/sop/default_ai_pen_test.yaml` 新增“上下文先行、PoC知识仅作提示、JS误报抑制、API文档结构化优先”的运行时约束，并明确 `verified/needs_manual_review/likely_false_positive` 三档证据标准，减少 planner 因提示词过于泛化而做出激进判断
+- `[v4.3.30]` AI渗透编排 Skill 初版：新增 `ARL/docker/ai/skills/ai-pen-orchestrator/`，以中文为主沉淀 `SKILL.md + routing/evidence-criteria/product-playbooks/false-positive-rules` 四类参考文件，用于统一 AI渗透测试后续开发中的候选路由、证据标准、产品画像与误报抑制方法论，降低“规则、SOP、代码三处各说各话”的维护成本
+- `[v4.3.31]` 结构化接口消费增强：AI渗透验证链将 `API文档摘要` 扩展为统一的 `api_surface_summary`，开始同时消费 `Swagger/OpenAPI` 与 `JS` 中提取出的接口面（`method/url/params/source`），补充 `auth/object_id/upload/download` 风格统计；`AI渗透详情` 新增“接口结构摘要 + JS提取接口样例”展示，帮助用户确认即使目标没有标准 API 文档，前端暴露出的接口与参数也已被结构化纳入验证输入
+- `[v4.3.32]` PoC 文库结构化二期：`build_ai_pen_knowledge_index.py` 从 `tools/poc/POC` 语料中进一步提炼 `product_labels / vuln_types / entry_paths / verify_actions / record_refs` 等结构化知识，运行时 `AI渗透` 候选命中新增对应字段并参与 planner 输入与详情展示；`AI渗透详情` 新增“知识画像”区域，直接展示知识命中的产品组件、漏洞类型、入口路径与建议验证动作，让 `PoC 文库` 从“只命中 token 的参考语料”升级为“可解释的验证知识源”
+- `[v4.3.33]` AI渗透能力模型去产品特判化：`commonTask` 中原本偏向具体产品名的 `product_hints/playbook` 逻辑收敛为通用系统家族/能力画像（如 `api_doc_surface/js_bundler_app/token_auth_flow/admin_office_portal`），不再将用户举例的某些产品直接写死为运行时优先对象；同时清理重复 helper 定义并同步更新测试与 Skill 参考文档，使后续能力建设更贴近 `OWASP / PortSwigger` 风格的基础能力矩阵
+- `[v4.3.34]` 浏览器情报采集层与认知图谱最小版本接入：新增 `browser_intel_scan` 服务并补齐 `BROWSER_INTEL_*` 配置，基于 Playwright 对高价值页面目标做低侵入采集，输出 `browser_surface_summary / runtime_api_calls / dom_form_summary`；`AI渗透` 验证链按条件补充浏览器视角，并新增 `task_ai_pen_graph_summary` 摘要字段（节点数、边数、核心路径/参数、auth/object_ref/file cluster），前端 `AI渗透详情` 同步新增“浏览器情报摘要 / 认知图谱摘要”区块，为后续图谱化推理与认证上下文接入打基础
+- `[v4.3.35]` 浏览器情报默认跟随 `AI渗透测试` 启用：`config.py` 与 `config-docker.yaml` 中 `BROWSER_INTEL_ENABLE` 默认调整为开启，但运行时仅在 `AI_PEN_TEST_ENABLE && BROWSER_INTEL_ENABLE` 同时满足时才会实际参与 `AI渗透` 链路，确保浏览器情报作为 AI 渗透的受控补充能力，而不是独立后台采集任务
+- `[v4.3.35]` `WIH/静态情报` 与浏览器运行时情报边界收口：`commonTask` 新增 `intel_layers` 摘要与“静态上下文已足够则不再触发浏览器采集”的判断，浏览器情报结果新增 `runtime_enrichment/passive` 角色标识；`AI渗透详情` 和 `认知图谱摘要` 现在会显式展示“静态情报 / 文库知识 / 浏览器运行时”三层来源，减少重复采集、重复展示和用户理解成本
+- `[v4.3.36]` AI渗透任务级图谱上下文复用：`commonTask` 新增 `task_ai_pen_graph_context`，将单候选 `graph_summary` 聚合为任务级共享上下文（候选数、来源分布、路线分布、情报层分布、任务级核心路径/参数、认证/对象引用/文件处理存在性），并在 AI planner、结果落库、重试链与前端详情中统一复用；同时新增 `docs/AI渗透测试能力清单.md`，以“已具备 / 部分具备 / 未具备”方式盘点当前能力边界
+- `[v4.3.37]` 黑盒能力补强：文件处理与登录页分析进入 AI渗透主链。`commonTask` 新增 `file_handling_surface/login_entry_surface` 能力画像与对应上下文分析，对 `upload/download/export/attachment/template` 入口、`multipart` 表单、下载响应头、登录表单、密码输入、验证码/风控线索、认证相关运行时接口做保守识别与低副作用裁决；`browser_intel_scan` 表单摘要新增 `enctype/has_file_input/has_password_input/password_fields/has_captcha_hint/submit_text`，前端 `AI渗透详情` 新增“登录面黑盒摘要”并增强 DOM 表单展示，SOP 默认模板同步补充“文件处理/登录入口不等于已证明漏洞”的约束
+- `[v4.3.38]` AI渗透结果对齐与报告补齐：`AI渗透详情` 新增“ARL 与 AI 对话记录 / 渗透测试记录”，可直接查看 `ai_plan_request / ai_plan_reply / ai_plan_actions / verification_step / payload / external_tool_runs`；资产搜索页隐藏 `指纹统计` 模块，减轻页面拥挤；`Excel` 导出与钉钉知识库报告同步新增 `AI渗透测试` 工作表/章节，保证页面、导出报告、知识库三条链路展示一致
+- `[v4.3.39]` 导出报告改为异步任务，彻底规避大报告同步导出导致的 `504 Gateway Time-out`：`export` 新增 `job` 创建/查询/下载接口，前端报告导出改为“创建任务 -> 轮询状态 -> 完成后下载”；后台通过 Celery `arlweb` 队列异步生成 `excel/html/ai_markdown` 报告并写入共享导出目录，`Workbook` 结果直接落盘而非先整份转字节串，降低大报告场景下的请求时长与内存峰值；同时补齐 `export_job` 索引、共享导出目录配置与 `web/worker` 挂载，避免继续依赖提高 nginx/gunicorn 超时来硬扛导出
+- `[v4.3.40]` AI渗透对话记录可读性增强：`AI渗透详情` 中的 `ARL请求摘要 / AI回复摘要` 不再直接展示原始 JSON，而是优先解析为“目标、风险类型、路由提示、能力画像、结论、置信度、原因、关键证据、下一步动作”等结构化可读文本；`Excel` 导出的 `AI渗透测试` 工作表同步采用同样的友好摘要逻辑，仅在解析失败时回退原文，降低用户在页面和报告中阅读原始 JSON 的负担
+- `[v4.3.41]` `web_info_hunter/urlfinder_extract` 容错修复：针对 JS/页面文本中误提取出的畸形 URL 候选（如 NFKC 非法 netloc、残缺 IPv6 URL），为 `urlfinder_extract` 与 `web_info_intel_utils` 的 URL 解析/归一化逻辑补充异常保护，策略改为“跳过单条脏候选，继续处理其它正常 URL/JS”，避免 `domain_task / web_info_hunter` 因单条异常字符串导致整个任务失败
+
 ## 2026-03-27（v4.3.19 ~ v4.3.25）
 
 - `[v4.3.25]` AI 渗透外部工具执行器升级为“可扩展框架”：`commonTask` 新增外部工具说明文件加载机制（`yaml/json`），支持用户在 `tools/ai_pen_tools` 目录按清单定义工具 `id/match/exec/result`，并通过 `AI_PEN_EXTERNAL_TOOLS` 白名单启用；运行时支持内置 `sqlmap/httpx` 与同名覆盖，匹配逻辑新增 `risk_name` 参与命中，`api_doc` 关键词命中修正，提升外部工具策略可维护性与命中稳定性
@@ -92,29 +117,6 @@
 - `[v4.3.19]` AI-POC 可观测性增强：任务服务阶段新增 `ai_poc_scan` 计时与决策明细，AI 管理日志新增 `AI-POC扫描-计划/决策` 场景，前端任务阶段与配置文案统一为 `AI-POC扫描`，便于确认“调用了哪些 PoC 候选策略”
 - `[v4.3.19]` PoC 索引能力补齐：新增 `ARL/app/tools/build_poc_index.py`，支持从 `nuclei-templates/afrog-pocs` 构建 `token -> tags/keywords` 索引；运行时优先读取 `/code/docker/ai/sop/poc_index.json`（兼容历史路径并支持 `ARL_AI_POC_INDEX_FILE` 覆盖），避免每次运行全库检索
 - `[v4.3.19]` AI 去噪 PoC 风险触发修复：`run_task_ai_denoise_pipeline` 启动时会先合并已累计的 `pending_modules`，修复并发阶段下 `nuclei_result/vuln` 等模块因状态切换被清空后漏执行的问题
-
-## 2026-03-28（v4.3.26 ~ v4.3.41）
-
-- `[v4.3.26]` AI 管理补齐“思考模型”配置：提供方预设新增 `default_reasoning_model`，前后端模型配置新增 `reasoning_model` 字段并接入读写；DeepSeek 默认展示 `DeepSeek-R1`，配置弹窗与卡片摘要同步显示“分析模型 / 思考模型 / API Base URL”，为后续区分分析模型与思考模型保留数据面
-- `[v4.3.26]` AI 渗透结果页可读性增强：`AI渗透` 列表新增 `详情` 按钮与详情弹窗，集中展示 `目标 / 漏洞URL / 说明 / 知识命中 / 证据片段 / 工具轨迹 / 响应摘要`，修复长文本挤压表格导致下方内容难以查看的问题；同时将 `目标 / 漏洞URL` 改为居中展示并复用超链接渲染
-- `[v4.3.26]` 配置管理新增 `PoC 更新代理`：扫描配置新增 `POC_UPDATE_PROXY` 并接入运行时热刷新、`config-docker.yaml` 模板与前端表单；`更新 Nuclei PoC / 更新 afrog PoC` 接口执行 `git clone/pull` 时自动透传 `http_proxy/https_proxy/all_proxy`，成功提示与失败文案同步展示代理信息，方便受限网络环境下更新 PoC 仓库
-- `[v4.3.27]` AI 管理思考模型改为“全提供方通用”默认策略：`通义千问 / Kimi / OpenAI-GPT / 智谱GLM / DeepSeek` 的 `reasoning_model` 在未单独配置时默认跟随当前分析模型，DeepSeek 继续保留 `DeepSeek-R1` 预置；前后端模型归一化、默认 profile 创建、旧配置回填与弹窗占位文案同步调整，修复“只有 DeepSeek 真正补了思考模型，其它提供方仍为空”的体验问题
-- `[v4.3.28]` AI 渗透 JS 误报收敛增强：`commonTask._verify_ai_pen_candidate` 新增 `.js` 静态上下文分析分支，对 `sensitive_info / DOM XSS` 命中补充“硬编码字面量、变量拼接、本地存储、框架构建产物、source->sink` 等上下文判断；可将 `Nuxt/Webpack` 构建产物与变量拼接类线索降为 `likely_false_positive`，对真实硬编码敏感值提升为 `verified/needs_manual_review`，并将 `JS上下文` 证据回写到 `reason/evidence_snippet/tool_trace`
-- `[v4.3.29]` AI+MCP 渗透编排增强：`commonTask` 新增 `route_hint/product_hints` 与 `API文档结构摘要` 能力，AI planner 请求体现在会携带 `js_sensitive_context/js_dom_context/api_doc_structure/jwt_token_first/websocket_handshake/structured_id_mutation` 等路由提示、产品线索与结论门槛；运行时对真实 API 文档命中补充 `paths/auth_paths/parameter_names/securitySchemes` 摘要并回写到 `reason/evidence_snippet/response_hash_diff`，让 AI+MCP 更像“基于上下文做验证”而不是只做通用重放
-- `[v4.3.29]` AI渗透 SOP 升级：`ARL/docker/ai/sop/default_ai_pen_test.yaml` 新增“上下文先行、PoC知识仅作提示、JS误报抑制、API文档结构化优先”的运行时约束，并明确 `verified/needs_manual_review/likely_false_positive` 三档证据标准，减少 planner 因提示词过于泛化而做出激进判断
-- `[v4.3.30]` AI渗透编排 Skill 初版：新增 `ARL/docker/ai/skills/ai-pen-orchestrator/`，以中文为主沉淀 `SKILL.md + routing/evidence-criteria/product-playbooks/false-positive-rules` 四类参考文件，用于统一 AI渗透测试后续开发中的候选路由、证据标准、产品画像与误报抑制方法论，降低“规则、SOP、代码三处各说各话”的维护成本
-- `[v4.3.31]` 结构化接口消费增强：AI渗透验证链将 `API文档摘要` 扩展为统一的 `api_surface_summary`，开始同时消费 `Swagger/OpenAPI` 与 `JS` 中提取出的接口面（`method/url/params/source`），补充 `auth/object_id/upload/download` 风格统计；`AI渗透详情` 新增“接口结构摘要 + JS提取接口样例”展示，帮助用户确认即使目标没有标准 API 文档，前端暴露出的接口与参数也已被结构化纳入验证输入
-- `[v4.3.32]` PoC 文库结构化二期：`build_ai_pen_knowledge_index.py` 从 `tools/poc/POC` 语料中进一步提炼 `product_labels / vuln_types / entry_paths / verify_actions / record_refs` 等结构化知识，运行时 `AI渗透` 候选命中新增对应字段并参与 planner 输入与详情展示；`AI渗透详情` 新增“知识画像”区域，直接展示知识命中的产品组件、漏洞类型、入口路径与建议验证动作，让 `PoC 文库` 从“只命中 token 的参考语料”升级为“可解释的验证知识源”
-- `[v4.3.33]` AI渗透能力模型去产品特判化：`commonTask` 中原本偏向具体产品名的 `product_hints/playbook` 逻辑收敛为通用系统家族/能力画像（如 `api_doc_surface/js_bundler_app/token_auth_flow/admin_office_portal`），不再将用户举例的某些产品直接写死为运行时优先对象；同时清理重复 helper 定义并同步更新测试与 Skill 参考文档，使后续能力建设更贴近 `OWASP / PortSwigger` 风格的基础能力矩阵
-- `[v4.3.34]` 浏览器情报采集层与认知图谱最小版本接入：新增 `browser_intel_scan` 服务并补齐 `BROWSER_INTEL_*` 配置，基于 Playwright 对高价值页面目标做低侵入采集，输出 `browser_surface_summary / runtime_api_calls / dom_form_summary`；`AI渗透` 验证链按条件补充浏览器视角，并新增 `task_ai_pen_graph_summary` 摘要字段（节点数、边数、核心路径/参数、auth/object_ref/file cluster），前端 `AI渗透详情` 同步新增“浏览器情报摘要 / 认知图谱摘要”区块，为后续图谱化推理与认证上下文接入打基础
-- `[v4.3.35]` 浏览器情报默认跟随 `AI渗透测试` 启用：`config.py` 与 `config-docker.yaml` 中 `BROWSER_INTEL_ENABLE` 默认调整为开启，但运行时仅在 `AI_PEN_TEST_ENABLE && BROWSER_INTEL_ENABLE` 同时满足时才会实际参与 `AI渗透` 链路，确保浏览器情报作为 AI 渗透的受控补充能力，而不是独立后台采集任务
-- `[v4.3.35]` `WIH/静态情报` 与浏览器运行时情报边界收口：`commonTask` 新增 `intel_layers` 摘要与“静态上下文已足够则不再触发浏览器采集”的判断，浏览器情报结果新增 `runtime_enrichment/passive` 角色标识；`AI渗透详情` 和 `认知图谱摘要` 现在会显式展示“静态情报 / 文库知识 / 浏览器运行时”三层来源，减少重复采集、重复展示和用户理解成本
-- `[v4.3.36]` AI渗透任务级图谱上下文复用：`commonTask` 新增 `task_ai_pen_graph_context`，将单候选 `graph_summary` 聚合为任务级共享上下文（候选数、来源分布、路线分布、情报层分布、任务级核心路径/参数、认证/对象引用/文件处理存在性），并在 AI planner、结果落库、重试链与前端详情中统一复用；同时新增 `docs/AI渗透测试能力清单.md`，以“已具备 / 部分具备 / 未具备”方式盘点当前能力边界
-- `[v4.3.37]` 黑盒能力补强：文件处理与登录页分析进入 AI渗透主链。`commonTask` 新增 `file_handling_surface/login_entry_surface` 能力画像与对应上下文分析，对 `upload/download/export/attachment/template` 入口、`multipart` 表单、下载响应头、登录表单、密码输入、验证码/风控线索、认证相关运行时接口做保守识别与低副作用裁决；`browser_intel_scan` 表单摘要新增 `enctype/has_file_input/has_password_input/password_fields/has_captcha_hint/submit_text`，前端 `AI渗透详情` 新增“登录面黑盒摘要”并增强 DOM 表单展示，SOP 默认模板同步补充“文件处理/登录入口不等于已证明漏洞”的约束
-- `[v4.3.38]` AI渗透结果对齐与报告补齐：`AI渗透详情` 新增“ARL 与 AI 对话记录 / 渗透测试记录”，可直接查看 `ai_plan_request / ai_plan_reply / ai_plan_actions / verification_step / payload / external_tool_runs`；资产搜索页隐藏 `指纹统计` 模块，减轻页面拥挤；`Excel` 导出与钉钉知识库报告同步新增 `AI渗透测试` 工作表/章节，保证页面、导出报告、知识库三条链路展示一致
-- `[v4.3.39]` 导出报告改为异步任务，彻底规避大报告同步导出导致的 `504 Gateway Time-out`：`export` 新增 `job` 创建/查询/下载接口，前端报告导出改为“创建任务 -> 轮询状态 -> 完成后下载”；后台通过 Celery `arlweb` 队列异步生成 `excel/html/ai_markdown` 报告并写入共享导出目录，`Workbook` 结果直接落盘而非先整份转字节串，降低大报告场景下的请求时长与内存峰值；同时补齐 `export_job` 索引、共享导出目录配置与 `web/worker` 挂载，避免继续依赖提高 nginx/gunicorn 超时来硬扛导出
-- `[v4.3.40]` AI渗透对话记录可读性增强：`AI渗透详情` 中的 `ARL请求摘要 / AI回复摘要` 不再直接展示原始 JSON，而是优先解析为“目标、风险类型、路由提示、能力画像、结论、置信度、原因、关键证据、下一步动作”等结构化可读文本；`Excel` 导出的 `AI渗透测试` 工作表同步采用同样的友好摘要逻辑，仅在解析失败时回退原文，降低用户在页面和报告中阅读原始 JSON 的负担
-- `[v4.3.41]` `web_info_hunter/urlfinder_extract` 容错修复：针对 JS/页面文本中误提取出的畸形 URL 候选（如 NFKC 非法 netloc、残缺 IPv6 URL），为 `urlfinder_extract` 与 `web_info_intel_utils` 的 URL 解析/归一化逻辑补充异常保护，策略改为“跳过单条脏候选，继续处理其它正常 URL/JS”，避免 `domain_task / web_info_hunter` 因单条异常字符串导致整个任务失败
 
 ## 2026-03-26（v4.3.0 ~ v4.3.18）
 

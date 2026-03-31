@@ -174,6 +174,9 @@ class WebSiteFetch(object):
         "ssrf_probe",
         "ssti_probe",
         "xxe_probe",
+        "path_traversal_probe",
+        "web_policy_probe",
+        "socketio_probe",
         "weak_password_probe",
         "idor_probe",
         "api_doc_probe",
@@ -208,6 +211,9 @@ class WebSiteFetch(object):
         "ssti_probe",
         "xxe_probe",
         "cmdi_probe",
+        "path_traversal_probe",
+        "web_policy_probe",
+        "socketio_probe",
         "idor_probe",
         "api_doc_probe",
         "graphql_probe",
@@ -261,6 +267,8 @@ class WebSiteFetch(object):
     AI_PEN_EXTRA_SURFACE_HINTS = {
         "api_doc_surface": ("swagger", "openapi", "api-docs", "postman", "knife4j", "redoc"),
         "graphql_surface": ("graphql", "graphiql", "graphql-playground", "apollo", "relay"),
+        "web_policy_surface": ("cors", "x-frame-options", "strict-transport-security", "content-security-policy", "cache-control"),
+        "realtime_channel_surface": ("websocket", "socket.io", "sockjs", "engine.io"),
         "js_bundler_app": ("_nuxt", "nuxt", "__nuxt__", "webpack", "__webpack_require__", "webpackjson", "__vite__"),
         "admin_office_portal": ("admin", "console", "dashboard", "backend", "manage", "panel", "oa", "office", "协同办公", "工作台", "审批", "流程"),
         "token_auth_flow": ("jwt", "bearer", "oauth", "openid", "access_token", "authorization", "id_token", "refresh_token"),
@@ -332,6 +340,28 @@ class WebSiteFetch(object):
             "priority_actions": [
                 "优先区分发现文件处理入口与已证明任意文件读写，避免把导出/附件功能直接判成漏洞",
                 "优先围绕 multipart 表单、下载响应头、导出/附件路径和文件参数做低副作用验证",
+            ],
+        },
+        "web_policy_surface": {
+            "priority": 81,
+            "route_hint": "web_policy_context",
+            "preferred_payload_type": "web_policy_probe",
+            "focus_paths": ["sample_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先检查 CORS、缓存策略和关键安全响应头，不将单一缺失头直接判定为高危漏洞",
+                "优先通过基线与对照请求判断是否存在可复现的策略缺陷证据",
+            ],
+        },
+        "realtime_channel_surface": {
+            "priority": 80,
+            "route_hint": "websocket_handshake",
+            "preferred_payload_type": "socketio_probe",
+            "focus_paths": ["sample_paths", "auth_paths"],
+            "focus_params": ["parameter_names"],
+            "priority_actions": [
+                "优先确认 Socket.IO/SockJS 入口是否真实可访问，再评估是否继续进行鉴权边界验证",
+                "优先记录握手/轮询入口证据，避免仅凭 URL 关键词判定风险",
             ],
         },
         "login_entry_surface": {
@@ -426,6 +456,17 @@ class WebSiteFetch(object):
     }
     AI_PEN_UPLOAD_HINTS = ("upload", "multipart", "file", "image", "avatar", "attachment", "import")
     AI_PEN_DOWNLOAD_HINTS = ("download", "export", "file", "attachment", "template", "report")
+    AI_PEN_PATH_TRAVERSAL_HINTS = ("path", "file", "filename", "filepath", "download", "template", "page", "dir")
+    AI_PEN_WEB_POLICY_HINTS = (
+        "cors",
+        "cache-control",
+        "security headers",
+        "strict-transport-security",
+        "x-frame-options",
+        "x-content-type-options",
+        "content-security-policy",
+        "referrer-policy",
+    )
     AI_POC_ALIAS_HINTS = {
         "alibaba": ["alibaba", "aliyun", "阿里", "阿里云"],
         "tencent": ["tencent", "qcloud", "腾讯", "腾讯云"],
@@ -3718,12 +3759,18 @@ class WebSiteFetch(object):
             return "login_entry_context"
         if risk_type in {"file_upload", "file_read"}:
             return "file_handling_context"
+        if risk_type == "path_traversal":
+            return "file_handling_context"
         if risk_type == "api_doc":
             return "api_doc_structure"
         if risk_type == "graphql":
             return "graphql_schema_context"
         if risk_type == "jwt":
             return "jwt_token_first"
+        if risk_type == "web_policy":
+            return "web_policy_context"
+        if risk_type == "socketio":
+            return "websocket_handshake"
         if risk_type == "websocket":
             return "websocket_handshake"
         if risk_type == "idor":
@@ -3811,7 +3858,7 @@ class WebSiteFetch(object):
             return True
         if route_hint in {"api_doc_structure", "jwt_token_first", "structured_id_mutation", "http_replay_then_context", "login_entry_context"}:
             return True
-        return risk_type in {"api_doc", "jwt", "idor", "websocket", "login_surface"}
+        return risk_type in {"api_doc", "jwt", "idor", "websocket", "socketio", "web_policy", "path_traversal", "login_surface"}
 
     def _collect_ai_pen_browser_intel(self, candidate: dict):
         item = candidate if isinstance(candidate, dict) else {}
@@ -3928,6 +3975,10 @@ class WebSiteFetch(object):
                 bump("file_handling_surface", 38)
             if product in {"login_entry_surface", "login", "signin", "sso", "cas", "passport"}:
                 bump("login_entry_surface", 40)
+            if product in {"web_policy_surface", "cors", "security_header", "cache_policy"}:
+                bump("web_policy_surface", 36)
+            if product in {"realtime_channel_surface", "websocket", "socket.io", "sockjs"}:
+                bump("realtime_channel_surface", 38)
 
         if route_hint == "api_doc_structure":
             bump("api_doc_surface", 40)
@@ -3939,6 +3990,10 @@ class WebSiteFetch(object):
             bump("token_auth_flow", 35)
         if route_hint == "file_handling_context":
             bump("file_handling_surface", 40)
+        if route_hint == "web_policy_context":
+            bump("web_policy_surface", 38)
+        if route_hint == "websocket_handshake":
+            bump("realtime_channel_surface", 30)
         if route_hint == "login_entry_context":
             bump("login_entry_surface", 42)
 
@@ -3971,6 +4026,14 @@ class WebSiteFetch(object):
             bump("graphql_surface", 32)
         if risk_type in {"file_upload", "file_read"}:
             bump("file_handling_surface", 32)
+        if risk_type == "path_traversal":
+            bump("file_handling_surface", 32)
+        if risk_type == "web_policy":
+            bump("web_policy_surface", 34)
+        if risk_type == "socketio":
+            bump("realtime_channel_surface", 34)
+        if risk_type == "websocket":
+            bump("realtime_channel_surface", 30)
         if risk_type == "login_surface":
             bump("login_entry_surface", 32)
 
@@ -4506,6 +4569,9 @@ class WebSiteFetch(object):
         ssti_proof_type = str(merged.get("ssti_proof_type", "") or "").strip().lower()
         xxe_proof_type = str(merged.get("xxe_proof_type", "") or "").strip().lower()
         ssrf_proof_type = str(merged.get("ssrf_proof_type", "") or "").strip().lower()
+        path_traversal_proof_type = str(merged.get("path_traversal_proof_type", "") or "").strip().lower()
+        web_policy_proof_type = str(merged.get("web_policy_proof_type", "") or "").strip().lower()
+        socketio_proof_type = str(merged.get("socketio_proof_type", "") or "").strip().lower()
 
         if ai_reason:
             base_reason = str(merged.get("reason", "") or "").strip()
@@ -4527,6 +4593,9 @@ class WebSiteFetch(object):
             ssti_proof_type=ssti_proof_type,
             xxe_proof_type=xxe_proof_type,
             ssrf_proof_type=ssrf_proof_type,
+            path_traversal_proof_type=path_traversal_proof_type,
+            web_policy_proof_type=web_policy_proof_type,
+            socketio_proof_type=socketio_proof_type,
         )
         if proof_guard_reason and base_decision == "verified":
             merged["decision"] = "needs_manual_review"
@@ -4583,6 +4652,9 @@ class WebSiteFetch(object):
         ssti_proof_type: str = "",
         xxe_proof_type: str = "",
         ssrf_proof_type: str = "",
+        path_traversal_proof_type: str = "",
+        web_policy_proof_type: str = "",
+        socketio_proof_type: str = "",
     ) -> str:
         if (str(risk_type_text or "").strip().lower() == "xss" or str(payload_type_text or "").strip().lower() == "xss_probe") and (not xss_popup_proof):
             return "XSS 缺少可触发弹窗的执行证据，禁止直接判定为 verified"
@@ -4617,6 +4689,21 @@ class WebSiteFetch(object):
             "local_network_disclosure",
         }:
             return "SSRF 缺少服务端请求命中内网/元数据证据，禁止直接判定为 verified"
+        if (str(risk_type_text or "").strip().lower() == "path_traversal" or str(payload_type_text or "").strip().lower() == "path_traversal_probe") and str(path_traversal_proof_type or "").strip().lower() not in {
+            "passwd_disclosure",
+            "win_ini_disclosure",
+        }:
+            return "路径穿越缺少明确文件读取证据，禁止直接判定为 verified"
+        if (str(risk_type_text or "").strip().lower() == "web_policy" or str(payload_type_text or "").strip().lower() == "web_policy_probe") and str(web_policy_proof_type or "").strip().lower() not in {
+            "cors_credentialed_wildcard",
+            "cors_credentialed_reflect_origin",
+        }:
+            return "Web 策略缺少可复现的高危 CORS 证据，禁止直接判定为 verified"
+        if (str(risk_type_text or "").strip().lower() == "socketio" or str(payload_type_text or "").strip().lower() == "socketio_probe") and str(socketio_proof_type or "").strip().lower() not in {
+            "socketio_polling_open",
+            "sockjs_info_open",
+        }:
+            return "Socket.IO/SockJS 缺少稳定入口证据，禁止直接判定为 verified"
         return ""
 
     @staticmethod
@@ -6167,6 +6254,151 @@ class WebSiteFetch(object):
         except Exception:
             return []
 
+    @classmethod
+    def _build_path_traversal_probe_targets(cls, target_url: str, max_count=4):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return []
+        payloads = [
+            "../../../../etc/passwd",
+            "..%2f..%2f..%2f..%2fetc%2fpasswd",
+            "..\\..\\..\\..\\windows\\win.ini",
+        ]
+        try:
+            parsed = urlsplit(url_text)
+            query_items = parse_qsl(parsed.query, keep_blank_values=True)
+            query_keys = [str(key or "").strip() for key, _ in query_items if str(key or "").strip()]
+            candidate_keys = []
+            for key_text in query_keys:
+                lowered = key_text.lower()
+                if any(token in lowered for token in cls.AI_PEN_PATH_TRAVERSAL_HINTS):
+                    candidate_keys.append(key_text)
+            if not candidate_keys and query_keys:
+                candidate_keys = query_keys[:2]
+            if not candidate_keys:
+                candidate_keys = ["file", "path"]
+
+            targets = []
+            seen = set()
+            for key_text in candidate_keys:
+                for payload in payloads:
+                    mutable_items = list(query_items)
+                    replaced = False
+                    for index, (item_key, _) in enumerate(mutable_items):
+                        if str(item_key or "").strip() == key_text:
+                            mutable_items[index] = (item_key, payload)
+                            replaced = True
+                    if not replaced:
+                        mutable_items.append((key_text, payload))
+                    final_query = urlencode(mutable_items, doseq=True)
+                    full_url = urlunsplit(parsed._replace(query=final_query))
+                    if full_url in seen:
+                        continue
+                    seen.add(full_url)
+                    targets.append(full_url)
+                    if len(targets) >= max(1, int(max_count or 1)):
+                        return targets
+            return targets
+        except Exception:
+            return []
+
+    @staticmethod
+    def _build_web_policy_probe_steps(target_url: str, max_count=4):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return []
+        try:
+            parsed = urlsplit(url_text)
+            base_url = "{}://{}".format(parsed.scheme, parsed.netloc)
+        except Exception:
+            parsed = None
+            base_url = url_text
+        candidate_urls = [url_text]
+        if base_url and base_url not in candidate_urls:
+            candidate_urls.append(base_url)
+        if base_url and "{}{}".format(base_url, "/") not in candidate_urls:
+            candidate_urls.append("{}{}".format(base_url, "/"))
+
+        steps = []
+        seen = set()
+        origin = "https://arl-probe.example"
+        for candidate_url in candidate_urls:
+            get_step = {
+                "url": candidate_url,
+                "method": "get",
+                "allow_redirects": True,
+                "headers": {
+                    "Origin": origin,
+                    "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+                },
+            }
+            options_step = {
+                "url": candidate_url,
+                "method": "options",
+                "allow_redirects": False,
+                "headers": {
+                    "Origin": origin,
+                    "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Headers": "authorization,content-type",
+                },
+            }
+            for step in (get_step, options_step):
+                cache_key = json.dumps(step, ensure_ascii=False, sort_keys=True)
+                if cache_key in seen:
+                    continue
+                seen.add(cache_key)
+                steps.append(step)
+                if len(steps) >= max(1, int(max_count or 1)):
+                    return steps
+        return steps
+
+    @staticmethod
+    def _build_socketio_probe_targets(target_url: str, max_count=4):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return []
+        try:
+            parsed = urlsplit(url_text)
+            base = "{}://{}".format(parsed.scheme, parsed.netloc)
+            lower_path = str(parsed.path or "").strip().lower()
+            has_api_prefix = lower_path.startswith("/api/") or "/api/" in lower_path
+            candidate_paths = []
+            if "socket.io" in lower_path or "sockjs" in lower_path:
+                candidate_paths.append(str(parsed.path or "").strip())
+            candidate_paths.extend(
+                [
+                    "/socket.io/?EIO=4&transport=polling&t=arlprobe",
+                    "/socket.io/?EIO=3&transport=polling&t=arlprobe",
+                    "/sockjs/info",
+                    "/sockjs-node/info",
+                ]
+            )
+            if has_api_prefix:
+                candidate_paths.extend(
+                    [
+                        "/api/socket.io/?EIO=4&transport=polling&t=arlprobe",
+                        "/api/sockjs/info",
+                    ]
+                )
+            targets = []
+            seen = set()
+            for path in candidate_paths:
+                path_text = str(path or "").strip()
+                if not path_text:
+                    continue
+                if not path_text.startswith("/"):
+                    path_text = "/{}".format(path_text)
+                full_url = "{}{}".format(base, path_text)
+                if full_url in seen:
+                    continue
+                seen.add(full_url)
+                targets.append(full_url)
+                if len(targets) >= max(1, int(max_count or 1)):
+                    break
+            return targets
+        except Exception:
+            return []
+
     @staticmethod
     def _build_auth_protocol_probe_targets(target_url: str, max_count=4):
         url_text = str(target_url or "").strip()
@@ -6712,6 +6944,196 @@ class WebSiteFetch(object):
             reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
         return {"decision": "needs_manual_review", "confidence": 0.66, "reason": reason}
 
+    @staticmethod
+    def _detect_path_traversal_proof_type(base_body: str, probe_body: str) -> str:
+        base_lower = str(base_body or "").lower()
+        probe_lower = str(probe_body or "").lower()
+        if not probe_lower:
+            return ""
+        if any(token in probe_lower and token not in base_lower for token in ("root:x:", "daemon:", "/bin/bash", "www-data:x:")):
+            return "passwd_disclosure"
+        if any(token in probe_lower and token not in base_lower for token in ("[fonts]", "[extensions]", "for 16-bit app support", "mci extensions")):
+            return "win_ini_disclosure"
+        if any(token in probe_lower and token not in base_lower for token in ("no such file or directory", "failed to open stream", "cannot find the path")):
+            return "path_disclosure"
+        return ""
+
+    @classmethod
+    def _looks_like_path_traversal_response(cls, url_text: str, body_text: str, headers=None):
+        lower_url = str(url_text or "").strip().lower()
+        lower_body = str(body_text or "").strip().lower()
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        if not lower_url and not lower_body:
+            return False
+        if any(token in lower_body for token in ("root:x:", "daemon:", "/bin/bash", "www-data:x:")):
+            return True
+        if any(token in lower_body for token in ("[fonts]", "[extensions]", "for 16-bit app support", "mci extensions")):
+            return True
+        if any(token in lower_body for token in ("failed to open stream", "no such file or directory", "cannot find the path")):
+            return True
+        if any(token in lower_url for token in ("%2e%2e", "../", "..\\", "etc/passwd", "win.ini")) and any(
+            token in content_type for token in ("text/plain", "application/octet-stream")
+        ):
+            return True
+        return False
+
+    @classmethod
+    def _extract_web_policy_summary(cls, url_text: str, status_code: int, headers=None, body_text: str = ""):
+        header_obj = headers if isinstance(headers, dict) else {}
+        lower_header_map = {str(key or "").strip().lower(): str(value or "").strip() for key, value in header_obj.items()}
+        allow_origin = str(lower_header_map.get("access-control-allow-origin", "") or "").strip()
+        allow_credentials = str(lower_header_map.get("access-control-allow-credentials", "") or "").strip().lower() == "true"
+        vary = str(lower_header_map.get("vary", "") or "").strip().lower()
+        cache_control = str(lower_header_map.get("cache-control", "") or "").strip().lower()
+        pragma = str(lower_header_map.get("pragma", "") or "").strip().lower()
+        body_lower = str(body_text or "").strip().lower()
+        url_lower = str(url_text or "").strip().lower()
+        status_value = cls._safe_int_value(status_code, 0)
+
+        missing_security_headers = []
+        required_headers = (
+            "strict-transport-security",
+            "x-frame-options",
+            "x-content-type-options",
+            "content-security-policy",
+            "referrer-policy",
+        )
+        for header_name in required_headers:
+            if not str(lower_header_map.get(header_name, "") or "").strip():
+                missing_security_headers.append(header_name)
+
+        cors_reflect_origin = allow_origin == "https://arl-probe.example"
+        cors_wildcard = allow_origin == "*"
+        cors_sensitive = allow_credentials and (cors_reflect_origin or cors_wildcard)
+        weak_cache_policy = False
+        if status_value in {200, 201, 204}:
+            if ("auth" in url_lower or "token" in url_lower or "login" in url_lower) and (
+                ("no-store" not in cache_control and "private" not in cache_control)
+                and ("no-cache" not in pragma)
+            ):
+                weak_cache_policy = True
+
+        error_exposure_markers = (
+            "stack trace",
+            "exception in thread",
+            "traceback (most recent call last)",
+            "java.lang.",
+            "at org.springframework",
+            "sql syntax",
+        )
+        error_exposure = status_value >= 500 and any(token in body_lower for token in error_exposure_markers)
+
+        proof_type = ""
+        if cors_sensitive and cors_wildcard:
+            proof_type = "cors_credentialed_wildcard"
+        elif cors_sensitive and cors_reflect_origin:
+            proof_type = "cors_credentialed_reflect_origin"
+        elif cors_wildcard:
+            proof_type = "cors_wildcard"
+        elif cors_reflect_origin and "origin" in vary:
+            proof_type = "cors_reflect_origin"
+        elif error_exposure:
+            proof_type = "error_exposure"
+        elif len(missing_security_headers) >= 3:
+            proof_type = "missing_security_headers"
+        elif weak_cache_policy:
+            proof_type = "weak_cache_policy"
+
+        return {
+            "url": str(url_text or "").strip()[:220],
+            "status_code": status_value,
+            "allow_origin": allow_origin[:120],
+            "allow_credentials": bool(allow_credentials),
+            "cors_reflect_origin": bool(cors_reflect_origin),
+            "cors_wildcard": bool(cors_wildcard),
+            "cors_sensitive": bool(cors_sensitive),
+            "missing_security_headers": missing_security_headers[:6],
+            "cache_control": cache_control[:120],
+            "weak_cache_policy": bool(weak_cache_policy),
+            "error_exposure": bool(error_exposure),
+            "proof_type": proof_type,
+        }
+
+    @classmethod
+    def _classify_ai_pen_web_policy_outcome(cls, summary: dict):
+        item = summary if isinstance(summary, dict) else {}
+        proof_type = str(item.get("proof_type") or "").strip().lower()
+        missing_headers = [str(x or "").strip() for x in list(item.get("missing_security_headers", []) or []) if str(x or "").strip()]
+        if proof_type in {"cors_credentialed_wildcard", "cors_credentialed_reflect_origin"}:
+            return {
+                "decision": "verified",
+                "confidence": 0.89,
+                "reason": "CORS 允许携带凭据且 Origin 策略不安全，存在跨域凭据泄露风险",
+            }
+        if proof_type in {"cors_wildcard", "cors_reflect_origin"}:
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.76,
+                "reason": "CORS 策略过宽，建议结合真实鉴权接口复核跨域读取风险",
+            }
+        if proof_type == "error_exposure":
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.80,
+                "reason": "响应包含错误栈/调试信息，存在暴露型错误配置风险",
+            }
+        if proof_type == "missing_security_headers":
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.70,
+                "reason": "关键安全响应头缺失（{}）".format(",".join(missing_headers[:4])),
+            }
+        if proof_type == "weak_cache_policy":
+            return {
+                "decision": "needs_manual_review",
+                "confidence": 0.72,
+                "reason": "认证相关路径缓存策略偏弱，建议复核是否可缓存敏感响应",
+            }
+        return {
+            "decision": "likely_false_positive",
+            "confidence": 0.60,
+            "reason": "未发现稳定且可复现的 Web 策略风险证据",
+        }
+
+    @staticmethod
+    def _extract_socketio_summary(url_text: str, status_code: int, headers=None, body_text: str = ""):
+        lower_url = str(url_text or "").strip().lower()
+        lower_body = str(body_text or "").strip().lower()
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        status_value = int(status_code or 0)
+
+        proof_type = ""
+        if ("/socket.io/" in lower_url or "/socket.io?" in lower_url) and '"sid"' in lower_body and '"upgrades"' in lower_body:
+            proof_type = "socketio_polling_open"
+        elif "sockjs" in lower_url and '"websocket"' in lower_body and '"origins"' in lower_body:
+            proof_type = "sockjs_info_open"
+        elif ("socket.io" in lower_url or "sockjs" in lower_url) and status_value in {400, 403} and (
+            "transport" in lower_body or "engine.io" in lower_body
+        ):
+            proof_type = "transport_hint"
+
+        return {
+            "proof_type": proof_type,
+            "status_code": status_value,
+            "content_type": content_type[:120],
+        }
+
+    @classmethod
+    def _looks_like_socketio_response(cls, url_text: str, body_text: str, headers=None, status_code: int = 0):
+        summary = cls._extract_socketio_summary(
+            url_text=url_text,
+            status_code=status_code,
+            headers=headers,
+            body_text=body_text,
+        )
+        return str(summary.get("proof_type") or "").strip().lower() in {
+            "socketio_polling_open",
+            "sockjs_info_open",
+            "transport_hint",
+        }
+
     @classmethod
     def _extract_api_doc_summary(cls, body_text: str):
         text = str(body_text or "").strip()
@@ -6826,6 +7248,18 @@ class WebSiteFetch(object):
         parameter_names = [str(item or "").strip() for item in list(summary.get("parameter_names", []) or [])[:6] if str(item or "").strip()]
         if parameter_names:
             parts.append("params={}".format(",".join(parameter_names)))
+        tag_stats = summary.get("parameter_tag_stats") if isinstance(summary.get("parameter_tag_stats"), dict) else {}
+        if tag_stats:
+            tag_parts = []
+            for key_name, count in sorted(tag_stats.items(), key=lambda item: (-int(item[1] or 0), str(item[0]))):
+                key_text = str(key_name or "").strip()
+                if not key_text:
+                    continue
+                tag_parts.append("{}:{}".format(key_text, cls._safe_int_value(count, 0)))
+                if len(tag_parts) >= 4:
+                    break
+            if tag_parts:
+                parts.append("param_tags={}".format(",".join(tag_parts)))
 
         return " | ".join(parts)
 
@@ -6999,6 +7433,35 @@ class WebSiteFetch(object):
         return targets[:20]
 
     @classmethod
+    def _tag_ai_pen_parameter_name(cls, name_text: str):
+        lowered = str(name_text or "").strip().lower()
+        if not lowered:
+            return []
+
+        tags = []
+        if lowered in cls.AI_PEN_OBJECT_ID_PARAM_HINTS or lowered.endswith("_id"):
+            tags.append("object_id")
+        if any(token in lowered for token in ("token", "jwt", "auth", "authorization", "bearer", "session", "csrf")):
+            tags.append("auth")
+        if any(token in lowered for token in ("file", "filename", "filepath", "path", "dir", "download", "template", "attachment")):
+            tags.append("file_path")
+        if any(token in lowered for token in ("url", "uri", "callback", "redirect", "next", "return")):
+            tags.append("url")
+        if any(token in lowered for token in ("role", "admin", "permission", "scope", "privilege", "level")):
+            tags.append("access_control")
+        if any(token in lowered for token in ("cmd", "command", "exec", "shell")):
+            tags.append("command")
+        if any(token in lowered for token in ("template", "view", "render")):
+            tags.append("template")
+        if any(token in lowered for token in ("xml", "soap", "doctype")):
+            tags.append("xml")
+        if any(token in lowered for token in ("host", "domain", "target", "endpoint", "proxy")):
+            tags.append("host")
+        if (not tags) and any(token in lowered for token in ("name", "title", "query", "q", "search", "keyword")):
+            tags.append("input")
+        return tags[:4]
+
+    @classmethod
     def _build_api_surface_summary(cls, api_doc_summary=None, js_api_targets=None):
         doc_summary = api_doc_summary if isinstance(api_doc_summary, dict) else {}
         js_targets = list(js_api_targets or [])
@@ -7059,12 +7522,26 @@ class WebSiteFetch(object):
         if not sample_paths:
             sample_paths = [str(item.get("path") or "").strip() for item in sample_interfaces if str(item.get("path") or "").strip()]
 
+        final_parameter_names = parameter_names[:12] or list(doc_summary.get("parameter_names", []) or [])[:12]
+        parameter_assets = []
+        parameter_tag_stats = {}
+        for param_name in final_parameter_names:
+            name_text = str(param_name or "").strip()
+            if not name_text:
+                continue
+            tags = cls._tag_ai_pen_parameter_name(name_text)
+            parameter_assets.append({"name": name_text, "tags": tags})
+            for tag in tags:
+                parameter_tag_stats[tag] = int(parameter_tag_stats.get(tag, 0) or 0) + 1
+
         return {
             "path_count": path_count,
             "sample_paths": sample_paths[:6],
             "auth_path_count": auth_like_count,
             "auth_paths": auth_paths[:6],
-            "parameter_names": parameter_names[:12] or list(doc_summary.get("parameter_names", []) or [])[:12],
+            "parameter_names": final_parameter_names,
+            "parameter_assets": parameter_assets[:16],
+            "parameter_tag_stats": parameter_tag_stats,
             "security_scheme_count": security_scheme_count,
             "object_id_like_count": object_id_like_count,
             "upload_like_count": upload_like_count,
@@ -7788,6 +8265,21 @@ class WebSiteFetch(object):
             top_params.append(text[:80])
             if len(top_params) >= 12:
                 break
+        top_param_tags = []
+        tag_seen = set()
+        for asset in list(api_surface_summary.get("parameter_assets", []) or []):
+            if not isinstance(asset, dict):
+                continue
+            for tag_name in list(asset.get("tags", []) or []):
+                tag_text = str(tag_name or "").strip().lower()
+                if not tag_text or tag_text in tag_seen:
+                    continue
+                tag_seen.add(tag_text)
+                top_param_tags.append(tag_text)
+                if len(top_param_tags) >= 8:
+                    break
+            if len(top_param_tags) >= 8:
+                break
 
         auth_cluster = {
             "auth_path_count": cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0),
@@ -7827,6 +8319,7 @@ class WebSiteFetch(object):
             "edge_count": edge_count,
             "top_paths": top_paths,
             "top_params": top_params,
+            "top_param_tags": top_param_tags,
             "auth_cluster": auth_cluster,
             "object_ref_cluster": object_ref_cluster,
             "file_cluster": file_cluster,
@@ -8268,8 +8761,31 @@ class WebSiteFetch(object):
             return "sensitive_info"
         if "upload" in merged or "文件上传" in merged:
             return "file_upload"
-        if "read" in merged or "download" in merged or "traversal" in merged or "文件读取" in merged:
+        if any(token in merged for token in ("path traversal", "directory traversal", "traversal", "lfi", "文件包含", "路径穿越")):
+            return "path_traversal"
+        if any(
+            token in merged
+            for token in (
+                "cors",
+                "security header",
+                "security headers",
+                "cache-control",
+                "cache policy",
+                "strict-transport-security",
+                "x-frame-options",
+                "x-content-type-options",
+                "content-security-policy",
+                "referrer-policy",
+                "跨域",
+                "响应头",
+                "缓存策略",
+            )
+        ):
+            return "web_policy"
+        if "read" in merged or "download" in merged or "文件读取" in merged:
             return "file_read"
+        if "socket.io" in merged or "sockjs" in merged:
+            return "socketio"
         if "websocket" in merged or "ws://" in merged or "wss://" in merged:
             return "websocket"
         if "graphql" in merged or "graphiql" in merged:
@@ -8314,6 +8830,10 @@ class WebSiteFetch(object):
             return "xxe_probe", '<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><root>&xxe;</root>'
         if "idor" in merged or "越权" in merged:
             return "idor_probe", "id=1 -> id=2"
+        if any(token in merged for token in ("path traversal", "directory traversal", "traversal", "lfi", "路径穿越", "文件包含")):
+            return "path_traversal_probe", "../../../../etc/passwd"
+        if any(token in merged for token in ("cors", "security header", "cache-control", "跨域", "响应头", "缓存策略")):
+            return "web_policy_probe", "origin=https://arl-probe.example"
         if "graphql" in merged or "graphiql" in merged:
             return "graphql_probe", '{"query":"query { __typename }"}'
         if "swagger" in merged or "openapi" in merged or "postman" in merged or "api_doc" in merged:
@@ -8339,7 +8859,9 @@ class WebSiteFetch(object):
             )
         ):
             return "config_probe", ""
-        if "websocket" in merged or "socket.io" in merged or "sockjs" in merged:
+        if "socket.io" in merged or "sockjs" in merged:
+            return "socketio_probe", "socketio_handshake"
+        if "websocket" in merged:
             return "websocket_probe", "ws_handshake"
         if "upload" in merged or "文件上传" in merged:
             return "upload_probe", "arl-safe-upload.txt"
@@ -8403,6 +8925,14 @@ class WebSiteFetch(object):
             "/graphql-playground",
             "/graphql/console",
         )
+        socketio_tokens = (
+            "/socket.io/",
+            "/socket.io?",
+            "/sockjs/",
+            "/sockjs?",
+            "/sockjs-node/",
+            "/engine.io/",
+        )
         config_tokens = (
             "/actuator/env",
             "/api/actuator/env",
@@ -8460,6 +8990,25 @@ class WebSiteFetch(object):
             "/avatar",
             "/report",
         )
+        path_traversal_tokens = (
+            "../",
+            "..\\",
+            "%2e%2e%2f",
+            "%2e%2e/",
+            "%252e%252e%252f",
+            "etc/passwd",
+            "windows/win.ini",
+            "file=..",
+            "path=..",
+        )
+        web_policy_tokens = (
+            "cors",
+            "cross-origin",
+            "x-frame-options",
+            "content-security-policy",
+            "strict-transport-security",
+            "cache-control",
+        )
         file_tokens = (
             "/.env",
             "/.git/config",
@@ -8487,6 +9036,13 @@ class WebSiteFetch(object):
             severity = "high" if success_like else "medium"
             priority_score = 58 if success_like else 28
             high_value_reason = "graphql_endpoint"
+        elif any(token in lower_url for token in socketio_tokens):
+            matched_keywords = [token for token in socketio_tokens if token in lower_url][:4] or ["socket.io"]
+            risk_type = "socketio"
+            risk_name = "高价值 Socket.IO/SockJS 入口"
+            severity = "medium" if success_like else "low"
+            priority_score = 46 if success_like else 20
+            high_value_reason = "socketio_endpoint"
         elif any(token in lower_url for token in config_tokens):
             matched_keywords = [token for token in config_tokens if token in lower_url][:4]
             risk_type = "sensitive_info"
@@ -8501,7 +9057,7 @@ class WebSiteFetch(object):
             severity = "high" if success_like else "medium"
             priority_score = 52 if success_like else 24
             high_value_reason = "manage_debug_endpoint"
-        elif any(token in lower_url for token in file_surface_tokens):
+        elif any(token in lower_url for token in file_surface_tokens) and not any(token in lower_url for token in path_traversal_tokens):
             matched_keywords = [token for token in file_surface_tokens if token in lower_url][:4]
             if any(token in lower_url for token in ("/upload", "/import", "/avatar")):
                 risk_type = "file_upload"
@@ -8511,6 +9067,20 @@ class WebSiteFetch(object):
             severity = "medium" if success_like else "low"
             priority_score = 42 if success_like else 18
             high_value_reason = "file_surface_endpoint"
+        elif any(token in lower_url for token in path_traversal_tokens):
+            matched_keywords = [token for token in path_traversal_tokens if token in lower_url][:4]
+            risk_type = "path_traversal"
+            risk_name = "高价值路径穿越入口"
+            severity = "high" if success_like else "medium"
+            priority_score = 50 if success_like else 24
+            high_value_reason = "path_traversal_endpoint"
+        elif any(token in lower_url for token in web_policy_tokens) or any(token in title_lower for token in web_policy_tokens):
+            matched_keywords = [token for token in web_policy_tokens if token in lower_url or token in title_lower][:4]
+            risk_type = "web_policy"
+            risk_name = "高价值 Web 策略验证入口"
+            severity = "medium" if success_like else "low"
+            priority_score = 36 if success_like else 14
+            high_value_reason = "web_policy_endpoint"
         elif any(token in lower_url for token in auth_protocol_tokens):
             matched_keywords = [token for token in auth_protocol_tokens if token in lower_url][:4]
             risk_type = "jwt"
@@ -8856,6 +9426,52 @@ class WebSiteFetch(object):
                 )
             return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
+        if payload_type_text == "path_traversal_probe":
+            for probe_url in cls._build_path_traversal_probe_targets(target_url, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "path_traversal_probe",
+                        "params": {
+                            "url": probe_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "路径穿越参数变异探针",
+                    }
+                )
+            return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
+        if payload_type_text == "web_policy_probe":
+            for step in cls._build_web_policy_probe_steps(target_url, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "web_policy_probe",
+                        "params": {
+                            "url": str(step.get("url") or target_url),
+                            "method": str(step.get("method") or "get"),
+                            "allow_redirects": bool(step.get("allow_redirects", True)),
+                            "headers": dict(step.get("headers") or {}),
+                        },
+                        "summary": "Web 策略探针（CORS/缓存/安全响应头）",
+                    }
+                )
+            return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
+        if payload_type_text == "socketio_probe":
+            for sio_url in cls._build_socketio_probe_targets(target_url, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "socketio_probe",
+                        "params": {
+                            "url": sio_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "Socket.IO/SockJS 入口探针",
+                    }
+                )
+            return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
+
         if payload_type_text == "weak_password_probe":
             login_context = cls._build_ai_pen_login_probe_context(
                 target_url=target_url,
@@ -9183,6 +9799,46 @@ class WebSiteFetch(object):
                         "summary": "fallback 配置/环境暴露探针",
                     }
                 )
+        elif payload_type_text == "path_traversal_probe":
+            for probe_url in cls._build_path_traversal_probe_targets(url_text, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "path_traversal_probe",
+                        "params": {
+                            "url": probe_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback 路径穿越参数变异探针",
+                    }
+                )
+        elif payload_type_text == "web_policy_probe":
+            for step in cls._build_web_policy_probe_steps(url_text, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "web_policy_probe",
+                        "params": {
+                            "url": str(step.get("url") or url_text),
+                            "method": str(step.get("method") or "get"),
+                            "allow_redirects": bool(step.get("allow_redirects", True)),
+                            "headers": dict(step.get("headers") or {}),
+                        },
+                        "summary": "fallback Web 策略探针",
+                    }
+                )
+        elif payload_type_text == "socketio_probe":
+            for sio_url in cls._build_socketio_probe_targets(url_text, max_count=max_steps):
+                plan.append(
+                    {
+                        "tool": "socketio_probe",
+                        "params": {
+                            "url": sio_url,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback Socket.IO/SockJS 入口探针",
+                    }
+                )
         elif payload_type_text == "weak_password_probe":
             login_context = cls._build_ai_pen_login_probe_context(
                 target_url=url_text,
@@ -9403,6 +10059,15 @@ class WebSiteFetch(object):
             "config_exposure_hit": False,
             "config_exposure_url": "",
             "config_exposure_summary": "",
+            "path_traversal_hit": False,
+            "path_traversal_hit_url": "",
+            "path_traversal_proof_type": "",
+            "web_policy_hit": False,
+            "web_policy_url": "",
+            "web_policy_summary": {},
+            "socketio_hit": False,
+            "socketio_hit_url": "",
+            "socketio_summary": {},
             "websocket_upgrade_hit": False,
             "websocket_upgrade_hint": False,
             "login_success_hit": False,
@@ -9502,6 +10167,38 @@ class WebSiteFetch(object):
                 observation["config_exposure_hit"] = True
                 observation["config_exposure_url"] = url_text
                 observation["config_exposure_summary"] = cls._extract_sensitive_config_summary(body_excerpt)
+
+            if tool_name == "path_traversal_probe" and cls._looks_like_path_traversal_response(url_text, body_excerpt, headers=headers):
+                observation["path_traversal_hit"] = True
+                observation["path_traversal_hit_url"] = url_text
+                observation["path_traversal_proof_type"] = cls._detect_path_traversal_proof_type("", body_excerpt)
+
+            if tool_name == "web_policy_probe":
+                web_policy_summary = cls._extract_web_policy_summary(
+                    url_text=url_text,
+                    status_code=status_code,
+                    headers=headers,
+                    body_text=body_excerpt,
+                )
+                if isinstance(web_policy_summary, dict) and web_policy_summary:
+                    observation["web_policy_summary"] = web_policy_summary
+                    if str(web_policy_summary.get("proof_type") or "").strip():
+                        observation["web_policy_hit"] = True
+                        observation["web_policy_url"] = url_text
+
+            if tool_name == "socketio_probe":
+                socketio_summary = cls._extract_socketio_summary(
+                    url_text=url_text,
+                    status_code=status_code,
+                    headers=headers,
+                    body_text=body_excerpt,
+                )
+                if isinstance(socketio_summary, dict) and socketio_summary:
+                    observation["socketio_summary"] = socketio_summary
+                    proof_type = str(socketio_summary.get("proof_type") or "").strip()
+                    if proof_type:
+                        observation["socketio_hit"] = True
+                        observation["socketio_hit_url"] = url_text
 
             ws_upgrade_header = str(headers.get("Upgrade", "") or "").strip().lower()
             ws_version_hint = str(headers.get("Sec-WebSocket-Version", "") or "").strip()
@@ -10995,6 +11692,30 @@ class WebSiteFetch(object):
         )
         runtime.register_tool(
             ToolSchema(
+                name="path_traversal_probe",
+                description="路径穿越参数变异探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="web_policy_probe",
+                description="Web 策略探针（CORS/缓存/安全响应头）",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=False),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
+                name="socketio_probe",
+                description="Socket.IO/SockJS 握手探针",
+                input_schema=common_input_schema,
+                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+            )
+        )
+        runtime.register_tool(
+            ToolSchema(
                 name="idor_probe",
                 description="IDOR 参数变异探针",
                 input_schema=common_input_schema,
@@ -11293,6 +12014,18 @@ class WebSiteFetch(object):
             config_exposure_hit = False
             config_exposure_url = ""
             config_exposure_summary = ""
+            path_traversal_hit = False
+            path_traversal_hit_url = ""
+            path_traversal_proof_type = ""
+            path_traversal_probe_count = 0
+            web_policy_hit = False
+            web_policy_url = ""
+            web_policy_summary = {}
+            web_policy_probe_count = 0
+            socketio_hit = False
+            socketio_hit_url = ""
+            socketio_summary = {}
+            socketio_probe_count = 0
             jwt_token_found = ""
             jwt_alg_text = ""
             jwt_alg_none_hit = False
@@ -11419,6 +12152,18 @@ class WebSiteFetch(object):
                     dict(plan_observation.get("tool_counts") or {}).get("config_probe"),
                     0,
                 )
+                path_traversal_probe_count += self._safe_int_value(
+                    dict(plan_observation.get("tool_counts") or {}).get("path_traversal_probe"),
+                    0,
+                )
+                web_policy_probe_count += self._safe_int_value(
+                    dict(plan_observation.get("tool_counts") or {}).get("web_policy_probe"),
+                    0,
+                )
+                socketio_probe_count += self._safe_int_value(
+                    dict(plan_observation.get("tool_counts") or {}).get("socketio_probe"),
+                    0,
+                )
                 idor_probe_count += self._safe_int_value(
                     dict(plan_observation.get("tool_counts") or {}).get("idor_probe"),
                     0,
@@ -11426,6 +12171,17 @@ class WebSiteFetch(object):
                 config_exposure_hit = bool(plan_observation.get("config_exposure_hit")) or config_exposure_hit
                 config_exposure_url = str(plan_observation.get("config_exposure_url", "") or "") or config_exposure_url
                 config_exposure_summary = str(plan_observation.get("config_exposure_summary", "") or "") or config_exposure_summary
+                path_traversal_hit = bool(plan_observation.get("path_traversal_hit")) or path_traversal_hit
+                path_traversal_hit_url = str(plan_observation.get("path_traversal_hit_url", "") or "") or path_traversal_hit_url
+                path_traversal_proof_type = str(plan_observation.get("path_traversal_proof_type", "") or "") or path_traversal_proof_type
+                web_policy_hit = bool(plan_observation.get("web_policy_hit")) or web_policy_hit
+                web_policy_url = str(plan_observation.get("web_policy_url", "") or "") or web_policy_url
+                if isinstance(plan_observation.get("web_policy_summary"), dict) and plan_observation.get("web_policy_summary"):
+                    web_policy_summary = dict(plan_observation.get("web_policy_summary") or {})
+                socketio_hit = bool(plan_observation.get("socketio_hit")) or socketio_hit
+                socketio_hit_url = str(plan_observation.get("socketio_hit_url", "") or "") or socketio_hit_url
+                if isinstance(plan_observation.get("socketio_summary"), dict) and plan_observation.get("socketio_summary"):
+                    socketio_summary = dict(plan_observation.get("socketio_summary") or {})
                 websocket_upgrade_hit = bool(plan_observation.get("websocket_upgrade_hit")) or websocket_upgrade_hit
                 websocket_upgrade_hint = bool(plan_observation.get("websocket_upgrade_hint")) or websocket_upgrade_hint
                 credential_probe_count += self._safe_int_value(
@@ -11565,6 +12321,18 @@ class WebSiteFetch(object):
                         dict(fallback_observation.get("tool_counts") or {}).get("config_probe"),
                         0,
                     )
+                    path_traversal_probe_count += self._safe_int_value(
+                        dict(fallback_observation.get("tool_counts") or {}).get("path_traversal_probe"),
+                        0,
+                    )
+                    web_policy_probe_count += self._safe_int_value(
+                        dict(fallback_observation.get("tool_counts") or {}).get("web_policy_probe"),
+                        0,
+                    )
+                    socketio_probe_count += self._safe_int_value(
+                        dict(fallback_observation.get("tool_counts") or {}).get("socketio_probe"),
+                        0,
+                    )
                     idor_probe_count += self._safe_int_value(
                         dict(fallback_observation.get("tool_counts") or {}).get("idor_probe"),
                         0,
@@ -11572,6 +12340,17 @@ class WebSiteFetch(object):
                     config_exposure_hit = bool(fallback_observation.get("config_exposure_hit")) or config_exposure_hit
                     config_exposure_url = str(fallback_observation.get("config_exposure_url", "") or "") or config_exposure_url
                     config_exposure_summary = str(fallback_observation.get("config_exposure_summary", "") or "") or config_exposure_summary
+                    path_traversal_hit = bool(fallback_observation.get("path_traversal_hit")) or path_traversal_hit
+                    path_traversal_hit_url = str(fallback_observation.get("path_traversal_hit_url", "") or "") or path_traversal_hit_url
+                    path_traversal_proof_type = str(fallback_observation.get("path_traversal_proof_type", "") or "") or path_traversal_proof_type
+                    web_policy_hit = bool(fallback_observation.get("web_policy_hit")) or web_policy_hit
+                    web_policy_url = str(fallback_observation.get("web_policy_url", "") or "") or web_policy_url
+                    if isinstance(fallback_observation.get("web_policy_summary"), dict) and fallback_observation.get("web_policy_summary"):
+                        web_policy_summary = dict(fallback_observation.get("web_policy_summary") or {})
+                    socketio_hit = bool(fallback_observation.get("socketio_hit")) or socketio_hit
+                    socketio_hit_url = str(fallback_observation.get("socketio_hit_url", "") or "") or socketio_hit_url
+                    if isinstance(fallback_observation.get("socketio_summary"), dict) and fallback_observation.get("socketio_summary"):
+                        socketio_summary = dict(fallback_observation.get("socketio_summary") or {})
                     websocket_upgrade_hit = bool(fallback_observation.get("websocket_upgrade_hit")) or websocket_upgrade_hit
                     websocket_upgrade_hint = bool(fallback_observation.get("websocket_upgrade_hint")) or websocket_upgrade_hint
                     credential_probe_count += self._safe_int_value(
@@ -11618,6 +12397,12 @@ class WebSiteFetch(object):
                     tool_trace_parts.append("graphql_probe(skip_no_target)")
                 elif payload_type == "websocket_probe":
                     tool_trace_parts.append("websocket_probe(skip_invalid_target)")
+                elif payload_type == "socketio_probe":
+                    tool_trace_parts.append("socketio_probe(skip_no_target)")
+                elif payload_type == "web_policy_probe":
+                    tool_trace_parts.append("web_policy_probe(skip_no_target)")
+                elif payload_type == "path_traversal_probe":
+                    tool_trace_parts.append("path_traversal_probe(skip_no_mutation)")
                 elif payload_type == "weak_password_probe":
                     tool_trace_parts.append("weak_password_probe(skip_no_login_form)")
 
@@ -11632,6 +12417,8 @@ class WebSiteFetch(object):
             ssti_proof_type = ""
             xxe_proof_type = ""
             ssrf_proof_type = ""
+            web_policy_proof_type = ""
+            socketio_proof_type = ""
             if is_xss_case:
                 xss_popup_proof = self._has_xss_popup_proof(payload, base_body_excerpt, probe_body_excerpt)
             if is_sqli_case:
@@ -11656,6 +12443,29 @@ class WebSiteFetch(object):
                     probe_body_excerpt or base_body_excerpt,
                     headers=probe_headers,
                 )
+            if payload_type == "path_traversal_probe":
+                path_traversal_proof_type = self._detect_path_traversal_proof_type(
+                    base_body_excerpt,
+                    probe_body_excerpt or base_body_excerpt,
+                ) or path_traversal_proof_type
+            if payload_type == "web_policy_probe":
+                if not isinstance(web_policy_summary, dict) or not web_policy_summary:
+                    web_policy_summary = self._extract_web_policy_summary(
+                        url_text=probe_url or target_url,
+                        status_code=probe_status or status_code,
+                        headers=probe_headers or header_obj,
+                        body_text=probe_body_excerpt or base_body_excerpt,
+                    )
+                web_policy_proof_type = str(web_policy_summary.get("proof_type") or "").strip().lower()
+            if payload_type == "socketio_probe":
+                if not isinstance(socketio_summary, dict) or not socketio_summary:
+                    socketio_summary = self._extract_socketio_summary(
+                        url_text=probe_url or target_url,
+                        status_code=probe_status or status_code,
+                        headers=probe_headers or header_obj,
+                        body_text=probe_body_excerpt or base_body_excerpt,
+                    )
+                socketio_proof_type = str(socketio_summary.get("proof_type") or "").strip().lower()
             if payload_type == "idor_probe" and idor_probe_responses:
                 best_idor_score = -1
                 idor_positive_summaries = []
@@ -11806,11 +12616,37 @@ class WebSiteFetch(object):
                 decision = "needs_manual_review"
                 confidence = 0.80
                 reason = "SSRF 探针出现内网地址返回线索，建议结合回连链路复核"
+            elif payload_type == "path_traversal_probe" and path_traversal_hit:
+                if path_traversal_proof_type in {"passwd_disclosure", "win_ini_disclosure"}:
+                    decision = "verified"
+                    confidence = 0.88
+                    reason = "路径穿越探针命中文件内容泄露证据（{}）".format(path_traversal_proof_type)
+                else:
+                    decision = "needs_manual_review"
+                    confidence = 0.76
+                    reason = "路径穿越探针触发文件读取相关差异，建议结合对象参数继续复核"
+            elif payload_type == "socketio_probe" and socketio_hit:
+                if socketio_proof_type in {"socketio_polling_open", "sockjs_info_open"}:
+                    decision = "verified"
+                    confidence = 0.84
+                    reason = "发现可访问的 Socket.IO/SockJS 握手或信息端点（{}）".format(socketio_proof_type)
+                else:
+                    decision = "needs_manual_review"
+                    confidence = 0.70
+                    reason = "Socket.IO/SockJS 端点返回传输层提示，建议结合鉴权策略复核"
+            elif payload_type == "web_policy_probe" and web_policy_hit:
+                web_policy_outcome = self._classify_ai_pen_web_policy_outcome(web_policy_summary)
+                decision = self._normalize_ai_pen_decision(
+                    web_policy_outcome.get("decision"),
+                    default_value="needs_manual_review",
+                )
+                confidence = self._clamp_ai_pen_confidence(web_policy_outcome.get("confidence"), 0.68)
+                reason = self._clip_text(web_policy_outcome.get("reason", ""), self.AI_PEN_TEST_REASON_MAX) or reason
             elif evidence_hit and not (
                 is_xss_case
                 or is_sqli_case
                 or is_weak_password_case
-                or payload_type in {"cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe"}
+                or payload_type in {"cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "path_traversal_probe", "web_policy_probe", "socketio_probe"}
             ):
                 decision = "verified"
                 confidence = 0.82
@@ -11905,6 +12741,18 @@ class WebSiteFetch(object):
                 decision = "likely_false_positive"
                 confidence = 0.60
                 reason = "已探测 {} 个配置/环境端点，暂未命中高价值暴露特征".format(config_probe_count)
+            elif payload_type == "path_traversal_probe" and path_traversal_probe_count > 0 and not path_traversal_hit:
+                decision = "likely_false_positive"
+                confidence = 0.62
+                reason = "已尝试 {} 条路径穿越参数变异，暂未命中文件泄露特征".format(path_traversal_probe_count)
+            elif payload_type == "web_policy_probe" and web_policy_probe_count > 0 and not web_policy_hit:
+                decision = "likely_false_positive"
+                confidence = 0.62
+                reason = "已探测 {} 轮 Web 策略请求，未发现稳定的可复现策略风险".format(web_policy_probe_count)
+            elif payload_type == "socketio_probe" and socketio_probe_count > 0 and not socketio_hit:
+                decision = "likely_false_positive"
+                confidence = 0.60
+                reason = "已探测 {} 个 Socket.IO/SockJS 入口，未命中可用握手/信息端点".format(socketio_probe_count)
             elif payload_type == "graphql_probe":
                 decision = "likely_false_positive"
                 confidence = 0.60
@@ -11931,6 +12779,9 @@ class WebSiteFetch(object):
                 ssti_proof_type=ssti_proof_type,
                 xxe_proof_type=xxe_proof_type,
                 ssrf_proof_type=ssrf_proof_type,
+                path_traversal_proof_type=path_traversal_proof_type,
+                web_policy_proof_type=web_policy_proof_type,
+                socketio_proof_type=socketio_proof_type,
             )
             if decision == "needs_manual_review" and agent_decision == "verified" and agent_confidence >= 0.9 and not agent_proof_guard_reason:
                 decision = "verified"
@@ -12061,6 +12912,12 @@ class WebSiteFetch(object):
                 verification_step = "mcp_file_probe"
             elif mcp_enable and max_tool_calls > 1 and payload_type == "config_probe":
                 verification_step = "mcp_config_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "path_traversal_probe":
+                verification_step = "mcp_path_traversal_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "web_policy_probe":
+                verification_step = "mcp_web_policy_probe"
+            elif mcp_enable and max_tool_calls > 1 and payload_type == "socketio_probe":
+                verification_step = "mcp_socketio_probe"
             elif mcp_enable and max_tool_calls > 1:
                 verification_step = "mcp_http_probe"
 
@@ -12116,6 +12973,9 @@ class WebSiteFetch(object):
                 ssti_proof_type=ssti_proof_type,
                 xxe_proof_type=xxe_proof_type,
                 ssrf_proof_type=ssrf_proof_type,
+                path_traversal_proof_type=path_traversal_proof_type,
+                web_policy_proof_type=web_policy_proof_type,
+                socketio_proof_type=socketio_proof_type,
             )
             if decision == "verified" and proof_guard_reason:
                 decision = "needs_manual_review"
@@ -12124,7 +12984,8 @@ class WebSiteFetch(object):
 
             logger.info(
                 "task_id:{} ai_pen verify done target:{} payload_type:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
-                "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} config_probe_count:{} external_hit:{} stop_reason:{} reason:{}".format(
+                "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} config_probe_count:{} path_traversal_probe_count:{} "
+                "web_policy_probe_count:{} socketio_probe_count:{} external_hit:{} stop_reason:{} reason:{}".format(
                     self.task_id,
                     target_url[:180],
                     payload_type,
@@ -12136,6 +12997,9 @@ class WebSiteFetch(object):
                     idor_probe_count,
                     api_doc_probe_count,
                     config_probe_count,
+                    path_traversal_probe_count,
+                    web_policy_probe_count,
+                    socketio_probe_count,
                     int(bool(external_ret.get("tool_hit"))),
                     agent_loop_stop_reason or "-",
                     self._clip_text(reason, 220),
@@ -12162,6 +13026,9 @@ class WebSiteFetch(object):
                 "ssti_proof_type": ssti_proof_type,
                 "xxe_proof_type": xxe_proof_type,
                 "ssrf_proof_type": ssrf_proof_type,
+                "path_traversal_proof_type": path_traversal_proof_type,
+                "web_policy_proof_type": web_policy_proof_type,
+                "socketio_proof_type": socketio_proof_type,
                 "api_doc_summary": api_doc_summary if isinstance(api_doc_summary, dict) else {},
                 "api_surface_summary": api_surface_summary if isinstance(api_surface_summary, dict) else {},
                 "browser_surface_summary": browser_surface_summary,
@@ -12206,6 +13073,9 @@ class WebSiteFetch(object):
                 "ssti_proof_type": "",
                 "xxe_proof_type": "",
                 "ssrf_proof_type": "",
+                "path_traversal_proof_type": "",
+                "web_policy_proof_type": "",
+                "socketio_proof_type": "",
                 "api_doc_summary": {},
                 "api_surface_summary": {},
                 "browser_surface_summary": browser_surface_summary,

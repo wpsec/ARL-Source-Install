@@ -337,16 +337,28 @@ AI 渗透测试至少要覆盖以下能力族：
 
 当前实现状态（截至 2026-03-31）：
 
-- 阶段 C 已达成可用完成态（100% 可用口径）
-- 已覆盖能力链路与成立证据标准：
-  - 登录/会话：`session_start -> extract_csrf_token -> credential_probe -> detect_login_success`，以登录成功/阻断信号判定
-  - API/OpenAPI/GraphQL：`api_doc_probe/graphql_probe` 多端点探测，基于结构响应摘要判定
-  - JWT/认证协议：`jwt_probe + token_replay + OAuth/OIDC 协议端点探测`，基于弱密钥/alg=none/令牌字段/协议语义分级判定
-  - IDOR/访问控制：`idor_probe` 多对象变异，一致性与敏感字段差异评分分级判定
-  - 文件处理：`upload_probe/file_probe`，基于上传成功特征与下载响应特征判定
-  - SQLi：`sqli_probe`，覆盖 `error_based/boolean_based/time_based` 证据判定
-  - XSS/DOM XSS：`xss_probe + js_context`，覆盖弹窗执行证据与 `dom_xss_proof_type` 结构化证据
-  - SSRF/SSTI/XXE/CMDI：对应探针覆盖专项 proof（元数据命中、模板表达式执行、外部实体文件读取、命令输出）
+- `C-Core（主动验证能力）`：基本完成
+  - 已具备：前端 JS / runtime API / 表单字段（含隐藏字段）提取
+  - 已具备：参数汇总后自动生成 tool plan 并调用 MCP
+  - 已具备：`SQLi/XSS/DOM XSS/SSTI/CMDI/SSRF/XXE/JWT/IDOR/文件上传下载` 基础自动验证链
+  - 已具备：认证链（JWT + OAuth/OIDC + token replay）语义降噪与分级判定
+  - 已具备：上传/下载类接口自动探测与证据化输出
+
+- `C-AutoPassive（被动参数提取 -> AI分析 -> MCP自动测）`：部分完成
+  - 已有能力：多源参数汇总（JS/runtime/form/api-doc/hidden）与图谱摘要
+  - 差距：参数类型标签 -> payload 编排 -> 全链路验证 仍未统一为单引擎
+  - 差距：`垂直越权/路径穿越/SockJS/Socket.IO` 深测能力仍需补强
+  - 差距：`CORS/Cache/Security Headers/Error Exposure` 的 Web 策略验证尚未体系化
+
+- 口径结论：
+  - 按阶段 C 最低口径：可用
+  - 按“工程师提效型被动扫描 + 自动验证”口径：未达 100%
+
+- `C-AutoPassive=100%` 验收建议（开发优先级）：
+  1. 参数资产图：统一收敛 `JS/runtime/form/api-doc/hidden` 参数并打类型标签
+  2. 参数驱动编排器：按参数类型自动触发 `SQLi/报错注入/上传/下载/IDOR/SSRF/路径穿越/Web策略` MCP 链
+  3. 统一证据引擎：所有 payload 走 `基线 + 对照 + proof_type` 判定，避免仅靠文本 heuristics
+  4. 并行补齐专项探针：`path_traversal_probe`、`web_policy_probe`、`sockjs/socket.io probe`
 
 ### 阶段 D：高价值目标通用化
 

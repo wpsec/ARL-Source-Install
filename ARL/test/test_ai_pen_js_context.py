@@ -300,6 +300,33 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("高价值 GraphQL 入口", candidate.get("risk_name"))
         self.assertTrue(bool(candidate.get("high_value_target")))
 
+    def test_high_value_url_candidate_detects_socketio_surface(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd799439033",
+            target_url="https://example.com/socket.io/?EIO=4&transport=polling&t=abc",
+            status_code=200,
+            title_text="Socket Service",
+            source_text="url",
+        )
+
+        self.assertEqual("socketio", candidate.get("risk_type"))
+        self.assertEqual("高价值 Socket.IO/SockJS 入口", candidate.get("risk_name"))
+        self.assertEqual("socketio_endpoint", candidate.get("high_value_reason"))
+
+    def test_high_value_url_candidate_detects_path_traversal_surface(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd799439034",
+            target_url="https://example.com/download?file=../../../../etc/passwd",
+            status_code=200,
+            title_text="download",
+            source_text="url",
+        )
+
+        self.assertEqual("path_traversal", candidate.get("risk_type"))
+        self.assertEqual("高价值路径穿越入口", candidate.get("risk_name"))
+
     def test_sensitive_config_response_detects_actuator_env_json(self):
         self.assertTrue(
             WebSiteFetch._looks_like_sensitive_config_response(
@@ -376,6 +403,65 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(observation.get("graphql_hit")))
         self.assertEqual("https://example.com/graphql", observation.get("graphql_hit_url"))
         self.assertEqual("typename", observation.get("graphql_summary", {}).get("mode"))
+
+    def test_collect_ai_pen_runtime_observation_detects_web_policy(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "web_policy_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/api/profile",
+                            "status_code": 200,
+                            "headers": {
+                                "Content-Type": "application/json",
+                                "Access-Control-Allow-Origin": "*",
+                                "Access-Control-Allow-Credentials": "true",
+                            },
+                            "body_text": '{"ok":true}',
+                        }
+                    },
+                }
+            ],
+            evidence_seed="",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("web_policy_hit")))
+        self.assertEqual("https://example.com/api/profile", observation.get("web_policy_url"))
+        self.assertEqual(
+            "cors_credentialed_wildcard",
+            str(observation.get("web_policy_summary", {}).get("proof_type") or ""),
+        )
+
+    def test_collect_ai_pen_runtime_observation_detects_socketio(self):
+        observation = WebSiteFetch._collect_ai_pen_runtime_observation(
+            [
+                {
+                    "turn": 1,
+                    "tool": "socketio_probe",
+                    "status": "ok",
+                    "result": {
+                        "response": {
+                            "url": "https://example.com/socket.io/?EIO=4&transport=polling&t=arlprobe",
+                            "status_code": 200,
+                            "headers": {"Content-Type": "text/plain; charset=utf-8"},
+                            "body_text": '0{"sid":"abc","upgrades":["websocket"]}',
+                        }
+                    },
+                }
+            ],
+            evidence_seed="",
+            js_api_targets=[],
+        )
+
+        self.assertTrue(bool(observation.get("socketio_hit")))
+        self.assertEqual(
+            "socketio_polling_open",
+            str(observation.get("socketio_summary", {}).get("proof_type") or ""),
+        )
 
     def test_collect_ai_pen_runtime_observation_detects_login_success(self):
         observation = WebSiteFetch._collect_ai_pen_runtime_observation(
@@ -455,6 +541,30 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(all(item.get("tool") == "config_probe" for item in plan))
         self.assertEqual("get", plan[0].get("params", {}).get("method"))
         self.assertIn("/actuator/env", str(plan[0].get("params", {}).get("url", "")))
+
+    def test_build_ai_pen_fallback_tool_plan_for_path_traversal_probe(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/download?file=report.txt",
+            payload_type="path_traversal_probe",
+            payload="",
+            max_steps=2,
+        )
+
+        self.assertEqual(2, len(plan))
+        self.assertTrue(all(item.get("tool") == "path_traversal_probe" for item in plan))
+        self.assertTrue(any("file=" in str(item.get("params", {}).get("url", "")) for item in plan))
+
+    def test_build_ai_pen_fallback_tool_plan_for_web_policy_probe(self):
+        plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
+            target_url="https://example.com/api/profile",
+            payload_type="web_policy_probe",
+            payload="",
+            max_steps=2,
+        )
+
+        self.assertEqual(2, len(plan))
+        self.assertTrue(all(item.get("tool") == "web_policy_probe" for item in plan))
+        self.assertTrue(any(str(item.get("params", {}).get("method", "")).lower() == "options" for item in plan))
 
     def test_build_ai_pen_fallback_tool_plan_for_idor_uses_multiple_targets(self):
         plan = WebSiteFetch._build_ai_pen_fallback_tool_plan(
@@ -1300,6 +1410,22 @@ class TestAiPenJsContext(unittest.TestCase):
         )
         self.assertEqual("jwt", risk_type)
 
+    def test_classify_socketio_risk_type(self):
+        risk_type = WebSiteFetch._classify_ai_pen_risk_type(
+            raw_type="url",
+            risk_name="sockjs endpoint",
+            source_module="wih",
+        )
+        self.assertEqual("socketio", risk_type)
+
+    def test_classify_web_policy_risk_type(self):
+        risk_type = WebSiteFetch._classify_ai_pen_risk_type(
+            raw_type="nuclei",
+            risk_name="CORS misconfiguration",
+            source_module="nuclei",
+        )
+        self.assertEqual("web_policy", risk_type)
+
     def test_payload_hint_for_config_surface_prefers_config_probe(self):
         task = WebSiteFetch.__new__(WebSiteFetch)
         payload_type, payload = task._build_ai_pen_payload_hint(
@@ -1309,6 +1435,26 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("config_probe", payload_type)
         self.assertEqual("", payload)
+
+    def test_payload_hint_for_path_traversal_prefers_path_probe(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        payload_type, payload = task._build_ai_pen_payload_hint(
+            risk_type="path_traversal",
+            risk_name="Directory Traversal",
+        )
+
+        self.assertEqual("path_traversal_probe", payload_type)
+        self.assertIn("etc/passwd", payload)
+
+    def test_payload_hint_for_web_policy_prefers_policy_probe(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        payload_type, payload = task._build_ai_pen_payload_hint(
+            risk_type="web_policy",
+            risk_name="CORS misconfiguration",
+        )
+
+        self.assertEqual("web_policy_probe", payload_type)
+        self.assertIn("origin=", payload)
 
     def test_infer_tool_plan_uses_config_probe_for_actuator_endpoint(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
@@ -1332,6 +1478,42 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("https://example.com/api/actuator/env", targets)
         self.assertTrue(any(item.endswith("/actuator/configprops") for item in targets))
         self.assertTrue(any(item.endswith("/api/actuator/configprops") for item in targets))
+
+    def test_build_path_traversal_probe_targets_mutates_file_param(self):
+        targets = WebSiteFetch._build_path_traversal_probe_targets(
+            "https://example.com/download?file=a.txt",
+            max_count=3,
+        )
+
+        self.assertEqual(3, len(targets))
+        self.assertTrue(any("etc%2Fpasswd" in item or "etc/passwd" in item for item in targets))
+        self.assertTrue(all("file=" in item for item in targets))
+
+    def test_infer_tool_plan_for_web_policy_uses_policy_probe_steps(self):
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={"target": "https://example.com/api/profile"},
+            payload_type="web_policy_probe",
+            payload="",
+            max_steps=3,
+        )
+
+        self.assertEqual(3, len(plan))
+        self.assertTrue(all(str(item.get("tool") or "") == "web_policy_probe" for item in plan))
+        methods = [str(item.get("params", {}).get("method", "") or "").lower() for item in plan]
+        self.assertIn("options", methods)
+        self.assertIn("get", methods)
+
+    def test_infer_tool_plan_for_socketio_uses_socketio_probe(self):
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={"target": "https://example.com/app"},
+            payload_type="socketio_probe",
+            payload="",
+            max_steps=2,
+        )
+
+        self.assertEqual(2, len(plan))
+        self.assertTrue(all(str(item.get("tool") or "") == "socketio_probe" for item in plan))
+        self.assertTrue(any("/socket.io/" in str(item.get("params", {}).get("url", "") or "") for item in plan))
 
     def test_build_auth_protocol_probe_targets_covers_openid_family(self):
         targets = WebSiteFetch._build_auth_protocol_probe_targets(
@@ -1499,7 +1681,18 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(any("/.well-known/openid-configuration" in item for item in urls))
 
     def test_runtime_tool_registry_contains_session_and_config_tools(self):
-        for tool_name in ("session_request", "extract_csrf_token", "token_replay", "config_probe", "xss_probe", "ssti_probe", "xxe_probe"):
+        for tool_name in (
+            "session_request",
+            "extract_csrf_token",
+            "token_replay",
+            "config_probe",
+            "xss_probe",
+            "ssti_probe",
+            "xxe_probe",
+            "path_traversal_probe",
+            "web_policy_probe",
+            "socketio_probe",
+        ):
             self.assertIn(tool_name, WebSiteFetch.AI_PEN_RUNTIME_TOOL_NAMES)
 
     def test_infer_tool_plan_for_jwt_adds_token_replay_when_token_present(self):
