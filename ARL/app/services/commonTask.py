@@ -7822,6 +7822,8 @@ class WebSiteFetch(object):
 
         if "jwt" in merged:
             return "jwt"
+        if any(token in merged for token in ("oauth", "openid", "oidc", "jwks", "bearer token", "access_token", "id_token", "refresh_token")):
+            return "jwt"
         if any(
             token in merged
             for token in (
@@ -8030,6 +8032,16 @@ class WebSiteFetch(object):
             "/api/login",
             "/connect/token",
         )
+        auth_protocol_tokens = (
+            "/.well-known/openid-configuration",
+            "/.well-known/jwks.json",
+            "/oauth/token",
+            "/oauth2/token",
+            "/connect/token",
+            "/oauth/introspect",
+            "/oauth2/introspect",
+            "/userinfo",
+        )
         file_surface_tokens = (
             "/upload",
             "/import",
@@ -8091,6 +8103,13 @@ class WebSiteFetch(object):
             severity = "medium" if success_like else "low"
             priority_score = 42 if success_like else 18
             high_value_reason = "file_surface_endpoint"
+        elif any(token in lower_url for token in auth_protocol_tokens):
+            matched_keywords = [token for token in auth_protocol_tokens if token in lower_url][:4]
+            risk_type = "jwt"
+            risk_name = "高价值认证协议端点"
+            severity = "high" if success_like else "medium"
+            priority_score = 56 if success_like else 24
+            high_value_reason = "auth_protocol_endpoint"
         elif any(token in lower_url for token in auth_tokens):
             matched_keywords = [token for token in auth_tokens if token in lower_url][:4]
             risk_type = "login_surface"

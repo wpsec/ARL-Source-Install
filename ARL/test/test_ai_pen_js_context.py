@@ -259,6 +259,20 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("login_surface", candidate.get("risk_type"))
         self.assertEqual("高价值认证入口", candidate.get("risk_name"))
 
+    def test_high_value_url_candidate_detects_auth_protocol_endpoint(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd7994390aa",
+            target_url="https://example.com/.well-known/openid-configuration",
+            status_code=200,
+            title_text="OpenID Provider Metadata",
+            source_text="url",
+        )
+
+        self.assertEqual("jwt", candidate.get("risk_type"))
+        self.assertEqual("高价值认证协议端点", candidate.get("risk_name"))
+        self.assertEqual("auth_protocol_endpoint", candidate.get("high_value_reason"))
+
     def test_high_value_url_candidate_detects_file_surface(self):
         candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
             source_collection="url",
@@ -1259,6 +1273,14 @@ class TestAiPenJsContext(unittest.TestCase):
             source_module="nuclei",
         )
         self.assertEqual("weak_password", risk_type)
+
+    def test_classify_oauth_risk_type_to_jwt(self):
+        risk_type = WebSiteFetch._classify_ai_pen_risk_type(
+            raw_type="oauth2",
+            risk_name="OpenID Connect discovery endpoint",
+            source_module="url",
+        )
+        self.assertEqual("jwt", risk_type)
 
     def test_payload_hint_for_config_surface_prefers_config_probe(self):
         task = WebSiteFetch.__new__(WebSiteFetch)
