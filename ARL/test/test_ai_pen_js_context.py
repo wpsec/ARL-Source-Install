@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import pathlib
 import sys
 import types
@@ -1270,6 +1271,41 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(any(item.endswith("/actuator/configprops") for item in targets))
         self.assertTrue(any(item.endswith("/api/actuator/configprops") for item in targets))
 
+    def test_build_auth_protocol_probe_targets_covers_openid_family(self):
+        targets = WebSiteFetch._build_auth_protocol_probe_targets(
+            "https://example.com/api/login",
+            max_count=6,
+        )
+
+        self.assertEqual(6, len(targets))
+        self.assertTrue(any(item.endswith("/.well-known/openid-configuration") for item in targets))
+        self.assertTrue(any(item.endswith("/oauth/token") for item in targets))
+
+    def test_looks_like_auth_protocol_response_detects_openid_configuration(self):
+        body = json.dumps(
+            {
+                "issuer": "https://example.com",
+                "authorization_endpoint": "https://example.com/oauth/authorize",
+                "token_endpoint": "https://example.com/oauth/token",
+                "jwks_uri": "https://example.com/.well-known/jwks.json",
+            },
+            ensure_ascii=False,
+        )
+
+        hit = WebSiteFetch._looks_like_auth_protocol_response(
+            "https://example.com/.well-known/openid-configuration",
+            body,
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertTrue(hit)
+
+        summary = WebSiteFetch._extract_auth_protocol_summary(
+            body,
+            url_text="https://example.com/.well-known/openid-configuration",
+        )
+        self.assertEqual("openid_configuration", summary.get("mode"))
+        self.assertEqual("/oauth/token", summary.get("token_endpoint"))
+
     def test_infer_tool_plan_for_weak_password_uses_session_chain(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={
@@ -1301,6 +1337,19 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("credential_probe", plan[2].get("tool"))
         self.assertEqual("detect_login_success", plan[3].get("tool"))
         self.assertEqual("weak_password", plan[2].get("params", {}).get("session_key"))
+
+    def test_infer_tool_plan_for_jwt_extends_to_auth_protocol_targets(self):
+        plan = WebSiteFetch._infer_ai_pen_tool_plan(
+            candidate={"target": "https://example.com/api/login"},
+            payload_type="jwt_probe",
+            payload="",
+            max_steps=4,
+        )
+
+        self.assertEqual(4, len(plan))
+        self.assertEqual("jwt_probe", plan[0].get("tool"))
+        urls = [str(item.get("params", {}).get("url", "") or "") for item in plan]
+        self.assertTrue(any("/.well-known/openid-configuration" in item for item in urls))
 
     def test_runtime_tool_registry_contains_session_and_config_tools(self):
         for tool_name in ("session_request", "extract_csrf_token", "token_replay", "config_probe", "xss_probe", "ssti_probe", "xxe_probe"):

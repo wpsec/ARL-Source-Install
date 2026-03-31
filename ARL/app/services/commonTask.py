@@ -5977,6 +5977,167 @@ class WebSiteFetch(object):
             return []
 
     @staticmethod
+    def _build_auth_protocol_probe_targets(target_url: str, max_count=4):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return []
+
+        try:
+            parsed = urlsplit(url_text)
+            base = "{}://{}".format(parsed.scheme, parsed.netloc)
+            lower_path = str(parsed.path or "").strip().lower()
+            candidate_paths = []
+            if lower_path and any(
+                token in lower_path
+                for token in (
+                    "/oauth",
+                    "/openid",
+                    "/oidc",
+                    "/token",
+                    "/authorize",
+                    "/userinfo",
+                    "/introspect",
+                    "/.well-known",
+                    "/connect/",
+                )
+            ):
+                candidate_paths.append(str(parsed.path or "").strip())
+
+            has_api_prefix = ("/api/" in lower_path) or lower_path.startswith("/api")
+            prefixes = ["/api", ""] if has_api_prefix else [""]
+
+            base_paths = [
+                "/.well-known/openid-configuration",
+                "/.well-known/jwks.json",
+                "/oauth/token",
+                "/oauth2/token",
+                "/connect/token",
+                "/oauth/authorize",
+                "/oauth2/authorize",
+                "/connect/authorize",
+                "/oauth/introspect",
+                "/oauth2/introspect",
+                "/userinfo",
+            ]
+
+            for prefix in prefixes:
+                prefix_text = str(prefix or "").strip()
+                for path in base_paths:
+                    path_text = str(path or "").strip()
+                    if not path_text:
+                        continue
+                    if prefix_text:
+                        candidate_paths.append("{}{}".format(prefix_text, path_text))
+                    else:
+                        candidate_paths.append(path_text)
+
+            targets = []
+            seen = set()
+            for path in candidate_paths:
+                path_text = str(path or "").strip()
+                if not path_text:
+                    continue
+                if not path_text.startswith("/"):
+                    path_text = "/{}".format(path_text)
+                full_url = "{}{}".format(base, path_text)
+                if full_url in seen:
+                    continue
+                seen.add(full_url)
+                targets.append(full_url)
+                if len(targets) >= max(1, int(max_count or 1)):
+                    break
+            return targets
+        except Exception:
+            return []
+
+    @staticmethod
+    def _looks_like_auth_protocol_response(url_text: str, body_text: str, headers=None):
+        url_lower = str(url_text or "").strip().lower()
+        body_lower = str(body_text or "").strip().lower()
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+
+        if not url_lower and not body_lower and not content_type:
+            return False
+
+        url_markers = (
+            "/.well-known/openid-configuration",
+            "/.well-known/jwks.json",
+            "/oauth/token",
+            "/oauth2/token",
+            "/connect/token",
+            "/oauth/authorize",
+            "/oauth2/authorize",
+            "/connect/authorize",
+            "/oauth/introspect",
+            "/oauth2/introspect",
+            "/userinfo",
+        )
+        if "openid-configuration" in url_lower and all(
+            token in body_lower for token in ('"issuer"', '"token_endpoint"')
+        ):
+            return True
+        if "jwks" in url_lower and '"keys"' in body_lower and any(token in body_lower for token in ('"kty"', '"kid"')):
+            return True
+        if all(token in body_lower for token in ('"issuer"', '"authorization_endpoint"', '"token_endpoint"')):
+            return True
+        if '"jwks_uri"' in body_lower and '"token_endpoint"' in body_lower:
+            return True
+        if any(marker in url_lower for marker in url_markers) and "json" in content_type and body_lower[:1] in "{[":
+            return True
+        return False
+
+    @classmethod
+    def _extract_auth_protocol_summary(cls, body_text: str, url_text: str = ""):
+        text = str(body_text or "").strip()
+        lower_url = str(url_text or "").strip().lower()
+        if not text and not lower_url:
+            return {}
+
+        summary = {"mode": "unknown"}
+        if "openid-configuration" in lower_url:
+            summary["mode"] = "openid_configuration"
+        elif "jwks" in lower_url:
+            summary["mode"] = "jwks"
+        elif "token" in lower_url:
+            summary["mode"] = "token_endpoint"
+
+        try:
+            parsed = json.loads(text) if text else {}
+        except Exception:
+            parsed = {}
+
+        if isinstance(parsed, dict):
+            issuer = str(parsed.get("issuer") or "").strip()
+            if issuer:
+                summary["issuer"] = issuer[:180]
+                if summary.get("mode") == "unknown":
+                    summary["mode"] = "openid_configuration"
+
+            for key_name in ("authorization_endpoint", "token_endpoint", "userinfo_endpoint", "jwks_uri"):
+                key_value = str(parsed.get(key_name) or "").strip()
+                if not key_value:
+                    continue
+                try:
+                    endpoint_path = str(urlsplit(key_value).path or "").strip()
+                except Exception:
+                    endpoint_path = key_value
+                summary[key_name] = endpoint_path[:180] if endpoint_path else key_value[:180]
+
+            grant_types = parsed.get("grant_types_supported")
+            if isinstance(grant_types, list):
+                grant_list = [str(item or "").strip() for item in grant_types if str(item or "").strip()]
+                if grant_list:
+                    summary["grant_types"] = grant_list[:4]
+
+            if summary.get("mode") == "unknown" and any(key in parsed for key in ("authorization_endpoint", "token_endpoint", "jwks_uri")):
+                summary["mode"] = "openid_configuration"
+            if summary.get("mode") == "unknown" and "keys" in parsed:
+                summary["mode"] = "jwks"
+
+        return summary
+
+    @staticmethod
     def _looks_like_api_doc_response(url_text: str, body_text: str, headers=None):
         """
         轻量判断响应是否命中 API 文档（Swagger/OpenAPI）。
@@ -6102,6 +6263,31 @@ class WebSiteFetch(object):
         top_level_keys = [str(item or "").strip() for item in list(summary.get("top_level_keys", []) or [])[:4] if str(item or "").strip()]
         if top_level_keys:
             parts.append("keys={}".format(",".join(top_level_keys)))
+        return " | ".join(parts)
+
+    @classmethod
+    def _format_auth_protocol_summary_text(cls, summary: dict):
+        if not isinstance(summary, dict) or not summary:
+            return ""
+
+        parts = []
+        mode_text = str(summary.get("mode") or "").strip()
+        if mode_text and mode_text != "unknown":
+            parts.append("mode={}".format(mode_text))
+        issuer = str(summary.get("issuer") or "").strip()
+        if issuer:
+            parts.append("issuer={}".format(issuer[:120]))
+        for key_name in ("authorization_endpoint", "token_endpoint", "userinfo_endpoint", "jwks_uri"):
+            value_text = str(summary.get(key_name) or "").strip()
+            if value_text:
+                parts.append("{}={}".format(key_name, value_text[:120]))
+        grant_types = [
+            str(item or "").strip()
+            for item in list(summary.get("grant_types", []) or [])[:3]
+            if str(item or "").strip()
+        ]
+        if grant_types:
+            parts.append("grant_types={}".format(",".join(grant_types)))
         return " | ".join(parts)
 
     @classmethod
@@ -8388,6 +8574,21 @@ class WebSiteFetch(object):
                     "summary": "复测 JWT 鉴权入口",
                 }
             )
+            for auth_url in cls._build_auth_protocol_probe_targets(target_url, max_count=max_steps):
+                auth_url_text = str(auth_url or "").strip()
+                if not auth_url_text or auth_url_text == target_url:
+                    continue
+                plan.append(
+                    {
+                        "tool": "jwt_probe",
+                        "params": {
+                            "url": auth_url_text,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "探测 OAuth/OIDC 协议端点",
+                    }
+                )
         return cls._normalize_ai_pen_tool_plan(plan, default_url=target_url, max_steps=max_steps)
 
     @classmethod
@@ -8645,6 +8846,21 @@ class WebSiteFetch(object):
                     "summary": "fallback JWT 鉴权入口复测",
                 }
             )
+            for auth_url in cls._build_auth_protocol_probe_targets(url_text, max_count=max_steps):
+                auth_url_text = str(auth_url or "").strip()
+                if not auth_url_text or auth_url_text == url_text:
+                    continue
+                plan.append(
+                    {
+                        "tool": "jwt_probe",
+                        "params": {
+                            "url": auth_url_text,
+                            "method": "get",
+                            "allow_redirects": True,
+                        },
+                        "summary": "fallback OAuth/OIDC 协议端点探测",
+                    }
+                )
         elif payload_type_text == "websocket_probe":
             ws_probe_url = cls._build_websocket_handshake_url(url_text)
             if ws_probe_url:
@@ -8726,6 +8942,9 @@ class WebSiteFetch(object):
             "graphql_hit": False,
             "graphql_hit_url": "",
             "graphql_summary": {},
+            "auth_protocol_hit": False,
+            "auth_protocol_url": "",
+            "auth_protocol_summary": {},
             "config_exposure_hit": False,
             "config_exposure_url": "",
             "config_exposure_summary": "",
@@ -8809,6 +9028,14 @@ class WebSiteFetch(object):
                 observation["graphql_hit"] = True
                 observation["graphql_hit_url"] = url_text
                 observation["graphql_summary"] = cls._extract_graphql_summary(body_excerpt)
+
+            if tool_name in {"jwt_probe", "token_replay"} and cls._looks_like_auth_protocol_response(url_text, body_excerpt, headers):
+                observation["auth_protocol_hit"] = True
+                observation["auth_protocol_url"] = url_text
+                observation["auth_protocol_summary"] = cls._extract_auth_protocol_summary(
+                    body_excerpt,
+                    url_text=url_text,
+                )
 
             if cls._looks_like_sensitive_config_response(url_text, body_excerpt, headers):
                 observation["config_exposure_hit"] = True
@@ -10575,6 +10802,9 @@ class WebSiteFetch(object):
             graphql_hit = False
             graphql_hit_url = ""
             graphql_summary = {}
+            auth_protocol_hit = False
+            auth_protocol_url = ""
+            auth_protocol_summary = {}
             config_exposure_hit = False
             config_exposure_url = ""
             config_exposure_summary = ""
@@ -10684,6 +10914,10 @@ class WebSiteFetch(object):
                 graphql_hit_url = str(plan_observation.get("graphql_hit_url", "") or "") or graphql_hit_url
                 if isinstance(plan_observation.get("graphql_summary"), dict) and plan_observation.get("graphql_summary"):
                     graphql_summary = dict(plan_observation.get("graphql_summary") or {})
+                auth_protocol_hit = bool(plan_observation.get("auth_protocol_hit")) or auth_protocol_hit
+                auth_protocol_url = str(plan_observation.get("auth_protocol_url", "") or "") or auth_protocol_url
+                if isinstance(plan_observation.get("auth_protocol_summary"), dict) and plan_observation.get("auth_protocol_summary"):
+                    auth_protocol_summary = dict(plan_observation.get("auth_protocol_summary") or {})
                 api_doc_probe_count += self._safe_int_value(
                     dict(plan_observation.get("tool_counts") or {}).get("api_doc_probe"),
                     0,
@@ -10818,6 +11052,10 @@ class WebSiteFetch(object):
                     graphql_hit_url = str(fallback_observation.get("graphql_hit_url", "") or "") or graphql_hit_url
                     if isinstance(fallback_observation.get("graphql_summary"), dict) and fallback_observation.get("graphql_summary"):
                         graphql_summary = dict(fallback_observation.get("graphql_summary") or {})
+                    auth_protocol_hit = bool(fallback_observation.get("auth_protocol_hit")) or auth_protocol_hit
+                    auth_protocol_url = str(fallback_observation.get("auth_protocol_url", "") or "") or auth_protocol_url
+                    if isinstance(fallback_observation.get("auth_protocol_summary"), dict) and fallback_observation.get("auth_protocol_summary"):
+                        auth_protocol_summary = dict(fallback_observation.get("auth_protocol_summary") or {})
                     api_doc_probe_count += self._safe_int_value(
                         dict(fallback_observation.get("tool_counts") or {}).get("api_doc_probe"),
                         0,
@@ -11010,6 +11248,13 @@ class WebSiteFetch(object):
                 decision = "needs_manual_review"
                 confidence = 0.64
                 reason = "发现疑似 JWT 令牌（alg={}），建议结合登录态进一步验证".format(jwt_alg_text or "-")
+            elif payload_type == "jwt_probe" and auth_protocol_hit:
+                decision = "verified"
+                confidence = 0.82
+                reason = "发现可访问 OAuth/OIDC 协议端点 {}".format((auth_protocol_url or target_url)[:180])
+                auth_protocol_summary_text = self._format_auth_protocol_summary_text(auth_protocol_summary)
+                if auth_protocol_summary_text:
+                    reason = "{}；协议摘要：{}".format(reason, auth_protocol_summary_text)
             elif payload_type == "websocket_probe" and websocket_upgrade_hit:
                 decision = "verified"
                 confidence = 0.86
