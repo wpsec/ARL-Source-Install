@@ -1767,6 +1767,59 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("unauth_profile_data", result.get("proof_type"))
         self.assertEqual("https://example.com/api/account/current", result.get("matched_url"))
 
+    def test_apply_ai_pen_decision_guard_downgrades_health_only_verified(self):
+        result = WebSiteFetch._apply_ai_pen_decision_guard(
+            decision="verified",
+            confidence=0.88,
+            reason="健康检查/信息端点返回成功状态，存在公开未授权访问线索",
+            proof_family="unauth_access",
+            proof_type="unauth_health_endpoint",
+            proof_strength="weak",
+            payload_type="replay",
+            unauth_access_hit=True,
+            unauth_access_type="unauth_health_endpoint",
+            unauth_negative_type="health_only",
+            unauth_probe_summary={"probe_count": 2, "success_count": 2, "health_like_count": 2},
+        )
+
+        self.assertEqual("needs_manual_review", result.get("decision"))
+        self.assertEqual("downgrade_health_only", result.get("decision_guard_action"))
+        self.assertIn("健康检查", str(result.get("decision_guard_reason") or ""))
+
+    def test_apply_ai_pen_decision_guard_downgrades_access_control_verified(self):
+        result = WebSiteFetch._apply_ai_pen_decision_guard(
+            decision="verified",
+            confidence=0.84,
+            reason="对象访问差异明显",
+            proof_family="access_control",
+            proof_type="idor_access_control_signal",
+            proof_strength="weak",
+            payload_type="idor_probe",
+        )
+
+        self.assertEqual("needs_manual_review", result.get("decision"))
+        self.assertEqual("downgrade_access_control", result.get("decision_guard_action"))
+        self.assertIn("人工复核线索", str(result.get("decision_guard_reason") or ""))
+
+    def test_apply_ai_pen_decision_guard_boosts_strong_multi_hit_manual_review(self):
+        result = WebSiteFetch._apply_ai_pen_decision_guard(
+            decision="needs_manual_review",
+            confidence=0.74,
+            reason="高价值入口未观察到鉴权拦截，疑似可未授权直接访问",
+            proof_family="unauth_access",
+            proof_type="unauth_profile_data",
+            proof_strength="strong",
+            payload_type="replay",
+            unauth_access_hit=True,
+            unauth_access_type="unauth_profile_data",
+            unauth_negative_type="",
+            unauth_probe_summary={"probe_count": 3, "success_count": 2, "blocked_count": 0, "login_wall_count": 0, "health_like_count": 0},
+        )
+
+        self.assertEqual("needs_manual_review", result.get("decision"))
+        self.assertEqual("boost_multi_hit", result.get("decision_guard_action"))
+        self.assertGreaterEqual(float(result.get("confidence") or 0.0), 0.82)
+
     def test_build_ai_pen_login_followup_targets_prefers_session_and_logout_paths(self):
         targets = WebSiteFetch._build_ai_pen_login_followup_targets(
             target_url="https://example.com/login",

@@ -11599,6 +11599,40 @@ class WebSiteFetch(object):
         return ""
 
     @classmethod
+    def _classify_ai_pen_proof_strength(cls, proof_family: str, proof_type: str, proof_signals=None) -> str:
+        family = str(proof_family or "").strip().lower()
+        proof = str(proof_type or "").strip().lower()
+        signals = {
+            str(item or "").strip().lower()
+            for item in list(proof_signals or [])
+            if str(item or "").strip()
+        }
+
+        if family in {"active_execution", "auth_bypass", "sensitive_disclosure"}:
+            return "strong"
+        if family == "response_differential":
+            if proof in {"boolean_based", "error_based", "time_based", "external_tool"}:
+                return "strong"
+            return "medium"
+        if family == "unauth_access":
+            if proof in {"unauth_admin_portal", "unauth_profile_data", "unauth_actuator_surface", "unauth_management_surface"}:
+                return "strong"
+            if proof == "unauth_health_endpoint":
+                return "weak"
+            return "medium"
+        if family in {"surface_exposure", "realtime_exposure"}:
+            if proof in {"config_exposure", "websocket_upgrade", "websocket_upgrade_open", "socketio_websocket_upgrade"}:
+                return "medium"
+            return "weak"
+        if family in {"policy_misconfig", "access_control"}:
+            return "weak"
+        if signals.intersection({"login_success", "session_auth", "logout_effective", "unauth_access"}):
+            return "medium"
+        if proof:
+            return "medium"
+        return "weak"
+
+    @classmethod
     def _build_ai_pen_proof_summary(cls, payload_obj):
         item = payload_obj if isinstance(payload_obj, dict) else {}
         payload_type = str(item.get("payload_type", "") or "").strip().lower()
@@ -11712,6 +11746,11 @@ class WebSiteFetch(object):
             append_signal("logout_effective")
 
         proof_family = cls._classify_ai_pen_proof_family(proof_type, payload_type=payload_type)
+        proof_strength = cls._classify_ai_pen_proof_strength(
+            proof_family,
+            proof_type,
+            proof_signals=proof_signals,
+        )
 
         summary_parts = []
         if payload_variant:
@@ -11730,8 +11769,99 @@ class WebSiteFetch(object):
         return {
             "proof_family": proof_family,
             "proof_type": proof_type,
+            "proof_strength": proof_strength,
             "proof_signals": proof_signals[:8],
             "summary": " | ".join(summary_parts[:5]).strip(),
+        }
+
+    @classmethod
+    def _apply_ai_pen_decision_guard(
+        cls,
+        decision: str,
+        confidence: float,
+        reason: str,
+        proof_family: str = "",
+        proof_type: str = "",
+        proof_strength: str = "",
+        payload_type: str = "",
+        unauth_access_hit: bool = False,
+        unauth_access_type: str = "",
+        unauth_negative_type: str = "",
+        unauth_probe_summary=None,
+    ):
+        current_decision = cls._normalize_ai_pen_decision(decision, default_value="needs_manual_review")
+        current_confidence = cls._clamp_ai_pen_confidence(confidence, 0.5)
+        current_reason = str(reason or "").strip()
+        family = str(proof_family or "").strip().lower()
+        proof = str(proof_type or "").strip().lower()
+        strength = str(proof_strength or "").strip().lower() or cls._classify_ai_pen_proof_strength(family, proof)
+        payload = str(payload_type or "").strip().lower()
+        access_type = str(unauth_access_type or "").strip().lower()
+        negative_type = str(unauth_negative_type or "").strip().lower()
+        summary = unauth_probe_summary if isinstance(unauth_probe_summary, dict) else {}
+        probe_count = cls._safe_int_value(summary.get("probe_count"), 0)
+        success_count = cls._safe_int_value(summary.get("success_count"), 0)
+        blocked_count = cls._safe_int_value(summary.get("blocked_count"), 0)
+        login_wall_count = cls._safe_int_value(summary.get("login_wall_count"), 0)
+        health_like_count = cls._safe_int_value(summary.get("health_like_count"), 0)
+
+        guard_action = ""
+        guard_reason = ""
+
+        if current_decision == "verified" and family == "access_control":
+            guard_action = "downgrade_access_control"
+            current_decision = "needs_manual_review"
+            current_confidence = min(current_confidence, 0.78)
+            guard_reason = "对象访问/权限差异默认仅保留人工复核线索，避免自动定性为越权"
+        elif current_decision == "verified" and family == "unauth_access":
+            if access_type == "unauth_health_endpoint" or proof == "unauth_health_endpoint":
+                guard_action = "downgrade_health_only"
+                current_decision = "needs_manual_review"
+                current_confidence = min(current_confidence, 0.72)
+                guard_reason = "当前命中主要是健康检查/信息端点，先不直接判定为高价值未授权入口"
+            elif negative_type in {"auth_blocked", "login_wall"} and (blocked_count + login_wall_count) >= max(1, success_count):
+                guard_action = "downgrade_negative_signal"
+                current_decision = "needs_manual_review"
+                current_confidence = min(current_confidence, 0.78)
+                guard_reason = "同轮高价值未授权复核仍以鉴权拦截/登录墙为主，先下调为人工复核"
+            elif negative_type == "guarded_mixed" and success_count <= 1 and (blocked_count + login_wall_count) >= success_count:
+                guard_action = "downgrade_negative_signal"
+                current_decision = "needs_manual_review"
+                current_confidence = min(current_confidence, 0.80)
+                guard_reason = "未授权复核存在成功与受保护混合信号，当前保守下调为人工复核"
+            elif negative_type == "health_only" and health_like_count >= max(1, success_count):
+                guard_action = "downgrade_health_only"
+                current_decision = "needs_manual_review"
+                current_confidence = min(current_confidence, 0.74)
+                guard_reason = "当前成功返回主要来自健康检查/信息端点，建议继续补管理面与账户接口复核"
+        elif (
+            current_decision == "needs_manual_review"
+            and family == "unauth_access"
+            and bool(unauth_access_hit)
+            and strength == "strong"
+            and access_type in {"unauth_admin_portal", "unauth_profile_data", "unauth_actuator_surface", "unauth_management_surface"}
+            and probe_count >= 2
+            and success_count >= 2
+            and blocked_count <= 0
+            and login_wall_count <= 0
+            and health_like_count < success_count
+        ):
+            boosted_confidence = max(current_confidence, 0.82)
+            if boosted_confidence > current_confidence:
+                current_confidence = boosted_confidence
+                guard_action = "boost_multi_hit"
+                guard_reason = "多目标未授权复核连续命中，提升人工复核优先级"
+
+        if guard_reason:
+            current_reason = "{}；{}".format(current_reason, guard_reason).strip("；")
+
+        return {
+            "decision": current_decision,
+            "confidence": current_confidence,
+            "reason": current_reason,
+            "proof_strength": strength,
+            "decision_guard_action": guard_action,
+            "decision_guard_reason": guard_reason,
         }
 
     def _build_ai_pen_payload_hint(self, risk_type: str, risk_name: str):
@@ -15881,8 +16011,11 @@ class WebSiteFetch(object):
             proof_summary = self._build_ai_pen_proof_summary(payload_obj)
             payload_obj["proof_family"] = str(proof_summary.get("proof_family") or "").strip()
             payload_obj["proof_type"] = str(proof_summary.get("proof_type") or "").strip()
+            payload_obj["proof_strength"] = str(payload_obj.get("proof_strength") or proof_summary.get("proof_strength") or "").strip()
             payload_obj["proof_signals"] = list(proof_summary.get("proof_signals", []) or [])[:8]
             payload_obj["proof_summary"] = str(proof_summary.get("summary") or "").strip()
+            payload_obj["decision_guard_action"] = str(payload_obj.get("decision_guard_action") or "").strip()
+            payload_obj["decision_guard_reason"] = str(payload_obj.get("decision_guard_reason") or "").strip()
             return payload_obj
 
         if not self._is_http_target(target_url):
@@ -17221,11 +17354,43 @@ class WebSiteFetch(object):
                     "login_success_hit": login_success_hit,
                 }
             )
+            proof_strength = str(proof_summary_obj.get("proof_strength") or "").strip().lower()
+            decision_guard_action = ""
+            decision_guard_reason = ""
+            decision_guard_ret = self._apply_ai_pen_decision_guard(
+                decision=decision,
+                confidence=confidence,
+                reason=reason,
+                proof_family=proof_summary_obj.get("proof_family", ""),
+                proof_type=proof_summary_obj.get("proof_type", ""),
+                proof_strength=proof_strength,
+                payload_type=payload_type,
+                unauth_access_hit=unauth_access_hit,
+                unauth_access_type=unauth_access_type,
+                unauth_negative_type=unauth_negative_type,
+                unauth_probe_summary=unauth_probe_summary,
+            )
+            decision = self._normalize_ai_pen_decision(
+                decision_guard_ret.get("decision"),
+                default_value=decision,
+            )
+            confidence = self._clamp_ai_pen_confidence(
+                decision_guard_ret.get("confidence"),
+                confidence,
+            )
+            reason = self._clip_text(
+                decision_guard_ret.get("reason", "") or reason,
+                self.AI_PEN_TEST_REASON_MAX,
+            ) or reason
+            proof_strength = str(decision_guard_ret.get("proof_strength") or proof_strength or "").strip().lower()
+            decision_guard_action = str(decision_guard_ret.get("decision_guard_action", "") or "").strip().lower()
+            decision_guard_reason = str(decision_guard_ret.get("decision_guard_reason", "") or "").strip()
             logger.info(
                 "task_id:{} ai_pen verify done target:{} payload_type:{} payload_variant:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
                 "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} config_probe_count:{} path_traversal_probe_count:{} "
                 "web_policy_probe_count:{} socketio_probe_count:{} external_hit:{} stop_reason:{} tool_plan_source:{} "
-                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} request_template:{} proof:{} unauth_probe:{} unauth_negative:{} reason:{}".format(
+                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} request_template:{} proof:{} proof_strength:{} guard:{} "
+                "unauth_probe:{} unauth_negative:{} reason:{}".format(
                     self.task_id,
                     target_url[:180],
                     payload_type,
@@ -17252,6 +17417,8 @@ class WebSiteFetch(object):
                     self._format_ai_pen_session_summary_text(session_summary),
                     self._clip_text(str(request_template_preview.get("summary") or "-"), 180),
                     self._clip_text(proof_summary_obj.get("summary", "") or "-", 220),
+                    proof_strength or "-",
+                    decision_guard_action or "-",
                     self._clip_text(str(unauth_probe_summary.get("text") or "-"), 180),
                     unauth_negative_type or "-",
                     self._clip_text(reason, 220),
@@ -17273,6 +17440,9 @@ class WebSiteFetch(object):
                 "evidence_snippet": evidence_snippet,
                 "http_status": probe_status or status_code,
                 "response_hash_diff": response_hash_diff,
+                "proof_strength": proof_strength,
+                "decision_guard_action": decision_guard_action,
+                "decision_guard_reason": decision_guard_reason,
                 "xss_popup_proof": xss_popup_proof,
                 "dom_xss_proof_type": dom_xss_proof_type,
                 "sqli_proof_type": sqli_proof_type,
@@ -17760,12 +17930,15 @@ class WebSiteFetch(object):
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
                 "proof_family": str(verify_result.get("proof_family", "") or "").strip(),
                 "proof_type": str(verify_result.get("proof_type", "") or "").strip(),
+                "proof_strength": str(verify_result.get("proof_strength", "") or "").strip(),
                 "proof_signals": (
                     list(verify_result.get("proof_signals", []) or [])[:8]
                     if isinstance(verify_result.get("proof_signals"), (list, tuple))
                     else []
                 ),
                 "proof_summary": str(verify_result.get("proof_summary", "") or "").strip(),
+                "decision_guard_action": str(verify_result.get("decision_guard_action", "") or "").strip(),
+                "decision_guard_reason": str(verify_result.get("decision_guard_reason", "") or "").strip(),
                 "unauth_access_hit": bool(verify_result.get("unauth_access_hit")),
                 "unauth_access_type": str(verify_result.get("unauth_access_type", "") or "").strip(),
                 "unauth_access_reason": str(verify_result.get("unauth_access_reason", "") or "").strip(),

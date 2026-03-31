@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.56`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.58`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -411,8 +411,9 @@ AI 渗透测试至少要覆盖以下能力族：
   - 已补能力：`unauth_actuator_surface` 与 `unauth_health_endpoint` 已分层，`actuator/health/info` 这类公开健康检查默认降为 `needs_manual_review`，降低把存活探针当成真入口的噪声
   - 已补能力：`unauth_probe_summary` 已进入结果层，会把一轮未授权复核中的 `targets/success/blocked/login_wall/health_like` 收成摘要，用于解释“为何当前不判未授权”并进一步压低误报
   - 已补能力：`unauth_negative_type` 已结构化进入结果、统计、导出与工程师优先入口，并已反向驱动 `Phase F readiness` 收紧口径；当某类能力当前只有“鉴权拦截/登录墙/健康检查”负信号而无正向命中时，不再乐观记为 `covered`
+  - 已补能力：`proof_strength` 与 `decision_guard_action/reason` 已接入最终裁决、工程师优先排序与导出链；`access_control`、`health_only`、`auth_blocked/login_wall/guarded_mixed` 这类高误报信号现在会主动触发结果降级与原因解释
   - 已补能力：已修正 `redirect -> dir` 子串误判，减少 URL 跳转参数被错误打到路径穿越链的噪声
-  - 差距：参数类型标签 -> payload 编排 -> proof/evidence 判定 主干已通，但 `proof_family` 对最终裁决、误报抑制和阶段 F readiness 的统一驱动仍需继续收口
+  - 差距：参数类型标签 -> payload 编排 -> proof/evidence 判定 主干已通，当前主要剩余是把这套守门逻辑继续和阶段 F 基线样本联动
   - 差距：`未授权访问` 与 `访问控制线索` 的结果分流已具基础，但仍需继续压误报；部分实时通道深测能力仍需补强
   - 差距：`CORS/Cache/Security Headers/Error Exposure` 虽已有探针，但统一 proof engine 仍未完全收口
 
@@ -523,12 +524,12 @@ AI 渗透测试至少要覆盖以下能力族：
 - 按整份方案最终口径：`未全部完成`
 - 按“互联网资产高价值漏洞入口发现器”口径：`已具备基础渗透测试能力，进入持续完善阶段`
 - 已接近完成的阶段：`B / C-Core / D / E`
-- 仍需继续推进的阶段：`A / C-AutoPassive / F`
+- 仍需继续推进的阶段：`A / C-AutoPassive(收尾) / F`
 
 建议下一步优先级：
 
 1. 阶段 C / 7：完成参数单引擎与受控字典资源封装，继续提升“真漏洞入口”挖掘能力
-   - 当前已完成：参数探针家族、受控字典 preview 资源封装、接口级 payload 编排、请求模板摘要落库、受控 payload 模板库与 `payload_variant` 选择、`proof_summary/proof_family` 结果链打通
-   - 下一步重点：继续让 `proof_family` 驱动最终裁决、人工优先级和误报抑制，进一步降低水洞
+   - 当前已完成：参数探针家族、受控字典 preview 资源封装、接口级 payload 编排、请求模板摘要落库、受控 payload 模板库与 `payload_variant` 选择、`proof_summary/proof_family` 结果链打通，以及 `proof_strength/decision_guard` 对最终裁决、人工优先级和误报抑制的第一阶段收口
+   - 下一步重点：让这套守门逻辑进一步和阶段 F 的正负样例基线联动，持续降低水洞
 2. 阶段 F：建立最小靶场与正负样例集，把误报率和入口价值真正量化
 3. 阶段 A：继续把控制权从 `commonTask` 挪到 runtime，减少执行路径写死

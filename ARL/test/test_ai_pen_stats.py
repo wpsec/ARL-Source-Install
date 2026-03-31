@@ -572,6 +572,38 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual("login_wall", entries[0]["unauth_negative_type"])
         self.assertIn("登录页/登录墙", entries[0]["focus_reason"])
 
+    def test_build_ai_pen_engineer_focus_entries_surfaces_decision_guard_fields(self):
+        entries = ai_pen_test_module._build_ai_pen_engineer_focus_entries(
+            [
+                {
+                    "_id": "u4-guard",
+                    "target": "https://example.com/actuator/health",
+                    "vuln_url": "https://example.com/actuator/health",
+                    "risk_type": "sensitive_info",
+                    "risk_name": "健康检查端点",
+                    "payload_type": "replay",
+                    "verification_step": "http_fetch_replay",
+                    "decision": "needs_manual_review",
+                    "status": "ok",
+                    "confidence": 0.72,
+                    "http_status": 200,
+                    "proof_family": "unauth_access",
+                    "proof_type": "unauth_health_endpoint",
+                    "proof_strength": "weak",
+                    "decision_guard_action": "downgrade_health_only",
+                    "decision_guard_reason": "当前命中主要是健康检查/信息端点，先不直接判定为高价值未授权入口",
+                    "unauth_access_type": "unauth_health_endpoint",
+                    "unauth_negative_type": "health_only",
+                    "proof_summary": "proof=unauth_health_endpoint | family=unauth_access | signals=unauth_access",
+                    "reason": "健康检查/信息端点返回成功状态，存在公开未授权访问线索",
+                }
+            ]
+        )
+
+        self.assertEqual("weak", entries[0]["proof_strength"])
+        self.assertEqual("downgrade_health_only", entries[0]["decision_guard_action"])
+        self.assertIn("自动守门已下调", entries[0]["focus_reason"])
+
     def test_build_ai_pen_engineer_focus_queue_surfaces_unauth_negative_summary(self):
         readiness = ai_pen_test_module._build_ai_pen_phase_f_readiness(
             [

@@ -37,6 +37,8 @@ base_search_fields = {
     "payload_variant": fields.String(description="受控payload变体标识"),
     "proof_family": fields.String(description="统一证据家族(active_execution/auth_bypass/surface_exposure等)"),
     "proof_type": fields.String(description="统一证据类型"),
+    "proof_strength": fields.String(description="证据强度等级(strong/medium/weak)"),
+    "decision_guard_action": fields.String(description="最终裁决守门动作(downgrade_negative_signal/downgrade_health_only等)"),
     "unauth_access_type": fields.String(description="未授权直访证据类型(unauth_admin_portal/unauth_profile_data等)"),
     "unauth_probe_summary": fields.String(description="未授权复核摘要(targets/blocked/login_wall/health_like等)"),
     "unauth_negative_type": fields.String(description="未授权负信号类型(auth_blocked/login_wall/guarded_mixed/health_only)"),
@@ -793,6 +795,9 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
         payload_expected_signal = str(item.get("payload_expected_signal", "") or "").strip()
         proof_family = str(item.get("proof_family", "") or "").strip()
         proof_type = str(item.get("proof_type", "") or "").strip()
+        proof_strength = str(item.get("proof_strength", "") or "").strip().lower()
+        decision_guard_action = str(item.get("decision_guard_action", "") or "").strip().lower()
+        decision_guard_reason = str(item.get("decision_guard_reason", "") or "").strip()
         unauth_access_type = str(item.get("unauth_access_type", "") or "").strip()
         unauth_access_reason = str(item.get("unauth_access_reason", "") or "").strip()
         unauth_probe_summary = str(item.get("unauth_probe_summary", "") or "").strip()
@@ -851,18 +856,30 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             score += 4
         if proof_type:
             score += 10
+        if proof_strength == "strong":
+            score += 6
+        elif proof_strength == "weak":
+            score -= 4
         if proof_summary:
             score += 4
         if unauth_access_type:
             score += 8
         if unauth_access_type == "unauth_health_endpoint":
             score -= 10
+        if decision_guard_action in {"downgrade_negative_signal", "downgrade_access_control"}:
+            score -= 8
+        elif decision_guard_action == "downgrade_health_only":
+            score -= 10
+        elif decision_guard_action == "boost_multi_hit":
+            score += 6
         if unauth_negative_type in {"auth_blocked", "login_wall", "guarded_mixed"}:
             score -= 6
         elif unauth_negative_type == "health_only":
             score -= 4
 
-        if unauth_access_type == "unauth_health_endpoint":
+        if decision_guard_reason and decision_guard_action.startswith("downgrade"):
+            focus_reason = "自动守门已下调：{}".format(decision_guard_reason[:120])
+        elif unauth_access_type == "unauth_health_endpoint":
             focus_reason = "已观察到公开健康检查/信息端点，建议结合敏感管理面继续复核"
         elif decision == "verified" and proof_family == "unauth_access":
             focus_reason = "已命中无登录直访证据（{}），建议工程师优先接手".format(unauth_access_type or proof_type or "unauth_access")
@@ -870,6 +887,8 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             focus_reason = "已获得可复核证据（{}），建议工程师优先接手".format(proof_type)
         elif decision == "verified":
             focus_reason = "已获得较高置信验证结果，建议工程师优先接手"
+        elif decision_guard_action == "boost_multi_hit":
+            focus_reason = decision_guard_reason or "多目标未授权复核连续命中，建议提升人工复核优先级"
         elif unauth_negative_type == "auth_blocked":
             focus_reason = "已完成未授权复核，主要被鉴权拦截"
         elif unauth_negative_type == "login_wall":
@@ -902,10 +921,13 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
                 "payload_variant": payload_variant,
                 "payload_expected_signal": payload_expected_signal,
                 "proof_family": proof_family,
+                "proof_strength": proof_strength,
                 "unauth_access_type": unauth_access_type,
                 "unauth_access_reason": unauth_access_reason[:240],
                 "unauth_probe_summary": unauth_probe_summary[:240],
                 "unauth_negative_type": unauth_negative_type,
+                "decision_guard_action": decision_guard_action,
+                "decision_guard_reason": decision_guard_reason[:240],
                 "verification_step": str(item.get("verification_step", "") or "").strip(),
                 "high_value_family": str(item.get("high_value_family", "") or "").strip(),
                 "request_template_mode": request_template_mode,
@@ -1423,11 +1445,14 @@ class StatsAiPenTest(ARLResource):
                     "request_template_summary": 1,
                     "proof_family": 1,
                     "proof_type": 1,
+                    "proof_strength": 1,
                     "unauth_access_hit": 1,
                     "unauth_access_type": 1,
                     "unauth_access_reason": 1,
                     "unauth_probe_summary": 1,
                     "unauth_negative_type": 1,
+                    "decision_guard_action": 1,
+                    "decision_guard_reason": 1,
                     "proof_signals": 1,
                     "proof_summary": 1,
                     "target": 1,

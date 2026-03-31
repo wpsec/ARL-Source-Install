@@ -3,7 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-01（v4.5.10 ~ v4.5.56）
+## 2026-04-01（v4.5.10 ~ v4.5.58）
+
+- `[v4.5.58]` AI渗透 `证据强度/裁决守门` 主链落地：新增统一 `proof_strength` 与 `decision_guard_action/reason`，让 `proof_family / proof_type / unauth_negative_type / unauth_probe_summary` 不再只是展示字段，而会真正参与最终裁决和误报抑制；例如 `access_control` 结果默认收敛为人工复核，`unauth_health_endpoint`、`health_only`、`auth_blocked/login_wall/guarded_mixed` 会主动压低过于激进的未授权结论。与此同时，这批字段已经打通到结果落库、工程师优先队列、导出列和回归测试，进一步把“少给水洞”的收口逻辑从统计层推进到最终判定层
 
 - `[v4.5.56]` AI渗透 `工作台证据视图` 前台继续收口：`AI渗透测试` 页新增更完整的未授权概览、阶段 F 能力就绪度和工程师优先能力细视图，前台会直接消费 `unauth_access_overview` 的正负分布与负信号占比、`phase_f_readiness` 的覆盖率/命中率/能力明细，以及 `engineer_focus_queue` 的误报率/平均轮次/平均工具调用数；结果列表也新增 `证据家族/探针类型/未授权负信号` 的行内速览，右侧详情补齐 `proof_summary/request_template_summary/unauth_probe_summary` 的证据总览，进一步把“工程师优先看什么入口、为什么值得接手”从后端统计真正产品化到前台工作台
 

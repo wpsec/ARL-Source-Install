@@ -186,11 +186,14 @@ AI_PEN_TEST_EXPORT_PROJECTION = {
     "response_hash_diff": 1,
     "proof_family": 1,
     "proof_type": 1,
+    "proof_strength": 1,
     "unauth_access_hit": 1,
     "unauth_access_type": 1,
     "unauth_access_reason": 1,
     "unauth_probe_summary": 1,
     "unauth_negative_type": 1,
+    "decision_guard_action": 1,
+    "decision_guard_reason": 1,
     "proof_signals": 1,
     "proof_summary": 1,
     "reason": 1,
@@ -2874,10 +2877,13 @@ def _extract_ai_pen_rows(task_ids):
             confidence = sanitize_excel_value(item.get("confidence", "")).strip()
             proof_family = sanitize_excel_value(item.get("proof_family", "")).strip()
             proof_type = sanitize_excel_value(item.get("proof_type", "")).strip()
+            proof_strength = sanitize_excel_value(item.get("proof_strength", "")).strip()
             unauth_access_type = sanitize_excel_value(item.get("unauth_access_type", "")).strip()
             unauth_access_reason = _truncate_report_text(item.get("unauth_access_reason", ""), 300)
             unauth_probe_summary = _truncate_report_text(item.get("unauth_probe_summary", ""), 300)
             unauth_negative_type = sanitize_excel_value(item.get("unauth_negative_type", "")).strip()
+            decision_guard_action = sanitize_excel_value(item.get("decision_guard_action", "")).strip()
+            decision_guard_reason = _truncate_report_text(item.get("decision_guard_reason", ""), 300)
             proof_summary = _truncate_report_text(item.get("proof_summary", ""), 600)
             reason = _truncate_report_text(item.get("reason", ""), 800)
             tool_trace = _truncate_report_text(item.get("tool_trace", ""), 600)
@@ -2939,10 +2945,13 @@ def _extract_ai_pen_rows(task_ids):
                 payload,
                 proof_family,
                 proof_type,
+                proof_strength,
                 unauth_access_type,
                 unauth_access_reason,
                 unauth_probe_summary,
                 unauth_negative_type,
+                decision_guard_action,
+                decision_guard_reason,
                 proof_summary,
                 request_packet,
                 request_template_summary,
@@ -3016,10 +3025,13 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "Payload",
         "证据家族",
         "证据类型",
+        "证据强度",
         "未授权类型",
         "未授权说明",
         "未授权复核摘要",
         "未授权负信号",
+        "守门动作",
+        "守门原因",
         "证据摘要",
         "Request请求包",
         "请求模板摘要",
