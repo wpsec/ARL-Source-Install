@@ -34,6 +34,9 @@ base_search_fields = {
     "status": fields.String(description="执行状态(ok/error/skipped)"),
     "verification_step": fields.String(description="验证阶段(http_fetch_replay/mcp_http_probe/mcp_idor_probe/mcp_api_doc_probe/mcp_jwt_probe/mcp_websocket_probe)"),
     "payload_type": fields.String(description="探针类型(xss_probe/sqli_probe/idor_probe/api_doc_probe等)"),
+    "payload_variant": fields.String(description="受控payload变体标识"),
+    "proof_family": fields.String(description="统一证据家族(active_execution/auth_bypass/surface_exposure等)"),
+    "proof_type": fields.String(description="统一证据类型"),
     "high_value_family": fields.String(description="高价值目标家族(api_doc_surface/token_auth_flow/login_entry_surface等)"),
     "request_template_mode": fields.String(description="请求模板模式(query/form_data/json_data/body)"),
     "request_template_content_type": fields.String(description="请求模板Content-Type"),
@@ -406,6 +409,67 @@ def _build_ai_pen_group_benchmarks(rows, field_name: str, max_items: int = 12):
     return benchmark_rows[:max_items]
 
 
+def _build_ai_pen_group_counts(rows, field_name: str, max_items: int = 20):
+    items = list(rows or [])
+    group_text = str(field_name or "").strip()
+    grouped = defaultdict(int)
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get(group_text) or "").strip()
+        if not name:
+            continue
+        grouped[name] += 1
+
+    rows = [{"name": name, "count": count} for name, count in grouped.items()]
+    rows.sort(key=lambda item: (-int(item.get("count") or 0), str(item.get("name") or "")))
+    if max_items <= 0:
+        return rows
+    return rows[:max_items]
+
+
+def _classify_ai_pen_proof_family(proof_type, payload_type=""):
+    if hasattr(WebSiteFetch, "_classify_ai_pen_proof_family"):
+        try:
+            return str(
+                WebSiteFetch._classify_ai_pen_proof_family(
+                    proof_type,
+                    payload_type=payload_type,
+                )
+                or ""
+            ).strip()
+        except Exception:
+            pass
+
+    proof = str(proof_type or "").strip().lower()
+    payload = str(payload_type or "").strip().lower()
+
+    if proof in {"popup_execution", "expression_eval", "id_output"}:
+        return "active_execution"
+    if proof in {"boolean_based", "error_based", "time_based", "template_error", "external_tool"}:
+        return "response_differential"
+    if proof in {"login_success", "weak_secret", "alg_none", "signature_bypass"}:
+        return "auth_bypass"
+    if proof in {"idor_diff", "idor_vertical_indicator"}:
+        return "access_control"
+    if proof in {"api_doc_open", "api_schema_exposed", "graphql_schema_open", "config_exposure", "auth_protocol_open"}:
+        return "surface_exposure"
+    if proof in {"websocket_upgrade", "websocket_upgrade_open", "websocket_upgrade_hint", "socketio_polling_open", "sockjs_info_open", "socketio_websocket_upgrade", "transport_hint"}:
+        return "realtime_exposure"
+    if proof in {"entity_file_read", "passwd_disclosure", "win_ini_disclosure", "metadata_disclosure", "local_network_disclosure"}:
+        return "sensitive_disclosure"
+    if proof.startswith("cors_") or proof in {"missing_security_headers", "weak_cache_policy", "error_exposure"}:
+        return "policy_misconfig"
+
+    if not proof:
+        if payload in {"api_doc_probe", "graphql_probe", "config_probe"}:
+            return "surface_exposure"
+        if payload in {"websocket_probe", "socketio_probe"}:
+            return "realtime_exposure"
+    return ""
+
+
 def _normalize_ai_pen_signal_set(values):
     normalized = set()
     for item in list(values or []):
@@ -600,6 +664,24 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
                 summary_parts.append("params={}".format(",".join(request_template_params[:8])))
             request_template_summary = " | ".join(summary_parts)
 
+        payload_variant = str(item.get("payload_variant", "") or "").strip()
+        payload_expected_signal = str(item.get("payload_expected_signal", "") or "").strip()
+        proof_family = str(item.get("proof_family", "") or "").strip()
+        proof_type = str(item.get("proof_type", "") or "").strip()
+        if not proof_family and proof_type:
+            proof_family = _classify_ai_pen_proof_family(
+                proof_type,
+                payload_type=str(item.get("payload_type", "") or "").strip(),
+            )
+        raw_proof_signals = item.get("proof_signals")
+        proof_signals = []
+        if isinstance(raw_proof_signals, (list, tuple)):
+            for signal_name in list(raw_proof_signals or []):
+                signal_text = str(signal_name or "").strip()
+                if signal_text and signal_text not in proof_signals:
+                    proof_signals.append(signal_text)
+        proof_summary = str(item.get("proof_summary", "") or "").strip()
+
         score = int(round(confidence * 30))
         score += min(24, max(0, int(high_value_rank / 4)))
         if decision == "verified":
@@ -632,9 +714,21 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             score += 6
         elif request_template_mode == "query":
             score += 2
+        if proof_family in {"auth_bypass", "active_execution", "access_control", "sensitive_disclosure"}:
+            score += 8
+        elif proof_family in {"surface_exposure", "realtime_exposure", "policy_misconfig"}:
+            score += 4
+        if proof_type:
+            score += 10
+        if proof_summary:
+            score += 4
 
-        if decision == "verified":
+        if decision == "verified" and proof_type:
+            focus_reason = "已获得可复核证据（{}），建议工程师优先接手".format(proof_type)
+        elif decision == "verified":
             focus_reason = "已获得较高置信验证结果，建议工程师优先接手"
+        elif proof_type and proof_summary:
+            focus_reason = "已收敛到 {} 证据，自动化已给出可复核摘要".format(proof_type)
         elif request_template_mode in {"json_data", "form_data", "body"} and request_template_summary:
             focus_reason = "已命中结构化接口模板，适合作为优先复核入口"
         elif bool(item.get("session_auth_hit")):
@@ -652,12 +746,18 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
                 "risk_type": str(item.get("risk_type", "") or "").strip(),
                 "risk_name": str(item.get("risk_name", "") or "").strip(),
                 "payload_type": str(item.get("payload_type", "") or "").strip(),
+                "payload_variant": payload_variant,
+                "payload_expected_signal": payload_expected_signal,
+                "proof_family": proof_family,
                 "verification_step": str(item.get("verification_step", "") or "").strip(),
                 "high_value_family": str(item.get("high_value_family", "") or "").strip(),
                 "request_template_mode": request_template_mode,
                 "request_template_content_type": request_template_content_type,
                 "request_template_params": request_template_params[:8],
                 "request_template_summary": request_template_summary,
+                "proof_type": proof_type,
+                "proof_signals": proof_signals[:8],
+                "proof_summary": proof_summary,
                 "decision": decision,
                 "status": status,
                 "confidence": float("{:.4f}".format(max(0.0, confidence))),
@@ -804,6 +904,13 @@ def _retry_records(result_docs):
                 "confidence": float("{:.4f}".format(confidence)),
                 "reason": str(verify_result.get("reason", "") or "").strip(),
                 "payload_type": str(verify_result.get("payload_type", "") or "").strip(),
+                "payload_variant": str(verify_result.get("payload_variant", "") or "").strip(),
+                "payload_expected_signal": str(verify_result.get("payload_expected_signal", "") or "").strip(),
+                "payload_proof_candidates": (
+                    list(verify_result.get("payload_proof_candidates", []) or [])[:6]
+                    if isinstance(verify_result.get("payload_proof_candidates"), (list, tuple))
+                    else []
+                ),
                 "payload": str(verify_result.get("payload", "") or "").strip(),
                 "request_method": str(verify_result.get("request_method", "") or "").strip(),
                 "request_url": str(verify_result.get("request_url", "") or "").strip(),
@@ -823,6 +930,14 @@ def _retry_records(result_docs):
                 "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
                 "http_status": int(verify_result.get("http_status", 0) or 0),
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
+                "proof_family": str(verify_result.get("proof_family", "") or "").strip(),
+                "proof_type": str(verify_result.get("proof_type", "") or "").strip(),
+                "proof_signals": (
+                    list(verify_result.get("proof_signals", []) or [])[:8]
+                    if isinstance(verify_result.get("proof_signals"), (list, tuple))
+                    else []
+                ),
+                "proof_summary": str(verify_result.get("proof_summary", "") or "").strip(),
                 "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
                 "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
                 "browser_surface_summary": dict(verify_result.get("browser_surface_summary") or {}) if isinstance(verify_result.get("browser_surface_summary"), dict) else {},
@@ -1118,6 +1233,8 @@ class StatsAiPenTest(ARLResource):
         risk_type = _agg_group("risk_type")
         verification_step = _agg_group("verification_step")
         high_value_family = _agg_group("high_value_family")
+        payload_variant = _agg_group("payload_variant")
+        proof_type = _agg_group("proof_type")
         request_template_mode = _agg_group("request_template_mode")
         tool_plan_source = _agg_group("tool_plan_source")
         stop_reason = _agg_group("stop_reason")
@@ -1130,6 +1247,9 @@ class StatsAiPenTest(ARLResource):
                     "risk_type": 1,
                     "risk_name": 1,
                     "payload_type": 1,
+                    "payload_variant": 1,
+                    "payload_expected_signal": 1,
+                    "payload_proof_candidates": 1,
                     "verification_step": 1,
                     "high_value_family": 1,
                     "high_value_family_rank": 1,
@@ -1137,6 +1257,10 @@ class StatsAiPenTest(ARLResource):
                     "request_template_content_type": 1,
                     "request_template_params": 1,
                     "request_template_summary": 1,
+                    "proof_family": 1,
+                    "proof_type": 1,
+                    "proof_signals": 1,
+                    "proof_summary": 1,
                     "target": 1,
                     "vuln_url": 1,
                     "reason": 1,
@@ -1152,10 +1276,21 @@ class StatsAiPenTest(ARLResource):
                 },
             )
         )
+        for item in metric_rows:
+            if not isinstance(item, dict):
+                continue
+            if not str(item.get("proof_family", "") or "").strip():
+                item["proof_family"] = _classify_ai_pen_proof_family(
+                    item.get("proof_type"),
+                    payload_type=item.get("payload_type"),
+                )
         quant_metrics = _build_ai_pen_quant_metrics(metric_rows, total=total)
         capability_benchmarks = {
             "risk_type": _build_ai_pen_group_benchmarks(metric_rows, "risk_type"),
             "payload_type": _build_ai_pen_group_benchmarks(metric_rows, "payload_type"),
+            "payload_variant": _build_ai_pen_group_benchmarks(metric_rows, "payload_variant"),
+            "proof_family": _build_ai_pen_group_benchmarks(metric_rows, "proof_family"),
+            "proof_type": _build_ai_pen_group_benchmarks(metric_rows, "proof_type"),
             "high_value_family": _build_ai_pen_group_benchmarks(metric_rows, "high_value_family"),
             "verification_step": _build_ai_pen_group_benchmarks(metric_rows, "verification_step"),
             "request_template_mode": _build_ai_pen_group_benchmarks(metric_rows, "request_template_mode"),
@@ -1175,6 +1310,9 @@ class StatsAiPenTest(ARLResource):
                 "risk_type": risk_type,
                 "verification_step": verification_step,
                 "high_value_family": high_value_family,
+                "payload_variant": payload_variant,
+                "proof_family": _build_ai_pen_group_counts(metric_rows, "proof_family"),
+                "proof_type": proof_type,
                 "request_template_mode": request_template_mode,
                 "tool_plan_source": tool_plan_source,
                 "stop_reason": stop_reason,

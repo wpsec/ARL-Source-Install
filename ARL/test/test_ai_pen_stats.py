@@ -328,6 +328,8 @@ class TestAiPenStats(unittest.TestCase):
                     "risk_type": "weak_password",
                     "risk_name": "弱口令登录入口",
                     "payload_type": "weak_password_probe",
+                    "payload_variant": "minimal_default_creds",
+                    "payload_expected_signal": "login_success_or_session_creation",
                     "verification_step": "mcp_login_probe",
                     "high_value_family": "login_entry_surface",
                     "high_value_family_rank": 72,
@@ -340,6 +342,9 @@ class TestAiPenStats(unittest.TestCase):
                     "request_template_content_type": "application/x-www-form-urlencoded",
                     "request_template_params": ["username", "password"],
                     "request_template_summary": "mode=form_data | content_type=application/x-www-form-urlencoded | params=username,password",
+                    "proof_type": "login_success",
+                    "proof_signals": ["login_success", "session_auth"],
+                    "proof_summary": "type=login_success | variant=minimal_default_creds | expect=login_success_or_session_creation | template=mode=form_data | content_type=application/x-www-form-urlencoded | params=username,password | signals=login_success,session_auth",
                     "reason": "登录后访问 dashboard 成功",
                 },
                 {
@@ -364,6 +369,11 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual("a1", entries[0]["result_id"])
         self.assertEqual("verified", entries[0]["decision"])
         self.assertEqual("form_data", entries[0]["request_template_mode"])
+        self.assertEqual("minimal_default_creds", entries[0]["payload_variant"])
+        self.assertEqual("auth_bypass", entries[0]["proof_family"])
+        self.assertEqual("login_success", entries[0]["proof_type"])
+        self.assertIn("session_auth", entries[0]["proof_signals"])
+        self.assertIn("variant=minimal_default_creds", entries[0]["proof_summary"])
         self.assertEqual(
             "mode=form_data | content_type=application/x-www-form-urlencoded | params=username,password",
             entries[0]["request_template_summary"],
@@ -380,6 +390,8 @@ class TestAiPenStats(unittest.TestCase):
                 "status": "ok",
                 "risk_type": "api_doc",
                 "payload_type": "api_doc_probe",
+                "payload_variant": "openapi_fetch",
+                "payload_expected_signal": "api_doc_schema_exposed",
                 "verification_step": "mcp_api_doc_probe",
                 "high_value_family": "api_doc_surface",
                 "tool_plan_source": "ai_plan",
@@ -394,6 +406,9 @@ class TestAiPenStats(unittest.TestCase):
                 "request_template_content_type": "application/json",
                 "request_template_params": ["query", "page"],
                 "request_template_summary": "mode=json_data | content_type=application/json | params=query,page",
+                "proof_type": "api_schema_exposed",
+                "proof_signals": ["openapi_paths"],
+                "proof_summary": "type=api_schema_exposed | variant=openapi_fetch | expect=api_doc_schema_exposed | template=mode=json_data | content_type=application/json | params=query,page | signals=openapi_paths",
                 "reason": "开放 API schema",
             },
             {
@@ -403,6 +418,8 @@ class TestAiPenStats(unittest.TestCase):
                 "status": "ok",
                 "risk_type": "jwt",
                 "payload_type": "jwt_probe",
+                "payload_variant": "alg_none_header_swap",
+                "payload_expected_signal": "jwt_none_accept_or_weak_secret",
                 "verification_step": "mcp_jwt_probe",
                 "high_value_family": "token_auth_flow",
                 "tool_plan_source": "retry_history",
@@ -416,6 +433,9 @@ class TestAiPenStats(unittest.TestCase):
                 "request_template_mode": "query",
                 "request_template_params": ["token"],
                 "request_template_summary": "mode=query | params=token",
+                "proof_type": "auth_protocol_open",
+                "proof_signals": ["oidc_metadata"],
+                "proof_summary": "type=auth_protocol_open | variant=alg_none_header_swap | expect=jwt_none_accept_or_weak_secret | template=mode=query | params=token | signals=oidc_metadata",
                 "reason": "仅协议元数据可访问",
             },
             {
@@ -425,6 +445,8 @@ class TestAiPenStats(unittest.TestCase):
                 "status": "error",
                 "risk_type": "websocket",
                 "payload_type": "websocket_probe",
+                "payload_variant": "websocket_upgrade_probe",
+                "payload_expected_signal": "websocket_upgrade_or_socketio_banner",
                 "verification_step": "mcp_websocket_probe",
                 "high_value_family": "realtime_channel_surface",
                 "tool_plan_source": "inferred",
@@ -440,6 +462,9 @@ class TestAiPenStats(unittest.TestCase):
                 "request_template_content_type": "application/xml",
                 "request_template_params": ["root"],
                 "request_template_summary": "mode=body | content_type=application/xml | params=root",
+                "proof_type": "websocket_upgrade_open",
+                "proof_signals": ["websocket_upgrade"],
+                "proof_summary": "type=websocket_upgrade_open | variant=websocket_upgrade_probe | expect=websocket_upgrade_or_socketio_banner | template=mode=body | content_type=application/xml | params=root | signals=websocket_upgrade",
                 "reason": "握手存在但语义待确认",
             },
         ]
@@ -460,6 +485,12 @@ class TestAiPenStats(unittest.TestCase):
         self.assertTrue(any(item.get("name") == "api_doc_surface" for item in data.get("high_value_family", [])))
         self.assertTrue(any(item.get("name") == "api_doc" for item in data["capability_benchmarks"]["risk_type"]))
         self.assertTrue(any(item.get("name") == "api_doc_probe" for item in data["capability_benchmarks"]["payload_type"]))
+        self.assertTrue(any(item.get("name") == "openapi_fetch" for item in data["payload_variant"]))
+        self.assertTrue(any(item.get("name") == "surface_exposure" for item in data["proof_family"]))
+        self.assertTrue(any(item.get("name") == "api_schema_exposed" for item in data["proof_type"]))
+        self.assertTrue(any(item.get("name") == "openapi_fetch" for item in data["capability_benchmarks"]["payload_variant"]))
+        self.assertTrue(any(item.get("name") == "surface_exposure" for item in data["capability_benchmarks"]["proof_family"]))
+        self.assertTrue(any(item.get("name") == "api_schema_exposed" for item in data["capability_benchmarks"]["proof_type"]))
         self.assertTrue(any(item.get("name") == "realtime_channel_surface" for item in data["capability_benchmarks"]["high_value_family"]))
         self.assertTrue(any(item.get("name") == "mcp_websocket_probe" for item in data["capability_benchmarks"]["verification_step"]))
         self.assertTrue(any(item.get("name") == "json_data" for item in data["request_template_mode"]))
@@ -472,10 +503,15 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual("r1", data["engineer_focus_entries"][0]["result_id"])
         self.assertEqual("api_doc", data["engineer_focus_entries"][0]["risk_type"])
         self.assertEqual("json_data", data["engineer_focus_entries"][0]["request_template_mode"])
+        self.assertEqual("openapi_fetch", data["engineer_focus_entries"][0]["payload_variant"])
+        self.assertEqual("surface_exposure", data["engineer_focus_entries"][0]["proof_family"])
+        self.assertEqual("api_schema_exposed", data["engineer_focus_entries"][0]["proof_type"])
+        self.assertIn("openapi_paths", data["engineer_focus_entries"][0]["proof_signals"])
         self.assertEqual(
             "mode=json_data | content_type=application/json | params=query,page",
             data["engineer_focus_entries"][0]["request_template_summary"],
         )
+        self.assertIn("type=api_schema_exposed", data["engineer_focus_entries"][0]["proof_summary"])
         self.assertTrue("focus_reason" in data["engineer_focus_entries"][0])
 
 

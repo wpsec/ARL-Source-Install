@@ -11018,6 +11018,166 @@ class WebSiteFetch(object):
             parts.append("proof={}".format(",".join(proof_candidates[:3])))
         return " ".join(parts[:3]).strip()
 
+    @classmethod
+    def _classify_ai_pen_proof_family(cls, proof_type: str, payload_type: str = "") -> str:
+        proof = str(proof_type or "").strip().lower()
+        payload = str(payload_type or "").strip().lower()
+
+        if proof in {"popup_execution", "expression_eval", "id_output"}:
+            return "active_execution"
+        if proof in {"boolean_based", "error_based", "time_based", "template_error", "external_tool"}:
+            return "response_differential"
+        if proof in {"login_success", "weak_secret", "alg_none", "signature_bypass"}:
+            return "auth_bypass"
+        if proof in {"idor_diff", "idor_vertical_indicator"}:
+            return "access_control"
+        if proof in {"api_doc_open", "api_schema_exposed", "graphql_schema_open", "config_exposure", "auth_protocol_open"}:
+            return "surface_exposure"
+        if proof in {"websocket_upgrade", "websocket_upgrade_open", "websocket_upgrade_hint", "socketio_polling_open", "sockjs_info_open", "socketio_websocket_upgrade", "transport_hint"}:
+            return "realtime_exposure"
+        if proof in {"entity_file_read", "passwd_disclosure", "win_ini_disclosure", "metadata_disclosure", "local_network_disclosure"}:
+            return "sensitive_disclosure"
+        if proof.startswith("cors_") or proof in {"missing_security_headers", "weak_cache_policy", "error_exposure"}:
+            return "policy_misconfig"
+
+        if not proof:
+            if payload in {"api_doc_probe", "graphql_probe", "config_probe"}:
+                return "surface_exposure"
+            if payload in {"websocket_probe", "socketio_probe"}:
+                return "realtime_exposure"
+        return ""
+
+    @classmethod
+    def _build_ai_pen_proof_summary(cls, payload_obj):
+        item = payload_obj if isinstance(payload_obj, dict) else {}
+        payload_type = str(item.get("payload_type", "") or "").strip().lower()
+        payload_variant = str(item.get("payload_variant", "") or "").strip()
+        payload_expected_signal = str(item.get("payload_expected_signal", "") or "").strip()
+        request_template_summary = str(item.get("request_template_summary", "") or "").strip()
+
+        proof_type = ""
+        proof_signals = []
+
+        def append_signal(raw_value):
+            signal_text = str(raw_value or "").strip().lower()
+            if signal_text and signal_text not in proof_signals:
+                proof_signals.append(signal_text)
+
+        if payload_type == "xss_probe":
+            if bool(item.get("xss_popup_proof")):
+                proof_type = "popup_execution"
+            append_signal(item.get("dom_xss_proof_type"))
+        elif payload_type == "sqli_probe":
+            proof_type = str(item.get("sqli_proof_type", "") or "").strip().lower()
+        elif payload_type == "weak_password_probe":
+            if bool(item.get("weak_password_login_proof")):
+                proof_type = "login_success"
+            if bool(item.get("session_auth_hit")):
+                append_signal("session_auth")
+            if bool(item.get("logout_effective")):
+                append_signal("logout_effective")
+        elif payload_type == "cmdi_probe":
+            proof_type = str(item.get("cmdi_proof_type", "") or "").strip().lower()
+        elif payload_type == "ssti_probe":
+            proof_type = str(item.get("ssti_proof_type", "") or "").strip().lower()
+        elif payload_type == "xxe_probe":
+            proof_type = str(item.get("xxe_proof_type", "") or "").strip().lower()
+        elif payload_type == "ssrf_probe":
+            proof_type = str(item.get("ssrf_proof_type", "") or "").strip().lower()
+        elif payload_type == "path_traversal_probe":
+            proof_type = str(item.get("path_traversal_proof_type", "") or "").strip().lower()
+        elif payload_type == "web_policy_probe":
+            proof_type = str(item.get("web_policy_proof_type", "") or "").strip().lower()
+        elif payload_type == "socketio_probe":
+            proof_type = str(item.get("socketio_proof_type", "") or "").strip().lower()
+        elif payload_type == "websocket_probe":
+            if bool(item.get("websocket_upgrade_hit")):
+                proof_type = "websocket_upgrade"
+            elif bool(item.get("websocket_upgrade_hint")):
+                proof_type = "websocket_upgrade_hint"
+        elif payload_type == "api_doc_probe":
+            if bool(item.get("api_doc_hit")):
+                proof_type = "api_doc_open"
+        elif payload_type == "graphql_probe":
+            if bool(item.get("graphql_hit")):
+                proof_type = "graphql_schema_open"
+        elif payload_type == "config_probe":
+            if bool(item.get("config_exposure_hit")):
+                proof_type = "config_exposure"
+        elif payload_type == "jwt_probe":
+            if str(item.get("jwt_weak_secret", "") or "").strip():
+                proof_type = "weak_secret"
+            elif bool(item.get("jwt_alg_none_hit")):
+                proof_type = "alg_none"
+            elif bool(item.get("jwt_none_probe_hit")):
+                proof_type = "signature_bypass"
+            elif bool(item.get("auth_protocol_hit")):
+                proof_type = "auth_protocol_open"
+        elif payload_type == "idor_probe":
+            idor_summary = item.get("idor_diff_summary") if isinstance(item.get("idor_diff_summary"), dict) else {}
+            if bool(item.get("idor_diff_hit")):
+                if bool(idor_summary.get("vertical_indicator")):
+                    proof_type = "idor_vertical_indicator"
+                else:
+                    proof_type = "idor_diff"
+
+        for field_name in (
+            "dom_xss_proof_type",
+            "sqli_proof_type",
+            "cmdi_proof_type",
+            "ssti_proof_type",
+            "xxe_proof_type",
+            "ssrf_proof_type",
+            "path_traversal_proof_type",
+            "web_policy_proof_type",
+            "socketio_proof_type",
+        ):
+            field_value = str(item.get(field_name, "") or "").strip().lower()
+            if field_value and field_value != proof_type:
+                append_signal(field_value)
+
+        if bool(item.get("api_doc_hit")) and payload_type != "api_doc_probe":
+            append_signal("api_doc_hit")
+        if bool(item.get("graphql_hit")) and payload_type != "graphql_probe":
+            append_signal("graphql_hit")
+        if bool(item.get("config_exposure_hit")) and payload_type != "config_probe":
+            append_signal("config_exposure_hit")
+        if bool(item.get("websocket_upgrade_hit")) and payload_type != "websocket_probe":
+            append_signal("websocket_upgrade")
+        if bool(item.get("websocket_upgrade_hint")) and payload_type != "websocket_probe":
+            append_signal("websocket_upgrade_hint")
+        if bool(item.get("external_tool_hit")):
+            append_signal("external_tool")
+        if bool(item.get("login_success_hit")):
+            append_signal("login_success")
+        if bool(item.get("session_auth_hit")):
+            append_signal("session_auth")
+        if bool(item.get("logout_effective")):
+            append_signal("logout_effective")
+
+        proof_family = cls._classify_ai_pen_proof_family(proof_type, payload_type=payload_type)
+
+        summary_parts = []
+        if payload_variant:
+            summary_parts.append("variant={}".format(payload_variant))
+        if payload_expected_signal:
+            summary_parts.append("expect={}".format(payload_expected_signal))
+        if request_template_summary:
+            summary_parts.append(request_template_summary)
+        if proof_type:
+            summary_parts.append("proof={}".format(proof_type))
+        if proof_family:
+            summary_parts.append("family={}".format(proof_family))
+        if proof_signals:
+            summary_parts.append("signals={}".format(",".join(proof_signals[:4])))
+
+        return {
+            "proof_family": proof_family,
+            "proof_type": proof_type,
+            "proof_signals": proof_signals[:8],
+            "summary": " | ".join(summary_parts[:5]).strip(),
+        }
+
     def _build_ai_pen_payload_hint(self, risk_type: str, risk_name: str):
         merged = "{} {}".format(str(risk_type or ""), str(risk_name or "")).lower()
         payload_type = "replay"
@@ -14061,7 +14221,8 @@ class WebSiteFetch(object):
             payload_type = ai_plan_payload_type
         if ai_plan_payload:
             payload = ai_plan_payload
-        elif ai_plan_payload_variant and payload_type and payload_type != "replay":
+        selected_payload_template = {}
+        if payload_type and payload_type != "replay":
             selected_payload_template = self._select_ai_pen_controlled_payload_template(
                 payload_type=payload_type,
                 target_url=target_url,
@@ -14071,6 +14232,14 @@ class WebSiteFetch(object):
             template_payload = str(selected_payload_template.get("payload") or "").strip()
             if template_payload:
                 payload = template_payload[: self.AI_PEN_TEST_PAYLOAD_MAX]
+        selected_payload_variant = str(selected_payload_template.get("variant") or ai_plan_payload_variant or "").strip()
+        selected_payload_expected_signal = str(selected_payload_template.get("expected_signal") or "").strip()
+        selected_payload_proof_candidates = [
+            str(item or "").strip()
+            for item in list(selected_payload_template.get("proof_candidates", []) or [])
+            if str(item or "").strip()
+        ][:6]
+        selected_payload_template_summary = self._format_ai_pen_payload_template_summary(selected_payload_template)
         history_tool_plan = self._normalize_ai_pen_tool_plan(
             candidate.get("history_tool_plan"),
             default_url=target_url,
@@ -14104,6 +14273,8 @@ class WebSiteFetch(object):
                 tool_plan_preview_parts.append("{}@{}".format(tool_name, step_url[:90]))
             else:
                 tool_plan_preview_parts.append(tool_name)
+        if selected_payload_template_summary:
+            tool_plan_preview_parts.append(selected_payload_template_summary[:120])
         is_xss_case = (risk_type_text == "xss") or (str(payload_type or "").strip().lower() == "xss_probe")
         is_sqli_case = (risk_type_text == "sqli") or (str(payload_type or "").strip().lower() == "sqli_probe")
         is_weak_password_case = (risk_type_text == "weak_password") or (
@@ -14116,7 +14287,7 @@ class WebSiteFetch(object):
         if runtime_timeout_sec < 1:
             runtime_timeout_sec = self.AI_PEN_TEST_MCP_TIMEOUT_SEC
         logger.info(
-            "task_id:{} ai_pen verify start source={}:{} target:{} risk_type:{} payload_type:{} route_hint:{} capability:{} "
+            "task_id:{} ai_pen verify start source={}:{} target:{} risk_type:{} payload_type:{} payload_variant:{} payload_expect:{} route_hint:{} capability:{} "
             "mcp:{} agent_loop:{} max_tool_calls:{} tool_plan_source:{} tool_plan_steps:{} tool_plan_preview:{}".format(
                 self.task_id,
                 str(candidate.get("source_collection", "") or "").strip()[:40] or "-",
@@ -14124,6 +14295,8 @@ class WebSiteFetch(object):
                 target_url[:180],
                 risk_type_text,
                 payload_type,
+                selected_payload_variant[:48] or "-",
+                selected_payload_expected_signal[:64] or "-",
                 route_hint[:48],
                 str(capability_profile.get("name", "") or "").strip()[:48] or "-",
                 "on" if mcp_enable else "off",
@@ -15065,6 +15238,15 @@ class WebSiteFetch(object):
                 else self._build_ai_pen_runtime_session_summary(session_store)
             )
             payload_obj["tool_plan_source"] = str(payload_obj.get("tool_plan_source") or tool_plan_source or "").strip()
+            payload_obj["payload_variant"] = str(payload_obj.get("payload_variant") or selected_payload_variant or "").strip()
+            payload_obj["payload_expected_signal"] = str(
+                payload_obj.get("payload_expected_signal") or selected_payload_expected_signal or ""
+            ).strip()
+            payload_obj["payload_proof_candidates"] = (
+                list(payload_obj.get("payload_proof_candidates", []) or [])[:6]
+                if isinstance(payload_obj.get("payload_proof_candidates"), (list, tuple))
+                else list(selected_payload_proof_candidates or [])[:6]
+            )
             request_packet_obj = self._build_ai_pen_request_packet(
                 target_url=target_url,
                 payload_type=str(payload_obj.get("payload_type", "") or payload_type),
@@ -15091,6 +15273,11 @@ class WebSiteFetch(object):
             payload_obj["request_template_content_type"] = str(request_template_summary.get("content_type") or "").strip()
             payload_obj["request_template_params"] = list(request_template_summary.get("param_names", []) or [])
             payload_obj["request_template_summary"] = str(request_template_summary.get("summary") or "").strip()
+            proof_summary = self._build_ai_pen_proof_summary(payload_obj)
+            payload_obj["proof_family"] = str(proof_summary.get("proof_family") or "").strip()
+            payload_obj["proof_type"] = str(proof_summary.get("proof_type") or "").strip()
+            payload_obj["proof_signals"] = list(proof_summary.get("proof_signals", []) or [])[:8]
+            payload_obj["proof_summary"] = str(proof_summary.get("summary") or "").strip()
             return payload_obj
 
         if not self._is_http_target(target_url):
@@ -15484,12 +15671,14 @@ class WebSiteFetch(object):
                     payload_reflect_hit = True
                 _apply_jwt_none_replay_signal(plan_observation)
                 logger.info(
-                    "task_id:{} ai_pen verify main_plan target:{} payload_type:{} stop_reason:{} probe_status:{} "
+                    "task_id:{} ai_pen verify main_plan target:{} payload_type:{} payload_variant:{} payload_expect:{} stop_reason:{} probe_status:{} "
                     "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} "
-                    "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} error:{} session:{}".format(
+                    "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} error:{} session:{} template:{}".format(
                         self.task_id,
                         target_url[:180],
                         payload_type,
+                        selected_payload_variant[:48] or "-",
+                        selected_payload_expected_signal[:64] or "-",
                         agent_loop_stop_reason or "-",
                         probe_status,
                         self._clip_text(
@@ -15509,6 +15698,7 @@ class WebSiteFetch(object):
                         self._format_ai_pen_session_summary_text(
                             self._build_ai_pen_runtime_session_summary(session_store)
                         ),
+                        self._clip_text(selected_payload_template_summary or "-", 120),
                     )
                 )
             tool_calls = len(list(runtime.tool_calls or []))
@@ -15667,12 +15857,14 @@ class WebSiteFetch(object):
                         payload_reflect_hit = True
                     _apply_jwt_none_replay_signal(fallback_observation)
                     logger.info(
-                        "task_id:{} ai_pen verify fallback_plan target:{} payload_type:{} probe_status:{} "
+                        "task_id:{} ai_pen verify fallback_plan target:{} payload_type:{} payload_variant:{} payload_expect:{} probe_status:{} "
                         "tool_counts:{} evidence_hit:{} api_doc_hit:{} graphql_hit:{} idor_resp:{} "
-                        "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} error:{} session:{}".format(
+                        "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} error:{} session:{} template:{}".format(
                             self.task_id,
                             target_url[:180],
                             payload_type,
+                            selected_payload_variant[:48] or "-",
+                            selected_payload_expected_signal[:64] or "-",
                             probe_status,
                             self._clip_text(
                                 json.dumps(dict(fallback_observation.get("tool_counts") or {}), ensure_ascii=False, sort_keys=True),
@@ -15691,6 +15883,7 @@ class WebSiteFetch(object):
                             self._format_ai_pen_session_summary_text(
                                 self._build_ai_pen_runtime_session_summary(session_store)
                             ),
+                            self._clip_text(selected_payload_template_summary or "-", 120),
                         )
                     )
                 elif payload_type == "weak_password_probe" and login_probe_context:
@@ -16298,14 +16491,59 @@ class WebSiteFetch(object):
                 reason = "{}；{}".format(reason, proof_guard_reason).strip("；")
 
             session_summary = self._build_ai_pen_runtime_session_summary(session_store)
+            request_template_preview = self._build_ai_pen_request_template_summary(
+                self._build_ai_pen_request_packet(
+                    target_url=target_url,
+                    payload_type=payload_type,
+                    payload=payload,
+                    verification_step=verification_step,
+                    tool_trace_parts=tool_trace_parts,
+                    tool_calls=list(runtime.tool_calls or []),
+                )
+            )
+            proof_summary_obj = self._build_ai_pen_proof_summary(
+                {
+                    "payload_type": payload_type,
+                    "payload_variant": selected_payload_variant,
+                    "payload_expected_signal": selected_payload_expected_signal,
+                    "request_template_summary": str(request_template_preview.get("summary") or "").strip(),
+                    "xss_popup_proof": xss_popup_proof,
+                    "dom_xss_proof_type": dom_xss_proof_type,
+                    "sqli_proof_type": sqli_proof_type,
+                    "weak_password_login_proof": weak_password_login_proof,
+                    "session_auth_hit": session_auth_hit,
+                    "logout_effective": logout_effective,
+                    "cmdi_proof_type": cmdi_proof_type,
+                    "ssti_proof_type": ssti_proof_type,
+                    "xxe_proof_type": xxe_proof_type,
+                    "ssrf_proof_type": ssrf_proof_type,
+                    "path_traversal_proof_type": path_traversal_proof_type,
+                    "web_policy_proof_type": web_policy_proof_type,
+                    "socketio_proof_type": socketio_proof_type,
+                    "api_doc_hit": api_doc_hit,
+                    "graphql_hit": graphql_hit,
+                    "config_exposure_hit": config_exposure_hit,
+                    "websocket_upgrade_hit": websocket_upgrade_hit,
+                    "websocket_upgrade_hint": websocket_upgrade_hint,
+                    "jwt_weak_secret": jwt_weak_secret,
+                    "jwt_alg_none_hit": jwt_alg_none_hit,
+                    "jwt_none_probe_hit": jwt_none_probe_hit,
+                    "auth_protocol_hit": auth_protocol_hit,
+                    "idor_diff_hit": idor_diff_hit,
+                    "idor_diff_summary": idor_diff_summary,
+                    "external_tool_hit": bool(external_ret.get("tool_hit")),
+                    "login_success_hit": login_success_hit,
+                }
+            )
             logger.info(
-                "task_id:{} ai_pen verify done target:{} payload_type:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
+                "task_id:{} ai_pen verify done target:{} payload_type:{} payload_variant:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
                 "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} config_probe_count:{} path_traversal_probe_count:{} "
                 "web_policy_probe_count:{} socketio_probe_count:{} external_hit:{} stop_reason:{} tool_plan_source:{} "
-                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} reason:{}".format(
+                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} request_template:{} proof:{} reason:{}".format(
                     self.task_id,
                     target_url[:180],
                     payload_type,
+                    selected_payload_variant[:48] or "-",
                     decision,
                     float(confidence or 0.0),
                     verification_step,
@@ -16326,6 +16564,8 @@ class WebSiteFetch(object):
                     int(bool(websocket_upgrade_hit)),
                     int(bool(websocket_upgrade_hint)),
                     self._format_ai_pen_session_summary_text(session_summary),
+                    self._clip_text(str(request_template_preview.get("summary") or "-"), 180),
+                    self._clip_text(proof_summary_obj.get("summary", "") or "-", 220),
                     self._clip_text(reason, 220),
                 )
             )
@@ -16337,6 +16577,9 @@ class WebSiteFetch(object):
                 "reason": reason,
                 "risk_type": risk_type_text,
                 "payload_type": payload_type,
+                "payload_variant": selected_payload_variant,
+                "payload_expected_signal": selected_payload_expected_signal,
+                "payload_proof_candidates": list(selected_payload_proof_candidates or [])[:6],
                 "payload": payload,
                 "verification_step": verification_step,
                 "evidence_snippet": evidence_snippet,
@@ -16359,6 +16602,18 @@ class WebSiteFetch(object):
                 "path_traversal_proof_type": path_traversal_proof_type,
                 "web_policy_proof_type": web_policy_proof_type,
                 "socketio_proof_type": socketio_proof_type,
+                "api_doc_hit": api_doc_hit,
+                "graphql_hit": graphql_hit,
+                "auth_protocol_hit": auth_protocol_hit,
+                "config_exposure_hit": config_exposure_hit,
+                "websocket_upgrade_hit": websocket_upgrade_hit,
+                "websocket_upgrade_hint": websocket_upgrade_hint,
+                "idor_diff_hit": idor_diff_hit,
+                "idor_diff_summary": idor_diff_summary if isinstance(idor_diff_summary, dict) else {},
+                "jwt_weak_secret": jwt_weak_secret,
+                "jwt_alg_none_hit": jwt_alg_none_hit,
+                "jwt_none_probe_hit": jwt_none_probe_hit,
+                "login_success_hit": login_success_hit,
                 "api_doc_summary": api_doc_summary if isinstance(api_doc_summary, dict) else {},
                 "api_surface_summary": api_surface_summary if isinstance(api_surface_summary, dict) else {},
                 "browser_surface_summary": browser_surface_summary,
@@ -16397,6 +16652,9 @@ class WebSiteFetch(object):
                 "evidence_snippet": evidence_seed,
                 "http_status": 0,
                 "response_hash_diff": "",
+                "payload_variant": selected_payload_variant,
+                "payload_expected_signal": selected_payload_expected_signal,
+                "payload_proof_candidates": list(selected_payload_proof_candidates or [])[:6],
                 "xss_popup_proof": False,
                 "dom_xss_proof_type": "",
                 "sqli_proof_type": "",
@@ -16699,13 +16957,14 @@ class WebSiteFetch(object):
             ai_plan_output = ai_plan_result.get("output") if isinstance(ai_plan_result.get("output"), dict) else {}
             ai_plan_tool_steps = len(list(ai_plan_output.get("tool_plan", []) or []))
             logger.info(
-                "task_id:{} ai_pen candidate planner {}/{} status:{} ok:{} payload_type:{} tool_steps:{} message:{}".format(
+                "task_id:{} ai_pen candidate planner {}/{} status:{} ok:{} payload_type:{} payload_variant:{} tool_steps:{} message:{}".format(
                     self.task_id,
                     candidate_index,
                     len(selected_candidates),
                     ai_plan_status,
                     int(bool(ai_plan_result.get("ok"))),
                     str(ai_plan_output.get("payload_type", "") or "").strip()[:32] or "-",
+                    str(ai_plan_output.get("payload_variant", "") or "").strip()[:48] or "-",
                     ai_plan_tool_steps,
                     ai_plan_message or "-",
                 )
@@ -16780,6 +17039,13 @@ class WebSiteFetch(object):
                 "risk_name": str(candidate.get("risk_name", "") or "").strip(),
                 "severity": str(candidate.get("severity", "") or "").strip(),
                 "payload_type": str(verify_result.get("payload_type", "") or "").strip(),
+                "payload_variant": str(verify_result.get("payload_variant", "") or "").strip(),
+                "payload_expected_signal": str(verify_result.get("payload_expected_signal", "") or "").strip(),
+                "payload_proof_candidates": (
+                    list(verify_result.get("payload_proof_candidates", []) or [])[:6]
+                    if isinstance(verify_result.get("payload_proof_candidates"), (list, tuple))
+                    else []
+                ),
                 "payload": str(verify_result.get("payload", "") or "").strip(),
                 "request_method": str(verify_result.get("request_method", "") or "").strip(),
                 "request_url": str(verify_result.get("request_url", "") or "").strip(),
@@ -16799,6 +17065,14 @@ class WebSiteFetch(object):
                 "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
                 "http_status": int(verify_result.get("http_status", 0) or 0),
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
+                "proof_family": str(verify_result.get("proof_family", "") or "").strip(),
+                "proof_type": str(verify_result.get("proof_type", "") or "").strip(),
+                "proof_signals": (
+                    list(verify_result.get("proof_signals", []) or [])[:8]
+                    if isinstance(verify_result.get("proof_signals"), (list, tuple))
+                    else []
+                ),
+                "proof_summary": str(verify_result.get("proof_summary", "") or "").strip(),
                 "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
                 "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
                 "browser_surface_summary": dict(verify_result.get("browser_surface_summary") or {}) if isinstance(verify_result.get("browser_surface_summary"), dict) else {},

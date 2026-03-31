@@ -171,6 +171,8 @@ AI_PEN_TEST_EXPORT_PROJECTION = {
     "status": 1,
     "verification_step": 1,
     "payload_type": 1,
+    "payload_variant": 1,
+    "payload_expected_signal": 1,
     "payload": 1,
     "request_method": 1,
     "request_url": 1,
@@ -182,6 +184,9 @@ AI_PEN_TEST_EXPORT_PROJECTION = {
     "evidence_snippet": 1,
     "http_status": 1,
     "response_hash_diff": 1,
+    "proof_type": 1,
+    "proof_signals": 1,
+    "proof_summary": 1,
     "reason": 1,
     "high_value_summary": 1,
     "high_value_family": 1,
@@ -2855,10 +2860,14 @@ def _extract_ai_pen_rows(task_ids):
             status = sanitize_excel_value(item.get("status", "")).strip()
             verification_step = sanitize_excel_value(item.get("verification_step", "")).strip()
             payload_type = sanitize_excel_value(item.get("payload_type", "")).strip()
+            payload_variant = sanitize_excel_value(item.get("payload_variant", "")).strip()
+            payload_expected_signal = sanitize_excel_value(item.get("payload_expected_signal", "")).strip()
             payload = sanitize_excel_value(item.get("payload", "")).strip()
             request_packet = _truncate_report_text(item.get("request_packet", ""), 1200)
             request_template_summary = _truncate_report_text(item.get("request_template_summary", ""), 400)
             confidence = sanitize_excel_value(item.get("confidence", "")).strip()
+            proof_type = sanitize_excel_value(item.get("proof_type", "")).strip()
+            proof_summary = _truncate_report_text(item.get("proof_summary", ""), 600)
             reason = _truncate_report_text(item.get("reason", ""), 800)
             tool_trace = _truncate_report_text(item.get("tool_trace", ""), 600)
             ai_plan_request = _format_ai_plan_request_text(item.get("ai_plan_request", ""))
@@ -2896,6 +2905,8 @@ def _extract_ai_pen_rows(task_ids):
                 decision,
                 verification_step,
                 payload_type,
+                payload_variant,
+                proof_type,
             )
             if dedup_key in dedup_keys:
                 continue
@@ -2912,7 +2923,11 @@ def _extract_ai_pen_rows(task_ids):
                 status,
                 verification_step,
                 payload_type,
+                payload_variant,
+                payload_expected_signal,
                 payload,
+                proof_type,
+                proof_summary,
                 request_packet,
                 request_template_summary,
                 reason,
@@ -2945,18 +2960,22 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "H": 10.0,
         "I": 18.0,
         "J": 14.0,
-        "K": 24.0,
-        "L": 72.0,
-        "M": 42.0,
-        "N": 72.0,
-        "O": 52.0,
-        "P": 42.0,
-        "Q": 80.0,
-        "R": 80.0,
-        "S": 80.0,
-        "T": 12.0,
-        "U": 64.0,
-        "V": 21.0,
+        "K": 18.0,
+        "L": 22.0,
+        "M": 24.0,
+        "N": 18.0,
+        "O": 56.0,
+        "P": 72.0,
+        "Q": 42.0,
+        "R": 72.0,
+        "S": 52.0,
+        "T": 42.0,
+        "U": 80.0,
+        "V": 80.0,
+        "W": 80.0,
+        "X": 12.0,
+        "Y": 64.0,
+        "Z": 21.0,
     }.items():
         ws.column_dimensions[key].width = width
 
@@ -2971,7 +2990,11 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "状态",
         "验证阶段",
         "探针类型",
+        "Payload变体",
+        "期望信号",
         "Payload",
+        "证据类型",
+        "证据摘要",
         "Request请求包",
         "请求模板摘要",
         "说明",

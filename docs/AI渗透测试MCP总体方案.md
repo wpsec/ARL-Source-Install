@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.40`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.42`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -403,8 +403,10 @@ AI 渗透测试至少要覆盖以下能力族：
   - 已补能力：参数感知 payload 编排已可优先命中 query 参数，并在无 query 时回退利用 `sample_interfaces` 的 `GET/POST` 线索构造真实接口探针
   - 已补能力：`request_template_mode/content_type/params/summary` 已随验证结果落库，并接入统计、工程师优先入口与导出链，能直接区分 `query/form/json/body` 模板入口
   - 已补能力：`受控 payload 模板库` 已落地，`SQLi/XSS/SSRF/CMDI/SSTI/XXE` 会按 `request_mode/content_type` 选择受控变体；AI planner 也可回 `payload_variant`，由执行链安全映射到模板 payload
+  - 已补能力：`payload_variant/payload_expected_signal/payload_proof_candidates/proof_type/proof_signals/proof_summary` 已统一进入验证日志、结果落库、重试更新、统计与导出链，不再只是运行时临时信息
+  - 已补能力：已新增 `proof_family` 证据家族（如 `auth_bypass/surface_exposure/realtime_exposure/response_differential/sensitive_disclosure`），工程师可按更高层证据类型快速筛选“更像真入口”的结果
   - 已补能力：已修正 `redirect -> dir` 子串误判，减少 URL 跳转参数被错误打到路径穿越链的噪声
-  - 差距：参数类型标签 -> payload 编排 -> proof/evidence 判定 仍未完全统一为单引擎
+  - 差距：参数类型标签 -> payload 编排 -> proof/evidence 判定 主干已通，但 `proof_family` 对最终裁决、误报抑制和阶段 F readiness 的统一驱动仍需继续收口
   - 差距：`垂直越权` 及部分实时通道深测能力仍需补强
   - 差距：`CORS/Cache/Security Headers/Error Exposure` 虽已有探针，但统一 proof engine 仍未完全收口
 
@@ -517,7 +519,7 @@ AI 渗透测试至少要覆盖以下能力族：
 建议下一步优先级：
 
 1. 阶段 C / 7：完成参数单引擎与受控字典资源封装，继续提升“真漏洞入口”挖掘能力
-   - 当前已完成：参数探针家族、受控字典 preview 资源封装、接口级 payload 编排、请求模板摘要落库、受控 payload 模板库与 `payload_variant` 选择
-   - 下一步重点：统一 `payload_variant -> proof_type/evidence_summary`，继续降低误报
+   - 当前已完成：参数探针家族、受控字典 preview 资源封装、接口级 payload 编排、请求模板摘要落库、受控 payload 模板库与 `payload_variant` 选择、`proof_summary/proof_family` 结果链打通
+   - 下一步重点：继续让 `proof_family` 驱动最终裁决、人工优先级和误报抑制，进一步降低水洞
 2. 阶段 F：建立最小靶场与正负样例集，把误报率和入口价值真正量化
 3. 阶段 A：继续把控制权从 `commonTask` 挪到 runtime，减少执行路径写死

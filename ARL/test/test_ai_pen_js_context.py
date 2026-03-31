@@ -2098,6 +2098,39 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("etc/hosts", str(template.get("payload") or ""))
         self.assertIn("entity_file_read", list(template.get("proof_candidates", []) or []))
 
+    def test_build_ai_pen_proof_summary_summarizes_json_sqli_variant(self):
+        summary = WebSiteFetch._build_ai_pen_proof_summary(
+            {
+                "payload_type": "sqli_probe",
+                "payload_variant": "boolean_json_string",
+                "payload_expected_signal": "error_or_boolean_diff",
+                "request_template_summary": "mode=json_data | content_type=application/json | params=q,page",
+                "sqli_proof_type": "boolean_based",
+            }
+        )
+
+        self.assertEqual("response_differential", str(summary.get("proof_family") or ""))
+        self.assertEqual("boolean_based", str(summary.get("proof_type") or ""))
+        self.assertIn("variant=boolean_json_string", str(summary.get("summary") or ""))
+        self.assertIn("mode=json_data", str(summary.get("summary") or ""))
+
+    def test_build_ai_pen_proof_summary_summarizes_weak_password_signals(self):
+        summary = WebSiteFetch._build_ai_pen_proof_summary(
+            {
+                "payload_type": "weak_password_probe",
+                "payload_variant": "minimal_default_creds",
+                "payload_expected_signal": "login_success_or_session_creation",
+                "weak_password_login_proof": True,
+                "session_auth_hit": True,
+                "logout_effective": True,
+            }
+        )
+
+        self.assertEqual("auth_bypass", str(summary.get("proof_family") or ""))
+        self.assertEqual("login_success", str(summary.get("proof_type") or ""))
+        self.assertIn("session_auth", list(summary.get("proof_signals", []) or []))
+        self.assertIn("logout_effective", list(summary.get("proof_signals", []) or []))
+
     def test_infer_tool_plan_uses_config_probe_for_actuator_endpoint(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={"target": "https://example.com/actuator/env"},
