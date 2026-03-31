@@ -6148,6 +6148,94 @@ class WebSiteFetch(object):
             )
         return results[:limit]
 
+    @classmethod
+    def _build_ai_pen_sample_interface_payload_targets(
+        cls,
+        target_url: str,
+        payload: str,
+        preferred_tags=None,
+        api_surface_summary=None,
+        max_count: int = 3,
+    ):
+        url_text = str(target_url or "").strip()
+        payload_text = str(payload or "").strip()
+        summary = api_surface_summary if isinstance(api_surface_summary, dict) else {}
+        sample_interfaces = [item for item in list(summary.get("sample_interfaces", []) or []) if isinstance(item, dict)]
+        limit = max(1, int(max_count or 1))
+        if not url_text or not payload_text or not sample_interfaces:
+            return []
+
+        preferred_tag_set = {
+            str(tag or "").strip().lower()
+            for tag in list(preferred_tags or [])
+            if str(tag or "").strip()
+        }
+        results = []
+        seen = set()
+
+        def append_target(target_obj: dict):
+            if not isinstance(target_obj, dict):
+                return
+            cache_key = json.dumps(target_obj, ensure_ascii=False, sort_keys=True)
+            if cache_key in seen:
+                return
+            seen.add(cache_key)
+            results.append(target_obj)
+
+        for sample in sample_interfaces:
+            method_text = str(sample.get("method") or "GET").strip().upper() or "GET"
+            path_text = str(sample.get("path") or "").strip()
+            params = [str(param or "").strip() for param in list(sample.get("params", []) or []) if str(param or "").strip()]
+            if not path_text or not params:
+                continue
+
+            matched_param = ""
+            for param_name in params:
+                tags = cls._tag_ai_pen_parameter_name(param_name)
+                if preferred_tag_set and preferred_tag_set.intersection(tags):
+                    matched_param = param_name
+                    break
+            if not matched_param:
+                matched_param = params[0]
+
+            resolved_url = urljoin(url_text, path_text)
+            if not cls._is_http_target(resolved_url):
+                continue
+
+            if method_text == "GET":
+                query_targets = cls._build_ai_pen_payload_probe_targets(
+                    resolved_url,
+                    payload_text,
+                    preferred_tags=preferred_tags,
+                    parameter_names=[matched_param],
+                    max_count=1,
+                )
+                for query_target in query_targets:
+                    append_target(
+                        {
+                            "url": str(query_target.get("url") or resolved_url).strip(),
+                            "method": "get",
+                            "param": matched_param[:80],
+                            "reason": "sample_interface_query_match",
+                            "tags": cls._tag_ai_pen_parameter_name(matched_param),
+                        }
+                    )
+            else:
+                append_target(
+                    {
+                        "url": resolved_url,
+                        "method": method_text.lower(),
+                        "form_data": {matched_param: payload_text},
+                        "param": matched_param[:80],
+                        "reason": "sample_interface_form_match",
+                        "tags": cls._tag_ai_pen_parameter_name(matched_param),
+                    }
+                )
+            if len(results) >= limit:
+                break
+
+        return results[:limit]
+
     @staticmethod
     def _mutate_idor_like_value(value_text: str):
         text = str(value_text or "").strip()
@@ -11024,27 +11112,62 @@ class WebSiteFetch(object):
 
             payload_seed = str(payload_seed_map.get(tool_name, "") or "").strip()
             if tool_name in {"xss_probe", "sqli_probe", "ssrf_probe", "cmdi_probe", "ssti_probe", "xxe_probe"} and payload_seed:
-                payload_targets = cls._build_ai_pen_payload_probe_targets(
+                query_payload_targets = cls._build_ai_pen_payload_probe_targets(
                     target_url,
                     payload_seed,
                     preferred_tags=payload_tag_map.get(tool_name, ()),
                     parameter_names=parameter_names,
                     max_count=1,
                 )
+                interface_payload_targets = cls._build_ai_pen_sample_interface_payload_targets(
+                    target_url,
+                    payload_seed,
+                    preferred_tags=payload_tag_map.get(tool_name, ()),
+                    api_surface_summary=api_surface_summary,
+                    max_count=1,
+                )
+                query_is_generic_only = bool(query_payload_targets) and all(
+                    str(item.get("reason") or "").strip() in {"generic_fallback", "first_query_fallback"}
+                    for item in query_payload_targets
+                    if isinstance(item, dict)
+                )
+                if interface_payload_targets and query_is_generic_only:
+                    payload_targets = interface_payload_targets + query_payload_targets
+                elif query_payload_targets:
+                    payload_targets = query_payload_targets + interface_payload_targets
+                else:
+                    payload_targets = interface_payload_targets + query_payload_targets
+                deduped_targets = []
+                seen_target_keys = set()
                 for target in payload_targets:
+                    if not isinstance(target, dict):
+                        continue
+                    cache_key = json.dumps(target, ensure_ascii=False, sort_keys=True)
+                    if cache_key in seen_target_keys:
+                        continue
+                    seen_target_keys.add(cache_key)
+                    deduped_targets.append(target)
+                    if len(deduped_targets) >= 1:
+                        break
+                for target in deduped_targets:
                     target_url_text = str(target.get("url") or "").strip() or target_url
                     target_param = str(target.get("param") or "").strip()
                     summary_text = str(tool_reason_map.get(tool_name) or "参数标签驱动 {} 探针".format(tool_name))
                     if target_param and target_param != "arl_probe":
                         summary_text = "{} param={}".format(summary_text, target_param)
+                    params_obj = {
+                        "url": target_url_text,
+                        "method": str(target.get("method") or "get").strip().lower() or "get",
+                        "allow_redirects": True,
+                    }
+                    if isinstance(target.get("form_data"), dict) and target.get("form_data"):
+                        params_obj["form_data"] = dict(target.get("form_data") or {})
+                    if isinstance(target.get("json_data"), dict) and target.get("json_data"):
+                        params_obj["json_data"] = dict(target.get("json_data") or {})
                     plan.append(
                         {
                             "tool": tool_name,
-                            "params": {
-                                "url": target_url_text,
-                                "method": "get",
-                                "allow_redirects": True,
-                            },
+                            "params": params_obj,
                             "summary": summary_text[:160],
                         }
                     )
@@ -11457,13 +11580,31 @@ class WebSiteFetch(object):
             }
             api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
             parameter_names = list(api_surface_summary.get("parameter_names", []) or [])
-            payload_targets = cls._build_ai_pen_payload_probe_targets(
+            query_payload_targets = cls._build_ai_pen_payload_probe_targets(
                 url_text,
                 payload_text,
                 preferred_tags=preferred_tags.get(payload_type_text, ()),
                 parameter_names=parameter_names,
                 max_count=max_steps,
             )
+            interface_payload_targets = cls._build_ai_pen_sample_interface_payload_targets(
+                url_text,
+                payload_text,
+                preferred_tags=preferred_tags.get(payload_type_text, ()),
+                api_surface_summary=api_surface_summary,
+                max_count=max_steps,
+            )
+            query_is_generic_only = bool(query_payload_targets) and all(
+                str(item.get("reason") or "").strip() in {"generic_fallback", "first_query_fallback"}
+                for item in query_payload_targets
+                if isinstance(item, dict)
+            )
+            if interface_payload_targets and query_is_generic_only:
+                payload_targets = interface_payload_targets + query_payload_targets
+            elif query_payload_targets:
+                payload_targets = query_payload_targets + interface_payload_targets
+            else:
+                payload_targets = interface_payload_targets + query_payload_targets
             probe_tool_name = "payload_probe" if payload_type_text == "replay" else payload_type_text
             for target in payload_targets:
                 probe_url = str(target.get("url") or "").strip()
@@ -11473,14 +11614,19 @@ class WebSiteFetch(object):
                 target_param = str(target.get("param") or "").strip()
                 if target_param and target_param != "arl_probe":
                     summary_text = "{} param={}".format(summary_text, target_param)
+                params_obj = {
+                    "url": probe_url,
+                    "method": str(target.get("method") or "get").strip().lower() or "get",
+                    "allow_redirects": True,
+                }
+                if isinstance(target.get("form_data"), dict) and target.get("form_data"):
+                    params_obj["form_data"] = dict(target.get("form_data") or {})
+                if isinstance(target.get("json_data"), dict) and target.get("json_data"):
+                    params_obj["json_data"] = dict(target.get("json_data") or {})
                 plan.append(
                     {
                         "tool": probe_tool_name,
-                        "params": {
-                            "url": probe_url,
-                            "method": "get",
-                            "allow_redirects": True,
-                        },
+                        "params": params_obj,
                         "summary": summary_text[:160],
                     }
                 )

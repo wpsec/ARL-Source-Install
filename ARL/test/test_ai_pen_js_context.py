@@ -2211,6 +2211,29 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("redirect", str(targets[0].get("param") or ""))
         self.assertIn("redirect=http%3A%2F%2F127.0.0.1%2F", str(targets[0].get("url") or ""))
 
+    def test_build_ai_pen_sample_interface_payload_targets_supports_post_form_probe(self):
+        targets = WebSiteFetch._build_ai_pen_sample_interface_payload_targets(
+            "https://example.com/search",
+            "<svg/onload=alert(1)>",
+            preferred_tags=["input"],
+            api_surface_summary={
+                "sample_interfaces": [
+                    {
+                        "method": "POST",
+                        "path": "/api/search",
+                        "params": ["q", "page"],
+                        "source": "api_doc",
+                    }
+                ]
+            },
+            max_count=1,
+        )
+
+        self.assertTrue(bool(targets))
+        self.assertEqual("post", str(targets[0].get("method") or ""))
+        self.assertEqual("q", str(targets[0].get("param") or ""))
+        self.assertEqual("<svg/onload=alert(1)>", str(targets[0].get("form_data", {}).get("q") or ""))
+
     def test_infer_tool_plan_for_replay_uses_param_orchestrator_path_traversal(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={
@@ -2268,6 +2291,31 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("ssrf_probe", str(plan[0].get("tool") or ""))
         self.assertIn("redirect=http%3A%2F%2F127.0.0.1%2F", str(plan[0].get("params", {}).get("url", "") or ""))
         self.assertIn("param=redirect", str(plan[0].get("summary") or ""))
+
+    def test_param_orchestrated_tool_plan_uses_post_sample_interface_when_url_has_no_query(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            js_api_targets=[
+                {
+                    "method": "POST",
+                    "url": "https://example.com/api/search",
+                    "params": ["q", "page"],
+                    "source": "js_api_extract",
+                }
+            ]
+        )
+
+        plan = WebSiteFetch._build_ai_pen_param_orchestrated_tool_plan(
+            candidate={
+                "target": "https://example.com/search",
+                "api_surface_summary": summary,
+            },
+            max_steps=2,
+        )
+
+        self.assertTrue(bool(plan))
+        self.assertIn(str(plan[0].get("tool") or ""), {"sqli_probe", "xss_probe"})
+        self.assertEqual("post", str(plan[0].get("params", {}).get("method") or ""))
+        self.assertEqual("<svg/onload=alert(1)>", str(plan[1].get("params", {}).get("form_data", {}).get("q") or ""))
 
     def test_build_auth_protocol_probe_targets_covers_openid_family(self):
         targets = WebSiteFetch._build_auth_protocol_probe_targets(
