@@ -381,6 +381,59 @@ class TestAiPenStats(unittest.TestCase):
         self.assertIn("优先接手", entries[0]["focus_reason"])
         self.assertGreater(entries[0]["priority_score"], entries[1]["priority_score"])
 
+    def test_build_ai_pen_phase_f_readiness_matches_unauth_access_proof_family(self):
+        readiness = ai_pen_test_module._build_ai_pen_phase_f_readiness(
+            [
+                {
+                    "risk_type": "sensitive_info",
+                    "payload_type": "replay",
+                    "proof_family": "unauth_access",
+                    "proof_type": "unauth_management_surface",
+                    "high_value_family": "admin_debug_surface",
+                    "decision": "verified",
+                    "status": "ok",
+                    "budget_used": {"turns": 1, "tool_calls": 1},
+                }
+            ]
+        )
+
+        capability = next(item for item in readiness["capabilities"] if item["id"] == "idor_access")
+        self.assertEqual("covered", capability["status"])
+        self.assertEqual("未授权/对象访问线索", capability["label"])
+
+    def test_build_ai_pen_engineer_focus_entries_surfaces_unauth_access_fields(self):
+        entries = ai_pen_test_module._build_ai_pen_engineer_focus_entries(
+            [
+                {
+                    "_id": "u1",
+                    "target": "https://example.com/admin/dashboard",
+                    "vuln_url": "https://example.com/admin/dashboard",
+                    "risk_type": "sensitive_info",
+                    "risk_name": "高价值管理端点",
+                    "payload_type": "replay",
+                    "verification_step": "http_fetch_replay",
+                    "high_value_family": "admin_debug_surface",
+                    "high_value_family_rank": 90,
+                    "decision": "verified",
+                    "status": "ok",
+                    "confidence": 0.88,
+                    "http_status": 200,
+                    "proof_family": "unauth_access",
+                    "proof_type": "unauth_admin_portal",
+                    "unauth_access_type": "unauth_admin_portal",
+                    "unauth_access_reason": "管理/办公入口返回成功状态且出现后台语义，疑似可未授权直接访问",
+                    "proof_signals": ["unauth_access"],
+                    "proof_summary": "proof=unauth_admin_portal | family=unauth_access | signals=unauth_access",
+                    "reason": "管理/办公入口返回成功状态且出现后台语义，疑似可未授权直接访问",
+                }
+            ]
+        )
+
+        self.assertEqual("unauth_access", entries[0]["proof_family"])
+        self.assertEqual("unauth_admin_portal", entries[0]["unauth_access_type"])
+        self.assertIn("未授权直接访问", entries[0]["unauth_access_reason"])
+        self.assertIn("无登录直访", entries[0]["focus_reason"])
+
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
             {
@@ -513,6 +566,51 @@ class TestAiPenStats(unittest.TestCase):
         )
         self.assertIn("type=api_schema_exposed", data["engineer_focus_entries"][0]["proof_summary"])
         self.assertTrue("focus_reason" in data["engineer_focus_entries"][0])
+
+    def test_stats_route_returns_unauth_access_groups(self):
+        rows = [
+            {
+                "_id": "u1",
+                "task_id": "507f1f77bcf86cd799439011",
+                "decision": "verified",
+                "status": "ok",
+                "risk_type": "sensitive_info",
+                "payload_type": "replay",
+                "verification_step": "http_fetch_replay",
+                "high_value_family": "admin_debug_surface",
+                "tool_plan_source": "inferred",
+                "stop_reason": "final_decision",
+                "budget_used": {"turns": 1, "tool_calls": 1},
+                "target": "https://example.com/admin/dashboard",
+                "vuln_url": "https://example.com/admin/dashboard",
+                "risk_name": "高价值管理端点",
+                "confidence": 0.88,
+                "http_status": 200,
+                "request_template_mode": "query",
+                "request_template_params": ["admin"],
+                "request_template_summary": "mode=query | params=admin",
+                "proof_family": "unauth_access",
+                "proof_type": "unauth_management_surface",
+                "unauth_access_type": "unauth_management_surface",
+                "unauth_access_reason": "高价值管理/配置端点返回成功状态，疑似可未授权直接访问",
+                "proof_signals": ["unauth_access"],
+                "proof_summary": "proof=unauth_management_surface | family=unauth_access | signals=unauth_access",
+                "reason": "高价值管理/配置端点返回成功状态，疑似可未授权直接访问",
+            }
+        ]
+
+        ai_pen_test_module.utils.conn_db = lambda _name: _FakeCollection(rows)
+        ai_pen_test_module.StatsAiPenTest.parser = types.SimpleNamespace(
+            parse_args=lambda: {"task_id": "507f1f77bcf86cd799439011"}
+        )
+
+        response = ai_pen_test_module.StatsAiPenTest().get()
+        data = response["data"]
+
+        self.assertTrue(any(item.get("name") == "unauth_management_surface" for item in data["unauth_access_type"]))
+        self.assertTrue(any(item.get("name") == "unauth_management_surface" for item in data["capability_benchmarks"]["unauth_access_type"]))
+        self.assertEqual("unauth_access", data["engineer_focus_entries"][0]["proof_family"])
+        self.assertEqual("unauth_management_surface", data["engineer_focus_entries"][0]["unauth_access_type"])
 
 
 if __name__ == "__main__":

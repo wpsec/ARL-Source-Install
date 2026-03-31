@@ -5,6 +5,8 @@
 
 ## 2026-04-01（v4.5.10 ~ v4.5.46）
 
+- `[v4.5.47]` AI渗透 `未授权直访` 结果层打通：`unauth_access_hit/type/reason` 已随验证结果落库，并接入 `/ai_pen_test/stats/` 的 `unauth_access_type` 分组与 benchmark、`Phase F readiness` 能力匹配、`engineer_focus_entries` 优先级排序和导出列，工程师现在可以直接按“未授权类型 + 证据摘要”筛选更值得接手的入口
+
 - `[v4.5.46]` AI渗透 `未授权直访` 基础链落地：新增高价值 `admin/dashboard/account/current/profile` 路径的无登录直访分析器，命中后会收敛为 `unauth_access` 证据家族（如 `unauth_admin_portal/unauth_profile_data`），并直接参与最终裁决与 proof summary；同时 `IDOR/access_control` 口径继续收紧为“访问控制线索，需人工复核”，不再自动给出越权 `verified`
 
 - `[v4.5.45]` AI渗透 版本与方案口径同步：对齐 `version.txt` 自动递增后的版本号，统一修正 `CHANGELOG` 与 `AI渗透测试MCP总体方案` 的同步版本，避免版本号、方案状态和代码能力说明出现错位

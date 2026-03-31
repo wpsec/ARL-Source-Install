@@ -184,7 +184,11 @@ AI_PEN_TEST_EXPORT_PROJECTION = {
     "evidence_snippet": 1,
     "http_status": 1,
     "response_hash_diff": 1,
+    "proof_family": 1,
     "proof_type": 1,
+    "unauth_access_hit": 1,
+    "unauth_access_type": 1,
+    "unauth_access_reason": 1,
     "proof_signals": 1,
     "proof_summary": 1,
     "reason": 1,
@@ -2866,7 +2870,10 @@ def _extract_ai_pen_rows(task_ids):
             request_packet = _truncate_report_text(item.get("request_packet", ""), 1200)
             request_template_summary = _truncate_report_text(item.get("request_template_summary", ""), 400)
             confidence = sanitize_excel_value(item.get("confidence", "")).strip()
+            proof_family = sanitize_excel_value(item.get("proof_family", "")).strip()
             proof_type = sanitize_excel_value(item.get("proof_type", "")).strip()
+            unauth_access_type = sanitize_excel_value(item.get("unauth_access_type", "")).strip()
+            unauth_access_reason = _truncate_report_text(item.get("unauth_access_reason", ""), 300)
             proof_summary = _truncate_report_text(item.get("proof_summary", ""), 600)
             reason = _truncate_report_text(item.get("reason", ""), 800)
             tool_trace = _truncate_report_text(item.get("tool_trace", ""), 600)
@@ -2926,7 +2933,10 @@ def _extract_ai_pen_rows(task_ids):
                 payload_variant,
                 payload_expected_signal,
                 payload,
+                proof_family,
                 proof_type,
+                unauth_access_type,
+                unauth_access_reason,
                 proof_summary,
                 request_packet,
                 request_template_summary,
@@ -2964,18 +2974,21 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "L": 22.0,
         "M": 24.0,
         "N": 18.0,
-        "O": 56.0,
-        "P": 72.0,
-        "Q": 42.0,
-        "R": 72.0,
-        "S": 52.0,
+        "O": 18.0,
+        "P": 20.0,
+        "Q": 32.0,
+        "R": 56.0,
+        "S": 72.0,
         "T": 42.0,
-        "U": 80.0,
-        "V": 80.0,
-        "W": 80.0,
-        "X": 12.0,
-        "Y": 64.0,
-        "Z": 21.0,
+        "U": 72.0,
+        "V": 52.0,
+        "W": 42.0,
+        "X": 80.0,
+        "Y": 80.0,
+        "Z": 80.0,
+        "AA": 12.0,
+        "AB": 64.0,
+        "AC": 21.0,
     }.items():
         ws.column_dimensions[key].width = width
 
@@ -2993,7 +3006,10 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "Payload变体",
         "期望信号",
         "Payload",
+        "证据家族",
         "证据类型",
+        "未授权类型",
+        "未授权说明",
         "证据摘要",
         "Request请求包",
         "请求模板摘要",

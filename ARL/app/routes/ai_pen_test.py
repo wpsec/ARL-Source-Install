@@ -37,6 +37,7 @@ base_search_fields = {
     "payload_variant": fields.String(description="受控payload变体标识"),
     "proof_family": fields.String(description="统一证据家族(active_execution/auth_bypass/surface_exposure等)"),
     "proof_type": fields.String(description="统一证据类型"),
+    "unauth_access_type": fields.String(description="未授权直访证据类型(unauth_admin_portal/unauth_profile_data等)"),
     "high_value_family": fields.String(description="高价值目标家族(api_doc_surface/token_auth_flow/login_entry_surface等)"),
     "request_template_mode": fields.String(description="请求模板模式(query/form_data/json_data/body)"),
     "request_template_content_type": fields.String(description="请求模板Content-Type"),
@@ -85,6 +86,7 @@ AI_PEN_PHASE_F_CAPABILITY_SPECS = (
         "label": "未授权/对象访问线索",
         "risk_types": ("idor",),
         "payload_types": ("idor_probe",),
+        "proof_families": ("unauth_access", "access_control"),
     },
     {
         "id": "sqli",
@@ -488,6 +490,7 @@ def _match_ai_pen_capability_row(item: dict, capability_spec: dict):
     signal_pairs = (
         ("risk_type", "risk_types"),
         ("payload_type", "payload_types"),
+        ("proof_family", "proof_families"),
         ("high_value_family", "high_value_families"),
         ("verification_step", "verification_steps"),
     )
@@ -670,11 +673,15 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
         payload_expected_signal = str(item.get("payload_expected_signal", "") or "").strip()
         proof_family = str(item.get("proof_family", "") or "").strip()
         proof_type = str(item.get("proof_type", "") or "").strip()
+        unauth_access_type = str(item.get("unauth_access_type", "") or "").strip()
+        unauth_access_reason = str(item.get("unauth_access_reason", "") or "").strip()
         if not proof_family and proof_type:
             proof_family = _classify_ai_pen_proof_family(
                 proof_type,
                 payload_type=str(item.get("payload_type", "") or "").strip(),
             )
+        if not unauth_access_type and proof_family == "unauth_access":
+            unauth_access_type = proof_type
         raw_proof_signals = item.get("proof_signals")
         proof_signals = []
         if isinstance(raw_proof_signals, (list, tuple)):
@@ -724,11 +731,17 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             score += 10
         if proof_summary:
             score += 4
+        if unauth_access_type:
+            score += 8
 
-        if decision == "verified" and proof_type:
+        if decision == "verified" and proof_family == "unauth_access":
+            focus_reason = "已命中无登录直访证据（{}），建议工程师优先接手".format(unauth_access_type or proof_type or "unauth_access")
+        elif decision == "verified" and proof_type:
             focus_reason = "已获得可复核证据（{}），建议工程师优先接手".format(proof_type)
         elif decision == "verified":
             focus_reason = "已获得较高置信验证结果，建议工程师优先接手"
+        elif proof_family == "unauth_access" and (unauth_access_reason or proof_summary):
+            focus_reason = "已观察到无登录直访线索，适合作为未授权入口优先复核"
         elif proof_type and proof_summary:
             focus_reason = "已收敛到 {} 证据，自动化已给出可复核摘要".format(proof_type)
         elif request_template_mode in {"json_data", "form_data", "body"} and request_template_summary:
@@ -751,6 +764,8 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
                 "payload_variant": payload_variant,
                 "payload_expected_signal": payload_expected_signal,
                 "proof_family": proof_family,
+                "unauth_access_type": unauth_access_type,
+                "unauth_access_reason": unauth_access_reason[:240],
                 "verification_step": str(item.get("verification_step", "") or "").strip(),
                 "high_value_family": str(item.get("high_value_family", "") or "").strip(),
                 "request_template_mode": request_template_mode,
@@ -934,6 +949,9 @@ def _retry_records(result_docs):
                 "response_hash_diff": str(verify_result.get("response_hash_diff", "") or "").strip(),
                 "proof_family": str(verify_result.get("proof_family", "") or "").strip(),
                 "proof_type": str(verify_result.get("proof_type", "") or "").strip(),
+                "unauth_access_hit": bool(verify_result.get("unauth_access_hit")),
+                "unauth_access_type": str(verify_result.get("unauth_access_type", "") or "").strip(),
+                "unauth_access_reason": str(verify_result.get("unauth_access_reason", "") or "").strip(),
                 "proof_signals": (
                     list(verify_result.get("proof_signals", []) or [])[:8]
                     if isinstance(verify_result.get("proof_signals"), (list, tuple))
@@ -1237,6 +1255,7 @@ class StatsAiPenTest(ARLResource):
         high_value_family = _agg_group("high_value_family")
         payload_variant = _agg_group("payload_variant")
         proof_type = _agg_group("proof_type")
+        unauth_access_type = _agg_group("unauth_access_type")
         request_template_mode = _agg_group("request_template_mode")
         tool_plan_source = _agg_group("tool_plan_source")
         stop_reason = _agg_group("stop_reason")
@@ -1261,6 +1280,9 @@ class StatsAiPenTest(ARLResource):
                     "request_template_summary": 1,
                     "proof_family": 1,
                     "proof_type": 1,
+                    "unauth_access_hit": 1,
+                    "unauth_access_type": 1,
+                    "unauth_access_reason": 1,
                     "proof_signals": 1,
                     "proof_summary": 1,
                     "target": 1,
@@ -1286,6 +1308,8 @@ class StatsAiPenTest(ARLResource):
                     item.get("proof_type"),
                     payload_type=item.get("payload_type"),
                 )
+            if not str(item.get("unauth_access_type", "") or "").strip() and str(item.get("proof_family", "") or "").strip() == "unauth_access":
+                item["unauth_access_type"] = str(item.get("proof_type", "") or "").strip()
         quant_metrics = _build_ai_pen_quant_metrics(metric_rows, total=total)
         capability_benchmarks = {
             "risk_type": _build_ai_pen_group_benchmarks(metric_rows, "risk_type"),
@@ -1293,6 +1317,7 @@ class StatsAiPenTest(ARLResource):
             "payload_variant": _build_ai_pen_group_benchmarks(metric_rows, "payload_variant"),
             "proof_family": _build_ai_pen_group_benchmarks(metric_rows, "proof_family"),
             "proof_type": _build_ai_pen_group_benchmarks(metric_rows, "proof_type"),
+            "unauth_access_type": _build_ai_pen_group_benchmarks(metric_rows, "unauth_access_type"),
             "high_value_family": _build_ai_pen_group_benchmarks(metric_rows, "high_value_family"),
             "verification_step": _build_ai_pen_group_benchmarks(metric_rows, "verification_step"),
             "request_template_mode": _build_ai_pen_group_benchmarks(metric_rows, "request_template_mode"),
@@ -1315,6 +1340,7 @@ class StatsAiPenTest(ARLResource):
                 "payload_variant": payload_variant,
                 "proof_family": _build_ai_pen_group_counts(metric_rows, "proof_family"),
                 "proof_type": proof_type,
+                "unauth_access_type": unauth_access_type,
                 "request_template_mode": request_template_mode,
                 "tool_plan_source": tool_plan_source,
                 "stop_reason": stop_reason,

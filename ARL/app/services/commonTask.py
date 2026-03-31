@@ -17183,6 +17183,9 @@ class WebSiteFetch(object):
                     else []
                 ),
                 "proof_summary": str(verify_result.get("proof_summary", "") or "").strip(),
+                "unauth_access_hit": bool(verify_result.get("unauth_access_hit")),
+                "unauth_access_type": str(verify_result.get("unauth_access_type", "") or "").strip(),
+                "unauth_access_reason": str(verify_result.get("unauth_access_reason", "") or "").strip(),
                 "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
                 "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
                 "browser_surface_summary": dict(verify_result.get("browser_surface_summary") or {}) if isinstance(verify_result.get("browser_surface_summary"), dict) else {},
