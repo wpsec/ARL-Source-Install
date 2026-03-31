@@ -34,6 +34,7 @@ base_search_fields = {
     "status": fields.String(description="执行状态(ok/error/skipped)"),
     "verification_step": fields.String(description="验证阶段(http_fetch_replay/mcp_http_probe/mcp_idor_probe/mcp_api_doc_probe/mcp_jwt_probe/mcp_websocket_probe)"),
     "payload_type": fields.String(description="探针类型(xss_probe/sqli_probe/idor_probe/api_doc_probe等)"),
+    "high_value_family": fields.String(description="高价值目标家族(api_doc_surface/token_auth_flow/login_entry_surface等)"),
     "tool_plan_source": fields.String(description="工具计划来源(ai_plan/retry_history/inferred)"),
     "stop_reason": fields.String(description="Agent/MCP 停止原因(final_decision/manual_required/budget_exhausted/timeout/error)"),
     "reason": fields.String(description="验证说明"),
@@ -189,6 +190,10 @@ def _build_candidate_from_result(item: dict, max_steps: int = 4):
         "task_ai_pen_graph_summary": dict(item.get("task_ai_pen_graph_summary") or {}) if isinstance(item.get("task_ai_pen_graph_summary"), dict) else {},
         "task_ai_pen_graph_context": dict(item.get("task_ai_pen_graph_context") or {}) if isinstance(item.get("task_ai_pen_graph_context"), dict) else {},
         "login_surface_summary": dict(item.get("login_surface_summary") or {}) if isinstance(item.get("login_surface_summary"), dict) else {},
+        "high_value_summary": dict(item.get("high_value_summary") or {}) if isinstance(item.get("high_value_summary"), dict) else {},
+        "high_value_family": str(item.get("high_value_family", "") or "").strip(),
+        "high_value_family_rank": int(item.get("high_value_family_rank", 0) or 0),
+        "high_value_keywords": list(item.get("high_value_keywords", []) or [])[:8],
         "history_session_summary": dict(item.get("session_summary") or {}) if isinstance(item.get("session_summary"), dict) else {},
         "history_tool_plan": history_tool_plan,
         "history_tool_result_summary": history_tool_result_summary,
@@ -291,6 +296,10 @@ def _retry_records(result_docs):
                 "task_ai_pen_graph_summary": dict(verify_result.get("task_ai_pen_graph_summary") or {}) if isinstance(verify_result.get("task_ai_pen_graph_summary"), dict) else {},
                 "task_ai_pen_graph_context": dict(verify_result.get("task_ai_pen_graph_context") or {}) if isinstance(verify_result.get("task_ai_pen_graph_context"), dict) else {},
                 "login_surface_summary": dict(verify_result.get("login_surface_summary") or {}) if isinstance(verify_result.get("login_surface_summary"), dict) else {},
+                "high_value_summary": dict(candidate.get("high_value_summary") or {}) if isinstance(candidate.get("high_value_summary"), dict) else {},
+                "high_value_family": str(candidate.get("high_value_family", "") or "").strip(),
+                "high_value_family_rank": int(candidate.get("high_value_family_rank", 0) or 0),
+                "high_value_keywords": list(candidate.get("high_value_keywords", []) or [])[:8],
                 "session_summary": dict(verify_result.get("session_summary") or {}) if isinstance(verify_result.get("session_summary"), dict) else {},
                 "weak_password_login_proof": bool(verify_result.get("weak_password_login_proof")),
                 "session_auth_hit": bool(verify_result.get("session_auth_hit")),
@@ -573,6 +582,7 @@ class StatsAiPenTest(ARLResource):
         source_collection = _agg_group("source_collection")
         risk_type = _agg_group("risk_type")
         verification_step = _agg_group("verification_step")
+        high_value_family = _agg_group("high_value_family")
         tool_plan_source = _agg_group("tool_plan_source")
         stop_reason = _agg_group("stop_reason")
 
@@ -586,6 +596,7 @@ class StatsAiPenTest(ARLResource):
                 "source_collection": source_collection,
                 "risk_type": risk_type,
                 "verification_step": verification_step,
+                "high_value_family": high_value_family,
                 "tool_plan_source": tool_plan_source,
                 "stop_reason": stop_reason,
             },

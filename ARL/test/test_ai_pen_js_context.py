@@ -314,6 +314,20 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("高价值 Socket.IO/SockJS 入口", candidate.get("risk_name"))
         self.assertEqual("socketio_endpoint", candidate.get("high_value_reason"))
 
+    def test_high_value_url_candidate_detects_websocket_surface(self):
+        candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
+            source_collection="url",
+            source_id="507f1f77bcf86cd7994390bb",
+            target_url="https://example.com/api/websocket/chat",
+            status_code=200,
+            title_text="Realtime Chat",
+            source_text="url",
+        )
+
+        self.assertEqual("websocket", candidate.get("risk_type"))
+        self.assertEqual("高价值 WebSocket 入口", candidate.get("risk_name"))
+        self.assertEqual("websocket_endpoint", candidate.get("high_value_reason"))
+
     def test_high_value_url_candidate_detects_path_traversal_surface(self):
         candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
             source_collection="url",
@@ -326,6 +340,61 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("path_traversal", candidate.get("risk_type"))
         self.assertEqual("高价值路径穿越入口", candidate.get("risk_name"))
+
+    def test_build_ai_pen_high_value_summary_merges_runtime_browser_and_login_families(self):
+        summary = WebSiteFetch._build_ai_pen_high_value_summary(
+            {
+                "source_collection": "wih",
+                "source_module": "wih",
+                "target": "https://example.com/",
+                "vuln_url": "https://example.com/",
+                "risk_name": "WIH-info",
+                "evidence_seed": "发现 swagger ui 和 openid configuration 以及 websocket 入口",
+                "status_code_hint": 200,
+                "browser_surface_summary": {
+                    "page_title": "Swagger UI",
+                    "page_url": "https://example.com/",
+                },
+                "runtime_api_calls": [
+                    {"method": "GET", "url": "https://example.com/.well-known/openid-configuration"},
+                    {"method": "GET", "url": "wss://example.com/ws/chat"},
+                ],
+                "dom_form_summary": [
+                    {"action": "/passport/login", "method": "POST", "has_password_input": "true"},
+                ],
+                "login_surface_summary": {
+                    "runtime_auth_paths": ["/api/auth/login"],
+                },
+            }
+        )
+
+        self.assertTrue(bool(summary.get("used")))
+        self.assertEqual("api_doc_surface", summary.get("best_family"))
+        self.assertIn("token_auth_flow", list(summary.get("families", []) or []))
+        self.assertIn("realtime_channel_surface", list(summary.get("families", []) or []))
+        self.assertIn("login_entry_surface", list(summary.get("families", []) or []))
+        self.assertTrue(any("/.well-known/openid-configuration" in item for item in list(summary.get("matched_urls", []) or [])))
+
+    def test_build_ai_pen_high_value_summary_uses_browser_title_for_site_root(self):
+        summary = WebSiteFetch._build_ai_pen_high_value_summary(
+            {
+                "source_collection": "site",
+                "source_module": "site",
+                "target": "https://portal.example.com/",
+                "vuln_url": "https://portal.example.com/",
+                "risk_name": "站点疑似暴露API文档",
+                "evidence_seed": "title=Swagger UI",
+                "status_code_hint": 200,
+                "browser_surface_summary": {
+                    "page_title": "Swagger UI",
+                    "page_url": "https://portal.example.com/",
+                },
+            }
+        )
+
+        self.assertTrue(bool(summary.get("used")))
+        self.assertEqual("api_doc_surface", summary.get("best_family"))
+        self.assertIn("swagger", ",".join(list(summary.get("keywords", []) or [])))
 
     def test_sensitive_config_response_detects_actuator_env_json(self):
         self.assertTrue(

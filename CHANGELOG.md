@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-03-31（v4.5.10 ~ v4.5.23）
+## 2026-03-31（v4.5.10 ~ v4.5.27）
 
 - `[v4.5.10]` 仪表盘 `资产增长趋势(7日)` 统计口径修复：`/console/dashboard` 的 `asset_trend_7d` 从“累计总量曲线”调整为“按日新增曲线”，并额外保留 `assets_total/vulns_total` 累计字段用于兼容；修复高基数资产下曲线长期近似直线的问题（例如 tooltip 持续显示同一总量值）
 - `[v4.5.10]` 仪表盘当日新增资产统计兼容修复：`new_assets_today` 改为统一复用日统计逻辑，兼容 `save_date` 为 `date/string` 的混合存储，并在 `save_date` 缺失时回退 `update_date`，避免历史数据口径差异导致“新增始终为 0”
@@ -22,6 +22,10 @@
 - `[v4.5.22]` AI渗透 DOM XSS 证据结构化：`js_context` 分析新增 `dom_xss_proof_type`（`source_sink_only/source_sink_popup_hint`）并回写验证结果字段，形成 DOM XSS 的标准化证据描述，避免仅靠泛化 reason 文本；同时补齐 DOM XSS proof type 回归测试，便于后续在阶段 C 完成度核查中直接量化
 - `[v4.5.23]` AI渗透 `C-AutoPassive` 链路补齐第一批：新增 `path_traversal_probe / web_policy_probe / socketio_probe` 三类探针并打通 `risk_type -> payload_hint -> infer/fallback tool_plan -> runtime observation -> decision/proof_guard` 全链路；同时扩展参数资产图（`parameter_assets/parameter_tag_stats`）用于参数类型标签化，强化“参数驱动编排 + 证据分级”执行能力
 - `[v4.5.23]` AI渗透文档与回归同步：`docs/AI渗透测试MCP总体方案.md` 的阶段 C 更新为 `C-Core/C-AutoPassive` 双口径，并新增 `C-AutoPassive=100%` 验收与开发优先级；补齐 `test_ai_pen_js_context.py` 对 `path_traversal/web_policy/socketio` 的计划编排、运行时观测、分类与工具注册回归用例
+- `[v4.5.24]` AI渗透 `弱口令/登录会话` 闭环增强：新增登录后 follow-up 目标构造与 `session_request/logout_probe` 标准化判定，`weak_password_probe` 主计划与 fallback 均可在预算内自动执行 `session_start -> extract_csrf_token -> credential_probe -> detect_login_success -> session_request -> logout_probe`；运行时将“认证后资源可访问 / 退出后回登录页”纳入证据与结果落库
+- `[v4.5.25]` AI渗透 `轨迹与导出` 产品化继续推进：验证链日志补充登录面、会话摘要与 `tool_plan_source`，重试优先沿用历史 `tool_plan/tool_calls`；导出字段新增 `session_summary/tool_plan_source/ai_plan_tool_plan/evidence_snippet/http_status/response_hash_diff` 等轨迹面数据，便于复盘 Agent 决策与验证链路
+- `[v4.5.26]` AI渗透 `统计维度` 扩展：`/ai_pen_test/stats/` 新增 `tool_plan_source/stop_reason` 聚合，可直接观察 AI 计划命中、历史重试占比，以及 `manual_required/budget_exhausted/error` 等停止原因分布，为阶段 E 结果轨迹分析补齐数据面
+- `[v4.5.27]` AI渗透 `高价值目标通用化` 主干落地：新增统一 `AI_PEN_HIGH_VALUE_FAMILY_SPECS` 与高价值摘要构造器，融合 `site/url/fileleak/wih/browser/runtime/login` 多层线索生成 `high_value_summary/high_value_family/high_value_family_rank/high_value_keywords`，并接入候选排序、AI planner 输入、重试、导出与统计；同时补齐 `WebSocket` 与多家族聚合回归测试
 
 ## 2026-03-30（v4.3.60 ~ v4.5.4）
 

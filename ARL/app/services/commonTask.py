@@ -275,6 +275,164 @@ class WebSiteFetch(object):
         "file_handling_surface": ("upload", "download", "attachment", "export", "template", "multipart", "avatar", "import", "附件", "上传", "下载", "导出", "模板"),
         "login_entry_surface": ("login", "signin", "sign-in", "sso", "cas", "passport", "认证", "登录", "统一身份认证", "单点登录"),
     }
+    AI_PEN_HIGH_VALUE_FAMILY_SPECS = (
+        {
+            "family": "api_doc_surface",
+            "reason": "api_doc_endpoint",
+            "risk_type": "api_doc",
+            "risk_name": "高价值接口说明/Schema端点",
+            "severity_success": "high",
+            "severity_other": "medium",
+            "priority_success": 60,
+            "priority_other": 28,
+            "family_rank": 96,
+            "url_tokens": ("/v3/api-docs", "/v2/api-docs", "/api-docs", "/swagger-resources", "/swagger-ui", "/openapi", "/redoc", "/knife4j", "/postman"),
+            "text_tokens": ("swagger", "openapi", "knife4j", "redoc", "postman"),
+        },
+        {
+            "family": "graphql_surface",
+            "reason": "graphql_endpoint",
+            "risk_type": "graphql",
+            "risk_name": "高价值 GraphQL 入口",
+            "severity_success": "high",
+            "severity_other": "medium",
+            "priority_success": 58,
+            "priority_other": 28,
+            "family_rank": 92,
+            "url_tokens": ("/graphql", "/api/graphql", "/graphiql", "/graphql-playground", "/graphql/console"),
+            "text_tokens": ("graphql", "graphiql", "apollo"),
+        },
+        {
+            "family": "token_auth_flow",
+            "reason": "auth_protocol_endpoint",
+            "risk_type": "jwt",
+            "risk_name": "高价值认证协议端点",
+            "severity_success": "high",
+            "severity_other": "medium",
+            "priority_success": 56,
+            "priority_other": 24,
+            "family_rank": 88,
+            "url_tokens": ("/.well-known/openid-configuration", "/.well-known/jwks.json", "/oauth/token", "/oauth2/token", "/connect/token", "/oauth/introspect", "/oauth2/introspect", "/userinfo"),
+            "text_tokens": ("openid", "oidc", "oauth2", "oauth", "jwks"),
+        },
+        {
+            "family": "config_exposure_surface",
+            "reason": "config_env_endpoint",
+            "risk_type": "sensitive_info",
+            "risk_name": "高价值配置/环境信息端点",
+            "severity_success": "high",
+            "severity_other": "medium",
+            "priority_success": 64,
+            "priority_other": 30,
+            "family_rank": 90,
+            "url_tokens": ("/actuator/env", "/api/actuator/env", "/env", "/actuator/configprops", "/configprops", "/actuator/beans", "/actuator/mappings", "/actuator/conditions", "/actuator/heapdump", "/heapdump", "/actuator/loggers"),
+            "text_tokens": ("actuator", "configprops", "propertysources", "activeprofiles", "spring boot"),
+        },
+        {
+            "family": "admin_debug_surface",
+            "reason": "manage_debug_endpoint",
+            "risk_type": "sensitive_info",
+            "risk_name": "高价值管理/诊断端点",
+            "severity_success": "high",
+            "severity_other": "medium",
+            "priority_success": 52,
+            "priority_other": 24,
+            "family_rank": 74,
+            "url_tokens": ("/actuator", "/jolokia", "/druid", "/prometheus", "/metrics", "/mappings", "/beans", "/conditions", "/loggers"),
+            "text_tokens": ("prometheus", "jolokia", "druid", "metrics"),
+        },
+        {
+            "family": "sensitive_file_surface",
+            "reason": "sensitive_file_endpoint",
+            "risk_type": "sensitive_info",
+            "risk_name": "高价值敏感文件/配置端点",
+            "severity_success": "high",
+            "severity_other": "medium",
+            "priority_success": 58,
+            "priority_other": 26,
+            "family_rank": 84,
+            "url_tokens": ("/.env", "/.git/config", "/application.yml", "/application.yaml", "/bootstrap.yml", "/bootstrap.yaml", "/application-prod.yml", "/application-dev.yml", "/web.config", "/config.php"),
+            "text_tokens": (".env", ".git/config", "application.yml", "bootstrap.yml", "config.php"),
+        },
+        {
+            "family": "path_traversal_surface",
+            "reason": "path_traversal_endpoint",
+            "risk_type": "path_traversal",
+            "risk_name": "高价值路径穿越入口",
+            "severity_success": "high",
+            "severity_other": "medium",
+            "priority_success": 50,
+            "priority_other": 24,
+            "family_rank": 82,
+            "url_tokens": ("../", "..\\", "%2e%2e%2f", "%2e%2e/", "%252e%252e%252f", "etc/passwd", "windows/win.ini", "file=..", "path=.."),
+            "text_tokens": ("traversal", "etc/passwd", "win.ini"),
+        },
+        {
+            "family": "file_handling_surface",
+            "reason": "file_surface_endpoint",
+            "risk_type": "",
+            "risk_name": "高价值文件处理入口",
+            "severity_success": "medium",
+            "severity_other": "low",
+            "priority_success": 42,
+            "priority_other": 18,
+            "family_rank": 78,
+            "url_tokens": ("/upload", "/import", "/download", "/export", "/attachment", "/template", "/avatar", "/report"),
+            "text_tokens": ("upload", "download", "attachment", "export", "template", "avatar", "import", "附件", "上传", "下载", "导出", "模板"),
+        },
+        {
+            "family": "realtime_channel_surface",
+            "reason": "socketio_endpoint",
+            "risk_type": "socketio",
+            "risk_name": "高价值 Socket.IO/SockJS 入口",
+            "severity_success": "medium",
+            "severity_other": "low",
+            "priority_success": 46,
+            "priority_other": 20,
+            "family_rank": 76,
+            "url_tokens": ("/socket.io/", "/socket.io?", "/sockjs/", "/sockjs?", "/sockjs-node/", "/engine.io/"),
+            "text_tokens": ("socket.io", "sockjs", "engine.io"),
+        },
+        {
+            "family": "realtime_channel_surface",
+            "reason": "websocket_endpoint",
+            "risk_type": "websocket",
+            "risk_name": "高价值 WebSocket 入口",
+            "severity_success": "medium",
+            "severity_other": "low",
+            "priority_success": 44,
+            "priority_other": 18,
+            "family_rank": 74,
+            "url_tokens": ("ws://", "wss://", "/websocket", "/api/websocket", "/ws/", "/ws?", "transport=websocket"),
+            "text_tokens": ("websocket",),
+        },
+        {
+            "family": "web_policy_surface",
+            "reason": "web_policy_endpoint",
+            "risk_type": "web_policy",
+            "risk_name": "高价值 Web 策略验证入口",
+            "severity_success": "medium",
+            "severity_other": "low",
+            "priority_success": 36,
+            "priority_other": 14,
+            "family_rank": 66,
+            "url_tokens": ("cors", "cross-origin", "x-frame-options", "content-security-policy", "strict-transport-security", "cache-control"),
+            "text_tokens": ("cors", "cross-origin", "x-frame-options", "content-security-policy", "strict-transport-security", "cache-control"),
+        },
+        {
+            "family": "login_entry_surface",
+            "reason": "auth_entry_endpoint",
+            "risk_type": "login_surface",
+            "risk_name": "高价值认证入口",
+            "severity_success": "medium",
+            "severity_other": "low",
+            "priority_success": 38,
+            "priority_other": 16,
+            "family_rank": 72,
+            "url_tokens": ("/login", "/signin", "/sign-in", "/sso", "/cas", "/passport", "/oauth", "/token", "/auth/login", "/api/login", "/connect/token"),
+            "text_tokens": ("login", "signin", "sign-in", "sso", "cas", "passport", "认证", "登录", "统一身份认证", "单点登录"),
+        },
+    )
     AI_PEN_CAPABILITY_PROFILES = {
         "api_doc_surface": {
             "priority": 100,
@@ -4223,6 +4381,9 @@ class WebSiteFetch(object):
                 "task_ai_pen_graph_summary": dict(candidate.get("task_ai_pen_graph_summary") or {}) if isinstance(candidate.get("task_ai_pen_graph_summary"), dict) else {},
                 "task_ai_pen_graph_context": dict(candidate.get("task_ai_pen_graph_context") or {}) if isinstance(candidate.get("task_ai_pen_graph_context"), dict) else {},
                 "login_surface_summary": dict(candidate.get("login_surface_summary") or {}) if isinstance(candidate.get("login_surface_summary"), dict) else {},
+                "high_value_summary": dict(candidate.get("high_value_summary") or {}) if isinstance(candidate.get("high_value_summary"), dict) else {},
+                "high_value_family": str(candidate.get("high_value_family", "") or "").strip(),
+                "high_value_keywords": list(candidate.get("high_value_keywords", []) or [])[:8],
                 "history_session_summary": dict(candidate.get("history_session_summary") or {}) if isinstance(candidate.get("history_session_summary"), dict) else {},
                 "history_tool_plan": list(candidate.get("history_tool_plan", []) or [])[:4],
                 "history_tool_results": list(candidate.get("history_tool_result_summary", []) or [])[:4],
@@ -9725,6 +9886,240 @@ class WebSiteFetch(object):
         return cls._safe_int_value(status_code, 0) in cls.AI_PEN_SUCCESS_STATUS_SET
 
     @classmethod
+    def _match_ai_pen_high_value_family(
+        cls,
+        target_url: str,
+        title_text: str = "",
+        source_text: str = "",
+        extra_text: str = "",
+        status_code=0,
+    ):
+        """
+        统一识别高价值目标家族，供 URL 直接命中、浏览器/runtime 提示和候选排序复用。
+        """
+        raw_url = str(target_url or "").strip()
+        lower_url = raw_url.lower()
+        title_lower = str(title_text or "").strip().lower()
+        source_lower = str(source_text or "").strip().lower()
+        extra_lower = str(extra_text or "").strip().lower()
+        status_value = cls._safe_int_value(status_code, 0)
+        success_like = cls._is_ai_pen_success_status(status_value)
+
+        best_match = {}
+        for spec in cls.AI_PEN_HIGH_VALUE_FAMILY_SPECS:
+            if not isinstance(spec, dict):
+                continue
+
+            matched_keywords = []
+            for token in list(spec.get("url_tokens", ()) or ()):
+                token_text = str(token or "").strip().lower()
+                if token_text and token_text in lower_url and token_text not in matched_keywords:
+                    matched_keywords.append(token_text)
+            for token in list(spec.get("text_tokens", ()) or ()):
+                token_text = str(token or "").strip().lower()
+                if not token_text:
+                    continue
+                if any(token_text in text for text in (title_lower, source_lower, extra_lower)) and token_text not in matched_keywords:
+                    matched_keywords.append(token_text)
+            if not matched_keywords:
+                continue
+
+            reason = str(spec.get("reason") or "").strip().lower()
+            risk_type = str(spec.get("risk_type") or "").strip().lower()
+            if reason == "file_surface_endpoint":
+                if any(token in lower_url for token in ("/upload", "/import", "/avatar")):
+                    risk_type = "file_upload"
+                else:
+                    risk_type = "file_read"
+
+            severity = str(spec.get("severity_success") if success_like else spec.get("severity_other") or "info").strip().lower() or "info"
+            priority_score = cls._safe_int_value(
+                spec.get("priority_success") if success_like else spec.get("priority_other"),
+                0,
+            )
+            family_rank = cls._safe_int_value(spec.get("family_rank"), 0)
+
+            candidate = {
+                "family": str(spec.get("family") or "").strip().lower(),
+                "reason": reason,
+                "risk_type": risk_type,
+                "risk_name": str(spec.get("risk_name") or "").strip(),
+                "severity": severity,
+                "priority_score": priority_score,
+                "family_rank": family_rank,
+                "matched_keywords": matched_keywords[:6],
+            }
+            if (
+                not best_match
+                or family_rank > cls._safe_int_value(best_match.get("family_rank"), 0)
+                or (
+                    family_rank == cls._safe_int_value(best_match.get("family_rank"), 0)
+                    and priority_score > cls._safe_int_value(best_match.get("priority_score"), 0)
+                )
+            ):
+                best_match = candidate
+        return best_match
+
+    @classmethod
+    def _resolve_ai_pen_high_value_candidate_url(cls, base_url: str, raw_value):
+        text = str(raw_value or "").strip()
+        if not text:
+            return ""
+        if text.startswith(("ws://", "wss://")):
+            return text
+        if text.startswith(("http://", "https://")):
+            return text
+        if text.startswith("//"):
+            base_scheme = str(urlsplit(str(base_url or "").strip()).scheme or "https").strip() or "https"
+            return "{}:{}".format(base_scheme, text)
+        base_text = str(base_url or "").strip()
+        if cls._is_http_target(base_text):
+            return urljoin(base_text, text)
+        return text
+
+    @classmethod
+    def _build_ai_pen_high_value_summary(cls, candidate: dict):
+        """
+        汇总候选在 site/url/fileleak/wih/js/runtime 等多层上下文里的高价值家族命中。
+        """
+        item = candidate if isinstance(candidate, dict) else {}
+        base_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+        source_text = str(item.get("source_module") or item.get("source_collection") or "").strip()
+        browser_surface_summary = item.get("browser_surface_summary") if isinstance(item.get("browser_surface_summary"), dict) else {}
+        login_surface_summary = item.get("login_surface_summary") if isinstance(item.get("login_surface_summary"), dict) else {}
+        dom_form_summary = list(item.get("dom_form_summary", []) or [])
+        runtime_api_calls = list(item.get("runtime_api_calls", []) or [])
+        title_text = str(browser_surface_summary.get("page_title") or "").strip()
+        status_code = cls._safe_int_value(item.get("status_code_hint"), 0)
+        extra_text = " ".join(
+            [
+                str(item.get("risk_name") or "").strip(),
+                str(item.get("evidence_seed") or "").strip(),
+                str(browser_surface_summary.get("page_title") or "").strip(),
+                str(browser_surface_summary.get("source_role") or "").strip(),
+                " ".join([str(token or "").strip() for token in list(item.get("knowledge_hit_tokens", []) or [])[:8]]),
+                " ".join([str(token or "").strip() for token in list(item.get("surface_hints", []) or [])[:8]]),
+            ]
+        ).strip()
+
+        candidate_urls = []
+        seen_urls = set()
+
+        def _append_url(raw_value, source_kind="context"):
+            resolved = cls._resolve_ai_pen_high_value_candidate_url(base_url, raw_value)
+            resolved_text = str(resolved or "").strip()
+            if not resolved_text or resolved_text in seen_urls:
+                return
+            seen_urls.add(resolved_text)
+            candidate_urls.append(
+                {
+                    "url": resolved_text,
+                    "source": str(source_kind or "context").strip().lower() or "context",
+                }
+            )
+
+        _append_url(item.get("target"), "target")
+        _append_url(item.get("vuln_url"), "vuln_url")
+        _append_url(browser_surface_summary.get("page_url"), "page")
+        for api_call in runtime_api_calls[:12]:
+            if isinstance(api_call, dict):
+                _append_url(api_call.get("url"), "runtime")
+        for form_item in dom_form_summary[:8]:
+            if not isinstance(form_item, dict):
+                continue
+            _append_url(form_item.get("action"), "form")
+        for raw_value in list(login_surface_summary.get("form_actions", []) or [])[:8]:
+            _append_url(raw_value, "login_surface")
+        for raw_value in list(login_surface_summary.get("runtime_auth_paths", []) or [])[:8]:
+            _append_url(raw_value, "login_surface")
+        for raw_value in list(login_surface_summary.get("auth_api_paths", []) or [])[:8]:
+            _append_url(raw_value, "login_surface")
+
+        family_hits = {}
+        keyword_seen = set()
+        ordered_keywords = []
+        matched_urls = []
+        for url_item in candidate_urls:
+            if not isinstance(url_item, dict):
+                continue
+            url_text = str(url_item.get("url") or "").strip()
+            source_kind = str(url_item.get("source") or "").strip().lower()
+            scoped_title = title_text if source_kind in {"target", "vuln_url", "page"} else ""
+            scoped_extra = extra_text if source_kind in {"target", "vuln_url", "page"} else ""
+            match_obj = cls._match_ai_pen_high_value_family(
+                target_url=url_text,
+                title_text=scoped_title,
+                source_text=source_text,
+                extra_text=scoped_extra,
+                status_code=status_code,
+            )
+            family_text = str(match_obj.get("family") or "").strip().lower()
+            if not family_text:
+                continue
+            previous = family_hits.get(family_text) if isinstance(family_hits.get(family_text), dict) else {}
+            if (
+                (not previous)
+                or cls._safe_int_value(match_obj.get("family_rank"), 0) > cls._safe_int_value(previous.get("family_rank"), 0)
+                or (
+                    cls._safe_int_value(match_obj.get("family_rank"), 0) == cls._safe_int_value(previous.get("family_rank"), 0)
+                    and cls._safe_int_value(match_obj.get("priority_score"), 0) > cls._safe_int_value(previous.get("priority_score"), 0)
+                )
+            ):
+                family_hits[family_text] = dict(match_obj or {})
+                family_hits[family_text]["matched_url"] = url_text[:220]
+            if url_text not in matched_urls:
+                matched_urls.append(url_text[:220])
+            for keyword in list(match_obj.get("matched_keywords", []) or [])[:6]:
+                keyword_text = str(keyword or "").strip().lower()
+                if not keyword_text or keyword_text in keyword_seen:
+                    continue
+                keyword_seen.add(keyword_text)
+                ordered_keywords.append(keyword_text)
+
+        if not family_hits and (title_text or extra_text):
+            fallback_match = cls._match_ai_pen_high_value_family(
+                target_url=base_url,
+                title_text=title_text,
+                source_text=source_text,
+                extra_text=extra_text,
+                status_code=status_code,
+            )
+            family_text = str(fallback_match.get("family") or "").strip().lower()
+            if family_text:
+                family_hits[family_text] = dict(fallback_match or {})
+                if base_url:
+                    family_hits[family_text]["matched_url"] = base_url[:220]
+                for keyword in list(fallback_match.get("matched_keywords", []) or [])[:6]:
+                    keyword_text = str(keyword or "").strip().lower()
+                    if keyword_text and keyword_text not in keyword_seen:
+                        keyword_seen.add(keyword_text)
+                        ordered_keywords.append(keyword_text)
+
+        ordered_hits = sorted(
+            list(family_hits.values()),
+            key=lambda item: (
+                -cls._safe_int_value(item.get("family_rank"), 0),
+                -cls._safe_int_value(item.get("priority_score"), 0),
+                str(item.get("family") or ""),
+            )
+        )
+        best_hit = dict(ordered_hits[0] or {}) if ordered_hits else {}
+        family_names = [str(item.get("family") or "").strip() for item in ordered_hits if str(item.get("family") or "").strip()]
+
+        return {
+            "used": bool(ordered_hits),
+            "best_family": str(best_hit.get("family") or "").strip(),
+            "best_reason": str(best_hit.get("reason") or "").strip(),
+            "best_risk_type": str(best_hit.get("risk_type") or "").strip(),
+            "best_risk_name": str(best_hit.get("risk_name") or "").strip(),
+            "family_rank": cls._safe_int_value(best_hit.get("family_rank"), 0),
+            "priority_score": cls._safe_int_value(best_hit.get("priority_score"), 0),
+            "families": family_names[:6],
+            "matched_urls": matched_urls[:6],
+            "keywords": ordered_keywords[:8],
+        }
+
+    @classmethod
     def _build_ai_pen_high_value_url_candidate(
         cls,
         source_collection: str,
@@ -9751,209 +10146,21 @@ class WebSiteFetch(object):
         if status_value in {404, 500, 502, 503, 504}:
             return None
 
-        matched_keywords = []
-        risk_type = ""
-        risk_name = ""
-        severity = "info"
-        priority_score = 0
-        high_value_reason = ""
-
-        api_doc_tokens = (
-            "/v3/api-docs",
-            "/v2/api-docs",
-            "/api-docs",
-            "/swagger-resources",
-            "/swagger-ui",
-            "/openapi",
-            "/redoc",
-            "/knife4j",
-            "/postman",
+        match_obj = cls._match_ai_pen_high_value_family(
+            target_url=raw_url,
+            title_text=title_text,
+            source_text=source_text,
+            extra_text="{} {}".format(title_lower, source_lower).strip(),
+            status_code=status_value,
         )
-        graphql_tokens = (
-            "/graphql",
-            "/api/graphql",
-            "/graphiql",
-            "/graphql-playground",
-            "/graphql/console",
-        )
-        socketio_tokens = (
-            "/socket.io/",
-            "/socket.io?",
-            "/sockjs/",
-            "/sockjs?",
-            "/sockjs-node/",
-            "/engine.io/",
-        )
-        config_tokens = (
-            "/actuator/env",
-            "/api/actuator/env",
-            "/env",
-            "/actuator/configprops",
-            "/configprops",
-            "/actuator/beans",
-            "/actuator/mappings",
-            "/actuator/conditions",
-            "/actuator/heapdump",
-            "/heapdump",
-            "/actuator/loggers",
-        )
-        manage_tokens = (
-            "/actuator",
-            "/jolokia",
-            "/druid",
-            "/prometheus",
-            "/metrics",
-            "/mappings",
-            "/beans",
-            "/conditions",
-            "/loggers",
-        )
-        auth_tokens = (
-            "/login",
-            "/signin",
-            "/sign-in",
-            "/sso",
-            "/cas",
-            "/passport",
-            "/oauth",
-            "/token",
-            "/auth/login",
-            "/api/login",
-            "/connect/token",
-        )
-        auth_protocol_tokens = (
-            "/.well-known/openid-configuration",
-            "/.well-known/jwks.json",
-            "/oauth/token",
-            "/oauth2/token",
-            "/connect/token",
-            "/oauth/introspect",
-            "/oauth2/introspect",
-            "/userinfo",
-        )
-        file_surface_tokens = (
-            "/upload",
-            "/import",
-            "/download",
-            "/export",
-            "/attachment",
-            "/template",
-            "/avatar",
-            "/report",
-        )
-        path_traversal_tokens = (
-            "../",
-            "..\\",
-            "%2e%2e%2f",
-            "%2e%2e/",
-            "%252e%252e%252f",
-            "etc/passwd",
-            "windows/win.ini",
-            "file=..",
-            "path=..",
-        )
-        web_policy_tokens = (
-            "cors",
-            "cross-origin",
-            "x-frame-options",
-            "content-security-policy",
-            "strict-transport-security",
-            "cache-control",
-        )
-        file_tokens = (
-            "/.env",
-            "/.git/config",
-            "/application.yml",
-            "/application.yaml",
-            "/bootstrap.yml",
-            "/bootstrap.yaml",
-            "/application-prod.yml",
-            "/application-dev.yml",
-            "/web.config",
-            "/config.php",
-        )
-
-        if any(token in lower_url for token in api_doc_tokens) or any(token in title_lower for token in ("swagger", "openapi", "knife4j", "redoc")):
-            matched_keywords = [token for token in api_doc_tokens if token in lower_url][:4] or ["api-docs"]
-            risk_type = "api_doc"
-            risk_name = "高价值接口说明/Schema端点"
-            severity = "high" if success_like else "medium"
-            priority_score = 60 if success_like else 28
-            high_value_reason = "api_doc_endpoint"
-        elif any(token in lower_url for token in graphql_tokens) or any(token in title_lower for token in ("graphql", "graphiql", "apollo")):
-            matched_keywords = [token for token in graphql_tokens if token in lower_url][:4] or ["graphql"]
-            risk_type = "graphql"
-            risk_name = "高价值 GraphQL 入口"
-            severity = "high" if success_like else "medium"
-            priority_score = 58 if success_like else 28
-            high_value_reason = "graphql_endpoint"
-        elif any(token in lower_url for token in socketio_tokens):
-            matched_keywords = [token for token in socketio_tokens if token in lower_url][:4] or ["socket.io"]
-            risk_type = "socketio"
-            risk_name = "高价值 Socket.IO/SockJS 入口"
-            severity = "medium" if success_like else "low"
-            priority_score = 46 if success_like else 20
-            high_value_reason = "socketio_endpoint"
-        elif any(token in lower_url for token in config_tokens):
-            matched_keywords = [token for token in config_tokens if token in lower_url][:4]
-            risk_type = "sensitive_info"
-            risk_name = "高价值配置/环境信息端点"
-            severity = "high" if success_like else "medium"
-            priority_score = 64 if success_like else 30
-            high_value_reason = "config_env_endpoint"
-        elif any(token in lower_url for token in manage_tokens):
-            matched_keywords = [token for token in manage_tokens if token in lower_url][:4]
-            risk_type = "sensitive_info"
-            risk_name = "高价值管理/诊断端点"
-            severity = "high" if success_like else "medium"
-            priority_score = 52 if success_like else 24
-            high_value_reason = "manage_debug_endpoint"
-        elif any(token in lower_url for token in file_surface_tokens) and not any(token in lower_url for token in path_traversal_tokens):
-            matched_keywords = [token for token in file_surface_tokens if token in lower_url][:4]
-            if any(token in lower_url for token in ("/upload", "/import", "/avatar")):
-                risk_type = "file_upload"
-            else:
-                risk_type = "file_read"
-            risk_name = "高价值文件处理入口"
-            severity = "medium" if success_like else "low"
-            priority_score = 42 if success_like else 18
-            high_value_reason = "file_surface_endpoint"
-        elif any(token in lower_url for token in path_traversal_tokens):
-            matched_keywords = [token for token in path_traversal_tokens if token in lower_url][:4]
-            risk_type = "path_traversal"
-            risk_name = "高价值路径穿越入口"
-            severity = "high" if success_like else "medium"
-            priority_score = 50 if success_like else 24
-            high_value_reason = "path_traversal_endpoint"
-        elif any(token in lower_url for token in web_policy_tokens) or any(token in title_lower for token in web_policy_tokens):
-            matched_keywords = [token for token in web_policy_tokens if token in lower_url or token in title_lower][:4]
-            risk_type = "web_policy"
-            risk_name = "高价值 Web 策略验证入口"
-            severity = "medium" if success_like else "low"
-            priority_score = 36 if success_like else 14
-            high_value_reason = "web_policy_endpoint"
-        elif any(token in lower_url for token in auth_protocol_tokens):
-            matched_keywords = [token for token in auth_protocol_tokens if token in lower_url][:4]
-            risk_type = "jwt"
-            risk_name = "高价值认证协议端点"
-            severity = "high" if success_like else "medium"
-            priority_score = 56 if success_like else 24
-            high_value_reason = "auth_protocol_endpoint"
-        elif any(token in lower_url for token in auth_tokens):
-            matched_keywords = [token for token in auth_tokens if token in lower_url][:4]
-            risk_type = "login_surface"
-            risk_name = "高价值认证入口"
-            severity = "medium" if success_like else "low"
-            priority_score = 38 if success_like else 16
-            high_value_reason = "auth_entry_endpoint"
-        elif any(token in lower_url for token in file_tokens):
-            matched_keywords = [token for token in file_tokens if token in lower_url][:4]
-            risk_type = "sensitive_info"
-            risk_name = "高价值敏感文件/配置端点"
-            severity = "high" if success_like else "medium"
-            priority_score = 58 if success_like else 26
-            high_value_reason = "sensitive_file_endpoint"
-
+        matched_keywords = list(match_obj.get("matched_keywords", []) or [])
+        risk_type = str(match_obj.get("risk_type") or "").strip()
+        risk_name = str(match_obj.get("risk_name") or "").strip()
+        severity = str(match_obj.get("severity") or "info").strip().lower() or "info"
+        priority_score = cls._safe_int_value(match_obj.get("priority_score"), 0)
+        high_value_reason = str(match_obj.get("reason") or "").strip()
+        high_value_family = str(match_obj.get("family") or "").strip()
+        high_value_family_rank = cls._safe_int_value(match_obj.get("family_rank"), 0)
         if not risk_type:
             return None
         if not success_like and not privileged_like:
@@ -9987,6 +10194,9 @@ class WebSiteFetch(object):
             "priority_score": priority_score,
             "high_value_target": True,
             "high_value_reason": high_value_reason,
+            "high_value_family": high_value_family,
+            "high_value_family_rank": high_value_family_rank,
+            "high_value_keywords": matched_keywords[:6],
         }
 
     @classmethod
@@ -12350,6 +12560,15 @@ class WebSiteFetch(object):
         except Exception as e:
             logger.warning("task_id:{} build ai_pen candidates from fileleak failed err:{}".format(self.task_id, e))
 
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            high_value_summary = self._build_ai_pen_high_value_summary(item)
+            item["high_value_summary"] = dict(high_value_summary or {})
+            item["high_value_family"] = str(high_value_summary.get("best_family") or "").strip()
+            item["high_value_family_rank"] = self._safe_int_value(high_value_summary.get("family_rank"), 0)
+            item["high_value_keywords"] = list(high_value_summary.get("keywords", []) or [])[:8]
+
         def _risk_score(item):
             score = 0
             risk_type = str(item.get("risk_type", "") or "").lower()
@@ -12373,6 +12592,10 @@ class WebSiteFetch(object):
                 score -= 8
             if bool(item.get("high_value_target")):
                 score += 24
+            family_rank = self._safe_int_value(item.get("high_value_family_rank"), 0)
+            if family_rank > 0:
+                score += min(18, max(4, int(family_rank / 5)))
+            score += min(6, len(list(item.get("high_value_keywords", []) or [])))
             score += self._safe_int_value(item.get("priority_score"), 0)
             if severity in ("critical", "high"):
                 score += 12
@@ -14924,6 +15147,11 @@ class WebSiteFetch(object):
             candidate["dom_form_summary"] = list(browser_intel.get("dom_form_summary", []) or [])[:8]
             candidate["task_ai_pen_graph_summary"] = self._build_ai_pen_graph_summary(candidate)
             candidate["login_surface_summary"] = self._build_ai_pen_login_surface_summary(candidate)
+            high_value_summary = self._build_ai_pen_high_value_summary(candidate)
+            candidate["high_value_summary"] = dict(high_value_summary or {})
+            candidate["high_value_family"] = str(high_value_summary.get("best_family") or "").strip()
+            candidate["high_value_family_rank"] = int(high_value_summary.get("family_rank", 0) or 0)
+            candidate["high_value_keywords"] = list(high_value_summary.get("keywords", []) or [])[:8]
             candidate["knowledge_score"] = int(hit_info.get("score", 0) or 0)
             if bool(hit_info.get("loaded")):
                 knowledge_loaded = True
@@ -14940,7 +15168,9 @@ class WebSiteFetch(object):
         candidates.sort(
             key=lambda item: (
                 -int(item.get("knowledge_score", 0) or 0),
+                -int(item.get("high_value_family_rank", 0) or 0),
                 -int(item.get("priority_score", 0) or 0),
+                -len(list(item.get("high_value_keywords", []) or [])),
                 str(item.get("source_collection", "")),
                 str(item.get("source_id", "")),
             )
@@ -14969,9 +15199,10 @@ class WebSiteFetch(object):
         selected_preview = []
         for candidate in selected_candidates[:6]:
             selected_preview.append(
-                "{}:{}:{}@{}".format(
+                "{}:{}:{}:{}@{}".format(
                     str(candidate.get("source_collection", "") or "").strip()[:16] or "unknown",
                     str(candidate.get("risk_type", "") or "").strip()[:18] or "unknown",
+                    str(candidate.get("high_value_family", "") or "").strip()[:20] or "none",
                     str(candidate.get("payload_type", "") or "").strip()[:18] or "auto",
                     str(candidate.get("target") or candidate.get("vuln_url") or "").strip()[:80],
                 )
@@ -14998,7 +15229,7 @@ class WebSiteFetch(object):
             candidate_target = str(candidate.get("vuln_url") or candidate.get("target") or "").strip()
             logger.info(
                 "task_id:{} ai_pen candidate start {}/{} source={}:{} target:{} risk_type:{} risk_name:{} "
-                "priority:{} knowledge_score:{}".format(
+                "priority:{} knowledge_score:{} high_value_family:{} high_value_rank:{}".format(
                     self.task_id,
                     candidate_index,
                     len(selected_candidates),
@@ -15009,6 +15240,8 @@ class WebSiteFetch(object):
                     str(candidate.get("risk_name", "") or "").strip()[:48] or "-",
                     self._safe_int_value(candidate.get("priority_score"), 0),
                     self._safe_int_value(candidate.get("knowledge_score"), 0),
+                    str(candidate.get("high_value_family", "") or "").strip()[:24] or "-",
+                    self._safe_int_value(candidate.get("high_value_family_rank"), 0),
                 )
             )
             ai_plan_result = {
@@ -15156,6 +15389,10 @@ class WebSiteFetch(object):
                 "task_ai_pen_graph_summary": dict(verify_result.get("task_ai_pen_graph_summary") or {}) if isinstance(verify_result.get("task_ai_pen_graph_summary"), dict) else {},
                 "task_ai_pen_graph_context": dict(verify_result.get("task_ai_pen_graph_context") or {}) if isinstance(verify_result.get("task_ai_pen_graph_context"), dict) else {},
                 "login_surface_summary": dict(verify_result.get("login_surface_summary") or {}) if isinstance(verify_result.get("login_surface_summary"), dict) else {},
+                "high_value_summary": dict(candidate.get("high_value_summary") or {}) if isinstance(candidate.get("high_value_summary"), dict) else {},
+                "high_value_family": str(candidate.get("high_value_family", "") or "").strip(),
+                "high_value_family_rank": self._safe_int_value(candidate.get("high_value_family_rank"), 0),
+                "high_value_keywords": list(candidate.get("high_value_keywords", []) or [])[:8],
                 "weak_password_login_proof": bool(verify_result.get("weak_password_login_proof")),
                 "session_auth_hit": bool(verify_result.get("session_auth_hit")),
                 "session_auth_url": str(verify_result.get("session_auth_url", "") or "").strip(),
