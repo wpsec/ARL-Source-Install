@@ -38,6 +38,7 @@ base_search_fields = {
     "proof_family": fields.String(description="统一证据家族(active_execution/auth_bypass/surface_exposure等)"),
     "proof_type": fields.String(description="统一证据类型"),
     "unauth_access_type": fields.String(description="未授权直访证据类型(unauth_admin_portal/unauth_profile_data等)"),
+    "unauth_probe_summary": fields.String(description="未授权复核摘要(targets/blocked/login_wall/health_like等)"),
     "high_value_family": fields.String(description="高价值目标家族(api_doc_surface/token_auth_flow/login_entry_surface等)"),
     "request_template_mode": fields.String(description="请求模板模式(query/form_data/json_data/body)"),
     "request_template_content_type": fields.String(description="请求模板Content-Type"),
@@ -675,6 +676,7 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
         proof_type = str(item.get("proof_type", "") or "").strip()
         unauth_access_type = str(item.get("unauth_access_type", "") or "").strip()
         unauth_access_reason = str(item.get("unauth_access_reason", "") or "").strip()
+        unauth_probe_summary = str(item.get("unauth_probe_summary", "") or "").strip()
         if not proof_family and proof_type:
             proof_family = _classify_ai_pen_proof_family(
                 proof_type,
@@ -735,6 +737,8 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             score += 8
         if unauth_access_type == "unauth_health_endpoint":
             score -= 10
+        if unauth_probe_summary and ("blocked=" in unauth_probe_summary or "login_wall=" in unauth_probe_summary):
+            score -= 6
 
         if unauth_access_type == "unauth_health_endpoint":
             focus_reason = "已观察到公开健康检查/信息端点，建议结合敏感管理面继续复核"
@@ -744,6 +748,8 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
             focus_reason = "已获得可复核证据（{}），建议工程师优先接手".format(proof_type)
         elif decision == "verified":
             focus_reason = "已获得较高置信验证结果，建议工程师优先接手"
+        elif unauth_probe_summary and ("blocked=" in unauth_probe_summary or "login_wall=" in unauth_probe_summary):
+            focus_reason = "已完成未授权复核，当前更多被鉴权拦截或登录墙阻断"
         elif proof_family == "unauth_access" and (unauth_access_reason or proof_summary):
             focus_reason = "已观察到无登录直访线索，适合作为未授权入口优先复核"
         elif proof_type and proof_summary:
@@ -770,6 +776,7 @@ def _build_ai_pen_engineer_focus_entries(rows, max_items: int = 10):
                 "proof_family": proof_family,
                 "unauth_access_type": unauth_access_type,
                 "unauth_access_reason": unauth_access_reason[:240],
+                "unauth_probe_summary": unauth_probe_summary[:240],
                 "verification_step": str(item.get("verification_step", "") or "").strip(),
                 "high_value_family": str(item.get("high_value_family", "") or "").strip(),
                 "request_template_mode": request_template_mode,
@@ -956,6 +963,7 @@ def _retry_records(result_docs):
                 "unauth_access_hit": bool(verify_result.get("unauth_access_hit")),
                 "unauth_access_type": str(verify_result.get("unauth_access_type", "") or "").strip(),
                 "unauth_access_reason": str(verify_result.get("unauth_access_reason", "") or "").strip(),
+                "unauth_probe_summary": str(verify_result.get("unauth_probe_summary", "") or "").strip(),
                 "proof_signals": (
                     list(verify_result.get("proof_signals", []) or [])[:8]
                     if isinstance(verify_result.get("proof_signals"), (list, tuple))
@@ -1287,6 +1295,7 @@ class StatsAiPenTest(ARLResource):
                     "unauth_access_hit": 1,
                     "unauth_access_type": 1,
                     "unauth_access_reason": 1,
+                    "unauth_probe_summary": 1,
                     "proof_signals": 1,
                     "proof_summary": 1,
                     "target": 1,

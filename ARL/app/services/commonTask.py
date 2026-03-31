@@ -10242,6 +10242,71 @@ class WebSiteFetch(object):
                 break
         return selected_targets
 
+    @classmethod
+    def _summarize_ai_pen_unauth_probe_responses(cls, response_items, target_url: str = ""):
+        summary = {
+            "probe_count": 0,
+            "success_count": 0,
+            "blocked_count": 0,
+            "login_wall_count": 0,
+            "health_like_count": 0,
+            "sample_urls": [],
+            "text": "",
+        }
+        seen_urls = set()
+        for response in list(response_items or []):
+            if not isinstance(response, dict):
+                continue
+            raw_url = str(response.get("url") or response.get("request_url") or target_url).strip()
+            if not cls._is_http_target(raw_url):
+                continue
+            try:
+                parsed = urlsplit(raw_url)
+                path_text = str(parsed.path or "/").strip() or "/"
+            except Exception:
+                path_text = raw_url
+            lowered_path = path_text.lower()
+            headers = dict(response.get("headers") or {}) if isinstance(response.get("headers"), dict) else {}
+            body_text = str(response.get("body_text") or "")
+            body_lower = body_text.strip().lower()
+            status_code = cls._safe_int_value(response.get("status_code"), 0)
+
+            summary["probe_count"] += 1
+            if status_code in cls.AI_PEN_SUCCESS_STATUS_SET:
+                summary["success_count"] += 1
+            if status_code in {401, 403}:
+                summary["blocked_count"] += 1
+            if any(token in lowered_path for token in cls.AI_PEN_UNAUTH_HEALTH_PATH_KEYWORDS):
+                summary["health_like_count"] += 1
+            elif lowered_path in {"/actuator", "/manage", "/management"} and "application/json" in str(headers.get("Content-Type") or headers.get("content-type") or "").lower():
+                summary["health_like_count"] += 1
+            if any(token in lowered_path for token in cls.AI_PEN_LOGIN_PATH_KEYWORDS):
+                summary["login_wall_count"] += 1
+            elif any(token in body_lower for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS) and not any(
+                token in body_lower for token in ("logout", "dashboard", "workbench", "console")
+            ):
+                summary["login_wall_count"] += 1
+
+            if raw_url not in seen_urls:
+                seen_urls.add(raw_url)
+                summary["sample_urls"].append(raw_url[:180])
+
+        parts = []
+        if summary["probe_count"]:
+            parts.append("targets={}".format(summary["probe_count"]))
+        if summary["success_count"]:
+            parts.append("success={}".format(summary["success_count"]))
+        if summary["blocked_count"]:
+            parts.append("blocked={}".format(summary["blocked_count"]))
+        if summary["login_wall_count"]:
+            parts.append("login_wall={}".format(summary["login_wall_count"]))
+        if summary["health_like_count"]:
+            parts.append("health_like={}".format(summary["health_like_count"]))
+        if summary["sample_urls"]:
+            parts.append("sample={}".format(",".join(summary["sample_urls"][:2])))
+        summary["text"] = " | ".join(parts[:6]).strip()
+        return summary
+
     @staticmethod
     def _extract_runtime_api_paths(runtime_api_calls):
         results = []
@@ -16586,6 +16651,7 @@ class WebSiteFetch(object):
             unauth_access_hit = False
             unauth_access_type = ""
             unauth_access_reason = ""
+            unauth_probe_summary = {}
             if not bool(session_auth_hit) and not bool(weak_password_login_proof):
                 unauth_access_ret = self._analyze_ai_pen_unauth_access(
                     target_url=probe_url or target_url,
@@ -16605,6 +16671,10 @@ class WebSiteFetch(object):
                     probe_headers = dict(unauth_access_ret.get("matched_headers") or {})
                 probe_body_excerpt = str(unauth_access_ret.get("matched_body_text", "") or "") or probe_body_excerpt
                 probe_body_md5 = str(unauth_access_ret.get("matched_body_md5", "") or "") or probe_body_md5
+                unauth_probe_summary = self._summarize_ai_pen_unauth_probe_responses(
+                    unauth_probe_responses,
+                    target_url=target_url,
+                )
 
             if is_xss_case and xss_popup_proof:
                 decision = "verified"
@@ -16788,6 +16858,27 @@ class WebSiteFetch(object):
                 else:
                     confidence = 0.84
                 reason = unauth_access_reason or "高价值入口未观察到鉴权拦截，疑似可未授权直接访问"
+            elif payload_type == "replay" and self._safe_int_value(unauth_probe_summary.get("probe_count"), 0) > 0:
+                blocked_count = self._safe_int_value(unauth_probe_summary.get("blocked_count"), 0)
+                login_wall_count = self._safe_int_value(unauth_probe_summary.get("login_wall_count"), 0)
+                health_like_count = self._safe_int_value(unauth_probe_summary.get("health_like_count"), 0)
+                success_count = self._safe_int_value(unauth_probe_summary.get("success_count"), 0)
+                probe_count = self._safe_int_value(unauth_probe_summary.get("probe_count"), 0)
+                if blocked_count > 0 or login_wall_count > 0:
+                    decision = "likely_false_positive"
+                    confidence = 0.64 if (blocked_count + login_wall_count) >= 2 else 0.60
+                    reason = "已复核 {} 个高价值未授权目标".format(probe_count)
+                    if blocked_count > 0:
+                        reason = "{}，{} 个被鉴权拦截".format(reason, blocked_count)
+                    if login_wall_count > 0:
+                        reason = "{}，{} 个回到登录页/登录墙".format(reason, login_wall_count)
+                    reason = "{}，当前不判定为未授权入口".format(reason)
+                elif success_count > 0 and health_like_count >= success_count:
+                    decision = "needs_manual_review"
+                    confidence = 0.58
+                    reason = "已复核 {} 个高价值未授权目标，当前返回多为健康检查/信息端点，建议结合更高价值管理面继续复核".format(
+                        probe_count
+                    )
             elif payload_reflect_hit:
                 decision = "needs_manual_review"
                 confidence = 0.74
@@ -17112,7 +17203,7 @@ class WebSiteFetch(object):
                 "task_id:{} ai_pen verify done target:{} payload_type:{} payload_variant:{} decision:{} confidence:{:.4f} step:{} http_status:{} "
                 "tool_calls:{} idor_probe_count:{} api_doc_probe_count:{} config_probe_count:{} path_traversal_probe_count:{} "
                 "web_policy_probe_count:{} socketio_probe_count:{} external_hit:{} stop_reason:{} tool_plan_source:{} "
-                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} request_template:{} proof:{} reason:{}".format(
+                "login_success:{} session_auth:{} logout:{} websocket_hit:{} websocket_hint:{} session:{} request_template:{} proof:{} unauth_probe:{} reason:{}".format(
                     self.task_id,
                     target_url[:180],
                     payload_type,
@@ -17139,6 +17230,7 @@ class WebSiteFetch(object):
                     self._format_ai_pen_session_summary_text(session_summary),
                     self._clip_text(str(request_template_preview.get("summary") or "-"), 180),
                     self._clip_text(proof_summary_obj.get("summary", "") or "-", 220),
+                    self._clip_text(str(unauth_probe_summary.get("text") or "-"), 180),
                     self._clip_text(reason, 220),
                 )
             )
@@ -17184,6 +17276,7 @@ class WebSiteFetch(object):
                 "unauth_access_hit": unauth_access_hit,
                 "unauth_access_type": unauth_access_type,
                 "unauth_access_reason": unauth_access_reason,
+                "unauth_probe_summary": str(unauth_probe_summary.get("text") or "").strip(),
                 "idor_diff_hit": idor_diff_hit,
                 "idor_diff_summary": idor_diff_summary if isinstance(idor_diff_summary, dict) else {},
                 "jwt_weak_secret": jwt_weak_secret,
@@ -17652,6 +17745,7 @@ class WebSiteFetch(object):
                 "unauth_access_hit": bool(verify_result.get("unauth_access_hit")),
                 "unauth_access_type": str(verify_result.get("unauth_access_type", "") or "").strip(),
                 "unauth_access_reason": str(verify_result.get("unauth_access_reason", "") or "").strip(),
+                "unauth_probe_summary": str(verify_result.get("unauth_probe_summary", "") or "").strip(),
                 "api_doc_summary": dict(verify_result.get("api_doc_summary") or {}) if isinstance(verify_result.get("api_doc_summary"), dict) else {},
                 "api_surface_summary": dict(verify_result.get("api_surface_summary") or {}) if isinstance(verify_result.get("api_surface_summary"), dict) else {},
                 "browser_surface_summary": dict(verify_result.get("browser_surface_summary") or {}) if isinstance(verify_result.get("browser_surface_summary"), dict) else {},

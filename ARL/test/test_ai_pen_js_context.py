@@ -2550,6 +2550,40 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(any("/actuator" in item or "/manage" in item for item in urls))
         self.assertIn("unauth_health_endpoint", proof_types)
 
+    def test_summarize_ai_pen_unauth_probe_responses_tracks_blocked_and_login_wall(self):
+        summary = WebSiteFetch._summarize_ai_pen_unauth_probe_responses(
+            [
+                {
+                    "tool": "http_fetch",
+                    "url": "https://example.com/admin/dashboard",
+                    "status_code": 401,
+                    "headers": {"Content-Type": "text/html"},
+                    "body_text": "unauthorized",
+                },
+                {
+                    "tool": "http_fetch",
+                    "url": "https://example.com/login",
+                    "status_code": 200,
+                    "headers": {"Content-Type": "text/html"},
+                    "body_text": "<html><body>login password username</body></html>",
+                },
+                {
+                    "tool": "http_fetch",
+                    "url": "https://example.com/actuator/health",
+                    "status_code": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body_text": '{"status":"UP"}',
+                },
+            ],
+            target_url="https://example.com/",
+        )
+
+        self.assertEqual(3, summary.get("probe_count"))
+        self.assertEqual(1, summary.get("blocked_count"))
+        self.assertEqual(1, summary.get("login_wall_count"))
+        self.assertEqual(1, summary.get("health_like_count"))
+        self.assertIn("blocked=1", str(summary.get("text") or ""))
+
     def test_infer_tool_plan_for_replay_prefers_unauth_http_fetch_targets(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(
             candidate={

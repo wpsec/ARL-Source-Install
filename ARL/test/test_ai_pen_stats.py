@@ -465,6 +465,30 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual("unauth_health_endpoint", entries[0]["unauth_access_type"])
         self.assertIn("健康检查/信息端点", entries[0]["focus_reason"])
 
+    def test_build_ai_pen_engineer_focus_entries_surfaces_unauth_probe_summary(self):
+        entries = ai_pen_test_module._build_ai_pen_engineer_focus_entries(
+            [
+                {
+                    "_id": "u3",
+                    "target": "https://example.com/",
+                    "vuln_url": "https://example.com/",
+                    "risk_type": "sensitive_info",
+                    "risk_name": "未授权入口复核",
+                    "payload_type": "replay",
+                    "verification_step": "http_fetch_replay",
+                    "decision": "likely_false_positive",
+                    "status": "ok",
+                    "confidence": 0.64,
+                    "http_status": 200,
+                    "unauth_probe_summary": "targets=4 | blocked=2 | login_wall=1 | sample=https://example.com/admin",
+                    "reason": "已复核 4 个高价值未授权目标，2 个被鉴权拦截，1 个回到登录页/登录墙，当前不判定为未授权入口",
+                }
+            ]
+        )
+
+        self.assertIn("鉴权拦截", entries[0]["focus_reason"])
+        self.assertIn("blocked=2", entries[0]["unauth_probe_summary"])
+
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
             {
