@@ -1325,6 +1325,16 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(any(item.endswith("/.well-known/openid-configuration") for item in targets))
         self.assertTrue(any(item.endswith("/oauth/token") for item in targets))
 
+    def test_build_auth_protocol_probe_steps_sets_post_for_token_endpoint(self):
+        steps = WebSiteFetch._build_auth_protocol_probe_steps(
+            "https://example.com/oauth/token",
+            max_count=4,
+        )
+
+        token_step = next((item for item in steps if "/oauth/token" in str(item.get("url", "") or "")), {})
+        self.assertEqual("post", str(token_step.get("method") or ""))
+        self.assertTrue(bool(token_step.get("form_data")))
+
     def test_looks_like_auth_protocol_response_detects_openid_configuration(self):
         body = json.dumps(
             {
@@ -1379,6 +1389,18 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("verified", outcome.get("decision"))
         self.assertIn("令牌字段", str(outcome.get("reason", "")))
+
+    def test_classify_auth_protocol_outcome_for_invalid_client_returns_likely_fp(self):
+        outcome = WebSiteFetch._classify_ai_pen_auth_protocol_outcome(
+            auth_url="https://example.com/oauth/token",
+            status_code=400,
+            headers={"Content-Type": "application/json"},
+            body_text='{"error":"invalid_client"}',
+            summary={"mode": "token_endpoint"},
+        )
+
+        self.assertEqual("likely_false_positive", outcome.get("decision"))
+        self.assertIn("鉴权生效", str(outcome.get("reason", "")))
 
     def test_infer_tool_plan_for_weak_password_uses_session_chain(self):
         plan = WebSiteFetch._infer_ai_pen_tool_plan(

@@ -6196,6 +6196,57 @@ class WebSiteFetch(object):
         except Exception:
             return []
 
+    @classmethod
+    def _build_auth_protocol_probe_steps(cls, target_url: str, max_count=4):
+        targets = cls._build_auth_protocol_probe_targets(target_url, max_count=max(2, int(max_count or 1) * 2))
+        steps = []
+        seen = set()
+        for auth_url in targets:
+            url_text = str(auth_url or "").strip()
+            if not url_text:
+                continue
+            lower_url = url_text.lower()
+            step = {
+                "url": url_text,
+                "method": "get",
+                "allow_redirects": True,
+            }
+            if any(token in lower_url for token in ("/oauth/token", "/oauth2/token", "/connect/token")):
+                step["method"] = "post"
+                step["headers"] = {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json, */*;q=0.8",
+                }
+                step["form_data"] = {
+                    "grant_type": "client_credentials",
+                    "client_id": "arl_probe",
+                    "client_secret": "arl_probe",
+                }
+            elif any(token in lower_url for token in ("/oauth/introspect", "/oauth2/introspect")):
+                step["method"] = "post"
+                step["headers"] = {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json, */*;q=0.8",
+                }
+                step["form_data"] = {
+                    "token": "arl_probe",
+                }
+            elif "/userinfo" in lower_url:
+                step["method"] = "get"
+                step["headers"] = {
+                    "Authorization": "Bearer arl_probe",
+                    "Accept": "application/json, */*;q=0.8",
+                }
+
+            cache_key = json.dumps(step, ensure_ascii=False, sort_keys=True)
+            if cache_key in seen:
+                continue
+            seen.add(cache_key)
+            steps.append(step)
+            if len(steps) >= max(1, int(max_count or 1)):
+                break
+        return steps
+
     @staticmethod
     def _looks_like_auth_protocol_response(url_text: str, body_text: str, headers=None):
         url_lower = str(url_text or "").strip().lower()
@@ -6458,6 +6509,7 @@ class WebSiteFetch(object):
         mode_text = str(summary_obj.get("mode") or "").strip().lower()
         header_obj = headers if isinstance(headers, dict) else {}
         content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        www_auth = str(header_obj.get("WWW-Authenticate", "") or "").strip().lower()
         body_lower = str(body_text or "").strip().lower()
         success_like = cls._is_ai_pen_success_status(status)
 
@@ -6494,6 +6546,24 @@ class WebSiteFetch(object):
             if protocol_summary_text:
                 reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
             return {"decision": "likely_false_positive", "confidence": 0.66, "reason": reason}
+
+        auth_error_markers = (
+            "invalid_client",
+            "invalid_grant",
+            "invalid_token",
+            "unauthorized_client",
+            "unsupported_grant_type",
+            "invalid_request",
+            "insufficient_scope",
+        )
+        if token_endpoint_like and status in {400, 405} and (
+            any(token in body_lower for token in auth_error_markers)
+            or any(token in www_auth for token in ("invalid_token", "bearer", "insufficient_scope"))
+        ):
+            reason = "认证协议端点返回标准鉴权错误（{}），当前更像鉴权生效而非漏洞".format(status)
+            if protocol_summary_text:
+                reason = "{}；协议摘要：{}".format(reason, protocol_summary_text)
+            return {"decision": "likely_false_positive", "confidence": 0.68, "reason": reason}
 
         if success_like and sensitive_markers:
             reason = "认证协议响应中包含敏感字段（{}），疑似存在凭据泄露".format(",".join(sensitive_markers[:3]))
@@ -8827,18 +8897,23 @@ class WebSiteFetch(object):
                     "summary": "复测 JWT 鉴权入口",
                 }
             )
-            for auth_url in cls._build_auth_protocol_probe_targets(target_url, max_count=max_steps):
-                auth_url_text = str(auth_url or "").strip()
-                if not auth_url_text or auth_url_text == target_url:
+            for auth_step in cls._build_auth_protocol_probe_steps(target_url, max_count=max_steps):
+                auth_url_text = str(auth_step.get("url") or "").strip()
+                if not auth_url_text:
                     continue
+                params_obj = {
+                    "url": auth_url_text,
+                    "method": str(auth_step.get("method") or "get").strip().lower() or "get",
+                    "allow_redirects": bool(auth_step.get("allow_redirects", True)),
+                }
+                if isinstance(auth_step.get("headers"), dict) and auth_step.get("headers"):
+                    params_obj["headers"] = dict(auth_step.get("headers") or {})
+                if isinstance(auth_step.get("form_data"), dict) and auth_step.get("form_data"):
+                    params_obj["form_data"] = dict(auth_step.get("form_data") or {})
                 plan.append(
                     {
                         "tool": "jwt_probe",
-                        "params": {
-                            "url": auth_url_text,
-                            "method": "get",
-                            "allow_redirects": True,
-                        },
+                        "params": params_obj,
                         "summary": "探测 OAuth/OIDC 协议端点",
                     }
                 )
@@ -9099,18 +9174,23 @@ class WebSiteFetch(object):
                     "summary": "fallback JWT 鉴权入口复测",
                 }
             )
-            for auth_url in cls._build_auth_protocol_probe_targets(url_text, max_count=max_steps):
-                auth_url_text = str(auth_url or "").strip()
-                if not auth_url_text or auth_url_text == url_text:
+            for auth_step in cls._build_auth_protocol_probe_steps(url_text, max_count=max_steps):
+                auth_url_text = str(auth_step.get("url") or "").strip()
+                if not auth_url_text:
                     continue
+                params_obj = {
+                    "url": auth_url_text,
+                    "method": str(auth_step.get("method") or "get").strip().lower() or "get",
+                    "allow_redirects": bool(auth_step.get("allow_redirects", True)),
+                }
+                if isinstance(auth_step.get("headers"), dict) and auth_step.get("headers"):
+                    params_obj["headers"] = dict(auth_step.get("headers") or {})
+                if isinstance(auth_step.get("form_data"), dict) and auth_step.get("form_data"):
+                    params_obj["form_data"] = dict(auth_step.get("form_data") or {})
                 plan.append(
                     {
                         "tool": "jwt_probe",
-                        "params": {
-                            "url": auth_url_text,
-                            "method": "get",
-                            "allow_redirects": True,
-                        },
+                        "params": params_obj,
                         "summary": "fallback OAuth/OIDC 协议端点探测",
                     }
                 )
