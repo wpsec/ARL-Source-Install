@@ -202,6 +202,40 @@ class TestAiPenMcpRuntime(unittest.TestCase):
         self.assertEqual(2, len(result.get("tool_calls", [])))
         self.assertEqual("needs_manual_review", result.get("final_output", {}).get("decision"))
 
+    def test_runtime_invoke_skips_duplicate_semantic_tool_call(self):
+        runtime = AiPenMcpRuntime(max_turns=4, max_tool_calls=4, timeout_sec=12)
+        seen = {"count": 0}
+
+        def _http_fetch(_ctx, params):
+            seen["count"] += 1
+            return {"status": "ok", "message": "fetched", "url": params.get("url")}
+
+        runtime.register_tool(
+            ToolSchema(
+                name="http_fetch",
+                description="获取目标响应",
+                input_schema={"type": "object"},
+                execute=_http_fetch,
+            )
+        )
+
+        first = runtime.invoke(
+            tool_name="http_fetch",
+            params={"url": "https://example.com", "method": "get"},
+            summary="获取基线响应",
+        )
+        second = runtime.invoke(
+            tool_name="http_fetch",
+            params={"url": "https://example.com", "method": "get"},
+            summary="相同请求但不同文案",
+        )
+
+        self.assertEqual("ok", first.get("status"))
+        self.assertEqual("skipped", second.get("status"))
+        self.assertEqual(1, seen["count"])
+        self.assertEqual(1, len(runtime.tool_calls))
+        self.assertEqual(2, len(runtime.tool_results))
+
 
 if __name__ == "__main__":
     unittest.main()

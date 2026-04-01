@@ -1807,40 +1807,11 @@ class StatsAiPenTest(ARLResource):
         query = {"task_id": task_id} if task_id else {}
 
         collection = utils.conn_db("ai_pen_test_result")
-        total = int(collection.count_documents(query))
-
-        def _agg_group(field_name):
-            pipeline = []
-            if query:
-                pipeline.append({"$match": query})
-            pipeline.extend(
-                [
-                    {"$group": {"_id": {"$ifNull": ["${}".format(field_name), ""]}, "count": {"$sum": 1}}},
-                    {"$sort": {"count": -1}},
-                ]
-            )
-            rows = list(collection.aggregate(pipeline))
-            return [{"name": str(item.get("_id") or ""), "count": int(item.get("count") or 0)} for item in rows]
-
-        decision = _agg_group("decision")
-        status = _agg_group("status")
-        source_collection = _agg_group("source_collection")
-        risk_type = _agg_group("risk_type")
-        verification_step = _agg_group("verification_step")
-        high_value_family = _agg_group("high_value_family")
-        payload_variant = _agg_group("payload_variant")
-        proof_type = _agg_group("proof_type")
-        proof_strength = _agg_group("proof_strength")
-        decision_guard_action = _agg_group("decision_guard_action")
-        unauth_access_type = _agg_group("unauth_access_type")
-        unauth_negative_type = _agg_group("unauth_negative_type")
-        request_template_mode = _agg_group("request_template_mode")
-        tool_plan_source = _agg_group("tool_plan_source")
-        stop_reason = _agg_group("stop_reason")
         metric_rows = list(
             collection.find(
                 query,
                 {
+                    "source_collection": 1,
                     "decision": 1,
                     "status": 1,
                     "risk_type": 1,
@@ -1859,6 +1830,8 @@ class StatsAiPenTest(ARLResource):
                     "proof_family": 1,
                     "proof_type": 1,
                     "proof_strength": 1,
+                    "tool_plan_source": 1,
+                    "stop_reason": 1,
                     "unauth_access_hit": 1,
                     "unauth_access_type": 1,
                     "unauth_access_reason": 1,
@@ -1883,6 +1856,7 @@ class StatsAiPenTest(ARLResource):
                 },
             )
         )
+        total = len(metric_rows)
         for item in metric_rows:
             if not isinstance(item, dict):
                 continue
@@ -1899,6 +1873,21 @@ class StatsAiPenTest(ARLResource):
                 )
             if not str(item.get("unauth_access_type", "") or "").strip() and str(item.get("proof_family", "") or "").strip() == "unauth_access":
                 item["unauth_access_type"] = str(item.get("proof_type", "") or "").strip()
+        decision = _build_ai_pen_group_counts(metric_rows, "decision")
+        status = _build_ai_pen_group_counts(metric_rows, "status")
+        source_collection = _build_ai_pen_group_counts(metric_rows, "source_collection")
+        risk_type = _build_ai_pen_group_counts(metric_rows, "risk_type")
+        verification_step = _build_ai_pen_group_counts(metric_rows, "verification_step")
+        high_value_family = _build_ai_pen_group_counts(metric_rows, "high_value_family")
+        payload_variant = _build_ai_pen_group_counts(metric_rows, "payload_variant")
+        proof_type = _build_ai_pen_group_counts(metric_rows, "proof_type")
+        proof_strength = _build_ai_pen_group_counts(metric_rows, "proof_strength")
+        decision_guard_action = _build_ai_pen_group_counts(metric_rows, "decision_guard_action")
+        unauth_access_type = _build_ai_pen_group_counts(metric_rows, "unauth_access_type")
+        unauth_negative_type = _build_ai_pen_group_counts(metric_rows, "unauth_negative_type")
+        request_template_mode = _build_ai_pen_group_counts(metric_rows, "request_template_mode")
+        tool_plan_source = _build_ai_pen_group_counts(metric_rows, "tool_plan_source")
+        stop_reason = _build_ai_pen_group_counts(metric_rows, "stop_reason")
         quant_metrics = _build_ai_pen_quant_metrics(metric_rows, total=total)
         capability_benchmarks = {
             "risk_type": _build_ai_pen_group_benchmarks(metric_rows, "risk_type"),

@@ -163,6 +163,22 @@ class _FakeCollection(object):
         return list(self._match_rows(query))
 
 
+class _FindOnlyCollection(object):
+    def __init__(self, rows):
+        self.rows = list(rows or [])
+
+    def find(self, query, _projection=None):
+        if not isinstance(query, dict) or not query:
+            return list(self.rows)
+        matched = []
+        for item in self.rows:
+            if not isinstance(item, dict):
+                continue
+            if all(item.get(key) == value for key, value in query.items()):
+                matched.append(item)
+        return matched
+
+
 class TestAiPenStats(unittest.TestCase):
     def test_build_ai_pen_quant_metrics_calculates_phase_f_indicators(self):
         metrics = ai_pen_test_module._build_ai_pen_quant_metrics(
@@ -1005,6 +1021,49 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(2, data["minimal_baseline_summary"]["summary"]["passed_count"])
         self.assertTrue(any(item.get("id") == "unauth_admin_positive" and item.get("status") == "passed" for item in data["minimal_baseline_summary"]["cases"]))
         self.assertTrue(any(item.get("id") == "jwt_none_positive" and item.get("status") == "missing" for item in data["minimal_baseline_summary"]["cases"]))
+
+    def test_stats_route_can_build_summary_from_find_only_collection(self):
+        rows = [
+            {
+                "_id": "s1",
+                "task_id": "507f1f77bcf86cd799439011",
+                "source_collection": "url",
+                "decision": "verified",
+                "status": "ok",
+                "risk_type": "api_doc",
+                "payload_type": "api_doc_probe",
+                "payload_variant": "openapi_fetch",
+                "verification_step": "mcp_api_doc_probe",
+                "high_value_family": "api_doc_surface",
+                "proof_family": "surface_exposure",
+                "proof_type": "api_schema_exposed",
+                "proof_strength": "medium",
+                "request_template_mode": "json_data",
+                "tool_plan_source": "inferred",
+                "stop_reason": "final_decision",
+                "budget_used": {"turns": 2, "tool_calls": 1},
+                "target": "https://example.com/openapi.json",
+                "vuln_url": "https://example.com/openapi.json",
+                "risk_name": "OpenAPI 暴露",
+                "confidence": 0.88,
+                "http_status": 200,
+                "proof_signals": ["openapi_paths"],
+                "proof_summary": "proof=api_schema_exposed | family=surface_exposure",
+            }
+        ]
+
+        ai_pen_test_module.utils.conn_db = lambda _name: _FindOnlyCollection(rows)
+        ai_pen_test_module.StatsAiPenTest.parser = types.SimpleNamespace(
+            parse_args=lambda: {"task_id": "507f1f77bcf86cd799439011"}
+        )
+
+        response = ai_pen_test_module.StatsAiPenTest().get()
+        data = response["data"]
+
+        self.assertEqual(1, data["total"])
+        self.assertTrue(any(item.get("name") == "verified" for item in data["decision"]))
+        self.assertTrue(any(item.get("name") == "surface_exposure" for item in data["proof_family"]))
+        self.assertTrue(any(item.get("name") == "inferred" for item in data["tool_plan_source"]))
 
 
 if __name__ == "__main__":

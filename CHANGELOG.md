@@ -5,6 +5,8 @@
 
 ## 2026-04-01（v4.5.10 ~ v4.5.64）
 
+- `[v4.5.65]` AI渗透 `性能与误报治理` 第一轮收敛：`/ai_pen_test/stats/` 改为单次 `find()` 取数后本地汇总，去掉多轮 Mongo `_agg_group()` 聚合与额外计数，降低任务级统计压力；验证链同步收紧“仅命中证据片段即 verified”的 broad 裁决，AI/Agent 不再仅凭高置信直接把 `needs_manual_review` 抬成 `verified`，必须满足结构化硬证据门槛。与此同时，未授权分析新增 `Actuator` 敏感端点白名单与“与基线页相同响应”降噪，runtime 侧新增同轮工具调用语义去重，减少重复探针请求并继续压低 `unauth` 与泛化入口误报
+
 - `[v4.5.64]` AI渗透 `最小基线` 工作台与后端摘要落地：`/ai_pen_test/stats/` 新增 `minimal_baseline_summary`，会按第一版 10 个最小正负样例输出 `passed/partial/failed/missing`、`pass_rate`、`top_gaps` 与 `recommended_action`，让系统开始直接回答“离最小基线还差哪些”；前台 `AI渗透测试` 工作台同步新增“最小基线概览/最小基线缺口”区块，可直接查看通过数、缺样本数、当前最关键缺口与建议动作，把阶段 F 从“只有统计口径”推进到“已有可消费的基线视图”
 
 - `[v4.5.63]` AI渗透版本口径同步：对齐 `version.txt` 自动递增后的版本号，统一修正 `CHANGELOG` 与 `AI渗透测试MCP总体方案` 的同步版本，避免版本文件、日志与方案说明出现错位

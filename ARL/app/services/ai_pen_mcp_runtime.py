@@ -8,6 +8,7 @@ AI 渗透 MCP Runtime（P0 最小可用版）
 """
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -63,6 +64,7 @@ class AiPenMcpRuntime:
         self.final_output: Dict[str, Any] = {}
         self.turn_count: int = 0
         self._started_at = time.perf_counter()
+        self._tool_fingerprint_seen = set()
 
     def register_tool(self, schema: ToolSchema):
         name = str(schema.name or "").strip()
@@ -72,6 +74,28 @@ class AiPenMcpRuntime:
 
     def list_tools(self) -> List[str]:
         return list(self._registry.keys())
+
+    @staticmethod
+    def _build_tool_call_fingerprint(tool_name: str, params: Optional[Dict[str, Any]] = None) -> str:
+        params_obj = params if isinstance(params, dict) else {}
+        normalized = {
+            "tool": str(tool_name or "").strip(),
+            "url": str(params_obj.get("url") or "").strip(),
+            "method": str(params_obj.get("method") or "").strip().lower(),
+            "allow_redirects": bool(params_obj.get("allow_redirects")) if isinstance(params_obj.get("allow_redirects"), bool) else "",
+            "session_key": str(params_obj.get("session_key") or "").strip(),
+            "prepare_url": str(params_obj.get("prepare_url") or "").strip(),
+            "login_url": str(params_obj.get("login_url") or "").strip(),
+            "headers": dict(params_obj.get("headers") or {}) if isinstance(params_obj.get("headers"), dict) else {},
+            "cookies": dict(params_obj.get("cookies") or {}) if isinstance(params_obj.get("cookies"), dict) else {},
+            "form_data": dict(params_obj.get("form_data") or {}) if isinstance(params_obj.get("form_data"), dict) else {},
+            "json_data": dict(params_obj.get("json_data") or {}) if isinstance(params_obj.get("json_data"), dict) else {},
+            "body_data": str(params_obj.get("body_data") or ""),
+            "file_field": str(params_obj.get("file_field") or "").strip(),
+            "file_name": str(params_obj.get("file_name") or "").strip(),
+            "file_content_type": str(params_obj.get("file_content_type") or "").strip(),
+        }
+        return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
 
     def invoke(
         self,
@@ -87,7 +111,28 @@ class AiPenMcpRuntime:
         params_obj = params if isinstance(params, dict) else {}
         context_obj = context if isinstance(context, dict) else {}
         summary_text = str(summary or "").strip()
-        turn_id = len(self.tool_calls) + 1
+        turn_id = max(len(self.tool_calls), len(self.tool_results)) + 1
+
+        fingerprint = self._build_tool_call_fingerprint(tool_text, params_obj)
+        if fingerprint and fingerprint in self._tool_fingerprint_seen:
+            result_item = {
+                "turn": turn_id,
+                "tool": tool_text,
+                "status": "skipped",
+                "message": "duplicate_tool_call_skipped",
+                "result": {},
+            }
+            self.tool_results.append(result_item)
+            self.agent_trace.append(
+                {
+                    "turn": turn_id,
+                    "action": "tool_call",
+                    "tool": tool_text,
+                    "status": "skipped",
+                    "summary": summary_text or "重复工具调用已跳过",
+                }
+            )
+            return result_item
 
         call_item = {
             "turn": turn_id,
@@ -95,6 +140,8 @@ class AiPenMcpRuntime:
             "params": params_obj,
         }
         self.tool_calls.append(call_item)
+        if fingerprint:
+            self._tool_fingerprint_seen.add(fingerprint)
 
         if len(self.tool_calls) > self.max_tool_calls:
             self.stop_reason = "budget_exhausted"

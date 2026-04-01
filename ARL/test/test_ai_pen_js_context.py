@@ -1717,6 +1717,19 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(result.get("hit")))
         self.assertEqual("unauth_actuator_surface", result.get("proof_type"))
 
+    def test_analyze_ai_pen_unauth_access_does_not_overmatch_generic_actuator_root(self):
+        result = WebSiteFetch._analyze_ai_pen_unauth_access(
+            target_url="https://example.com/actuator",
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body_text='{"_links":{"self":{"href":"https://example.com/actuator"}}}',
+            high_value_family="config_exposure_surface",
+            payload_type="replay",
+        )
+
+        self.assertFalse(bool(result.get("hit")))
+        self.assertEqual("", str(result.get("proof_type") or ""))
+
     def test_analyze_ai_pen_unauth_access_downgrades_health_endpoint_type(self):
         result = WebSiteFetch._analyze_ai_pen_unauth_access(
             target_url="https://example.com/actuator/health",
@@ -1766,6 +1779,29 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertTrue(bool(result.get("hit")))
         self.assertEqual("unauth_profile_data", result.get("proof_type"))
         self.assertEqual("https://example.com/api/account/current", result.get("matched_url"))
+
+    def test_analyze_ai_pen_unauth_access_skips_response_same_as_baseline(self):
+        result = WebSiteFetch._analyze_ai_pen_unauth_access(
+            target_url="https://example.com/",
+            high_value_family="admin_debug_surface",
+            payload_type="replay",
+            baseline_url="https://example.com/",
+            baseline_body_text="<html><body>console dashboard menu</body></html>",
+            baseline_body_md5="same-md5",
+            response_items=[
+                {
+                    "tool": "http_fetch",
+                    "url": "https://example.com/admin/dashboard",
+                    "status_code": 200,
+                    "headers": {"Content-Type": "text/html"},
+                    "body_text": "<html><body>console dashboard menu</body></html>",
+                    "body_md5": "same-md5",
+                },
+            ],
+        )
+
+        self.assertFalse(bool(result.get("hit")))
+        self.assertEqual("", str(result.get("proof_type") or ""))
 
     def test_apply_ai_pen_decision_guard_downgrades_health_only_verified(self):
         result = WebSiteFetch._apply_ai_pen_decision_guard(
@@ -1819,6 +1855,27 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("needs_manual_review", result.get("decision"))
         self.assertEqual("boost_multi_hit", result.get("decision_guard_action"))
         self.assertGreaterEqual(float(result.get("confidence") or 0.0), 0.82)
+
+    def test_has_ai_pen_hard_verified_evidence_requires_real_structured_signals(self):
+        self.assertFalse(
+            WebSiteFetch._has_ai_pen_hard_verified_evidence(
+                unauth_access_hit=True,
+                unauth_access_type="unauth_health_endpoint",
+                unauth_negative_type="health_only",
+            )
+        )
+        self.assertTrue(
+            WebSiteFetch._has_ai_pen_hard_verified_evidence(
+                sqli_proof_type="error_based",
+            )
+        )
+        self.assertTrue(
+            WebSiteFetch._has_ai_pen_hard_verified_evidence(
+                unauth_access_hit=True,
+                unauth_access_type="unauth_profile_data",
+                unauth_negative_type="",
+            )
+        )
 
     def test_build_ai_pen_login_followup_targets_prefers_session_and_logout_paths(self):
         targets = WebSiteFetch._build_ai_pen_login_followup_targets(

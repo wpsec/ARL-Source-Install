@@ -283,6 +283,44 @@ class WebSiteFetch(object):
         "/management",
         "/monitor",
     )
+    AI_PEN_UNAUTH_ACTUATOR_SENSITIVE_PATH_KEYWORDS = (
+        "/actuator/env",
+        "/api/actuator/env",
+        "/manage/env",
+        "/management/env",
+        "/actuator/configprops",
+        "/api/actuator/configprops",
+        "/manage/configprops",
+        "/management/configprops",
+        "/actuator/beans",
+        "/api/actuator/beans",
+        "/manage/beans",
+        "/management/beans",
+        "/actuator/mappings",
+        "/api/actuator/mappings",
+        "/manage/mappings",
+        "/management/mappings",
+        "/actuator/conditions",
+        "/api/actuator/conditions",
+        "/manage/conditions",
+        "/management/conditions",
+        "/actuator/loggers",
+        "/api/actuator/loggers",
+        "/manage/loggers",
+        "/management/loggers",
+        "/actuator/heapdump",
+        "/manage/heapdump",
+        "/management/heapdump",
+        "/actuator/threaddump",
+        "/manage/threaddump",
+        "/management/threaddump",
+        "/actuator/prometheus",
+        "/manage/prometheus",
+        "/management/prometheus",
+        "/actuator/metrics",
+        "/manage/metrics",
+        "/management/metrics",
+    )
     AI_PEN_UNAUTH_HEALTH_PATH_KEYWORDS = (
         "/actuator/health",
         "/api/actuator/health",
@@ -9871,7 +9909,26 @@ class WebSiteFetch(object):
         high_value_family: str = "",
         payload_type: str = "",
         response_items=None,
+        baseline_url: str = "",
+        baseline_body_text: str = "",
+        baseline_body_md5: str = "",
     ):
+        def _normalize_body_sample(raw_text: str) -> str:
+            return re.sub(r"\s+", " ", str(raw_text or "").strip().lower())[:400]
+
+        def _same_as_baseline(url_value: str, body_value: str = "", body_md5: str = "") -> bool:
+            current_url = str(url_value or "").strip()
+            base_url = str(baseline_url or "").strip()
+            if (not current_url) or (not base_url) or current_url == base_url:
+                return False
+            current_md5 = str(body_md5 or "").strip().lower()
+            base_md5 = str(baseline_body_md5 or "").strip().lower()
+            if current_md5 and base_md5 and current_md5 == base_md5:
+                return True
+            current_sample = _normalize_body_sample(body_value)
+            base_sample = _normalize_body_sample(baseline_body_text)
+            return bool(current_sample and base_sample and current_sample == base_sample)
+
         def _analyze_single(url_value: str, status_value=0, header_map=None, body_value: str = ""):
             url_text = str(url_value or "").strip()
             if not cls._is_http_target(url_text):
@@ -9907,6 +9964,9 @@ class WebSiteFetch(object):
             admin_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_ADMIN_PATH_KEYWORDS)
             management_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_MANAGEMENT_PATH_KEYWORDS)
             actuator_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_ACTUATOR_PATH_KEYWORDS)
+            actuator_sensitive_path_hit = any(
+                token in path_text for token in cls.AI_PEN_UNAUTH_ACTUATOR_SENSITIVE_PATH_KEYWORDS
+            )
             health_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_HEALTH_PATH_KEYWORDS)
             profile_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_PROFILE_PATH_KEYWORDS)
             actuator_hits = [
@@ -9925,6 +9985,9 @@ class WebSiteFetch(object):
                 )
                 if token in body_lower
             ][:4]
+            strong_actuator_hits = [
+                token for token in actuator_hits if token not in {"health", "status", "components", "diskspace"}
+            ][:4]
             health_body_hit = (
                 ("application/json" in content_type or "text/plain" in content_type)
                 and any(token in body_lower for token in ('"status"', '"up"', '"down"', '"version"', '"build"'))
@@ -9940,10 +10003,10 @@ class WebSiteFetch(object):
                     "reason": reason,
                 }
 
-            if actuator_path_hit and ("application/json" in content_type or actuator_hits):
+            if actuator_path_hit and (actuator_sensitive_path_hit or strong_actuator_hits):
                 reason = "Actuator/管理端点返回成功状态并出现诊断语义，疑似可未授权直接访问"
-                if actuator_hits:
-                    reason = "{}（信号：{}）".format(reason, ",".join(actuator_hits[:3]))
+                if strong_actuator_hits:
+                    reason = "{}（信号：{}）".format(reason, ",".join(strong_actuator_hits[:3]))
                 if path_text:
                     reason = "{}（{}）".format(reason, path_text[:120])
                 return {
@@ -9955,7 +10018,12 @@ class WebSiteFetch(object):
             if (
                 family_text in {"config_exposure_surface", "admin_debug_surface", "sensitive_file_surface"}
                 or payload_text == "config_probe"
-            ) and (actuator_path_hit or management_path_hit or admin_path_hit):
+            ) and (
+                actuator_sensitive_path_hit
+                or strong_actuator_hits
+                or (management_path_hit and (sensitive_hits or admin_hits))
+                or (admin_path_hit and admin_hits)
+            ):
                 reason = "高价值管理/配置端点返回成功状态，疑似可未授权直接访问"
                 if path_text:
                     reason = "{}（{}）".format(reason, path_text[:120])
@@ -10019,13 +10087,21 @@ class WebSiteFetch(object):
                 if not isinstance(response, dict):
                     continue
                 response_url = str(response.get("url") or response.get("request_url") or target_url).strip()
+                response_body_text = str(response.get("body_text") or "")
+                response_body_md5 = str(response.get("body_md5") or "").strip()
                 match_obj = _analyze_single(
                     url_value=response_url,
                     status_value=response.get("status_code"),
                     header_map=response.get("headers"),
-                    body_value=response.get("body_text"),
+                    body_value=response_body_text,
                 )
                 if not bool(match_obj.get("hit")):
+                    continue
+                if _same_as_baseline(
+                    response_url,
+                    body_value=response_body_text,
+                    body_md5=response_body_md5,
+                ):
                     continue
                 candidate_rank = _proof_rank(match_obj.get("proof_type"))
                 if candidate_rank <= best_rank:
@@ -10035,8 +10111,8 @@ class WebSiteFetch(object):
                 best_match["matched_url"] = response_url
                 best_match["matched_status_code"] = cls._safe_int_value(response.get("status_code"), 0)
                 best_match["matched_headers"] = dict(response.get("headers") or {}) if isinstance(response.get("headers"), dict) else {}
-                best_match["matched_body_text"] = str(response.get("body_text") or "")
-                best_match["matched_body_md5"] = str(response.get("body_md5") or "").strip()
+                best_match["matched_body_text"] = response_body_text
+                best_match["matched_body_md5"] = response_body_md5
             if best_match.get("hit"):
                 return best_match
 
@@ -10051,6 +10127,7 @@ class WebSiteFetch(object):
             single_match["matched_status_code"] = cls._safe_int_value(status_code, 0)
             single_match["matched_headers"] = dict(headers or {}) if isinstance(headers, dict) else {}
             single_match["matched_body_text"] = str(body_text or "")
+            single_match["matched_body_md5"] = str(baseline_body_md5 or "").strip()
         return single_match
 
     @classmethod
@@ -11864,6 +11941,55 @@ class WebSiteFetch(object):
             "decision_guard_reason": guard_reason,
         }
 
+    @classmethod
+    def _has_ai_pen_hard_verified_evidence(
+        cls,
+        xss_popup_proof: bool = False,
+        weak_password_login_proof: bool = False,
+        sqli_proof_type: str = "",
+        cmdi_proof_type: str = "",
+        ssti_proof_type: str = "",
+        xxe_proof_type: str = "",
+        ssrf_proof_type: str = "",
+        path_traversal_proof_type: str = "",
+        jwt_weak_secret: str = "",
+        jwt_alg_none_hit: bool = False,
+        websocket_upgrade_hit: bool = False,
+        config_exposure_hit: bool = False,
+        config_exposure_summary: str = "",
+        unauth_access_hit: bool = False,
+        unauth_access_type: str = "",
+        unauth_negative_type: str = "",
+    ) -> bool:
+        unauth_type = str(unauth_access_type or "").strip().lower()
+        unauth_negative = str(unauth_negative_type or "").strip().lower()
+        return any(
+            (
+                bool(xss_popup_proof),
+                bool(weak_password_login_proof),
+                str(sqli_proof_type or "").strip().lower() in {"error_based", "time_based", "boolean_based"},
+                bool(str(cmdi_proof_type or "").strip()),
+                str(ssti_proof_type or "").strip().lower() == "expression_eval",
+                str(xxe_proof_type or "").strip().lower() in {"entity_file_read", "passwd_disclosure"},
+                str(ssrf_proof_type or "").strip().lower() == "metadata_disclosure",
+                str(path_traversal_proof_type or "").strip().lower() in {"passwd_disclosure", "win_ini_disclosure"},
+                bool(str(jwt_weak_secret or "").strip()),
+                bool(jwt_alg_none_hit),
+                bool(websocket_upgrade_hit),
+                bool(config_exposure_hit and str(config_exposure_summary or "").strip()),
+                bool(
+                    unauth_access_hit
+                    and unauth_type in {
+                        "unauth_profile_data",
+                        "unauth_actuator_surface",
+                        "unauth_management_surface",
+                        "unauth_admin_portal",
+                    }
+                    and unauth_negative not in {"auth_blocked", "login_wall", "guarded_mixed", "health_only"}
+                ),
+            )
+        )
+
     def _build_ai_pen_payload_hint(self, risk_type: str, risk_name: str):
         merged = "{} {}".format(str(risk_type or ""), str(risk_name or "")).lower()
         payload_type = "replay"
@@ -12454,7 +12580,14 @@ class WebSiteFetch(object):
                 if field_value:
                     step["params"][field_name] = field_value[:180]
 
-            cache_key = json.dumps(step, ensure_ascii=False, sort_keys=True)
+            cache_key = json.dumps(
+                {
+                    "tool": str(step.get("tool") or "").strip(),
+                    "params": dict(step.get("params") or {}) if isinstance(step.get("params"), dict) else {},
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
             if cache_key in seen:
                 continue
             seen.add(cache_key)
@@ -16815,6 +16948,9 @@ class WebSiteFetch(object):
                     high_value_family=high_value_family,
                     payload_type=payload_type,
                     response_items=unauth_probe_responses,
+                    baseline_url=target_url,
+                    baseline_body_text=base_body_excerpt,
+                    baseline_body_md5=base_body_md5,
                 )
                 unauth_access_hit = bool(unauth_access_ret.get("hit"))
                 unauth_access_type = str(unauth_access_ret.get("proof_type", "") or "").strip().lower()
@@ -16939,9 +17075,9 @@ class WebSiteFetch(object):
                 or is_weak_password_case
                 or payload_type in {"cmdi_probe", "ssrf_probe", "ssti_probe", "xxe_probe", "path_traversal_probe", "web_policy_probe", "socketio_probe"}
             ):
-                decision = "verified"
-                confidence = 0.82
-                reason = "响应中命中风险证据片段，验证通过"
+                decision = "needs_manual_review"
+                confidence = 0.72
+                reason = "响应中命中风险证据片段，但当前缺少结构化利用证据，建议人工复核"
             elif payload_type == "jwt_probe" and jwt_weak_secret:
                 decision = "verified"
                 confidence = 0.93
@@ -17091,6 +17227,25 @@ class WebSiteFetch(object):
                 confidence = 0.48
                 reason = "目标受访问控制保护（{}），建议结合登录态复核".format(status_code)
 
+            hard_verified_evidence = self._has_ai_pen_hard_verified_evidence(
+                xss_popup_proof=xss_popup_proof,
+                weak_password_login_proof=weak_password_login_proof,
+                sqli_proof_type=sqli_proof_type,
+                cmdi_proof_type=cmdi_proof_type,
+                ssti_proof_type=ssti_proof_type,
+                xxe_proof_type=xxe_proof_type,
+                ssrf_proof_type=ssrf_proof_type,
+                path_traversal_proof_type=path_traversal_proof_type,
+                jwt_weak_secret=jwt_weak_secret,
+                jwt_alg_none_hit=jwt_alg_none_hit,
+                websocket_upgrade_hit=websocket_upgrade_hit,
+                config_exposure_hit=config_exposure_hit,
+                config_exposure_summary=config_exposure_summary,
+                unauth_access_hit=unauth_access_hit,
+                unauth_access_type=unauth_access_type,
+                unauth_negative_type=unauth_negative_type,
+            )
+
             agent_decision = self._normalize_ai_pen_decision(agent_loop_final_decision.get("decision"), default_value="")
             agent_confidence = self._clamp_ai_pen_confidence(agent_loop_final_decision.get("confidence"), 0.55)
             agent_reason = self._clip_text(agent_loop_final_decision.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
@@ -17108,7 +17263,13 @@ class WebSiteFetch(object):
                 web_policy_proof_type=web_policy_proof_type,
                 socketio_proof_type=socketio_proof_type,
             )
-            if decision == "needs_manual_review" and agent_decision == "verified" and agent_confidence >= 0.9 and not agent_proof_guard_reason:
+            if (
+                decision == "needs_manual_review"
+                and agent_decision == "verified"
+                and agent_confidence >= 0.9
+                and not agent_proof_guard_reason
+                and hard_verified_evidence
+            ):
                 decision = "verified"
                 confidence = max(confidence, min(0.94, agent_confidence * 0.9))
             elif decision == "needs_manual_review" and agent_decision in {"needs_manual_review", "likely_false_positive"}:
