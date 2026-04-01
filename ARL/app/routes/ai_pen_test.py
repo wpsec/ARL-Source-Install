@@ -529,6 +529,81 @@ def _build_ai_pen_unauth_access_overview(rows):
     }
 
 
+def _build_ai_pen_decision_guard_summary(rows):
+    items = [item for item in list(rows or []) if isinstance(item, dict)]
+    total_count = len(items)
+    action_distribution = _build_ai_pen_group_counts(items, "decision_guard_action", max_items=8)
+    proof_strength_distribution = _build_ai_pen_group_counts(items, "proof_strength", max_items=8)
+    guarded_count = sum(int(item.get("count", 0) or 0) for item in action_distribution)
+    downgrade_count = sum(
+        int(item.get("count", 0) or 0)
+        for item in action_distribution
+        if str(item.get("name") or "").strip().startswith("downgrade")
+    )
+    boost_count = sum(
+        int(item.get("count", 0) or 0)
+        for item in action_distribution
+        if str(item.get("name") or "").strip() == "boost_multi_hit"
+    )
+    dominant_guard_action = ""
+    if action_distribution:
+        priority_map = {
+            "downgrade_negative_signal": 40,
+            "downgrade_access_control": 38,
+            "downgrade_health_only": 36,
+            "boost_multi_hit": 20,
+        }
+        dominant_guard_action = str(
+            max(
+                action_distribution,
+                key=lambda item: (
+                    int(item.get("count", 0) or 0),
+                    int(priority_map.get(str(item.get("name") or "").strip(), 0)),
+                    str(item.get("name") or ""),
+                ),
+            ).get("name")
+            or ""
+        ).strip()
+    strong_proof_count = sum(
+        int(item.get("count", 0) or 0)
+        for item in proof_strength_distribution
+        if str(item.get("name") or "").strip() == "strong"
+    )
+    weak_proof_count = sum(
+        int(item.get("count", 0) or 0)
+        for item in proof_strength_distribution
+        if str(item.get("name") or "").strip() == "weak"
+    )
+
+    recommended_action = ""
+    if dominant_guard_action in {"downgrade_negative_signal", "downgrade_health_only"}:
+        recommended_action = "当前守门主要在压制未授权噪声，建议继续补高价值管理面和会话复核"
+    elif dominant_guard_action == "downgrade_access_control":
+        recommended_action = "当前守门主要在压访问控制误报，建议保持线索输出、避免自动定性"
+    elif dominant_guard_action == "boost_multi_hit":
+        recommended_action = "已有多目标连续命中的强未授权线索，可优先人工接手"
+    elif guarded_count > 0:
+        recommended_action = "当前已有守门动作参与最终裁决，建议结合导出字段复核降级原因"
+
+    return {
+        "total_count": total_count,
+        "guarded_count": guarded_count,
+        "guarded_rate": _safe_ratio(guarded_count, total_count),
+        "downgrade_count": downgrade_count,
+        "downgrade_rate": _safe_ratio(downgrade_count, total_count),
+        "boost_count": boost_count,
+        "boost_rate": _safe_ratio(boost_count, total_count),
+        "strong_proof_count": strong_proof_count,
+        "strong_proof_rate": _safe_ratio(strong_proof_count, total_count),
+        "weak_proof_count": weak_proof_count,
+        "weak_proof_rate": _safe_ratio(weak_proof_count, total_count),
+        "dominant_guard_action": dominant_guard_action,
+        "action_distribution": action_distribution,
+        "proof_strength_distribution": proof_strength_distribution,
+        "recommended_action": recommended_action,
+    }
+
+
 def _classify_ai_pen_proof_family(proof_type, payload_type=""):
     if hasattr(WebSiteFetch, "_classify_ai_pen_proof_family"):
         try:
@@ -570,6 +645,50 @@ def _classify_ai_pen_proof_family(proof_type, payload_type=""):
         if payload in {"websocket_probe", "socketio_probe"}:
             return "realtime_exposure"
     return ""
+
+
+def _classify_ai_pen_proof_strength(proof_family, proof_type, proof_signals=None):
+    if hasattr(WebSiteFetch, "_classify_ai_pen_proof_strength"):
+        try:
+            return str(
+                WebSiteFetch._classify_ai_pen_proof_strength(
+                    proof_family,
+                    proof_type,
+                    proof_signals=proof_signals,
+                )
+                or ""
+            ).strip()
+        except Exception:
+            pass
+
+    family = str(proof_family or "").strip().lower()
+    proof = str(proof_type or "").strip().lower()
+    signals = {
+        str(item or "").strip().lower()
+        for item in list(proof_signals or [])
+        if str(item or "").strip()
+    }
+    if family in {"active_execution", "auth_bypass", "sensitive_disclosure"}:
+        return "strong"
+    if family == "response_differential":
+        if proof in {"boolean_based", "error_based", "time_based", "external_tool"}:
+            return "strong"
+        return "medium"
+    if family == "unauth_access":
+        if proof in {"unauth_admin_portal", "unauth_profile_data", "unauth_actuator_surface", "unauth_management_surface"}:
+            return "strong"
+        if proof == "unauth_health_endpoint":
+            return "weak"
+        return "medium"
+    if family in {"surface_exposure", "realtime_exposure"}:
+        return "medium" if proof else "weak"
+    if family in {"policy_misconfig", "access_control"}:
+        return "weak"
+    if signals.intersection({"login_success", "session_auth", "logout_effective", "unauth_access"}):
+        return "medium"
+    if proof:
+        return "medium"
+    return "weak"
 
 
 def _normalize_ai_pen_signal_set(values):
@@ -1419,6 +1538,8 @@ class StatsAiPenTest(ARLResource):
         high_value_family = _agg_group("high_value_family")
         payload_variant = _agg_group("payload_variant")
         proof_type = _agg_group("proof_type")
+        proof_strength = _agg_group("proof_strength")
+        decision_guard_action = _agg_group("decision_guard_action")
         unauth_access_type = _agg_group("unauth_access_type")
         unauth_negative_type = _agg_group("unauth_negative_type")
         request_template_mode = _agg_group("request_template_mode")
@@ -1478,6 +1599,12 @@ class StatsAiPenTest(ARLResource):
                     item.get("proof_type"),
                     payload_type=item.get("payload_type"),
                 )
+            if not str(item.get("proof_strength", "") or "").strip():
+                item["proof_strength"] = _classify_ai_pen_proof_strength(
+                    item.get("proof_family"),
+                    item.get("proof_type"),
+                    proof_signals=item.get("proof_signals"),
+                )
             if not str(item.get("unauth_access_type", "") or "").strip() and str(item.get("proof_family", "") or "").strip() == "unauth_access":
                 item["unauth_access_type"] = str(item.get("proof_type", "") or "").strip()
         quant_metrics = _build_ai_pen_quant_metrics(metric_rows, total=total)
@@ -1487,6 +1614,8 @@ class StatsAiPenTest(ARLResource):
             "payload_variant": _build_ai_pen_group_benchmarks(metric_rows, "payload_variant"),
             "proof_family": _build_ai_pen_group_benchmarks(metric_rows, "proof_family"),
             "proof_type": _build_ai_pen_group_benchmarks(metric_rows, "proof_type"),
+            "proof_strength": _build_ai_pen_group_benchmarks(metric_rows, "proof_strength"),
+            "decision_guard_action": _build_ai_pen_group_benchmarks(metric_rows, "decision_guard_action"),
             "unauth_access_type": _build_ai_pen_group_benchmarks(metric_rows, "unauth_access_type"),
             "unauth_negative_type": _build_ai_pen_group_benchmarks(metric_rows, "unauth_negative_type"),
             "high_value_family": _build_ai_pen_group_benchmarks(metric_rows, "high_value_family"),
@@ -1498,6 +1627,7 @@ class StatsAiPenTest(ARLResource):
         engineer_focus_entries = _build_ai_pen_engineer_focus_entries(metric_rows)
         unauth_negative_summary = _build_ai_pen_unauth_negative_summary(metric_rows)
         unauth_access_overview = _build_ai_pen_unauth_access_overview(metric_rows)
+        decision_guard_summary = _build_ai_pen_decision_guard_summary(metric_rows)
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -1513,6 +1643,8 @@ class StatsAiPenTest(ARLResource):
                 "payload_variant": payload_variant,
                 "proof_family": _build_ai_pen_group_counts(metric_rows, "proof_family"),
                 "proof_type": proof_type,
+                "proof_strength": _build_ai_pen_group_counts(metric_rows, "proof_strength"),
+                "decision_guard_action": _build_ai_pen_group_counts(metric_rows, "decision_guard_action"),
                 "unauth_access_type": unauth_access_type,
                 "unauth_negative_type": unauth_negative_type,
                 "request_template_mode": request_template_mode,
@@ -1525,5 +1657,6 @@ class StatsAiPenTest(ARLResource):
                 "engineer_focus_entries": engineer_focus_entries,
                 "unauth_negative_summary": unauth_negative_summary,
                 "unauth_access_overview": unauth_access_overview,
+                "decision_guard_summary": decision_guard_summary,
             },
         )

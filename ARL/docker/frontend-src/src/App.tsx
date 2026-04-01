@@ -12847,6 +12847,23 @@ function AiPenAssetWorkspaceView({
       dominant_negative_type?: string;
     };
   };
+  type AiPenDecisionGuardSummary = {
+    total_count: number;
+    guarded_count: number;
+    guarded_rate: number;
+    downgrade_count: number;
+    downgrade_rate: number;
+    boost_count: number;
+    boost_rate: number;
+    strong_proof_count: number;
+    strong_proof_rate: number;
+    weak_proof_count: number;
+    weak_proof_rate: number;
+    dominant_guard_action: string;
+    action_distribution: AiPenStatsItem[];
+    proof_strength_distribution: AiPenStatsItem[];
+    recommended_action: string;
+  };
   type AiPenStatsPayload = {
     total: number;
     decision: AiPenStatsItem[];
@@ -12854,12 +12871,15 @@ function AiPenAssetWorkspaceView({
     source_collection: AiPenStatsItem[];
     risk_type: AiPenStatsItem[];
     verification_step: AiPenStatsItem[];
+    proof_strength: AiPenStatsItem[];
+    decision_guard_action: AiPenStatsItem[];
     phase_f_readiness: {
       summary: AiPenReadinessSummary;
       capabilities: AiPenReadinessCapability[];
     };
     engineer_focus_queue: AiPenFocusQueueItem[];
     unauth_access_overview: AiPenUnauthOverview;
+    decision_guard_summary: AiPenDecisionGuardSummary;
   };
   type AiPenSearchForm = {
     task_id: string;
@@ -12869,6 +12889,8 @@ function AiPenAssetWorkspaceView({
     decision: string;
     status: string;
     proof_family: string;
+    proof_strength: string;
+    decision_guard_action: string;
     unauth_negative_type: string;
   };
 
@@ -12880,6 +12902,8 @@ function AiPenAssetWorkspaceView({
     decision: '',
     status: '',
     proof_family: '',
+    proof_strength: '',
+    decision_guard_action: '',
     unauth_negative_type: '',
   };
   const emptyStats: AiPenStatsPayload = {
@@ -12889,6 +12913,8 @@ function AiPenAssetWorkspaceView({
     source_collection: [],
     risk_type: [],
     verification_step: [],
+    proof_strength: [],
+    decision_guard_action: [],
     phase_f_readiness: {
       summary: {
         total_capabilities: 0,
@@ -12897,6 +12923,23 @@ function AiPenAssetWorkspaceView({
         missing_count: 0,
       },
       capabilities: [],
+    },
+    decision_guard_summary: {
+      total_count: 0,
+      guarded_count: 0,
+      guarded_rate: 0,
+      downgrade_count: 0,
+      downgrade_rate: 0,
+      boost_count: 0,
+      boost_rate: 0,
+      strong_proof_count: 0,
+      strong_proof_rate: 0,
+      weak_proof_count: 0,
+      weak_proof_rate: 0,
+      dominant_guard_action: '',
+      action_distribution: [],
+      proof_strength_distribution: [],
+      recommended_action: '',
     },
     engineer_focus_queue: [],
     unauth_access_overview: {
@@ -13053,6 +13096,38 @@ function AiPenAssetWorkspaceView({
       idor_access_control_signal: '访问控制线索',
     };
     return mapping[text] || normalizeValue(value);
+  }, []);
+  const formatProofStrength = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    const mapping: Record<string, string> = {
+      strong: '强证据',
+      medium: '中等证据',
+      weak: '弱证据',
+    };
+    return mapping[text] || normalizeValue(value);
+  }, []);
+  const getProofStrengthClass = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    if (text === 'strong') return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300';
+    if (text === 'medium') return 'border-brand-warning/40 bg-brand-warning/15 text-brand-warning';
+    if (text === 'weak') return 'border-brand-border bg-brand-bg/65 text-brand-text-muted';
+    return 'border-brand-border bg-brand-bg/65 text-brand-text-muted';
+  }, []);
+  const formatDecisionGuardAction = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    const mapping: Record<string, string> = {
+      downgrade_negative_signal: '降级：负信号压制',
+      downgrade_access_control: '降级：访问控制线索',
+      downgrade_health_only: '降级：健康检查为主',
+      boost_multi_hit: '提升：多目标连续命中',
+    };
+    return mapping[text] || normalizeValue(value);
+  }, []);
+  const getDecisionGuardActionClass = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    if (text === 'boost_multi_hit') return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300';
+    if (text.startsWith('downgrade')) return 'border-brand-warning/40 bg-brand-warning/15 text-brand-warning';
+    return 'border-brand-border bg-brand-bg/65 text-brand-text-muted';
   }, []);
   const formatUnauthAccessType = useCallback((value: any) => {
     const text = String(value || '').trim().toLowerCase();
@@ -13261,6 +13336,8 @@ function AiPenAssetWorkspaceView({
         source_collection: Array.isArray(data?.source_collection) ? data.source_collection : [],
         risk_type: Array.isArray(data?.risk_type) ? data.risk_type : [],
         verification_step: Array.isArray(data?.verification_step) ? data.verification_step : [],
+        proof_strength: Array.isArray(data?.proof_strength) ? data.proof_strength : [],
+        decision_guard_action: Array.isArray(data?.decision_guard_action) ? data.decision_guard_action : [],
         phase_f_readiness: {
           summary: {
             total_capabilities: Number(data?.phase_f_readiness?.summary?.total_capabilities || 0),
@@ -13294,6 +13371,23 @@ function AiPenAssetWorkspaceView({
                 dominant_negative_type: String(data?.unauth_access_overview?.negative_summary?.dominant_negative_type || '').trim(),
               }
             : emptyStats.unauth_access_overview.negative_summary,
+        },
+        decision_guard_summary: {
+          total_count: Number(data?.decision_guard_summary?.total_count || 0),
+          guarded_count: Number(data?.decision_guard_summary?.guarded_count || 0),
+          guarded_rate: Number(data?.decision_guard_summary?.guarded_rate || 0),
+          downgrade_count: Number(data?.decision_guard_summary?.downgrade_count || 0),
+          downgrade_rate: Number(data?.decision_guard_summary?.downgrade_rate || 0),
+          boost_count: Number(data?.decision_guard_summary?.boost_count || 0),
+          boost_rate: Number(data?.decision_guard_summary?.boost_rate || 0),
+          strong_proof_count: Number(data?.decision_guard_summary?.strong_proof_count || 0),
+          strong_proof_rate: Number(data?.decision_guard_summary?.strong_proof_rate || 0),
+          weak_proof_count: Number(data?.decision_guard_summary?.weak_proof_count || 0),
+          weak_proof_rate: Number(data?.decision_guard_summary?.weak_proof_rate || 0),
+          dominant_guard_action: String(data?.decision_guard_summary?.dominant_guard_action || '').trim(),
+          action_distribution: Array.isArray(data?.decision_guard_summary?.action_distribution) ? data.decision_guard_summary.action_distribution : [],
+          proof_strength_distribution: Array.isArray(data?.decision_guard_summary?.proof_strength_distribution) ? data.decision_guard_summary.proof_strength_distribution : [],
+          recommended_action: String(data?.decision_guard_summary?.recommended_action || '').trim(),
         },
       });
     } catch {
@@ -13387,6 +13481,7 @@ function AiPenAssetWorkspaceView({
   const likelyFpCount = getStatsCount(stats.decision, 'likely_false_positive');
   const manualReviewCount = getStatsCount(stats.decision, 'needs_manual_review');
   const errorCount = getStatsCount(stats.status, 'error');
+  const strongProofCount = getStatsCount(stats.proof_strength, 'strong');
   const topRiskType = stats.risk_type[0]?.name ? `${stats.risk_type[0].name} (${stats.risk_type[0].count})` : '-';
   const topSource = stats.source_collection[0]?.name ? `${formatSource(stats.source_collection[0].name)} (${stats.source_collection[0].count})` : '-';
   const readinessSummary = stats.phase_f_readiness?.summary || emptyStats.phase_f_readiness.summary;
@@ -13396,11 +13491,18 @@ function AiPenAssetWorkspaceView({
     .slice(0, 3);
   const focusQueueItems = Array.isArray(stats.engineer_focus_queue) ? stats.engineer_focus_queue.slice(0, 6) : [];
   const unauthOverview = stats.unauth_access_overview || emptyStats.unauth_access_overview;
+  const decisionGuardSummary = stats.decision_guard_summary || emptyStats.decision_guard_summary;
   const unauthPositiveDistribution = Array.isArray(unauthOverview.positive_type_distribution)
     ? unauthOverview.positive_type_distribution.slice(0, 4)
     : [];
   const unauthNegativeDistribution = Array.isArray(unauthOverview.negative_type_distribution)
     ? unauthOverview.negative_type_distribution.slice(0, 4)
+    : [];
+  const topDecisionGuardActions = Array.isArray(decisionGuardSummary.action_distribution)
+    ? decisionGuardSummary.action_distribution.slice(0, 4)
+    : [];
+  const topProofStrengthDistribution = Array.isArray(decisionGuardSummary.proof_strength_distribution)
+    ? decisionGuardSummary.proof_strength_distribution.slice(0, 3)
     : [];
   const aiDialogueMessages = useMemo(() => normalizeAiPlanMessages(selectedRow), [selectedRow]);
   const requestPacketData = useMemo(() => {
@@ -13554,7 +13656,7 @@ function AiPenAssetWorkspaceView({
       ) : null}
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-10 gap-3">
           <div className="space-y-1">
             <label className="text-xs font-bold text-brand-text">任务ID</label>
             <input
@@ -13654,6 +13756,39 @@ function AiPenAssetWorkspaceView({
             </div>
           </div>
           <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">证据强度</label>
+            <div className="relative">
+              <select
+                value={searchForm.proof_strength}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, proof_strength: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                <option value="strong">强证据</option>
+                <option value="medium">中等证据</option>
+                <option value="weak">弱证据</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">守门动作</label>
+            <div className="relative">
+              <select
+                value={searchForm.decision_guard_action}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, decision_guard_action: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                <option value="downgrade_negative_signal">降级：负信号压制</option>
+                <option value="downgrade_access_control">降级：访问控制线索</option>
+                <option value="downgrade_health_only">降级：健康检查为主</option>
+                <option value="boost_multi_hit">提升：多目标连续命中</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-1">
             <label className="text-xs font-bold text-brand-text">未授权负信号</label>
             <div className="relative">
               <select
@@ -13707,12 +13842,14 @@ function AiPenAssetWorkspaceView({
         <StatusPill text={`已验证 ${statsLoading ? '...' : verifiedCount}`} type="success" />
         <StatusPill text={`疑似误报 ${statsLoading ? '...' : likelyFpCount}`} type="info" />
         <StatusPill text={`人工复核/异常 ${statsLoading ? '...' : `${manualReviewCount}/${errorCount}`}`} type="error" />
+        <StatusPill text={`强证据 ${statsLoading ? '...' : strongProofCount}`} type="success" />
+        <StatusPill text={`守门触发 ${statsLoading ? '...' : decisionGuardSummary.guarded_count}`} type="info" />
         <StatusPill text={`主要类型 ${topRiskType}`} type="info" />
         <StatusPill text={`主要来源 ${topSource}`} type="info" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-4 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+        <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-black">未授权概览</div>
             <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `样本 ${unauthOverview.total_count}`}</span>
@@ -13809,7 +13946,7 @@ function AiPenAssetWorkspaceView({
           </div>
         </div>
 
-        <div className="xl:col-span-4 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+        <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-black">阶段F能力就绪度</div>
             <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `总计 ${readinessSummary.total_capabilities}`}</span>
@@ -13885,7 +14022,7 @@ function AiPenAssetWorkspaceView({
           ) : null}
         </div>
 
-        <div className="xl:col-span-4 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+        <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-black">工程师优先能力</div>
             <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `Top ${focusQueueItems.length}`}</span>
@@ -13930,6 +14067,77 @@ function AiPenAssetWorkspaceView({
                 {statsLoading ? '加载中...' : '暂无优先能力'}
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black">裁决守门概览</div>
+            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `样本 ${decisionGuardSummary.total_count}`}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">守门触发</div>
+              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : decisionGuardSummary.guarded_count}</div>
+              <div className="mt-1 text-[10px] text-brand-text-muted">{statsLoading ? '' : formatRatePercent(decisionGuardSummary.guarded_rate)}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">降级次数</div>
+              <div className="mt-1 text-lg font-black text-brand-warning">{statsLoading ? '...' : decisionGuardSummary.downgrade_count}</div>
+              <div className="mt-1 text-[10px] text-brand-text-muted">{statsLoading ? '' : formatRatePercent(decisionGuardSummary.downgrade_rate)}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">提升次数</div>
+              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : decisionGuardSummary.boost_count}</div>
+              <div className="mt-1 text-[10px] text-brand-text-muted">{statsLoading ? '' : formatRatePercent(decisionGuardSummary.boost_rate)}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">强证据占比</div>
+              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : decisionGuardSummary.strong_proof_count}</div>
+              <div className="mt-1 text-[10px] text-brand-text-muted">{statsLoading ? '' : formatRatePercent(decisionGuardSummary.strong_proof_rate)}</div>
+            </div>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">主导守门动作</div>
+              <div className="mt-1 break-all">{statsLoading ? '加载中...' : formatDecisionGuardAction(decisionGuardSummary.dominant_guard_action || '暂无')}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">建议动作</div>
+              <div className="mt-1 break-all leading-relaxed">{statsLoading ? '加载中...' : (decisionGuardSummary.recommended_action || '暂无建议')}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">守门动作分布</div>
+              {topDecisionGuardActions.length > 0 ? (
+                <div className="space-y-1.5">
+                  {topDecisionGuardActions.map((item, index) => (
+                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="break-all leading-relaxed">{formatDecisionGuardAction(item.name)}</span>
+                      <span className="shrink-0 text-brand-text-muted">{Number(item.count || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无守门动作'}</div>
+              )}
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">证据强度分布</div>
+              {topProofStrengthDistribution.length > 0 ? (
+                <div className="space-y-1.5">
+                  {topProofStrengthDistribution.map((item, index) => (
+                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="break-all leading-relaxed">{formatProofStrength(item.name)}</span>
+                      <span className="shrink-0 text-brand-text-muted">{Number(item.count || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无证据强度分布'}</div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -13977,9 +14185,19 @@ function AiPenAssetWorkspaceView({
                             <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[10px] font-semibold">
                               {formatPayloadType(row?.payload_type)}
                             </span>
+                            {String(row?.proof_strength || '').trim() ? (
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getProofStrengthClass(row?.proof_strength)}`}>
+                                {formatProofStrength(row?.proof_strength)}
+                              </span>
+                            ) : null}
                             {String(row?.unauth_negative_type || '').trim() ? (
                               <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[10px] font-semibold">
                                 {formatUnauthNegativeType(row?.unauth_negative_type)}
+                              </span>
+                            ) : null}
+                            {String(row?.decision_guard_action || '').trim() ? (
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getDecisionGuardActionClass(row?.decision_guard_action)}`}>
+                                {formatDecisionGuardAction(row?.decision_guard_action)}
                               </span>
                             ) : null}
                           </div>
@@ -14145,6 +14363,11 @@ function AiPenAssetWorkspaceView({
                     <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
                       证据类型：{formatProofType(selectedRow?.proof_type)}
                     </span>
+                    {String(selectedRow?.proof_strength || '').trim() ? (
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${getProofStrengthClass(selectedRow?.proof_strength)}`}>
+                        证据强度：{formatProofStrength(selectedRow?.proof_strength)}
+                      </span>
+                    ) : null}
                     {String(selectedRow?.unauth_access_type || '').trim() ? (
                       <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
                         未授权类型：{formatUnauthAccessType(selectedRow?.unauth_access_type)}
@@ -14153,6 +14376,11 @@ function AiPenAssetWorkspaceView({
                     {String(selectedRow?.unauth_negative_type || '').trim() ? (
                       <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
                         未授权负信号：{formatUnauthNegativeType(selectedRow?.unauth_negative_type)}
+                      </span>
+                    ) : null}
+                    {String(selectedRow?.decision_guard_action || '').trim() ? (
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${getDecisionGuardActionClass(selectedRow?.decision_guard_action)}`}>
+                        守门动作：{formatDecisionGuardAction(selectedRow?.decision_guard_action)}
                       </span>
                     ) : null}
                     <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
@@ -14191,6 +14419,26 @@ function AiPenAssetWorkspaceView({
                       <div className="text-[11px] font-black tracking-wide text-brand-text-muted">未授权复核摘要</div>
                       <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
                         {normalizeValueNoTruncate(selectedRow?.unauth_probe_summary)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">证据强度</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {formatProofStrength(selectedRow?.proof_strength)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">守门动作</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {formatDecisionGuardAction(selectedRow?.decision_guard_action)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">守门原因</div>
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(selectedRow?.decision_guard_reason)}
                       </div>
                     </div>
                   </div>

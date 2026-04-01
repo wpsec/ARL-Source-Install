@@ -3,7 +3,11 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-01（v4.5.10 ~ v4.5.58）
+## 2026-04-01（v4.5.10 ~ v4.5.60）
+
+- `[v4.5.60]` AI渗透 `守门工作台` 前台继续收口：`AI渗透测试` 工作台新增“裁决守门概览”卡片，直接展示守门触发数、降级/提升次数、强证据占比、主导守门动作与建议动作；搜索区新增 `证据强度/守门动作` 筛选，结果列表与详情面板补齐 `proof_strength / decision_guard_action / decision_guard_reason` 标签，工程师现在可以直接在页面上区分“强证据真入口”和“被系统主动压下去的噪声”
+
+- `[v4.5.59]` AI渗透 `裁决守门` 量化摘要落地：`/ai_pen_test/stats/` 新增 `decision_guard_summary`，并将 `proof_strength / decision_guard_action` 接入顶层分组与 `capability_benchmarks`；现在不仅能看到某条结果为何被守门降级，还能直接量化“多少结果被守门触发、多少属于 downgrade/boost、主导守门动作是什么、强/弱证据分布如何”，让“少给水洞”的收口逻辑从结果解释进一步推进到统计可量化
 
 - `[v4.5.58]` AI渗透 `证据强度/裁决守门` 主链落地：新增统一 `proof_strength` 与 `decision_guard_action/reason`，让 `proof_family / proof_type / unauth_negative_type / unauth_probe_summary` 不再只是展示字段，而会真正参与最终裁决和误报抑制；例如 `access_control` 结果默认收敛为人工复核，`unauth_health_endpoint`、`health_only`、`auth_blocked/login_wall/guarded_mixed` 会主动压低过于激进的未授权结论。与此同时，这批字段已经打通到结果落库、工程师优先队列、导出列和回归测试，进一步把“少给水洞”的收口逻辑从统计层推进到最终判定层
 

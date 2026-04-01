@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.58`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.60`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -464,7 +464,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - 后端数据面已具备：`agent_trace/tool_calls/tool_results/stop_reason/budget_used/session_summary/tool_plan_source`
 - 已支持历史 `session/tool_plan/tool_results` 沿用重试
 - 已补导出字段与 `/ai_pen_test/stats/` 轨迹维度统计
-- AI渗透工作台已补：`未授权概览 / 阶段 F 能力就绪度 / 工程师优先能力` 卡片、`证据家族/未授权负信号` 筛选、结果列表行内证据速览、右侧 `proof_summary/request_template_summary/unauth_probe_summary` 证据总览
+- AI渗透工作台已补：`未授权概览 / 阶段 F 能力就绪度 / 工程师优先能力 / 裁决守门概览` 卡片、`证据家族/证据强度/守门动作/未授权负信号` 筛选、结果列表行内证据速览、右侧 `proof_summary/request_template_summary/unauth_probe_summary/decision_guard_reason` 证据总览
 - 差距：前台主体已基本到位，但仍可继续补更细的 Agent 时间线组织与靶场基线联动
 - 结论：`前后台主链已基本打通，前台进入收尾优化`
 
@@ -499,6 +499,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - 已可按 `request_template_mode` 查看模板入口分布，并在工程师入口列表中直接查看 `request_template_summary`
 - 已可输出 `unauth_negative_type/unauth_negative_summary`，直接区分“被鉴权挡住 / 登录墙 / 只有健康检查面”等未授权负信号
 - 已可输出 `unauth_access_overview`，在 stats 顶层直接汇总未授权正向命中、负信号主导类型和建议动作
+- 已可输出 `decision_guard_summary`，并按 `proof_strength / decision_guard_action` 量化“守门压制了多少激进结论、主导守门动作是什么”
 - 已可输出“工程师优先队列”及“具体入口 Top 列表”所需的 readiness/priority 数据面，并在前台工作台直接展示
 - 差距：登录/JWT/API文档/Actuator/IDOR/SQLi/XSS/文件/SSRF 靶场与标注样本尚未建立
 - 结论：`指标数据面已具备，靶场基线未完成`

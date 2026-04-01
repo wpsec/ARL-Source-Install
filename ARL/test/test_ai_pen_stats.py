@@ -626,6 +626,30 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(1, idor_item["negative_signal_count"])
         self.assertIn("阻断", idor_item["focus_reason"])
 
+    def test_build_ai_pen_decision_guard_summary(self):
+        summary = ai_pen_test_module._build_ai_pen_decision_guard_summary(
+            [
+                {
+                    "decision_guard_action": "downgrade_health_only",
+                    "proof_strength": "weak",
+                },
+                {
+                    "decision_guard_action": "downgrade_access_control",
+                    "proof_strength": "weak",
+                },
+                {
+                    "decision_guard_action": "boost_multi_hit",
+                    "proof_strength": "strong",
+                },
+            ]
+        )
+
+        self.assertEqual(3, summary["guarded_count"])
+        self.assertEqual(2, summary["downgrade_count"])
+        self.assertEqual(1, summary["boost_count"])
+        self.assertEqual("downgrade_access_control", summary["dominant_guard_action"])
+        self.assertTrue(any(item.get("name") == "weak" for item in summary["proof_strength_distribution"]))
+
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
             {
@@ -740,6 +764,8 @@ class TestAiPenStats(unittest.TestCase):
         self.assertTrue(any(item.get("name") == "mcp_websocket_probe" for item in data["capability_benchmarks"]["verification_step"]))
         self.assertTrue(any(item.get("name") == "json_data" for item in data["request_template_mode"]))
         self.assertTrue(any(item.get("name") == "json_data" for item in data["capability_benchmarks"]["request_template_mode"]))
+        self.assertTrue(any(item.get("name") == "medium" for item in data["proof_strength"]))
+        self.assertTrue(any(item.get("name") == "medium" for item in data["capability_benchmarks"]["proof_strength"]))
         self.assertEqual(2, data["phase_f_readiness"]["summary"]["covered_count"])
         self.assertEqual(0, data["phase_f_readiness"]["summary"]["partial_count"])
         self.assertEqual(7, data["phase_f_readiness"]["summary"]["missing_count"])
@@ -854,6 +880,53 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual(1, data["unauth_negative_summary"]["negative_signal_count"])
         self.assertEqual("guarded_mixed", data["unauth_access_overview"]["dominant_negative_type"])
         self.assertIn("会话复核", data["unauth_access_overview"]["recommended_action"])
+
+    def test_stats_route_returns_decision_guard_groups(self):
+        rows = [
+            {
+                "_id": "g1",
+                "task_id": "507f1f77bcf86cd799439011",
+                "decision": "needs_manual_review",
+                "status": "ok",
+                "risk_type": "sensitive_info",
+                "payload_type": "replay",
+                "verification_step": "http_fetch_replay",
+                "high_value_family": "admin_debug_surface",
+                "tool_plan_source": "inferred",
+                "stop_reason": "manual_required",
+                "budget_used": {"turns": 1, "tool_calls": 2},
+                "target": "https://example.com/actuator/health",
+                "vuln_url": "https://example.com/actuator/health",
+                "risk_name": "健康检查端点",
+                "confidence": 0.72,
+                "http_status": 200,
+                "request_template_mode": "query",
+                "request_template_summary": "mode=query",
+                "proof_family": "unauth_access",
+                "proof_type": "unauth_health_endpoint",
+                "proof_strength": "weak",
+                "decision_guard_action": "downgrade_health_only",
+                "decision_guard_reason": "当前命中主要是健康检查/信息端点，先不直接判定为高价值未授权入口",
+                "unauth_access_type": "unauth_health_endpoint",
+                "unauth_negative_type": "health_only",
+                "proof_signals": ["unauth_access"],
+                "proof_summary": "proof=unauth_health_endpoint | family=unauth_access | signals=unauth_access",
+                "reason": "健康检查/信息端点返回成功状态，存在公开未授权访问线索",
+            }
+        ]
+
+        ai_pen_test_module.utils.conn_db = lambda _name: _FakeCollection(rows)
+        ai_pen_test_module.StatsAiPenTest.parser = types.SimpleNamespace(
+            parse_args=lambda: {"task_id": "507f1f77bcf86cd799439011"}
+        )
+
+        response = ai_pen_test_module.StatsAiPenTest().get()
+        data = response["data"]
+
+        self.assertTrue(any(item.get("name") == "downgrade_health_only" for item in data["decision_guard_action"]))
+        self.assertTrue(any(item.get("name") == "downgrade_health_only" for item in data["capability_benchmarks"]["decision_guard_action"]))
+        self.assertEqual("downgrade_health_only", data["decision_guard_summary"]["dominant_guard_action"])
+        self.assertEqual(1, data["decision_guard_summary"]["guarded_count"])
 
 
 if __name__ == "__main__":
