@@ -650,6 +650,36 @@ class TestAiPenStats(unittest.TestCase):
         self.assertEqual("downgrade_access_control", summary["dominant_guard_action"])
         self.assertTrue(any(item.get("name") == "weak" for item in summary["proof_strength_distribution"]))
 
+    def test_build_ai_pen_minimal_baseline_summary_tracks_pass_fail_and_gaps(self):
+        summary = ai_pen_test_module._build_ai_pen_minimal_baseline_summary(
+            [
+                {
+                    "decision": "verified",
+                    "proof_family": "unauth_access",
+                    "proof_type": "unauth_admin_portal",
+                    "unauth_access_type": "unauth_admin_portal",
+                },
+                {
+                    "decision": "likely_false_positive",
+                    "unauth_negative_type": "login_wall",
+                    "decision_guard_action": "downgrade_negative_signal",
+                },
+                {
+                    "decision": "verified",
+                    "proof_type": "unauth_health_endpoint",
+                    "unauth_negative_type": "health_only",
+                },
+            ]
+        )
+
+        self.assertEqual(10, summary["summary"]["total_cases"])
+        self.assertEqual(2, summary["summary"]["passed_count"])
+        self.assertEqual(2, summary["summary"]["failed_count"])
+        self.assertTrue(any(item.get("id") == "unauth_health_only_negative" and item.get("status") == "failed" for item in summary["cases"]))
+        self.assertTrue(any(item.get("id") == "unauth_profile_positive" and item.get("status") == "missing" for item in summary["cases"]))
+        self.assertEqual("unauth_health_only_negative", summary["top_gaps"][0]["id"])
+        self.assertIn("proof/guard", summary["recommended_action"])
+
     def test_stats_route_returns_quant_metrics_summary(self):
         rows = [
             {
@@ -927,6 +957,54 @@ class TestAiPenStats(unittest.TestCase):
         self.assertTrue(any(item.get("name") == "downgrade_health_only" for item in data["capability_benchmarks"]["decision_guard_action"]))
         self.assertEqual("downgrade_health_only", data["decision_guard_summary"]["dominant_guard_action"])
         self.assertEqual(1, data["decision_guard_summary"]["guarded_count"])
+
+    def test_stats_route_returns_minimal_baseline_summary(self):
+        rows = [
+            {
+                "_id": "b1",
+                "task_id": "507f1f77bcf86cd799439011",
+                "decision": "verified",
+                "status": "ok",
+                "risk_type": "sensitive_info",
+                "payload_type": "replay",
+                "verification_step": "http_fetch_replay",
+                "high_value_family": "admin_debug_surface",
+                "target": "https://example.com/admin",
+                "vuln_url": "https://example.com/admin",
+                "proof_family": "unauth_access",
+                "proof_type": "unauth_admin_portal",
+                "unauth_access_type": "unauth_admin_portal",
+                "confidence": 0.88,
+            },
+            {
+                "_id": "b2",
+                "task_id": "507f1f77bcf86cd799439011",
+                "decision": "likely_false_positive",
+                "status": "ok",
+                "risk_type": "sensitive_info",
+                "payload_type": "replay",
+                "verification_step": "http_fetch_replay",
+                "high_value_family": "admin_debug_surface",
+                "target": "https://example.com/login",
+                "vuln_url": "https://example.com/login",
+                "unauth_negative_type": "login_wall",
+                "decision_guard_action": "downgrade_negative_signal",
+                "confidence": 0.52,
+            },
+        ]
+
+        ai_pen_test_module.utils.conn_db = lambda _name: _FakeCollection(rows)
+        ai_pen_test_module.StatsAiPenTest.parser = types.SimpleNamespace(
+            parse_args=lambda: {"task_id": "507f1f77bcf86cd799439011"}
+        )
+
+        response = ai_pen_test_module.StatsAiPenTest().get()
+        data = response["data"]
+
+        self.assertEqual(10, data["minimal_baseline_summary"]["summary"]["total_cases"])
+        self.assertEqual(2, data["minimal_baseline_summary"]["summary"]["passed_count"])
+        self.assertTrue(any(item.get("id") == "unauth_admin_positive" and item.get("status") == "passed" for item in data["minimal_baseline_summary"]["cases"]))
+        self.assertTrue(any(item.get("id") == "jwt_none_positive" and item.get("status") == "missing" for item in data["minimal_baseline_summary"]["cases"]))
 
 
 if __name__ == "__main__":

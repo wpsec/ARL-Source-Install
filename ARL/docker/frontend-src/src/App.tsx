@@ -12864,6 +12864,38 @@ function AiPenAssetWorkspaceView({
     proof_strength_distribution: AiPenStatsItem[];
     recommended_action: string;
   };
+  type AiPenMinimalBaselineCase = {
+    id: string;
+    label: string;
+    expectation: string;
+    status: string;
+    matched_count: number;
+    passed_count: number;
+    partial_count: number;
+    failed_count: number;
+    sample_decision: string;
+    sample_proof_type: string;
+    sample_guard_action: string;
+    focus_reason: string;
+  };
+  type AiPenMinimalBaselineSummary = {
+    summary: {
+      total_cases: number;
+      passed_count: number;
+      partial_count: number;
+      failed_count: number;
+      missing_count: number;
+      pass_rate: number;
+    };
+    cases: AiPenMinimalBaselineCase[];
+    top_gaps: Array<{
+      id: string;
+      label: string;
+      status: string;
+      focus_reason: string;
+    }>;
+    recommended_action: string;
+  };
   type AiPenStatsPayload = {
     total: number;
     decision: AiPenStatsItem[];
@@ -12880,6 +12912,7 @@ function AiPenAssetWorkspaceView({
     engineer_focus_queue: AiPenFocusQueueItem[];
     unauth_access_overview: AiPenUnauthOverview;
     decision_guard_summary: AiPenDecisionGuardSummary;
+    minimal_baseline_summary: AiPenMinimalBaselineSummary;
   };
   type AiPenSearchForm = {
     task_id: string;
@@ -12939,6 +12972,19 @@ function AiPenAssetWorkspaceView({
       dominant_guard_action: '',
       action_distribution: [],
       proof_strength_distribution: [],
+      recommended_action: '',
+    },
+    minimal_baseline_summary: {
+      summary: {
+        total_cases: 0,
+        passed_count: 0,
+        partial_count: 0,
+        failed_count: 0,
+        missing_count: 0,
+        pass_rate: 0,
+      },
+      cases: [],
+      top_gaps: [],
       recommended_action: '',
     },
     engineer_focus_queue: [],
@@ -13180,6 +13226,21 @@ function AiPenAssetWorkspaceView({
     };
     return mapping[text] || normalizeValue(value);
   }, []);
+  const formatMinimalBaselineStatus = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    if (text === 'passed') return '已通过';
+    if (text === 'partial') return '部分通过';
+    if (text === 'failed') return '失败';
+    if (text === 'missing') return '缺样本';
+    return normalizeValue(value);
+  }, []);
+  const getMinimalBaselineStatusClass = useCallback((value: any) => {
+    const text = String(value || '').trim().toLowerCase();
+    if (text === 'passed') return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300';
+    if (text === 'partial') return 'border-brand-warning/40 bg-brand-warning/15 text-brand-warning';
+    if (text === 'failed') return 'border-red-500/40 bg-red-500/15 text-red-300';
+    return 'border-brand-border bg-brand-bg/65 text-brand-text-muted';
+  }, []);
   const getStatsCount = useCallback((items: AiPenStatsItem[], key: string) => {
     const row = items.find((item) => String(item?.name || '').trim().toLowerCase() === key);
     return Number(row?.count || 0);
@@ -13389,6 +13450,19 @@ function AiPenAssetWorkspaceView({
           proof_strength_distribution: Array.isArray(data?.decision_guard_summary?.proof_strength_distribution) ? data.decision_guard_summary.proof_strength_distribution : [],
           recommended_action: String(data?.decision_guard_summary?.recommended_action || '').trim(),
         },
+        minimal_baseline_summary: {
+          summary: {
+            total_cases: Number(data?.minimal_baseline_summary?.summary?.total_cases || 0),
+            passed_count: Number(data?.minimal_baseline_summary?.summary?.passed_count || 0),
+            partial_count: Number(data?.minimal_baseline_summary?.summary?.partial_count || 0),
+            failed_count: Number(data?.minimal_baseline_summary?.summary?.failed_count || 0),
+            missing_count: Number(data?.minimal_baseline_summary?.summary?.missing_count || 0),
+            pass_rate: Number(data?.minimal_baseline_summary?.summary?.pass_rate || 0),
+          },
+          cases: Array.isArray(data?.minimal_baseline_summary?.cases) ? data.minimal_baseline_summary.cases : [],
+          top_gaps: Array.isArray(data?.minimal_baseline_summary?.top_gaps) ? data.minimal_baseline_summary.top_gaps : [],
+          recommended_action: String(data?.minimal_baseline_summary?.recommended_action || '').trim(),
+        },
       });
     } catch {
       setStats(emptyStats);
@@ -13492,6 +13566,10 @@ function AiPenAssetWorkspaceView({
   const focusQueueItems = Array.isArray(stats.engineer_focus_queue) ? stats.engineer_focus_queue.slice(0, 6) : [];
   const unauthOverview = stats.unauth_access_overview || emptyStats.unauth_access_overview;
   const decisionGuardSummary = stats.decision_guard_summary || emptyStats.decision_guard_summary;
+  const minimalBaselineSummary = stats.minimal_baseline_summary || emptyStats.minimal_baseline_summary;
+  const minimalBaselineCases = Array.isArray(minimalBaselineSummary.cases) ? minimalBaselineSummary.cases : [];
+  const minimalBaselineTopGaps = Array.isArray(minimalBaselineSummary.top_gaps) ? minimalBaselineSummary.top_gaps : [];
+  const minimalBaselineSummaryInfo = minimalBaselineSummary.summary || emptyStats.minimal_baseline_summary.summary;
   const unauthPositiveDistribution = Array.isArray(unauthOverview.positive_type_distribution)
     ? unauthOverview.positive_type_distribution.slice(0, 4)
     : [];
@@ -13504,6 +13582,7 @@ function AiPenAssetWorkspaceView({
   const topProofStrengthDistribution = Array.isArray(decisionGuardSummary.proof_strength_distribution)
     ? decisionGuardSummary.proof_strength_distribution.slice(0, 3)
     : [];
+  const topMinimalBaselineCases = minimalBaselineCases.slice(0, 4);
   const aiDialogueMessages = useMemo(() => normalizeAiPlanMessages(selectedRow), [selectedRow]);
   const requestPacketData = useMemo(() => {
     if (!selectedRow) {
@@ -13844,6 +13923,7 @@ function AiPenAssetWorkspaceView({
         <StatusPill text={`人工复核/异常 ${statsLoading ? '...' : `${manualReviewCount}/${errorCount}`}`} type="error" />
         <StatusPill text={`强证据 ${statsLoading ? '...' : strongProofCount}`} type="success" />
         <StatusPill text={`守门触发 ${statsLoading ? '...' : decisionGuardSummary.guarded_count}`} type="info" />
+        <StatusPill text={`最小基线通过 ${statsLoading ? '...' : `${minimalBaselineSummaryInfo.passed_count}/${minimalBaselineSummaryInfo.total_cases}`}`} type="info" />
         <StatusPill text={`主要类型 ${topRiskType}`} type="info" />
         <StatusPill text={`主要来源 ${topSource}`} type="info" />
       </div>
@@ -14138,6 +14218,88 @@ function AiPenAssetWorkspaceView({
                 <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无证据强度分布'}</div>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+        <div className="xl:col-span-5 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black">最小基线概览</div>
+            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `样例 ${minimalBaselineSummaryInfo.total_cases}`}</span>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">已通过</div>
+              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : minimalBaselineSummaryInfo.passed_count}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">部分通过</div>
+              <div className="mt-1 text-lg font-black text-brand-warning">{statsLoading ? '...' : minimalBaselineSummaryInfo.partial_count}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">失败</div>
+              <div className="mt-1 text-lg font-black text-red-300">{statsLoading ? '...' : minimalBaselineSummaryInfo.failed_count}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">缺样本</div>
+              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : minimalBaselineSummaryInfo.missing_count}</div>
+            </div>
+            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
+              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">通过率</div>
+              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : formatRatePercent(minimalBaselineSummaryInfo.pass_rate)}</div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+            <div className="text-[11px] font-black tracking-wide text-brand-text-muted">建议动作</div>
+            <div className="text-sm break-all leading-relaxed">{statsLoading ? '加载中...' : (minimalBaselineSummary.recommended_action || '暂无建议')}</div>
+          </div>
+          <div className="space-y-2">
+            {topMinimalBaselineCases.length > 0 ? topMinimalBaselineCases.map((item) => (
+              <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-semibold">{item.label || '-'}</div>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getMinimalBaselineStatusClass(item.status)}`}>
+                    {formatMinimalBaselineStatus(item.status)}
+                  </span>
+                </div>
+                <div className="text-xs text-brand-text-muted break-all leading-relaxed">{item.focus_reason || '暂无说明'}</div>
+                <div className="flex flex-wrap gap-2 text-[11px] text-brand-text-muted">
+                  <span>命中 {Number(item.matched_count || 0)}</span>
+                  <span>通过 {Number(item.passed_count || 0)}</span>
+                  <span>部分 {Number(item.partial_count || 0)}</span>
+                  <span>失败 {Number(item.failed_count || 0)}</span>
+                </div>
+              </div>
+            )) : (
+              <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
+                {statsLoading ? '加载中...' : '暂无最小基线摘要'}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="xl:col-span-7 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black">最小基线缺口</div>
+            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `Top ${minimalBaselineTopGaps.length}`}</span>
+          </div>
+          <div className="space-y-2">
+            {minimalBaselineTopGaps.length > 0 ? minimalBaselineTopGaps.map((item, index) => (
+              <div key={`${item.id}-${index}`} className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-semibold">{index + 1}. {item.label || '-'}</div>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getMinimalBaselineStatusClass(item.status)}`}>
+                    {formatMinimalBaselineStatus(item.status)}
+                  </span>
+                </div>
+                <div className="text-sm text-brand-text-muted break-all leading-relaxed">{item.focus_reason || '暂无说明'}</div>
+              </div>
+            )) : (
+              <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
+                {statsLoading ? '加载中...' : '当前最小基线暂无明显缺口'}
+              </div>
+            )}
           </div>
         </div>
       </div>

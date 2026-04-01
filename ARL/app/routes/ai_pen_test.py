@@ -119,6 +119,107 @@ AI_PEN_PHASE_F_CAPABILITY_SPECS = (
     },
 )
 
+AI_PEN_MINIMAL_BASELINE_CASE_SPECS = (
+    {
+        "id": "unauth_admin_positive",
+        "label": "未授权后台入口",
+        "expectation": "positive",
+        "proof_types": ("unauth_admin_portal", "unauth_management_surface"),
+        "unauth_access_types": ("unauth_admin_portal", "unauth_management_surface"),
+        "proof_families": ("unauth_access",),
+        "passing_decisions": ("verified",),
+        "accepted_decisions": ("verified", "needs_manual_review"),
+    },
+    {
+        "id": "unauth_profile_positive",
+        "label": "未授权账户信息接口",
+        "expectation": "positive",
+        "proof_types": ("unauth_profile_data",),
+        "unauth_access_types": ("unauth_profile_data",),
+        "proof_families": ("unauth_access",),
+        "passing_decisions": ("verified",),
+        "accepted_decisions": ("verified", "needs_manual_review"),
+    },
+    {
+        "id": "unauth_login_wall_negative",
+        "label": "未授权登录墙降噪",
+        "expectation": "negative",
+        "unauth_negative_types": ("login_wall",),
+        "passing_decisions": ("likely_false_positive", "needs_manual_review"),
+        "forbidden_decisions": ("verified",),
+    },
+    {
+        "id": "unauth_auth_blocked_negative",
+        "label": "未授权鉴权拦截降噪",
+        "expectation": "negative",
+        "unauth_negative_types": ("auth_blocked",),
+        "passing_decisions": ("likely_false_positive", "needs_manual_review"),
+        "forbidden_decisions": ("verified",),
+    },
+    {
+        "id": "unauth_health_only_negative",
+        "label": "健康检查端点降噪",
+        "expectation": "negative",
+        "proof_types": ("unauth_health_endpoint",),
+        "unauth_negative_types": ("health_only",),
+        "passing_decisions": ("likely_false_positive", "needs_manual_review"),
+        "forbidden_decisions": ("verified",),
+        "supporting_guard_actions": ("downgrade_health_only",),
+    },
+    {
+        "id": "actuator_env_positive",
+        "label": "Actuator/配置暴露",
+        "expectation": "positive",
+        "risk_types": ("sensitive_info",),
+        "proof_families": ("sensitive_disclosure", "surface_exposure"),
+        "high_value_families": ("config_exposure_surface", "admin_debug_surface"),
+        "exclude_proof_types": ("unauth_health_endpoint",),
+        "passing_decisions": ("verified",),
+        "accepted_decisions": ("verified", "needs_manual_review"),
+    },
+    {
+        "id": "actuator_health_negative",
+        "label": "Actuator 健康检查负样例",
+        "expectation": "negative",
+        "proof_types": ("unauth_health_endpoint",),
+        "unauth_negative_types": ("health_only",),
+        "passing_decisions": ("likely_false_positive", "needs_manual_review"),
+        "forbidden_decisions": ("verified",),
+        "supporting_guard_actions": ("downgrade_health_only",),
+    },
+    {
+        "id": "api_doc_positive",
+        "label": "API 文档暴露",
+        "expectation": "positive",
+        "risk_types": ("api_doc", "graphql"),
+        "payload_types": ("api_doc_probe", "graphql_probe"),
+        "proof_families": ("surface_exposure",),
+        "high_value_families": ("api_doc_surface", "graphql_surface"),
+        "passing_decisions": ("verified",),
+        "accepted_decisions": ("verified", "needs_manual_review"),
+    },
+    {
+        "id": "jwt_none_positive",
+        "label": "JWT 弱校验/鉴权绕过",
+        "expectation": "positive",
+        "risk_types": ("jwt",),
+        "payload_types": ("jwt_probe",),
+        "proof_families": ("auth_bypass",),
+        "passing_decisions": ("verified",),
+        "accepted_decisions": ("verified", "needs_manual_review"),
+    },
+    {
+        "id": "jwt_auth_enforced_negative",
+        "label": "JWT 鉴权生效负样例",
+        "expectation": "negative",
+        "risk_types": ("jwt",),
+        "payload_types": ("jwt_probe",),
+        "proof_types": ("auth_protocol_open",),
+        "passing_decisions": ("likely_false_positive", "needs_manual_review"),
+        "forbidden_decisions": ("verified",),
+    },
+)
+
 retry_fields = ns.model(
     "AiPenRetryFields",
     {
@@ -719,6 +820,197 @@ def _match_ai_pen_capability_row(item: dict, capability_spec: dict):
         if current_value and current_value in expected_set:
             return True
     return False
+
+
+def _match_ai_pen_minimal_baseline_row(item: dict, baseline_spec: dict):
+    row = item if isinstance(item, dict) else {}
+    spec = baseline_spec if isinstance(baseline_spec, dict) else {}
+
+    exclude_pairs = (
+        ("proof_type", "exclude_proof_types"),
+        ("proof_family", "exclude_proof_families"),
+        ("unauth_negative_type", "exclude_unauth_negative_types"),
+    )
+    for row_key, spec_key in exclude_pairs:
+        blocked_set = _normalize_ai_pen_signal_set(spec.get(spec_key))
+        if not blocked_set:
+            continue
+        current_value = str(row.get(row_key) or "").strip().lower()
+        if current_value and current_value in blocked_set:
+            return False
+
+    signal_pairs = (
+        ("proof_type", "proof_types"),
+        ("unauth_access_type", "unauth_access_types"),
+        ("unauth_negative_type", "unauth_negative_types"),
+        ("decision_guard_action", "decision_guard_actions"),
+        ("proof_family", "proof_families"),
+        ("risk_type", "risk_types"),
+        ("payload_type", "payload_types"),
+        ("high_value_family", "high_value_families"),
+    )
+    checked = False
+    for row_key, spec_key in signal_pairs:
+        expected_set = _normalize_ai_pen_signal_set(spec.get(spec_key))
+        if not expected_set:
+            continue
+        checked = True
+        current_value = str(row.get(row_key) or "").strip().lower()
+        if not current_value or current_value not in expected_set:
+            return False
+    return checked
+
+
+def _build_ai_pen_minimal_baseline_case_summary(rows, baseline_spec: dict):
+    spec = baseline_spec if isinstance(baseline_spec, dict) else {}
+    case_id = str(spec.get("id") or "").strip()
+    label = str(spec.get("label") or "").strip()
+    expectation = str(spec.get("expectation") or "").strip().lower() or "positive"
+    matched_rows = [item for item in list(rows or []) if _match_ai_pen_minimal_baseline_row(item, spec)]
+    matched_count = len(matched_rows)
+    passing_decisions = _normalize_ai_pen_signal_set(spec.get("passing_decisions"))
+    accepted_decisions = _normalize_ai_pen_signal_set(spec.get("accepted_decisions"))
+    if not accepted_decisions:
+        accepted_decisions = set(passing_decisions)
+    forbidden_decisions = _normalize_ai_pen_signal_set(spec.get("forbidden_decisions"))
+    support_guard_actions = _normalize_ai_pen_signal_set(spec.get("supporting_guard_actions"))
+
+    passed_rows = []
+    partial_rows = []
+    failed_rows = []
+    for item in matched_rows:
+        decision = _normalize_decision(item.get("decision"))
+        guard_action = str(item.get("decision_guard_action") or "").strip().lower()
+        if expectation == "negative":
+            if forbidden_decisions and decision in forbidden_decisions:
+                failed_rows.append(item)
+                continue
+            if passing_decisions and decision in passing_decisions:
+                if support_guard_actions:
+                    if guard_action and guard_action in support_guard_actions:
+                        passed_rows.append(item)
+                    else:
+                        partial_rows.append(item)
+                else:
+                    passed_rows.append(item)
+                continue
+            partial_rows.append(item)
+            continue
+
+        if passing_decisions and decision in passing_decisions:
+            passed_rows.append(item)
+        elif accepted_decisions and decision in accepted_decisions:
+            partial_rows.append(item)
+        elif forbidden_decisions and decision in forbidden_decisions:
+            failed_rows.append(item)
+        else:
+            partial_rows.append(item)
+
+    if passed_rows:
+        status = "passed"
+    elif failed_rows:
+        status = "failed"
+    elif partial_rows:
+        status = "partial"
+    else:
+        status = "missing"
+
+    sample_row = passed_rows[0] if passed_rows else failed_rows[0] if failed_rows else partial_rows[0] if partial_rows else None
+    sample_decision = _normalize_decision(sample_row.get("decision")) if isinstance(sample_row, dict) else ""
+    sample_proof_type = str(sample_row.get("proof_type") or "").strip() if isinstance(sample_row, dict) else ""
+    sample_guard_action = str(sample_row.get("decision_guard_action") or "").strip() if isinstance(sample_row, dict) else ""
+
+    focus_reason = ""
+    if status == "passed":
+        if expectation == "negative":
+            focus_reason = "已满足负样例预期，当前不会把该类场景激进判成 verified"
+        else:
+            focus_reason = "已满足正样例预期，当前能稳定产出高价值入口"
+    elif status == "failed":
+        focus_reason = "已出现与基线预期相反的结论，需优先回看 proof/guard 链"
+    elif status == "partial":
+        if expectation == "negative" and support_guard_actions:
+            focus_reason = "已命中负样例，但守门动作还不够稳定"
+        elif expectation == "positive":
+            focus_reason = "已能发现该类入口，但结论仍偏保守或需要人工复核"
+        else:
+            focus_reason = "已有相关样本，但与最小基线仍有偏差"
+    else:
+        focus_reason = "当前尚无满足该最小基线的样本"
+
+    return {
+        "id": case_id,
+        "label": label,
+        "expectation": expectation,
+        "status": status,
+        "matched_count": matched_count,
+        "passed_count": len(passed_rows),
+        "partial_count": len(partial_rows),
+        "failed_count": len(failed_rows),
+        "sample_decision": sample_decision,
+        "sample_proof_type": sample_proof_type,
+        "sample_guard_action": sample_guard_action,
+        "focus_reason": focus_reason,
+    }
+
+
+def _build_ai_pen_minimal_baseline_summary(rows):
+    items = list(rows or [])
+    cases = [_build_ai_pen_minimal_baseline_case_summary(items, spec) for spec in AI_PEN_MINIMAL_BASELINE_CASE_SPECS]
+    total_cases = len(cases)
+    passed_count = sum(1 for item in cases if str(item.get("status") or "") == "passed")
+    partial_count = sum(1 for item in cases if str(item.get("status") or "") == "partial")
+    failed_count = sum(1 for item in cases if str(item.get("status") or "") == "failed")
+    missing_count = sum(1 for item in cases if str(item.get("status") or "") == "missing")
+
+    gap_cases = [
+        item for item in cases
+        if str(item.get("status") or "") in {"failed", "missing", "partial"}
+    ]
+    severity_order = {"failed": 3, "missing": 2, "partial": 1}
+    order_map = {
+        str(spec.get("id") or "").strip(): index
+        for index, spec in enumerate(AI_PEN_MINIMAL_BASELINE_CASE_SPECS)
+    }
+    gap_cases.sort(
+        key=lambda item: (
+            -int(severity_order.get(str(item.get("status") or ""), 0)),
+            int(order_map.get(str(item.get("id") or "").strip(), 10_000)),
+        )
+    )
+    top_gaps = [
+        {
+            "id": str(item.get("id") or "").strip(),
+            "label": str(item.get("label") or "").strip(),
+            "status": str(item.get("status") or "").strip(),
+            "focus_reason": str(item.get("focus_reason") or "").strip(),
+        }
+        for item in gap_cases[:5]
+    ]
+
+    recommended_action = ""
+    if failed_count > 0:
+        recommended_action = "当前最小基线已出现反向命中，建议优先修正失败样例对应的 proof/guard 规则"
+    elif missing_count > 0:
+        recommended_action = "当前最小基线仍有缺口，建议优先补齐未授权/Actuator/API文档/JWT 的基础样本"
+    elif partial_count > 0:
+        recommended_action = "当前最小基线已初步覆盖，但部分样例仍偏保守，建议继续优化 guard 和结论收敛"
+    else:
+        recommended_action = "最小基线已全部满足，可以继续扩大样本和靶场覆盖范围"
+
+    return {
+        "summary": {
+            "total_cases": total_cases,
+            "passed_count": passed_count,
+            "partial_count": partial_count,
+            "failed_count": failed_count,
+            "missing_count": missing_count,
+            "pass_rate": _safe_ratio(passed_count, total_cases),
+        },
+        "cases": cases,
+        "top_gaps": top_gaps,
+        "recommended_action": recommended_action,
+    }
 
 
 def _build_ai_pen_phase_f_readiness(rows):
@@ -1628,6 +1920,7 @@ class StatsAiPenTest(ARLResource):
         unauth_negative_summary = _build_ai_pen_unauth_negative_summary(metric_rows)
         unauth_access_overview = _build_ai_pen_unauth_access_overview(metric_rows)
         decision_guard_summary = _build_ai_pen_decision_guard_summary(metric_rows)
+        minimal_baseline_summary = _build_ai_pen_minimal_baseline_summary(metric_rows)
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -1658,5 +1951,6 @@ class StatsAiPenTest(ARLResource):
                 "unauth_negative_summary": unauth_negative_summary,
                 "unauth_access_overview": unauth_access_overview,
                 "decision_guard_summary": decision_guard_summary,
+                "minimal_baseline_summary": minimal_baseline_summary,
             },
         )

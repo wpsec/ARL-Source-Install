@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.63`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.64`（截至 `2026-04-01`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -464,7 +464,7 @@ AI 渗透测试至少要覆盖以下能力族：
 - 后端数据面已具备：`agent_trace/tool_calls/tool_results/stop_reason/budget_used/session_summary/tool_plan_source`
 - 已支持历史 `session/tool_plan/tool_results` 沿用重试
 - 已补导出字段与 `/ai_pen_test/stats/` 轨迹维度统计
-- AI渗透工作台已补：`未授权概览 / 阶段 F 能力就绪度 / 工程师优先能力 / 裁决守门概览` 卡片、`证据家族/证据强度/守门动作/未授权负信号` 筛选、结果列表行内证据速览、右侧 `proof_summary/request_template_summary/unauth_probe_summary/decision_guard_reason` 证据总览
+- AI渗透工作台已补：`未授权概览 / 阶段 F 能力就绪度 / 工程师优先能力 / 裁决守门概览 / 最小基线概览` 卡片、`证据家族/证据强度/守门动作/未授权负信号` 筛选、结果列表行内证据速览、右侧 `proof_summary/request_template_summary/unauth_probe_summary/decision_guard_reason` 证据总览，以及最小基线缺口列表
 - 差距：前台主体已基本到位，但仍可继续补更细的 Agent 时间线组织与靶场基线联动
 - 结论：`前后台主链已基本打通，前台进入收尾优化`
 
@@ -500,9 +500,107 @@ AI 渗透测试至少要覆盖以下能力族：
 - 已可输出 `unauth_negative_type/unauth_negative_summary`，直接区分“被鉴权挡住 / 登录墙 / 只有健康检查面”等未授权负信号
 - 已可输出 `unauth_access_overview`，在 stats 顶层直接汇总未授权正向命中、负信号主导类型和建议动作
 - 已可输出 `decision_guard_summary`，并按 `proof_strength / decision_guard_action` 量化“守门压制了多少激进结论、主导守门动作是什么”
+- 已可输出 `minimal_baseline_summary`，按第一版 10 个最小正负样例给出 `passed/partial/failed/missing`、`top_gaps` 与 `recommended_action`，并在前台工作台直接展示
 - 已可输出“工程师优先队列”及“具体入口 Top 列表”所需的 readiness/priority 数据面，并在前台工作台直接展示
-- 差距：登录/JWT/API文档/Actuator/IDOR/SQLi/XSS/文件/SSRF 靶场与标注样本尚未建立
-- 结论：`指标数据面已具备，靶场基线未完成`
+- 差距：当前已具“基线摘要”，但真实靶场、标注样本与自动跑批入口尚未建立
+- 结论：`指标与最小基线数据面已具备，真实靶场基线未完成`
+
+最小基线建议（第一版）：
+
+- 第一目标不是“把所有漏洞类型一次做全”，而是先做一套能证明“真入口更多、误报更少”的最小考卷
+- 第一批建议只覆盖最有价值、最符合当前系统定位的 5 条主线：
+  - `未授权真入口`
+  - `未授权负信号降噪`
+  - `Actuator/配置暴露`
+  - `API 文档暴露`
+  - `JWT/认证链`
+
+建议先落 10 个最小样例：
+
+1. `unauth_admin_positive`
+   - 场景：无凭证访问 `/admin` 或 `/admin/dashboard` 可直接进入后台
+   - 预期：`decision=verified`
+   - 预期证据：`proof_family=unauth_access`，`proof_type=unauth_admin_portal`
+   - 守门预期：不应被 `downgrade_*`
+
+2. `unauth_profile_positive`
+   - 场景：无凭证访问 `/api/me`、`/userinfo`、`/account/current` 返回账户资料
+   - 预期：`decision=verified`
+   - 预期证据：`proof_family=unauth_access`，`proof_type=unauth_profile_data`
+   - 守门预期：`proof_strength` 至少为 `medium`
+
+3. `unauth_login_wall_negative`
+   - 场景：访问高价值路径最终跳到登录页或返回明确登录墙
+   - 预期：不应为 `verified`
+   - 预期证据：`unauth_negative_type=login_wall`
+   - 守门预期：优先出现 `downgrade_negative_signal`
+
+4. `unauth_auth_blocked_negative`
+   - 场景：访问高价值路径被 `401/403` 拦截
+   - 预期：不应为 `verified`
+   - 预期证据：`unauth_negative_type=auth_blocked`
+   - 守门预期：优先出现 `downgrade_negative_signal`
+
+5. `unauth_health_only_negative`
+   - 场景：无凭证只能访问 `/actuator/health`、`/actuator/info`
+   - 预期：`decision=needs_manual_review` 或 `likely_false_positive`
+   - 预期证据：`proof_type=unauth_health_endpoint`，`unauth_negative_type=health_only`
+   - 守门预期：优先出现 `downgrade_health_only`
+
+6. `actuator_env_positive`
+   - 场景：无凭证访问 `/actuator/env`、`/manage/env` 返回敏感配置或环境信息
+   - 预期：`decision=verified`
+   - 预期证据：`proof_family=sensitive_disclosure` 或 `surface_exposure`
+   - 守门预期：不应因 `health_only` 类规则被误降级
+
+7. `actuator_health_negative`
+   - 场景：仅 `/actuator/health` 可访问，不返回高价值敏感字段
+   - 预期：不应为 `verified`
+   - 预期证据：可保留 `unauth_access` 线索，但必须低优先级
+   - 守门预期：应出现 `downgrade_health_only` 或进入 `health_only`
+
+8. `api_doc_positive`
+   - 场景：`/swagger-ui/`、`/v3/api-docs`、`/openapi.json` 可直接访问
+   - 预期：`decision=verified` 或高优先级 `needs_manual_review`
+   - 预期证据：`proof_family=surface_exposure`
+   - 补充要求：应进入 `phase_f_readiness` 的 `API文档/GraphQL`
+
+9. `jwt_none_positive`
+   - 场景：JWT `alg=none` 或等价弱校验链存在
+   - 预期：`decision=verified`
+   - 预期证据：`proof_family=auth_bypass`
+   - 守门预期：不应被 `downgrade_negative_signal`
+
+10. `jwt_auth_enforced_negative`
+   - 场景：JWT 接口对无效 token、none token、错误 client 均明确拒绝
+   - 预期：不应为 `verified`
+   - 预期证据：应更偏 `likely_false_positive` 或保守 `needs_manual_review`
+   - 守门预期：应保留“鉴权生效”的负向解释
+
+每个样例至少要校验这 6 个字段：
+
+- `decision`
+- `proof_family`
+- `proof_type`
+- `proof_strength`
+- `decision_guard_action`
+- `unauth_negative_type`
+
+第一版最小验收指标建议：
+
+- 未授权正样例命中率：`>= 80%`
+- 未授权负样例误报率：`<= 10%`
+- `health_only` 误报为 `verified`：`必须为 0`
+- `auth_blocked/login_wall` 误报为 `verified`：`必须为 0`
+- `decision_guard` 命中的负样例中，成功降级率：`>= 80%`
+- 平均轮数与平均工具调用数：先记录基线，不在第一版设硬阈值
+
+落地顺序建议：
+
+1. 先做 5 个未授权/Actuator 样例
+2. 再补 2 个 API 文档样例
+3. 最后补 2 个 JWT 样例
+4. 第一轮不追求 `SQLi/XSS/文件/SSRF` 全覆盖，先把“高价值入口 + 降噪”基线立住
 
 ## 9. 结论
 
