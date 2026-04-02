@@ -3,7 +3,7 @@
 ## 1. 目标定位
 
 - 目标版本：`v4.5.x`
-- 文档同步版本：`v4.5.65`（截至 `2026-04-01`）
+- 文档同步版本：`v4.5.66`（截至 `2026-04-02`）
 - 能力下限：至少具备 `PortSwigger Web Security Academy` 核心 Web 漏洞能力
 - 架构要求：必须是真正的 `Agent MCP`，不是“规则驱动 + AI 点缀 + MCP 外壳”
 - 运行边界：默认低副作用、强审计、可回放、可人工接管，不做自动化后渗透和横向移动
@@ -42,6 +42,7 @@
 - `/ai_pen_test/stats/` 已改为单次结果取数后本地汇总，不再依赖多轮 Mongo 分组聚合，任务级统计链性能更稳
 - 通用 `evidence_hit` 不再直接抬成 `verified`，AI/Agent 也不再仅凭高置信把结果升级为 `verified`，必须满足结构化硬证据门槛
 - 未授权分析已新增 `Actuator` 敏感端点收窄与“和基线页相同响应”降噪，runtime 侧也已具备同轮语义请求去重
+- `secret_key` 的 JS 资产命中已并入 `js_context` 降噪主链，`Token="+变量`、运行时拼接与本地存储片段会统一收敛为 `secret_template_noise`，降低前端 bundle 中“伪密钥”误报
 
 ## 3. 能力下限：按 PortSwigger 体系定义
 

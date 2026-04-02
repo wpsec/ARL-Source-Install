@@ -5614,7 +5614,7 @@ class WebSiteFetch(object):
             ret["js_context_summary"] = dict(js_summary or {})
             return ret
 
-        if risk_type_text == "sensitive_info":
+        if risk_type_text in {"sensitive_info", "secret_key"}:
             if bool(js_summary.get("hardcoded_literal")) and key_name:
                 reason_parts = ["JS 上下文发现硬编码 {} 字面量".format(key_name)]
                 if key_type:

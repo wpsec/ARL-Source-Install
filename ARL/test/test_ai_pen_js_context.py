@@ -2101,6 +2101,21 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("likely_false_positive", result.get("decision"))
         self.assertIn("未发现硬编码敏感值", str(result.get("reason") or ""))
 
+    def test_secret_key_js_bundle_concat_noise_is_downgraded(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/js/common~app.87011869.js",
+            body_text='const headerSnippet = "Token="+e,method:"; axios({headers:{token:headerSnippet},baseURL:a})',
+            headers={"Content-Type": "application/javascript"},
+            risk_type="secret_key",
+            payload_type="replay",
+            evidence_seed='Token="+e,method:"',
+        )
+
+        summary = result.get("js_context_summary") if isinstance(result.get("js_context_summary"), dict) else {}
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertEqual("secret_template_noise", summary.get("noise_kind"))
+        self.assertIn("未发现硬编码敏感值", str(result.get("reason") or ""))
+
     def test_sensitive_info_hardcoded_client_secret_is_promoted(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(
             target_url="https://example.com/static/main.js",
@@ -2109,6 +2124,19 @@ class TestAiPenJsContext(unittest.TestCase):
             risk_type="sensitive_info",
             payload_type="replay",
             evidence_seed="client_secret",
+        )
+
+        self.assertEqual("verified", result.get("decision"))
+        self.assertIn("硬编码", str(result.get("reason") or ""))
+
+    def test_secret_key_hardcoded_literal_stays_promoted(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/static/main.js",
+            body_text='const secret_key = "AbCdEf1234567890ZXCVBNMqwerty"; const sign = hmac(secret_key);',
+            headers={"Content-Type": "application/javascript"},
+            risk_type="secret_key",
+            payload_type="replay",
+            evidence_seed="secret_key",
         )
 
         self.assertEqual("verified", result.get("decision"))
