@@ -12386,6 +12386,54 @@ class WebSiteFetch(object):
         }
 
     @classmethod
+    def _build_ai_pen_baseline_site_candidate(
+        cls,
+        source_id,
+        site_url: str,
+        status_code=0,
+        title_text: str = "",
+        server_text: str = "",
+        finger_names=None,
+    ):
+        target_url = str(site_url or "").strip()
+        if not cls._is_http_target(target_url):
+            return None
+
+        status_value = cls._safe_int_value(status_code, 0)
+        if not (cls._is_ai_pen_success_status(status_value) or status_value in {401, 403}):
+            return None
+
+        finger_list = [
+            str(item or "").strip()
+            for item in list(finger_names or [])
+            if str(item or "").strip()
+        ][:4]
+        evidence_parts = []
+        if title_text:
+            evidence_parts.append("title={}".format(str(title_text)[:90]))
+        if server_text:
+            evidence_parts.append("server={}".format(str(server_text)[:64]))
+        if status_value:
+            evidence_parts.append("status={}".format(status_value))
+        if finger_list:
+            evidence_parts.append("finger={}".format(",".join(finger_list)))
+
+        return {
+            "source_collection": "site",
+            "source_id": source_id,
+            "source_module": "site",
+            "target": target_url,
+            "vuln_url": target_url,
+            "risk_type": "web_policy",
+            "risk_name": "站点基础探测",
+            "severity": "info",
+            "evidence_seed": " | ".join(evidence_parts),
+            "status_code_hint": status_value,
+            "priority_score": 10 if cls._is_ai_pen_success_status(status_value) else 4,
+            "route_hint": "web_policy_context",
+        }
+
+    @classmethod
     def _looks_like_sensitive_config_response(cls, url_text: str, body_text: str, headers=None):
         lower_url = str(url_text or "").strip().lower()
         if not lower_url:
@@ -14701,16 +14749,45 @@ class WebSiteFetch(object):
             websocket_keywords = ("websocket", "socket.io", "sockjs", "ws://", "wss://")
             jwt_keywords = ("jwt", "json web token", "oauth2", "openid", "oidc")
             login_keywords = self.AI_PEN_LOGIN_PAGE_KEYWORDS
+            site_candidate_stats = {
+                "total": 0,
+                "skip_non_http": 0,
+                "skip_out_of_scope": 0,
+                "high_value": 0,
+                "keyword": 0,
+                "baseline": 0,
+                "skip_status": 0,
+            }
+            site_candidate_samples = {
+                "high_value": [],
+                "keyword": [],
+                "baseline": [],
+                "skip_status": [],
+            }
+
+            def _append_site_sample(bucket: str, sample_text: str):
+                if bucket not in site_candidate_samples:
+                    return
+                text = str(sample_text or "").strip()
+                if not text:
+                    return
+                if len(site_candidate_samples[bucket]) >= 5:
+                    return
+                site_candidate_samples[bucket].append(text[:140])
+
             site_cursor = utils.conn_db("site").find(
                 {"task_id": self.task_id},
                 {"_id": 1, "site": 1, "title": 1, "http_server": 1, "finger": 1, "status": 1},
                 max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
             ).limit(self.AI_PEN_TEST_SOURCE_LIMIT)
             for row in site_cursor:
+                site_candidate_stats["total"] += 1
                 site_url = str(row.get("site", "") or "").strip()
                 if not self._is_http_target(site_url):
+                    site_candidate_stats["skip_non_http"] += 1
                     continue
                 if not self._url_in_task_scope(site_url):
+                    site_candidate_stats["skip_out_of_scope"] += 1
                     continue
 
                 status_code = int(row.get("status", 0) or 0)
@@ -14724,6 +14801,15 @@ class WebSiteFetch(object):
                     site_url=site_url,
                 )
                 if high_value_candidate:
+                    site_candidate_stats["high_value"] += 1
+                    _append_site_sample(
+                        "high_value",
+                        "{}|{}|{}".format(
+                            site_url,
+                            str(high_value_candidate.get("risk_type", "") or "").strip() or "-",
+                            status_code,
+                        ),
+                    )
                     _append_candidate(high_value_candidate)
                     continue
 
@@ -14770,6 +14856,29 @@ class WebSiteFetch(object):
                     severity = "low"
 
                 if not risk_type:
+                    # 普通站点也纳入基础探测，避免 AI 渗透测试页只有风险/URL 线索而没有站点资产。
+                    baseline_site_candidate = self._build_ai_pen_baseline_site_candidate(
+                        source_id=row.get("_id"),
+                        site_url=site_url,
+                        status_code=status_code,
+                        title_text=title_text,
+                        server_text=server_text,
+                        finger_names=finger_names,
+                    )
+                    if baseline_site_candidate:
+                        site_candidate_stats["baseline"] += 1
+                        _append_site_sample(
+                            "baseline",
+                            "{}|{}|{}".format(
+                                site_url,
+                                str(baseline_site_candidate.get("risk_type", "") or "").strip() or "-",
+                                status_code,
+                            ),
+                        )
+                        _append_candidate(baseline_site_candidate)
+                    else:
+                        site_candidate_stats["skip_status"] += 1
+                        _append_site_sample("skip_status", "{}|{}".format(site_url, status_code))
                     continue
 
                 evidence_parts = []
@@ -14800,6 +14909,26 @@ class WebSiteFetch(object):
                         "priority_score": 18 if self._is_ai_pen_success_status(status_code) else (8 if status_code in {401, 403} else 0),
                     }
                 )
+                site_candidate_stats["keyword"] += 1
+                _append_site_sample("keyword", "{}|{}|{}".format(site_url, risk_type, status_code))
+            logger.info(
+                "task_id:{} ai_pen site candidate stats total:{} high_value:{} keyword:{} baseline:{} "
+                "skip_non_http:{} skip_out_of_scope:{} skip_status:{} high_value_samples:{} "
+                "keyword_samples:{} baseline_samples:{} skip_status_samples:{}".format(
+                    self.task_id,
+                    site_candidate_stats["total"],
+                    site_candidate_stats["high_value"],
+                    site_candidate_stats["keyword"],
+                    site_candidate_stats["baseline"],
+                    site_candidate_stats["skip_non_http"],
+                    site_candidate_stats["skip_out_of_scope"],
+                    site_candidate_stats["skip_status"],
+                    site_candidate_samples["high_value"],
+                    site_candidate_samples["keyword"],
+                    site_candidate_samples["baseline"],
+                    site_candidate_samples["skip_status"],
+                )
+            )
         except Exception as e:
             logger.warning("task_id:{} build ai_pen candidates from site failed err:{}".format(self.task_id, e))
 

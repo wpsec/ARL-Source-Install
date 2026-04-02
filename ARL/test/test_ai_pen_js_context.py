@@ -260,6 +260,31 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("login_surface", candidate.get("risk_type"))
         self.assertEqual("高价值认证入口", candidate.get("risk_name"))
 
+    def test_baseline_site_candidate_covers_generic_sites(self):
+        candidate = WebSiteFetch._build_ai_pen_baseline_site_candidate(
+            source_id="507f1f77bcf86cd7994390c1",
+            site_url="https://example.com/",
+            status_code=200,
+            title_text="Example Portal",
+            server_text="nginx",
+            finger_names=["php", "laravel"],
+        )
+
+        self.assertEqual("site", candidate.get("source_collection"))
+        self.assertEqual("web_policy", candidate.get("risk_type"))
+        self.assertEqual("站点基础探测", candidate.get("risk_name"))
+        self.assertEqual("web_policy_context", candidate.get("route_hint"))
+        self.assertIn("status=200", candidate.get("evidence_seed", ""))
+        self.assertGreater(int(candidate.get("priority_score", 0) or 0), 0)
+        self.assertIsNone(
+            WebSiteFetch._build_ai_pen_baseline_site_candidate(
+                source_id="507f1f77bcf86cd7994390c2",
+                site_url="https://example.com/missing",
+                status_code=404,
+                title_text="Not Found",
+            )
+        )
+
     def test_high_value_url_candidate_detects_auth_protocol_endpoint(self):
         candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
             source_collection="url",
