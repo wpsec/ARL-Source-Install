@@ -14028,7 +14028,7 @@ function AiPenAssetWorkspaceView({
 
         <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black">阶段F能力就绪度</div>
+            <div className="text-sm font-black">基础能力覆盖情况</div>
             <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `总计 ${readinessSummary.total_capabilities}`}</span>
           </div>
           <div className="grid grid-cols-3 gap-2">
@@ -14071,7 +14071,7 @@ function AiPenAssetWorkspaceView({
               </div>
             )) : (
               <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
-                {statsLoading ? '加载中...' : '暂无阶段 F 能力摘要'}
+                {statsLoading ? '加载中...' : '暂无基础能力覆盖摘要'}
               </div>
             )}
           </div>
@@ -14104,7 +14104,7 @@ function AiPenAssetWorkspaceView({
 
         <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black">工程师优先能力</div>
+            <div className="text-sm font-black">建议优先复核能力</div>
             <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `Top ${focusQueueItems.length}`}</span>
           </div>
           <div className="space-y-2">
@@ -14144,7 +14144,7 @@ function AiPenAssetWorkspaceView({
               </div>
             )) : (
               <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
-                {statsLoading ? '加载中...' : '暂无优先能力'}
+                {statsLoading ? '加载中...' : '暂无优先复核能力'}
               </div>
             )}
           </div>

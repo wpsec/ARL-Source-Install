@@ -3,9 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-02（v4.5.66 ~ v4.5.66）
+## 2026-04-02（v4.5.66 ~ v4.5.67）
 
 - `[v4.5.66]` AI渗透 `JS secret_key` 误报收紧：`js_context` 分析将 `risk_type=secret_key` 并入与 `sensitive_info` 相同的前端静态资源降噪链，对 `Token="+变量`、`secret="+变量`、`key="+变量` 以及本地存储/运行时拼接痕迹这类 bundle 片段统一收敛为 `secret_template_noise`，不再误判为硬编码密钥；同时补齐 `secret_key` 的 JS 拼接噪声与真实硬编码字面量双向回归，确保正常的 `secret_key` 硬编码命中不被误伤
+- `[v4.5.67]` AI渗透工作台文案继续收口：将原本偏内部实现口径的“阶段 F 能力就绪度”改成更直白的“基础能力覆盖情况”，并将与其语义过近的“基础渗透测试能力”进一步改成“建议优先复核能力”，让“覆盖情况”和“优先排序”两张卡片各自表达更清楚；同时删除已基本完成使命的 `AI渗透测试MCP总体方案` 文档，避免继续维护过期方案说明
 
 ## 2026-04-01（v4.5.10 ~ v4.5.65）
 
@@ -21,7 +22,7 @@
 
 - `[v4.5.58]` AI渗透 `证据强度/裁决守门` 主链落地：新增统一 `proof_strength` 与 `decision_guard_action/reason`，让 `proof_family / proof_type / unauth_negative_type / unauth_probe_summary` 不再只是展示字段，而会真正参与最终裁决和误报抑制；例如 `access_control` 结果默认收敛为人工复核，`unauth_health_endpoint`、`health_only`、`auth_blocked/login_wall/guarded_mixed` 会主动压低过于激进的未授权结论。与此同时，这批字段已经打通到结果落库、工程师优先队列、导出列和回归测试，进一步把“少给水洞”的收口逻辑从统计层推进到最终判定层
 
-- `[v4.5.56]` AI渗透 `工作台证据视图` 前台继续收口：`AI渗透测试` 页新增更完整的未授权概览、阶段 F 能力就绪度和工程师优先能力细视图，前台会直接消费 `unauth_access_overview` 的正负分布与负信号占比、`phase_f_readiness` 的覆盖率/命中率/能力明细，以及 `engineer_focus_queue` 的误报率/平均轮次/平均工具调用数；结果列表也新增 `证据家族/探针类型/未授权负信号` 的行内速览，右侧详情补齐 `proof_summary/request_template_summary/unauth_probe_summary` 的证据总览，进一步把“工程师优先看什么入口、为什么值得接手”从后端统计真正产品化到前台工作台
+- `[v4.5.56]` AI渗透 `工作台证据视图` 前台继续收口：`AI渗透测试` 页新增更完整的未授权概览、基础能力覆盖情况和基础渗透测试能力细视图，前台会直接消费 `unauth_access_overview` 的正负分布与负信号占比、`phase_f_readiness` 的覆盖率/命中率/能力明细，以及 `engineer_focus_queue` 的误报率/平均轮次/平均工具调用数；结果列表也新增 `证据家族/探针类型/未授权负信号` 的行内速览，右侧详情补齐 `proof_summary/request_template_summary/unauth_probe_summary` 的证据总览，进一步把“当前哪些基础渗透能力更值得优先看、为什么值得接手”从后端统计真正产品化到前台工作台
 
 - `[v4.5.52]` AI渗透 `未授权基线摘要` 继续收敛：`/ai_pen_test/stats/` 新增 `unauth_access_overview`，会把未授权相关结果中的正向命中、`needs_manual_review` 线索、负信号分布、主导类型和建议动作收成一段顶层摘要，便于工程师快速区分当前更像“真未授权入口”还是“被鉴权/登录墙保护住的面”；对应回归同步补齐，进一步强化阶段 F 统计对“少给水洞”的支撑
 
