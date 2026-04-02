@@ -21145,21 +21145,12 @@ function MainShell() {
         {activeModule.id === 'config_console' ? <ConfigConsoleView token={token} /> : null}
         {activeModule.id === 'ai_console' ? <ConfigAiManagementPanel token={token} /> : null}
         {activeModule.id === 'dingtalk_api' ? <DingtalkIntegrationView token={token} /> : null}
-        {activeModule.id === 'ai_pen_test' ? (
-          <AiPenAssetWorkspaceView
-            token={token}
-            onOpenModule={openModule}
-            externalFilters={activeExternalFilters}
-            onClearExternalFilters={clearActiveExternalFilters}
-          />
-        ) : null}
         {activeModule.id !== 'dashboard' &&
         activeModule.id !== 'system_monitor' &&
         activeModule.id !== 'api_console' &&
         activeModule.id !== 'config_console' &&
         activeModule.id !== 'ai_console' &&
-        activeModule.id !== 'dingtalk_api' &&
-        activeModule.id !== 'ai_pen_test' ? (
+        activeModule.id !== 'dingtalk_api' ? (
           <TableModuleView
             module={activeModule}
             token={token}
