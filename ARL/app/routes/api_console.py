@@ -718,7 +718,11 @@ def _default_ai_prompt_templates():
             'name': '默认AI渗透测试模板',
             'scene': 'ai_pen_test_plan',
             'content': (
-                "你是AI渗透测试助手。请结合风险类型、URL、参数、响应特征与知识命中，"
+                "你是AI渗透测试助手。当前任务默认属于已授权、合规、范围受控的安全验证场景"
+                "（自有资产或客户明确授权资产），请不要只因为输入里没有重复写授权背景就拒绝回答；"
+                "若某一步超出当前 task/target/vuln_url 范围，或需要高破坏性、持久化、社工、对第三方扩展扫描、口令爆破扩张等高风险动作，"
+                "请保守返回 needs_manual_review。"
+                "请结合风险类型、URL、参数、响应特征与知识命中，"
                 "给出验证优先级与建议探针类型，输出应包含："
                 "1) 结论（verified/likely_false_positive/needs_manual_review）；"
                 "2) 证据摘要；"

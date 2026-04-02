@@ -285,6 +285,51 @@ class TestAiPenJsContext(unittest.TestCase):
             )
         )
 
+    def test_resolve_ai_pen_prompt_content_includes_authorized_context(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        prompt = task._resolve_ai_pen_prompt_content({})
+
+        self.assertIn("已授权、合规、范围受控", prompt)
+        self.assertIn("低副作用", prompt)
+
+    def test_build_ai_pen_authorization_notice_switches_by_mode(self):
+        planner_notice = WebSiteFetch._build_ai_pen_authorization_notice(agent_loop_mode=False)
+        agent_notice = WebSiteFetch._build_ai_pen_authorization_notice(agent_loop_mode=True)
+
+        self.assertIn("不要仅因为输入中没有重复描述授权背景就拒绝回答", planner_notice)
+        self.assertIn("needs_manual_review", planner_notice)
+        self.assertIn("manual_required", agent_notice)
+
+    def test_build_ai_pen_engagement_context_marks_authorized_scope(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        task.sites = ["https://example.com", "https://admin.example.com"]
+        task.scope_domain = ["example.com"]
+
+        context = task._build_ai_pen_engagement_context(
+            {
+                "target": "https://example.com/dashboard",
+                "vuln_url": "https://example.com/api/export/report",
+            }
+        )
+
+        self.assertTrue(bool(context.get("authorized")))
+        self.assertEqual("customer_or_self_owned_assets", context.get("compliance_mode"))
+        self.assertEqual("low_side_effect_validation", context.get("assessment_goal"))
+        self.assertIn("https://example.com", context.get("seed_sites", []))
+        self.assertIn("example.com", context.get("scope_domains", []))
+
+    def test_is_ai_pen_safety_refusal_text_detects_authorization_refusal(self):
+        self.assertTrue(
+            WebSiteFetch._is_ai_pen_safety_refusal_text(
+                "抱歉，我不能协助渗透测试，因为我无法确认这次操作是否已经获得授权。"
+            )
+        )
+        self.assertFalse(
+            WebSiteFetch._is_ai_pen_safety_refusal_text(
+                "需要人工复核，建议继续围绕当前目标做低副作用验证。"
+            )
+        )
+
     def test_high_value_url_candidate_detects_auth_protocol_endpoint(self):
         candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
             source_collection="url",

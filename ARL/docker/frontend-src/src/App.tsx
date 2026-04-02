@@ -148,6 +148,19 @@ type ApiRequestOptions = {
 };
 
 type TaskReportExportFormat = 'excel' | 'html' | 'ai_markdown';
+type TaskReportExportPhase = 'creating' | 'queued' | 'running' | 'downloading' | 'success' | 'error';
+type TaskReportExportFeedback = {
+  phase: TaskReportExportPhase;
+  progress: number;
+  title: string;
+  summary: string;
+  detail: string;
+  formatLabel: string;
+  taskCount: number;
+  jobId: string;
+  fileName: string;
+  error: string;
+};
 type SensitiveVerifyContext = 'api' | 'ai';
 
 const API_BASE = '/api';
@@ -4591,7 +4604,23 @@ function DashboardView({
     { title: '高危风险', value: highRisk, change: `总计 ${stats.vuln}`, isUp: highRisk === 0, icon: AlertTriangle, color: 'text-brand-danger' },
     { title: '计划任务', value: stats.scheduler, change: `资产分组 ${stats.asset_scope}`, isUp: stats.scheduler > 0, icon: Settings, color: 'text-brand-warning' },
   ];
-  const trendData = assetTrend.length > 0 ? assetTrend : [{ name: '周一', assets: stats.asset_site, vulns: stats.vuln }];
+  const buildEmptyAssetTrend = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(today);
+      day.setDate(today.getDate() - (6 - index));
+      const month = String(day.getMonth() + 1).padStart(2, '0');
+      const date = String(day.getDate()).padStart(2, '0');
+      return {
+        name: `${month}-${date}`,
+        assets: 0,
+        vulns: 0,
+      };
+    });
+  };
+  // 回退模式下不要把“总资产数”伪装成“7日增长趋势”。
+  const trendData = assetTrend.length > 0 ? assetTrend : buildEmptyAssetTrend();
   const assetOverviewData = [
     { name: '子域名', value: Number(stats.domain_total || 0), color: '#14b8a6' },
     { name: 'IP', value: Number(stats.ip_total || 0), color: '#3b82f6' },
@@ -7067,6 +7096,7 @@ function TableModuleView({
   } | null>(null);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
+  const [taskReportExportFeedback, setTaskReportExportFeedback] = useState<TaskReportExportFeedback | null>(null);
   const [taskReportExportMenu, setTaskReportExportMenu] = useState('');
   const [taskErrorDialog, setTaskErrorDialog] = useState<{
     taskId: string;
@@ -9444,6 +9474,73 @@ function TableModuleView({
     setTaskReportExportMenu((current) => (current === menuKey ? '' : menuKey));
   };
 
+  const taskReportExportBusy = Boolean(
+    taskReportExportFeedback
+    && ['creating', 'queued', 'running', 'downloading'].includes(taskReportExportFeedback.phase)
+  );
+
+  const closeTaskReportExportFeedback = () => {
+    setTaskReportExportFeedback((current) => {
+      if (!current) return null;
+      if (['success', 'error'].includes(current.phase)) {
+        return null;
+      }
+      return current;
+    });
+  };
+
+  const openTaskReportExportFeedback = (format: TaskReportExportFormat, taskCount: number) => {
+    const formatLabel = TASK_REPORT_EXPORT_LABELS[format] || '表格';
+    setTaskReportExportFeedback({
+      phase: 'creating',
+      progress: 8,
+      title: `${formatLabel}报告导出`,
+      summary: `正在创建${formatLabel}导出任务`,
+      detail: taskCount > 1 ? `已提交 ${taskCount} 条任务，请稍候...` : '正在为当前任务准备导出文件，请稍候...',
+      formatLabel,
+      taskCount,
+      jobId: '',
+      fileName: '',
+      error: '',
+    });
+    return formatLabel;
+  };
+
+  const updateTaskReportExportFeedback = (
+    phase: TaskReportExportPhase,
+    updates: Partial<TaskReportExportFeedback> = {},
+  ) => {
+    setTaskReportExportFeedback((current) => {
+      if (!current) return current;
+
+      const currentProgress = Number(current.progress || 0);
+      let nextProgress = currentProgress;
+      if (typeof updates.progress === 'number' && Number.isFinite(updates.progress)) {
+        nextProgress = Math.min(100, Math.max(0, Math.round(updates.progress)));
+      } else if (phase === 'queued') {
+        nextProgress = currentProgress < 18 ? 18 : Math.min(currentProgress + 8, 34);
+      } else if (phase === 'running') {
+        nextProgress = currentProgress < 45 ? 45 : Math.min(currentProgress + 10, 88);
+      } else if (phase === 'downloading') {
+        nextProgress = Math.max(currentProgress, 96);
+      } else if (phase === 'success') {
+        nextProgress = 100;
+      } else if (phase === 'error') {
+        nextProgress = Math.max(currentProgress, 12);
+      } else {
+        nextProgress = Math.max(currentProgress, 8);
+      }
+
+      return {
+        ...current,
+        ...updates,
+        phase,
+        progress: nextProgress,
+        error: phase === 'error' ? String(updates.error || current.error || '').trim() : '',
+      };
+    });
+  };
+
   const resolveTaskReportExportIds = useCallback(async () => {
     if (module.id !== 'task') return [];
     if (selectedIds.length > 0) return [...selectedIds];
@@ -9456,9 +9553,14 @@ function TableModuleView({
 
   const runTaskBatchReportExport = async (format: TaskReportExportFormat) => {
     if (module.id !== 'task') return;
+    if (taskReportExportBusy) {
+      setError('已有报告导出任务进行中，请稍候');
+      return;
+    }
 
     setTaskReportExportMenu('');
     setError('');
+    setSuccess('');
 
     let taskIds: string[] = [];
     try {
@@ -9473,17 +9575,33 @@ function TableModuleView({
       return;
     }
 
-    const formatLabel = TASK_REPORT_EXPORT_LABELS[format] || '表格';
-    setSuccess(`正在创建${formatLabel}导出任务，请稍候...`);
+    const formatLabel = openTaskReportExportFeedback(format, taskIds.length);
     try {
       await createExportJobAndDownload(taskIds, format);
       setSuccess(`${formatLabel}报告导出成功`);
     } catch (err: any) {
-      setError(err?.message || '报告导出失败');
+      const errorMessage = err?.message || '报告导出失败';
+      updateTaskReportExportFeedback('error', {
+        summary: `${formatLabel}报告导出失败`,
+        detail: '导出任务未能完成，请根据错误信息排查后重试。',
+        error: errorMessage,
+      });
+      setError(errorMessage);
     }
   };
 
-  const waitForExportJob = async (jobId: string, timeoutMs = 30 * 60 * 1000, intervalMs = 2000) => {
+  const waitForExportJob = async (
+    jobId: string,
+    {
+      timeoutMs = 30 * 60 * 1000,
+      intervalMs = 2000,
+      onProgress,
+    }: {
+      timeoutMs?: number;
+      intervalMs?: number;
+      onProgress?: (phase: TaskReportExportPhase, payload?: { data?: any }) => void;
+    } = {},
+  ) => {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       const result = await requestApi(token, `/export/job/${jobId}`, {
@@ -9491,6 +9609,12 @@ function TableModuleView({
       });
       const data = result?.data || {};
       const status = String(data?.status || '').trim().toLowerCase();
+      if (status === 'queued') {
+        onProgress?.('queued', { data });
+      }
+      if (status === 'running') {
+        onProgress?.('running', { data });
+      }
       if (status === 'done') {
         return data;
       }
@@ -9514,11 +9638,59 @@ function TableModuleView({
     if (!jobId) {
       throw new Error('创建导出任务失败，未返回 job_id');
     }
-    await waitForExportJob(jobId);
-    await requestApi(token, `/export/job/${jobId}/download`, {
+    updateTaskReportExportFeedback('queued', {
+      jobId,
+      summary: '导出任务已创建，正在排队执行',
+      detail: `导出任务 ID: ${jobId}`,
+    });
+    const exportJobInfo = await waitForExportJob(jobId, {
+      onProgress: (phase, payload) => {
+        const data = payload?.data || {};
+        if (phase === 'queued') {
+          updateTaskReportExportFeedback('queued', {
+            jobId,
+            summary: '导出任务排队中',
+            detail: `导出任务 ID: ${jobId}`,
+          });
+          return;
+        }
+        if (phase === 'running') {
+          updateTaskReportExportFeedback('running', {
+            jobId,
+            summary: '正在生成导出文件',
+            detail: data?.started_at
+              ? `任务开始时间: ${normalizeValue(data.started_at)}`
+              : `导出任务 ID: ${jobId}`,
+          });
+        }
+      },
+    });
+    updateTaskReportExportFeedback('downloading', {
+      jobId,
+      fileName: String(exportJobInfo?.filename || '').trim(),
+      summary: '导出文件已生成，正在下载',
+      detail: String(exportJobInfo?.filename || '').trim()
+        ? `文件名: ${String(exportJobInfo.filename).trim()}`
+        : `导出任务 ID: ${jobId}`,
+    });
+    const downloadResult = await requestApi(token, `/export/job/${jobId}/download`, {
       method: 'GET',
       download: true,
     });
+    const downloadedFileName = String(downloadResult?.data?.fileName || exportJobInfo?.filename || '').trim();
+    updateTaskReportExportFeedback('success', {
+      jobId,
+      fileName: downloadedFileName,
+      summary: `${TASK_REPORT_EXPORT_LABELS[format] || '表格'}报告导出成功`,
+      detail: downloadedFileName
+        ? `文件已开始下载：${downloadedFileName}`
+        : '文件已开始下载，请留意浏览器下载栏。',
+      error: '',
+    });
+    return {
+      jobId,
+      fileName: downloadedFileName,
+    };
   };
 
   const stopAndDeleteSelectedTasks = async () => {
@@ -9653,16 +9825,26 @@ function TableModuleView({
     if (module.id !== 'task') return;
     if (!taskId) return;
     if (taskRowPendingActionMap[taskId]) return;
+    if (taskReportExportBusy) {
+      setError('已有报告导出任务进行中，请稍候');
+      return;
+    }
     setTaskReportExportMenu('');
     markTaskRowActionPending(taskId, 'export');
     setError('');
-    const formatLabel = TASK_REPORT_EXPORT_LABELS[format] || '表格';
-    setSuccess(`正在创建${formatLabel}导出任务，请稍候...`);
+    setSuccess('');
+    const formatLabel = openTaskReportExportFeedback(format, 1);
     try {
       await createExportJobAndDownload([taskId], format);
       setSuccess(`${formatLabel}报告导出成功`);
     } catch (err: any) {
-      setError(err?.message || '导出失败');
+      const errorMessage = err?.message || '导出失败';
+      updateTaskReportExportFeedback('error', {
+        summary: `${formatLabel}报告导出失败`,
+        detail: '导出任务未能完成，请根据错误信息排查后重试。',
+        error: errorMessage,
+      });
+      setError(errorMessage);
     } finally {
       clearTaskRowActionPending(taskId);
     }
@@ -9714,7 +9896,8 @@ function TableModuleView({
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
   const canUseTaskNameForReportExport = module.id === 'task' && selectedIds.length === 0 && Boolean(taskNameSearchText);
-  const taskReportExportDisabled = module.id === 'task' && selectedIds.length === 0 && !canUseTaskNameForReportExport;
+  const taskReportExportDisabled =
+    module.id === 'task' && (taskReportExportBusy || (selectedIds.length === 0 && !canUseTaskNameForReportExport));
   const showTaskRowOperate = module.id === 'task';
   const showAssetScopeRowOperate = module.id === 'asset_scope';
   const showPolicyRowOperate = module.id === 'policy';
@@ -10168,7 +10351,7 @@ function TableModuleView({
                   className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  报告导出
+                  {taskReportExportBusy ? '报告导出中...' : '报告导出'}
                   <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === 'batch' ? 'rotate-180' : ''}`} />
                 </button>
                 {taskReportExportMenu === 'batch' ? (
@@ -11043,13 +11226,13 @@ function TableModuleView({
                                     <button
                                       type="button"
                                       onClick={() => toggleTaskReportExportMenu(`row:${id}`)}
-                                      disabled={taskRowPending}
+                                      disabled={taskRowPending || taskReportExportBusy}
                                       className={`${rowOperateButtonDisabledClass} flex items-center gap-1`}
                                     >
-                                      {taskRowPendingAction === 'export' ? '导出中...' : '导出'}
+                                      {taskRowPendingAction === 'export' || taskReportExportBusy ? '导出中...' : '导出'}
                                       <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === `row:${id}` ? 'rotate-180' : ''}`} />
                                     </button>
-                                    {taskReportExportMenu === `row:${id}` && !taskRowPending ? (
+                                    {taskReportExportMenu === `row:${id}` && !taskRowPending && !taskReportExportBusy ? (
                                       <div className="absolute right-0 top-full z-20 mt-2 min-w-[140px] overflow-hidden rounded-xl border border-brand-border bg-brand-card shadow-2xl">
                                         {TASK_REPORT_EXPORT_OPTIONS.map((option) => (
                                           <button
@@ -11369,6 +11552,125 @@ function TableModuleView({
             await runAction(dialogAction, payload, file);
           }}
         />
+      ) : null}
+
+      {taskReportExportFeedback ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => {
+            if (!taskReportExportBusy) {
+              closeTaskReportExportFeedback();
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-lg bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h4 className="text-lg font-black">{taskReportExportFeedback.title}</h4>
+                <p className="text-xs text-brand-text-muted mt-1 break-all">
+                  {taskReportExportFeedback.jobId
+                    ? `导出任务 ID: ${taskReportExportFeedback.jobId}`
+                    : '正在初始化导出任务'}
+                </p>
+              </div>
+              <button
+                onClick={closeTaskReportExportFeedback}
+                disabled={taskReportExportBusy}
+                className="p-2 rounded-lg hover:bg-brand-bg/70 transition disabled:opacity-40"
+                title={taskReportExportBusy ? '导出进行中，暂不可关闭' : '关闭'}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div
+                className={`rounded-xl border px-4 py-3 ${
+                  taskReportExportFeedback.phase === 'error'
+                    ? 'border-red-500/30 bg-red-500/10 text-red-200'
+                    : taskReportExportFeedback.phase === 'success'
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      : 'border-brand-accent/30 bg-brand-accent/10 text-brand-text'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 shrink-0">
+                    {taskReportExportFeedback.phase === 'success' ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+                    ) : taskReportExportFeedback.phase === 'error' ? (
+                      <AlertTriangle className="w-5 h-5 text-red-300" />
+                    ) : (
+                      <RefreshCw className="w-5 h-5 text-brand-accent animate-spin" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-black break-all">{taskReportExportFeedback.summary}</p>
+                    <p className="text-xs mt-1 break-all opacity-90">{taskReportExportFeedback.detail}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-brand-text-muted">
+                  <span>导出进度</span>
+                  <span>{taskReportExportFeedback.progress}%</span>
+                </div>
+                <div className="h-2.5 rounded-full border border-brand-border bg-brand-bg overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      taskReportExportFeedback.phase === 'error'
+                        ? 'bg-brand-danger'
+                        : taskReportExportFeedback.phase === 'success'
+                          ? 'bg-emerald-400'
+                          : 'bg-brand-accent'
+                    }`}
+                    style={{ width: `${Math.max(0, Math.min(100, taskReportExportFeedback.progress))}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-3 py-2">
+                  <div className="text-brand-text-muted">任务数量</div>
+                  <div className="mt-1 font-semibold text-sm">{taskReportExportFeedback.taskCount}</div>
+                </div>
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-3 py-2">
+                  <div className="text-brand-text-muted">导出格式</div>
+                  <div className="mt-1 font-semibold text-sm break-all">{taskReportExportFeedback.formatLabel}</div>
+                </div>
+              </div>
+
+              {taskReportExportFeedback.fileName ? (
+                <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-3 py-2">
+                  <div className="text-xs text-brand-text-muted">导出文件</div>
+                  <div className="mt-1 text-sm font-semibold break-all">{taskReportExportFeedback.fileName}</div>
+                </div>
+              ) : null}
+
+              {taskReportExportFeedback.error ? (
+                <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2 whitespace-pre-wrap break-all">
+                  {taskReportExportFeedback.error}
+                </div>
+              ) : null}
+
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-brand-text-muted">
+                  {taskReportExportBusy ? '导出进行中，请稍候...' : '导出流程已结束'}
+                </p>
+                <button
+                  onClick={closeTaskReportExportFeedback}
+                  disabled={taskReportExportBusy}
+                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                >
+                  {taskReportExportFeedback.phase === 'error' ? '关闭' : '知道了'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {riskDialogOpen ? (
@@ -13679,7 +13981,17 @@ function AiPenAssetWorkspaceView({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {hasExternalFilters ? (
+          <button
+            onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
+            className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
+            title="返回任务管理"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            返回任务管理
+          </button>
+        ) : null}
         {TASK_DETAIL_TABS.map((item) => (
           <button
             key={item.id}
@@ -13704,14 +14016,6 @@ function AiPenAssetWorkspaceView({
       {hasExternalFilters ? (
         <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
-              className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
-              title="返回任务管理"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              返回任务管理
-            </button>
             <span className="text-xs font-semibold text-brand-text">查看筛选条件:</span>
             {Object.entries(activeExternalFilters).map(([key, value]) => (
               <span
@@ -13926,382 +14230,6 @@ function AiPenAssetWorkspaceView({
         <StatusPill text={`最小基线通过 ${statsLoading ? '...' : `${minimalBaselineSummaryInfo.passed_count}/${minimalBaselineSummaryInfo.total_cases}`}`} type="info" />
         <StatusPill text={`主要类型 ${topRiskType}`} type="info" />
         <StatusPill text={`主要来源 ${topSource}`} type="info" />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black">未授权概览</div>
-            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `样本 ${unauthOverview.total_count}`}</span>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">正向命中</div>
-              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : unauthOverview.verified_count}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">人工复核</div>
-              <div className="mt-1 text-lg font-black text-brand-warning">{statsLoading ? '...' : unauthOverview.needs_manual_review_count}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">负信号</div>
-              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : unauthOverview.negative_signal_count}</div>
-            </div>
-          </div>
-          <div className="space-y-2 text-sm">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">主导正向类型</div>
-              <div className="mt-1 break-all">{statsLoading ? '加载中...' : formatAiPenDistributionLabel(unauthOverview.dominant_positive_type || '暂无')}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">主导负信号</div>
-              <div className="mt-1 break-all">{statsLoading ? '加载中...' : formatUnauthNegativeType(unauthOverview.dominant_negative_type || '暂无')}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">建议动作</div>
-              <div className="mt-1 break-all leading-relaxed">{statsLoading ? '加载中...' : (unauthOverview.recommended_action || '暂无建议')}</div>
-            </div>
-          </div>
-          {unauthOverview.next_actions.length > 0 ? (
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">下一步</div>
-              <div className="space-y-1.5">
-                {unauthOverview.next_actions.slice(0, 3).map((item, index) => (
-                  <div key={`${index}-${item}`} className="text-xs break-all leading-relaxed">{index + 1}. {item}</div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">正向类型分布</div>
-              {unauthPositiveDistribution.length > 0 ? (
-                <div className="space-y-1.5">
-                  {unauthPositiveDistribution.map((item, index) => (
-                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
-                      <span className="break-all leading-relaxed">{formatAiPenDistributionLabel(item.name)}</span>
-                      <span className="shrink-0 text-brand-text-muted">{Number(item.count || 0)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无正向未授权命中'}</div>
-              )}
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">负信号分布</div>
-              {unauthNegativeDistribution.length > 0 ? (
-                <div className="space-y-1.5">
-                  {unauthNegativeDistribution.map((item, index) => (
-                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
-                      <span className="break-all leading-relaxed">{formatAiPenDistributionLabel(item.name)}</span>
-                      <span className="shrink-0 text-brand-text-muted">{Number(item.count || 0)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无负信号'}</div>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">保护占比</div>
-              <div className="mt-1 text-sm font-black text-brand-text">
-                {statsLoading ? '...' : formatRatePercent(unauthOverview.negative_summary?.protected_rate)}
-              </div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">健康检查占比</div>
-              <div className="mt-1 text-sm font-black text-brand-text">
-                {statsLoading ? '...' : formatRatePercent(unauthOverview.negative_summary?.health_only_rate)}
-              </div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">负信号占比</div>
-              <div className="mt-1 text-sm font-black text-brand-text">
-                {statsLoading ? '...' : formatRatePercent(unauthOverview.negative_summary?.negative_signal_rate)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black">基础能力覆盖情况</div>
-            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `总计 ${readinessSummary.total_capabilities}`}</span>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">已覆盖</div>
-              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : readinessSummary.covered_count}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">部分覆盖</div>
-              <div className="mt-1 text-lg font-black text-brand-warning">{statsLoading ? '...' : readinessSummary.partial_count}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">缺失</div>
-              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : readinessSummary.missing_count}</div>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {topReadinessCapabilities.length > 0 ? topReadinessCapabilities.map((item) => (
-              <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-semibold">{item.label || '-'}</div>
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getReadinessStatusClass(item.status)}`}>
-                    {formatReadinessStatus(item.status)}
-                  </span>
-                </div>
-                <div className="text-xs text-brand-text-muted break-all leading-relaxed">{item.focus_reason || '暂无说明'}</div>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
-                    覆盖率 {formatRatePercent(item.coverage_rate)}
-                  </div>
-                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
-                    命中率 {formatRatePercent(item.success_rate)}
-                  </div>
-                </div>
-                {item.dominant_unauth_negative_type ? (
-                  <div className="text-[11px] text-brand-text-muted">
-                    主导负信号：{formatUnauthNegativeType(item.dominant_unauth_negative_type)} / {Number(item.negative_signal_count || 0)} 条
-                  </div>
-                ) : null}
-              </div>
-            )) : (
-              <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
-                {statsLoading ? '加载中...' : '暂无基础能力覆盖摘要'}
-              </div>
-            )}
-          </div>
-          {readinessCapabilities.length > 0 ? (
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">能力明细</div>
-              <div className="space-y-2 max-h-48 overflow-auto">
-                {readinessCapabilities
-                  .slice()
-                  .sort((a, b) => Number(b?.priority_score || 0) - Number(a?.priority_score || 0))
-                  .map((item) => (
-                    <div key={`readiness-detail-${item.id}`} className="rounded-lg border border-brand-border bg-brand-bg/60 px-3 py-2 space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs font-semibold break-all">{item.label || '-'}</div>
-                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getReadinessStatusClass(item.status)}`}>
-                          {formatReadinessStatus(item.status)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-[10px] text-brand-text-muted">
-                        <span>verified {Number(item.verified_count || 0)}</span>
-                        <span>manual {Number(item.needs_manual_review_count || 0)}</span>
-                        <span>fp {Number(item.likely_false_positive_count || 0)}</span>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black">建议优先复核能力</div>
-            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `Top ${focusQueueItems.length}`}</span>
-          </div>
-          <div className="space-y-2">
-            {focusQueueItems.length > 0 ? focusQueueItems.map((item, index) => (
-              <div key={`${item.id}-${index}`} className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-semibold">{index + 1}. {item.label || '-'}</div>
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getReadinessStatusClass(item.status)}`}>
-                    {formatReadinessStatus(item.status)}
-                  </span>
-                </div>
-                <div className="text-xs text-brand-text-muted break-all leading-relaxed">{item.focus_reason || '暂无说明'}</div>
-                <div className="flex flex-wrap gap-2 text-[11px] text-brand-text-muted">
-                  <span>verified {Number(item.verified_count || 0)}</span>
-                  <span>manual {Number(item.needs_manual_review_count || 0)}</span>
-                  <span>fp {Number(item.likely_false_positive_count || 0)}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
-                    覆盖率 {formatRatePercent(item.coverage_rate)}
-                  </div>
-                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
-                    误报率 {formatRatePercent(item.false_positive_rate)}
-                  </div>
-                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
-                    平均轮次 {Number(item.avg_turns || 0).toFixed(1)}
-                  </div>
-                  <div className="rounded-lg border border-brand-border bg-brand-bg/60 px-2 py-1.5">
-                    平均工具 {Number(item.avg_tool_calls || 0).toFixed(1)}
-                  </div>
-                </div>
-                {item.dominant_unauth_negative_type ? (
-                  <div className="text-[11px] text-brand-text-muted">
-                    主导负信号：{formatUnauthNegativeType(item.dominant_unauth_negative_type)} / 占比 {formatRatePercent(item.negative_signal_rate)}
-                  </div>
-                ) : null}
-              </div>
-            )) : (
-              <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
-                {statsLoading ? '加载中...' : '暂无优先复核能力'}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="xl:col-span-3 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black">裁决守门概览</div>
-            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `样本 ${decisionGuardSummary.total_count}`}</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">守门触发</div>
-              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : decisionGuardSummary.guarded_count}</div>
-              <div className="mt-1 text-[10px] text-brand-text-muted">{statsLoading ? '' : formatRatePercent(decisionGuardSummary.guarded_rate)}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">降级次数</div>
-              <div className="mt-1 text-lg font-black text-brand-warning">{statsLoading ? '...' : decisionGuardSummary.downgrade_count}</div>
-              <div className="mt-1 text-[10px] text-brand-text-muted">{statsLoading ? '' : formatRatePercent(decisionGuardSummary.downgrade_rate)}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">提升次数</div>
-              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : decisionGuardSummary.boost_count}</div>
-              <div className="mt-1 text-[10px] text-brand-text-muted">{statsLoading ? '' : formatRatePercent(decisionGuardSummary.boost_rate)}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">强证据占比</div>
-              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : decisionGuardSummary.strong_proof_count}</div>
-              <div className="mt-1 text-[10px] text-brand-text-muted">{statsLoading ? '' : formatRatePercent(decisionGuardSummary.strong_proof_rate)}</div>
-            </div>
-          </div>
-          <div className="space-y-2 text-sm">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">主导守门动作</div>
-              <div className="mt-1 break-all">{statsLoading ? '加载中...' : formatDecisionGuardAction(decisionGuardSummary.dominant_guard_action || '暂无')}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">建议动作</div>
-              <div className="mt-1 break-all leading-relaxed">{statsLoading ? '加载中...' : (decisionGuardSummary.recommended_action || '暂无建议')}</div>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">守门动作分布</div>
-              {topDecisionGuardActions.length > 0 ? (
-                <div className="space-y-1.5">
-                  {topDecisionGuardActions.map((item, index) => (
-                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
-                      <span className="break-all leading-relaxed">{formatDecisionGuardAction(item.name)}</span>
-                      <span className="shrink-0 text-brand-text-muted">{Number(item.count || 0)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无守门动作'}</div>
-              )}
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">证据强度分布</div>
-              {topProofStrengthDistribution.length > 0 ? (
-                <div className="space-y-1.5">
-                  {topProofStrengthDistribution.map((item, index) => (
-                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-3 text-xs">
-                      <span className="break-all leading-relaxed">{formatProofStrength(item.name)}</span>
-                      <span className="shrink-0 text-brand-text-muted">{Number(item.count || 0)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : '暂无证据强度分布'}</div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-5 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black">最小基线概览</div>
-            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `样例 ${minimalBaselineSummaryInfo.total_cases}`}</span>
-          </div>
-          <div className="grid grid-cols-5 gap-2">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">已通过</div>
-              <div className="mt-1 text-lg font-black text-emerald-300">{statsLoading ? '...' : minimalBaselineSummaryInfo.passed_count}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">部分通过</div>
-              <div className="mt-1 text-lg font-black text-brand-warning">{statsLoading ? '...' : minimalBaselineSummaryInfo.partial_count}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">失败</div>
-              <div className="mt-1 text-lg font-black text-red-300">{statsLoading ? '...' : minimalBaselineSummaryInfo.failed_count}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">缺样本</div>
-              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : minimalBaselineSummaryInfo.missing_count}</div>
-            </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-2">
-              <div className="text-[11px] font-black tracking-wide text-brand-text-muted">通过率</div>
-              <div className="mt-1 text-lg font-black text-brand-text">{statsLoading ? '...' : formatRatePercent(minimalBaselineSummaryInfo.pass_rate)}</div>
-            </div>
-          </div>
-          <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-            <div className="text-[11px] font-black tracking-wide text-brand-text-muted">建议动作</div>
-            <div className="text-sm break-all leading-relaxed">{statsLoading ? '加载中...' : (minimalBaselineSummary.recommended_action || '暂无建议')}</div>
-          </div>
-          <div className="space-y-2">
-            {topMinimalBaselineCases.length > 0 ? topMinimalBaselineCases.map((item) => (
-              <div key={item.id} className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-semibold">{item.label || '-'}</div>
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getMinimalBaselineStatusClass(item.status)}`}>
-                    {formatMinimalBaselineStatus(item.status)}
-                  </span>
-                </div>
-                <div className="text-xs text-brand-text-muted break-all leading-relaxed">{item.focus_reason || '暂无说明'}</div>
-                <div className="flex flex-wrap gap-2 text-[11px] text-brand-text-muted">
-                  <span>命中 {Number(item.matched_count || 0)}</span>
-                  <span>通过 {Number(item.passed_count || 0)}</span>
-                  <span>部分 {Number(item.partial_count || 0)}</span>
-                  <span>失败 {Number(item.failed_count || 0)}</span>
-                </div>
-              </div>
-            )) : (
-              <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
-                {statsLoading ? '加载中...' : '暂无最小基线摘要'}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="xl:col-span-7 rounded-2xl border border-brand-border bg-brand-card/35 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black">最小基线缺口</div>
-            <span className="text-xs text-brand-text-muted">{statsLoading ? '加载中...' : `Top ${minimalBaselineTopGaps.length}`}</span>
-          </div>
-          <div className="space-y-2">
-            {minimalBaselineTopGaps.length > 0 ? minimalBaselineTopGaps.map((item, index) => (
-              <div key={`${item.id}-${index}`} className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-semibold">{index + 1}. {item.label || '-'}</div>
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getMinimalBaselineStatusClass(item.status)}`}>
-                    {formatMinimalBaselineStatus(item.status)}
-                  </span>
-                </div>
-                <div className="text-sm text-brand-text-muted break-all leading-relaxed">{item.focus_reason || '暂无说明'}</div>
-              </div>
-            )) : (
-              <div className="rounded-xl border border-brand-border bg-brand-bg/45 px-3 py-6 text-sm text-brand-text-muted text-center">
-                {statsLoading ? '加载中...' : '当前最小基线暂无明显缺口'}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
