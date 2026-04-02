@@ -154,10 +154,10 @@ class WebSiteFetch(object):
     AI_PEN_TEST_MAX_CASES = 80
     AI_PEN_TEST_SOURCE_LIMIT = 260
     AI_PEN_TEST_FETCH_TIMEOUT = (5.1, 10.1)
-    AI_PEN_TEST_MCP_MAX_TOOL_CALLS = 3
+    AI_PEN_TEST_MCP_MAX_TOOL_CALLS = 6
     AI_PEN_TEST_MCP_TIMEOUT_SEC = 12
     AI_PEN_MCP_RUNTIME_VERSION = "p0-local-v1"
-    AI_PEN_TEST_AI_PLAN_MAX_CASES = 24
+    AI_PEN_TEST_AI_PLAN_MAX_CASES = 36
     AI_PEN_TEST_BODY_MAX = 8192
     AI_PEN_TEST_EVIDENCE_MAX = 280
     AI_PEN_TEST_ERROR_MAX = 180
@@ -3218,6 +3218,26 @@ class WebSiteFetch(object):
             return default_value
         return text[:64]
 
+    @classmethod
+    def _build_ai_pen_candidate_identity_key(cls, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        source_collection = str(item.get("source_collection", "") or "").strip().lower()
+        source_id = cls._normalize_object_id(item.get("source_id"))
+        risk_type = cls._normalize_risk_type(item.get("risk_type"), default_value="unknown")
+        risk_name = str(item.get("risk_name", "") or "").strip().lower()
+        target_url = str(item.get("vuln_url") or item.get("target") or "").strip().lower()
+        if not source_collection or not source_id:
+            return ""
+        return "|".join(
+            [
+                source_collection[:24],
+                source_id[:64],
+                risk_type[:64],
+                risk_name[:96],
+                target_url[:220],
+            ]
+        )
+
     @staticmethod
     def _safe_int_value(value, default_value=0):
         try:
@@ -3248,13 +3268,13 @@ class WebSiteFetch(object):
             getattr(Config, "AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", 45),
         )
         external_max_runs = cls._safe_int_value(
-            config_obj.get("ai_pen_external_max_runs", getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 1)),
-            getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 1),
+            config_obj.get("ai_pen_external_max_runs", getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 2)),
+            getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 2),
         )
         if max_tool_calls < 1:
             max_tool_calls = 1
-        if max_tool_calls > 8:
-            max_tool_calls = 8
+        if max_tool_calls > 12:
+            max_tool_calls = 12
         if timeout_sec < 1:
             timeout_sec = 1
         if timeout_sec > 60:
@@ -3502,8 +3522,8 @@ class WebSiteFetch(object):
                         "--batch",
                         "--smart",
                         "--random-agent",
-                        "--level", "1",
-                        "--risk", "1",
+                        "--level", "2",
+                        "--risk", "2",
                         "--threads", "1",
                         "--timeout", "10",
                         "--retries", "0",
@@ -4437,6 +4457,8 @@ class WebSiteFetch(object):
             bump("file_handling_surface", 40)
         if route_hint == "web_policy_context":
             bump("web_policy_surface", 38)
+        if route_hint == "admin_portal_context":
+            bump("admin_office_portal", 40)
         if route_hint == "websocket_handshake":
             bump("realtime_channel_surface", 30)
         if route_hint == "login_entry_context":
@@ -5506,6 +5528,49 @@ class WebSiteFetch(object):
         return any(token in path_text for token in ("/_nuxt/", "/static/js/", "/assets/")) and ".json" not in path_text
 
     @classmethod
+    def _is_static_asset_target(cls, target_url: str, headers=None):
+        url_text = str(target_url or "").strip()
+        if not url_text:
+            return False
+        if cls._is_js_asset_target(url_text, headers=headers):
+            return True
+
+        try:
+            parsed = urlsplit(url_text)
+            path_text = str(parsed.path or "").strip().lower()
+        except Exception:
+            path_text = str(target_url or "").strip().lower()
+
+        header_obj = headers if isinstance(headers, dict) else {}
+        content_type = str(header_obj.get("Content-Type", "") or "").strip().lower()
+        if any(
+            token in content_type
+            for token in (
+                "text/css",
+                "image/",
+                "font/",
+                "application/font",
+                "application/vnd.ms-fontobject",
+            )
+        ):
+            return True
+        return path_text.endswith((
+            ".css",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".svg",
+            ".ico",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+            ".otf",
+            ".map",
+        ))
+
+    @classmethod
     def _extract_js_context_snippet(cls, body_text: str, anchor_text: str = "", fallback_keywords=None):
         content = str(body_text or "")
         if not content:
@@ -6494,7 +6559,7 @@ class WebSiteFetch(object):
         payload: str,
         preferred_tags=None,
         parameter_names=None,
-        max_count: int = 3,
+        max_count: int = 5,
     ):
         url_text = str(target_url or "").strip()
         payload_text = str(payload or "").strip()
@@ -6676,7 +6741,7 @@ class WebSiteFetch(object):
         payload: str,
         preferred_tags=None,
         api_surface_summary=None,
-        max_count: int = 3,
+        max_count: int = 5,
     ):
         url_text = str(target_url or "").strip()
         payload_text = str(payload or "").strip()
@@ -6870,7 +6935,7 @@ class WebSiteFetch(object):
         return {}
 
     @classmethod
-    def _build_idor_probe_targets(cls, target_url: str, max_count=3):
+    def _build_idor_probe_targets(cls, target_url: str, max_count=5):
         url_text = str(target_url or "").strip()
         if not url_text:
             return []
@@ -7232,7 +7297,7 @@ class WebSiteFetch(object):
             return []
 
     @staticmethod
-    def _build_config_probe_targets(target_url: str, max_count=4):
+    def _build_config_probe_targets(target_url: str, max_count=6):
         url_text = str(target_url or "").strip()
         if not url_text:
             return []
@@ -7308,9 +7373,11 @@ class WebSiteFetch(object):
             return []
 
     @classmethod
-    def _build_path_traversal_probe_targets(cls, target_url: str, max_count=4):
+    def _build_path_traversal_probe_targets(cls, target_url: str, max_count=5):
         url_text = str(target_url or "").strip()
         if not url_text:
+            return []
+        if cls._is_static_asset_target(url_text):
             return []
         payloads = [
             "../../../../etc/passwd",
@@ -7356,7 +7423,7 @@ class WebSiteFetch(object):
             return []
 
     @staticmethod
-    def _build_web_policy_probe_steps(target_url: str, max_count=4):
+    def _build_web_policy_probe_steps(target_url: str, max_count=6):
         url_text = str(target_url or "").strip()
         if not url_text:
             return []
@@ -10343,7 +10410,7 @@ class WebSiteFetch(object):
         return {}
 
     @classmethod
-    def _build_ai_pen_unauth_probe_targets(cls, target_url: str, candidate: dict = None, max_count: int = 4):
+    def _build_ai_pen_unauth_probe_targets(cls, target_url: str, candidate: dict = None, max_count: int = 6):
         item = candidate if isinstance(candidate, dict) else {}
         url_text = str(target_url or "").strip()
         if not cls._is_http_target(url_text):
@@ -11338,6 +11405,53 @@ class WebSiteFetch(object):
             "token",
         )
         return any(token in merged for token in sensitive_tokens)
+
+    @staticmethod
+    def _is_ai_pen_wih_url_record_type(record_type: str):
+        record_type_text = str(record_type or "").strip().lower()
+        return bool(record_type_text) and (record_type_text.endswith("_url") or record_type_text == "url")
+
+    @classmethod
+    def _resolve_ai_pen_wih_target_url(cls, record_type: str, content: str, source_url: str = "", site_url: str = ""):
+        if not cls._is_ai_pen_wih_url_record_type(record_type):
+            return str(source_url or "").strip() if cls._is_http_target(source_url) else str(site_url or "").strip()
+
+        content_text = str(content or "").strip()
+        source_url_text = str(source_url or "").strip()
+        site_url_text = str(site_url or "").strip()
+        if not content_text:
+            return ""
+        if cls._is_http_target(content_text):
+            return content_text
+
+        base_url = source_url_text if cls._is_http_target(source_url_text) else site_url_text
+        if not cls._is_http_target(base_url):
+            return ""
+
+        try:
+            parsed_base = urlsplit(base_url)
+        except Exception:
+            parsed_base = None
+
+        if content_text.startswith("//"):
+            scheme = str(getattr(parsed_base, "scheme", "") or "https").strip() or "https"
+            return "{}:{}".format(scheme, content_text)
+
+        if content_text.startswith("/"):
+            if parsed_base and str(getattr(parsed_base, "netloc", "") or "").strip():
+                return "{}://{}{}".format(
+                    str(getattr(parsed_base, "scheme", "") or "https").strip() or "https",
+                    str(getattr(parsed_base, "netloc", "") or "").strip(),
+                    content_text,
+                )
+            return ""
+
+        if any(token in content_text for token in ("/", "?", "=")):
+            try:
+                return urljoin(base_url, content_text)
+            except Exception:
+                return ""
+        return ""
 
     @classmethod
     def _classify_ai_pen_risk_type(cls, raw_type: str, risk_name: str, source_module: str = ""):
@@ -12606,7 +12720,139 @@ class WebSiteFetch(object):
             "status_code_hint": status_value,
             "priority_score": 10 if cls._is_ai_pen_success_status(status_value) else 4,
             "route_hint": "web_policy_context",
+            "surface_hints": ["web_policy_surface"],
         }
+
+    @classmethod
+    def _build_ai_pen_site_capability_candidates(cls, candidate: dict):
+        item = candidate if isinstance(candidate, dict) else {}
+        target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+        source_collection = str(item.get("source_collection", "") or "").strip().lower()
+        source_module = str(item.get("source_module", "") or "").strip().lower()
+        risk_type = str(item.get("risk_type", "") or "").strip().lower()
+        risk_name = str(item.get("risk_name", "") or "").strip()
+        status_value = cls._safe_int_value(item.get("status_code_hint"), 0)
+        if (
+            source_collection != "site"
+            or source_module != "site"
+            or risk_type != "web_policy"
+            or risk_name != "站点基础探测"
+            or (not cls._is_http_target(target_url))
+        ):
+            return []
+        if not (cls._is_ai_pen_success_status(status_value) or status_value in {401, 403}):
+            return []
+
+        api_surface_summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        parameter_probe_families = [
+            family
+            for family in list(api_surface_summary.get("parameter_probe_families", []) or [])
+            if isinstance(family, dict)
+        ]
+        if not parameter_probe_families:
+            parameter_probe_families = cls._build_ai_pen_parameter_probe_families(
+                parameter_tag_stats=api_surface_summary.get("parameter_tag_stats"),
+                auth_path_count=cls._safe_int_value(api_surface_summary.get("auth_path_count"), 0),
+                security_scheme_count=cls._safe_int_value(api_surface_summary.get("security_scheme_count"), 0),
+                upload_like_count=cls._safe_int_value(api_surface_summary.get("upload_like_count"), 0),
+                download_like_count=cls._safe_int_value(api_surface_summary.get("download_like_count"), 0),
+            )
+        parameter_tool_set = {
+            str(family.get("tool") or "").strip().lower()
+            for family in parameter_probe_families
+            if str(family.get("tool") or "").strip()
+        }
+        base_priority = cls._safe_int_value(item.get("priority_score"), 0)
+        success_like = cls._is_ai_pen_success_status(status_value)
+        existing_surface_hints = [
+            str(raw_hint or "").strip()
+            for raw_hint in list(item.get("surface_hints", []) or [])
+            if str(raw_hint or "").strip()
+        ]
+        derived_candidates = []
+
+        def append_candidate(risk_type_text: str, risk_name_text: str, priority_value: int, route_hint_text: str = "", surface_hints=None):
+            derived = dict(item or {})
+            derived["risk_type"] = str(risk_type_text or "").strip().lower()
+            derived["risk_name"] = str(risk_name_text or "").strip()
+            derived["priority_score"] = int(priority_value or 0)
+            if route_hint_text:
+                derived["route_hint"] = str(route_hint_text or "").strip()
+            merged_surface_hints = list(existing_surface_hints)
+            for raw_hint in list(surface_hints or []):
+                hint_text = str(raw_hint or "").strip()
+                if hint_text and hint_text not in merged_surface_hints:
+                    merged_surface_hints.append(hint_text)
+            if merged_surface_hints:
+                derived["surface_hints"] = merged_surface_hints[:8]
+            evidence_seed = str(derived.get("evidence_seed") or "").strip()
+            seed_marker = "capability_seed={}".format(str(risk_type_text or "").strip().lower())
+            if seed_marker not in evidence_seed:
+                derived["evidence_seed"] = "{} | {}".format(evidence_seed, seed_marker).strip(" |")
+            derived_candidates.append(derived)
+
+        append_candidate(
+            "unauth_access",
+            "站点未授权访问基线复核",
+            max(8, base_priority + 2),
+            route_hint_text="admin_portal_context",
+            surface_hints=["admin_office_portal"],
+        )
+        append_candidate(
+            "sensitive_info",
+            "站点配置暴露基线复核",
+            max(7, base_priority + 1),
+            route_hint_text="admin_portal_context",
+            surface_hints=["admin_office_portal"],
+        )
+
+        if success_like:
+            if "idor_probe" in parameter_tool_set:
+                append_candidate(
+                    "idor",
+                    "站点对象访问控制面探测",
+                    max(7, base_priority + 1),
+                    route_hint_text="structured_id_mutation",
+                    surface_hints=["admin_office_portal"],
+                )
+            if "path_traversal_probe" in parameter_tool_set:
+                append_candidate(
+                    "path_traversal",
+                    "站点路径穿越面探测",
+                    max(7, base_priority + 1),
+                    route_hint_text="file_handling_context",
+                    surface_hints=["file_handling_surface"],
+                )
+            if "ssrf_probe" in parameter_tool_set:
+                append_candidate("ssrf", "站点 SSRF 注入面探测", max(6, base_priority))
+            if "cmdi_probe" in parameter_tool_set:
+                append_candidate("cmdi", "站点命令注入面探测", max(6, base_priority))
+            if "ssti_probe" in parameter_tool_set:
+                append_candidate("ssti", "站点模板注入面探测", max(6, base_priority - 1))
+            if "xxe_probe" in parameter_tool_set:
+                append_candidate("xxe", "站点 XML 实体注入面探测", max(6, base_priority - 1))
+            if "upload_probe" in parameter_tool_set:
+                append_candidate(
+                    "file_upload",
+                    "站点文件上传面探测",
+                    max(6, base_priority),
+                    route_hint_text="file_handling_context",
+                    surface_hints=["file_handling_surface"],
+                )
+            if "file_probe" in parameter_tool_set:
+                append_candidate(
+                    "file_read",
+                    "站点下载/导出面探测",
+                    max(6, base_priority),
+                    route_hint_text="file_handling_context",
+                    surface_hints=["file_handling_surface"],
+                )
+            if "sqli_probe" in parameter_tool_set:
+                append_candidate("sqli", "站点 SQL 注入面探测", max(6, base_priority - 1))
+            if "xss_probe" in parameter_tool_set:
+                append_candidate("xss", "站点 XSS 注入面探测", max(5, base_priority - 2))
+
+        return derived_candidates
 
     @classmethod
     def _looks_like_sensitive_config_response(cls, url_text: str, body_text: str, headers=None):
@@ -14895,7 +15141,19 @@ class WebSiteFetch(object):
 
                 source_url = str(row.get("source", "") or "").strip()
                 site_url = str(row.get("site", "") or "").strip()
-                target = source_url if self._is_http_target(source_url) else site_url
+                if self._is_ai_pen_wih_url_record_type(record_type):
+                    target = self._resolve_ai_pen_wih_target_url(
+                        record_type=record_type,
+                        content=content,
+                        source_url=source_url,
+                        site_url=site_url,
+                    )
+                    if not self._is_http_target(target):
+                        continue
+                    if self._is_static_asset_target(target):
+                        continue
+                else:
+                    target = source_url if self._is_http_target(source_url) else site_url
                 if self._is_http_target(target) and not self._url_in_task_scope(target):
                     continue
                 _append_candidate(
@@ -15372,6 +15630,7 @@ class WebSiteFetch(object):
         risk_type = str(candidate.get("risk_type", "") or "").strip()
         risk_type_text = self._normalize_risk_type(risk_type, default_value="unknown")
         risk_name = str(candidate.get("risk_name", "") or "").strip()
+        high_value_family = str(candidate.get("high_value_family", "") or "").strip().lower()
         evidence_seed = self._clip_text(candidate.get("evidence_seed", ""), self.AI_PEN_TEST_EVIDENCE_MAX)
         browser_surface_summary = dict(candidate.get("browser_surface_summary") or {}) if isinstance(candidate.get("browser_surface_summary"), dict) else {}
         runtime_api_calls = list(candidate.get("runtime_api_calls", []) or [])[:16]
@@ -15813,6 +16072,22 @@ class WebSiteFetch(object):
                         "message": self._clip_text(req_exc, self.AI_PEN_TEST_ERROR_MAX),
                         "response": {},
                     }
+
+            return _executor
+
+        def _build_path_traversal_probe_executor():
+            base_executor = _build_runtime_http_executor(default_method="get", default_allow_redirects=True)
+
+            def _executor(_context, params):
+                params_obj = params if isinstance(params, dict) else {}
+                req_url = str(params_obj.get("url") or "").strip()
+                if self._is_static_asset_target(req_url):
+                    return {
+                        "status": "blocked",
+                        "message": "static_asset_target_blocked",
+                        "response": {},
+                    }
+                return base_executor(_context, params)
 
             return _executor
 
@@ -16259,7 +16534,7 @@ class WebSiteFetch(object):
                 name="path_traversal_probe",
                 description="路径穿越参数变异探针",
                 input_schema=common_input_schema,
-                execute=_build_runtime_http_executor(default_method="get", default_allow_redirects=True),
+                execute=_build_path_traversal_probe_executor(),
             )
         )
         runtime.register_tool(
@@ -18044,7 +18319,7 @@ class WebSiteFetch(object):
             runtime_settings.get("external_timeout_sec"), getattr(Config, "AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", 45)
         )
         external_max_runs = self._safe_int_value(
-            runtime_settings.get("external_max_runs"), getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 1)
+            runtime_settings.get("external_max_runs"), getattr(Config, "AI_PEN_MCP_EXTERNAL_MAX_RUNS", 2)
         )
         runtime_provider = "local-mcp" if mcp_enable else "local"
         runtime_model = "mcp-rule-lite" if mcp_enable else "rule-lite"
@@ -18129,6 +18404,8 @@ class WebSiteFetch(object):
         knowledge_path = ""
         knowledge_index_token_count = 0
         knowledge_hit_tokens_set = set()
+        expanded_candidates = []
+        expanded_candidate_seen = set()
         for candidate in candidates:
             hit_info = self._collect_ai_pen_knowledge_hits(candidate)
             candidate["knowledge_hit_tokens"] = list(hit_info.get("hit_tokens", []) or [])
@@ -18142,6 +18419,12 @@ class WebSiteFetch(object):
             candidate["browser_surface_summary"] = dict(browser_intel.get("browser_surface_summary") or {}) if isinstance(browser_intel.get("browser_surface_summary"), dict) else {}
             candidate["runtime_api_calls"] = list(browser_intel.get("runtime_api_calls", []) or [])[:16]
             candidate["dom_form_summary"] = list(browser_intel.get("dom_form_summary", []) or [])[:8]
+            candidate["api_surface_summary"] = self._build_api_surface_summary(
+                api_doc_summary=candidate.get("api_doc_summary"),
+                js_api_targets=candidate.get("js_api_targets"),
+                runtime_api_calls=candidate.get("runtime_api_calls"),
+                dom_form_summary=candidate.get("dom_form_summary"),
+            )
             candidate["task_ai_pen_graph_summary"] = self._build_ai_pen_graph_summary(candidate)
             candidate["login_surface_summary"] = self._build_ai_pen_login_surface_summary(candidate)
             high_value_summary = self._build_ai_pen_high_value_summary(candidate)
@@ -18160,6 +18443,15 @@ class WebSiteFetch(object):
                 token_text = str(token or "").strip()
                 if token_text:
                     knowledge_hit_tokens_set.add(token_text)
+            for expanded_candidate in [candidate] + self._build_ai_pen_site_capability_candidates(candidate):
+                identity_key = self._build_ai_pen_candidate_identity_key(expanded_candidate)
+                if not identity_key or identity_key in expanded_candidate_seen:
+                    continue
+                expanded_candidate_seen.add(identity_key)
+                expanded_candidates.append(expanded_candidate)
+
+        if expanded_candidates:
+            candidates = expanded_candidates
 
         # 有知识命中的候选优先进入执行窗口；同分时继续按高价值与状态优先级排序。
         candidates.sort(

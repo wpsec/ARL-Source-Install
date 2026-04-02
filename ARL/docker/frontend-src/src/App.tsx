@@ -17861,11 +17861,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const activePromptId = promptIds.includes(activePromptIdRaw) ? activePromptIdRaw : promptIds[0] || '';
     const dialogContextMessages = Number(rawForm?.dialog_context_messages ?? 8);
     const requestDelayMs = Number(rawForm?.request_delay_ms ?? 0);
-    const aiPenMcpMaxToolCalls = Number(rawForm?.ai_pen_mcp_max_tool_calls ?? 3);
+    const aiPenMcpMaxToolCalls = Number(rawForm?.ai_pen_mcp_max_tool_calls ?? 6);
     const aiPenMcpTimeoutSec = Number(rawForm?.ai_pen_mcp_timeout_sec ?? 12);
     const aiPenExternalTimeoutSec = Number(rawForm?.ai_pen_external_timeout_sec ?? 45);
-    const aiPenExternalMaxRuns = Number(rawForm?.ai_pen_external_max_runs ?? 1);
-    const aiPenAiPlanMaxCases = Number(rawForm?.ai_pen_ai_plan_max_cases ?? 24);
+    const aiPenExternalMaxRuns = Number(rawForm?.ai_pen_external_max_runs ?? 2);
+    const aiPenAiPlanMaxCases = Number(rawForm?.ai_pen_ai_plan_max_cases ?? 36);
     const modelProfiles = normalizeModelProfiles(rawForm?.model_profiles, rawForm);
     const activeModelProfileIdRaw = String(rawForm?.active_model_profile_id || '').trim();
     const activeProfile =
@@ -17904,7 +17904,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ai_pen_external_enable: rawForm?.ai_pen_external_enable !== false,
       ai_pen_ai_planner_enable: rawForm?.ai_pen_ai_planner_enable !== false,
       ai_pen_mcp_max_tool_calls:
-        Number.isFinite(aiPenMcpMaxToolCalls) && aiPenMcpMaxToolCalls > 0 ? Math.floor(aiPenMcpMaxToolCalls) : 3,
+        Number.isFinite(aiPenMcpMaxToolCalls) && aiPenMcpMaxToolCalls > 0 ? Math.floor(aiPenMcpMaxToolCalls) : 6,
       ai_pen_mcp_timeout_sec:
         Number.isFinite(aiPenMcpTimeoutSec) && aiPenMcpTimeoutSec > 0 ? Math.floor(aiPenMcpTimeoutSec) : 12,
       ai_pen_external_tools: String(rawForm?.ai_pen_external_tools || 'sqlmap,httpx').trim() || 'sqlmap,httpx',
@@ -17915,9 +17915,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ai_pen_external_max_runs:
         Number.isFinite(aiPenExternalMaxRuns) && aiPenExternalMaxRuns > 0
           ? Math.floor(aiPenExternalMaxRuns)
-          : 1,
+          : 2,
       ai_pen_ai_plan_max_cases:
-        Number.isFinite(aiPenAiPlanMaxCases) && aiPenAiPlanMaxCases > 0 ? Math.floor(aiPenAiPlanMaxCases) : 24,
+        Number.isFinite(aiPenAiPlanMaxCases) && aiPenAiPlanMaxCases > 0 ? Math.floor(aiPenAiPlanMaxCases) : 36,
       ai_denoise_modules: normalizeAiDenoiseModules(rawForm?.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(rawForm?.ai_denoise_prompt_ids, promptTemplates),
     };
@@ -18310,12 +18310,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ai_pen_mcp_enable: Boolean(currentForm.ai_pen_mcp_enable),
       ai_pen_external_enable: Boolean(currentForm.ai_pen_external_enable),
       ai_pen_ai_planner_enable: Boolean(currentForm.ai_pen_ai_planner_enable),
-      ai_pen_mcp_max_tool_calls: Math.max(1, Math.min(8, Math.floor(Number(currentForm.ai_pen_mcp_max_tool_calls) || 3))),
+      ai_pen_mcp_max_tool_calls: Math.max(1, Math.min(12, Math.floor(Number(currentForm.ai_pen_mcp_max_tool_calls) || 6))),
       ai_pen_mcp_timeout_sec: Math.max(1, Math.min(60, Math.floor(Number(currentForm.ai_pen_mcp_timeout_sec) || 12))),
       ai_pen_external_tools: String(currentForm.ai_pen_external_tools || 'sqlmap,httpx').trim().slice(0, 180) || 'sqlmap,httpx',
       ai_pen_external_timeout_sec: Math.max(5, Math.min(300, Math.floor(Number(currentForm.ai_pen_external_timeout_sec) || 45))),
-      ai_pen_external_max_runs: Math.max(1, Math.min(8, Math.floor(Number(currentForm.ai_pen_external_max_runs) || 1))),
-      ai_pen_ai_plan_max_cases: Math.max(1, Math.min(120, Math.floor(Number(currentForm.ai_pen_ai_plan_max_cases) || 24))),
+      ai_pen_external_max_runs: Math.max(1, Math.min(8, Math.floor(Number(currentForm.ai_pen_external_max_runs) || 2))),
+      ai_pen_ai_plan_max_cases: Math.max(1, Math.min(120, Math.floor(Number(currentForm.ai_pen_ai_plan_max_cases) || 36))),
       ai_denoise_modules: normalizeAiDenoiseModules(currentForm.ai_denoise_modules),
       ai_denoise_prompt_ids: normalizeAiDenoisePromptIds(currentForm.ai_denoise_prompt_ids, promptTemplates),
     };
@@ -19474,12 +19474,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               id="ai-pen-mcp-max-tool-calls"
               type="number"
               min={1}
-              max={8}
+              max={12}
               value={String(form.ai_pen_mcp_max_tool_calls)}
               onChange={(event) =>
                 setForm((prev) => ({
                   ...prev,
-                  ai_pen_mcp_max_tool_calls: Math.max(1, Math.min(8, Number(event.target.value || 0) || 1)),
+                  ai_pen_mcp_max_tool_calls: Math.max(1, Math.min(12, Number(event.target.value || 0) || 1)),
                 }))
               }
               className={aiInputClass}

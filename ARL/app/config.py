@@ -625,7 +625,7 @@ class Config(object):
     AI_PEN_MCP_EXTERNAL_ENABLE = True
     AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = "sqlmap,httpx"
     AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = 45
-    AI_PEN_MCP_EXTERNAL_MAX_RUNS = 1
+    AI_PEN_MCP_EXTERNAL_MAX_RUNS = 2
     # TruffleHog 可执行文件路径（优先使用 tools 目录）
     TRUFFLEHOG_BIN = os.path.join(project_root, "tools", "TruffleHog", "trufflehog")
     # 是否启用 TruffleHog JS 二次扫描

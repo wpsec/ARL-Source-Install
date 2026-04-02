@@ -204,6 +204,43 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("login_entry_context", route_hint)
 
+    def test_resolve_wih_url_target_prefers_content_route_over_js_source(self):
+        target = WebSiteFetch._resolve_ai_pen_wih_target_url(
+            record_type="urlfinder_url",
+            content="/js/authorization",
+            source_url="https://policy.eytax.com.cn/js/index-BnVSq8In.js",
+            site_url="https://policy.eytax.com.cn",
+        )
+
+        self.assertEqual("https://policy.eytax.com.cn/js/authorization", target)
+
+    def test_resolve_wih_url_target_keeps_absolute_content_url(self):
+        target = WebSiteFetch._resolve_ai_pen_wih_target_url(
+            record_type="urlfinder_url",
+            content="https://example.com/api/profile",
+            source_url="https://example.com/static/js/app.js",
+            site_url="https://example.com",
+        )
+
+        self.assertEqual("https://example.com/api/profile", target)
+
+    def test_path_traversal_probe_targets_skip_static_js_asset(self):
+        targets = WebSiteFetch._build_path_traversal_probe_targets(
+            "https://example.com/js/index-BnVSq8In.js",
+            max_count=4,
+        )
+
+        self.assertEqual([], targets)
+
+    def test_path_traversal_probe_targets_keep_non_asset_route(self):
+        targets = WebSiteFetch._build_path_traversal_probe_targets(
+            "https://example.com/js/authorization",
+            max_count=2,
+        )
+
+        self.assertEqual(2, len(targets))
+        self.assertTrue(all("?file=" in item or "?path=" in item for item in targets))
+
     def test_high_value_url_candidate_detects_api_docs(self):
         candidate = WebSiteFetch._build_ai_pen_high_value_url_candidate(
             source_collection="url",
@@ -284,6 +321,107 @@ class TestAiPenJsContext(unittest.TestCase):
                 title_text="Not Found",
             )
         )
+
+    def test_site_capability_candidates_expand_unauth_config_and_injection(self):
+        candidate = WebSiteFetch._build_ai_pen_baseline_site_candidate(
+            source_id="507f1f77bcf86cd7994390c3",
+            site_url="https://example.com/",
+            status_code=200,
+            title_text="Example Portal",
+            server_text="nginx",
+        )
+        candidate["api_surface_summary"] = WebSiteFetch._build_api_surface_summary(
+            runtime_api_calls=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/api/report?redirect=https://a.example&q=test",
+                },
+                {
+                    "method": "POST",
+                    "url": "https://example.com/api/run",
+                    "form_data": {"cmd": "whoami"},
+                },
+            ],
+            dom_form_summary=[
+                {
+                    "action": "/search",
+                    "method": "POST",
+                    "fields": "q",
+                    "has_password_input": "false",
+                }
+            ],
+        )
+
+        derived = WebSiteFetch._build_ai_pen_site_capability_candidates(candidate)
+        risk_types = {str(item.get("risk_type") or "") for item in derived}
+
+        self.assertIn("unauth_access", risk_types)
+        self.assertIn("sensitive_info", risk_types)
+        self.assertIn("ssrf", risk_types)
+        self.assertIn("cmdi", risk_types)
+        self.assertIn("sqli", risk_types)
+        self.assertIn("xss", risk_types)
+        unauth_candidate = next(item for item in derived if str(item.get("risk_type") or "") == "unauth_access")
+        self.assertEqual("admin_portal_context", unauth_candidate.get("route_hint"))
+
+    def test_site_capability_candidates_expand_deeper_file_and_object_surfaces(self):
+        candidate = WebSiteFetch._build_ai_pen_baseline_site_candidate(
+            source_id="507f1f77bcf86cd7994390d5",
+            site_url="https://example.com/",
+            status_code=200,
+            title_text="Example Portal",
+            server_text="nginx",
+        )
+        candidate["api_surface_summary"] = {
+            "parameter_probe_families": [
+                {"tool": "idor_probe"},
+                {"tool": "path_traversal_probe"},
+                {"tool": "ssti_probe"},
+                {"tool": "xxe_probe"},
+                {"tool": "upload_probe"},
+                {"tool": "file_probe"},
+            ]
+        }
+
+        derived = WebSiteFetch._build_ai_pen_site_capability_candidates(candidate)
+        derived_by_type = {str(item.get("risk_type") or ""): item for item in derived}
+
+        self.assertIn("idor", derived_by_type)
+        self.assertIn("path_traversal", derived_by_type)
+        self.assertIn("ssti", derived_by_type)
+        self.assertIn("xxe", derived_by_type)
+        self.assertIn("file_upload", derived_by_type)
+        self.assertIn("file_read", derived_by_type)
+        self.assertEqual("structured_id_mutation", derived_by_type["idor"].get("route_hint"))
+        self.assertEqual("file_handling_context", derived_by_type["path_traversal"].get("route_hint"))
+        self.assertIn("file_handling_surface", list(derived_by_type["file_read"].get("surface_hints", []) or []))
+
+    def test_site_capability_candidates_keep_403_sites_conservative(self):
+        candidate = WebSiteFetch._build_ai_pen_baseline_site_candidate(
+            source_id="507f1f77bcf86cd7994390c4",
+            site_url="https://example.com/",
+            status_code=403,
+            title_text="Forbidden",
+        )
+        candidate["api_surface_summary"] = WebSiteFetch._build_api_surface_summary(
+            runtime_api_calls=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/api/report?redirect=https://a.example&q=test",
+                }
+            ],
+            dom_form_summary=[],
+        )
+
+        derived = WebSiteFetch._build_ai_pen_site_capability_candidates(candidate)
+        risk_types = {str(item.get("risk_type") or "") for item in derived}
+
+        self.assertIn("unauth_access", risk_types)
+        self.assertIn("sensitive_info", risk_types)
+        self.assertNotIn("sqli", risk_types)
+        self.assertNotIn("xss", risk_types)
+        self.assertNotIn("idor", risk_types)
+        self.assertNotIn("path_traversal", risk_types)
 
     def test_resolve_ai_pen_prompt_content_includes_authorized_context(self):
         task = WebSiteFetch.__new__(WebSiteFetch)
@@ -1020,6 +1158,18 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("login_entry_surface", profile.get("name"))
         self.assertEqual("replay", profile.get("preferred_payload_type"))
 
+    def test_capability_profile_prefers_admin_portal_surface_for_admin_route_hint(self):
+        profile = WebSiteFetch._select_ai_pen_capability_profile(
+            {
+                "target": "https://example.com/console",
+                "route_hint": "admin_portal_context",
+                "surface_hints": ["admin_office_portal"],
+            }
+        )
+
+        self.assertEqual("admin_office_portal", profile.get("name"))
+        self.assertEqual("replay", profile.get("preferred_payload_type"))
+
     def test_api_doc_summary_extracts_paths_and_params(self):
         summary = WebSiteFetch._extract_api_doc_summary(
             '{"openapi":"3.0.0","paths":{"/api/login":{"post":{"parameters":[{"name":"tenant"}],"requestBody":{"content":{"application/json":{"schema":{"properties":{"username":{},"password":{}}}}}}}},"/api/user/{id}":{"get":{"parameters":[{"name":"id"}]}}},"components":{"securitySchemes":{"BearerAuth":{"type":"http","scheme":"bearer"}}}}'
@@ -1109,6 +1259,23 @@ class TestAiPenJsContext(unittest.TestCase):
         kinds = [str(item.get("mutation_kind") or "") for item in targets]
         self.assertTrue(any("role=admin" in item for item in urls))
         self.assertTrue(any(kind in {"access_control", "access_control_numeric"} for kind in kinds))
+
+    def test_build_ai_pen_runtime_settings_uses_deeper_defaults_and_caps(self):
+        defaults = WebSiteFetch._build_ai_pen_runtime_settings({})
+        capped = WebSiteFetch._build_ai_pen_runtime_settings(
+            {
+                "ai_pen_mcp_max_tool_calls": 99,
+                "ai_pen_external_max_runs": 99,
+                "ai_pen_ai_plan_max_cases": 999,
+            }
+        )
+
+        self.assertEqual(6, defaults.get("max_tool_calls"))
+        self.assertEqual(2, defaults.get("external_max_runs"))
+        self.assertEqual(36, defaults.get("ai_plan_max_cases"))
+        self.assertEqual(12, capped.get("max_tool_calls"))
+        self.assertEqual(8, capped.get("external_max_runs"))
+        self.assertEqual(120, capped.get("ai_plan_max_cases"))
 
     def test_build_idor_diff_summary_marks_sensitive_fields(self):
         summary = WebSiteFetch._build_idor_diff_summary(

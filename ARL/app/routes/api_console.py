@@ -1245,14 +1245,14 @@ def _extract_ai_config(config_obj):
         'ai_denoise_enable': _safe_bool(ai_conf.get('AI_DENOISE_ENABLE'), True),
         'ai_pen_test_enable': _safe_bool(ai_conf.get('AI_PEN_TEST_ENABLE'), True),
         'ai_pen_mcp_enable': _safe_bool(ai_conf.get('AI_PEN_MCP_ENABLE'), True),
-        'ai_pen_mcp_max_tool_calls': _safe_int(ai_conf.get('AI_PEN_MCP_MAX_TOOL_CALLS'), 3, min_value=1),
+        'ai_pen_mcp_max_tool_calls': _safe_int(ai_conf.get('AI_PEN_MCP_MAX_TOOL_CALLS'), 6, min_value=1),
         'ai_pen_mcp_timeout_sec': _safe_int(ai_conf.get('AI_PEN_MCP_TIMEOUT_SEC'), 12, min_value=1),
         'ai_pen_external_enable': _safe_bool(ai_conf.get('AI_PEN_EXTERNAL_ENABLE'), True),
         'ai_pen_external_tools': str(ai_conf.get('AI_PEN_EXTERNAL_TOOLS') or 'sqlmap,httpx').strip(),
         'ai_pen_external_timeout_sec': _safe_int(ai_conf.get('AI_PEN_EXTERNAL_TIMEOUT_SEC'), 45, min_value=1),
-        'ai_pen_external_max_runs': _safe_int(ai_conf.get('AI_PEN_EXTERNAL_MAX_RUNS'), 1, min_value=1),
+        'ai_pen_external_max_runs': _safe_int(ai_conf.get('AI_PEN_EXTERNAL_MAX_RUNS'), 2, min_value=1),
         'ai_pen_ai_planner_enable': _safe_bool(ai_conf.get('AI_PEN_AI_PLANNER_ENABLE'), True),
-        'ai_pen_ai_plan_max_cases': _safe_int(ai_conf.get('AI_PEN_AI_PLAN_MAX_CASES'), 24, min_value=1),
+        'ai_pen_ai_plan_max_cases': _safe_int(ai_conf.get('AI_PEN_AI_PLAN_MAX_CASES'), 36, min_value=1),
         'ai_denoise_modules': ai_denoise_modules,
         'ai_denoise_prompt_ids': ai_denoise_prompt_ids,
     }
@@ -1513,7 +1513,7 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['AI_PEN_MCP_ENABLE'] = _safe_bool(ai_config.get('ai_pen_mcp_enable'), True)
     ai_conf['AI_PEN_MCP_MAX_TOOL_CALLS'] = max(
         1,
-        min(8, _safe_int(ai_config.get('ai_pen_mcp_max_tool_calls'), 3, min_value=1)),
+        min(12, _safe_int(ai_config.get('ai_pen_mcp_max_tool_calls'), 6, min_value=1)),
     )
     ai_conf['AI_PEN_MCP_TIMEOUT_SEC'] = max(
         1,
@@ -1532,12 +1532,12 @@ def _merge_ai_config(config_obj, ai_config):
     )
     ai_conf['AI_PEN_EXTERNAL_MAX_RUNS'] = max(
         1,
-        min(8, _safe_int(ai_config.get('ai_pen_external_max_runs'), 1, min_value=1)),
+        min(8, _safe_int(ai_config.get('ai_pen_external_max_runs'), 2, min_value=1)),
     )
     ai_conf['AI_PEN_AI_PLANNER_ENABLE'] = _safe_bool(ai_config.get('ai_pen_ai_planner_enable'), True)
     ai_conf['AI_PEN_AI_PLAN_MAX_CASES'] = max(
         1,
-        min(120, _safe_int(ai_config.get('ai_pen_ai_plan_max_cases'), 24, min_value=1)),
+        min(120, _safe_int(ai_config.get('ai_pen_ai_plan_max_cases'), 36, min_value=1)),
     )
     ai_conf['AI_DENOISE_MODULES'] = ai_denoise_modules
     ai_conf['AI_DENOISE_PROMPT_IDS'] = ai_denoise_prompt_ids

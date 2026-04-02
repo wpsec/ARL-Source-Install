@@ -165,14 +165,14 @@ AI:
   AI_DENOISE_ENABLE: true
   AI_PEN_TEST_ENABLE: true # AI渗透测试总开关（任务勾选 ai_penetration_test 后仍受该项控制）
   AI_PEN_MCP_ENABLE: true # 启用后自动执行基础 MCP 工具链（重放 + Payload 探针）
-  AI_PEN_MCP_MAX_TOOL_CALLS: 3 # 单条候选最多工具调用次数
+  AI_PEN_MCP_MAX_TOOL_CALLS: 6 # 单条候选最多工具调用次数（过低会退化成浅探针）
   AI_PEN_MCP_TIMEOUT_SEC: 12 # MCP 工具请求超时（秒）
   AI_PEN_EXTERNAL_ENABLE: true # 启用 AI渗透外部工具白名单执行器（sqlmap/httpx 等，默认开启）
   AI_PEN_EXTERNAL_TOOLS: "sqlmap,httpx" # 外部工具白名单（按工具说明文件中的 id）
   AI_PEN_EXTERNAL_TIMEOUT_SEC: 45 # 外部工具单次执行超时（秒）
-  AI_PEN_EXTERNAL_MAX_RUNS: 1 # 单条候选最多执行外部工具数量
+  AI_PEN_EXTERNAL_MAX_RUNS: 2 # 单条候选最多执行外部工具数量
   AI_PEN_AI_PLANNER_ENABLE: true # 启用 AI 规划器（关闭后仅执行规则/MCP验证）
-  AI_PEN_AI_PLAN_MAX_CASES: 24 # 单任务允许调用 AI 规划的候选上限
+  AI_PEN_AI_PLAN_MAX_CASES: 36 # 单任务允许调用 AI 规划的候选上限
   AI_DENOISE_MODULES:
     site: true
     fileleak: true
