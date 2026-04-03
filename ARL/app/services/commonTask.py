@@ -1185,12 +1185,15 @@ class WebSiteFetch(object):
         return host_in_scope(value, context.get("allowed_hosts", []), context.get("allowed_flds", []))
 
     def save_site_info(self):
+        curr_date = utils.curr_date()
         for site_info in self.site_info_list:
             curr_site = site_info["site"]
             site_path = "/image/" + self.task_id
             file_name = '{}/{}.jpg'.format(site_path, utils.gen_filename(curr_site))
             site_info["task_id"] = self.task_id
             site_info["screenshot"] = file_name
+            site_info.setdefault("save_date", curr_date)
+            site_info.setdefault("update_date", curr_date)
 
             # 调用读取站点识别的结果，并且去重
             if self.web_analyze_map:

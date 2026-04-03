@@ -36,6 +36,14 @@ def _load_console_module():
     flask_restx_module = types.ModuleType("flask_restx")
     flask_restx_module.Namespace = _Namespace
 
+    class _ObjectId:
+        @staticmethod
+        def from_datetime(value):
+            return value
+
+    bson_module = types.ModuleType("bson")
+    bson_module.ObjectId = _ObjectId
+
     app_module = types.ModuleType("app")
     app_module.__path__ = []
     utils_module = types.ModuleType("app.utils")
@@ -65,6 +73,7 @@ def _load_console_module():
     for name, module in (
         ("flask", flask_module),
         ("flask_restx", flask_restx_module),
+        ("bson", bson_module),
         ("app", app_module),
         ("app.utils", utils_module),
         ("app.utils.device", utils_device_module),
@@ -166,6 +175,25 @@ class TestConsoleDashboardTrend(unittest.TestCase):
             day_key = day_start.strftime("%Y-%m-%d")
             count = console._count_daily_records("asset_site", day_start, day_end, day_key, primary_field="save_date")
             self.assertEqual(4, count)
+        finally:
+            console._count_documents = original_count_documents
+
+    def test_count_daily_records_falls_back_to_object_id_when_dates_missing(self):
+        original_count_documents = console._count_documents
+        try:
+            def _fake_count_documents(collection, query=None):
+                query_obj = query or {}
+                clauses = query_obj.get("$and") or []
+                if any("_id" in clause for clause in clauses):
+                    return 3
+                return 0
+
+            console._count_documents = _fake_count_documents
+            day_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+            day_key = day_start.strftime("%Y-%m-%d")
+            count = console._count_daily_records("site", day_start, day_end, day_key, primary_field="save_date")
+            self.assertEqual(3, count)
         finally:
             console._count_documents = original_count_documents
 

@@ -7,13 +7,14 @@
 - 用于系统监控和健康检查
 """
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import re
 import threading
 import time
 
 import psutil
+from bson import ObjectId
 from flask import request
 from flask_restx import Namespace
 from app.utils import get_logger, auth
@@ -170,10 +171,20 @@ def _count_daily_records(collection_name: str, day_start: datetime, day_end: dat
     - 兼容时间字段为 `date` 与 `string`
     - 优先使用 primary_field（默认 save_date）
     - 当 primary_field 缺失时回退到 update_date，避免历史数据/迁移数据导致趋势全 0
+    - 当 save_date/update_date 都缺失时，再回退到 `_id` 时间戳，兼容旧 site 数据
     """
     safe_day_key = re.escape(str(day_key or "").strip())
     if not safe_day_key:
         return 0
+
+    def _missing_field_query(field_name: str):
+        return {
+            "$or": [
+                {field_name: {"$exists": False}},
+                {field_name: None},
+                {field_name: ""},
+            ]
+        }
 
     def _field_daily_query(field_name: str):
         return {
@@ -181,6 +192,19 @@ def _count_daily_records(collection_name: str, day_start: datetime, day_end: dat
                 {field_name: {"$type": "date", "$gte": day_start, "$lt": day_end}},
                 {field_name: {"$type": "string", "$regex": "^{}".format(safe_day_key)}},
             ]
+        }
+
+    def _object_id_daily_query():
+        # 旧版 site 记录没有 save_date/update_date，只能退回 ObjectId 生成时间估算所属日期。
+        start_dt = day_start.astimezone() if day_start.tzinfo is None else day_start
+        end_dt = day_end.astimezone() if day_end.tzinfo is None else day_end
+        start_utc = start_dt.astimezone(timezone.utc)
+        end_utc = end_dt.astimezone(timezone.utc)
+        return {
+            "_id": {
+                "$gte": ObjectId.from_datetime(start_utc),
+                "$lt": ObjectId.from_datetime(end_utc),
+            }
         }
 
     primary_query = _field_daily_query(primary_field)
@@ -192,18 +216,23 @@ def _count_daily_records(collection_name: str, day_start: datetime, day_end: dat
 
     fallback_query = {
         "$and": [
-            {
-                "$or": [
-                    {primary_field: {"$exists": False}},
-                    {primary_field: None},
-                    {primary_field: ""},
-                ]
-            },
+            _missing_field_query(primary_field),
             _field_daily_query("update_date"),
         ]
     }
     fallback_count = _count_documents(collection_name, fallback_query)
-    return int(primary_count) + int(fallback_count)
+    if fallback_count > 0:
+        return int(primary_count) + int(fallback_count)
+
+    object_id_fallback_query = {
+        "$and": [
+            _missing_field_query(primary_field),
+            _missing_field_query("update_date"),
+            _object_id_daily_query(),
+        ]
+    }
+    object_id_fallback_count = _count_documents(collection_name, object_id_fallback_query)
+    return int(primary_count) + int(fallback_count) + int(object_id_fallback_count)
 
 
 def _build_asset_trend_7d(asset_collection="asset_site"):

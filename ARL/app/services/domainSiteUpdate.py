@@ -113,6 +113,7 @@ class DomainSiteUpdate(object):
 
     def save_site_info(self):
         site_info_list = fetch_site(self.available_sites)
+        curr_date = utils.curr_date()
 
         for site_info in site_info_list:
             curr_site = site_info["site"]
@@ -120,6 +121,8 @@ class DomainSiteUpdate(object):
             file_name = '{}/{}.jpg'.format(site_path, utils.gen_filename(curr_site))
             site_info["task_id"] = self.task_id
             site_info["screenshot"] = file_name
+            site_info.setdefault("save_date", curr_date)
+            site_info.setdefault("update_date", curr_date)
 
         if site_info_list:
             utils.conn_db('site').insert_many(site_info_list)

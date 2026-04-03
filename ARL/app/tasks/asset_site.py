@@ -104,8 +104,11 @@ class AssetSiteUpdateTask(CommonTask):
         - 为每个站点添加task_id
         - 保存到site表
         """
+        curr_date = utils.curr_date()
         for site_info in site_info_list:
             site_info["task_id"] = self.task_id
+            site_info.setdefault("save_date", curr_date)
+            site_info.setdefault("update_date", curr_date)
             utils.conn_db('site').insert_one(site_info)
         logger.info("save {} to {}".format(len(site_info_list), self.task_id))
 
