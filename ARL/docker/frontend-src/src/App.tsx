@@ -2809,7 +2809,9 @@ function extractAiPenSamplePaths(samplePaths: any[]): string[] {
 
 function extractAiPenSampleInterfacePaths(sampleInterfaces: any[]): string[] {
   if (!Array.isArray(sampleInterfaces)) return [];
-  return normalizeAiPenCopyLines(sampleInterfaces.map((item) => String(item?.path || '').trim()));
+  return normalizeAiPenCopyLines(
+    sampleInterfaces.map((item) => String(item?.url_template || item?.path_template || item?.path || '').trim())
+  );
 }
 
 function buildAiPenParamTemplate(params: any[], modeText: string): string {
@@ -2903,19 +2905,10 @@ function buildAiPenRuntimeRequestPacketText(item: any): string {
 
 function buildAiPenSampleInterfaceCopyText(item: any): string {
   const method = String(item?.method || 'GET').trim().toUpperCase() || 'GET';
-  const path = String(item?.path || '').trim();
-  if (!path) return '';
-  if (method === 'GET') return path;
-
-  const contentType = String(item?.content_type || '').trim();
-  const bodyTemplate = String(item?.request_body_template || '').trim() || buildAiPenParamTemplate(item?.params, item?.mode);
-  const lines = [`${method} ${path}`];
-  if (contentType) lines.push(`Content-Type: ${contentType}`);
-  if (bodyTemplate) {
-    lines.push('');
-    lines.push(bodyTemplate);
-  }
-  return lines.join('\n').trim();
+  const urlTemplate = String(item?.url_template || '').trim();
+  const pathTemplate = String(item?.path_template || item?.path || '').trim();
+  if (method === 'GET') return urlTemplate || pathTemplate;
+  return String(item?.request_packet_template || '').trim() || buildAiPenParamTemplate(item?.params, item?.mode);
 }
 
 function extractAiPenPostSampleInterfaceTemplates(sampleInterfaces: any[]): string[] {
@@ -2925,6 +2918,24 @@ function extractAiPenPostSampleInterfaceTemplates(sampleInterfaces: any[]): stri
       .filter((item) => ['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()))
       .map((item) => buildAiPenSampleInterfaceCopyText(item))
   );
+}
+
+function formatAiPenInterfaceRole(role: any): string {
+  const text = String(role || '').trim().toLowerCase();
+  const mapping: Record<string, string> = {
+    url_input_interface: 'URL输入接口',
+    auth_interface: '认证接口',
+    config_i18n_interface: '配置/国际化接口',
+    static_resource: '静态资源',
+    file_interface: '文件处理接口',
+    object_interface: '对象访问接口',
+    profile_interface: '身份资料接口',
+    graphql_interface: 'GraphQL接口',
+    realtime_interface: '实时通道接口',
+    management_interface: '管理接口',
+    generic_api: '通用接口',
+  };
+  return mapping[text] || text || '-';
 }
 
 function tryExtractJsonObjectText(raw: string): string {
@@ -13091,6 +13102,82 @@ function TableModuleView({
                     </div>
                   </div>
 
+                  {Array.isArray(apiSurfaceSummary?.interface_role_distribution) && apiSurfaceSummary.interface_role_distribution.length > 0 ? (
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">接口角色分类</div>
+                      <div className="flex flex-wrap gap-2">
+                        {apiSurfaceSummary.interface_role_distribution.map((item: any, index: number) => (
+                          <span
+                            key={`${index}-${item?.role}`}
+                            className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                          >
+                            {formatAiPenInterfaceRole(item?.role)}:{normalizeValue(item?.count)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {Array.isArray(apiSurfaceSummary?.high_value_param_interfaces) && apiSurfaceSummary.high_value_param_interfaces.length > 0 ? (
+                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-3">
+                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">高价值参数接口</div>
+                      <div className="space-y-3">
+                        {apiSurfaceSummary.high_value_param_interfaces.map((item: any, index: number) => {
+                          const methodText = String(item?.method || 'GET').trim().toUpperCase();
+                          const displayText = String(item?.url_template || item?.path_template || item?.path || '').trim() || '-';
+                          const requestPacketText = buildAiPenSampleInterfaceCopyText(item);
+                          const highValueParams = Array.isArray(item?.high_value_params) ? item.high_value_params : [];
+                          return (
+                            <div key={`${index}-${item?.method}-${item?.path}`} className="rounded-md border border-brand-border bg-brand-bg/60 px-2.5 py-3 space-y-2">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="font-mono break-all flex-1 min-w-0">
+                                  {methodText} {displayText}
+                                </div>
+                                <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void copyTextToClipboard(displayText, '高价值接口URL')}
+                                    className="text-[11px] font-semibold text-brand-accent hover:underline"
+                                    disabled={displayText === '-'}
+                                  >
+                                    复制URL
+                                  </button>
+                                  {['POST', 'PUT', 'PATCH'].includes(methodText) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void copyTextToClipboard(requestPacketText, '高价值接口请求包')}
+                                      className="text-[11px] font-semibold text-brand-accent hover:underline"
+                                      disabled={!requestPacketText}
+                                    >
+                                      复制请求包
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="text-[11px] text-brand-text-muted break-all">
+                                角色：{formatAiPenInterfaceRole(item?.primary_role)}
+                                {' / '}
+                                高价值参数：{highValueParams.length > 0 ? highValueParams.join(', ') : '-'}
+                                {' / '}
+                                评分：{normalizeValue(item?.score)}
+                              </div>
+                              {String(item?.score_reason || '').trim() ? (
+                                <div className="text-[11px] text-brand-text-muted break-all">
+                                  说明：{String(item?.score_reason || '').trim()}
+                                </div>
+                              ) : null}
+                              {['POST', 'PUT', 'PATCH'].includes(methodText) && String(item?.request_packet_template || '').trim() ? (
+                                <div className="rounded border border-brand-border bg-brand-bg/70 px-2 py-2 text-[11px] font-mono whitespace-pre-wrap break-all leading-relaxed">
+                                  {String(item?.request_packet_template || '').trim()}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
                       <div className="flex items-center justify-between gap-3">
@@ -13116,7 +13203,15 @@ function TableModuleView({
                           ) : null}
                         </div>
                       </div>
-                      {Array.isArray(apiSurfaceSummary?.sample_paths) && apiSurfaceSummary.sample_paths.length > 0 ? (
+                      {Array.isArray(apiSurfaceSummary?.sample_interfaces) && apiSurfaceSummary.sample_interfaces.length > 0 ? (
+                        <div className="space-y-1">
+                          {apiSurfaceSummary.sample_interfaces.map((item: any, index: number) => (
+                            <div key={`${index}-${item?.method}-${item?.path}`} className="font-mono break-all">
+                              {index + 1}. {String(item?.path_template || item?.path || '').trim() || '-'}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (Array.isArray(apiSurfaceSummary?.sample_paths) && apiSurfaceSummary.sample_paths.length > 0 ? (
                         <div className="space-y-1">
                           {apiSurfaceSummary.sample_paths.map((item: any, index: number) => (
                             <div key={`${index}-${item}`} className="font-mono break-all">
@@ -13126,7 +13221,7 @@ function TableModuleView({
                         </div>
                       ) : (
                         <div className="text-brand-text-muted">暂无</div>
-                      )}
+                      ))}
                     </div>
                     <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
                       <div className="text-[11px] font-black tracking-wide text-brand-text-muted">参数摘要</div>
@@ -13190,8 +13285,29 @@ function TableModuleView({
                         <div className="space-y-2">
                           {apiSurfaceSummary.sample_interfaces.map((item: any, index: number) => (
                             <div key={`${index}-${item?.method}-${item?.path}`} className="rounded-md border border-brand-border bg-brand-bg/60 px-2.5 py-2">
-                              <div className="font-mono break-all">
-                                {String(item?.method || 'GET').toUpperCase()} {String(item?.path || '').trim() || '-'}
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="font-mono break-all flex-1 min-w-0">
+                                  {String(item?.method || 'GET').toUpperCase()} {String(item?.path_template || item?.path || '').trim() || '-'}
+                                </div>
+                                <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void copyTextToClipboard(String(item?.url_template || item?.path_template || item?.path || '').trim(), '接口模板')}
+                                    className="text-[11px] font-semibold text-brand-accent hover:underline"
+                                    disabled={String(item?.url_template || item?.path_template || item?.path || '').trim() === ''}
+                                  >
+                                    复制URL
+                                  </button>
+                                  {['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void copyTextToClipboard(buildAiPenSampleInterfaceCopyText(item), '接口请求包')}
+                                      className="text-[11px] font-semibold text-brand-accent hover:underline"
+                                    >
+                                      复制请求包
+                                    </button>
+                                  ) : null}
+                                </div>
                               </div>
                               <div className="mt-1 text-[11px] text-brand-text-muted">
                                 参数：{Array.isArray(item?.params) && item.params.length > 0 ? item.params.join(', ') : '-'}
@@ -13205,7 +13321,7 @@ function TableModuleView({
                               ) : null}
                               {['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()) && (String(item?.request_body_template || '').trim() || Array.isArray(item?.params)) ? (
                                 <div className="mt-2 rounded border border-brand-border bg-brand-bg/70 px-2 py-2 text-[11px] font-mono whitespace-pre-wrap break-all leading-relaxed">
-                                  {String(item?.request_body_template || '').trim() || buildAiPenParamTemplate(item?.params, item?.mode)}
+                                  {String(item?.request_packet_template || '').trim() || buildAiPenSampleInterfaceCopyText(item)}
                                 </div>
                               ) : null}
                             </div>

@@ -12,7 +12,7 @@ import hashlib
 import hmac
 import requests
 from types import SimpleNamespace
-from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit, urljoin
+from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit, urljoin, quote
 from bson import ObjectId
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
 from app import utils
@@ -8848,7 +8848,6 @@ class WebSiteFetch(object):
         path_list = path_list[:120]
         sample_paths = path_list[:4]
 
-        auth_keywords = ("login", "auth", "token", "oauth", "signin", "session", "user", "me", "current")
         auth_paths = []
         parameter_names = []
         parameter_seen = set()
@@ -8887,7 +8886,7 @@ class WebSiteFetch(object):
 
         for path_text in path_list:
             path_lower = path_text.lower()
-            if any(token in path_lower for token in auth_keywords):
+            if cls._looks_like_ai_pen_auth_path(path_text):
                 auth_paths.append(path_text)
 
             path_item = paths_obj.get(path_text)
@@ -9181,6 +9180,315 @@ class WebSiteFetch(object):
         targets.sort(key=lambda item: (-len(item.get("params", [])), str(item.get("url", "") or "")))
         return targets[:20]
 
+    @staticmethod
+    def _extract_ai_pen_path_tokens(path_text: str):
+        text = str(path_text or "").strip().lower()
+        if not text:
+            return []
+        try:
+            parsed = urlsplit(text)
+            text = str(parsed.path or "").strip().lower()
+        except Exception:
+            pass
+        results = []
+        seen = set()
+        for segment in text.split("/"):
+            segment_text = str(segment or "").strip().lower()
+            if not segment_text:
+                continue
+            for token in re.split(r"[^a-z0-9]+", segment_text):
+                token_text = str(token or "").strip().lower()
+                if not token_text or token_text in seen:
+                    continue
+                seen.add(token_text)
+                results.append(token_text)
+        return results
+
+    @classmethod
+    def _looks_like_ai_pen_auth_path(cls, path_text: str, params=None):
+        tokens = cls._extract_ai_pen_path_tokens(path_text)
+        if not tokens:
+            return False
+        token_set = set(tokens)
+        strong_exact_tokens = {
+            "login", "signin", "sign", "sso", "cas", "oauth", "oauth2", "token",
+            "session", "sessions", "passport", "auth", "authorize", "authorization",
+            "logout", "signout", "logoff",
+        }
+        if token_set.intersection(strong_exact_tokens):
+            return True
+
+        lowered_path = str(path_text or "").strip().lower()
+        compound_hints = (
+            "/api/me",
+            "/me",
+            "/userinfo",
+            "/api/userinfo",
+            "/profile",
+            "/api/profile",
+            "/user/profile",
+            "/account/current",
+            "/api/account/current",
+            "/current/user",
+            "/auth/login",
+            "/oauth/token",
+            "/oauth2/token",
+            "/connect/token",
+            "/session/check",
+            "/session/me",
+        )
+        if any(hint in lowered_path for hint in compound_hints):
+            return True
+
+        param_list = [str(item or "").strip().lower() for item in list(params or []) if str(item or "").strip()]
+        auth_param_hints = {"token", "access_token", "refresh_token", "id_token", "authorization", "bearer", "session", "csrf"}
+        if token_set.intersection({"auth", "oauth", "token"}) and set(param_list).intersection(auth_param_hints):
+            return True
+        return False
+
+    @classmethod
+    def _score_ai_pen_parameter_value(cls, name_text: str):
+        lowered = str(name_text or "").strip().lower()
+        if not lowered:
+            return {"name": "", "score": 0, "tags": [], "reason": ""}
+
+        low_value_names = {
+            "environment", "env", "client", "lang", "language", "locale", "theme", "version",
+            "page", "size", "sort", "order", "limit", "offset", "timestamp", "ts",
+            "currentpage", "pagesize",
+        }
+        if lowered in low_value_names:
+            return {"name": lowered, "score": 0, "tags": [], "reason": "低价值上下文参数"}
+
+        tags = cls._tag_ai_pen_parameter_name(lowered)
+        exact_high_value_names = {
+            "url": 100,
+            "target_url": 100,
+            "file_url": 96,
+            "callback_url": 94,
+            "redirect_url": 94,
+            "return_url": 92,
+            "redirect": 90,
+            "callback": 90,
+            "next": 88,
+            "uri": 88,
+            "endpoint": 86,
+            "host": 84,
+            "domain": 82,
+            "proxy": 82,
+        }
+        if lowered in exact_high_value_names:
+            return {
+                "name": lowered,
+                "score": exact_high_value_names[lowered],
+                "tags": tags,
+                "reason": "高价值外部目标输入参数",
+            }
+
+        tag_scores = {
+            "url": 84,
+            "host": 80,
+            "file_path": 76,
+            "object_id": 72,
+            "access_control": 70,
+            "command": 68,
+            "template": 66,
+            "xml": 64,
+            "auth": 60,
+            "input": 36,
+        }
+        best_score = 0
+        best_tag = ""
+        for tag_name in tags:
+            score = int(tag_scores.get(tag_name, 0) or 0)
+            if score > best_score:
+                best_score = score
+                best_tag = str(tag_name or "").strip().lower()
+        if best_score <= 0:
+            return {"name": lowered, "score": 0, "tags": tags, "reason": ""}
+        return {
+            "name": lowered,
+            "score": best_score,
+            "tags": tags,
+            "reason": "参数标签命中 {}".format(best_tag or "input"),
+        }
+
+    @classmethod
+    def _classify_ai_pen_interface_profile(
+        cls,
+        method_name: str,
+        path_text: str,
+        params,
+        *,
+        source_text: str = "",
+        mode_text: str = "",
+        content_type_text: str = "",
+        body_kind_text: str = "",
+    ):
+        method = str(method_name or "GET").strip().upper() or "GET"
+        path = str(path_text or "").strip()
+        lowered_path = path.lower()
+        param_list = [str(item or "").strip() for item in list(params or []) if str(item or "").strip()]
+        lowered_params = [item.lower() for item in param_list]
+        score_items = [cls._score_ai_pen_parameter_value(name) for name in param_list]
+        high_value_params = [item for item in score_items if int(item.get("score", 0) or 0) >= 60]
+        tags = []
+        seen_tags = set()
+        for item in score_items:
+            for tag_name in list(item.get("tags", []) or []):
+                lowered = str(tag_name or "").strip().lower()
+                if lowered and lowered not in seen_tags:
+                    seen_tags.add(lowered)
+                    tags.append(lowered)
+
+        roles = []
+
+        def append_role(role_name: str):
+            role = str(role_name or "").strip().lower()
+            if role and role not in roles:
+                roles.append(role)
+
+        if cls._looks_like_ai_pen_auth_path(path, param_list):
+            append_role("auth_interface")
+        if any(token in lowered_path for token in ("i18n", "lang", "locale", "multilanguage", "translation")):
+            append_role("config_i18n_interface")
+        if lowered_path.endswith((".json", ".js", ".css", ".png", ".svg", ".ico", ".map")):
+            append_role("static_resource")
+        if "url" in tags or "host" in tags:
+            append_role("url_input_interface")
+        if "file_path" in tags or any(token in lowered_path for token in cls.AI_PEN_UPLOAD_HINTS + cls.AI_PEN_DOWNLOAD_HINTS):
+            append_role("file_interface")
+        if "object_id" in tags or "access_control" in tags:
+            append_role("object_interface")
+        if "graphql" in str(body_kind_text or "").strip().lower() or "/graphql" in lowered_path:
+            append_role("graphql_interface")
+        if any(token in lowered_path for token in ("socket.io", "sockjs", "websocket")):
+            append_role("realtime_interface")
+        if any(token in lowered_path for token in ("actuator", "manage", "management", "admin", "console", "workbench")):
+            append_role("management_interface")
+        if any(token in lowered_path for token in ("/profile", "/userinfo", "/account", "/me", "/current")):
+            append_role("profile_interface")
+        if not roles:
+            append_role("generic_api")
+
+        role_priority = {
+            "url_input_interface": 120,
+            "file_interface": 110,
+            "object_interface": 108,
+            "management_interface": 100,
+            "graphql_interface": 96,
+            "realtime_interface": 92,
+            "auth_interface": 84,
+            "profile_interface": 80,
+            "config_i18n_interface": 34,
+            "static_resource": 18,
+            "generic_api": 40,
+        }
+        primary_role = sorted(roles, key=lambda item: (-int(role_priority.get(item, 0) or 0), item))[0]
+        score = 0
+        if high_value_params:
+            score += max(int(item.get("score", 0) or 0) for item in high_value_params)
+        score += int(role_priority.get(primary_role, 0) or 0)
+        if str(source_text or "").strip().lower() == "runtime_api":
+            score += 24
+        elif str(source_text or "").strip().lower() == "js_api_extract":
+            score += 12
+        if method in {"POST", "PUT", "PATCH"}:
+            score += 8
+        if primary_role in {"config_i18n_interface", "static_resource"} and not high_value_params:
+            score = max(0, score - 60)
+
+        reason_parts = []
+        if high_value_params:
+            reason_parts.append(
+                "高价值参数={}".format(",".join([str(item.get("name") or "") for item in high_value_params[:3]]))
+            )
+        if primary_role:
+            reason_parts.append("角色={}".format(primary_role))
+        if source_text:
+            reason_parts.append("来源={}".format(str(source_text or "").strip()))
+
+        return {
+            "roles": roles[:4],
+            "primary_role": primary_role,
+            "high_value_params": [str(item.get("name") or "") for item in high_value_params[:6]],
+            "parameter_scores": [
+                {
+                    "name": str(item.get("name") or ""),
+                    "score": int(item.get("score", 0) or 0),
+                    "reason": str(item.get("reason") or ""),
+                }
+                for item in score_items[:12]
+            ],
+            "score": int(score or 0),
+            "reason": " | ".join(reason_parts[:3]),
+        }
+
+    @classmethod
+    def _build_ai_pen_interface_templates(cls, method_name: str, path_text: str, params, mode_text: str = "", body_kind_text: str = "", content_type_text: str = "", request_body_template: str = "", base_url: str = ""):
+        method = str(method_name or "GET").strip().upper() or "GET"
+        path = str(path_text or "").strip() or "/"
+        param_list = [str(item or "").strip() for item in list(params or []) if str(item or "").strip()]
+        resolved_url = cls._resolve_ai_pen_high_value_candidate_url(base_url, path)
+
+        path_template = path
+        url_template = resolved_url
+        if method == "GET" and param_list:
+            query_text = "&".join(
+                ["{}=<value>".format(quote(str(name or "").strip(), safe="")) for name in param_list[:12] if str(name or "").strip()]
+            )
+            try:
+                parsed = urlsplit(resolved_url or path)
+                template_path = str(parsed.path or path or "/").strip() or "/"
+                path_template = "{}?{}".format(template_path, query_text)
+                if parsed.scheme and parsed.netloc:
+                    url_template = "{}://{}{}".format(parsed.scheme, parsed.netloc, path_template)
+                else:
+                    url_template = path_template
+            except Exception:
+                path_template = "{}?{}".format(path, query_text)
+                url_template = path_template
+
+        body_template = str(request_body_template or "").strip()
+        if method in {"POST", "PUT", "PATCH"} and not body_template:
+            if str(mode_text or "").strip().lower() == "json_data":
+                body_template = json.dumps({name: "<value>" for name in param_list[:12]}, ensure_ascii=False, indent=2)
+            elif str(mode_text or "").strip().lower() == "form_data":
+                body_template = urlencode([(name, "<value>") for name in param_list[:12]], doseq=True)
+            elif str(body_kind_text or "").strip().lower() == "xml":
+                body_template = "<root>...</root>"
+            elif param_list:
+                body_template = "\n".join(param_list[:12])
+
+        request_packet_template = ""
+        if method in {"POST", "PUT", "PATCH"}:
+            try:
+                parsed = urlsplit(resolved_url or base_url or path)
+                request_path = str(parsed.path or path or "/").strip() or "/"
+                if str(parsed.query or "").strip():
+                    request_path = "{}?{}".format(request_path, parsed.query)
+                host_text = str(parsed.netloc or "").strip()
+            except Exception:
+                request_path = path
+                host_text = ""
+            packet_lines = ["{} {} HTTP/1.1".format(method, request_path)]
+            if host_text:
+                packet_lines.append("Host: {}".format(host_text))
+            if content_type_text:
+                packet_lines.append("Content-Type: {}".format(str(content_type_text or "").strip()))
+            packet_lines.append("")
+            if body_template:
+                packet_lines.append(body_template)
+            request_packet_template = "\n".join(packet_lines).strip()
+
+        return {
+            "resolved_url": str(resolved_url or "").strip(),
+            "path_template": cls._clip_text(path_template, 260),
+            "url_template": cls._clip_text(url_template, 340),
+            "body_template": cls._clip_text(body_template, 340),
+            "request_packet_template": cls._clip_text(request_packet_template, 700),
+        }
+
     @classmethod
     def _tag_ai_pen_parameter_name(cls, name_text: str):
         lowered = str(name_text or "").strip().lower()
@@ -9276,6 +9584,7 @@ class WebSiteFetch(object):
         js_api_targets=None,
         runtime_api_calls=None,
         dom_form_summary=None,
+        base_url: str = "",
     ):
         doc_summary = api_doc_summary if isinstance(api_doc_summary, dict) else {}
         js_targets = list(js_api_targets or [])
@@ -9390,7 +9699,7 @@ class WebSiteFetch(object):
             path_lower = path_text.lower()
 
             source_type_set.add("js")
-            if any(token in path_lower for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
+            if cls._looks_like_ai_pen_auth_path(path_text, params):
                 auth_like_count += 1
                 append_auth_path(path_text)
             if any(param.lower() in cls.AI_PEN_OBJECT_ID_PARAM_HINTS or param.lower().endswith("_id") for param in params):
@@ -9424,7 +9733,7 @@ class WebSiteFetch(object):
             lower_path = str(runtime_path or "").strip().lower()
             if not lower_path:
                 continue
-            if any(token in lower_path for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
+            if cls._looks_like_ai_pen_auth_path(runtime_path):
                 auth_like_count += 1
                 append_auth_path(runtime_path)
             if any(token in lower_path for token in cls.AI_PEN_UPLOAD_HINTS):
@@ -9549,7 +9858,7 @@ class WebSiteFetch(object):
                 auth_like_count += 1
             if has_file:
                 upload_like_count += 1
-            if any(token in action_lower for token in cls.AI_PEN_AUTH_PATH_KEYWORDS):
+            if cls._looks_like_ai_pen_auth_path(action_path, fields):
                 append_auth_path(action_path)
             if any(token in action_lower for token in cls.AI_PEN_DOWNLOAD_HINTS):
                 download_like_count += 1
@@ -9632,6 +9941,67 @@ class WebSiteFetch(object):
             if source_name in source_type_set:
                 ordered_source_types.append(source_name)
 
+        enriched_sample_interfaces = []
+        interface_role_stats = {}
+        high_value_param_interfaces = []
+        for sample in sample_interfaces[:12]:
+            if not isinstance(sample, dict):
+                continue
+            templates = cls._build_ai_pen_interface_templates(
+                method_name=sample.get("method"),
+                path_text=sample.get("path"),
+                params=sample.get("params"),
+                mode_text=sample.get("mode"),
+                body_kind_text=sample.get("body_kind"),
+                content_type_text=sample.get("content_type"),
+                request_body_template=sample.get("request_body_template"),
+                base_url=base_url,
+            )
+            profile = cls._classify_ai_pen_interface_profile(
+                method_name=sample.get("method"),
+                path_text=sample.get("path"),
+                params=sample.get("params"),
+                source_text=sample.get("source"),
+                mode_text=sample.get("mode"),
+                content_type_text=sample.get("content_type"),
+                body_kind_text=sample.get("body_kind"),
+            )
+            enriched = dict(sample)
+            enriched.update(
+                {
+                    "url": str(templates.get("resolved_url") or "").strip(),
+                    "path_template": str(templates.get("path_template") or "").strip(),
+                    "url_template": str(templates.get("url_template") or "").strip(),
+                    "body_template": str(templates.get("body_template") or "").strip(),
+                    "request_packet_template": str(templates.get("request_packet_template") or "").strip(),
+                    "roles": list(profile.get("roles", []) or [])[:4],
+                    "primary_role": str(profile.get("primary_role") or "").strip(),
+                    "high_value_params": list(profile.get("high_value_params", []) or [])[:6],
+                    "parameter_scores": list(profile.get("parameter_scores", []) or [])[:12],
+                    "score": cls._safe_int_value(profile.get("score"), 0),
+                    "score_reason": str(profile.get("reason") or "").strip(),
+                }
+            )
+            enriched_sample_interfaces.append(enriched)
+            for role_name in list(enriched.get("roles", []) or []):
+                role_text = str(role_name or "").strip()
+                if not role_text:
+                    continue
+                interface_role_stats[role_text] = int(interface_role_stats.get(role_text, 0) or 0) + 1
+            if cls._safe_int_value(enriched.get("score"), 0) >= 90 and list(enriched.get("high_value_params", []) or []):
+                high_value_param_interfaces.append(enriched)
+
+        high_value_param_interfaces.sort(
+            key=lambda item: (
+                -cls._safe_int_value(item.get("score"), 0),
+                str(item.get("path") or ""),
+            )
+        )
+        interface_role_distribution = [
+            {"role": role_name, "count": int(count or 0)}
+            for role_name, count in sorted(interface_role_stats.items(), key=lambda item: (-int(item[1] or 0), str(item[0])))
+        ]
+
         return {
             "path_count": path_count,
             "sample_paths": sample_paths[:6],
@@ -9646,7 +10016,9 @@ class WebSiteFetch(object):
             "upload_like_count": upload_like_count,
             "download_like_count": download_like_count,
             "js_api_count": len(js_targets),
-            "sample_interfaces": sample_interfaces[:6],
+            "sample_interfaces": enriched_sample_interfaces[:8],
+            "interface_role_distribution": interface_role_distribution[:8],
+            "high_value_param_interfaces": high_value_param_interfaces[:8],
             "source_types": ordered_source_types,
         }
 
@@ -11319,7 +11691,7 @@ class WebSiteFetch(object):
             lowered = str(path_text or "").strip().lower()
             if not lowered:
                 continue
-            if any(token in lowered for token in cls.AI_PEN_AUTH_PATH_KEYWORDS) and lowered not in seen_runtime_auth:
+            if cls._looks_like_ai_pen_auth_path(path_text) and lowered not in seen_runtime_auth:
                 seen_runtime_auth.add(lowered)
                 runtime_auth_paths.append(path_text[:180])
             if any(token in lowered for token in cls.AI_PEN_CAPTCHA_HINTS) and lowered not in seen_runtime_captcha:
@@ -15214,6 +15586,7 @@ class WebSiteFetch(object):
                     js_api_targets=js_api_targets or [],
                     runtime_api_calls=runtime_api_calls or [],
                     dom_form_summary=dom_form_summary or [],
+                    base_url=url_text,
                 )
 
             if cls._looks_like_graphql_response(url_text, body_excerpt, headers):
@@ -17456,6 +17829,7 @@ class WebSiteFetch(object):
                 js_api_targets=js_api_targets,
                 runtime_api_calls=runtime_api_calls,
                 dom_form_summary=dom_form_summary,
+                base_url=target_url,
             )
             graphql_hit = False
             graphql_hit_url = ""
@@ -18973,6 +19347,7 @@ class WebSiteFetch(object):
                 js_api_targets=candidate.get("js_api_targets"),
                 runtime_api_calls=candidate.get("runtime_api_calls"),
                 dom_form_summary=candidate.get("dom_form_summary"),
+                base_url=str(candidate.get("vuln_url") or candidate.get("target") or "").strip(),
             )
             candidate["task_ai_pen_graph_summary"] = self._build_ai_pen_graph_summary(candidate)
             candidate["login_surface_summary"] = self._build_ai_pen_login_surface_summary(candidate)

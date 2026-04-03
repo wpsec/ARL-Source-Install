@@ -1554,6 +1554,63 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("query", list(sample_interfaces[0].get("params", []) or []))
         self.assertIn("variables", list(sample_interfaces[0].get("params", []) or []))
 
+    def test_auth_path_signal_does_not_match_environment_substring(self):
+        self.assertFalse(
+            WebSiteFetch._looks_like_ai_pen_auth_path(
+                "/operationservice/public/multilanguage/release?environment=prod&client=web"
+            )
+        )
+
+    def test_api_surface_summary_does_not_mark_i18n_release_as_auth_path(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            runtime_api_calls=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/operationservice/public/multilanguage/release?environment=prod&client=web",
+                }
+            ]
+        )
+
+        self.assertEqual(0, int(summary.get("auth_path_count", 0) or 0))
+        self.assertFalse(bool(summary.get("auth_paths", [])))
+
+    def test_api_surface_summary_builds_high_value_param_interface_for_url_input(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            runtime_api_calls=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/operationservice/public/get/allocation?url=https://example.com&language=en",
+                }
+            ],
+            base_url="https://example.com",
+        )
+
+        high_value_items = list(summary.get("high_value_param_interfaces", []) or [])
+        self.assertTrue(bool(high_value_items))
+        self.assertEqual("url_input_interface", str(high_value_items[0].get("primary_role") or ""))
+        self.assertIn("url", list(high_value_items[0].get("high_value_params", []) or []))
+        self.assertIn("url=<value>", str(high_value_items[0].get("url_template") or ""))
+
+    def test_api_surface_summary_builds_interface_role_distribution(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            runtime_api_calls=[
+                {
+                    "method": "GET",
+                    "url": "https://example.com/operationservice/public/get/allocation?url=https://example.com&language=en",
+                },
+                {
+                    "method": "GET",
+                    "url": "https://example.com/multilanguage/web_prod_en.json",
+                },
+            ],
+            base_url="https://example.com",
+        )
+
+        role_items = list(summary.get("interface_role_distribution", []) or [])
+        role_names = [str(item.get("role") or "") for item in role_items]
+        self.assertIn("url_input_interface", role_names)
+        self.assertIn("static_resource", role_names)
+
     def test_collect_runtime_observation_merges_runtime_form_and_hidden_into_api_surface(self):
         observation = WebSiteFetch._collect_ai_pen_runtime_observation(
             [
