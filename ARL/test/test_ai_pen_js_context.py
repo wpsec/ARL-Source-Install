@@ -1533,6 +1533,27 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("application/json", str(sample_interfaces[0].get("content_type") or ""))
         self.assertIn("q", list(sample_interfaces[0].get("params", []) or []))
 
+    def test_api_surface_summary_marks_runtime_graphql_interface_mode(self):
+        summary = WebSiteFetch._build_api_surface_summary(
+            runtime_api_calls=[
+                {
+                    "method": "POST",
+                    "url": "https://example.com/graphql",
+                    "request_headers": {"Content-Type": "application/json"},
+                    "request_body": '{"query":"query { viewer { id } }","variables":{"id":1}}',
+                    "body_kind": "graphql",
+                    "request_body_template": '{"query":"<value>","variables":{"id":"<value>"}}',
+                }
+            ]
+        )
+
+        sample_interfaces = [item for item in list(summary.get("sample_interfaces", []) or []) if isinstance(item, dict)]
+        self.assertTrue(bool(sample_interfaces))
+        self.assertEqual("json_data", str(sample_interfaces[0].get("mode") or ""))
+        self.assertEqual("graphql", str(sample_interfaces[0].get("body_kind") or ""))
+        self.assertIn("query", list(sample_interfaces[0].get("params", []) or []))
+        self.assertIn("variables", list(sample_interfaces[0].get("params", []) or []))
+
     def test_collect_runtime_observation_merges_runtime_form_and_hidden_into_api_surface(self):
         observation = WebSiteFetch._collect_ai_pen_runtime_observation(
             [
@@ -3328,6 +3349,104 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("body", str(summary.get("mode") or ""))
         self.assertEqual("application/xml", str(summary.get("content_type") or ""))
         self.assertTrue(any(str(item or "").strip().lower() == "root" for item in list(summary.get("param_names", []) or [])))
+
+    def test_build_ai_pen_request_template_summary_detects_graphql_shape(self):
+        packet = WebSiteFetch._build_ai_pen_request_packet(
+            target_url="https://example.com/graphql",
+            payload_type="graphql_probe",
+            payload='{"query":"query { __typename }"}',
+            verification_step="mcp_graphql_probe",
+            tool_calls=[
+                {
+                    "tool": "graphql_probe",
+                    "params": {
+                        "url": "https://example.com/graphql",
+                        "method": "post",
+                        "headers": {"Content-Type": "application/json"},
+                        "json_data": {"query": "query { viewer { id } }", "variables": {"id": 1}},
+                    },
+                }
+            ],
+        )
+        summary = WebSiteFetch._build_ai_pen_request_template_summary(packet)
+
+        self.assertEqual("json_data", str(summary.get("mode") or ""))
+        self.assertEqual("graphql", str(summary.get("body_kind") or ""))
+        self.assertIn("query", list(summary.get("param_names", []) or []))
+
+    def test_build_ai_pen_request_profile_summary_collapses_weak_404(self):
+        summary = WebSiteFetch._build_ai_pen_request_profile_summary(
+            request_template_summary={"mode": "query", "content_type": "", "param_names": []},
+            api_surface_summary={},
+            runtime_api_calls=[],
+            decision="needs_manual_review",
+            http_status=404,
+            reason="目标返回异常状态码 404，当前证据不足",
+        )
+
+        self.assertEqual("collapse", str(summary.get("display_decision") or ""))
+        self.assertIn("异常状态码", str(summary.get("display_reason") or ""))
+
+    def test_normalize_ai_pen_request_profile_output_filters_invalid_values(self):
+        profile = WebSiteFetch._normalize_ai_pen_request_profile_output(
+            {
+                "request_mode": "json_data",
+                "body_kind": "graphql",
+                "content_type": "application/json",
+                "param_names": ["query", "variables", "query"],
+                "copy_strategy": "runtime_request_template",
+                "display_decision": "collapse",
+                "display_reason": "runtime 404",
+            },
+            base_profile={"request_mode": "query", "copy_strategy": "url"},
+        )
+
+        self.assertEqual("json_data", profile.get("request_mode"))
+        self.assertEqual("graphql", profile.get("body_kind"))
+        self.assertEqual("runtime_request_template", profile.get("copy_strategy"))
+        self.assertEqual("collapse", profile.get("display_decision"))
+        self.assertEqual(["query", "variables"], list(profile.get("param_names", []) or []))
+
+    def test_merge_ai_pen_result_with_ai_plan_applies_request_profile_and_display_decision(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        merged = task._merge_ai_pen_result_with_ai_plan(
+            verify_result={
+                "decision": "needs_manual_review",
+                "confidence": 0.66,
+                "reason": "弱线索",
+                "status": "ok",
+                "risk_type": "api_doc",
+                "payload_type": "replay",
+                "request_profile_summary": {
+                    "request_mode": "query",
+                    "copy_strategy": "url",
+                    "display_decision": "show",
+                },
+            },
+            ai_plan_result={
+                "ok": True,
+                "status": "ok",
+                "output": {
+                    "decision": "needs_manual_review",
+                    "confidence": 0.74,
+                    "reason": "AI 判断更像 JSON POST",
+                    "display_decision": "collapse",
+                    "display_reason": "运行时主要返回无效内容",
+                    "request_profile": {
+                        "request_mode": "json_data",
+                        "body_kind": "graphql",
+                        "content_type": "application/json",
+                        "param_names": ["query", "variables"],
+                        "copy_strategy": "runtime_request_template",
+                    },
+                },
+            },
+        )
+
+        self.assertEqual("collapse", merged.get("display_decision"))
+        self.assertEqual("json_data", (merged.get("request_profile_summary") or {}).get("request_mode"))
+        self.assertEqual("runtime_request_template", (merged.get("request_profile_summary") or {}).get("copy_strategy"))
+        self.assertIn("AI研判", str(merged.get("reason") or ""))
 
     def test_build_auth_protocol_probe_targets_covers_openid_family(self):
         targets = WebSiteFetch._build_auth_protocol_probe_targets(

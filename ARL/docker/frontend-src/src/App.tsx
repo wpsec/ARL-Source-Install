@@ -2683,6 +2683,7 @@ function normalizeValueNoTruncate(value: any): string {
 function isAiPenWeakOutcome(row: any): boolean {
   if (!row || typeof row !== 'object') return false;
   const decisionText = String(row?.decision || '').trim().toLowerCase();
+  const displayDecisionText = String(row?.display_decision || row?.request_profile_summary?.display_decision || '').trim().toLowerCase();
   const proofTypeText = String(row?.proof_type || '').trim().toLowerCase();
   const proofStrengthText = String(row?.proof_strength || '').trim().toLowerCase();
   const reasonText = normalizeValueNoTruncate(row?.reason).toLowerCase();
@@ -2696,6 +2697,7 @@ function isAiPenWeakOutcome(row: any): boolean {
     '白名单未命中当前风险类型',
   ].filter((item) => reasonText.includes(item.toLowerCase()));
 
+  if (displayDecisionText === 'collapse' || displayDecisionText === 'hide') return true;
   if (decisionText === 'likely_false_positive') return true;
   if (decisionText === 'verified') return false;
   if (httpStatus >= 400 && !proofTypeText) return true;
@@ -2735,8 +2737,10 @@ function buildAiPenWeakOutcomeHint(row: any): string {
   if (!isAiPenWeakOutcome(row)) return '';
   const httpStatus = Number(row?.http_status || 0);
   const reasonText = normalizeValueNoTruncate(row?.reason);
+  const displayReason = normalizeValueNoTruncate(row?.display_reason || row?.request_profile_summary?.display_reason);
   const fragments: string[] = [];
   if (httpStatus >= 400) fragments.push(`HTTP ${httpStatus}`);
+  if (displayReason !== '-') fragments.push(displayReason);
   if (reasonText !== '-' && /证据不足|未形成|普通响应差异|仅发现文件处理路径或命名线索/i.test(reasonText)) {
     fragments.push('未形成结构化利用证据');
   }
@@ -2773,6 +2777,111 @@ function hasMeaningfulAiPenGraphSummary(summary: any): boolean {
   const arrayKeys = ['top_paths', 'top_params'];
   if (arrayKeys.some((key) => Array.isArray(summary?.[key]) && summary[key].length > 0)) return true;
   return Array.isArray(summary?.intel_layers?.active_layers) && summary.intel_layers.active_layers.length > 0;
+}
+
+function normalizeAiPenCopyLines(values: any[]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  values.forEach((item) => {
+    const text = String(item || '').trim();
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(text);
+  });
+  return result;
+}
+
+function extractAiPenRuntimeApiUrls(runtimeApiCalls: any[]): string[] {
+  if (!Array.isArray(runtimeApiCalls)) return [];
+  return normalizeAiPenCopyLines(
+    runtimeApiCalls
+      .filter((item) => String(item?.method || 'GET').trim().toUpperCase() === 'GET')
+      .map((item) => String(item?.url || item?.request_url || '').trim())
+  );
+}
+
+function extractAiPenSamplePaths(samplePaths: any[]): string[] {
+  if (!Array.isArray(samplePaths)) return [];
+  return normalizeAiPenCopyLines(samplePaths.map((item) => String(item || '').trim()));
+}
+
+function extractAiPenSampleInterfacePaths(sampleInterfaces: any[]): string[] {
+  if (!Array.isArray(sampleInterfaces)) return [];
+  return normalizeAiPenCopyLines(sampleInterfaces.map((item) => String(item?.path || '').trim()));
+}
+
+function buildAiPenParamTemplate(params: any[], modeText: string): string {
+  const names = normalizeAiPenCopyLines(Array.isArray(params) ? params : []);
+  const mode = String(modeText || '').trim().toLowerCase();
+  if (names.length === 0) return '';
+  if (mode === 'json_data') {
+    const obj: Record<string, string> = {};
+    names.forEach((name) => {
+      obj[name] = '<value>';
+    });
+    return JSON.stringify(obj, null, 2);
+  }
+  if (mode === 'form_data') {
+    return names.map((name) => `${name}=<value>`).join('&');
+  }
+  if (mode === 'body') {
+    return names.length === 1 && names[0] === 'body' ? '<body>' : names.join('\n');
+  }
+  return '';
+}
+
+function buildAiPenRuntimeRequestCopyText(item: any): string {
+  const method = String(item?.method || 'GET').trim().toUpperCase() || 'GET';
+  const url = String(item?.url || item?.request_url || '').trim();
+  if (!url) return '';
+  if (method === 'GET') return url;
+
+  const contentType = String(item?.content_type || item?.request_headers?.['Content-Type'] || item?.request_headers?.['content-type'] || '').trim();
+  const bodyTemplate = String(item?.request_body_template || item?.request_body || '').trim() || buildAiPenParamTemplate(item?.param_names, item?.mode);
+  const lines = [`${method} ${url}`];
+  if (contentType) lines.push(`Content-Type: ${contentType}`);
+  if (bodyTemplate) {
+    lines.push('');
+    lines.push(bodyTemplate);
+  }
+  return lines.join('\n').trim();
+}
+
+function extractAiPenRuntimeRequestTemplates(runtimeApiCalls: any[]): string[] {
+  if (!Array.isArray(runtimeApiCalls)) return [];
+  return normalizeAiPenCopyLines(
+    runtimeApiCalls
+      .filter((item) => ['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()))
+      .map((item) => buildAiPenRuntimeRequestCopyText(item))
+  );
+}
+
+function buildAiPenSampleInterfaceCopyText(item: any): string {
+  const method = String(item?.method || 'GET').trim().toUpperCase() || 'GET';
+  const path = String(item?.path || '').trim();
+  if (!path) return '';
+  if (method === 'GET') return path;
+
+  const contentType = String(item?.content_type || '').trim();
+  const bodyTemplate = String(item?.request_body_template || '').trim() || buildAiPenParamTemplate(item?.params, item?.mode);
+  const lines = [`${method} ${path}`];
+  if (contentType) lines.push(`Content-Type: ${contentType}`);
+  if (bodyTemplate) {
+    lines.push('');
+    lines.push(bodyTemplate);
+  }
+  return lines.join('\n').trim();
+}
+
+function extractAiPenPostSampleInterfaceTemplates(sampleInterfaces: any[]): string[] {
+  if (!Array.isArray(sampleInterfaces)) return [];
+  return normalizeAiPenCopyLines(
+    sampleInterfaces
+      .filter((item) => ['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()))
+      .map((item) => buildAiPenSampleInterfaceCopyText(item))
+  );
 }
 
 function tryExtractJsonObjectText(raw: string): string {
@@ -7651,6 +7760,32 @@ function TableModuleView({
     () => !aiPenDetailWeakOutcome && hasMeaningfulAiPenGraphSummary(aiPenDetail?.row?.task_ai_pen_graph_summary),
     [aiPenDetail, aiPenDetailWeakOutcome]
   );
+  const aiPenDetailRuntimeApiUrls = useMemo(
+    () => extractAiPenRuntimeApiUrls(aiPenDetail?.row?.runtime_api_calls),
+    [aiPenDetail]
+  );
+  const aiPenDetailRuntimePostTemplates = useMemo(
+    () => extractAiPenRuntimeRequestTemplates(aiPenDetail?.row?.runtime_api_calls),
+    [aiPenDetail]
+  );
+  const aiPenDetailSamplePaths = useMemo(
+    () => extractAiPenSamplePaths(
+      aiPenDetail?.row?.api_surface_summary?.sample_paths || aiPenDetail?.row?.api_doc_summary?.sample_paths
+    ),
+    [aiPenDetail]
+  );
+  const aiPenDetailSampleInterfacePaths = useMemo(
+    () => extractAiPenSampleInterfacePaths(
+      aiPenDetail?.row?.api_surface_summary?.sample_interfaces || aiPenDetail?.row?.api_doc_summary?.sample_interfaces
+    ),
+    [aiPenDetail]
+  );
+  const aiPenDetailPostSampleInterfaceTemplates = useMemo(
+    () => extractAiPenPostSampleInterfaceTemplates(
+      aiPenDetail?.row?.api_surface_summary?.sample_interfaces || aiPenDetail?.row?.api_doc_summary?.sample_interfaces
+    ),
+    [aiPenDetail]
+  );
 
   useEffect(() => {
     if (!keepBottomAfterSizeChangeRef.current || loading) return;
@@ -12360,7 +12495,34 @@ function TableModuleView({
 
                   {Array.isArray(aiPenDetail.row?.runtime_api_calls) && aiPenDetail.row.runtime_api_calls.length > 0 ? (
                     <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">运行时接口请求样例</div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-black tracking-wide text-brand-text-muted">运行时接口请求样例</div>
+                          <div className="mt-1 text-[11px] text-brand-text-muted">
+                            来自浏览器运行时采集，界面最多展示前 8 条；`GET` 可复制全部 URL，`POST` 可复制全部请求模板。
+                          </div>
+                        </div>
+                        <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
+                          {aiPenDetailRuntimeApiUrls.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => void copyTextToClipboard(aiPenDetailRuntimeApiUrls.join('\n'), '运行时GET接口URL')}
+                              className="text-xs font-semibold text-brand-accent hover:underline"
+                            >
+                              复制GET URL
+                            </button>
+                          ) : null}
+                          {aiPenDetailRuntimePostTemplates.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => void copyTextToClipboard(aiPenDetailRuntimePostTemplates.join('\n\n'), '运行时POST请求模板')}
+                              className="text-xs font-semibold text-brand-accent hover:underline"
+                            >
+                              复制POST模板
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
                       <div className="space-y-2">
                         {aiPenDetail.row.runtime_api_calls.slice(0, 8).map((item: any, index: number) => (
                           <div key={`${index}-${item?.method}-${item?.url}`} className="rounded-md border border-brand-border bg-brand-bg/60 px-2.5 py-2">
@@ -12370,6 +12532,19 @@ function TableModuleView({
                             <div className="mt-1 text-[11px] text-brand-text-muted">
                               状态：{String(item?.status || '').trim() || '-'}
                             </div>
+                            {(String(item?.mode || '').trim() || String(item?.content_type || '').trim() || Array.isArray(item?.param_names)) ? (
+                              <div className="mt-1 text-[11px] text-brand-text-muted break-all">
+                                形态：{String(item?.mode || '').trim() || '-'}
+                                {String(item?.body_kind || '').trim() ? ` / ${String(item?.body_kind || '').trim()}` : ''}
+                                {String(item?.content_type || '').trim() ? ` / ${String(item?.content_type || '').trim()}` : ''}
+                                {Array.isArray(item?.param_names) && item.param_names.length > 0 ? ` / 参数：${item.param_names.join(', ')}` : ''}
+                              </div>
+                            ) : null}
+                            {['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()) && String(item?.request_body_template || item?.request_body || '').trim() ? (
+                              <div className="mt-2 rounded border border-brand-border bg-brand-bg/70 px-2 py-2 text-[11px] font-mono whitespace-pre-wrap break-all leading-relaxed">
+                                {String(item?.request_body_template || item?.request_body || '').trim()}
+                              </div>
+                            ) : null}
                           </div>
                         ))}
                       </div>
@@ -12867,7 +13042,29 @@ function TableModuleView({
 
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">示例接口</div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[11px] font-black tracking-wide text-brand-text-muted">示例接口</div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {aiPenDetailSamplePaths.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => void copyTextToClipboard(aiPenDetailSamplePaths.join('\n'), '示例接口路径')}
+                              className="text-xs font-semibold text-brand-accent hover:underline"
+                            >
+                              复制路径
+                            </button>
+                          ) : null}
+                          {aiPenDetailPostSampleInterfaceTemplates.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => void copyTextToClipboard(aiPenDetailPostSampleInterfaceTemplates.join('\n\n'), '示例POST接口模板')}
+                              className="text-xs font-semibold text-brand-accent hover:underline"
+                            >
+                              复制POST模板
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
                       {Array.isArray(apiSurfaceSummary?.sample_paths) && apiSurfaceSummary.sample_paths.length > 0 ? (
                         <div className="space-y-1">
                           {apiSurfaceSummary.sample_paths.map((item: any, index: number) => (
@@ -12915,7 +13112,29 @@ function TableModuleView({
                     )}
                   </div>
                     <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
-                      <div className="text-[11px] font-black tracking-wide text-brand-text-muted">JS提取接口样例</div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[11px] font-black tracking-wide text-brand-text-muted">JS提取接口样例</div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {aiPenDetailSampleInterfacePaths.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => void copyTextToClipboard(aiPenDetailSampleInterfacePaths.join('\n'), 'JS提取接口路径')}
+                              className="text-xs font-semibold text-brand-accent hover:underline"
+                            >
+                              复制路径
+                            </button>
+                          ) : null}
+                          {aiPenDetailPostSampleInterfaceTemplates.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => void copyTextToClipboard(aiPenDetailPostSampleInterfaceTemplates.join('\n\n'), 'JS提取POST接口模板')}
+                              className="text-xs font-semibold text-brand-accent hover:underline"
+                            >
+                              复制POST模板
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
                       {Array.isArray(apiSurfaceSummary?.sample_interfaces) && apiSurfaceSummary.sample_interfaces.length > 0 ? (
                         <div className="space-y-2">
                           {apiSurfaceSummary.sample_interfaces.map((item: any, index: number) => (
@@ -12926,6 +13145,18 @@ function TableModuleView({
                               <div className="mt-1 text-[11px] text-brand-text-muted">
                                 参数：{Array.isArray(item?.params) && item.params.length > 0 ? item.params.join(', ') : '-'}
                               </div>
+                              {(String(item?.mode || '').trim() || String(item?.content_type || '').trim()) ? (
+                                <div className="mt-1 text-[11px] text-brand-text-muted break-all">
+                                  形态：{String(item?.mode || '').trim() || '-'}
+                                  {String(item?.body_kind || '').trim() ? ` / ${String(item?.body_kind || '').trim()}` : ''}
+                                  {String(item?.content_type || '').trim() ? ` / ${String(item?.content_type || '').trim()}` : ''}
+                                </div>
+                              ) : null}
+                              {['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()) && (String(item?.request_body_template || '').trim() || Array.isArray(item?.params)) ? (
+                                <div className="mt-2 rounded border border-brand-border bg-brand-bg/70 px-2 py-2 text-[11px] font-mono whitespace-pre-wrap break-all leading-relaxed">
+                                  {String(item?.request_body_template || '').trim() || buildAiPenParamTemplate(item?.params, item?.mode)}
+                                </div>
+                              ) : null}
                             </div>
                           ))}
                         </div>

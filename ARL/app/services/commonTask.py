@@ -3411,6 +3411,58 @@ class WebSiteFetch(object):
         return ""
 
     @classmethod
+    def _normalize_ai_pen_request_profile_output(cls, value, base_profile=None):
+        profile = value if isinstance(value, dict) else {}
+        fallback = base_profile if isinstance(base_profile, dict) else {}
+        result = dict(fallback or {})
+
+        request_mode = str(profile.get("request_mode") or result.get("request_mode") or "").strip().lower()
+        if request_mode in {"query", "json_data", "form_data", "body"}:
+            result["request_mode"] = request_mode
+
+        body_kind = str(profile.get("body_kind") or result.get("body_kind") or "").strip().lower()
+        if body_kind in {"query", "json", "graphql", "form_urlencoded", "multipart", "xml", "text", "unknown"}:
+            result["body_kind"] = body_kind
+
+        content_type = str(profile.get("content_type") or result.get("content_type") or "").strip().lower()
+        if content_type:
+            result["content_type"] = content_type[:120]
+
+        raw_params = profile.get("param_names")
+        if isinstance(raw_params, (list, tuple)):
+            normalized_params = []
+            seen = set()
+            for item in raw_params:
+                text = str(item or "").strip()
+                lowered = text.lower()
+                if not text or lowered in seen:
+                    continue
+                seen.add(lowered)
+                normalized_params.append(text[:80])
+                if len(normalized_params) >= 12:
+                    break
+            if normalized_params:
+                result["param_names"] = normalized_params
+
+        copy_strategy = str(profile.get("copy_strategy") or result.get("copy_strategy") or "").strip().lower()
+        if copy_strategy in {"url", "request_template", "runtime_request_template"}:
+            result["copy_strategy"] = copy_strategy
+
+        display_decision = cls._normalize_ai_pen_display_decision(
+            profile.get("display_decision") or result.get("display_decision"),
+            default_value=result.get("display_decision") or "show",
+        )
+        result["display_decision"] = display_decision
+
+        display_reason = cls._clip_text(
+            profile.get("display_reason", "") or result.get("display_reason", ""),
+            180,
+        )
+        if display_reason:
+            result["display_reason"] = display_reason
+        return result
+
+    @classmethod
     def _infer_ai_pen_payload_type_from_actions(cls, actions, fallback_type="replay"):
         action_texts = []
         if isinstance(actions, str):
@@ -4105,7 +4157,8 @@ class WebSiteFetch(object):
             "请优先遵守“上下文先行、证据驱动、PoC知识仅作提示不作证明”。"
             "请结合风险类型、URL、参数、响应特征、产品线索、知识命中与路由提示，"
             "评估该结果可信度并给出下一步验证建议。"
-            "输出JSON对象，字段包含：decision/confidence/reason/payload_type/payload/evidence/next_actions。"
+            "同时请辅助判断当前接口更像 query/json/form/multipart/xml/text 中的哪一种请求形态，以及该记录应 show/collapse/hide。"
+            "输出JSON对象，字段包含：decision/confidence/reason/payload_type/payload/evidence/next_actions/request_profile/display_decision/display_reason。"
             "decision 仅允许 verified、likely_false_positive、needs_manual_review。"
             "若为静态JS场景，请区分硬编码字面量与变量拼接/本地存储噪声；"
             "若为API文档场景，请优先围绕文档结构、路径和参数做验证建议；"
@@ -4716,6 +4769,14 @@ class WebSiteFetch(object):
                 )
             payload_schema_hint = "|".join(list(self.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES))
             tool_schema_hint = "|".join(list(self.AI_PEN_RUNTIME_TOOL_NAMES))
+            request_surface_summary = self._build_ai_pen_request_profile_summary(
+                request_template_summary={},
+                api_surface_summary=candidate.get("api_surface_summary"),
+                runtime_api_calls=candidate.get("runtime_api_calls"),
+                decision="",
+                http_status=0,
+                reason="",
+            )
             request_obj = {
                 "task_id": str(self.task_id),
                 "target": str(candidate.get("target", "") or "").strip(),
@@ -4762,6 +4823,7 @@ class WebSiteFetch(object):
                 "default_payload_type": default_payload_type,
                 "default_payload": default_payload,
                 "controlled_payload_variants": controlled_payload_variants,
+                "request_surface_summary": request_surface_summary,
                 "mcp_enable": bool(runtime_settings.get("mcp_enable", True)),
                 "mcp_max_tool_calls": self._safe_int_value(
                     runtime_settings.get("max_tool_calls"), self.AI_PEN_TEST_MCP_MAX_TOOL_CALLS
@@ -4809,6 +4871,16 @@ class WebSiteFetch(object):
                     "payload": "string",
                     "evidence": ["string"],
                     "next_actions": ["string"],
+                    "display_decision": "show|collapse|hide",
+                    "display_reason": "string",
+                    "request_profile": {
+                        "request_mode": "query|json_data|form_data|body",
+                        "body_kind": "query|json|graphql|form_urlencoded|multipart|xml|text|unknown",
+                        "content_type": "string",
+                        "param_names": ["string"],
+                        "display_decision": "show|collapse|hide",
+                        "display_reason": "string",
+                    },
                     "tool_plan": [
                         {
                             "tool": tool_schema_hint,
@@ -5090,6 +5162,23 @@ class WebSiteFetch(object):
                         ai_payload = str(inferred_payload)[: self.AI_PEN_TEST_PAYLOAD_MAX]
             ai_reason = self._clip_text(parsed_final.get("reason", "") or parsed.get("reason", ""), self.AI_PEN_TEST_REASON_MAX)
             ai_evidence = self._normalize_ai_poc_keywords(parsed_final.get("evidence"), max_count=8)
+            ai_request_profile = self._normalize_ai_pen_request_profile_output(
+                parsed_final.get("request_profile"),
+                base_profile=request_surface_summary,
+            )
+            ai_display_decision = str(
+                parsed_final.get("display_decision")
+                or ai_request_profile.get("display_decision")
+                or ""
+            ).strip().lower()
+            ai_display_reason = self._clip_text(
+                parsed_final.get("display_reason", "") or ai_request_profile.get("display_reason", ""),
+                180,
+            )
+            if ai_display_decision:
+                ai_request_profile["display_decision"] = ai_display_decision
+            if ai_display_reason:
+                ai_request_profile["display_reason"] = ai_display_reason
             ai_tool_plan = self._normalize_ai_pen_tool_plan(
                 parsed.get("tool_plan"),
                 default_url=str(candidate.get("vuln_url") or candidate.get("target") or "").strip(),
@@ -5119,9 +5208,13 @@ class WebSiteFetch(object):
                     "confidence": ai_confidence,
                     "reason": ai_reason,
                     "payload_type": ai_payload_type,
+                    "payload_variant": ai_payload_variant,
                     "payload": ai_payload,
                     "evidence": ai_evidence,
                     "next_actions": ai_actions,
+                    "display_decision": ai_display_decision,
+                    "display_reason": ai_display_reason,
+                    "request_profile": ai_request_profile,
                 }
                 result["ok"] = True
                 result["status"] = "ok"
@@ -5136,10 +5229,13 @@ class WebSiteFetch(object):
                     "decision": final_decision_obj["decision"],
                     "confidence": final_decision_obj["confidence"],
                     "payload_type": final_decision_obj["payload_type"],
-                    "payload_variant": ai_payload_variant,
+                    "payload_variant": final_decision_obj["payload_variant"],
                     "payload": final_decision_obj["payload"],
                     "evidence": list(final_decision_obj.get("evidence", []) or []),
                     "next_actions": list(final_decision_obj.get("next_actions", []) or []),
+                    "display_decision": final_decision_obj["display_decision"],
+                    "display_reason": final_decision_obj["display_reason"],
+                    "request_profile": final_decision_obj["request_profile"],
                 }
                 return result
 
@@ -5155,6 +5251,9 @@ class WebSiteFetch(object):
                 "payload": ai_payload,
                 "evidence": ai_evidence,
                 "next_actions": ai_actions,
+                "display_decision": ai_display_decision,
+                "display_reason": ai_display_reason,
+                "request_profile": ai_request_profile,
                 "tool_plan": ai_tool_plan,
             }
             return result
@@ -5194,6 +5293,35 @@ class WebSiteFetch(object):
         merged["ai_plan_confidence"] = ai_confidence
         merged["ai_plan_actions"] = ai_actions
         merged["ai_plan_tool_plan"] = ai_tool_plan
+        base_request_profile = (
+            dict(merged.get("request_profile_summary") or {})
+            if isinstance(merged.get("request_profile_summary"), dict)
+            else {}
+        )
+        plan_request_profile = self._normalize_ai_pen_request_profile_output(
+            plan_output.get("request_profile"),
+            base_profile=base_request_profile,
+        )
+        raw_display_decision = str(
+            plan_output.get("display_decision")
+            or plan_request_profile.get("display_decision")
+            or ""
+        ).strip().lower()
+        ai_display_decision = raw_display_decision if raw_display_decision in {"show", "collapse", "hide"} else ""
+        ai_display_reason = self._clip_text(
+            plan_output.get("display_reason", "") or plan_request_profile.get("display_reason", ""),
+            180,
+        )
+        if plan_request_profile:
+            base_request_profile = dict(plan_request_profile)
+        if ai_display_decision:
+            merged["display_decision"] = ai_display_decision
+            base_request_profile["display_decision"] = ai_display_decision
+        if ai_display_reason:
+            merged["display_reason"] = ai_display_reason
+            base_request_profile["display_reason"] = ai_display_reason
+        if base_request_profile:
+            merged["request_profile_summary"] = base_request_profile
 
         base_decision = self._normalize_ai_pen_decision(merged.get("decision"), default_value="needs_manual_review")
         base_confidence = self._clamp_ai_pen_confidence(merged.get("confidence"), 0.5)
@@ -6731,6 +6859,7 @@ class WebSiteFetch(object):
         url_text = str(packet.get("url") or "").strip()
         content_type = str(headers.get("Content-Type") or headers.get("content-type") or "").strip().lower()
         mode_text = "query"
+        body_kind = "query"
         param_names = []
         seen = set()
 
@@ -6757,30 +6886,146 @@ class WebSiteFetch(object):
                 except Exception:
                     body_obj = {}
                 if isinstance(body_obj, dict):
+                    body_kind = "graphql" if any(key in body_obj for key in ("query", "variables", "operationName")) else "json"
                     for key_text in body_obj.keys():
                         append_param(key_text)
+                else:
+                    body_kind = "json"
             elif "x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
                 mode_text = "form_data"
+                body_kind = "multipart" if "multipart/form-data" in content_type else "form_urlencoded"
                 for key_text, _ in parse_qsl(body_text, keep_blank_values=True):
                     append_param(key_text)
             elif body_text:
                 mode_text = "body"
                 if "xml" in content_type:
+                    body_kind = "xml"
                     for match in re.finditer(r"<([A-Za-z_][\w.-]{0,63})>", body_text):
                         append_param(match.group(1))
                 else:
+                    body_kind = "text"
                     append_param("body")
 
         parts = ["mode={}".format(mode_text)]
+        if body_kind and body_kind != mode_text:
+            parts.append("shape={}".format(body_kind))
         if content_type:
             parts.append("content_type={}".format(content_type[:80]))
         if param_names:
             parts.append("params={}".format(",".join(param_names[:6])))
         return {
             "mode": mode_text,
+            "body_kind": body_kind[:32],
             "content_type": content_type[:120],
             "param_names": param_names[:12],
             "summary": " | ".join(parts),
+        }
+
+    @staticmethod
+    def _normalize_ai_pen_display_decision(value, default_value="show"):
+        text = str(value or "").strip().lower()
+        if text in {"show", "collapse", "hide"}:
+            return text
+        return str(default_value or "show").strip().lower() or "show"
+
+    @classmethod
+    def _build_ai_pen_request_profile_summary(
+        cls,
+        request_template_summary=None,
+        api_surface_summary=None,
+        runtime_api_calls=None,
+        decision: str = "",
+        http_status: int = 0,
+        reason: str = "",
+    ):
+        template_obj = request_template_summary if isinstance(request_template_summary, dict) else {}
+        summary_obj = api_surface_summary if isinstance(api_surface_summary, dict) else {}
+        runtime_calls = [item for item in list(runtime_api_calls or []) if isinstance(item, dict)]
+        reason_text = str(reason or "").strip().lower()
+
+        request_mode = str(template_obj.get("mode") or "").strip().lower() or "query"
+        body_kind = str(template_obj.get("body_kind") or "").strip().lower()
+        content_type = str(template_obj.get("content_type") or "").strip().lower()
+        param_names = [str(item or "").strip() for item in list(template_obj.get("param_names", []) or []) if str(item or "").strip()]
+
+        runtime_get_count = 0
+        runtime_post_count = 0
+        runtime_structured_count = 0
+        runtime_modes = []
+        runtime_body_kinds = []
+        runtime_content_types = []
+        seen_modes = set()
+        seen_body_kinds = set()
+        seen_content_types = set()
+
+        for item in runtime_calls:
+            method_text = str(item.get("method") or "").strip().upper()
+            mode_text = str(item.get("mode") or "").strip().lower()
+            body_kind_text = str(item.get("body_kind") or "").strip().lower()
+            content_type_text = str(item.get("content_type") or "").strip().lower()
+            body_template = str(item.get("request_body_template") or item.get("request_body") or "").strip()
+            if method_text == "GET":
+                runtime_get_count += 1
+            elif method_text in {"POST", "PUT", "PATCH"}:
+                runtime_post_count += 1
+                if body_template or mode_text in {"json_data", "form_data", "body"}:
+                    runtime_structured_count += 1
+            if mode_text and mode_text not in seen_modes:
+                seen_modes.add(mode_text)
+                runtime_modes.append(mode_text)
+            if body_kind_text and body_kind_text not in seen_body_kinds:
+                seen_body_kinds.add(body_kind_text)
+                runtime_body_kinds.append(body_kind_text)
+            if content_type_text and content_type_text not in seen_content_types:
+                seen_content_types.add(content_type_text)
+                runtime_content_types.append(content_type_text)
+
+        copy_strategy = "url"
+        if request_mode in {"json_data", "form_data", "body"}:
+            copy_strategy = "request_template"
+        if runtime_post_count > 0 and runtime_structured_count > 0:
+            copy_strategy = "runtime_request_template"
+
+        display_decision = "show"
+        display_reason = "存在可消费的请求结构线索"
+        weak_reason = any(
+            token in reason_text
+            for token in (
+                "当前证据不足",
+                "仅发现文件处理路径或命名线索",
+                "普通响应差异",
+                "未形成",
+                "未观察到稳定",
+            )
+        )
+        http_status_value = cls._safe_int_value(http_status, 0)
+        normalized_decision = cls._normalize_ai_pen_decision(decision, default_value="needs_manual_review")
+        if normalized_decision == "likely_false_positive":
+            display_decision = "collapse"
+            display_reason = "结果已被判定为疑似误报，默认折叠非关键请求线索"
+        elif http_status_value >= 400 and runtime_structured_count <= 0 and cls._safe_int_value(summary_obj.get("path_count"), 0) <= 0:
+            display_decision = "collapse"
+            display_reason = "当前请求主要是异常状态码，且没有稳定的运行时请求结构"
+        elif weak_reason and runtime_structured_count <= 0 and runtime_post_count <= 0:
+            display_decision = "collapse"
+            display_reason = "当前仅有弱线索或静态路径摘要，建议默认折叠"
+
+        return {
+            "request_mode": request_mode[:32],
+            "body_kind": body_kind[:32],
+            "content_type": content_type[:120],
+            "param_names": param_names[:12],
+            "runtime_api_total": len(runtime_calls),
+            "runtime_get_count": runtime_get_count,
+            "runtime_post_count": runtime_post_count,
+            "runtime_structured_count": runtime_structured_count,
+            "runtime_modes": runtime_modes[:6],
+            "runtime_body_kinds": runtime_body_kinds[:6],
+            "runtime_content_types": runtime_content_types[:6],
+            "sample_interface_total": len(list(summary_obj.get("sample_interfaces", []) or [])),
+            "copy_strategy": copy_strategy,
+            "display_decision": display_decision,
+            "display_reason": display_reason[:180],
         }
 
     @staticmethod
@@ -9070,7 +9315,16 @@ class WebSiteFetch(object):
             auth_path_seen.add(lowered)
             auth_paths.append(path_text)
 
-        def append_sample_interface(method_name: str, path_text: str, params, source_text: str, mode_text: str = "", content_type_text: str = ""):
+        def append_sample_interface(
+            method_name: str,
+            path_text: str,
+            params,
+            source_text: str,
+            mode_text: str = "",
+            content_type_text: str = "",
+            body_kind_text: str = "",
+            body_template_text: str = "",
+        ):
             method_text = str(method_name or "GET").strip().upper() or "GET"
             path_value = str(path_text or "").strip()
             if not path_value:
@@ -9078,13 +9332,14 @@ class WebSiteFetch(object):
             param_list = [str(param or "").strip() for param in list(params or []) if str(param or "").strip()]
             mode_value = str(mode_text or "").strip().lower()
             content_type_value = str(content_type_text or "").strip().lower()
+            body_kind_value = str(body_kind_text or "").strip().lower()
             cache_key = "{}|{}|{}|{}|{}|{}".format(
                 method_text,
                 path_value,
                 ",".join(param_list[:8]),
                 str(source_text or "").strip(),
                 mode_value,
-                content_type_value,
+                "{}|{}".format(content_type_value, body_kind_value),
             )
             if cache_key in sample_seen:
                 return
@@ -9099,6 +9354,10 @@ class WebSiteFetch(object):
                 item["mode"] = mode_value[:32]
             if content_type_value:
                 item["content_type"] = content_type_value[:120]
+            if body_kind_value:
+                item["body_kind"] = body_kind_value[:32]
+            if body_template_text:
+                item["request_body_template"] = cls._clip_text(body_template_text, 260)
             sample_interfaces.append(item)
 
         # 统一收敛 api_doc/js/runtime/form/hidden 多源参数，供参数编排器与图谱摘要共用。
@@ -9116,6 +9375,8 @@ class WebSiteFetch(object):
                 source_text=sample.get("source") or "api_doc",
                 mode_text=sample.get("mode"),
                 content_type_text=sample.get("content_type"),
+                body_kind_text=sample.get("body_kind"),
+                body_template_text=sample.get("request_body_template"),
             )
 
         for item in js_targets:
@@ -9150,6 +9411,8 @@ class WebSiteFetch(object):
                 source_text=source_text or "js_api_extract",
                 mode_text=item.get("mode"),
                 content_type_text=item.get("content_type"),
+                body_kind_text=item.get("body_kind"),
+                body_template_text=item.get("request_body_template"),
             )
 
         runtime_paths = cls._extract_runtime_api_paths(runtime_calls)
@@ -9248,6 +9511,8 @@ class WebSiteFetch(object):
                 source_text="runtime_api",
                 mode_text=item.get("mode") or request_mode,
                 content_type_text=item.get("content_type") or request_content_type,
+                body_kind_text=item.get("body_kind"),
+                body_template_text=item.get("request_body_template") or item.get("request_body"),
             )
 
         for param_name in runtime_params:
@@ -9296,6 +9561,7 @@ class WebSiteFetch(object):
                 source_text="dom_form",
                 mode_text="form_data",
                 content_type_text="application/x-www-form-urlencoded",
+                body_kind_text="form_urlencoded",
             )
 
         for field_name in form_fields:
@@ -9511,9 +9777,14 @@ class WebSiteFetch(object):
                 except Exception:
                     pass
 
-            for key_name in ("params", "query_params", "form_data", "json_data"):
+            for key_name in ("params", "param_names", "query_params", "form_data", "json_data"):
                 data_obj = item.get(key_name)
-                if isinstance(data_obj, dict):
+                if isinstance(data_obj, list):
+                    for field_name in data_obj:
+                        append_name(field_name)
+                        if len(results) >= limit:
+                            return results
+                elif isinstance(data_obj, dict):
                     for field_name in data_obj.keys():
                         append_name(field_name)
                         if len(results) >= limit:
@@ -16984,9 +17255,21 @@ class WebSiteFetch(object):
                 self.AI_PEN_TEST_REQUEST_PACKET_MAX,
             )
             payload_obj["request_template_mode"] = str(request_template_summary.get("mode") or "").strip()
+            payload_obj["request_template_body_kind"] = str(request_template_summary.get("body_kind") or "").strip()
             payload_obj["request_template_content_type"] = str(request_template_summary.get("content_type") or "").strip()
             payload_obj["request_template_params"] = list(request_template_summary.get("param_names", []) or [])
             payload_obj["request_template_summary"] = str(request_template_summary.get("summary") or "").strip()
+            request_profile_summary = self._build_ai_pen_request_profile_summary(
+                request_template_summary=request_template_summary,
+                api_surface_summary=payload_obj.get("api_surface_summary"),
+                runtime_api_calls=payload_obj.get("runtime_api_calls"),
+                decision=payload_obj.get("decision"),
+                http_status=payload_obj.get("http_status"),
+                reason=payload_obj.get("reason"),
+            )
+            payload_obj["request_profile_summary"] = request_profile_summary
+            payload_obj["display_decision"] = str(request_profile_summary.get("display_decision") or "").strip()
+            payload_obj["display_reason"] = str(request_profile_summary.get("display_reason") or "").strip()
             proof_summary = self._build_ai_pen_proof_summary(payload_obj)
             payload_obj["proof_family"] = str(proof_summary.get("proof_family") or "").strip()
             payload_obj["proof_type"] = str(proof_summary.get("proof_type") or "").strip()
@@ -18940,6 +19223,7 @@ class WebSiteFetch(object):
                 "request_body": self._clip_multiline_text(verify_result.get("request_body", ""), self.AI_PEN_TEST_REQUEST_PACKET_MAX),
                 "request_packet": self._clip_multiline_text(verify_result.get("request_packet", ""), self.AI_PEN_TEST_REQUEST_PACKET_MAX),
                 "request_template_mode": str(verify_result.get("request_template_mode", "") or "").strip(),
+                "request_template_body_kind": str(verify_result.get("request_template_body_kind", "") or "").strip(),
                 "request_template_content_type": str(verify_result.get("request_template_content_type", "") or "").strip(),
                 "request_template_params": (
                     list(verify_result.get("request_template_params", []) or [])[:8]
@@ -18947,6 +19231,9 @@ class WebSiteFetch(object):
                     else []
                 ),
                 "request_template_summary": str(verify_result.get("request_template_summary", "") or "").strip(),
+                "request_profile_summary": dict(verify_result.get("request_profile_summary") or {}) if isinstance(verify_result.get("request_profile_summary"), dict) else {},
+                "display_decision": str(verify_result.get("display_decision", "") or "").strip(),
+                "display_reason": str(verify_result.get("display_reason", "") or "").strip(),
                 "verification_step": str(verify_result.get("verification_step", "") or "").strip(),
                 "evidence_snippet": str(verify_result.get("evidence_snippet", "") or "").strip(),
                 "http_status": int(verify_result.get("http_status", 0) or 0),
