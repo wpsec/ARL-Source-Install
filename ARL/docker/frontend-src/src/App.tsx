@@ -2849,13 +2849,56 @@ function buildAiPenRuntimeRequestCopyText(item: any): string {
   return lines.join('\n').trim();
 }
 
-function extractAiPenRuntimeRequestTemplates(runtimeApiCalls: any[]): string[] {
-  if (!Array.isArray(runtimeApiCalls)) return [];
-  return normalizeAiPenCopyLines(
-    runtimeApiCalls
-      .filter((item) => ['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()))
-      .map((item) => buildAiPenRuntimeRequestCopyText(item))
-  );
+function buildAiPenRuntimeRequestPacketText(item: any): string {
+  const method = String(item?.method || 'GET').trim().toUpperCase() || 'GET';
+  const urlText = String(item?.url || item?.request_url || '').trim();
+  if (!urlText) return '';
+
+  let requestPath = '/';
+  let hostText = '';
+  try {
+    const parsed = new URL(urlText);
+    requestPath = `${parsed.pathname || '/'}${parsed.search || ''}` || '/';
+    hostText = parsed.host || '';
+  } catch {
+    requestPath = urlText;
+  }
+
+  const headerMap = (item?.request_headers && typeof item.request_headers === 'object') ? item.request_headers : {};
+  const packetHeaders: Array<[string, string]> = [];
+  if (hostText) packetHeaders.push(['Host', hostText]);
+  const hasHostHeader = Object.keys(headerMap).some((key) => String(key || '').trim().toLowerCase() === 'host');
+  if (hasHostHeader) {
+    packetHeaders.length = 0;
+  }
+  Object.entries(headerMap).forEach(([key, value]) => {
+    const keyText = String(key || '').trim();
+    const valueText = String(value || '').trim();
+    if (!keyText || !valueText) return;
+    packetHeaders.push([keyText, valueText]);
+  });
+
+  const contentType = String(
+    item?.content_type
+      || item?.request_headers?.['Content-Type']
+      || item?.request_headers?.['content-type']
+      || ''
+  ).trim();
+  const hasContentType = packetHeaders.some(([key]) => key.toLowerCase() === 'content-type');
+  if (contentType && !hasContentType && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    packetHeaders.push(['Content-Type', contentType]);
+  }
+
+  const bodyText = String(item?.request_body_template || item?.request_body || '').trim() || buildAiPenParamTemplate(item?.param_names, item?.mode);
+  const lines = [`${method} ${requestPath} HTTP/1.1`];
+  packetHeaders.forEach(([key, value]) => {
+    lines.push(`${key}: ${value}`);
+  });
+  lines.push('');
+  if (bodyText) {
+    lines.push(bodyText);
+  }
+  return lines.join('\n').trim();
 }
 
 function buildAiPenSampleInterfaceCopyText(item: any): string {
@@ -7764,10 +7807,6 @@ function TableModuleView({
     () => extractAiPenRuntimeApiUrls(aiPenDetail?.row?.runtime_api_calls),
     [aiPenDetail]
   );
-  const aiPenDetailRuntimePostTemplates = useMemo(
-    () => extractAiPenRuntimeRequestTemplates(aiPenDetail?.row?.runtime_api_calls),
-    [aiPenDetail]
-  );
   const aiPenDetailSamplePaths = useMemo(
     () => extractAiPenSamplePaths(
       aiPenDetail?.row?.api_surface_summary?.sample_paths || aiPenDetail?.row?.api_doc_summary?.sample_paths
@@ -12499,7 +12538,7 @@ function TableModuleView({
                         <div>
                           <div className="text-[11px] font-black tracking-wide text-brand-text-muted">运行时接口请求样例</div>
                           <div className="mt-1 text-[11px] text-brand-text-muted">
-                            来自浏览器运行时采集，界面最多展示前 8 条；`GET` 可复制全部 URL，`POST` 可复制全部请求模板。
+                            来自浏览器运行时采集，当前展示全部记录；数量较多时可在此区域内滚动。`GET` 仍支持批量复制 URL，`POST` 请按单条复制 URL 或请求包。
                           </div>
                         </div>
                         <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
@@ -12512,22 +12551,34 @@ function TableModuleView({
                               复制GET URL
                             </button>
                           ) : null}
-                          {aiPenDetailRuntimePostTemplates.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => void copyTextToClipboard(aiPenDetailRuntimePostTemplates.join('\n\n'), '运行时POST请求模板')}
-                              className="text-xs font-semibold text-brand-accent hover:underline"
-                            >
-                              复制POST模板
-                            </button>
-                          ) : null}
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        {aiPenDetail.row.runtime_api_calls.slice(0, 8).map((item: any, index: number) => (
+                      <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
+                        {aiPenDetail.row.runtime_api_calls.map((item: any, index: number) => (
                           <div key={`${index}-${item?.method}-${item?.url}`} className="rounded-md border border-brand-border bg-brand-bg/60 px-2.5 py-2">
-                            <div className="font-mono break-all">
-                              {String(item?.method || 'GET').toUpperCase()} {String(item?.url || '').trim() || '-'}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="font-mono break-all flex-1 min-w-0">
+                                {String(item?.method || 'GET').toUpperCase()} {String(item?.url || '').trim() || '-'}
+                              </div>
+                              <div className="shrink-0 flex flex-wrap items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void copyTextToClipboard(String(item?.url || item?.request_url || '').trim(), '接口URL')}
+                                  className="text-[11px] font-semibold text-brand-accent hover:underline"
+                                  disabled={String(item?.url || item?.request_url || '').trim() === ''}
+                                >
+                                  复制URL
+                                </button>
+                                {['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void copyTextToClipboard(buildAiPenRuntimeRequestPacketText(item), '请求包')}
+                                    className="text-[11px] font-semibold text-brand-accent hover:underline"
+                                  >
+                                    复制请求包
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                             <div className="mt-1 text-[11px] text-brand-text-muted">
                               状态：{String(item?.status || '').trim() || '-'}
