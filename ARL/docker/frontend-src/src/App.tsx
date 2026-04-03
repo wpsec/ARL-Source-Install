@@ -2680,6 +2680,101 @@ function normalizeValueNoTruncate(value: any): string {
   return String(value);
 }
 
+function isAiPenWeakOutcome(row: any): boolean {
+  if (!row || typeof row !== 'object') return false;
+  const decisionText = String(row?.decision || '').trim().toLowerCase();
+  const proofTypeText = String(row?.proof_type || '').trim().toLowerCase();
+  const proofStrengthText = String(row?.proof_strength || '').trim().toLowerCase();
+  const reasonText = normalizeValueNoTruncate(row?.reason).toLowerCase();
+  const httpStatus = Number(row?.http_status || 0);
+  const weakReasonHits = [
+    '当前证据不足',
+    '仅发现文件处理路径或命名线索',
+    '普通响应差异',
+    '未形成',
+    '未观察到稳定',
+    '白名单未命中当前风险类型',
+  ].filter((item) => reasonText.includes(item.toLowerCase()));
+
+  if (decisionText === 'likely_false_positive') return true;
+  if (decisionText === 'verified') return false;
+  if (httpStatus >= 400 && !proofTypeText) return true;
+  if (proofStrengthText === 'weak' && weakReasonHits.length > 0) return true;
+  if (!proofTypeText && weakReasonHits.length > 0) return true;
+  return false;
+}
+
+function buildAiPenDisplayTitle(row: any, rowIndex = 0): string {
+  const rawRiskName = normalizeValueNoTruncate(row?.risk_name);
+  const targetText = normalizeValueNoTruncate(row?.target) !== '-' ? normalizeValueNoTruncate(row?.target) : normalizeValueNoTruncate(row?.vuln_url);
+  if (!isAiPenWeakOutcome(row)) {
+    const titleParts = [rawRiskName, targetText].filter((item) => item && item !== '-');
+    return titleParts.length > 0 ? titleParts.join(' | ') : `AI渗透记录 #${rowIndex + 1}`;
+  }
+
+  const riskTypeText = String(row?.risk_type || '').trim().toLowerCase();
+  const httpStatus = Number(row?.http_status || 0);
+  let prefix = '弱线索结果';
+  if (riskTypeText === 'file_upload' || riskTypeText === 'file_read') {
+    prefix = httpStatus >= 400 ? '文件路径线索（未证实）' : '文件处理线索（未证实）';
+  } else if (riskTypeText === 'unauth_access') {
+    prefix = '未授权线索（未证实）';
+  } else if (riskTypeText === 'sqli') {
+    prefix = 'SQL差异线索（未证实）';
+  } else if (riskTypeText === 'xss') {
+    prefix = 'XSS线索（未证实）';
+  } else if (riskTypeText === 'sensitive_info' || riskTypeText === 'secret_key') {
+    prefix = '敏感信息线索（未证实）';
+  }
+
+  const titleParts = [prefix, targetText].filter((item) => item && item !== '-');
+  return titleParts.length > 0 ? titleParts.join(' | ') : `AI渗透记录 #${rowIndex + 1}`;
+}
+
+function buildAiPenWeakOutcomeHint(row: any): string {
+  if (!isAiPenWeakOutcome(row)) return '';
+  const httpStatus = Number(row?.http_status || 0);
+  const reasonText = normalizeValueNoTruncate(row?.reason);
+  const fragments: string[] = [];
+  if (httpStatus >= 400) fragments.push(`HTTP ${httpStatus}`);
+  if (reasonText !== '-' && /证据不足|未形成|普通响应差异|仅发现文件处理路径或命名线索/i.test(reasonText)) {
+    fragments.push('未形成结构化利用证据');
+  }
+  if (fragments.length === 0) {
+    fragments.push('当前更像低价值弱线索');
+  }
+  return `当前记录更像弱线索：${fragments.join('，')}，建议低优先处理。详情已默认隐藏与本次结论关系不大的背景信息。`;
+}
+
+function hasMeaningfulAiPenLoginSummary(summary: any): boolean {
+  if (!summary || typeof summary !== 'object') return false;
+  const countKeys = ['auth_form_count', 'password_form_count', 'captcha_form_count', 'auth_runtime_call_count', 'auth_api_path_count'];
+  if (Boolean(summary?.login_page_hint)) return true;
+  if (countKeys.some((key) => Number(summary?.[key] || 0) > 0)) return true;
+  const arrayKeys = ['form_actions', 'runtime_auth_paths', 'password_fields', 'captcha_fields', 'indicators'];
+  return arrayKeys.some((key) => Array.isArray(summary?.[key]) && summary[key].some((item: any) => String(item || '').trim()));
+}
+
+function hasMeaningfulAiPenGraphContext(summary: any): boolean {
+  if (!summary || typeof summary !== 'object') return false;
+  if (Number(summary?.candidate_count || 0) > 1) return true;
+  const arrayKeys = ['source_mix', 'route_mix', 'layer_mix', 'top_paths', 'top_params', 'runtime_targets'];
+  return arrayKeys.some((key) => Array.isArray(summary?.[key]) && summary[key].length > 0);
+}
+
+function hasMeaningfulAiPenGraphSummary(summary: any): boolean {
+  if (!summary || typeof summary !== 'object') return false;
+  const countKeys = ['node_count', 'edge_count', 'browser_runtime_call_count', 'dom_form_count'];
+  if (countKeys.some((key) => Number(summary?.[key] || 0) > 0)) return true;
+  const authCount = Number(summary?.auth_cluster?.auth_path_count || 0) + Number(summary?.auth_cluster?.security_scheme_count || 0);
+  const objectCount = Number(summary?.object_ref_cluster?.object_id_like_count || 0);
+  const fileCount = Number(summary?.file_cluster?.upload_like_count || 0) + Number(summary?.file_cluster?.download_like_count || 0);
+  if (authCount > 0 || objectCount > 0 || fileCount > 0) return true;
+  const arrayKeys = ['top_paths', 'top_params'];
+  if (arrayKeys.some((key) => Array.isArray(summary?.[key]) && summary[key].length > 0)) return true;
+  return Array.isArray(summary?.intel_layers?.active_layers) && summary.intel_layers.active_layers.length > 0;
+}
+
 function tryExtractJsonObjectText(raw: string): string {
   const text = String(raw || '').trim();
   if (!text) return '';
@@ -7536,6 +7631,26 @@ function TableModuleView({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [aiPenDetail]);
+  const aiPenDetailWeakOutcome = useMemo(
+    () => Boolean(aiPenDetail?.row) && isAiPenWeakOutcome(aiPenDetail?.row),
+    [aiPenDetail]
+  );
+  const aiPenDetailWeakHint = useMemo(
+    () => (aiPenDetail?.row ? buildAiPenWeakOutcomeHint(aiPenDetail.row) : ''),
+    [aiPenDetail]
+  );
+  const aiPenDetailShowLoginSummary = useMemo(
+    () => hasMeaningfulAiPenLoginSummary(aiPenDetail?.row?.login_surface_summary),
+    [aiPenDetail]
+  );
+  const aiPenDetailShowGraphContext = useMemo(
+    () => !aiPenDetailWeakOutcome && hasMeaningfulAiPenGraphContext(aiPenDetail?.row?.task_ai_pen_graph_context),
+    [aiPenDetail, aiPenDetailWeakOutcome]
+  );
+  const aiPenDetailShowGraphSummary = useMemo(
+    () => !aiPenDetailWeakOutcome && hasMeaningfulAiPenGraphSummary(aiPenDetail?.row?.task_ai_pen_graph_summary),
+    [aiPenDetail, aiPenDetailWeakOutcome]
+  );
 
   useEffect(() => {
     if (!keepBottomAfterSizeChangeRef.current || loading) return;
@@ -8434,16 +8549,12 @@ function TableModuleView({
   }, []);
   const openAiPenDetail = useCallback((row: any, rowIndex: number) => {
     const rowId = getRowId(row) || `${rowIndex}`;
-    const titleParts = [
-      normalizeValueNoTruncate(row?.risk_name),
-      normalizeValueNoTruncate(row?.target),
-    ].filter((item) => item && item !== '-');
     setAiPenDetail({
       rowId,
-      rowTitle: titleParts.length > 0 ? titleParts.join(' | ') : `AI渗透记录 #${rowIndex + 1}`,
+      rowTitle: buildAiPenDisplayTitle(row, rowIndex),
       row,
     });
-  }, [getRowId]);
+  }, [buildAiPenDisplayTitle, getRowId]);
 
   useEffect(() => {
     if (!aiDenoiseModuleId) {
@@ -10695,6 +10806,16 @@ function TableModuleView({
                           );
                         }
 
+                        if (module.id === 'ai_pen_test' && column === 'risk_name') {
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[240px] max-w-[520px]">
+                              <div className="min-h-[24px] flex items-center justify-center whitespace-pre-wrap break-all leading-relaxed text-center">
+                                {buildAiPenDisplayTitle(row, rowIndex)}
+                              </div>
+                            </td>
+                          );
+                        }
+
                         if ((module.id === 'vuln' || module.id === 'nuclei_result') && column === 'ai_pen_decision') {
                           const decisionText = String(row?.ai_pen_decision || '').trim().toLowerCase();
                           const displayText = formatModuleCellValue(module.id, column, row);
@@ -12145,6 +12266,15 @@ function TableModuleView({
                 </div>
               </div>
 
+              {aiPenDetailWeakOutcome && aiPenDetailWeakHint ? (
+                <div className="rounded-xl border border-brand-warning/35 bg-brand-warning/10 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-brand-warning">弱线索提示</div>
+                  <div className="text-sm whitespace-pre-wrap break-all leading-relaxed text-brand-text">
+                    {aiPenDetailWeakHint}
+                  </div>
+                </div>
+              ) : null}
+
               {aiPenDetail.row?.js_context_summary && typeof aiPenDetail.row.js_context_summary === 'object' && Object.keys(aiPenDetail.row.js_context_summary).length > 0 ? (
                 <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
                   <div className="text-xs font-black tracking-wide text-brand-text">JS上下文摘要</div>
@@ -12286,7 +12416,7 @@ function TableModuleView({
                 </div>
               ) : null}
 
-              {aiPenDetail.row?.login_surface_summary && typeof aiPenDetail.row.login_surface_summary === 'object' ? (
+              {aiPenDetailShowLoginSummary ? (
                 <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
                   <div className="text-xs font-black tracking-wide text-brand-text">登录面黑盒摘要</div>
                   <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
@@ -12387,7 +12517,7 @@ function TableModuleView({
                 </div>
               ) : null}
 
-              {aiPenDetail.row?.task_ai_pen_graph_context && typeof aiPenDetail.row.task_ai_pen_graph_context === 'object' ? (
+              {aiPenDetailShowGraphContext ? (
                 <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
                   <div className="text-xs font-black tracking-wide text-brand-text">任务级图谱上下文</div>
                   <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
@@ -12494,7 +12624,7 @@ function TableModuleView({
                 </div>
               ) : null}
 
-              {aiPenDetail.row?.task_ai_pen_graph_summary && typeof aiPenDetail.row.task_ai_pen_graph_summary === 'object' ? (
+              {aiPenDetailShowGraphSummary ? (
                 <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
                   <div className="text-xs font-black tracking-wide text-brand-text">认知图谱摘要</div>
                   <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 text-sm leading-relaxed">
@@ -13344,6 +13474,14 @@ function AiPenAssetWorkspaceView({
   const selectedRow = useMemo(
     () => rows.find((item) => normalizeRowIdValue(item?._id) === selectedRowId) || null,
     [rows, selectedRowId]
+  );
+  const selectedRowWeakOutcome = useMemo(
+    () => isAiPenWeakOutcome(selectedRow),
+    [selectedRow]
+  );
+  const selectedRowWeakHint = useMemo(
+    () => buildAiPenWeakOutcomeHint(selectedRow),
+    [selectedRow]
   );
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / size) || 1), [size, total]);
 
@@ -14266,7 +14404,7 @@ function AiPenAssetWorkspaceView({
                       <td className="px-3 py-2.5 align-middle text-sm whitespace-pre-wrap break-all text-center leading-relaxed min-w-[180px] max-w-[280px]">
                         <div className="space-y-2">
                           <span className={`font-semibold ${active ? 'text-brand-accent' : 'text-brand-text'}`}>
-                            {normalizeValueNoTruncate(row?.risk_name)}
+                            {buildAiPenDisplayTitle(row, index)}
                           </span>
                           <div className="flex flex-wrap items-center justify-center gap-1">
                             <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2 py-0.5 text-[10px] font-semibold">
@@ -14419,7 +14557,7 @@ function AiPenAssetWorkspaceView({
               <>
                 <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
                   <div className="text-sm font-black break-all">
-                    {normalizeValueNoTruncate(selectedRow?.risk_name) !== '-' ? normalizeValueNoTruncate(selectedRow?.risk_name) : '-'}
+                    {buildAiPenDisplayTitle(selectedRow)}
                   </div>
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 text-sm">
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2 space-y-1">
@@ -14481,6 +14619,14 @@ function AiPenAssetWorkspaceView({
                     </span>
                   </div>
                 </div>
+
+                {selectedRowWeakOutcome && selectedRowWeakHint ? (
+                  <div className="rounded-xl border border-brand-warning/35 bg-brand-warning/10 p-4">
+                    <div className="text-sm whitespace-pre-wrap break-all leading-relaxed text-brand-text">
+                      {selectedRowWeakHint}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
                   <div className="text-xs font-black tracking-wide text-brand-text">证据概览与未授权判定</div>
