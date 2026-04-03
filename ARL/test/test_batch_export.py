@@ -15,14 +15,18 @@ from unittest.mock import patch
 IMPORT_ERROR = None
 try:
     from openpyxl import load_workbook
+    from openpyxl import Workbook
     from app.routes.export import export_merge_tasks, export_merge_tasks_html, SaveTask, build_task_export_summary
+    from app.routes.export import _build_ai_pen_sheet
     from app import create_app
 except Exception as exc:
     load_workbook = None
+    Workbook = None
     export_merge_tasks = None
     export_merge_tasks_html = None
     SaveTask = None
     build_task_export_summary = None
+    _build_ai_pen_sheet = None
     create_app = None
     IMPORT_ERROR = exc
 
@@ -452,6 +456,56 @@ class TestBatchExportIntegration(unittest.TestCase):
 
         # 验证API基本可用性（即使数据不存在，也应该返回适当的错误响应）
         self.assertIn(response.status_code, [200, 400, 404, 500])
+
+
+@unittest.skipIf(IMPORT_ERROR is not None, "requires export test dependencies: {}".format(IMPORT_ERROR))
+class TestAiPenExportSheet(unittest.TestCase):
+    def test_build_ai_pen_sheet_should_use_slim_headers(self):
+        with patch('app.routes.export.get_ai_pen_test_data') as mock_get_ai_pen_test_data:
+            mock_get_ai_pen_test_data.return_value = [
+                {
+                    "source_collection": "site",
+                    "risk_type": "ssrf",
+                    "risk_name": "站点 SSRF 注入面探测",
+                    "target": "https://example.com",
+                    "status": "ok",
+                    "request_method": "GET",
+                    "request_url": "https://example.com/api/demo?url=http://127.0.0.1/",
+                    "request_packet": "GET /api/demo?url=http://127.0.0.1/ HTTP/1.1",
+                    "reason": "弱线索",
+                    "save_date": "2026-04-03 00:00:00",
+                    "api_surface_summary": {
+                        "sample_interfaces": [
+                            {"method": "GET", "path": "/api/demo", "url_template": "https://example.com/api/demo?url=<value>"},
+                            {"method": "POST", "path": "/api/post", "request_packet_template": "POST /api/post HTTP/1.1"},
+                        ]
+                    },
+                }
+            ]
+
+            wb = Workbook()
+            default_ws = wb.active
+            wb.remove(default_ws)
+            _build_ai_pen_sheet(wb, ["task_1"], apply_style=False)
+            ws = wb["AI渗透测试"]
+            header_row = [cell.value for cell in ws[1]]
+
+            self.assertEqual(
+                [
+                    "来源",
+                    "风险类型",
+                    "风险名称",
+                    "目标",
+                    "状态",
+                    "有效接口",
+                    "获取接口",
+                    "Payload",
+                    "Request请求包",
+                    "说明",
+                    "时间",
+                ],
+                header_row,
+            )
 
 
 if __name__ == '__main__':

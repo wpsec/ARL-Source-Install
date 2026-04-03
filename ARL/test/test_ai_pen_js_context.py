@@ -3505,6 +3505,69 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("runtime_request_template", (merged.get("request_profile_summary") or {}).get("copy_strategy"))
         self.assertIn("AI研判", str(merged.get("reason") or ""))
 
+    def test_merge_ai_pen_result_with_ai_plan_prefers_ai_likely_fp_for_collapsed_weak_result(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        merged = task._merge_ai_pen_result_with_ai_plan(
+            verify_result={
+                "decision": "needs_manual_review",
+                "confidence": 0.66,
+                "reason": "目标返回异常状态码 404，当前证据不足",
+                "status": "ok",
+                "risk_type": "sensitive_info",
+                "payload_type": "replay",
+                "http_status": 404,
+                "proof_type": "",
+                "request_profile_summary": {
+                    "display_decision": "collapse",
+                    "display_reason": "当前仅有弱线索或静态路径摘要，建议默认折叠",
+                    "sample_interface_total": 0,
+                    "runtime_structured_count": 0,
+                },
+                "api_surface_summary": {
+                    "interface_role_distribution": [
+                        {"role": "config_i18n_interface", "count": 2},
+                        {"role": "static_resource", "count": 3},
+                    ]
+                },
+            },
+            ai_plan_result={
+                "ok": True,
+                "status": "ok",
+                "output": {
+                    "decision": "likely_false_positive",
+                    "confidence": 0.68,
+                    "reason": "AI 判断更像静态配置资源和低价值弱线索",
+                    "display_decision": "collapse",
+                },
+            },
+        )
+
+        self.assertEqual("likely_false_positive", merged.get("decision"))
+
+    def test_merge_ai_pen_result_with_ai_plan_keeps_base_likely_fp_when_ai_manual_is_weak(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        merged = task._merge_ai_pen_result_with_ai_plan(
+            verify_result={
+                "decision": "likely_false_positive",
+                "confidence": 0.74,
+                "reason": "当前更像静态资源噪声",
+                "status": "ok",
+                "risk_type": "sensitive_info",
+                "payload_type": "replay",
+            },
+            ai_plan_result={
+                "ok": True,
+                "status": "ok",
+                "output": {
+                    "decision": "needs_manual_review",
+                    "confidence": 0.70,
+                    "reason": "可以人工再看看，但没有新增强证据",
+                },
+            },
+        )
+
+        self.assertEqual("likely_false_positive", merged.get("decision"))
+
     def test_build_auth_protocol_probe_targets_covers_openid_family(self):
         targets = WebSiteFetch._build_auth_protocol_probe_targets(
             "https://example.com/api/login",

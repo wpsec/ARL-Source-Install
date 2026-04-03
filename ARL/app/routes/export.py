@@ -2775,6 +2775,9 @@ def _extract_ai_pen_rows(task_ids):
     """
     汇总 AI 渗透测试导出行。
     """
+    def _safe_list(value):
+        return list(value or []) if isinstance(value, (list, tuple)) else []
+
     def _parse_json_object(value):
         text = sanitize_excel_value(value).strip()
         if not text:
@@ -2784,6 +2787,110 @@ def _extract_ai_pen_rows(task_ids):
             return parsed if isinstance(parsed, dict) else {}
         except Exception:
             return {}
+
+    def _normalize_text_list(items, max_items=32):
+        result = []
+        seen = set()
+        for item in _safe_list(items):
+            text = sanitize_excel_value(item).strip()
+            lowered = text.lower()
+            if not text or lowered in seen:
+                continue
+            seen.add(lowered)
+            result.append(text)
+            if len(result) >= max(1, int(max_items or 1)):
+                break
+        return result
+
+    def _extract_ai_pen_interface_fetch_counts(item):
+        summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        sample_interfaces = [entry for entry in _safe_list(summary.get("sample_interfaces")) if isinstance(entry, dict)]
+        runtime_calls = [entry for entry in _safe_list(item.get("runtime_api_calls")) if isinstance(entry, dict)]
+        seen = set()
+        get_count = 0
+        post_count = 0
+
+        source_items = sample_interfaces if sample_interfaces else runtime_calls
+        for entry in source_items:
+            method_text = sanitize_excel_value(entry.get("method", "GET")).strip().upper() or "GET"
+            target_text = sanitize_excel_value(
+                entry.get("url")
+                or entry.get("url_template")
+                or entry.get("path_template")
+                or entry.get("path")
+            ).strip()
+            if not target_text:
+                continue
+            cache_key = "{}|{}".format(method_text, target_text)
+            if cache_key in seen:
+                continue
+            seen.add(cache_key)
+            if method_text == "GET":
+                get_count += 1
+            elif method_text in {"POST", "PUT", "PATCH"}:
+                post_count += 1
+        return {
+            "get_count": get_count,
+            "post_count": post_count,
+            "summary": "POST：{}条\nGET：{}条".format(post_count, get_count),
+        }
+
+    def _build_ai_pen_curl_payload(item):
+        method_text = sanitize_excel_value(item.get("request_method", "")).strip().upper() or "GET"
+        request_url = sanitize_excel_value(item.get("request_url") or item.get("vuln_url") or item.get("target") or "").strip()
+        if not request_url:
+            return ""
+
+        parts = ["curl", "-X", method_text]
+        request_headers = item.get("request_headers") if isinstance(item.get("request_headers"), dict) else {}
+        for header_key, header_value in request_headers.items():
+            key_text = sanitize_excel_value(header_key).strip()
+            value_text = sanitize_excel_value(header_value).strip()
+            lowered = key_text.lower()
+            if not key_text or not value_text:
+                continue
+            if lowered in {"host", "content-length"}:
+                continue
+            parts.extend(["-H", "'{}: {}'".format(key_text, value_text.replace("'", "\\'"))])
+
+        body_text = sanitize_excel_value(item.get("request_body") or "").strip()
+        if not body_text:
+            request_packet = sanitize_excel_value(item.get("request_packet") or "").strip()
+            if request_packet:
+                split_token = "\r\n\r\n" if "\r\n\r\n" in request_packet else "\n\n"
+                if split_token in request_packet:
+                    body_text = request_packet.split(split_token, 1)[1].strip()
+        if body_text:
+            parts.extend(["--data-raw", "'{}'".format(body_text.replace("'", "\\'"))])
+
+        parts.append("'{}'".format(request_url.replace("'", "\\'")))
+        return _truncate_report_text(" ".join(parts), 1600)
+
+    def _build_ai_pen_effective_interfaces_text(item):
+        summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
+        sample_interfaces = [entry for entry in _safe_list(summary.get("sample_interfaces")) if isinstance(entry, dict)]
+        runtime_calls = [entry for entry in _safe_list(item.get("runtime_api_calls")) if isinstance(entry, dict)]
+        source_items = sample_interfaces if sample_interfaces else runtime_calls
+        lines = []
+        seen = set()
+        for entry in source_items:
+            method_text = sanitize_excel_value(entry.get("method", "GET")).strip().upper() or "GET"
+            target_text = sanitize_excel_value(
+                entry.get("url_template")
+                or entry.get("path_template")
+                or entry.get("url")
+                or entry.get("path")
+            ).strip()
+            if not target_text:
+                continue
+            cache_key = "{}|{}".format(method_text, target_text)
+            if cache_key in seen:
+                continue
+            seen.add(cache_key)
+            lines.append("{} {}".format(method_text, target_text))
+            if len(lines) >= 16:
+                break
+        return _truncate_report_text("\n".join(lines), 1200)
 
     def _format_ai_plan_request_text(value):
         parsed = _parse_json_object(value)
@@ -2865,51 +2972,12 @@ def _extract_ai_pen_rows(task_ids):
             risk_name = sanitize_excel_value(item.get("risk_name", "")).strip()
             target = sanitize_excel_value(item.get("target", "")).strip()
             vuln_url = sanitize_excel_value(item.get("vuln_url", "")).strip()
-            decision = sanitize_excel_value(item.get("decision", "")).strip()
             status = sanitize_excel_value(item.get("status", "")).strip()
-            verification_step = sanitize_excel_value(item.get("verification_step", "")).strip()
-            payload_type = sanitize_excel_value(item.get("payload_type", "")).strip()
-            payload_variant = sanitize_excel_value(item.get("payload_variant", "")).strip()
-            payload_expected_signal = sanitize_excel_value(item.get("payload_expected_signal", "")).strip()
-            payload = sanitize_excel_value(item.get("payload", "")).strip()
+            payload = _build_ai_pen_curl_payload(item)
+            interface_fetch_summary = _extract_ai_pen_interface_fetch_counts(item).get("summary", "")
+            effective_interfaces = _build_ai_pen_effective_interfaces_text(item)
             request_packet = _truncate_report_text(item.get("request_packet", ""), 1200)
-            request_template_summary = _truncate_report_text(item.get("request_template_summary", ""), 400)
-            confidence = sanitize_excel_value(item.get("confidence", "")).strip()
-            proof_family = sanitize_excel_value(item.get("proof_family", "")).strip()
-            proof_type = sanitize_excel_value(item.get("proof_type", "")).strip()
-            proof_strength = sanitize_excel_value(item.get("proof_strength", "")).strip()
-            unauth_access_type = sanitize_excel_value(item.get("unauth_access_type", "")).strip()
-            unauth_access_reason = _truncate_report_text(item.get("unauth_access_reason", ""), 300)
-            unauth_probe_summary = _truncate_report_text(item.get("unauth_probe_summary", ""), 300)
-            unauth_negative_type = sanitize_excel_value(item.get("unauth_negative_type", "")).strip()
-            decision_guard_action = sanitize_excel_value(item.get("decision_guard_action", "")).strip()
-            decision_guard_reason = _truncate_report_text(item.get("decision_guard_reason", ""), 300)
-            proof_summary = _truncate_report_text(item.get("proof_summary", ""), 600)
             reason = _truncate_report_text(item.get("reason", ""), 800)
-            tool_trace = _truncate_report_text(item.get("tool_trace", ""), 600)
-            ai_plan_request = _format_ai_plan_request_text(item.get("ai_plan_request", ""))
-            ai_plan_reply = _format_ai_plan_reply_text(item.get("ai_plan_reply", ""))
-            ai_plan_actions = " \r\n".join(
-                [sanitize_excel_value(x).strip() for x in (item.get("ai_plan_actions") or []) if sanitize_excel_value(x).strip()]
-            )
-            external_tool_runs = []
-            for run_item in (item.get("external_tool_runs") or []):
-                if not isinstance(run_item, dict):
-                    continue
-                tool_name = sanitize_excel_value(run_item.get("tool", "")).strip()
-                tool_status = sanitize_excel_value(run_item.get("status", "")).strip()
-                tool_message = sanitize_excel_value(run_item.get("message", "")).strip()
-                if tool_name or tool_status or tool_message:
-                    external_tool_runs.append("{} [{}] {}".format(tool_name or "-", tool_status or "-", tool_message or "-").strip())
-            external_tool_text = " \r\n".join(external_tool_runs)
-            ai_plan_text = _truncate_report_text(
-                "decision={}; confidence={}; reason={}".format(
-                    sanitize_excel_value(item.get("ai_plan_decision", "")).strip() or "-",
-                    sanitize_excel_value(item.get("ai_plan_confidence", "")).strip() or "-",
-                    sanitize_excel_value(item.get("ai_plan_reason", "")).strip() or "-",
-                ),
-                600,
-            )
             save_date = sanitize_excel_value(item.get("save_date") or item.get("update_date") or "").strip()
 
             dedup_key = (
@@ -2919,11 +2987,7 @@ def _extract_ai_pen_rows(task_ids):
                 risk_name,
                 target,
                 vuln_url,
-                decision,
-                verification_step,
-                payload_type,
-                payload_variant,
-                proof_type,
+                payload,
             )
             if dedup_key in dedup_keys:
                 continue
@@ -2934,35 +2998,12 @@ def _extract_ai_pen_rows(task_ids):
                 risk_type,
                 risk_name,
                 target,
-                vuln_url,
-                decision,
-                confidence,
                 status,
-                verification_step,
-                payload_type,
-                payload_variant,
-                payload_expected_signal,
+                effective_interfaces,
+                interface_fetch_summary,
                 payload,
-                proof_family,
-                proof_type,
-                proof_strength,
-                unauth_access_type,
-                unauth_access_reason,
-                unauth_probe_summary,
-                unauth_negative_type,
-                decision_guard_action,
-                decision_guard_reason,
-                proof_summary,
                 request_packet,
-                request_template_summary,
                 reason,
-                tool_trace,
-                ai_plan_text,
-                ai_plan_actions,
-                ai_plan_request,
-                ai_plan_reply,
-                sanitize_excel_value("是" if bool(item.get("external_tool_hit")) else "否"),
-                external_tool_text,
                 save_date,
             ])
 
@@ -2979,33 +3020,13 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "B": 14.0,
         "C": 26.0,
         "D": 34.0,
-        "E": 52.0,
-        "F": 14.0,
-        "G": 10.0,
-        "H": 10.0,
-        "I": 18.0,
-        "J": 14.0,
-        "K": 18.0,
-        "L": 22.0,
-        "M": 24.0,
-        "N": 18.0,
-        "O": 18.0,
-        "P": 20.0,
-        "Q": 32.0,
-        "R": 56.0,
-        "S": 48.0,
-        "T": 24.0,
-        "U": 72.0,
-        "V": 42.0,
-        "W": 72.0,
-        "X": 52.0,
-        "Y": 42.0,
-        "Z": 80.0,
-        "AA": 80.0,
-        "AB": 80.0,
-        "AC": 12.0,
-        "AD": 64.0,
-        "AE": 21.0,
+        "E": 18.0,
+        "F": 46.0,
+        "G": 18.0,
+        "H": 96.0,
+        "I": 96.0,
+        "J": 88.0,
+        "K": 21.0,
     }.items():
         ws.column_dimensions[key].width = width
 
@@ -3014,35 +3035,12 @@ def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
         "风险类型",
         "风险名称",
         "目标",
-        "漏洞URL",
-        "结论",
-        "置信度",
         "状态",
-        "验证阶段",
-        "探针类型",
-        "Payload变体",
-        "期望信号",
+        "有效接口",
+        "获取接口",
         "Payload",
-        "证据家族",
-        "证据类型",
-        "证据强度",
-        "未授权类型",
-        "未授权说明",
-        "未授权复核摘要",
-        "未授权负信号",
-        "守门动作",
-        "守门原因",
-        "证据摘要",
         "Request请求包",
-        "请求模板摘要",
         "说明",
-        "工具轨迹",
-        "AI规划摘要",
-        "AI规划动作",
-        "ARL请求摘要",
-        "AI回复摘要",
-        "外部工具命中",
-        "外部工具记录",
         "时间",
     ])
 

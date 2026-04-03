@@ -4150,6 +4150,62 @@ class WebSiteFetch(object):
                     continue
         return merged
 
+    @classmethod
+    def _build_ai_pen_ai_override_signals(cls, item: dict):
+        row = item if isinstance(item, dict) else {}
+        request_profile = row.get("request_profile_summary") if isinstance(row.get("request_profile_summary"), dict) else {}
+        api_surface_summary = row.get("api_surface_summary") if isinstance(row.get("api_surface_summary"), dict) else {}
+        interface_roles = [
+            str(entry.get("role") or "").strip().lower()
+            for entry in list(api_surface_summary.get("interface_role_distribution", []) or [])
+            if isinstance(entry, dict) and str(entry.get("role") or "").strip()
+        ]
+        display_decision = str(
+            row.get("display_decision")
+            or request_profile.get("display_decision")
+            or ""
+        ).strip().lower()
+        display_reason = str(
+            row.get("display_reason")
+            or request_profile.get("display_reason")
+            or ""
+        ).strip().lower()
+        reason_text = str(row.get("reason", "") or "").strip().lower()
+        http_status = cls._safe_int_value(row.get("http_status"), 0)
+        proof_type = str(row.get("proof_type", "") or "").strip().lower()
+        proof_strength = str(row.get("proof_strength", "") or "").strip().lower()
+        request_mode = str(request_profile.get("request_mode") or "").strip().lower()
+        sample_interface_total = cls._safe_int_value(request_profile.get("sample_interface_total"), 0)
+        runtime_structured_count = cls._safe_int_value(request_profile.get("runtime_structured_count"), 0)
+        copy_strategy = str(request_profile.get("copy_strategy") or "").strip().lower()
+        weak_reason = any(
+            token in "{} {}".format(reason_text, display_reason)
+            for token in (
+                "当前证据不足",
+                "未形成结构化利用证据",
+                "普通响应差异",
+                "仅发现文件处理路径或命名线索",
+                "更像低价值弱线索",
+                "默认折叠",
+            )
+        )
+        static_like = any(role in {"static_resource", "config_i18n_interface"} for role in interface_roles)
+
+        return {
+            "display_decision": display_decision,
+            "display_reason": display_reason,
+            "http_status": http_status,
+            "proof_type": proof_type,
+            "proof_strength": proof_strength,
+            "request_mode": request_mode,
+            "sample_interface_total": sample_interface_total,
+            "runtime_structured_count": runtime_structured_count,
+            "copy_strategy": copy_strategy,
+            "static_like": static_like,
+            "weak_reason": weak_reason,
+            "has_request_surface": sample_interface_total > 0 or runtime_structured_count > 0,
+        }
+
     def _resolve_ai_pen_prompt_content(self, ai_config: dict):
         fallback_prompt = (
             "你是AI渗透测试助手，目标是做可控的二次验证与误报收敛，不是盲目利用。"
@@ -4160,6 +4216,8 @@ class WebSiteFetch(object):
             "同时请辅助判断当前接口更像 query/json/form/multipart/xml/text 中的哪一种请求形态，以及该记录应 show/collapse/hide。"
             "输出JSON对象，字段包含：decision/confidence/reason/payload_type/payload/evidence/next_actions/request_profile/display_decision/display_reason。"
             "decision 仅允许 verified、likely_false_positive、needs_manual_review。"
+            "请将 needs_manual_review 只保留给“仍有明确人工验证价值”的结果；"
+            "如果更像静态资源、公共配置、国际化/多语言资源、弱线索、无效状态码、普通响应差异或其它无结构化利用证据的噪声，请优先返回 likely_false_positive。"
             "若为静态JS场景，请区分硬编码字面量与变量拼接/本地存储噪声；"
             "若为API文档场景，请优先围绕文档结构、路径和参数做验证建议；"
             "若为文件处理场景，请区分发现上传/下载/导出入口与已证明任意文件读写；"
@@ -4849,6 +4907,7 @@ class WebSiteFetch(object):
                         "仅命中关键词，没有真实字面量或结构性证据",
                         "构建产物/变量拼接/本地存储噪声",
                         "Swagger关键词存在但没有真实文档结构",
+                        "静态资源、公共配置、多语言/i18n资源、弱线索、无效状态码或普通响应差异，且没有明确人工验证价值",
                     ],
                 },
                 "false_positive_focus": {
@@ -4859,6 +4918,7 @@ class WebSiteFetch(object):
                     "api_doc": "URL包含swagger/openapi不等于真实文档暴露，优先看 paths/securitySchemes/参数结构",
                     "file_handling": "发现上传/下载/导出/附件入口不等于已证明任意文件读写，优先保守裁决并给出低副作用下一步",
                     "login_surface": "发现登录表单、验证码或 auth 接口不等于存在漏洞，优先整理黑盒认证面上下文与后续验证建议",
+                    "manual_review_budget": "如果结果已更像噪声、静态资源、配置/i18n资源或明显无效链路，请主动给 likely_false_positive，不要机械停留在 needs_manual_review",
                 },
                 "supported_payload_types": list(self.AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES),
                 "supported_tools": list(self.AI_PEN_RUNTIME_TOOL_NAMES),
@@ -5373,6 +5433,8 @@ class WebSiteFetch(object):
             ai_decision = "needs_manual_review"
             merged["reason"] = "{}；{}".format(str(merged.get("reason", "") or "").strip(), proof_guard_reason).strip("；")
 
+        override_signals = self._build_ai_pen_ai_override_signals(merged)
+
         if ai_decision == base_decision:
             merged["confidence"] = max(base_confidence, min(0.99, ai_confidence))
             return merged
@@ -5385,9 +5447,41 @@ class WebSiteFetch(object):
             ).strip("；")
             return merged
 
-        if base_decision == "needs_manual_review" and ai_decision in {"verified", "likely_false_positive"} and ai_confidence >= 0.82:
+        if (
+            base_decision == "needs_manual_review"
+            and ai_decision == "likely_false_positive"
+            and (
+                ai_confidence >= 0.72
+                or (
+                    ai_confidence >= 0.66
+                    and (
+                        override_signals.get("display_decision") in {"collapse", "hide"}
+                        or bool(override_signals.get("static_like"))
+                        or bool(override_signals.get("weak_reason"))
+                        or (
+                            int(override_signals.get("http_status") or 0) >= 400
+                            and not str(override_signals.get("proof_type") or "").strip()
+                        )
+                    )
+                )
+            )
+        ):
+            merged["decision"] = "likely_false_positive"
+            merged["confidence"] = max(base_confidence, min(0.94, ai_confidence * 0.94))
+            return merged
+
+        if base_decision == "needs_manual_review" and ai_decision == "verified" and ai_confidence >= 0.78:
             merged["decision"] = ai_decision
             merged["confidence"] = max(base_confidence, min(0.96, ai_confidence * 0.92))
+            return merged
+
+        if (
+            base_decision == "likely_false_positive"
+            and ai_decision == "needs_manual_review"
+            and ai_confidence < 0.80
+        ):
+            merged["decision"] = "likely_false_positive"
+            merged["confidence"] = max(base_confidence, min(0.90, max(base_confidence, ai_confidence)))
             return merged
 
         if ai_decision == "needs_manual_review":
