@@ -1692,13 +1692,14 @@ const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'risk_name',
     defaultOrder: '-save_date',
-    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'detail_action', 'save_date'],
+    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'interface_fetch_count', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'detail_action', 'save_date'],
     columnLabels: {
       source_collection: '来源',
       risk_type: '类型',
       risk_name: '风险名称',
       target: '目标',
       vuln_url: '漏洞URL',
+      interface_fetch_count: '获取接口',
       decision: '结论',
       confidence: '置信度',
       verification_step: '验证阶段',
@@ -2936,6 +2937,42 @@ function formatAiPenInterfaceRole(role: any): string {
     generic_api: '通用接口',
   };
   return mapping[text] || text || '-';
+}
+
+function buildAiPenInterfaceFetchCountSummary(row: any): { postCount: number; getCount: number } {
+  const apiSurfaceSummary = row?.api_surface_summary && typeof row.api_surface_summary === 'object' ? row.api_surface_summary : {};
+  const sampleInterfaces = Array.isArray(apiSurfaceSummary?.sample_interfaces) ? apiSurfaceSummary.sample_interfaces : [];
+  const runtimeApiCalls = Array.isArray(row?.runtime_api_calls) ? row.runtime_api_calls : [];
+
+  const counts = { postCount: 0, getCount: 0 };
+  const seen = new Set<string>();
+
+  const consume = (items: any[], preferPath = false) => {
+    items.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      const methodText = String(item?.method || 'GET').trim().toUpperCase();
+      const targetText = preferPath
+        ? String(item?.path || item?.path_template || item?.url || '').trim()
+        : String(item?.url || item?.path || item?.path_template || '').trim();
+      if (!targetText) return;
+      const key = `${methodText}|${targetText}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (methodText === 'GET') {
+        counts.getCount += 1;
+      } else if (['POST', 'PUT', 'PATCH'].includes(methodText)) {
+        counts.postCount += 1;
+      }
+    });
+  };
+
+  if (sampleInterfaces.length > 0) {
+    consume(sampleInterfaces, true);
+  } else {
+    consume(runtimeApiCalls, false);
+  }
+
+  return counts;
 }
 
 function tryExtractJsonObjectText(raw: string): string {
@@ -10996,6 +11033,18 @@ function TableModuleView({
                             <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[240px] max-w-[520px]">
                               <div className="min-h-[24px] flex items-center justify-center whitespace-pre-wrap break-all leading-relaxed text-center">
                                 {buildAiPenDisplayTitle(row, rowIndex)}
+                              </div>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'ai_pen_test' && column === 'interface_fetch_count') {
+                          const { postCount, getCount } = buildAiPenInterfaceFetchCountSummary(row);
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-[120px]">
+                              <div className="inline-flex flex-col items-center justify-center gap-1 rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2 text-xs font-semibold leading-relaxed">
+                                <span>POST：{postCount}条</span>
+                                <span>GET：{getCount}条</span>
                               </div>
                             </td>
                           );

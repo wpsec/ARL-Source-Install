@@ -3,7 +3,7 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-03（v4.6.1 ~ v4.6.8）
+## 2026-04-03（v4.6.1 ~ v4.6.9）
 
 - `[v4.6.1]` 资产搜索 `AI渗透测试` 页签 UI 统一修复：点击该页签时不再误切到独立工作台视图，而是回到与 `站点/子域名/IP/SSL证书/服务/目录扫描/URL信息/风险/PoC风险/WIH/WAF识别` 一致的统一资产表格容器，修复“只有 AI渗透测试 点击后界面样式突变、不统一”的问题，同时保留原有 AI 渗透详情与操作能力
 - `[v4.6.3]` 仪表盘 `资产增长趋势` 与 `今日新增` 统计修复：当 `/console/dashboard` 回退使用旧 `site` 集合时，7 日趋势与今日新增不再因为历史记录缺少 `save_date/update_date` 而长期显示 `0`；后端统计新增 `_id` 时间戳兜底，兼容老数据立即恢复趋势展示，同时为 `site` 新写入链路统一补齐 `save_date/update_date`，避免后续新增资产继续被统计漏掉，并补充对应回归测试覆盖 `update_date/_id` 双回退场景
@@ -12,6 +12,7 @@
 - `[v4.6.6]` AI渗透 `请求画像与 POST 模板` 第一版落地：浏览器运行时情报现在不再只保留 `method/url/status`，而会额外采集并结构化保存 `request_headers/content_type/mode/body_kind/param_names/request_body_template` 等请求形态线索，让 `POST/PUT/PATCH` 接口第一次具备“接近真实请求模板”的基础。后端 `api_surface_summary.sample_interfaces` 与 `request_template_summary` 也同步扩展，开始统一归纳 `query/json_data/form_data/body`、`json/graphql/form_urlencoded/multipart/xml/text` 等请求画像，并额外落库 `request_profile_summary/display_decision/display_reason` 作为后续 AI 展示决策的统一结构。前台详情页则新增 `GET/POST` 分流复制：运行时接口请求样例支持“复制 GET URL / 复制 POST 模板”，接口结构摘要中的 `示例接口 / JS提取接口样例` 也支持按路径或 `POST` 模板一键复制，显著降低人工从页面抄接口和手拼请求包的成本；对应回归补齐运行时 GraphQL/JSON POST、请求画像归一化与 AI 合并请求画像等关键场景
 - `[v4.6.7]` AI渗透 `运行时接口样例交互优化`：根据实际使用反馈，运行时接口请求样例不再只展示前 `8` 条，而是改为“全部展示 + 容器内滚动”；顶部保留批量复制 `GET URL`，但 `POST/PUT/PATCH` 不再提供容易混淆的总按钮，改成每条记录单独提供 `复制URL / 复制请求包`，复制内容也从简化模板提升为更接近 Burp Raw Request 的结构，包含请求行、可公开头部和请求体模板，进一步降低人工逐条抄接口和手工拼包的成本
 - `[v4.6.8]` AI渗透 `接口语义与高价值参数接口` 增强：继续围绕“从 JS/运行时提接口、提参数、提上下文并指导测试”这条主线收口。后端 `api_surface_summary` 新增接口角色分类（如 `url_input_interface/config_i18n_interface/static_resource/auth_interface/file_interface/object_interface` 等）、高价值参数接口筛选与评分、以及参数化模板（`path_template/url_template/request_packet_template`）输出，前台详情页也同步新增“接口角色分类”和“高价值参数接口”卡片，让真正值得人工跟进的 `url/file/id/auth` 等参数接口能被单独顶出来，而不是和静态资源、国际化配置接口混在一起。与此同时，`auth/login` 路径识别从宽松子串匹配收紧为更偏路径分段与明确语义的判断，减少把普通参数接口误挂到“登录面黑盒摘要/鉴权相关接口”里的情况；对应回归补齐高价值 URL 输入接口识别、角色分布统计与 `environment -> me` 误命中抑制等关键样例
+- `[v4.6.9]` AI渗透 `获取接口` 列补齐：`AI渗透测试` 列表新增 `获取接口` 列，会优先基于 `api_surface_summary.sample_interfaces` 统计当前结果已提取到的 `POST/GET` 接口数量，并在缺少接口摘要时回退到运行时请求样例统计，统一显示为 `POST：x条 / GET：x条`，让工程师在列表层就能快速判断这条结果是否真的挖到了可消费的接口面，而不必逐条点进详情页再确认
 
 ## 2026-04-02（v4.5.66 ~ v4.5.70）
 
