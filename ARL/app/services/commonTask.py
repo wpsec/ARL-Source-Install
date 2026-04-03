@@ -675,6 +675,25 @@ class WebSiteFetch(object):
     )
     AI_PEN_LOGOUT_PATH_KEYWORDS = ("logout", "signout", "sign-out", "logoff", "sign_off", "exit")
     AI_PEN_LOGIN_PAGE_KEYWORDS = ("login", "signin", "sign-in", "sso", "cas", "passport", "登录", "认证", "统一身份认证", "单点登录")
+    AI_PEN_LOGIN_FORM_HINTS = (
+        "<form",
+        'type="password"',
+        "type='password'",
+        "username",
+        "password",
+        "remember me",
+        "remember-me",
+        "otp",
+        "captcha",
+        "verifycode",
+        "form-item",
+        "el-form",
+        "ant-form",
+        "登录",
+        "账号",
+        "密码",
+        "验证码",
+    )
     AI_PEN_CAPTCHA_HINTS = ("captcha", "verifycode", "verification", "checkcode", "validatecode", "randcode", "yzm", "图形码", "验证码")
     AI_PEN_CSRF_FIELD_HINTS = ("csrf", "token", "_token", "authenticity", "xsrf", "nonce")
     AI_PEN_IDOR_SENSITIVE_MARKERS = (
@@ -705,6 +724,63 @@ class WebSiteFetch(object):
         "system_admin",
         "tenant_admin",
         "manage_users",
+    )
+    AI_PEN_UNAUTH_ADMIN_UI_STRONG_HINTS = (
+        "logout",
+        "sign out",
+        "退出登录",
+        "user management",
+        "role management",
+        "permission management",
+        "system config",
+        "tenant management",
+        "menu tree",
+        "organization",
+        "用户管理",
+        "角色管理",
+        "权限管理",
+        "菜单管理",
+        "系统设置",
+        "系统配置",
+        "组织架构",
+        "租户管理",
+        "manage users",
+    )
+    AI_PEN_SECRET_PLACEHOLDER_VALUES = (
+        "password",
+        "passwd",
+        "pwd",
+        "token",
+        "secret",
+        "secret_key",
+        "client_secret",
+        "api_key",
+        "access_key",
+        "authorization",
+        "bearer",
+        "basic",
+        "admin",
+        "test",
+        "demo",
+        "sample",
+        "example",
+        "default",
+        "changeme",
+        "null",
+        "undefined",
+        "your_password",
+        "your_secret",
+        "your_token",
+        "your_key",
+    )
+    AI_PEN_JS_DEBUG_HINTS = (
+        "console.debug(",
+        "console.log(",
+        "logger.debug(",
+        "logger.info(",
+        "debug(",
+        "trace(",
+        "syno.debug(",
     )
     AI_PEN_ACCESS_CONTROL_PARAM_HINTS = (
         "role",
@@ -5342,6 +5418,53 @@ class WebSiteFetch(object):
             return "error_based"
         return ""
 
+    @classmethod
+    def _classify_ai_pen_sqli_outcome(
+        cls,
+        sqli_proof_type: str,
+        base_body_md5: str = "",
+        probe_body_md5: str = "",
+        base_status: int = 0,
+        probe_status: int = 0,
+    ):
+        proof_type = str(sqli_proof_type or "").strip().lower()
+        if proof_type == "error_based":
+            return {
+                "decision": "verified",
+                "confidence": 0.88,
+                "reason": "探针触发 SQL 报错注入特征，可复现",
+            }
+        if proof_type == "time_based":
+            return {
+                "decision": "verified",
+                "confidence": 0.86,
+                "reason": "SQL 探针触发显著延时差异，疑似时间盲注可复现",
+            }
+        if proof_type == "boolean_based":
+            return {
+                "decision": "verified",
+                "confidence": 0.84,
+                "reason": "SQL 探针触发布尔条件差异特征，疑似布尔盲注可复现",
+            }
+
+        base_md5_text = str(base_body_md5 or "").strip().lower()
+        probe_md5_text = str(probe_body_md5 or "").strip().lower()
+        base_status_code = cls._safe_int_value(base_status, 0)
+        probe_status_code = cls._safe_int_value(probe_status, 0)
+        if (
+            (base_md5_text and probe_md5_text and base_md5_text != probe_md5_text)
+            or (base_status_code and probe_status_code and base_status_code != probe_status_code)
+        ):
+            reason = "SQL 探针仅出现普通响应差异，未形成报错/时间/布尔注入证据，当前更像动态页面噪声"
+            if base_status_code and probe_status_code and base_status_code != probe_status_code:
+                reason = "{}（状态 {}->{})".format(reason, base_status_code, probe_status_code)
+            return {
+                "decision": "likely_false_positive",
+                "confidence": 0.66,
+                "reason": reason,
+            }
+        return {}
+
     @staticmethod
     def _detect_ssti_proof_type(payload: str, base_body: str, probe_body: str) -> str:
         base_text = str(base_body or "")
@@ -5573,6 +5696,25 @@ class WebSiteFetch(object):
             ".map",
         ))
 
+    @staticmethod
+    def _collect_keyword_hits(text: str, keywords, max_hits=6):
+        lowered = str(text or "").strip().lower()
+        if not lowered:
+            return []
+
+        hits = []
+        seen = set()
+        for item in list(keywords or []):
+            token = str(item or "").strip().lower()
+            if not token or token in seen:
+                continue
+            if token in lowered:
+                hits.append(token)
+                seen.add(token)
+                if len(hits) >= max(1, int(max_hits or 1)):
+                    break
+        return hits
+
     @classmethod
     def _extract_js_context_snippet(cls, body_text: str, anchor_text: str = "", fallback_keywords=None):
         content = str(body_text or "")
@@ -5721,6 +5863,92 @@ class WebSiteFetch(object):
         return ""
 
     @classmethod
+    def _detect_js_secret_placeholder_or_debug_noise(cls, evidence_seed: str, context_snippet: str):
+        snippet = str(context_snippet or "").strip()
+        snippet_lower = snippet.lower()
+        if not snippet_lower:
+            return "", ""
+
+        placeholder_match = re.search(
+            r"(?i)\b(?P<key>api[_-]?key|access[_-]?key|secret(?:[_-]?key)?|client[_-]?secret|authorization|token|app[_-]?key|password|passwd|pwd)\b"
+            r"\s*[:=]\s*['\"](?P<value>[A-Za-z0-9_\-]{3,64})['\"]",
+            snippet,
+        )
+        if placeholder_match:
+            key_text = str(placeholder_match.group("key") or "").strip().lower().replace("-", "_")
+            value_text = str(placeholder_match.group("value") or "").strip().lower().replace("-", "_")
+            if (
+                value_text in cls.AI_PEN_SECRET_PLACEHOLDER_VALUES
+                or value_text == key_text
+                or value_text in key_text
+                or key_text in value_text
+            ):
+                return "secret_placeholder_noise", value_text[:32]
+
+        field_schema_hit = re.search(
+            r"(?i)\b(?:type|field|label|prop|name|placeholder)\b\s*[:=]\s*['\"](?:password|passwd|pwd|token|secret(?:[_-]?key)?)['\"]",
+            snippet,
+        )
+        if field_schema_hit:
+            return "secret_placeholder_noise", "field_schema"
+
+        if any(token in snippet_lower for token in cls.AI_PEN_JS_DEBUG_HINTS):
+            if any(token in snippet_lower for token in ("token", "secret", "password", "authorization")):
+                return "secret_debug_noise", "debug"
+
+        if re.search(r"(?i)\b(token|secret|password|authorization)\b\s*[:=]\s*['\"]?[^\"'\s]{0,24}(?:debug|log)\s*\(", snippet):
+            return "secret_debug_noise", "debug"
+
+        return "", ""
+
+    @classmethod
+    def _looks_like_ai_pen_login_shell(cls, body_text: str, content_type: str = "") -> bool:
+        body_lower = str(body_text or "").strip().lower()
+        if not body_lower:
+            return False
+
+        content_type_text = str(content_type or "").strip().lower()
+        login_hits = cls._collect_keyword_hits(body_lower, cls.AI_PEN_LOGIN_PAGE_KEYWORDS, max_hits=4)
+        form_hits = cls._collect_keyword_hits(body_lower, cls.AI_PEN_LOGIN_FORM_HINTS, max_hits=6)
+        captcha_hits = cls._collect_keyword_hits(body_lower, cls.AI_PEN_CAPTCHA_HINTS, max_hits=3)
+        block_hits = cls._collect_keyword_hits(body_lower, cls.AI_PEN_LOGIN_FAILURE_KEYWORDS, max_hits=2)
+        html_like = ("html" in content_type_text) or ("<html" in body_lower) or ("<form" in body_lower)
+        if block_hits:
+            return True
+        if html_like and len(form_hits) >= 2 and (login_hits or captcha_hits):
+            return True
+        if html_like and len(login_hits) >= 2 and len(form_hits) >= 1:
+            return True
+        return False
+
+    @classmethod
+    def _is_obvious_wih_secret_noise(cls, record_type: str, content: str, source: str = "") -> bool:
+        record_type_text = str(record_type or "").strip().lower()
+        content_text = str(content or "").strip()
+        if not record_type_text or not content_text:
+            return False
+
+        noise_kind, _ = cls._detect_js_secret_placeholder_or_debug_noise(content_text, content_text)
+        if noise_kind in {"secret_placeholder_noise", "secret_debug_noise"}:
+            return True
+
+        source_text = str(source or "").strip()
+        if not source_text or (not cls._is_js_asset_target(source_text)):
+            return False
+
+        if noise_kind == "secret_template_noise":
+            return True
+
+        content_lower = content_text.lower()
+        if (
+            record_type_text in {"password", "passwd", "secret_key", "token", "authorization", "credential"}
+            and any(token in content_lower for token in cls.AI_PEN_JS_DEBUG_HINTS)
+        ):
+            return True
+
+        return False
+
+    @classmethod
     def _build_ai_pen_js_context_summary(
         cls,
         target_url: str,
@@ -5788,8 +6016,16 @@ class WebSiteFetch(object):
         summary["application_hint"] = cls._guess_js_application_hint(target_url, content, context_snippet)
 
         header_noise_label = cls._detect_js_header_noise(evidence_seed, context_snippet)
+        secret_noise_kind, secret_noise_token = cls._detect_js_secret_placeholder_or_debug_noise(
+            evidence_seed,
+            context_snippet,
+        )
 
-        if not summary["hardcoded_literal"]:
+        if secret_noise_kind and not summary["hardcoded_literal"]:
+            summary["noise_kind"] = secret_noise_kind
+            summary["noise_token"] = secret_noise_token
+
+        if not summary["hardcoded_literal"] and not summary["noise_kind"]:
             template_noise = (
                 bool(re.search(r"(?i)(token|key|secret)\s*[:=]\s*['\"]?\s*\+", context_snippet))
                 or "localstorage[" in context_lower
@@ -5817,6 +6053,10 @@ class WebSiteFetch(object):
             summary_parts.append("噪声=HTTP头关键字落在前端代码中")
         elif summary["noise_kind"] == "secret_template_noise":
             summary_parts.append("噪声=变量拼接/本地存储")
+        elif summary["noise_kind"] == "secret_placeholder_noise":
+            summary_parts.append("噪声=字段占位符/表单schema")
+        elif summary["noise_kind"] == "secret_debug_noise":
+            summary_parts.append("噪声=调试/日志拼接片段")
         elif framework_like:
             summary_parts.append("上下文=前端静态构建产物")
         summary["summary_text"] = cls._clip_text("；".join(summary_parts), cls.AI_PEN_TEST_REASON_MAX)
@@ -5881,8 +6121,13 @@ class WebSiteFetch(object):
                     }
                 )
 
-            if noise_kind == "secret_template_noise":
-                reason_text = "JS 上下文显示命中片段更像变量拼接或本地存储逻辑，未发现硬编码敏感值"
+            if noise_kind in {"secret_template_noise", "secret_placeholder_noise", "secret_debug_noise"}:
+                if noise_kind == "secret_placeholder_noise":
+                    reason_text = "JS 上下文显示命中片段更像字段占位符、表单 schema 或示例值，未发现硬编码敏感值"
+                elif noise_kind == "secret_debug_noise":
+                    reason_text = "JS 上下文显示命中片段更像调试/日志拼接代码，未发现可复用凭据"
+                else:
+                    reason_text = "JS 上下文显示命中片段更像变量拼接或本地存储逻辑，未发现硬编码敏感值"
                 if component_hint:
                     reason_text = "{}，当前代码更像 {}".format(reason_text, component_hint)
                 return _with_summary(
@@ -6182,7 +6427,10 @@ class WebSiteFetch(object):
         if downloadable_content_signal:
             download_signal_score += 2
 
-        if download_signal_score >= 5:
+        strong_upload_surface = bool(file_form_hits or multipart_form_hits > 0 or html_upload_signal)
+        strong_download_surface = bool(attachment_signal or downloadable_content_signal)
+
+        if download_signal_score >= 5 and strong_download_surface:
             return {
                 "decision": "needs_manual_review",
                 "confidence": 0.80,
@@ -6190,7 +6438,7 @@ class WebSiteFetch(object):
                 "context_snippet": context_snippet,
                 "tool_trace": "file_context(download_surface)",
             }
-        if upload_signal_score >= 5:
+        if upload_signal_score >= 5 and strong_upload_surface:
             return {
                 "decision": "needs_manual_review",
                 "confidence": 0.78,
@@ -6200,9 +6448,9 @@ class WebSiteFetch(object):
             }
         if upload_signal_score >= 2 or download_signal_score >= 2 or weak_path_signal:
             return {
-                "decision": "needs_manual_review",
-                "confidence": 0.66,
-                "reason": "发现文件处理相关路径或参数线索，但证据尚不足以证明存在任意文件读写风险",
+                "decision": "likely_false_positive",
+                "confidence": 0.68,
+                "reason": "当前仅发现文件处理路径或命名线索，缺少稳定的上传表单、附件响应或探针成功证据，先按低优先级噪声处理",
                 "context_snippet": context_snippet,
                 "tool_trace": "file_context(file_hint)",
             }
@@ -10199,6 +10447,8 @@ class WebSiteFetch(object):
                 return {"hit": False, "proof_type": "", "reason": ""}
             if any(token in body_lower for token in cls.AI_PEN_LOGIN_FAILURE_KEYWORDS):
                 return {"hit": False, "proof_type": "", "reason": ""}
+            if cls._looks_like_ai_pen_login_shell(body_text=body_value, content_type=content_type):
+                return {"hit": False, "proof_type": "", "reason": ""}
             if any(token in body_lower for token in cls.AI_PEN_LOGIN_PAGE_KEYWORDS) and not any(
                 token in body_lower for token in ("logout", "dashboard", "workbench", "console")
             ):
@@ -10206,6 +10456,7 @@ class WebSiteFetch(object):
 
             sensitive_hits = [token for token in cls.AI_PEN_IDOR_SENSITIVE_MARKERS if token in body_lower][:4]
             admin_hits = [token for token in cls.AI_PEN_IDOR_ADMIN_MARKERS if token in body_lower][:4]
+            admin_ui_hits = cls._collect_keyword_hits(body_lower, cls.AI_PEN_UNAUTH_ADMIN_UI_STRONG_HINTS, max_hits=4)
             admin_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_ADMIN_PATH_KEYWORDS)
             management_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_MANAGEMENT_PATH_KEYWORDS)
             actuator_path_hit = any(token in path_text for token in cls.AI_PEN_UNAUTH_ACTUATOR_PATH_KEYWORDS)
@@ -10237,6 +10488,18 @@ class WebSiteFetch(object):
                 ("application/json" in content_type or "text/plain" in content_type)
                 and any(token in body_lower for token in ('"status"', '"up"', '"down"', '"version"', '"build"'))
             )
+            profile_identity_hits = cls._collect_keyword_hits(
+                body_lower,
+                ("username", "email", "mobile", "phone", "realname", "nickname", "tenant", "role", "permission", "department"),
+                max_hits=6,
+            )
+            strong_management_signal = bool(
+                actuator_sensitive_path_hit
+                or strong_actuator_hits
+                or admin_hits
+                or (("application/json" in content_type) and len(sensitive_hits) >= 2)
+                or len(admin_ui_hits) >= 2
+            )
 
             if health_path_hit and (health_body_hit or "application/json" in content_type):
                 reason = "健康检查/信息端点返回成功状态，存在公开未授权访问线索"
@@ -10266,8 +10529,8 @@ class WebSiteFetch(object):
             ) and (
                 actuator_sensitive_path_hit
                 or strong_actuator_hits
-                or (management_path_hit and (sensitive_hits or admin_hits))
-                or (admin_path_hit and admin_hits)
+                or (management_path_hit and strong_management_signal)
+                or (admin_path_hit and (admin_hits or len(admin_ui_hits) >= 2))
             ):
                 reason = "高价值管理/配置端点返回成功状态，疑似可未授权直接访问"
                 if path_text:
@@ -10278,7 +10541,7 @@ class WebSiteFetch(object):
                     "reason": reason,
                 }
 
-            if management_path_hit and ("application/json" in content_type or admin_hits or sensitive_hits):
+            if management_path_hit and strong_management_signal:
                 reason = "管理/配置接口返回成功状态并出现敏感语义，疑似可未授权直接访问"
                 if sensitive_hits:
                     reason = "{}（字段：{}）".format(reason, ",".join(sensitive_hits[:3]))
@@ -10290,7 +10553,7 @@ class WebSiteFetch(object):
                     "reason": reason,
                 }
 
-            if admin_path_hit and (admin_hits or any(token in body_lower for token in ("dashboard", "workbench", "console", "logout", "tenant", "menu"))):
+            if admin_path_hit and (admin_hits or len(admin_ui_hits) >= 2):
                 reason = "管理/办公入口返回成功状态且出现后台语义，疑似可未授权直接访问"
                 if path_text:
                     reason = "{}（{}）".format(reason, path_text[:120])
@@ -10300,10 +10563,10 @@ class WebSiteFetch(object):
                     "reason": reason,
                 }
 
-            if profile_path_hit and ("application/json" in content_type or sensitive_hits):
+            if profile_path_hit and "application/json" in content_type and len(profile_identity_hits) >= 2:
                 reason = "账户/身份接口返回成功状态并带有身份字段，疑似未授权对象访问"
-                if sensitive_hits:
-                    reason = "{}（字段：{}）".format(reason, ",".join(sensitive_hits[:3]))
+                if profile_identity_hits:
+                    reason = "{}（字段：{}）".format(reason, ",".join(profile_identity_hits[:3]))
                 if path_text:
                     reason = "{}（{}）".format(reason, path_text[:120])
                 return {
@@ -11379,10 +11642,12 @@ class WebSiteFetch(object):
         return results
 
     @classmethod
-    def _is_sensitive_wih_record(cls, record_type: str, content: str):
+    def _is_sensitive_wih_record(cls, record_type: str, content: str, source: str = ""):
         record_type_text = str(record_type or "").strip().lower()
         content_text = str(content or "").strip().lower()
         if not record_type_text and not content_text:
+            return False
+        if cls._is_obvious_wih_secret_noise(record_type_text, content, source=source):
             return False
 
         if record_type_text in cls.AI_PEN_TEST_SENSITIVE_RECORD_TYPES:
@@ -15139,11 +15404,10 @@ class WebSiteFetch(object):
             for row in wih_cursor:
                 record_type = str(row.get("record_type", "") or "").strip()
                 content = str(row.get("content", "") or "").strip()
-                if not self._is_sensitive_wih_record(record_type, content):
-                    continue
-
                 source_url = str(row.get("source", "") or "").strip()
                 site_url = str(row.get("site", "") or "").strip()
+                if not self._is_sensitive_wih_record(record_type, content, source=source_url or site_url):
+                    continue
                 if self._is_ai_pen_wih_url_record_type(record_type):
                     target = self._resolve_ai_pen_wih_target_url(
                         record_type=record_type,
@@ -17585,22 +17849,21 @@ class WebSiteFetch(object):
                 reason = "默认口令验证未命中登录成功信号，当前不判定为可利用弱口令"
                 if session_auth_reason:
                     reason = "{}；会话跟进：{}".format(reason, session_auth_reason)
-            elif is_sqli_case and sqli_proof_type == "error_based":
-                decision = "verified"
-                confidence = 0.88
-                reason = "探针触发 SQL 报错注入特征，可复现"
-            elif is_sqli_case and sqli_proof_type == "time_based":
-                decision = "verified"
-                confidence = 0.86
-                reason = "SQL 探针触发显著延时差异，疑似时间盲注可复现"
-            elif is_sqli_case and sqli_proof_type == "boolean_based":
-                decision = "verified"
-                confidence = 0.84
-                reason = "SQL 探针触发布尔条件差异特征，疑似布尔盲注可复现"
-            elif is_sqli_case and (probe_body_md5 and base_body_md5 and probe_body_md5 != base_body_md5):
-                decision = "needs_manual_review"
-                confidence = 0.72
-                reason = "SQL 探针前后响应差异明显，疑似布尔/时间盲注，需人工复核"
+            elif is_sqli_case:
+                sqli_outcome = self._classify_ai_pen_sqli_outcome(
+                    sqli_proof_type=sqli_proof_type,
+                    base_body_md5=base_body_md5,
+                    probe_body_md5=probe_body_md5,
+                    base_status=status_code,
+                    probe_status=probe_status,
+                )
+                if sqli_outcome:
+                    decision = self._normalize_ai_pen_decision(
+                        sqli_outcome.get("decision"),
+                        default_value="needs_manual_review",
+                    )
+                    confidence = self._clamp_ai_pen_confidence(sqli_outcome.get("confidence"), 0.66)
+                    reason = self._clip_text(sqli_outcome.get("reason", ""), self.AI_PEN_TEST_REASON_MAX) or reason
             elif payload_type == "cmdi_probe" and cmdi_proof_type:
                 decision = "verified"
                 confidence = 0.89
@@ -19046,6 +19309,10 @@ class WebSiteFetch(object):
         """
         record_type = str(getattr(record, "recordType", "") or "").strip().lower()
         if not record_type:
+            return False
+        content = str(getattr(record, "content", "") or "").strip()
+        source = str(getattr(record, "source", "") or "").strip()
+        if self._is_obvious_wih_secret_noise(record_type, content, source=source):
             return False
 
         if record_type.startswith("trufflehog_"):

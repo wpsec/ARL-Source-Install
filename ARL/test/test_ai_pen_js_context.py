@@ -1723,6 +1723,23 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("needs_manual_review", result.get("decision"))
         self.assertIn("下载/导出响应特征", str(result.get("reason") or ""))
 
+    def test_file_context_path_only_hint_is_downgraded(self):
+        result = WebSiteFetch._analyze_ai_pen_file_context(
+            target_url="http://www.ucsanya.com/upload.html",
+            body_text="<html><body>upload center</body></html>",
+            headers={"Content-Type": "text/html"},
+            risk_type="file_upload",
+            payload_type="upload_probe",
+            evidence_seed="upload",
+            api_surface_summary={"upload_like_count": 1, "download_like_count": 0},
+            browser_surface_summary={},
+            runtime_api_calls=[],
+            dom_form_summary=[],
+        )
+
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertIn("仅发现文件处理路径或命名线索", str(result.get("reason") or ""))
+
     def test_file_context_verifies_upload_probe_from_runtime_response(self):
         result = WebSiteFetch._analyze_ai_pen_file_context(
             target_url="https://example.com/api/upload",
@@ -2040,6 +2057,23 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertFalse(bool(result.get("hit")))
         self.assertEqual("", str(result.get("proof_type") or ""))
 
+    def test_analyze_ai_pen_unauth_access_skips_login_shell_even_if_dashboard_keyword_exists(self):
+        result = WebSiteFetch._analyze_ai_pen_unauth_access(
+            target_url="https://example.com/portal/dashboard",
+            status_code=200,
+            headers={"Content-Type": "text/html"},
+            body_text=(
+                "<html><body><form class='login-form'>统一身份认证登录"
+                "<input name='username'><input type='password' name='password'>"
+                "<button>登录</button><div>dashboard</div></form></body></html>"
+            ),
+            high_value_family="admin_debug_surface",
+            payload_type="replay",
+        )
+
+        self.assertFalse(bool(result.get("hit")))
+        self.assertEqual("", str(result.get("proof_type") or ""))
+
     def test_apply_ai_pen_decision_guard_downgrades_health_only_verified(self):
         result = WebSiteFetch._apply_ai_pen_decision_guard(
             decision="verified",
@@ -2338,6 +2372,21 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("likely_false_positive", result.get("decision"))
         self.assertIn("未发现硬编码敏感值", str(result.get("reason") or ""))
 
+    def test_sensitive_info_password_placeholder_in_js_is_downgraded(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/static/components.min.js",
+            body_text='const schema={field:"password",label:"Password",password:"password"};',
+            headers={"Content-Type": "application/javascript"},
+            risk_type="sensitive_info",
+            payload_type="replay",
+            evidence_seed='password:"password"',
+        )
+
+        summary = result.get("js_context_summary") if isinstance(result.get("js_context_summary"), dict) else {}
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertEqual("secret_placeholder_noise", summary.get("noise_kind"))
+        self.assertIn("占位符", str(result.get("reason") or ""))
+
     def test_secret_key_js_bundle_concat_noise_is_downgraded(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(
             target_url="https://example.com/js/common~app.87011869.js",
@@ -2352,6 +2401,21 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("likely_false_positive", result.get("decision"))
         self.assertEqual("secret_template_noise", summary.get("noise_kind"))
         self.assertIn("未发现硬编码敏感值", str(result.get("reason") or ""))
+
+    def test_secret_key_js_debug_concat_noise_is_downgraded(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/webman/sds/dist/dsm.common.bundle.js",
+            body_text='function a(){token=")&&(SYNO.Debug(" + moduleName + ")";return token;}',
+            headers={"Content-Type": "application/javascript"},
+            risk_type="secret_key",
+            payload_type="replay",
+            evidence_seed='token=")&&(SYNO.Debug("',
+        )
+
+        summary = result.get("js_context_summary") if isinstance(result.get("js_context_summary"), dict) else {}
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertEqual("secret_debug_noise", summary.get("noise_kind"))
+        self.assertIn("调试/日志", str(result.get("reason") or ""))
 
     def test_sensitive_info_hardcoded_client_secret_is_promoted(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(
@@ -2444,6 +2508,18 @@ class TestAiPenJsContext(unittest.TestCase):
 
         self.assertEqual("needs_manual_review", result.get("decision"))
         self.assertEqual("source_sink_popup_hint", result.get("dom_xss_proof_type"))
+
+    def test_classify_ai_pen_sqli_outcome_downgrades_plain_response_diff(self):
+        result = WebSiteFetch._classify_ai_pen_sqli_outcome(
+            sqli_proof_type="",
+            base_body_md5="base-md5",
+            probe_body_md5="probe-md5",
+            base_status=200,
+            probe_status=200,
+        )
+
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertIn("普通响应差异", str(result.get("reason") or ""))
 
     def test_generic_js_header_keyword_noise_is_downgraded(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(

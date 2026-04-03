@@ -1,7 +1,10 @@
 import unittest
 from types import SimpleNamespace
 
-from app.services.commonTask import WebSiteFetch
+try:
+    from app.services.commonTask import WebSiteFetch
+except Exception:
+    from test.test_ai_pen_js_context import WebSiteFetch
 
 
 class TestWihRiskPromotion(unittest.TestCase):
@@ -31,6 +34,24 @@ class TestWihRiskPromotion(unittest.TestCase):
                 SimpleNamespace(recordType="secret_key", content='secret_key="demo-secret"')
             )
         )
+
+    def test_js_placeholder_password_record_is_not_promoted(self):
+        record = SimpleNamespace(
+            recordType="password",
+            content='password:"password"',
+            source="https://example.com/static/app.js",
+        )
+        self.assertFalse(self.task._should_promote_wih_to_risk(record))
+        self.assertFalse(self.task._is_sensitive_wih_record("password", 'password:"password"', source=record.source))
+
+    def test_js_debug_secret_record_is_not_promoted(self):
+        record = SimpleNamespace(
+            recordType="secret_key",
+            content='token=")&&(SYNO.Debug("',
+            source="https://example.com/webman/sds/dist/dsm.common.bundle.js",
+        )
+        self.assertFalse(self.task._should_promote_wih_to_risk(record))
+        self.assertFalse(self.task._is_sensitive_wih_record("secret_key", 'token=")&&(SYNO.Debug("', source=record.source))
 
 
 if __name__ == "__main__":
