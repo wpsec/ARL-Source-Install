@@ -281,6 +281,12 @@ function isPreferredPageText(text) {
   return /(search|filter|query|list|detail|admin|manage|dashboard|index|home|api|doc|search|查询|筛选|列表|详情|管理|后台|首页|文档)/.test(normalized);
 }
 
+function isPreferredFormText(text) {
+  const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  return /(search|filter|query|keyword|查询|搜索|筛选|关键字|检索)/.test(normalized);
+}
+
 function normalizeSameHostPageUrl(rawUrl, baseUrl, targetHost) {
   const text = String(rawUrl || '').trim();
   if (!text || text.startsWith('javascript:') || text.startsWith('mailto:') || text.startsWith('tel:')) {
@@ -421,6 +427,48 @@ async function performLowRiskInteractions(page, maxActions) {
     }).catch(() => '');
     if (!value) continue;
     await locator.selectOption(value).catch(() => {});
+    used += 1;
+    await settle();
+  }
+
+  const formCount = await page.locator('form').count();
+  for (let i = 0; i < formCount && used < maxActions; i += 1) {
+    const locator = page.locator('form').nth(i);
+    const visible = await locator.isVisible().catch(() => false);
+    if (!visible) continue;
+    const meta = await locator.evaluate((element) => {
+      const text = [
+        element.getAttribute('id') || '',
+        element.getAttribute('name') || '',
+        element.getAttribute('action') || '',
+        element.innerText || element.textContent || '',
+      ].join(' ');
+      const method = String(element.getAttribute('method') || 'get').trim().toLowerCase();
+      const hasPassword = element.querySelector('input[type="password"]') !== null;
+      const hasFile = element.querySelector('input[type="file"]') !== null;
+      const inputCount = element.querySelectorAll('input, select, textarea').length;
+      return {
+        text,
+        method,
+        hasPassword,
+        hasFile,
+        inputCount,
+      };
+    }).catch(() => ({ text: '', method: 'get', hasPassword: false, hasFile: false, inputCount: 0 }));
+
+    if (meta.hasPassword || meta.hasFile) continue;
+    if (meta.inputCount <= 0) continue;
+    if (meta.method !== '' && meta.method !== 'get') continue;
+    if (!isPreferredFormText(meta.text)) continue;
+    if (isDangerousActionText(meta.text)) continue;
+
+    await locator.evaluate((element) => {
+      if (typeof element.requestSubmit === 'function') {
+        element.requestSubmit();
+        return;
+      }
+      element.submit();
+    }).catch(() => {});
     used += 1;
     await settle();
   }

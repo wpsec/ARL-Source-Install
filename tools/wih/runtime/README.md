@@ -150,6 +150,7 @@ runtime driver 通过 `stdout` 返回 JSON：
 
 - 搜索类输入框填充
 - `select` 切换
+- 低风险 `GET/搜索表单` 提交
 - `tab` 切换
 - 搜索/筛选/下一页/更多 这类弱副作用按钮点击
 

@@ -42,6 +42,75 @@
 4. 把这套能力直接接入普通 `站点爬虫 / URL信息 / WIH` 主链路，不依赖单独的 `AI渗透测试` 模块。
 5. 让后续 AI 只做“语义增强与重排序”，而不是做主提取器。
 
+## 2.1 当前已完成情况（截至 2026-04-05 / commit `a22fba91`）
+
+当前这份规划已经不再只是方案，下面这些内容已落地到仓库中：
+
+- 已完成统一结构化模型：
+  - `EndpointRecord`
+  - `ParameterRecord`
+  - `EndpointRequestTemplate`
+  - `EndpointTriggerContext`
+- 已完成结构化参数画像基础字段：
+  - `is_pii`
+  - `entropy`
+  - `request_template`
+  - `request_packet`
+  - `page_url`
+  - `source_detail`
+  - `occurrence_count`
+- 已完成 `WIH` 独立工具输出增强：
+  - 主 `JSON` 输出直接携带 `endpoints / parameters`
+  - 支持独立导出 `endpoint.json / parameter.json`
+  - 已接入对应 CLI 参数与自动落盘逻辑
+- 已完成 `HTML form` 首版参数提取：
+  - `action/method/enctype`
+  - `input/select/textarea`
+  - `required/default/example/enum`
+  - `GET/POST` 请求模板生成
+- 已完成 `JS` 静态参数提取过渡版：
+  - 当前仍以模式提取为主，不是 AST 主链
+  - 已覆盖 `fetch / axios / request({...}) / URLSearchParams / FormData / GraphQL variables`
+  - 已能输出 `query/body/header/path/graphql_variable`
+- 已完成 runtime external driver 契约与最小样例：
+  - `stdin/stdout JSON` 协议
+  - 示例输入输出文件
+  - external driver 示例脚本
+- 已完成内置 `Playwright` runtime MVP：
+  - 页面加载期 `fetch/xhr/sendBeacon`
+  - `xhr.setRequestHeader`
+  - `JSON / GraphQL / form` body 基础解析
+  - 同 host 页面浅层探索
+  - 低风险交互：
+    - 搜索输入
+    - `select` 切换
+    - `tab` 切换
+    - 搜索/筛选/下一页/更多点击
+    - 低风险 `GET/搜索表单` 提交
+  - `Playwright page.on('request')` 网络请求观测补充
+- 已完成 runtime 结果归一化：
+  - `endpoint_id` 映射
+  - `method/protocol/body_kind/content_type`
+  - `request_template/request_packet`
+  - `parameter.location/param_type`
+  - `parameter.source/source_detail`
+
+当前仍未完成的部分：
+
+- `JS AST` 主链尚未落地
+- `schema` 提取尚未开始
+- `GraphQL` 仍以基础变量提取与 runtime 观察为主，未进入深层结构分析
+- `AI` 语义增强尚未开始
+
+当前更准确的状态应理解为：
+
+- `WIH` 已经具备“可独立运行的接口/参数发现 MVP”
+- `runtime + form + JS静态提取` 三条主链已经打通
+- 后续工作的重点不再是“从 0 到 1”，而是：
+  - 把 runtime 继续做深
+  - 把静态 `JS` 从模式提取升级到 `AST`
+  - 把 schema / GraphQL 深化补齐
+
 ## 3. 非目标
 
 本方案不以“自动攻击”或“自动漏洞利用”为目标，首要目标是提升接口面与参数面的发现质量。
@@ -514,6 +583,8 @@ type ParameterRecord struct {}
 
 ### 阶段 0：模型与链路改造准备
 
+当前状态：`已完成`
+
 目标：
 
 - 定义统一参数模型
@@ -532,6 +603,8 @@ type ParameterRecord struct {}
 ---
 
 ### 阶段 1：运行时 Hook MVP
+
+当前状态：`MVP 已完成，持续增强中`
 
 目标：
 
@@ -558,6 +631,8 @@ type ParameterRecord struct {}
 
 ### 阶段 2：HTML 表单提取
 
+当前状态：`首版已完成`
+
 目标：
 
 - 把页面里明确定义的参数结构补齐
@@ -573,6 +648,8 @@ type ParameterRecord struct {}
 ---
 
 ### 阶段 3：AST 静态分析
+
+当前状态：`过渡版已落地，AST 主链未完成`
 
 目标：
 
@@ -592,6 +669,8 @@ type ParameterRecord struct {}
 
 ### 阶段 4：Schema / GraphQL 深化
 
+当前状态：`未完成`
+
 目标：
 
 - 提升参数类型、required、enum、default 的结构化质量
@@ -607,6 +686,8 @@ type ParameterRecord struct {}
 ---
 
 ### 阶段 5：AI 语义增强
+
+当前状态：`未开始`
 
 目标：
 
