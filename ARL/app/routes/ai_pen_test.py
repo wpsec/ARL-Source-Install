@@ -1651,6 +1651,9 @@ class RetryAiPenTest(ARLResource):
     @auth
     @ns.expect(retry_fields)
     def post(self):
+        if getattr(WebSiteFetch, "PENETRATION_FEATURES_TEMP_DISABLED", False):
+            return utils.build_ret(ErrorMsg.Error, {"error": "AI渗透测试功能已临时下线，暂不支持重试"})
+
         args = self.parse_args(retry_fields)
         result_ids = list(args.get("result_ids") or [])
         single = str(args.get("result_id") or "").strip()
@@ -1687,6 +1690,9 @@ class BatchRunAiPenTest(ARLResource):
     @auth
     @ns.expect(batch_run_fields)
     def post(self):
+        if getattr(WebSiteFetch, "PENETRATION_FEATURES_TEMP_DISABLED", False):
+            return utils.build_ret(ErrorMsg.Error, {"error": "AI渗透测试功能已临时下线，暂不支持按任务重跑"})
+
         args = self.parse_args(batch_run_fields)
         task_ids = list(args.get("task_ids") or [])
         single = str(args.get("task_id") or "").strip()

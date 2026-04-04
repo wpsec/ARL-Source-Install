@@ -416,9 +416,6 @@ const modules: ModuleConfig[] = [
           afrog_scan: false,
           findvhost: false,
           web_info_hunter: false,
-          penetration_test: false,
-          ai_penetration_test: false,
-          waf_bypass: false,
           smart_skip_waf: false,
           ai_denoise: true,
           dingding_notify: false,
@@ -828,15 +825,12 @@ const modules: ModuleConfig[] = [
               site_identify: false,
               site_capture: false,
               search_engines: false,
-              site_spider: false,
-              nuclei_scan: false,
-              afrog_scan: false,
-              web_info_hunter: false,
-              penetration_test: false,
-              ai_penetration_test: false,
-              waf_bypass: false,
-              smart_skip_waf: false,
-            },
+            site_spider: false,
+            nuclei_scan: false,
+            afrog_scan: false,
+            web_info_hunter: false,
+            smart_skip_waf: false,
+          },
             domain_dict: '',
             file_leak_dict: '',
             file_leak: false,
@@ -1687,6 +1681,7 @@ const modules: ModuleConfig[] = [
     description: '进入 AI 渗透测试的资产与完整链路记录',
     group: '资产数据',
     icon: Crosshair,
+    hidden: true,
     listPath: '/ai_pen_test/',
     rowIdKey: '_id',
     showIndex: true,
@@ -2212,7 +2207,6 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'nuclei_result', label: 'PoC风险' },
   { id: 'wih', label: 'WIH' },
   { id: 'waf_host', label: 'WAF识别' },
-  { id: 'ai_pen_test', label: 'AI渗透测试' },
 ];
 
 const visibleModules = modules.filter((module) => !module.hidden);
@@ -4486,9 +4480,6 @@ const fieldLabelMap: Record<string, string> = {
   afrog_scan: 'afrog 调用',
   findvhost: 'Host 碰撞',
   web_info_hunter: 'WIH 调用',
-  penetration_test: '渗透测试',
-  ai_penetration_test: 'AI渗透测试',
-  waf_bypass: 'WAF绕过',
   smart_skip_waf: '跳过WAF',
   ai_denoise: 'AI去噪分析',
 };
@@ -5540,7 +5531,7 @@ function ActionDialog({
       },
       {
         title: 'Web与风险',
-        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'penetration_test', 'ai_penetration_test', 'waf_bypass', 'smart_skip_waf', 'ai_denoise', 'dingding_notify'],
+        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'smart_skip_waf', 'ai_denoise', 'dingding_notify'],
       },
     ];
     return sections
@@ -5651,9 +5642,6 @@ function ActionDialog({
     { key: 'site_config.nuclei_scan', label: 'nuclei 调用' },
     { key: 'site_config.afrog_scan', label: 'afrog 调用' },
     { key: 'site_config.web_info_hunter', label: 'WIH 调用' },
-    { key: 'site_config.penetration_test', label: '渗透测试' },
-    { key: 'site_config.ai_penetration_test', label: 'AI渗透测试' },
-    { key: 'site_config.waf_bypass', label: 'WAF绕过' },
     { key: 'site_config.smart_skip_waf', label: '跳过WAF' },
   ];
   const filteredPolicyOptions = policyOptionDefs.filter((item) => {
@@ -19999,45 +19987,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
               <input
                 type="checkbox"
-                checked={form.ai_pen_test_enable}
-                onChange={(event) => setForm((prev) => ({ ...prev, ai_pen_test_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-              />
-              <span className="text-xs font-semibold">启用AI渗透测试</span>
-            </label>
-            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
-              <input
-                type="checkbox"
-                checked={form.ai_pen_mcp_enable}
-                onChange={(event) => setForm((prev) => ({ ...prev, ai_pen_mcp_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-                disabled={!form.ai_pen_test_enable}
-              />
-              <span className="text-xs font-semibold">启用AI渗透-MCP</span>
-            </label>
-            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
-              <input
-                type="checkbox"
-                checked={form.ai_pen_external_enable}
-                onChange={(event) => setForm((prev) => ({ ...prev, ai_pen_external_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-                disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable}
-              />
-              <span className="text-xs font-semibold">启用AI渗透-外部工具白名单执行器</span>
-            </label>
-            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
-              <input
-                type="checkbox"
-                checked={form.ai_pen_ai_planner_enable}
-                onChange={(event) => setForm((prev) => ({ ...prev, ai_pen_ai_planner_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-                disabled={!form.ai_pen_test_enable}
-              />
-              <span className="text-xs font-semibold">启用AI渗透-AI规划</span>
-            </label>
-            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
-              <input
-                type="checkbox"
                 checked={form.ai_poc_scan_enable}
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_poc_scan_enable: event.target.checked }))}
                 className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
@@ -20056,128 +20005,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </div>
         </div>
         <div className="text-xs text-brand-text-muted">
-          AI渗透测试用于对风险/PoC/WIH结果做二次验证；开启 AI规划 后会先由模型生成验证计划，开启 MCP 后会自动执行“重放 + Payload 探针”工具链；开启外部工具白名单后可调用 `sqlmap/httpx` 等进行补充验证（不包含 nuclei，nuclei 属于 AI-POC 扫描能力）。AI-POC 扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 候选 PoC。AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
-        </div>
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-          <div className="space-y-2">
-            <label htmlFor="ai-pen-mcp-max-tool-calls" className="text-xs font-bold text-brand-text-muted block">
-              AI渗透-MCP最大工具调用次数
-            </label>
-            <input
-              id="ai-pen-mcp-max-tool-calls"
-              type="number"
-              min={1}
-              max={12}
-              value={String(form.ai_pen_mcp_max_tool_calls)}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  ai_pen_mcp_max_tool_calls: Math.max(1, Math.min(12, Number(event.target.value || 0) || 1)),
-                }))
-              }
-              className={aiInputClass}
-              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable}
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="ai-pen-mcp-timeout-sec" className="text-xs font-bold text-brand-text-muted block">
-              AI渗透-MCP工具超时（秒）
-            </label>
-            <input
-              id="ai-pen-mcp-timeout-sec"
-              type="number"
-              min={1}
-              max={60}
-              value={String(form.ai_pen_mcp_timeout_sec)}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  ai_pen_mcp_timeout_sec: Math.max(1, Math.min(60, Number(event.target.value || 0) || 1)),
-                }))
-              }
-              className={aiInputClass}
-              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable}
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="ai-pen-ai-plan-max-cases" className="text-xs font-bold text-brand-text-muted block">
-              AI渗透-AI规划候选上限
-            </label>
-            <input
-              id="ai-pen-ai-plan-max-cases"
-              type="number"
-              min={1}
-              max={120}
-              value={String(form.ai_pen_ai_plan_max_cases)}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  ai_pen_ai_plan_max_cases: Math.max(1, Math.min(120, Number(event.target.value || 0) || 1)),
-                }))
-              }
-              className={aiInputClass}
-              disabled={!form.ai_pen_test_enable || !form.ai_pen_ai_planner_enable}
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="ai-pen-external-tools" className="text-xs font-bold text-brand-text-muted block">
-              外部工具白名单（逗号分隔）
-            </label>
-            <input
-              id="ai-pen-external-tools"
-              type="text"
-              value={String(form.ai_pen_external_tools)}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  ai_pen_external_tools: event.target.value,
-                }))
-              }
-              className={aiInputClass}
-              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable || !form.ai_pen_external_enable}
-              placeholder="sqlmap,httpx"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="ai-pen-external-timeout-sec" className="text-xs font-bold text-brand-text-muted block">
-              外部工具超时（秒）
-            </label>
-            <input
-              id="ai-pen-external-timeout-sec"
-              type="number"
-              min={5}
-              max={300}
-              value={String(form.ai_pen_external_timeout_sec)}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  ai_pen_external_timeout_sec: Math.max(5, Math.min(300, Number(event.target.value || 0) || 5)),
-                }))
-              }
-              className={aiInputClass}
-              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable || !form.ai_pen_external_enable}
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="ai-pen-external-max-runs" className="text-xs font-bold text-brand-text-muted block">
-              外部工具单条候选最大执行数
-            </label>
-            <input
-              id="ai-pen-external-max-runs"
-              type="number"
-              min={1}
-              max={8}
-              value={String(form.ai_pen_external_max_runs)}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  ai_pen_external_max_runs: Math.max(1, Math.min(8, Number(event.target.value || 0) || 1)),
-                }))
-              }
-              className={aiInputClass}
-              disabled={!form.ai_pen_test_enable || !form.ai_pen_mcp_enable || !form.ai_pen_external_enable}
-            />
-          </div>
+          AI-POC 扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 候选 PoC。AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。AI渗透测试功能当前已临时下线，不再在此处展示配置入口。
         </div>
         <div className="space-y-2">
           {aiDenoiseModuleConfigs.map((moduleConfig) => {

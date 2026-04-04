@@ -50,7 +50,7 @@ from app.config import normalize_dict_path_compat
 from app.modules import TaskStatus, ErrorMsg, TaskSyncStatus, CeleryAction, TaskTag, TaskType
 from app.helpers import get_options_by_policy_id, submit_task_task,\
     submit_risk_cruising, get_scope_by_scope_id, check_target_in_scope
-from app.helpers.task import get_task_data, restart_task
+from app.helpers.task import get_task_data, restart_task, strip_disabled_penetration_options
 
 # 创建任务信息命名空间
 ns = Namespace('task', description="资产发现任务信息")
@@ -155,9 +155,6 @@ add_task_fields = ns.model('AddTask', {
     "afrog_scan": fields.Boolean(description="afrog漏洞扫描", example=False, default=False),
     "findvhost": fields.Boolean(example=False, default=False, description="虚拟主机碰撞"),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="WebInfoHunter JS信息收集"),
-    "penetration_test": fields.Boolean(example=False, default=False, description="Web专项渗透测试"),
-    "ai_penetration_test": fields.Boolean(example=False, default=False, description="AI渗透测试"),
-    "waf_bypass": fields.Boolean(example=False, default=False, description="WAF绕过（仅渗透测试）"),
     "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),
     "ai_denoise": fields.Boolean(example=True, default=True, description="AI去噪分析"),
     "dingding_notify": fields.Boolean(example=False, default=False, description="任务完成后是否推送钉钉通知"),
@@ -274,9 +271,7 @@ class ARLTask(ARLResource):
         else:
             args.pop('port_custom', None)
 
-        # WAF 试探绕过仅对主动渗透链路生效，未开启渗透测试时统一收敛为 false。
-        if not bool(args.get("penetration_test", False)):
-            args["waf_bypass"] = False
+        args, _ = strip_disabled_penetration_options(args)
 
         try:
             # 提交任务（会进行目标验证和任务创建）

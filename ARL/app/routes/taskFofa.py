@@ -203,8 +203,6 @@ class AddFofaTask(ARLResource):
             "site_identify": False,  # 站点识别
             "file_leak": False,  # 文件泄露检测
             "afrog_scan": False,  # afrog 漏洞扫描
-            "penetration_test": False,  # Web 专项渗透测试
-            "ai_penetration_test": False,  # AI 渗透测试
             "ssl_cert": False  # SSL证书获取
         }
 

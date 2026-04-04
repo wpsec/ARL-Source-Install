@@ -26,6 +26,7 @@ from app.services.ai_pen_mcp_runtime import AiPenMcpRuntime, ToolSchema
 from app.services.task_scope_guard import load_task_scope_context, host_in_scope, url_in_scope
 from app.services.infoHunter import InfoHunter
 from app.services import run_risk_cruising, BaseUpdateTask
+from app.helpers.task import strip_disabled_penetration_options
 logger = utils.get_logger()
 
 
@@ -170,6 +171,7 @@ class WebSiteFetch(object):
     AI_PEN_JS_MAX_SCRIPT_URLS = 12
     AI_PEN_JS_PAGE_FETCH_MAX_TARGETS = 160
     AI_PEN_JS_MAX_API_TARGETS = 20
+    PENETRATION_FEATURES_TEMP_DISABLED = True
     AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES = (
         "xss_probe",
         "sqli_probe",
@@ -1001,6 +1003,14 @@ class WebSiteFetch(object):
         self.task_id = task_id
         self.sites = sites  # ** 这个是用户提交的目标
         self.options = options or {}
+        self.options, disabled_pen_keys = strip_disabled_penetration_options(self.options)
+        if disabled_pen_keys and self.PENETRATION_FEATURES_TEMP_DISABLED:
+            logger.info(
+                "task_id:{} penetration features auto disabled at runtime keys:{}".format(
+                    self.task_id,
+                    ",".join(disabled_pen_keys),
+                )
+            )
         self.smart_skip_waf = bool(self.options.get("smart_skip_waf", False))
         self.waf_bypass = bool(
             self.options.get(WebSiteFetchOption.WAF_BYPASS, False)

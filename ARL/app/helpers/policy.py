@@ -9,6 +9,7 @@
 import bson
 from app import utils
 from app.modules import TaskTag
+from .task import strip_disabled_penetration_options
 
 
 def get_options_by_policy_id(policy_id, task_tag):
@@ -60,6 +61,7 @@ def get_options_by_policy_id(policy_id, task_tag):
         options.update(filtered_ip_config)
 
     options.update(site_config)
+    options, _ = strip_disabled_penetration_options(options)
 
     options.update(policy)
     return options

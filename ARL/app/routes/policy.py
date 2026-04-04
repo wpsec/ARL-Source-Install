@@ -22,6 +22,7 @@ from app.config import normalize_dict_path_compat
 from bson import ObjectId
 from flask_restx.fields import Nested, String, Boolean, List
 from flask_restx.model import Model
+from app.helpers.task import strip_disabled_penetration_options
 
 ns = Namespace('policy', description="策略信息")
 
@@ -109,9 +110,6 @@ site_config_fields = ns.model('siteConfig', {
     "nuclei_scan": fields.Boolean(description="nuclei 扫描", default=False),
     "afrog_scan": fields.Boolean(description="afrog 扫描", default=False),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="web JS 中的信息收集"),
-    "penetration_test": fields.Boolean(example=False, default=False, description="Web 专项渗透测试"),
-    "ai_penetration_test": fields.Boolean(example=False, default=False, description="AI渗透测试"),
-    "waf_bypass": fields.Boolean(example=False, default=False, description="WAF绕过（仅渗透测试）"),
     "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),
 })
 
@@ -269,8 +267,7 @@ class AddARLPolicy(ARLResource):
         # 处理站点配置
         site_config = policy.pop("site_config", {})
         site_config = self._update_arg(site_config, site_config_fields)
-        if not bool(site_config.get("penetration_test", False)):
-            site_config["waf_bypass"] = False
+        site_config, _ = strip_disabled_penetration_options(site_config)
 
         # 处理PoC插件配置
         poc_config = policy.pop("poc_config", [])
@@ -582,8 +579,8 @@ class EditPolicy(ARLResource):
         if file_leak_dict_error:
             return utils.build_ret(ErrorMsg.Error, file_leak_dict_error)
         item["policy"]["file_leak_dict"] = file_leak_dict
-        if not bool(item["policy"].get("site_config", {}).get("penetration_test", False)):
-            item["policy"].setdefault("site_config", {})["waf_bypass"] = False
+        sanitized_site_config, _ = strip_disabled_penetration_options(item["policy"].get("site_config", {}))
+        item["policy"]["site_config"] = sanitized_site_config
 
         # 更新时间戳并保存
         item["update_date"] = utils.curr_date()

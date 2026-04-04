@@ -8,7 +8,13 @@
 - 为其他模块提供便捷的导入接口
 """
 from .policy import get_options_by_policy_id
-from .task import submit_task, build_task_data, get_ip_domain_list, submit_task_task, submit_risk_cruising
+from .task import (
+    submit_task,
+    build_task_data,
+    get_ip_domain_list,
+    submit_task_task,
+    submit_risk_cruising,
+    strip_disabled_penetration_options,
+)
 from .scope import get_scope_by_scope_id, check_target_in_scope
 from .url import get_url_by_task_id
-
