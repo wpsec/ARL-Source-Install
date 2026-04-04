@@ -67,6 +67,9 @@ Flags:
   -x, --proxy string               HTTP proxy (e.g. http://localhost:8080)
   -r, --rule-config string         规则配置文件 (default "rules.yml")
       --runtime-enable             启用运行时参数采集骨架
+      --runtime-driver string      运行时采集驱动(noop/external) (default "noop")
+      --runtime-command string     external 运行时采集命令
+      --runtime-timeout int        运行时采集超时(秒) (default 20)
       --runtime-max-actions int    运行时探索最大交互动作数 (default 8)
       --runtime-max-pages int      运行时探索最大页面数 (default 3)
       --runtime-max-requests int   运行时采集最大请求数 (default 40)
@@ -119,6 +122,32 @@ Flags:
   --endpoint-output endpoint.json \
   --parameter-output parameter.json
 ```
+
+5. 使用 external runtime driver 接入浏览器采集器
+
+`WIH` 当前已经预留运行时采集接入口。若你有独立的浏览器采集脚本，可通过 `stdin/stdout JSON` 契约接入：
+
+```shell
+./wih -t https://example.com \
+  --runtime-enable \
+  --runtime-driver external \
+  --runtime-command "node runtime_driver.js"
+```
+
+`runtime_command` 会从标准输入读取请求 JSON，并向标准输出返回：
+
+```json
+{
+  "endpoints": [],
+  "parameters": []
+}
+```
+
+注意：
+
+- 当前版本仅接入了 external driver 契约和主链路接入口
+- 未内置浏览器实现
+- 返回结果会继续经过同 host 过滤与统一归并
 
 
 ## 内置规则

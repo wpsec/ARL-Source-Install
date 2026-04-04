@@ -37,6 +37,12 @@ var (
 	ConcurrencyPerSite = 3
 	// RuntimeEnable 控制是否启用运行时参数采集骨架。
 	RuntimeEnable = false
+	// RuntimeDriver 控制运行时采集驱动类型。
+	RuntimeDriver = "noop"
+	// RuntimeCommand 为 external 驱动执行命令。
+	RuntimeCommand = ""
+	// RuntimeTimeout 控制运行时采集超时。
+	RuntimeTimeout = 20 * time.Second
 	// RuntimeMaxPages 控制运行时探索页面预算。
 	RuntimeMaxPages = 3
 	// RuntimeMaxActions 控制运行时交互预算。

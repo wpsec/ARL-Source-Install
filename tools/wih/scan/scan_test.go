@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -310,5 +311,40 @@ func TestExtractRuntimeSurfaceDisabled(t *testing.T) {
 	result := extractRuntimeSurface("https://example.com")
 	if len(result.Endpoints) != 0 || len(result.Parameters) != 0 {
 		t.Fatalf("runtime surface should be empty when disabled: %+v", result)
+	}
+}
+
+// TestParseRuntimeSurfaceResponseFiltersCrossHost 验证 external runtime 结果会继续受 host 过滤。
+func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
+	payload := map[string]any{
+		"endpoints": []map[string]any{
+			{
+				"url":    "https://example.com/api/user",
+				"method": "GET",
+			},
+			{
+				"url":    "https://other.com/api/out",
+				"method": "GET",
+			},
+		},
+		"parameters": []map[string]any{
+			{
+				"endpoint_id": "manual-endpoint-id",
+				"param_name":  "id",
+				"location":    "query",
+			},
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal runtime payload failed: %v", err)
+	}
+
+	result := parseRuntimeSurfaceResponse(raw, "https://example.com")
+	if len(result.Endpoints) != 1 {
+		t.Fatalf("unexpected runtime endpoint count: %d", len(result.Endpoints))
+	}
+	if result.Endpoints[0].URL != "https://example.com/api/user" {
+		t.Fatalf("unexpected runtime endpoint url: %s", result.Endpoints[0].URL)
 	}
 }

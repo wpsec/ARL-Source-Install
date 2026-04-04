@@ -29,6 +29,9 @@ func Options() *datatype.Option {
 		MaxCollect:          600,
 		LimitReaderSize:     10 * 1024 * 1024,
 		RuntimeEnable:       false,
+		RuntimeDriver:       "noop",
+		RuntimeCommand:      "",
+		RuntimeTimeoutSec:   20,
 		RuntimeMaxPages:     3,
 		RuntimeMaxActions:   8,
 		RuntimeMaxRequests:  40,
@@ -72,6 +75,9 @@ func Options() *datatype.Option {
 		flagset.IntVarP(&option.MaxCollect, "max-collect", "M", 600, "用于表示所有收集类型的最大收集数量, 对于每个站点"),
 		flagset.IntVarP(&option.LimitReaderSize, "limit-reader-size", "", 10*1024*1024, "Maximum response size (in bytes)"),
 		flagset.BoolVarP(&option.RuntimeEnable, "runtime-enable", "", false, "启用运行时参数采集骨架"),
+		flagset.StringVarP(&option.RuntimeDriver, "runtime-driver", "", "noop", "运行时采集驱动(noop/external)"),
+		flagset.StringVarP(&option.RuntimeCommand, "runtime-command", "", "", "external 运行时采集命令"),
+		flagset.IntVarP(&option.RuntimeTimeoutSec, "runtime-timeout", "", 20, "运行时采集超时(秒)"),
 		flagset.IntVarP(&option.RuntimeMaxPages, "runtime-max-pages", "", 3, "运行时探索最大页面数"),
 		flagset.IntVarP(&option.RuntimeMaxActions, "runtime-max-actions", "", 8, "运行时探索最大交互动作数"),
 		flagset.IntVarP(&option.RuntimeMaxRequests, "runtime-max-requests", "", 40, "运行时采集最大请求数"),
@@ -127,6 +133,9 @@ func Options() *datatype.Option {
 	if option.RuntimeMaxPages < 1 {
 		option.RuntimeMaxPages = 1
 	}
+	if option.RuntimeTimeoutSec < 1 {
+		option.RuntimeTimeoutSec = 1
+	}
 	if option.RuntimeMaxActions < 1 {
 		option.RuntimeMaxActions = 1
 	}
@@ -159,6 +168,12 @@ func Options() *datatype.Option {
 	global.MaxCollect = option.MaxCollect
 	global.ConcurrencyPerSite = option.ConcurrencyPerSite
 	global.RuntimeEnable = option.RuntimeEnable
+	global.RuntimeDriver = strings.ToLower(strings.TrimSpace(option.RuntimeDriver))
+	if global.RuntimeDriver == "" {
+		global.RuntimeDriver = "noop"
+	}
+	global.RuntimeCommand = strings.TrimSpace(option.RuntimeCommand)
+	global.RuntimeTimeout = time.Duration(option.RuntimeTimeoutSec) * time.Second
 	global.RuntimeMaxPages = option.RuntimeMaxPages
 	global.RuntimeMaxActions = option.RuntimeMaxActions
 	global.RuntimeMaxRequests = option.RuntimeMaxRequests
