@@ -58,6 +58,35 @@ class TestWihNoiseFilter(unittest.TestCase):
             "/bscSysTheme/addTheme",
         )
 
+    def test_should_drop_secret_concat_noise_from_js(self):
+        source = "https://example.com/static/js/main.81433c50.js"
+        site = "https://example.com"
+        self.assertEqual(
+            InfoHunter._normalize_record_content("secret_key", 'secret=").concat(t.publish)', source=source, site=site),
+            "",
+        )
+
+    def test_should_drop_placeholder_basic_token_from_js(self):
+        source = "https://example.com/js/app.9cc81352.js"
+        site = "https://example.com"
+        self.assertEqual(
+            InfoHunter._normalize_record_content("basic_token", "Basic c2FiZXI6c2FiZXJfc2VjcmV0", source=source, site=site),
+            "",
+        )
+
+    def test_should_drop_base64_profile_secret_from_js(self):
+        source = "https://example.com/cyberplayer.js"
+        site = "https://example.com"
+        self.assertEqual(
+            InfoHunter._normalize_record_content(
+                "secret_key",
+                'token:"base64:QXV0aG9yOmNoYW5neWFubG9uZ3xHaXRIdWI6aHR0cHM6Ly9naXRodWIuY29tL251bWJlcndvbGZ8RW1haWw6cG9yc2NoZWd0MjNAZm94bWFpbC5jb218RGlzY29yZDpudW1iZXJ3b2xmIzg2OTR8V29ya0luOkJhaWR1"',
+                source=source,
+                site=site,
+            ),
+            "",
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

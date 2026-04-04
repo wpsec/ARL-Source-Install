@@ -53,6 +53,24 @@ class TestWihRiskPromotion(unittest.TestCase):
         self.assertFalse(self.task._should_promote_wih_to_risk(record))
         self.assertFalse(self.task._is_sensitive_wih_record("secret_key", 'token=")&&(SYNO.Debug("', source=record.source))
 
+    def test_js_concat_secret_record_is_not_promoted(self):
+        record = SimpleNamespace(
+            recordType="secret_key",
+            content='secret=").concat(t.publish)',
+            source="https://example.com/static/js/main.81433c50.js",
+        )
+        self.assertFalse(self.task._should_promote_wih_to_risk(record))
+        self.assertFalse(self.task._is_sensitive_wih_record("secret_key", record.content, source=record.source))
+
+    def test_placeholder_basic_token_record_is_not_promoted(self):
+        record = SimpleNamespace(
+            recordType="basic_token",
+            content="Basic c2FiZXI6c2FiZXJfc2VjcmV0",
+            source="https://example.com/js/app.9cc81352.js",
+        )
+        self.assertFalse(self.task._should_promote_wih_to_risk(record))
+        self.assertFalse(self.task._is_sensitive_wih_record("basic_token", record.content, source=record.source))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,6 +24,7 @@ from app.services.afrog_scan import run_afrog_scan
 from app.services.waf_guard import WAFSmartSkipGuard
 from app.services.ai_pen_mcp_runtime import AiPenMcpRuntime, ToolSchema
 from app.services.task_scope_guard import load_task_scope_context, host_in_scope, url_in_scope
+from app.services.infoHunter import InfoHunter
 from app.services import run_risk_cruising, BaseUpdateTask
 logger = utils.get_logger()
 
@@ -772,6 +773,18 @@ class WebSiteFetch(object):
         "your_secret",
         "your_token",
         "your_key",
+        "secret_do_not_pass_this_or_you_will_be_fired",
+    )
+    AI_PEN_SECRET_LITERAL_METADATA_HINTS = (
+        "author:",
+        "github:",
+        "email:",
+        "homepage:",
+        "discord:",
+        "qq:",
+        "wechat:",
+        "wechar:",
+        "workin:",
     )
     AI_PEN_JS_DEBUG_HINTS = (
         "console.debug(",
@@ -6099,13 +6112,21 @@ class WebSiteFetch(object):
         if placeholder_match:
             key_text = str(placeholder_match.group("key") or "").strip().lower().replace("-", "_")
             value_text = str(placeholder_match.group("value") or "").strip().lower().replace("-", "_")
-            if (
-                value_text in cls.AI_PEN_SECRET_PLACEHOLDER_VALUES
-                or value_text == key_text
-                or value_text in key_text
-                or key_text in value_text
-            ):
+            if cls._looks_like_secret_placeholder_value(key_text, value_text):
                 return "secret_placeholder_noise", value_text[:32]
+
+        literal_match = re.search(
+            r"(?i)\b(?P<key>api[_-]?key|access[_-]?key|secret(?:[_-]?key)?|client[_-]?secret|authorization|token|app[_-]?key|password|passwd|pwd)\b"
+            r"\s*[:=]\s*['\"](?P<value>[^\"'\r\n]{3,512})['\"]",
+            snippet,
+        )
+        if literal_match:
+            noise_kind, noise_token, _ = cls._detect_js_secret_literal_noise(
+                literal_match.group("key"),
+                literal_match.group("value"),
+            )
+            if noise_kind:
+                return noise_kind, noise_token
 
         field_schema_hit = re.search(
             r"(?i)\b(?:type|field|label|prop|name|placeholder)\b\s*[:=]\s*['\"](?:password|passwd|pwd|token|secret(?:[_-]?key)?)['\"]",
@@ -6113,6 +6134,19 @@ class WebSiteFetch(object):
         )
         if field_schema_hit:
             return "secret_placeholder_noise", "field_schema"
+
+        if re.search(r"(?i)\b(token|secret|key|authorization)\b[^;\r\n]{0,80}\.concat\(", snippet):
+            return "secret_template_noise", "concat"
+
+        if re.search(
+            r"(?i)\b(token|secret|key|authorization)\b\s*[:=]\s*['\"]?(?:[^\"'\r\n]{0,32})?\+\s*[A-Za-z_$({\[]",
+            snippet,
+        ):
+            return "secret_template_noise", "concat"
+
+        if any(token in snippet_lower for token in ("localstorage[", "sessionstorage[", "location.host", "webcustomize.title")) and \
+                any(token in snippet_lower for token in ("token", "secret", "key", "authorization")):
+            return "secret_template_noise", "storage"
 
         if any(token in snippet_lower for token in cls.AI_PEN_JS_DEBUG_HINTS):
             if any(token in snippet_lower for token in ("token", "secret", "password", "authorization")):
@@ -6122,6 +6156,113 @@ class WebSiteFetch(object):
             return "secret_debug_noise", "debug"
 
         return "", ""
+
+    @classmethod
+    def _normalize_secret_placeholder_token(cls, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+
+    @classmethod
+    def _looks_like_secret_placeholder_value(cls, key_text: str, value_text: str) -> bool:
+        key_norm = cls._normalize_secret_placeholder_token(key_text)
+        value_norm = cls._normalize_secret_placeholder_token(value_text)
+        if not value_norm:
+            return False
+
+        if value_norm in cls.AI_PEN_SECRET_PLACEHOLDER_VALUES:
+            return True
+
+        if key_norm and value_norm == key_norm:
+            return True
+
+        if key_norm and value_norm.startswith("{}_".format(key_norm)):
+            suffix = value_norm[len(key_norm):].strip("_")
+            if suffix in cls.AI_PEN_SECRET_PLACEHOLDER_VALUES:
+                return True
+
+        return False
+
+    @classmethod
+    def _decode_base64_literal_value(cls, value: str) -> str:
+        value_text = str(value or "").strip()
+        if not value_text.lower().startswith("base64:"):
+            return ""
+
+        payload = value_text.split(":", 1)[1].strip()
+        if len(payload) < 16 or (not re.fullmatch(r"[A-Za-z0-9+/=]+", payload)):
+            return ""
+
+        padding = (-len(payload)) % 4
+        if padding:
+            payload = "{}{}".format(payload, "=" * padding)
+
+        try:
+            decoded = base64.b64decode(payload, validate=False)
+            return cls._clip_text(decoded.decode("utf-8", errors="ignore").strip(), 240)
+        except Exception:
+            return ""
+
+    @classmethod
+    def _detect_js_secret_literal_noise(cls, secret_name: str, secret_value: str):
+        key_text = cls._normalize_secret_placeholder_token(secret_name)
+        value_text = str(secret_value or "").strip()
+        value_norm = cls._normalize_secret_placeholder_token(value_text)
+        if not value_text:
+            return "", "", ""
+
+        if cls._looks_like_secret_placeholder_value(key_text, value_norm):
+            return "secret_placeholder_noise", value_norm[:32] or "placeholder", ""
+
+        decoded_text = cls._decode_base64_literal_value(value_text)
+        decoded_lower = decoded_text.lower()
+        if decoded_text:
+            marker_hits = sum(1 for token in cls.AI_PEN_SECRET_LITERAL_METADATA_HINTS if token in decoded_lower)
+            if marker_hits >= 3:
+                return "secret_metadata_noise", "base64_profile", decoded_text
+
+        return "", "", ""
+
+    @classmethod
+    def _looks_like_placeholder_basic_token(cls, content: str) -> bool:
+        match = re.search(r"(?i)\bbasic\s+(?P<token>[A-Za-z0-9+/]{8,}={0,2})\b", str(content or "").strip())
+        if not match:
+            return False
+
+        payload = str(match.group("token") or "").strip()
+        if not payload:
+            return False
+
+        padding = (-len(payload)) % 4
+        if padding:
+            payload = "{}{}".format(payload, "=" * padding)
+
+        try:
+            decoded = base64.b64decode(payload, validate=False).decode("utf-8", errors="ignore").strip()
+        except Exception:
+            return False
+
+        if ":" not in decoded:
+            return False
+
+        username, password = decoded.split(":", 1)
+        username_norm = cls._normalize_secret_placeholder_token(username)
+        password_norm = cls._normalize_secret_placeholder_token(password)
+        if not username_norm or not password_norm:
+            return False
+
+        if (
+            password_norm in cls.AI_PEN_SECRET_PLACEHOLDER_VALUES
+            or password_norm == username_norm
+            or password_norm in username_norm
+            or username_norm in password_norm
+        ):
+            return True
+
+        if password_norm.startswith(username_norm):
+            suffix = password_norm[len(username_norm):].strip("_")
+            if suffix in {"secret", "token", "password", "key", "client_secret", "access_key"}:
+                return True
+
+        return False
 
     @classmethod
     def _looks_like_ai_pen_login_shell(cls, body_text: str, content_type: str = "") -> bool:
@@ -6150,16 +6291,17 @@ class WebSiteFetch(object):
         if not record_type_text or not content_text:
             return False
 
+        if record_type_text in {"basic_token", "auth_token", "authorization", "token"} and \
+                cls._looks_like_placeholder_basic_token(content_text):
+            return True
+
         noise_kind, _ = cls._detect_js_secret_placeholder_or_debug_noise(content_text, content_text)
-        if noise_kind in {"secret_placeholder_noise", "secret_debug_noise"}:
+        if noise_kind in {"secret_placeholder_noise", "secret_debug_noise", "secret_template_noise", "secret_metadata_noise"}:
             return True
 
         source_text = str(source or "").strip()
         if not source_text or (not cls._is_js_asset_target(source_text)):
             return False
-
-        if noise_kind == "secret_template_noise":
-            return True
 
         content_lower = content_text.lower()
         if (
@@ -6221,9 +6363,14 @@ class WebSiteFetch(object):
             secret_value = str(secret_match.group(2) or "").strip()
             if secret_value and not secret_value.lower().startswith(("http://", "https://")) and "${" not in secret_value:
                 summary["key_name"] = secret_name
-                summary["hardcoded_literal"] = True
                 summary["context_snippet"] = cls._extract_js_context_snippet(content, secret_match.group(0), fallback_keywords=[secret_name])
                 summary["key_type"] = cls._classify_js_secret_type(secret_name, summary["context_snippet"] or content[:1024])
+                literal_noise_kind, literal_noise_token, _ = cls._detect_js_secret_literal_noise(secret_name, secret_value)
+                if literal_noise_kind:
+                    summary["noise_kind"] = literal_noise_kind
+                    summary["noise_token"] = literal_noise_token
+                else:
+                    summary["hardcoded_literal"] = True
 
         if not summary["context_snippet"]:
             summary["context_snippet"] = cls._extract_js_context_snippet(
@@ -6279,6 +6426,8 @@ class WebSiteFetch(object):
             summary_parts.append("噪声=字段占位符/表单schema")
         elif summary["noise_kind"] == "secret_debug_noise":
             summary_parts.append("噪声=调试/日志拼接片段")
+        elif summary["noise_kind"] == "secret_metadata_noise":
+            summary_parts.append("噪声=base64作者/联系信息")
         elif framework_like:
             summary_parts.append("上下文=前端静态构建产物")
         summary["summary_text"] = cls._clip_text("；".join(summary_parts), cls.AI_PEN_TEST_REASON_MAX)
@@ -6343,11 +6492,13 @@ class WebSiteFetch(object):
                     }
                 )
 
-            if noise_kind in {"secret_template_noise", "secret_placeholder_noise", "secret_debug_noise"}:
+            if noise_kind in {"secret_template_noise", "secret_placeholder_noise", "secret_debug_noise", "secret_metadata_noise"}:
                 if noise_kind == "secret_placeholder_noise":
                     reason_text = "JS 上下文显示命中片段更像字段占位符、表单 schema 或示例值，未发现硬编码敏感值"
                 elif noise_kind == "secret_debug_noise":
                     reason_text = "JS 上下文显示命中片段更像调试/日志拼接代码，未发现可复用凭据"
+                elif noise_kind == "secret_metadata_noise":
+                    reason_text = "JS 上下文显示命中片段更像 base64 编码的作者/联系信息，未发现可复用凭据"
                 else:
                     reason_text = "JS 上下文显示命中片段更像变量拼接或本地存储逻辑，未发现硬编码敏感值"
                 if component_hint:
@@ -20257,7 +20408,10 @@ class WebSiteFetch(object):
                 waf_guard=self.waf_guard,
             )
 
-        for record in records:
+        for raw_record in records:
+            record = InfoHunter.normalize_wih_record(raw_record)
+            if not record:
+                continue
             # 先判断记录是否已经存在
             if record.fnv_hash in self.wih_record_set:
                 continue

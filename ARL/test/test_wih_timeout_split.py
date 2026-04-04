@@ -62,6 +62,7 @@ def _load_info_hunter_module():
     url_candidate_filter_module.is_js_resource_path = lambda value: str(value or "").endswith(".js")
     url_candidate_filter_module.is_non_js_static_resource_path = lambda value: False
     url_candidate_filter_module.is_noise_single_segment_path = lambda value: False
+    url_candidate_filter_module.strip_url_annotation = lambda value: str(value or "")
     url_candidate_filter_module.strip_route_method_suffix = lambda value: str(value or "")
 
     sys.modules.setdefault("app", app_module)
@@ -88,6 +89,52 @@ InfoHunter = info_hunter_module.InfoHunter
 
 
 class TestWihTimeoutSplit(unittest.TestCase):
+    def test_normalize_wih_record_collapses_secret_duplicates_across_same_site_pages(self):
+        record_a = types.SimpleNamespace(
+            recordType="secret_key",
+            content='token:"base64:demo-profile"',
+            source="https://cdn.example.com/app.js",
+            site="https://example.com/Page_1.html",
+            fnv_hash=1,
+        )
+        record_b = types.SimpleNamespace(
+            recordType="secret_key",
+            content='token:"base64:demo-profile"',
+            source="https://cdn.example.com/app.js",
+            site="https://example.com/",
+            fnv_hash=2,
+        )
+
+        normalized_a = InfoHunter.normalize_wih_record(record_a)
+        normalized_b = InfoHunter.normalize_wih_record(record_b)
+
+        self.assertEqual("https://example.com", normalized_a.site)
+        self.assertEqual("https://example.com", normalized_b.site)
+        self.assertEqual(normalized_a.fnv_hash, normalized_b.fnv_hash)
+
+    def test_normalize_wih_record_collapses_root_slash_url_duplicates(self):
+        record_a = types.SimpleNamespace(
+            recordType="urlfinder_url",
+            content="https://example.com/",
+            source="https://example.com/index.html",
+            site="https://example.com/",
+            fnv_hash=11,
+        )
+        record_b = types.SimpleNamespace(
+            recordType="urlfinder_url",
+            content="https://example.com",
+            source="https://example.com/index.html",
+            site="https://example.com",
+            fnv_hash=12,
+        )
+
+        normalized_a = InfoHunter.normalize_wih_record(record_a)
+        normalized_b = InfoHunter.normalize_wih_record(record_b)
+
+        self.assertEqual("https://example.com", normalized_a.content)
+        self.assertEqual("https://example.com", normalized_b.content)
+        self.assertEqual(normalized_a.fnv_hash, normalized_b.fnv_hash)
+
     def test_exec_wih_splits_timeout_batch_and_keeps_results(self):
         hunter = InfoHunter(
             [

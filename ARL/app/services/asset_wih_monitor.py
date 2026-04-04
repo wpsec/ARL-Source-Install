@@ -15,6 +15,7 @@ from app.services import (
 from app.utils import get_logger, check_domain_black
 from app.modules import WihRecord
 from app import utils
+from app.services.infoHunter import InfoHunter
 
 logger = get_logger()
 
@@ -117,7 +118,10 @@ class AssetWihMonitor(object):
                 wih_results.extend(trufflehog_results)
 
         fnv_hash_set = set(self.wih_record_fnv_hash)
-        for item in wih_results:
+        for raw_item in wih_results:
+            item = InfoHunter.normalize_wih_record(raw_item)
+            if not item:
+                continue
 
             # 保存到数据库的是字符串，所以这里要转换一下
             item_fnv_hash = str(item.fnv_hash)

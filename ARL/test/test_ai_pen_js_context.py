@@ -47,6 +47,15 @@ def _load_common_task_module():
     waf_guard_module = types.ModuleType("app.services.waf_guard")
     waf_guard_module.WAFSmartSkipGuard = object
 
+    info_hunter_module = types.ModuleType("app.services.infoHunter")
+    info_hunter_module.InfoHunter = type(
+        "InfoHunter",
+        (),
+        {
+            "normalize_wih_record": staticmethod(lambda record: record),
+        },
+    )
+
     ai_pen_runtime_module = types.ModuleType("app.services.ai_pen_mcp_runtime")
     ai_pen_runtime_module.AiPenMcpRuntime = type(
         "AiPenMcpRuntime",
@@ -92,6 +101,7 @@ def _load_common_task_module():
     sys.modules["app.services.nuclei_scan"] = nuclei_scan_module
     sys.modules["app.services.afrog_scan"] = afrog_scan_module
     sys.modules["app.services.waf_guard"] = waf_guard_module
+    sys.modules["app.services.infoHunter"] = info_hunter_module
     sys.modules["app.services.ai_pen_mcp_runtime"] = ai_pen_runtime_module
     sys.modules["app.services.task_scope_guard"] = task_scope_guard_module
     sys.modules["bson"] = bson_module
@@ -2494,6 +2504,48 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("likely_false_positive", result.get("decision"))
         self.assertEqual("secret_debug_noise", summary.get("noise_kind"))
         self.assertIn("调试/日志", str(result.get("reason") or ""))
+
+    def test_secret_key_js_concat_noise_is_downgraded(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/static/js/main.81433c50.js",
+            body_text='const sign = "secret=").concat(t.publish); const auth = "Token=").concat(n);',
+            headers={"Content-Type": "application/javascript"},
+            risk_type="secret_key",
+            payload_type="replay",
+            evidence_seed='secret=").concat(t.publish)',
+        )
+
+        summary = result.get("js_context_summary") if isinstance(result.get("js_context_summary"), dict) else {}
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertEqual("secret_template_noise", summary.get("noise_kind"))
+
+    def test_secret_key_known_fake_literal_is_downgraded(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/prop-types.min.js",
+            body_text='var Secret="SECRET_DO_NOT_PASS_THIS_OR_YOU_WILL_BE_FIRED";',
+            headers={"Content-Type": "application/javascript"},
+            risk_type="secret_key",
+            payload_type="replay",
+            evidence_seed='Secret="SECRET_DO_NOT_PASS_THIS_OR_YOU_WILL_BE_FIRED"',
+        )
+
+        summary = result.get("js_context_summary") if isinstance(result.get("js_context_summary"), dict) else {}
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertEqual("secret_placeholder_noise", summary.get("noise_kind"))
+
+    def test_secret_key_base64_profile_metadata_is_downgraded(self):
+        result = WebSiteFetch._analyze_ai_pen_js_context(
+            target_url="https://example.com/cyberplayer.js",
+            body_text='var token="base64:QXV0aG9yOmNoYW5neWFubG9uZ3xHaXRIdWI6aHR0cHM6Ly9naXRodWIuY29tL251bWJlcndvbGZ8RW1haWw6cG9yc2NoZWd0MjNAZm94bWFpbC5jb218RGlzY29yZDpudW1iZXJ3b2xmIzg2OTR8V29ya0luOkJhaWR1";',
+            headers={"Content-Type": "application/javascript"},
+            risk_type="secret_key",
+            payload_type="replay",
+            evidence_seed='token="base64:QXV0aG9yOmNoYW5neWFubG9uZ3xHaXRIdWI6aHR0cHM6Ly9naXRodWIuY29tL251bWJlcndvbGZ8RW1haWw6cG9yc2NoZWd0MjNAZm94bWFpbC5jb218RGlzY29yZDpudW1iZXJ3b2xmIzg2OTR8V29ya0luOkJhaWR1"',
+        )
+
+        summary = result.get("js_context_summary") if isinstance(result.get("js_context_summary"), dict) else {}
+        self.assertEqual("likely_false_positive", result.get("decision"))
+        self.assertEqual("secret_metadata_noise", summary.get("noise_kind"))
 
     def test_sensitive_info_hardcoded_client_secret_is_promoted(self):
         result = WebSiteFetch._analyze_ai_pen_js_context(

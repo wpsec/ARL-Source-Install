@@ -8,14 +8,16 @@ import os
 import json
 import subprocess
 import hashlib
+import base64
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from app.modules import WihRecord
 from .url_candidate_filter import (
     has_route_template_markers,
     is_js_resource_path,
     is_non_js_static_resource_path,
     is_noise_single_segment_path,
+    strip_url_annotation,
     strip_route_method_suffix,
 )
 
@@ -73,6 +75,55 @@ _PATH_CODE_MARKER_RE = re.compile(
     r"function\.prototype|object\.prototype|number\.isfinite|regexp\(|substr\(|substring\(|"
     r"starting_with\(|django_value|xhtml\+xml|android/gi|iphone|msie|lark)"
 )
+_SECRET_PLACEHOLDER_VALUES = {
+    "password",
+    "passwd",
+    "pwd",
+    "token",
+    "secret",
+    "secret_key",
+    "client_secret",
+    "api_key",
+    "access_key",
+    "accesskey",
+    "authorization",
+    "bearer",
+    "basic",
+    "admin",
+    "test",
+    "demo",
+    "sample",
+    "example",
+    "default",
+    "changeme",
+    "null",
+    "undefined",
+    "your_password",
+    "your_secret",
+    "your_token",
+    "your_key",
+    "secret_do_not_pass_this_or_you_will_be_fired",
+}
+_SECRET_METADATA_HINTS = (
+    "author:",
+    "github:",
+    "email:",
+    "homepage:",
+    "discord:",
+    "qq:",
+    "wechat:",
+    "wechar:",
+    "workin:",
+)
+_SECRET_LITERAL_RE = re.compile(
+    r"(?i)\b(?P<key>api[_-]?key|access[_-]?key|secret(?:[_-]?key)?|client[_-]?secret|authorization|token|app[_-]?key|password|passwd|pwd)\b"
+    r"\s*[:=]\s*['\"](?P<value>[^\"'\r\n]{3,512})['\"]"
+)
+_SECRET_TEMPLATE_RE = re.compile(r"(?i)\b(token|secret|key|authorization)\b[^;\r\n]{0,80}\.concat\(")
+_SECRET_PLUS_TEMPLATE_RE = re.compile(
+    r"(?i)\b(token|secret|key|authorization)\b\s*[:=]\s*['\"]?(?:[^\"'\r\n]{0,32})?\+\s*[A-Za-z_$({\[]"
+)
+_SECRET_DEBUG_RE = re.compile(r"(?i)\b(token|secret|password|authorization)\b\s*[:=]\s*['\"]?[^\"'\s]{0,24}(?:debug|log)\s*\(")
 
 
 class InfoHunter(object):
@@ -120,6 +171,50 @@ class InfoHunter(object):
             if is_js_resource_path(parsed.path or ""):
                 return True
         return bool(site_text and source_text != site_text and source_text.endswith((".js", ".mjs")))
+
+    @staticmethod
+    def _is_http_url(value: str) -> bool:
+        text = str(value or "").strip().lower()
+        return text.startswith("http://") or text.startswith("https://")
+
+    @staticmethod
+    def _canonicalize_http_url(value: str, origin_only: bool = False) -> str:
+        text = strip_url_annotation(str(value or "").strip())
+        if not text:
+            return ""
+
+        try:
+            parsed = urlparse(text)
+        except Exception:
+            return ""
+
+        scheme = str(parsed.scheme or "").strip().lower()
+        host = str(parsed.hostname or "").strip().lower().rstrip(".")
+        if scheme not in {"http", "https"} or not host:
+            return ""
+
+        try:
+            port = int(parsed.port) if parsed.port else None
+        except Exception:
+            port = None
+
+        if (scheme == "http" and port in {None, 80}) or (scheme == "https" and port in {None, 443}):
+            netloc = host
+        elif port:
+            netloc = "{}:{}".format(host, port)
+        else:
+            netloc = host
+
+        if origin_only:
+            path = ""
+            query = ""
+        else:
+            path = strip_route_method_suffix(parsed.path or "")
+            if path == "/":
+                path = ""
+            query = str(parsed.query or "").strip()
+
+        return urlunparse((scheme, netloc, path, "", query, ""))
 
     @staticmethod
     def _should_keep_email_content(content: str) -> bool:
@@ -197,6 +292,225 @@ class InfoHunter(object):
         return True
 
     @staticmethod
+    def _is_secret_like_record_type(record_type: str) -> bool:
+        record_type_text = str(record_type or "").strip().lower()
+        if not record_type_text:
+            return False
+        if record_type_text in {"password", "passwd", "authorization", "credential", "basic_token", "auth_token"}:
+            return True
+        return record_type_text.endswith("_key") or record_type_text.endswith("_token")
+
+    @staticmethod
+    def _normalize_secret_token_text(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+
+    @staticmethod
+    def _canonicalize_domain_text(value: str) -> str:
+        return str(value or "").strip().lower().rstrip(".")
+
+    @staticmethod
+    def _looks_like_secret_placeholder_value(key_text: str, value_text: str) -> bool:
+        key_norm = InfoHunter._normalize_secret_token_text(key_text)
+        value_norm = InfoHunter._normalize_secret_token_text(value_text)
+        if not value_norm:
+            return False
+
+        if value_norm in _SECRET_PLACEHOLDER_VALUES:
+            return True
+
+        if key_norm and value_norm == key_norm:
+            return True
+
+        if key_norm and value_norm.startswith("{}_".format(key_norm)):
+            suffix = value_norm[len(key_norm):].strip("_")
+            if suffix in _SECRET_PLACEHOLDER_VALUES:
+                return True
+
+        return False
+
+    @staticmethod
+    def _decode_base64_secret_literal(value: str) -> str:
+        value_text = str(value or "").strip()
+        if not value_text.lower().startswith("base64:"):
+            return ""
+
+        payload = value_text.split(":", 1)[1].strip()
+        if len(payload) < 16 or (not re.fullmatch(r"[A-Za-z0-9+/=]+", payload)):
+            return ""
+
+        padding = (-len(payload)) % 4
+        if padding:
+            payload = "{}{}".format(payload, "=" * padding)
+
+        try:
+            return base64.b64decode(payload, validate=False).decode("utf-8", errors="ignore").strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _looks_like_secret_literal_noise(secret_name: str, secret_value: str) -> bool:
+        key_text = InfoHunter._normalize_secret_token_text(secret_name)
+        value_text = str(secret_value or "").strip()
+        value_norm = InfoHunter._normalize_secret_token_text(value_text)
+        if not value_text:
+            return False
+
+        if InfoHunter._looks_like_secret_placeholder_value(key_text, value_norm):
+            return True
+
+        decoded_text = InfoHunter._decode_base64_secret_literal(value_text)
+        if decoded_text:
+            decoded_lower = decoded_text.lower()
+            marker_hits = sum(1 for token in _SECRET_METADATA_HINTS if token in decoded_lower)
+            if marker_hits >= 3:
+                return True
+
+        return False
+
+    @staticmethod
+    def _looks_like_placeholder_basic_token(content: str) -> bool:
+        match = re.search(r"(?i)\bbasic\s+(?P<token>[A-Za-z0-9+/]{8,}={0,2})\b", str(content or "").strip())
+        if not match:
+            return False
+
+        payload = str(match.group("token") or "").strip()
+        if not payload:
+            return False
+
+        padding = (-len(payload)) % 4
+        if padding:
+            payload = "{}{}".format(payload, "=" * padding)
+
+        try:
+            decoded = base64.b64decode(payload, validate=False).decode("utf-8", errors="ignore").strip()
+        except Exception:
+            return False
+
+        if ":" not in decoded:
+            return False
+
+        username, password = decoded.split(":", 1)
+        username_norm = InfoHunter._normalize_secret_token_text(username)
+        password_norm = InfoHunter._normalize_secret_token_text(password)
+        if not username_norm or not password_norm:
+            return False
+
+        if (
+            password_norm in _SECRET_PLACEHOLDER_VALUES
+            or password_norm == username_norm
+            or password_norm in username_norm
+            or username_norm in password_norm
+        ):
+            return True
+
+        if password_norm.startswith(username_norm):
+            suffix = password_norm[len(username_norm):].strip("_")
+            if suffix in {"secret", "token", "password", "key", "client_secret", "access_key"}:
+                return True
+
+        return False
+
+    @staticmethod
+    def _looks_like_js_secret_noise(content: str) -> bool:
+        content_text = str(content or "").strip()
+        content_lower = content_text.lower()
+        if not content_lower:
+            return False
+
+        literal_match = _SECRET_LITERAL_RE.search(content_text)
+        if literal_match and InfoHunter._looks_like_secret_literal_noise(
+            literal_match.group("key"),
+            literal_match.group("value"),
+        ):
+            return True
+
+        if _SECRET_TEMPLATE_RE.search(content_text) or _SECRET_PLUS_TEMPLATE_RE.search(content_text):
+            return True
+
+        if any(token in content_lower for token in ("localstorage[", "sessionstorage[", "location.host", "webcustomize.title")) and \
+                any(token in content_lower for token in ("token", "secret", "key", "authorization")):
+            return True
+
+        if any(token in content_lower for token in ("console.debug(", "console.log(", "logger.debug(", "logger.info(", "debug(", "trace(", "syno.debug(")) and \
+                any(token in content_lower for token in ("token", "secret", "password", "authorization")):
+            return True
+
+        if _SECRET_DEBUG_RE.search(content_text):
+            return True
+
+        return False
+
+    @staticmethod
+    def _should_keep_secret_content(record_type: str, content: str, source: str = "", site: str = "") -> bool:
+        record_type_text = str(record_type or "").strip().lower()
+        content_text = str(content or "").strip()
+        if not content_text:
+            return False
+
+        if record_type_text in {"basic_token", "auth_token", "authorization", "token"} and \
+                InfoHunter._looks_like_placeholder_basic_token(content_text):
+            return False
+
+        if InfoHunter._is_js_source(source, site) and InfoHunter._looks_like_js_secret_noise(content_text):
+            return False
+
+        return True
+
+    @staticmethod
+    def _canonicalize_record_fields(record_type: str, content: str, source: str = "", site: str = ""):
+        record_type_text = str(record_type or "").strip().lower()
+        content_text = str(content or "").strip()
+        source_text = str(source or "").strip()
+        site_text = str(site or "").strip()
+
+        if InfoHunter._is_http_url(content_text):
+            content_text = InfoHunter._canonicalize_http_url(content_text) or content_text
+        elif record_type_text == "domain":
+            content_text = InfoHunter._canonicalize_domain_text(content_text)
+
+        if InfoHunter._is_http_url(source_text):
+            source_text = InfoHunter._canonicalize_http_url(source_text) or source_text
+
+        if InfoHunter._is_http_url(site_text):
+            site_text = InfoHunter._canonicalize_http_url(site_text, origin_only=True) or site_text
+        elif record_type_text == "domain":
+            site_text = InfoHunter._canonicalize_domain_text(site_text)
+
+        return record_type_text, content_text, source_text, site_text
+
+    @staticmethod
+    def normalize_wih_record(record) -> WihRecord:
+        if not record:
+            return None
+
+        record_type = str(getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip()
+        content = str(getattr(record, "content", "") or "").strip()
+        source = str(getattr(record, "source", "") or "").strip()
+        site = str(getattr(record, "site", "") or "").strip()
+        if not record_type or not content:
+            return None
+
+        record_type, content, source, site = InfoHunter._canonicalize_record_fields(
+            record_type,
+            content,
+            source=source,
+            site=site,
+        )
+        if not record_type or not content:
+            return None
+
+        hash_text = "{}|{}|{}|{}".format(record_type, content, source, site)
+        hash_digest = hashlib.md5(hash_text.encode("utf-8", errors="ignore")).hexdigest()
+        fnv_hash = int(hash_digest[:16], 16)
+        return WihRecord(
+            record_type=record_type,
+            content=content,
+            source=source,
+            site=site,
+            fnv_hash=fnv_hash,
+        )
+
+    @staticmethod
     def _normalize_record_content(record_type: str, content: str, source: str = "", site: str = "") -> str:
         normalized_type = str(record_type or "").strip().lower()
         text = str(content or "").strip()
@@ -209,6 +523,9 @@ class InfoHunter(object):
         if normalized_type == "path":
             normalized_path = strip_route_method_suffix(text)
             return normalized_path if InfoHunter._should_keep_path_content(normalized_path, source, site) else ""
+
+        if InfoHunter._is_secret_like_record_type(normalized_type):
+            return text if InfoHunter._should_keep_secret_content(normalized_type, text, source=source, site=site) else ""
 
         return text
 
@@ -577,6 +894,7 @@ class InfoHunter(object):
             raw_text = str(f.read() or "").strip()
 
         payload_items = []
+        record_hash_set = set()
         if not raw_text:
             payload_items = []
         elif raw_text.startswith("["):
@@ -655,7 +973,15 @@ class InfoHunter(object):
                     "site": site,
                     "fnv_hash": hash_value,
                 }
-                results.append(WihRecord(**record_dict))
+                record = InfoHunter.normalize_wih_record(WihRecord(**record_dict))
+                if not record:
+                    filtered_items += 1
+                    continue
+                if record.fnv_hash in record_hash_set:
+                    filtered_items += 1
+                    continue
+                record_hash_set.add(record.fnv_hash)
+                results.append(record)
 
         logger.info(
             "wih parsed result file:{} payload_items:{} invalid_items:{} filtered_items:{} records:{} bin:{}".format(
