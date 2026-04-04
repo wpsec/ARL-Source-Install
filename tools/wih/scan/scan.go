@@ -71,6 +71,12 @@ type pathProbeCandidate struct {
 	Source string
 }
 
+type jsSurfaceScanResult struct {
+	Records    []datatype.ScanRecord
+	Endpoints  []datatype.EndpointRecord
+	Parameters []datatype.ParameterRecord
+}
+
 // Scan 扫描单个站点：页面正文 + JS 资源。
 func Scan(targetURL string) *datatype.ScanResult {
 	targetURL = normalizeTargetURL(targetURL)
@@ -101,9 +107,11 @@ func Scan(targetURL string) *datatype.ScanResult {
 		jsURLs = jsURLs[:global.MaxJSFiles]
 	}
 
-	jsRecords := scanJSResources(client, jsURLs)
-	records = append(records, jsRecords...)
+	jsSurface := scanJSResources(client, jsURLs)
+	records = append(records, jsSurface.Records...)
 	records = dedupeRecords(records)
+	endpoints = mergeEndpointRecords(append(endpoints, jsSurface.Endpoints...))
+	parameters = mergeParameterRecords(append(parameters, jsSurface.Parameters...))
 
 	// 对 path 命中做“根路径 + 当前目录”双策略拼接探测。
 	if len(records) < global.MaxCollect {
@@ -147,9 +155,9 @@ func fetchBody(client *http.Client, target string) (string, error) {
 }
 
 // scanJSResources 并发抓取并扫描 JS 文件。
-func scanJSResources(client *http.Client, jsURLs []string) []datatype.ScanRecord {
+func scanJSResources(client *http.Client, jsURLs []string) jsSurfaceScanResult {
 	if len(jsURLs) == 0 {
-		return nil
+		return jsSurfaceScanResult{}
 	}
 
 	workerCount := global.ConcurrencyPerSite
@@ -158,7 +166,7 @@ func scanJSResources(client *http.Client, jsURLs []string) []datatype.ScanRecord
 	}
 
 	jobs := make(chan string)
-	results := make(chan []datatype.ScanRecord, len(jsURLs))
+	results := make(chan jsSurfaceScanResult, len(jsURLs))
 
 	var wg sync.WaitGroup
 	for i := 0; i < workerCount; i++ {
@@ -171,7 +179,12 @@ func scanJSResources(client *http.Client, jsURLs []string) []datatype.ScanRecord
 					util.ErrPrint(err)
 					continue
 				}
-				results <- rule(jsBody, jsURL, "js")
+				endpoints, parameters := extractJSStaticSurface(jsBody, jsURL)
+				results <- jsSurfaceScanResult{
+					Records:    rule(jsBody, jsURL, "js"),
+					Endpoints:  endpoints,
+					Parameters: parameters,
+				}
 			}
 		}()
 	}
@@ -185,17 +198,26 @@ func scanJSResources(client *http.Client, jsURLs []string) []datatype.ScanRecord
 		close(results)
 	}()
 
-	merged := make([]datatype.ScanRecord, 0)
+	merged := jsSurfaceScanResult{
+		Records:    make([]datatype.ScanRecord, 0),
+		Endpoints:  make([]datatype.EndpointRecord, 0),
+		Parameters: make([]datatype.ParameterRecord, 0),
+	}
 	for batch := range results {
-		if len(batch) == 0 {
+		if len(batch.Records) == 0 && len(batch.Endpoints) == 0 && len(batch.Parameters) == 0 {
 			continue
 		}
-		merged = append(merged, batch...)
+		merged.Records = append(merged.Records, batch.Records...)
+		merged.Endpoints = append(merged.Endpoints, batch.Endpoints...)
+		merged.Parameters = append(merged.Parameters, batch.Parameters...)
 	}
 
-	if len(merged) > global.MaxCollect {
-		return merged[:global.MaxCollect]
+	if len(merged.Records) > global.MaxCollect {
+		merged.Records = merged.Records[:global.MaxCollect]
 	}
+	merged.Records = dedupeRecords(merged.Records)
+	merged.Endpoints = mergeEndpointRecords(merged.Endpoints)
+	merged.Parameters = mergeParameterRecords(merged.Parameters)
 	return merged
 }
 

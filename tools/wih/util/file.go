@@ -67,6 +67,13 @@ func WriteFile(filePath string, content string) {
 	}
 }
 
+// WriteFileOverwrite 以覆盖模式写入文件。
+func WriteFileOverwrite(filePath string, content string) {
+	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+		ErrPrint(fmt.Errorf("覆盖写入文件失败 %s: %w", filePath, err))
+	}
+}
+
 // EnsureRuleTemplate 初始化规则模板到 config/rules.yml。
 func EnsureRuleTemplate() {
 	targetPath := filepath.Join("config", "rules.yml")

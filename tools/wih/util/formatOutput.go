@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	datatype "wih/dataType"
 	"wih/global"
@@ -45,6 +46,36 @@ func FormatOutputWrite(result *datatype.ScanResult, writePath string, outputJSON
 	WriteFile(writePath, content)
 }
 
+// WriteStructuredOutputFiles 将 endpoint/parameter 结构化结果独立落盘。
+func WriteStructuredOutputFiles(result *datatype.ScanResult, endpointPath string, parameterPath string) {
+	if result == nil {
+		return
+	}
+	writeStructuredJSON(endpointPath, result.Endpoints)
+	writeStructuredJSON(parameterPath, result.Parameters)
+}
+
+// ResolveStructuredOutputPaths 根据主输出文件推导结构化输出文件路径。
+func ResolveStructuredOutputPaths(mainOutputPath string, endpointOutputPath string, parameterOutputPath string) (string, string) {
+	endpointPath := strings.TrimSpace(endpointOutputPath)
+	parameterPath := strings.TrimSpace(parameterOutputPath)
+	if endpointPath != "" || parameterPath != "" {
+		return endpointPath, parameterPath
+	}
+
+	mainPath := strings.TrimSpace(mainOutputPath)
+	if mainPath == "" || mainPath == "-" {
+		return "", ""
+	}
+
+	ext := filepath.Ext(mainPath)
+	base := strings.TrimSuffix(mainPath, ext)
+	if base == "" {
+		base = mainPath
+	}
+	return base + "_endpoint.json", base + "_parameter.json"
+}
+
 // renderResult 将扫描结果渲染为指定格式。
 func renderResult(result *datatype.ScanResult, outputJSON bool) string {
 	if result == nil {
@@ -69,6 +100,38 @@ func renderResult(result *datatype.ScanResult, outputJSON bool) string {
 	default:
 		return renderText(result)
 	}
+}
+
+func writeStructuredJSON[T any](writePath string, items []T) {
+	path := strings.TrimSpace(writePath)
+	if path == "" {
+		return
+	}
+	if len(items) == 0 {
+		return
+	}
+
+	mergedItems := make([]T, 0)
+	if FileExists(path) {
+		raw := strings.TrimSpace(ReadFile2Str(path))
+		if raw != "" {
+			var existing []T
+			if err := json.Unmarshal([]byte(raw), &existing); err == nil {
+				mergedItems = append(mergedItems, existing...)
+			}
+		}
+	}
+	mergedItems = append(mergedItems, items...)
+
+	data, err := json.MarshalIndent(mergedItems, "", "  ")
+	if err != nil {
+		ErrPrint(err)
+		return
+	}
+	if !strings.HasSuffix(string(data), "\n") {
+		data = append(data, '\n')
+	}
+	WriteFileOverwrite(path, string(data))
 }
 
 // renderText 生成文本输出。

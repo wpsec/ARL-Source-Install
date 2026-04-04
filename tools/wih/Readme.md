@@ -17,6 +17,19 @@ wih 工具支持多种输出格式，包括文本、JSON、CSV、HTML 和 Markdo
 
 而且，wih 工具还支持自动根据站点URL保存输出结果，方便对结果来源进行查找，同时还可以将 AK 和 SK 检出结果单独保存，提高工作效率。
 
+当前结构化输出能力：
+
+- 主 `JSON` 输出会直接包含：
+  - `records`
+  - `endpoints`
+  - `parameters`
+- 当主输出文件不是 `-` 且未禁用结构化输出时，会自动生成：
+  - `xxx_endpoint.json`
+  - `xxx_parameter.json`
+- 也可以显式指定：
+  - `--endpoint-output`
+  - `--parameter-output`
+
 
 
 ## 命令行
@@ -36,6 +49,8 @@ Flags:
       --disable-ak-sk-output       禁止 AK/SK 单独保存
       --disable-check-ak-sk        禁止检查 AK/SK 有效性
       --disable-color              disable log color
+      --disable-structured-output  禁止 endpoint/parameter 独立输出
+      --endpoint-output string     结构化接口结果输出文件
   -f, --follow-redirect            跟随重定向
   -G, --generate-rule              生成规则
   -H, --header strings             Custom header (e.g. 'X-My-Header: value')
@@ -48,6 +63,7 @@ Flags:
       --md                         Markdown 格式输出
   -o, --output string              结果输出文件的名称(- 为标准输出) (default "-")
   -J, --output-json                JSON 格式输出
+      --parameter-output string    结构化参数结果输出文件
   -x, --proxy string               HTTP proxy (e.g. http://localhost:8080)
   -r, --rule-config string         规则配置文件 (default "rules.yml")
       --size int                   设置表格分页大小
@@ -90,6 +106,14 @@ Flags:
 
 ```shell
 ./wih -t https://www.baidu.com -J -o result.json
+```
+
+4. 独立导出结构化接口与参数结果
+
+```shell
+./wih -t https://example.com -J -o result.json \
+  --endpoint-output endpoint.json \
+  --parameter-output parameter.json
 ```
 
 

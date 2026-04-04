@@ -166,3 +166,101 @@ func TestExtractHTMLFormSurface(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractJSStaticSurface 验证 JS 中的接口与参数可被结构化提取。
+func TestExtractJSStaticSurface(t *testing.T) {
+	jsBody := `
+fetch("/api/search?scene=web", {
+  method: "POST",
+  headers: {
+    "X-Token": token,
+    "Authorization": authHeader
+  },
+  body: JSON.stringify({
+    keyword,
+    pageNo,
+  })
+})
+
+axios.get("/api/user/detail", {
+  params: {
+    id,
+    profile
+  }
+})
+
+request({
+  url: "/graphql",
+  method: "POST",
+  data: {
+    query: "query Demo($userId: String!) { user(id: $userId) { id } }",
+    variables: {
+      userId,
+      tenantId
+    }
+  }
+})
+`
+
+	endpoints, parameters := extractJSStaticSurface(jsBody, "https://example.com/static/app.js")
+	if len(endpoints) != 3 {
+		t.Fatalf("js endpoint count mismatch got=%d", len(endpoints))
+	}
+	if len(parameters) < 8 {
+		t.Fatalf("js parameter count mismatch got=%d", len(parameters))
+	}
+
+	endpointMap := make(map[string]datatype.EndpointRecord)
+	for _, endpoint := range endpoints {
+		endpointMap[endpoint.URL] = endpoint
+	}
+
+	searchEndpoint, ok := endpointMap["https://example.com/api/search?scene=web"]
+	if !ok {
+		t.Fatal("missing search endpoint")
+	}
+	if searchEndpoint.Method != "POST" {
+		t.Fatalf("unexpected search method %s", searchEndpoint.Method)
+	}
+	if searchEndpoint.BodyKind != "json" {
+		t.Fatalf("unexpected search body kind %s", searchEndpoint.BodyKind)
+	}
+
+	gqlEndpoint, ok := endpointMap["https://example.com/graphql"]
+	if !ok {
+		t.Fatal("missing graphql endpoint")
+	}
+	if gqlEndpoint.BodyKind != "graphql" {
+		t.Fatalf("unexpected graphql body kind %s", gqlEndpoint.BodyKind)
+	}
+
+	type expectedParam struct {
+		location string
+	}
+	expected := map[string]expectedParam{
+		"scene":         {location: "query"},
+		"id":            {location: "query"},
+		"profile":       {location: "query"},
+		"keyword":       {location: "body"},
+		"pageNo":        {location: "body"},
+		"X-Token":       {location: "header"},
+		"Authorization": {location: "header"},
+		"userId":        {location: "graphql_variable"},
+		"tenantId":      {location: "graphql_variable"},
+	}
+
+	paramMap := make(map[string]datatype.ParameterRecord)
+	for _, parameter := range parameters {
+		paramMap[parameter.ParamName] = parameter
+	}
+
+	for name, expect := range expected {
+		param, ok := paramMap[name]
+		if !ok {
+			t.Fatalf("missing js parameter %s", name)
+		}
+		if param.Location != expect.location {
+			t.Fatalf("parameter location mismatch name=%s got=%s expected=%s", name, param.Location, expect.location)
+		}
+	}
+}

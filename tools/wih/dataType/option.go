@@ -10,9 +10,11 @@ type Option struct {
 	FilePath     string // --file-path：文件路径（兼容输入）
 	JsonFilePath string // --json-path：JSON 路径（兼容输入）
 
-	RuleConfigPath string // -r, --rule-config：规则文件路径
-	OutputFilePath string // -o, --output：输出文件路径（- 表示标准输出）
-	OutputSize     int    // --size：分页大小（兼容参数）
+	RuleConfigPath      string // -r, --rule-config：规则文件路径
+	OutputFilePath      string // -o, --output：输出文件路径（- 表示标准输出）
+	EndpointOutputPath  string // --endpoint-output：结构化接口输出文件
+	ParameterOutputPath string // --parameter-output：结构化参数输出文件
+	OutputSize          int    // --size：分页大小（兼容参数）
 
 	Proxy string // -x, --proxy：代理地址
 
@@ -30,11 +32,12 @@ type Option struct {
 
 	HeaderRaw []string // -H, --header：自定义请求头（可重复）
 
-	OutputJSON bool // -J, --output-json：JSON 行输出
-	OutputCSV  bool // --csv：CSV 输出
-	OutputHTML bool // --html：HTML 输出
-	OutputMD   bool // --md：Markdown 输出
-	OutputText bool // -T, --text：文本输出
+	OutputJSON              bool // -J, --output-json：JSON 行输出
+	OutputCSV               bool // --csv：CSV 输出
+	OutputHTML              bool // --html：HTML 输出
+	OutputMD                bool // --md：Markdown 输出
+	OutputText              bool // -T, --text：文本输出
+	DisableStructuredOutput bool // --disable-structured-output：禁用 endpoint/parameter 独立输出
 
 	DisableColor bool // --disable-color：禁用彩色输出
 	Debug        bool // --debug：调试日志开关

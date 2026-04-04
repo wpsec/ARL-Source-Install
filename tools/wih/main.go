@@ -74,10 +74,18 @@ func main() {
 			if option.AutoSaveName {
 				realOutputPath = buildAutoSavePath(targetURL, option.OutputJSON)
 			}
+			endpointOutputPath, parameterOutputPath := util.ResolveStructuredOutputPaths(
+				realOutputPath,
+				option.EndpointOutputPath,
+				option.ParameterOutputPath,
+			)
 
 			outputLock.Lock()
 			util.FormatOutput(result, option.OutputJSON)
 			util.FormatOutputWrite(result, realOutputPath, option.OutputJSON)
+			if !option.DisableStructuredOutput {
+				util.WriteStructuredOutputFiles(result, endpointOutputPath, parameterOutputPath)
+			}
 			outputLock.Unlock()
 
 			if !option.DisableAKSKOutput {

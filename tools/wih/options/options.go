@@ -18,16 +18,18 @@ func Options() *datatype.Option {
 	util.EnsureRuleTemplate()
 
 	option := &datatype.Option{
-		RuleConfigPath:     "config/rules.yml",
-		OutputFilePath:     "-",
-		LogLevel:           "info",
-		LogFile:            "-",
-		Concurrency:        2,
-		ConcurrencyPerSite: 3,
-		MaxCollect:         600,
-		LimitReaderSize:    10 * 1024 * 1024,
-		AKSKOutputPath:     "ak_leak.txt",
-		OutputText:         true,
+		RuleConfigPath:      "config/rules.yml",
+		OutputFilePath:      "-",
+		EndpointOutputPath:  "",
+		ParameterOutputPath: "",
+		LogLevel:            "info",
+		LogFile:             "-",
+		Concurrency:         2,
+		ConcurrencyPerSite:  3,
+		MaxCollect:          600,
+		LimitReaderSize:     10 * 1024 * 1024,
+		AKSKOutputPath:      "ak_leak.txt",
+		OutputText:          true,
 	}
 
 	var timeoutRaw = "180"
@@ -46,11 +48,14 @@ func Options() *datatype.Option {
 
 	flagset.CreateGroup("output", "输出参数",
 		flagset.StringVarP(&option.OutputFilePath, "output", "o", "-", "结果输出文件的名称(- 为标准输出)"),
+		flagset.StringVarP(&option.EndpointOutputPath, "endpoint-output", "", "", "结构化接口结果输出文件"),
+		flagset.StringVarP(&option.ParameterOutputPath, "parameter-output", "", "", "结构化参数结果输出文件"),
 		flagset.BoolVarP(&option.OutputJSON, "output-json", "J", false, "JSON 格式输出"),
 		flagset.BoolVarP(&option.OutputCSV, "csv", "", false, "CSV 格式输出"),
 		flagset.BoolVarP(&option.OutputHTML, "html", "", false, "HTML 格式输出"),
 		flagset.BoolVarP(&option.OutputMD, "md", "", false, "Markdown 格式输出"),
 		flagset.BoolVarP(&option.OutputText, "text", "T", false, "文本格式输出"),
+		flagset.BoolVarP(&option.DisableStructuredOutput, "disable-structured-output", "", false, "禁止 endpoint/parameter 独立输出"),
 		flagset.IntVarP(&option.OutputSize, "size", "", 0, "设置表格分页大小"),
 		flagset.BoolVarP(&option.AutoSaveName, "auto-save-name", "a", false, "根据站点自动生成保存的文件名"),
 		flagset.StringVarP(&option.AKSKOutputPath, "ak-sk-output", "", "ak_leak.txt", "AK/SK 单独保存的文件名"),
