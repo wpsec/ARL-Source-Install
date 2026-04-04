@@ -167,6 +167,8 @@ class WebSiteFetch(object):
     AI_PEN_TEST_REQUEST_PACKET_MAX = 2600
     AI_PEN_PRODUCT_HINT_MAX = 8
     AI_PEN_JS_REQUEST_WINDOW_SIZE = 800
+    AI_PEN_JS_MAX_SCRIPT_URLS = 12
+    AI_PEN_JS_PAGE_FETCH_MAX_TARGETS = 160
     AI_PEN_JS_MAX_API_TARGETS = 20
     AI_PEN_TEST_SUPPORTED_PAYLOAD_TYPES = (
         "xss_probe",
@@ -1042,6 +1044,8 @@ class WebSiteFetch(object):
         }
         self.ai_pen_browser_intel_cache = {}
         self.ai_pen_js_context_cache = {}
+        self.ai_pen_js_api_target_cache = {}
+        self.ai_pen_js_page_intel_cache = {}
         self.ai_pen_task_graph_context_cache = {}
         self._task_scope_context_cache = None
 
@@ -9268,13 +9272,31 @@ class WebSiteFetch(object):
             if not name or lowered in seen:
                 return
             if lowered in {
-                "method", "headers", "body", "url", "type", "data", "params", "timeout",
-                "responsetype", "mode", "credentials", "cache", "redirect", "signal",
+                "method", "headers", "body", "url", "data", "params",
                 "content-type", "accept", "authorization",
             }:
                 return
             seen.add(lowered)
             param_names.append(name)
+
+        def append_object_literal_keys(block_text: str):
+            raw_text = str(block_text or "").strip()
+            if not raw_text:
+                return
+
+            for match in re.finditer(r"[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:", raw_text):
+                append_name(match.group(1))
+            for match in re.finditer(r"(?<![\"'])\b([A-Za-z_][\w.-]{0,63})\b\s*:", raw_text):
+                append_name(match.group(1))
+
+            normalized = re.sub(r"\s+", " ", raw_text)
+            for match in re.finditer(r"(?:^|,)\s*(\.\.\.)?\s*([A-Za-z_][\w.-]{0,63})\s*(?=,|$)", normalized):
+                if str(match.group(1) or "").strip():
+                    continue
+                token_text = str(match.group(2) or "").strip()
+                if re.search(r"[()\[\]{}]", token_text):
+                    continue
+                append_name(token_text)
 
         capture_patterns = (
             r"params\s*:\s*\{([^}]{1,300})\}",
@@ -9284,19 +9306,15 @@ class WebSiteFetch(object):
             r"send\s*\(\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)\s*\)",
             r"new\s+URLSearchParams\s*\(\s*\{([^}]{1,300})\}\s*\)",
         )
-        key_patterns = (
-            r"[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:",
-            r"\b([A-Za-z_][\w.-]{0,63})\s*:",
-        )
 
         for pattern in capture_patterns:
             for match in re.finditer(pattern, text, flags=re.I | re.S):
                 inner_text = str(match.group(1) or "")
-                for key_pattern in key_patterns:
-                    for inner_match in re.finditer(key_pattern, inner_text):
-                        append_name(inner_match.group(1))
+                append_object_literal_keys(inner_text)
 
         for match in re.finditer(r"\.append\s*\(\s*[\"']([A-Za-z_][\w.-]{0,63})[\"']", text, flags=re.I):
+            append_name(match.group(1))
+        for match in re.finditer(r"\.set\s*\(\s*[\"']([A-Za-z_][\w.-]{0,63})[\"']", text, flags=re.I):
             append_name(match.group(1))
 
         return param_names[:10]
@@ -9306,6 +9324,14 @@ class WebSiteFetch(object):
         candidate = str(raw_url or "").strip().strip("\"'`")
         if not candidate or "javascript:" in candidate.lower():
             return ""
+
+        def replace_template_segment(match):
+            expr_text = str(match.group(1) or "").strip()
+            expr_text = re.sub(r"[^A-Za-z0-9_.-]+", "_", expr_text).strip("._")
+            return "{{{}}}".format(expr_text[:40] or "param")
+
+        candidate = re.sub(r"\$\{\s*([^}]{1,80})\s*\}", replace_template_segment, candidate)
+        candidate = re.sub(r"\{\{\s*([^}]{1,80})\s*\}\}", replace_template_segment, candidate)
         if any(mark in candidate for mark in ("${", "{{", "}}")):
             return ""
 
@@ -9369,7 +9395,7 @@ class WebSiteFetch(object):
 
         def request_window(start_index: int):
             start = max(0, int(start_index or 0))
-            end = min(len(merged_content), start + 800)
+            end = min(len(merged_content), start + max(200, int(cls.AI_PEN_JS_REQUEST_WINDOW_SIZE or 800)))
             snippet = merged_content[start:end]
             close_candidates = []
             for token in (");", "})", "};", "\n\n"):
@@ -9401,7 +9427,7 @@ class WebSiteFetch(object):
             method_name = str(method_match.group(1) or "GET").strip().upper() if method_match else "GET"
             append_target(raw_url, method_name, cls._extract_js_api_param_names(window))
 
-        for match in re.finditer(r"axios\.(get|post|put|delete|patch)\s*\(\s*([\"'`])([^\"'`]+)\2", merged_content, flags=re.I):
+        for match in re.finditer(r"(?:[A-Za-z_$][\w$]*\.)+(get|post|put|delete|patch)\s*\(\s*([\"'`])([^\"'`]+)\2", merged_content, flags=re.I):
             method_name = str(match.group(1) or "GET").strip().upper()
             raw_url = str(match.group(3) or "").strip()
             window = request_window(match.start())
@@ -9416,6 +9442,20 @@ class WebSiteFetch(object):
             method_name = str(method_match.group(1) or "GET").strip().upper() if method_match else "GET"
             append_target(str(url_match.group(2) or "").strip(), method_name, cls._extract_js_api_param_names(window))
 
+        config_call_patterns = (
+            r"axios(?:\.[A-Za-z_$][\w$]*)?\s*\(\s*\{",
+            r"(?:[A-Za-z_$][\w$]*\.)?request\s*\(\s*\{",
+        )
+        for pattern in config_call_patterns:
+            for match in re.finditer(pattern, merged_content, flags=re.I):
+                window = request_window(match.start())
+                url_match = re.search(r"url\s*:\s*([\"'`])([^\"'`]+)\1", window, flags=re.I)
+                if not url_match:
+                    continue
+                method_match = re.search(r"(?:type|method)\s*:\s*[\"'`]([A-Za-z]+)[\"'`]", window, flags=re.I)
+                method_name = str(method_match.group(1) or "GET").strip().upper() if method_match else "GET"
+                append_target(str(url_match.group(2) or "").strip(), method_name, cls._extract_js_api_param_names(window))
+
         for match in re.finditer(r"\.open\s*\(\s*([\"'])(GET|POST|PUT|PATCH|DELETE)\1\s*,\s*([\"'`])([^\"'`]+)\3", merged_content, flags=re.I):
             method_name = str(match.group(2) or "GET").strip().upper()
             raw_url = str(match.group(4) or "").strip()
@@ -9424,6 +9464,307 @@ class WebSiteFetch(object):
 
         targets.sort(key=lambda item: (-len(item.get("params", [])), str(item.get("url", "") or "")))
         return targets[:20]
+
+    @classmethod
+    def _merge_ai_pen_js_api_targets(cls, *target_groups):
+        merged_targets = []
+        seen = set()
+
+        for group in target_groups:
+            for item in list(group or []):
+                if not isinstance(item, dict):
+                    continue
+
+                method_text = str(item.get("method") or "GET").strip().upper() or "GET"
+                url_text = str(item.get("url") or "").strip()
+                if method_text not in {"GET", "POST"} or not cls._is_http_target(url_text):
+                    continue
+
+                param_names = []
+                param_seen = set()
+                for raw_name in list(item.get("params", []) or []):
+                    name_text = str(raw_name or "").strip()
+                    lowered = name_text.lower()
+                    if not name_text or lowered in param_seen:
+                        continue
+                    param_seen.add(lowered)
+                    param_names.append(name_text)
+
+                dedupe_key = "{}|{}|{}".format(
+                    method_text,
+                    url_text,
+                    ",".join(param_names[:10]),
+                )
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+
+                normalized = {
+                    "method": method_text,
+                    "url": url_text,
+                    "params": param_names[:10],
+                    "source": str(item.get("source") or "js_api_extract").strip() or "js_api_extract",
+                }
+                for extra_key in ("mode", "content_type", "body_kind", "request_body_template"):
+                    extra_value = str(item.get(extra_key) or "").strip()
+                    if extra_value:
+                        normalized[extra_key] = extra_value[:260]
+                merged_targets.append(normalized)
+                if len(merged_targets) >= cls.AI_PEN_JS_MAX_API_TARGETS:
+                    return merged_targets
+
+        return merged_targets
+
+    @classmethod
+    def _extract_ai_pen_script_urls(cls, base_url: str, body_text: str = "", browser_surface_summary=None, max_count=None):
+        results = []
+        seen = set()
+        limit = max(1, int(max_count or cls.AI_PEN_JS_MAX_SCRIPT_URLS or 1))
+        base_text = str(base_url or "").strip()
+        summary_obj = browser_surface_summary if isinstance(browser_surface_summary, dict) else {}
+
+        def append_script(raw_value):
+            raw_text = str(raw_value or "").strip()
+            if not raw_text:
+                return False
+            lowered_raw = raw_text.lower()
+            if lowered_raw.startswith(("data:", "javascript:", "blob:")):
+                return False
+
+            resolved_url = urljoin(base_text, raw_text) if base_text else raw_text
+            resolved_text = str(resolved_url or "").strip()
+            lowered_url = resolved_text.lower()
+            if (not resolved_text) or (not cls._is_http_target(resolved_text)) or (not cls._is_js_asset_target(resolved_text)):
+                return False
+            if lowered_url in seen:
+                return False
+
+            seen.add(lowered_url)
+            results.append(resolved_text[:240])
+            return len(results) >= limit
+
+        for match in re.finditer(r"(?is)<script\b([^>]*)>", str(body_text or "")):
+            attrs_text = str(match.group(1) or "")
+            if append_script(cls._extract_html_attr_value(attrs_text, "src")):
+                return results
+
+        for script_item in list(summary_obj.get("scripts", []) or []):
+            raw_src = script_item.get("src") if isinstance(script_item, dict) else script_item
+            if append_script(raw_src):
+                break
+
+        return results
+
+    def _fetch_ai_pen_js_api_targets(self, js_url: str):
+        normalized_url = str(js_url or "").strip()
+        if not normalized_url:
+            return []
+
+        cached = self.ai_pen_js_api_target_cache.get(normalized_url)
+        if cached is not None:
+            return list(cached or [])
+
+        if (not self._is_http_target(normalized_url)) or (not self._is_js_asset_target(normalized_url)):
+            self.ai_pen_js_api_target_cache[normalized_url] = []
+            return []
+        if not self._url_in_task_scope(normalized_url):
+            self.ai_pen_js_api_target_cache[normalized_url] = []
+            return []
+
+        if self.waf_guard:
+            host = self.waf_guard._extract_host(normalized_url)
+            if host and self.waf_guard.is_blocked_host(host):
+                self.ai_pen_js_api_target_cache[normalized_url] = []
+                return []
+
+        try:
+            response = utils.http_req(
+                normalized_url,
+                "get",
+                timeout=self.AI_PEN_TEST_FETCH_TIMEOUT,
+                allow_redirects=True,
+                waf_guard=self.waf_guard,
+                waf_module="ai_pen_script_js_intel",
+            )
+        except Exception as e:
+            logger.warning(
+                "task_id:{} fetch ai_pen js target failed url:{} err:{}".format(
+                    self.task_id,
+                    normalized_url[:180],
+                    self._clip_text(e, self.AI_PEN_TEST_ERROR_MAX),
+                )
+            )
+            self.ai_pen_js_api_target_cache[normalized_url] = []
+            return []
+
+        header_obj = getattr(response, "headers", {}) or {}
+        if str(header_obj.get("X-ARL-WAF-SMART-SKIP", "")).strip() == "1":
+            self.ai_pen_js_api_target_cache[normalized_url] = []
+            return []
+
+        status_code = self._safe_int_value(getattr(response, "status_code", 0), 0)
+        if status_code >= 400:
+            self.ai_pen_js_api_target_cache[normalized_url] = []
+            return []
+
+        try:
+            body_text = str(getattr(response, "text", "") or "")
+        except Exception:
+            body_text = ""
+        if not body_text or (not self._is_js_asset_target(normalized_url, headers=header_obj)):
+            self.ai_pen_js_api_target_cache[normalized_url] = []
+            return []
+
+        targets = self._merge_ai_pen_js_api_targets(
+            self._extract_js_api_targets(normalized_url, body_text)
+        )
+        self.ai_pen_js_api_target_cache[normalized_url] = list(targets or [])
+        return list(targets or [])
+
+    def _fetch_ai_pen_page_js_intel(self, target_url: str):
+        normalized_url = str(target_url or "").strip()
+        if not normalized_url:
+            return {}
+
+        cached = self.ai_pen_js_page_intel_cache.get(normalized_url)
+        if cached is not None:
+            return dict(cached or {})
+
+        if (not self._is_http_target(normalized_url)) or self._is_static_asset_target(normalized_url):
+            self.ai_pen_js_page_intel_cache[normalized_url] = {}
+            return {}
+        if not self._url_in_task_scope(normalized_url):
+            self.ai_pen_js_page_intel_cache[normalized_url] = {}
+            return {}
+
+        if len(self.ai_pen_js_page_intel_cache) >= self.AI_PEN_JS_PAGE_FETCH_MAX_TARGETS:
+            self.ai_pen_js_page_intel_cache[normalized_url] = {}
+            return {}
+
+        if self.waf_guard:
+            host = self.waf_guard._extract_host(normalized_url)
+            if host and self.waf_guard.is_blocked_host(host):
+                self.ai_pen_js_page_intel_cache[normalized_url] = {}
+                return {}
+
+        try:
+            response = utils.http_req(
+                normalized_url,
+                "get",
+                timeout=(2.5, 4.5),
+                allow_redirects=True,
+                waf_guard=self.waf_guard,
+                waf_module="ai_pen_page_js_intel",
+            )
+        except Exception as e:
+            logger.warning(
+                "task_id:{} fetch ai_pen page js intel failed url:{} err:{}".format(
+                    self.task_id,
+                    normalized_url[:180],
+                    self._clip_text(e, self.AI_PEN_TEST_ERROR_MAX),
+                )
+            )
+            self.ai_pen_js_page_intel_cache[normalized_url] = {}
+            return {}
+
+        header_obj = getattr(response, "headers", {}) or {}
+        if str(header_obj.get("X-ARL-WAF-SMART-SKIP", "")).strip() == "1":
+            self.ai_pen_js_page_intel_cache[normalized_url] = {}
+            return {}
+
+        status_code = self._safe_int_value(getattr(response, "status_code", 0), 0)
+        if status_code >= 400:
+            self.ai_pen_js_page_intel_cache[normalized_url] = {}
+            return {}
+
+        try:
+            body_text = str(getattr(response, "text", "") or "")
+        except Exception:
+            body_text = ""
+        if not body_text:
+            self.ai_pen_js_page_intel_cache[normalized_url] = {}
+            return {}
+
+        content_type = str(
+            header_obj.get("Content-Type")
+            or header_obj.get("content-type")
+            or ""
+        ).strip().lower()
+        body_lower = body_text[:4096].lower()
+        looks_like_html = (
+            ("html" in content_type)
+            or ("<html" in body_lower)
+            or ("<script" in body_lower)
+            or ("</body" in body_lower)
+        )
+        if not looks_like_html:
+            self.ai_pen_js_page_intel_cache[normalized_url] = {}
+            return {}
+
+        result = {
+            "headers": header_obj,
+            "body_text": body_text,
+        }
+        self.ai_pen_js_page_intel_cache[normalized_url] = dict(result)
+        return dict(result)
+
+    def _collect_ai_pen_script_js_api_targets(self, target_url: str, body_text: str = "", browser_surface_summary=None):
+        target_text = str(target_url or "").strip()
+        if not self._is_http_target(target_text):
+            return []
+
+        merged_targets = []
+        for script_url in self._extract_ai_pen_script_urls(
+            target_text,
+            body_text=body_text,
+            browser_surface_summary=browser_surface_summary,
+            max_count=self.AI_PEN_JS_MAX_SCRIPT_URLS,
+        ):
+            merged_targets = self._merge_ai_pen_js_api_targets(
+                merged_targets,
+                self._fetch_ai_pen_js_api_targets(script_url),
+            )
+            if len(merged_targets) >= self.AI_PEN_JS_MAX_API_TARGETS:
+                break
+        return merged_targets
+
+    def _collect_ai_pen_candidate_js_api_targets(self, candidate: dict, body_text: str = "", headers=None, browser_surface_summary=None):
+        item = candidate if isinstance(candidate, dict) else {}
+        target_url = str(item.get("vuln_url") or item.get("target") or "").strip()
+        header_obj = headers if isinstance(headers, dict) else {}
+        body_value = str(body_text or "")
+        browser_summary = (
+            browser_surface_summary
+            if isinstance(browser_surface_summary, dict)
+            else item.get("browser_surface_summary") if isinstance(item.get("browser_surface_summary"), dict) else {}
+        )
+
+        merged_targets = self._merge_ai_pen_js_api_targets(item.get("js_api_targets"))
+        if not self._is_http_target(target_url):
+            return merged_targets
+
+        if (not body_value) and (not self._is_js_asset_target(target_url, headers=header_obj)):
+            page_intel = self._fetch_ai_pen_page_js_intel(target_url)
+            if page_intel:
+                fetched_headers = page_intel.get("headers") if isinstance(page_intel.get("headers"), dict) else {}
+                if fetched_headers and not header_obj:
+                    header_obj = fetched_headers
+                body_value = str(page_intel.get("body_text") or "")
+
+        if body_value and self._is_js_asset_target(target_url, headers=header_obj):
+            return self._merge_ai_pen_js_api_targets(
+                merged_targets,
+                self._extract_js_api_targets(target_url, body_value),
+            )
+
+        return self._merge_ai_pen_js_api_targets(
+            merged_targets,
+            self._collect_ai_pen_script_js_api_targets(
+                target_url=target_url,
+                body_text=body_value,
+                browser_surface_summary=browser_summary,
+            ),
+        )
 
     @staticmethod
     def _extract_ai_pen_path_tokens(path_text: str):
@@ -12219,51 +12560,6 @@ class WebSiteFetch(object):
         context = self._build_task_ai_pen_graph_context(candidates)
         self.ai_pen_task_graph_context_cache = dict(context or {})
         return dict(self.ai_pen_task_graph_context_cache)
-
-    @staticmethod
-    def _extract_js_api_param_names(snippet: str):
-        param_names = []
-        seen = set()
-        text = str(snippet or "")
-
-        def append_name(name_text: str):
-            name = str(name_text or "").strip()
-            lowered = name.lower()
-            if not name or lowered in seen:
-                return
-            if lowered in {
-                "method", "headers", "body", "url", "type", "data", "params", "timeout",
-                "responsetype", "mode", "credentials", "cache", "redirect", "signal",
-                "content-type", "accept", "authorization",
-            }:
-                return
-            seen.add(lowered)
-            param_names.append(name)
-
-        capture_patterns = (
-            r"params\s*:\s*\{([^}]{1,300})\}",
-            r"data\s*:\s*\{([^}]{1,300})\}",
-            r"body\s*:\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)",
-            r"body\s*:\s*\{([^}]{1,300})\}",
-            r"send\s*\(\s*JSON\.stringify\s*\(\s*\{([^}]{1,300})\}\s*\)\s*\)",
-            r"new\s+URLSearchParams\s*\(\s*\{([^}]{1,300})\}\s*\)",
-        )
-        key_patterns = (
-            r"[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:",
-            r"\b([A-Za-z_][\w.-]{0,63})\s*:",
-        )
-
-        for pattern in capture_patterns:
-            for match in re.finditer(pattern, text, flags=re.I | re.S):
-                inner_text = str(match.group(1) or "")
-                for key_pattern in key_patterns:
-                    for inner_match in re.finditer(key_pattern, inner_text):
-                        append_name(inner_match.group(1))
-
-        for match in re.finditer(r"\.append\s*\(\s*[\"']([A-Za-z_][\w.-]{0,63})[\"']", text, flags=re.I):
-            append_name(match.group(1))
-
-        return param_names[:10]
 
     @staticmethod
     def _extract_jwt_candidates(*text_values, max_count=3):
@@ -18010,7 +18306,12 @@ class WebSiteFetch(object):
             except Exception:
                 body_text = ""
             base_elapsed_ms = self._safe_int_value(getattr(response, "elapsed_ms", 0), 0)
-            js_api_targets = self._extract_js_api_targets(target_url, body_text) if self._is_js_asset_target(target_url, headers=header_obj) else []
+            js_api_targets = self._collect_ai_pen_candidate_js_api_targets(
+                candidate,
+                body_text=body_text,
+                headers=header_obj,
+                browser_surface_summary=browser_surface_summary,
+            )
 
             base_body_excerpt = body_text[: self.AI_PEN_TEST_BODY_MAX]
             base_body_md5 = hashlib.md5(base_body_excerpt.encode("utf-8", "ignore")).hexdigest() if base_body_excerpt else ""
@@ -19587,6 +19888,10 @@ class WebSiteFetch(object):
             candidate["browser_surface_summary"] = dict(browser_intel.get("browser_surface_summary") or {}) if isinstance(browser_intel.get("browser_surface_summary"), dict) else {}
             candidate["runtime_api_calls"] = list(browser_intel.get("runtime_api_calls", []) or [])[:16]
             candidate["dom_form_summary"] = list(browser_intel.get("dom_form_summary", []) or [])[:8]
+            candidate["js_api_targets"] = self._collect_ai_pen_candidate_js_api_targets(
+                candidate,
+                browser_surface_summary=candidate.get("browser_surface_summary"),
+            )
             candidate["api_surface_summary"] = self._build_api_surface_summary(
                 api_doc_summary=candidate.get("api_doc_summary"),
                 js_api_targets=candidate.get("js_api_targets"),

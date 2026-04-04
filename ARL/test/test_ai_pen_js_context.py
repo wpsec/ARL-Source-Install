@@ -120,7 +120,8 @@ def _load_common_task_module():
     return module
 
 
-WebSiteFetch = _load_common_task_module().WebSiteFetch
+common_task_module = _load_common_task_module()
+WebSiteFetch = common_task_module.WebSiteFetch
 Config = sys.modules["app.config"].Config
 
 
@@ -1230,6 +1231,33 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertIn("https://example.com/api/user/detail", target_map)
         self.assertIn("id", target_map["https://example.com/api/user/detail"]["params"])
 
+    def test_extract_js_api_targets_supports_request_config_and_shorthand_params(self):
+        targets = WebSiteFetch._extract_js_api_targets(
+            "https://example.com/static/app.js",
+            """
+            axios.request({
+              url: `/api/report/${reportId}/export`,
+              method: 'POST',
+              data: { keyword, pageSize, token }
+            });
+            service.request({
+              url: '/api/user/detail',
+              method: 'GET',
+              params: { id, profile, mode }
+            });
+            """
+        )
+
+        target_map = {item["url"]: item for item in targets}
+        self.assertIn("https://example.com/api/report/{reportId}/export", target_map)
+        self.assertEqual("POST", target_map["https://example.com/api/report/{reportId}/export"]["method"])
+        self.assertIn("keyword", target_map["https://example.com/api/report/{reportId}/export"]["params"])
+        self.assertIn("pageSize", target_map["https://example.com/api/report/{reportId}/export"]["params"])
+        self.assertIn("https://example.com/api/user/detail", target_map)
+        self.assertIn("id", target_map["https://example.com/api/user/detail"]["params"])
+        self.assertIn("profile", target_map["https://example.com/api/user/detail"]["params"])
+        self.assertIn("mode", target_map["https://example.com/api/user/detail"]["params"])
+
     def test_normalize_js_api_target_keeps_query_param_names(self):
         target = WebSiteFetch._normalize_js_api_target(
             "https://example.com/static/app.js",
@@ -1242,6 +1270,147 @@ class TestAiPenJsContext(unittest.TestCase):
         self.assertEqual("https://example.com/api/search?scene=web", target.get("url"))
         self.assertIn("scene", target.get("params", []))
         self.assertIn("keyword", target.get("params", []))
+
+    def test_extract_ai_pen_script_urls_merges_html_and_browser_scripts(self):
+        urls = WebSiteFetch._extract_ai_pen_script_urls(
+            "https://example.com/dashboard",
+            body_text="""
+            <html>
+              <script src="/static/app.js"></script>
+              <script src="https://example.com/assets/vendor.mjs?v=1"></script>
+            </html>
+            """,
+            browser_surface_summary={
+                "page_url": "https://example.com/dashboard",
+                "scripts": [
+                    {"src": "/static/app.js"},
+                    {"src": "../modules/admin.cjs"},
+                ],
+            },
+            max_count=8,
+        )
+
+        self.assertIn("https://example.com/static/app.js", urls)
+        self.assertIn("https://example.com/assets/vendor.mjs?v=1", urls)
+        self.assertIn("https://example.com/modules/admin.cjs", urls)
+        self.assertEqual(3, len(urls))
+
+    def test_collect_ai_pen_candidate_js_api_targets_fetches_referenced_scripts(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        task.task_id = "task-demo"
+        task.waf_guard = None
+        task.ai_pen_js_api_target_cache = {}
+        task._task_scope_context_cache = {
+            "allowed_hosts": ["example.com"],
+            "allowed_flds": ["example.com"],
+        }
+
+        class _FakeResp:
+            def __init__(self, url, text, headers=None, status_code=200):
+                self.url = url
+                self.text = text
+                self.headers = headers or {"Content-Type": "application/javascript"}
+                self.status_code = status_code
+
+        def _fake_http_req(url, method, **kwargs):
+            if url == "https://example.com/static/app.js":
+                return _FakeResp(
+                    url,
+                    """
+                    fetch('/api/search?scene=web', {
+                      method: 'POST',
+                      body: JSON.stringify({ keyword: query, page: currentPage })
+                    });
+                    """,
+                )
+            if url == "https://example.com/assets/admin.js":
+                return _FakeResp(
+                    url,
+                    "axios.get('/api/user/detail', { params: { id: userId, profile: mode } });",
+                )
+            raise AssertionError("unexpected url {}".format(url))
+
+        candidate = {
+            "target": "https://example.com/dashboard",
+            "vuln_url": "https://example.com/dashboard",
+            "browser_surface_summary": {
+                "page_url": "https://example.com/dashboard",
+                "scripts": [{"src": "/static/app.js"}],
+            },
+        }
+        body_text = """
+        <html>
+          <script src="/static/app.js"></script>
+          <script src="/assets/admin.js"></script>
+        </html>
+        """
+
+        with mock.patch.object(common_task_module.utils, "http_req", side_effect=_fake_http_req, create=True) as mock_http_req:
+            targets = task._collect_ai_pen_candidate_js_api_targets(candidate, body_text=body_text)
+
+        target_map = {item.get("url"): item for item in targets if isinstance(item, dict)}
+        self.assertIn("https://example.com/api/search?scene=web", target_map)
+        self.assertIn("keyword", target_map["https://example.com/api/search?scene=web"].get("params", []))
+        self.assertIn("https://example.com/api/user/detail", target_map)
+        self.assertIn("id", target_map["https://example.com/api/user/detail"].get("params", []))
+        self.assertEqual(2, mock_http_req.call_count)
+
+    def test_collect_ai_pen_candidate_js_api_targets_fetches_page_html_when_browser_intel_missing(self):
+        task = WebSiteFetch.__new__(WebSiteFetch)
+        task.task_id = "task-demo"
+        task.waf_guard = None
+        task.ai_pen_js_api_target_cache = {}
+        task.ai_pen_js_page_intel_cache = {}
+        task._task_scope_context_cache = {
+            "allowed_hosts": ["example.com"],
+            "allowed_flds": ["example.com"],
+        }
+
+        class _FakeResp:
+            def __init__(self, url, text, headers=None, status_code=200):
+                self.url = url
+                self.text = text
+                self.headers = headers or {}
+                self.status_code = status_code
+
+        def _fake_http_req(url, method, **kwargs):
+            if url == "https://example.com/dashboard":
+                return _FakeResp(
+                    url,
+                    """
+                    <html>
+                      <script src="/static/app.js"></script>
+                    </html>
+                    """,
+                    headers={"Content-Type": "text/html; charset=utf-8"},
+                )
+            if url == "https://example.com/static/app.js":
+                return _FakeResp(
+                    url,
+                    """
+                    request({
+                      url: '/api/search',
+                      method: 'POST',
+                      data: { keyword, pageNo, token }
+                    });
+                    """,
+                    headers={"Content-Type": "application/javascript"},
+                )
+            raise AssertionError("unexpected url {}".format(url))
+
+        candidate = {
+            "target": "https://example.com/dashboard",
+            "vuln_url": "https://example.com/dashboard",
+        }
+
+        with mock.patch.object(common_task_module.utils, "http_req", side_effect=_fake_http_req, create=True) as mock_http_req:
+            targets = task._collect_ai_pen_candidate_js_api_targets(candidate)
+
+        target_map = {item.get("url"): item for item in targets if isinstance(item, dict)}
+        self.assertIn("https://example.com/api/search", target_map)
+        self.assertIn("keyword", target_map["https://example.com/api/search"].get("params", []))
+        self.assertIn("pageNo", target_map["https://example.com/api/search"].get("params", []))
+        self.assertEqual(2, mock_http_req.call_count)
 
     def test_build_idor_probe_targets_supports_query_and_path_tokens(self):
         query_targets = WebSiteFetch._build_idor_probe_targets(
