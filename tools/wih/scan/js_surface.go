@@ -157,6 +157,7 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 		requestTemplate := buildRequestTemplate(
 			candidate.Method,
 			parsedURL,
+			candidate.BodyKind,
 			extractPathParameters(parsedURL.Path),
 			queryTemplate,
 			bodyTemplate,

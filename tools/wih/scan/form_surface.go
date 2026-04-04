@@ -334,6 +334,7 @@ func buildFormRequestTemplate(actionURL *url.URL, method string, fields []formFi
 	return buildRequestTemplate(
 		method,
 		actionURL,
+		bodyKind,
 		extractPathParameters(actionURL.Path),
 		queryTemplate,
 		bodyTemplate,

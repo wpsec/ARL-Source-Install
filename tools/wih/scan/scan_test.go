@@ -319,8 +319,9 @@ func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
 	payload := map[string]any{
 		"endpoints": []map[string]any{
 			{
-				"url":    "https://example.com/api/user",
-				"method": "GET",
+				"endpoint_id": "runtime-ep-1",
+				"url":         "https://example.com/api/user",
+				"method":      "GET",
 			},
 			{
 				"url":    "https://other.com/api/out",
@@ -329,7 +330,7 @@ func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
 		},
 		"parameters": []map[string]any{
 			{
-				"endpoint_id": "manual-endpoint-id",
+				"endpoint_id": "runtime-ep-1",
 				"param_name":  "id",
 				"location":    "query",
 			},
@@ -346,5 +347,119 @@ func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
 	}
 	if result.Endpoints[0].URL != "https://example.com/api/user" {
 		t.Fatalf("unexpected runtime endpoint url: %s", result.Endpoints[0].URL)
+	}
+	if result.Endpoints[0].RequestTemplate.RequestPacket == "" {
+		t.Fatal("runtime endpoint request packet should be normalized")
+	}
+	if len(result.Parameters) != 1 {
+		t.Fatalf("unexpected runtime parameter count: %d", len(result.Parameters))
+	}
+	if result.Parameters[0].EndpointID != result.Endpoints[0].EndpointID {
+		t.Fatalf("runtime parameter endpoint id mismatch got=%s expected=%s", result.Parameters[0].EndpointID, result.Endpoints[0].EndpointID)
+	}
+}
+
+// TestParseRuntimeSurfaceResponseBuildsPostRequestTemplate 验证 external runtime 返回 POST 结果时会自动补齐模板。
+func TestParseRuntimeSurfaceResponseBuildsPostRequestTemplate(t *testing.T) {
+	payload := map[string]any{
+		"endpoints": []map[string]any{
+			{
+				"url":          "https://example.com/api/login",
+				"method":       "POST",
+				"content_type": "application/json",
+				"request_template": map[string]any{
+					"body": map[string]string{
+						"username": "<value>",
+						"password": "<value>",
+					},
+				},
+			},
+		},
+		"parameters": []map[string]any{
+			{
+				"param_name": "username",
+				"location":   "body",
+			},
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal runtime payload failed: %v", err)
+	}
+
+	result := parseRuntimeSurfaceResponse(raw, "https://example.com")
+	if len(result.Endpoints) != 1 {
+		t.Fatalf("unexpected runtime endpoint count: %d", len(result.Endpoints))
+	}
+	endpoint := result.Endpoints[0]
+	if endpoint.RequestTemplate.Headers["Content-Type"] != "application/json" {
+		t.Fatalf("unexpected runtime content-type: %s", endpoint.RequestTemplate.Headers["Content-Type"])
+	}
+	if !strings.Contains(endpoint.RequestTemplate.RequestPacket, "POST /api/login HTTP/1.1") {
+		t.Fatalf("unexpected runtime request packet: %s", endpoint.RequestTemplate.RequestPacket)
+	}
+	if endpoint.RequestTemplate.BodyText == "" {
+		t.Fatal("runtime request body preview should not be empty")
+	}
+	if len(result.Parameters) != 1 {
+		t.Fatalf("unexpected runtime parameter count: %d", len(result.Parameters))
+	}
+	if result.Parameters[0].Location != "body" {
+		t.Fatalf("runtime parameter location should be inferred as body: %s", result.Parameters[0].Location)
+	}
+	if result.Parameters[0].ParamType != "string" {
+		t.Fatalf("runtime parameter type should be inferred as string: %s", result.Parameters[0].ParamType)
+	}
+}
+
+// TestParseRuntimeSurfaceResponseBuildsGraphQLTemplate 验证 external runtime GraphQL 结果会自动补全 body 模板。
+func TestParseRuntimeSurfaceResponseBuildsGraphQLTemplate(t *testing.T) {
+	payload := map[string]any{
+		"endpoints": []map[string]any{
+			{
+				"endpoint_id": "runtime-gql-1",
+				"url":         "https://example.com/graphql",
+				"method":      "POST",
+				"body_kind":   "graphql",
+				"request_template": map[string]any{
+					"body": map[string]string{
+						"query":    "query Demo { __typename }",
+						"userId":   "<value>",
+						"tenantId": "<value>",
+					},
+				},
+			},
+		},
+		"parameters": []map[string]any{
+			{
+				"endpoint_id": "runtime-gql-1",
+				"param_name":  "userId",
+			},
+		},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal runtime payload failed: %v", err)
+	}
+
+	result := parseRuntimeSurfaceResponse(raw, "https://example.com")
+	if len(result.Endpoints) != 1 {
+		t.Fatalf("unexpected runtime endpoint count: %d", len(result.Endpoints))
+	}
+	endpoint := result.Endpoints[0]
+	if endpoint.BodyKind != "graphql" {
+		t.Fatalf("unexpected runtime graphql body kind: %s", endpoint.BodyKind)
+	}
+	if endpoint.RequestTemplate.BodyText == "" {
+		t.Fatal("runtime graphql body preview should not be empty")
+	}
+	if !strings.Contains(endpoint.RequestTemplate.RequestPacket, "POST /graphql HTTP/1.1") {
+		t.Fatalf("unexpected runtime graphql packet: %s", endpoint.RequestTemplate.RequestPacket)
+	}
+	if len(result.Parameters) != 1 {
+		t.Fatalf("unexpected runtime graphql parameter count: %d", len(result.Parameters))
+	}
+	if result.Parameters[0].Location != "graphql_variable" {
+		t.Fatalf("runtime graphql parameter location should be inferred as graphql_variable: %s", result.Parameters[0].Location)
 	}
 }

@@ -121,21 +121,37 @@ func parseRuntimeSurfaceResponse(raw []byte, targetURL string) runtimeSurfaceRes
 	endpoints := make([]datatype.EndpointRecord, 0, len(resp.Endpoints))
 	parameters := make([]datatype.ParameterRecord, 0, len(resp.Parameters))
 	allowedEndpointIDs := make(map[string]struct{})
+	endpointIDAlias := make(map[string]string)
+	endpointMap := make(map[string]datatype.EndpointRecord)
 
 	for _, endpoint := range resp.Endpoints {
+		originalEndpointID := strings.TrimSpace(endpoint.EndpointID)
 		normalizedEndpoint, ok := normalizeRuntimeEndpoint(endpoint, targetURL, targetHost)
 		if !ok {
 			continue
 		}
 		allowedEndpointIDs[normalizedEndpoint.EndpointID] = struct{}{}
+		if originalEndpointID != "" {
+			endpointIDAlias[originalEndpointID] = normalizedEndpoint.EndpointID
+		}
+		endpointMap[normalizedEndpoint.EndpointID] = normalizedEndpoint
 		endpoints = append(endpoints, normalizedEndpoint)
 	}
 
+	singleEndpointID := ""
+	if len(endpoints) == 1 {
+		singleEndpointID = endpoints[0].EndpointID
+	}
+
 	for _, parameter := range resp.Parameters {
-		if _, ok := allowedEndpointIDs[strings.TrimSpace(parameter.EndpointID)]; !ok {
+		normalizedParameter, ok := normalizeRuntimeParameter(parameter, endpointIDAlias, singleEndpointID, endpointMap)
+		if !ok {
 			continue
 		}
-		parameters = append(parameters, enrichParameterMetadata(parameter))
+		if _, ok := allowedEndpointIDs[strings.TrimSpace(normalizedParameter.EndpointID)]; !ok {
+			continue
+		}
+		parameters = append(parameters, enrichParameterMetadata(normalizedParameter))
 	}
 
 	return runtimeSurfaceResult{
@@ -175,6 +191,15 @@ func normalizeRuntimeEndpoint(endpoint datatype.EndpointRecord, targetURL string
 	normalized.Method = methodText
 	normalized.Protocol = firstNonEmpty(strings.TrimSpace(parsed.Scheme), "https")
 	normalized.SourceTypes = uniqueSortedStrings(append(normalized.SourceTypes, "runtime_hook"))
+	normalized.ContentType = firstNonEmpty(
+		strings.TrimSpace(normalized.ContentType),
+		strings.TrimSpace((normalized.RequestTemplate.Headers)["Content-Type"]),
+		strings.TrimSpace((normalized.RequestTemplate.Headers)["content-type"]),
+	)
+	if strings.TrimSpace(normalized.BodyKind) == "" {
+		normalized.BodyKind = inferRuntimeBodyKind(normalized.ContentType, normalized.RequestTemplate.Body, normalized.RequestTemplate.BodyText)
+	}
+	normalized.RequestTemplate = buildRuntimeRequestTemplate(parsed, normalized.Method, normalized.ContentType, normalized.BodyKind, normalized.RequestTemplate)
 	if strings.TrimSpace(normalized.TriggerContext.Event) == "" {
 		normalized.TriggerContext.Event = "runtime_hook"
 	}
@@ -182,4 +207,243 @@ func normalizeRuntimeEndpoint(endpoint datatype.EndpointRecord, targetURL string
 		normalized.Confidence = 0.93
 	}
 	return normalized, true
+}
+
+func normalizeRuntimeParameter(
+	parameter datatype.ParameterRecord,
+	endpointIDAlias map[string]string,
+	singleEndpointID string,
+	endpointMap map[string]datatype.EndpointRecord,
+) (datatype.ParameterRecord, bool) {
+	normalized := parameter
+	normalized.ParamName = strings.TrimSpace(normalized.ParamName)
+	if normalized.ParamName == "" {
+		return datatype.ParameterRecord{}, false
+	}
+
+	locationText := strings.ToLower(strings.TrimSpace(normalized.Location))
+	switch locationText {
+	case "query", "path", "body", "header", "cookie", "graphql_variable":
+		normalized.Location = locationText
+	default:
+		if locationText == "" {
+			normalized.Location = "body"
+		} else {
+			normalized.Location = locationText
+		}
+	}
+
+	endpointID := strings.TrimSpace(normalized.EndpointID)
+	if endpointID != "" {
+		if mappedID, ok := endpointIDAlias[endpointID]; ok {
+			normalized.EndpointID = mappedID
+		}
+	} else if singleEndpointID != "" {
+		normalized.EndpointID = singleEndpointID
+	}
+
+	if strings.TrimSpace(normalized.EndpointID) == "" {
+		return datatype.ParameterRecord{}, false
+	}
+
+	endpoint := endpointMap[strings.TrimSpace(normalized.EndpointID)]
+	normalized.Location = inferRuntimeParameterLocation(normalized.ParamName, normalized.Location, endpoint)
+	normalized.ParamType = inferRuntimeParameterType(normalized, endpoint)
+	if strings.TrimSpace(normalized.Example) == "" && strings.TrimSpace(normalized.Default) == "" {
+		example, def := inferRuntimeParameterSample(normalized.ParamName, normalized.Location, endpoint)
+		normalized.Example = example
+		normalized.Default = def
+	}
+
+	if strings.TrimSpace(normalized.ParameterID) == "" {
+		normalized.ParameterID = fmt.Sprintf("%d", util.StableHash(strings.Join([]string{
+			normalized.EndpointID,
+			strings.ToLower(strings.TrimSpace(normalized.Location)),
+			strings.ToLower(normalized.ParamName),
+		}, "|")))
+	}
+	if normalized.OccurrenceCount <= 0 {
+		normalized.OccurrenceCount = 1
+	}
+	if normalized.Confidence <= 0 {
+		normalized.Confidence = 0.90
+	}
+	return normalized, true
+}
+
+func buildRuntimeRequestTemplate(
+	endpointURL *url.URL,
+	method string,
+	contentType string,
+	bodyKind string,
+	template datatype.EndpointRequestTemplate,
+) datatype.EndpointRequestTemplate {
+	queryMap := cloneTemplateMap(template.Query)
+	bodyMap := cloneTemplateMap(template.Body)
+	headerMap := cloneTemplateMap(template.Headers)
+	pathMap := cloneTemplateMap(template.Path)
+	bodyText := buildBodyPreviewByKind(bodyKind, bodyMap, template.BodyText)
+
+	clonedURL := *endpointURL
+	if strings.TrimSpace(clonedURL.RawQuery) == "" && strings.TrimSpace(template.QueryString) != "" {
+		clonedURL.RawQuery = strings.TrimSpace(template.QueryString)
+	}
+	if pathMap == nil {
+		pathMap = extractPathParameters(firstNonEmpty(clonedURL.Path, "/"))
+	}
+	if headerMap == nil {
+		headerMap = make(map[string]string)
+	}
+	if strings.TrimSpace(contentType) != "" {
+		if _, ok := headerMap["Content-Type"]; !ok {
+			headerMap["Content-Type"] = strings.TrimSpace(contentType)
+		}
+	}
+	return buildRequestTemplate(
+		method,
+		&clonedURL,
+		bodyKind,
+		pathMap,
+		queryMap,
+		bodyMap,
+		headerMap,
+		bodyText,
+	)
+}
+
+func inferRuntimeBodyKind(contentType string, bodyMap map[string]string, bodyText string) string {
+	loweredContentType := strings.ToLower(strings.TrimSpace(contentType))
+	switch {
+	case strings.Contains(loweredContentType, "graphql"):
+		return "graphql"
+	case strings.Contains(loweredContentType, "application/json"):
+		if _, ok := bodyMap["query"]; ok {
+			return "graphql"
+		}
+		return "json"
+	case strings.Contains(loweredContentType, "application/x-www-form-urlencoded"):
+		return "form_urlencoded"
+	case strings.Contains(loweredContentType, "multipart/form-data"):
+		return "multipart"
+	case strings.Contains(loweredContentType, "xml"):
+		return "xml"
+	}
+
+	trimmedBodyText := strings.TrimSpace(bodyText)
+	switch {
+	case strings.HasPrefix(trimmedBodyText, "{"), strings.HasPrefix(trimmedBodyText, "["):
+		if _, ok := bodyMap["query"]; ok {
+			return "graphql"
+		}
+		return "json"
+	case strings.Contains(trimmedBodyText, multipartBoundary):
+		return "multipart"
+	case strings.HasPrefix(trimmedBodyText, "<"):
+		return "xml"
+	case strings.Contains(trimmedBodyText, "="):
+		return "form_urlencoded"
+	default:
+		return ""
+	}
+}
+
+func inferRuntimeParameterLocation(paramName string, currentLocation string, endpoint datatype.EndpointRecord) string {
+	location := strings.ToLower(strings.TrimSpace(currentLocation))
+	switch location {
+	case "query", "path", "body", "header", "cookie", "graphql_variable":
+		return location
+	}
+	name := strings.TrimSpace(paramName)
+	if name == "" {
+		return "body"
+	}
+	if _, ok := endpoint.RequestTemplate.Path[name]; ok {
+		return "path"
+	}
+	if _, ok := endpoint.RequestTemplate.Query[name]; ok {
+		return "query"
+	}
+	if _, ok := endpoint.RequestTemplate.Headers[name]; ok {
+		return "header"
+	}
+	if _, ok := endpoint.RequestTemplate.Body[name]; ok {
+		if strings.EqualFold(endpoint.BodyKind, "graphql") {
+			return "graphql_variable"
+		}
+		return "body"
+	}
+	if strings.EqualFold(endpoint.Method, "GET") {
+		return "query"
+	}
+	return "body"
+}
+
+func inferRuntimeParameterType(parameter datatype.ParameterRecord, endpoint datatype.EndpointRecord) string {
+	paramType := strings.ToLower(strings.TrimSpace(parameter.ParamType))
+	if paramType != "" && paramType != "unknown" {
+		return paramType
+	}
+	name := strings.TrimSpace(parameter.ParamName)
+	sample := firstNonEmpty(parameter.Example, parameter.Default)
+	if strings.EqualFold(parameter.Location, "header") {
+		return "string"
+	}
+	if looksLikeBooleanValue(sample) {
+		return "boolean"
+	}
+	if looksLikeNumberValue(sample) {
+		return "number"
+	}
+	loweredName := strings.ToLower(name)
+	if strings.Contains(loweredName, "file") || strings.Contains(loweredName, "image") || strings.Contains(loweredName, "avatar") {
+		return "file"
+	}
+	if strings.EqualFold(endpoint.BodyKind, "json") || strings.EqualFold(endpoint.BodyKind, "graphql") {
+		return "string"
+	}
+	return "unknown"
+}
+
+func inferRuntimeParameterSample(paramName string, location string, endpoint datatype.EndpointRecord) (string, string) {
+	name := strings.TrimSpace(paramName)
+	if name == "" {
+		return "", ""
+	}
+	switch strings.ToLower(strings.TrimSpace(location)) {
+	case "path":
+		if value, ok := endpoint.RequestTemplate.Path[name]; ok {
+			return value, value
+		}
+	case "query":
+		if value, ok := endpoint.RequestTemplate.Query[name]; ok {
+			return value, value
+		}
+	case "header":
+		if value, ok := endpoint.RequestTemplate.Headers[name]; ok {
+			return value, value
+		}
+	case "graphql_variable", "body":
+		if value, ok := endpoint.RequestTemplate.Body[name]; ok {
+			return value, value
+		}
+	}
+	return "", ""
+}
+
+func looksLikeBooleanValue(value string) bool {
+	text := strings.ToLower(strings.TrimSpace(value))
+	return text == "true" || text == "false"
+}
+
+func looksLikeNumberValue(value string) bool {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return false
+	}
+	for _, r := range text {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -15,6 +16,7 @@ const multipartBoundary = "----WIHFormBoundary7MA4YWxkTrZu0gW"
 func buildRequestTemplate(
 	method string,
 	endpointURL *url.URL,
+	bodyKind string,
 	pathParams map[string]string,
 	queryParams map[string]string,
 	bodyParams map[string]string,
@@ -32,11 +34,7 @@ func buildRequestTemplate(
 	pathMap := normalizeTemplateMap(pathParams)
 	queryMap := normalizeTemplateMap(queryParams)
 	bodyMap := normalizeTemplateMap(bodyParams)
-	bodyPreview := strings.TrimSpace(bodyText)
-
-	if bodyPreview == "" && len(bodyMap) > 0 {
-		bodyPreview = buildBodyPreview(bodyMap)
-	}
+	bodyPreview := buildBodyPreviewByKind(bodyKind, bodyMap, bodyText)
 
 	if headers != nil {
 		if contentType, ok := headers["Content-Type"]; ok {
@@ -145,6 +143,65 @@ func buildBodyPreview(bodyMap map[string]string) string {
 		parts = append(parts, fmt.Sprintf("%s=%s", key, bodyMap[key]))
 	}
 	return strings.Join(parts, "&")
+}
+
+func buildBodyPreviewByKind(bodyKind string, bodyMap map[string]string, bodyText string) string {
+	trimmedBody := strings.TrimSpace(bodyText)
+	if trimmedBody != "" {
+		return trimmedBody
+	}
+	if len(bodyMap) == 0 {
+		return ""
+	}
+
+	keys := make([]string, 0, len(bodyMap))
+	for key := range bodyMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	switch strings.ToLower(strings.TrimSpace(bodyKind)) {
+	case "json":
+		payload := make(map[string]string, len(keys))
+		for _, key := range keys {
+			payload[key] = bodyMap[key]
+		}
+		raw, err := json.MarshalIndent(payload, "", "  ")
+		if err == nil {
+			return string(raw)
+		}
+	case "graphql":
+		variables := make(map[string]string)
+		queryText := "query Demo { __typename }"
+		for _, key := range keys {
+			if key == "query" && strings.TrimSpace(bodyMap[key]) != "" {
+				queryText = strings.TrimSpace(bodyMap[key])
+				continue
+			}
+			variables[key] = bodyMap[key]
+		}
+		payload := map[string]any{
+			"query":     queryText,
+			"variables": variables,
+		}
+		raw, err := json.MarshalIndent(payload, "", "  ")
+		if err == nil {
+			return string(raw)
+		}
+	case "multipart":
+		return buildMultipartPreview(keys)
+	case "xml":
+		lines := []string{"<root>"}
+		for _, key := range keys {
+			lines = append(lines, fmt.Sprintf("  <%s>%s</%s>", key, bodyMap[key], key))
+		}
+		lines = append(lines, "</root>")
+		return strings.Join(lines, "\n")
+	case "form_urlencoded":
+		return buildBodyPreview(bodyMap)
+	}
+
+	return buildBodyPreview(bodyMap)
 }
 
 func buildMultipartPreview(paramNames []string) string {
