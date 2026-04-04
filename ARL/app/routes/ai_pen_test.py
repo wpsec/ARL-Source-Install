@@ -30,6 +30,7 @@ base_search_fields = {
     "risk_name": fields.String(description="风险名称"),
     "target": fields.String(description="目标"),
     "vuln_url": fields.String(description="漏洞URL"),
+    "interface_fetch_filter": fields.String(description="获取接口筛选(post_available|get_available)"),
     "decision": fields.String(description="结论(verified/likely_false_positive/needs_manual_review)"),
     "status": fields.String(description="执行状态(ok/error/skipped)"),
     "verification_step": fields.String(description="验证阶段(http_fetch_replay/mcp_http_probe/mcp_idor_probe/mcp_api_doc_probe/mcp_jwt_probe/mcp_websocket_probe)"),
@@ -1641,7 +1642,51 @@ class ARLAiPenTest(ARLResource):
     @ns.expect(parser)
     def get(self):
         args = self.parser.parse_args()
-        return self.build_data(args=args, collection="ai_pen_test_result")
+        interface_fetch_filter = str(args.pop("interface_fetch_filter", "") or "").strip().lower()
+        default_field = self.get_default_field(args)
+        page = default_field.get("page", 1)
+        size = default_field.get("size", 10)
+        orderby_list = default_field.get("order", [("_id", -1)])
+
+        query = self.build_db_query(args)
+        query = self.normalize_task_status_query("ai_pen_test_result", args, query)
+        for exact_key in (
+            "source_collection",
+            "risk_type",
+            "decision",
+            "status",
+            "proof_family",
+            "proof_strength",
+            "decision_guard_action",
+            "unauth_negative_type",
+        ):
+            exact_value = str(args.get(exact_key, "") or "").strip()
+            if exact_value:
+                query[exact_key] = exact_value
+
+        if interface_fetch_filter == "post_available":
+            query["$or"] = [
+                {"api_surface_summary.sample_interfaces": {"$elemMatch": {"method": {"$in": ["POST", "PUT", "PATCH"]}}}},
+                {"runtime_api_calls": {"$elemMatch": {"method": {"$in": ["POST", "PUT", "PATCH"]}}}},
+            ]
+        elif interface_fetch_filter == "get_available":
+            query["$or"] = [
+                {"api_surface_summary.sample_interfaces": {"$elemMatch": {"method": "GET"}}},
+                {"runtime_api_calls": {"$elemMatch": {"method": "GET"}}},
+            ]
+
+        result = utils.conn_db("ai_pen_test_result").find(query).sort(orderby_list).skip(size * (page - 1)).limit(size)
+        total = utils.conn_db("ai_pen_test_result").count_documents(query)
+        items = self.build_return_items(result)
+
+        return {
+            "page": page,
+            "size": size,
+            "total": total,
+            "items": items,
+            "query": query,
+            "code": 200,
+        }
 
 
 @ns.route("/retry/")

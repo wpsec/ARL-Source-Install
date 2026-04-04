@@ -1687,13 +1687,12 @@ const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'risk_name',
     defaultOrder: '-save_date',
-    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'vuln_url', 'interface_fetch_count', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'detail_action', 'save_date'],
+    columns: ['source_collection', 'risk_type', 'risk_name', 'target', 'interface_fetch_count', 'decision', 'confidence', 'verification_step', 'payload_type', 'status', 'detail_action', 'save_date'],
     columnLabels: {
       source_collection: '来源',
       risk_type: '类型',
       risk_name: '风险名称',
       target: '目标',
-      vuln_url: '漏洞URL',
       interface_fetch_count: '获取接口',
       decision: '结论',
       confidence: '置信度',
@@ -1704,11 +1703,62 @@ const modules: ModuleConfig[] = [
       save_date: '时间',
     },
     searchFields: [
-      { key: 'source_collection', label: '来源', placeholder: '请输入来源进行搜索' },
-      { key: 'risk_type', label: '类型', placeholder: '请输入类型进行搜索' },
+      {
+        key: 'source_collection',
+        label: '来源',
+        placeholder: '请选择来源',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '风险', value: 'vuln' },
+          { label: 'PoC风险', value: 'nuclei_result' },
+          { label: 'WIH', value: 'wih' },
+          { label: '目录扫描', value: 'fileleak' },
+          { label: '站点线索', value: 'site' },
+          { label: 'URL线索', value: 'url' },
+        ],
+      },
+      {
+        key: 'risk_type',
+        label: '类型',
+        placeholder: '请选择类型',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: 'API文档', value: 'api_doc' },
+          { label: 'GraphQL', value: 'graphql' },
+          { label: 'JWT', value: 'jwt' },
+          { label: '敏感信息', value: 'sensitive_info' },
+          { label: 'IDOR', value: 'idor' },
+          { label: 'SQL注入', value: 'sqli' },
+          { label: 'XSS', value: 'xss' },
+          { label: '文件上传', value: 'file_upload' },
+          { label: '文件读取', value: 'file_read' },
+          { label: '路径穿越', value: 'path_traversal' },
+          { label: 'SSRF', value: 'ssrf' },
+          { label: 'XXE', value: 'xxe' },
+          { label: 'SSTI', value: 'ssti' },
+          { label: '命令注入', value: 'cmdi' },
+          { label: 'WebSocket', value: 'websocket' },
+          { label: 'Socket.IO', value: 'socketio' },
+          { label: '策略配置', value: 'web_policy' },
+          { label: '登录入口', value: 'login_surface' },
+          { label: '弱口令', value: 'weak_password' },
+        ],
+      },
       { key: 'risk_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
-      { key: 'vuln_url', label: '漏洞URL', placeholder: '请输入漏洞URL进行搜索' },
+      {
+        key: 'interface_fetch_filter',
+        label: '获取接口',
+        placeholder: '请选择接口获取情况',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: 'POST 接口 > 0', value: 'post_available' },
+          { label: 'GET 接口 > 0', value: 'get_available' },
+        ],
+      },
       { key: 'verification_step', label: '验证阶段', placeholder: '请输入验证阶段进行搜索' },
       { key: 'payload_type', label: '探针类型', placeholder: '请输入探针类型进行搜索' },
       {
@@ -2809,24 +2859,186 @@ function extractAiPenSampleInterfacePaths(sampleInterfaces: any[]): string[] {
   );
 }
 
-function buildAiPenParamTemplate(params: any[], modeText: string): string {
+const AI_PEN_MULTIPART_BOUNDARY = '----ARLFormBoundary7MA4YWxkTrZu0gW';
+
+function buildAiPenMultipartTemplate(params: string[]): string {
+  const lines: string[] = [];
+  params.forEach((name) => {
+    lines.push(`--${AI_PEN_MULTIPART_BOUNDARY}`);
+    lines.push(`Content-Disposition: form-data; name="${name}"`);
+    lines.push('');
+    lines.push('<value>');
+  });
+  lines.push(`--${AI_PEN_MULTIPART_BOUNDARY}--`);
+  return lines.join('\n');
+}
+
+function buildAiPenParamTemplate(params: any[], modeText: string, contentTypeText = '', bodyKindText = ''): string {
   const names = normalizeAiPenCopyLines(Array.isArray(params) ? params : []);
   const mode = String(modeText || '').trim().toLowerCase();
-  if (names.length === 0) return '';
-  if (mode === 'json_data') {
+  const contentType = String(contentTypeText || '').trim().toLowerCase();
+  const bodyKind = String(bodyKindText || '').trim().toLowerCase();
+  if (bodyKind === 'graphql' || contentType.includes('graphql')) {
+    const variables: Record<string, string> = {};
+    names.forEach((name) => {
+      variables[name] = '<value>';
+    });
+    return JSON.stringify({
+      query: 'query Demo { __typename }',
+      variables,
+    }, null, 2);
+  }
+  if (mode === 'json_data' || contentType.includes('json') || bodyKind === 'json') {
     const obj: Record<string, string> = {};
     names.forEach((name) => {
       obj[name] = '<value>';
     });
     return JSON.stringify(obj, null, 2);
   }
-  if (mode === 'form_data') {
+  if (mode === 'form_data' || contentType.includes('application/x-www-form-urlencoded') || bodyKind === 'form_urlencoded') {
     return names.map((name) => `${name}=<value>`).join('&');
+  }
+  if (contentType.includes('multipart/form-data') || bodyKind === 'multipart') {
+    return buildAiPenMultipartTemplate(names);
+  }
+  if (bodyKind === 'xml' || contentType.includes('xml')) {
+    if (names.length === 0) return '<root>\n  <value />\n</root>';
+    return `<root>\n${names.map((name) => `  <${name}><value></${name}>`).join('\n')}\n</root>`;
   }
   if (mode === 'body') {
     return names.length === 1 && names[0] === 'body' ? '<body>' : names.join('\n');
   }
+  if (names.length === 0) return '';
+  return names.map((name) => `${name}=<value>`).join('&');
+}
+
+function getAiPenDefaultPacketHeaders(method: string, contentType = ''): Array<[string, string]> {
+  const upperMethod = String(method || 'GET').trim().toUpperCase();
+  const headers: Array<[string, string]> = [
+    ['User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'],
+    ['Accept', 'application/json, text/plain, */*'],
+    ['Connection', 'close'],
+  ];
+  if (['POST', 'PUT', 'PATCH'].includes(upperMethod) && contentType) {
+    headers.push(['Content-Type', contentType]);
+  }
+  return headers;
+}
+
+function getAiPenUtf8ByteLength(text: string): number {
+  const rawText = String(text || '');
+  try {
+    return new TextEncoder().encode(rawText).length;
+  } catch {
+    return rawText.length;
+  }
+}
+
+function inferAiPenContentType(modeText: any, bodyKindText: any, contentTypeText: any, bodyText: string): string {
+  const mode = String(modeText || '').trim().toLowerCase();
+  const bodyKind = String(bodyKindText || '').trim().toLowerCase();
+  const existing = String(contentTypeText || '').trim();
+  if (existing) return existing;
+  if (bodyKind === 'graphql') return 'application/json';
+  if (mode === 'json_data' || bodyKind === 'json') return 'application/json';
+  if (mode === 'form_data' || bodyKind === 'form_urlencoded') return 'application/x-www-form-urlencoded';
+  if (bodyKind === 'multipart' || String(bodyText || '').includes(AI_PEN_MULTIPART_BOUNDARY)) return 'multipart/form-data';
+  if (bodyKind === 'xml') return 'application/xml';
+  const normalizedBody = String(bodyText || '').trim();
+  if (!normalizedBody) return '';
+  if (normalizedBody.startsWith('{') || normalizedBody.startsWith('[')) return 'application/json';
+  if (normalizedBody.startsWith('<')) return 'application/xml';
+  if (normalizedBody.includes('=<value>') || (normalizedBody.includes('=') && normalizedBody.includes('&'))) {
+    return 'application/x-www-form-urlencoded';
+  }
   return '';
+}
+
+function buildAiPenHttpPacketText(
+  methodText: string,
+  urlText: string,
+  headerMap: any = {},
+  contentTypeText = '',
+  bodyText = ''
+): string {
+  const method = String(methodText || 'GET').trim().toUpperCase() || 'GET';
+  const normalizedUrl = String(urlText || '').trim();
+  if (!normalizedUrl) return '';
+
+  let requestPath = '/';
+  let hostText = '';
+  let originText = '';
+  try {
+    const parsed = new URL(normalizedUrl);
+    requestPath = `${parsed.pathname || '/'}${parsed.search || ''}` || '/';
+    hostText = parsed.host || '';
+    originText = parsed.origin || '';
+  } catch {
+    requestPath = normalizedUrl;
+  }
+
+  const mergedHeaders: Array<[string, string]> = [];
+  const normalizedHeaderMap = (headerMap && typeof headerMap === 'object') ? headerMap : {};
+  const lowerHeaderKeys = new Set(
+    Object.keys(normalizedHeaderMap).map((key) => String(key || '').trim().toLowerCase()).filter((key) => key)
+  );
+
+  if (hostText && !lowerHeaderKeys.has('host')) {
+    mergedHeaders.push(['Host', hostText]);
+  }
+
+  getAiPenDefaultPacketHeaders(method, contentTypeText).forEach(([key, value]) => {
+    if (!lowerHeaderKeys.has(key.toLowerCase())) {
+      mergedHeaders.push([key, value]);
+    }
+  });
+
+  if (originText && ['POST', 'PUT', 'PATCH'].includes(method) && !lowerHeaderKeys.has('origin')) {
+    mergedHeaders.push(['Origin', originText]);
+  }
+
+  Object.entries(normalizedHeaderMap).forEach(([key, value]) => {
+    const keyText = String(key || '').trim();
+    const valueText = String(value || '').trim();
+    if (!keyText || !valueText) return;
+    mergedHeaders.push([keyText, valueText]);
+  });
+
+  let contentType = String(
+    contentTypeText
+      || normalizedHeaderMap?.['Content-Type']
+      || normalizedHeaderMap?.['content-type']
+      || ''
+  ).trim();
+  if (contentType.toLowerCase().includes('multipart/form-data') && !contentType.toLowerCase().includes('boundary=')) {
+    contentType = `${contentType}; boundary=${AI_PEN_MULTIPART_BOUNDARY}`;
+  }
+  if (contentType && !mergedHeaders.some(([key]) => key.toLowerCase() === 'content-type') && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    mergedHeaders.push(['Content-Type', contentType]);
+  }
+
+  const normalizedBody = String(bodyText || '').trim();
+  if (normalizedBody && !mergedHeaders.some(([key]) => key.toLowerCase() === 'content-length')) {
+    mergedHeaders.push(['Content-Length', String(getAiPenUtf8ByteLength(normalizedBody))]);
+  }
+
+  const lines = [`${method} ${requestPath} HTTP/1.1`];
+  mergedHeaders.forEach(([key, value]) => {
+    lines.push(`${key}: ${value}`);
+  });
+  lines.push('');
+  if (normalizedBody) {
+    lines.push(normalizedBody);
+  }
+  return lines.join('\n').trim();
+}
+
+function filterAiPenJsSampleInterfaces(sampleInterfaces: any[]): any[] {
+  if (!Array.isArray(sampleInterfaces)) return [];
+  return sampleInterfaces.filter((item) => {
+    const sourceText = String(item?.source || '').trim().toLowerCase();
+    return sourceText.includes('js');
+  });
 }
 
 function buildAiPenRuntimeRequestCopyText(item: any): string {
@@ -2836,7 +3048,8 @@ function buildAiPenRuntimeRequestCopyText(item: any): string {
   if (method === 'GET') return url;
 
   const contentType = String(item?.content_type || item?.request_headers?.['Content-Type'] || item?.request_headers?.['content-type'] || '').trim();
-  const bodyTemplate = String(item?.request_body_template || item?.request_body || '').trim() || buildAiPenParamTemplate(item?.param_names, item?.mode);
+  const bodyTemplate = String(item?.request_body_template || item?.request_body || '').trim()
+    || buildAiPenParamTemplate(item?.param_names, item?.mode, contentType, item?.body_kind);
   const lines = [`${method} ${url}`];
   if (contentType) lines.push(`Content-Type: ${contentType}`);
   if (bodyTemplate) {
@@ -2850,60 +3063,28 @@ function buildAiPenRuntimeRequestPacketText(item: any): string {
   const method = String(item?.method || 'GET').trim().toUpperCase() || 'GET';
   const urlText = String(item?.url || item?.request_url || '').trim();
   if (!urlText) return '';
-
-  let requestPath = '/';
-  let hostText = '';
-  try {
-    const parsed = new URL(urlText);
-    requestPath = `${parsed.pathname || '/'}${parsed.search || ''}` || '/';
-    hostText = parsed.host || '';
-  } catch {
-    requestPath = urlText;
-  }
-
-  const headerMap = (item?.request_headers && typeof item.request_headers === 'object') ? item.request_headers : {};
-  const packetHeaders: Array<[string, string]> = [];
-  if (hostText) packetHeaders.push(['Host', hostText]);
-  const hasHostHeader = Object.keys(headerMap).some((key) => String(key || '').trim().toLowerCase() === 'host');
-  if (hasHostHeader) {
-    packetHeaders.length = 0;
-  }
-  Object.entries(headerMap).forEach(([key, value]) => {
-    const keyText = String(key || '').trim();
-    const valueText = String(value || '').trim();
-    if (!keyText || !valueText) return;
-    packetHeaders.push([keyText, valueText]);
-  });
-
-  const contentType = String(
+  const rawContentType = String(
     item?.content_type
       || item?.request_headers?.['Content-Type']
       || item?.request_headers?.['content-type']
       || ''
   ).trim();
-  const hasContentType = packetHeaders.some(([key]) => key.toLowerCase() === 'content-type');
-  if (contentType && !hasContentType && ['POST', 'PUT', 'PATCH'].includes(method)) {
-    packetHeaders.push(['Content-Type', contentType]);
-  }
-
-  const bodyText = String(item?.request_body_template || item?.request_body || '').trim() || buildAiPenParamTemplate(item?.param_names, item?.mode);
-  const lines = [`${method} ${requestPath} HTTP/1.1`];
-  packetHeaders.forEach(([key, value]) => {
-    lines.push(`${key}: ${value}`);
-  });
-  lines.push('');
-  if (bodyText) {
-    lines.push(bodyText);
-  }
-  return lines.join('\n').trim();
+  const bodyText = String(item?.request_body_template || item?.request_body || '').trim()
+    || buildAiPenParamTemplate(item?.param_names, item?.mode, rawContentType, item?.body_kind);
+  const contentType = inferAiPenContentType(item?.mode, item?.body_kind, rawContentType, bodyText);
+  return buildAiPenHttpPacketText(method, urlText, item?.request_headers, contentType, bodyText);
 }
 
 function buildAiPenSampleInterfaceCopyText(item: any): string {
   const method = String(item?.method || 'GET').trim().toUpperCase() || 'GET';
-  const urlTemplate = String(item?.url_template || '').trim();
+  const urlTemplate = String(item?.url_template || item?.url || '').trim();
   const pathTemplate = String(item?.path_template || item?.path || '').trim();
   if (method === 'GET') return urlTemplate || pathTemplate;
-  return String(item?.request_packet_template || '').trim() || buildAiPenParamTemplate(item?.params, item?.mode);
+  const rawContentType = String(item?.content_type || '').trim();
+  const bodyText = String(item?.request_body_template || item?.body_template || '').trim()
+    || buildAiPenParamTemplate(item?.params, item?.mode, rawContentType, item?.body_kind);
+  const contentType = inferAiPenContentType(item?.mode, item?.body_kind, rawContentType, bodyText);
+  return buildAiPenHttpPacketText(method, urlTemplate || pathTemplate, {}, contentType, bodyText);
 }
 
 function extractAiPenPostSampleInterfaceTemplates(sampleInterfaces: any[]): string[] {
@@ -2931,6 +3112,32 @@ function formatAiPenInterfaceRole(role: any): string {
     generic_api: '通用接口',
   };
   return mapping[text] || text || '-';
+}
+
+function formatAiPenRiskTypeLabel(value: any): string {
+  const text = String(value || '').trim().toLowerCase();
+  const mapping: Record<string, string> = {
+    api_doc: 'API文档',
+    graphql: 'GraphQL',
+    jwt: 'JWT',
+    sensitive_info: '敏感信息',
+    idor: 'IDOR',
+    sqli: 'SQL注入',
+    xss: 'XSS',
+    file_upload: '文件上传',
+    file_read: '文件读取',
+    path_traversal: '路径穿越',
+    ssrf: 'SSRF',
+    xxe: 'XXE',
+    ssti: 'SSTI',
+    cmdi: '命令注入',
+    websocket: 'WebSocket',
+    socketio: 'Socket.IO',
+    web_policy: '策略配置',
+    login_surface: '登录入口',
+    weak_password: '弱口令',
+  };
+  return mapping[text] || normalizeValue(value);
 }
 
 function buildAiPenInterfaceFetchCountSummary(row: any): { postCount: number; getCount: number } {
@@ -3158,7 +3365,7 @@ function formatAiPlanRequestText(value: any): string {
   };
 
   append('目标', parsed.target);
-  append('漏洞URL', parsed.vuln_url);
+  append('获取接口', `POST:${buildAiPenInterfaceFetchCountSummary(parsed).postCount} / GET:${buildAiPenInterfaceFetchCountSummary(parsed).getCount}`);
   append('来源', parsed.source_collection);
   append('来源模块', parsed.source_module);
   append('风险类型', parsed.risk_type);
@@ -4273,10 +4480,14 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
         vuln: '风险',
         nuclei_result: 'PoC风险',
         wih: 'WIH',
+        fileleak: '目录扫描',
         site: '站点线索',
         url: 'URL线索',
       };
       return sourceMap[sourceText] || normalizeValue(value);
+    }
+    if (column === 'risk_type') {
+      return formatAiPenRiskTypeLabel(value);
     }
     if (column === 'decision') {
       const decisionText = String(value || '').trim().toLowerCase();
@@ -7842,23 +8053,19 @@ function TableModuleView({
     () => extractAiPenRuntimeApiUrls(aiPenDetail?.row?.runtime_api_calls),
     [aiPenDetail]
   );
-  const aiPenDetailSamplePaths = useMemo(
-    () => extractAiPenSamplePaths(
-      aiPenDetail?.row?.api_surface_summary?.sample_paths || aiPenDetail?.row?.api_doc_summary?.sample_paths
+  const aiPenDetailJsSampleInterfaces = useMemo(
+    () => filterAiPenJsSampleInterfaces(
+      aiPenDetail?.row?.api_surface_summary?.sample_interfaces || aiPenDetail?.row?.api_doc_summary?.sample_interfaces || []
     ),
     [aiPenDetail]
   );
-  const aiPenDetailSampleInterfacePaths = useMemo(
-    () => extractAiPenSampleInterfacePaths(
-      aiPenDetail?.row?.api_surface_summary?.sample_interfaces || aiPenDetail?.row?.api_doc_summary?.sample_interfaces
-    ),
-    [aiPenDetail]
+  const aiPenDetailJsSampleInterfacePaths = useMemo(
+    () => extractAiPenSampleInterfacePaths(aiPenDetailJsSampleInterfaces),
+    [aiPenDetailJsSampleInterfaces]
   );
-  const aiPenDetailPostSampleInterfaceTemplates = useMemo(
-    () => extractAiPenPostSampleInterfaceTemplates(
-      aiPenDetail?.row?.api_surface_summary?.sample_interfaces || aiPenDetail?.row?.api_doc_summary?.sample_interfaces
-    ),
-    [aiPenDetail]
+  const aiPenDetailJsPostSampleInterfaceTemplates = useMemo(
+    () => extractAiPenPostSampleInterfaceTemplates(aiPenDetailJsSampleInterfaces),
+    [aiPenDetailJsSampleInterfaces]
   );
 
   useEffect(() => {
@@ -12417,7 +12624,7 @@ function TableModuleView({
                   来源：{formatModuleCellValue('ai_pen_test', 'source_collection', aiPenDetail.row)}
                 </span>
                 <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
-                  类型：{normalizeValue(aiPenDetail.row?.risk_type)}
+                  类型：{formatAiPenRiskTypeLabel(aiPenDetail.row?.risk_type)}
                 </span>
                 <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
                   结论：{formatModuleCellValue('ai_pen_test', 'decision', aiPenDetail.row)}
@@ -12459,23 +12666,24 @@ function TableModuleView({
                 </div>
                 <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs font-black tracking-wide text-brand-text">漏洞URL</div>
-                    {normalizeValueNoTruncate(aiPenDetail.row?.vuln_url) !== '-' ? (
+                    <div className="text-xs font-black tracking-wide text-brand-text">获取接口</div>
+                    {(buildAiPenInterfaceFetchCountSummary(aiPenDetail.row).postCount > 0 || buildAiPenInterfaceFetchCountSummary(aiPenDetail.row).getCount > 0) ? (
                       <button
                         type="button"
-                        onClick={() => void copyTextToClipboard(normalizeValueNoTruncate(aiPenDetail.row?.vuln_url), '漏洞URL')}
+                        onClick={() => void copyTextToClipboard(`POST:${buildAiPenInterfaceFetchCountSummary(aiPenDetail.row).postCount} / GET:${buildAiPenInterfaceFetchCountSummary(aiPenDetail.row).getCount}`, '获取接口摘要')}
                         className="text-xs font-semibold text-brand-accent hover:underline"
                       >
                         复制
                       </button>
                     ) : null}
                   </div>
-                  <div className="text-sm break-all leading-relaxed text-center">
-                    {renderTextWithHyperlink(
-                      normalizeValueNoTruncate(aiPenDetail.row?.vuln_url) !== '-'
-                        ? normalizeValueNoTruncate(aiPenDetail.row?.vuln_url)
-                        : normalizeValueNoTruncate(aiPenDetail.row?.target)
-                    )}
+                  <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                      POST：{buildAiPenInterfaceFetchCountSummary(aiPenDetail.row).postCount} 条
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                      GET：{buildAiPenInterfaceFetchCountSummary(aiPenDetail.row).getCount} 条
+                    </span>
                   </div>
                 </div>
               </div>
@@ -13216,50 +13424,6 @@ function TableModuleView({
 
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-[11px] font-black tracking-wide text-brand-text-muted">示例接口</div>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          {aiPenDetailSamplePaths.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => void copyTextToClipboard(aiPenDetailSamplePaths.join('\n'), '示例接口路径')}
-                              className="text-xs font-semibold text-brand-accent hover:underline"
-                            >
-                              复制路径
-                            </button>
-                          ) : null}
-                          {aiPenDetailPostSampleInterfaceTemplates.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => void copyTextToClipboard(aiPenDetailPostSampleInterfaceTemplates.join('\n\n'), '示例POST接口模板')}
-                              className="text-xs font-semibold text-brand-accent hover:underline"
-                            >
-                              复制POST模板
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                      {Array.isArray(apiSurfaceSummary?.sample_interfaces) && apiSurfaceSummary.sample_interfaces.length > 0 ? (
-                        <div className="space-y-1">
-                          {apiSurfaceSummary.sample_interfaces.map((item: any, index: number) => (
-                            <div key={`${index}-${item?.method}-${item?.path}`} className="font-mono break-all">
-                              {index + 1}. {String(item?.path_template || item?.path || '').trim() || '-'}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (Array.isArray(apiSurfaceSummary?.sample_paths) && apiSurfaceSummary.sample_paths.length > 0 ? (
-                        <div className="space-y-1">
-                          {apiSurfaceSummary.sample_paths.map((item: any, index: number) => (
-                            <div key={`${index}-${item}`} className="font-mono break-all">
-                              {index + 1}. {String(item || '').trim() || '-'}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-brand-text-muted">暂无</div>
-                      ))}
-                    </div>
-                    <div className="rounded-lg border border-brand-border bg-brand-bg/50 px-3 py-3 space-y-2">
                       <div className="text-[11px] font-black tracking-wide text-brand-text-muted">参数摘要</div>
                       {Array.isArray(apiSurfaceSummary?.parameter_names) && apiSurfaceSummary.parameter_names.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
@@ -13297,29 +13461,29 @@ function TableModuleView({
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[11px] font-black tracking-wide text-brand-text-muted">JS提取接口样例</div>
                         <div className="flex flex-wrap items-center justify-end gap-2">
-                          {aiPenDetailSampleInterfacePaths.length > 0 ? (
+                          {aiPenDetailJsSampleInterfacePaths.length > 0 ? (
                             <button
                               type="button"
-                              onClick={() => void copyTextToClipboard(aiPenDetailSampleInterfacePaths.join('\n'), 'JS提取接口路径')}
+                              onClick={() => void copyTextToClipboard(aiPenDetailJsSampleInterfacePaths.join('\n'), 'JS提取接口路径')}
                               className="text-xs font-semibold text-brand-accent hover:underline"
                             >
                               复制路径
                             </button>
                           ) : null}
-                          {aiPenDetailPostSampleInterfaceTemplates.length > 0 ? (
+                          {aiPenDetailJsPostSampleInterfaceTemplates.length > 0 ? (
                             <button
                               type="button"
-                              onClick={() => void copyTextToClipboard(aiPenDetailPostSampleInterfaceTemplates.join('\n\n'), 'JS提取POST接口模板')}
+                              onClick={() => void copyTextToClipboard(aiPenDetailJsPostSampleInterfaceTemplates.join('\n\n'), 'JS提取POST接口请求包')}
                               className="text-xs font-semibold text-brand-accent hover:underline"
                             >
-                              复制POST模板
+                              复制POST请求包
                             </button>
                           ) : null}
                         </div>
                       </div>
-                      {Array.isArray(apiSurfaceSummary?.sample_interfaces) && apiSurfaceSummary.sample_interfaces.length > 0 ? (
+                      {Array.isArray(aiPenDetailJsSampleInterfaces) && aiPenDetailJsSampleInterfaces.length > 0 ? (
                         <div className="space-y-2">
-                          {apiSurfaceSummary.sample_interfaces.map((item: any, index: number) => (
+                          {aiPenDetailJsSampleInterfaces.map((item: any, index: number) => (
                             <div key={`${index}-${item?.method}-${item?.path}`} className="rounded-md border border-brand-border bg-brand-bg/60 px-2.5 py-2">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="font-mono break-all flex-1 min-w-0">
@@ -13336,11 +13500,11 @@ function TableModuleView({
                                   </button>
                                   {['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()) ? (
                                     <button
-                                      type="button"
-                                      onClick={() => void copyTextToClipboard(buildAiPenSampleInterfaceCopyText(item), '接口请求包')}
-                                      className="text-[11px] font-semibold text-brand-accent hover:underline"
-                                    >
-                                      复制请求包
+                                    type="button"
+                                    onClick={() => void copyTextToClipboard(buildAiPenSampleInterfaceCopyText(item), '接口请求包')}
+                                    className="text-[11px] font-semibold text-brand-accent hover:underline"
+                                  >
+                                    复制请求包
                                     </button>
                                   ) : null}
                                 </div>
@@ -13357,7 +13521,7 @@ function TableModuleView({
                               ) : null}
                               {['POST', 'PUT', 'PATCH'].includes(String(item?.method || '').trim().toUpperCase()) && (String(item?.request_body_template || '').trim() || Array.isArray(item?.params)) ? (
                                 <div className="mt-2 rounded border border-brand-border bg-brand-bg/70 px-2 py-2 text-[11px] font-mono whitespace-pre-wrap break-all leading-relaxed">
-                                  {String(item?.request_packet_template || '').trim() || buildAiPenSampleInterfaceCopyText(item)}
+                                  {buildAiPenSampleInterfaceCopyText(item)}
                                 </div>
                               ) : null}
                             </div>
@@ -13785,6 +13949,8 @@ function AiPenAssetWorkspaceView({
     target: string;
     risk_name: string;
     source_collection: string;
+    risk_type: string;
+    interface_fetch_filter: string;
     decision: string;
     status: string;
     proof_family: string;
@@ -13798,6 +13964,8 @@ function AiPenAssetWorkspaceView({
     target: '',
     risk_name: '',
     source_collection: '',
+    risk_type: '',
+    interface_fetch_filter: '',
     decision: '',
     status: '',
     proof_family: '',
@@ -13917,6 +14085,10 @@ function AiPenAssetWorkspaceView({
     () => buildAiPenWeakOutcomeHint(selectedRow),
     [selectedRow]
   );
+  const selectedRowInterfaceFetchSummary = useMemo(
+    () => buildAiPenInterfaceFetchCountSummary(selectedRow),
+    [selectedRow]
+  );
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / size) || 1), [size, total]);
 
   const decisionLabelMap: Record<string, string> = {
@@ -13973,6 +14145,7 @@ function AiPenAssetWorkspaceView({
     (value: any) => sourceLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
     [sourceLabelMap]
   );
+  const formatRiskType = useCallback((value: any) => formatAiPenRiskTypeLabel(value), []);
   const formatVerificationStep = useCallback(
     (value: any) => verificationStepLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
     [verificationStepLabelMap]
@@ -13981,6 +14154,20 @@ function AiPenAssetWorkspaceView({
     (value: any) => payloadTypeLabelMap[String(value || '').trim().toLowerCase()] || normalizeValue(value),
     [payloadTypeLabelMap]
   );
+  const riskTypeOptions = useMemo(() => {
+    const fallbackValues = [
+      'api_doc', 'graphql', 'jwt', 'sensitive_info', 'idor', 'sqli', 'xss',
+      'file_upload', 'file_read', 'path_traversal', 'ssrf', 'xxe', 'ssti', 'cmdi',
+      'websocket', 'socketio', 'web_policy', 'login_surface', 'weak_password',
+    ];
+    const merged = new Set<string>();
+    fallbackValues.forEach((item) => merged.add(item));
+    (Array.isArray(stats.risk_type) ? stats.risk_type : []).forEach((item) => {
+      const text = String(item?.name || '').trim().toLowerCase();
+      if (text) merged.add(text);
+    });
+    return Array.from(merged);
+  }, [stats.risk_type]);
   const formatProofFamily = useCallback((value: any) => {
     const text = String(value || '').trim().toLowerCase();
     const mapping: Record<string, string> = {
@@ -14430,7 +14617,7 @@ function AiPenAssetWorkspaceView({
   const manualReviewCount = getStatsCount(stats.decision, 'needs_manual_review');
   const errorCount = getStatsCount(stats.status, 'error');
   const strongProofCount = getStatsCount(stats.proof_strength, 'strong');
-  const topRiskType = stats.risk_type[0]?.name ? `${stats.risk_type[0].name} (${stats.risk_type[0].count})` : '-';
+  const topRiskType = stats.risk_type[0]?.name ? `${formatRiskType(stats.risk_type[0].name)} (${stats.risk_type[0].count})` : '-';
   const topSource = stats.source_collection[0]?.name ? `${formatSource(stats.source_collection[0].name)} (${stats.source_collection[0].count})` : '-';
   const readinessSummary = stats.phase_f_readiness?.summary || emptyStats.phase_f_readiness.summary;
   const readinessCapabilities = Array.isArray(stats.phase_f_readiness?.capabilities) ? stats.phase_f_readiness.capabilities : [];
@@ -14611,7 +14798,7 @@ function AiPenAssetWorkspaceView({
       ) : null}
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-10 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3">
           <div className="space-y-1">
             <label className="text-xs font-bold text-brand-text">任务ID</label>
             <input
@@ -14651,8 +14838,42 @@ function AiPenAssetWorkspaceView({
                 <option value="vuln">风险</option>
                 <option value="nuclei_result">PoC风险</option>
                 <option value="wih">WIH</option>
+                <option value="fileleak">目录扫描</option>
                 <option value="site">站点线索</option>
                 <option value="url">URL线索</option>
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">类型</label>
+            <div className="relative">
+              <select
+                value={searchForm.risk_type}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, risk_type: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                {riskTypeOptions.map((item) => (
+                  <option key={item} value={item}>
+                    {formatRiskType(item)}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-brand-text">获取接口</label>
+            <div className="relative">
+              <select
+                value={searchForm.interface_fetch_filter}
+                onChange={(event) => setSearchForm((prev) => ({ ...prev, interface_fetch_filter: event.target.value }))}
+                className={UNIFIED_SELECT_CLASS}
+              >
+                <option value="">全部</option>
+                <option value="post_available">POST 接口 &gt; 0</option>
+                <option value="get_available">GET 接口 &gt; 0</option>
               </select>
               <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
@@ -14997,15 +15218,30 @@ function AiPenAssetWorkspaceView({
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2 space-y-1">
                       <div className="text-xs font-black tracking-wide text-brand-text-muted">目标资产</div>
                       <div className="break-all">{normalizeValueNoTruncate(selectedRow?.target)}</div>
+                      {normalizeValueNoTruncate(selectedRow?.vuln_url) !== '-' && normalizeValueNoTruncate(selectedRow?.vuln_url) !== normalizeValueNoTruncate(selectedRow?.target) ? (
+                        <div className="text-[11px] text-brand-text-muted break-all">
+                          {normalizeValueNoTruncate(selectedRow?.vuln_url)}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-2 space-y-1">
-                      <div className="text-xs font-black tracking-wide text-brand-text-muted">漏洞URL</div>
-                      <div className="break-all">{normalizeValueNoTruncate(selectedRow?.vuln_url)}</div>
+                      <div className="text-xs font-black tracking-wide text-brand-text-muted">获取接口</div>
+                      <div className="flex flex-wrap gap-2 text-sm">
+                        <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold">
+                          POST：{selectedRowInterfaceFetchSummary.postCount} 条
+                        </span>
+                        <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold">
+                          GET：{selectedRowInterfaceFetchSummary.getCount} 条
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
                       来源：{formatSource(selectedRow?.source_collection)}
+                    </span>
+                    <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/65 px-2.5 py-1 text-xs font-semibold">
+                      类型：{formatRiskType(selectedRow?.risk_type)}
                     </span>
                     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${renderDecisionBadgeClass(selectedRow?.decision)}`}>
                       结论：{formatDecision(selectedRow?.decision)}
