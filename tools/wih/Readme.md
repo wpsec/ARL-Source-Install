@@ -136,12 +136,20 @@ Flags:
 当前这版内置驱动已覆盖：
 
 - 页面加载期 `fetch/xhr/sendBeacon`
+- Playwright 网络请求观测补充
 - 基础 `json/graphql/form` body 解析
+- 同 host 页面浅层探索
 - 少量低风险自动交互：
   - 搜索类输入
   - `select` 切换
   - `tab` 切换
   - 搜索/筛选/下一页/更多 这类按钮点击
+
+`--runtime-max-pages` 现在会真实参与页面探索预算：
+
+- 先访问当前目标页
+- 再从 `a[href] / iframe[src] / GET form action` 中收集同 host 候选页
+- 按预算做浅层探索，并继续采集运行时请求
 
 6. 使用 external runtime driver 接入自定义浏览器采集器
 

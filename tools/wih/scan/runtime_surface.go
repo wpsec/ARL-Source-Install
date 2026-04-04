@@ -263,6 +263,7 @@ func normalizeRuntimeEndpoint(endpoint datatype.EndpointRecord, targetURL string
 	normalized.Path = firstNonEmpty(strings.TrimSpace(parsed.Path), "/")
 	normalized.Method = methodText
 	normalized.Protocol = firstNonEmpty(strings.TrimSpace(parsed.Scheme), "https")
+	normalized.PageURL = firstNonEmpty(strings.TrimSpace(normalized.PageURL), strings.TrimSpace(normalized.TriggerContext.Page), strings.TrimSpace(targetURL))
 	normalized.SourceTypes = uniqueSortedStrings(append(normalized.SourceTypes, "runtime_hook"))
 	normalized.ContentType = firstNonEmpty(
 		strings.TrimSpace(normalized.ContentType),
@@ -330,6 +331,15 @@ func normalizeRuntimeParameter(
 			strings.ToLower(strings.TrimSpace(normalized.Location)),
 			strings.ToLower(normalized.ParamName),
 		}, "|")))
+	}
+	if strings.TrimSpace(normalized.Source) == "" {
+		normalized.Source = "runtime"
+	}
+	if strings.TrimSpace(normalized.SourceDetail.PageURL) == "" {
+		normalized.SourceDetail.PageURL = firstNonEmpty(
+			strings.TrimSpace(endpoint.TriggerContext.Page),
+			strings.TrimSpace(endpoint.PageURL),
+		)
 	}
 	if normalized.OccurrenceCount <= 0 {
 		normalized.OccurrenceCount = 1

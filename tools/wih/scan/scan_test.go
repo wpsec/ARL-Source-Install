@@ -322,6 +322,10 @@ func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
 				"endpoint_id": "runtime-ep-1",
 				"url":         "https://example.com/api/user",
 				"method":      "GET",
+				"trigger_context": map[string]any{
+					"page":  "https://example.com/admin",
+					"event": "fetch",
+				},
 			},
 			{
 				"url":    "https://other.com/api/out",
@@ -348,6 +352,9 @@ func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
 	if result.Endpoints[0].URL != "https://example.com/api/user" {
 		t.Fatalf("unexpected runtime endpoint url: %s", result.Endpoints[0].URL)
 	}
+	if result.Endpoints[0].PageURL != "https://example.com/admin" {
+		t.Fatalf("unexpected runtime endpoint page url: %s", result.Endpoints[0].PageURL)
+	}
 	if result.Endpoints[0].RequestTemplate.RequestPacket == "" {
 		t.Fatal("runtime endpoint request packet should be normalized")
 	}
@@ -356,6 +363,12 @@ func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
 	}
 	if result.Parameters[0].EndpointID != result.Endpoints[0].EndpointID {
 		t.Fatalf("runtime parameter endpoint id mismatch got=%s expected=%s", result.Parameters[0].EndpointID, result.Endpoints[0].EndpointID)
+	}
+	if result.Parameters[0].Source != "runtime" {
+		t.Fatalf("unexpected runtime parameter source: %s", result.Parameters[0].Source)
+	}
+	if result.Parameters[0].SourceDetail.PageURL != "https://example.com/admin" {
+		t.Fatalf("unexpected runtime parameter page url: %s", result.Parameters[0].SourceDetail.PageURL)
 	}
 }
 

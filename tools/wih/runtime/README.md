@@ -140,9 +140,11 @@ runtime driver 通过 `stdout` 返回 JSON：
 - `window.fetch`
 - `XMLHttpRequest.open/send/setRequestHeader`
 - `navigator.sendBeacon`
+- `Playwright page.on('request')` 网络请求观测
 - `URLSearchParams`
 - `FormData`
 - `JSON / GraphQL body` 的基础解析
+- 同 host 页面浅层探索
 
 同时会执行少量低风险交互：
 
@@ -150,6 +152,30 @@ runtime driver 通过 `stdout` 返回 JSON：
 - `select` 切换
 - `tab` 切换
 - 搜索/筛选/下一页/更多 这类弱副作用按钮点击
+
+页面探索策略当前为：
+
+- 先访问当前目标页
+- 再从页面里的 `a[href] / iframe[src] / GET form action` 中提取同 host 候选页
+- 按 `max_pages` 预算做浅层顺序探索
+- 每页仅执行预算内的低风险交互，不做明显高副作用动作
+
+endpoint 去重当前也不再只按“完整 URL 值”处理，而是更偏向“接口面”维度：
+
+- `method`
+- `origin + path`
+- `query 参数键集合`
+- `body 参数键集合`
+- `body_kind`
+
+这样像分页、筛选值变化这类请求，不会轻易把同一接口面拆成大量近似重复记录。
+
+当前 runtime 输出也会开始补齐：
+
+- `endpoint.page_url`
+- `parameter.source=runtime`
+- `parameter.source_detail.page_url`
+- `parameter.occurrence_count`
 
 默认仍然会避免：
 
