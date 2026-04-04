@@ -13,32 +13,32 @@ import (
 )
 
 var (
-	fetchCallPattern       = regexp.MustCompile(`(?is)fetch\s*\(\s*([\"'` + "`" + `])([^"'` + "`" + `]+)\1`)
-	axiosMethodCallPattern = regexp.MustCompile(`(?is)(?:[A-Za-z_$][\w$]*\.)+(get|post|put|delete|patch)\s*\(\s*([\"'` + "`" + `])([^"'` + "`" + `]+)\2`)
+	fetchCallPattern       = regexp.MustCompile("(?is)fetch\\s*\\(\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`]+)`)")
+	axiosMethodCallPattern = regexp.MustCompile("(?is)(?:[A-Za-z_$][\\w$]*\\.)+(get|post|put|delete|patch)\\s*\\(\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`]+)`)")
 	configRequestPatterns  = []*regexp.Regexp{
 		regexp.MustCompile(`(?is)axios(?:\.[A-Za-z_$][\w$]*)?\s*\(\s*\{`),
 		regexp.MustCompile(`(?is)(?:[A-Za-z_$][\w$]*\.)?request\s*\(\s*\{`),
 	}
-	graphQLVariablePattern = regexp.MustCompile(`(?is)variables\s*:\s*\{([^}]{1,1200})\}`)
+	graphQLVariablePattern = regexp.MustCompile(`(?is)variables\s*:\s*\{([^}]{1,1000})\}`)
 	queryObjectPatterns    = []*regexp.Regexp{
-		regexp.MustCompile(`(?is)params\s*:\s*\{([^}]{1,1200})\}`),
-		regexp.MustCompile(`(?is)new\s+URLSearchParams\s*\(\s*\{([^}]{1,1200})\}\s*\)`),
+		regexp.MustCompile(`(?is)params\s*:\s*\{([^}]{1,1000})\}`),
+		regexp.MustCompile(`(?is)new\s+URLSearchParams\s*\(\s*\{([^}]{1,1000})\}\s*\)`),
 	}
 	bodyObjectPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`(?is)data\s*:\s*\{([^}]{1,1200})\}`),
-		regexp.MustCompile(`(?is)body\s*:\s*JSON\.stringify\s*\(\s*\{([^}]{1,1200})\}\s*\)`),
-		regexp.MustCompile(`(?is)body\s*:\s*\{([^}]{1,1200})\}`),
+		regexp.MustCompile(`(?is)data\s*:\s*\{([^}]{1,1000})\}`),
+		regexp.MustCompile(`(?is)body\s*:\s*JSON\.stringify\s*\(\s*\{([^}]{1,1000})\}\s*\)`),
+		regexp.MustCompile(`(?is)body\s*:\s*\{([^}]{1,1000})\}`),
 	}
 	headerObjectPatterns = []*regexp.Regexp{
-		regexp.MustCompile(`(?is)headers\s*:\s*\{([^}]{1,1200})\}`),
+		regexp.MustCompile(`(?is)headers\s*:\s*\{([^}]{1,1000})\}`),
 	}
-	appendCallPattern      = regexp.MustCompile(`(?is)\.(append|set)\s*\(\s*([\"'])([^\"']{1,120})\2`)
-	urlConfigPattern       = regexp.MustCompile(`(?is)url\s*:\s*([\"'` + "`" + `])([^"'` + "`" + `]+)\1`)
-	methodConfigPattern    = regexp.MustCompile(`(?is)(?:type|method)\s*:\s*([\"'` + "`" + `])([A-Za-z]+)\1`)
+	appendCallPattern      = regexp.MustCompile(`(?is)\.(append|set)\s*\(\s*(?:"([^"]{1,120})"|'([^']{1,120})')`)
+	urlConfigPattern       = regexp.MustCompile("(?is)url\\s*:\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`]+)`)")
+	methodConfigPattern    = regexp.MustCompile("(?is)(?:type|method)\\s*:\\s*(?:\"([A-Za-z]+)\"|'([A-Za-z]+)'|`([A-Za-z]+)`)")
 	graphQLSignalPattern   = regexp.MustCompile(`(?is)\b(query|mutation|operationName)\b`)
 	objectKeyQuotedPattern = regexp.MustCompile(`(?is)[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:`)
-	objectKeyBarePattern   = regexp.MustCompile(`(?is)(?<![\"'])\b([A-Za-z_][\w.-]{0,63})\b\s*:`)
-	objectShorthandPattern = regexp.MustCompile(`(?:^|,)\s*(\.\.\.)?\s*([A-Za-z_][\w.-]{0,63})\s*(?=,|$)`)
+	objectKeyBarePattern   = regexp.MustCompile(`(?is)(?:^|[{\s,])([A-Za-z_][\w.-]{0,63})\s*:`)
+	objectShorthandPattern = regexp.MustCompile(`(?:^|,)\s*(\.\.\.)?\s*([A-Za-z_][\w.-]{0,63})\s*(?:,|$)`)
 	templateSegmentPattern = regexp.MustCompile(`\$\{\s*([^}]{1,80})\s*\}`)
 	doubleBracePattern     = regexp.MustCompile(`\{\{\s*([^}]{1,80})\s*\}\}`)
 	pathPlaceholderPattern = regexp.MustCompile(`\{([A-Za-z_][\w.-]{0,63})\}`)
@@ -67,25 +67,25 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 	}
 
 	candidates := make([]jsEndpointCandidate, 0)
-	for _, indexPair := range fetchCallPattern.FindAllStringSubmatchIndex(jsBody, -1) {
-		if len(indexPair) < 6 {
+	for _, match := range fetchCallPattern.FindAllStringSubmatchIndex(jsBody, -1) {
+		if len(match) < 8 {
 			continue
 		}
-		rawURL := jsBody[indexPair[4]:indexPair[5]]
-		window := buildJSRequestWindow(jsBody, indexPair[0])
+		rawURL := firstIndexedValue(jsBody, match[2:4], match[4:6], match[6:8])
+		window := buildJSRequestWindow(jsBody, match[0])
 		candidate := buildJSEndpointCandidate(jsURL, rawURL, "GET", window)
 		if candidate.URL != "" {
 			candidates = append(candidates, candidate)
 		}
 	}
 
-	for _, indexPair := range axiosMethodCallPattern.FindAllStringSubmatchIndex(jsBody, -1) {
-		if len(indexPair) < 8 {
+	for _, match := range axiosMethodCallPattern.FindAllStringSubmatchIndex(jsBody, -1) {
+		if len(match) < 10 {
 			continue
 		}
-		method := strings.ToUpper(strings.TrimSpace(jsBody[indexPair[2]:indexPair[3]]))
-		rawURL := jsBody[indexPair[6]:indexPair[7]]
-		window := buildJSRequestWindow(jsBody, indexPair[0])
+		method := strings.ToUpper(strings.TrimSpace(firstIndexedValue(jsBody, match[2:4])))
+		rawURL := firstIndexedValue(jsBody, match[4:6], match[6:8], match[8:10])
+		window := buildJSRequestWindow(jsBody, match[0])
 		candidate := buildJSEndpointCandidate(jsURL, rawURL, method, window)
 		if candidate.URL != "" {
 			candidates = append(candidates, candidate)
@@ -97,14 +97,15 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 			start := indexPair[0]
 			window := buildJSRequestWindow(jsBody, start)
 			urlMatch := urlConfigPattern.FindStringSubmatch(window)
-			if len(urlMatch) < 3 {
+			rawURL := matchValue(urlMatch, 1)
+			if strings.TrimSpace(rawURL) == "" {
 				continue
 			}
 			methodText := "GET"
-			if methodMatch := methodConfigPattern.FindStringSubmatch(window); len(methodMatch) >= 3 {
-				methodText = strings.ToUpper(strings.TrimSpace(methodMatch[2]))
+			if methodMatch := methodConfigPattern.FindStringSubmatch(window); len(methodMatch) > 0 {
+				methodText = strings.ToUpper(strings.TrimSpace(matchValue(methodMatch, 1)))
 			}
-			candidate := buildJSEndpointCandidate(jsURL, urlMatch[2], methodText, window)
+			candidate := buildJSEndpointCandidate(jsURL, rawURL, methodText, window)
 			if candidate.URL != "" {
 				candidates = append(candidates, candidate)
 			}
@@ -237,7 +238,7 @@ func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParam
 	case "multipart":
 		formNames := make([]string, 0, len(keys))
 		formNames = append(formNames, keys...)
-		return buildAiMultipartPreview(formNames)
+		return buildMultipartPreview(formNames)
 	}
 	return buildBodyPreview(normalizedBodyMap)
 }
@@ -403,7 +404,7 @@ func collectAppendParamNames(source string) []string {
 	names := make([]string, 0)
 	for _, match := range appendCallPattern.FindAllStringSubmatch(source, -1) {
 		if len(match) >= 4 {
-			names = append(names, strings.TrimSpace(match[3]))
+			names = append(names, strings.TrimSpace(firstNonEmpty(match[2], match[3])))
 		}
 	}
 	return uniqueSortedStrings(names)
@@ -464,7 +465,7 @@ func extractObjectLiteralKeys(raw string) []string {
 		}
 	}
 
-	normalized := regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+	normalized := strings.TrimSpace(regexp.MustCompile(`\s+`).ReplaceAllString(text, " "))
 	for _, match := range objectShorthandPattern.FindAllStringSubmatch(normalized, -1) {
 		if len(match) < 3 {
 			continue
@@ -479,12 +480,50 @@ func extractObjectLiteralKeys(raw string) []string {
 		appendName(token)
 	}
 
+	for _, segment := range strings.Split(normalized, ",") {
+		token := strings.TrimSpace(segment)
+		if token == "" || strings.Contains(token, ":") {
+			continue
+		}
+		token = strings.TrimPrefix(token, "...")
+		token = strings.TrimSpace(token)
+		if token == "" || strings.ContainsAny(token, "()[]{} ") {
+			continue
+		}
+		appendName(token)
+	}
+
 	for _, match := range appendCallPattern.FindAllStringSubmatch(text, -1) {
 		if len(match) >= 4 {
-			appendName(match[3])
+			appendName(firstNonEmpty(match[2], match[3]))
 		}
 	}
 	return result
+}
+
+func firstIndexedValue(source string, pairs ...[]int) string {
+	for _, pair := range pairs {
+		if len(pair) < 2 {
+			continue
+		}
+		start := pair[0]
+		end := pair[1]
+		if start < 0 || end < 0 || end <= start || end > len(source) {
+			continue
+		}
+		value := strings.TrimSpace(source[start:end])
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func matchValue(match []string, start int) string {
+	if len(match) <= start || start < 0 {
+		return ""
+	}
+	return firstNonEmpty(match[start:]...)
 }
 
 func inferJSBodyProfile(requestWindow string, bodyParams []string, graphqlParams []string) (string, string) {

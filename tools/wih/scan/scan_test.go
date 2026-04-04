@@ -463,3 +463,19 @@ func TestParseRuntimeSurfaceResponseBuildsGraphQLTemplate(t *testing.T) {
 		t.Fatalf("runtime graphql parameter location should be inferred as graphql_variable: %s", result.Parameters[0].Location)
 	}
 }
+
+// TestResolveBuiltInPlaywrightDriverPath 验证仓库内置 Playwright 驱动路径可被解析。
+func TestResolveBuiltInPlaywrightDriverPath(t *testing.T) {
+	driverPath := resolveBuiltInPlaywrightDriverPath()
+	if strings.TrimSpace(driverPath) == "" {
+		t.Fatal("playwright driver path should not be empty")
+	}
+	if !strings.HasSuffix(driverPath, "tools/wih/runtime/playwright_driver.js") &&
+		!strings.HasSuffix(driverPath, "runtime/playwright_driver.js") {
+		t.Fatalf("unexpected playwright driver path: %s", driverPath)
+	}
+	commandText := resolveBuiltInPlaywrightDriverCommand()
+	if !strings.Contains(commandText, "playwright_driver.js") {
+		t.Fatalf("unexpected playwright driver command: %s", commandText)
+	}
+}

@@ -7,7 +7,8 @@ import (
 
 // TestResolvePatternBuiltin 验证内置规则可正常取到默认正则。
 func TestResolvePatternBuiltin(t *testing.T) {
-	item := datatype.Rule{Id: "domain", Enabled: true}
+	enabled := true
+	item := datatype.Rule{Id: "domain", Enabled: &enabled}
 	if resolvePattern(item) == "" {
 		t.Fatal("domain 内置规则未返回默认 pattern")
 	}

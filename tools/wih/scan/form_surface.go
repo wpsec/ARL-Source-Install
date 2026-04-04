@@ -302,6 +302,7 @@ func buildFormRequestTemplate(actionURL *url.URL, method string, fields []formFi
 	bodyTemplate := make(map[string]string)
 	headerTemplate := make(map[string]string)
 	bodyPreview := ""
+	bodyKind := ""
 	if strings.ToUpper(strings.TrimSpace(method)) == "GET" {
 		for key := range actionURL.Query() {
 			queryTemplate[key] = "<value>"
@@ -312,6 +313,14 @@ func buildFormRequestTemplate(actionURL *url.URL, method string, fields []formFi
 	} else {
 		if contentType != "" {
 			headerTemplate["Content-Type"] = contentType
+		}
+		switch strings.ToLower(strings.TrimSpace(contentType)) {
+		case "application/x-www-form-urlencoded":
+			bodyKind = "form_urlencoded"
+		case "multipart/form-data":
+			bodyKind = "multipart"
+		case "text/plain":
+			bodyKind = "text"
 		}
 		for _, field := range fields {
 			bodyTemplate[field.Name] = firstNonEmpty(field.Example, field.Default, "<value>")

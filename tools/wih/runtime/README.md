@@ -18,7 +18,25 @@
 - `Puppeteer`
 - 自研浏览器自动化脚本
 
+当前仓库也已经内置一版最小 `Playwright` driver：
+
+- [playwright_driver.js](/Users/eric.sy.wu/Documents/Github/newui/ARL-Source-Install/tools/wih/runtime/playwright_driver.js)
+
+它的定位是：
+
+- 为 `WIH` 提供最小真实浏览器运行时采集能力
+- 优先覆盖页面加载期请求与少量低风险交互
+- 仍然把结果归一化、过滤和结构化输出留给 `WIH` 主链路
+
 ## 2. 启用方式
+
+```bash
+./wih -t https://example.com \
+  --runtime-enable \
+  --runtime-driver playwright
+```
+
+若要继续接入自定义 external driver：
 
 ```bash
 ./wih -t https://example.com \
@@ -27,9 +45,17 @@
   --runtime-command "python3 tools/wih/runtime/external_driver_example.py"
 ```
 
+使用内置 `playwright` 驱动前，需要本地具备：
+
+- `node`
+- `playwright`
+- 对应浏览器运行依赖
+
+若 `playwright` 已安装但 `node` 不在默认路径，可通过 `--runtime-command` 覆盖调用命令。
+
 ## 3. 输入协议
 
-`WIH` 会通过 `stdin` 向 external driver 发送 JSON：
+`WIH` 会通过 `stdin` 向 runtime driver 发送 JSON：
 
 ```json
 {
@@ -65,7 +91,7 @@
 
 ## 4. 输出协议
 
-external driver 通过 `stdout` 返回 JSON：
+runtime driver 通过 `stdout` 返回 JSON：
 
 ```json
 {
@@ -107,9 +133,32 @@ external driver 通过 `stdout` 返回 JSON：
 }
 ```
 
-## 5. 当前主链路会自动补的内容
+## 5. 内置 Playwright driver 当前行为
 
-external driver 不需要完全理解 `WIH` 的内部模型。
+当前仓库自带的 `playwright_driver.js` 为 MVP 实现，已覆盖：
+
+- `window.fetch`
+- `XMLHttpRequest.open/send/setRequestHeader`
+- `navigator.sendBeacon`
+- `URLSearchParams`
+- `FormData`
+- `JSON / GraphQL body` 的基础解析
+
+同时会执行少量低风险交互：
+
+- 搜索类输入框填充
+- `select` 切换
+- `tab` 切换
+- 搜索/筛选/下一页/更多 这类弱副作用按钮点击
+
+默认仍然会避免：
+
+- `submit/save/delete/update/upload/pay` 等明显高副作用动作
+- 跨 host 请求采集
+
+## 6. 当前主链路会自动补的内容
+
+runtime driver 不需要完全理解 `WIH` 的内部模型。
 
 当前 `WIH` 主链路会自动补：
 
@@ -126,9 +175,9 @@ external driver 不需要完全理解 `WIH` 的内部模型。
 - `is_pii`
 - `entropy`
 
-## 6. 当前主链路会自动做的过滤
+## 7. 当前主链路会自动做的过滤
 
-external driver 返回的结果不会被无条件信任。
+runtime driver 返回的结果不会被无条件信任。
 
 `WIH` 会继续执行：
 
@@ -143,16 +192,19 @@ external driver 返回的结果不会被无条件信任。
 - external driver 只需要尽量把真实运行时观测到的基础信息吐出来
 - 结果标准化和最终输出仍由 `WIH` 完成
 
-## 7. 示例脚本
+## 8. 示例脚本
 
 仓库中提供了一个最小可运行示例：
 
 - [external_driver_example.py](/Users/eric.sy.wu/Documents/Github/newui/ARL-Source-Install/tools/wih/runtime/external_driver_example.py)
+- [playwright_driver.js](/Users/eric.sy.wu/Documents/Github/newui/ARL-Source-Install/tools/wih/runtime/playwright_driver.js)
 
-这个脚本不实现真实浏览器 Hook，只演示：
+其中：
 
-- 读取 `stdin` JSON
-- 构造最小 runtime 结果
-- 输出 `stdout` JSON
+- `external_driver_example.py` 不实现真实浏览器 Hook，只演示：
+  - 读取 `stdin` JSON
+  - 构造最小 runtime 结果
+  - 输出 `stdout` JSON
+- `playwright_driver.js` 则提供一版最小真实浏览器实现，适合本地已有 `Playwright` 环境时直接试跑
 
-后续可以直接替换成真实的浏览器驱动实现。
+后续若需要更强的登录态、复杂单页应用、更多交互策略，仍建议继续基于当前契约替换或扩展浏览器驱动实现。

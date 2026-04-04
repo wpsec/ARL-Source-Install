@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
+	goruntime "runtime"
 	"strings"
 
 	datatype "wih/dataType"
@@ -40,6 +43,7 @@ type runtimeSurfaceResponse struct {
 // 当前支持两种模式：
 // - noop: 默认空实现，保持独立工具稳定
 // - external: 调用外部命令，通过 stdin/stdout 交换 JSON
+// - playwright: 调用仓库内置 Node/Playwright 运行时驱动
 func extractRuntimeSurface(targetURL string) runtimeSurfaceResult {
 	if !global.RuntimeEnable {
 		return runtimeSurfaceResult{}
@@ -50,6 +54,8 @@ func extractRuntimeSurface(targetURL string) runtimeSurfaceResult {
 		return runtimeSurfaceResult{}
 	case "external":
 		return extractRuntimeSurfaceByExternalDriver(targetURL)
+	case "playwright":
+		return extractRuntimeSurfaceByPlaywrightDriver(targetURL)
 	default:
 		return runtimeSurfaceResult{}
 	}
@@ -60,7 +66,21 @@ func extractRuntimeSurfaceByExternalDriver(targetURL string) runtimeSurfaceResul
 	if commandText == "" {
 		return runtimeSurfaceResult{}
 	}
+	return extractRuntimeSurfaceByCommand(targetURL, commandText)
+}
 
+func extractRuntimeSurfaceByPlaywrightDriver(targetURL string) runtimeSurfaceResult {
+	commandText := strings.TrimSpace(global.RuntimeCommand)
+	if commandText == "" {
+		commandText = resolveBuiltInPlaywrightDriverCommand()
+	}
+	if commandText == "" {
+		return runtimeSurfaceResult{}
+	}
+	return extractRuntimeSurfaceByCommand(targetURL, commandText)
+}
+
+func extractRuntimeSurfaceByCommand(targetURL string, commandText string) runtimeSurfaceResult {
 	timeoutSec := int(global.RuntimeTimeout.Seconds())
 	if timeoutSec < 1 {
 		timeoutSec = 20
@@ -100,6 +120,59 @@ func extractRuntimeSurfaceByExternalDriver(targetURL string) runtimeSurfaceResul
 	}
 
 	return parseRuntimeSurfaceResponse(stdout.Bytes(), targetURL)
+}
+
+func resolveBuiltInPlaywrightDriverCommand() string {
+	scriptPath := resolveBuiltInPlaywrightDriverPath()
+	if scriptPath == "" {
+		return ""
+	}
+	return fmt.Sprintf("node %s", shellQuote(scriptPath))
+}
+
+func resolveBuiltInPlaywrightDriverPath() string {
+	candidates := make([]string, 0, 8)
+	candidates = append(candidates,
+		filepath.Join("runtime", "playwright_driver.js"),
+		filepath.Join("tools", "wih", "runtime", "playwright_driver.js"),
+	)
+
+	if executablePath, err := os.Executable(); err == nil && strings.TrimSpace(executablePath) != "" {
+		executableDir := filepath.Dir(executablePath)
+		candidates = append(candidates,
+			filepath.Join(executableDir, "runtime", "playwright_driver.js"),
+			filepath.Join(executableDir, "tools", "wih", "runtime", "playwright_driver.js"),
+		)
+	}
+
+	if _, currentFile, _, ok := goruntime.Caller(0); ok {
+		currentDir := filepath.Dir(currentFile)
+		candidates = append(candidates, filepath.Join(currentDir, "..", "runtime", "playwright_driver.js"))
+	}
+
+	seen := make(map[string]struct{})
+	for _, candidate := range candidates {
+		cleaned := filepath.Clean(strings.TrimSpace(candidate))
+		if cleaned == "" {
+			continue
+		}
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		if util.FileExists(cleaned) {
+			return cleaned
+		}
+	}
+	return ""
+}
+
+func shellQuote(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(text, "'", "'\"'\"'") + "'"
 }
 
 func parseRuntimeSurfaceResponse(raw []byte, targetURL string) runtimeSurfaceResult {
@@ -226,11 +299,7 @@ func normalizeRuntimeParameter(
 	case "query", "path", "body", "header", "cookie", "graphql_variable":
 		normalized.Location = locationText
 	default:
-		if locationText == "" {
-			normalized.Location = "body"
-		} else {
-			normalized.Location = locationText
-		}
+		normalized.Location = locationText
 	}
 
 	endpointID := strings.TrimSpace(normalized.EndpointID)

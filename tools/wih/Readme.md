@@ -66,9 +66,9 @@ Flags:
       --parameter-output string    结构化参数结果输出文件
   -x, --proxy string               HTTP proxy (e.g. http://localhost:8080)
   -r, --rule-config string         规则配置文件 (default "rules.yml")
-      --runtime-enable             启用运行时参数采集骨架
-      --runtime-driver string      运行时采集驱动(noop/external) (default "noop")
-      --runtime-command string     external 运行时采集命令
+      --runtime-enable             启用运行时参数采集
+      --runtime-driver string      运行时采集驱动(noop/external/playwright) (default "noop")
+      --runtime-command string     运行时采集命令；external 为完整命令，playwright 可覆盖默认 node 调用
       --runtime-timeout int        运行时采集超时(秒) (default 20)
       --runtime-max-actions int    运行时探索最大交互动作数 (default 8)
       --runtime-max-pages int      运行时探索最大页面数 (default 3)
@@ -123,9 +123,29 @@ Flags:
   --parameter-output parameter.json
 ```
 
-5. 使用 external runtime driver 接入浏览器采集器
+5. 使用内置 Playwright 运行时驱动
 
-`WIH` 当前已经预留运行时采集接入口。若你有独立的浏览器采集脚本，可通过 `stdin/stdout JSON` 契约接入：
+若本地已经具备 `node + playwright` 运行环境，可直接启用仓库内置的最小浏览器运行时驱动：
+
+```shell
+./wih -t https://example.com \
+  --runtime-enable \
+  --runtime-driver playwright
+```
+
+当前这版内置驱动已覆盖：
+
+- 页面加载期 `fetch/xhr/sendBeacon`
+- 基础 `json/graphql/form` body 解析
+- 少量低风险自动交互：
+  - 搜索类输入
+  - `select` 切换
+  - `tab` 切换
+  - 搜索/筛选/下一页/更多 这类按钮点击
+
+6. 使用 external runtime driver 接入自定义浏览器采集器
+
+`WIH` 当前也保留了 external driver 契约。若你有独立的浏览器采集脚本，可通过 `stdin/stdout JSON` 接入：
 
 ```shell
 ./wih -t https://example.com \
@@ -145,10 +165,10 @@ Flags:
 
 注意：
 
-- 当前版本仅接入了 external driver 契约和主链路接入口
-- 未内置浏览器实现
+- 当前版本已内置最小 `Playwright` 驱动，同时保留 `external driver` 契约
 - 返回结果会继续经过同 host 过滤与统一归并
 - 最小可运行示例见：
+  - `tools/wih/runtime/playwright_driver.js`
   - `tools/wih/runtime/external_driver_example.py`
   - `tools/wih/runtime/README.md`
   - `tools/wih/runtime/request.example.json`
