@@ -1366,6 +1366,49 @@ class WebSiteFetch(object):
                 item.update(page_map[url])
                 utils.conn_db('url').insert_one(item)
 
+        self._enhance_site_spider_urls_with_intel()
+
+    def _enhance_site_spider_urls_with_intel(self):
+        """
+        在纯站点爬虫场景下补充 page_intel + urlfinder + url_probe：
+        - 仍严格限制在当前任务 host/scope 内
+        - 仅当 web_info_hunter 未开启时补跑，避免与后续情报链重复
+        """
+        if self.options.get(WebSiteFetchOption.Info_Hunter):
+            return
+
+        if not self.available_sites:
+            return
+
+        try:
+            page_intel_records = list(
+                services.run_page_intel_scan(self.available_sites, [], waf_guard=self.waf_guard) or []
+            )
+            urlfinder_records = list(
+                services.run_urlfinder_extract(self.available_sites, page_intel_records, waf_guard=self.waf_guard) or []
+            )
+            merged_records = list(set(page_intel_records + urlfinder_records))
+            if not merged_records:
+                return
+
+            inserted_count = services.run_urlfinder_url_probe(
+                task_id=self.task_id,
+                sites=self.available_sites,
+                wih_records=merged_records,
+                page_url_set=self.page_url_set,
+                waf_guard=self.waf_guard,
+            )
+            logger.info(
+                "task_id:{} site_spider intel merge page_intel:{} urlfinder:{} url_probe_inserted:{}".format(
+                    self.task_id,
+                    len(page_intel_records),
+                    len(urlfinder_records),
+                    inserted_count,
+                )
+            )
+        except Exception as e:
+            logger.warning("task_id:{} site_spider intel merge failed err:{}".format(self.task_id, e))
+
     def fetch_site(self):
         # ***站点信息获取***
         self.site_info_list = services.fetch_site(self.sites, waf_guard=self.waf_guard)

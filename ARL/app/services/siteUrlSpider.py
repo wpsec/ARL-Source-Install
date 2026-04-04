@@ -1,7 +1,10 @@
 """
 网站URL爬虫
 """
+import re
 import time
+from collections import deque
+from xml.etree import ElementTree
 from app import utils
 from app.utils.url import urlsimilar
 from .baseThread import BaseThread
@@ -116,6 +119,7 @@ class SiteURLSpider(object):
         self.deep_num = deep_num
         self.all_url_list = URLSimilarList()
         self.max_url = max(60, len(entry_urls)*6)
+        self.max_sitemap_urls = max(40, len(entry_urls) * 20)
         self.scope_url = entry_urls[0]
         self.dns_policy_cache = {}
         self.waf_guard = waf_guard
@@ -129,6 +133,136 @@ class SiteURLSpider(object):
 
         self.ignore_ext = [".pdf", ".xls", ".xlsx", ".doc", ".docx", ".ppt", ".pptx", ".zip", ".rar"]
         self.ignore_ext.extend([".png", ".jpg", ".gif", ".js", ".css", ".ico"])
+
+    @staticmethod
+    def _extract_text_body(conn) -> str:
+        try:
+            body = getattr(conn, "text", None)
+            if body is not None:
+                return str(body or "")
+        except Exception:
+            pass
+
+        raw_body = getattr(conn, "content", b"")
+        if isinstance(raw_body, bytes):
+            try:
+                return raw_body.decode("utf-8", "ignore")
+            except Exception:
+                return ""
+        return str(raw_body or "")
+
+    def _is_same_scope_url(self, value: str) -> bool:
+        normalized = utils.normal_url(value)
+        if not normalized:
+            return False
+        return utils.same_netloc(normalized, self.scope_url)
+
+    def _fetch_sitemap_candidates(self):
+        scope_parsed = urlparse(self.scope_url)
+        if not scope_parsed.scheme or not scope_parsed.netloc:
+            return []
+
+        base_origin = "{}://{}".format(scope_parsed.scheme, scope_parsed.netloc)
+        robots_url = "{}/robots.txt".format(base_origin.rstrip("/"))
+        default_sitemap_url = "{}/sitemap.xml".format(base_origin.rstrip("/"))
+        candidates = [default_sitemap_url]
+
+        try:
+            allow_scan, policy_detail = utils.check_dns_policy_for_url(robots_url, cache_map=self.dns_policy_cache)
+            if allow_scan:
+                conn = utils.http_req(robots_url, waf_guard=self.waf_guard, waf_module="site_spider")
+                if str((getattr(conn, "headers", {}) or {}).get("X-ARL-WAF-SMART-SKIP", "")) != "1":
+                    body_text = self._extract_text_body(conn)
+                    for line in body_text.splitlines():
+                        if not re.match(r"^\s*sitemap\s*:", line, flags=re.I):
+                            continue
+                        sitemap_url = str(line.split(":", 1)[1] or "").strip()
+                        if self._is_same_scope_url(sitemap_url):
+                            candidates.append(sitemap_url)
+            else:
+                logger.info(
+                    "skip site_spider robots by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                        robots_url,
+                        policy_detail.get("reason", ""),
+                        policy_detail.get("resolver_ips", []),
+                        policy_detail.get("system_ips", []),
+                    )
+                )
+        except Exception as e:
+            logger.debug("site spider robots parse failed {} {}".format(robots_url, e))
+
+        deduped = []
+        seen = set()
+        for item in candidates:
+            normalized = utils.normal_url(item)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(normalized)
+        return deduped
+
+    def _collect_sitemap_urls(self) -> URLSimilarList:
+        result = URLSimilarList()
+        sitemap_queue = deque()
+        queued = set()
+        visited = set()
+
+        for sitemap_url in self._fetch_sitemap_candidates():
+            sitemap_queue.append(sitemap_url)
+            queued.add(sitemap_url)
+
+        while sitemap_queue and len(result) < self.max_sitemap_urls:
+            sitemap_url = sitemap_queue.popleft()
+            if sitemap_url in visited:
+                continue
+            visited.add(sitemap_url)
+
+            try:
+                allow_scan, policy_detail = utils.check_dns_policy_for_url(sitemap_url, cache_map=self.dns_policy_cache)
+                if not allow_scan:
+                    logger.info(
+                        "skip site_spider sitemap by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                            sitemap_url,
+                            policy_detail.get("reason", ""),
+                            policy_detail.get("resolver_ips", []),
+                            policy_detail.get("system_ips", []),
+                        )
+                    )
+                    continue
+
+                conn = utils.http_req(sitemap_url, waf_guard=self.waf_guard, waf_module="site_spider")
+                if str((getattr(conn, "headers", {}) or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
+                    logger.info("skip site_spider sitemap by waf smart skip url:{}".format(sitemap_url))
+                    continue
+                body_text = self._extract_text_body(conn)
+                if not body_text or "<loc" not in body_text.lower():
+                    continue
+                try:
+                    root = ElementTree.fromstring(body_text.encode("utf-8", "ignore"))
+                except Exception:
+                    continue
+
+                for node in root.iter():
+                    if not str(node.tag or "").lower().endswith("loc"):
+                        continue
+                    loc_text = str(node.text or "").strip()
+                    normalized = utils.normal_url(loc_text)
+                    if not normalized or not self._is_same_scope_url(normalized):
+                        continue
+                    if normalized.lower().endswith(".xml"):
+                        if normalized not in queued and normalized not in visited and len(queued) + len(visited) < self.max_sitemap_urls:
+                            sitemap_queue.append(normalized)
+                            queued.add(normalized)
+                        continue
+                    if utils.url_ext(normalized) in self.ignore_ext:
+                        continue
+                    result.add(URLInfo(self.scope_url, normalized, URLTYPE.document))
+                    if len(result) >= self.max_sitemap_urls:
+                        break
+            except Exception as e:
+                logger.debug("site spider sitemap parse failed {} {}".format(sitemap_url, e))
+
+        return result
 
     def get_urls(self, entry_url):
         return self._work(entry_url)
@@ -216,7 +350,12 @@ class SiteURLSpider(object):
             return URLSimilarList()
 
     def run(self):
-        tmp_urls = self.entry_url_list
+        tmp_urls = URLSimilarList()
+        for item in self.entry_url_list:
+            tmp_urls.add(item)
+        for item in self._collect_sitemap_urls():
+            tmp_urls.add(item)
+
         for num in range(0, self.deep_num):
             if len(tmp_urls) > 0:
                 logger.info("{} deep num {}, len {}".format(self.scope_url, num + 1, len(tmp_urls)))
@@ -279,7 +418,6 @@ def site_spider(entry_url, deep_num=3, waf_guard=None):
             ret.append(x.crawl_url)
 
     return ret
-
 
 
 

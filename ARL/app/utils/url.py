@@ -34,9 +34,6 @@ def urlsimilar(url):
     query_value = 0
     if len(query_keys) > 0:
         query_value = hash("-".join(query_keys)) % 98765
-    if query_value:
-        url_value = query_value
-        return url_value
 
     if len(path.split('/')) > 1:
         tail = path.split('/')[-1].split('.')[-1]
@@ -66,7 +63,8 @@ def urlsimilar(url):
 
     url_hash = hashlib.md5()
     url_hash.update(netloc.encode('utf-8'))
-
+    if query_value:
+        url_hash.update(str(query_value).encode('utf-8'))
     url_hash.update(str(path_value + netloc_value).encode('utf-8'))
     url_value = hash(url_hash.hexdigest()) % hash_size
     return url_value
