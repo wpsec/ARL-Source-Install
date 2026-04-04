@@ -4574,8 +4574,7 @@ function LoginView({
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute -top-16 -left-16 w-72 h-72 rounded-full bg-brand-accent/20 blur-[120px] pointer-events-none" />
-      <div className="absolute -bottom-20 -right-20 w-72 h-72 rounded-full bg-brand-secondary/20 blur-[120px] pointer-events-none" />
+      <div className="absolute inset-0 theme-atmosphere-layer-login pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-3xl bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-12 sm:p-14 shadow-2xl">
         <div className="flex items-start sm:items-center gap-4 mb-10">
@@ -21530,9 +21529,7 @@ function MainShell() {
   return (
     <div className="h-screen flex bg-brand-bg text-brand-text overflow-hidden">
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-[20%] left-[10%] w-[35%] h-[35%] bg-brand-accent/10 rounded-full blur-[120px]" />
-        <div className="absolute top-[20%] -right-[10%] w-[30%] h-[30%] bg-brand-secondary/10 rounded-full blur-[120px]" />
-        <div className="absolute -bottom-[20%] left-[30%] w-[40%] h-[40%] bg-brand-warning/10 rounded-full blur-[120px]" />
+        <div className="absolute inset-0 theme-atmosphere-layer" />
       </div>
 
       <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
