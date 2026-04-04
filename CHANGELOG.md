@@ -14,6 +14,7 @@
 - `[v4.6.23]` `WIH参数提取` runtime 骨架接入：为后续浏览器运行时采集铺路，`tools/wih` 新增 `--runtime-enable / --runtime-max-pages / --runtime-max-actions / --runtime-max-requests` 参数，并把运行时采集调用点接入扫描主链路；当前阶段先提供默认 `noop` 的 `runtime_surface` 实现，保证独立工具在未接入浏览器依赖前仍可稳定运行，同时让后续 `fetch/xhr/FormData/URLSearchParams` 等真实 Hook 能在不改 CLI、预算配置与输出模型的前提下直接落到现有 `endpoint/parameter` 结构中。`Readme` 也同步补充了这组参数说明，明确该能力目前仍处于骨架阶段
 - `[v4.6.25]` `WIH参数提取` external runtime driver 契约落地：继续把运行时采集从“空骨架”推进到“可接真实浏览器实现”的阶段。`tools/wih` 新增 `--runtime-driver / --runtime-command / --runtime-timeout` 参数，运行时链路现在支持通过 `stdin/stdout JSON` 调用外部 driver，并将返回的 `endpoints/parameters` 结果继续纳入同 host 过滤、参数画像与主链路归并中。这样后续无论接 `Playwright/CDP` 还是独立 Node 浏览器脚本，都不需要再重改 `WIH` 的 CLI、预算配置和结构化输出模型；`Readme` 也同步补充了 external driver 的接入说明与当前边界
 - `[v4.6.26]` `WIH参数提取` runtime 结果归一化增强：继续把 external driver 返回结果从“能接入”推进到“可直接消费”的阶段。运行时返回的 `endpoint` 现在会自动补齐 `method/protocol/request_template/request_packet/body_kind/content_type` 等核心字段，`parameter` 也会在进入主链路前完成 `endpoint_id` 映射、`location/type` 推断、示例值回填以及 `is_pii/entropy` 元数据增强。这样外部 driver 端不需要完全理解 `WIH` 内部模型，只要按最小 JSON 契约返回基本的接口与参数信息，`WIH` 就能在主链路里完成标准化、同 host 过滤和结构化输出，减少后续浏览器实现的耦合成本
+- `[v4.6.28]` `WIH参数提取` external driver 样例补齐：继续把运行时采集从“有契约”推进到“可直接照着接”。`tools/wih/runtime/` 目录新增最小可运行的 `external_driver_example.py`、输入样例 `request.example.json`、输出样例 `response.example.json` 与独立 `README.md`，把 external runtime driver 的 `stdin/stdout JSON` 契约落成可直接对照的样例文件；主 `Readme` 也同步补上这些文件入口，降低后续接入真实浏览器驱动时的试错成本
 
 ## 2026-04-05（v4.6.13）
 

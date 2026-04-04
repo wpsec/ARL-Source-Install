@@ -1,0 +1,51 @@
+{
+  "endpoints": [
+    {
+      "endpoint_id": "runtime-demo-endpoint",
+      "url": "https://example.com/api/search",
+      "method": "POST",
+      "content_type": "application/json",
+      "body_kind": "json",
+      "trigger_context": {
+        "page": "https://example.com/search",
+        "event": "click",
+        "dom_hint": "button.search"
+      },
+      "request_template": {
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "query": {
+          "scene": "web"
+        },
+        "body": {
+          "keyword": "<value>",
+          "pageNo": "<value>"
+        }
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "endpoint_id": "runtime-demo-endpoint",
+      "param_name": "scene",
+      "location": "query",
+      "param_type": "string",
+      "example": "web"
+    },
+    {
+      "endpoint_id": "runtime-demo-endpoint",
+      "param_name": "keyword",
+      "location": "body",
+      "param_type": "string",
+      "example": "test"
+    },
+    {
+      "endpoint_id": "runtime-demo-endpoint",
+      "param_name": "pageNo",
+      "location": "body",
+      "param_type": "number",
+      "example": "1"
+    }
+  ]
+}

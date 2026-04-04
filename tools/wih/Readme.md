@@ -148,6 +148,11 @@ Flags:
 - 当前版本仅接入了 external driver 契约和主链路接入口
 - 未内置浏览器实现
 - 返回结果会继续经过同 host 过滤与统一归并
+- 最小可运行示例见：
+  - `tools/wih/runtime/external_driver_example.py`
+  - `tools/wih/runtime/README.md`
+  - `tools/wih/runtime/request.example.json`
+  - `tools/wih/runtime/response.example.json`
 
 
 ## 内置规则
