@@ -119,6 +119,15 @@ func TestExtractHTMLFormSurface(t *testing.T) {
 	if loginEndpoint.BodyKind != "form_urlencoded" {
 		t.Fatalf("unexpected login body kind %s", loginEndpoint.BodyKind)
 	}
+	if loginEndpoint.RequestTemplate.Headers["User-Agent"] == "" {
+		t.Fatal("login endpoint request template should include default user-agent")
+	}
+	if loginEndpoint.RequestTemplate.Headers["Content-Type"] != "application/x-www-form-urlencoded" {
+		t.Fatalf("unexpected login content-type %s", loginEndpoint.RequestTemplate.Headers["Content-Type"])
+	}
+	if loginEndpoint.RequestTemplate.RequestPacket == "" {
+		t.Fatal("login endpoint request packet should not be empty")
+	}
 
 	searchEndpoint, ok := endpointMap["https://example.com/search?scene=web"]
 	if !ok {
@@ -129,6 +138,9 @@ func TestExtractHTMLFormSurface(t *testing.T) {
 	}
 	if searchEndpoint.RequestTemplate.Query["scene"] != "<value>" {
 		t.Fatalf("unexpected query template for scene: %+v", searchEndpoint.RequestTemplate.Query)
+	}
+	if searchEndpoint.RequestTemplate.QueryString == "" {
+		t.Fatal("search endpoint query string should not be empty")
 	}
 
 	type paramExpect struct {
@@ -164,6 +176,12 @@ func TestExtractHTMLFormSurface(t *testing.T) {
 		if param.Required != expect.required {
 			t.Fatalf("parameter required mismatch name=%s got=%v expected=%v", paramName, param.Required, expect.required)
 		}
+	}
+	if !hitMap["password"].IsPII {
+		t.Fatal("password 应被识别为疑似敏感参数")
+	}
+	if hitMap["csrf_token"].Entropy <= 0 {
+		t.Fatal("csrf_token 示例值应生成熵值")
 	}
 }
 
@@ -233,6 +251,12 @@ request({
 	if gqlEndpoint.BodyKind != "graphql" {
 		t.Fatalf("unexpected graphql body kind %s", gqlEndpoint.BodyKind)
 	}
+	if gqlEndpoint.RequestTemplate.BodyText == "" {
+		t.Fatal("graphql endpoint body text should not be empty")
+	}
+	if gqlEndpoint.RequestTemplate.RequestPacket == "" {
+		t.Fatal("graphql endpoint request packet should not be empty")
+	}
 
 	type expectedParam struct {
 		location string
@@ -262,5 +286,8 @@ request({
 		if param.Location != expect.location {
 			t.Fatalf("parameter location mismatch name=%s got=%s expected=%s", name, param.Location, expect.location)
 		}
+	}
+	if !paramMap["X-Token"].IsPII {
+		t.Fatal("X-Token 应被识别为疑似敏感参数")
 	}
 }

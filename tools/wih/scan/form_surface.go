@@ -107,7 +107,7 @@ func extractHTMLFormSurface(pageBody string, pageURL string) ([]datatype.Endpoin
 				location,
 				field.Name,
 			}, "|")))
-			parameters = append(parameters, datatype.ParameterRecord{
+			paramRecord := datatype.ParameterRecord{
 				ParameterID: paramID,
 				EndpointID:  endpointID,
 				ParamName:   field.Name,
@@ -123,7 +123,8 @@ func extractHTMLFormSurface(pageBody string, pageURL string) ([]datatype.Endpoin
 				},
 				Confidence:      0.72,
 				OccurrenceCount: 1,
-			})
+			}
+			parameters = append(parameters, enrichParameterMetadata(paramRecord))
 		}
 	}
 
@@ -297,38 +298,48 @@ func inferFormContentType(method string, enctype string) (string, string) {
 }
 
 func buildFormRequestTemplate(actionURL *url.URL, method string, fields []formField, contentType string) datatype.EndpointRequestTemplate {
-	template := datatype.EndpointRequestTemplate{
-		Headers: make(map[string]string),
-		Query:   make(map[string]string),
-		Body:    make(map[string]string),
-	}
-
+	queryTemplate := make(map[string]string)
+	bodyTemplate := make(map[string]string)
+	headerTemplate := make(map[string]string)
+	bodyPreview := ""
 	if strings.ToUpper(strings.TrimSpace(method)) == "GET" {
 		for key := range actionURL.Query() {
-			template.Query[key] = "<value>"
+			queryTemplate[key] = "<value>"
 		}
 		for _, field := range fields {
-			template.Query[field.Name] = firstNonEmpty(field.Example, field.Default, "<value>")
+			queryTemplate[field.Name] = firstNonEmpty(field.Example, field.Default, "<value>")
 		}
 	} else {
 		if contentType != "" {
-			template.Headers["Content-Type"] = contentType
+			headerTemplate["Content-Type"] = contentType
 		}
 		for _, field := range fields {
-			template.Body[field.Name] = firstNonEmpty(field.Example, field.Default, "<value>")
+			bodyTemplate[field.Name] = firstNonEmpty(field.Example, field.Default, "<value>")
+		}
+		switch strings.ToLower(strings.TrimSpace(contentType)) {
+		case "multipart/form-data":
+			fieldNames := make([]string, 0, len(fields))
+			for _, field := range fields {
+				fieldNames = append(fieldNames, field.Name)
+			}
+			bodyPreview = buildMultipartPreview(fieldNames)
+		case "text/plain":
+			lines := make([]string, 0, len(fields))
+			for _, field := range fields {
+				lines = append(lines, fmt.Sprintf("%s=%s", field.Name, firstNonEmpty(field.Example, field.Default, "<value>")))
+			}
+			bodyPreview = strings.Join(lines, "\n")
 		}
 	}
-
-	if len(template.Headers) == 0 {
-		template.Headers = nil
-	}
-	if len(template.Query) == 0 {
-		template.Query = nil
-	}
-	if len(template.Body) == 0 {
-		template.Body = nil
-	}
-	return template
+	return buildRequestTemplate(
+		method,
+		actionURL,
+		extractPathParameters(actionURL.Path),
+		queryTemplate,
+		bodyTemplate,
+		headerTemplate,
+		bodyPreview,
+	)
 }
 
 func buildActionQueryParameters(endpointID string, pageURL string, actionURL *url.URL, method string) []datatype.ParameterRecord {
@@ -355,7 +366,7 @@ func buildActionQueryParameters(endpointID string, pageURL string, actionURL *ur
 			"query",
 			paramName,
 		}, "|")))
-		parameters = append(parameters, datatype.ParameterRecord{
+		paramRecord := datatype.ParameterRecord{
 			ParameterID: paramID,
 			EndpointID:  endpointID,
 			ParamName:   paramName,
@@ -369,7 +380,8 @@ func buildActionQueryParameters(endpointID string, pageURL string, actionURL *ur
 			},
 			Confidence:      0.70,
 			OccurrenceCount: 1,
-		})
+		}
+		parameters = append(parameters, enrichParameterMetadata(paramRecord))
 	}
 	return parameters
 }

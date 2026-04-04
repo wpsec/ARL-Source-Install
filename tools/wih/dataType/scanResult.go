@@ -9,9 +9,13 @@ type EndpointTriggerContext struct {
 
 // EndpointRequestTemplate 表示接口请求模板。
 type EndpointRequestTemplate struct {
-	Headers map[string]string `json:"headers,omitempty"`
-	Query   map[string]string `json:"query,omitempty"`
-	Body    map[string]string `json:"body,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	Path          map[string]string `json:"path,omitempty"`
+	Query         map[string]string `json:"query,omitempty"`
+	Body          map[string]string `json:"body,omitempty"`
+	QueryString   string            `json:"query_string,omitempty"`
+	BodyText      string            `json:"body_text,omitempty"`
+	RequestPacket string            `json:"request_packet,omitempty"`
 }
 
 // EndpointRecord 表示结构化接口结果。
@@ -52,6 +56,8 @@ type ParameterRecord struct {
 	Enum            []string              `json:"enum,omitempty"`
 	Source          string                `json:"source,omitempty"`
 	SourceDetail    ParameterSourceDetail `json:"source_detail,omitempty"`
+	IsPII           bool                  `json:"is_pii,omitempty"`
+	Entropy         float64               `json:"entropy,omitempty"`
 	Confidence      float64               `json:"confidence,omitempty"`
 	OccurrenceCount int                   `json:"occurrence_count,omitempty"`
 }

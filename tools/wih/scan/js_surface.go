@@ -1,9 +1,11 @@
 package scan
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	datatype "wih/dataType"
@@ -151,6 +153,16 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 		if candidate.ContentType != "" {
 			headerTemplate["Content-Type"] = candidate.ContentType
 		}
+		bodyPreview := buildJSBodyPreview(candidate.BodyKind, bodyTemplate, candidate.GraphQLParams)
+		requestTemplate := buildRequestTemplate(
+			candidate.Method,
+			parsedURL,
+			extractPathParameters(parsedURL.Path),
+			queryTemplate,
+			bodyTemplate,
+			headerTemplate,
+			bodyPreview,
+		)
 
 		endpoints = append(endpoints, datatype.EndpointRecord{
 			EndpointID:  endpointID,
@@ -166,14 +178,10 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 				Event:   "js_static_extract",
 				DOMHint: "script",
 			},
-			ContentType: candidate.ContentType,
-			BodyKind:    candidate.BodyKind,
-			RequestTemplate: datatype.EndpointRequestTemplate{
-				Headers: normalizeTemplateMap(headerTemplate),
-				Query:   normalizeTemplateMap(queryTemplate),
-				Body:    normalizeTemplateMap(bodyTemplate),
-			},
-			Confidence: 0.68,
+			ContentType:     candidate.ContentType,
+			BodyKind:        candidate.BodyKind,
+			RequestTemplate: requestTemplate,
+			Confidence:      0.68,
 		})
 
 		parameters = append(parameters, buildJSQueryParameters(endpointID, jsURL, parsedURL, candidate.QueryParams)...)
@@ -184,6 +192,53 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 	}
 
 	return mergeEndpointRecords(endpoints), mergeParameterRecords(parameters)
+}
+
+func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParams []string) string {
+	normalizedBodyMap := normalizeTemplateMap(bodyMap)
+	if len(normalizedBodyMap) == 0 {
+		return ""
+	}
+
+	keys := make([]string, 0, len(normalizedBodyMap))
+	for key := range normalizedBodyMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	switch strings.ToLower(strings.TrimSpace(bodyKind)) {
+	case "json":
+		payload := make(map[string]string, len(keys))
+		for _, key := range keys {
+			payload[key] = normalizedBodyMap[key]
+		}
+		raw, err := json.MarshalIndent(payload, "", "  ")
+		if err == nil {
+			return string(raw)
+		}
+	case "graphql":
+		variables := make(map[string]string)
+		for _, name := range graphqlParams {
+			if value, ok := normalizedBodyMap[name]; ok {
+				variables[name] = value
+			}
+		}
+		payload := map[string]any{
+			"query":     "query Demo { __typename }",
+			"variables": variables,
+		}
+		raw, err := json.MarshalIndent(payload, "", "  ")
+		if err == nil {
+			return string(raw)
+		}
+	case "form_urlencoded":
+		return buildBodyPreview(normalizedBodyMap)
+	case "multipart":
+		formNames := make([]string, 0, len(keys))
+		formNames = append(formNames, keys...)
+		return buildAiMultipartPreview(formNames)
+	}
+	return buildBodyPreview(normalizedBodyMap)
 }
 
 func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod string, requestWindow string) jsEndpointCandidate {
@@ -518,7 +573,7 @@ func appendJSParameter(result *[]datatype.ParameterRecord, seen map[string]struc
 		location,
 		paramName,
 	}, "|")))
-	*result = append(*result, datatype.ParameterRecord{
+	paramRecord := datatype.ParameterRecord{
 		ParameterID: parameterID,
 		EndpointID:  endpointID,
 		ParamName:   paramName,
@@ -532,7 +587,8 @@ func appendJSParameter(result *[]datatype.ParameterRecord, seen map[string]struc
 		},
 		Confidence:      confidence,
 		OccurrenceCount: 1,
-	})
+	}
+	*result = append(*result, enrichParameterMetadata(paramRecord))
 }
 
 func normalizeTemplateMap(input map[string]string) map[string]string {
