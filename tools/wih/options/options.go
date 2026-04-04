@@ -28,6 +28,10 @@ func Options() *datatype.Option {
 		ConcurrencyPerSite:  3,
 		MaxCollect:          600,
 		LimitReaderSize:     10 * 1024 * 1024,
+		RuntimeEnable:       false,
+		RuntimeMaxPages:     3,
+		RuntimeMaxActions:   8,
+		RuntimeMaxRequests:  40,
 		AKSKOutputPath:      "ak_leak.txt",
 		OutputText:          true,
 	}
@@ -67,6 +71,10 @@ func Options() *datatype.Option {
 		flagset.IntVarP(&option.ConcurrencyPerSite, "concurrency-per-site", "P", 3, "每个站点的并发数"),
 		flagset.IntVarP(&option.MaxCollect, "max-collect", "M", 600, "用于表示所有收集类型的最大收集数量, 对于每个站点"),
 		flagset.IntVarP(&option.LimitReaderSize, "limit-reader-size", "", 10*1024*1024, "Maximum response size (in bytes)"),
+		flagset.BoolVarP(&option.RuntimeEnable, "runtime-enable", "", false, "启用运行时参数采集骨架"),
+		flagset.IntVarP(&option.RuntimeMaxPages, "runtime-max-pages", "", 3, "运行时探索最大页面数"),
+		flagset.IntVarP(&option.RuntimeMaxActions, "runtime-max-actions", "", 8, "运行时探索最大交互动作数"),
+		flagset.IntVarP(&option.RuntimeMaxRequests, "runtime-max-requests", "", 40, "运行时采集最大请求数"),
 		flagset.StringVarP(&timeoutRaw, "timeout", "", "180", "Response timeout (s)"),
 		flagset.StringVarP(&dialTimeoutRaw, "dial-timeout", "", "5", "Dial timeout (s)"),
 		flagset.StringVarP(&option.Proxy, "proxy", "x", "", "HTTP proxy (e.g. http://localhost:8080)"),
@@ -116,6 +124,15 @@ func Options() *datatype.Option {
 	if option.LimitReaderSize < 1024 {
 		option.LimitReaderSize = 1024
 	}
+	if option.RuntimeMaxPages < 1 {
+		option.RuntimeMaxPages = 1
+	}
+	if option.RuntimeMaxActions < 1 {
+		option.RuntimeMaxActions = 1
+	}
+	if option.RuntimeMaxRequests < 1 {
+		option.RuntimeMaxRequests = 1
+	}
 
 	timeoutSec, err := parsePositiveFloat(timeoutRaw)
 	if err != nil {
@@ -141,6 +158,10 @@ func Options() *datatype.Option {
 	global.LimitReaderSize = int64(option.LimitReaderSize)
 	global.MaxCollect = option.MaxCollect
 	global.ConcurrencyPerSite = option.ConcurrencyPerSite
+	global.RuntimeEnable = option.RuntimeEnable
+	global.RuntimeMaxPages = option.RuntimeMaxPages
+	global.RuntimeMaxActions = option.RuntimeMaxActions
+	global.RuntimeMaxRequests = option.RuntimeMaxRequests
 	global.FollowRedirect = option.FollowRedirect
 	global.LogLevel = normalizeLogLevel(option.LogLevel)
 	global.LogFile = strings.TrimSpace(option.LogFile)

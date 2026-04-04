@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"strings"
 	"testing"
 
 	datatype "wih/dataType"
@@ -128,6 +129,9 @@ func TestExtractHTMLFormSurface(t *testing.T) {
 	if loginEndpoint.RequestTemplate.RequestPacket == "" {
 		t.Fatal("login endpoint request packet should not be empty")
 	}
+	if !strings.Contains(loginEndpoint.RequestTemplate.RequestPacket, "POST /login HTTP/1.1") {
+		t.Fatalf("unexpected login request packet: %s", loginEndpoint.RequestTemplate.RequestPacket)
+	}
 
 	searchEndpoint, ok := endpointMap["https://example.com/search?scene=web"]
 	if !ok {
@@ -141,6 +145,9 @@ func TestExtractHTMLFormSurface(t *testing.T) {
 	}
 	if searchEndpoint.RequestTemplate.QueryString == "" {
 		t.Fatal("search endpoint query string should not be empty")
+	}
+	if !strings.Contains(searchEndpoint.RequestTemplate.RequestPacket, "GET /search?scene=web HTTP/1.1") {
+		t.Fatalf("unexpected search request packet: %s", searchEndpoint.RequestTemplate.RequestPacket)
 	}
 
 	type paramExpect struct {
@@ -257,6 +264,12 @@ request({
 	if gqlEndpoint.RequestTemplate.RequestPacket == "" {
 		t.Fatal("graphql endpoint request packet should not be empty")
 	}
+	if !strings.Contains(gqlEndpoint.RequestTemplate.RequestPacket, "POST /graphql HTTP/1.1") {
+		t.Fatalf("unexpected graphql request packet: %s", gqlEndpoint.RequestTemplate.RequestPacket)
+	}
+	if gqlEndpoint.RequestTemplate.Headers["User-Agent"] == "" {
+		t.Fatal("graphql endpoint request template should include default user-agent")
+	}
 
 	type expectedParam struct {
 		location string
@@ -289,5 +302,13 @@ request({
 	}
 	if !paramMap["X-Token"].IsPII {
 		t.Fatal("X-Token 应被识别为疑似敏感参数")
+	}
+}
+
+// TestExtractRuntimeSurfaceDisabled 验证运行时采集默认关闭时不会返回结果。
+func TestExtractRuntimeSurfaceDisabled(t *testing.T) {
+	result := extractRuntimeSurface("https://example.com")
+	if len(result.Endpoints) != 0 || len(result.Parameters) != 0 {
+		t.Fatalf("runtime surface should be empty when disabled: %+v", result)
 	}
 }

@@ -113,6 +113,10 @@ func Scan(targetURL string) *datatype.ScanResult {
 	endpoints = mergeEndpointRecords(append(endpoints, jsSurface.Endpoints...))
 	parameters = mergeParameterRecords(append(parameters, jsSurface.Parameters...))
 
+	runtimeSurface := extractRuntimeSurface(targetURL)
+	endpoints = mergeEndpointRecords(append(endpoints, runtimeSurface.Endpoints...))
+	parameters = mergeParameterRecords(append(parameters, runtimeSurface.Parameters...))
+
 	// 对 path 命中做“根路径 + 当前目录”双策略拼接探测。
 	if len(records) < global.MaxCollect {
 		pathProbeRecords := probePathRecords(client, targetURL, records)

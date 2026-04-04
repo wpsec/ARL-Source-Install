@@ -18,11 +18,15 @@ type Option struct {
 
 	Proxy string // -x, --proxy：代理地址
 
-	Concurrency        int // -c, --concurrency：站点并发
-	ConcurrencyPerSite int // -P, --concurrency-per-site：单站并发
-	MaxCollect         int // -M, --max-collect：每站最多收集条数
-	LimitReaderSize    int // --limit-reader-size：响应体读取上限（字节）
-	MaxJSFiles         int // 内部参数：每站最多抓取 JS 文件数量
+	Concurrency        int  // -c, --concurrency：站点并发
+	ConcurrencyPerSite int  // -P, --concurrency-per-site：单站并发
+	MaxCollect         int  // -M, --max-collect：每站最多收集条数
+	LimitReaderSize    int  // --limit-reader-size：响应体读取上限（字节）
+	MaxJSFiles         int  // 内部参数：每站最多抓取 JS 文件数量
+	RuntimeEnable      bool // --runtime-enable：启用运行时参数采集骨架
+	RuntimeMaxPages    int  // --runtime-max-pages：运行时最大页面数
+	RuntimeMaxActions  int  // --runtime-max-actions：运行时最大交互动作数
+	RuntimeMaxRequests int  // --runtime-max-requests：运行时最大采集请求数
 
 	TimeOutSec     float64 // --timeout：请求超时（秒）
 	DialTimeOutSec float64 // --dial-timeout：连接超时（秒）

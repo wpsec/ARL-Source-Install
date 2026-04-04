@@ -66,6 +66,10 @@ Flags:
       --parameter-output string    结构化参数结果输出文件
   -x, --proxy string               HTTP proxy (e.g. http://localhost:8080)
   -r, --rule-config string         规则配置文件 (default "rules.yml")
+      --runtime-enable             启用运行时参数采集骨架
+      --runtime-max-actions int    运行时探索最大交互动作数 (default 8)
+      --runtime-max-pages int      运行时探索最大页面数 (default 3)
+      --runtime-max-requests int   运行时采集最大请求数 (default 40)
       --size int                   设置表格分页大小
   -t, --target string              目标URL或者文件
   -T, --text                       文本格式输出

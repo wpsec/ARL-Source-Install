@@ -35,6 +35,14 @@ var (
 	MaxJSFiles = 30
 	// ConcurrencyPerSite 为单站点 JS 抓取并发。
 	ConcurrencyPerSite = 3
+	// RuntimeEnable 控制是否启用运行时参数采集骨架。
+	RuntimeEnable = false
+	// RuntimeMaxPages 控制运行时探索页面预算。
+	RuntimeMaxPages = 3
+	// RuntimeMaxActions 控制运行时交互预算。
+	RuntimeMaxActions = 8
+	// RuntimeMaxRequests 控制运行时请求采集预算。
+	RuntimeMaxRequests = 40
 
 	// FollowRedirect 控制是否跟随重定向。
 	FollowRedirect = false
