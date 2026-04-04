@@ -86,8 +86,14 @@ func Scan(targetURL string) *datatype.ScanResult {
 	}
 
 	records := rule(pageBody, targetURL, "page")
+	endpoints, parameters := extractHTMLFormSurface(pageBody, targetURL)
 	if len(records) >= global.MaxCollect {
-		return &datatype.ScanResult{Target: targetURL, Records: records[:global.MaxCollect]}
+		return &datatype.ScanResult{
+			Target:     targetURL,
+			Records:    records[:global.MaxCollect],
+			Endpoints:  endpoints,
+			Parameters: parameters,
+		}
 	}
 
 	jsURLs := extractJSURLs(pageBody, targetURL)
@@ -110,7 +116,12 @@ func Scan(targetURL string) *datatype.ScanResult {
 		records = records[:global.MaxCollect]
 	}
 
-	return &datatype.ScanResult{Target: targetURL, Records: records}
+	return &datatype.ScanResult{
+		Target:     targetURL,
+		Records:    records,
+		Endpoints:  endpoints,
+		Parameters: parameters,
+	}
 }
 
 // fetchBody 抓取目标内容，并应用响应大小限制。

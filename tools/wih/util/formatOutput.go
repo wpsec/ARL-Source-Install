@@ -73,13 +73,32 @@ func renderResult(result *datatype.ScanResult, outputJSON bool) string {
 
 // renderText 生成文本输出。
 func renderText(result *datatype.ScanResult) string {
-	if len(result.Records) == 0 {
+	if len(result.Records) == 0 && len(result.Endpoints) == 0 && len(result.Parameters) == 0 {
 		return ""
 	}
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("[+] %s\n", result.Target))
 	for _, record := range result.Records {
 		builder.WriteString(fmt.Sprintf("    %s: %s\n", record.Id, record.Content))
+	}
+	if len(result.Endpoints) > 0 {
+		builder.WriteString("    [endpoints]\n")
+		for _, endpoint := range result.Endpoints {
+			builder.WriteString(fmt.Sprintf("      %s %s\n", endpoint.Method, endpoint.URL))
+		}
+	}
+	if len(result.Parameters) > 0 {
+		builder.WriteString("    [parameters]\n")
+		for _, parameter := range result.Parameters {
+			builder.WriteString(
+				fmt.Sprintf(
+					"      %s (%s/%s)\n",
+					parameter.ParamName,
+					parameter.Location,
+					parameter.ParamType,
+				),
+			)
+		}
 	}
 	builder.WriteString("\n")
 	return builder.String()

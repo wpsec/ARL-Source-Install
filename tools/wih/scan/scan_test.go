@@ -75,3 +75,94 @@ func TestNormalizePathTokenFiltersNoise(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractHTMLFormSurface 验证 HTML 表单提取出的 endpoint/parameter 结构化结果。
+func TestExtractHTMLFormSurface(t *testing.T) {
+	html := `
+<html>
+  <body>
+    <form action="/login" method="post">
+      <input type="text" name="username" required>
+      <input type="password" name="password">
+      <input type="hidden" name="csrf_token" value="abc123">
+    </form>
+    <form action="/search?scene=web" method="get">
+      <input type="text" name="keyword" value="arl">
+      <select name="role" required>
+        <option value="student">student</option>
+        <option value="teacher" selected>teacher</option>
+      </select>
+    </form>
+  </body>
+</html>
+`
+	endpoints, parameters := extractHTMLFormSurface(html, "https://example.com/admin")
+	if len(endpoints) != 2 {
+		t.Fatalf("endpoint count mismatch got=%d", len(endpoints))
+	}
+	if len(parameters) < 5 {
+		t.Fatalf("parameter count mismatch got=%d", len(parameters))
+	}
+
+	endpointMap := make(map[string]datatype.EndpointRecord)
+	for _, endpoint := range endpoints {
+		endpointMap[endpoint.URL] = endpoint
+	}
+
+	loginEndpoint, ok := endpointMap["https://example.com/login"]
+	if !ok {
+		t.Fatal("missing login endpoint")
+	}
+	if loginEndpoint.Method != "POST" {
+		t.Fatalf("unexpected login method %s", loginEndpoint.Method)
+	}
+	if loginEndpoint.BodyKind != "form_urlencoded" {
+		t.Fatalf("unexpected login body kind %s", loginEndpoint.BodyKind)
+	}
+
+	searchEndpoint, ok := endpointMap["https://example.com/search?scene=web"]
+	if !ok {
+		t.Fatal("missing search endpoint")
+	}
+	if searchEndpoint.Method != "GET" {
+		t.Fatalf("unexpected search method %s", searchEndpoint.Method)
+	}
+	if searchEndpoint.RequestTemplate.Query["scene"] != "<value>" {
+		t.Fatalf("unexpected query template for scene: %+v", searchEndpoint.RequestTemplate.Query)
+	}
+
+	type paramExpect struct {
+		location  string
+		paramType string
+		required  bool
+	}
+	expected := map[string]paramExpect{
+		"username":   {location: "body", paramType: "string", required: true},
+		"password":   {location: "body", paramType: "string", required: false},
+		"csrf_token": {location: "body", paramType: "string", required: false},
+		"scene":      {location: "query", paramType: "string", required: false},
+		"keyword":    {location: "query", paramType: "string", required: false},
+		"role":       {location: "query", paramType: "string", required: true},
+	}
+
+	hitMap := make(map[string]datatype.ParameterRecord)
+	for _, parameter := range parameters {
+		hitMap[parameter.ParamName] = parameter
+	}
+
+	for paramName, expect := range expected {
+		param, ok := hitMap[paramName]
+		if !ok {
+			t.Fatalf("missing parameter %s", paramName)
+		}
+		if param.Location != expect.location {
+			t.Fatalf("parameter location mismatch name=%s got=%s expected=%s", paramName, param.Location, expect.location)
+		}
+		if param.ParamType != expect.paramType {
+			t.Fatalf("parameter type mismatch name=%s got=%s expected=%s", paramName, param.ParamType, expect.paramType)
+		}
+		if param.Required != expect.required {
+			t.Fatalf("parameter required mismatch name=%s got=%v expected=%v", paramName, param.Required, expect.required)
+		}
+	}
+}
