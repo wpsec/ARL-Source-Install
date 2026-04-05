@@ -397,6 +397,84 @@ request({
 	}
 }
 
+// TestExtractJSStaticSurfaceResolvesVariableReferences 验证静态提取能解析对象变量与位置参数引用。
+func TestExtractJSStaticSurfaceResolvesVariableReferences(t *testing.T) {
+	jsBody := "const payload = {\n" +
+		"  keyword,\n" +
+		"  pageNo,\n" +
+		"  role\n" +
+		"}\n\n" +
+		"const queryData = {\n" +
+		"  userId,\n" +
+		"  profile\n" +
+		"}\n\n" +
+		"const authHeaders = {\n" +
+		"  Authorization: authToken,\n" +
+		"  \"X-Tenant\": tenantId\n" +
+		"}\n\n" +
+		"const gqlQuery = gql`\n" +
+		"\tquery Demo($tenantId: String!, $userId: String!) {\n" +
+		"\t  user(id: $userId) { id }\n" +
+		"\t}\n" +
+		"`\n\n" +
+		"const variables = {\n" +
+		"  tenantId,\n" +
+		"  userId\n" +
+		"}\n\n" +
+		"axios.post(\"/api/search\", payload)\n\n" +
+		"axios.get(\"/api/detail\", {\n" +
+		"  params: queryData,\n" +
+		"  headers: authHeaders\n" +
+		"})\n\n" +
+		"request({\n" +
+		"  url: \"/graphql\",\n" +
+		"  method: \"POST\",\n" +
+		"  data: {\n" +
+		"    query: gqlQuery,\n" +
+		"    variables: variables\n" +
+		"  }\n" +
+		"})\n"
+
+	endpoints, parameters := extractJSStaticSurface(jsBody, "https://example.com/static/app.js")
+	if len(endpoints) != 3 {
+		t.Fatalf("unexpected variable-ref endpoint count: %d", len(endpoints))
+	}
+	if len(parameters) < 9 {
+		t.Fatalf("unexpected variable-ref parameter count: %d", len(parameters))
+	}
+
+	paramMap := make(map[string]datatype.ParameterRecord)
+	for _, parameter := range parameters {
+		paramMap[parameter.ParamName] = parameter
+	}
+
+	if paramMap["keyword"].Location != "body" {
+		t.Fatalf("keyword should resolve to body, got=%s", paramMap["keyword"].Location)
+	}
+	if paramMap["userId"].Location != "graphql_variable" {
+		t.Fatalf("userId should resolve to graphql_variable, got=%s", paramMap["userId"].Location)
+	}
+	if paramMap["Authorization"].Location != "header" {
+		t.Fatalf("Authorization should resolve to header, got=%s", paramMap["Authorization"].Location)
+	}
+	if paramMap["profile"].Location != "query" {
+		t.Fatalf("profile should resolve to query, got=%s", paramMap["profile"].Location)
+	}
+
+	gqlFound := false
+	for _, endpoint := range endpoints {
+		if endpoint.URL == "https://example.com/graphql" {
+			gqlFound = true
+			if !strings.Contains(endpoint.RequestTemplate.BodyText, "query Demo($tenantId: String!, $userId: String!)") {
+				t.Fatalf("graphql query text should be resolved from variable: %s", endpoint.RequestTemplate.BodyText)
+			}
+		}
+	}
+	if !gqlFound {
+		t.Fatal("graphql endpoint should exist")
+	}
+}
+
 // TestExtractRuntimeSurfaceDisabled 验证运行时采集默认关闭时不会返回结果。
 func TestExtractRuntimeSurfaceDisabled(t *testing.T) {
 	result := extractRuntimeSurface("https://example.com")

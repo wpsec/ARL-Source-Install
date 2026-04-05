@@ -42,7 +42,7 @@
 4. 把这套能力直接接入普通 `站点爬虫 / URL信息 / WIH` 主链路，不依赖单独的 `AI渗透测试` 模块。
 5. 让后续 AI 只做“语义增强与重排序”，而不是做主提取器。
 
-## 2.1 当前已完成情况（截至 2026-04-05 / commit `a22fba91`）
+## 2.1 当前已完成情况（截至 2026-04-05，持续更新）
 
 当前这份规划已经不再只是方案，下面这些内容已落地到仓库中：
 
@@ -72,6 +72,11 @@
   - 当前仍以模式提取为主，不是 AST 主链
   - 已覆盖 `fetch / axios / request({...}) / URLSearchParams / FormData / GraphQL variables`
   - 已能输出 `query/body/header/path/graphql_variable`
+  - 已补变量对象引用解析：
+    - `const payload = {...}; axios.post(url, payload)`
+    - `params: queryData`
+    - `headers: authHeaders`
+    - `variables: variables`
   - 已接入 `SourceMap` 利用：
     - 优先解析 `sourceMappingURL`
     - 可消费 `sourcesContent`
@@ -110,7 +115,8 @@
 
 - `JS AST` 主链尚未落地
 - `schema` 深层结构提取尚未完成，当前还是 hints 级增强
-- `GraphQL` 仍以基础变量提取与 runtime 观察为主，未进入深层结构分析
+  - `GraphQL` 仍以基础变量提取与 runtime 观察为主，未进入深层结构分析
+  - 已能在静态请求模板里尽量保留真实 `GraphQL query` 文本，但仍不等于完整 operation/schema 分析
 - `AI` 语义增强尚未开始
 
 当前更准确的状态应理解为：
