@@ -36,6 +36,8 @@ var (
 	urlConfigPattern       = regexp.MustCompile("(?is)url\\s*:\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`]+)`)")
 	methodConfigPattern    = regexp.MustCompile("(?is)(?:type|method)\\s*:\\s*(?:\"([A-Za-z]+)\"|'([A-Za-z]+)'|`([A-Za-z]+)`)")
 	graphQLSignalPattern   = regexp.MustCompile(`(?is)\b(query|mutation|operationName)\b`)
+	graphQLQueryPattern    = regexp.MustCompile("(?is)\\bquery\\s*:\\s*(?:\"([^\"]{1,1000})\"|'([^']{1,1000})'|`([^`]{1,1000})`)")
+	graphQLTaggedPattern   = regexp.MustCompile("(?is)gql\\s*`([^`]{1,1000})`")
 	objectKeyQuotedPattern = regexp.MustCompile(`(?is)[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:`)
 	objectKeyBarePattern   = regexp.MustCompile(`(?is)(?:^|[{\s,])([A-Za-z_][\w.-]{0,63})\s*:`)
 	objectShorthandPattern = regexp.MustCompile(`(?:^|,)\s*(\.\.\.)?\s*([A-Za-z_][\w.-]{0,63})\s*(?:,|$)`)
@@ -51,12 +53,17 @@ type jsEndpointCandidate struct {
 	BodyParams    []string
 	HeaderParams  []string
 	GraphQLParams []string
+	GraphQLQuery  string
 	ContentType   string
 	BodyKind      string
 	SourceType    string
 }
 
 func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRecord, []datatype.ParameterRecord) {
+	return extractJSStaticSurfaceWithMeta(jsBody, jsURL, "static_js", "static_js")
+}
+
+func extractJSStaticSurfaceWithMeta(jsBody string, jsURL string, endpointSourceType string, parameterSource string) ([]datatype.EndpointRecord, []datatype.ParameterRecord) {
 	if strings.TrimSpace(jsBody) == "" || strings.TrimSpace(jsURL) == "" {
 		return nil, nil
 	}
@@ -73,7 +80,7 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 		}
 		rawURL := firstIndexedValue(jsBody, match[2:4], match[4:6], match[6:8])
 		window := buildJSRequestWindow(jsBody, match[0])
-		candidate := buildJSEndpointCandidate(jsURL, rawURL, "GET", window)
+		candidate := buildJSEndpointCandidate(jsURL, rawURL, "GET", window, endpointSourceType)
 		if candidate.URL != "" {
 			candidates = append(candidates, candidate)
 		}
@@ -86,7 +93,7 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 		method := strings.ToUpper(strings.TrimSpace(firstIndexedValue(jsBody, match[2:4])))
 		rawURL := firstIndexedValue(jsBody, match[4:6], match[6:8], match[8:10])
 		window := buildJSRequestWindow(jsBody, match[0])
-		candidate := buildJSEndpointCandidate(jsURL, rawURL, method, window)
+		candidate := buildJSEndpointCandidate(jsURL, rawURL, method, window, endpointSourceType)
 		if candidate.URL != "" {
 			candidates = append(candidates, candidate)
 		}
@@ -105,7 +112,7 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 			if methodMatch := methodConfigPattern.FindStringSubmatch(window); len(methodMatch) > 0 {
 				methodText = strings.ToUpper(strings.TrimSpace(matchValue(methodMatch, 1)))
 			}
-			candidate := buildJSEndpointCandidate(jsURL, rawURL, methodText, window)
+			candidate := buildJSEndpointCandidate(jsURL, rawURL, methodText, window, endpointSourceType)
 			if candidate.URL != "" {
 				candidates = append(candidates, candidate)
 			}
@@ -154,7 +161,7 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 		if candidate.ContentType != "" {
 			headerTemplate["Content-Type"] = candidate.ContentType
 		}
-		bodyPreview := buildJSBodyPreview(candidate.BodyKind, bodyTemplate, candidate.GraphQLParams)
+		bodyPreview := buildJSBodyPreview(candidate.BodyKind, bodyTemplate, candidate.GraphQLParams, candidate.GraphQLQuery)
 		requestTemplate := buildRequestTemplate(
 			candidate.Method,
 			parsedURL,
@@ -186,17 +193,18 @@ func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRec
 			Confidence:      0.68,
 		})
 
-		parameters = append(parameters, buildJSQueryParameters(endpointID, jsURL, parsedURL, candidate.QueryParams)...)
-		parameters = append(parameters, buildJSNamedParameters(endpointID, jsURL, "body", candidate.BodyParams, candidate.BodyKind, 0.66)...)
-		parameters = append(parameters, buildJSNamedParameters(endpointID, jsURL, "header", candidate.HeaderParams, "header", 0.62)...)
-		parameters = append(parameters, buildJSNamedParameters(endpointID, jsURL, "graphql_variable", candidate.GraphQLParams, "graphql", 0.72)...)
-		parameters = append(parameters, buildJSPathParameters(endpointID, jsURL, parsedURL.Path)...)
+		parameters = append(parameters, buildJSQueryParameters(endpointID, jsURL, parsedURL, candidate.QueryParams, parameterSource)...)
+		parameters = append(parameters, buildJSNamedParameters(endpointID, jsURL, "body", candidate.BodyParams, candidate.BodyKind, 0.66, parameterSource)...)
+		parameters = append(parameters, buildJSNamedParameters(endpointID, jsURL, "header", candidate.HeaderParams, "header", 0.62, parameterSource)...)
+		parameters = append(parameters, buildJSNamedParameters(endpointID, jsURL, "graphql_variable", candidate.GraphQLParams, "graphql", 0.72, parameterSource)...)
+		parameters = append(parameters, buildJSPathParameters(endpointID, jsURL, parsedURL.Path, parameterSource)...)
 	}
 
+	parameters = applyJSSchemaHints(parameters, jsBody)
 	return mergeEndpointRecords(endpoints), mergeParameterRecords(parameters)
 }
 
-func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParams []string) string {
+func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParams []string, graphQLQuery string) string {
 	normalizedBodyMap := normalizeTemplateMap(bodyMap)
 	if len(normalizedBodyMap) == 0 {
 		return ""
@@ -226,7 +234,7 @@ func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParam
 			}
 		}
 		payload := map[string]any{
-			"query":     "query Demo { __typename }",
+			"query":     firstNonEmpty(strings.TrimSpace(graphQLQuery), "query Demo { __typename }"),
 			"variables": variables,
 		}
 		raw, err := json.MarshalIndent(payload, "", "  ")
@@ -243,7 +251,7 @@ func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParam
 	return buildBodyPreview(normalizedBodyMap)
 }
 
-func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod string, requestWindow string) jsEndpointCandidate {
+func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod string, requestWindow string, sourceType string) jsEndpointCandidate {
 	resolvedURL, err := normalizeStaticEndpointURL(baseJSURL, rawURL)
 	if err != nil || resolvedURL == "" {
 		return jsEndpointCandidate{}
@@ -270,6 +278,10 @@ func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod str
 		}
 	}
 	contentType, bodyKind := inferJSBodyProfile(requestWindow, bodyParams, graphqlParams)
+	graphQLQuery := ""
+	if bodyKind == "graphql" {
+		graphQLQuery = extractGraphQLQueryText(requestWindow)
+	}
 	if bodyKind == "graphql" {
 		contentType = "application/json"
 	}
@@ -289,10 +301,24 @@ func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod str
 		BodyParams:    uniqueSortedStrings(bodyParams),
 		HeaderParams:  uniqueSortedStrings(headerParams),
 		GraphQLParams: uniqueSortedStrings(graphqlParams),
+		GraphQLQuery:  graphQLQuery,
 		ContentType:   contentType,
 		BodyKind:      bodyKind,
-		SourceType:    "static_js",
+		SourceType:    firstNonEmpty(strings.TrimSpace(sourceType), "static_js"),
 	}
+}
+
+func extractGraphQLQueryText(requestWindow string) string {
+	if strings.TrimSpace(requestWindow) == "" {
+		return ""
+	}
+	if match := graphQLQueryPattern.FindStringSubmatch(requestWindow); len(match) > 0 {
+		return strings.TrimSpace(matchValue(match, 1))
+	}
+	if match := graphQLTaggedPattern.FindStringSubmatch(requestWindow); len(match) > 1 {
+		return strings.TrimSpace(match[1])
+	}
+	return ""
 }
 
 func normalizeStaticEndpointURL(baseJSURL string, rawURL string) (string, error) {
@@ -546,7 +572,7 @@ func inferJSBodyProfile(requestWindow string, bodyParams []string, graphqlParams
 	return "", ""
 }
 
-func buildJSQueryParameters(endpointID string, jsURL string, endpointURL *url.URL, queryParams []string) []datatype.ParameterRecord {
+func buildJSQueryParameters(endpointID string, jsURL string, endpointURL *url.URL, queryParams []string, parameterSource string) []datatype.ParameterRecord {
 	paramList := make([]datatype.ParameterRecord, 0)
 	seen := make(map[string]struct{})
 	if endpointURL != nil {
@@ -556,16 +582,16 @@ func buildJSQueryParameters(endpointID string, jsURL string, endpointURL *url.UR
 				continue
 			}
 			example := firstSliceValue(values)
-			appendJSParameter(&paramList, seen, endpointID, jsURL, name, "query", "string", example, 0.64)
+			appendJSParameter(&paramList, seen, endpointID, jsURL, name, "query", "string", example, 0.64, parameterSource)
 		}
 	}
 	for _, name := range queryParams {
-		appendJSParameter(&paramList, seen, endpointID, jsURL, name, "query", "string", "", 0.66)
+		appendJSParameter(&paramList, seen, endpointID, jsURL, name, "query", "string", "", 0.66, parameterSource)
 	}
 	return paramList
 }
 
-func buildJSNamedParameters(endpointID string, jsURL string, location string, names []string, bodyKind string, confidence float64) []datatype.ParameterRecord {
+func buildJSNamedParameters(endpointID string, jsURL string, location string, names []string, bodyKind string, confidence float64, parameterSource string) []datatype.ParameterRecord {
 	paramList := make([]datatype.ParameterRecord, 0)
 	seen := make(map[string]struct{})
 	paramType := "string"
@@ -576,12 +602,12 @@ func buildJSNamedParameters(endpointID string, jsURL string, location string, na
 		paramType = "unknown"
 	}
 	for _, name := range names {
-		appendJSParameter(&paramList, seen, endpointID, jsURL, name, location, paramType, "", confidence)
+		appendJSParameter(&paramList, seen, endpointID, jsURL, name, location, paramType, "", confidence, parameterSource)
 	}
 	return paramList
 }
 
-func buildJSPathParameters(endpointID string, jsURL string, pathText string) []datatype.ParameterRecord {
+func buildJSPathParameters(endpointID string, jsURL string, pathText string, parameterSource string) []datatype.ParameterRecord {
 	matches := pathPlaceholderPattern.FindAllStringSubmatch(pathText, -1)
 	if len(matches) == 0 {
 		return nil
@@ -592,12 +618,12 @@ func buildJSPathParameters(endpointID string, jsURL string, pathText string) []d
 		if len(match) < 2 {
 			continue
 		}
-		appendJSParameter(&paramList, seen, endpointID, jsURL, match[1], "path", "string", "", 0.64)
+		appendJSParameter(&paramList, seen, endpointID, jsURL, match[1], "path", "string", "", 0.64, parameterSource)
 	}
 	return paramList
 }
 
-func appendJSParameter(result *[]datatype.ParameterRecord, seen map[string]struct{}, endpointID string, jsURL string, name string, location string, paramType string, example string, confidence float64) {
+func appendJSParameter(result *[]datatype.ParameterRecord, seen map[string]struct{}, endpointID string, jsURL string, name string, location string, paramType string, example string, confidence float64, parameterSource string) {
 	paramName := strings.TrimSpace(name)
 	if paramName == "" {
 		return
@@ -621,7 +647,7 @@ func appendJSParameter(result *[]datatype.ParameterRecord, seen map[string]struc
 		ParamType:   paramType,
 		Example:     strings.TrimSpace(example),
 		Default:     strings.TrimSpace(example),
-		Source:      "static_js",
+		Source:      firstNonEmpty(strings.TrimSpace(parameterSource), "static_js"),
 		SourceDetail: datatype.ParameterSourceDetail{
 			JSFile: jsURL,
 		},

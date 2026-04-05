@@ -140,6 +140,7 @@ runtime driver 通过 `stdout` 返回 JSON：
 - `window.fetch`
 - `XMLHttpRequest.open/send/setRequestHeader`
 - `navigator.sendBeacon`
+- `WebSocket`
 - `Playwright page.on('request')` 网络请求观测
 - `URLSearchParams`
 - `FormData`

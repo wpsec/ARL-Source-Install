@@ -183,12 +183,30 @@ func scanJSResources(client *http.Client, jsURLs []string) jsSurfaceScanResult {
 					util.ErrPrint(err)
 					continue
 				}
-				endpoints, parameters := extractJSStaticSurface(jsBody, jsURL)
-				results <- jsSurfaceScanResult{
-					Records:    rule(jsBody, jsURL, "js"),
-					Endpoints:  endpoints,
-					Parameters: parameters,
+				scanUnits := []jsScanUnit{
+					{
+						URL:             jsURL,
+						Body:            jsBody,
+						SourceType:      "static_js",
+						ParameterSource: "static_js",
+						RuleSourceTag:   "js",
+					},
 				}
+				scanUnits = append(scanUnits, fetchSourceMapScanUnits(client, jsURL, jsBody)...)
+				scanUnits = dedupeJSScanUnits(scanUnits)
+
+				batchResult := jsSurfaceScanResult{
+					Records:    make([]datatype.ScanRecord, 0),
+					Endpoints:  make([]datatype.EndpointRecord, 0),
+					Parameters: make([]datatype.ParameterRecord, 0),
+				}
+				for _, unit := range scanUnits {
+					endpoints, parameters := extractJSStaticSurfaceWithMeta(unit.Body, unit.URL, unit.SourceType, unit.ParameterSource)
+					batchResult.Records = append(batchResult.Records, rule(unit.Body, unit.URL, unit.RuleSourceTag)...)
+					batchResult.Endpoints = append(batchResult.Endpoints, endpoints...)
+					batchResult.Parameters = append(batchResult.Parameters, parameters...)
+				}
+				results <- batchResult
 			}
 		}()
 	}

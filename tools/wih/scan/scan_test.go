@@ -262,6 +262,9 @@ request({
 	if gqlEndpoint.RequestTemplate.BodyText == "" {
 		t.Fatal("graphql endpoint body text should not be empty")
 	}
+	if !strings.Contains(gqlEndpoint.RequestTemplate.BodyText, "user(id: $userId)") {
+		t.Fatalf("graphql endpoint body text should preserve original query: %s", gqlEndpoint.RequestTemplate.BodyText)
+	}
 	if gqlEndpoint.RequestTemplate.RequestPacket == "" {
 		t.Fatal("graphql endpoint request packet should not be empty")
 	}
@@ -303,6 +306,94 @@ request({
 	}
 	if !paramMap["X-Token"].IsPII {
 		t.Fatal("X-Token 应被识别为疑似敏感参数")
+	}
+}
+
+// TestExtractJSStaticSurfaceAppliesSchemaHints 验证静态 JS 参数会吸收 schema 里的类型与必填信息。
+func TestExtractJSStaticSurfaceAppliesSchemaHints(t *testing.T) {
+	jsBody := `
+const searchSchema = z.object({
+  keyword: z.string().default("demo"),
+  pageNo: z.number().optional(),
+  role: z.enum(["student", "teacher"])
+})
+
+const profileSchema = yup.object({
+  enabled: yup.boolean().required(),
+  tenantId: yup.string().default("tenant-a")
+})
+
+const authSchema = Joi.object({
+  token: Joi.string().required(),
+  level: Joi.number().default(3)
+})
+
+const jsonSchema = {
+  type: "object",
+  properties: {
+    category: { type: "string", enum: ["news", "notice"] }
+  },
+  required: ["category"]
+}
+
+request({
+  url: "/api/search",
+  method: "POST",
+  data: {
+    keyword,
+    pageNo,
+    role,
+    enabled,
+    tenantId,
+    token,
+    level,
+    category
+  }
+})
+`
+
+	_, parameters := extractJSStaticSurface(jsBody, "https://example.com/static/app.js")
+	if len(parameters) < 8 {
+		t.Fatalf("unexpected schema parameter count: %d", len(parameters))
+	}
+
+	paramMap := make(map[string]datatype.ParameterRecord)
+	for _, parameter := range parameters {
+		paramMap[parameter.ParamName] = parameter
+	}
+
+	if paramMap["keyword"].ParamType != "string" {
+		t.Fatalf("unexpected keyword param type: %s", paramMap["keyword"].ParamType)
+	}
+	if paramMap["keyword"].Default != "demo" {
+		t.Fatalf("unexpected keyword default: %s", paramMap["keyword"].Default)
+	}
+	if paramMap["keyword"].SourceDetail.SchemaLib != "zod" {
+		t.Fatalf("unexpected keyword schema lib: %s", paramMap["keyword"].SourceDetail.SchemaLib)
+	}
+	if paramMap["pageNo"].Required {
+		t.Fatal("pageNo 应被识别为 optional")
+	}
+	if len(paramMap["role"].Enum) != 2 {
+		t.Fatalf("unexpected role enum: %+v", paramMap["role"].Enum)
+	}
+	if paramMap["enabled"].ParamType != "boolean" || !paramMap["enabled"].Required {
+		t.Fatalf("unexpected enabled schema hint: %+v", paramMap["enabled"])
+	}
+	if paramMap["tenantId"].Default != "tenant-a" {
+		t.Fatalf("unexpected tenantId default: %s", paramMap["tenantId"].Default)
+	}
+	if paramMap["token"].SourceDetail.SchemaLib != "joi" || !paramMap["token"].Required {
+		t.Fatalf("unexpected token schema hint: %+v", paramMap["token"])
+	}
+	if paramMap["level"].ParamType != "number" {
+		t.Fatalf("unexpected level param type: %s", paramMap["level"].ParamType)
+	}
+	if paramMap["category"].SourceDetail.SchemaLib != "json_schema" || !paramMap["category"].Required {
+		t.Fatalf("unexpected category schema hint: %+v", paramMap["category"])
+	}
+	if len(paramMap["category"].Enum) != 2 {
+		t.Fatalf("unexpected category enum: %+v", paramMap["category"].Enum)
 	}
 }
 
@@ -490,5 +581,72 @@ func TestResolveBuiltInPlaywrightDriverPath(t *testing.T) {
 	commandText := resolveBuiltInPlaywrightDriverCommand()
 	if !strings.Contains(commandText, "playwright_driver.js") {
 		t.Fatalf("unexpected playwright driver command: %s", commandText)
+	}
+}
+
+// TestExtractJSStaticSurfaceWithSourceMapMeta 验证静态提取支持保留 source map 来源元信息。
+func TestExtractJSStaticSurfaceWithSourceMapMeta(t *testing.T) {
+	jsBody := `
+axios.get("/api/source-map/detail", {
+  params: {
+    userId,
+    tenantId
+  }
+})
+`
+
+	endpoints, parameters := extractJSStaticSurfaceWithMeta(
+		jsBody,
+		"https://example.com/__wih_sourcemap__/src/api.ts",
+		"source_map_js",
+		"source_map_js",
+	)
+	if len(endpoints) != 1 {
+		t.Fatalf("unexpected source map endpoint count: %d", len(endpoints))
+	}
+	if len(parameters) != 2 {
+		t.Fatalf("unexpected source map parameter count: %d", len(parameters))
+	}
+	if len(endpoints[0].SourceTypes) == 0 || endpoints[0].SourceTypes[0] != "source_map_js" {
+		t.Fatalf("unexpected source map endpoint source types: %+v", endpoints[0].SourceTypes)
+	}
+	for _, parameter := range parameters {
+		if parameter.Source != "source_map_js" {
+			t.Fatalf("unexpected source map parameter source: %s", parameter.Source)
+		}
+		if parameter.SourceDetail.JSFile != "https://example.com/__wih_sourcemap__/src/api.ts" {
+			t.Fatalf("unexpected source map js file: %s", parameter.SourceDetail.JSFile)
+		}
+	}
+}
+
+// TestCollectSourceMapScanUnitsUsesSourcesContent 验证 source map 的 sourcesContent 会转成扫描单元。
+func TestCollectSourceMapScanUnitsUsesSourcesContent(t *testing.T) {
+	mapBody := `{
+  "version": 3,
+  "file": "app.js",
+  "sourceRoot": "/assets/",
+  "sources": [
+    "src/search.ts",
+    "webpack://src/admin.ts"
+  ],
+  "sourcesContent": [
+    "fetch('/api/search', { method: 'GET' })",
+    "axios.post('/api/admin', { id })"
+  ]
+}`
+
+	units := collectSourceMapScanUnits(nil, "https://example.com/static/app.js.map", mapBody)
+	if len(units) != 2 {
+		t.Fatalf("unexpected source map unit count: %d", len(units))
+	}
+	if units[0].SourceType != "source_map_js" || units[0].ParameterSource != "source_map_js" {
+		t.Fatalf("unexpected source map unit metadata: %+v", units[0])
+	}
+	if !strings.HasPrefix(units[0].URL, "https://example.com/") {
+		t.Fatalf("unexpected source map unit url: %s", units[0].URL)
+	}
+	if strings.TrimSpace(units[0].Body) == "" {
+		t.Fatal("source map unit body should not be empty")
 	}
 }

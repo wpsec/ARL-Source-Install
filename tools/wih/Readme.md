@@ -136,6 +136,7 @@ Flags:
 当前这版内置驱动已覆盖：
 
 - 页面加载期 `fetch/xhr/sendBeacon`
+- `WebSocket`
 - Playwright 网络请求观测补充
 - 基础 `json/graphql/form` body 解析
 - 同 host 页面浅层探索

@@ -72,12 +72,23 @@
   - 当前仍以模式提取为主，不是 AST 主链
   - 已覆盖 `fetch / axios / request({...}) / URLSearchParams / FormData / GraphQL variables`
   - 已能输出 `query/body/header/path/graphql_variable`
+  - 已接入 `SourceMap` 利用：
+    - 优先解析 `sourceMappingURL`
+    - 可消费 `sourcesContent`
+    - 在缺少 `sourcesContent` 时尝试回拉少量同 host 源文件
+  - 已接入 `schema hints` 过渡增强：
+    - `zod`
+    - `yup`
+    - `joi`
+    - `json schema / ajv 风格 object`
+    - 当前可把 `type / required / default / enum / schema_lib` 回填到已提取参数
 - 已完成 runtime external driver 契约与最小样例：
   - `stdin/stdout JSON` 协议
   - 示例输入输出文件
   - external driver 示例脚本
 - 已完成内置 `Playwright` runtime MVP：
   - 页面加载期 `fetch/xhr/sendBeacon`
+  - `WebSocket`
   - `xhr.setRequestHeader`
   - `JSON / GraphQL / form` body 基础解析
   - 同 host 页面浅层探索
@@ -98,7 +109,7 @@
 当前仍未完成的部分：
 
 - `JS AST` 主链尚未落地
-- `schema` 提取尚未开始
+- `schema` 深层结构提取尚未完成，当前还是 hints 级增强
 - `GraphQL` 仍以基础变量提取与 runtime 观察为主，未进入深层结构分析
 - `AI` 语义增强尚未开始
 
@@ -618,6 +629,7 @@ type ParameterRecord struct {}
 - `URLSearchParams`
 - `sendBeacon`
 - `GraphQL request`
+- `WebSocket`
 
 交付：
 
@@ -669,7 +681,7 @@ type ParameterRecord struct {}
 
 ### 阶段 4：Schema / GraphQL 深化
 
-当前状态：`未完成`
+当前状态：`已启动，仍未完成`
 
 目标：
 

@@ -809,6 +809,24 @@ async function main() {
         return originalBeacon(url, data);
       };
     }
+
+    const OriginalWebSocket = window.WebSocket;
+    if (typeof OriginalWebSocket === 'function') {
+      window.WebSocket = function(url, protocols) {
+        safePush({
+          source: 'websocket',
+          url: String(url || ''),
+          method: 'GET',
+          headers: protocols ? { 'Sec-WebSocket-Protocol': Array.isArray(protocols) ? protocols.join(',') : String(protocols) } : {},
+          bodyKind: '',
+          bodyText: '',
+          body: {},
+          trigger: document.location.href,
+        });
+        return protocols === undefined ? new OriginalWebSocket(url) : new OriginalWebSocket(url, protocols);
+      };
+      window.WebSocket.prototype = OriginalWebSocket.prototype;
+    }
   });
 
   const pendingPages = [targetUrl];
