@@ -32,26 +32,30 @@ var (
 	headerObjectPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`(?is)headers\s*:\s*\{([^}]{1,1000})\}`),
 	}
-	appendCallPattern      = regexp.MustCompile(`(?is)\.(append|set)\s*\(\s*(?:"([^"]{1,120})"|'([^']{1,120})')`)
-	urlConfigPattern       = regexp.MustCompile("(?is)url\\s*:\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`]+)`)")
-	methodConfigPattern    = regexp.MustCompile("(?is)(?:type|method)\\s*:\\s*(?:\"([A-Za-z]+)\"|'([A-Za-z]+)'|`([A-Za-z]+)`)")
-	graphQLSignalPattern   = regexp.MustCompile(`(?is)\b(query|mutation|operationName)\b`)
-	graphQLQueryPattern    = regexp.MustCompile("(?is)\\bquery\\s*:\\s*(?:\"([^\"]{1,1000})\"|'([^']{1,1000})'|`([^`]{1,1000})`)")
-	graphQLTaggedPattern   = regexp.MustCompile("(?is)gql\\s*`([^`]{1,1000})`")
-	objectAssignPattern    = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\{`)
-	urlSearchAssignPattern = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+URLSearchParams\s*\(\s*\{`)
-	formDataAssignPattern  = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+FormData\s*\(`)
-	paramsVarPattern       = regexp.MustCompile(`(?is)\bparams\s*:\s*([A-Za-z_$][\w$]*)`)
-	bodyVarPattern         = regexp.MustCompile(`(?is)\b(?:data|body)\s*:\s*(?:JSON\.stringify\s*\(\s*)?([A-Za-z_$][\w$]*)`)
-	headersVarPattern      = regexp.MustCompile(`(?is)\bheaders\s*:\s*([A-Za-z_$][\w$]*)`)
-	graphQLVarsVarPattern  = regexp.MustCompile(`(?is)\bvariables\s*:\s*([A-Za-z_$][\w$]*)`)
-	graphQLQueryVarPattern = regexp.MustCompile(`(?is)\bquery\s*:\s*([A-Za-z_$][\w$]*)`)
-	objectKeyQuotedPattern = regexp.MustCompile(`(?is)[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:`)
-	objectKeyBarePattern   = regexp.MustCompile(`(?is)(?:^|[{\s,])([A-Za-z_][\w.-]{0,63})\s*:`)
-	objectShorthandPattern = regexp.MustCompile(`(?:^|,)\s*(\.\.\.)?\s*([A-Za-z_][\w.-]{0,63})\s*(?:,|$)`)
-	templateSegmentPattern = regexp.MustCompile(`\$\{\s*([^}]{1,80})\s*\}`)
-	doubleBracePattern     = regexp.MustCompile(`\{\{\s*([^}]{1,80})\s*\}\}`)
-	pathPlaceholderPattern = regexp.MustCompile(`\{([A-Za-z_][\w.-]{0,63})\}`)
+	appendCallPattern       = regexp.MustCompile(`(?is)\.(append|set)\s*\(\s*(?:"([^"]{1,120})"|'([^']{1,120})')`)
+	fetchVarPattern         = regexp.MustCompile(`(?is)\bfetch\s*\(\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
+	axiosMethodVarPattern   = regexp.MustCompile(`(?is)(?:[A-Za-z_$][\w$]*\.)+(get|post|put|delete|patch)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
+	urlConfigPattern        = regexp.MustCompile("(?is)url\\s*:\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`]+)`)")
+	urlConfigVarPattern     = regexp.MustCompile(`(?is)\burl\s*:\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
+	methodConfigPattern     = regexp.MustCompile("(?is)(?:type|method)\\s*:\\s*(?:\"([A-Za-z]+)\"|'([A-Za-z]+)'|`([A-Za-z]+)`)")
+	requestConfigVarPattern = regexp.MustCompile(`(?is)(?:axios(?:\.[A-Za-z_$][\w$]*)?|(?:[A-Za-z_$][\w$]*\.)?request)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\)`)
+	graphQLSignalPattern    = regexp.MustCompile(`(?is)\b(query|mutation|operationName)\b`)
+	graphQLQueryPattern     = regexp.MustCompile("(?is)\\bquery\\s*:\\s*(?:\"([^\"]{1,1000})\"|'([^']{1,1000})'|`([^`]{1,1000})`)")
+	graphQLTaggedPattern    = regexp.MustCompile("(?is)gql\\s*`([^`]{1,1000})`")
+	objectAssignPattern     = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\{`)
+	urlSearchAssignPattern  = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+URLSearchParams\s*\(\s*\{`)
+	formDataAssignPattern   = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+FormData\s*\(`)
+	paramsVarPattern        = regexp.MustCompile(`(?is)\bparams\s*:\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
+	bodyVarPattern          = regexp.MustCompile(`(?is)\b(?:data|body)\s*:\s*(?:JSON\.stringify\s*\(\s*)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
+	headersVarPattern       = regexp.MustCompile(`(?is)\bheaders\s*:\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
+	graphQLVarsVarPattern   = regexp.MustCompile(`(?is)\bvariables\s*:\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
+	graphQLQueryVarPattern  = regexp.MustCompile(`(?is)\bquery\s*:\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
+	objectKeyQuotedPattern  = regexp.MustCompile(`(?is)[\"']([A-Za-z_][\w.-]{0,63})[\"']\s*:`)
+	objectKeyBarePattern    = regexp.MustCompile(`(?is)(?:^|[{\s,])([A-Za-z_][\w.-]{0,63})\s*:`)
+	objectShorthandPattern  = regexp.MustCompile(`(?:^|,)\s*(\.\.\.)?\s*([A-Za-z_][\w.-]{0,63})\s*(?:,|$)`)
+	templateSegmentPattern  = regexp.MustCompile(`\$\{\s*([^}]{1,80})\s*\}`)
+	doubleBracePattern      = regexp.MustCompile(`\{\{\s*([^}]{1,80})\s*\}\}`)
+	pathPlaceholderPattern  = regexp.MustCompile(`\{([A-Za-z_][\w.-]{0,63})\}`)
 )
 
 type jsEndpointCandidate struct {
@@ -69,9 +73,13 @@ type jsEndpointCandidate struct {
 
 type jsVariableHints struct {
 	ObjectFields   map[string][]string
+	ObjectRaw      map[string]string
+	MemberFields   map[string][]string
+	MemberRaw      map[string]string
 	URLSearchField map[string][]string
 	FormDataFields map[string][]string
 	StringValues   map[string]string
+	MemberStrings  map[string]string
 }
 
 func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRecord, []datatype.ParameterRecord) {
@@ -95,7 +103,19 @@ func extractJSStaticSurfaceWithMeta(jsBody string, jsURL string, endpointSourceT
 			continue
 		}
 		rawURL := firstIndexedValue(jsBody, match[2:4], match[4:6], match[6:8])
-		window := buildJSRequestWindow(jsBody, match[0])
+		window := expandJSRequestWindowWithConfig(buildJSRequestWindow(jsBody, match[0]), variableHints)
+		candidate := buildJSEndpointCandidate(jsURL, rawURL, "GET", window, endpointSourceType, variableHints)
+		if candidate.URL != "" {
+			candidates = append(candidates, candidate)
+		}
+	}
+
+	for _, match := range fetchVarPattern.FindAllStringSubmatchIndex(jsBody, -1) {
+		if len(match) < 4 {
+			continue
+		}
+		rawURL := firstIndexedValue(jsBody, match[2:4])
+		window := expandJSRequestWindowWithConfig(buildJSRequestWindow(jsBody, match[0]), variableHints)
 		candidate := buildJSEndpointCandidate(jsURL, rawURL, "GET", window, endpointSourceType, variableHints)
 		if candidate.URL != "" {
 			candidates = append(candidates, candidate)
@@ -108,7 +128,20 @@ func extractJSStaticSurfaceWithMeta(jsBody string, jsURL string, endpointSourceT
 		}
 		method := strings.ToUpper(strings.TrimSpace(firstIndexedValue(jsBody, match[2:4])))
 		rawURL := firstIndexedValue(jsBody, match[4:6], match[6:8], match[8:10])
-		window := buildJSRequestWindow(jsBody, match[0])
+		window := expandJSRequestWindowWithConfig(buildJSRequestWindow(jsBody, match[0]), variableHints)
+		candidate := buildJSEndpointCandidate(jsURL, rawURL, method, window, endpointSourceType, variableHints)
+		if candidate.URL != "" {
+			candidates = append(candidates, candidate)
+		}
+	}
+
+	for _, match := range axiosMethodVarPattern.FindAllStringSubmatchIndex(jsBody, -1) {
+		if len(match) < 6 {
+			continue
+		}
+		method := strings.ToUpper(strings.TrimSpace(firstIndexedValue(jsBody, match[2:4])))
+		rawURL := firstIndexedValue(jsBody, match[4:6])
+		window := expandJSRequestWindowWithConfig(buildJSRequestWindow(jsBody, match[0]), variableHints)
 		candidate := buildJSEndpointCandidate(jsURL, rawURL, method, window, endpointSourceType, variableHints)
 		if candidate.URL != "" {
 			candidates = append(candidates, candidate)
@@ -120,7 +153,7 @@ func extractJSStaticSurfaceWithMeta(jsBody string, jsURL string, endpointSourceT
 			start := indexPair[0]
 			window := buildJSRequestWindow(jsBody, start)
 			urlMatch := urlConfigPattern.FindStringSubmatch(window)
-			rawURL := matchValue(urlMatch, 1)
+			rawURL := firstNonEmpty(matchValue(urlMatch, 1), collectReferencedStringValue(window, urlConfigVarPattern, variableHints.StringValues, variableHints.MemberStrings))
 			if strings.TrimSpace(rawURL) == "" {
 				continue
 			}
@@ -132,6 +165,29 @@ func extractJSStaticSurfaceWithMeta(jsBody string, jsURL string, endpointSourceT
 			if candidate.URL != "" {
 				candidates = append(candidates, candidate)
 			}
+		}
+	}
+
+	for _, match := range requestConfigVarPattern.FindAllStringSubmatch(jsBody, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		configName := strings.ToLower(strings.TrimSpace(match[1]))
+		configWindow, ok := resolveObjectReferenceRaw(configName, variableHints)
+		if !ok || strings.TrimSpace(configWindow) == "" {
+			continue
+		}
+		rawURL := firstNonEmpty(matchValue(urlConfigPattern.FindStringSubmatch(configWindow), 1), collectReferencedStringValue(configWindow, urlConfigVarPattern, variableHints.StringValues, variableHints.MemberStrings))
+		if strings.TrimSpace(rawURL) == "" {
+			continue
+		}
+		methodText := "GET"
+		if methodMatch := methodConfigPattern.FindStringSubmatch(configWindow); len(methodMatch) > 0 {
+			methodText = strings.ToUpper(strings.TrimSpace(matchValue(methodMatch, 1)))
+		}
+		candidate := buildJSEndpointCandidate(jsURL, rawURL, methodText, configWindow, endpointSourceType, variableHints)
+		if candidate.URL != "" {
+			candidates = append(candidates, candidate)
 		}
 	}
 
@@ -268,7 +324,7 @@ func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParam
 }
 
 func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod string, requestWindow string, sourceType string, variableHints jsVariableHints) jsEndpointCandidate {
-	resolvedURL, err := normalizeStaticEndpointURL(baseJSURL, rawURL)
+	resolvedURL, err := resolveStaticEndpointExpression(baseJSURL, rawURL, variableHints.StringValues, variableHints.MemberStrings)
 	if err != nil || resolvedURL == "" {
 		return jsEndpointCandidate{}
 	}
@@ -282,10 +338,10 @@ func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod str
 	bodyParams := collectObjectLiteralParamNames(requestWindow, bodyObjectPatterns...)
 	headerParams := collectHeaderNames(requestWindow)
 	graphqlParams := collectObjectLiteralParamNames(requestWindow, graphQLVariablePattern)
-	queryParams = append(queryParams, collectReferencedNames(requestWindow, paramsVarPattern, variableHints.ObjectFields, variableHints.URLSearchField)...)
-	bodyParams = append(bodyParams, collectReferencedNames(requestWindow, bodyVarPattern, variableHints.ObjectFields, variableHints.FormDataFields)...)
-	headerParams = append(headerParams, collectReferencedNames(requestWindow, headersVarPattern, variableHints.ObjectFields)...)
-	graphqlParams = append(graphqlParams, collectReferencedNames(requestWindow, graphQLVarsVarPattern, variableHints.ObjectFields)...)
+	queryParams = append(queryParams, collectReferencedNames(requestWindow, paramsVarPattern, variableHints.ObjectFields, variableHints.URLSearchField, variableHints.MemberFields)...)
+	bodyParams = append(bodyParams, collectReferencedNames(requestWindow, bodyVarPattern, variableHints.ObjectFields, variableHints.FormDataFields, variableHints.MemberFields)...)
+	headerParams = append(headerParams, collectReferencedNames(requestWindow, headersVarPattern, variableHints.ObjectFields, variableHints.MemberFields)...)
+	graphqlParams = append(graphqlParams, collectReferencedNames(requestWindow, graphQLVarsVarPattern, variableHints.ObjectFields, variableHints.MemberFields)...)
 	appendNames := collectAppendParamNames(requestWindow)
 	positionalBodyExpr, _, hasPositional := extractAxiosPositionalExpressions(requestWindow)
 	if hasPositional {
@@ -306,7 +362,7 @@ func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod str
 	if bodyKind == "graphql" {
 		graphQLQuery = extractGraphQLQueryText(requestWindow)
 		if strings.TrimSpace(graphQLQuery) == "" {
-			graphQLQuery = collectReferencedStringValue(requestWindow, graphQLQueryVarPattern, variableHints.StringValues)
+			graphQLQuery = collectReferencedStringValue(requestWindow, graphQLQueryVarPattern, variableHints.StringValues, variableHints.MemberStrings)
 		}
 	}
 	if bodyKind == "graphql" {
@@ -338,9 +394,13 @@ func buildJSEndpointCandidate(baseJSURL string, rawURL string, defaultMethod str
 func buildJSVariableHints(jsBody string) jsVariableHints {
 	hints := jsVariableHints{
 		ObjectFields:   make(map[string][]string),
+		ObjectRaw:      make(map[string]string),
+		MemberFields:   make(map[string][]string),
+		MemberRaw:      make(map[string]string),
 		URLSearchField: make(map[string][]string),
 		FormDataFields: make(map[string][]string),
 		StringValues:   make(map[string]string),
+		MemberStrings:  make(map[string]string),
 	}
 
 	for _, match := range objectAssignPattern.FindAllStringSubmatchIndex(jsBody, -1) {
@@ -355,6 +415,7 @@ func buildJSVariableHints(jsBody string) jsVariableHints {
 		if !ok || strings.TrimSpace(block) == "" {
 			continue
 		}
+		hints.ObjectRaw[strings.ToLower(name)] = strings.TrimSpace(block)
 		fields := extractObjectLiteralKeys(block)
 		if len(fields) > 0 {
 			hints.ObjectFields[strings.ToLower(name)] = uniqueSortedStrings(fields)
@@ -414,13 +475,92 @@ func buildJSVariableHints(jsBody string) jsVariableHints {
 			if name == "" || value == "" {
 				continue
 			}
-			if strings.Contains(strings.ToLower(value), "query") || strings.Contains(strings.ToLower(value), "mutation") || strings.Contains(strings.ToLower(value), "subscription") {
-				hints.StringValues[name] = value
-			}
+			hints.StringValues[name] = value
 		}
 	}
 
+	visited := make(map[string]struct{})
+	for objectName, rawObject := range hints.ObjectRaw {
+		populateJSMemberHints(objectName, rawObject, &hints, visited, 0)
+	}
+
 	return hints
+}
+
+func populateJSMemberHints(baseName string, rawObject string, hints *jsVariableHints, visited map[string]struct{}, depth int) {
+	if hints == nil || depth > 4 {
+		return
+	}
+	objectName := strings.ToLower(strings.TrimSpace(baseName))
+	objectText := strings.TrimSpace(rawObject)
+	if objectName == "" || objectText == "" {
+		return
+	}
+	visitKey := objectName + "|" + objectText
+	if _, ok := visited[visitKey]; ok {
+		return
+	}
+	visited[visitKey] = struct{}{}
+
+	for fieldName, expr := range parseTopLevelObjectFields(objectText) {
+		fieldKey := strings.ToLower(strings.TrimSpace(fieldName))
+		exprText := strings.TrimSpace(expr)
+		if fieldKey == "" || exprText == "" {
+			continue
+		}
+		memberKey := objectName + "." + fieldKey
+
+		if value, ok := resolveStringReferenceWithMembers(exprText, hints.StringValues, hints.MemberStrings); ok && strings.TrimSpace(value) != "" {
+			hints.MemberStrings[memberKey] = strings.TrimSpace(value)
+		} else if value, ok := extractInlineStringValue(exprText); ok && strings.TrimSpace(value) != "" {
+			hints.MemberStrings[memberKey] = strings.TrimSpace(value)
+		}
+
+		if strings.HasPrefix(exprText, "{") && strings.HasSuffix(exprText, "}") {
+			hints.MemberRaw[memberKey] = exprText
+			if fields := extractObjectLiteralKeys(exprText); len(fields) > 0 {
+				hints.MemberFields[memberKey] = uniqueSortedStrings(fields)
+			}
+			populateJSMemberHints(memberKey, exprText, hints, visited, depth+1)
+			continue
+		}
+
+		refName := strings.ToLower(strings.TrimSpace(exprText))
+		if refName == "" {
+			continue
+		}
+		if rawRef, ok := hints.ObjectRaw[refName]; ok && strings.TrimSpace(rawRef) != "" {
+			hints.MemberRaw[memberKey] = strings.TrimSpace(rawRef)
+			if fields, ok := hints.ObjectFields[refName]; ok && len(fields) > 0 {
+				hints.MemberFields[memberKey] = uniqueSortedStrings(fields)
+			}
+			populateJSMemberHints(memberKey, rawRef, hints, visited, depth+1)
+			continue
+		}
+		if rawRef, ok := hints.MemberRaw[refName]; ok && strings.TrimSpace(rawRef) != "" {
+			hints.MemberRaw[memberKey] = strings.TrimSpace(rawRef)
+			if fields, ok := hints.MemberFields[refName]; ok && len(fields) > 0 {
+				hints.MemberFields[memberKey] = uniqueSortedStrings(fields)
+			}
+			populateJSMemberHints(memberKey, rawRef, hints, visited, depth+1)
+			continue
+		}
+		if fields, ok := hints.ObjectFields[refName]; ok && len(fields) > 0 {
+			hints.MemberFields[memberKey] = uniqueSortedStrings(fields)
+			continue
+		}
+		if fields, ok := hints.MemberFields[refName]; ok && len(fields) > 0 {
+			hints.MemberFields[memberKey] = uniqueSortedStrings(fields)
+			continue
+		}
+		if fields, ok := hints.URLSearchField[refName]; ok && len(fields) > 0 {
+			hints.MemberFields[memberKey] = uniqueSortedStrings(fields)
+			continue
+		}
+		if fields, ok := hints.FormDataFields[refName]; ok && len(fields) > 0 {
+			hints.MemberFields[memberKey] = uniqueSortedStrings(fields)
+		}
+	}
 }
 
 func collectReferencedNames(source string, pattern *regexp.Regexp, sources ...map[string][]string) []string {
@@ -443,13 +583,15 @@ func collectReferencedNames(source string, pattern *regexp.Regexp, sources ...ma
 	return uniqueSortedStrings(result)
 }
 
-func collectReferencedStringValue(source string, pattern *regexp.Regexp, valueMap map[string]string) string {
+func collectReferencedStringValue(source string, pattern *regexp.Regexp, valueMap map[string]string, memberMap map[string]string) string {
 	if pattern == nil || valueMap == nil {
-		return ""
+		if memberMap == nil {
+			return ""
+		}
 	}
 	for _, match := range pattern.FindAllStringSubmatch(source, -1) {
 		name := strings.ToLower(strings.TrimSpace(matchValue(match, 1)))
-		if value, ok := valueMap[name]; ok && strings.TrimSpace(value) != "" {
+		if value, ok := resolveStringReferenceWithMembers(name, valueMap, memberMap); ok && strings.TrimSpace(value) != "" {
 			return strings.TrimSpace(value)
 		}
 	}
@@ -493,6 +635,9 @@ func extractFieldsFromExpression(expr string, variableHints jsVariableHints) []s
 	if fields, ok := variableHints.ObjectFields[name]; ok {
 		return fields
 	}
+	if fields, ok := variableHints.MemberFields[name]; ok {
+		return fields
+	}
 	if fields, ok := variableHints.FormDataFields[name]; ok {
 		return fields
 	}
@@ -513,6 +658,122 @@ func extractGraphQLQueryText(requestWindow string) string {
 		return strings.TrimSpace(match[1])
 	}
 	return ""
+}
+
+func resolveStaticEndpointExpression(baseJSURL string, rawExpr string, stringValues map[string]string, memberStrings map[string]string) (string, error) {
+	expr := strings.TrimSpace(rawExpr)
+	if expr == "" {
+		return "", fmt.Errorf("empty url expression")
+	}
+	if value, ok := resolveStringReferenceWithMembers(expr, stringValues, memberStrings); ok {
+		expr = value
+	}
+	return normalizeStaticEndpointURL(baseJSURL, expr)
+}
+
+func resolveStringReference(expr string, valueMap map[string]string) (string, bool) {
+	if valueMap == nil {
+		return "", false
+	}
+	name := strings.ToLower(strings.TrimSpace(expr))
+	if name == "" {
+		return "", false
+	}
+	value, ok := valueMap[name]
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(value), true
+}
+
+func resolveStringReferenceWithMembers(expr string, valueMap map[string]string, memberMap map[string]string) (string, bool) {
+	if value, ok := resolveStringReference(expr, valueMap); ok {
+		return value, true
+	}
+	if memberMap == nil {
+		return "", false
+	}
+	name := strings.ToLower(strings.TrimSpace(expr))
+	if name == "" {
+		return "", false
+	}
+	value, ok := memberMap[name]
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(value), true
+}
+
+func extractInlineStringValue(expr string) (string, bool) {
+	text := strings.TrimSpace(expr)
+	if text == "" {
+		return "", false
+	}
+	for _, pattern := range []*regexp.Regexp{
+		regexp.MustCompile(`^"([^"]{1,1000})"$`),
+		regexp.MustCompile(`^'([^']{1,1000})'$`),
+		regexp.MustCompile("^`([^`]{1,1000})`$"),
+		regexp.MustCompile("(?is)^gql\\s*`([^`]{1,1000})`$"),
+	} {
+		match := pattern.FindStringSubmatch(text)
+		if len(match) < 2 {
+			continue
+		}
+		return strings.TrimSpace(match[1]), true
+	}
+	return "", false
+}
+
+func expandJSRequestWindowWithConfig(requestWindow string, variableHints jsVariableHints) string {
+	text := strings.TrimSpace(requestWindow)
+	if text == "" || len(variableHints.ObjectRaw) == 0 {
+		return text
+	}
+	openIndex := strings.Index(text, "(")
+	if openIndex < 0 {
+		return text
+	}
+	argsText, ok := extractBalancedParenContent(text[openIndex:])
+	if !ok || strings.TrimSpace(argsText) == "" {
+		return text
+	}
+	parts := splitTopLevel(argsText, ',')
+	if len(parts) < 2 {
+		return text
+	}
+
+	result := text
+	seen := make(map[string]struct{})
+	for index := 1; index < len(parts) && index <= 2; index++ {
+		name := strings.ToLower(strings.TrimSpace(parts[index]))
+		if name == "" {
+			continue
+		}
+		raw, ok := resolveObjectReferenceRaw(name, variableHints)
+		if !ok || strings.TrimSpace(raw) == "" {
+			continue
+		}
+		if _, duplicated := seen[name]; duplicated {
+			continue
+		}
+		seen[name] = struct{}{}
+		result += "\n" + raw
+	}
+	return result
+}
+
+func resolveObjectReferenceRaw(expr string, hints jsVariableHints) (string, bool) {
+	name := strings.ToLower(strings.TrimSpace(expr))
+	if name == "" {
+		return "", false
+	}
+	if raw, ok := hints.ObjectRaw[name]; ok && strings.TrimSpace(raw) != "" {
+		return strings.TrimSpace(raw), true
+	}
+	if raw, ok := hints.MemberRaw[name]; ok && strings.TrimSpace(raw) != "" {
+		return strings.TrimSpace(raw), true
+	}
+	return "", false
 }
 
 func normalizeStaticEndpointURL(baseJSURL string, rawURL string) (string, error) {

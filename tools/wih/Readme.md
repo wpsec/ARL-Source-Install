@@ -30,7 +30,25 @@ wih 工具支持多种输出格式，包括文本、JSON、CSV、HTML 和 Markdo
   - `--endpoint-output`
   - `--parameter-output`
 
+## 编译
 
+在 `tools/wih` 目录下可直接执行：
+
+```shell
+go build -o wih .
+```
+
+若希望把 `Go` 构建缓存放到临时目录，避免写入系统默认缓存目录，可使用：
+
+```shell
+GOCACHE=/tmp/arl-go-build GOMODCACHE=/tmp/arl-go-mod go build -o wih .
+```
+
+编译完成后，当前目录会生成可直接执行的二进制：
+
+```shell
+./wih --version
+```
 
 ## 命令行
 
@@ -81,11 +99,7 @@ Flags:
 
 ```
 
-
-
-
 ## 例子
-
 
 0. 生成规则
 
@@ -93,13 +107,11 @@ Flags:
 ./wih -G
 ```
 
-
 2. 对单个URL进行信息提取
 
 ```shell
-./wih -t https://www.baidu.com
+./wih -t https://example.com
 ```
-
 
 2. 批量对URL进行信息提取
 
@@ -112,7 +124,7 @@ Flags:
 3. 第三方程序调用
 
 ```shell
-./wih -t https://www.baidu.com -J -o result.json
+./wih -t https://example.com -J -o result.json
 ```
 
 4. 独立导出结构化接口与参数结果
@@ -183,7 +195,6 @@ Flags:
   - `tools/wih/runtime/README.md`
   - `tools/wih/runtime/request.example.json`
   - `tools/wih/runtime/response.example.json`
-
 
 ## 内置规则
 
@@ -345,22 +356,4 @@ exclude_rules:
   - name: "过滤来自首页的内容"
     source_tag: page
     enabled: false
-
 ```
-
-
-
-## 更新日志
-
-### 2023-12（v1.5.4-beta）
-
-- 新增：根据来源（source_tag）进行排除
-- 新增：命令行参数 --disable-check-ak-sk ，用于禁用 sk 有效性检测
-- 新增：规则 1 条
-- 修复：检验AK有效性时，如果不联网标记为(Network Error)
-- 修复：检验腾讯云 SK 有效时，正确输出 AppId
-
-## 已经集成到 ARL
-
-
-https://tophanttechnology.github.io/ARL-doc/function_desc/web_info_hunter/

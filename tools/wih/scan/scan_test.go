@@ -404,6 +404,10 @@ func TestExtractJSStaticSurfaceResolvesVariableReferences(t *testing.T) {
 		"  pageNo,\n" +
 		"  role\n" +
 		"}\n\n" +
+		"const API = {\n" +
+		"  search: \"/api/search\",\n" +
+		"  detail: \"/api/detail\"\n" +
+		"}\n\n" +
 		"const queryData = {\n" +
 		"  userId,\n" +
 		"  profile\n" +
@@ -412,25 +416,39 @@ func TestExtractJSStaticSurfaceResolvesVariableReferences(t *testing.T) {
 		"  Authorization: authToken,\n" +
 		"  \"X-Tenant\": tenantId\n" +
 		"}\n\n" +
-		"const gqlQuery = gql`\n" +
+		"const Queries = {\n" +
+		"  demo: gql`\n" +
 		"\tquery Demo($tenantId: String!, $userId: String!) {\n" +
 		"\t  user(id: $userId) { id }\n" +
 		"\t}\n" +
-		"`\n\n" +
+		"`\n" +
+		"}\n\n" +
 		"const variables = {\n" +
 		"  tenantId,\n" +
 		"  userId\n" +
 		"}\n\n" +
-		"axios.post(\"/api/search\", payload)\n\n" +
-		"axios.get(\"/api/detail\", {\n" +
+		"const requestConfig = {\n" +
+		"  url: API.detail,\n" +
+		"  method: \"GET\",\n" +
+		"  params: queryData,\n" +
+		"  headers: authHeaders\n" +
+		"}\n\n" +
+		"const fetchOptions = {\n" +
+		"  headers: authHeaders,\n" +
+		"  body: payload\n" +
+		"}\n\n" +
+		"axios.post(API.search, payload)\n\n" +
+		"axios.get(API.detail, {\n" +
 		"  params: queryData,\n" +
 		"  headers: authHeaders\n" +
 		"})\n\n" +
+		"fetch(API.search, fetchOptions)\n\n" +
+		"request(requestConfig)\n\n" +
 		"request({\n" +
 		"  url: \"/graphql\",\n" +
 		"  method: \"POST\",\n" +
 		"  data: {\n" +
-		"    query: gqlQuery,\n" +
+		"    query: Queries.demo,\n" +
 		"    variables: variables\n" +
 		"  }\n" +
 		"})\n"
@@ -472,6 +490,97 @@ func TestExtractJSStaticSurfaceResolvesVariableReferences(t *testing.T) {
 	}
 	if !gqlFound {
 		t.Fatal("graphql endpoint should exist")
+	}
+}
+
+// TestExtractJSStaticSurfaceResolvesNestedMemberReferences 验证静态提取支持嵌套对象成员引用。
+func TestExtractJSStaticSurfaceResolvesNestedMemberReferences(t *testing.T) {
+	jsBody := "const API = {\n" +
+		"  urls: {\n" +
+		"    search: \"/api/search\",\n" +
+		"    graphql: \"/graphql\"\n" +
+		"  },\n" +
+		"  payloads: {\n" +
+		"    search: {\n" +
+		"      keyword,\n" +
+		"      pageNo\n" +
+		"    }\n" +
+		"  },\n" +
+		"  headers: {\n" +
+		"    auth: {\n" +
+		"      Authorization: authToken,\n" +
+		"      \"X-Tenant\": tenantId\n" +
+		"    }\n" +
+		"  },\n" +
+		"  config: {\n" +
+		"    search: {\n" +
+		"      url: \"/api/search\",\n" +
+		"      method: \"POST\",\n" +
+		"      data: {\n" +
+		"        keyword,\n" +
+		"        pageNo\n" +
+		"      },\n" +
+		"      headers: {\n" +
+		"        Authorization: authToken\n" +
+		"      }\n" +
+		"    }\n" +
+		"  },\n" +
+		"  queries: {\n" +
+		"    user: {\n" +
+		"      userId,\n" +
+		"      profile\n" +
+		"    }\n" +
+		"  },\n" +
+		"  gql: {\n" +
+		"    demo: gql`\n" +
+		"\tquery Demo($tenantId: String!, $userId: String!) {\n" +
+		"\t  user(id: $userId) { id }\n" +
+		"\t}\n" +
+		"`\n" +
+		"  }\n" +
+		"}\n\n" +
+		"fetch(API.urls.search, {\n" +
+		"  method: \"POST\",\n" +
+		"  headers: API.headers.auth,\n" +
+		"  body: API.payloads.search\n" +
+		"})\n\n" +
+		"request(API.config.search)\n\n" +
+		"request({\n" +
+		"  url: API.urls.graphql,\n" +
+		"  method: \"POST\",\n" +
+		"  data: {\n" +
+		"    query: API.gql.demo,\n" +
+		"    variables: API.queries.user\n" +
+		"  }\n" +
+		"})\n"
+
+	endpoints, parameters := extractJSStaticSurface(jsBody, "https://example.com/static/app.js")
+	if len(endpoints) != 2 {
+		t.Fatalf("unexpected nested-member endpoint count: %d", len(endpoints))
+	}
+	if len(parameters) < 6 {
+		t.Fatalf("unexpected nested-member parameter count: %d", len(parameters))
+	}
+
+	paramMap := make(map[string]datatype.ParameterRecord)
+	for _, parameter := range parameters {
+		paramMap[parameter.ParamName] = parameter
+	}
+
+	if paramMap["keyword"].Location != "body" {
+		t.Fatalf("keyword should resolve from nested payload, got=%s", paramMap["keyword"].Location)
+	}
+	if paramMap["Authorization"].Location != "header" {
+		t.Fatalf("Authorization should resolve from nested headers, got=%s", paramMap["Authorization"].Location)
+	}
+	if paramMap["userId"].Location != "graphql_variable" {
+		t.Fatalf("userId should resolve from nested graphql vars, got=%s", paramMap["userId"].Location)
+	}
+
+	for _, endpoint := range endpoints {
+		if endpoint.URL == "https://example.com/graphql" && !strings.Contains(endpoint.RequestTemplate.BodyText, "query Demo($tenantId: String!, $userId: String!)") {
+			t.Fatalf("nested graphql query should be preserved: %s", endpoint.RequestTemplate.BodyText)
+		}
 	}
 }
 
