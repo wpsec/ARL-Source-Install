@@ -784,6 +784,9 @@ func normalizeStaticEndpointURL(baseJSURL string, rawURL string) (string, error)
 	if strings.Contains(strings.ToLower(candidate), "javascript:") {
 		return "", fmt.Errorf("javascript scheme")
 	}
+	if !looksLikeEndpointLiteral(candidate) {
+		return "", fmt.Errorf("unlikely endpoint literal")
+	}
 
 	candidate = templateSegmentPattern.ReplaceAllStringFunc(candidate, func(segment string) string {
 		match := templateSegmentPattern.FindStringSubmatch(segment)
@@ -829,8 +832,70 @@ func normalizeStaticEndpointURL(baseJSURL string, rawURL string) (string, error)
 	if resolved.Path == "" {
 		resolved.Path = "/"
 	}
+	if !isLikelyMeaningfulEndpointPath(resolved.Path) {
+		return "", fmt.Errorf("noisy endpoint path")
+	}
 	resolved.Fragment = ""
 	return resolved.String(), nil
+}
+
+func looksLikeEndpointLiteral(candidate string) bool {
+	text := strings.TrimSpace(candidate)
+	lowered := strings.ToLower(text)
+	switch {
+	case strings.HasPrefix(lowered, "http://"), strings.HasPrefix(lowered, "https://"), strings.HasPrefix(text, "//"),
+		strings.HasPrefix(text, "/"), strings.HasPrefix(text, "./"), strings.HasPrefix(text, "../"):
+		return true
+	}
+	if strings.Contains(text, "/") || strings.Contains(text, "?") {
+		return true
+	}
+	switch lowered {
+	case "api", "graphql", "login", "logout", "auth", "oauth", "token", "user", "account", "search", "query", "upload", "download", "file", "service", "admin", "rest":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLikelyMeaningfulEndpointPath(pathText string) bool {
+	text := strings.TrimSpace(pathText)
+	if text == "" || text == "/" {
+		return false
+	}
+	if strings.ContainsAny(text, "\"'`()[]{}|=*") {
+		return false
+	}
+	lowered := strings.ToLower(text)
+	for _, suffix := range []string{".js", ".mjs", ".css", ".map", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".woff", ".woff2", ".ttf", ".eot"} {
+		if strings.HasSuffix(lowered, suffix) {
+			return false
+		}
+	}
+	for _, token := range []string{".test", ".exec", ".value", ".name", ".scroll", ".prototype", "this.", "window.", "document.", "*", "set-cookie", "content-type", "content-length"} {
+		if strings.Contains(lowered, token) {
+			return false
+		}
+	}
+	if strings.HasPrefix(lowered, "/assets/") || strings.HasPrefix(lowered, "/static/") || strings.HasPrefix(lowered, "/dist/") {
+		return containsEndpointKeyword(lowered)
+	}
+	segments := splitPathSegments(text)
+	if len(segments) == 0 {
+		return false
+	}
+	if containsEndpointKeyword(lowered) {
+		return true
+	}
+	for _, segment := range segments {
+		if len(segment) < 2 {
+			return false
+		}
+		if regexp.MustCompile(`^\d+(?:\.\d+)?$`).MatchString(segment) {
+			return false
+		}
+	}
+	return len(segments) >= 2
 }
 
 func sanitizeTemplateToken(raw string) string {

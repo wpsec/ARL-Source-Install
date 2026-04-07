@@ -58,6 +58,9 @@ logs/
 *.temp
 *.backup
 *~
+tools/wih/node_modules/
+tools/wih/output/
+tools/wih/wih
 
 # Export/Reports
 exports/

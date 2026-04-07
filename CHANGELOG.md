@@ -3,6 +3,11 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-04-06（v4.6.36）
+
+- `[v4.6.36]` `WIH` 独立能力与 `ARL` 兼容链路同步收口：`tools/wih` 这一轮围绕“独立可用 + 结果更可消费”做了较大一轮完善。扫描链新增同域范围约束与静态浅层页面探索，开始继续抓取同 host 下的 `a[href] / iframe[src] / GET form action` 页面，并把下一层页面里的表单接口、GET/POST 参数和额外 `JS` 继续纳入结果；运行时链默认启用内置 `Playwright`，`records/endpoints/parameters` 输出补齐中文表头、请求报文展示、接口状态码与响应大小，`CSV` 文件输出统一收口为单个 `xlsx` 工作簿多工作表，结构化与主输出目录也调整为按“域名 + 时间戳”落盘，减少覆盖和产物散落。与此同时，为避免 `ARL` 运行依赖 `WIH` 的默认行为，`ARL` 侧同步新增 `WIH_RUNTIME_*` 配置项，并在 `InfoHunter` 调用 `wih` 时显式透传 `runtime-enable/driver/timeout/max-pages/max-actions/max-requests` 与 `disable-structured-output`，保证平台侧行为稳定可控；主 Docker 镜像也补装 Node 版 `playwright` 运行环境，确保容器内默认 runtime 链路可直接工作
+- `[v4.6.36]` `WIH/ARL` 输出与代理联动细节继续收口：`WIH` 新增 `--output-dir`，`--csv` 在未显式指定 `-o` 时默认落盘为 `result.xlsx`，多目标任务在保留“每目标单独目录”的同时补充任务级汇总 `CSV/XLSX`；同时静态抓取请求与内置 `Playwright runtime` 现在都会自动携带 `X-WIH-Target` 并共同继承 `-x/--proxy`，便于在 `Burp` 等代理中按目标批量筛选运行时流量。对应 `ARL` 侧 `InfoHunter` 帮助探测、超时切分与回归测试也已重新校验，保证现有 `-J -o -t` 调用协议不受影响
+
 ## 2026-04-05（v4.6.14）
 
 - `[v4.6.34]` `WIH参数提取` 静态变量引用解析增强：继续补强 `JS` 静态参数提取对现代前端写法的适配。当前静态链已经可以识别更多“先定义变量、后传入请求”的模式，例如 `const payload = {...}; axios.post(url, payload)`、`params: queryData`、`headers: authHeaders`、`variables: variables` 等，不再只依赖请求调用点内联对象字面量。与此同时，`GraphQL` 请求模板也进一步增强，若查询文本先绑定到变量，再在请求里通过 `query: gqlQuery` 传入，静态链会尽量把真实 `query` 文本保留下来，而不是回退成默认占位查询。对应回归测试已补齐，并通过 `go test ./scan ./dataType ./util`

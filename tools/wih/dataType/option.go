@@ -11,6 +11,7 @@ type Option struct {
 	JsonFilePath string // --json-path：JSON 路径（兼容输入）
 
 	RuleConfigPath      string // -r, --rule-config：规则文件路径
+	OutputDir           string // --output-dir：结果输出根目录
 	OutputFilePath      string // -o, --output：输出文件路径（- 表示标准输出）
 	EndpointOutputPath  string // --endpoint-output：结构化接口输出文件
 	ParameterOutputPath string // --parameter-output：结构化参数输出文件

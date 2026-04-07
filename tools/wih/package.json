@@ -1,0 +1,8 @@
+{
+  "name": "wih-runtime",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}

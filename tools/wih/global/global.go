@@ -36,24 +36,26 @@ var (
 	// ConcurrencyPerSite 为单站点 JS 抓取并发。
 	ConcurrencyPerSite = 3
 	// RuntimeEnable 控制是否启用运行时参数采集骨架。
-	RuntimeEnable = false
+	RuntimeEnable = true
 	// RuntimeDriver 控制运行时采集驱动类型。
-	RuntimeDriver = "noop"
+	RuntimeDriver = "playwright"
 	// RuntimeCommand 为 external 驱动执行命令。
 	RuntimeCommand = ""
 	// RuntimeTimeout 控制运行时采集超时。
 	RuntimeTimeout = 20 * time.Second
 	// RuntimeMaxPages 控制运行时探索页面预算。
-	RuntimeMaxPages = 3
+	RuntimeMaxPages = 8
 	// RuntimeMaxActions 控制运行时交互预算。
-	RuntimeMaxActions = 8
+	RuntimeMaxActions = 20
 	// RuntimeMaxRequests 控制运行时请求采集预算。
-	RuntimeMaxRequests = 40
+	RuntimeMaxRequests = 120
 
 	// FollowRedirect 控制是否跟随重定向。
 	FollowRedirect = false
 	// Headers 为用户自定义请求头。
 	Headers = make([]string, 0)
+	// ProxyURL 为当前生效的代理地址。
+	ProxyURL = ""
 
 	// LogLevel 支持：zero/debug/info/success/error。
 	LogLevel = "info"
@@ -81,6 +83,7 @@ func RebuildTransport(proxyRaw string) error {
 	defer transportLock.Unlock()
 
 	proxyRaw = strings.TrimSpace(proxyRaw)
+	ProxyURL = proxyRaw
 	if proxyRaw == "" {
 		Tr = newTransport("")
 		return nil

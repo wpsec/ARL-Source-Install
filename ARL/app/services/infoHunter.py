@@ -144,12 +144,29 @@ class InfoHunter(object):
         self.wih_timeout_sec = int(getattr(Config, "WIH_TIMEOUT_SEC", 2 * 60 * 60) or (2 * 60 * 60))
         self.wih_concurrency = int(getattr(Config, "WIH_CONCURRENCY", 6) or 6)
         self.wih_concurrency_per_site = int(getattr(Config, "WIH_CONCURRENCY_PER_SITE", 2) or 2)
+        self.wih_runtime_enable = bool(getattr(Config, "WIH_RUNTIME_ENABLE", True))
+        self.wih_runtime_driver = str(getattr(Config, "WIH_RUNTIME_DRIVER", "playwright") or "playwright").strip().lower()
+        self.wih_runtime_command = str(getattr(Config, "WIH_RUNTIME_COMMAND", "") or "").strip()
+        self.wih_runtime_timeout_sec = int(getattr(Config, "WIH_RUNTIME_TIMEOUT_SEC", 20) or 20)
+        self.wih_runtime_max_pages = int(getattr(Config, "WIH_RUNTIME_MAX_PAGES", 8) or 8)
+        self.wih_runtime_max_actions = int(getattr(Config, "WIH_RUNTIME_MAX_ACTIONS", 20) or 20)
+        self.wih_runtime_max_requests = int(getattr(Config, "WIH_RUNTIME_MAX_REQUESTS", 120) or 120)
         if self.wih_timeout_sec < 60:
             self.wih_timeout_sec = 60
         if self.wih_concurrency < 1:
             self.wih_concurrency = 1
         if self.wih_concurrency_per_site < 1:
             self.wih_concurrency_per_site = 1
+        if self.wih_runtime_timeout_sec < 1:
+            self.wih_runtime_timeout_sec = 20
+        if self.wih_runtime_max_pages < 1:
+            self.wih_runtime_max_pages = 1
+        if self.wih_runtime_max_actions < 0:
+            self.wih_runtime_max_actions = 0
+        if self.wih_runtime_max_requests < 1:
+            self.wih_runtime_max_requests = 1
+        if self.wih_runtime_driver not in {"playwright", "external", "noop"}:
+            self.wih_runtime_driver = "playwright"
         self._help_text = None
 
     @staticmethod
@@ -558,6 +575,9 @@ class InfoHunter(object):
         try:
             if os.path.exists(self.wih_result_path):
                 os.unlink(self.wih_result_path)
+            for extra_path in self._structured_result_paths():
+                if os.path.exists(extra_path):
+                    os.unlink(extra_path)
         except Exception as e:
             logger.warning(e)
 
@@ -568,6 +588,17 @@ class InfoHunter(object):
             self._clear_result_file()
         except Exception as e:
             logger.warning(e)
+
+    def _structured_result_paths(self) -> list:
+        base_path = os.path.splitext(self.wih_result_path)[0]
+        if not base_path:
+            return []
+        return [
+            "{}_endpoint.json".format(base_path),
+            "{}_parameter.json".format(base_path),
+            "{}_endpoint.csv".format(base_path),
+            "{}_parameter.csv".format(base_path),
+        ]
 
     def _initial_batch_size(self) -> int:
         site_count = len(list(self.sites or []))
@@ -786,6 +817,26 @@ class InfoHunter(object):
             self.wih_target_path,
         ]
 
+        self._append_wih_control_flags(command)
+        if self._supports_flag("--runtime-enable"):
+            command.append("--runtime-enable={}".format("true" if self.wih_runtime_enable else "false"))
+
+        if self._supports_flag("--runtime-driver"):
+            runtime_driver = self.wih_runtime_driver if self.wih_runtime_enable else "noop"
+            command.extend(["--runtime-driver", runtime_driver])
+
+        if self.wih_runtime_enable:
+            if self._supports_flag("--runtime-command") and self.wih_runtime_command:
+                command.extend(["--runtime-command", self.wih_runtime_command])
+            if self._supports_flag("--runtime-timeout"):
+                command.extend(["--runtime-timeout", str(self.wih_runtime_timeout_sec)])
+            if self._supports_flag("--runtime-max-pages"):
+                command.extend(["--runtime-max-pages", str(self.wih_runtime_max_pages)])
+            if self._supports_flag("--runtime-max-actions"):
+                command.extend(["--runtime-max-actions", str(self.wih_runtime_max_actions)])
+            if self._supports_flag("--runtime-max-requests"):
+                command.extend(["--runtime-max-requests", str(self.wih_runtime_max_requests)])
+
         if minimal:
             return command
 
@@ -807,9 +858,6 @@ class InfoHunter(object):
         if self._supports_flag("--concurrency-per-site"):
             command.extend(["--concurrency-per-site", str(self.wih_concurrency_per_site)])
 
-        if self._supports_flag("--disable-ak-sk-output"):
-            command.append("--disable-ak-sk-output")
-
         proxy_url = str(getattr(Config, "PROXY_URL", "") or "").strip()
         if proxy_url:
             if self._supports_flag("--proxy"):
@@ -818,6 +866,12 @@ class InfoHunter(object):
                 command.extend(["-x", proxy_url])
 
         return command
+
+    def _append_wih_control_flags(self, command: list):
+        if self._supports_flag("--disable-ak-sk-output"):
+            command.append("--disable-ak-sk-output")
+        if self._supports_flag("--disable-structured-output"):
+            command.append("--disable-structured-output")
 
     def exec_wih(self):
         site_list = [str(site or "").strip() for site in sorted(list(self.sites or [])) if str(site or "").strip()]

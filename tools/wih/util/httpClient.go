@@ -23,6 +23,11 @@ func NewClient() *http.Client {
 
 // ApplyRequestHeaders 将全局配置头写入请求对象。
 func ApplyRequestHeaders(req *http.Request) {
+	ApplyRequestHeadersForTarget(req, "")
+}
+
+// ApplyRequestHeadersForTarget 将全局配置头与扫描目标标记写入请求对象。
+func ApplyRequestHeadersForTarget(req *http.Request, targetURL string) {
 	if req == nil {
 		return
 	}
@@ -43,5 +48,10 @@ func ApplyRequestHeaders(req *http.Request) {
 			continue
 		}
 		req.Header.Set(key, value)
+	}
+
+	targetText := strings.TrimSpace(targetURL)
+	if targetText != "" {
+		req.Header.Set("X-WIH-Target", targetText)
 	}
 }

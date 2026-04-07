@@ -31,6 +31,8 @@ type EndpointRecord struct {
 	TriggerContext  EndpointTriggerContext  `json:"trigger_context,omitempty"`
 	ContentType     string                  `json:"content_type,omitempty"`
 	BodyKind        string                  `json:"body_kind,omitempty"`
+	ResponseStatus  int                     `json:"response_status,omitempty"`
+	ResponseSize    int64                   `json:"response_size,omitempty"`
 	RequestTemplate EndpointRequestTemplate `json:"request_template,omitempty"`
 	Confidence      float64                 `json:"confidence,omitempty"`
 }

@@ -3,6 +3,7 @@ package options
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ func Options() *datatype.Option {
 
 	option := &datatype.Option{
 		RuleConfigPath:      "config/rules.yml",
+		OutputDir:           "output",
 		OutputFilePath:      "-",
 		EndpointOutputPath:  "",
 		ParameterOutputPath: "",
@@ -28,13 +30,13 @@ func Options() *datatype.Option {
 		ConcurrencyPerSite:  3,
 		MaxCollect:          600,
 		LimitReaderSize:     10 * 1024 * 1024,
-		RuntimeEnable:       false,
-		RuntimeDriver:       "noop",
+		RuntimeEnable:       true,
+		RuntimeDriver:       "playwright",
 		RuntimeCommand:      "",
 		RuntimeTimeoutSec:   20,
-		RuntimeMaxPages:     3,
-		RuntimeMaxActions:   8,
-		RuntimeMaxRequests:  40,
+		RuntimeMaxPages:     8,
+		RuntimeMaxActions:   20,
+		RuntimeMaxRequests:  120,
 		AKSKOutputPath:      "ak_leak.txt",
 		OutputText:          true,
 	}
@@ -54,9 +56,10 @@ func Options() *datatype.Option {
 	)
 
 	flagset.CreateGroup("output", "输出参数",
-		flagset.StringVarP(&option.OutputFilePath, "output", "o", "-", "结果输出文件的名称(- 为标准输出)"),
-		flagset.StringVarP(&option.EndpointOutputPath, "endpoint-output", "", "", "结构化接口结果输出文件"),
-		flagset.StringVarP(&option.ParameterOutputPath, "parameter-output", "", "", "结构化参数结果输出文件"),
+		flagset.StringVarP(&option.OutputDir, "output-dir", "", "output", "结果输出根目录（相对文件名默认写入 <output-dir>/<域名_时间戳>/）"),
+		flagset.StringVarP(&option.OutputFilePath, "output", "o", "-", "结果输出文件名或路径(- 为标准输出；相对文件名默认写入 <output-dir>/<域名_时间戳>/；--csv 未指定时默认 result.csv，并自动写成 xlsx 工作簿)"),
+		flagset.StringVarP(&option.EndpointOutputPath, "endpoint-output", "", "", "结构化接口结果输出文件（相对文件名默认写入主输出目录）"),
+		flagset.StringVarP(&option.ParameterOutputPath, "parameter-output", "", "", "结构化参数结果输出文件（相对文件名默认写入主输出目录）"),
 		flagset.BoolVarP(&option.OutputJSON, "output-json", "J", false, "JSON 格式输出"),
 		flagset.BoolVarP(&option.OutputCSV, "csv", "", false, "CSV 格式输出"),
 		flagset.BoolVarP(&option.OutputHTML, "html", "", false, "HTML 格式输出"),
@@ -65,7 +68,7 @@ func Options() *datatype.Option {
 		flagset.BoolVarP(&option.DisableStructuredOutput, "disable-structured-output", "", false, "禁止 endpoint/parameter 独立输出"),
 		flagset.IntVarP(&option.OutputSize, "size", "", 0, "设置表格分页大小"),
 		flagset.BoolVarP(&option.AutoSaveName, "auto-save-name", "a", false, "根据站点自动生成保存的文件名"),
-		flagset.StringVarP(&option.AKSKOutputPath, "ak-sk-output", "", "ak_leak.txt", "AK/SK 单独保存的文件名"),
+		flagset.StringVarP(&option.AKSKOutputPath, "ak-sk-output", "", "ak_leak.txt", "AK/SK 单独保存的文件名（相对文件名默认写入主输出目录）"),
 		flagset.BoolVarP(&option.DisableAKSKOutput, "disable-ak-sk-output", "", false, "禁止 AK/SK 单独保存"),
 	)
 
@@ -74,13 +77,13 @@ func Options() *datatype.Option {
 		flagset.IntVarP(&option.ConcurrencyPerSite, "concurrency-per-site", "P", 3, "每个站点的并发数"),
 		flagset.IntVarP(&option.MaxCollect, "max-collect", "M", 600, "用于表示所有收集类型的最大收集数量, 对于每个站点"),
 		flagset.IntVarP(&option.LimitReaderSize, "limit-reader-size", "", 10*1024*1024, "Maximum response size (in bytes)"),
-		flagset.BoolVarP(&option.RuntimeEnable, "runtime-enable", "", false, "启用运行时参数采集"),
-		flagset.StringVarP(&option.RuntimeDriver, "runtime-driver", "", "noop", "运行时采集驱动(noop/external/playwright)"),
+		flagset.BoolVarP(&option.RuntimeEnable, "runtime-enable", "", true, "启用运行时参数采集（默认启用 Playwright）"),
+		flagset.StringVarP(&option.RuntimeDriver, "runtime-driver", "", "playwright", "运行时采集驱动(playwright/external/noop)"),
 		flagset.StringVarP(&option.RuntimeCommand, "runtime-command", "", "", "运行时采集命令；external 为完整命令，playwright 可覆盖默认 node 调用"),
 		flagset.IntVarP(&option.RuntimeTimeoutSec, "runtime-timeout", "", 20, "运行时采集超时(秒)"),
-		flagset.IntVarP(&option.RuntimeMaxPages, "runtime-max-pages", "", 3, "运行时探索最大页面数"),
-		flagset.IntVarP(&option.RuntimeMaxActions, "runtime-max-actions", "", 8, "运行时探索最大交互动作数"),
-		flagset.IntVarP(&option.RuntimeMaxRequests, "runtime-max-requests", "", 40, "运行时采集最大请求数"),
+		flagset.IntVarP(&option.RuntimeMaxPages, "runtime-max-pages", "", 8, "运行时探索最大页面数"),
+		flagset.IntVarP(&option.RuntimeMaxActions, "runtime-max-actions", "", 20, "运行时探索最大交互动作数"),
+		flagset.IntVarP(&option.RuntimeMaxRequests, "runtime-max-requests", "", 120, "运行时采集最大请求数"),
 		flagset.StringVarP(&timeoutRaw, "timeout", "", "180", "Response timeout (s)"),
 		flagset.StringVarP(&dialTimeoutRaw, "dial-timeout", "", "5", "Dial timeout (s)"),
 		flagset.StringVarP(&option.Proxy, "proxy", "x", "", "HTTP proxy (e.g. http://localhost:8080)"),
@@ -100,6 +103,7 @@ func Options() *datatype.Option {
 	)
 
 	_ = flagset.Parse()
+	outputFlagProvided := hasOutputFlag(os.Args[1:])
 
 	if headerSingle != "" {
 		option.HeaderRaw = append(option.HeaderRaw, headerSingle)
@@ -153,6 +157,10 @@ func Options() *datatype.Option {
 		fmt.Printf("dial-timeout 参数错误: %v\n", err)
 		return nil
 	}
+	option.OutputDir = normalizeOutputDir(option.OutputDir)
+	if outputMode(option) == "csv" && !outputFlagProvided {
+		option.OutputFilePath = "result.csv"
+	}
 	option.TimeOutSec = timeoutSec
 	option.DialTimeOutSec = dialTimeoutSec
 
@@ -170,7 +178,7 @@ func Options() *datatype.Option {
 	global.RuntimeEnable = option.RuntimeEnable
 	global.RuntimeDriver = strings.ToLower(strings.TrimSpace(option.RuntimeDriver))
 	if global.RuntimeDriver == "" {
-		global.RuntimeDriver = "noop"
+		global.RuntimeDriver = "playwright"
 	}
 	global.RuntimeCommand = strings.TrimSpace(option.RuntimeCommand)
 	global.RuntimeTimeout = time.Duration(option.RuntimeTimeoutSec) * time.Second
@@ -184,6 +192,7 @@ func Options() *datatype.Option {
 	global.DisableColor = option.DisableColor
 	global.Headers = option.HeaderRaw
 	global.OutputMode = outputMode(option)
+	util.SetDefaultOutputRootDir(option.OutputDir)
 
 	if err = global.RebuildTransport(option.Proxy); err != nil {
 		fmt.Printf("proxy 参数错误: %v\n", err)
@@ -208,6 +217,14 @@ func outputMode(option *datatype.Option) string {
 		return "md"
 	}
 	return "text"
+}
+
+func normalizeOutputDir(path string) string {
+	text := strings.TrimSpace(path)
+	if text == "" || text == "-" {
+		return "output"
+	}
+	return filepath.Clean(text)
 }
 
 // parsePositiveFloat 解析正浮点数。
@@ -255,6 +272,21 @@ func uniqueTrimmed(items []string) []string {
 		result = append(result, value)
 	}
 	return result
+}
+
+func hasOutputFlag(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		switch {
+		case arg == "-o" || arg == "--output":
+			return true
+		case strings.HasPrefix(arg, "-o="):
+			return true
+		case strings.HasPrefix(arg, "--output="):
+			return true
+		}
+	}
+	return false
 }
 
 // collectHeaderFlags 兼容重复传入 -H/--header。

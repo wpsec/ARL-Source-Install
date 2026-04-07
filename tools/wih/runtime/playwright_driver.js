@@ -76,6 +76,13 @@ function inferParamType(value) {
   return 'string';
 }
 
+function parsePositiveInteger(value) {
+  const text = String(value ?? '').trim();
+  if (!/^\d+$/.test(text)) return 0;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 function normalizeHeaders(input) {
   const result = {};
   if (!input || typeof input !== 'object') return result;
@@ -86,6 +93,21 @@ function normalizeHeaders(input) {
     result[name] = text;
   }
   return result;
+}
+
+function buildProxyOptions(proxyUrl) {
+  const text = String(proxyUrl || '').trim();
+  if (!text) return null;
+  try {
+    const parsed = new URL(text);
+    const server = `${parsed.protocol}//${parsed.host}`;
+    const options = { server };
+    if (parsed.username) options.username = decodeURIComponent(parsed.username);
+    if (parsed.password) options.password = decodeURIComponent(parsed.password);
+    return options;
+  } catch (error) {
+    return { server: text };
+  }
 }
 
 function normalizeMap(input) {
@@ -572,11 +594,17 @@ async function main() {
   const maxActions = Math.max(0, Number(payload.max_actions || 8) || 0);
   const timeoutMs = Math.max(1000, (Number(payload.timeout_sec || 20) || 20) * 1000);
   const defaultHeaders = normalizeHeaders(payload.default_headers);
+  const proxyOptions = buildProxyOptions(payload.proxy_url);
 
-  const browser = await playwright.chromium.launch({
+  const launchOptions = {
     headless: true,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
-  });
+  };
+  if (proxyOptions) {
+    launchOptions.proxy = proxyOptions;
+  }
+
+  const browser = await playwright.chromium.launch(launchOptions);
 
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
@@ -618,6 +646,46 @@ async function main() {
       });
     } catch (error) {
       // 运行时采集以尽量多拿结果为目标，单条请求解析失败时保守跳过。
+    }
+  });
+
+  page.on('response', async (response) => {
+    try {
+      const request = response.request();
+      if (!shouldCaptureNetworkRequest(request, target.hostname)) {
+        return;
+      }
+
+      const headers = normalizeHeaders(request.headers());
+      const rawBodyText = String(request.postData() || '').trim();
+      const bodyInfo = rawBodyText ? parseBodyText(rawBodyText) : { bodyKind: '', bodyText: '', body: {} };
+      const contentType = headers['Content-Type'] || headers['content-type'] || '';
+      const bodyKind = String(bodyInfo.bodyKind || inferBodyKind(contentType, rawBodyText)).trim();
+
+      let responseSize = 0;
+      const responseHeaders = typeof response.headers === 'function' ? normalizeHeaders(response.headers()) : {};
+      responseSize = parsePositiveInteger(responseHeaders['content-length'] || responseHeaders['Content-Length']);
+      if (responseSize <= 0) {
+        const responseBody = await response.body().catch(() => null);
+        if (responseBody && typeof responseBody.length === 'number' && responseBody.length > 0) {
+          responseSize = Number(responseBody.length);
+        }
+      }
+
+      pushObservedRequest({
+        source: `response_${String(request.resourceType() || 'request').toLowerCase()}`,
+        url: request.url(),
+        method: String(request.method() || 'GET').toUpperCase(),
+        headers,
+        bodyKind,
+        bodyText: bodyInfo.bodyText || rawBodyText,
+        body: normalizeMap(bodyInfo.body),
+        trigger: String(page.url() || targetUrl).trim() || targetUrl,
+        response_status: Number(response.status() || 0),
+        response_size: responseSize,
+      });
+    } catch (error) {
+      // 响应解析失败时保守跳过，不影响整体采集。
     }
   });
 
@@ -905,6 +973,12 @@ async function main() {
       if (!existing.body_kind && bodyKind) {
         existing.body_kind = bodyKind;
       }
+      if (!existing.response_status && Number(event.response_status || 0) > 0) {
+        existing.response_status = Number(event.response_status || 0);
+      }
+      if (!existing.response_size && Number(event.response_size || 0) > 0) {
+        existing.response_size = Number(event.response_size || 0);
+      }
       existing.trigger_context.page = existing.trigger_context.page || String(event.trigger || targetUrl);
       endpointMap.set(endpointKey, existing);
       continue;
@@ -917,6 +991,8 @@ async function main() {
       method,
       content_type: contentType,
       body_kind: bodyKind,
+      response_status: Number(event.response_status || 0),
+      response_size: Number(event.response_size || 0),
       trigger_context: {
         page: String(event.trigger || targetUrl),
         event: String(event.source || 'runtime'),

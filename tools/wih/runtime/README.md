@@ -30,6 +30,26 @@
 
 ## 2. 启用方式
 
+默认情况下，`WIH` 已启用内置 `Playwright` 运行时采集。
+
+等价默认值为：
+
+- `--runtime-enable=true`
+- `--runtime-driver=playwright`
+- `--runtime-max-pages=8`
+- `--runtime-max-actions=20`
+- `--runtime-max-requests=120`
+
+如果你只是正常执行：
+
+```bash
+./wih -t https://example.com
+```
+
+并且本地具备 `node + playwright`，就会直接尝试运行内置 driver。
+
+若需显式指定，也可以继续这样写：
+
 ```bash
 ./wih -t https://example.com \
   --runtime-enable \
@@ -51,7 +71,23 @@
 - `playwright`
 - 对应浏览器运行依赖
 
+推荐在 `tools/wih` 目录执行：
+
+```bash
+cd tools/wih
+npm install
+npx playwright install chromium
+```
+
+说明：
+
+- 内置 driver 使用的是 Node 版 `Playwright`
+- 仅安装 Python 版 `playwright` 不会满足 `require('playwright')`
+- 当前只要求 `chromium`，不需要额外下载全部浏览器
+
 若 `playwright` 已安装但 `node` 不在默认路径，可通过 `--runtime-command` 覆盖调用命令。
+
+若运行环境缺失，`WIH` 会提醒并自动退回静态扫描。
 
 ## 3. 输入协议
 
@@ -64,9 +100,9 @@
     "User-Agent": "Mozilla/5.0 ...",
     "Accept": "application/json, text/plain, */*"
   },
-  "max_pages": 3,
-  "max_actions": 8,
-  "max_requests": 40,
+  "max_pages": 8,
+  "max_actions": 20,
+  "max_requests": 120,
   "follow_redirect": false,
   "timeout_sec": 20
 }
@@ -132,6 +168,13 @@ runtime driver 通过 `stdout` 返回 JSON：
   ]
 }
 ```
+
+`stdin` 请求体还支持：
+
+- `default_headers`
+  - 会作为 Playwright context 的默认请求头附加到运行时请求
+- `proxy_url`
+  - 若存在，会在浏览器启动时作为代理配置使用
 
 ## 5. 内置 Playwright driver 当前行为
 

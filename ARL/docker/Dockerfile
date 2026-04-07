@@ -110,6 +110,7 @@ RUN set -eux; \
     dnf install -y \
       fontconfig gcc gcc-c++ make git zlib-devel bzip2-devel openssl-devel sqlite-devel \
       readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap \
+      nodejs npm \
       alsa-lib atk at-spi2-atk cairo cups-libs gtk3 libdrm mesa-libgbm \
       libX11 libXcomposite libXcursor libXdamage libXext libXi libXrandr \
       libXScrnSaver libXtst nss nspr pango xorg-x11-fonts-Type1 xorg-x11-fonts-misc; \
@@ -257,6 +258,9 @@ RUN set -eux; \
     go version; \
     cd /code/tools/wih; \
     GOOS=linux GOARCH="${GO_ARCH}" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /usr/bin/wih .; \
+    npm config set registry "${NPM_REGISTRY}"; \
+    if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; \
+    node -e "require('playwright'); console.log('node-playwright-ok')"; \
     cd /code; \
     rm -rf /usr/local/go /root/go /tmp/go-build "${GO_TGZ}"; \
     ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs; \

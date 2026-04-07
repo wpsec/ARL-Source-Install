@@ -2,8 +2,10 @@
   "target_url": "https://example.com",
   "default_headers": {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*"
+    "Accept": "application/json, text/plain, */*",
+    "X-WIH-Target": "https://example.com"
   },
+  "proxy_url": "http://127.0.0.1:8080",
   "max_pages": 3,
   "max_actions": 8,
   "max_requests": 40,

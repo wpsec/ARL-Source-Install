@@ -42,6 +42,13 @@ def _load_info_hunter_module():
             "WIH_TIMEOUT_SEC": 7200,
             "WIH_CONCURRENCY": 6,
             "WIH_CONCURRENCY_PER_SITE": 2,
+            "WIH_RUNTIME_ENABLE": True,
+            "WIH_RUNTIME_DRIVER": "playwright",
+            "WIH_RUNTIME_COMMAND": "",
+            "WIH_RUNTIME_TIMEOUT_SEC": 20,
+            "WIH_RUNTIME_MAX_PAGES": 8,
+            "WIH_RUNTIME_MAX_ACTIONS": 20,
+            "WIH_RUNTIME_MAX_REQUESTS": 120,
             "WIH_RULE_PATH": "",
             "PROXY_URL": "",
         },
@@ -89,6 +96,42 @@ InfoHunter = info_hunter_module.InfoHunter
 
 
 class TestWihTimeoutSplit(unittest.TestCase):
+    def test_build_command_includes_explicit_runtime_flags(self):
+        hunter = InfoHunter(["https://a.example.com"])
+        hunter._supports_flag = lambda flag_text: flag_text in {
+            "--concurrency",
+            "--concurrency-per-site",
+            "--log-level",
+            "--disable-ak-sk-output",
+            "--disable-structured-output",
+            "--runtime-enable",
+            "--runtime-driver",
+            "--runtime-timeout",
+            "--runtime-max-pages",
+            "--runtime-max-actions",
+            "--runtime-max-requests",
+        }
+
+        command = hunter._build_command(minimal=False)
+
+        self.assertIn("--disable-structured-output", command)
+        self.assertIn("--runtime-enable=true", command)
+        self.assertIn("--runtime-driver", command)
+        self.assertIn("playwright", command)
+        self.assertIn("--runtime-timeout", command)
+        self.assertIn("20", command)
+        self.assertIn("--runtime-max-pages", command)
+        self.assertIn("8", command)
+        self.assertIn("--runtime-max-actions", command)
+        self.assertIn("20", command)
+        self.assertIn("--runtime-max-requests", command)
+        self.assertIn("120", command)
+
+        minimal_command = hunter._build_command(minimal=True)
+        self.assertIn("--disable-structured-output", minimal_command)
+        self.assertIn("--runtime-enable=true", minimal_command)
+        self.assertIn("--runtime-driver", minimal_command)
+
     def test_normalize_wih_record_collapses_secret_duplicates_across_same_site_pages(self):
         record_a = types.SimpleNamespace(
             recordType="secret_key",

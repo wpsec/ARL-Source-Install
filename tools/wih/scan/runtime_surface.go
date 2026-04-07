@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"sync"
 
 	datatype "wih/dataType"
 	"wih/global"
@@ -26,6 +27,7 @@ type runtimeSurfaceResult struct {
 type runtimeSurfaceRequest struct {
 	TargetURL      string            `json:"target_url"`
 	DefaultHeaders map[string]string `json:"default_headers,omitempty"`
+	ProxyURL       string            `json:"proxy_url,omitempty"`
 	MaxPages       int               `json:"max_pages"`
 	MaxActions     int               `json:"max_actions"`
 	MaxRequests    int               `json:"max_requests"`
@@ -36,7 +38,10 @@ type runtimeSurfaceRequest struct {
 type runtimeSurfaceResponse struct {
 	Endpoints  []datatype.EndpointRecord  `json:"endpoints"`
 	Parameters []datatype.ParameterRecord `json:"parameters"`
+	Error      string                     `json:"error,omitempty"`
 }
+
+var runtimeNoticeOnce sync.Once
 
 // extractRuntimeSurface 为运行时 Hook MVP 提供统一接入口。
 //
@@ -46,11 +51,13 @@ type runtimeSurfaceResponse struct {
 // - playwright: 调用仓库内置 Node/Playwright 运行时驱动
 func extractRuntimeSurface(targetURL string) runtimeSurfaceResult {
 	if !global.RuntimeEnable {
+		warnRuntimeNotice("当前已关闭 Playwright 运行时采集，可通过 --runtime-enable --runtime-driver playwright 开启")
 		return runtimeSurfaceResult{}
 	}
 
 	switch strings.ToLower(strings.TrimSpace(global.RuntimeDriver)) {
 	case "", "noop":
+		warnRuntimeNotice("当前未启用 Playwright 运行时采集，可通过 --runtime-driver playwright 开启")
 		return runtimeSurfaceResult{}
 	case "external":
 		return extractRuntimeSurfaceByExternalDriver(targetURL)
@@ -64,6 +71,7 @@ func extractRuntimeSurface(targetURL string) runtimeSurfaceResult {
 func extractRuntimeSurfaceByExternalDriver(targetURL string) runtimeSurfaceResult {
 	commandText := strings.TrimSpace(global.RuntimeCommand)
 	if commandText == "" {
+		warnRuntimeNotice("未设置 external runtime 命令，当前未启用 Playwright 运行时采集")
 		return runtimeSurfaceResult{}
 	}
 	return extractRuntimeSurfaceByCommand(targetURL, commandText)
@@ -75,6 +83,7 @@ func extractRuntimeSurfaceByPlaywrightDriver(targetURL string) runtimeSurfaceRes
 		commandText = resolveBuiltInPlaywrightDriverCommand()
 	}
 	if commandText == "" {
+		warnRuntimeNotice("未找到内置 Playwright driver，请确认 tools/wih/runtime/playwright_driver.js 存在")
 		return runtimeSurfaceResult{}
 	}
 	return extractRuntimeSurfaceByCommand(targetURL, commandText)
@@ -89,9 +98,11 @@ func extractRuntimeSurfaceByCommand(targetURL string, commandText string) runtim
 	requestPayload := runtimeSurfaceRequest{
 		TargetURL: targetURL,
 		DefaultHeaders: map[string]string{
-			"User-Agent": global.DefaultUserAgent,
-			"Accept":     "application/json, text/plain, */*",
+			"User-Agent":   global.DefaultUserAgent,
+			"Accept":       "application/json, text/plain, */*",
+			"X-WIH-Target": targetURL,
 		},
+		ProxyURL:       strings.TrimSpace(global.ProxyURL),
 		MaxPages:       global.RuntimeMaxPages,
 		MaxActions:     global.RuntimeMaxActions,
 		MaxRequests:    global.RuntimeMaxRequests,
@@ -116,6 +127,11 @@ func extractRuntimeSurfaceByCommand(targetURL string, commandText string) runtim
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		errText := strings.TrimSpace(stderr.String())
+		if errText == "" {
+			errText = err.Error()
+		}
+		warnRuntimeNotice("Playwright 运行时采集执行失败，当前将退回静态扫描；可检查 node / playwright 环境。错误: " + truncateRuntimeMessage(errText))
 		return runtimeSurfaceResult{}
 	}
 
@@ -184,6 +200,9 @@ func parseRuntimeSurfaceResponse(raw []byte, targetURL string) runtimeSurfaceRes
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return runtimeSurfaceResult{}
 	}
+	if strings.TrimSpace(resp.Error) != "" {
+		warnRuntimeNotice(runtimeErrorMessage(resp.Error))
+	}
 
 	targetParsed, err := url.Parse(strings.TrimSpace(targetURL))
 	if err != nil || targetParsed.Host == "" {
@@ -230,6 +249,44 @@ func parseRuntimeSurfaceResponse(raw []byte, targetURL string) runtimeSurfaceRes
 	return runtimeSurfaceResult{
 		Endpoints:  mergeEndpointRecords(endpoints),
 		Parameters: mergeParameterRecords(parameters),
+	}
+}
+
+func warnRuntimeNotice(message string) {
+	text := strings.TrimSpace(message)
+	if text == "" {
+		return
+	}
+	runtimeNoticeOnce.Do(func() {
+		util.WarnPrint("[runtime] " + text)
+	})
+}
+
+func truncateRuntimeMessage(message string) string {
+	text := strings.TrimSpace(message)
+	if len(text) <= 220 {
+		return text
+	}
+	return strings.TrimSpace(text[:220]) + "..."
+}
+
+func runtimeErrorMessage(code string) string {
+	switch strings.TrimSpace(code) {
+	case "playwright_not_installed":
+		return "未检测到 Node Playwright 依赖，当前将退回静态扫描；如需动态能力，请安装 playwright 或显式关闭 runtime 提示"
+	case "invalid_request_json":
+		return "运行时驱动请求参数异常，当前将退回静态扫描"
+	case "empty_target_url":
+		return "运行时驱动收到空目标，当前将退回静态扫描"
+	case "invalid_target_url":
+		return "运行时驱动目标 URL 无效，当前将退回静态扫描"
+	case "runtime_driver_unexpected_error":
+		return "运行时驱动发生异常，当前将退回静态扫描"
+	default:
+		if strings.TrimSpace(code) == "" {
+			return "运行时驱动返回异常，当前将退回静态扫描"
+		}
+		return "运行时驱动返回异常: " + truncateRuntimeMessage(code)
 	}
 }
 

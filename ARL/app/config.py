@@ -293,6 +293,13 @@ def refresh_runtime_config_best_effort(force=False):
             "WIH_TIMEOUT_SEC",
             "WIH_CONCURRENCY",
             "WIH_CONCURRENCY_PER_SITE",
+            "WIH_RUNTIME_ENABLE",
+            "WIH_RUNTIME_DRIVER",
+            "WIH_RUNTIME_COMMAND",
+            "WIH_RUNTIME_TIMEOUT_SEC",
+            "WIH_RUNTIME_MAX_PAGES",
+            "WIH_RUNTIME_MAX_ACTIONS",
+            "WIH_RUNTIME_MAX_REQUESTS",
             "FILE_LEAK_CONCURRENCY",
             "FILE_LEAK_TARGET_CONCURRENCY",
             "FILE_LEAK_SITE_TIMEOUT_SEC",
@@ -727,6 +734,20 @@ class Config(object):
     WIH_CONCURRENCY = 6
     # WIH 单站点并发（透传给 wih --concurrency-per-site）
     WIH_CONCURRENCY_PER_SITE = 2
+    # 是否启用 WIH 运行时采集
+    WIH_RUNTIME_ENABLE = True
+    # WIH 运行时驱动类型：playwright / external / noop
+    WIH_RUNTIME_DRIVER = "playwright"
+    # WIH 运行时自定义命令（external 为完整命令；playwright 可覆盖默认 node 调用）
+    WIH_RUNTIME_COMMAND = ""
+    # WIH 运行时超时（秒）
+    WIH_RUNTIME_TIMEOUT_SEC = 20
+    # WIH 运行时最大页面数
+    WIH_RUNTIME_MAX_PAGES = 8
+    # WIH 运行时最大交互动作数
+    WIH_RUNTIME_MAX_ACTIONS = 20
+    # WIH 运行时最大请求采集数
+    WIH_RUNTIME_MAX_REQUESTS = 120
 
     # 黑名单域名列表（通用）
     black_domain_path = os.path.join(basedir, 'dicts/blackdomain.txt')
@@ -1307,6 +1328,37 @@ try:
             int(y["ARL"]["WIH_CONCURRENCY_PER_SITE"]), Config.WIH_CONCURRENCY_PER_SITE
         )
 
+    if y["ARL"].get("WIH_RUNTIME_ENABLE") is not None:
+        Config.WIH_RUNTIME_ENABLE = safe_bool(
+            y["ARL"]["WIH_RUNTIME_ENABLE"], Config.WIH_RUNTIME_ENABLE
+        )
+
+    if y["ARL"].get("WIH_RUNTIME_DRIVER") is not None:
+        Config.WIH_RUNTIME_DRIVER = str(y["ARL"]["WIH_RUNTIME_DRIVER"] or "").strip().lower() or Config.WIH_RUNTIME_DRIVER
+
+    if y["ARL"].get("WIH_RUNTIME_COMMAND") is not None:
+        Config.WIH_RUNTIME_COMMAND = str(y["ARL"]["WIH_RUNTIME_COMMAND"] or "").strip()
+
+    if y["ARL"].get("WIH_RUNTIME_TIMEOUT_SEC") is not None:
+        Config.WIH_RUNTIME_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["WIH_RUNTIME_TIMEOUT_SEC"]), Config.WIH_RUNTIME_TIMEOUT_SEC
+        )
+
+    if y["ARL"].get("WIH_RUNTIME_MAX_PAGES") is not None:
+        Config.WIH_RUNTIME_MAX_PAGES = safe_positive_int(
+            int(y["ARL"]["WIH_RUNTIME_MAX_PAGES"]), Config.WIH_RUNTIME_MAX_PAGES
+        )
+
+    if y["ARL"].get("WIH_RUNTIME_MAX_ACTIONS") is not None:
+        Config.WIH_RUNTIME_MAX_ACTIONS = safe_positive_int(
+            int(y["ARL"]["WIH_RUNTIME_MAX_ACTIONS"]), Config.WIH_RUNTIME_MAX_ACTIONS
+        )
+
+    if y["ARL"].get("WIH_RUNTIME_MAX_REQUESTS") is not None:
+        Config.WIH_RUNTIME_MAX_REQUESTS = safe_positive_int(
+            int(y["ARL"]["WIH_RUNTIME_MAX_REQUESTS"]), Config.WIH_RUNTIME_MAX_REQUESTS
+        )
+
     if y["ARL"].get("TRUFFLEHOG_BIN"):
         Config.TRUFFLEHOG_BIN = str(y["ARL"]["TRUFFLEHOG_BIN"]).strip()
 
@@ -1845,6 +1897,25 @@ try:
     Config.WIH_CONCURRENCY_PER_SITE = safe_positive_int(
         env_int("ARL_WIH_CONCURRENCY_PER_SITE", Config.WIH_CONCURRENCY_PER_SITE),
         Config.WIH_CONCURRENCY_PER_SITE
+    )
+    Config.WIH_RUNTIME_ENABLE = env_bool("ARL_WIH_RUNTIME_ENABLE", Config.WIH_RUNTIME_ENABLE)
+    Config.WIH_RUNTIME_DRIVER = env_str("ARL_WIH_RUNTIME_DRIVER", Config.WIH_RUNTIME_DRIVER).strip().lower() or Config.WIH_RUNTIME_DRIVER
+    Config.WIH_RUNTIME_COMMAND = env_str("ARL_WIH_RUNTIME_COMMAND", Config.WIH_RUNTIME_COMMAND).strip()
+    Config.WIH_RUNTIME_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_WIH_RUNTIME_TIMEOUT_SEC", Config.WIH_RUNTIME_TIMEOUT_SEC),
+        Config.WIH_RUNTIME_TIMEOUT_SEC
+    )
+    Config.WIH_RUNTIME_MAX_PAGES = safe_positive_int(
+        env_int("ARL_WIH_RUNTIME_MAX_PAGES", Config.WIH_RUNTIME_MAX_PAGES),
+        Config.WIH_RUNTIME_MAX_PAGES
+    )
+    Config.WIH_RUNTIME_MAX_ACTIONS = safe_positive_int(
+        env_int("ARL_WIH_RUNTIME_MAX_ACTIONS", Config.WIH_RUNTIME_MAX_ACTIONS),
+        Config.WIH_RUNTIME_MAX_ACTIONS
+    )
+    Config.WIH_RUNTIME_MAX_REQUESTS = safe_positive_int(
+        env_int("ARL_WIH_RUNTIME_MAX_REQUESTS", Config.WIH_RUNTIME_MAX_REQUESTS),
+        Config.WIH_RUNTIME_MAX_REQUESTS
     )
     Config.TRUFFLEHOG_BIN = env_str("ARL_TRUFFLEHOG_BIN", Config.TRUFFLEHOG_BIN)
     Config.TRUFFLEHOG_ENABLE = env_bool("ARL_TRUFFLEHOG_ENABLE", Config.TRUFFLEHOG_ENABLE)

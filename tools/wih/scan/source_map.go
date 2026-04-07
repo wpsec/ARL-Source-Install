@@ -88,7 +88,7 @@ func guessSourceMapURL(jsURL string) (string, error) {
 	return jsParsed.String(), nil
 }
 
-func fetchSourceMapScanUnits(client *http.Client, jsURL string, jsBody string) []jsScanUnit {
+func fetchSourceMapScanUnits(client *http.Client, scanTargetURL string, jsURL string, jsBody string) []jsScanUnit {
 	candidateURLs := buildSourceMapCandidateURLs(jsURL, jsBody)
 	if len(candidateURLs) == 0 {
 		return nil
@@ -105,12 +105,12 @@ func fetchSourceMapScanUnits(client *http.Client, jsURL string, jsBody string) [
 		}
 		seenMapURLs[mapText] = struct{}{}
 
-		mapBody, err := fetchBody(client, mapText)
+		mapBody, err := fetchBody(client, mapText, scanTargetURL)
 		if err != nil || strings.TrimSpace(mapBody) == "" {
 			continue
 		}
 
-		units := collectSourceMapScanUnits(client, mapText, mapBody)
+		units := collectSourceMapScanUnits(client, scanTargetURL, mapText, mapBody)
 		if len(units) > 0 {
 			return dedupeJSScanUnits(units)
 		}
@@ -132,7 +132,7 @@ func buildSourceMapCandidateURLs(jsURL string, jsBody string) []string {
 	return uniqueSortedStrings(candidates)
 }
 
-func collectSourceMapScanUnits(client *http.Client, mapURL string, mapBody string) []jsScanUnit {
+func collectSourceMapScanUnits(client *http.Client, scanTargetURL string, mapURL string, mapBody string) []jsScanUnit {
 	document := sourceMapDocument{}
 	if err := json.Unmarshal([]byte(mapBody), &document); err != nil {
 		return nil
@@ -186,7 +186,7 @@ func collectSourceMapScanUnits(client *http.Client, mapURL string, mapBody strin
 		if sourceURL == "" {
 			continue
 		}
-		sourceBody, err := fetchBody(client, sourceURL)
+		sourceBody, err := fetchBody(client, sourceURL, scanTargetURL)
 		if err != nil || strings.TrimSpace(sourceBody) == "" {
 			continue
 		}

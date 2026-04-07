@@ -3,6 +3,7 @@ package scan
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -15,12 +16,15 @@ import (
 	datatype "wih/dataType"
 	"wih/global"
 	"wih/util"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 var (
 	jsSrcPattern             = regexp.MustCompile(`(?i)(?:src|href)\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["']`)
 	jsAbsPattern             = regexp.MustCompile(`(?i)https?://[^\s"'<>]+\.js(?:\?[^\s"'<>]*)?`)
 	routeMethodSuffixPattern = regexp.MustCompile(`(?i)\|(get|post|put|delete|patch|options|head|connect|trace)$`)
+	titlePattern             = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 )
 
 const (
@@ -32,6 +36,8 @@ const (
 	pathProbeTimeout = 8 * time.Second
 	// pathProbeDrainBytes 限制每个探测请求的响应读取字节数，仅用于连接复用排空。
 	pathProbeDrainBytes = 2048
+	// pathProbeBodyReadBytes 限制每个探测请求用于标题提取的正文读取字节数。
+	pathProbeBodyReadBytes = 64 * 1024
 )
 
 var (
@@ -77,6 +83,11 @@ type jsSurfaceScanResult struct {
 	Parameters []datatype.ParameterRecord
 }
 
+type targetScope struct {
+	Host              string
+	RegistrableDomain string
+}
+
 // Scan 扫描单个站点：页面正文 + JS 资源。
 func Scan(targetURL string) *datatype.ScanResult {
 	targetURL = normalizeTargetURL(targetURL)
@@ -85,13 +96,13 @@ func Scan(targetURL string) *datatype.ScanResult {
 	}
 
 	client := util.NewClient()
-	pageBody, err := fetchBody(client, targetURL)
+	pageBody, err := fetchBody(client, targetURL, targetURL)
 	if err != nil {
 		util.ErrPrint(err)
 		return nil
 	}
 
-	records := rule(pageBody, targetURL, "page")
+	records := filterRecordsByTargetScope(targetURL, rule(pageBody, targetURL, "page"))
 	endpoints, parameters := extractHTMLFormSurface(pageBody, targetURL)
 	if len(records) >= global.MaxCollect {
 		return &datatype.ScanResult{
@@ -103,12 +114,18 @@ func Scan(targetURL string) *datatype.ScanResult {
 	}
 
 	jsURLs := extractJSURLs(pageBody, targetURL)
+	linkedPageSurface := scanLinkedHTMLPages(client, targetURL, pageBody)
+	records = append(records, linkedPageSurface.Records...)
+	endpoints = mergeEndpointRecords(append(endpoints, linkedPageSurface.Endpoints...))
+	parameters = mergeParameterRecords(append(parameters, linkedPageSurface.Parameters...))
+	jsURLs = append(jsURLs, linkedPageSurface.JSURLs...)
+	jsURLs = uniqueSortedText(jsURLs)
 	if global.MaxJSFiles > 0 && len(jsURLs) > global.MaxJSFiles {
 		jsURLs = jsURLs[:global.MaxJSFiles]
 	}
 
-	jsSurface := scanJSResources(client, jsURLs)
-	records = append(records, jsSurface.Records...)
+	jsSurface := scanJSResources(client, targetURL, jsURLs)
+	records = append(records, filterRecordsByTargetScope(targetURL, jsSurface.Records)...)
 	records = dedupeRecords(records)
 	endpoints = mergeEndpointRecords(append(endpoints, jsSurface.Endpoints...))
 	parameters = mergeParameterRecords(append(parameters, jsSurface.Parameters...))
@@ -122,6 +139,7 @@ func Scan(targetURL string) *datatype.ScanResult {
 		pathProbeRecords := probePathRecords(client, targetURL, records)
 		records = append(records, pathProbeRecords...)
 		records = dedupeRecords(records)
+		records = collapseProbedPathRecords(targetURL, records)
 	}
 
 	if len(records) > global.MaxCollect {
@@ -137,12 +155,12 @@ func Scan(targetURL string) *datatype.ScanResult {
 }
 
 // fetchBody 抓取目标内容，并应用响应大小限制。
-func fetchBody(client *http.Client, target string) (string, error) {
-	req, err := http.NewRequest(http.MethodGet, target, nil)
+func fetchBody(client *http.Client, requestURL string, scanTargetURL string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
 	if err != nil {
 		return "", err
 	}
-	util.ApplyRequestHeaders(req)
+	util.ApplyRequestHeadersForTarget(req, scanTargetURL)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -159,7 +177,7 @@ func fetchBody(client *http.Client, target string) (string, error) {
 }
 
 // scanJSResources 并发抓取并扫描 JS 文件。
-func scanJSResources(client *http.Client, jsURLs []string) jsSurfaceScanResult {
+func scanJSResources(client *http.Client, scanTargetURL string, jsURLs []string) jsSurfaceScanResult {
 	if len(jsURLs) == 0 {
 		return jsSurfaceScanResult{}
 	}
@@ -178,7 +196,7 @@ func scanJSResources(client *http.Client, jsURLs []string) jsSurfaceScanResult {
 		go func() {
 			defer wg.Done()
 			for jsURL := range jobs {
-				jsBody, err := fetchBody(client, jsURL)
+				jsBody, err := fetchBody(client, jsURL, scanTargetURL)
 				if err != nil {
 					util.ErrPrint(err)
 					continue
@@ -192,7 +210,7 @@ func scanJSResources(client *http.Client, jsURLs []string) jsSurfaceScanResult {
 						RuleSourceTag:   "js",
 					},
 				}
-				scanUnits = append(scanUnits, fetchSourceMapScanUnits(client, jsURL, jsBody)...)
+				scanUnits = append(scanUnits, fetchSourceMapScanUnits(client, scanTargetURL, jsURL, jsBody)...)
 				scanUnits = dedupeJSScanUnits(scanUnits)
 
 				batchResult := jsSurfaceScanResult{
@@ -202,7 +220,7 @@ func scanJSResources(client *http.Client, jsURLs []string) jsSurfaceScanResult {
 				}
 				for _, unit := range scanUnits {
 					endpoints, parameters := extractJSStaticSurfaceWithMeta(unit.Body, unit.URL, unit.SourceType, unit.ParameterSource)
-					batchResult.Records = append(batchResult.Records, rule(unit.Body, unit.URL, unit.RuleSourceTag)...)
+					batchResult.Records = append(batchResult.Records, sanitizeRuleRecords(rule(unit.Body, unit.URL, unit.RuleSourceTag), unit.RuleSourceTag)...)
 					batchResult.Endpoints = append(batchResult.Endpoints, endpoints...)
 					batchResult.Parameters = append(batchResult.Parameters, parameters...)
 				}
@@ -272,7 +290,7 @@ func probePathRecords(client *http.Client, targetURL string, records []datatype.
 		go func() {
 			defer wg.Done()
 			for candidate := range jobs {
-				record := probeSinglePathCandidate(&probeClient, candidate)
+				record := probeSinglePathCandidate(&probeClient, targetURL, candidate)
 				if record == nil {
 					continue
 				}
@@ -298,12 +316,12 @@ func probePathRecords(client *http.Client, targetURL string, records []datatype.
 }
 
 // probeSinglePathCandidate 探测单个 path 拼接 URL，命中后返回 path_url 记录。
-func probeSinglePathCandidate(client *http.Client, candidate pathProbeCandidate) *datatype.ScanRecord {
+func probeSinglePathCandidate(client *http.Client, scanTargetURL string, candidate pathProbeCandidate) *datatype.ScanRecord {
 	req, err := http.NewRequest(http.MethodGet, candidate.URL, nil)
 	if err != nil {
 		return nil
 	}
-	util.ApplyRequestHeaders(req)
+	util.ApplyRequestHeadersForTarget(req, scanTargetURL)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -311,10 +329,23 @@ func probeSinglePathCandidate(client *http.Client, candidate pathProbeCandidate)
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, pathProbeBodyReadBytes))
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, pathProbeDrainBytes))
 
 	if !isPathProbeStatusUseful(resp.StatusCode) {
 		return nil
+	}
+
+	tagParts := []string{fmt.Sprintf("path_probe status=%d", resp.StatusCode)}
+	if titleText := extractHTMLTitle(bodyBytes); titleText != "" {
+		tagParts = append(tagParts, "title="+titleText)
+	}
+	sizeValue := resp.ContentLength
+	if sizeValue < 0 {
+		sizeValue = int64(len(bodyBytes))
+	}
+	if sizeValue >= 0 {
+		tagParts = append(tagParts, fmt.Sprintf("size=%d", sizeValue))
 	}
 
 	hashText := "path_url|" + candidate.URL
@@ -322,7 +353,7 @@ func probeSinglePathCandidate(client *http.Client, candidate pathProbeCandidate)
 		Id:      "path_url",
 		Content: candidate.URL,
 		Source:  candidate.Source,
-		Tag:     fmt.Sprintf("path_probe status=%d", resp.StatusCode),
+		Tag:     strings.Join(tagParts, " "),
 		Hash:    util.StableHash(hashText),
 	}
 }
@@ -380,6 +411,352 @@ func buildPathProbeCandidates(targetURL string, records []datatype.ScanRecord) [
 	}
 
 	return sortedPathProbeCandidates(seen)
+}
+
+func collapseProbedPathRecords(targetURL string, records []datatype.ScanRecord) []datatype.ScanRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	targetParsed, err := url.Parse(strings.TrimSpace(targetURL))
+	if err != nil || targetParsed.Host == "" {
+		return records
+	}
+
+	probedURLSet := make(map[string]struct{})
+	for _, record := range records {
+		if !strings.EqualFold(strings.TrimSpace(record.Id), "path_url") {
+			continue
+		}
+		probedURLSet[strings.TrimSpace(record.Content)] = struct{}{}
+	}
+	if len(probedURLSet) == 0 {
+		return records
+	}
+
+	result := make([]datatype.ScanRecord, 0, len(records))
+	for _, record := range records {
+		if !strings.EqualFold(strings.TrimSpace(record.Id), "path") {
+			result = append(result, record)
+			continue
+		}
+		pathToken := normalizePathToken(record.Content)
+		if pathToken == "" {
+			result = append(result, record)
+			continue
+		}
+		candidates := buildCandidateURLsByPath(targetParsed, strings.TrimSpace(record.Source), pathToken)
+		matched := false
+		for _, candidateURL := range candidates {
+			if _, ok := probedURLSet[candidateURL]; ok {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			continue
+		}
+		result = append(result, record)
+	}
+	return result
+}
+
+func sanitizeRuleRecords(records []datatype.ScanRecord, sourceTag string) []datatype.ScanRecord {
+	if len(records) == 0 {
+		return nil
+	}
+
+	result := make([]datatype.ScanRecord, 0, len(records))
+	for _, record := range records {
+		if shouldDropRuleRecord(record, sourceTag) {
+			continue
+		}
+		result = append(result, record)
+	}
+	return result
+}
+
+func shouldDropRuleRecord(record datatype.ScanRecord, sourceTag string) bool {
+	idText := strings.ToLower(strings.TrimSpace(record.Id))
+	contentText := strings.TrimSpace(record.Content)
+	if contentText == "" {
+		return true
+	}
+
+	if strings.EqualFold(sourceTag, "js") || strings.EqualFold(sourceTag, "js_source_map") {
+		switch idText {
+		case "ip", "internal_ip":
+			return true
+		case "path":
+			return !isLikelyMeaningfulJSPath(contentText)
+		case "domain":
+			return !isLikelyMeaningfulJSDomain(contentText)
+		case "domain_url", "ip_url", "url_as_value":
+			return !isLikelyMeaningfulJSURL(contentText)
+		case "debug_logic_parameters", "dos_parameters", "location_header":
+			return true
+		case "password":
+			return isPlaceholderPassword(contentText)
+		}
+	}
+
+	if idText == "location_header" {
+		return !strings.Contains(strings.ToLower(contentText), "http") && !strings.Contains(contentText, "/")
+	}
+
+	return false
+}
+
+func isJSLikeSource(source string) bool {
+	sourceText := strings.ToLower(strings.TrimSpace(source))
+	if sourceText == "" {
+		return false
+	}
+	if strings.Contains(sourceText, "/__wih_sourcemap__/") {
+		return true
+	}
+	for _, suffix := range []string{".js", ".mjs", ".cjs", ".map", ".ts", ".tsx", ".jsx"} {
+		if strings.Contains(sourceText, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLikelyMeaningfulJSPath(pathText string) bool {
+	text := strings.TrimSpace(pathText)
+	if !strings.HasPrefix(text, "/") {
+		return false
+	}
+	if strings.ContainsAny(text, "\"'`()[]{}|=*") {
+		return false
+	}
+	lowered := strings.ToLower(text)
+	for _, token := range []string{
+		".test", ".exec", ".value", ".name", ".scroll", ".prototype", "this.", "window.", "document.",
+		"runtime-core", "runtime-dom", "reactivity", "shared", "function", "const", "let", "var",
+	} {
+		if strings.Contains(lowered, token) {
+			return false
+		}
+	}
+	segments := splitPathSegments(text)
+	if len(segments) == 0 {
+		return false
+	}
+	if containsEndpointKeyword(text) {
+		return true
+	}
+	for _, segment := range segments {
+		if len(segment) < 2 {
+			return false
+		}
+		if regexp.MustCompile(`^\d+(?:\.\d+)?$`).MatchString(segment) {
+			return false
+		}
+	}
+	return len(segments) >= 2
+}
+
+func isLikelyMeaningfulJSDomain(domainText string) bool {
+	raw := strings.TrimSpace(domainText)
+	if raw == "" {
+		return false
+	}
+	if raw != strings.ToLower(raw) {
+		return false
+	}
+	labels := strings.Split(raw, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels[:len(labels)-1] {
+		if strings.TrimSpace(label) == "" {
+			return false
+		}
+	}
+	if len(labels) == 2 && len(labels[0]) < 3 {
+		return false
+	}
+	for _, token := range []string{"appcontext", "prototype", "runtime", "scroll", "window", "document", "record", "value"} {
+		if strings.Contains(raw, token) {
+			return false
+		}
+	}
+	return true
+}
+
+func isLikelyMeaningfulJSURL(rawURL string) bool {
+	text := strings.TrimSpace(rawURL)
+	if text == "" {
+		return false
+	}
+	if strings.ContainsAny(text, "{}$`") || strings.Contains(text, "${") || strings.Contains(text, "{{") {
+		return false
+	}
+	parsed, err := url.Parse(text)
+	if err != nil {
+		return false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	if parsed.Host == "" {
+		return false
+	}
+	return true
+}
+
+func filterRecordsByTargetScope(targetURL string, records []datatype.ScanRecord) []datatype.ScanRecord {
+	if len(records) == 0 {
+		return nil
+	}
+
+	scope := buildTargetScope(targetURL)
+	if scope.Host == "" {
+		return records
+	}
+
+	result := make([]datatype.ScanRecord, 0, len(records))
+	for _, record := range records {
+		if shouldDropOutOfScopeRecord(record, scope) {
+			continue
+		}
+		result = append(result, record)
+	}
+	return result
+}
+
+func buildTargetScope(targetURL string) targetScope {
+	parsed, err := url.Parse(strings.TrimSpace(targetURL))
+	if err != nil {
+		return targetScope{}
+	}
+
+	host := normalizeHostToken(parsed.Hostname())
+	if host == "" {
+		return targetScope{}
+	}
+
+	scope := targetScope{Host: host}
+	if net.ParseIP(host) == nil {
+		scope.RegistrableDomain = effectiveRegistrableDomain(host)
+	}
+	return scope
+}
+
+func shouldDropOutOfScopeRecord(record datatype.ScanRecord, scope targetScope) bool {
+	idText := strings.ToLower(strings.TrimSpace(record.Id))
+	contentText := strings.TrimSpace(record.Content)
+	if contentText == "" {
+		return false
+	}
+
+	switch idText {
+	case "domain":
+		return !isHostInTargetScope(contentText, scope)
+	case "domain_url":
+		parsed, err := url.Parse(contentText)
+		if err != nil {
+			return true
+		}
+		return !isHostInTargetScope(parsed.Hostname(), scope)
+	case "email":
+		atIndex := strings.LastIndex(contentText, "@")
+		if atIndex <= 0 || atIndex >= len(contentText)-1 {
+			return true
+		}
+		return !isHostInTargetScope(contentText[atIndex+1:], scope)
+	default:
+		return false
+	}
+}
+
+func isHostInTargetScope(rawHost string, scope targetScope) bool {
+	host := normalizeHostToken(rawHost)
+	if host == "" || scope.Host == "" {
+		return false
+	}
+	if host == scope.Host {
+		return true
+	}
+
+	hostIP := net.ParseIP(host)
+	scopeIP := net.ParseIP(scope.Host)
+	if hostIP != nil || scopeIP != nil {
+		return host == scope.Host
+	}
+
+	hostRegistrable := effectiveRegistrableDomain(host)
+	if hostRegistrable == "" || scope.RegistrableDomain == "" {
+		return host == scope.Host || strings.HasSuffix(host, "."+scope.Host) || strings.HasSuffix(scope.Host, "."+host)
+	}
+	return hostRegistrable == scope.RegistrableDomain
+}
+
+func normalizeHostToken(rawHost string) string {
+	host := strings.ToLower(strings.TrimSpace(rawHost))
+	host = strings.Trim(host, ".")
+	return host
+}
+
+func effectiveRegistrableDomain(host string) string {
+	normalized := normalizeHostToken(host)
+	if normalized == "" {
+		return ""
+	}
+	value, err := publicsuffix.EffectiveTLDPlusOne(normalized)
+	if err != nil {
+		return normalized
+	}
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func extractHTMLTitle(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	match := titlePattern.FindStringSubmatch(string(body))
+	if len(match) < 2 {
+		return ""
+	}
+	titleText := strings.TrimSpace(stripHTMLTags(match[1]))
+	titleText = regexp.MustCompile(`\s+`).ReplaceAllString(titleText, " ")
+	if len(titleText) > 120 {
+		titleText = titleText[:120]
+	}
+	return strings.TrimSpace(titleText)
+}
+
+func isPlaceholderPassword(content string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(content))
+	return strings.Contains(lowered, `password="password"`) || strings.Contains(lowered, `password='password'`)
+}
+
+func splitPathSegments(pathText string) []string {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(pathText), "/"), "/")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		result = append(result, part)
+	}
+	return result
+}
+
+func containsEndpointKeyword(pathText string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(pathText))
+	for _, token := range []string{
+		"/api", "/auth", "/login", "/logout", "/graphql", "/oauth", "/token", "/user", "/account",
+		"/search", "/query", "/upload", "/download", "/file", "/service", "/admin", "/rest",
+		"/openapi", "/swagger", "/captcha", "/verify",
+	} {
+		if strings.Contains(lowered, token) {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizePathToken 规范化 path 记录内容，仅保留可拼接路径片段。

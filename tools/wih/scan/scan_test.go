@@ -2,11 +2,21 @@ package scan
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
 	datatype "wih/dataType"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 // TestNormalizeTargetURL 验证目标 URL 规范化行为。
 func TestNormalizeTargetURL(t *testing.T) {
@@ -18,6 +28,170 @@ func TestNormalizeTargetURL(t *testing.T) {
 	}
 	if normalizeTargetURL("example.com") != "http://example.com" {
 		t.Fatal("无协议目标应自动补 http://")
+	}
+}
+
+// TestFilterRecordsByTargetScope 验证 domain/domain_url/email 仅保留同站点域范围。
+func TestFilterRecordsByTargetScope(t *testing.T) {
+	records := []datatype.ScanRecord{
+		{Id: "domain", Content: "cube.eytax.com.cn"},
+		{Id: "domain", Content: "api.eytax.com.cn"},
+		{Id: "domain", Content: "vuejs.org"},
+		{Id: "domain_url", Content: "https://api.eytax.com.cn/open/api/list"},
+		{Id: "domain_url", Content: "https://v3-migration.vuejs.org/breaking-changes/v-model.html"},
+		{Id: "email", Content: "admin@eytax.com.cn"},
+		{Id: "email", Content: "jhruby.web@gmail.com"},
+		{Id: "path", Content: "/api/user/list"},
+	}
+
+	filtered := filterRecordsByTargetScope("https://cube.eytax.com.cn", records)
+	if len(filtered) != 5 {
+		t.Fatalf("unexpected filtered record count: %d", len(filtered))
+	}
+
+	contents := make(map[string]struct{}, len(filtered))
+	for _, record := range filtered {
+		contents[record.Content] = struct{}{}
+	}
+
+	for _, expected := range []string{
+		"cube.eytax.com.cn",
+		"api.eytax.com.cn",
+		"https://api.eytax.com.cn/open/api/list",
+		"admin@eytax.com.cn",
+		"/api/user/list",
+	} {
+		if _, ok := contents[expected]; !ok {
+			t.Fatalf("missing expected scoped record: %s", expected)
+		}
+	}
+
+	for _, dropped := range []string{
+		"vuejs.org",
+		"https://v3-migration.vuejs.org/breaking-changes/v-model.html",
+		"jhruby.web@gmail.com",
+	} {
+		if _, ok := contents[dropped]; ok {
+			t.Fatalf("unexpected out-of-scope record retained: %s", dropped)
+		}
+	}
+}
+
+// TestIsHostInTargetScope 验证同注册域及其子域名会被视为站点范围内。
+func TestIsHostInTargetScope(t *testing.T) {
+	scope := buildTargetScope("https://cube.eytax.com.cn")
+	cases := map[string]bool{
+		"cube.eytax.com.cn":      true,
+		"api.eytax.com.cn":       true,
+		"eytax.com.cn":           true,
+		"cube.other.com":         false,
+		"v3-migration.vuejs.org": false,
+	}
+
+	for host, expected := range cases {
+		got := isHostInTargetScope(host, scope)
+		if got != expected {
+			t.Fatalf("host scope mismatch host=%s got=%v expected=%v", host, got, expected)
+		}
+	}
+}
+
+// TestExtractLinkedPageURLs 验证静态页面探索仅保留同 host、可继续抓取的页面链接。
+func TestExtractLinkedPageURLs(t *testing.T) {
+	targetParsed, err := url.Parse("https://example.com")
+	if err != nil {
+		t.Fatalf("parse target failed: %v", err)
+	}
+
+	body := `
+<html>
+  <body>
+    <a href="/login">login</a>
+    <a href="https://example.com/admin?tab=user">admin</a>
+    <a href="https://other.com/out">out</a>
+    <a href="#top">top</a>
+    <a href="mailto:test@example.com">mail</a>
+    <iframe src="/frame/dashboard"></iframe>
+    <a href="/assets/app.js">js</a>
+  </body>
+</html>
+`
+
+	links := extractLinkedPageURLs(body, targetParsed, "https://example.com")
+	if len(links) != 3 {
+		t.Fatalf("unexpected linked page count: %d", len(links))
+	}
+
+	expected := map[string]struct{}{
+		"https://example.com/admin?tab=user":  {},
+		"https://example.com/frame/dashboard": {},
+		"https://example.com/login":           {},
+	}
+	for _, link := range links {
+		if _, ok := expected[link]; !ok {
+			t.Fatalf("unexpected linked page: %s", link)
+		}
+	}
+}
+
+// TestScanLinkedHTMLPagesCollectsFormSurface 验证静态页面探索会继续提取下一层页面的接口、参数和 JS。
+func TestScanLinkedHTMLPagesCollectsFormSurface(t *testing.T) {
+	rootBody := `<html><body><a href="/login">login</a></body></html>`
+	loginBody := `
+<html>
+  <body>
+    <form action="/api/login?scene=web" method="post">
+      <input type="text" name="username" required>
+      <input type="password" name="password">
+    </form>
+    <script src="/static/login.js"></script>
+  </body>
+</html>
+`
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.String() {
+			case "https://example.com/login":
+				return &http.Response{
+					StatusCode:    http.StatusOK,
+					ContentLength: int64(len(loginBody)),
+					Header:        http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
+					Body:          io.NopCloser(strings.NewReader(loginBody)),
+					Request:       req,
+				}, nil
+			default:
+				return nil, fmt.Errorf("unexpected url: %s", req.URL.String())
+			}
+		}),
+	}
+
+	result := scanLinkedHTMLPages(client, "https://example.com", rootBody)
+	if len(result.Endpoints) != 1 {
+		t.Fatalf("unexpected endpoint count: %d", len(result.Endpoints))
+	}
+	if result.Endpoints[0].URL != "https://example.com/api/login?scene=web" {
+		t.Fatalf("unexpected endpoint url: %s", result.Endpoints[0].URL)
+	}
+	if len(result.Parameters) < 3 {
+		t.Fatalf("unexpected parameter count: %d", len(result.Parameters))
+	}
+
+	paramMap := make(map[string]datatype.ParameterRecord)
+	for _, parameter := range result.Parameters {
+		paramMap[parameter.ParamName] = parameter
+	}
+	if paramMap["scene"].Location != "query" {
+		t.Fatalf("expected scene query parameter, got=%s", paramMap["scene"].Location)
+	}
+	if paramMap["username"].Location != "body" || !paramMap["username"].Required {
+		t.Fatalf("unexpected username parameter: %+v", paramMap["username"])
+	}
+	if paramMap["password"].Location != "body" {
+		t.Fatalf("unexpected password parameter: %+v", paramMap["password"])
+	}
+	if len(result.JSURLs) != 1 || result.JSURLs[0] != "https://example.com/static/login.js" {
+		t.Fatalf("unexpected js urls: %+v", result.JSURLs)
 	}
 }
 
@@ -36,7 +210,7 @@ func TestBuildPathProbeCandidates(t *testing.T) {
 		{
 			Id:      "path",
 			Content: "/test123",
-			Source:  "http://www.test.com/123/test.js",
+			Source:  "http://www.test.com/123/index.html",
 		},
 	}
 	candidates := buildPathProbeCandidates("http://www.test.com/123/", records)
@@ -584,6 +758,117 @@ func TestExtractJSStaticSurfaceResolvesNestedMemberReferences(t *testing.T) {
 	}
 }
 
+// TestExtractJSStaticSurfaceFiltersNoiseLiterals 验证静态 endpoint 提取会过滤明显噪声字面量。
+func TestExtractJSStaticSurfaceFiltersNoiseLiterals(t *testing.T) {
+	jsBody := "const API = {\n" +
+		"  mode: \"text\",\n" +
+		"  header: \"set-cookie\",\n" +
+		"  asset: \"index-9edb2d11.js\",\n" +
+		"  search: \"/api/search\"\n" +
+		"}\n\n" +
+		"fetch(API.mode)\n" +
+		"fetch(API.asset)\n" +
+		"request({ url: API.header })\n" +
+		"axios.get(API.search)\n"
+
+	endpoints, _ := extractJSStaticSurface(jsBody, "https://example.com/assets/app.js")
+	if len(endpoints) != 1 {
+		t.Fatalf("unexpected filtered endpoint count: %d", len(endpoints))
+	}
+	if endpoints[0].URL != "https://example.com/api/search" {
+		t.Fatalf("unexpected filtered endpoint url: %s", endpoints[0].URL)
+	}
+}
+
+// TestSanitizeRuleRecordsForJS 验证 JS 规则命中会过滤明显噪声。
+func TestSanitizeRuleRecordsForJS(t *testing.T) {
+	records := []datatype.ScanRecord{
+		{Id: "ip", Content: "1.2.3.4", Source: "https://example.com/assets/app.js"},
+		{Id: "domain", Content: "o.app", Source: "https://example.com/assets/app.js"},
+		{Id: "path", Content: "/runtime-core", Source: "https://example.com/assets/app.js"},
+		{Id: "path", Content: "/api/user/list", Source: "https://example.com/assets/app.js"},
+		{Id: "domain_url", Content: "https://vuejs.org/error-reference/#runtime-${n}", Source: "https://example.com/assets/app.js"},
+		{Id: "password", Content: `PASSWORD="password"`, Source: "https://example.com/assets/app.js"},
+	}
+
+	filtered := sanitizeRuleRecords(records, "js")
+	if len(filtered) != 1 {
+		t.Fatalf("unexpected sanitized record count: %d", len(filtered))
+	}
+	if filtered[0].Id != "path" || filtered[0].Content != "/api/user/list" {
+		t.Fatalf("unexpected sanitized record: %+v", filtered[0])
+	}
+}
+
+// TestBuildPathProbeCandidatesSkipsJSSource 验证 path probe 不再消费来自 JS 资源的 path 记录。
+func TestBuildPathProbeCandidatesSkipsJSSource(t *testing.T) {
+	records := []datatype.ScanRecord{
+		{Id: "path", Content: "/api/user/list", Source: "https://example.com/assets/app.js"},
+	}
+	candidates := buildPathProbeCandidates("https://example.com", records)
+	if len(candidates) == 0 {
+		t.Fatal("meaningful js-source path should produce probe candidates")
+	}
+}
+
+// TestCollapseProbedPathRecords 验证已成功探测出的 path_url 会折叠原始 path 记录。
+func TestCollapseProbedPathRecords(t *testing.T) {
+	records := []datatype.ScanRecord{
+		{Id: "path", Content: "/api/user/list", Source: "https://example.com/app.js"},
+		{Id: "path_url", Content: "https://example.com/api/user/list", Source: "https://example.com/app.js", Tag: "path_probe status=200 title=demo"},
+	}
+	collapsed := collapseProbedPathRecords("https://example.com", records)
+	if len(collapsed) != 1 {
+		t.Fatalf("unexpected collapsed record count: %d", len(collapsed))
+	}
+	if collapsed[0].Id != "path_url" {
+		t.Fatalf("unexpected collapsed record: %+v", collapsed[0])
+	}
+}
+
+// TestExtractHTMLTitle 验证 path probe 可从 HTML 中提取标题。
+func TestExtractHTMLTitle(t *testing.T) {
+	body := []byte("<html><head><title> Demo Title </title></head><body></body></html>")
+	titleText := extractHTMLTitle(body)
+	if titleText != "Demo Title" {
+		t.Fatalf("unexpected html title: %s", titleText)
+	}
+}
+
+// TestProbeSinglePathCandidateIncludesTitleAndSize 验证 path probe 记录会带出标题与响应大小。
+func TestProbeSinglePathCandidateIncludesTitleAndSize(t *testing.T) {
+	body := "<html><head><title>Probe Demo</title></head><body>ok</body></html>"
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if got := req.Header.Get("X-WIH-Target"); got != "https://example.com" {
+				t.Fatalf("unexpected X-WIH-Target header: %s", got)
+			}
+			return &http.Response{
+				StatusCode:    http.StatusOK,
+				ContentLength: int64(len(body)),
+				Header:        http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
+				Body:          io.NopCloser(strings.NewReader(body)),
+				Request:       req,
+			}, nil
+		}),
+	}
+
+	record := probeSinglePathCandidate(client, "https://example.com", pathProbeCandidate{
+		URL:    "https://example.com/api/demo",
+		Source: "https://example.com/index.html",
+	})
+	if record == nil {
+		t.Fatal("path probe record should not be nil")
+	}
+	if !strings.Contains(record.Tag, "title=Probe Demo") {
+		t.Fatalf("path probe tag should include title: %s", record.Tag)
+	}
+	expectedSize := fmt.Sprintf("size=%d", len(body))
+	if !strings.Contains(record.Tag, expectedSize) {
+		t.Fatalf("path probe tag should include size: %s", record.Tag)
+	}
+}
+
 // TestExtractRuntimeSurfaceDisabled 验证运行时采集默认关闭时不会返回结果。
 func TestExtractRuntimeSurfaceDisabled(t *testing.T) {
 	result := extractRuntimeSurface("https://example.com")
@@ -771,6 +1056,14 @@ func TestResolveBuiltInPlaywrightDriverPath(t *testing.T) {
 	}
 }
 
+// TestRuntimeErrorMessage 验证 runtime driver 错误码会转成可读提示。
+func TestRuntimeErrorMessage(t *testing.T) {
+	message := runtimeErrorMessage("playwright_not_installed")
+	if !strings.Contains(message, "Node Playwright") {
+		t.Fatalf("unexpected runtime error message: %s", message)
+	}
+}
+
 // TestExtractJSStaticSurfaceWithSourceMapMeta 验证静态提取支持保留 source map 来源元信息。
 func TestExtractJSStaticSurfaceWithSourceMapMeta(t *testing.T) {
 	jsBody := `
@@ -823,7 +1116,7 @@ func TestCollectSourceMapScanUnitsUsesSourcesContent(t *testing.T) {
   ]
 }`
 
-	units := collectSourceMapScanUnits(nil, "https://example.com/static/app.js.map", mapBody)
+	units := collectSourceMapScanUnits(nil, "https://example.com", "https://example.com/static/app.js.map", mapBody)
 	if len(units) != 2 {
 		t.Fatalf("unexpected source map unit count: %d", len(units))
 	}

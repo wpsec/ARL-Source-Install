@@ -55,6 +55,10 @@ func ReadFile2Str(filePath string) string {
 
 // WriteFile 以 append 模式写入文件。
 func WriteFile(filePath string, content string) {
+	if err := ensureParentDir(filePath); err != nil {
+		ErrPrint(fmt.Errorf("创建目录失败 %s: %w", filePath, err))
+		return
+	}
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
 	if err != nil {
 		ErrPrint(fmt.Errorf("写入文件失败 %s: %w", filePath, err))
@@ -69,6 +73,10 @@ func WriteFile(filePath string, content string) {
 
 // WriteFileOverwrite 以覆盖模式写入文件。
 func WriteFileOverwrite(filePath string, content string) {
+	if err := ensureParentDir(filePath); err != nil {
+		ErrPrint(fmt.Errorf("创建目录失败 %s: %w", filePath, err))
+		return
+	}
 	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
 		ErrPrint(fmt.Errorf("覆盖写入文件失败 %s: %w", filePath, err))
 	}
@@ -109,6 +117,9 @@ func GenerateRuleTemplate(outputPath string) error {
 		return nil
 	}
 
+	if err = ensureParentDir(outputPath); err != nil {
+		return fmt.Errorf("创建目录失败 %s: %w", outputPath, err)
+	}
 	if err = os.WriteFile(outputPath, content, 0o644); err != nil {
 		return fmt.Errorf("写入规则模板失败 %s: %w", outputPath, err)
 	}
@@ -128,4 +139,17 @@ func ReadEmbeddedRuleTemplate() []byte {
 func FileExists(filePath string) bool {
 	info, err := os.Stat(filePath)
 	return err == nil && !info.IsDir()
+}
+
+func ensureParentDir(filePath string) error {
+	path := strings.TrimSpace(filePath)
+	if path == "" || path == "-" {
+		return nil
+	}
+
+	dir := filepath.Dir(path)
+	if dir == "." || dir == "" {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
 }

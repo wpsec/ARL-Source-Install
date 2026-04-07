@@ -18,9 +18,10 @@ import (
 )
 
 var (
-	outputLock sync.Mutex
-	akskLock   sync.Mutex
-	fileNameRE = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+	outputLock    sync.Mutex
+	aggregateLock sync.Mutex
+	akskLock      sync.Mutex
+	fileNameRE    = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 )
 
 // main 为 wih 入口。
@@ -53,6 +54,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, option.Concurrency)
+	aggregateResults := make([]*datatype.ScanResult, 0, len(targets))
 	for _, target := range targets {
 		target = strings.TrimSpace(target)
 		if target == "" {
@@ -69,13 +71,22 @@ func main() {
 			if result == nil {
 				return
 			}
+			aggregateLock.Lock()
+			aggregateResults = append(aggregateResults, result)
+			aggregateLock.Unlock()
 
 			realOutputPath := option.OutputFilePath
 			if option.AutoSaveName {
 				realOutputPath = buildAutoSavePath(targetURL, option.OutputJSON)
 			}
+			realOutputPath = util.ResolveOutputPathForTarget(targetURL, realOutputPath)
+			if util.ShouldWriteWorkbookOutput(realOutputPath, option.OutputJSON) {
+				realOutputPath = util.ResolveWorkbookPath(realOutputPath)
+			}
+			hasExplicitStructuredOutput := strings.TrimSpace(option.EndpointOutputPath) != "" || strings.TrimSpace(option.ParameterOutputPath) != ""
 			endpointOutputPath, parameterOutputPath := util.ResolveStructuredOutputPaths(
 				realOutputPath,
+				targetURL,
 				option.EndpointOutputPath,
 				option.ParameterOutputPath,
 			)
@@ -83,17 +94,29 @@ func main() {
 			outputLock.Lock()
 			util.FormatOutput(result, option.OutputJSON)
 			util.FormatOutputWrite(result, realOutputPath, option.OutputJSON)
-			if !option.DisableStructuredOutput {
+			if !option.DisableStructuredOutput && (hasExplicitStructuredOutput || !util.ShouldWriteWorkbookOutput(realOutputPath, option.OutputJSON)) {
 				util.WriteStructuredOutputFiles(result, endpointOutputPath, parameterOutputPath)
 			}
 			outputLock.Unlock()
 
 			if !option.DisableAKSKOutput {
-				saveAKSK(result, option.AKSKOutputPath, option.AutoSaveName)
+				saveAKSK(result, option.AKSKOutputPath, realOutputPath, targetURL)
 			}
 		}(target)
 	}
 	wg.Wait()
+
+	if util.ShouldWriteTaskAggregateOutput(option.OutputFilePath, option.OutputJSON, option.AutoSaveName) && len(aggregateResults) > 1 {
+		aggregateCSVPath := util.ResolveTaskAggregateCSVPath(option.OutputFilePath)
+		if err := util.WriteAggregateCSVOutput(aggregateResults, aggregateCSVPath); err != nil {
+			util.ErrPrint(err)
+		}
+
+		aggregatePath := util.ResolveWorkbookPath(util.ResolveTaskAggregatePath(option.OutputFilePath))
+		if err := util.WriteAggregateWorkbookOutput(aggregateResults, aggregatePath); err != nil {
+			util.ErrPrint(err)
+		}
+	}
 }
 
 // printBanner 根据日志级别输出启动横幅。
@@ -109,7 +132,7 @@ func printBanner() {
 }
 
 // saveAKSK 将可能的 AK/SK 结果单独落盘。
-func saveAKSK(result *datatype.ScanResult, outputPath string, autoSaveName bool) {
+func saveAKSK(result *datatype.ScanResult, outputPath string, scopePath string, targetURL string) {
 	if result == nil || len(result.Records) == 0 {
 		return
 	}
@@ -118,10 +141,7 @@ func saveAKSK(result *datatype.ScanResult, outputPath string, autoSaveName bool)
 	if path == "" || path == "-" {
 		path = "ak_leak.txt"
 	}
-	if autoSaveName {
-		base := buildAutoSavePath(result.Target, false)
-		path = strings.TrimSuffix(base, filepath.Ext(base)) + "_ak_leak.txt"
-	}
+	path = util.ResolveOutputPathInScope(scopePath, targetURL, path)
 
 	var builder strings.Builder
 	for _, record := range result.Records {
