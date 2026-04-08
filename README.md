@@ -33,9 +33,9 @@ chmod +x build.sh start.sh scripts/quick-build.sh
 
 ### 注意！
 
-可提前开代理下载Playwright 以提升部署速度，不建议开启nuclei与afrog，确实太慢了且扫不出来啥漏洞。
+可提前开代理下载Playwright 以提升部署速度
 
-参考：
+参考文档：
 
 ```plain
 tools/playwright/README.md
@@ -43,19 +43,21 @@ tools/playwright/README.md
 
 只在 x86 环境做了测试，arm 没有做测试，不知道兼不兼容
 
-### POC 知识库
+### ~~POC 知识库~~
 
-https://github.com/eeeeeeeeee-code/POC
+~~https://github.com/eeeeeeeeee-code/POC~~
 
-https://github.com/nomi-sec/PoC-in-GitHub
+~~https://github.com/nomi-sec/PoC-in-GitHub~~
 
-https://github.com/vulhub/vulhub
+~~https://github.com/vulhub/vulhub~~
 
-是给AI分析做参考的，可自行下载到这个目录，不下也行
+~~是给AI分析做参考的，可自行下载到这个目录，不下也行，暂时没想好怎么做~~
 
 ```plain
 /项目目录/ARL-Source-Install/tools/poc
 ```
+
+
 
 ### 密码修改
 
