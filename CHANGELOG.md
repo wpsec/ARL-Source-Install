@@ -3,8 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-08（v4.6.39 ~ v4.6.46）
+## 2026-04-08（v4.6.39 ~ v4.6.48）
 
+- `[v4.6.48]` 任务删除关联结果清理修复：任务管理页删除单个任务、批量删除任务、停止并删除任务时，前端会明确传入 `del_task_data=true`，让后端同步清理该任务产生的资产搜索结果数据，避免任务记录已删除但站点、域名、URL、目录扫描、`WIH` 等任务结果仍在资产搜索页残留。后端级联清理名单同步补齐 `wih_endpoint`，确保新增的 `WIH接口提取` 数据也会随任务结果清理，同时不触碰已经同步到资产组的 `asset_*` 表，降低误删正式资产组数据的风险
 - `[v4.6.46]` `WIH接口提取` 格式与导出继续收口：`WIH` 结构化接口提取补强 `application/json / application/x-www-form-urlencoded / multipart/form-data / text/xml / application/xml / text/plain / application/octet-stream` 等 `POST` 请求体识别，运行时与静态 `JS` 提取都会尽量保留更准确的 `content_type/body_kind/body_text/request_packet`，避免 `text/plain` 中的 `a=b` 被误判为表单。`ARL` 入库侧同时修复接口 URL 已带查询参数时又追加同名同值参数导致的重复 query；`WIH接口提取` 页面与导出对未知状态码/响应大小不再展示误导性的 `0`，而是显示为 `-`。此外，资产导出 Excel 与钉钉知识库报告新增 `WIH接口提取` 工作表，包含序号、目标、页面 URL、方法、状态码、响应大小、请求 URL 与请求报文，方便直接复核和复现接口
 - `[v4.6.45]` 部署文档与离线浏览器包流程优化：`tools/playwright/README.md` 改为推荐按 `tools/wih` 锁定的 Node 版 `Playwright` 生成离线浏览器包，并补充宿主机无 `npm` 时使用 Docker Node 镜像生成 `ms-playwright` 离线包的方式；主镜像中 `WIH` Node 依赖安装阶段保持 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`，不再二次执行 `npx playwright install chromium`，避免已准备离线包后仍触发在线下载
 - `[v4.6.44]` Docker `npm/npx` 运行时入口修复：主镜像从前端构建阶段复用 Node 20 时，不再直接复制 `/usr/local/bin/npm` 与 `/usr/local/bin/npx`，避免 Docker `COPY --from` 将 symlink 解引用成脚本文件后触发 `Cannot find module '../lib/cli.js'`。现在改为复制 Node 与全局 npm 模块目录后，在 runtime 阶段显式重建 `npm/npx` symlink，并提前执行 `node/npm/npx --version` 自检，让 WIH Playwright 依赖安装能继续进入后续步骤

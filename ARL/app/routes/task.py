@@ -465,7 +465,7 @@ class DeleteTask(ARLResource):
         - del_task_data为true时会删除关联的资产数据：
           * 证书(cert)、域名(domain)、IP(ip)、服务(service)
           * 站点(site)、URL(url)、漏洞(vuln)、文件泄露(fileleak)
-          * CIP、NPoC服务、WIH、Nuclei结果、指纹统计等
+          * CIP、NPoC服务、WIH、WIH接口提取、Nuclei结果、指纹统计等
         - 删除操作不可逆，请谨慎使用
         """
         # 终态状态列表（只有这些状态的任务可以删除）
@@ -494,8 +494,9 @@ class DeleteTask(ARLResource):
             utils.conn_db('ai_pen_test_result').delete_many({'task_id': task_id})
             
             # 相关资产数据表列表
-            table_list = ["cert", "domain", "fileleak","ip", "service",
-                          "site", "url", "vuln", "cip", "npoc_service", "wih", "nuclei_result", "stat_finger", "ai_pen_test_result"]
+            table_list = ["cert", "domain", "fileleak", "ip", "service",
+                          "site", "url", "vuln", "cip", "npoc_service", "wih", "wih_endpoint",
+                          "nuclei_result", "stat_finger", "ai_pen_test_result"]
 
             # 如果选择删除任务数据，则删除所有相关资产
             if del_task_data_flag:

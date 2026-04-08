@@ -465,7 +465,7 @@ const modules: ModuleConfig[] = [
         selectionMode: 'multiple',
         payloadTemplate: {
           task_id: [],
-          del_task_data: false,
+          del_task_data: true,
         },
       },
       {
@@ -10408,7 +10408,7 @@ function TableModuleView({
     }
 
     const confirmed = await askDeleteConfirm(
-      `将先停止再删除已勾选的 ${taskIds.length} 条任务。此操作不可恢复。`,
+      `将先停止再删除已勾选的 ${taskIds.length} 条任务，并清理资产搜索中的关联结果数据。此操作不可恢复。`,
       '确认停止并删除'
     );
     if (!confirmed) return;
@@ -10429,7 +10429,7 @@ function TableModuleView({
         method: 'POST',
         body: {
           task_id: taskIds,
-          del_task_data: false,
+          del_task_data: true,
         },
       });
       await loadRows({ forceRefresh: true });
@@ -10469,7 +10469,7 @@ function TableModuleView({
     if (module.id !== 'task') return;
     if (!taskId) return;
     if (taskRowPendingActionMap[taskId]) return;
-    if (!(await askDeleteConfirm('将删除该任务。此操作不可恢复。'))) return;
+    if (!(await askDeleteConfirm('将删除该任务，并清理资产搜索中的关联结果数据。此操作不可恢复。'))) return;
     markTaskRowActionPending(taskId, 'delete');
     setError('');
     setSuccess('正在删除任务，请稍候...');
@@ -10478,7 +10478,7 @@ function TableModuleView({
         method: 'POST',
         body: {
           task_id: [taskId],
-          del_task_data: false,
+          del_task_data: true,
         },
       });
       await loadRows({ forceRefresh: true });
