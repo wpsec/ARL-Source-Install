@@ -278,8 +278,8 @@ class TestBatchExport(unittest.TestCase):
             self.assertEqual(["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文"], header_row)
             data_row = [cell.value for cell in next(ws.iter_rows(min_row=2, max_row=2))]
             self.assertEqual(1, data_row[0])
-            self.assertEqual("-", data_row[4])
-            self.assertEqual("-", data_row[5])
+            self.assertEqual("未验证", data_row[4])
+            self.assertEqual("未验证", data_row[5])
             self.assertEqual("https://example.com/api/login", data_row[6])
             self.assertIn("POST /api/login HTTP/1.1", data_row[7])
         finally:
@@ -337,6 +337,34 @@ class TestBatchExport(unittest.TestCase):
         self.assertIn("ARL批量导出报告", html)
         self.assertIn("站点", html)
         self.assertIn("Example Site", html)
+
+    def test_wih_endpoint_sheet_should_show_verification_note_for_skipped_methods(self):
+        with patch('app.routes.export.get_wih_endpoint_data') as mock_get_wih_endpoint_data:
+            mock_get_wih_endpoint_data.return_value = [
+                {
+                    "target": "http://portal.example.com",
+                    "page_url": "",
+                    "method": "DELETE",
+                    "status_code": None,
+                    "response_size": None,
+                    "url": "http://portal.example.com/api/item/1",
+                    "request_packet": "DELETE /api/item/1 HTTP/1.1\r\nHost: portal.example.com",
+                    "verification_status": "skipped",
+                    "verification_note": "危险 HTTP 方法 DELETE，未主动验证",
+                }
+            ]
+
+            wb = Workbook()
+            default_ws = wb.active
+            wb.remove(default_ws)
+            _build_wih_endpoint_sheet(wb, ["task_1"], apply_style=False)
+
+            ws = wb["WIH接口提取"]
+            data_row = [cell.value for cell in next(ws.iter_rows(min_row=2, max_row=2))]
+
+            self.assertEqual("DELETE", data_row[3])
+            self.assertEqual("未验证（危险 HTTP 方法 DELETE，未主动验证）", data_row[4])
+            self.assertEqual("未验证（危险 HTTP 方法 DELETE，未主动验证）", data_row[5])
 
     @patch.object(SaveTask, 'build_statist')
     @patch.object(SaveTask, 'build_stat_finger_xl')

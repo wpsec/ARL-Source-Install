@@ -2533,8 +2533,8 @@ def _format_wih_endpoint_status(item):
     try:
         status_num = int(float(status_text))
     except Exception:
-        return status_text if status_text else "-"
-    return str(status_num) if status_num > 0 else "-"
+        return status_text if status_text else _format_wih_endpoint_verification(item)
+    return str(status_num) if status_num > 0 else _format_wih_endpoint_verification(item)
 
 
 def _format_wih_endpoint_response_size(item):
@@ -2542,15 +2542,35 @@ def _format_wih_endpoint_response_size(item):
     if size_value is None or size_value == "":
         size_value = item.get("content_length", "")
     size_text = sanitize_excel_value(size_value).strip()
+    if not size_text:
+        status_text = _format_wih_endpoint_status(item)
+        if status_text and status_text != "-" and not status_text.startswith("未验证") and not status_text.startswith("验证失败"):
+            return "-"
+        return _format_wih_endpoint_verification(item)
     try:
         size_num = int(float(size_text))
     except Exception:
-        return size_text if size_text else "-"
+        return size_text
 
     status_text = _format_wih_endpoint_status(item)
-    if size_num <= 0 and status_text == "-":
-        return "-"
+    if size_num <= 0 and (status_text == "-" or status_text.startswith("未验证") or status_text.startswith("验证失败")):
+        return status_text
     return str(size_num)
+
+
+def _format_wih_endpoint_verification(item):
+    status_text = sanitize_excel_value(item.get("verification_status", "")).strip().lower()
+    note_text = sanitize_excel_value(item.get("verification_note", "")).strip()
+    method_text = sanitize_excel_value(item.get("method", "")).strip().upper()
+    if status_text == "skipped":
+        return "未验证（{}）".format(note_text) if note_text else "未验证"
+    if status_text == "error":
+        return "验证失败（{}）".format(note_text) if note_text else "验证失败"
+    if method_text in {"DELETE", "PUT", "PATCH", "TRACE", "CONNECT"}:
+        return "未验证（危险 HTTP 方法 {}，未主动验证）".format(method_text)
+    if method_text:
+        return "未验证"
+    return "-"
 
 
 def _extract_wih_endpoint_rows(task_ids):
