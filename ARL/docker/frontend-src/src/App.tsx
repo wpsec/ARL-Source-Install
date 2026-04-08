@@ -1589,13 +1589,14 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'url',
-    columns: ['url', 'title', 'status_code', 'content_length', 'ai_analysis'],
+    columns: ['url', 'title', 'status_code', 'content_length', 'source', 'ai_analysis'],
     sortableColumns: ['content_length'],
     columnLabels: {
       url: 'URL',
       title: '标题',
       status_code: '状态码',
       content_length: 'body 长度',
+      source: '来源',
       ai_analysis: 'AI分析',
     },
     searchFields: [
@@ -1603,6 +1604,17 @@ const modules: ModuleConfig[] = [
       { key: 'title', label: '标题', placeholder: '请输入标题进行搜索' },
       { key: 'status_code', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
       { key: 'content_length', label: 'body 长度', placeholder: '请输入body 长度进行搜索', inputType: 'number' },
+      {
+        key: 'source',
+        label: '来源',
+        placeholder: '请选择来源',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '字典爆破', value: 'dict_brute' },
+          { label: 'wih_url_probe', value: 'wih_url_probe' },
+        ],
+      },
       {
         key: 'ai_analysis',
         label: 'AI分析',
@@ -4471,6 +4483,18 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
     const scannerType = String(value || '').trim().toLowerCase();
     if (scannerType === 'nuclei') return 'Nuclei';
     if (scannerType === 'afrog') return 'afrog';
+  }
+
+  if (moduleId === 'fileleak' && column === 'source') {
+    const sourceText = String(value || '').trim().toLowerCase();
+    const sourceMap: Record<string, string> = {
+      '': '字典爆破',
+      dict_brute: '字典爆破',
+      dictionary_brute: '字典爆破',
+      brute: '字典爆破',
+      wih_url_probe: 'wih_url_probe',
+    };
+    return sourceMap[sourceText] || normalizeValue(value);
   }
 
   if (moduleId === 'ai_pen_test') {

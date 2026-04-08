@@ -20,13 +20,26 @@ class _FakeUrlCollection:
         self.inserted.append(item)
 
 
+class _FakeDb:
+    def __init__(self, existing_url_assets=None, existing_fileleak_urls=None):
+        self.url = _FakeUrlCollection(existing_url_assets)
+        self.fileleak = _FakeUrlCollection(existing_fileleak_urls)
+
+    def collection(self, name):
+        if name == "url":
+            return self.url
+        if name == "fileleak":
+            return self.fileleak
+        return _FakeUrlCollection()
+
+
 class TestUrlfinderUrlProbe(unittest.TestCase):
     @patch("app.services.urlfinder_url_probe.page_fetch")
     @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
     @patch("app.services.urlfinder_url_probe.utils.conn_db")
     def test_probe_insert_and_filter(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
-        fake_collection = _FakeUrlCollection(existing_urls=["https://example.com/already"])
-        mock_conn_db.return_value = fake_collection
+        fake_db = _FakeDb(existing_url_assets=["https://example.com/already"])
+        mock_conn_db.side_effect = fake_db.collection
 
         def _dns_policy(url, cache_map=None):
             if "blocked" in url:
@@ -59,9 +72,12 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             page_url_set=page_url_set,
         )
 
-        self.assertEqual(inserted_count, 1)
-        self.assertEqual(len(fake_collection.inserted), 1)
-        self.assertEqual(fake_collection.inserted[0]["source"], CollectSource.WIH_URL_PROBE)
+        self.assertEqual(inserted_count, 2)
+        self.assertEqual(len(fake_db.url.inserted), 1)
+        self.assertEqual(fake_db.url.inserted[0]["source"], CollectSource.WIH_URL_PROBE)
+        self.assertEqual(len(fake_db.fileleak.inserted), 1)
+        self.assertEqual(fake_db.fileleak.inserted[0]["source"], CollectSource.WIH_URL_PROBE)
+        self.assertEqual(fake_db.fileleak.inserted[0]["site"], "https://example.com")
         self.assertIn("https://example.com/api/user", page_url_set)
         mock_page_fetch.assert_called_once_with(
             ["https://example.com/api/user"],
@@ -74,8 +90,8 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
     @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
     @patch("app.services.urlfinder_url_probe.utils.conn_db")
     def test_probe_filters_template_static_and_annotation_noise(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
-        fake_collection = _FakeUrlCollection()
-        mock_conn_db.return_value = fake_collection
+        fake_db = _FakeDb()
+        mock_conn_db.side_effect = fake_db.collection
         mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
         mock_page_fetch.return_value = {
             "https://example.com/api/user": {
@@ -99,15 +115,46 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             wih_records=records,
         )
 
-        self.assertEqual(inserted_count, 1)
-        self.assertEqual(len(fake_collection.inserted), 1)
-        self.assertEqual(fake_collection.inserted[0]["url"], "https://example.com/api/user")
+        self.assertEqual(inserted_count, 2)
+        self.assertEqual(len(fake_db.url.inserted), 1)
+        self.assertEqual(len(fake_db.fileleak.inserted), 1)
+        self.assertEqual(fake_db.fileleak.inserted[0]["url"], "https://example.com/api/user")
         mock_page_fetch.assert_called_once_with(
             ["https://example.com/api/user"],
             concurrency=6,
             waf_guard=None,
             waf_module="urlfinder_url_probe",
         )
+
+    @patch("app.services.urlfinder_url_probe.page_fetch")
+    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
+    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    def test_probe_inserts_fileleak_when_url_asset_exists(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
+        fake_db = _FakeDb(existing_url_assets=["https://example.com/api/user"])
+        mock_conn_db.side_effect = fake_db.collection
+        mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
+        mock_page_fetch.return_value = {
+            "https://example.com/api/user": {
+                "url": "https://example.com/api/user",
+                "title": "ok",
+                "content_length": 12,
+                "status_code": 200,
+            }
+        }
+
+        inserted_count = run_urlfinder_url_probe(
+            task_id="task_4",
+            sites=["https://example.com"],
+            wih_records=[
+                WihRecord("path_url", "https://example.com/api/user", "https://example.com/a.js", "https://example.com", 21),
+            ],
+            page_url_set={"https://example.com/api/user"},
+        )
+
+        self.assertEqual(inserted_count, 1)
+        self.assertEqual(len(fake_db.url.inserted), 0)
+        self.assertEqual(len(fake_db.fileleak.inserted), 1)
+        self.assertEqual(fake_db.fileleak.inserted[0]["source"], CollectSource.WIH_URL_PROBE)
 
     @patch("app.services.urlfinder_url_probe.utils.conn_db")
     def test_probe_skip_when_disabled(self, mock_conn_db):

@@ -26,7 +26,7 @@ from flask_restx import Resource, Api, reqparse, fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app import utils
-from app.modules import ErrorMsg
+from app.modules import CollectSource, ErrorMsg
 
 ns = Namespace('fileleak', description="文件泄漏信息")
 
@@ -39,6 +39,7 @@ base_search_fields = {
     'content_length': fields.Integer(description="响应体大小（字节）"),
     'status_code': fields.Integer(description="HTTP状态码"),
     'title': fields.String(description="页面标题"),
+    'source': fields.String(description="来源"),
     "task_id": fields.String(description="任务ID")
 }
 
@@ -94,6 +95,9 @@ class ARLFileLeak(ARLResource):
         """
         args = self.parser.parse_args()
         data = self.build_data(args=args, collection='fileleak')
+        for item in data.get("items", []):
+            if not item.get("source"):
+                item["source"] = CollectSource.FILE_LEAK_DICT_BRUTE
 
         return data
 
@@ -165,4 +169,3 @@ class DeleteARLFileleak(ARLResource):
             utils.conn_db('fileleak').delete_one(query)
 
         return utils.build_ret(ErrorMsg.Success, {'_id': id_list})
-

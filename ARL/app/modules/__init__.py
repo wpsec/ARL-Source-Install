@@ -29,6 +29,7 @@ class CollectSource:
     SITESPIDER = "site_spider"
     SEARCHENGINE = "search_engine"
     WIH_URL_PROBE = "wih_url_probe"
+    FILE_LEAK_DICT_BRUTE = "dict_brute"
     MONITOR = "monitor"
 
 

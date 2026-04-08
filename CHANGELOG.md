@@ -3,6 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-04-08（v4.6.39）
+
+- `[v4.6.39]` `WIH/目录扫描` 展示链路打通：`urlfinder_url_probe` 现在会把 `WIH` 提取并探测命中的 `path_url/urlfinder_url` 同步写入 `fileleak` 目录扫描集合，来源统一标记为 `wih_url_probe`，同时保留原 `URL信息` 入库逻辑。原目录扫描字典爆破结果新增 `dict_brute` 来源标识，历史无来源记录在列表与导出时兜底展示为“字典爆破”；前台目录扫描页新增“来源”列和来源筛选，批量导出也同步补充来源列，便于区分 `WIH` 接口发现与传统字典爆破结果
+
 ## 2026-04-06（v4.6.36）
 
 - `[v4.6.36]` `WIH` 独立能力与 `ARL` 兼容链路同步收口：`tools/wih` 这一轮围绕“独立可用 + 结果更可消费”做了较大一轮完善。扫描链新增同域范围约束与静态浅层页面探索，开始继续抓取同 host 下的 `a[href] / iframe[src] / GET form action` 页面，并把下一层页面里的表单接口、GET/POST 参数和额外 `JS` 继续纳入结果；运行时链默认启用内置 `Playwright`，`records/endpoints/parameters` 输出补齐中文表头、请求报文展示、接口状态码与响应大小，`CSV` 文件输出统一收口为单个 `xlsx` 工作簿多工作表，结构化与主输出目录也调整为按“域名 + 时间戳”落盘，减少覆盖和产物散落。与此同时，为避免 `ARL` 运行依赖 `WIH` 的默认行为，`ARL` 侧同步新增 `WIH_RUNTIME_*` 配置项，并在 `InfoHunter` 调用 `wih` 时显式透传 `runtime-enable/driver/timeout/max-pages/max-actions/max-requests` 与 `disable-structured-output`，保证平台侧行为稳定可控；主 Docker 镜像也补装 Node 版 `playwright` 运行环境，确保容器内默认 runtime 链路可直接工作

@@ -106,6 +106,7 @@ FILELEAK_EXPORT_PROJECTION = {
     "title": 1,
     "status_code": 1,
     "content_length": 1,
+    "source": 1,
 }
 WIH_EXPORT_PROJECTION = {
     "record_type": 1,
@@ -2449,10 +2450,20 @@ def _extract_fileleak_rows(task_ids):
                     sanitize_excel_value(item.get("title", "")),
                     sanitize_excel_value(item.get("status_code", "")),
                     sanitize_excel_value(item.get("content_length", "")),
+                    sanitize_excel_value(_format_fileleak_source(item.get("source"))),
                     sanitize_excel_value(ai_result.get("text", "未分析")),
                 ]
             )
     return rows
+
+
+def _format_fileleak_source(value):
+    source = str(value or "").strip().lower()
+    if source in {"", "dict_brute", "dictionary_brute", "brute"}:
+        return "字典爆破"
+    if source == "wih_url_probe":
+        return "wih_url_probe"
+    return value
 
 
 def _extract_wih_rows(task_ids):
@@ -2703,8 +2714,9 @@ def _build_fileleak_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['C'].width = 52.0
     ws.column_dimensions['D'].width = 10.0
     ws.column_dimensions['E'].width = 12.0
-    ws.column_dimensions['F'].width = 24.0
-    ws.append(["URL", "站点", "标题", "状态码", "body长度", "AI分析"])
+    ws.column_dimensions['F'].width = 18.0
+    ws.column_dimensions['G'].width = 24.0
+    ws.append(["URL", "站点", "标题", "状态码", "body长度", "来源", "AI分析"])
 
     for row in _extract_fileleak_rows(task_ids):
         ws.append(row)

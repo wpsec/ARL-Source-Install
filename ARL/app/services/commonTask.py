@@ -1438,6 +1438,7 @@ class WebSiteFetch(object):
                 item = page if isinstance(page, dict) else page.dump_json()
                 item["task_id"] = self.task_id
                 item["site"] = site
+                item.setdefault("source", CollectSource.FILE_LEAK_DICT_BRUTE)
                 utils.conn_db('fileleak').insert_one(item)
 
     @property
