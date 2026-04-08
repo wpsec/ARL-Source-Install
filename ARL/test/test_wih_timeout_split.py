@@ -178,6 +178,51 @@ class TestWihTimeoutSplit(unittest.TestCase):
         self.assertEqual("https://example.com", normalized_b.content)
         self.assertEqual(normalized_a.fnv_hash, normalized_b.fnv_hash)
 
+    def test_normalize_endpoint_record_builds_detail_payload(self):
+        endpoint = {
+            "endpoint_id": "search",
+            "site": "https://example.com",
+            "page_url": "https://example.com/search",
+            "url": "https://example.com/api/search",
+            "method": "GET",
+            "response_status": 200,
+            "response_size": 128,
+            "request_template": {
+                "headers": {"Accept": "application/json"},
+                "query": {"scene": "web", "keyword": "<value>"},
+            },
+        }
+
+        normalized = InfoHunter._normalize_endpoint_record(endpoint, "https://example.com")
+
+        self.assertEqual("https://example.com/api/search?scene=web&keyword=%3Cvalue%3E", normalized["url"])
+        self.assertEqual("GET", normalized["method"])
+        self.assertEqual(200, normalized["status_code"])
+        self.assertEqual(128, normalized["response_size"])
+        self.assertIn("GET /api/search?scene=web&keyword=%3Cvalue%3E HTTP/1.1", normalized["request_packet"])
+        self.assertIsInstance(normalized["fnv_hash"], str)
+
+    def test_normalize_endpoint_record_keeps_post_body_in_request_packet(self):
+        endpoint = {
+            "endpoint_id": "login",
+            "site": "https://example.com",
+            "trigger_context": {"page": "https://example.com/login"},
+            "url": "https://example.com/api/login",
+            "method": "POST",
+            "request_template": {
+                "headers": {"Content-Type": "application/json"},
+                "body": {"username": "<value>", "password": "<value>"},
+            },
+        }
+
+        normalized = InfoHunter._normalize_endpoint_record(endpoint, "https://example.com")
+
+        self.assertEqual("https://example.com/login", normalized["page_url"])
+        self.assertEqual("https://example.com/api/login", normalized["url"])
+        self.assertIn("POST /api/login HTTP/1.1", normalized["request_packet"])
+        self.assertIn('"username": "<value>"', normalized["request_packet"])
+        self.assertIn('"password": "<value>"', normalized["request_packet"])
+
     def test_exec_wih_splits_timeout_batch_and_keeps_results(self):
         hunter = InfoHunter(
             [

@@ -201,6 +201,7 @@ const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
   nuclei_result: ['vuln_url'],
   ai_pen_test: ['target', 'vuln_url'],
   wih: ['content', 'source', 'site'],
+  wih_endpoint: ['target', 'page_url', 'url'],
 };
 const TABLE_HEADER_FREEZE_MODULE_IDS = new Set([
   'task',
@@ -222,6 +223,7 @@ const TABLE_HEADER_FREEZE_MODULE_IDS = new Set([
   'nuclei_result',
   'stat_finger',
   'wih',
+  'wih_endpoint',
   'waf_host',
   'ai_pen_test',
   'cip',
@@ -1662,6 +1664,57 @@ const modules: ModuleConfig[] = [
     exportPath: '/wih/export/',
   },
   {
+    id: 'wih_endpoint',
+    label: 'WIH接口提取',
+    description: 'WIH 结构化接口提取结果',
+    group: '风险与规则',
+    icon: FileCode,
+    listPath: '/wih_endpoint/',
+    rowIdKey: '_id',
+    showIndex: true,
+    quickFilterKey: 'url',
+    columns: ['target', 'page_url', 'method', 'status_code', 'response_size', 'detail_action'],
+    sortableColumns: ['status_code', 'response_size'],
+    columnLabels: {
+      target: '目标',
+      page_url: '页面URL',
+      method: '方法',
+      status_code: '状态码',
+      response_size: '响应大小',
+      detail_action: '详情信息',
+    },
+    searchFields: [
+      { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
+      { key: 'page_url', label: '页面URL', placeholder: '请输入页面URL进行搜索' },
+      { key: 'url', label: '接口URL', placeholder: '请输入接口URL进行搜索' },
+      {
+        key: 'method',
+        label: '方法',
+        placeholder: '请选择方法',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: 'GET', value: 'GET' },
+          { label: 'POST', value: 'POST' },
+        ],
+      },
+      { key: 'status_code', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
+      { key: 'response_size', label: '响应大小', placeholder: '请输入响应大小进行搜索', inputType: 'number' },
+    ],
+    actions: [
+      {
+        id: 'wih_endpoint_delete',
+        label: '删除所选',
+        method: 'POST',
+        path: '/wih_endpoint/delete/',
+        selectedField: '_id',
+        selectionMode: 'multiple',
+        payloadTemplate: { _id: [] },
+      },
+    ],
+    exportPath: '/wih_endpoint/export/',
+  },
+  {
     id: 'waf_host',
     label: 'WAF识别',
     description: '任务中被 WAF 智能跳过的主机',
@@ -2268,6 +2321,7 @@ const TASK_DETAIL_TABS: Array<{ id: string; label: string }> = [
   { id: 'vuln', label: '风险' },
   { id: 'nuclei_result', label: 'PoC风险' },
   { id: 'wih', label: 'WIH' },
+  { id: 'wih_endpoint', label: 'WIH接口提取' },
   { id: 'waf_host', label: 'WAF识别' },
 ];
 
@@ -2735,6 +2789,40 @@ function normalizeValueNoTruncate(value: any): string {
     }
   }
   return String(value);
+}
+
+function buildWihEndpointDetailUrl(row: any): string {
+  const rawUrl = normalizeValueNoTruncate(row?.url);
+  if (!rawUrl || rawUrl === '-') return '-';
+
+  const methodText = String(row?.method || '').trim().toUpperCase();
+  if (methodText !== 'GET' || rawUrl.includes('?')) return rawUrl;
+
+  const requestTemplate = row?.request_template && typeof row.request_template === 'object' ? row.request_template : {};
+  const queryString = String(requestTemplate?.query_string || '').trim().replace(/^\?+/, '');
+  if (queryString) return `${rawUrl}?${queryString}`;
+
+  const queryObject = requestTemplate?.query && typeof requestTemplate.query === 'object' ? requestTemplate.query : {};
+  const queryParams = new URLSearchParams();
+  Object.entries(queryObject).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '') return;
+    queryParams.append(key, String(value));
+  });
+  const composedQuery = queryParams.toString();
+  return composedQuery ? `${rawUrl}?${composedQuery}` : rawUrl;
+}
+
+function buildWihEndpointRequestPacket(row: any): string {
+  const packet = normalizeValueNoTruncate(row?.request_packet);
+  if (packet && packet !== '-') return packet;
+
+  const template = row?.request_template && typeof row.request_template === 'object' ? row.request_template : null;
+  if (!template) return '-';
+  try {
+    return JSON.stringify(template, null, 2);
+  } catch {
+    return normalizeValueNoTruncate(template);
+  }
 }
 
 function isAiPenWeakOutcome(row: any): boolean {
@@ -4495,6 +4583,15 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
       wih_url_probe: 'wih_url_probe',
     };
     return sourceMap[sourceText] || normalizeValue(value);
+  }
+
+  if (moduleId === 'wih_endpoint') {
+    if (column === 'method') {
+      return String(value || '').trim().toUpperCase() || '-';
+    }
+    if (column === 'detail_action') {
+      return '查看详情';
+    }
   }
 
   if (moduleId === 'ai_pen_test') {
@@ -7611,6 +7708,11 @@ function TableModuleView({
     rowTitle: string;
     row: any;
   } | null>(null);
+  const [wihEndpointDetail, setWihEndpointDetail] = useState<{
+    rowId: string;
+    rowTitle: string;
+    row: any;
+  } | null>(null);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
   const [taskReportExportFeedback, setTaskReportExportFeedback] = useState<TaskReportExportFeedback | null>(null);
@@ -7980,6 +8082,7 @@ function TableModuleView({
     setAiDenoiseResultMap({});
     setAiDenoiseDetail(null);
     setAiPenDetail(null);
+    setWihEndpointDetail(null);
   }, [module.id]);
 
   const renderTextWithHyperlink = useCallback((value: string): React.ReactNode => {
@@ -8053,6 +8156,18 @@ function TableModuleView({
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [aiPenDetail]);
+
+  useEffect(() => {
+    if (!wihEndpointDetail) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setWihEndpointDetail(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [wihEndpointDetail]);
+
   const aiPenDetailWeakOutcome = useMemo(
     () => Boolean(aiPenDetail?.row) && isAiPenWeakOutcome(aiPenDetail?.row),
     [aiPenDetail]
@@ -8995,6 +9110,19 @@ function TableModuleView({
       row,
     });
   }, [buildAiPenDisplayTitle, getRowId]);
+  const closeWihEndpointDetail = useCallback(() => {
+    setWihEndpointDetail(null);
+  }, []);
+  const openWihEndpointDetail = useCallback((row: any, rowIndex: number) => {
+    const rowId = getRowId(row) || `${rowIndex}`;
+    const methodText = String(row?.method || '').trim().toUpperCase() || '-';
+    const urlText = normalizeValueNoTruncate(row?.url);
+    setWihEndpointDetail({
+      rowId,
+      rowTitle: `${methodText} ${urlText && urlText !== '-' ? urlText : normalizeValueNoTruncate(row?.target)}`,
+      row,
+    });
+  }, [getRowId]);
 
   useEffect(() => {
     if (!aiDenoiseModuleId) {
@@ -9211,6 +9339,7 @@ function TableModuleView({
     if (moduleId === 'ai_pen_test' && ['target', 'vuln_url', 'knowledge_hit_tokens', 'reason', 'tool_trace'].includes(column)) return true;
     if (moduleId === 'waf_host' && column === 'hit_rule') return true;
     if (moduleId === 'wih' && ['content', 'source', 'site'].includes(column)) return true;
+    if (moduleId === 'wih_endpoint' && ['target', 'page_url'].includes(column)) return true;
     if (moduleId === 'github_result' && ['path', 'human_content'].includes(column)) return true;
     if (moduleId === 'github_monitor_result' && ['path', 'human_content'].includes(column)) return true;
     return false;
@@ -10520,7 +10649,7 @@ function TableModuleView({
           ))}
         </div>
       ) : null}
-      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih', 'waf_host', 'ai_pen_test'].includes(module.id) ? (
+      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih', 'wih_endpoint', 'waf_host', 'ai_pen_test'].includes(module.id) ? (
         <div className="flex items-center gap-2">
           {hasExternalFilters ? (
             <button
@@ -11226,6 +11355,35 @@ function TableModuleView({
                               {sensitive ? (
                                 <div className="mt-2 text-[11px] font-black text-brand-danger">敏感信息</div>
                               ) : null}
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'wih_endpoint' && column === 'method') {
+                          const methodText = String(row?.method || '').trim().toUpperCase();
+                          const tagClass =
+                            methodText === 'POST'
+                              ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-warning/60 bg-brand-warning/15 text-brand-warning text-xs font-bold'
+                              : methodText === 'GET'
+                                ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-emerald-400/45 bg-emerald-400/12 text-emerald-300 text-xs font-bold'
+                                : 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/50 text-brand-text-muted text-xs font-bold';
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span className={tagClass}>{methodText || '-'}</span>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'wih_endpoint' && column === 'detail_action') {
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <button
+                                type="button"
+                                onClick={() => openWihEndpointDetail(row, rowIndex)}
+                                className="inline-flex items-center justify-center rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-1.5 text-xs font-semibold text-brand-accent hover:bg-brand-bg/80 transition"
+                              >
+                                查看详情
+                              </button>
                             </td>
                           );
                         }
@@ -12432,6 +12590,110 @@ function TableModuleView({
           </div>
         </div>
       ) : null}
+
+      {wihEndpointDetail ? (() => {
+        const detailRow = wihEndpointDetail.row || {};
+        const methodText = String(detailRow?.method || '').trim().toUpperCase() || '-';
+        const detailUrl = buildWihEndpointDetailUrl(detailRow);
+        const requestPacket = buildWihEndpointRequestPacket(detailRow);
+        const urlLabel = methodText === 'GET' ? '带参数URL' : '请求URL';
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={closeWihEndpointDetail}
+          >
+            <div
+              className="w-full max-w-5xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
+                <div className="space-y-1 min-w-0">
+                  <h4 className="text-lg font-black">WIH接口详情</h4>
+                  <p className="text-xs text-brand-text-muted">仅展示 WIH 扫描阶段已落库的接口与请求模板。</p>
+                  <p className="text-sm font-semibold break-all">{wihEndpointDetail.rowTitle || '-'}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeWihEndpointDetail}
+                  className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                  title="关闭"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4 max-h-[72vh] overflow-auto">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                    方法：{methodText}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                    状态码：{normalizeValue(detailRow?.status_code || detailRow?.response_status)}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                    响应大小：{normalizeValue(detailRow?.response_size)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                    <div className="text-xs font-black tracking-wide text-brand-text">目标</div>
+                    <div className="text-sm break-all leading-relaxed">{renderTextWithHyperlink(normalizeValueNoTruncate(detailRow?.target))}</div>
+                  </div>
+                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                    <div className="text-xs font-black tracking-wide text-brand-text">页面URL</div>
+                    <div className="text-sm break-all leading-relaxed">{renderTextWithHyperlink(normalizeValueNoTruncate(detailRow?.page_url))}</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-black tracking-wide text-brand-text">{urlLabel}</div>
+                    {detailUrl && detailUrl !== '-' ? (
+                      <button
+                        type="button"
+                        onClick={() => void copyTextToClipboard(detailUrl, urlLabel)}
+                        className="text-xs font-semibold text-brand-accent hover:underline"
+                      >
+                        复制
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="text-sm break-all leading-relaxed">{renderTextWithHyperlink(detailUrl)}</div>
+                </div>
+
+                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-black tracking-wide text-brand-text">请求报文</div>
+                    {requestPacket && requestPacket !== '-' ? (
+                      <button
+                        type="button"
+                        onClick={() => void copyTextToClipboard(requestPacket, '请求报文')}
+                        className="text-xs font-semibold text-brand-accent hover:underline"
+                      >
+                        复制
+                      </button>
+                    ) : null}
+                  </div>
+                  <pre className="max-h-[420px] overflow-auto rounded-xl border border-brand-border bg-brand-bg/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
+                    {requestPacket || '-'}
+                  </pre>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-brand-border bg-brand-bg/30 flex justify-end">
+                <button
+                  type="button"
+                  onClick={closeWihEndpointDetail}
+                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
 
       {aiDenoiseDetail ? (
         <div
@@ -21569,6 +21831,7 @@ function MainShell() {
     reversed.nuclei_result = 'assets';
     reversed.stat_finger = 'assets';
     reversed.wih = 'assets';
+    reversed.wih_endpoint = 'assets';
     reversed.waf_host = 'assets';
     reversed.ai_pen_test = 'assets';
     reversed.github_result = 'github_mgmt';

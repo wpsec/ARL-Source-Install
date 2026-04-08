@@ -10,7 +10,7 @@ import subprocess
 import hashlib
 import base64
 import re
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse, urlencode
 from app.modules import WihRecord
 from .url_candidate_filter import (
     has_route_template_markers,
@@ -130,6 +130,7 @@ class InfoHunter(object):
     # 从JS中收集，子域名，AK SK 等信息
     def __init__(self, sites: list):
         self.sites = set(sites)
+        self.endpoint_results = []
 
         tmp_path = Config.TMP_PATH
         rand_str = utils.random_choices()
@@ -168,6 +169,143 @@ class InfoHunter(object):
         if self.wih_runtime_driver not in {"playwright", "external", "noop"}:
             self.wih_runtime_driver = "playwright"
         self._help_text = None
+
+    @staticmethod
+    def _safe_int(value, default=0) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _append_query_string(url: str, query_string: str) -> str:
+        text = str(url or "").strip()
+        query_text = str(query_string or "").strip().lstrip("?")
+        if not text or not query_text:
+            return text
+        separator = "&" if "?" in text else "?"
+        return "{}{}{}".format(text, separator, query_text)
+
+    @staticmethod
+    def _request_template_query_string(request_template: dict) -> str:
+        if not isinstance(request_template, dict):
+            return ""
+        query_string = str(request_template.get("query_string") or "").strip().lstrip("?")
+        if query_string:
+            return query_string
+
+        query = request_template.get("query")
+        if not isinstance(query, dict) or not query:
+            return ""
+        try:
+            items = []
+            for key, value in query.items():
+                key_text = str(key or "").strip()
+                if not key_text or value is None:
+                    continue
+                items.append((key_text, str(value)))
+            return urlencode(items)
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _build_request_packet_fallback(url: str, method: str, request_template: dict) -> str:
+        text = str(url or "").strip()
+        if not text:
+            return ""
+
+        parsed = urlparse(text)
+        host = str(parsed.netloc or "").strip()
+        path = urlunparse(("", "", parsed.path or "/", "", parsed.query or "", "")) or "/"
+        method_text = str(method or "").strip().upper() or "GET"
+        headers = request_template.get("headers") if isinstance(request_template, dict) else {}
+        if not isinstance(headers, dict):
+            headers = {}
+
+        lines = ["{} {} HTTP/1.1".format(method_text, path)]
+        if host:
+            lines.append("Host: {}".format(host))
+
+        for key, value in headers.items():
+            key_text = str(key or "").strip()
+            value_text = str(value or "").strip()
+            if not key_text or not value_text or key_text.lower() in {"host", "content-length"}:
+                continue
+            lines.append("{}: {}".format(key_text, value_text))
+
+        body_text = ""
+        if isinstance(request_template, dict):
+            body_text = str(request_template.get("body_text") or "").strip()
+            if not body_text and isinstance(request_template.get("body"), dict) and request_template.get("body"):
+                try:
+                    body_text = json.dumps(request_template.get("body"), ensure_ascii=False, indent=2)
+                except Exception:
+                    body_text = str(request_template.get("body"))
+
+        if body_text:
+            lines.append("")
+            lines.append(body_text)
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _normalize_endpoint_record(endpoint: dict, target: str):
+        if not isinstance(endpoint, dict):
+            return None
+
+        request_template = endpoint.get("request_template") if isinstance(endpoint.get("request_template"), dict) else {}
+        endpoint_url = str(endpoint.get("url") or "").strip()
+        query_string = InfoHunter._request_template_query_string(request_template)
+        method = str(endpoint.get("method") or "GET").strip().upper() or "GET"
+        if query_string:
+            endpoint_url = InfoHunter._append_query_string(endpoint_url, query_string)
+
+        if not endpoint_url:
+            return None
+
+        page_url = str(endpoint.get("page_url") or "").strip()
+        trigger_context = endpoint.get("trigger_context") if isinstance(endpoint.get("trigger_context"), dict) else {}
+        if not page_url:
+            page_url = str(trigger_context.get("page") or "").strip()
+
+        target_text = str(endpoint.get("site") or target or "").strip()
+        request_packet = str(request_template.get("request_packet") or "").strip()
+        if not request_packet:
+            request_packet = InfoHunter._build_request_packet_fallback(endpoint_url, method, request_template)
+
+        hash_text = "{}|{}|{}|{}|{}|{}".format(
+            target_text,
+            page_url,
+            method,
+            endpoint_url,
+            request_packet,
+            str(endpoint.get("endpoint_id") or "").strip(),
+        )
+        hash_digest = hashlib.md5(hash_text.encode("utf-8", errors="ignore")).hexdigest()
+        endpoint_hash = hash_digest[:16]
+        response_status = endpoint.get("response_status", endpoint.get("status_code"))
+        response_size = endpoint.get("response_size", endpoint.get("content_length"))
+
+        return {
+            "endpoint_id": str(endpoint.get("endpoint_id") or "").strip(),
+            "target": target_text,
+            "site": target_text,
+            "page_url": page_url,
+            "url": endpoint_url,
+            "path": str(endpoint.get("path") or "").strip(),
+            "method": method,
+            "protocol": str(endpoint.get("protocol") or "").strip(),
+            "source_types": endpoint.get("source_types") if isinstance(endpoint.get("source_types"), list) else [],
+            "content_type": str(endpoint.get("content_type") or "").strip(),
+            "body_kind": str(endpoint.get("body_kind") or "").strip(),
+            "status_code": InfoHunter._safe_int(response_status),
+            "response_status": InfoHunter._safe_int(response_status),
+            "response_size": InfoHunter._safe_int(response_size),
+            "request_packet": request_packet,
+            "request_template": request_template,
+            "confidence": endpoint.get("confidence", 0),
+            "fnv_hash": endpoint_hash,
+        }
 
     @staticmethod
     def _should_keep_plain_content(record_type: str, content: str) -> bool:
@@ -935,9 +1073,11 @@ class InfoHunter(object):
 
     def dump_result(self) -> list:
         results = []
+        self.endpoint_results = []
         total_items = 0
         invalid_items = 0
         filtered_items = 0
+        endpoint_hash_set = set()
 
         # 检查结果文件是否存在
         if not os.path.exists(self.wih_result_path):
@@ -982,6 +1122,20 @@ class InfoHunter(object):
             if not site:
                 invalid_items += 1
                 continue
+
+            endpoints = data.get("endpoints")
+            if isinstance(endpoints, list):
+                for endpoint in endpoints:
+                    endpoint_record = self._normalize_endpoint_record(endpoint, site)
+                    if not endpoint_record:
+                        filtered_items += 1
+                        continue
+                    endpoint_hash = endpoint_record.get("fnv_hash")
+                    if endpoint_hash in endpoint_hash_set:
+                        filtered_items += 1
+                        continue
+                    endpoint_hash_set.add(endpoint_hash)
+                    self.endpoint_results.append(endpoint_record)
 
             records = data.get("records")
             if not isinstance(records, list):
@@ -1038,8 +1192,8 @@ class InfoHunter(object):
                 results.append(record)
 
         logger.info(
-            "wih parsed result file:{} payload_items:{} invalid_items:{} filtered_items:{} records:{} bin:{}".format(
-                self.wih_result_path, total_items, invalid_items, filtered_items, len(results), self.wih_bin_path
+            "wih parsed result file:{} payload_items:{} invalid_items:{} filtered_items:{} records:{} endpoints:{} bin:{}".format(
+                self.wih_result_path, total_items, invalid_items, filtered_items, len(results), len(self.endpoint_results), self.wih_bin_path
             )
         )
         return results
@@ -1057,11 +1211,14 @@ class InfoHunter(object):
             self._delete_file()
 
 
-def run_wih(sites: List[str]) -> List[WihRecord]:
+def run_wih(sites: List[str], include_endpoints: bool = False):
     logger.info("run webInfoHunter, sites: {}".format(len(sites)))
     hunter = InfoHunter(sites)
     results = hunter.run()
 
     logger.info("webInfoHunter result: {}".format(len(results)))
+
+    if include_endpoints:
+        return results, list(hunter.endpoint_results or [])
 
     return results

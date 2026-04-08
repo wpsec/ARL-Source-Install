@@ -20712,10 +20712,62 @@ class WebSiteFetch(object):
         except Exception as e:
             logger.warning("save wih risk failed task_id:{} err:{}".format(self.task_id, e))
 
+    def _save_wih_endpoints(self, endpoints):
+        """
+        WIH 结构化接口需要独立落库，前台才能按任务维度分页查询。
+        """
+        for raw_item in list(endpoints or []):
+            if not isinstance(raw_item, dict):
+                continue
+
+            endpoint_url = str(raw_item.get("url") or "").strip()
+            page_url = str(raw_item.get("page_url") or "").strip()
+            if endpoint_url and not self._url_in_task_scope(endpoint_url):
+                continue
+            if page_url and not self._url_in_task_scope(page_url):
+                continue
+
+            item = raw_item.copy()
+            item["task_id"] = self.task_id
+            item["save_date"] = utils.curr_date()
+            endpoint_hash = str(item.get("fnv_hash") or "")
+            if not endpoint_hash:
+                endpoint_hash = "{}|{}|{}|{}".format(
+                    item.get("target", ""),
+                    item.get("page_url", ""),
+                    item.get("method", ""),
+                    item.get("url", ""),
+                )
+            item["fnv_hash"] = endpoint_hash
+
+            try:
+                utils.conn_db("wih_endpoint").update_one(
+                    {
+                        "task_id": self.task_id,
+                        "fnv_hash": item["fnv_hash"],
+                    },
+                    {"$setOnInsert": item},
+                    upsert=True,
+                )
+            except Exception as e:
+                logger.warning("save wih endpoint failed task_id:{} err:{}".format(self.task_id, e))
+
     def run_web_info_hunter(self):
         wih_targets = self._filter_waf_blocked_targets(self.sites, stage_name="wih")
         scan_sites = list(wih_targets or [])
-        records = set(services.run_wih(wih_targets)) if wih_targets else set()
+        wih_endpoints = []
+        if wih_targets:
+            wih_result = services.run_wih(wih_targets, include_endpoints=True)
+            if isinstance(wih_result, tuple):
+                raw_records, wih_endpoints = wih_result
+            else:
+                raw_records = wih_result
+            records = set(raw_records or [])
+        else:
+            records = set()
+
+        if wih_endpoints:
+            self._save_wih_endpoints(wih_endpoints)
 
         urlfinder_records = set(
             services.run_urlfinder_extract(scan_sites, list(records), waf_guard=self.waf_guard)

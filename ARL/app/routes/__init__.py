@@ -452,6 +452,7 @@ class ARLResource(Resource):
             "fileleak": "url",
             "cip": "cidr_ip",
             "wih": "content",
+            "wih_endpoint": "url",
         }
         
         # 导出场景：注入 _export 标记，绕过 API_PAGE_SIZE_MAX 限制
@@ -645,6 +646,7 @@ from .task_schedule import ns as task_schedule_ns            # 任务调度
 from .dingtalk_api import ns as dingtalk_api_ns              # 钉钉开放平台调试
 from .nuclei_result import ns as nuclei_result_ns            # Nuclei 扫描结果
 from .wih import ns as wih_ns                                # WIH
+from .wih_endpoint import ns as wih_endpoint_ns              # WIH 接口提取
 from .waf_host import ns as waf_host_ns                      # WAF 识别结果
 from .ai_pen_test import ns as ai_pen_test_ns                # AI 渗透测试结果
 from .assetWih import ns as asset_wih_ns                     # 资产 WIH
