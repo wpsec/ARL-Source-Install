@@ -111,11 +111,15 @@ RUN set -eux; \
     dnf install -y \
       fontconfig gcc gcc-c++ make git zlib-devel bzip2-devel openssl-devel sqlite-devel \
       readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap \
-      nodejs npm \
       alsa-lib atk at-spi2-atk cairo cups-libs gtk3 libdrm mesa-libgbm \
       libX11 libXcomposite libXcursor libXdamage libXext libXi libXrandr \
       libXScrnSaver libXtst nss nspr pango xorg-x11-fonts-Type1 xorg-x11-fonts-misc; \
     dnf clean all
+
+COPY --from=frontend_builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend_builder /usr/local/bin/npm /usr/local/bin/npm
+COPY --from=frontend_builder /usr/local/bin/npx /usr/local/bin/npx
+COPY --from=frontend_builder /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
 
 # 编译安装 ncrack，避免预编译二进制与当前 OpenSSL 运行时不兼容
 RUN set -eux; \
