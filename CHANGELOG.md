@@ -3,8 +3,11 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-08（v4.6.39 ~ v4.6.40）
+## 2026-04-08（v4.6.39 ~ v4.6.43）
 
+- `[v4.6.43]` Docker `WIH Playwright` 构建链路修复：`tools/wih` 的 `package-lock` 调整为兼容性更好的 `lockfileVersion=2` 并同步包名，避免部分 `npm ci` 场景报 `Cannot read property 'playwright' of undefined`；镜像构建阶段在安装 Node 版 `playwright` 时跳过 postinstall 浏览器下载，并改为非阻断方式尝试补装 `chromium`，保证离线/弱网环境下主镜像构建不被浏览器下载失败卡死。同时补充 `node/npm` 版本输出与 `.dockerignore` 中 `tools/wih/node_modules` 排除规则，减少本地依赖污染构建上下文并提升后续排障可读性
+- `[v4.6.42]` Docker `WIH runtime` Node 版本收口：主镜像运行阶段不再依赖 Rocky/EPEL 的 `nodejs npm` 包，改为复用前端构建阶段的 Node 20、`npm/npx` 与全局 npm 模块路径，避免系统仓库 Node 版本偏旧导致 `WIH` 内置 `Playwright` runtime 依赖安装或运行异常
+- `[v4.6.41]` Docker `NPM_REGISTRY` 参数作用域修复：在主镜像运行阶段补充 `ARG NPM_REGISTRY`，确保后续 `tools/wih` 的 Node 依赖安装能正确继承构建时传入的 npm 镜像源，避免多阶段 Dockerfile 中前端阶段的 `ARG` 无法传递到 runtime 阶段而导致构建脚本变量未定义
 - `[v4.6.40]` `WIH接口提取` 结果页落地：资产搜索/任务详情的 `WIH` 旁新增 `WIH接口提取` 页面，列表展示目标、页面 URL、请求方法、状态码、响应大小与详情入口，并保持与现有 ARL 表格交互一致。后端新增 `wih_endpoint` 集合与查询/删除/导出接口，`InfoHunter` 会从 `WIH` 结构化 `endpoints` 中归一化接口 URL、请求模板、请求报文、响应状态与大小，并在任务链路中按 scope 校验后独立落库；详情弹窗支持 `GET` 展示带参数 URL、`POST` 展示请求 URL，同时统一展示可复制请求报文，方便后续人工复核与复现
 - `[v4.6.39]` `WIH/目录扫描` 展示链路打通：`urlfinder_url_probe` 现在会把 `WIH` 提取并探测命中的 `path_url/urlfinder_url` 同步写入 `fileleak` 目录扫描集合，来源统一标记为 `wih_url_probe`，同时保留原 `URL信息` 入库逻辑。原目录扫描字典爆破结果新增 `dict_brute` 来源标识，历史无来源记录在列表与导出时兜底展示为“字典爆破”；前台目录扫描页新增“来源”列和来源筛选，批量导出也同步补充来源列，便于区分 `WIH` 接口发现与传统字典爆破结果
 

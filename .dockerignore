@@ -8,6 +8,10 @@ ARL/docker/frontend-src/.vite
 ARL/docker/frontend-src/.cache
 ARL/docker/frontend-src/npm-debug.log*
 
+# WIH 本地 Node 依赖由镜像构建阶段安装，避免污染构建上下文
+tools/wih/node_modules
+tools/wih/npm-debug.log*
+
 # 旧版预编译前端目录不再参与镜像构建
 ARL/docker/frontend
 
