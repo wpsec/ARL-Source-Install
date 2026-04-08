@@ -2791,6 +2791,27 @@ function normalizeValueNoTruncate(value: any): string {
   return String(value);
 }
 
+function formatWihEndpointMetric(row: any, column: string): string {
+  const rawValue = column === 'status_code'
+    ? (row?.status_code ?? row?.response_status)
+    : row?.response_size;
+  if (rawValue === null || rawValue === undefined || rawValue === '') return '-';
+
+  const numericValue = Number(rawValue);
+  if (!Number.isFinite(numericValue)) return normalizeValue(rawValue);
+
+  if (column === 'status_code') {
+    return numericValue > 0 ? String(numericValue) : '-';
+  }
+
+  const rawStatus = row?.status_code ?? row?.response_status;
+  const numericStatus = Number(rawStatus);
+  if (numericValue <= 0 && (!Number.isFinite(numericStatus) || numericStatus <= 0)) {
+    return '-';
+  }
+  return String(numericValue);
+}
+
 function buildWihEndpointDetailUrl(row: any): string {
   const rawUrl = normalizeValueNoTruncate(row?.url);
   if (!rawUrl || rawUrl === '-') return '-';
@@ -4588,6 +4609,9 @@ function formatModuleCellValue(moduleId: string, column: string, row: any): stri
   if (moduleId === 'wih_endpoint') {
     if (column === 'method') {
       return String(value || '').trim().toUpperCase() || '-';
+    }
+    if (column === 'status_code' || column === 'response_size') {
+      return formatWihEndpointMetric(row, column);
     }
     if (column === 'detail_action') {
       return '查看详情';
@@ -12628,10 +12652,10 @@ function TableModuleView({
                     方法：{methodText}
                   </span>
                   <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
-                    状态码：{normalizeValue(detailRow?.status_code || detailRow?.response_status)}
+                    状态码：{formatWihEndpointMetric(detailRow, 'status_code')}
                   </span>
                   <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
-                    响应大小：{normalizeValue(detailRow?.response_size)}
+                    响应大小：{formatWihEndpointMetric(detailRow, 'response_size')}
                   </span>
                 </div>
 

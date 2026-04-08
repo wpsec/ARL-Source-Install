@@ -278,7 +278,16 @@ func extractJSStaticSurfaceWithMeta(jsBody string, jsURL string, endpointSourceT
 
 func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParams []string, graphQLQuery string) string {
 	normalizedBodyMap := normalizeTemplateMap(bodyMap)
+	normalizedKind := strings.ToLower(strings.TrimSpace(bodyKind))
 	if len(normalizedBodyMap) == 0 {
+		switch normalizedKind {
+		case "xml":
+			return "<root>\n  <value />\n</root>"
+		case "text", "text_plain", "plain":
+			return "<body>"
+		case "octet_stream", "octet-stream", "binary", "application/octet-stream":
+			return "<binary>"
+		}
 		return ""
 	}
 
@@ -288,7 +297,7 @@ func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParam
 	}
 	sort.Strings(keys)
 
-	switch strings.ToLower(strings.TrimSpace(bodyKind)) {
+	switch normalizedKind {
 	case "json":
 		payload := make(map[string]string, len(keys))
 		for _, key := range keys {
@@ -319,6 +328,8 @@ func buildJSBodyPreview(bodyKind string, bodyMap map[string]string, graphqlParam
 		formNames := make([]string, 0, len(keys))
 		formNames = append(formNames, keys...)
 		return buildMultipartPreview(formNames)
+	case "xml", "text", "text_plain", "plain", "octet_stream", "octet-stream", "binary", "application/octet-stream":
+		return buildBodyPreviewByKind(normalizedKind, normalizedBodyMap, "")
 	}
 	return buildBodyPreview(normalizedBodyMap)
 }
@@ -1086,6 +1097,21 @@ func inferJSBodyProfile(requestWindow string, bodyParams []string, graphqlParams
 	if strings.Contains(lowered, "application/x-www-form-urlencoded") || strings.Contains(lowered, "urlsearchparams") {
 		return "application/x-www-form-urlencoded", "form_urlencoded"
 	}
+	if hasExplicitJSContentType(requestWindow, "application/octet-stream") ||
+		strings.Contains(lowered, "arraybuffer") ||
+		strings.Contains(lowered, "uint8array") ||
+		strings.Contains(lowered, "new blob") {
+		return "application/octet-stream", "octet_stream"
+	}
+	if hasExplicitJSContentType(requestWindow, "application/xml", "text/xml") ||
+		strings.Contains(lowered, "xml.stringify") ||
+		strings.Contains(lowered, `"<`) ||
+		strings.Contains(lowered, `'<`) {
+		return "application/xml", "xml"
+	}
+	if hasExplicitJSContentType(requestWindow, "text/plain") {
+		return "text/plain", "text"
+	}
 	if strings.Contains(lowered, "formdata") {
 		return "multipart/form-data", "multipart"
 	}
@@ -1093,6 +1119,32 @@ func inferJSBodyProfile(requestWindow string, bodyParams []string, graphqlParams
 		return "application/json", "json"
 	}
 	return "", ""
+}
+
+func hasExplicitJSContentType(requestWindow string, values ...string) bool {
+	lowered := strings.ToLower(requestWindow)
+	searchStart := 0
+	for {
+		relativeIndex := strings.Index(lowered[searchStart:], "content-type")
+		if relativeIndex < 0 {
+			return false
+		}
+		index := searchStart + relativeIndex
+		end := index + 240
+		if end > len(lowered) {
+			end = len(lowered)
+		}
+		segment := lowered[index:end]
+		for _, value := range values {
+			if strings.Contains(segment, strings.ToLower(strings.TrimSpace(value))) {
+				return true
+			}
+		}
+		searchStart = index + len("content-type")
+		if searchStart >= len(lowered) {
+			return false
+		}
+	}
 }
 
 func buildJSQueryParameters(endpointID string, jsURL string, endpointURL *url.URL, queryParams []string, parameterSource string) []datatype.ParameterRecord {

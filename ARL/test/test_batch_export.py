@@ -17,7 +17,7 @@ try:
     from openpyxl import load_workbook
     from openpyxl import Workbook
     from app.routes.export import export_merge_tasks, export_merge_tasks_html, SaveTask, build_task_export_summary
-    from app.routes.export import _build_ai_pen_sheet
+    from app.routes.export import _build_ai_pen_sheet, _build_wih_endpoint_sheet
     from app import create_app
 except Exception as exc:
     load_workbook = None
@@ -27,6 +27,7 @@ except Exception as exc:
     SaveTask = None
     build_task_export_summary = None
     _build_ai_pen_sheet = None
+    _build_wih_endpoint_sheet = None
     create_app = None
     IMPORT_ERROR = exc
 
@@ -171,6 +172,7 @@ class TestBatchExport(unittest.TestCase):
     @patch('app.routes.export.get_nuclei_result_data')
     @patch('app.routes.export.get_stat_finger_data')
     @patch('app.routes.export.get_vuln_data')
+    @patch('app.routes.export.get_wih_endpoint_data')
     @patch('app.routes.export.get_wih_data')
     @patch('app.routes.export.get_fileleak_data')
     @patch('app.routes.export.get_url_data')
@@ -191,6 +193,7 @@ class TestBatchExport(unittest.TestCase):
         mock_get_url_data,
         mock_get_fileleak_data,
         mock_get_wih_data,
+        mock_get_wih_endpoint_data,
         mock_get_vuln_data,
         mock_get_stat_finger_data,
         mock_get_nuclei_result_data,
@@ -229,6 +232,17 @@ class TestBatchExport(unittest.TestCase):
         ]
         mock_get_fileleak_data.return_value = []
         mock_get_wih_data.return_value = []
+        mock_get_wih_endpoint_data.return_value = [
+            {
+                "target": "https://example.com",
+                "page_url": "https://example.com/login",
+                "method": "POST",
+                "status_code": 0,
+                "response_size": 0,
+                "url": "https://example.com/api/login",
+                "request_packet": "POST /api/login HTTP/1.1\r\nHost: example.com\r\n\r\n{}",
+            }
+        ]
         mock_get_stat_finger_data.return_value = []
         mock_get_vuln_data.return_value = [
             {
@@ -257,14 +271,24 @@ class TestBatchExport(unittest.TestCase):
         try:
             self.assertEqual(
                 wb.sheetnames,
-                ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "WAF识别", "风险", "PoC风险", "指纹统计", "资产统计"],
+                ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "WIH接口提取", "WAF识别", "风险", "PoC风险", "AI渗透测试", "指纹统计", "资产统计"],
             )
+            ws = wb["WIH接口提取"]
+            header_row = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+            self.assertEqual(["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文"], header_row)
+            data_row = [cell.value for cell in next(ws.iter_rows(min_row=2, max_row=2))]
+            self.assertEqual(1, data_row[0])
+            self.assertEqual("-", data_row[4])
+            self.assertEqual("-", data_row[5])
+            self.assertEqual("https://example.com/api/login", data_row[6])
+            self.assertIn("POST /api/login HTTP/1.1", data_row[7])
         finally:
             wb.close()
 
     @patch('app.routes.export.get_nuclei_result_data')
     @patch('app.routes.export.get_stat_finger_data')
     @patch('app.routes.export.get_vuln_data')
+    @patch('app.routes.export.get_wih_endpoint_data')
     @patch('app.routes.export.get_wih_data')
     @patch('app.routes.export.get_fileleak_data')
     @patch('app.routes.export.get_url_data')
@@ -285,6 +309,7 @@ class TestBatchExport(unittest.TestCase):
         mock_get_url_data,
         mock_get_fileleak_data,
         mock_get_wih_data,
+        mock_get_wih_endpoint_data,
         mock_get_vuln_data,
         mock_get_stat_finger_data,
         mock_get_nuclei_result_data,
@@ -299,6 +324,7 @@ class TestBatchExport(unittest.TestCase):
         mock_get_url_data.return_value = []
         mock_get_fileleak_data.return_value = []
         mock_get_wih_data.return_value = []
+        mock_get_wih_endpoint_data.return_value = []
         mock_get_stat_finger_data.return_value = []
         mock_get_vuln_data.return_value = []
         mock_get_nuclei_result_data.return_value = []
@@ -316,6 +342,7 @@ class TestBatchExport(unittest.TestCase):
     @patch.object(SaveTask, 'build_stat_finger_xl')
     @patch.object(SaveTask, 'build_nuclei_xl')
     @patch.object(SaveTask, 'build_vuln_xl')
+    @patch.object(SaveTask, 'build_wih_endpoint_xl')
     @patch.object(SaveTask, 'build_wih_xl')
     @patch.object(SaveTask, 'build_fileleak_xl')
     @patch.object(SaveTask, 'build_url_xl')
@@ -338,6 +365,7 @@ class TestBatchExport(unittest.TestCase):
         mock_build_url_xl,
         mock_build_fileleak_xl,
         mock_build_wih_xl,
+        mock_build_wih_endpoint_xl,
         mock_build_vuln_xl,
         mock_build_nuclei_xl,
         mock_build_stat_finger_xl,
@@ -351,6 +379,7 @@ class TestBatchExport(unittest.TestCase):
         result = save_task.run()
 
         self.assertEqual(result, b"demo")
+        mock_build_wih_endpoint_xl.assert_called_once()
         mock_build_vuln_xl.assert_called_once()
         mock_build_nuclei_xl.assert_called_once()
         mock_build_stat_finger_xl.assert_called_once()

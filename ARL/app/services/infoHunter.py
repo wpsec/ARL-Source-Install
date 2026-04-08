@@ -10,7 +10,7 @@ import subprocess
 import hashlib
 import base64
 import re
-from urllib.parse import urlparse, urlunparse, urlencode
+from urllib.parse import urlparse, urlunparse, urlencode, parse_qsl
 from app.modules import WihRecord
 from .url_candidate_filter import (
     has_route_template_markers,
@@ -178,13 +178,39 @@ class InfoHunter(object):
             return default
 
     @staticmethod
+    def _safe_positive_int(value):
+        parsed = InfoHunter._safe_int(value, default=0)
+        if parsed <= 0:
+            return None
+        return parsed
+
+    @staticmethod
     def _append_query_string(url: str, query_string: str) -> str:
         text = str(url or "").strip()
         query_text = str(query_string or "").strip().lstrip("?")
         if not text or not query_text:
             return text
-        separator = "&" if "?" in text else "?"
-        return "{}{}{}".format(text, separator, query_text)
+        try:
+            parsed = urlparse(text)
+            existing_pairs = parse_qsl(parsed.query or "", keep_blank_values=True)
+            append_pairs = parse_qsl(query_text, keep_blank_values=True)
+            if not append_pairs:
+                separator = "&" if parsed.query else "?"
+                return "{}{}{}".format(text, separator, query_text)
+
+            seen_pairs = set(existing_pairs)
+            merged_pairs = list(existing_pairs)
+            for key, value in append_pairs:
+                pair = (key, value)
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                merged_pairs.append(pair)
+            merged_query = urlencode(merged_pairs)
+            return urlunparse((parsed.scheme, parsed.netloc, parsed.path or "", parsed.params, merged_query, parsed.fragment))
+        except Exception:
+            separator = "&" if "?" in text else "?"
+            return "{}{}{}".format(text, separator, query_text)
 
     @staticmethod
     def _request_template_query_string(request_template: dict) -> str:
@@ -285,6 +311,9 @@ class InfoHunter(object):
         endpoint_hash = hash_digest[:16]
         response_status = endpoint.get("response_status", endpoint.get("status_code"))
         response_size = endpoint.get("response_size", endpoint.get("content_length"))
+        status_code = InfoHunter._safe_positive_int(response_status)
+        response_size_int = InfoHunter._safe_int(response_size)
+        normalized_response_size = response_size_int if response_size_int > 0 or status_code is not None else None
 
         return {
             "endpoint_id": str(endpoint.get("endpoint_id") or "").strip(),
@@ -298,9 +327,9 @@ class InfoHunter(object):
             "source_types": endpoint.get("source_types") if isinstance(endpoint.get("source_types"), list) else [],
             "content_type": str(endpoint.get("content_type") or "").strip(),
             "body_kind": str(endpoint.get("body_kind") or "").strip(),
-            "status_code": InfoHunter._safe_int(response_status),
-            "response_status": InfoHunter._safe_int(response_status),
-            "response_size": InfoHunter._safe_int(response_size),
+            "status_code": status_code,
+            "response_status": status_code,
+            "response_size": normalized_response_size,
             "request_packet": request_packet,
             "request_template": request_template,
             "confidence": endpoint.get("confidence", 0),

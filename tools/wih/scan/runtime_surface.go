@@ -463,6 +463,10 @@ func inferRuntimeBodyKind(contentType string, bodyMap map[string]string, bodyTex
 		return "multipart"
 	case strings.Contains(loweredContentType, "xml"):
 		return "xml"
+	case strings.Contains(loweredContentType, "text/plain"):
+		return "text"
+	case strings.Contains(loweredContentType, "application/octet-stream"):
+		return "octet_stream"
 	}
 
 	trimmedBodyText := strings.TrimSpace(bodyText)

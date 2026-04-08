@@ -61,6 +61,8 @@ function inferBodyKind(contentType, bodyText) {
   if (loweredType.includes('application/x-www-form-urlencoded')) return 'form_urlencoded';
   if (loweredType.includes('multipart/form-data')) return 'multipart';
   if (loweredType.includes('xml')) return 'xml';
+  if (loweredType.includes('text/plain')) return 'text';
+  if (loweredType.includes('application/octet-stream')) return 'octet_stream';
   if (trimmedBody.startsWith('{') || trimmedBody.startsWith('[')) return 'json';
   if (trimmedBody.startsWith('<')) return 'xml';
   if (trimmedBody.includes('=') && trimmedBody.includes('&')) return 'form_urlencoded';
@@ -160,27 +162,34 @@ function normalizeObjectBody(input) {
   return result;
 }
 
-function parseBodyText(bodyText) {
+function parseBodyText(bodyText, contentType = '') {
   const trimmed = String(bodyText || '').trim();
   if (!trimmed) return { bodyKind: '', bodyText: '', body: {} };
+  const explicitKind = inferBodyKind(contentType, trimmed);
+  if (explicitKind === 'text' || explicitKind === 'octet_stream') {
+    return { bodyKind: explicitKind, bodyText: trimmed, body: {} };
+  }
   if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
     try {
       const parsed = JSON.parse(trimmed);
       const body = normalizeObjectBody(parsed);
-      const bodyKind = inferBodyKind('application/json', trimmed) || (body.query ? 'graphql' : 'json');
+      const bodyKind = explicitKind || inferBodyKind('application/json', trimmed) || (body.query ? 'graphql' : 'json');
       return { bodyKind, bodyText: trimmed, body };
     } catch (error) {
-      return { bodyKind: inferBodyKind('', trimmed), bodyText: trimmed, body: {} };
+      return { bodyKind: explicitKind || inferBodyKind('', trimmed), bodyText: trimmed, body: {} };
     }
   }
-  if (trimmed.includes('=')) {
+  if (explicitKind === 'xml') {
+    return { bodyKind: 'xml', bodyText: trimmed, body: {} };
+  }
+  if (explicitKind === 'form_urlencoded' || (!explicitKind && trimmed.includes('='))) {
     const query = {};
     for (const [key, value] of new URLSearchParams(trimmed).entries()) {
       query[key] = value;
     }
     return { bodyKind: 'form_urlencoded', bodyText: trimmed, body: query };
   }
-  return { bodyKind: inferBodyKind('', trimmed), bodyText: trimmed, body: {} };
+  return { bodyKind: explicitKind || inferBodyKind('', trimmed), bodyText: trimmed, body: {} };
 }
 
 function extractParameters(endpointId, endpoint, query, body, headers, bodyKind) {
@@ -630,8 +639,8 @@ async function main() {
 
       const headers = normalizeHeaders(request.headers());
       const rawBodyText = String(request.postData() || '').trim();
-      const bodyInfo = rawBodyText ? parseBodyText(rawBodyText) : { bodyKind: '', bodyText: '', body: {} };
       const contentType = headers['Content-Type'] || headers['content-type'] || '';
+      const bodyInfo = rawBodyText ? parseBodyText(rawBodyText, contentType) : { bodyKind: '', bodyText: '', body: {} };
       const bodyKind = String(bodyInfo.bodyKind || inferBodyKind(contentType, rawBodyText)).trim();
 
       pushObservedRequest({
@@ -658,8 +667,8 @@ async function main() {
 
       const headers = normalizeHeaders(request.headers());
       const rawBodyText = String(request.postData() || '').trim();
-      const bodyInfo = rawBodyText ? parseBodyText(rawBodyText) : { bodyKind: '', bodyText: '', body: {} };
       const contentType = headers['Content-Type'] || headers['content-type'] || '';
+      const bodyInfo = rawBodyText ? parseBodyText(rawBodyText, contentType) : { bodyKind: '', bodyText: '', body: {} };
       const bodyKind = String(bodyInfo.bodyKind || inferBodyKind(contentType, rawBodyText)).trim();
 
       let responseSize = 0;
@@ -732,26 +741,49 @@ async function main() {
       return result;
     };
 
-    const parseBodyTextInPage = (bodyText) => {
+    const inferBodyKindInPage = (contentType, bodyText) => {
+      const loweredType = String(contentType || '').toLowerCase();
+      const trimmedBody = String(bodyText || '').trim();
+      if (loweredType.includes('graphql')) return 'graphql';
+      if (loweredType.includes('application/json')) return 'json';
+      if (loweredType.includes('application/x-www-form-urlencoded')) return 'form_urlencoded';
+      if (loweredType.includes('multipart/form-data')) return 'multipart';
+      if (loweredType.includes('xml')) return 'xml';
+      if (loweredType.includes('text/plain')) return 'text';
+      if (loweredType.includes('application/octet-stream')) return 'octet_stream';
+      if (trimmedBody.startsWith('{') || trimmedBody.startsWith('[')) return 'json';
+      if (trimmedBody.startsWith('<')) return 'xml';
+      if (trimmedBody.includes('=') && trimmedBody.includes('&')) return 'form_urlencoded';
+      return '';
+    };
+
+    const parseBodyTextInPage = (bodyText, contentType = '') => {
       const trimmed = String(bodyText || '').trim();
       if (!trimmed) return { bodyKind: '', bodyText: '', body: {} };
+      const explicitKind = inferBodyKindInPage(contentType, trimmed);
+      if (explicitKind === 'text' || explicitKind === 'octet_stream') {
+        return { bodyKind: explicitKind, bodyText: trimmed, body: {} };
+      }
       if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
         try {
           const parsed = JSON.parse(trimmed);
           const body = normalizeObjectBodyInPage(parsed);
-          return { bodyKind: body.query ? 'graphql' : 'json', bodyText: trimmed, body };
+          return { bodyKind: explicitKind || (body.query ? 'graphql' : 'json'), bodyText: trimmed, body };
         } catch (error) {
-          return { bodyKind: '', bodyText: trimmed, body: {} };
+          return { bodyKind: explicitKind, bodyText: trimmed, body: {} };
         }
       }
-      if (trimmed.includes('=')) {
+      if (explicitKind === 'xml') {
+        return { bodyKind: 'xml', bodyText: trimmed, body: {} };
+      }
+      if (explicitKind === 'form_urlencoded' || (!explicitKind && trimmed.includes('='))) {
         const query = {};
         for (const [key, value] of new URLSearchParams(trimmed).entries()) {
           query[key] = value;
         }
         return { bodyKind: 'form_urlencoded', bodyText: trimmed, body: query };
       }
-      return { bodyKind: '', bodyText: trimmed, body: {} };
+      return { bodyKind: explicitKind, bodyText: trimmed, body: {} };
     };
 
     const collectHeaders = (sourceHeaders) => {
@@ -778,6 +810,16 @@ async function main() {
       return headersObj;
     };
 
+    const headerValue = (headersObj, name) => {
+      const wanted = String(name || '').toLowerCase();
+      for (const [key, value] of Object.entries(headersObj || {})) {
+        if (String(key || '').toLowerCase() === wanted) {
+          return String(value || '');
+        }
+      }
+      return '';
+    };
+
     const safePush = (record) => {
       if (!record || !record.url) return;
       events.push(record);
@@ -785,10 +827,10 @@ async function main() {
       window.__WIH_RUNTIME_EVENTS__ = events;
     };
 
-    const normalizeBody = (body) => {
+    const normalizeBody = (body, contentType = '') => {
       if (!body) return { bodyKind: '', bodyText: '', body: {} };
       if (typeof body === 'string') {
-        return parseBodyTextInPage(body);
+        return parseBodyTextInPage(body, contentType);
       }
       if (body instanceof URLSearchParams) {
         const query = {};
@@ -799,6 +841,13 @@ async function main() {
         const data = {};
         for (const [key, value] of body.entries()) data[key] = String(value ?? '');
         return { bodyKind: 'multipart', bodyText: '', body: data };
+      }
+      if (typeof Blob !== 'undefined' && body instanceof Blob) {
+        const bodyKind = inferBodyKindInPage(body.type || contentType, '') || 'octet_stream';
+        return { bodyKind, bodyText: '<binary>', body: {} };
+      }
+      if (typeof ArrayBuffer !== 'undefined' && (body instanceof ArrayBuffer || ArrayBuffer.isView(body))) {
+        return { bodyKind: 'octet_stream', bodyText: '<binary>', body: {} };
       }
       if (typeof body === 'object') {
         const data = normalizeObjectBodyInPage(body);
@@ -817,7 +866,7 @@ async function main() {
       const method = String(init.method || (input && input.method) || 'GET').toUpperCase();
       const sourceHeaders = init.headers || (input && input.headers);
       const headersObj = collectHeaders(sourceHeaders);
-      const bodyInfo = normalizeBody(init.body);
+      const bodyInfo = normalizeBody(init.body, headerValue(headersObj, 'content-type'));
       safePush({
         source: 'fetch',
         url: requestUrl,
@@ -846,7 +895,7 @@ async function main() {
       return originalSetRequestHeader.apply(this, arguments);
     };
     XMLHttpRequest.prototype.send = function(body) {
-      const bodyInfo = normalizeBody(body);
+      const bodyInfo = normalizeBody(body, headerValue(this.__wihHeaders || {}, 'content-type'));
       safePush({
         source: 'xhr',
         url: this.__wihUrl || '',

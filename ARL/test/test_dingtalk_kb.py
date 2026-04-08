@@ -170,6 +170,22 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         self.assertEqual(result.get("sheet_success_count"), 2)
         self.assertEqual(result.get("sheet_failed_count"), 1)
 
+    def test_build_ordered_export_sheet_items_should_keep_wih_endpoint_sheet(self):
+        """钉钉知识库应保留 WIH 接口提取工作表。"""
+        ordered_items, ignored_sheet_names = dingtalk_openapi._build_ordered_export_sheet_items(
+            [
+                {"sheet_name": "风险", "values": [["risk"]]},
+                {"sheet_name": "WIH接口提取", "values": [["endpoint"]]},
+                {"sheet_name": "WIH", "values": [["wih"]]},
+            ]
+        )
+
+        self.assertEqual(
+            ["WIH", "WIH接口提取", "风险"],
+            [item.get("sheet_name") for item in ordered_items],
+        )
+        self.assertEqual([], ignored_sheet_names)
+
     @patch('app.helpers.message_notify._push_ssl_cert_warning')
     @patch('app.helpers.message_notify.push_dingding')
     @patch('app.helpers.message_notify.utils.conn_db')

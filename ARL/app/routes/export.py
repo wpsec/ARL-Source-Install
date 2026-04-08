@@ -114,6 +114,21 @@ WIH_EXPORT_PROJECTION = {
     "source": 1,
     "site": 1,
 }
+WIH_ENDPOINT_EXPORT_PROJECTION = {
+    "task_id": 1,
+    "target": 1,
+    "site": 1,
+    "page_url": 1,
+    "url": 1,
+    "request_url": 1,
+    "method": 1,
+    "status_code": 1,
+    "response_status": 1,
+    "response_size": 1,
+    "content_length": 1,
+    "request_packet": 1,
+    "request_template": 1,
+}
 SERVICE_EXPORT_PROJECTION = {
     "task_id": 1,
     "service_name": 1,
@@ -1730,6 +1745,16 @@ def get_wih_data(task_id):
     ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 
 
+def get_wih_endpoint_data(task_id):
+    """
+    获取任务的 WIH 接口提取数据。
+    """
+    return utils.conn_db('wih_endpoint').find(
+        {'task_id': task_id},
+        projection=WIH_ENDPOINT_EXPORT_PROJECTION,
+    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+
+
 def _normalize_task_id_list(task_ids):
     """
     规范化任务ID列表，兼容 str/list/tuple/set 输入。
@@ -2489,6 +2514,86 @@ def _extract_wih_rows(task_ids):
     return rows
 
 
+def _extract_wih_endpoint_request_packet(item):
+    """
+    从 WIH 接口记录中提取请求报文，兼容历史 request_template 结构。
+    """
+    request_packet = sanitize_excel_value(item.get("request_packet", "")).strip()
+    if request_packet:
+        return request_packet
+
+    request_template = item.get("request_template", {})
+    if isinstance(request_template, dict):
+        return sanitize_excel_value(request_template.get("request_packet", "")).strip()
+    return ""
+
+
+def _format_wih_endpoint_status(item):
+    status_text = sanitize_excel_value(item.get("status_code") or item.get("response_status", "")).strip()
+    try:
+        status_num = int(float(status_text))
+    except Exception:
+        return status_text if status_text else "-"
+    return str(status_num) if status_num > 0 else "-"
+
+
+def _format_wih_endpoint_response_size(item):
+    size_value = item.get("response_size")
+    if size_value is None or size_value == "":
+        size_value = item.get("content_length", "")
+    size_text = sanitize_excel_value(size_value).strip()
+    try:
+        size_num = int(float(size_text))
+    except Exception:
+        return size_text if size_text else "-"
+
+    status_text = _format_wih_endpoint_status(item)
+    if size_num <= 0 and status_text == "-":
+        return "-"
+    return str(size_num)
+
+
+def _extract_wih_endpoint_rows(task_ids):
+    """
+    汇总 WIH 接口提取导出行，按目标+页面URL+方法+请求URL+请求报文去重。
+    """
+    task_id_list = _normalize_task_id_list(task_ids)
+    rows = []
+    dedup_keys = set()
+
+    for task_id in task_id_list:
+        for item in get_wih_endpoint_data(task_id):
+            target = sanitize_excel_value(item.get("target") or item.get("site") or "").strip()
+            page_url = sanitize_excel_value(item.get("page_url", "")).strip()
+            method = sanitize_excel_value(item.get("method", "")).strip().upper() or "GET"
+            status_code = _format_wih_endpoint_status(item)
+            response_size = _format_wih_endpoint_response_size(item)
+            request_url = sanitize_excel_value(item.get("url") or item.get("request_url") or "").strip()
+            request_packet = _extract_wih_endpoint_request_packet(item)
+
+            if not request_url and not request_packet:
+                continue
+
+            dedup_key = (target, page_url, method, request_url, request_packet)
+            if dedup_key in dedup_keys:
+                continue
+            dedup_keys.add(dedup_key)
+            rows.append(
+                [
+                    len(rows) + 1,
+                    target,
+                    page_url,
+                    method,
+                    status_code,
+                    response_size,
+                    request_url,
+                    request_packet,
+                ]
+            )
+
+    return rows
+
+
 def _extract_waf_rows(task_ids):
     """
     汇总任务的 WAF 识别结果（来源 task.waf_skip_summary.blocked_hosts）。
@@ -2737,6 +2842,28 @@ def _build_wih_sheet(wb, task_ids, apply_style=True):
     ws.append(["记录类型", "内容", "来源", "站点"])
 
     for row in _extract_wih_rows(task_ids):
+        ws.append(row)
+
+    if apply_style:
+        set_sheet_style(ws)
+
+
+def _build_wih_endpoint_sheet(wb, task_ids, apply_style=True):
+    """
+    在导出工作簿中新增 WIH 接口提取工作表。
+    """
+    ws = wb.create_sheet(title="WIH接口提取")
+    ws.column_dimensions['A'].width = 8.0
+    ws.column_dimensions['B'].width = 46.0
+    ws.column_dimensions['C'].width = 58.0
+    ws.column_dimensions['D'].width = 10.0
+    ws.column_dimensions['E'].width = 10.0
+    ws.column_dimensions['F'].width = 12.0
+    ws.column_dimensions['G'].width = 72.0
+    ws.column_dimensions['H'].width = 96.0
+    ws.append(["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文"])
+
+    for row in _extract_wih_endpoint_rows(task_ids):
         ws.append(row)
 
     if apply_style:
@@ -4698,6 +4825,12 @@ class SaveTask(object):
         """
         _build_wih_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
+    def build_wih_endpoint_xl(self):
+        """
+        构建 WIH 接口提取工作表。
+        """
+        _build_wih_endpoint_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
+
     def build_waf_xl(self):
         """
         构建 WAF 识别工作表。
@@ -4820,6 +4953,7 @@ class SaveTask(object):
         self.build_url_xl()
         self.build_fileleak_xl()
         self.build_wih_xl()
+        self.build_wih_endpoint_xl()
         self.build_waf_xl()
         self.build_vuln_xl()
         self.build_nuclei_xl()
@@ -5164,10 +5298,11 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     if apply_style:
         set_sheet_style(ws)
 
-    # URL信息 / 目录扫描 / WIH / 风险（与单任务导出顺序保持一致）
+    # URL信息 / 目录扫描 / WIH / WIH接口提取 / 风险（与单任务导出顺序保持一致）
     _build_url_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_fileleak_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_wih_sheet(wb, valid_task_ids, apply_style=apply_style)
+    _build_wih_endpoint_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_waf_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_vuln_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_nuclei_sheet(wb, valid_task_ids, apply_style=apply_style)

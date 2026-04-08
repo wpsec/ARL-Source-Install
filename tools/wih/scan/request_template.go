@@ -150,7 +150,16 @@ func buildBodyPreviewByKind(bodyKind string, bodyMap map[string]string, bodyText
 	if trimmedBody != "" {
 		return trimmedBody
 	}
+	normalizedKind := strings.ToLower(strings.TrimSpace(bodyKind))
 	if len(bodyMap) == 0 {
+		switch normalizedKind {
+		case "xml":
+			return "<root>\n  <value />\n</root>"
+		case "text", "text_plain", "plain":
+			return "<body>"
+		case "octet_stream", "octet-stream", "binary", "application/octet-stream":
+			return "<binary>"
+		}
 		return ""
 	}
 
@@ -160,7 +169,7 @@ func buildBodyPreviewByKind(bodyKind string, bodyMap map[string]string, bodyText
 	}
 	sort.Strings(keys)
 
-	switch strings.ToLower(strings.TrimSpace(bodyKind)) {
+	switch normalizedKind {
 	case "json":
 		payload := make(map[string]string, len(keys))
 		for _, key := range keys {
@@ -196,6 +205,18 @@ func buildBodyPreviewByKind(bodyKind string, bodyMap map[string]string, bodyText
 			lines = append(lines, fmt.Sprintf("  <%s>%s</%s>", key, bodyMap[key], key))
 		}
 		lines = append(lines, "</root>")
+		return strings.Join(lines, "\n")
+	case "text", "text_plain", "plain":
+		lines := make([]string, 0, len(keys))
+		for _, key := range keys {
+			lines = append(lines, fmt.Sprintf("%s=%s", key, bodyMap[key]))
+		}
+		return strings.Join(lines, "\n")
+	case "octet_stream", "octet-stream", "binary", "application/octet-stream":
+		lines := make([]string, 0, len(keys))
+		for _, key := range keys {
+			lines = append(lines, fmt.Sprintf("%s=<binary>", key))
+		}
 		return strings.Join(lines, "\n")
 	case "form_urlencoded":
 		return buildBodyPreview(bodyMap)

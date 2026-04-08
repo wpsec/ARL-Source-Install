@@ -31,6 +31,80 @@ func TestNormalizeTargetURL(t *testing.T) {
 	}
 }
 
+func TestBuildBodyPreviewByKindSupportsAdditionalPostTypes(t *testing.T) {
+	xmlPreview := buildBodyPreviewByKind("xml", map[string]string{"token": "<value>"}, "")
+	if !strings.Contains(xmlPreview, "<token><value></token>") {
+		t.Fatalf("unexpected xml body preview: %s", xmlPreview)
+	}
+
+	textPreview := buildBodyPreviewByKind("text", map[string]string{"message": "hello", "trace": "123"}, "")
+	if textPreview != "message=hello\ntrace=123" {
+		t.Fatalf("unexpected text body preview: %s", textPreview)
+	}
+
+	binaryPreview := buildBodyPreviewByKind("octet_stream", map[string]string{"file": "<value>"}, "")
+	if binaryPreview != "file=<binary>" {
+		t.Fatalf("unexpected octet-stream body preview: %s", binaryPreview)
+	}
+
+	emptyBinaryPreview := buildBodyPreviewByKind("application/octet-stream", nil, "")
+	if emptyBinaryPreview != "<binary>" {
+		t.Fatalf("unexpected empty binary body preview: %s", emptyBinaryPreview)
+	}
+}
+
+func TestInferJSBodyProfileSupportsAdditionalPostTypes(t *testing.T) {
+	cases := []struct {
+		name        string
+		window      string
+		contentType string
+		bodyKind    string
+	}{
+		{
+			name:        "text plain",
+			window:      `fetch("/api/log", { method: "POST", headers: { "Content-Type": "text/plain" }, body: "a=b" })`,
+			contentType: "text/plain",
+			bodyKind:    "text",
+		},
+		{
+			name:        "xml",
+			window:      `fetch("/api/xml", { method: "POST", headers: { "Content-Type": "application/xml" }, body: "<root></root>" })`,
+			contentType: "application/xml",
+			bodyKind:    "xml",
+		},
+		{
+			name:        "octet stream",
+			window:      `fetch("/api/upload", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: new Uint8Array([1, 2]) })`,
+			contentType: "application/octet-stream",
+			bodyKind:    "octet_stream",
+		},
+	}
+
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			contentType, bodyKind := inferJSBodyProfile(item.window, nil, nil)
+			if contentType != item.contentType || bodyKind != item.bodyKind {
+				t.Fatalf("unexpected body profile: contentType=%s bodyKind=%s", contentType, bodyKind)
+			}
+		})
+	}
+}
+
+func TestInferRuntimeBodyKindSupportsAdditionalPostTypes(t *testing.T) {
+	cases := map[string]string{
+		"text/plain":               "text",
+		"text/xml":                 "xml",
+		"application/xml":          "xml",
+		"application/octet-stream": "octet_stream",
+	}
+
+	for contentType, expected := range cases {
+		if got := inferRuntimeBodyKind(contentType, nil, "a=b"); got != expected {
+			t.Fatalf("unexpected runtime body kind contentType=%s got=%s expected=%s", contentType, got, expected)
+		}
+	}
+}
+
 // TestFilterRecordsByTargetScope 验证 domain/domain_url/email 仅保留同站点域范围。
 func TestFilterRecordsByTargetScope(t *testing.T) {
 	records := []datatype.ScanRecord{

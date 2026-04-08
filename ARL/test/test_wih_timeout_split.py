@@ -222,6 +222,32 @@ class TestWihTimeoutSplit(unittest.TestCase):
         self.assertIn("POST /api/login HTTP/1.1", normalized["request_packet"])
         self.assertIn('"username": "<value>"', normalized["request_packet"])
         self.assertIn('"password": "<value>"', normalized["request_packet"])
+        self.assertIsNone(normalized["status_code"])
+        self.assertIsNone(normalized["response_size"])
+
+    def test_normalize_endpoint_record_deduplicates_existing_query(self):
+        endpoint = {
+            "endpoint_id": "syno_auth",
+            "site": "https://test.example.com:6001",
+            "url": "https://test.example.com:6001/scripts/synocredential.js/webapi/entry.cgi?api=SYNO.API.Auth",
+            "method": "POST",
+            "request_template": {
+                "headers": {"Accept": "application/json, text/plain, */*"},
+                "query": {"api": "SYNO.API.Auth"},
+            },
+        }
+
+        normalized = InfoHunter._normalize_endpoint_record(endpoint, "https://test.example.com:6001")
+
+        self.assertEqual(
+            "https://test.example.com:6001/scripts/synocredential.js/webapi/entry.cgi?api=SYNO.API.Auth",
+            normalized["url"],
+        )
+        self.assertIn("POST /scripts/synocredential.js/webapi/entry.cgi?api=SYNO.API.Auth HTTP/1.1", normalized["request_packet"])
+        self.assertNotIn("api=SYNO.API.Auth&api=SYNO.API.Auth", normalized["url"])
+        self.assertNotIn("api=SYNO.API.Auth&api=SYNO.API.Auth", normalized["request_packet"])
+        self.assertIsNone(normalized["status_code"])
+        self.assertIsNone(normalized["response_size"])
 
     def test_exec_wih_splits_timeout_batch_and_keeps_results(self):
         hunter = InfoHunter(
