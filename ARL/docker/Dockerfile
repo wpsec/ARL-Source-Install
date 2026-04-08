@@ -117,9 +117,13 @@ RUN set -eux; \
     dnf clean all
 
 COPY --from=frontend_builder /usr/local/bin/node /usr/local/bin/node
-COPY --from=frontend_builder /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=frontend_builder /usr/local/bin/npx /usr/local/bin/npx
 COPY --from=frontend_builder /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
+RUN set -eux; \
+    ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm; \
+    ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx; \
+    node --version; \
+    npm --version; \
+    npx --version
 
 # 编译安装 ncrack，避免预编译二进制与当前 OpenSSL 运行时不兼容
 RUN set -eux; \

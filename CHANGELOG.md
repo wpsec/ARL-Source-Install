@@ -3,8 +3,9 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-08（v4.6.39 ~ v4.6.43）
+## 2026-04-08（v4.6.39 ~ v4.6.44）
 
+- `[v4.6.44]` Docker `npm/npx` 运行时入口修复：主镜像从前端构建阶段复用 Node 20 时，不再直接复制 `/usr/local/bin/npm` 与 `/usr/local/bin/npx`，避免 Docker `COPY --from` 将 symlink 解引用成脚本文件后触发 `Cannot find module '../lib/cli.js'`。现在改为复制 Node 与全局 npm 模块目录后，在 runtime 阶段显式重建 `npm/npx` symlink，并提前执行 `node/npm/npx --version` 自检，让 WIH Playwright 依赖安装能继续进入后续步骤
 - `[v4.6.43]` Docker `WIH Playwright` 构建链路修复：`tools/wih` 的 `package-lock` 调整为兼容性更好的 `lockfileVersion=2` 并同步包名，避免部分 `npm ci` 场景报 `Cannot read property 'playwright' of undefined`；镜像构建阶段在安装 Node 版 `playwright` 时跳过 postinstall 浏览器下载，并改为非阻断方式尝试补装 `chromium`，保证离线/弱网环境下主镜像构建不被浏览器下载失败卡死。同时补充 `node/npm` 版本输出与 `.dockerignore` 中 `tools/wih/node_modules` 排除规则，减少本地依赖污染构建上下文并提升后续排障可读性
 - `[v4.6.42]` Docker `WIH runtime` Node 版本收口：主镜像运行阶段不再依赖 Rocky/EPEL 的 `nodejs npm` 包，改为复用前端构建阶段的 Node 20、`npm/npx` 与全局 npm 模块路径，避免系统仓库 Node 版本偏旧导致 `WIH` 内置 `Playwright` runtime 依赖安装或运行异常
 - `[v4.6.41]` Docker `NPM_REGISTRY` 参数作用域修复：在主镜像运行阶段补充 `ARG NPM_REGISTRY`，确保后续 `tools/wih` 的 Node 依赖安装能正确继承构建时传入的 npm 镜像源，避免多阶段 Dockerfile 中前端阶段的 `ARG` 无法传递到 runtime 阶段而导致构建脚本变量未定义
