@@ -252,6 +252,7 @@ class TestBatchExport(unittest.TestCase):
                 "vuln_url": "http://www.example.com/login",
                 "plg_name": "test-plugin",
                 "plg_type": "info-leak",
+                "credential": "demo-credential",
                 "description": "demo",
             }
         ]
@@ -282,6 +283,14 @@ class TestBatchExport(unittest.TestCase):
             self.assertEqual("未验证", data_row[5])
             self.assertEqual("https://example.com/api/login", data_row[6])
             self.assertIn("POST /api/login HTTP/1.1", data_row[7])
+            risk_ws = wb["风险"]
+            risk_header_row = [cell.value for cell in next(risk_ws.iter_rows(min_row=1, max_row=1))]
+            self.assertEqual(
+                ["来源", "风险名称", "严重级别", "目标", "风险URL", "凭证", "模板/插件", "风险类型", "详情", "AI分析"],
+                risk_header_row,
+            )
+            risk_data_row = [cell.value for cell in next(risk_ws.iter_rows(min_row=2, max_row=2))]
+            self.assertEqual("demo-credential", risk_data_row[5])
         finally:
             wb.close()
 

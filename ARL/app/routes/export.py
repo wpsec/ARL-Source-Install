@@ -139,6 +139,7 @@ VULN_EXPORT_PROJECTION = {
     "vul_name": 1,
     "severity": 1,
     "target": 1,
+    "credential": 1,
     "plg_name": 1,
     "plg_type": 1,
     "description": 1,
@@ -3747,6 +3748,11 @@ def _extract_vuln_rows(task_ids):
 
         return _truncate_report_text(description or detail or verify_data, 900)
 
+    def _resolve_vuln_credential_text(item):
+        credential = sanitize_excel_value(item.get("credential", "")).strip()
+        verify_data = sanitize_excel_value(item.get("verify_data", "")).strip()
+        return _truncate_report_text(credential or verify_data, 900)
+
     task_id_list = _normalize_task_id_list(task_ids)
     vuln_ai_lookup = _build_ai_denoise_lookup(task_id_list, "vuln")
     nuclei_ai_lookup = _build_ai_denoise_lookup(task_id_list, "nuclei_result")
@@ -3763,12 +3769,13 @@ def _extract_vuln_rows(task_ids):
             severity = sanitize_excel_value(item.get("severity", ""))
             target = sanitize_excel_value(item.get("target", ""))
             vuln_url = target if str(target).startswith("http") else ""
+            credential = _resolve_vuln_credential_text(item)
             plugin = sanitize_excel_value(item.get("plg_name", ""))
             vuln_type = sanitize_excel_value(item.get("plg_type", ""))
             detail = _resolve_vuln_detail_text(item)
 
             dedup_key = (
-                task_id, "npoc", vuln_name, severity, target, vuln_url, plugin, vuln_type
+                task_id, "npoc", vuln_name, severity, target, vuln_url, credential, plugin, vuln_type
             )
             if dedup_key in dedup_keys:
                 continue
@@ -3782,6 +3789,7 @@ def _extract_vuln_rows(task_ids):
                     severity,
                     target,
                     vuln_url,
+                    credential,
                     plugin,
                     vuln_type,
                     detail,
@@ -3794,11 +3802,12 @@ def _extract_vuln_rows(task_ids):
             severity = sanitize_excel_value(item.get("vuln_severity", ""))
             target = sanitize_excel_value(item.get("target", ""))
             vuln_url = sanitize_excel_value(item.get("vuln_url", ""))
+            credential = _resolve_vuln_credential_text(item)
             template_id = sanitize_excel_value(item.get("template_id", ""))
             template_url = sanitize_excel_value(item.get("template_url", ""))
 
             dedup_key = (
-                task_id, "nuclei", vuln_name, severity, target, vuln_url, template_id
+                task_id, "nuclei", vuln_name, severity, target, vuln_url, credential, template_id
             )
             if dedup_key in dedup_keys:
                 continue
@@ -3812,6 +3821,7 @@ def _extract_vuln_rows(task_ids):
                     severity,
                     target,
                     vuln_url,
+                    credential,
                     template_id,
                     "nuclei",
                     template_url,
@@ -4184,10 +4194,10 @@ def _build_suspected_fp_rows(vuln_rows, limit=12):
     suspects = []
     seen = set()
     for row in vuln_rows:
-        if not isinstance(row, list) or len(row) < 8:
+        if not isinstance(row, list) or len(row) < 9:
             continue
         severity = sanitize_excel_value(row[2]).strip().lower()
-        detail = sanitize_excel_value(row[7]).strip()
+        detail = sanitize_excel_value(row[8]).strip()
         if not detail:
             continue
 
@@ -4556,12 +4566,13 @@ def _build_vuln_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['C'].width = 14.0
     ws.column_dimensions['D'].width = 36.0
     ws.column_dimensions['E'].width = 60.0
-    ws.column_dimensions['F'].width = 28.0
-    ws.column_dimensions['G'].width = 20.0
-    ws.column_dimensions['H'].width = 80.0
-    ws.column_dimensions['I'].width = 24.0
+    ws.column_dimensions['F'].width = 48.0
+    ws.column_dimensions['G'].width = 28.0
+    ws.column_dimensions['H'].width = 20.0
+    ws.column_dimensions['I'].width = 80.0
+    ws.column_dimensions['J'].width = 24.0
 
-    ws.append(["来源", "风险名称", "严重级别", "目标", "风险URL", "模板/插件", "风险类型", "详情", "AI分析"])
+    ws.append(["来源", "风险名称", "严重级别", "目标", "风险URL", "凭证", "模板/插件", "风险类型", "详情", "AI分析"])
     for row in _extract_vuln_rows(task_ids):
         ws.append(row)
 
