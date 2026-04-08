@@ -263,8 +263,13 @@ RUN set -eux; \
     go version; \
     cd /code/tools/wih; \
     GOOS=linux GOARCH="${GO_ARCH}" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /usr/bin/wih .; \
+    node --version; \
+    npm --version; \
     npm config set registry "${NPM_REGISTRY}"; \
+    export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1; \
     if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; \
+    unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD; \
+    npx playwright install chromium || echo "[WARN] node playwright browser install failed, WIH runtime will fallback when unavailable"; \
     node -e "require('playwright'); console.log('node-playwright-ok')"; \
     cd /code; \
     rm -rf /usr/local/go /root/go /tmp/go-build "${GO_TGZ}"; \
