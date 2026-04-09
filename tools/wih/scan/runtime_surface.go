@@ -20,6 +20,7 @@ import (
 
 // runtimeSurfaceResult 表示运行时参数采集结果。
 type runtimeSurfaceResult struct {
+	Records    []datatype.ScanRecord
 	Endpoints  []datatype.EndpointRecord
 	Parameters []datatype.ParameterRecord
 }
@@ -37,6 +38,7 @@ type runtimeSurfaceRequest struct {
 }
 
 type runtimeSurfaceResponse struct {
+	Records    []datatype.ScanRecord      `json:"records"`
 	Endpoints  []datatype.EndpointRecord  `json:"endpoints"`
 	Parameters []datatype.ParameterRecord `json:"parameters"`
 	Error      string                     `json:"error,omitempty"`
@@ -214,9 +216,18 @@ func parseRuntimeSurfaceResponse(raw []byte, targetURL string) runtimeSurfaceRes
 
 	endpoints := make([]datatype.EndpointRecord, 0, len(resp.Endpoints))
 	parameters := make([]datatype.ParameterRecord, 0, len(resp.Parameters))
+	records := make([]datatype.ScanRecord, 0, len(resp.Records))
 	allowedEndpointIDs := make(map[string]struct{})
 	endpointIDAlias := make(map[string]string)
 	endpointMap := make(map[string]datatype.EndpointRecord)
+
+	for _, record := range resp.Records {
+		normalizedRecord, ok := normalizeRuntimeRecord(record, targetURL, targetHost)
+		if !ok {
+			continue
+		}
+		records = append(records, normalizedRecord)
+	}
 
 	for _, endpoint := range resp.Endpoints {
 		originalEndpointID := strings.TrimSpace(endpoint.EndpointID)
@@ -249,6 +260,7 @@ func parseRuntimeSurfaceResponse(raw []byte, targetURL string) runtimeSurfaceRes
 	}
 
 	return runtimeSurfaceResult{
+		Records:    dedupeRecords(records),
 		Endpoints:  mergeEndpointRecords(endpoints),
 		Parameters: mergeParameterRecords(parameters),
 	}
@@ -338,6 +350,50 @@ func normalizeRuntimeEndpoint(endpoint datatype.EndpointRecord, targetURL string
 	}
 	if normalized.Confidence <= 0 {
 		normalized.Confidence = 0.93
+	}
+	return normalized, true
+}
+
+func normalizeRuntimeRecord(record datatype.ScanRecord, targetURL string, targetHost string) (datatype.ScanRecord, bool) {
+	recordID := strings.ToLower(strings.TrimSpace(record.Id))
+	if recordID == "" {
+		recordID = "page_url"
+	}
+	if recordID != "page_url" {
+		return datatype.ScanRecord{}, false
+	}
+
+	contentText := strings.TrimSpace(record.Content)
+	if contentText == "" {
+		return datatype.ScanRecord{}, false
+	}
+	parsed, err := url.Parse(contentText)
+	if err != nil || parsed.Host == "" {
+		return datatype.ScanRecord{}, false
+	}
+	if strings.ToLower(strings.TrimSpace(parsed.Hostname())) != targetHost {
+		return datatype.ScanRecord{}, false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return datatype.ScanRecord{}, false
+	}
+	if isStaticHTMLExploreAsset(parsed.Path) {
+		return datatype.ScanRecord{}, false
+	}
+
+	normalized := record
+	normalized.Id = recordID
+	normalized.Content = parsed.String()
+	normalized.Source = strings.TrimSpace(normalized.Source)
+	if normalized.Source == "" {
+		normalized.Source = targetURL
+	}
+	if normalized.Hash == 0 {
+		normalized.Hash = util.StableHash(strings.Join([]string{
+			recordID,
+			targetURL,
+			normalized.Content,
+		}, "|"))
 	}
 	return normalized, true
 }

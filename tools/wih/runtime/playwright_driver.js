@@ -480,6 +480,17 @@ function isPreferredFormText(text) {
   return /(search|filter|query|keyword|查询|搜索|筛选|关键字|检索)/.test(normalized);
 }
 
+function isNavigationLikeValue(rawValue) {
+  const text = String(rawValue || '').trim().toLowerCase();
+  if (!text) return false;
+  if (text.startsWith('javascript:') || text.startsWith('mailto:') || text.startsWith('tel:')) return false;
+  if (text.startsWith('http://') || text.startsWith('https://')) return true;
+  if (text.startsWith('/') || text.startsWith('./') || text.startsWith('../')) return true;
+  if (text.startsWith('#/') || text.startsWith('#!/')) return true;
+  if (text.startsWith('?')) return true;
+  return false;
+}
+
 function normalizeSameHostPageUrl(rawUrl, baseUrl, targetHost) {
   const text = String(rawUrl || '').trim();
   if (!text || text.startsWith('javascript:') || text.startsWith('mailto:') || text.startsWith('tel:')) {
@@ -1156,8 +1167,14 @@ async function performLowRiskInteractions(page, maxActions) {
           element.getAttribute('data-target') || '',
         ].join(' ').trim(),
         type: (element.getAttribute('type') || '').trim(),
-      })).catch(() => ({ text: '', type: '' }));
-      if (!isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
+        navigationHint: [
+          element.getAttribute('data-target') || '',
+          element.getAttribute('href') || '',
+          element.getAttribute('data-url') || '',
+          element.getAttribute('data-route') || '',
+        ].some((value) => String(value || '').trim() !== ''),
+      })).catch(() => ({ text: '', type: '', navigationHint: false }));
+      if (!meta.navigationHint && !isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
       if (meta.type.toLowerCase() === 'submit' || isExplicitSubmitActionText(meta.text) || isDangerousActionText(meta.text)) continue;
       await locator.click({ timeout: 1000 }).catch(() => {});
       used += 1;
@@ -1181,8 +1198,17 @@ async function performLowRiskInteractions(page, maxActions) {
           element.getAttribute('class') || '',
         ].join(' ').trim(),
         type: (element.getAttribute('type') || '').trim(),
-      })).catch(() => ({ text: '', type: '' }));
-      if (!isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
+        navigationHint: [
+          element.getAttribute('href') || '',
+          element.getAttribute('data-route') || '',
+          element.getAttribute('data-path') || '',
+          element.getAttribute('data-url') || '',
+          element.getAttribute('to') || '',
+          element.getAttribute('router-link') || '',
+          element.getAttribute('onclick') || '',
+        ].some((value) => String(value || '').trim() !== ''),
+      })).catch(() => ({ text: '', type: '', navigationHint: false }));
+      if (!meta.navigationHint && !isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
       if (meta.type.toLowerCase() === 'submit' || isExplicitSubmitActionText(meta.text) || isDangerousActionText(meta.text)) continue;
       await locator.click({ timeout: 1000 }).catch(() => {});
       used += 1;
@@ -1232,8 +1258,17 @@ async function performLowRiskInteractions(page, maxActions) {
           element.getAttribute('data-micro-app') || '',
         ].join(' ').trim(),
         type: (element.getAttribute('type') || '').trim(),
-      })).catch(() => ({ text: '', type: '' }));
-      if (!isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
+        navigationHint: [
+          element.getAttribute('href') || '',
+          element.getAttribute('data-route') || '',
+          element.getAttribute('data-path') || '',
+          element.getAttribute('data-url') || '',
+          element.getAttribute('to') || '',
+          element.getAttribute('router-link') || '',
+          element.getAttribute('data-micro-app') || '',
+        ].some((value) => String(value || '').trim() !== ''),
+      })).catch(() => ({ text: '', type: '', navigationHint: false }));
+      if (!meta.navigationHint && !isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
       if (meta.type.toLowerCase() === 'submit' || isExplicitSubmitActionText(meta.text) || isDangerousActionText(meta.text)) continue;
       await locator.click({ timeout: 1000 }).catch(() => {});
       used += 1;
@@ -1250,10 +1285,17 @@ async function performLowRiskInteractions(page, maxActions) {
       const enabled = await locator.isEnabled().catch(() => true);
       if (!visible || !enabled) continue;
       const meta = await locator.evaluate((element) => ({
-        text: (element.innerText || element.textContent || '').trim(),
+        text: [
+          element.innerText || element.textContent || '',
+          element.getAttribute('title') || '',
+          element.getAttribute('aria-label') || '',
+          element.getAttribute('href') || '',
+        ].join(' ').trim(),
         type: (element.getAttribute('type') || '').trim(),
-      })).catch(() => ({ text: '', type: '' }));
-      if (!isPreferredActionText(meta.text)) continue;
+        href: (element.getAttribute('href') || '').trim(),
+      })).catch(() => ({ text: '', type: '', href: '' }));
+      const navigationHint = isNavigationLikeValue(meta.href);
+      if (!navigationHint && !isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
       if (meta.type.toLowerCase() === 'submit' || isExplicitSubmitActionText(meta.text) || isDangerousActionText(meta.text)) continue;
       await locator.click({ timeout: 1000 }).catch(() => {});
       used += 1;
@@ -1841,6 +1883,7 @@ async function main() {
   const endpointMap = new Map();
   const parameterCountMap = new Map();
   const parameters = [];
+  const records = [];
   const combinedEvents = [...rawForms, ...rawEvents, ...observedRequests];
 
   for (const event of Array.isArray(combinedEvents) ? combinedEvents : []) {
@@ -1939,7 +1982,27 @@ async function main() {
     parameters.push(...endpointParameters);
   }
 
+  const recordKeys = new Set();
+  const appendRecord = (urlValue, tag) => {
+    const normalizedUrl = String(urlValue || '').trim();
+    const normalizedTag = String(tag || '').trim();
+    if (!normalizedUrl || normalizedUrl === targetUrl) return;
+    const recordKey = `${normalizedUrl}|${normalizedTag}`;
+    if (recordKeys.has(recordKey)) return;
+    recordKeys.add(recordKey);
+    records.push({
+      id: 'page_url',
+      content: normalizedUrl,
+      source: targetUrl,
+      tag: normalizedTag,
+    });
+  };
+
+  Array.from(visitedPages).sort().forEach((pageUrl) => appendRecord(pageUrl, 'runtime_page_visit'));
+  Array.from(discoveredPageSet).sort().forEach((pageUrl) => appendRecord(pageUrl, 'runtime_page_candidate'));
+
   safeJsonOutput({
+    records,
     endpoints: Array.from(endpointMap.values()),
     parameters,
   });

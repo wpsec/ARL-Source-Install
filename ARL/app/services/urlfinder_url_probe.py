@@ -2,7 +2,7 @@
 URLFinder 提取 URL 可达性探测并入库
 
 能力说明：
-- 从 WIH 的 `urlfinder_url/path_url` 记录中筛选当前任务同目标 URL
+- 从 WIH 的 `urlfinder_url/path_url/page_url` 记录中筛选当前任务同目标 URL
 - 探测 URL 可达性并提取页面基础信息
 - 将可访问 URL 写入 url 资产表，来源标记为 wih_url_probe
 """
@@ -25,10 +25,11 @@ class UrlfinderUrlProbeService:
     说明：
     - `urlfinder_url`：URLFinder 从 HTML/JS 提取出的候选 URL
     - `path_url`：WIH 对 path 规则拼接探测命中的候选 URL
-    两类记录都会进入可达性探测，命中后统一写入 URL 信息表。
+    - `page_url`：WIH 恢复出的隐藏页面/页面候选 URL
+    这三类记录都会进入可达性探测，命中后统一写入 URL 信息表。
     """
 
-    _SUPPORTED_RECORD_TYPES = {"urlfinder_url", "path_url"}
+    _SUPPORTED_RECORD_TYPES = {"urlfinder_url", "path_url", "page_url"}
 
     def __init__(
         self,
@@ -241,7 +242,7 @@ class UrlfinderUrlProbeService:
 
         candidates = self._collect_candidates()
         if not candidates:
-            logger.info("urlfinder url probe skip, no urlfinder_url/path_url records")
+            logger.info("urlfinder url probe skip, no urlfinder_url/path_url/page_url records")
             return 0
 
         pending_url_targets = self._filter_existing_urls(candidates)

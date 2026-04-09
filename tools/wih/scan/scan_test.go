@@ -772,6 +772,36 @@ func TestBuildJSPageCandidatePathRecordsSupportsHashRoute(t *testing.T) {
 	}
 }
 
+func TestBuildPageCandidateURLRecordsKeepsHiddenPageURLs(t *testing.T) {
+	records := buildPageCandidateURLRecords("https://example.com", []string{
+		"https://example.com/Login?dt=frmw0c9n",
+		"https://example.com/login",
+		"https://example.com/assets/app.js",
+		"https://other.com/admin",
+	}, "js_page_candidate")
+
+	expected := map[string]bool{
+		"https://example.com/Login?dt=frmw0c9n": false,
+		"https://example.com/login":             false,
+	}
+	if len(records) != len(expected) {
+		t.Fatalf("unexpected page_url record count: %d records=%+v", len(records), records)
+	}
+	for _, record := range records {
+		if record.Id != "page_url" {
+			t.Fatalf("unexpected page_url record id: %s", record.Id)
+		}
+		if _, ok := expected[record.Content]; ok {
+			expected[record.Content] = true
+		}
+	}
+	for urlValue, hit := range expected {
+		if !hit {
+			t.Fatalf("missing expected page_url record: %s records=%+v", urlValue, records)
+		}
+	}
+}
+
 // TestScanJSResourcesRecursivelyScansImportedChunks 验证懒加载 chunk 会继续被抓取并参与静态分析。
 func TestScanJSResourcesRecursivelyScansImportedChunks(t *testing.T) {
 	client := &http.Client{
@@ -1211,6 +1241,17 @@ func TestExtractRuntimeSurfaceDisabled(t *testing.T) {
 // TestParseRuntimeSurfaceResponseFiltersCrossHost 验证 external runtime 结果会继续受 host 过滤。
 func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
 	payload := map[string]any{
+		"records": []map[string]any{
+			{
+				"id":      "page_url",
+				"content": "https://example.com/portal?tenant=demo",
+				"tag":     "runtime_page_candidate",
+			},
+			{
+				"id":      "page_url",
+				"content": "https://other.com/out",
+			},
+		},
 		"endpoints": []map[string]any{
 			{
 				"endpoint_id": "runtime-ep-1",
@@ -1240,6 +1281,12 @@ func TestParseRuntimeSurfaceResponseFiltersCrossHost(t *testing.T) {
 	}
 
 	result := parseRuntimeSurfaceResponse(raw, "https://example.com")
+	if len(result.Records) != 1 {
+		t.Fatalf("unexpected runtime record count: %d", len(result.Records))
+	}
+	if result.Records[0].Id != "page_url" || result.Records[0].Content != "https://example.com/portal?tenant=demo" {
+		t.Fatalf("unexpected runtime record: %+v", result.Records[0])
+	}
 	if len(result.Endpoints) != 1 {
 		t.Fatalf("unexpected runtime endpoint count: %d", len(result.Endpoints))
 	}

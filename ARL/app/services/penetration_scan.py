@@ -533,7 +533,7 @@ class PenetrationScanService(object):
         for record in records or []:
             record_type = str(record.get("record_type", "") or "").strip()
             content = str(record.get("content", "") or "").strip()
-            if record_type in {"urlfinder_url", "path_url", "domain_url"} and self._is_http_url(content):
+            if record_type in {"urlfinder_url", "path_url", "page_url", "domain_url"} and self._is_http_url(content):
                 _append(content, record_type)
 
         candidates.sort(key=lambda item: item.get("url", ""))
@@ -2060,7 +2060,7 @@ class PenetrationScanService(object):
                         _append_target(parsed)
                 continue
 
-            if record_type in {"urlfinder_url", "path_url", "domain_url"} and self._is_http_url(content):
+            if record_type in {"urlfinder_url", "path_url", "page_url", "domain_url"} and self._is_http_url(content):
                 normalized = self._normalize_target_url(content)
                 if not normalized:
                     continue

@@ -48,6 +48,7 @@ func scanLinkedHTMLPages(client *http.Client, targetURL string, rootBody string)
 		result.Endpoints = append(result.Endpoints, endpoints...)
 		result.Parameters = append(result.Parameters, parameters...)
 		result.JSURLs = append(result.JSURLs, extractJSURLs(page.Body, page.URL)...)
+		result.PageURLs = append(result.PageURLs, page.URL)
 		result.PageURLs = append(result.PageURLs, extractJSPageCandidateURLs(page.Body, page.URL, buildJSVariableHints(page.Body))...)
 	}
 

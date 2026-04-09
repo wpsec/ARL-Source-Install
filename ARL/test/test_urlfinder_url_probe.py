@@ -129,6 +129,41 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
     @patch("app.services.urlfinder_url_probe.page_fetch")
     @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
     @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    def test_probe_supports_page_url_hidden_candidates(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
+        fake_db = _FakeDb()
+        mock_conn_db.side_effect = fake_db.collection
+        mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
+        mock_page_fetch.return_value = {
+            "https://example.com/portal?tenant=demo": {
+                "url": "https://example.com/portal?tenant=demo",
+                "title": "portal",
+                "content_length": 24,
+                "status_code": 200,
+            }
+        }
+
+        inserted_count = run_urlfinder_url_probe(
+            task_id="task_3_page",
+            sites=["https://example.com"],
+            wih_records=[
+                WihRecord("page_url", "https://example.com/portal?tenant=demo", "https://example.com", "https://example.com", 31),
+            ],
+        )
+
+        self.assertEqual(inserted_count, 2)
+        self.assertEqual(len(fake_db.url.inserted), 1)
+        self.assertEqual(fake_db.url.inserted[0]["site"], "https://example.com/portal?tenant=demo")
+        self.assertEqual(len(fake_db.fileleak.inserted), 1)
+        mock_page_fetch.assert_called_once_with(
+            ["https://example.com/portal?tenant=demo"],
+            concurrency=6,
+            waf_guard=None,
+            waf_module="urlfinder_url_probe",
+        )
+
+    @patch("app.services.urlfinder_url_probe.page_fetch")
+    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
+    @patch("app.services.urlfinder_url_probe.utils.conn_db")
     def test_probe_inserts_fileleak_when_url_asset_exists(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
         fake_db = _FakeDb(existing_url_assets=["https://example.com/api/user"])
         mock_conn_db.side_effect = fake_db.collection

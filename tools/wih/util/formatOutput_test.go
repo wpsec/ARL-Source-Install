@@ -635,6 +635,37 @@ func TestRenderCSVIncludesURLStatusTitleAndSize(t *testing.T) {
 	}
 }
 
+func TestRenderCSVPlacesPageURLRecordIntoURLColumn(t *testing.T) {
+	result := &datatype.ScanResult{
+		Target: "https://example.com",
+		Records: []datatype.ScanRecord{
+			{
+				Id:      "page_url",
+				Content: "https://example.com/portal?tenant=demo",
+				Source:  "https://example.com",
+				Tag:     "js_page_candidate",
+				Hash:    321,
+			},
+		},
+	}
+
+	rendered := renderCSV(result)
+	reader := csv.NewReader(strings.NewReader(rendered))
+	rows, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("read csv failed: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("unexpected csv row count: %d", len(rows))
+	}
+	if got := rows[1][2]; got != "https://example.com/portal?tenant=demo" {
+		t.Fatalf("unexpected page_url csv url value: %s", got)
+	}
+	if got := rows[1][3]; got != "" {
+		t.Fatalf("unexpected page_url csv content value: %s", got)
+	}
+}
+
 // TestBuildEndpointCSVTableUsesChineseHeaders 验证接口表使用中文表头并包含状态码/响应大小。
 func TestBuildEndpointCSVTableUsesChineseHeaders(t *testing.T) {
 	rows := buildEndpointCSVTable([]datatype.EndpointRecord{

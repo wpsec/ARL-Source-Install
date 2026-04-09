@@ -340,7 +340,7 @@ class InfoHunter(object):
     def _should_keep_plain_content(record_type: str, content: str) -> bool:
         record_type = str(record_type or "").strip().lower()
         content = str(content or "").strip().lower()
-        if record_type in {"domain_url", "ip_url", "path_url", "urlfinder_url", "urlfinder_js"}:
+        if record_type in {"domain_url", "ip_url", "path_url", "page_url", "urlfinder_url", "urlfinder_js"}:
             return True
         return content.startswith("http://") or content.startswith("https://")
 

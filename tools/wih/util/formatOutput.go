@@ -344,7 +344,7 @@ func buildRecordsCSVTable(result *datatype.ScanResult) [][]string {
 		titleText := ""
 		sizeText := ""
 
-		if strings.EqualFold(strings.TrimSpace(record.Id), "path_url") {
+		if strings.EqualFold(strings.TrimSpace(record.Id), "path_url") || strings.EqualFold(strings.TrimSpace(record.Id), "page_url") {
 			urlText = strings.TrimSpace(record.Content)
 			contentText = ""
 		}

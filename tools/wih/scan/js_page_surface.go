@@ -141,6 +141,53 @@ func buildJSPageCandidatePathRecords(targetURL string, pageURLs []string) []data
 	return results
 }
 
+func buildPageCandidateURLRecords(targetURL string, pageURLs []string, tag string) []datatype.ScanRecord {
+	targetParsed, err := url.Parse(strings.TrimSpace(targetURL))
+	if err != nil || targetParsed.Host == "" {
+		return nil
+	}
+
+	recordTag := strings.TrimSpace(tag)
+	if recordTag == "" {
+		recordTag = "page_candidate"
+	}
+
+	seen := make(map[string]struct{})
+	results := make([]datatype.ScanRecord, 0, len(pageURLs))
+	for _, pageURL := range pageURLs {
+		parsed, parseErr := url.Parse(strings.TrimSpace(pageURL))
+		if parseErr != nil || parsed.Host == "" {
+			continue
+		}
+		if !strings.EqualFold(parsed.Hostname(), targetParsed.Hostname()) {
+			continue
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			continue
+		}
+		if isStaticHTMLExploreAsset(parsed.Path) {
+			continue
+		}
+
+		normalized := parsed.String()
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		results = append(results, datatype.ScanRecord{
+			Id:      "page_url",
+			Content: normalized,
+			Source:  targetURL,
+			Tag:     recordTag,
+			Hash:    util.StableHash(fmt.Sprintf("page_url|%s|%s", targetURL, normalized)),
+		})
+	}
+	return results
+}
+
 func normalizeJSImportURL(baseJSURL string, rawURL string, stringValues map[string]string, memberStrings map[string]string) (string, error) {
 	expr := strings.TrimSpace(rawURL)
 	if expr == "" {
