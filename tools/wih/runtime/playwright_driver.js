@@ -16,6 +16,16 @@
 const { URL } = require('url');
 
 const staticAssetPattern = /\.(?:js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|pdf|zip|rar|7z|mp[34]|avi|mov|docx?|xlsx?|pptx?)$/i;
+const responseBodyInspectLimit = 256 * 1024;
+const responseHtmlCandidatePatterns = [
+  /<a\b[^>]*href\s*=\s*["']([^"']{1,300})["']/gi,
+  /<iframe\b[^>]*src\s*=\s*["']([^"']{1,300})["']/gi,
+  /<form\b[^>]*action\s*=\s*["']([^"']{1,300})["']/gi,
+];
+const responseStateCandidatePatterns = [
+  /\b(?:router\.(?:push|replace)|location\.(?:href|assign|replace)|window\.open)\s*\(\s*["'`]([^"'`]{1,300})["'`]/gi,
+  /(?:["']?(?:path|pathname|page|route|routePath|fullPath|redirect(?:Path|Url|URI)?|login(?:Path|Url)?|admin(?:Path|Url)?|entry(?:Path|Url)?)["']?)\s*[:=]\s*["'`]([^"'`]{1,300})["'`]/gi,
+];
 
 async function readStdin() {
   return await new Promise((resolve, reject) => {
@@ -354,44 +364,129 @@ function normalizeSameHostPageUrl(rawUrl, baseUrl, targetHost) {
   return resolved.toString();
 }
 
+function shouldInspectResponseBody(contentType, responseSize) {
+  const loweredType = String(contentType || '').toLowerCase();
+  if (!(loweredType.includes('html') ||
+    loweredType.includes('json') ||
+    loweredType.includes('javascript') ||
+    loweredType.includes('ecmascript') ||
+    loweredType.includes('text/plain') ||
+    loweredType.includes('xml'))) {
+    return false;
+  }
+  return responseSize <= 0 || responseSize <= responseBodyInspectLimit;
+}
+
+function extractPageCandidatesFromText(text, baseUrl, targetHost) {
+  const bodyText = String(text || '').trim();
+  if (!bodyText) return [];
+
+  const result = [];
+  const seen = new Set();
+  const addCandidate = (raw) => {
+    const normalized = normalizeSameHostPageUrl(raw, baseUrl, targetHost);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    result.push(normalized);
+  };
+
+  for (const pattern of responseHtmlCandidatePatterns) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(bodyText)) !== null) {
+      addCandidate(match[1]);
+    }
+  }
+
+  for (const pattern of responseStateCandidatePatterns) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(bodyText)) !== null) {
+      addCandidate(match[1]);
+    }
+  }
+
+  return result;
+}
+
 async function extractSameHostPageCandidates(page, baseUrl, targetHost) {
   const rawItems = await page.evaluate(() => {
     const candidates = [];
+    const seenRoots = new WeakSet();
+    const seenDocuments = new WeakSet();
 
-    const pushCandidate = (url, text = '', tag = '') => {
+    const pushCandidate = (url, text = '', tag = '', pageUrl = '') => {
       const value = String(url || '').trim();
       if (!value) return;
       candidates.push({
         url: value,
         text: String(text || '').trim(),
         tag: String(tag || '').trim().toLowerCase(),
+        page_url: String(pageUrl || '').trim(),
       });
     };
 
-    document.querySelectorAll('a[href]').forEach((element) => {
-      pushCandidate(
-        element.getAttribute('href') || '',
-        element.innerText || element.textContent || '',
-        'a',
-      );
-    });
+    const visitRoot = (root, pageUrl) => {
+      if (!root || seenRoots.has(root)) return;
+      seenRoots.add(root);
 
-    document.querySelectorAll('iframe[src]').forEach((element) => {
-      pushCandidate(
-        element.getAttribute('src') || '',
-        element.getAttribute('title') || '',
-        'iframe',
-      );
-    });
+      root.querySelectorAll('a[href]').forEach((element) => {
+        pushCandidate(
+          element.getAttribute('href') || '',
+          element.innerText || element.textContent || '',
+          'a',
+          pageUrl,
+        );
+      });
 
-    document.querySelectorAll('form[action]').forEach((element) => {
-      const method = String(element.getAttribute('method') || 'get').trim().toLowerCase();
-      if (method !== '' && method !== 'get') return;
-      pushCandidate(
-        element.getAttribute('action') || '',
-        element.getAttribute('name') || '',
-        'form',
-      );
+      root.querySelectorAll('iframe[src]').forEach((element) => {
+        pushCandidate(
+          element.getAttribute('src') || '',
+          element.getAttribute('title') || '',
+          'iframe',
+          pageUrl,
+        );
+        try {
+          if (element.contentDocument) {
+            visitDocument(element.contentDocument);
+          }
+        } catch (error) {
+          // 跨域 iframe 无法访问时直接跳过。
+        }
+      });
+
+      root.querySelectorAll('form[action]').forEach((element) => {
+        const method = String(element.getAttribute('method') || 'get').trim().toLowerCase();
+        if (method !== '' && method !== 'get') return;
+        pushCandidate(
+          element.getAttribute('action') || '',
+          element.getAttribute('name') || '',
+          'form',
+          pageUrl,
+        );
+      });
+
+      root.querySelectorAll('*').forEach((element) => {
+        if (element.shadowRoot) {
+          visitRoot(element.shadowRoot, pageUrl);
+        }
+      });
+    };
+
+    const visitDocument = (doc) => {
+      if (!doc || seenDocuments.has(doc)) return;
+      seenDocuments.add(doc);
+      const pageUrl = String(doc.location && doc.location.href || document.location.href || '').trim();
+      pushCandidate(pageUrl, doc.title || '', 'current', pageUrl);
+      visitRoot(doc, pageUrl);
+    };
+
+    visitDocument(document);
+
+    const runtimePageCandidates = Array.isArray(window.__WIH_RUNTIME_PAGE_CANDIDATES__) ? window.__WIH_RUNTIME_PAGE_CANDIDATES__.slice(0) : [];
+    window.__WIH_RUNTIME_PAGE_CANDIDATES__ = [];
+    runtimePageCandidates.forEach((item) => {
+      pushCandidate(item, '', 'runtime_page', String(document.location.href || '').trim());
     });
 
     return candidates;
@@ -400,7 +495,7 @@ async function extractSameHostPageCandidates(page, baseUrl, targetHost) {
   const result = [];
   const seen = new Set();
   for (const item of Array.isArray(rawItems) ? rawItems : []) {
-    const normalized = normalizeSameHostPageUrl(item && item.url, baseUrl, targetHost);
+    const normalized = normalizeSameHostPageUrl(item && item.url, (item && item.page_url) || baseUrl, targetHost);
     if (!normalized || seen.has(normalized)) continue;
     const text = String((item && item.text) || '').trim();
     const tag = String((item && item.tag) || '').trim().toLowerCase();
@@ -433,6 +528,9 @@ function inferFormBodyProfile(method, enctype) {
 async function extractSameHostFormEvents(page, baseUrl, targetHost) {
   const rawForms = await page.evaluate(() => {
     const forms = [];
+    const seenRoots = new WeakSet();
+    const seenDocuments = new WeakSet();
+
     const normalizeFieldValue = (element) => {
       const tagName = String(element.tagName || '').toLowerCase();
       const inputType = String(element.getAttribute('type') || '').toLowerCase();
@@ -458,32 +556,61 @@ async function extractSameHostFormEvents(page, baseUrl, targetHost) {
       return placeholder || '<value>';
     };
 
-    document.querySelectorAll('form').forEach((formElement) => {
-      const fields = [];
-      formElement.querySelectorAll('input, select, textarea').forEach((element) => {
-        const name = String(element.getAttribute('name') || '').trim();
-        if (!name) return;
-        const type = String(element.getAttribute('type') || element.tagName || 'text').trim().toLowerCase();
-        if (type === 'submit' || type === 'button' || type === 'reset' || type === 'image') return;
-        const value = normalizeFieldValue(element);
-        if (type === 'radio' && !value) return;
-        fields.push({
-          name,
-          type,
-          value,
-          required: !!element.required,
+    const visitRoot = (root, pageUrl) => {
+      if (!root || seenRoots.has(root)) return;
+      seenRoots.add(root);
+
+      root.querySelectorAll('form').forEach((formElement) => {
+        const fields = [];
+        formElement.querySelectorAll('input, select, textarea').forEach((element) => {
+          const name = String(element.getAttribute('name') || '').trim();
+          if (!name) return;
+          const type = String(element.getAttribute('type') || element.tagName || 'text').trim().toLowerCase();
+          if (type === 'submit' || type === 'button' || type === 'reset' || type === 'image') return;
+          const value = normalizeFieldValue(element);
+          if (type === 'radio' && !value) return;
+          fields.push({
+            name,
+            type,
+            value,
+            required: !!element.required,
+          });
+        });
+
+        forms.push({
+          action: String(formElement.getAttribute('action') || '').trim(),
+          method: String(formElement.getAttribute('method') || 'get').trim().toLowerCase(),
+          enctype: String(formElement.getAttribute('enctype') || '').trim().toLowerCase(),
+          page_url: pageUrl,
+          text: String(formElement.innerText || formElement.textContent || '').trim(),
+          fields,
         });
       });
 
-      forms.push({
-        action: String(formElement.getAttribute('action') || '').trim(),
-        method: String(formElement.getAttribute('method') || 'get').trim().toLowerCase(),
-        enctype: String(formElement.getAttribute('enctype') || '').trim().toLowerCase(),
-        page_url: String(document.location.href || '').trim(),
-        text: String(formElement.innerText || formElement.textContent || '').trim(),
-        fields,
+      root.querySelectorAll('*').forEach((element) => {
+        if (element.shadowRoot) {
+          visitRoot(element.shadowRoot, pageUrl);
+        }
+        if (String(element.tagName || '').toLowerCase() === 'iframe') {
+          try {
+            if (element.contentDocument) {
+              visitDocument(element.contentDocument);
+            }
+          } catch (error) {
+            // 跨域 iframe 无法访问时直接跳过。
+          }
+        }
       });
-    });
+    };
+
+    const visitDocument = (doc) => {
+      if (!doc || seenDocuments.has(doc)) return;
+      seenDocuments.add(doc);
+      const pageUrl = String(doc.location && doc.location.href || document.location.href || '').trim();
+      visitRoot(doc, pageUrl);
+    };
+
+    visitDocument(document);
 
     return forms;
   }).catch(() => []);
@@ -648,13 +775,63 @@ async function performLowRiskInteractions(page, maxActions) {
     await settle();
   }
 
-  const tabSelectors = ['[role="tab"]', '[data-tab]', '[aria-controls]'];
+  const tabSelectors = ['[role="tab"]', '[data-tab]', '[aria-controls]', 'summary'];
   for (const selector of tabSelectors) {
     const count = await page.locator(selector).count();
     for (let i = 0; i < count && used < maxActions; i += 1) {
       const locator = page.locator(selector).nth(i);
       const visible = await locator.isVisible().catch(() => false);
       if (!visible) continue;
+      await locator.click({ timeout: 1000 }).catch(() => {});
+      used += 1;
+      await settle();
+    }
+  }
+
+  const disclosureSelectors = ['[aria-haspopup="dialog"]', '[data-bs-toggle="modal"]', '[data-toggle="modal"]', '[data-target]', '[aria-expanded="false"]'];
+  for (const selector of disclosureSelectors) {
+    const count = await page.locator(selector).count();
+    for (let i = 0; i < count && used < maxActions; i += 1) {
+      const locator = page.locator(selector).nth(i);
+      const visible = await locator.isVisible().catch(() => false);
+      const enabled = await locator.isEnabled().catch(() => true);
+      if (!visible || !enabled) continue;
+      const meta = await locator.evaluate((element) => ({
+        text: [
+          element.innerText || element.textContent || '',
+          element.getAttribute('title') || '',
+          element.getAttribute('aria-label') || '',
+          element.getAttribute('data-target') || '',
+        ].join(' ').trim(),
+        type: (element.getAttribute('type') || '').trim(),
+      })).catch(() => ({ text: '', type: '' }));
+      if (!isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
+      if (meta.type.toLowerCase() === 'submit' || isExplicitSubmitActionText(meta.text) || isDangerousActionText(meta.text)) continue;
+      await locator.click({ timeout: 1000 }).catch(() => {});
+      used += 1;
+      await settle();
+    }
+  }
+
+  const authModeSelectors = ['.ant-tabs-tab', '.el-tabs__item', '.ivu-tabs-tab', '.van-tab', '[onclick]', '[tabindex]:not(input):not(textarea):not(select)'];
+  for (const selector of authModeSelectors) {
+    const count = await page.locator(selector).count();
+    for (let i = 0; i < count && used < maxActions; i += 1) {
+      const locator = page.locator(selector).nth(i);
+      const visible = await locator.isVisible().catch(() => false);
+      const enabled = await locator.isEnabled().catch(() => true);
+      if (!visible || !enabled) continue;
+      const meta = await locator.evaluate((element) => ({
+        text: [
+          element.innerText || element.textContent || '',
+          element.getAttribute('title') || '',
+          element.getAttribute('aria-label') || '',
+          element.getAttribute('class') || '',
+        ].join(' ').trim(),
+        type: (element.getAttribute('type') || '').trim(),
+      })).catch(() => ({ text: '', type: '' }));
+      if (!isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
+      if (meta.type.toLowerCase() === 'submit' || isExplicitSubmitActionText(meta.text) || isDangerousActionText(meta.text)) continue;
       await locator.click({ timeout: 1000 }).catch(() => {});
       used += 1;
       await settle();
@@ -768,6 +945,8 @@ async function main() {
   });
   const page = await context.newPage();
   const observedRequests = [];
+  const discoveredPageCandidates = [];
+  const discoveredPageSet = new Set();
   const maxObservedRequests = Math.max(200, maxRequests * 8);
 
   const pushObservedRequest = (record) => {
@@ -775,6 +954,15 @@ async function main() {
     observedRequests.push(record);
     if (observedRequests.length > maxObservedRequests) {
       observedRequests.shift();
+    }
+  };
+
+  const pushDiscoveredPageCandidates = (items, baseUrl = targetUrl) => {
+    for (const item of Array.isArray(items) ? items : []) {
+      const normalized = normalizeSameHostPageUrl(item, baseUrl, target.hostname);
+      if (!normalized || discoveredPageSet.has(normalized)) continue;
+      discoveredPageSet.add(normalized);
+      discoveredPageCandidates.push(normalized);
     }
   };
 
@@ -819,13 +1007,23 @@ async function main() {
       const bodyKind = String(bodyInfo.bodyKind || inferBodyKind(contentType, rawBodyText)).trim();
 
       let responseSize = 0;
+      let responseBody = null;
       const responseHeaders = typeof response.headers === 'function' ? normalizeHeaders(response.headers()) : {};
+      const responseContentType = responseHeaders['content-type'] || responseHeaders['Content-Type'] || '';
       responseSize = parsePositiveInteger(responseHeaders['content-length'] || responseHeaders['Content-Length']);
-      if (responseSize <= 0) {
-        const responseBody = await response.body().catch(() => null);
-        if (responseBody && typeof responseBody.length === 'number' && responseBody.length > 0) {
+      const shouldInspectBody = shouldInspectResponseBody(responseContentType, responseSize);
+      if (responseSize <= 0 || shouldInspectBody) {
+        responseBody = await response.body().catch(() => null);
+        if (responseBody && typeof responseBody.length === 'number' && responseBody.length > 0 && responseSize <= 0) {
           responseSize = Number(responseBody.length);
         }
+      }
+      if (shouldInspectBody && responseBody && responseBody.length > 0 && responseBody.length <= responseBodyInspectLimit) {
+        const responseText = responseBody.toString('utf8');
+        pushDiscoveredPageCandidates(
+          extractPageCandidatesFromText(responseText, request.url(), target.hostname),
+          request.url(),
+        );
       }
 
       pushObservedRequest({
@@ -848,6 +1046,8 @@ async function main() {
   await page.addInitScript(() => {
     const events = [];
     const maxStored = 200;
+    const pageCandidates = [];
+    const maxStoredPageCandidates = 120;
 
     const normalizeObjectBodyInPage = (input) => {
       if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
@@ -974,6 +1174,14 @@ async function main() {
       window.__WIH_RUNTIME_EVENTS__ = events;
     };
 
+    const safePushPageCandidate = (value) => {
+      const text = String(value || '').trim();
+      if (!text) return;
+      pageCandidates.push(text);
+      if (pageCandidates.length > maxStoredPageCandidates) pageCandidates.shift();
+      window.__WIH_RUNTIME_PAGE_CANDIDATES__ = pageCandidates;
+    };
+
     const normalizeBody = (body, contentType = '') => {
       if (!body) return { bodyKind: '', bodyText: '', body: {} };
       if (typeof body === 'string') {
@@ -1091,6 +1299,32 @@ async function main() {
       };
       window.WebSocket.prototype = OriginalWebSocket.prototype;
     }
+
+    const captureCurrentLocation = () => {
+      safePushPageCandidate(document.location.href);
+    };
+
+    const originalPushState = history.pushState?.bind(history);
+    if (originalPushState) {
+      history.pushState = function(...args) {
+        const result = originalPushState(...args);
+        captureCurrentLocation();
+        return result;
+      };
+    }
+
+    const originalReplaceState = history.replaceState?.bind(history);
+    if (originalReplaceState) {
+      history.replaceState = function(...args) {
+        const result = originalReplaceState(...args);
+        captureCurrentLocation();
+        return result;
+      };
+    }
+
+    window.addEventListener('hashchange', captureCurrentLocation, true);
+    window.addEventListener('popstate', captureCurrentLocation, true);
+    captureCurrentLocation();
   });
 
   const pendingPages = [];
@@ -1109,12 +1343,19 @@ async function main() {
     queuedPages.add(normalized);
   };
 
+  const drainDiscoveredPages = () => {
+    while (discoveredPageCandidates.length > 0) {
+      enqueuePage(discoveredPageCandidates.shift());
+    }
+  };
+
   enqueuePage(targetUrl);
   for (const candidatePage of candidatePages.slice(0, Math.max(maxPages * 4, 16))) {
     enqueuePage(candidatePage);
   }
 
   while (pendingPages.length > 0 && visitedPages.size < maxPages && rawEvents.length < maxRequests * 6) {
+    drainDiscoveredPages();
     const nextPageUrl = pendingPages.shift();
     queuedPages.delete(nextPageUrl);
     if (!nextPageUrl || visitedPages.has(nextPageUrl)) continue;
@@ -1136,6 +1377,7 @@ async function main() {
       queuedPages.add(candidateUrl);
       if (pendingPages.length + visitedPages.size >= maxPages * 4) break;
     }
+    drainDiscoveredPages();
   }
 
   await browser.close();

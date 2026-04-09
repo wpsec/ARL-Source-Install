@@ -22,6 +22,7 @@ type linkedPageSurface struct {
 	Endpoints  []datatype.EndpointRecord
 	Parameters []datatype.ParameterRecord
 	JSURLs     []string
+	PageURLs   []string
 }
 
 func scanLinkedHTMLPages(client *http.Client, targetURL string, rootBody string) linkedPageSurface {
@@ -39,6 +40,7 @@ func scanLinkedHTMLPages(client *http.Client, targetURL string, rootBody string)
 		Endpoints:  make([]datatype.EndpointRecord, 0),
 		Parameters: make([]datatype.ParameterRecord, 0),
 		JSURLs:     make([]string, 0),
+		PageURLs:   make([]string, 0),
 	}
 	for _, page := range pages {
 		result.Records = append(result.Records, filterRecordsByTargetScope(targetURL, rule(page.Body, page.URL, "page"))...)
@@ -46,12 +48,14 @@ func scanLinkedHTMLPages(client *http.Client, targetURL string, rootBody string)
 		result.Endpoints = append(result.Endpoints, endpoints...)
 		result.Parameters = append(result.Parameters, parameters...)
 		result.JSURLs = append(result.JSURLs, extractJSURLs(page.Body, page.URL)...)
+		result.PageURLs = append(result.PageURLs, extractJSPageCandidateURLs(page.Body, page.URL, buildJSVariableHints(page.Body))...)
 	}
 
 	result.Records = dedupeRecords(result.Records)
 	result.Endpoints = mergeEndpointRecords(result.Endpoints)
 	result.Parameters = mergeParameterRecords(result.Parameters)
 	result.JSURLs = uniqueSortedText(result.JSURLs)
+	result.PageURLs = prioritizePageCandidateURLs(result.PageURLs)
 	return result
 }
 

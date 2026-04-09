@@ -104,6 +104,8 @@ func Scan(targetURL string) *datatype.ScanResult {
 	}
 
 	records := filterRecordsByTargetScope(targetURL, rule(pageBody, targetURL, "page"))
+	rootPageCandidates := extractJSPageCandidateURLs(pageBody, targetURL, buildJSVariableHints(pageBody))
+	records = append(records, buildJSPageCandidatePathRecords(targetURL, rootPageCandidates)...)
 	endpoints, parameters := extractHTMLFormSurface(pageBody, targetURL)
 	if len(records) >= global.MaxCollect {
 		return &datatype.ScanResult{
@@ -127,12 +129,14 @@ func Scan(targetURL string) *datatype.ScanResult {
 
 	jsSurface := scanJSResources(client, targetURL, jsURLs)
 	records = append(records, filterRecordsByTargetScope(targetURL, jsSurface.Records)...)
+	records = append(records, buildJSPageCandidatePathRecords(targetURL, linkedPageSurface.PageURLs)...)
 	records = append(records, buildJSPageCandidatePathRecords(targetURL, jsSurface.PageURLs)...)
 	records = dedupeRecords(records)
 	endpoints = mergeEndpointRecords(append(endpoints, jsSurface.Endpoints...))
 	parameters = mergeParameterRecords(append(parameters, jsSurface.Parameters...))
 
-	runtimeSurface := extractRuntimeSurface(targetURL, jsSurface.PageURLs)
+	runtimeCandidatePages := prioritizePageCandidateURLs(append(append(rootPageCandidates, linkedPageSurface.PageURLs...), jsSurface.PageURLs...))
+	runtimeSurface := extractRuntimeSurface(targetURL, runtimeCandidatePages)
 	endpoints = mergeEndpointRecords(append(endpoints, runtimeSurface.Endpoints...))
 	parameters = mergeParameterRecords(append(parameters, runtimeSurface.Parameters...))
 

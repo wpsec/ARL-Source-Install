@@ -2799,52 +2799,22 @@ function formatWihEndpointMetric(row: any, column: string): string {
     const rawStatus = row?.status_code ?? row?.response_status;
     const numericStatus = Number(rawStatus);
     if (column === 'response_size' && Number.isFinite(numericStatus) && numericStatus > 0) return '-';
-    return getWihEndpointVerificationLabel(row);
+    return '-';
   }
 
   const numericValue = Number(rawValue);
   if (!Number.isFinite(numericValue)) return normalizeValue(rawValue);
 
   if (column === 'status_code') {
-    return numericValue > 0 ? String(numericValue) : getWihEndpointVerificationLabel(row);
+    return numericValue > 0 ? String(numericValue) : '-';
   }
 
   const rawStatus = row?.status_code ?? row?.response_status;
   const numericStatus = Number(rawStatus);
   if (numericValue <= 0 && (!Number.isFinite(numericStatus) || numericStatus <= 0)) {
-    return getWihEndpointVerificationLabel(row);
+    return '-';
   }
   return String(numericValue);
-}
-
-function getWihEndpointVerificationLabel(row: any): string {
-  const statusText = String(row?.verification_status || '').trim().toLowerCase();
-  if (statusText === 'skipped') return '未验证';
-  if (statusText === 'error') return '验证失败';
-  const methodText = String(row?.method || '').trim().toUpperCase();
-  if (methodText) return '未验证';
-  return '-';
-}
-
-function getWihEndpointVerificationNote(row: any): string {
-  const note = normalizeValueNoTruncate(row?.verification_note);
-  if (note && note !== '-') return note;
-  const methodText = String(row?.method || '').trim().toUpperCase();
-  if (['DELETE', 'PUT', 'PATCH', 'TRACE', 'CONNECT'].includes(methodText)) {
-    return `危险 HTTP 方法 ${methodText}，未主动验证`;
-  }
-  const statusText = String(row?.verification_status || '').trim().toLowerCase();
-  if (statusText === 'skipped' || methodText) return '未捕获响应或尚未重新扫描，未主动验证';
-  return '';
-}
-
-function getWihEndpointVerificationClass(row: any): string {
-  const statusText = String(row?.verification_status || '').trim().toLowerCase();
-  const methodText = String(row?.method || '').trim().toUpperCase();
-  if (statusText === 'skipped' || statusText === 'error' || ['DELETE', 'PUT', 'PATCH', 'TRACE', 'CONNECT'].includes(methodText)) {
-    return 'text-brand-danger bg-brand-danger/10 border-brand-danger/30';
-  }
-  return 'text-brand-text-muted bg-brand-bg/50 border-brand-border';
 }
 
 function buildWihEndpointDetailUrl(row: any): string {
@@ -12656,7 +12626,6 @@ function TableModuleView({
         const detailUrl = buildWihEndpointDetailUrl(detailRow);
         const requestPacket = buildWihEndpointRequestPacket(detailRow);
         const urlLabel = methodText === 'GET' ? '带参数URL' : '请求URL';
-        const verificationNote = getWihEndpointVerificationNote(detailRow);
         return (
           <div
             className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
@@ -12693,11 +12662,6 @@ function TableModuleView({
                   <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
                     响应大小：{formatWihEndpointMetric(detailRow, 'response_size')}
                   </span>
-                  {verificationNote ? (
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${getWihEndpointVerificationClass(detailRow)}`}>
-                      验证：{verificationNote}
-                    </span>
-                  ) : null}
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

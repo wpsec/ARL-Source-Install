@@ -17,6 +17,7 @@ var (
 
 	routePathPattern       = regexp.MustCompile("(?is)\\bpath\\s*:\\s*(?:\"([^\"]{1,300})\"|'([^']{1,300})'|`([^`]{1,300})`|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))")
 	locationHrefPattern    = regexp.MustCompile("(?is)\\blocation\\.href\\s*=\\s*(?:\"([^\"]{1,300})\"|'([^']{1,300})'|`([^`]{1,300})`|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))")
+	frameworkStatePattern  = regexp.MustCompile("(?is)(?:[\"']?(?:pathname|fullPath|page|route|routePath|redirect(?:Path|Url|URI)?|login(?:Path|Url)?|admin(?:Path|Url)?|entry(?:Path|Url)?)[\"']?)\\s*[:=]\\s*(?:\"([^\"]{1,300})\"|'([^']{1,300})'|`([^`]{1,300})`|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))")
 	numericPathSegmentExpr = regexp.MustCompile(`^\d+(?:\.\d+)?$`)
 	pageNavigationPatterns = []*regexp.Regexp{
 		regexp.MustCompile("(?is)\\b(?:router\\.(?:push|replace)|location\\.(?:assign|replace)|window\\.open)\\s*\\(\\s*(?:\"([^\"]{1,300})\"|'([^']{1,300})'|`([^`]{1,300})`|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))"),
@@ -75,6 +76,14 @@ func extractJSPageCandidateURLs(jsBody string, jsURL string, variableHints jsVar
 	}
 
 	for _, match := range locationHrefPattern.FindAllStringSubmatch(jsBody, -1) {
+		rawURL := firstNonEmpty(matchValue(match, 1), matchValue(match, 2), matchValue(match, 3), matchValue(match, 4))
+		pageURL, err := normalizeStaticPageURL(jsURL, rawURL, true, variableHints.StringValues, variableHints.MemberStrings)
+		if err == nil && strings.TrimSpace(pageURL) != "" {
+			results = append(results, pageURL)
+		}
+	}
+
+	for _, match := range frameworkStatePattern.FindAllStringSubmatch(jsBody, -1) {
 		rawURL := firstNonEmpty(matchValue(match, 1), matchValue(match, 2), matchValue(match, 3), matchValue(match, 4))
 		pageURL, err := normalizeStaticPageURL(jsURL, rawURL, true, variableHints.StringValues, variableHints.MemberStrings)
 		if err == nil && strings.TrimSpace(pageURL) != "" {

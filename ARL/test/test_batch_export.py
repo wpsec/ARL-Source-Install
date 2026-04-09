@@ -279,8 +279,8 @@ class TestBatchExport(unittest.TestCase):
             self.assertEqual(["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文"], header_row)
             data_row = [cell.value for cell in next(ws.iter_rows(min_row=2, max_row=2))]
             self.assertEqual(1, data_row[0])
-            self.assertEqual("未验证", data_row[4])
-            self.assertEqual("未验证", data_row[5])
+            self.assertEqual("-", data_row[4])
+            self.assertEqual("-", data_row[5])
             self.assertEqual("https://example.com/api/login", data_row[6])
             self.assertIn("POST /api/login HTTP/1.1", data_row[7])
             risk_ws = wb["风险"]
@@ -347,7 +347,7 @@ class TestBatchExport(unittest.TestCase):
         self.assertIn("站点", html)
         self.assertIn("Example Site", html)
 
-    def test_wih_endpoint_sheet_should_show_verification_note_for_skipped_methods(self):
+    def test_wih_endpoint_sheet_should_keep_wih_raw_status_for_skipped_methods(self):
         with patch('app.routes.export.get_wih_endpoint_data') as mock_get_wih_endpoint_data:
             mock_get_wih_endpoint_data.return_value = [
                 {
@@ -372,8 +372,8 @@ class TestBatchExport(unittest.TestCase):
             data_row = [cell.value for cell in next(ws.iter_rows(min_row=2, max_row=2))]
 
             self.assertEqual("DELETE", data_row[3])
-            self.assertEqual("未验证（危险 HTTP 方法 DELETE，未主动验证）", data_row[4])
-            self.assertEqual("未验证（危险 HTTP 方法 DELETE，未主动验证）", data_row[5])
+            self.assertEqual("-", data_row[4])
+            self.assertEqual("-", data_row[5])
 
     @patch.object(SaveTask, 'build_statist')
     @patch.object(SaveTask, 'build_stat_finger_xl')

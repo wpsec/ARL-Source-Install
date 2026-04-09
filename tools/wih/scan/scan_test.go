@@ -269,6 +269,54 @@ func TestScanLinkedHTMLPagesCollectsFormSurface(t *testing.T) {
 	}
 }
 
+// TestScanLinkedHTMLPagesCollectsFrameworkPageCandidates 验证静态 HTML 探索会从内联框架状态中恢复页面候选。
+func TestScanLinkedHTMLPagesCollectsFrameworkPageCandidates(t *testing.T) {
+	rootBody := `<html><body><a href="/shell">shell</a></body></html>`
+	shellBody := `
+<html>
+  <head>
+    <script>window.__NEXT_DATA__ = {"page":"/login","props":{"pageProps":{"loginUrl":"/loginAdmin"}}}</script>
+    <script>window.__NUXT__ = {"fullPath":"/portal/home"}</script>
+  </head>
+  <body></body>
+</html>
+`
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.String() {
+			case "https://example.com/shell":
+				return &http.Response{
+					StatusCode:    http.StatusOK,
+					ContentLength: int64(len(shellBody)),
+					Header:        http.Header{"Content-Type": []string{"text/html; charset=utf-8"}},
+					Body:          io.NopCloser(strings.NewReader(shellBody)),
+					Request:       req,
+				}, nil
+			default:
+				return nil, fmt.Errorf("unexpected url: %s", req.URL.String())
+			}
+		}),
+	}
+
+	result := scanLinkedHTMLPages(client, "https://example.com", rootBody)
+	expected := map[string]bool{
+		"https://example.com/login":       false,
+		"https://example.com/loginAdmin":  false,
+		"https://example.com/portal/home": false,
+	}
+	for _, item := range result.PageURLs {
+		if _, ok := expected[item]; ok {
+			expected[item] = true
+		}
+	}
+	for pageURL, hit := range expected {
+		if !hit {
+			t.Fatalf("missing expected framework page candidate: %s pageURLs=%+v", pageURL, result.PageURLs)
+		}
+	}
+}
+
 // TestExtractJSURLs 验证 JS URL 提取逻辑。
 func TestExtractJSURLs(t *testing.T) {
 	html := `<script src="/static/app.js"></script><script src="https://cdn.example.com/a.js"></script>`
@@ -625,6 +673,38 @@ location.href = passwordLogin
 	for urlValue, hit := range expected {
 		if !hit {
 			t.Fatalf("missing expected page candidate: %s urls=%+v", urlValue, urls)
+		}
+	}
+}
+
+// TestExtractJSPageCandidateURLsFromRecoveredStrings 验证 atob / decodeURIComponent / 字符串拼接会恢复成页面候选。
+func TestExtractJSPageCandidateURLsFromRecoveredStrings(t *testing.T) {
+	jsBody := `
+const loginPrefix = decodeURIComponent("%2Flog")
+const loginSuffix = atob("aW4=")
+const loginUrl = loginPrefix + loginSuffix
+const adminUrl = atob("L2xvZ2luQWRtaW4=")
+router.push(loginUrl)
+location.href = adminUrl
+`
+
+	urls := extractJSPageCandidateURLs(
+		jsBody,
+		"https://example.com/assets/router.js",
+		buildJSVariableHints(jsBody),
+	)
+	expected := map[string]bool{
+		"https://example.com/login":      false,
+		"https://example.com/loginAdmin": false,
+	}
+	for _, item := range urls {
+		if _, ok := expected[item]; ok {
+			expected[item] = true
+		}
+	}
+	for urlValue, hit := range expected {
+		if !hit {
+			t.Fatalf("missing recovered page candidate: %s urls=%+v", urlValue, urls)
 		}
 	}
 }

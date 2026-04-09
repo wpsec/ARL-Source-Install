@@ -22,7 +22,6 @@ from app.modules import CollectSource, WebSiteFetchStatus, WebSiteFetchOption
 from app.services.nuclei_scan import nuclei_scan, NucleiScan
 from app.services.afrog_scan import run_afrog_scan
 from app.services.waf_guard import WAFSmartSkipGuard
-from app.services.wih_endpoint_probe import enrich_wih_endpoints
 from app.services.ai_pen_mcp_runtime import AiPenMcpRuntime, ToolSchema
 from app.services.task_scope_guard import load_task_scope_context, host_in_scope, url_in_scope
 from app.services.infoHunter import InfoHunter
@@ -20730,7 +20729,7 @@ class WebSiteFetch(object):
                 continue
             scoped_endpoints.append(raw_item)
 
-        for raw_item in enrich_wih_endpoints(scoped_endpoints, waf_guard=self.waf_guard):
+        for raw_item in scoped_endpoints:
             item = raw_item.copy()
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
@@ -20745,12 +20744,12 @@ class WebSiteFetch(object):
             item["fnv_hash"] = endpoint_hash
 
             try:
-                utils.conn_db("wih_endpoint").update_one(
+                utils.conn_db("wih_endpoint").replace_one(
                     {
                         "task_id": self.task_id,
                         "fnv_hash": item["fnv_hash"],
                     },
-                    {"$setOnInsert": item},
+                    item,
                     upsert=True,
                 )
             except Exception as e:

@@ -6,6 +6,7 @@
 ## 2026-04-09（v4.6.51）
 
 - `[v4.6.51]` `WIH` 隐藏接口发现能力增强：静态扫描阶段开始递归跟踪懒加载 `JS chunk`，不会再只停留在入口脚本；新增前端页面候选提取，能从 `Vue Router` 等路由定义、`router.push/replace`、`location.href/assign/replace`、`window.open` 等导航语义中恢复页面入口，并对 `/login/:sysCode?` 这类模板路由自动降级为 `/login`，`hash route` 也会同步沉淀为页面与目录候选。运行时 `Playwright` 链路现在会接收这些页面候选并优先访问登录页、认证页、管理页，同时允许低风险点击“密码登录 / 管理员登录 / 其他登录方式 / 登录方式切换”等认证模式切换动作，但明确避开真实提交按钮与高风险动作；交互后会直接从当前 DOM 抽取同域表单的 `action/method/enctype/字段骨架`，将新出现的隐藏登录接口作为结构化接口面产出，而不主动提交凭证。对应补齐懒加载 chunk、路由候选、`hash route` 与递归扫描回归测试，帮助 `WIH` 更适合承担“替代人工啃前端 JS 找隐藏接口”的工作
+- `[v4.6.52]` `WIH/ARL` 隐藏登录口挖掘与结果口径继续收口：`WIH` 继续增强“更像人工”的页面状态探索能力，运行时开始递归消费同源 `iframe`、`shadow DOM`、响应体里的 `HTML/JSON/JS/XML` 文本线索，并捕获 `history.pushState/replaceState/hashchange/popstate` 导致的当前页面 URL 变化，让“默认 SSO / 点击密码登录后切到隐藏登录页”的场景更容易被沉淀为页面候选与接口面；静态链同时补强前端框架状态恢复与轻度反混淆，可从 `page/fullPath/route/loginUrl/adminPath` 等内联状态、`atob/decodeURIComponent`、字符串拼接与模板字符串中恢复登录页、管理页和隐藏导航入口。与此同时，`ARL` 侧 `WIH接口提取` 不再对 `WIH` 结构化接口做二次轻量验证，任务落库、页面展示和导出统一改为直接使用 `WIH` 原始 `status_code/response_size`，无响应时保持 `-`，避免平台侧补探测导致与单独运行 `WIH` 的结果口径不一致；同任务重扫时也会用最新 `WIH` 原始记录覆盖旧的接口结果，减少历史补探测数据残留
 
 ## 2026-04-08（v4.6.39 ~ v4.6.50）
 

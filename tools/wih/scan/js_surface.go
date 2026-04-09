@@ -1,12 +1,14 @@
 package scan
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	datatype "wih/dataType"
 	"wih/util"
@@ -56,6 +58,10 @@ var (
 	templateSegmentPattern  = regexp.MustCompile(`\$\{\s*([^}]{1,80})\s*\}`)
 	doubleBracePattern      = regexp.MustCompile(`\{\{\s*([^}]{1,80})\s*\}\}`)
 	pathPlaceholderPattern  = regexp.MustCompile(`\{([A-Za-z_][\w.-]{0,63})\}`)
+	stringAssignPatterns    = []*regexp.Regexp{
+		regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]{1,400})`),
+		regexp.MustCompile(`(?is)(?:^|[;({]\s*)([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*=\s*([^;\n]{1,400})`),
+	}
 )
 
 type jsEndpointCandidate struct {
@@ -490,12 +496,54 @@ func buildJSVariableHints(jsBody string) jsVariableHints {
 		}
 	}
 
+	populateResolvedJSStringAssignments(jsBody, &hints)
+
 	visited := make(map[string]struct{})
 	for objectName, rawObject := range hints.ObjectRaw {
 		populateJSMemberHints(objectName, rawObject, &hints, visited, 0)
 	}
 
 	return hints
+}
+
+func populateResolvedJSStringAssignments(jsBody string, hints *jsVariableHints) {
+	if hints == nil || strings.TrimSpace(jsBody) == "" {
+		return
+	}
+
+	for pass := 0; pass < 4; pass++ {
+		changed := false
+		for _, pattern := range stringAssignPatterns {
+			for _, item := range pattern.FindAllStringSubmatch(jsBody, -1) {
+				if len(item) < 3 {
+					continue
+				}
+				rawName := strings.ToLower(strings.TrimSpace(item[1]))
+				rawExpr := strings.TrimSpace(item[2])
+				if rawName == "" || rawExpr == "" {
+					continue
+				}
+				value, ok := resolveStringReferenceWithMembers(rawExpr, hints.StringValues, hints.MemberStrings)
+				if !ok || strings.TrimSpace(value) == "" {
+					continue
+				}
+				if strings.Contains(rawName, ".") {
+					if hints.MemberStrings[rawName] != value {
+						hints.MemberStrings[rawName] = value
+						changed = true
+					}
+					continue
+				}
+				if hints.StringValues[rawName] != value {
+					hints.StringValues[rawName] = value
+					changed = true
+				}
+			}
+		}
+		if !changed {
+			return
+		}
+	}
 }
 
 func populateJSMemberHints(baseName string, rawObject string, hints *jsVariableHints, visited map[string]struct{}, depth int) {
@@ -698,21 +746,51 @@ func resolveStringReference(expr string, valueMap map[string]string) (string, bo
 }
 
 func resolveStringReferenceWithMembers(expr string, valueMap map[string]string, memberMap map[string]string) (string, bool) {
+	if value, ok := resolveStringExpression(expr, valueMap, memberMap, 0); ok {
+		return value, true
+	}
+	return "", false
+}
+
+func resolveStringExpression(expr string, valueMap map[string]string, memberMap map[string]string, depth int) (string, bool) {
+	if depth > 5 {
+		return "", false
+	}
+	text := strings.TrimSpace(expr)
+	if text == "" {
+		return "", false
+	}
+
 	if value, ok := resolveStringReference(expr, valueMap); ok {
 		return value, true
 	}
-	if memberMap == nil {
-		return "", false
+	if memberMap != nil {
+		name := strings.ToLower(strings.TrimSpace(expr))
+		if name != "" {
+			if value, ok := memberMap[name]; ok && strings.TrimSpace(value) != "" {
+				return strings.TrimSpace(value), true
+			}
+		}
 	}
-	name := strings.ToLower(strings.TrimSpace(expr))
-	if name == "" {
-		return "", false
+
+	if value, ok := extractInlineStringValue(text); ok {
+		if strings.Contains(value, "${") {
+			if resolved, resolvedOK := resolveTemplateStringValue(value, valueMap, memberMap, depth+1); resolvedOK {
+				return resolved, true
+			}
+		}
+		return value, true
 	}
-	value, ok := memberMap[name]
-	if !ok || strings.TrimSpace(value) == "" {
-		return "", false
+
+	if resolved, ok := resolveFunctionWrappedString(text, valueMap, memberMap, depth+1); ok {
+		return resolved, true
 	}
-	return strings.TrimSpace(value), true
+
+	if resolved, ok := resolveConcatenatedString(text, valueMap, memberMap, depth+1); ok {
+		return resolved, true
+	}
+
+	return "", false
 }
 
 func extractInlineStringValue(expr string) (string, bool) {
@@ -733,6 +811,147 @@ func extractInlineStringValue(expr string) (string, bool) {
 		return strings.TrimSpace(match[1]), true
 	}
 	return "", false
+}
+
+func resolveTemplateStringValue(templateValue string, valueMap map[string]string, memberMap map[string]string, depth int) (string, bool) {
+	if depth > 5 {
+		return "", false
+	}
+	if !strings.Contains(templateValue, "${") {
+		return templateValue, true
+	}
+
+	matches := templateSegmentPattern.FindAllStringSubmatch(templateValue, -1)
+	if len(matches) == 0 {
+		return templateValue, true
+	}
+
+	resolved := templateValue
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		value, ok := resolveStringExpression(match[1], valueMap, memberMap, depth+1)
+		if !ok {
+			return "", false
+		}
+		resolved = strings.ReplaceAll(resolved, match[0], value)
+	}
+	if strings.Contains(resolved, "${") {
+		return "", false
+	}
+	return resolved, true
+}
+
+func resolveFunctionWrappedString(expr string, valueMap map[string]string, memberMap map[string]string, depth int) (string, bool) {
+	text := strings.TrimSpace(expr)
+	if text == "" {
+		return "", false
+	}
+	lowered := strings.ToLower(text)
+
+	decodeArgument := func(names ...string) string {
+		for _, name := range names {
+			nameText := strings.ToLower(strings.TrimSpace(name))
+			if !strings.HasPrefix(lowered, nameText+"(") {
+				continue
+			}
+			if content, ok := extractBalancedParenContent(text[len(name):]); ok {
+				return strings.TrimSpace(content)
+			}
+		}
+		return ""
+	}
+
+	if argument := decodeArgument("atob", "window.atob"); argument != "" {
+		value, ok := resolveStringExpression(argument, valueMap, memberMap, depth+1)
+		if !ok {
+			return "", false
+		}
+		decoded, decodeOK := decodeBase64String(value)
+		if !decodeOK {
+			return "", false
+		}
+		return decoded, true
+	}
+
+	if argument := decodeArgument("decodeURIComponent", "window.decodeURIComponent", "decodeURI", "window.decodeURI"); argument != "" {
+		value, ok := resolveStringExpression(argument, valueMap, memberMap, depth+1)
+		if !ok {
+			return "", false
+		}
+		decoded, err := url.PathUnescape(value)
+		if err != nil || strings.TrimSpace(decoded) == "" {
+			return "", false
+		}
+		return decoded, true
+	}
+
+	return "", false
+}
+
+func resolveConcatenatedString(expr string, valueMap map[string]string, memberMap map[string]string, depth int) (string, bool) {
+	parts := splitTopLevel(expr, '+')
+	if len(parts) <= 1 {
+		return "", false
+	}
+
+	builder := strings.Builder{}
+	for _, part := range parts {
+		value, ok := resolveStringExpression(part, valueMap, memberMap, depth+1)
+		if !ok {
+			return "", false
+		}
+		builder.WriteString(value)
+	}
+	result := strings.TrimSpace(builder.String())
+	if result == "" {
+		return "", false
+	}
+	return result, true
+}
+
+func decodeBase64String(raw string) (string, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", false
+	}
+	for _, decoder := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		decoded, err := decoder.DecodeString(value)
+		if err != nil {
+			continue
+		}
+		text := strings.TrimSpace(string(decoded))
+		if text == "" || !utf8.ValidString(text) {
+			continue
+		}
+		if !looksLikeRecoveredString(text) {
+			continue
+		}
+		return text, true
+	}
+	return "", false
+}
+
+func looksLikeRecoveredString(text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	if strings.ContainsRune(text, '\x00') {
+		return false
+	}
+	printable := 0
+	for _, r := range text {
+		if r == '\n' || r == '\r' || r == '\t' || (r >= 32 && r < 127) {
+			printable++
+		}
+	}
+	return printable*100 >= len([]rune(text))*85
 }
 
 func expandJSRequestWindowWithConfig(requestWindow string, variableHints jsVariableHints) string {
