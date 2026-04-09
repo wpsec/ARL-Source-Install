@@ -45,7 +45,7 @@ def _load_info_hunter_module():
             "WIH_RUNTIME_ENABLE": True,
             "WIH_RUNTIME_DRIVER": "playwright",
             "WIH_RUNTIME_COMMAND": "",
-            "WIH_RUNTIME_TIMEOUT_SEC": 20,
+            "WIH_RUNTIME_TIMEOUT_SEC": 60,
             "WIH_RUNTIME_MAX_PAGES": 12,
             "WIH_RUNTIME_MAX_ACTIONS": 32,
             "WIH_RUNTIME_MAX_REQUESTS": 180,
@@ -119,7 +119,7 @@ class TestWihTimeoutSplit(unittest.TestCase):
         self.assertIn("--runtime-driver", command)
         self.assertIn("playwright", command)
         self.assertIn("--runtime-timeout", command)
-        self.assertIn("20", command)
+        self.assertIn("60", command)
         self.assertIn("--runtime-max-pages", command)
         self.assertIn("12", command)
         self.assertIn("--runtime-max-actions", command)

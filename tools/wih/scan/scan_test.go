@@ -1,7 +1,9 @@
 package scan
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -732,9 +734,9 @@ router.replace(loginRoute)
 		buildJSVariableHints(jsBody),
 	)
 	expected := map[string]bool{
-		"https://example.com/Login?dt=frmw0c9n":      false,
+		"https://example.com/Login?dt=frmw0c9n":          false,
 		"https://example.com/portal/tenant-a/app/campus": false,
-		"https://example.com/login/eysys":            false,
+		"https://example.com/login/eysys":                false,
 	}
 	for _, item := range urls {
 		if _, ok := expected[item]; ok {
@@ -1439,6 +1441,19 @@ func TestRuntimeErrorMessage(t *testing.T) {
 	message := runtimeErrorMessage("playwright_not_installed")
 	if !strings.Contains(message, "Node Playwright") {
 		t.Fatalf("unexpected runtime error message: %s", message)
+	}
+}
+
+func TestRuntimeCommandFailureMessageTimeout(t *testing.T) {
+	message := runtimeCommandFailureMessage(errors.New("signal: killed"), "", context.DeadlineExceeded, 60)
+	if !strings.Contains(message, "超时") {
+		t.Fatalf("unexpected timeout failure message: %s", message)
+	}
+	if !strings.Contains(message, "60") {
+		t.Fatalf("timeout failure message should include timeout seconds: %s", message)
+	}
+	if !strings.Contains(message, "--runtime-timeout") {
+		t.Fatalf("timeout failure message should suggest runtime-timeout: %s", message)
 	}
 }
 

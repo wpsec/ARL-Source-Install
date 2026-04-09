@@ -1372,7 +1372,7 @@ async function main() {
   const maxRequests = Math.max(1, Number(payload.max_requests || 40) || 40);
   const maxPages = Math.max(1, Number(payload.max_pages || 3) || 1);
   const maxActions = Math.max(0, Number(payload.max_actions || 8) || 0);
-  const timeoutMs = Math.max(1000, (Number(payload.timeout_sec || 20) || 20) * 1000);
+  const timeoutMs = Math.max(1000, (Number(payload.timeout_sec || 60) || 60) * 1000);
   const candidatePages = Array.isArray(payload.candidate_pages) ? payload.candidate_pages : [];
   const defaultHeaders = normalizeHeaders(payload.default_headers);
   const proxyOptions = buildProxyOptions(payload.proxy_url);

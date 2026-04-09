@@ -95,7 +95,7 @@ func extractRuntimeSurfaceByPlaywrightDriver(targetURL string, candidatePages []
 func extractRuntimeSurfaceByCommand(targetURL string, candidatePages []string, commandText string) runtimeSurfaceResult {
 	timeoutSec := int(global.RuntimeTimeout.Seconds())
 	if timeoutSec < 1 {
-		timeoutSec = 20
+		timeoutSec = 60
 	}
 
 	requestPayload := runtimeSurfaceRequest{
@@ -131,11 +131,7 @@ func extractRuntimeSurfaceByCommand(targetURL string, candidatePages []string, c
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		errText := strings.TrimSpace(stderr.String())
-		if errText == "" {
-			errText = err.Error()
-		}
-		warnRuntimeNotice("Playwright 运行时采集执行失败，当前将退回静态扫描；可检查 node / playwright 环境。错误: " + truncateRuntimeMessage(errText))
+		warnRuntimeNotice(runtimeCommandFailureMessage(err, stderr.String(), ctx.Err(), timeoutSec))
 		return runtimeSurfaceResult{}
 	}
 
@@ -288,6 +284,8 @@ func runtimeErrorMessage(code string) string {
 	switch strings.TrimSpace(code) {
 	case "playwright_not_installed":
 		return "未检测到 Node Playwright 依赖，当前将退回静态扫描；如需动态能力，请安装 playwright 或显式关闭 runtime 提示"
+	case "runtime_timeout":
+		return "运行时采集超时，当前将退回静态扫描；可通过 --runtime-timeout 调大预算"
 	case "invalid_request_json":
 		return "运行时驱动请求参数异常，当前将退回静态扫描"
 	case "empty_target_url":
@@ -302,6 +300,27 @@ func runtimeErrorMessage(code string) string {
 		}
 		return "运行时驱动返回异常: " + truncateRuntimeMessage(code)
 	}
+}
+
+func runtimeCommandFailureMessage(runErr error, stderrText string, ctxErr error, timeoutSec int) string {
+	if ctxErr == context.DeadlineExceeded {
+		if timeoutSec < 1 {
+			timeoutSec = int(global.RuntimeTimeout.Seconds())
+		}
+		if timeoutSec < 1 {
+			timeoutSec = 1
+		}
+		return fmt.Sprintf("Playwright 运行时采集超时（%d秒），当前将退回静态扫描；可通过 --runtime-timeout 调大预算，或检查代理与目标响应速度", timeoutSec)
+	}
+
+	errText := strings.TrimSpace(stderrText)
+	if errText == "" && runErr != nil {
+		errText = runErr.Error()
+	}
+	if errText == "" {
+		errText = "unknown error"
+	}
+	return "Playwright 运行时采集执行失败，当前将退回静态扫描；可检查 node / playwright 环境。错误: " + truncateRuntimeMessage(errText)
 }
 
 func normalizeRuntimeEndpoint(endpoint datatype.EndpointRecord, targetURL string, targetHost string) (datatype.EndpointRecord, bool) {

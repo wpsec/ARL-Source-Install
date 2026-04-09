@@ -36,6 +36,7 @@
 
 - `--runtime-enable=true`
 - `--runtime-driver=playwright`
+- `--runtime-timeout=60`
 - `--runtime-max-pages=12`
 - `--runtime-max-actions=32`
 - `--runtime-max-requests=180`
@@ -104,7 +105,7 @@ npx playwright install chromium
   "max_actions": 32,
   "max_requests": 180,
   "follow_redirect": false,
-  "timeout_sec": 20
+  "timeout_sec": 60
 }
 ```
 

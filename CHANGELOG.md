@@ -3,13 +3,14 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
-## 2026-04-09（v4.6.51 ~ v4.6.55）
+## 2026-04-09（v4.6.51 ~ v4.6.56）
 
 - `[v4.6.51]` `WIH` 隐藏接口发现能力增强：静态扫描阶段开始递归跟踪懒加载 `JS chunk`，不会再只停留在入口脚本；新增前端页面候选提取，能从 `Vue Router` 等路由定义、`router.push/replace`、`location.href/assign/replace`、`window.open` 等导航语义中恢复页面入口，并对 `/login/:sysCode?` 这类模板路由自动降级为 `/login`，`hash route` 也会同步沉淀为页面与目录候选。运行时 `Playwright` 链路现在会接收这些页面候选并优先访问登录页、认证页、管理页，同时允许低风险点击“密码登录 / 管理员登录 / 其他登录方式 / 登录方式切换”等认证模式切换动作，但明确避开真实提交按钮与高风险动作；交互后会直接从当前 DOM 抽取同域表单的 `action/method/enctype/字段骨架`，将新出现的隐藏登录接口作为结构化接口面产出，而不主动提交凭证。对应补齐懒加载 chunk、路由候选、`hash route` 与递归扫描回归测试，帮助 `WIH` 更适合承担“替代人工啃前端 JS 找隐藏接口”的工作
 - `[v4.6.52]` `WIH/ARL` 隐藏登录口挖掘与结果口径继续收口：`WIH` 继续增强“更像人工”的页面状态探索能力，运行时开始递归消费同源 `iframe`、`shadow DOM`、响应体里的 `HTML/JSON/JS/XML` 文本线索，并捕获 `history.pushState/replaceState/hashchange/popstate` 导致的当前页面 URL 变化，让“默认 SSO / 点击密码登录后切到隐藏登录页”的场景更容易被沉淀为页面候选与接口面；静态链同时补强前端框架状态恢复与轻度反混淆，可从 `page/fullPath/route/loginUrl/adminPath` 等内联状态、`atob/decodeURIComponent`、字符串拼接与模板字符串中恢复登录页、管理页和隐藏导航入口。与此同时，`ARL` 侧 `WIH接口提取` 不再对 `WIH` 结构化接口做二次轻量验证，任务落库、页面展示和导出统一改为直接使用 `WIH` 原始 `status_code/response_size`，无响应时保持 `-`，避免平台侧补探测导致与单独运行 `WIH` 的结果口径不一致；同任务重扫时也会用最新 `WIH` 原始记录覆盖旧的接口结果，减少历史补探测数据残留
 - `[v4.6.53]` `WIH` 参数值恢复与更深状态切换探索继续推进：静态链新增面向 `bootstrap API / inline state / config.js / localStorage / sessionStorage` 的值候选恢复，开始把 `dt/sysCode/tenant/appId` 这类键从页面状态、存储写入与字符串表达式里提出来，并参与 `router path`、模板字符串、查询参数与隐藏页面 URL 的展开，让 `/login/:sysCode`、`/portal/:tenant/app/:appId`、`/Login?dt=...` 这类入口不再只停留在模板层。运行时链同步补充状态值池与更深的交互探索，开始从 `__NEXT_DATA__ / __NUXT__ / __INITIAL_STATE__ / __CONFIG__ / __BOOTSTRAP__ / __MICRO_APP_STATE__` 等全局状态、`script[type="application/json"]`、浏览器存储、响应体文本中持续恢复页面候选和值候选，并把这些值继续用于页面队列展开；低风险交互也继续覆盖 `menu / tree / dropdown / data-route / router-link / micro-app` 等复杂 `tab`、菜单与微前端切换入口，帮助 `WIH` 更稳定地接近“人工点开隐藏登录方式、再跟着状态跳转继续挖接口”的过程。对应补齐值恢复与模板路由替换回归测试，避免后续增强把这条主链弄丢
 - `[v4.6.54]` `WIH/ARL` 通用隐藏页面候选保留补齐：继续把能力从“识别登录隐藏口”收口到更通用的“发现前端未直露页面与接口面”。`WIH` 现在会把同 host 的页面候选直接沉淀为 `page_url` 记录，不再只把它们塞进 runtime 队列里等待后续访问；这意味着 `/portal?tenant=...`、`/entry?scene=...`、`/Login?dt=...` 这类带查询参数的隐藏页面，即使最终没来得及转成接口，也不会在结果里凭空消失。运行时 `Playwright` 链路也开始把真实访问过和运行时新发现的页面 URL 回写成 `page_url` 记录，并把低风险点击策略进一步向 `data-route/data-url/router-link/href/micro-app` 等导航语义倾斜，降低对特定业务文案的依赖。与此同时，`ARL` 侧 `urlfinder_url_probe`、后续 URL 候选消费与渗透候选收集开始接纳 `page_url` 记录，让这类隐藏页面 URL 能继续进入可达性探测和后续分析链，而不是只在 `WIH` 内部短暂停留
 - `[v4.6.55]` `WIH` runtime 默认探索预算上调：针对隐藏页面入口需要跨页切换、菜单展开和多轮低风险点击才能浮现的场景，默认运行时预算从 `8` 页、`20` 次动作、`120` 条请求提升到 `12` 页、`32` 次动作、`180` 条请求；`tools/wih` CLI 默认值、全局配置、`ARL` 侧 `InfoHunter` 回退值、`config.py/config.yaml.example` 与文档说明同步更新，避免独立运行 `WIH`、经 `ARL` 调用和配置模板三条链路仍然落在旧预算上。对应命令拼装回归也已跟进，确保新的默认预算会真实下发到 `WIH` 运行时
+- `[v4.6.56]` `WIH` runtime 默认超时与报错口径修正：在默认探索预算已经提升到 `12/32/180` 后，原先 `20` 秒的 runtime 总超时很容易让 `Playwright` 在浏览器启动、代理转发和多页浅探索尚未完成时被父进程直接杀掉，并对外只留下误导性的 `signal: killed`。现在默认 runtime 超时统一上调到 `60` 秒，覆盖 `tools/wih`、`ARL` 配置与命令拼装链路；同时 `WIH` 在运行时子进程因超时被回收时，会明确提示“运行时采集超时”并建议通过 `--runtime-timeout` 调整预算，不再笼统归因为 `node / playwright` 环境异常
 
 ## 2026-04-08（v4.6.39 ~ v4.6.50）
 

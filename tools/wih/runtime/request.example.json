@@ -10,5 +10,5 @@
   "max_actions": 8,
   "max_requests": 40,
   "follow_redirect": false,
-  "timeout_sec": 20
+  "timeout_sec": 60
 }

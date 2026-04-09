@@ -77,7 +77,7 @@ Flags:
       --runtime-enable             启用运行时参数采集（默认启用 Playwright）
       --runtime-driver string      运行时采集驱动(playwright/external/noop) (default "playwright")
       --runtime-command string     运行时采集命令；external 为完整命令，playwright 可覆盖默认 node 调用
-      --runtime-timeout int        运行时采集超时(秒) (default 20)
+      --runtime-timeout int        运行时采集超时(秒) (default 60)
       --runtime-max-actions int    运行时探索最大交互动作数 (default 32)
       --runtime-max-pages int      运行时探索最大页面数 (default 12)
       --runtime-max-requests int   运行时采集最大请求数 (default 180)
@@ -153,6 +153,7 @@ output/example.com_20260406_120000/ak_leak.txt
 - 默认等价于：
   - `--runtime-enable=true`
   - `--runtime-driver=playwright`
+  - `--runtime-timeout=60`
   - `--runtime-max-pages=12`
   - `--runtime-max-actions=32`
   - `--runtime-max-requests=180`
