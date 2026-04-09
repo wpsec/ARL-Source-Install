@@ -557,6 +557,144 @@ request({
 	}
 }
 
+// TestExtractJSImportChunkURLs 验证静态 JS 会继续发现并跟踪懒加载 chunk。
+func TestExtractJSImportChunkURLs(t *testing.T) {
+	jsBody := "const loginChunk = \"./index-09e8886e.js\"\n" +
+		"const assetList = [\"assets/layout-f4f7534c.js\", \"assets/admin-460f2767.js\"]\n" +
+		"import(loginChunk)\n" +
+		"import(\"./tenant-99eb85ef.js\")\n"
+
+	urls := extractJSImportChunkURLs(
+		jsBody,
+		"https://example.com/assets/index-7b220f9f.js",
+		buildJSVariableHints(jsBody),
+	)
+	expected := map[string]bool{
+		"https://example.com/assets/index-09e8886e.js":  false,
+		"https://example.com/assets/layout-f4f7534c.js": false,
+		"https://example.com/assets/admin-460f2767.js":  false,
+		"https://example.com/assets/tenant-99eb85ef.js": false,
+	}
+	if len(urls) < len(expected) {
+		t.Fatalf("unexpected js chunk url count: %d urls=%+v", len(urls), urls)
+	}
+	for _, item := range urls {
+		if _, ok := expected[item]; ok {
+			expected[item] = true
+		}
+	}
+	for urlValue, hit := range expected {
+		if !hit {
+			t.Fatalf("missing expected js chunk url: %s urls=%+v", urlValue, urls)
+		}
+	}
+}
+
+// TestExtractJSPageCandidateURLsFromRoutes 验证前端路由与导航字符串会转成页面候选。
+func TestExtractJSPageCandidateURLsFromRoutes(t *testing.T) {
+	jsBody := `{
+  path: "/loginLayout",
+  children: [{
+    path: "/login/:sysCode?",
+    name: "Login"
+  }, {
+    path: "/loginAdmin",
+    name: "LoginAdmin"
+  }]
+}
+const passwordLogin = "/Login?dt=frmw0c9n"
+location.href = passwordLogin
+`
+
+	urls := extractJSPageCandidateURLs(
+		jsBody,
+		"https://example.com/assets/router.js",
+		buildJSVariableHints(jsBody),
+	)
+	expected := map[string]bool{
+		"https://example.com/login":             false,
+		"https://example.com/loginLayout":       false,
+		"https://example.com/loginAdmin":        false,
+		"https://example.com/Login?dt=frmw0c9n": false,
+	}
+	for _, item := range urls {
+		if _, ok := expected[item]; ok {
+			expected[item] = true
+		}
+	}
+	for urlValue, hit := range expected {
+		if !hit {
+			t.Fatalf("missing expected page candidate: %s urls=%+v", urlValue, urls)
+		}
+	}
+}
+
+// TestBuildJSPageCandidatePathRecordsSupportsHashRoute 验证 hash 路由也会沉淀成 path 候选。
+func TestBuildJSPageCandidatePathRecordsSupportsHashRoute(t *testing.T) {
+	records := buildJSPageCandidatePathRecords("https://example.com", []string{
+		"https://example.com/#/login",
+		"https://example.com/#/login",
+		"https://example.com/#/portal/home",
+	})
+
+	got := make(map[string]bool)
+	for _, record := range records {
+		got[record.Content] = true
+	}
+
+	if !got["/login"] {
+		t.Fatalf("expected hash route /login path record, got=%+v", records)
+	}
+	if !got["/portal/home"] {
+		t.Fatalf("expected hash route /portal/home path record, got=%+v", records)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected deduped hash route records, got=%d records=%+v", len(records), records)
+	}
+}
+
+// TestScanJSResourcesRecursivelyScansImportedChunks 验证懒加载 chunk 会继续被抓取并参与静态分析。
+func TestScanJSResourcesRecursivelyScansImportedChunks(t *testing.T) {
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body := ""
+			switch req.URL.String() {
+			case "https://example.com/assets/app.js":
+				body = `const loginChunk = "./chunk-login.js"; import(loginChunk);`
+			case "https://example.com/assets/chunk-login.js":
+				body = `const routes = [{ path: "/loginAdmin", name: "LoginAdmin" }]; axios.get("/api/admin/detail")`
+			default:
+				return nil, fmt.Errorf("unexpected url: %s", req.URL.String())
+			}
+			return &http.Response{
+				StatusCode:    http.StatusOK,
+				ContentLength: int64(len(body)),
+				Header:        http.Header{"Content-Type": []string{"application/javascript"}},
+				Body:          io.NopCloser(strings.NewReader(body)),
+				Request:       req,
+			}, nil
+		}),
+	}
+
+	result := scanJSResources(client, "https://example.com", []string{"https://example.com/assets/app.js"})
+	if len(result.Endpoints) != 1 {
+		t.Fatalf("unexpected recursive js endpoint count: %d", len(result.Endpoints))
+	}
+	if result.Endpoints[0].URL != "https://example.com/api/admin/detail" {
+		t.Fatalf("unexpected recursive endpoint url: %s", result.Endpoints[0].URL)
+	}
+	foundLoginAdmin := false
+	for _, item := range result.PageURLs {
+		if item == "https://example.com/loginAdmin" {
+			foundLoginAdmin = true
+			break
+		}
+	}
+	if !foundLoginAdmin {
+		t.Fatalf("expected loginAdmin page candidate in recursive scan, got=%+v", result.PageURLs)
+	}
+}
+
 // TestExtractJSStaticSurfaceAppliesSchemaHints 验证静态 JS 参数会吸收 schema 里的类型与必填信息。
 func TestExtractJSStaticSurfaceAppliesSchemaHints(t *testing.T) {
 	jsBody := `
@@ -945,7 +1083,7 @@ func TestProbeSinglePathCandidateIncludesTitleAndSize(t *testing.T) {
 
 // TestExtractRuntimeSurfaceDisabled 验证运行时采集默认关闭时不会返回结果。
 func TestExtractRuntimeSurfaceDisabled(t *testing.T) {
-	result := extractRuntimeSurface("https://example.com")
+	result := extractRuntimeSurface("https://example.com", nil)
 	if len(result.Endpoints) != 0 || len(result.Parameters) != 0 {
 		t.Fatalf("runtime surface should be empty when disabled: %+v", result)
 	}

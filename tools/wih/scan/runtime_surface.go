@@ -26,6 +26,7 @@ type runtimeSurfaceResult struct {
 
 type runtimeSurfaceRequest struct {
 	TargetURL      string            `json:"target_url"`
+	CandidatePages []string          `json:"candidate_pages,omitempty"`
 	DefaultHeaders map[string]string `json:"default_headers,omitempty"`
 	ProxyURL       string            `json:"proxy_url,omitempty"`
 	MaxPages       int               `json:"max_pages"`
@@ -49,7 +50,7 @@ var runtimeNoticeOnce sync.Once
 // - noop: 默认空实现，保持独立工具稳定
 // - external: 调用外部命令，通过 stdin/stdout 交换 JSON
 // - playwright: 调用仓库内置 Node/Playwright 运行时驱动
-func extractRuntimeSurface(targetURL string) runtimeSurfaceResult {
+func extractRuntimeSurface(targetURL string, candidatePages []string) runtimeSurfaceResult {
 	if !global.RuntimeEnable {
 		warnRuntimeNotice("当前已关闭 Playwright 运行时采集，可通过 --runtime-enable --runtime-driver playwright 开启")
 		return runtimeSurfaceResult{}
@@ -60,24 +61,24 @@ func extractRuntimeSurface(targetURL string) runtimeSurfaceResult {
 		warnRuntimeNotice("当前未启用 Playwright 运行时采集，可通过 --runtime-driver playwright 开启")
 		return runtimeSurfaceResult{}
 	case "external":
-		return extractRuntimeSurfaceByExternalDriver(targetURL)
+		return extractRuntimeSurfaceByExternalDriver(targetURL, candidatePages)
 	case "playwright":
-		return extractRuntimeSurfaceByPlaywrightDriver(targetURL)
+		return extractRuntimeSurfaceByPlaywrightDriver(targetURL, candidatePages)
 	default:
 		return runtimeSurfaceResult{}
 	}
 }
 
-func extractRuntimeSurfaceByExternalDriver(targetURL string) runtimeSurfaceResult {
+func extractRuntimeSurfaceByExternalDriver(targetURL string, candidatePages []string) runtimeSurfaceResult {
 	commandText := strings.TrimSpace(global.RuntimeCommand)
 	if commandText == "" {
 		warnRuntimeNotice("未设置 external runtime 命令，当前未启用 Playwright 运行时采集")
 		return runtimeSurfaceResult{}
 	}
-	return extractRuntimeSurfaceByCommand(targetURL, commandText)
+	return extractRuntimeSurfaceByCommand(targetURL, candidatePages, commandText)
 }
 
-func extractRuntimeSurfaceByPlaywrightDriver(targetURL string) runtimeSurfaceResult {
+func extractRuntimeSurfaceByPlaywrightDriver(targetURL string, candidatePages []string) runtimeSurfaceResult {
 	commandText := strings.TrimSpace(global.RuntimeCommand)
 	if commandText == "" {
 		commandText = resolveBuiltInPlaywrightDriverCommand()
@@ -86,17 +87,18 @@ func extractRuntimeSurfaceByPlaywrightDriver(targetURL string) runtimeSurfaceRes
 		warnRuntimeNotice("未找到内置 Playwright driver，请确认 tools/wih/runtime/playwright_driver.js 存在")
 		return runtimeSurfaceResult{}
 	}
-	return extractRuntimeSurfaceByCommand(targetURL, commandText)
+	return extractRuntimeSurfaceByCommand(targetURL, candidatePages, commandText)
 }
 
-func extractRuntimeSurfaceByCommand(targetURL string, commandText string) runtimeSurfaceResult {
+func extractRuntimeSurfaceByCommand(targetURL string, candidatePages []string, commandText string) runtimeSurfaceResult {
 	timeoutSec := int(global.RuntimeTimeout.Seconds())
 	if timeoutSec < 1 {
 		timeoutSec = 20
 	}
 
 	requestPayload := runtimeSurfaceRequest{
-		TargetURL: targetURL,
+		TargetURL:      targetURL,
+		CandidatePages: prioritizePageCandidateURLs(candidatePages),
 		DefaultHeaders: map[string]string{
 			"User-Agent":   global.DefaultUserAgent,
 			"Accept":       "application/json, text/plain, */*",

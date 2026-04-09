@@ -297,19 +297,25 @@ function buildInputSample(name, type) {
 function isDangerousActionText(text) {
   const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!normalized) return false;
-  return /(delete|remove|save|update|submit|create|upload|import|export|pay|logout|登录|提交|删除|保存|修改|新增|创建|上传|导入|支付|退出)/.test(normalized);
+  return /(delete|remove|save|update|create|upload|import|export|pay|logout|删除|保存|修改|新增|创建|上传|导入|支付|退出)/.test(normalized);
+}
+
+function isExplicitSubmitActionText(text) {
+  const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  return /^(?:login|log in|sign in|submit|登录|提交|确认|立即登录)$/.test(normalized);
 }
 
 function isPreferredActionText(text) {
   const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!normalized) return false;
-  return /(search|filter|next|more|tab|query|搜索|查询|筛选|下一页|更多|切换|标签)/.test(normalized);
+  return /(search|filter|next|more|tab|query|password login|admin login|switch login|other login|account login|搜索|查询|筛选|下一页|更多|切换|标签|密码登录|账号密码|管理员登录|其他登录|切换登录|账号登录|登录方式|aad用户)/.test(normalized);
 }
 
 function isPreferredPageText(text) {
   const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!normalized) return false;
-  return /(search|filter|query|list|detail|admin|manage|dashboard|index|home|api|doc|search|查询|筛选|列表|详情|管理|后台|首页|文档)/.test(normalized);
+  return /(search|filter|query|list|detail|admin|manage|dashboard|index|home|api|doc|login|auth|account|portal|sso|password|aad|查询|筛选|列表|详情|管理|后台|首页|文档|登录|认证|账号|门户|密码)/.test(normalized);
 }
 
 function isPreferredFormText(text) {
@@ -402,6 +408,144 @@ async function extractSameHostPageCandidates(page, baseUrl, targetHost) {
     if (tag === 'a' && text && !isPreferredPageText(text)) continue;
     seen.add(normalized);
     result.push(normalized);
+  }
+  return result;
+}
+
+function inferFormBodyProfile(method, enctype) {
+  const normalizedMethod = String(method || 'GET').trim().toUpperCase() || 'GET';
+  const normalizedEnctype = String(enctype || '').trim().toLowerCase();
+  if (normalizedMethod === 'GET') {
+    return { contentType: '', bodyKind: '' };
+  }
+  if (normalizedEnctype.includes('multipart/form-data')) {
+    return { contentType: 'multipart/form-data', bodyKind: 'multipart' };
+  }
+  if (normalizedEnctype.includes('text/plain')) {
+    return { contentType: 'text/plain', bodyKind: 'text' };
+  }
+  if (normalizedEnctype.includes('application/xml') || normalizedEnctype.includes('text/xml')) {
+    return { contentType: normalizedEnctype, bodyKind: 'xml' };
+  }
+  return { contentType: 'application/x-www-form-urlencoded', bodyKind: 'form_urlencoded' };
+}
+
+async function extractSameHostFormEvents(page, baseUrl, targetHost) {
+  const rawForms = await page.evaluate(() => {
+    const forms = [];
+    const normalizeFieldValue = (element) => {
+      const tagName = String(element.tagName || '').toLowerCase();
+      const inputType = String(element.getAttribute('type') || '').toLowerCase();
+      if (inputType === 'password') return '<value>';
+      if (inputType === 'email') return 'test@example.com';
+      if (inputType === 'tel') return '13800138000';
+      if (inputType === 'file') return '<binary>';
+      if (inputType === 'checkbox') {
+        return element.checked ? String(element.value || 'on') : 'false';
+      }
+      if (inputType === 'radio') {
+        return element.checked ? String(element.value || 'on') : '';
+      }
+      if (tagName === 'select') {
+        const selected = element.options && Array.from(element.options).find((option) => option.selected) || null;
+        const fallback = element.options && Array.from(element.options).find((option) => !option.disabled) || null;
+        const option = selected || fallback;
+        return option ? String(option.value || option.text || '').trim() : '<value>';
+      }
+      const value = typeof element.value === 'string' ? element.value.trim() : '';
+      if (value) return value;
+      const placeholder = typeof element.getAttribute === 'function' ? String(element.getAttribute('placeholder') || '').trim() : '';
+      return placeholder || '<value>';
+    };
+
+    document.querySelectorAll('form').forEach((formElement) => {
+      const fields = [];
+      formElement.querySelectorAll('input, select, textarea').forEach((element) => {
+        const name = String(element.getAttribute('name') || '').trim();
+        if (!name) return;
+        const type = String(element.getAttribute('type') || element.tagName || 'text').trim().toLowerCase();
+        if (type === 'submit' || type === 'button' || type === 'reset' || type === 'image') return;
+        const value = normalizeFieldValue(element);
+        if (type === 'radio' && !value) return;
+        fields.push({
+          name,
+          type,
+          value,
+          required: !!element.required,
+        });
+      });
+
+      forms.push({
+        action: String(formElement.getAttribute('action') || '').trim(),
+        method: String(formElement.getAttribute('method') || 'get').trim().toLowerCase(),
+        enctype: String(formElement.getAttribute('enctype') || '').trim().toLowerCase(),
+        page_url: String(document.location.href || '').trim(),
+        text: String(formElement.innerText || formElement.textContent || '').trim(),
+        fields,
+      });
+    });
+
+    return forms;
+  }).catch(() => []);
+
+  const result = [];
+  for (const item of Array.isArray(rawForms) ? rawForms : []) {
+    let actionUrl;
+    try {
+      actionUrl = new URL(String(item && item.action ? item.action : baseUrl), baseUrl);
+    } catch (error) {
+      continue;
+    }
+    if (String(actionUrl.hostname || '').toLowerCase() !== String(targetHost || '').toLowerCase()) {
+      continue;
+    }
+    if (!/^https?:$/i.test(String(actionUrl.protocol || ''))) {
+      continue;
+    }
+    if (staticAssetPattern.test(String(actionUrl.pathname || ''))) {
+      continue;
+    }
+
+    const method = String((item && item.method) || 'GET').trim().toUpperCase() || 'GET';
+    const bodyProfile = inferFormBodyProfile(method, item && item.enctype);
+    const query = {};
+    actionUrl.searchParams.forEach((value, key) => {
+      query[key] = value || '<value>';
+    });
+    const body = {};
+    const fields = Array.isArray(item && item.fields) ? item.fields : [];
+    for (const field of fields) {
+      const name = String(field && field.name || '').trim();
+      if (!name) continue;
+      const value = String(field && field.value || '').trim() || '<value>';
+      if (method === 'GET') {
+        query[name] = value;
+      } else {
+        body[name] = value;
+      }
+    }
+    if (Object.keys(query).length === 0 && Object.keys(body).length === 0) {
+      continue;
+    }
+    if (method === 'GET') {
+      Object.entries(query).forEach(([key, value]) => {
+        actionUrl.searchParams.set(key, value);
+      });
+    }
+
+    result.push({
+      source: 'runtime_form',
+      trigger: String(item && item.page_url || baseUrl).trim() || baseUrl,
+      url: actionUrl.toString(),
+      method,
+      headers: bodyProfile.contentType ? { 'Content-Type': bodyProfile.contentType } : {},
+      query,
+      body,
+      bodyKind: bodyProfile.bodyKind,
+      bodyText: '',
+      response_status: 0,
+      response_size: 0,
+    });
   }
   return result;
 }
@@ -530,7 +674,7 @@ async function performLowRiskInteractions(page, maxActions) {
         type: (element.getAttribute('type') || '').trim(),
       })).catch(() => ({ text: '', type: '' }));
       if (!isPreferredActionText(meta.text)) continue;
-      if (meta.type.toLowerCase() === 'submit' || isDangerousActionText(meta.text)) continue;
+      if (meta.type.toLowerCase() === 'submit' || isExplicitSubmitActionText(meta.text) || isDangerousActionText(meta.text)) continue;
       await locator.click({ timeout: 1000 }).catch(() => {});
       used += 1;
       await settle();
@@ -545,7 +689,7 @@ async function visitPageAndCollect(page, targetPageUrl, targetHost, timeoutMs, a
     await page.goto(targetPageUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     await page.waitForTimeout(1200);
   } catch (error) {
-    return { events: [], candidates: [], actionsUsed: 0 };
+    return { events: [], forms: [], candidates: [], actionsUsed: 0 };
   }
 
   let actionsUsed = 0;
@@ -554,13 +698,15 @@ async function visitPageAndCollect(page, targetPageUrl, targetHost, timeoutMs, a
   }
 
   const currentPageUrl = String(page.url() || targetPageUrl).trim() || targetPageUrl;
-  const [events, candidates] = await Promise.all([
+  const [events, forms, candidates] = await Promise.all([
     drainRuntimeEvents(page),
+    extractSameHostFormEvents(page, currentPageUrl, targetHost),
     extractSameHostPageCandidates(page, currentPageUrl, targetHost),
   ]);
 
   return {
     events: Array.isArray(events) ? events : [],
+    forms: Array.isArray(forms) ? forms : [],
     candidates: Array.isArray(candidates) ? candidates : [],
     actionsUsed,
   };
@@ -602,6 +748,7 @@ async function main() {
   const maxPages = Math.max(1, Number(payload.max_pages || 3) || 1);
   const maxActions = Math.max(0, Number(payload.max_actions || 8) || 0);
   const timeoutMs = Math.max(1000, (Number(payload.timeout_sec || 20) || 20) * 1000);
+  const candidatePages = Array.isArray(payload.candidate_pages) ? payload.candidate_pages : [];
   const defaultHeaders = normalizeHeaders(payload.default_headers);
   const proxyOptions = buildProxyOptions(payload.proxy_url);
 
@@ -946,11 +1093,26 @@ async function main() {
     }
   });
 
-  const pendingPages = [targetUrl];
-  const queuedPages = new Set([targetUrl]);
+  const pendingPages = [];
+  const queuedPages = new Set();
   const visitedPages = new Set();
   let remainingActions = maxActions;
   const rawEvents = [];
+  const rawForms = [];
+
+  const enqueuePage = (pageUrl) => {
+    const normalized = normalizeSameHostPageUrl(pageUrl, targetUrl, target.hostname);
+    if (!normalized || queuedPages.has(normalized) || visitedPages.has(normalized)) {
+      return;
+    }
+    pendingPages.push(normalized);
+    queuedPages.add(normalized);
+  };
+
+  enqueuePage(targetUrl);
+  for (const candidatePage of candidatePages.slice(0, Math.max(maxPages * 4, 16))) {
+    enqueuePage(candidatePage);
+  }
 
   while (pendingPages.length > 0 && visitedPages.size < maxPages && rawEvents.length < maxRequests * 6) {
     const nextPageUrl = pendingPages.shift();
@@ -965,6 +1127,7 @@ async function main() {
 
     const visitResult = await visitPageAndCollect(page, nextPageUrl, target.hostname, timeoutMs, perPageActionBudget);
     rawEvents.push(...visitResult.events);
+    rawForms.push(...visitResult.forms);
     remainingActions = Math.max(0, remainingActions - visitResult.actionsUsed);
 
     for (const candidateUrl of visitResult.candidates) {
@@ -980,7 +1143,7 @@ async function main() {
   const endpointMap = new Map();
   const parameterCountMap = new Map();
   const parameters = [];
-  const combinedEvents = [...rawEvents, ...observedRequests];
+  const combinedEvents = [...rawForms, ...rawEvents, ...observedRequests];
 
   for (const event of Array.isArray(combinedEvents) ? combinedEvents : []) {
     if (!event || !event.url) continue;
@@ -996,9 +1159,11 @@ async function main() {
 
     const method = String(event.method || 'GET').toUpperCase();
     const headers = normalizeHeaders(event.headers);
-    const query = {};
+    const query = normalizeMap(event.query);
     eventUrl.searchParams.forEach((value, key) => {
-      query[key] = value;
+      if (!Object.prototype.hasOwnProperty.call(query, key)) {
+        query[key] = value;
+      }
     });
     const body = normalizeMap(event.body);
     const bodyText = String(event.bodyText || '').trim();

@@ -81,6 +81,7 @@ type jsSurfaceScanResult struct {
 	Records    []datatype.ScanRecord
 	Endpoints  []datatype.EndpointRecord
 	Parameters []datatype.ParameterRecord
+	PageURLs   []string
 }
 
 type targetScope struct {
@@ -126,11 +127,12 @@ func Scan(targetURL string) *datatype.ScanResult {
 
 	jsSurface := scanJSResources(client, targetURL, jsURLs)
 	records = append(records, filterRecordsByTargetScope(targetURL, jsSurface.Records)...)
+	records = append(records, buildJSPageCandidatePathRecords(targetURL, jsSurface.PageURLs)...)
 	records = dedupeRecords(records)
 	endpoints = mergeEndpointRecords(append(endpoints, jsSurface.Endpoints...))
 	parameters = mergeParameterRecords(append(parameters, jsSurface.Parameters...))
 
-	runtimeSurface := extractRuntimeSurface(targetURL)
+	runtimeSurface := extractRuntimeSurface(targetURL, jsSurface.PageURLs)
 	endpoints = mergeEndpointRecords(append(endpoints, runtimeSurface.Endpoints...))
 	parameters = mergeParameterRecords(append(parameters, runtimeSurface.Parameters...))
 
@@ -176,80 +178,78 @@ func fetchBody(client *http.Client, requestURL string, scanTargetURL string) (st
 	return string(bodyBytes), nil
 }
 
-// scanJSResources 并发抓取并扫描 JS 文件。
+// scanJSResources 递归抓取并扫描 JS 文件，同时补充懒加载 chunk 与页面候选。
 func scanJSResources(client *http.Client, scanTargetURL string, jsURLs []string) jsSurfaceScanResult {
 	if len(jsURLs) == 0 {
 		return jsSurfaceScanResult{}
 	}
 
-	workerCount := global.ConcurrencyPerSite
-	if workerCount < 1 {
-		workerCount = 1
+	queue := uniqueSortedText(jsURLs)
+	queuedSet := make(map[string]struct{}, len(queue))
+	for _, jsURL := range queue {
+		queuedSet[jsURL] = struct{}{}
 	}
-
-	jobs := make(chan string)
-	results := make(chan jsSurfaceScanResult, len(jsURLs))
-
-	var wg sync.WaitGroup
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for jsURL := range jobs {
-				jsBody, err := fetchBody(client, jsURL, scanTargetURL)
-				if err != nil {
-					util.ErrPrint(err)
-					continue
-				}
-				scanUnits := []jsScanUnit{
-					{
-						URL:             jsURL,
-						Body:            jsBody,
-						SourceType:      "static_js",
-						ParameterSource: "static_js",
-						RuleSourceTag:   "js",
-					},
-				}
-				scanUnits = append(scanUnits, fetchSourceMapScanUnits(client, scanTargetURL, jsURL, jsBody)...)
-				scanUnits = dedupeJSScanUnits(scanUnits)
-
-				batchResult := jsSurfaceScanResult{
-					Records:    make([]datatype.ScanRecord, 0),
-					Endpoints:  make([]datatype.EndpointRecord, 0),
-					Parameters: make([]datatype.ParameterRecord, 0),
-				}
-				for _, unit := range scanUnits {
-					endpoints, parameters := extractJSStaticSurfaceWithMeta(unit.Body, unit.URL, unit.SourceType, unit.ParameterSource)
-					batchResult.Records = append(batchResult.Records, sanitizeRuleRecords(rule(unit.Body, unit.URL, unit.RuleSourceTag), unit.RuleSourceTag)...)
-					batchResult.Endpoints = append(batchResult.Endpoints, endpoints...)
-					batchResult.Parameters = append(batchResult.Parameters, parameters...)
-				}
-				results <- batchResult
-			}
-		}()
-	}
-
-	go func() {
-		for _, jsURL := range jsURLs {
-			jobs <- jsURL
-		}
-		close(jobs)
-		wg.Wait()
-		close(results)
-	}()
-
+	processedSet := make(map[string]struct{}, len(queue))
+	maxJSFiles := int(global.MaxJSFiles)
 	merged := jsSurfaceScanResult{
 		Records:    make([]datatype.ScanRecord, 0),
 		Endpoints:  make([]datatype.EndpointRecord, 0),
 		Parameters: make([]datatype.ParameterRecord, 0),
+		PageURLs:   make([]string, 0),
 	}
-	for batch := range results {
-		if len(batch.Records) == 0 && len(batch.Endpoints) == 0 && len(batch.Parameters) == 0 {
+
+	for len(queue) > 0 {
+		if maxJSFiles > 0 && len(processedSet) >= maxJSFiles {
+			break
+		}
+
+		jsURL := strings.TrimSpace(queue[0])
+		queue = queue[1:]
+		if jsURL == "" {
 			continue
 		}
-		merged.Records = append(merged.Records, batch.Records...)
-		merged.Endpoints = append(merged.Endpoints, batch.Endpoints...)
-		merged.Parameters = append(merged.Parameters, batch.Parameters...)
+		if _, ok := processedSet[jsURL]; ok {
+			continue
+		}
+		processedSet[jsURL] = struct{}{}
+
+		jsBody, err := fetchBody(client, jsURL, scanTargetURL)
+		if err != nil {
+			util.ErrPrint(err)
+			continue
+		}
+
+		variableHints := buildJSVariableHints(jsBody)
+		for _, chunkURL := range extractJSImportChunkURLs(jsBody, jsURL, variableHints) {
+			if _, ok := processedSet[chunkURL]; ok {
+				continue
+			}
+			if _, ok := queuedSet[chunkURL]; ok {
+				continue
+			}
+			queue = append(queue, chunkURL)
+			queuedSet[chunkURL] = struct{}{}
+		}
+
+		scanUnits := []jsScanUnit{
+			{
+				URL:             jsURL,
+				Body:            jsBody,
+				SourceType:      "static_js",
+				ParameterSource: "static_js",
+				RuleSourceTag:   "js",
+			},
+		}
+		scanUnits = append(scanUnits, fetchSourceMapScanUnits(client, scanTargetURL, jsURL, jsBody)...)
+		scanUnits = dedupeJSScanUnits(scanUnits)
+
+		for _, unit := range scanUnits {
+			endpoints, parameters := extractJSStaticSurfaceWithMeta(unit.Body, unit.URL, unit.SourceType, unit.ParameterSource)
+			merged.Records = append(merged.Records, sanitizeRuleRecords(rule(unit.Body, unit.URL, unit.RuleSourceTag), unit.RuleSourceTag)...)
+			merged.Endpoints = append(merged.Endpoints, endpoints...)
+			merged.Parameters = append(merged.Parameters, parameters...)
+			merged.PageURLs = append(merged.PageURLs, extractJSPageCandidateURLs(unit.Body, unit.URL, buildJSVariableHints(unit.Body))...)
+		}
 	}
 
 	if len(merged.Records) > global.MaxCollect {
@@ -258,6 +258,7 @@ func scanJSResources(client *http.Client, scanTargetURL string, jsURLs []string)
 	merged.Records = dedupeRecords(merged.Records)
 	merged.Endpoints = mergeEndpointRecords(merged.Endpoints)
 	merged.Parameters = mergeParameterRecords(merged.Parameters)
+	merged.PageURLs = prioritizePageCandidateURLs(merged.PageURLs)
 	return merged
 }
 
