@@ -36,9 +36,9 @@
 
 - `--runtime-enable=true`
 - `--runtime-driver=playwright`
-- `--runtime-max-pages=8`
-- `--runtime-max-actions=20`
-- `--runtime-max-requests=120`
+- `--runtime-max-pages=12`
+- `--runtime-max-actions=32`
+- `--runtime-max-requests=180`
 
 如果你只是正常执行：
 
@@ -100,9 +100,9 @@ npx playwright install chromium
     "User-Agent": "Mozilla/5.0 ...",
     "Accept": "application/json, text/plain, */*"
   },
-  "max_pages": 8,
-  "max_actions": 20,
-  "max_requests": 120,
+  "max_pages": 12,
+  "max_actions": 32,
+  "max_requests": 180,
   "follow_redirect": false,
   "timeout_sec": 20
 }

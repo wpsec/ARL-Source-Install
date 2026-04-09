@@ -149,9 +149,9 @@ class InfoHunter(object):
         self.wih_runtime_driver = str(getattr(Config, "WIH_RUNTIME_DRIVER", "playwright") or "playwright").strip().lower()
         self.wih_runtime_command = str(getattr(Config, "WIH_RUNTIME_COMMAND", "") or "").strip()
         self.wih_runtime_timeout_sec = int(getattr(Config, "WIH_RUNTIME_TIMEOUT_SEC", 20) or 20)
-        self.wih_runtime_max_pages = int(getattr(Config, "WIH_RUNTIME_MAX_PAGES", 8) or 8)
-        self.wih_runtime_max_actions = int(getattr(Config, "WIH_RUNTIME_MAX_ACTIONS", 20) or 20)
-        self.wih_runtime_max_requests = int(getattr(Config, "WIH_RUNTIME_MAX_REQUESTS", 120) or 120)
+        self.wih_runtime_max_pages = int(getattr(Config, "WIH_RUNTIME_MAX_PAGES", 12) or 12)
+        self.wih_runtime_max_actions = int(getattr(Config, "WIH_RUNTIME_MAX_ACTIONS", 32) or 32)
+        self.wih_runtime_max_requests = int(getattr(Config, "WIH_RUNTIME_MAX_REQUESTS", 180) or 180)
         if self.wih_timeout_sec < 60:
             self.wih_timeout_sec = 60
         if self.wih_concurrency < 1:

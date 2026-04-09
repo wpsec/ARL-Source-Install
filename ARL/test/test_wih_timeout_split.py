@@ -46,9 +46,9 @@ def _load_info_hunter_module():
             "WIH_RUNTIME_DRIVER": "playwright",
             "WIH_RUNTIME_COMMAND": "",
             "WIH_RUNTIME_TIMEOUT_SEC": 20,
-            "WIH_RUNTIME_MAX_PAGES": 8,
-            "WIH_RUNTIME_MAX_ACTIONS": 20,
-            "WIH_RUNTIME_MAX_REQUESTS": 120,
+            "WIH_RUNTIME_MAX_PAGES": 12,
+            "WIH_RUNTIME_MAX_ACTIONS": 32,
+            "WIH_RUNTIME_MAX_REQUESTS": 180,
             "WIH_RULE_PATH": "",
             "PROXY_URL": "",
         },
@@ -121,11 +121,11 @@ class TestWihTimeoutSplit(unittest.TestCase):
         self.assertIn("--runtime-timeout", command)
         self.assertIn("20", command)
         self.assertIn("--runtime-max-pages", command)
-        self.assertIn("8", command)
+        self.assertIn("12", command)
         self.assertIn("--runtime-max-actions", command)
-        self.assertIn("20", command)
+        self.assertIn("32", command)
         self.assertIn("--runtime-max-requests", command)
-        self.assertIn("120", command)
+        self.assertIn("180", command)
 
         minimal_command = hunter._build_command(minimal=True)
         self.assertIn("--disable-structured-output", minimal_command)

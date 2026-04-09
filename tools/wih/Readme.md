@@ -78,9 +78,9 @@ Flags:
       --runtime-driver string      运行时采集驱动(playwright/external/noop) (default "playwright")
       --runtime-command string     运行时采集命令；external 为完整命令，playwright 可覆盖默认 node 调用
       --runtime-timeout int        运行时采集超时(秒) (default 20)
-      --runtime-max-actions int    运行时探索最大交互动作数 (default 20)
-      --runtime-max-pages int      运行时探索最大页面数 (default 8)
-      --runtime-max-requests int   运行时采集最大请求数 (default 120)
+      --runtime-max-actions int    运行时探索最大交互动作数 (default 32)
+      --runtime-max-pages int      运行时探索最大页面数 (default 12)
+      --runtime-max-requests int   运行时采集最大请求数 (default 180)
       --size int                   设置表格分页大小
   -t, --target string              目标URL或者文件
   -T, --text                       文本格式输出
@@ -153,9 +153,9 @@ output/example.com_20260406_120000/ak_leak.txt
 - 默认等价于：
   - `--runtime-enable=true`
   - `--runtime-driver=playwright`
-  - `--runtime-max-pages=8`
-  - `--runtime-max-actions=20`
-  - `--runtime-max-requests=120`
+  - `--runtime-max-pages=12`
+  - `--runtime-max-actions=32`
+  - `--runtime-max-requests=180`
 - 如果你显式关闭 runtime，`wih` 会提醒你当前未启用 `Playwright` 运行时采集
 - 如果本地缺少 `node` 或 Node 版 `playwright` 依赖，`wih` 会提示并自动退回静态扫描
 - 若同时传入 `-x/--proxy`，静态抓取请求与内置 Playwright runtime 请求都会走该代理，且都会自动携带 `X-WIH-Target`

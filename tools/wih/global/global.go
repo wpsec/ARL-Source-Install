@@ -44,11 +44,11 @@ var (
 	// RuntimeTimeout 控制运行时采集超时。
 	RuntimeTimeout = 20 * time.Second
 	// RuntimeMaxPages 控制运行时探索页面预算。
-	RuntimeMaxPages = 8
+	RuntimeMaxPages = 12
 	// RuntimeMaxActions 控制运行时交互预算。
-	RuntimeMaxActions = 20
+	RuntimeMaxActions = 32
 	// RuntimeMaxRequests 控制运行时请求采集预算。
-	RuntimeMaxRequests = 120
+	RuntimeMaxRequests = 180
 
 	// FollowRedirect 控制是否跟随重定向。
 	FollowRedirect = false

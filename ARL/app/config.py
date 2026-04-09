@@ -743,11 +743,11 @@ class Config(object):
     # WIH 运行时超时（秒）
     WIH_RUNTIME_TIMEOUT_SEC = 20
     # WIH 运行时最大页面数
-    WIH_RUNTIME_MAX_PAGES = 8
+    WIH_RUNTIME_MAX_PAGES = 12
     # WIH 运行时最大交互动作数
-    WIH_RUNTIME_MAX_ACTIONS = 20
+    WIH_RUNTIME_MAX_ACTIONS = 32
     # WIH 运行时最大请求采集数
-    WIH_RUNTIME_MAX_REQUESTS = 120
+    WIH_RUNTIME_MAX_REQUESTS = 180
 
     # 黑名单域名列表（通用）
     black_domain_path = os.path.join(basedir, 'dicts/blackdomain.txt')

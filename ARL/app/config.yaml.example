@@ -471,11 +471,11 @@ ARL:
   # WIH 运行时超时（秒）
   WIH_RUNTIME_TIMEOUT_SEC: 20
   # WIH 运行时最大页面数
-  WIH_RUNTIME_MAX_PAGES: 8
+  WIH_RUNTIME_MAX_PAGES: 12
   # WIH 运行时最大交互动作数
-  WIH_RUNTIME_MAX_ACTIONS: 20
+  WIH_RUNTIME_MAX_ACTIONS: 32
   # WIH 运行时最大请求采集数
-  WIH_RUNTIME_MAX_REQUESTS: 120
+  WIH_RUNTIME_MAX_REQUESTS: 180
   # TruffleHog 可执行文件路径（建议指向 tools/TruffleHog/trufflehog）
   TRUFFLEHOG_BIN: ""
   # 是否启用 TruffleHog JS 二次扫描
