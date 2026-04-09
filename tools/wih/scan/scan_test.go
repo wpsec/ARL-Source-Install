@@ -709,6 +709,45 @@ location.href = adminUrl
 	}
 }
 
+// TestExtractJSPageCandidateURLsFromStateValues 验证 bootstrap/localStorage/sessionStorage 值会参与页面候选恢复。
+func TestExtractJSPageCandidateURLsFromStateValues(t *testing.T) {
+	jsBody := `
+window.__BOOTSTRAP__ = {
+  tenant: "tenant-a",
+  appId: "campus",
+  sysCode: "eysys"
+}
+localStorage.setItem("dt", "frmw0c9n")
+const hiddenLogin = "/Login?dt=" + localStorage.getItem("dt")
+const tenantPortal = "/portal/:tenant/app/:appId"
+const loginRoute = "/login/:sysCode"
+location.href = hiddenLogin
+router.push(tenantPortal)
+router.replace(loginRoute)
+`
+
+	urls := extractJSPageCandidateURLs(
+		jsBody,
+		"https://example.com/assets/app.js",
+		buildJSVariableHints(jsBody),
+	)
+	expected := map[string]bool{
+		"https://example.com/Login?dt=frmw0c9n":      false,
+		"https://example.com/portal/tenant-a/app/campus": false,
+		"https://example.com/login/eysys":            false,
+	}
+	for _, item := range urls {
+		if _, ok := expected[item]; ok {
+			expected[item] = true
+		}
+	}
+	for urlValue, hit := range expected {
+		if !hit {
+			t.Fatalf("missing state-derived page candidate: %s urls=%+v", urlValue, urls)
+		}
+	}
+}
+
 // TestBuildJSPageCandidatePathRecordsSupportsHashRoute 验证 hash 路由也会沉淀成 path 候选。
 func TestBuildJSPageCandidatePathRecordsSupportsHashRoute(t *testing.T) {
 	records := buildJSPageCandidatePathRecords("https://example.com", []string{

@@ -17,6 +17,7 @@ const { URL } = require('url');
 
 const staticAssetPattern = /\.(?:js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|pdf|zip|rar|7z|mp[34]|avi|mov|docx?|xlsx?|pptx?)$/i;
 const responseBodyInspectLimit = 256 * 1024;
+const valueCandidatePattern = /^[A-Za-z0-9._~%:+=-]{1,120}$/;
 const responseHtmlCandidatePatterns = [
   /<a\b[^>]*href\s*=\s*["']([^"']{1,300})["']/gi,
   /<iframe\b[^>]*src\s*=\s*["']([^"']{1,300})["']/gi,
@@ -26,6 +27,151 @@ const responseStateCandidatePatterns = [
   /\b(?:router\.(?:push|replace)|location\.(?:href|assign|replace)|window\.open)\s*\(\s*["'`]([^"'`]{1,300})["'`]/gi,
   /(?:["']?(?:path|pathname|page|route|routePath|fullPath|redirect(?:Path|Url|URI)?|login(?:Path|Url)?|admin(?:Path|Url)?|entry(?:Path|Url)?)["']?)\s*[:=]\s*["'`]([^"'`]{1,300})["'`]/gi,
 ];
+const responseValueCandidatePattern = /(?:["']?([A-Za-z_][\w.-]{0,63})["']?)\s*[:=]\s*(?:"([^"]{1,120})"|'([^']{1,120})'|`([^`]{1,120})`|(-?\d{1,18}|true|false))/gi;
+
+function normalizeValueCandidateKey(rawKey) {
+  const normalized = String(rawKey || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .trim()
+    .toLowerCase();
+  if (!normalized) return '';
+  const parts = normalized.split('.');
+  return String(parts[parts.length - 1] || '')
+    .trim()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function buildValueCandidateKeys(rawKey) {
+  const normalized = normalizeValueCandidateKey(rawKey);
+  if (!normalized) return [];
+  const result = [normalized];
+  if (normalized.endsWith('_id') && normalized.length > 3) {
+    result.push(normalized.slice(0, -3));
+  } else if (normalized.endsWith('id') && normalized.length > 2) {
+    result.push(normalized.slice(0, -2));
+  }
+  return Array.from(new Set(result.filter(Boolean)));
+}
+
+function isLikelyStateValueKey(rawKey) {
+  const key = normalizeValueCandidateKey(rawKey);
+  if (!key) return false;
+  return /(tenant|sys|app|scene|channel|module|portal|realm|client|org|code|id|dt|login|auth|route|path|page)/.test(key);
+}
+
+function isLikelyStateValue(rawValue) {
+  const text = String(rawValue || '').trim();
+  if (!text || text.length > 120) return false;
+  if (text.includes(' ') || /[\r\n\t/\\?#&]/.test(text)) return false;
+  if (/^https?:\/\//i.test(text)) return false;
+  return valueCandidatePattern.test(text);
+}
+
+function appendValueCandidate(target, rawKey, rawValue) {
+  if (!target || typeof target !== 'object') return;
+  if (!isLikelyStateValueKey(rawKey) || !isLikelyStateValue(rawValue)) return;
+  for (const key of buildValueCandidateKeys(rawKey)) {
+    const current = Array.isArray(target[key]) ? target[key].slice(0) : [];
+    const value = String(rawValue || '').trim();
+    if (!value || current.includes(value)) continue;
+    current.push(value);
+    current.sort();
+    target[key] = current.slice(0, 6);
+  }
+}
+
+function mergeValueCandidates(target, source) {
+  const result = target || {};
+  for (const [rawKey, values] of Object.entries(source || {})) {
+    for (const value of Array.isArray(values) ? values : []) {
+      appendValueCandidate(result, rawKey, value);
+    }
+  }
+  return result;
+}
+
+function lookupValueCandidates(valueCandidates, rawKey) {
+  const result = [];
+  const seen = new Set();
+  for (const key of buildValueCandidateKeys(rawKey)) {
+    for (const value of Array.isArray(valueCandidates && valueCandidates[key]) ? valueCandidates[key] : []) {
+      const text = String(value || '').trim();
+      if (!text || seen.has(text) || !isLikelyStateValue(text)) continue;
+      seen.add(text);
+      result.push(text);
+      if (result.length >= 4) return result;
+    }
+  }
+  return result;
+}
+
+function extractLookupKey(rawValue) {
+  const text = String(rawValue || '').trim();
+  if (!text) return '';
+  let match = text.match(/\$\{\s*([A-Za-z_][\w.-]{0,63})\s*\}/);
+  if (match && match[1]) return match[1];
+  match = text.match(/\{([A-Za-z_][\w.-]{0,63})\}/);
+  if (match && match[1]) return match[1];
+  match = text.match(/^:([A-Za-z_][\w.-]{0,63})\??$/);
+  if (match && match[1]) return match[1];
+  return '';
+}
+
+function expandPathParameterizedCandidates(rawValue, valueCandidates) {
+  let variants = [String(rawValue || '').trim()].filter(Boolean);
+  for (let pass = 0; pass < 4; pass += 1) {
+    const next = [];
+    for (const item of variants) {
+      next.push(item);
+      const optionalMatch = item.match(/\/:([A-Za-z_][\w.-]{0,63})\?/);
+      if (optionalMatch && optionalMatch[0]) {
+        next.push(item.replace(optionalMatch[0], ''));
+        for (const value of lookupValueCandidates(valueCandidates, optionalMatch[1])) {
+          next.push(item.replace(optionalMatch[0], `/${value}`));
+        }
+        continue;
+      }
+      const requiredMatch = item.match(/\/:([A-Za-z_][\w.-]{0,63})(?=[/?#]|$)/);
+      if (requiredMatch && requiredMatch[0]) {
+        for (const value of lookupValueCandidates(valueCandidates, requiredMatch[1])) {
+          next.push(item.replace(requiredMatch[0], `/${value}`));
+        }
+        continue;
+      }
+      const braceMatch = item.match(/\{([A-Za-z_][\w.-]{0,63})\}/);
+      if (braceMatch && braceMatch[0]) {
+        for (const value of lookupValueCandidates(valueCandidates, braceMatch[1])) {
+          next.push(item.replace(braceMatch[0], value));
+        }
+        continue;
+      }
+      const templateMatch = item.match(/\$\{\s*([A-Za-z_][\w.-]{0,63})\s*\}/);
+      if (templateMatch && templateMatch[0]) {
+        for (const value of lookupValueCandidates(valueCandidates, templateMatch[1])) {
+          next.push(item.replace(templateMatch[0], value));
+        }
+      }
+    }
+    const deduped = Array.from(new Set(next.filter(Boolean)));
+    if (deduped.length === variants.length) {
+      variants = deduped;
+      break;
+    }
+    variants = deduped;
+  }
+  return variants;
+}
+
+function hasUnresolvedPageTemplate(resolvedUrl) {
+  const pathname = String(resolvedUrl && resolvedUrl.pathname || '').trim();
+  if (/\/:[A-Za-z_][\w.-]{0,63}\??(?:$|\/)/.test(pathname)) return true;
+  if (/\{[A-Za-z_][\w.-]{0,63}\}/.test(pathname)) return true;
+  if (/\$\{\s*[A-Za-z_][\w.-]{0,63}\s*\}/.test(pathname)) return true;
+  for (const value of (resolvedUrl && resolvedUrl.searchParams ? resolvedUrl.searchParams.values() : [])) {
+    if (extractLookupKey(value)) return true;
+  }
+  return false;
+}
 
 async function readStdin() {
   return await new Promise((resolve, reject) => {
@@ -319,13 +465,13 @@ function isExplicitSubmitActionText(text) {
 function isPreferredActionText(text) {
   const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!normalized) return false;
-  return /(search|filter|next|more|tab|query|password login|admin login|switch login|other login|account login|搜索|查询|筛选|下一页|更多|切换|标签|密码登录|账号密码|管理员登录|其他登录|切换登录|账号登录|登录方式|aad用户)/.test(normalized);
+  return /(search|filter|next|more|tab|query|password login|admin login|switch login|other login|account login|tenant|portal|system switch|app switch|workspace|menu|navigation|module|subapp|微应用|租户|门户|系统切换|应用切换|工作台|菜单|导航|模块|切换应用|密码登录|账号密码|管理员登录|其他登录|切换登录|账号登录|登录方式|aad用户|搜索|查询|筛选|下一页|更多|切换|标签)/.test(normalized);
 }
 
 function isPreferredPageText(text) {
   const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!normalized) return false;
-  return /(search|filter|query|list|detail|admin|manage|dashboard|index|home|api|doc|login|auth|account|portal|sso|password|aad|查询|筛选|列表|详情|管理|后台|首页|文档|登录|认证|账号|门户|密码)/.test(normalized);
+  return /(search|filter|query|list|detail|admin|manage|dashboard|index|home|api|doc|login|auth|account|portal|sso|password|aad|tenant|module|workspace|menu|navigation|subapp|micro app|租户|模块|工作台|菜单|导航|微应用|查询|筛选|列表|详情|管理|后台|首页|文档|登录|认证|账号|门户|密码)/.test(normalized);
 }
 
 function isPreferredFormText(text) {
@@ -356,12 +502,93 @@ function normalizeSameHostPageUrl(rawUrl, baseUrl, targetHost) {
   if (staticAssetPattern.test(String(resolved.pathname || ''))) {
     return '';
   }
+  if (hasUnresolvedPageTemplate(resolved)) {
+    return '';
+  }
 
   const hashText = String(resolved.hash || '').trim();
   if (hashText && !hashText.startsWith('#/') && !hashText.startsWith('#!/')) {
     resolved.hash = '';
   }
   return resolved.toString();
+}
+
+function expandAndNormalizeSameHostPageUrls(rawUrl, baseUrl, targetHost, valueCandidates = {}) {
+  const results = [];
+  const seen = new Set();
+  const rawVariants = expandPathParameterizedCandidates(rawUrl, valueCandidates);
+
+  const appendNormalized = (value) => {
+    const normalized = normalizeSameHostPageUrl(value, baseUrl, targetHost);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    results.push(normalized);
+  };
+
+  for (const item of rawVariants) {
+    let resolved;
+    try {
+      resolved = new URL(String(item || '').trim(), baseUrl);
+    } catch (error) {
+      appendNormalized(item);
+      continue;
+    }
+    appendNormalized(resolved.toString());
+
+    const queryEntries = Array.from(resolved.searchParams.entries());
+    if (queryEntries.length === 0) continue;
+    for (const [key, currentValue] of queryEntries) {
+      const lookupKey = extractLookupKey(currentValue) || key;
+      const candidates = lookupValueCandidates(valueCandidates, lookupKey);
+      if (candidates.length === 0) continue;
+      for (const candidateValue of candidates) {
+        const clone = new URL(resolved.toString());
+        clone.searchParams.set(key, candidateValue);
+        appendNormalized(clone.toString());
+      }
+    }
+  }
+
+  return results;
+}
+
+function collectStateValueCandidatesFromObject(input, result, depth = 0) {
+  if (!input || depth > 4) return;
+  if (Array.isArray(input)) {
+    input.slice(0, 20).forEach((item) => collectStateValueCandidatesFromObject(item, result, depth + 1));
+    return;
+  }
+  if (typeof input !== 'object') return;
+
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      appendValueCandidate(result, key, value);
+      continue;
+    }
+    collectStateValueCandidatesFromObject(value, result, depth + 1);
+  }
+}
+
+function extractValueCandidatesFromText(text) {
+  const bodyText = String(text || '').trim();
+  if (!bodyText) return {};
+
+  const result = {};
+  if ((bodyText.startsWith('{') && bodyText.endsWith('}')) || (bodyText.startsWith('[') && bodyText.endsWith(']'))) {
+    try {
+      collectStateValueCandidatesFromObject(JSON.parse(bodyText), result, 0);
+    } catch (error) {
+      // JSON 解析失败时回退到轻量正则提取。
+    }
+  }
+
+  responseValueCandidatePattern.lastIndex = 0;
+  let match;
+  while ((match = responseValueCandidatePattern.exec(bodyText)) !== null) {
+    appendValueCandidate(result, match[1], match[2] || match[3] || match[4] || match[5] || '');
+  }
+
+  return result;
 }
 
 function shouldInspectResponseBody(contentType, responseSize) {
@@ -410,12 +637,61 @@ function extractPageCandidatesFromText(text, baseUrl, targetHost) {
 }
 
 async function extractSameHostPageCandidates(page, baseUrl, targetHost) {
-  const rawItems = await page.evaluate(() => {
+  const runtimeState = await page.evaluate(() => {
     const candidates = [];
+    const valueCandidates = {};
     const seenRoots = new WeakSet();
     const seenDocuments = new WeakSet();
 
-    const pushCandidate = (url, text = '', tag = '', pageUrl = '') => {
+    const candidateValuePattern = /^[A-Za-z0-9._~%:+=-]{1,120}$/;
+    const normalizeCandidateKey = (rawKey) => String(rawKey || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const shouldCollectKey = (rawKey) => {
+      const key = normalizeCandidateKey(rawKey);
+      return !!key && /(tenant|sys|app|scene|channel|module|portal|realm|client|org|code|id|dt|login|auth|route|path|page)/.test(key);
+    };
+    const isCandidateValue = (rawValue) => {
+      const text = String(rawValue || '').trim();
+      if (!text || text.length > 120) return false;
+      if (text.includes(' ') || /[\r\n\t/\\?#&]/.test(text)) return false;
+      if (/^https?:\/\//i.test(text)) return false;
+      return candidateValuePattern.test(text);
+    };
+    const pushValueCandidate = (rawKey, rawValue) => {
+      if (!shouldCollectKey(rawKey) || !isCandidateValue(rawValue)) return;
+      const key = normalizeCandidateKey(rawKey);
+      const current = Array.isArray(valueCandidates[key]) ? valueCandidates[key].slice(0) : [];
+      const value = String(rawValue || '').trim();
+      if (!value || current.includes(value)) return;
+      current.push(value);
+      current.sort();
+      valueCandidates[key] = current.slice(0, 6);
+    };
+    const walkStateObject = (input, depth = 0) => {
+      if (!input || depth > 4) return;
+      if (Array.isArray(input)) {
+        input.slice(0, 20).forEach((item) => walkStateObject(item, depth + 1));
+        return;
+      }
+      if (typeof input !== 'object') return;
+      Object.entries(input).forEach(([key, value]) => {
+        const normalizedKey = normalizeCandidateKey(key);
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          pushValueCandidate(normalizedKey, value);
+          if (/(?:path|pathname|page|route|routepath|fullpath|redirect(?:path|url|uri)?|login(?:path|url)?|admin(?:path|url)?|entry(?:path|url)?)/.test(normalizedKey)) {
+            pushCandidate(value, key, 'state_field', String(document.location.href || '').trim());
+          }
+          return;
+        }
+        walkStateObject(value, depth + 1);
+      });
+    };
+
+    function pushCandidate(url, text = '', tag = '', pageUrl = '') {
       const value = String(url || '').trim();
       if (!value) return;
       candidates.push({
@@ -424,7 +700,7 @@ async function extractSameHostPageCandidates(page, baseUrl, targetHost) {
         tag: String(tag || '').trim().toLowerCase(),
         page_url: String(pageUrl || '').trim(),
       });
-    };
+    }
 
     const visitRoot = (root, pageUrl) => {
       if (!root || seenRoots.has(root)) return;
@@ -466,6 +742,19 @@ async function extractSameHostPageCandidates(page, baseUrl, targetHost) {
         );
       });
 
+      root.querySelectorAll('[data-route], [data-path], [data-url], [data-href], [to], [router-link], [href]').forEach((element) => {
+        ['data-route', 'data-path', 'data-url', 'data-href', 'to', 'router-link', 'href'].forEach((attrName) => {
+          const attrValue = typeof element.getAttribute === 'function' ? String(element.getAttribute(attrName) || '').trim() : '';
+          if (!attrValue) return;
+          pushCandidate(
+            attrValue,
+            element.innerText || element.textContent || '',
+            attrName,
+            pageUrl,
+          );
+        });
+      });
+
       root.querySelectorAll('*').forEach((element) => {
         if (element.shadowRoot) {
           visitRoot(element.shadowRoot, pageUrl);
@@ -483,28 +772,91 @@ async function extractSameHostPageCandidates(page, baseUrl, targetHost) {
 
     visitDocument(document);
 
+    try {
+      for (let index = 0; index < window.localStorage.length; index += 1) {
+        const key = String(window.localStorage.key(index) || '').trim();
+        if (!key) continue;
+        const value = String(window.localStorage.getItem(key) || '').trim();
+        if (!value) continue;
+        pushValueCandidate(key, value);
+        if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('[') && value.endsWith(']'))) {
+          try {
+            walkStateObject(JSON.parse(value), 0);
+          } catch (error) {
+            // 忽略无法解析的存储值。
+          }
+        }
+      }
+    } catch (error) {
+      // localStorage 不可用时直接跳过。
+    }
+
+    try {
+      for (let index = 0; index < window.sessionStorage.length; index += 1) {
+        const key = String(window.sessionStorage.key(index) || '').trim();
+        if (!key) continue;
+        const value = String(window.sessionStorage.getItem(key) || '').trim();
+        if (!value) continue;
+        pushValueCandidate(key, value);
+        if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('[') && value.endsWith(']'))) {
+          try {
+            walkStateObject(JSON.parse(value), 0);
+          } catch (error) {
+            // 忽略无法解析的存储值。
+          }
+        }
+      }
+    } catch (error) {
+      // sessionStorage 不可用时直接跳过。
+    }
+
+    ['__NEXT_DATA__', '__NUXT__', '__INITIAL_STATE__', '__PRELOADED_STATE__', '__APP_CONFIG__', '__BOOTSTRAP__', '__CONFIG__', '__STORE__', '__PINIA__', '__MICRO_APP_STATE__'].forEach((globalKey) => {
+      try {
+        if (window[globalKey] !== undefined) {
+          walkStateObject(window[globalKey], 0);
+        }
+      } catch (error) {
+        // 部分全局状态不可访问时直接跳过。
+      }
+    });
+
+    document.querySelectorAll('script[type="application/json"], script[type="application/ld+json"], script#__NEXT_DATA__, script#__NUXT_DATA__').forEach((scriptElement) => {
+      const text = String(scriptElement.textContent || '').trim();
+      if (!text) return;
+      try {
+        walkStateObject(JSON.parse(text), 0);
+      } catch (error) {
+        // 忽略非 JSON 或裁剪后的脚本内容。
+      }
+    });
+
     const runtimePageCandidates = Array.isArray(window.__WIH_RUNTIME_PAGE_CANDIDATES__) ? window.__WIH_RUNTIME_PAGE_CANDIDATES__.slice(0) : [];
     window.__WIH_RUNTIME_PAGE_CANDIDATES__ = [];
     runtimePageCandidates.forEach((item) => {
       pushCandidate(item, '', 'runtime_page', String(document.location.href || '').trim());
     });
 
-    return candidates;
+    return { candidates, value_candidates: valueCandidates };
   }).catch(() => []);
 
+  const rawItems = Array.isArray(runtimeState && runtimeState.candidates) ? runtimeState.candidates : [];
+  const valueCandidates = runtimeState && typeof runtimeState.value_candidates === 'object' && runtimeState.value_candidates !== null
+    ? runtimeState.value_candidates
+    : {};
   const result = [];
   const seen = new Set();
   for (const item of Array.isArray(rawItems) ? rawItems : []) {
-    const normalized = normalizeSameHostPageUrl(item && item.url, (item && item.page_url) || baseUrl, targetHost);
-    if (!normalized || seen.has(normalized)) continue;
     const text = String((item && item.text) || '').trim();
     const tag = String((item && item.tag) || '').trim().toLowerCase();
     if (isDangerousActionText(text)) continue;
     if (tag === 'a' && text && !isPreferredPageText(text)) continue;
-    seen.add(normalized);
-    result.push(normalized);
+    for (const normalized of expandAndNormalizeSameHostPageUrls(item && item.url, (item && item.page_url) || baseUrl, targetHost, valueCandidates)) {
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      result.push(normalized);
+    }
   }
-  return result;
+  return { candidates: result, valueCandidates };
 }
 
 function inferFormBodyProfile(method, enctype) {
@@ -838,6 +1190,57 @@ async function performLowRiskInteractions(page, maxActions) {
     }
   }
 
+  const menuSelectors = [
+    '[role="menuitem"]',
+    '[role="treeitem"]',
+    '.ant-menu-item',
+    '.ant-dropdown-menu-item',
+    '.ant-tree-node-content-wrapper',
+    '.el-menu-item',
+    '.el-submenu__title',
+    '.el-tree-node__content',
+    '.ivu-menu-item',
+    '.ivu-dropdown-item',
+    '.van-sidebar-item',
+    '.menu-item',
+    '.nav-item',
+    '[data-route]',
+    '[data-path]',
+    '[data-url]',
+    '[to]',
+    '[router-link]',
+    '[data-micro-app]',
+    'micro-app',
+  ];
+  for (const selector of menuSelectors) {
+    const count = await page.locator(selector).count();
+    for (let i = 0; i < count && used < maxActions; i += 1) {
+      const locator = page.locator(selector).nth(i);
+      const visible = await locator.isVisible().catch(() => false);
+      const enabled = await locator.isEnabled().catch(() => true);
+      if (!visible || !enabled) continue;
+      const meta = await locator.evaluate((element) => ({
+        text: [
+          element.innerText || element.textContent || '',
+          element.getAttribute('title') || '',
+          element.getAttribute('aria-label') || '',
+          element.getAttribute('data-route') || '',
+          element.getAttribute('data-path') || '',
+          element.getAttribute('data-url') || '',
+          element.getAttribute('to') || '',
+          element.getAttribute('router-link') || '',
+          element.getAttribute('data-micro-app') || '',
+        ].join(' ').trim(),
+        type: (element.getAttribute('type') || '').trim(),
+      })).catch(() => ({ text: '', type: '' }));
+      if (!isPreferredActionText(meta.text) && !isPreferredPageText(meta.text)) continue;
+      if (meta.type.toLowerCase() === 'submit' || isExplicitSubmitActionText(meta.text) || isDangerousActionText(meta.text)) continue;
+      await locator.click({ timeout: 1000 }).catch(() => {});
+      used += 1;
+      await settle();
+    }
+  }
+
   const actionSelectors = ['button', '[role="button"]', 'a[role="button"]', 'a'];
   for (const selector of actionSelectors) {
     const count = await page.locator(selector).count();
@@ -875,7 +1278,7 @@ async function visitPageAndCollect(page, targetPageUrl, targetHost, timeoutMs, a
   }
 
   const currentPageUrl = String(page.url() || targetPageUrl).trim() || targetPageUrl;
-  const [events, forms, candidates] = await Promise.all([
+  const [events, forms, pageState] = await Promise.all([
     drainRuntimeEvents(page),
     extractSameHostFormEvents(page, currentPageUrl, targetHost),
     extractSameHostPageCandidates(page, currentPageUrl, targetHost),
@@ -884,7 +1287,10 @@ async function visitPageAndCollect(page, targetPageUrl, targetHost, timeoutMs, a
   return {
     events: Array.isArray(events) ? events : [],
     forms: Array.isArray(forms) ? forms : [],
-    candidates: Array.isArray(candidates) ? candidates : [],
+    candidates: Array.isArray(pageState && pageState.candidates) ? pageState.candidates : [],
+    valueCandidates: pageState && typeof pageState.valueCandidates === 'object' && pageState.valueCandidates !== null
+      ? pageState.valueCandidates
+      : {},
     actionsUsed,
   };
 }
@@ -947,6 +1353,7 @@ async function main() {
   const observedRequests = [];
   const discoveredPageCandidates = [];
   const discoveredPageSet = new Set();
+  const discoveredValueCandidates = {};
   const maxObservedRequests = Math.max(200, maxRequests * 8);
 
   const pushObservedRequest = (record) => {
@@ -959,10 +1366,11 @@ async function main() {
 
   const pushDiscoveredPageCandidates = (items, baseUrl = targetUrl) => {
     for (const item of Array.isArray(items) ? items : []) {
-      const normalized = normalizeSameHostPageUrl(item, baseUrl, target.hostname);
-      if (!normalized || discoveredPageSet.has(normalized)) continue;
-      discoveredPageSet.add(normalized);
-      discoveredPageCandidates.push(normalized);
+      for (const normalized of expandAndNormalizeSameHostPageUrls(item, baseUrl, target.hostname, discoveredValueCandidates)) {
+        if (!normalized || discoveredPageSet.has(normalized)) continue;
+        discoveredPageSet.add(normalized);
+        discoveredPageCandidates.push(normalized);
+      }
     }
   };
 
@@ -1020,6 +1428,7 @@ async function main() {
       }
       if (shouldInspectBody && responseBody && responseBody.length > 0 && responseBody.length <= responseBodyInspectLimit) {
         const responseText = responseBody.toString('utf8');
+        mergeValueCandidates(discoveredValueCandidates, extractValueCandidatesFromText(responseText));
         pushDiscoveredPageCandidates(
           extractPageCandidatesFromText(responseText, request.url(), target.hostname),
           request.url(),
@@ -1182,6 +1591,24 @@ async function main() {
       window.__WIH_RUNTIME_PAGE_CANDIDATES__ = pageCandidates;
     };
 
+    const patchLocationMethod = (methodName) => {
+      try {
+        const locationProto = window.Location && window.Location.prototype;
+        const originalMethod = locationProto && typeof locationProto[methodName] === 'function'
+          ? locationProto[methodName].bind(window.location)
+          : null;
+        if (!originalMethod) return;
+        locationProto[methodName] = function(...args) {
+          if (args.length > 0) {
+            safePushPageCandidate(args[0]);
+          }
+          return originalMethod(...args);
+        };
+      } catch (error) {
+        // 某些浏览器环境下 Location 原型不可重写时直接跳过。
+      }
+    };
+
     const normalizeBody = (body, contentType = '') => {
       if (!body) return { bodyKind: '', bodyText: '', body: {} };
       if (typeof body === 'string') {
@@ -1300,6 +1727,16 @@ async function main() {
       window.WebSocket.prototype = OriginalWebSocket.prototype;
     }
 
+    const originalWindowOpen = window.open ? window.open.bind(window) : null;
+    if (originalWindowOpen) {
+      window.open = function(...args) {
+        if (args.length > 0) {
+          safePushPageCandidate(args[0]);
+        }
+        return originalWindowOpen(...args);
+      };
+    }
+
     const captureCurrentLocation = () => {
       safePushPageCandidate(document.location.href);
     };
@@ -1324,6 +1761,22 @@ async function main() {
 
     window.addEventListener('hashchange', captureCurrentLocation, true);
     window.addEventListener('popstate', captureCurrentLocation, true);
+    window.addEventListener('click', (event) => {
+      try {
+        const targetElement = event.target && typeof event.target.closest === 'function'
+          ? event.target.closest('a,[data-route],[data-path],[data-url],[data-href],[to],[router-link],[role="link"]')
+          : null;
+        if (!targetElement) return;
+        ['href', 'data-route', 'data-path', 'data-url', 'data-href', 'to', 'router-link'].forEach((attrName) => {
+          const value = typeof targetElement.getAttribute === 'function' ? String(targetElement.getAttribute(attrName) || '').trim() : '';
+          if (value) safePushPageCandidate(value);
+        });
+      } catch (error) {
+        // 点击态候选采集失败时不影响页面行为。
+      }
+    }, true);
+    patchLocationMethod('assign');
+    patchLocationMethod('replace');
     captureCurrentLocation();
   });
 
@@ -1369,13 +1822,16 @@ async function main() {
     const visitResult = await visitPageAndCollect(page, nextPageUrl, target.hostname, timeoutMs, perPageActionBudget);
     rawEvents.push(...visitResult.events);
     rawForms.push(...visitResult.forms);
+    mergeValueCandidates(discoveredValueCandidates, visitResult.valueCandidates);
     remainingActions = Math.max(0, remainingActions - visitResult.actionsUsed);
 
     for (const candidateUrl of visitResult.candidates) {
-      if (!candidateUrl || visitedPages.has(candidateUrl) || queuedPages.has(candidateUrl)) continue;
-      pendingPages.push(candidateUrl);
-      queuedPages.add(candidateUrl);
-      if (pendingPages.length + visitedPages.size >= maxPages * 4) break;
+      for (const normalized of expandAndNormalizeSameHostPageUrls(candidateUrl, nextPageUrl, target.hostname, discoveredValueCandidates)) {
+        if (!normalized || visitedPages.has(normalized) || queuedPages.has(normalized)) continue;
+        pendingPages.push(normalized);
+        queuedPages.add(normalized);
+        if (pendingPages.length + visitedPages.size >= maxPages * 4) break;
+      }
     }
     drainDiscoveredPages();
   }

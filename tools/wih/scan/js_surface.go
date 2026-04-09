@@ -45,8 +45,10 @@ var (
 	graphQLQueryPattern     = regexp.MustCompile("(?is)\\bquery\\s*:\\s*(?:\"([^\"]{1,1000})\"|'([^']{1,1000})'|`([^`]{1,1000})`)")
 	graphQLTaggedPattern    = regexp.MustCompile("(?is)gql\\s*`([^`]{1,1000})`")
 	objectAssignPattern     = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\{`)
+	objectMemberAssignPattern = regexp.MustCompile(`(?is)(?:^|[^A-Za-z0-9_$])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*=\s*\{`)
 	urlSearchAssignPattern  = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+URLSearchParams\s*\(\s*\{`)
 	formDataAssignPattern   = regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*new\s+FormData\s*\(`)
+	storageSetPattern       = regexp.MustCompile("(?is)\\b(?:window\\.)?(localStorage|sessionStorage)\\.setItem\\s*\\(\\s*(?:\"([^\"]{1,120})\"|'([^']{1,120})'|`([^`]{1,120})`|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))\\s*,\\s*([^\\n;)]{1,400})")
 	paramsVarPattern        = regexp.MustCompile(`(?is)\bparams\s*:\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
 	bodyVarPattern          = regexp.MustCompile(`(?is)\b(?:data|body)\s*:\s*(?:JSON\.stringify\s*\(\s*)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
 	headersVarPattern       = regexp.MustCompile(`(?is)\bheaders\s*:\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)`)
@@ -60,7 +62,7 @@ var (
 	pathPlaceholderPattern  = regexp.MustCompile(`\{([A-Za-z_][\w.-]{0,63})\}`)
 	stringAssignPatterns    = []*regexp.Regexp{
 		regexp.MustCompile(`(?is)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]{1,400})`),
-		regexp.MustCompile(`(?is)(?:^|[;({]\s*)([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*=\s*([^;\n]{1,400})`),
+		regexp.MustCompile(`(?is)(?:^|[^A-Za-z0-9_$])([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)\s*=\s*([^;\n]{1,400})`),
 	}
 )
 
@@ -86,6 +88,7 @@ type jsVariableHints struct {
 	FormDataFields map[string][]string
 	StringValues   map[string]string
 	MemberStrings  map[string]string
+	ValueCandidates map[string][]string
 }
 
 func extractJSStaticSurface(jsBody string, jsURL string) ([]datatype.EndpointRecord, []datatype.ParameterRecord) {
@@ -418,24 +421,34 @@ func buildJSVariableHints(jsBody string) jsVariableHints {
 		FormDataFields: make(map[string][]string),
 		StringValues:   make(map[string]string),
 		MemberStrings:  make(map[string]string),
+		ValueCandidates: make(map[string][]string),
 	}
 
-	for _, match := range objectAssignPattern.FindAllStringSubmatchIndex(jsBody, -1) {
-		if len(match) < 4 {
-			continue
-		}
-		name := strings.TrimSpace(firstIndexedValue(jsBody, match[2:4]))
-		if name == "" {
-			continue
-		}
-		block, ok := extractBalancedObject(jsBody, match[1]-1)
-		if !ok || strings.TrimSpace(block) == "" {
-			continue
-		}
-		hints.ObjectRaw[strings.ToLower(name)] = strings.TrimSpace(block)
-		fields := extractObjectLiteralKeys(block)
-		if len(fields) > 0 {
-			hints.ObjectFields[strings.ToLower(name)] = uniqueSortedStrings(fields)
+	for _, pattern := range []*regexp.Regexp{objectAssignPattern, objectMemberAssignPattern} {
+		for _, match := range pattern.FindAllStringSubmatchIndex(jsBody, -1) {
+			if len(match) < 4 {
+				continue
+			}
+			name := strings.ToLower(strings.TrimSpace(firstIndexedValue(jsBody, match[2:4])))
+			if name == "" {
+				continue
+			}
+			block, ok := extractBalancedObject(jsBody, match[1]-1)
+			if !ok || strings.TrimSpace(block) == "" {
+				continue
+			}
+			fields := extractObjectLiteralKeys(block)
+			if strings.Contains(name, ".") {
+				hints.MemberRaw[name] = strings.TrimSpace(block)
+				if len(fields) > 0 {
+					hints.MemberFields[name] = uniqueSortedStrings(fields)
+				}
+				continue
+			}
+			hints.ObjectRaw[name] = strings.TrimSpace(block)
+			if len(fields) > 0 {
+				hints.ObjectFields[name] = uniqueSortedStrings(fields)
+			}
 		}
 	}
 
@@ -493,15 +506,20 @@ func buildJSVariableHints(jsBody string) jsVariableHints {
 				continue
 			}
 			hints.StringValues[name] = value
+			addJSValueCandidate(&hints, name, value)
 		}
 	}
 
+	populateJSStorageHints(jsBody, &hints)
 	populateResolvedJSStringAssignments(jsBody, &hints)
-
 	visited := make(map[string]struct{})
 	for objectName, rawObject := range hints.ObjectRaw {
 		populateJSMemberHints(objectName, rawObject, &hints, visited, 0)
 	}
+	for objectName, rawObject := range hints.MemberRaw {
+		populateJSMemberHints(objectName, rawObject, &hints, visited, 0)
+	}
+	populateResolvedJSStringAssignments(jsBody, &hints)
 
 	return hints
 }
@@ -530,12 +548,14 @@ func populateResolvedJSStringAssignments(jsBody string, hints *jsVariableHints) 
 				if strings.Contains(rawName, ".") {
 					if hints.MemberStrings[rawName] != value {
 						hints.MemberStrings[rawName] = value
+						addJSValueCandidate(hints, rawName, value)
 						changed = true
 					}
 					continue
 				}
 				if hints.StringValues[rawName] != value {
 					hints.StringValues[rawName] = value
+					addJSValueCandidate(hints, rawName, value)
 					changed = true
 				}
 			}
@@ -544,6 +564,107 @@ func populateResolvedJSStringAssignments(jsBody string, hints *jsVariableHints) 
 			return
 		}
 	}
+}
+
+func populateJSStorageHints(jsBody string, hints *jsVariableHints) {
+	if hints == nil || strings.TrimSpace(jsBody) == "" {
+		return
+	}
+
+	for _, item := range storageSetPattern.FindAllStringSubmatch(jsBody, -1) {
+		if len(item) < 7 {
+			continue
+		}
+		keyExpr := strings.TrimSpace(firstNonEmpty(item[2], item[3], item[4], item[5]))
+		valueExpr := strings.TrimSpace(item[6])
+		if keyExpr == "" || valueExpr == "" {
+			continue
+		}
+
+		keyValue := keyExpr
+		if resolvedKey, ok := resolveStringReferenceWithMembers(keyExpr, hints.StringValues, hints.MemberStrings); ok && strings.TrimSpace(resolvedKey) != "" {
+			keyValue = strings.TrimSpace(resolvedKey)
+		}
+		valueText, ok := resolveScalarValueCandidateExpression(valueExpr, hints.StringValues, hints.MemberStrings)
+		if !ok {
+			continue
+		}
+
+		addJSValueCandidate(hints, keyValue, valueText)
+		normalizedKey := normalizeJSValueCandidateKey(keyValue)
+		if normalizedKey == "" || strings.TrimSpace(valueText) == "" {
+			continue
+		}
+		hints.StringValues["storage."+normalizedKey] = strings.TrimSpace(valueText)
+	}
+}
+
+func resolveScalarValueCandidateExpression(expr string, valueMap map[string]string, memberMap map[string]string) (string, bool) {
+	text := strings.TrimSpace(expr)
+	if text == "" {
+		return "", false
+	}
+	if value, ok := resolveStringReferenceWithMembers(text, valueMap, memberMap); ok && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value), true
+	}
+	if value, ok := extractInlineStringValue(text); ok && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value), true
+	}
+	if regexp.MustCompile(`^(?:true|false|-?\d+(?:\.\d+)?)$`).MatchString(strings.ToLower(text)) {
+		return text, true
+	}
+	return "", false
+}
+
+func addJSValueCandidate(hints *jsVariableHints, rawKey string, rawValue string) {
+	if hints == nil {
+		return
+	}
+	key := normalizeJSValueCandidateKey(rawKey)
+	value := strings.TrimSpace(rawValue)
+	if key == "" || !looksLikeJSValueCandidate(value) {
+		return
+	}
+
+	current := append([]string{}, hints.ValueCandidates[key]...)
+	for _, existing := range current {
+		if existing == value {
+			return
+		}
+	}
+	current = append(current, value)
+	sort.Strings(current)
+	if len(current) > 6 {
+		current = current[:6]
+	}
+	hints.ValueCandidates[key] = current
+}
+
+func normalizeJSValueCandidateKey(raw string) string {
+	text := strings.ToLower(strings.TrimSpace(raw))
+	if text == "" {
+		return ""
+	}
+	if strings.Contains(text, ".") {
+		parts := strings.Split(text, ".")
+		text = strings.TrimSpace(parts[len(parts)-1])
+	}
+	text = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(text, "")
+	return text
+}
+
+func looksLikeJSValueCandidate(value string) bool {
+	text := strings.TrimSpace(value)
+	if text == "" || len(text) > 120 {
+		return false
+	}
+	if strings.ContainsAny(text, " \r\n\t/\\?#&") {
+		return false
+	}
+	if strings.HasPrefix(strings.ToLower(text), "http://") || strings.HasPrefix(strings.ToLower(text), "https://") {
+		return false
+	}
+	return regexp.MustCompile(`^[A-Za-z0-9._~%:+=-]{1,120}$`).MatchString(text)
 }
 
 func populateJSMemberHints(baseName string, rawObject string, hints *jsVariableHints, visited map[string]struct{}, depth int) {
@@ -571,8 +692,10 @@ func populateJSMemberHints(baseName string, rawObject string, hints *jsVariableH
 
 		if value, ok := resolveStringReferenceWithMembers(exprText, hints.StringValues, hints.MemberStrings); ok && strings.TrimSpace(value) != "" {
 			hints.MemberStrings[memberKey] = strings.TrimSpace(value)
+			addJSValueCandidate(hints, memberKey, value)
 		} else if value, ok := extractInlineStringValue(exprText); ok && strings.TrimSpace(value) != "" {
 			hints.MemberStrings[memberKey] = strings.TrimSpace(value)
+			addJSValueCandidate(hints, memberKey, value)
 		}
 
 		if strings.HasPrefix(exprText, "{") && strings.HasSuffix(exprText, "}") {
@@ -885,6 +1008,31 @@ func resolveFunctionWrappedString(expr string, valueMap map[string]string, membe
 			return "", false
 		}
 		return decoded, true
+	}
+
+	if argument := decodeArgument(
+		"localStorage.getItem",
+		"window.localStorage.getItem",
+		"sessionStorage.getItem",
+		"window.sessionStorage.getItem",
+	); argument != "" {
+		value, ok := resolveStringExpression(argument, valueMap, memberMap, depth+1)
+		if !ok {
+			return "", false
+		}
+		lookupKey := normalizeJSValueCandidateKey(value)
+		if lookupKey == "" {
+			return "", false
+		}
+		for _, candidateKey := range []string{"storage." + lookupKey, lookupKey} {
+			if resolved, ok := resolveStringReference(candidateKey, valueMap); ok && strings.TrimSpace(resolved) != "" {
+				return strings.TrimSpace(resolved), true
+			}
+			if resolved, ok := resolveStringReference(candidateKey, memberMap); ok && strings.TrimSpace(resolved) != "" {
+				return strings.TrimSpace(resolved), true
+			}
+		}
+		return "", false
 	}
 
 	return "", false

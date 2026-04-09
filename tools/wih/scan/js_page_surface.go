@@ -19,6 +19,9 @@ var (
 	locationHrefPattern    = regexp.MustCompile("(?is)\\blocation\\.href\\s*=\\s*(?:\"([^\"]{1,300})\"|'([^']{1,300})'|`([^`]{1,300})`|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))")
 	frameworkStatePattern  = regexp.MustCompile("(?is)(?:[\"']?(?:pathname|fullPath|page|route|routePath|redirect(?:Path|Url|URI)?|login(?:Path|Url)?|admin(?:Path|Url)?|entry(?:Path|Url)?)[\"']?)\\s*[:=]\\s*(?:\"([^\"]{1,300})\"|'([^']{1,300})'|`([^`]{1,300})`|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))")
 	numericPathSegmentExpr = regexp.MustCompile(`^\d+(?:\.\d+)?$`)
+	routeOptionalParamPattern = regexp.MustCompile(`/:([A-Za-z_][\w.-]{0,63})\?`)
+	routeRequiredParamPattern = regexp.MustCompile(`/:([A-Za-z_][\w.-]{0,63})([/?#]|$)`)
+	braceParamPattern         = regexp.MustCompile(`\{([A-Za-z_][\w.-]{0,63})\}`)
 	pageNavigationPatterns = []*regexp.Regexp{
 		regexp.MustCompile("(?is)\\b(?:router\\.(?:push|replace)|location\\.(?:assign|replace)|window\\.open)\\s*\\(\\s*(?:\"([^\"]{1,300})\"|'([^']{1,300})'|`([^`]{1,300})`|([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*))"),
 	}
@@ -57,7 +60,7 @@ func extractJSPageCandidateURLs(jsBody string, jsURL string, variableHints jsVar
 	results := make([]string, 0)
 	for _, match := range routePathPattern.FindAllStringSubmatch(jsBody, -1) {
 		rawPath := firstNonEmpty(matchValue(match, 1), matchValue(match, 2), matchValue(match, 3), matchValue(match, 4))
-		for _, candidate := range expandRoutePathCandidates(rawPath, variableHints.StringValues, variableHints.MemberStrings) {
+		for _, candidate := range expandRoutePathCandidates(rawPath, variableHints.StringValues, variableHints.MemberStrings, variableHints.ValueCandidates) {
 			pageURL, err := normalizeStaticPageURL(jsURL, candidate, false, variableHints.StringValues, variableHints.MemberStrings)
 			if err == nil && strings.TrimSpace(pageURL) != "" {
 				results = append(results, pageURL)
@@ -68,26 +71,29 @@ func extractJSPageCandidateURLs(jsBody string, jsURL string, variableHints jsVar
 	for _, pattern := range pageNavigationPatterns {
 		for _, match := range pattern.FindAllStringSubmatch(jsBody, -1) {
 			rawURL := firstNonEmpty(matchValue(match, 1), matchValue(match, 2), matchValue(match, 3), matchValue(match, 4))
-			pageURL, err := normalizeStaticPageURL(jsURL, rawURL, true, variableHints.StringValues, variableHints.MemberStrings)
-			if err == nil && strings.TrimSpace(pageURL) != "" {
-				results = append(results, pageURL)
+			for _, candidate := range expandStaticPageURLCandidates(jsURL, rawURL, true, variableHints) {
+				if strings.TrimSpace(candidate) != "" {
+					results = append(results, candidate)
+				}
 			}
 		}
 	}
 
 	for _, match := range locationHrefPattern.FindAllStringSubmatch(jsBody, -1) {
 		rawURL := firstNonEmpty(matchValue(match, 1), matchValue(match, 2), matchValue(match, 3), matchValue(match, 4))
-		pageURL, err := normalizeStaticPageURL(jsURL, rawURL, true, variableHints.StringValues, variableHints.MemberStrings)
-		if err == nil && strings.TrimSpace(pageURL) != "" {
-			results = append(results, pageURL)
+		for _, candidate := range expandStaticPageURLCandidates(jsURL, rawURL, true, variableHints) {
+			if strings.TrimSpace(candidate) != "" {
+				results = append(results, candidate)
+			}
 		}
 	}
 
 	for _, match := range frameworkStatePattern.FindAllStringSubmatch(jsBody, -1) {
 		rawURL := firstNonEmpty(matchValue(match, 1), matchValue(match, 2), matchValue(match, 3), matchValue(match, 4))
-		pageURL, err := normalizeStaticPageURL(jsURL, rawURL, true, variableHints.StringValues, variableHints.MemberStrings)
-		if err == nil && strings.TrimSpace(pageURL) != "" {
-			results = append(results, pageURL)
+		for _, candidate := range expandStaticPageURLCandidates(jsURL, rawURL, true, variableHints) {
+			if strings.TrimSpace(candidate) != "" {
+				results = append(results, candidate)
+			}
 		}
 	}
 
@@ -261,7 +267,7 @@ func normalizeHashRoutePath(fragment string) string {
 	return ""
 }
 
-func expandRoutePathCandidates(rawPath string, stringValues map[string]string, memberStrings map[string]string) []string {
+func expandRoutePathCandidates(rawPath string, stringValues map[string]string, memberStrings map[string]string, valueCandidates map[string][]string) []string {
 	expr := strings.TrimSpace(rawPath)
 	if expr == "" {
 		return nil
@@ -275,10 +281,10 @@ func expandRoutePathCandidates(rawPath string, stringValues map[string]string, m
 	}
 
 	if strings.Contains(expr, "://") || strings.HasPrefix(expr, "./") || strings.HasPrefix(expr, "../") || strings.HasPrefix(expr, "#") {
-		return []string{expr}
+		return expandParameterizedPageExpressions([]string{expr}, valueCandidates)
 	}
 	if strings.Contains(expr, "?") && !strings.Contains(expr, ":") {
-		return []string{expr}
+		return expandParameterizedPageExpressions([]string{expr}, valueCandidates)
 	}
 
 	pathText := expr
@@ -296,19 +302,214 @@ func expandRoutePathCandidates(rawPath string, stringValues map[string]string, m
 		if strings.ContainsAny(segment, "{}[]*+") || strings.Contains(segment, "(") || strings.Contains(segment, ")") {
 			return nil
 		}
-		if strings.HasPrefix(segment, ":") {
-			if strings.HasSuffix(segment, "?") {
-				continue
-			}
-			return nil
-		}
 		resolvedSegments = append(resolvedSegments, segment)
 	}
 
 	if len(resolvedSegments) == 0 {
 		return nil
 	}
-	return []string{"/" + strings.Join(resolvedSegments, "/")}
+	return expandParameterizedPageExpressions([]string{"/" + strings.Join(resolvedSegments, "/")}, valueCandidates)
+}
+
+func expandStaticPageURLCandidates(baseJSURL string, rawURL string, allowQuery bool, variableHints jsVariableHints) []string {
+	expr := strings.TrimSpace(rawURL)
+	if expr == "" {
+		return nil
+	}
+	if value, ok := resolveStringReferenceWithMembers(expr, variableHints.StringValues, variableHints.MemberStrings); ok {
+		expr = value
+	}
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return nil
+	}
+
+	results := make([]string, 0)
+	for _, candidateExpr := range expandParameterizedPageExpressions([]string{expr}, variableHints.ValueCandidates) {
+		pageURL, err := normalizeStaticPageURL(baseJSURL, candidateExpr, allowQuery, variableHints.StringValues, variableHints.MemberStrings)
+		if err == nil && strings.TrimSpace(pageURL) != "" {
+			results = append(results, pageURL)
+		}
+	}
+	return uniqueSortedStrings(results)
+}
+
+func expandParameterizedPageExpressions(items []string, valueCandidates map[string][]string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	variants := uniqueSortedStrings(items)
+	for pass := 0; pass < 4; pass++ {
+		beforeSnapshot := strings.Join(variants, "\n")
+		variants = expandPageExpressionPlaceholders(variants, routeOptionalParamPattern, true, valueCandidates)
+		variants = expandPageExpressionPlaceholders(variants, routeRequiredParamPattern, false, valueCandidates)
+		variants = expandPageExpressionPlaceholders(variants, braceParamPattern, false, valueCandidates)
+		variants = expandTemplateSegmentCandidates(variants, valueCandidates)
+		variants = expandPageQueryCandidates(variants, valueCandidates)
+		if strings.Join(variants, "\n") == beforeSnapshot {
+			break
+		}
+	}
+	return uniqueSortedStrings(variants)
+}
+
+func expandPageExpressionPlaceholders(items []string, pattern *regexp.Regexp, optional bool, valueCandidates map[string][]string) []string {
+	if pattern == nil || len(items) == 0 {
+		return items
+	}
+
+	results := make([]string, 0, len(items))
+	for _, item := range items {
+		text := strings.TrimSpace(item)
+		if text == "" {
+			continue
+		}
+		results = append(results, text)
+		match := pattern.FindStringSubmatch(text)
+		if len(match) < 2 {
+			continue
+		}
+
+		rawSegment := match[0]
+		rawKey := match[1]
+		prefixSegment := rawSegment
+		if !optional && len(match) >= 3 {
+			suffixText := strings.TrimSpace(match[2])
+			if suffixText != "" && strings.HasSuffix(prefixSegment, suffixText) {
+				prefixSegment = strings.TrimSuffix(prefixSegment, suffixText)
+			}
+		}
+		if optional {
+			results = append(results, strings.Replace(text, rawSegment, "", 1))
+		}
+
+		for _, candidateValue := range lookupJSValueCandidates(valueCandidates, rawKey) {
+			replaced := strings.Replace(text, prefixSegment, "/"+strings.TrimSpace(candidateValue), 1)
+			if strings.TrimSpace(replaced) != "" {
+				results = append(results, replaced)
+			}
+		}
+	}
+	return uniqueSortedStrings(results)
+}
+
+func expandTemplateSegmentCandidates(items []string, valueCandidates map[string][]string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	results := make([]string, 0, len(items))
+	for _, item := range items {
+		text := strings.TrimSpace(item)
+		if text == "" {
+			continue
+		}
+		results = append(results, text)
+		match := templateSegmentPattern.FindStringSubmatch(text)
+		if len(match) < 2 {
+			continue
+		}
+		for _, candidateValue := range lookupJSValueCandidates(valueCandidates, match[1]) {
+			replaced := strings.Replace(text, match[0], candidateValue, 1)
+			if strings.TrimSpace(replaced) != "" {
+				results = append(results, replaced)
+			}
+		}
+	}
+	return uniqueSortedStrings(results)
+}
+
+func expandPageQueryCandidates(items []string, valueCandidates map[string][]string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	results := make([]string, 0, len(items))
+	for _, item := range items {
+		text := strings.TrimSpace(item)
+		if text == "" {
+			continue
+		}
+		results = append(results, text)
+
+		parsed, err := url.Parse(text)
+		if err != nil || strings.TrimSpace(parsed.RawQuery) == "" {
+			continue
+		}
+		queryMap := parsed.Query()
+		for key, values := range queryMap {
+			currentValue := firstSliceValue(values)
+			lookupKey := firstNonEmpty(extractCandidateLookupKey(currentValue), key)
+			for _, candidateValue := range lookupJSValueCandidates(valueCandidates, lookupKey) {
+				clone := *parsed
+				cloneQuery := clone.Query()
+				cloneQuery.Set(key, candidateValue)
+				clone.RawQuery = cloneQuery.Encode()
+				results = append(results, clone.String())
+			}
+		}
+	}
+	return uniqueSortedStrings(results)
+}
+
+func extractCandidateLookupKey(rawValue string) string {
+	text := strings.TrimSpace(rawValue)
+	if text == "" {
+		return ""
+	}
+	if match := templateSegmentPattern.FindStringSubmatch(text); len(match) >= 2 {
+		return match[1]
+	}
+	if match := braceParamPattern.FindStringSubmatch(text); len(match) >= 2 {
+		return match[1]
+	}
+	if strings.HasPrefix(text, ":") {
+		return strings.TrimPrefix(strings.TrimSuffix(text, "?"), ":")
+	}
+	return ""
+}
+
+func lookupJSValueCandidates(valueCandidates map[string][]string, rawKey string) []string {
+	if len(valueCandidates) == 0 {
+		return nil
+	}
+	key := normalizeJSValueCandidateKey(rawKey)
+	if key == "" {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	results := make([]string, 0)
+	appendValues := func(values []string) {
+		for _, value := range values {
+			text := strings.TrimSpace(value)
+			if text == "" {
+				continue
+			}
+			if _, ok := seen[text]; ok {
+				continue
+			}
+			seen[text] = struct{}{}
+			results = append(results, text)
+			if len(results) >= 4 {
+				return
+			}
+		}
+	}
+
+	appendValues(valueCandidates[key])
+	if len(results) < 4 {
+		trimmedKey := strings.TrimSuffix(strings.TrimSuffix(key, "_id"), "id")
+		if trimmedKey != "" && trimmedKey != key {
+			appendValues(valueCandidates[trimmedKey])
+		}
+	}
+	sort.Strings(results)
+	if len(results) > 4 {
+		results = results[:4]
+	}
+	return results
 }
 
 func isLikelyMeaningfulPagePath(pathText string) bool {
@@ -338,6 +539,9 @@ func isLikelyMeaningfulPagePath(pathText string) bool {
 	}
 	for _, segment := range segments {
 		if len(segment) < 2 {
+			return false
+		}
+		if strings.HasPrefix(segment, ":") {
 			return false
 		}
 		if numericPathSegmentExpr.MatchString(segment) {
