@@ -45,12 +45,20 @@ class BaseUpdateTask(object):
         return False
 
     def update_services(self, service_name: str, elapsed: float):
-        elapsed = "{:.2f}".format(elapsed)
         self.update_task_field("status", service_name)
+        self.append_service(service_name=service_name, elapsed=elapsed, trigger_ai=True)
+
+    def append_service(self, service_name: str, elapsed: float, detail: str = "", trigger_ai: bool = False):
+        elapsed = "{:.2f}".format(elapsed)
         query = {"_id": ObjectId(self.task_id)}
-        update = {"$push": {"service": {"name": service_name, "elapsed": float(elapsed)}}}
+        payload = {"name": service_name, "elapsed": float(elapsed)}
+        detail_text = str(detail or "").strip()
+        if detail_text:
+            payload["detail"] = detail_text
+        update = {"$push": {"service": payload}}
         self._safe_update_task(query, update, action="push_service")
-        self.trigger_ai_denoise_stage(stage_name=service_name)
+        if trigger_ai:
+            self.trigger_ai_denoise_stage(stage_name=service_name)
 
     def update_task_field(self, field=None, value=None):
         query = {"_id": ObjectId(self.task_id)}

@@ -496,6 +496,10 @@ ARL:
   URLFINDER_SENSITIVE_MAX_TARGETS: 300
   # URLFinder 二次敏感扫描是否包含 JS 目标
   URLFINDER_SENSITIVE_INCLUDE_JS: true
+  # URLFinder 二次敏感扫描单批 WIH 超时（秒）
+  URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC: 600
+  # URLFinder 二次敏感扫描阶段总预算（秒，0=不限制）
+  URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC: 1800
   # 是否启用 URLFinder URL 可达性探测并写入 URL 信息
   URLFINDER_URL_PROBE_ENABLE: true
   # URLFinder URL 可达性探测单次最多目标数

@@ -20480,6 +20480,16 @@ class WebSiteFetch(object):
 
         logger.info("end run {} ({:.2f}s), {}".format(name, elapse, self.__str__()))
 
+    def _run_substage(self, name: str, func: callable, detail: str = ""):
+        logger.info("start substage {} task_id:{} detail:{}".format(name, self.task_id, detail or "-"))
+        self.base_update_task.update_task_field("status", name)
+        t1 = time.time()
+        result = func()
+        elapse = time.time() - t1
+        self.base_update_task.append_service(name, elapse, detail=detail, trigger_ai=False)
+        logger.info("end substage {} ({:.2f}s) task_id:{}".format(name, elapse, self.task_id))
+        return result
+
     def update_page_url_set(self):
         from app.helpers import get_url_by_task_id
         # page_url_set 从数据库读取搜索引擎爬取到的URL
@@ -20760,7 +20770,11 @@ class WebSiteFetch(object):
         scan_sites = list(wih_targets or [])
         wih_endpoints = []
         if wih_targets:
-            wih_result = services.run_wih(wih_targets, include_endpoints=True)
+            wih_result = self._run_substage(
+                "wih_primary_scan",
+                lambda: services.run_wih(wih_targets, include_endpoints=True),
+                detail="targets={}".format(len(wih_targets)),
+            )
             if isinstance(wih_result, tuple):
                 raw_records, wih_endpoints = wih_result
             else:
@@ -20772,29 +20786,51 @@ class WebSiteFetch(object):
         if wih_endpoints:
             self._save_wih_endpoints(wih_endpoints)
 
-        urlfinder_records = set(
-            services.run_urlfinder_extract(scan_sites, list(records), waf_guard=self.waf_guard)
-        )
+        urlfinder_records = set()
+        if scan_sites:
+            urlfinder_records = set(
+                self._run_substage(
+                    "wih_urlfinder_extract",
+                    lambda: services.run_urlfinder_extract(scan_sites, list(records), waf_guard=self.waf_guard),
+                    detail="sites={}".format(len(scan_sites)),
+                )
+                or []
+            )
         if urlfinder_records:
             records |= urlfinder_records
 
         if scan_sites:
             page_intel_records = set(
-                services.run_page_intel_scan(scan_sites, list(records), waf_guard=self.waf_guard)
+                self._run_substage(
+                    "wih_page_intel",
+                    lambda: services.run_page_intel_scan(scan_sites, list(records), waf_guard=self.waf_guard),
+                    detail="records={}".format(len(records)),
+                )
+                or []
             )
             if page_intel_records:
                 records |= page_intel_records
 
         if scan_sites:
             api_doc_records = set(
-                services.run_api_doc_scan(scan_sites, list(records), waf_guard=self.waf_guard)
+                self._run_substage(
+                    "wih_api_doc",
+                    lambda: services.run_api_doc_scan(scan_sites, list(records), waf_guard=self.waf_guard),
+                    detail="records={}".format(len(records)),
+                )
+                or []
             )
             if api_doc_records:
                 records |= api_doc_records
 
         if records:
             js_intel_records = set(
-                services.run_js_intel_scan(scan_sites, list(records), waf_guard=self.waf_guard)
+                self._run_substage(
+                    "wih_js_intel",
+                    lambda: services.run_js_intel_scan(scan_sites, list(records), waf_guard=self.waf_guard),
+                    detail="records={}".format(len(records)),
+                )
+                or []
             )
             if js_intel_records:
                 records |= js_intel_records
@@ -20802,24 +20838,40 @@ class WebSiteFetch(object):
         if records:
             # 对 URLFinder 提取出的同目标 URL/HTML/JS 做二次敏感信息扫描。
             urlfinder_sensitive_records = set(
-                services.run_urlfinder_sensitive_scan(scan_sites, list(records), waf_guard=self.waf_guard)
+                self._run_substage(
+                    "wih_urlfinder_sensitive",
+                    lambda: services.run_urlfinder_sensitive_scan(scan_sites, list(records), waf_guard=self.waf_guard),
+                    detail="records={}".format(len(records)),
+                )
+                or []
             )
             if urlfinder_sensitive_records:
                 records |= urlfinder_sensitive_records
 
         if records:
-            trufflehog_records = set(services.run_trufflehog_js(scan_sites, list(records), waf_guard=self.waf_guard))
+            trufflehog_records = set(
+                self._run_substage(
+                    "wih_trufflehog_js",
+                    lambda: services.run_trufflehog_js(scan_sites, list(records), waf_guard=self.waf_guard),
+                    detail="records={}".format(len(records)),
+                )
+                or []
+            )
             if trufflehog_records:
                 records |= trufflehog_records
 
         # 将 urlfinder 提取到的 URL 做可达性探测，并同步写入 URL 信息表。
         if records:
-            services.run_urlfinder_url_probe(
-                task_id=self.task_id,
-                sites=scan_sites,
-                wih_records=list(records),
-                page_url_set=self.page_url_set,
-                waf_guard=self.waf_guard,
+            self._run_substage(
+                "wih_url_probe",
+                lambda: services.run_urlfinder_url_probe(
+                    task_id=self.task_id,
+                    sites=scan_sites,
+                    wih_records=list(records),
+                    page_url_set=self.page_url_set,
+                    waf_guard=self.waf_guard,
+                ),
+                detail="records={}".format(len(records)),
             )
 
         for raw_record in records:

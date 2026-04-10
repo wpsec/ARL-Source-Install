@@ -92,6 +92,21 @@ def safe_positive_int(value, default, min_value=1):
     return num
 
 
+def safe_int(value, default, min_value=None):
+    """
+    安全转换整数，非法值回退默认值，可选最小值约束。
+    """
+    try:
+        num = int(value)
+    except Exception:
+        return default
+
+    if min_value is not None and num < min_value:
+        return default
+
+    return num
+
+
 def safe_bool(value, default=False):
     """
     安全转换布尔值，兼容 YAML 布尔和字符串写法。
@@ -653,6 +668,10 @@ class Config(object):
     URLFINDER_SENSITIVE_MAX_TARGETS = 300
     # URLFinder 二次敏感扫描是否包含 JS 目标
     URLFINDER_SENSITIVE_INCLUDE_JS = True
+    # URLFinder 二次敏感扫描单批 WIH 超时（秒）
+    URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC = 10 * 60
+    # URLFinder 二次敏感扫描阶段总预算（秒，0=不限制）
+    URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC = 30 * 60
     # 是否启用 URLFinder 提取 URL 的可达性探测并写入 URL 信息
     URLFINDER_URL_PROBE_ENABLE = True
     # URLFinder URL 可达性探测单次最多目标数
@@ -1397,6 +1416,19 @@ try:
     if y["ARL"].get("URLFINDER_SENSITIVE_INCLUDE_JS") is not None:
         Config.URLFINDER_SENSITIVE_INCLUDE_JS = bool(y["ARL"]["URLFINDER_SENSITIVE_INCLUDE_JS"])
 
+    if y["ARL"].get("URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC") is not None:
+        Config.URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC"]), Config.URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC
+        )
+
+    if y["ARL"].get("URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC") is not None:
+        Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC = safe_int(
+            y["ARL"]["URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC"],
+            Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC,
+        )
+        if Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC < 0:
+            Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC = 0
+
     if y["ARL"].get("URLFINDER_URL_PROBE_ENABLE") is not None:
         Config.URLFINDER_URL_PROBE_ENABLE = bool(y["ARL"]["URLFINDER_URL_PROBE_ENABLE"])
 
@@ -1945,6 +1977,16 @@ try:
     Config.URLFINDER_SENSITIVE_INCLUDE_JS = env_bool(
         "ARL_URLFINDER_SENSITIVE_INCLUDE_JS", Config.URLFINDER_SENSITIVE_INCLUDE_JS
     )
+    Config.URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC", Config.URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC),
+        Config.URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC
+    )
+    Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC = safe_int(
+        env_int("ARL_URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC", Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC),
+        Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC
+    )
+    if Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC < 0:
+        Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC = 0
     Config.URLFINDER_URL_PROBE_ENABLE = env_bool(
         "ARL_URLFINDER_URL_PROBE_ENABLE", Config.URLFINDER_URL_PROBE_ENABLE
     )
