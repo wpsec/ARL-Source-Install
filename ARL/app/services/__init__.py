@@ -29,6 +29,7 @@ from .js_intel_scan import run_js_intel_scan
 from .urlfinder_extract import run_urlfinder_extract
 from .urlfinder_sensitive_scan import run_urlfinder_sensitive_scan
 from .urlfinder_url_probe import run_urlfinder_url_probe
+from .wih_endpoint_probe import run_wih_endpoint_probe
 from .trufflehog_scan import run_trufflehog_js
 from .afrog_scan import run_afrog_scan
 from .penetration_scan import run_penetration_scan

@@ -271,3 +271,24 @@ def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None) -> List[Dict]:
                 )
 
     return [item for item in results if isinstance(item, dict)]
+
+
+def run_wih_endpoint_probe(endpoints: List[Dict], waf_guard=None) -> List[Dict]:
+    """
+    运行 WIH 接口轻量探测，并返回补全后的接口记录。
+    """
+    endpoint_list = [dict(item or {}) for item in list(endpoints or []) if isinstance(item, dict)]
+    if not endpoint_list:
+        logger.info("wih endpoint probe skip, no endpoints")
+        return []
+
+    logger.info("wih endpoint probe start endpoints:{}".format(len(endpoint_list)))
+    results = enrich_wih_endpoints(endpoint_list, waf_guard=waf_guard)
+    observed_count = sum(1 for item in results if _has_response(item))
+    logger.info(
+        "wih endpoint probe finish endpoints:{} observed:{}".format(
+            len(results),
+            observed_count,
+        )
+    )
+    return results
