@@ -42,6 +42,7 @@ def _load_info_hunter_module():
             "WIH_TIMEOUT_SEC": 7200,
             "WIH_CONCURRENCY": 6,
             "WIH_CONCURRENCY_PER_SITE": 2,
+            "WIH_MAX_BATCH_SIZE": 12,
             "WIH_RUNTIME_ENABLE": True,
             "WIH_RUNTIME_DRIVER": "playwright",
             "WIH_RUNTIME_COMMAND": "",
@@ -96,6 +97,13 @@ InfoHunter = info_hunter_module.InfoHunter
 
 
 class TestWihTimeoutSplit(unittest.TestCase):
+    def test_initial_batch_size_respects_max_batch_size(self):
+        hunter = InfoHunter(["https://{}.example.com".format(index) for index in range(21)])
+        hunter.wih_concurrency = 15
+        hunter.wih_max_batch_size = 12
+
+        self.assertEqual(12, hunter._initial_batch_size())
+
     def test_build_command_includes_explicit_runtime_flags(self):
         hunter = InfoHunter(["https://a.example.com"])
         hunter._supports_flag = lambda flag_text: flag_text in {
@@ -302,6 +310,100 @@ class TestWihTimeoutSplit(unittest.TestCase):
             hunter._delete_file()
 
         self.assertEqual(3, len(results))
+        self.assertEqual(
+            sorted(["https://a.example.com", "https://b.example.com", "https://c.example.com"]),
+            sorted([item.site for item in results]),
+        )
+
+    def test_exec_wih_timeout_salvages_completed_sites_before_retry(self):
+        hunter = InfoHunter(
+            [
+                "https://a.example.com",
+                "https://b.example.com",
+                "https://c.example.com",
+            ]
+        )
+
+        hunter.check_have_wih = lambda: True
+        hunter._supports_flag = lambda flag_text: flag_text in {"-c", "-v"}
+        seen_batches = []
+
+        def _fake_exec_system(command, **kwargs):
+            command_list = list(command or [])
+            if "--version" in command_list:
+                return subprocess.CompletedProcess(command_list, 0, stdout=b"1.0.0", stderr=b"")
+            if "-h" in command_list:
+                return subprocess.CompletedProcess(command_list, 0, stdout=b"wih help", stderr=b"")
+
+            target_path = command_list[command_list.index("-t") + 1]
+            result_path = command_list[command_list.index("-o") + 1]
+            with open(target_path, "r", encoding="utf-8") as f:
+                sites = [line.strip() for line in f.readlines() if line.strip()]
+            seen_batches.append(list(sites))
+
+            if len(sites) > 1:
+                payload = [
+                    {
+                        "target": "https://a.example.com",
+                        "records": [
+                            {
+                                "id": "path",
+                                "content": "/api/a",
+                                "source": "https://a.example.com",
+                            }
+                        ],
+                    },
+                    {
+                        "target": "https://b.example.com",
+                        "records": [
+                            {
+                                "id": "path",
+                                "content": "/api/b",
+                                "source": "https://b.example.com",
+                            }
+                        ],
+                    },
+                ]
+                with open(result_path, "w", encoding="utf-8") as f:
+                    f.write(json.dumps(payload, ensure_ascii=False))
+                raise subprocess.TimeoutExpired(command_list, kwargs.get("timeout"))
+
+            payload = [
+                {
+                    "target": sites[0],
+                    "records": [
+                        {
+                            "id": "path",
+                            "content": "/api/user/list",
+                            "source": sites[0],
+                        }
+                    ],
+                }
+            ]
+            with open(result_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False))
+
+            return subprocess.CompletedProcess(command_list, 0, stdout=b"", stderr=b"")
+
+        info_hunter_module.utils.exec_system = _fake_exec_system
+
+        try:
+            self.assertTrue(hunter.exec_wih())
+            results = hunter.dump_result()
+        finally:
+            hunter._delete_file()
+
+        self.assertEqual(
+            [
+                [
+                    "https://a.example.com",
+                    "https://b.example.com",
+                    "https://c.example.com",
+                ],
+                ["https://c.example.com"],
+            ],
+            seen_batches,
+        )
         self.assertEqual(
             sorted(["https://a.example.com", "https://b.example.com", "https://c.example.com"]),
             sorted([item.site for item in results]),

@@ -462,6 +462,8 @@ ARL:
   WIH_CONCURRENCY: 6
   # WIH 单站点并发（若 wih 二进制支持 --concurrency-per-site）
   WIH_CONCURRENCY_PER_SITE: 2
+  # WIH 单批最大站点数，避免超时后把大批次整批重跑
+  WIH_MAX_BATCH_SIZE: 12
   # 是否启用 WIH 运行时采集
   WIH_RUNTIME_ENABLE: true
   # WIH 运行时驱动：playwright / external / noop

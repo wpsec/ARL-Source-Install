@@ -308,6 +308,7 @@ def refresh_runtime_config_best_effort(force=False):
             "WIH_TIMEOUT_SEC",
             "WIH_CONCURRENCY",
             "WIH_CONCURRENCY_PER_SITE",
+            "WIH_MAX_BATCH_SIZE",
             "WIH_RUNTIME_ENABLE",
             "WIH_RUNTIME_DRIVER",
             "WIH_RUNTIME_COMMAND",
@@ -753,6 +754,8 @@ class Config(object):
     WIH_CONCURRENCY = 6
     # WIH 单站点并发（透传给 wih --concurrency-per-site）
     WIH_CONCURRENCY_PER_SITE = 2
+    # WIH 单批最大站点数，避免大批次超时后整批重跑
+    WIH_MAX_BATCH_SIZE = 12
     # 是否启用 WIH 运行时采集
     WIH_RUNTIME_ENABLE = True
     # WIH 运行时驱动类型：playwright / external / noop
@@ -1347,6 +1350,11 @@ try:
             int(y["ARL"]["WIH_CONCURRENCY_PER_SITE"]), Config.WIH_CONCURRENCY_PER_SITE
         )
 
+    if y["ARL"].get("WIH_MAX_BATCH_SIZE") is not None:
+        Config.WIH_MAX_BATCH_SIZE = safe_positive_int(
+            int(y["ARL"]["WIH_MAX_BATCH_SIZE"]), Config.WIH_MAX_BATCH_SIZE
+        )
+
     if y["ARL"].get("WIH_RUNTIME_ENABLE") is not None:
         Config.WIH_RUNTIME_ENABLE = safe_bool(
             y["ARL"]["WIH_RUNTIME_ENABLE"], Config.WIH_RUNTIME_ENABLE
@@ -1698,6 +1706,7 @@ try:
         "WIH_TIMEOUT_SEC",
         "WIH_CONCURRENCY",
         "WIH_CONCURRENCY_PER_SITE",
+        "WIH_MAX_BATCH_SIZE",
         "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
         "SSL_CERT_FETCH_CONCURRENCY",
         "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
@@ -1929,6 +1938,10 @@ try:
     Config.WIH_CONCURRENCY_PER_SITE = safe_positive_int(
         env_int("ARL_WIH_CONCURRENCY_PER_SITE", Config.WIH_CONCURRENCY_PER_SITE),
         Config.WIH_CONCURRENCY_PER_SITE
+    )
+    Config.WIH_MAX_BATCH_SIZE = safe_positive_int(
+        env_int("ARL_WIH_MAX_BATCH_SIZE", Config.WIH_MAX_BATCH_SIZE),
+        Config.WIH_MAX_BATCH_SIZE
     )
     Config.WIH_RUNTIME_ENABLE = env_bool("ARL_WIH_RUNTIME_ENABLE", Config.WIH_RUNTIME_ENABLE)
     Config.WIH_RUNTIME_DRIVER = env_str("ARL_WIH_RUNTIME_DRIVER", Config.WIH_RUNTIME_DRIVER).strip().lower() or Config.WIH_RUNTIME_DRIVER

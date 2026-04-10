@@ -145,6 +145,7 @@ class InfoHunter(object):
         self.wih_timeout_sec = int(getattr(Config, "WIH_TIMEOUT_SEC", 2 * 60 * 60) or (2 * 60 * 60))
         self.wih_concurrency = int(getattr(Config, "WIH_CONCURRENCY", 6) or 6)
         self.wih_concurrency_per_site = int(getattr(Config, "WIH_CONCURRENCY_PER_SITE", 2) or 2)
+        self.wih_max_batch_size = int(getattr(Config, "WIH_MAX_BATCH_SIZE", 12) or 12)
         self.wih_runtime_enable = bool(getattr(Config, "WIH_RUNTIME_ENABLE", True))
         self.wih_runtime_driver = str(getattr(Config, "WIH_RUNTIME_DRIVER", "playwright") or "playwright").strip().lower()
         self.wih_runtime_command = str(getattr(Config, "WIH_RUNTIME_COMMAND", "") or "").strip()
@@ -158,6 +159,8 @@ class InfoHunter(object):
             self.wih_concurrency = 1
         if self.wih_concurrency_per_site < 1:
             self.wih_concurrency_per_site = 1
+        if self.wih_max_batch_size < 1:
+            self.wih_max_batch_size = 12
         if self.wih_runtime_timeout_sec < 1:
             self.wih_runtime_timeout_sec = 60
         if self.wih_runtime_max_pages < 1:
@@ -771,9 +774,8 @@ class InfoHunter(object):
         site_count = len(list(self.sites or []))
         if site_count <= 0:
             return 1
-        if site_count <= 12:
-            return site_count
-        return min(48, max(8, int(self.wih_concurrency) * 6))
+        suggested_batch_size = max(8, int(self.wih_concurrency) * 2)
+        return min(site_count, int(self.wih_max_batch_size), suggested_batch_size)
 
     @staticmethod
     def _split_site_batches(sites: list, batch_size: int) -> list:
@@ -788,6 +790,82 @@ class InfoHunter(object):
             return ""
         with open(self.wih_result_path, "r", encoding="utf-8", errors="ignore") as f:
             return str(f.read() or "").strip()
+
+    @staticmethod
+    def _parse_wih_payload_items(raw_text: str) -> tuple:
+        payload_items = []
+        invalid_items = 0
+        text = str(raw_text or "").strip()
+        if not text:
+            return payload_items, invalid_items
+
+        if text.startswith("["):
+            try:
+                payload = json.loads(text)
+                if isinstance(payload, list):
+                    payload_items = payload
+                elif isinstance(payload, dict):
+                    payload_items = [payload]
+            except Exception as e:
+                logger.debug("parse wih json array failed err:{}".format(e))
+                invalid_items += 1
+            return payload_items, invalid_items
+
+        for line in text.splitlines():
+            line = str(line or "").strip()
+            if not line:
+                continue
+            try:
+                payload_items.append(json.loads(line))
+            except Exception as e:
+                invalid_items += 1
+                logger.debug("skip invalid wih json line err:{} line:{}".format(e, line[:200]))
+
+        return payload_items, invalid_items
+
+    @staticmethod
+    def _extract_result_sites(payload_items: list) -> list:
+        site_list = []
+        site_seen = set()
+        for item in list(payload_items or []):
+            if not isinstance(item, dict):
+                continue
+            site = str(item.get("target") or item.get("url") or item.get("site") or "").strip()
+            if not site or site in site_seen:
+                continue
+            site_seen.add(site)
+            site_list.append(site)
+        return site_list
+
+    def _salvage_partial_batch_results(self, aggregate_result_texts: list, batch_sites: list, depth: int, command_name: str) -> list:
+        raw_text = self._read_current_result_text()
+        if not raw_text:
+            return []
+
+        payload_items, invalid_items = self._parse_wih_payload_items(raw_text)
+        completed_sites = self._extract_result_sites(payload_items)
+        if not completed_sites:
+            logger.info(
+                "wih {} partial result empty depth:{} batch_sites:{} invalid_items:{}".format(
+                    command_name,
+                    depth,
+                    len(list(batch_sites or [])),
+                    invalid_items,
+                )
+            )
+            return []
+
+        aggregate_result_texts.append(raw_text)
+        logger.info(
+            "salvage wih {} partial result depth:{} batch_sites:{} completed_sites:{} invalid_items:{}".format(
+                command_name,
+                depth,
+                len(list(batch_sites or [])),
+                len(completed_sites),
+                invalid_items,
+            )
+        )
+        return completed_sites
 
     def _write_aggregate_result_texts(self, result_texts: list):
         merged_lines = []
@@ -912,11 +990,34 @@ class InfoHunter(object):
                 aggregate_result_texts.append(raw_text)
             return True
 
-        if primary.get("timed_out") and len(current_sites) > 1:
-            mid = max(1, len(current_sites) // 2)
-            left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
-            right_ok = self._exec_wih_batch(current_sites[mid:], aggregate_result_texts, depth=depth + 1)
-            return bool(left_ok or right_ok)
+        partial_saved = False
+        if primary.get("timed_out"):
+            completed_sites = self._salvage_partial_batch_results(
+                aggregate_result_texts,
+                current_sites,
+                depth,
+                "primary",
+            )
+            if completed_sites:
+                partial_saved = True
+                completed_site_set = set(completed_sites)
+                current_sites = [site for site in current_sites if site not in completed_site_set]
+                logger.info(
+                    "wih primary timeout salvage depth:{} remaining_sites:{} completed_sites:{}".format(
+                        depth,
+                        len(current_sites),
+                        len(completed_sites),
+                    )
+                )
+            if not current_sites:
+                return True
+            if len(current_sites) > 1:
+                mid = max(1, len(current_sites) // 2)
+                left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
+                right_ok = self._exec_wih_batch(current_sites[mid:], aggregate_result_texts, depth=depth + 1)
+                return bool(partial_saved or left_ok or right_ok)
+            self._clear_result_file()
+            self._get_target_file(current_sites)
 
         fallback_command = self._build_command(minimal=True)
         logger.info(
@@ -933,11 +1034,31 @@ class InfoHunter(object):
                 aggregate_result_texts.append(raw_text)
             return True
 
-        if fallback.get("timed_out") and len(current_sites) > 1:
-            mid = max(1, len(current_sites) // 2)
-            left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
-            right_ok = self._exec_wih_batch(current_sites[mid:], aggregate_result_texts, depth=depth + 1)
-            return bool(left_ok or right_ok)
+        if fallback.get("timed_out"):
+            completed_sites = self._salvage_partial_batch_results(
+                aggregate_result_texts,
+                current_sites,
+                depth,
+                "minimal",
+            )
+            if completed_sites:
+                partial_saved = True
+                completed_site_set = set(completed_sites)
+                current_sites = [site for site in current_sites if site not in completed_site_set]
+                logger.info(
+                    "wih minimal timeout salvage depth:{} remaining_sites:{} completed_sites:{}".format(
+                        depth,
+                        len(current_sites),
+                        len(completed_sites),
+                    )
+                )
+            if not current_sites:
+                return True
+            if len(current_sites) > 1:
+                mid = max(1, len(current_sites) // 2)
+                left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
+                right_ok = self._exec_wih_batch(current_sites[mid:], aggregate_result_texts, depth=depth + 1)
+                return bool(partial_saved or left_ok or right_ok)
 
         logger.warning(
             "skip wih batch after failure depth:{} sites:{} sample:{}".format(
@@ -946,7 +1067,7 @@ class InfoHunter(object):
                 ",".join(current_sites[:3]),
             )
         )
-        return False
+        return partial_saved
 
     def _load_help_text(self) -> str:
         if self._help_text is not None:
@@ -1116,30 +1237,8 @@ class InfoHunter(object):
         with open(self.wih_result_path, "r", encoding="utf-8", errors="ignore") as f:
             raw_text = str(f.read() or "").strip()
 
-        payload_items = []
+        payload_items, invalid_items = self._parse_wih_payload_items(raw_text)
         record_hash_set = set()
-        if not raw_text:
-            payload_items = []
-        elif raw_text.startswith("["):
-            try:
-                payload = json.loads(raw_text)
-                if isinstance(payload, list):
-                    payload_items = payload
-                elif isinstance(payload, dict):
-                    payload_items = [payload]
-            except Exception as e:
-                logger.debug("parse wih json array failed err:{}".format(e))
-                payload_items = []
-        else:
-            for line in raw_text.splitlines():
-                line = str(line or "").strip()
-                if not line:
-                    continue
-                try:
-                    payload_items.append(json.loads(line))
-                except Exception as e:
-                    invalid_items += 1
-                    logger.debug("skip invalid wih json line err:{} line:{}".format(e, line[:200]))
 
         for data in payload_items:
             total_items += 1
