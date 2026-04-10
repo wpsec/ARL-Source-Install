@@ -47,7 +47,9 @@
 ## 规则模板
 
 - 默认模板：`tools/wih/config/rules.yml`
-- ARL 默认规则路径：`Config.WIH_RULE_PATH`（已默认指向上述路径）
+- ARL 默认二进制路径：`Config.WIH_BIN_PATH=/usr/bin/wih`（固定使用镜像内源码编译产物）
+- ARL 默认规则路径：`Config.WIH_RULE_PATH=/usr/local/share/arl/wih/config/rules.yml`（固定使用镜像内只读副本，避免共享 `tools` 残留旧规则）
+- Docker 镜像构建时会将 `tools/wih` 复制到 `/usr/local/share/arl/wih`，供规则模板与 runtime driver 在共享 `tools` 被挂载覆盖时继续使用
 
 ## 降噪约定
 

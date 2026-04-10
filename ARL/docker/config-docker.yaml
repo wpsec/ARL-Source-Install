@@ -477,14 +477,18 @@ ARL:
   FILE_LEAK_NO_PROGRESS_TIMEOUT_PER_1000_URLS_SEC: 30
   # 单站点目录扫描无进展超时预算上限（秒，0=不限制）
   FILE_LEAK_NO_PROGRESS_TIMEOUT_MAX_SEC: 600
-  # WIH 规则文件路径（默认使用源码版 wih 的规则模板）
-  WIH_RULE_PATH: "/code/tools/wih/config/rules.yml"
+  # WIH 可执行文件路径（默认固定使用镜像内源码编译产物，避免被共享 tools 目录中的旧版覆盖）
+  WIH_BIN_PATH: "/usr/bin/wih"
+  # WIH 规则文件路径（默认使用镜像内只读副本，避免被共享 tools 目录中的旧规则覆盖）
+  WIH_RULE_PATH: "/usr/local/share/arl/wih/config/rules.yml"
   # WIH 扫描超时（秒）
   WIH_TIMEOUT_SEC: 7200
   # WIH 全局并发（若 wih 二进制支持 --concurrency / -c）
   WIH_CONCURRENCY: 15
   # WIH 单站点并发（若 wih 二进制支持 --concurrency-per-site）
   WIH_CONCURRENCY_PER_SITE: 2
+  # WIH 单批最大站点数，避免超时后把大批次整批重跑
+  WIH_MAX_BATCH_SIZE: 12
   # 是否启用 WIH 运行时采集
   WIH_RUNTIME_ENABLE: true
   # WIH 运行时驱动：playwright / external / noop
@@ -492,13 +496,13 @@ ARL:
   # WIH 运行时自定义命令（external 为完整命令；playwright 可覆盖默认 node 调用）
   WIH_RUNTIME_COMMAND: ""
   # WIH 运行时超时（秒）
-  WIH_RUNTIME_TIMEOUT_SEC: 20
+  WIH_RUNTIME_TIMEOUT_SEC: 60
   # WIH 运行时最大页面数
-  WIH_RUNTIME_MAX_PAGES: 8
+  WIH_RUNTIME_MAX_PAGES: 12
   # WIH 运行时最大交互动作数
-  WIH_RUNTIME_MAX_ACTIONS: 20
+  WIH_RUNTIME_MAX_ACTIONS: 32
   # WIH 运行时最大请求采集数
-  WIH_RUNTIME_MAX_REQUESTS: 120
+  WIH_RUNTIME_MAX_REQUESTS: 180
 
   # Web Gunicorn worker 数（默认按高性能预设）
   WEB_GUNICORN_WORKERS: 6

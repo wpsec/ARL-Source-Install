@@ -6,6 +6,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 
 def _build_logger():
@@ -97,6 +98,58 @@ InfoHunter = info_hunter_module.InfoHunter
 
 
 class TestWihTimeoutSplit(unittest.TestCase):
+    def test_resolve_rule_path_falls_back_to_repo_template_when_immutable_copy_missing(self):
+        def _fake_isfile(path):
+            path_text = str(path or "").replace("\\", "/")
+            return path_text.endswith("tools/wih/config/rules.yml")
+
+        with patch.object(info_hunter_module.Config, "WIH_RULE_PATH", "/usr/local/share/arl/wih/config/rules.yml", create=True):
+            with patch.object(info_hunter_module.os.path, "isfile", side_effect=_fake_isfile):
+                resolved = InfoHunter._resolve_rule_path()
+
+        self.assertTrue(str(resolved or "").replace("\\", "/").endswith("tools/wih/config/rules.yml"))
+
+    def test_resolve_wih_binary_prefers_configured_image_binary(self):
+        def _fake_resolve_executable(command):
+            command_text = str(command or "").strip()
+            if command_text == "/usr/bin/wih":
+                return "/usr/bin/wih"
+            if command_text == "/code/tools/wih/wih":
+                return "/code/tools/wih/wih"
+            return ""
+
+        with patch.object(info_hunter_module.Config, "WIH_BIN_PATH", "/usr/bin/wih", create=True):
+            with patch.object(info_hunter_module.utils, "resolve_executable", side_effect=_fake_resolve_executable):
+                self.assertEqual("/usr/bin/wih", InfoHunter._resolve_wih_binary())
+
+    def test_check_have_wih_logs_binary_version(self):
+        hunter = InfoHunter(["https://a.example.com"])
+        messages = []
+        origin_logger = info_hunter_module.logger
+        info_hunter_module.logger = types.SimpleNamespace(
+            info=lambda message, *args, **kwargs: messages.append(str(message)),
+            warning=lambda *args, **kwargs: None,
+            debug=lambda *args, **kwargs: None,
+            error=lambda *args, **kwargs: None,
+        )
+
+        def _fake_exec_system(command, **kwargs):
+            command_list = list(command or [])
+            if "--version" in command_list:
+                return subprocess.CompletedProcess(command_list, 0, stdout=b"version: 1.2.1", stderr=b"")
+            return subprocess.CompletedProcess(command_list, 0, stdout=b"", stderr=b"")
+
+        try:
+            with patch.object(info_hunter_module.utils, "exec_system", side_effect=_fake_exec_system):
+                self.assertTrue(hunter.check_have_wih())
+        finally:
+            info_hunter_module.logger = origin_logger
+
+        self.assertEqual("version: 1.2.1", hunter._load_wih_version_text())
+        self.assertTrue(
+            any("using wih binary path:" in item and "version_text:version: 1.2.1" in item for item in messages)
+        )
+
     def test_initial_batch_size_respects_max_batch_size(self):
         hunter = InfoHunter(["https://{}.example.com".format(index) for index in range(21)])
         hunter.wih_concurrency = 15

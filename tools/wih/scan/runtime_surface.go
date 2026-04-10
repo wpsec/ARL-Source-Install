@@ -149,6 +149,7 @@ func resolveBuiltInPlaywrightDriverCommand() string {
 func resolveBuiltInPlaywrightDriverPath() string {
 	candidates := make([]string, 0, 8)
 	candidates = append(candidates,
+		filepath.Join("/usr", "local", "share", "arl", "wih", "runtime", "playwright_driver.js"),
 		filepath.Join("runtime", "playwright_driver.js"),
 		filepath.Join("tools", "wih", "runtime", "playwright_driver.js"),
 	)

@@ -172,6 +172,8 @@ class InfoHunter(object):
         if self.wih_runtime_driver not in {"playwright", "external", "noop"}:
             self.wih_runtime_driver = "playwright"
         self._help_text = None
+        self._wih_version_text = ""
+        self._wih_binary_logged = False
 
     @staticmethod
     def _safe_int(value, default=0) -> int:
@@ -718,15 +720,21 @@ class InfoHunter(object):
 
     @staticmethod
     def _resolve_wih_binary() -> str:
-        # 优先使用本地/挂载目录下的“成品二进制”，其次回退到镜像内编译产物。
-        candidates = [
+        # 默认固定走镜像内编译产物，避免共享 tools 目录残留旧版二进制时被优先命中。
+        configured_binary = str(getattr(Config, "WIH_BIN_PATH", "") or "").strip()
+        candidates = []
+        if configured_binary:
+            candidates.append(configured_binary)
+        candidates.extend([
+            "/usr/bin/wih",
+            "/usr/local/bin/wih",
+            "wih",
+            "wihscan",
             "/code/tools/wih/wih",
             "/code/tools/wih/wihscan",
             "/code/tools/wih/bin/wih",
             "/code/tools/wih/bin/wihscan",
-            "wihscan",
-            "wih",
-        ]
+        ])
         for candidate in candidates:
             binary_path = utils.resolve_executable(candidate)
             if binary_path:
@@ -1081,6 +1089,48 @@ class InfoHunter(object):
 
         return self._help_text
 
+    def _load_wih_version_text(self) -> str:
+        if self._wih_version_text:
+            return self._wih_version_text
+
+        command = [self.wih_bin_path, "--version"]
+        try:
+            completed = utils.exec_system(
+                command,
+                timeout=2 * 60,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except Exception as e:
+            logger.debug("load wih version failed err:{}".format(e))
+            return ""
+
+        if completed.returncode != 0:
+            return ""
+
+        output_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
+        if output_text:
+            self._wih_version_text = output_text.splitlines()[0].strip()
+        return self._wih_version_text
+
+    def _log_wih_binary_once(self):
+        if self._wih_binary_logged:
+            return
+        self._wih_binary_logged = True
+        version_text = self._load_wih_version_text() or "unknown"
+        logger.info(
+            "using wih binary path:{} version_text:{} timeout:{}s concurrency:{} per_site:{} max_batch:{} runtime:{} driver:{}".format(
+                self.wih_bin_path,
+                version_text,
+                self.wih_timeout_sec,
+                self.wih_concurrency,
+                self.wih_concurrency_per_site,
+                self.wih_max_batch_size,
+                self.wih_runtime_enable,
+                self.wih_runtime_driver,
+            )
+        )
+
     def _supports_flag(self, flag_text: str) -> bool:
         return flag_text in self._load_help_text()
 
@@ -1092,6 +1142,14 @@ class InfoHunter(object):
 
         if configured_path:
             logger.warning("wih rule path not found: {}, fallback to built-in/default".format(configured_path))
+
+        local_candidates = [
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "tools", "wih", "config", "rules.yml")),
+            "/code/tools/wih/config/rules.yml",
+        ]
+        for candidate in local_candidates:
+            if os.path.isfile(candidate):
+                return candidate
 
         return ""
 
@@ -1195,26 +1253,18 @@ class InfoHunter(object):
         return success_batches > 0
 
     def check_have_wih(self) -> bool:
-        command = [self.wih_bin_path, "--version"]
         try:
-            completed = utils.exec_system(
-                command,
-                timeout=2 * 60,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if completed.returncode != 0:
-                return False
-
-            output_text = completed.stdout.decode("utf-8", errors="ignore").strip() if completed.stdout else ""
+            output_text = self._load_wih_version_text()
             normalized = output_text.lower()
             if output_text and (
                 "version" in normalized or normalized.startswith("v") or normalized[0].isdigit()
             ):
+                self._log_wih_binary_once()
                 return True
             # 某些旧版二进制 --version 无输出，回退校验 -h。
             help_text = self._load_help_text()
             if help_text and ("webinfohunter" in help_text.lower() or "wih" in help_text.lower()):
+                self._log_wih_binary_once()
                 return True
         except Exception as e:
             logger.debug("{}".format(str(e)))
@@ -1320,8 +1370,15 @@ class InfoHunter(object):
                 results.append(record)
 
         logger.info(
-            "wih parsed result file:{} payload_items:{} invalid_items:{} filtered_items:{} records:{} endpoints:{} bin:{}".format(
-                self.wih_result_path, total_items, invalid_items, filtered_items, len(results), len(self.endpoint_results), self.wih_bin_path
+            "wih parsed result file:{} payload_items:{} invalid_items:{} filtered_items:{} records:{} endpoints:{} bin:{} version_text:{}".format(
+                self.wih_result_path,
+                total_items,
+                invalid_items,
+                filtered_items,
+                len(results),
+                len(self.endpoint_results),
+                self.wih_bin_path,
+                self._load_wih_version_text() or "unknown",
             )
         )
         return results

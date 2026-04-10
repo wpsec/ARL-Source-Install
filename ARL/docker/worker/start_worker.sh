@@ -50,6 +50,30 @@ ensure_python_runtime() {
   fi
 }
 
+log_wih_binary_runtime() {
+  local configured_path="${ARL_WIH_BIN_PATH:-/usr/bin/wih}"
+  local resolved_path=""
+  local version_text=""
+
+  if [ -n "$configured_path" ] && [ -x "$configured_path" ]; then
+    resolved_path="$configured_path"
+  elif command -v wih >/dev/null 2>&1; then
+    resolved_path="$(command -v wih)"
+  fi
+
+  if [ -z "$resolved_path" ]; then
+    echo "[WARN] wih binary not found during worker startup"
+    return 0
+  fi
+
+  version_text="$("$resolved_path" --version 2>/dev/null | head -n 1 || true)"
+  if [ -z "$version_text" ]; then
+    version_text="unknown"
+  fi
+
+  echo "worker startup wih binary path=${resolved_path} version_text=${version_text}"
+}
+
 recover_interrupted_tasks() {
   local output
 output="$(PYTHONPATH=/code python3 - <<'PY' 2>/dev/null || true
@@ -125,6 +149,7 @@ wait-for-it.sh -t 0 redis:6379
 mkdir -p /code/app/tmp
 LOG_FILE_PATH="${ARL_SCAN_LOG_FILE:-/code/logs/arl_worker.log}"
 mkdir -p "$(dirname "${LOG_FILE_PATH}")"
+log_wih_binary_runtime
 
 if should_run_startup_recovery; then
   recover_interrupted_tasks

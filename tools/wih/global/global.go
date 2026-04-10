@@ -17,7 +17,7 @@ const DefaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KH
 // 全局运行配置与共享状态。
 var (
 	// Version 为 wih 当前版本号。
-	Version = "1.2.0"
+	Version = "1.2.1"
 
 	// RulePath 为规则配置路径。
 	RulePath = "config/rules.yml"

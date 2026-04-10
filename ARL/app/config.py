@@ -746,8 +746,10 @@ class Config(object):
     # CDN信息JSON文件，用于CDN识别
     CDN_JSON_PATH = os.path.join(basedir, 'dicts/cdn_info.json')
 
-    # WebInfoHunter 规则文件（默认使用 ARL 自维护的源码版 wih 规则）
-    WIH_RULE_PATH = os.path.join(project_root, "tools", "wih", "config", "rules.yml")
+    # WebInfoHunter 可执行文件路径（默认固定使用镜像内源码编译产物，避免被共享 tools 目录中的旧版本覆盖）
+    WIH_BIN_PATH = "/usr/bin/wih"
+    # WebInfoHunter 规则文件（默认使用镜像内只读副本，避免被共享 tools 目录中的旧规则覆盖）
+    WIH_RULE_PATH = "/usr/local/share/arl/wih/config/rules.yml"
     # WIH 扫描超时（秒）
     WIH_TIMEOUT_SEC = 2 * 60 * 60
     # WIH 全局并发（透传给 wih --concurrency / -c）
@@ -1331,6 +1333,9 @@ try:
                 Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
                 min_value=1,
             )
+
+    if y["ARL"].get("WIH_BIN_PATH"):
+        Config.WIH_BIN_PATH = str(y["ARL"]["WIH_BIN_PATH"]).strip()
 
     if y["ARL"].get("WIH_RULE_PATH"):
         Config.WIH_RULE_PATH = str(y["ARL"]["WIH_RULE_PATH"]).strip()
@@ -1926,7 +1931,8 @@ try:
         Config.AFROG_STAGE_MAX_TARGETS,
         min_value=0,
     )
-    Config.WIH_RULE_PATH = env_str("ARL_WIH_RULE_PATH", Config.WIH_RULE_PATH)
+    Config.WIH_BIN_PATH = env_str("ARL_WIH_BIN_PATH", Config.WIH_BIN_PATH).strip() or Config.WIH_BIN_PATH
+    Config.WIH_RULE_PATH = env_str("ARL_WIH_RULE_PATH", Config.WIH_RULE_PATH).strip() or Config.WIH_RULE_PATH
     Config.WIH_TIMEOUT_SEC = safe_positive_int(
         env_int("ARL_WIH_TIMEOUT_SEC", Config.WIH_TIMEOUT_SEC),
         Config.WIH_TIMEOUT_SEC

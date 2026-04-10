@@ -273,6 +273,10 @@ RUN set -eux; \
     export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1; \
     if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; \
     node -e "require('playwright'); console.log('node-playwright-ok')"; \
+    mkdir -p /usr/local/share/arl; \
+    rm -rf /usr/local/share/arl/wih; \
+    cp -a /code/tools/wih /usr/local/share/arl/wih; \
+    test -f /usr/local/share/arl/wih/config/rules.yml; \
     cd /code; \
     rm -rf /usr/local/go /root/go /tmp/go-build "${GO_TGZ}"; \
     ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs; \
