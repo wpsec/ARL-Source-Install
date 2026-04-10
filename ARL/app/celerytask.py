@@ -40,6 +40,30 @@ if _task_soft_time_limit <= 0:
 if _task_time_limit and _task_soft_time_limit and _task_soft_time_limit >= _task_time_limit:
     _task_soft_time_limit = max(_task_time_limit - 1, 1)
 
+
+def _resolve_worker_prefetch_multiplier(raw_value):
+    try:
+        resolved = int(raw_value or 1)
+    except Exception:
+        resolved = 1
+
+    if resolved < 1:
+        return 1
+
+    if resolved > 1:
+        logger.warning(
+            "CELERY_PREFETCH_MULTIPLIER=%s may reserve extra long-running scan tasks and trigger RabbitMQ ack timeout; force clamp to 1",
+            resolved,
+        )
+        return 1
+
+    return resolved
+
+
+_worker_prefetch_multiplier = _resolve_worker_prefetch_multiplier(
+    getattr(Config, "CELERY_PREFETCH_MULTIPLIER", 1)
+)
+
 # Celery 配置
 celery.conf.update(
     # ARL 的扫描任务经常是“单条消息运行几十分钟”的长任务。
@@ -49,7 +73,7 @@ celery.conf.update(
     task_acks_late=False,
     # 保持默认语义：手动 stop/terminate 的任务不自动重新入队，避免被用户停止后再次跑起来。
     task_reject_on_worker_lost=False,
-    worker_prefetch_multiplier=Config.CELERY_PREFETCH_MULTIPLIER,  # Worker 每次只预取较少任务
+    worker_prefetch_multiplier=_worker_prefetch_multiplier,  # Worker 每次仅预取 1 个任务，避免长任务拖住预取消息
     # 显式设置 broker heartbeat，减少对默认协商值的依赖，降低宿主机短时卡顿导致的误判断链。
     broker_heartbeat=Config.CELERY_BROKER_HEARTBEAT,
     broker_heartbeat_checkrate=Config.CELERY_BROKER_HEARTBEAT_CHECKRATE,
@@ -1094,13 +1118,15 @@ def _enqueue_ai_denoise_task(
                 "modules": requested_modules,
             },
         }
-        arl_task_web.delay(options=task_options_payload)
+        # AI 去噪属于辅助任务，不应继续占用 arlweb 长任务队列，否则容易在长跑扫描阶段触发预取堆积。
+        arl_task.delay(options=task_options_payload)
         logger.info(
-            "enqueue ai_denoise task_id:%s trigger:%s modules:%s action:%s",
+            "enqueue ai_denoise task_id:%s trigger:%s modules:%s action:%s queue:%s",
             task_id_text,
             trigger,
             ",".join(requested_modules),
             action,
+            "arltask",
         )
     except Exception as exc:
         logger.warning("enqueue ai_denoise failed task_id:%s trigger:%s err:%s", task_id, trigger, exc)

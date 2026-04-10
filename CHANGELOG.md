@@ -5,6 +5,7 @@
 
 ## 2026-04-10（v4.6.57）
 
+- `[v4.6.58]` `Celery/WIH` 长任务预取与 AI 去噪队列冲突修复：针对域名任务进入 `wih_primary_scan` 后长时间运行时，`arlweb` 单 worker 因 `CELERY_PREFETCH_MULTIPLIER>1` 继续预取后续消息，最终把额外保留但未及时 ack 的消息拖到 RabbitMQ `consumer_timeout=1800000ms` 并触发 `PRECONDITION_FAILED` 的问题，这一轮在 `celerytask.py` 中把有效 `worker_prefetch_multiplier` 统一钳制为 `1`，即使部署层误配更大值也会在运行时自动收口并告警。同时，阶段触发的 `AI去噪` 任务不再继续投递到 `arlweb` 长任务队列，而是切回通用 `arltask` 队列，避免站点扫描还在跑时又把辅助去噪任务塞进同一条长跑队列，进一步降低 `WIH主扫描` 期间出现消息预取堆积、队列通道被 broker 关闭的风险；对应补齐 `prefetch` 钳制与 `AI去噪` 队列路由回归测试
 - `[v4.6.57]` `WIH` 阶段可观测性与 `URLFinder` 二次敏感扫描限时收口：针对任务长时间停留在“运行中（WIH扫描）”但前台无法看出究竟卡在主扫描、接口提取还是二次重扫的问题，这一轮把 `web_info_hunter` 内部链路拆成 `WIH主扫描 / URL候选提取 / 页面线索提取 / API文档扫描 / JS接口线索提取 / URL二次敏感扫描 / JS密钥扫描 / URL可达性探测` 八个子阶段，执行中会实时更新任务状态并记录子阶段耗时，避免所有时间都糊成一个 `WIH扫描`。同时，`urlfinder_sensitive_scan` 不再把最多 `300` 个 URLFinder 候选原样交给高预算 `WIH` 长时间递归重扫，而是改为“关闭 runtime 的轻量 WIH + 固定小批次 + 单批超时 + 阶段总预算”模式：默认每批 `24` 个目标、单批 `600s`、阶段总预算 `1800s`，超出预算会提前收口并保留已完成批次结果，显著降低任务被该增强链路拖到数小时以上的风险；`config.py/config.yaml.example` 与对应回归测试也已同步补齐
 
 ## 2026-04-09（v4.6.51 ~ v4.6.56）
