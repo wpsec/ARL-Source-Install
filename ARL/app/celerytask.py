@@ -109,7 +109,7 @@ _AI_DENOISE_STAGE_MODULE_MAP = {
     # URL 来源阶段。
     "site_spider": ["url"],
     "search_engines": ["url"],
-    "web_info_hunter": ["url", "vuln"],
+    "web_info_hunter": ["url", "wih_endpoint", "vuln"],
     # 目录与漏洞阶段。
     "file_leak": ["fileleak"],
     "nuclei_scan": ["nuclei_result"],
@@ -999,7 +999,7 @@ def _normalize_ai_denoise_modules(modules, default_all=True):
             modules = []
         normalized = [str(item).strip() for item in modules if str(item or "").strip()]
         if default_all and not normalized:
-            return ["site", "fileleak", "cert", "url", "vuln", "nuclei_result"]
+            return ["site", "fileleak", "cert", "url", "wih_endpoint", "vuln", "nuclei_result"]
         return normalized
 
 

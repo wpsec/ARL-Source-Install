@@ -162,6 +162,7 @@ AI:
     fileleak: true
     cert: true
     url: true
+    wih_endpoint: true
     vuln: true
     nuclei_result: true
   AI_DENOISE_PROMPT_IDS:
@@ -169,6 +170,7 @@ AI:
     fileleak: "default_ai_denoise_fileleak"
     cert: "default_ai_denoise_cert"
     url: "default_ai_denoise_url"
+    wih_endpoint: "default_ai_denoise_wih_endpoint"
     vuln: "default_ai_denoise_vuln"
     nuclei_result: "default_ai_denoise_poc"
   PROMPT_TEMPLATES:
@@ -201,6 +203,11 @@ AI:
       name: "默认AI去噪-URL信息"
       scene: "ai_denoise_url"
       content: "你是URL风险去噪助手。请基于URL路径、状态码、标题和上下文，输出安全/可疑/危险结论，并给出依据与建议。"
+      updated_at: ""
+    - id: "default_ai_denoise_wih_endpoint"
+      name: "默认AI去噪-WIH接口"
+      scene: "ai_denoise_wih_endpoint"
+      content: "你是WIH结构化接口价值分析助手。请基于站点信息、页面URL、接口URL、HTTP方法、参数名、请求体形态、状态码与响应大小，输出高价值/中价值/无价值结论，并给出关键证据与优先验证方向。"
       updated_at: ""
     - id: "default_ai_denoise_vuln"
       name: "默认AI去噪-风险"

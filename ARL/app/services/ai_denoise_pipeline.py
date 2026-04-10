@@ -18,6 +18,7 @@ AI_DENOISE_MODULE_COLLECTION_MAP = (
     ("fileleak", "fileleak"),
     ("cert", "cert"),
     ("url", "url"),
+    ("wih_endpoint", "wih_endpoint"),
     ("vuln", "vuln"),
     ("nuclei_result", "nuclei_result"),
 )

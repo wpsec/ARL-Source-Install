@@ -5,6 +5,7 @@
 
 ## 2026-04-10（v4.6.57）
 
+- `[v4.6.63]` `AI去噪/WIH接口` 高价值接口分级：`AI去噪` 新增 `wih_endpoint` 模块，开始对 `WIH接口提取` 结果做高价值/中价值/无价值分级，不再只停留在普通接口列表展示。后端复用了现有 `AI去噪` 框架，补齐 `scene/module/prompt` 映射、异步流水线 collection 绑定和 `web_info_hunter` 阶段触发；规则兜底会结合 `HTTP 方法、参数名、body_kind、页面/接口路径语义、站点标题/指纹` 对后台、账号、权限、订单、支付、上传、导入导出、配置与调试类接口做优先提级，同时对新闻、帮助、健康检查等低价值接口降权。前端 `WIH接口提取` 页面同步接入 `AI分析` 列，标签直接显示 `高价值 / 中价值 / 无价值`，并新增下拉式价值筛选；AI 详情弹窗也针对该模块改为展示 `价值等级/价值标签`。新增默认 SOP 模板 `default_ai_denoise_wih_endpoint.yaml`，支持在 AI 配置页与其它模块统一管理`
 - `[v4.6.62]` `WIH接口提取` 状态码/响应大小补全：针对任务详情页 `WIH接口提取` 中部分 `POST` 页面接口长期显示 `状态码=- / 响应大小=-` 的问题，这一轮将已存在但未接入主流程的 `wih_endpoint_probe` 轻量探测链正式并入 `web_info_hunter`：当 `WIH` 产出结构化接口但自身未携带响应状态时，会在保存到 `wih_endpoint` 表前按安全白名单方法（`GET/HEAD/POST/OPTIONS`）做一次轻量验证，并回填 `status_code/response_size`，前台和导出结果不再默认全是空值。对应补齐了任务流程级回归，覆盖“先探测再落库”的主链`
 - `[v4.6.61]` `WIH` 镜像内源码产物固定化：为彻底收口“CI 已部署但运行中的 `ARL` 仍可能命中旧版 `wih`/旧规则”的问题，这一轮把 `ARL` 默认 `WIH` 二进制路径固定为镜像内源码编译产物 `/usr/bin/wih`，不再优先从共享 `tools` 目录查找二进制；同时把默认规则路径切到镜像内只读副本 `/usr/local/share/arl/wih/config/rules.yml`，并在主 Docker 镜像构建时额外保留一份 `tools/wih` 到该目录，确保共享 `tools` 卷残留旧文件时，`WIH` 仍优先使用当前镜像随版本构建出的二进制、规则与 runtime 资源。对应 `InfoHunter`、`config.py/config.yaml.example/config-docker.yaml`、`runtime_surface.go` 与回归测试已同步补齐`
 - `[v4.6.60]` `WIH` 版本识别与运行版本日志补齐：将 `tools/wih` 版本号提升到 `1.2.1`，并在 `ARL` 调用 `WIH` 前记录“实际使用的二进制路径 + 版本号 + 关键调度参数”，解析完成后也会在结果日志中带上二进制版本，方便直接从 worker 日志判断当前容器里跑的是旧版 `/usr/bin/wih` 还是最新源码版 `WIH`，不再只能靠命令行参数侧面猜测。对应回归已补齐，覆盖 `check_have_wih()` 成功时会把版本信息写入日志这一条主链

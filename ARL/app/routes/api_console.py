@@ -8,6 +8,7 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections import Counter
+from functools import lru_cache
 import errno
 import json
 import os
@@ -16,6 +17,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from urllib.parse import parse_qsl, urlparse
 
 import yaml
 from bson import ObjectId
@@ -90,7 +92,7 @@ test_ai_config_fields = ns.model(
 analyze_ai_denoise_fields = ns.model(
     'AnalyzeAiDenoise',
     {
-        'module_id': fields.String(required=True, description='模块ID（site/fileleak/cert/url/vuln/nuclei_result）'),
+        'module_id': fields.String(required=True, description='模块ID（site/fileleak/cert/url/wih_endpoint/vuln/nuclei_result）'),
         'items': fields.List(fields.Raw, required=True, description='待分析的数据行列表'),
         'prefer_ai': fields.Boolean(required=False, description='兼容旧参数，当前接口会忽略该值（避免点击详情触发实时AI调用）'),
     },
@@ -467,6 +469,7 @@ AI_DENOISE_MODULE_SCENE_MAP = {
     'fileleak': 'ai_denoise_fileleak',
     'cert': 'ai_denoise_cert',
     'url': 'ai_denoise_url',
+    'wih_endpoint': 'ai_denoise_wih_endpoint',
     'vuln': 'ai_denoise_vuln',
     'nuclei_result': 'ai_denoise_nuclei_result',
 }
@@ -476,6 +479,7 @@ AI_DENOISE_MODULE_LABEL_MAP = {
     'fileleak': '目录扫描',
     'cert': 'SSL证书',
     'url': 'URL信息',
+    'wih_endpoint': 'WIH接口',
     'vuln': '风险',
     'nuclei_result': 'PoC风险',
 }
@@ -502,6 +506,7 @@ AI_USAGE_SCENE_LABEL_MAP = {
     'ai_denoise_fileleak': 'AI去噪-目录扫描',
     'ai_denoise_cert': 'AI去噪-SSL证书',
     'ai_denoise_url': 'AI去噪-URL信息',
+    'ai_denoise_wih_endpoint': 'AI去噪-WIH接口',
     'ai_denoise_vuln': 'AI去噪-风险',
     'ai_denoise_nuclei_result': 'AI去噪-PoC风险',
 }
@@ -516,6 +521,7 @@ AI_PROMPT_TEMPLATE_FILE_MAP = {
     'default_ai_denoise_fileleak': 'ai/sop/default_ai_denoise_fileleak.yaml',
     'default_ai_denoise_cert': 'ai/sop/default_ai_denoise_cert.yaml',
     'default_ai_denoise_url': 'ai/sop/default_ai_denoise_url.yaml',
+    'default_ai_denoise_wih_endpoint': 'ai/sop/default_ai_denoise_wih_endpoint.yaml',
     'default_ai_denoise_vuln': 'ai/sop/default_ai_denoise_vuln.yaml',
     'default_ai_denoise_poc': 'ai/sop/default_ai_denoise_poc.yaml',
 }
@@ -524,6 +530,7 @@ AI_DENOISE_MODULE_PROMPT_ID_MAP = {
     'fileleak': 'default_ai_denoise_fileleak',
     'cert': 'default_ai_denoise_cert',
     'url': 'default_ai_denoise_url',
+    'wih_endpoint': 'default_ai_denoise_wih_endpoint',
     'vuln': 'default_ai_denoise_vuln',
     'nuclei_result': 'default_ai_denoise_poc',
 }
@@ -782,6 +789,23 @@ def _default_ai_prompt_templates():
                 "1) 该URL属于登录、管理、调试、接口还是静态资源；"
                 "2) 是否值得进一步测试（鉴权、越权、注入、文件读取、重定向等）；"
                 "3) 明确下一步验证建议与优先级。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': 'default_ai_denoise_wih_endpoint',
+            'name': '默认AI去噪-WIH接口',
+            'scene': 'ai_denoise_wih_endpoint',
+            'content': (
+                "你是 WIH 结构化接口价值分析助手。请基于站点线索、页面URL、接口URL、HTTP方法、参数名、请求体形态、"
+                "状态码与响应大小，判断该接口是否值得优先进入渗透测试。"
+                "你必须关注后台/鉴权/用户/角色/订单/支付/上传/导入导出/配置/租户/令牌/调试类接口，"
+                "同时降低新闻、公告、列表、帮助、静态内容、健康检查等低价值接口权重。"
+                "输出时请给出："
+                "1) 高价值/中价值/无价值结论；"
+                "2) 关键证据；"
+                "3) 推荐优先验证方向（鉴权/越权/业务逻辑/注入/上传/配置变更/敏感数据导出等）。"
+                "禁止仅因存在 POST 或 query 参数就夸大为高价值。"
             ),
             'updated_at': '',
         },
@@ -2518,11 +2542,11 @@ def _normalize_ai_denoise_result_level(value, default_value='safe'):
     text = str(value or '').strip().lower()
     if text in ('disabled', 'close', 'off', '关闭', '已关闭'):
         return 'disabled'
-    if text in ('danger', 'high', 'critical', '严重', '危险', '高危', '危急'):
+    if text in ('danger', 'high', 'critical', '严重', '危险', '高危', '危急', 'high_value', '高价值'):
         return 'danger'
-    if text in ('suspicious', 'medium', 'manual_review', '可疑', '中危', '待复核'):
+    if text in ('suspicious', 'medium', 'manual_review', '可疑', '中危', '待复核', 'medium_value', '中价值'):
         return 'suspicious'
-    if text in ('safe', 'normal', 'low', 'pass', '安全', '正常', '低危', '可信'):
+    if text in ('safe', 'normal', 'low', 'pass', '安全', '正常', '低危', '可信', 'no_value', '无价值'):
         return 'safe'
     return default_value
 
@@ -2537,6 +2561,8 @@ def _merge_ai_denoise_result_level(current_level, next_level):
 
 def _normalize_risk_level_text(value):
     text = str(value or '').strip().lower()
+    if text in ('无', 'none', 'no_value') or '无价值' in text or 'no value' in text:
+        return '无'
     if any(word in text for word in ('critical', '严重', 'critical', 'urgent')):
         return '严重'
     if any(word in text for word in ('high', '高', '危急')):
@@ -2550,9 +2576,25 @@ def _normalize_risk_level_text(value):
 
 def _normalize_trust_level_text(value):
     text = str(value or '').strip().lower()
+    if '高价值' in text or 'high_value' in text or 'high value' in text:
+        return '高价值'
+    if '中价值' in text or 'medium_value' in text or 'medium value' in text:
+        return '中价值'
+    if '无价值' in text or 'no_value' in text or 'no value' in text:
+        return '无价值'
     if any(word in text for word in ('fp', '误报', 'suspected', '疑似')):
         return '疑似误报'
     return '可信'
+
+
+def _build_wih_endpoint_value_label(result_level):
+    mapping = {
+        'danger': '高价值',
+        'suspicious': '中价值',
+        'safe': '无价值',
+        'disabled': '已关闭',
+    }
+    return mapping.get(_normalize_ai_denoise_result_level(result_level, 'safe'), '无价值')
 
 
 def _build_ai_denoise_display_text(module_id, result_level, risk_level='中', trust='可信', cert_expire_days=None):
@@ -2569,6 +2611,8 @@ def _build_ai_denoise_display_text(module_id, result_level, risk_level='中', tr
     if module_id == 'url':
         mapping = {'safe': '安全', 'suspicious': '可疑', 'danger': '危险'}
         return mapping.get(result_level, '安全')
+    if module_id == 'wih_endpoint':
+        return _build_wih_endpoint_value_label(result_level)
     if module_id == 'cert':
         mapping = {'safe': '安全', 'suspicious': '可疑', 'danger': '危险'}
         base = mapping.get(result_level, '安全')
@@ -2673,6 +2717,136 @@ def _normalize_header_text(value):
                 lines.append('{}: {}'.format(key_text, item_text))
         return '\n'.join(lines[:40])
     return _normalize_item_text(value, 2000)
+
+
+def _normalize_site_origin(value):
+    text = str(value or '').strip()
+    if not text:
+        return ''
+    try:
+        parsed = urlparse(text)
+        if parsed.scheme and parsed.netloc:
+            return '{}://{}'.format(parsed.scheme, parsed.netloc)
+    except Exception:
+        return text.rstrip('/')
+    return text.rstrip('/')
+
+
+@lru_cache(maxsize=2048)
+def _lookup_ai_denoise_site_summary(task_id_text, site_origin):
+    task_id_value = str(task_id_text or '').strip()
+    site_text = str(site_origin or '').strip()
+    if not task_id_value or not site_text:
+        return {}
+
+    try:
+        query_value = task_id_value
+        if ObjectId.is_valid(task_id_value):
+            query_value = {'$in': [task_id_value, ObjectId(task_id_value)]}
+        doc = utils.conn_db('site').find_one(
+            {'task_id': query_value, 'site': site_text},
+            {'site': 1, 'title': 1, 'finger': 1},
+        )
+    except Exception:
+        return {}
+
+    if not isinstance(doc, dict):
+        return {}
+
+    return {
+        'site': str(doc.get('site') or site_text).strip(),
+        'title': _normalize_item_text(doc.get('title'), 320),
+        'finger': _extract_site_finger_names(doc.get('finger')),
+    }
+
+
+def _safe_wih_request_header_names(headers):
+    if not isinstance(headers, dict):
+        return []
+
+    result = []
+    seen = set()
+    for key in headers.keys():
+        name_text = str(key or '').strip()
+        if not name_text:
+            continue
+        normalized = name_text.lower()
+        if normalized in seen:
+            continue
+        if normalized in {'authorization', 'cookie', 'proxy-authorization', 'x-auth-token', 'x-access-token'}:
+            continue
+        seen.add(normalized)
+        result.append(name_text[:80])
+        if len(result) >= 16:
+            break
+    return result
+
+
+def _extract_wih_endpoint_request_summary(item):
+    request_template = item.get('request_template') if isinstance(item.get('request_template'), dict) else {}
+    query_obj = request_template.get('query') if isinstance(request_template.get('query'), dict) else {}
+    body_obj = request_template.get('body') if isinstance(request_template.get('body'), dict) else {}
+    path_obj = request_template.get('path') if isinstance(request_template.get('path'), dict) else {}
+    query_string = str(request_template.get('query_string') or '').strip().lstrip('?')
+
+    query_params = []
+    body_params = []
+    path_params = []
+    param_names = []
+    seen = set()
+
+    def append_param(container, raw_key):
+        key_text = str(raw_key or '').strip()
+        if not key_text:
+            return
+        container.append(key_text[:80])
+        lowered = key_text.lower()
+        if lowered in seen:
+            return
+        seen.add(lowered)
+        param_names.append(key_text[:80])
+
+    for key in query_obj.keys():
+        append_param(query_params, key)
+    for key in body_obj.keys():
+        append_param(body_params, key)
+    for key in path_obj.keys():
+        append_param(path_params, key)
+
+    if query_string:
+        try:
+            for key_text, _ in parse_qsl(query_string, keep_blank_values=True):
+                append_param(query_params, key_text)
+        except Exception:
+            pass
+
+    return {
+        'query_params': query_params[:16],
+        'body_params': body_params[:16],
+        'path_params': path_params[:16],
+        'param_names': param_names[:20],
+        'header_names': _safe_wih_request_header_names(request_template.get('headers')),
+    }
+
+
+def _build_wih_endpoint_site_summary(item):
+    task_id_text = str(item.get('task_id') or '').strip()
+    candidates = [
+        _normalize_site_origin(item.get('target')),
+        _normalize_site_origin(item.get('page_url')),
+        _normalize_site_origin(item.get('url')),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        summary = _lookup_ai_denoise_site_summary(task_id_text, candidate)
+        if summary:
+            return summary
+    return {
+        'site': next((item for item in candidates if item), ''),
+        'title': '',
+        'finger': [],
+    }
 
 
 def _rule_analyze_site_item(item):
@@ -2873,6 +3047,150 @@ def _rule_analyze_url_item(item):
     }
 
 
+def _rule_analyze_wih_endpoint_item(item):
+    target_text = _normalize_item_text(item.get('target') or item.get('site'), 320)
+    page_url_text = _normalize_item_text(item.get('page_url'), 900)
+    url_text = _normalize_item_text(item.get('url'), 900)
+    method_text = str(item.get('method') or 'GET').strip().upper() or 'GET'
+    status_code = _safe_int_any(item.get('status_code') or item.get('response_status'), 0)
+    response_size = _safe_int_any(item.get('response_size'), 0)
+    body_kind = _normalize_item_text(item.get('body_kind'), 80).lower()
+    source_types = _normalize_string_list_value(item.get('source_types'), max_items=8, max_item_len=40)
+    request_summary = _extract_wih_endpoint_request_summary(item)
+    site_summary = _build_wih_endpoint_site_summary(item)
+
+    combined_text = ' '.join(
+        [
+            target_text,
+            page_url_text,
+            url_text,
+            str(site_summary.get('title') or ''),
+            ' '.join(site_summary.get('finger') or []),
+            ' '.join(request_summary.get('param_names') or []),
+        ]
+    ).lower()
+    param_names_lower = [
+        str(name or '').strip().lower()
+        for name in list(request_summary.get('param_names') or [])
+        if str(name or '').strip()
+    ]
+
+    high_path_keywords = (
+        'admin', 'manage', 'console', 'config', 'setting', 'tenant', 'role', 'permission',
+        'user', 'account', 'profile', 'member', 'staff', 'employee', 'customer',
+        'login', 'auth', 'token', 'session', 'sso', 'oauth', 'passwd', 'password',
+        'order', 'refund', 'payment', 'pay', 'invoice', 'wallet', 'recharge',
+        'upload', 'import', 'export', 'download', 'attachment', 'file',
+        'debug', 'actuator', 'swagger', 'api-doc', 'graphql',
+    )
+    high_param_keywords = (
+        'token', 'ticket', 'code', 'password', 'passwd', 'oldpassword', 'newpassword',
+        'userid', 'uid', 'roleid', 'tenantid', 'orgid', 'deptid', 'amount', 'price',
+        'orderid', 'file', 'filename', 'filepath', 'path', 'redirect', 'callback',
+        'mobile', 'phone', 'idcard',
+    )
+    low_value_keywords = (
+        'news', 'notice', 'article', 'content', 'public', 'help', 'doc', 'docs',
+        'faq', 'banner', 'captcha', 'health', 'ping', 'static', 'asset', 'menu',
+    )
+
+    result_level = 'safe'
+    evidence = []
+
+    if method_text in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('接口方法为 {}，具备状态修改或提交语义。'.format(method_text))
+
+    if status_code in (401, 403):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('接口返回鉴权状态码 {}，可能位于受保护业务边界。'.format(status_code))
+
+    if any(keyword in combined_text for keyword in high_path_keywords):
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+        evidence.append('URL、页面或站点上下文命中后台、账号、订单、支付或配置类关键字。')
+
+    if any(keyword in name for name in param_names_lower for keyword in high_param_keywords):
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+        evidence.append('参数名命中认证、身份、金额、文件或重定向类高价值字段。')
+
+    if body_kind in ('json', 'graphql'):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('请求体形态为 {}，更接近真实业务接口。'.format(body_kind))
+
+    if body_kind == 'multipart':
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+        evidence.append('请求体为 multipart，优先关注上传、导入和解析链路。')
+
+    if site_summary.get('title'):
+        evidence.append('关联站点标题：{}。'.format(site_summary.get('title')))
+    if site_summary.get('finger'):
+        evidence.append('关联站点指纹：{}。'.format('、'.join(list(site_summary.get('finger') or [])[:4])))
+    if request_summary.get('param_names'):
+        evidence.append(
+            '识别到参数 {} 个：{}。'.format(
+                len(request_summary.get('param_names') or []),
+                ', '.join(list(request_summary.get('param_names') or [])[:8]),
+            )
+        )
+    if response_size > 0:
+        evidence.append('接口已有响应指标：状态 {}，大小 {} 字节。'.format(status_code or '-', response_size))
+    elif status_code > 0:
+        evidence.append('接口已有响应状态：{}。'.format(status_code))
+    if source_types:
+        evidence.append('来源类型：{}。'.format('、'.join(source_types[:4])))
+    if result_level == 'safe' and any(keyword in combined_text for keyword in low_value_keywords):
+        evidence.append('更接近内容展示、帮助或健康检查类接口，利用价值较低。')
+
+    if not evidence:
+        evidence.append('未发现明显的高价值接口特征。')
+
+    directions = []
+    if any(keyword in combined_text for keyword in ('auth', 'login', 'token', 'session', 'user', 'account', 'role', 'permission')):
+        directions.append('鉴权/越权')
+    if any(keyword in combined_text for keyword in ('order', 'refund', 'payment', 'pay', 'invoice', 'wallet', 'amount', 'price')):
+        directions.append('业务逻辑')
+    if any(keyword in combined_text for keyword in ('upload', 'import', 'file', 'attachment', 'multipart')):
+        directions.append('上传与文件处理')
+    if any(keyword in combined_text for keyword in ('export', 'download', 'report')):
+        directions.append('敏感数据导出')
+    if any(keyword in combined_text for keyword in ('config', 'setting', 'tenant', 'admin', 'manage')):
+        directions.append('后台配置变更')
+    if any(keyword in combined_text for keyword in ('debug', 'swagger', 'graphql', 'actuator')):
+        directions.append('调试面与接口文档')
+
+    dedup_directions = []
+    seen_directions = set()
+    for direction in directions:
+        if direction in seen_directions:
+            continue
+        seen_directions.add(direction)
+        dedup_directions.append(direction)
+
+    suggestions = []
+    if result_level == 'danger':
+        suggestions.append('建议优先人工复核，先做 {} 方向验证。'.format(' / '.join(dedup_directions[:3]) or '鉴权与业务逻辑'))
+        suggestions.append('结合认证态、角色差异和参数变化，验证越权、业务流程绕过或敏感数据读写。')
+    elif result_level == 'suspicious':
+        suggestions.append('建议纳入下一轮接口优先清单，补充认证态与不同角色访问对比。')
+        suggestions.append('优先确认接口是否真实落到业务写操作、导入导出或后台配置链路。')
+    else:
+        suggestions.append('当前更像通用展示或低敏查询接口，可放入常规巡检队列。')
+        suggestions.append('若后续补充到敏感参数、认证上下文或后台指纹，再重新提级。')
+
+    risk_level = '高' if result_level == 'danger' else ('中' if result_level == 'suspicious' else '无')
+    display_text = _build_ai_denoise_display_text('wih_endpoint', result_level)
+    summary = 'WIH接口价值分析结果：{}。接口：{} {}'.format(display_text, method_text, url_text or '-')
+    return {
+        'result_level': result_level,
+        'risk_level': risk_level,
+        'trust': display_text,
+        'summary': summary,
+        'evidence': evidence[:8],
+        'suggestions': suggestions[:6],
+        'display_text': display_text,
+    }
+
+
 def _rule_analyze_cert_item(item):
     cert_obj = item.get('cert') if isinstance(item.get('cert'), dict) else {}
     validity = cert_obj.get('validity') if isinstance(cert_obj.get('validity'), dict) else {}
@@ -3040,6 +3358,8 @@ def _build_ai_denoise_rule_result(module_id, item):
         return _rule_analyze_cert_item(item)
     if module_id == 'url':
         return _rule_analyze_url_item(item)
+    if module_id == 'wih_endpoint':
+        return _rule_analyze_wih_endpoint_item(item)
     if module_id == 'vuln':
         return _rule_analyze_vuln_item(item, module_id='vuln')
     if module_id == 'nuclei_result':
@@ -3180,6 +3500,27 @@ def _build_ai_denoise_context(module_id, item):
             'content_length': _safe_int_any(item.get('content_length'), 0),
             'source': _normalize_item_text(item.get('source'), 200),
         }
+    if module_id == 'wih_endpoint':
+        request_summary = _extract_wih_endpoint_request_summary(item)
+        site_summary = _build_wih_endpoint_site_summary(item)
+        return {
+            'target': _normalize_item_text(item.get('target') or item.get('site'), 320),
+            'page_url': _normalize_item_text(item.get('page_url'), 900),
+            'url': _normalize_item_text(item.get('url'), 900),
+            'method': _normalize_item_text(item.get('method'), 20).upper(),
+            'status_code': _safe_int_any(item.get('status_code') or item.get('response_status'), 0),
+            'response_size': _safe_int_any(item.get('response_size'), 0),
+            'content_type': _normalize_item_text(item.get('content_type'), 120),
+            'body_kind': _normalize_item_text(item.get('body_kind'), 80),
+            'source_types': _normalize_string_list_value(item.get('source_types'), max_items=8, max_item_len=40),
+            'param_names': request_summary.get('param_names') or [],
+            'query_params': request_summary.get('query_params') or [],
+            'body_params': request_summary.get('body_params') or [],
+            'path_params': request_summary.get('path_params') or [],
+            'request_header_names': request_summary.get('header_names') or [],
+            'site_title': _normalize_item_text(site_summary.get('title'), 320),
+            'site_finger': _normalize_string_list_value(site_summary.get('finger'), max_items=8, max_item_len=80),
+        }
     if module_id == 'cert':
         cert_obj = item.get('cert') if isinstance(item.get('cert'), dict) else {}
         validity = cert_obj.get('validity') if isinstance(cert_obj.get('validity'), dict) else {}
@@ -3282,6 +3623,15 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result,
             },
         },
     }
+    if module_id == 'wih_endpoint':
+        user_payload['output_requirement']['format'] = {
+            'result_level': 'safe|suspicious|danger',
+            'risk_level': '无|中|高',
+            'trust': '无价值|中价值|高价值',
+            'summary': '一句话价值结论',
+            'evidence': ['证据1', '证据2'],
+            'suggestions': ['建议1', '建议2'],
+        }
     system_content = '{}\n仅输出 JSON 对象，不要输出 Markdown 或解释文本。'.format(prompt_text)
     user_content = json.dumps(user_payload, ensure_ascii=False)
     request_body = {
@@ -3532,6 +3882,8 @@ def _normalize_ai_denoise_output(module_id, ai_output, rule_result):
     )
     if module_id in ('vuln', 'nuclei_result'):
         merged['trust'] = _normalize_trust_level_text(ai_output.get('trust') or ai_output.get('review_status'))
+    elif module_id == 'wih_endpoint':
+        merged['trust'] = _normalize_trust_level_text(ai_output.get('trust') or rule_result.get('trust'))
     else:
         merged['trust'] = rule_result.get('trust', '-')
 

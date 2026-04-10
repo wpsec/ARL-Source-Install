@@ -178,6 +178,7 @@ AI:
     fileleak: true
     cert: true
     url: true
+    wih_endpoint: true
     vuln: true
     nuclei_result: true
   AI_DENOISE_PROMPT_IDS:
@@ -185,6 +186,7 @@ AI:
     fileleak: "default_ai_denoise_fileleak"
     cert: "default_ai_denoise_cert"
     url: "default_ai_denoise_url"
+    wih_endpoint: "default_ai_denoise_wih_endpoint"
     vuln: "default_ai_denoise_vuln"
     nuclei_result: "default_ai_denoise_poc"
   PROMPT_TEMPLATES:
@@ -217,6 +219,11 @@ AI:
       name: "默认AI去噪-URL信息"
       scene: "ai_denoise_url"
       file: "ai/sop/default_ai_denoise_url.yaml"
+      updated_at: ""
+    - id: "default_ai_denoise_wih_endpoint"
+      name: "默认AI去噪-WIH接口"
+      scene: "ai_denoise_wih_endpoint"
+      file: "ai/sop/default_ai_denoise_wih_endpoint.yaml"
       updated_at: ""
     - id: "default_ai_denoise_vuln"
       name: "默认AI去噪-风险"

@@ -237,14 +237,22 @@ const AI_ANALYSIS_SEARCH_OPTIONS: Array<{ label: string; value: string }> = [
   { label: '可信', value: 'trusted' },
   { label: '疑似误报', value: 'suspected_fp' },
 ];
+const AI_WIH_ENDPOINT_ANALYSIS_SEARCH_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '全部', value: '' },
+  { label: '未分析', value: 'unanalyzed' },
+  { label: '高价值', value: 'high_value' },
+  { label: '中价值', value: 'medium_value' },
+  { label: '无价值', value: 'no_value' },
+];
 
-const AI_DENOISE_MODULE_IDS = ['site', 'fileleak', 'cert', 'url', 'vuln', 'nuclei_result'] as const;
+const AI_DENOISE_MODULE_IDS = ['site', 'fileleak', 'cert', 'url', 'wih_endpoint', 'vuln', 'nuclei_result'] as const;
 type AiDenoiseModuleId = (typeof AI_DENOISE_MODULE_IDS)[number];
 const AI_DENOISE_MODULE_LABEL_MAP: Record<AiDenoiseModuleId, string> = {
   site: '站点',
   fileleak: '目录扫描',
   cert: 'SSL证书',
   url: 'URL信息',
+  wih_endpoint: 'WIH接口',
   vuln: '风险',
   nuclei_result: 'PoC风险',
 };
@@ -1673,7 +1681,7 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'url',
-    columns: ['target', 'page_url', 'method', 'status_code', 'response_size', 'detail_action'],
+    columns: ['target', 'page_url', 'method', 'status_code', 'response_size', 'ai_analysis', 'detail_action'],
     sortableColumns: ['status_code', 'response_size'],
     columnLabels: {
       target: '目标',
@@ -1681,6 +1689,7 @@ const modules: ModuleConfig[] = [
       method: '方法',
       status_code: '状态码',
       response_size: '响应大小',
+      ai_analysis: 'AI分析',
       detail_action: '详情信息',
     },
     searchFields: [
@@ -1700,6 +1709,13 @@ const modules: ModuleConfig[] = [
       },
       { key: 'status_code', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
       { key: 'response_size', label: '响应大小', placeholder: '请输入响应大小进行搜索', inputType: 'number' },
+      {
+        key: 'ai_analysis',
+        label: 'AI分析',
+        placeholder: '请选择价值等级',
+        inputType: 'select',
+        options: AI_WIH_ENDPOINT_ANALYSIS_SEARCH_OPTIONS,
+      },
     ],
     actions: [
       {
@@ -7839,6 +7855,8 @@ function TableModuleView({
         if (!analysis) return aiAnalysisFilterValue === 'unanalyzed';
 
         const trustText = String(analysis.trust || '').trim().toLowerCase();
+        const displayText = String(analysis.display_text || '').trim().toLowerCase();
+        const riskText = String(analysis.risk_level || '').trim().toLowerCase();
         if (aiAnalysisFilterValue === 'unanalyzed') {
           return analysis.result_level === 'disabled' || String(analysis.display_text || '').includes('未分析');
         }
@@ -7856,6 +7874,15 @@ function TableModuleView({
         }
         if (aiAnalysisFilterValue === 'suspected_fp') {
           return trustText.includes('误报') || trustText.includes('suspected');
+        }
+        if (aiAnalysisFilterValue === 'high_value') {
+          return displayText.includes('高价值') || trustText.includes('高价值') || riskText === '高';
+        }
+        if (aiAnalysisFilterValue === 'medium_value') {
+          return displayText.includes('中价值') || trustText.includes('中价值') || riskText === '中';
+        }
+        if (aiAnalysisFilterValue === 'no_value') {
+          return displayText.includes('无价值') || trustText.includes('无价值') || riskText === '无';
         }
         return true;
       });
@@ -9011,6 +9038,11 @@ function TableModuleView({
     if (aiDenoiseModuleId === 'fileleak' || aiDenoiseModuleId === 'url') {
       return sanitizeUiMessage(String(row?.url || ''), 260) || fallback;
     }
+    if (aiDenoiseModuleId === 'wih_endpoint') {
+      const methodText = sanitizeUiMessage(String(row?.method || '').toUpperCase(), 16);
+      const urlText = sanitizeUiMessage(String(row?.url || ''), 240);
+      return `${methodText || 'GET'} ${urlText || fallback}`.trim();
+    }
     if (aiDenoiseModuleId === 'site') {
       return sanitizeUiMessage(String(row?.site || row?.url || row?.host || ''), 260) || fallback;
     }
@@ -9067,6 +9099,23 @@ function TableModuleView({
         status_code: row?.status_code,
         content_length: row?.content_length,
         source: row?.source,
+      };
+    }
+    if (aiDenoiseModuleId === 'wih_endpoint') {
+      return {
+        ...base,
+        target: row?.target,
+        site: row?.site,
+        page_url: row?.page_url,
+        url: row?.url,
+        method: row?.method,
+        status_code: row?.status_code,
+        response_status: row?.response_status,
+        response_size: row?.response_size,
+        content_type: row?.content_type,
+        body_kind: row?.body_kind,
+        source_types: row?.source_types,
+        request_template: row?.request_template,
       };
     }
     if (aiDenoiseModuleId === 'vuln') {
@@ -12757,10 +12806,10 @@ function TableModuleView({
                   {aiDenoiseDetail.analysis.display_text || '-'}
                 </span>
                 <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
-                  风险等级：{aiDenoiseDetail.analysis.risk_level || '-'}
+                  {aiDenoiseModuleId === 'wih_endpoint' ? '价值等级' : '风险等级'}：{aiDenoiseDetail.analysis.risk_level || '-'}
                 </span>
                 <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
-                  可信度：{aiDenoiseDetail.analysis.trust || '-'}
+                  {aiDenoiseModuleId === 'wih_endpoint' ? '价值标签' : '可信度'}：{aiDenoiseDetail.analysis.trust || '-'}
                 </span>
                 <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
                   来源：{
@@ -18599,7 +18648,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     max_tokens: number;
   };
 
-  type AiDenoiseModuleId = 'site' | 'fileleak' | 'cert' | 'url' | 'vuln' | 'nuclei_result';
+  type AiDenoiseModuleId = 'site' | 'fileleak' | 'cert' | 'url' | 'wih_endpoint' | 'vuln' | 'nuclei_result';
 
   type AiDenoiseModules = Record<AiDenoiseModuleId, boolean>;
   type AiDenoisePromptIds = Record<AiDenoiseModuleId, string>;
@@ -18770,6 +18819,15 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       file: 'ai/sop/default_ai_denoise_url.yaml',
     },
     {
+      id: 'default_ai_denoise_wih_endpoint',
+      name: '默认AI去噪-WIH接口',
+      scene: 'ai_denoise_wih_endpoint',
+      content:
+        '你是WIH结构化接口价值分析助手。请基于站点信息、页面URL、接口URL、HTTP方法、参数名、请求体形态、状态码与响应大小，输出高价值/中价值/无价值结论，并给出关键证据与优先验证方向。不要仅因存在POST或query参数就夸大为高价值。',
+      updated_at: '',
+      file: 'ai/sop/default_ai_denoise_wih_endpoint.yaml',
+    },
+    {
       id: 'default_ai_denoise_vuln',
       name: '默认AI去噪-风险',
       scene: 'ai_denoise_vuln',
@@ -18798,6 +18856,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     { id: 'fileleak', label: '目录扫描', scene: 'ai_denoise_fileleak' },
     { id: 'cert', label: 'SSL证书', scene: 'ai_denoise_cert' },
     { id: 'url', label: 'URL信息', scene: 'ai_denoise_url' },
+    { id: 'wih_endpoint', label: 'WIH接口', scene: 'ai_denoise_wih_endpoint' },
     { id: 'vuln', label: '风险', scene: 'ai_denoise_vuln' },
     { id: 'nuclei_result', label: 'PoC风险', scene: 'ai_denoise_nuclei_result' },
   ];
@@ -18807,6 +18866,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     fileleak: true,
     cert: true,
     url: true,
+    wih_endpoint: true,
     vuln: true,
     nuclei_result: true,
   };
@@ -18950,6 +19010,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       fileleak: source.fileleak !== false,
       cert: source.cert !== false,
       url: source.url !== false,
+      wih_endpoint: source.wih_endpoint !== false,
       vuln: source.vuln !== false,
       nuclei_result: source.nuclei_result !== false,
     };
@@ -18980,6 +19041,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       fileleak: normalizeOne('fileleak'),
       cert: normalizeOne('cert'),
       url: normalizeOne('url'),
+      wih_endpoint: normalizeOne('wih_endpoint'),
       vuln: normalizeOne('vuln'),
       nuclei_result: normalizeOne('nuclei_result'),
     };
@@ -19235,6 +19297,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       fileleak: null,
       cert: null,
       url: null,
+      wih_endpoint: null,
       vuln: null,
       nuclei_result: null,
     };
