@@ -5071,7 +5071,7 @@ function LoginView({
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-brand-accent hover:opacity-90 disabled:opacity-60 transition px-6 py-4 rounded-xl font-black text-lg tracking-widest uppercase"
+            className="w-full bg-brand-accent hover:opacity-90 disabled:opacity-60 transition px-6 py-4 rounded-xl font-black text-lg shadow-lg shadow-brand-accent/20"
           >
             {loading ? '登录中...' : '登录系统'}
           </button>
@@ -22434,7 +22434,7 @@ function MainShell() {
               <button
                 onClick={() => void changePassword()}
                 disabled={passwdLoading}
-                className="w-full bg-brand-accent py-3 rounded-xl font-black text-sm uppercase tracking-wider"
+                className="w-full bg-brand-accent py-3 rounded-xl font-black text-sm shadow-lg shadow-brand-accent/20"
               >
                 {passwdLoading ? '提交中...' : '提交并重新登录'}
               </button>

@@ -22,10 +22,10 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   const { theme, setTheme } = useTheme();
 
   const themes: { id: ThemeType; label: string; color: string }[] = [
-    { id: 'nord', label: '北欧极光', color: 'bg-[#b8c6cf]' },
-    { id: 'midnight', label: '午夜科技', color: 'bg-[#556477]' },
-    { id: 'slate', label: '专业灰蓝', color: 'bg-[#7f9fb3]' },
-    { id: 'titanium', label: '钛金黑', color: 'bg-[#8b9198]' },
+    { id: 'nord', label: '北欧极光', color: 'bg-[#79a8c3]' },
+    { id: 'midnight', label: '午夜科技', color: 'bg-[#5a94cb]' },
+    { id: 'slate', label: '专业灰蓝', color: 'bg-[#63a4d6]' },
+    { id: 'titanium', label: '钛金黑', color: 'bg-[#3794ff]' },
     { id: 'sandstone', label: '砂岩白', color: 'bg-[#7b6d62]' },
   ];
 

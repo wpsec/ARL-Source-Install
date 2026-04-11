@@ -8,6 +8,7 @@
   --brand-border: #34465d;
   --brand-accent: #8aa7c2;
   --brand-accent-rgb: 138, 167, 194;
+  --brand-accent-strong: #5f7892;
   --brand-secondary: #6d8599;
   --brand-secondary-rgb: 109, 133, 153;
   --brand-warning: #c29a6b;
@@ -15,6 +16,7 @@
   --brand-danger: #e59898;
   --brand-text: #f5f7fb;
   --brand-text-muted: #c4ced8;
+  --brand-accent-contrast: #f8fbff;
   --brand-card-surface-alpha: 0.74;
   --brand-card-elevated-alpha: 0.84;
   --brand-shell-alpha: 0.78;
@@ -25,99 +27,107 @@
 }
 
 [data-theme='midnight'] {
-  --brand-bg: #0d1725;
-  --brand-bg-rgb: 13, 23, 37;
-  --brand-card: #162234;
-  --brand-card-rgb: 22, 34, 52;
-  --brand-border: #31435b;
-  --brand-accent: #8ca3b9;
-  --brand-accent-rgb: 140, 163, 185;
-  --brand-secondary: #5f7589;
-  --brand-secondary-rgb: 95, 117, 137;
-  --brand-warning: #b28f66;
-  --brand-warning-rgb: 178, 143, 102;
-  --brand-danger: #cc8c92;
-  --brand-text: #f5f7fb;
-  --brand-text-muted: #c2cdd8;
-  --brand-card-surface-alpha: 0.76;
-  --brand-card-elevated-alpha: 0.86;
-  --brand-shell-alpha: 0.8;
-  --brand-atmosphere-accent-alpha: 0.14;
-  --brand-atmosphere-secondary-alpha: 0.1;
-  --brand-atmosphere-warning-alpha: 0.06;
-  --brand-atmosphere-sheen-alpha: 0.035;
-}
-
-[data-theme='slate'] {
-  --brand-bg: #132131;
-  --brand-bg-rgb: 19, 33, 49;
-  --brand-card: #1d2d42;
-  --brand-card-rgb: 29, 45, 66;
-  --brand-border: #3a516e;
-  --brand-accent: #82acc2;
-  --brand-accent-rgb: 130, 172, 194;
-  --brand-secondary: #94aabd;
-  --brand-secondary-rgb: 148, 170, 189;
-  --brand-warning: #c39d6c;
-  --brand-warning-rgb: 195, 157, 108;
-  --brand-danger: #e6a2a2;
-  --brand-text: #f4f7fb;
-  --brand-text-muted: #c6d1dd;
-  --brand-card-surface-alpha: 0.72;
-  --brand-card-elevated-alpha: 0.83;
-  --brand-shell-alpha: 0.77;
-  --brand-atmosphere-accent-alpha: 0.15;
-  --brand-atmosphere-secondary-alpha: 0.1;
-  --brand-atmosphere-warning-alpha: 0.06;
-  --brand-atmosphere-sheen-alpha: 0.03;
-}
-
-[data-theme='nord'] {
-  --brand-bg: #19232d;
-  --brand-bg-rgb: 25, 35, 45;
-  --brand-card: #23303b;
-  --brand-card-rgb: 35, 48, 59;
-  --brand-border: #455768;
-  --brand-accent: #9fb6c1;
-  --brand-accent-rgb: 159, 182, 193;
-  --brand-secondary: #bec9d1;
-  --brand-secondary-rgb: 190, 201, 209;
-  --brand-warning: #bfa176;
-  --brand-warning-rgb: 191, 161, 118;
-  --brand-danger: #e3acb2;
-  --brand-text: #f3f7fa;
-  --brand-text-muted: #cfd9e2;
-  --brand-card-surface-alpha: 0.74;
-  --brand-card-elevated-alpha: 0.84;
-  --brand-shell-alpha: 0.78;
-  --brand-atmosphere-accent-alpha: 0.12;
-  --brand-atmosphere-secondary-alpha: 0.09;
-  --brand-atmosphere-warning-alpha: 0.05;
-  --brand-atmosphere-sheen-alpha: 0.028;
-}
-
-[data-theme='titanium'] {
-  --brand-bg: #171a1f;
-  --brand-bg-rgb: 23, 26, 31;
-  --brand-card: #20252d;
-  --brand-card-rgb: 32, 37, 45;
-  --brand-border: #424a55;
-  --brand-accent: #b7c0ca;
-  --brand-accent-rgb: 183, 192, 202;
-  --brand-secondary: #8b949f;
-  --brand-secondary-rgb: 139, 148, 159;
-  --brand-warning: #b09572;
-  --brand-warning-rgb: 176, 149, 114;
-  --brand-danger: #c7938f;
-  --brand-text: #f3f5f6;
-  --brand-text-muted: #c8d0d6;
+  --brand-bg: #0b1220;
+  --brand-bg-rgb: 11, 18, 32;
+  --brand-card: #121a28;
+  --brand-card-rgb: 18, 26, 40;
+  --brand-border: #27364a;
+  --brand-accent: #5a94cb;
+  --brand-accent-rgb: 90, 148, 203;
+  --brand-accent-strong: #2e5f8a;
+  --brand-secondary: #7da0bf;
+  --brand-secondary-rgb: 125, 160, 191;
+  --brand-warning: #c89a63;
+  --brand-warning-rgb: 200, 154, 99;
+  --brand-danger: #d2828e;
+  --brand-text: #ebf2f9;
+  --brand-text-muted: #9fb1c6;
+  --brand-accent-contrast: #f8fbff;
   --brand-card-surface-alpha: 0.82;
   --brand-card-elevated-alpha: 0.9;
   --brand-shell-alpha: 0.86;
-  --brand-atmosphere-accent-alpha: 0.08;
-  --brand-atmosphere-secondary-alpha: 0.05;
-  --brand-atmosphere-warning-alpha: 0.04;
-  --brand-atmosphere-sheen-alpha: 0.018;
+  --brand-atmosphere-accent-alpha: 0.11;
+  --brand-atmosphere-secondary-alpha: 0.08;
+  --brand-atmosphere-warning-alpha: 0.05;
+  --brand-atmosphere-sheen-alpha: 0.026;
+}
+
+[data-theme='slate'] {
+  --brand-bg: #102031;
+  --brand-bg-rgb: 16, 32, 49;
+  --brand-card: #16283c;
+  --brand-card-rgb: 22, 40, 60;
+  --brand-border: #2f4863;
+  --brand-accent: #63a4d6;
+  --brand-accent-rgb: 99, 164, 214;
+  --brand-accent-strong: #336889;
+  --brand-secondary: #8cafc7;
+  --brand-secondary-rgb: 140, 175, 199;
+  --brand-warning: #d0a06a;
+  --brand-warning-rgb: 208, 160, 106;
+  --brand-danger: #d58e90;
+  --brand-text: #edf3f8;
+  --brand-text-muted: #b5c5d4;
+  --brand-accent-contrast: #f7fbff;
+  --brand-card-surface-alpha: 0.8;
+  --brand-card-elevated-alpha: 0.88;
+  --brand-shell-alpha: 0.84;
+  --brand-atmosphere-accent-alpha: 0.12;
+  --brand-atmosphere-secondary-alpha: 0.08;
+  --brand-atmosphere-warning-alpha: 0.05;
+  --brand-atmosphere-sheen-alpha: 0.026;
+}
+
+[data-theme='nord'] {
+  --brand-bg: #1b242e;
+  --brand-bg-rgb: 27, 36, 46;
+  --brand-card: #232f3a;
+  --brand-card-rgb: 35, 47, 58;
+  --brand-border: #415463;
+  --brand-accent: #79a8c3;
+  --brand-accent-rgb: 121, 168, 195;
+  --brand-accent-strong: #4c7187;
+  --brand-secondary: #a3bcc9;
+  --brand-secondary-rgb: 163, 188, 201;
+  --brand-warning: #c6a371;
+  --brand-warning-rgb: 198, 163, 113;
+  --brand-danger: #cf96a2;
+  --brand-text: #eff4f7;
+  --brand-text-muted: #bcc8d1;
+  --brand-accent-contrast: #f8fbfd;
+  --brand-card-surface-alpha: 0.8;
+  --brand-card-elevated-alpha: 0.88;
+  --brand-shell-alpha: 0.84;
+  --brand-atmosphere-accent-alpha: 0.1;
+  --brand-atmosphere-secondary-alpha: 0.07;
+  --brand-atmosphere-warning-alpha: 0.045;
+  --brand-atmosphere-sheen-alpha: 0.024;
+}
+
+[data-theme='titanium'] {
+  --brand-bg: #1e1e1e;
+  --brand-bg-rgb: 30, 30, 30;
+  --brand-card: #252526;
+  --brand-card-rgb: 37, 37, 38;
+  --brand-border: #34363a;
+  --brand-accent: #3794ff;
+  --brand-accent-rgb: 55, 148, 255;
+  --brand-accent-strong: #0e639c;
+  --brand-secondary: #6d93b3;
+  --brand-secondary-rgb: 109, 147, 179;
+  --brand-warning: #d7ba7d;
+  --brand-warning-rgb: 215, 186, 125;
+  --brand-danger: #d16d6d;
+  --brand-text: #d4d4d4;
+  --brand-text-muted: #a6adbb;
+  --brand-accent-contrast: #f7fbff;
+  --brand-card-surface-alpha: 0.9;
+  --brand-card-elevated-alpha: 0.96;
+  --brand-shell-alpha: 0.92;
+  --brand-atmosphere-accent-alpha: 0.05;
+  --brand-atmosphere-secondary-alpha: 0.025;
+  --brand-atmosphere-warning-alpha: 0.025;
+  --brand-atmosphere-sheen-alpha: 0.01;
 }
 
 [data-theme='emerald'] {
@@ -377,6 +387,46 @@
 
   html body .bg-brand-bg\/60 {
     background-color: rgba(var(--brand-bg-rgb), calc(var(--brand-shell-alpha) + 0.1)) !important;
+  }
+
+  /* 统一实心主按钮的前景色和字距，避免暗色主题下中文按钮发虚、发飘 */
+  html body :is(button, a)[class~='bg-brand-accent'] {
+    color: var(--brand-accent-contrast) !important;
+    border-color: rgba(var(--brand-accent-rgb), 0.34);
+    background-image: linear-gradient(135deg, var(--brand-accent) 0%, var(--brand-accent-strong) 100%);
+    box-shadow:
+      0 14px 32px rgba(var(--brand-accent-rgb), 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.16);
+  }
+
+  html body :is(button, a)[class~='bg-brand-accent']:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: saturate(1.06) brightness(1.03);
+    box-shadow:
+      0 18px 36px rgba(var(--brand-accent-rgb), 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  html body :is(button, a)[class~='bg-brand-accent']:active:not(:disabled) {
+    transform: translateY(0);
+    filter: saturate(1.02) brightness(0.98);
+  }
+
+  html body :is(button, a)[class~='bg-brand-accent']:disabled {
+    color: var(--brand-accent-contrast) !important;
+    box-shadow: none;
+    filter: none;
+  }
+
+  html body :is(button, a)[class~='bg-brand-accent'][class*='uppercase'] {
+    text-transform: none !important;
+    letter-spacing: 0.04em !important;
+  }
+
+  html body :is(button, a)[class~='bg-brand-accent'] :is(svg, span) {
+    color: inherit;
+    stroke: currentColor;
   }
   
   /* Light theme text color override */
