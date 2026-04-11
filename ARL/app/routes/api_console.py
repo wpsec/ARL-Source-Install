@@ -484,6 +484,20 @@ AI_DENOISE_MODULE_LABEL_MAP = {
     'nuclei_result': 'PoC风险',
 }
 
+AI_WIH_ENDPOINT_FILL_MODULE_ID = 'wih_endpoint_fill'
+AI_WIH_ENDPOINT_FILL_SCENE = 'ai_fill_wih_endpoint'
+AI_WIH_ENDPOINT_FILL_PROMPT_ID = 'default_ai_fill_wih_endpoint'
+AI_WIH_ENDPOINT_FILL_LABEL = 'WIH接口AI填充'
+
+AI_SOP_MODULE_SCENE_MAP = {
+    **AI_DENOISE_MODULE_SCENE_MAP,
+    AI_WIH_ENDPOINT_FILL_MODULE_ID: AI_WIH_ENDPOINT_FILL_SCENE,
+}
+AI_SOP_MODULE_LABEL_MAP = {
+    **AI_DENOISE_MODULE_LABEL_MAP,
+    AI_WIH_ENDPOINT_FILL_MODULE_ID: AI_WIH_ENDPOINT_FILL_LABEL,
+}
+
 AI_DENOISE_MAX_ITEMS = 120
 AI_DENOISE_MAX_ITEM_TEXT_LEN = 5000
 AI_DENOISE_RESULT_COLLECTION = 'ai_denoise_result'
@@ -509,6 +523,7 @@ AI_USAGE_SCENE_LABEL_MAP = {
     'ai_denoise_wih_endpoint': 'AI去噪-WIH接口',
     'ai_denoise_vuln': 'AI去噪-风险',
     'ai_denoise_nuclei_result': 'AI去噪-PoC风险',
+    'ai_fill_wih_endpoint': 'AI填充-WIH接口',
 }
 
 AI_PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -524,6 +539,7 @@ AI_PROMPT_TEMPLATE_FILE_MAP = {
     'default_ai_denoise_wih_endpoint': 'ai/sop/default_ai_denoise_wih_endpoint.yaml',
     'default_ai_denoise_vuln': 'ai/sop/default_ai_denoise_vuln.yaml',
     'default_ai_denoise_poc': 'ai/sop/default_ai_denoise_poc.yaml',
+    'default_ai_fill_wih_endpoint': 'ai/sop/default_ai_fill_wih_endpoint.yaml',
 }
 AI_DENOISE_MODULE_PROMPT_ID_MAP = {
     'site': 'default_ai_denoise_site',
@@ -533,6 +549,10 @@ AI_DENOISE_MODULE_PROMPT_ID_MAP = {
     'wih_endpoint': 'default_ai_denoise_wih_endpoint',
     'vuln': 'default_ai_denoise_vuln',
     'nuclei_result': 'default_ai_denoise_poc',
+}
+AI_SOP_MODULE_PROMPT_ID_MAP = {
+    **AI_DENOISE_MODULE_PROMPT_ID_MAP,
+    AI_WIH_ENDPOINT_FILL_MODULE_ID: AI_WIH_ENDPOINT_FILL_PROMPT_ID,
 }
 
 
@@ -832,6 +852,22 @@ def _default_ai_prompt_templates():
                 "1) 是否值得人工复现；"
                 "2) 复现路径与关键请求点；"
                 "3) 哪些结果应降权为疑似误报。"
+            ),
+            'updated_at': '',
+        },
+        {
+            'id': AI_WIH_ENDPOINT_FILL_PROMPT_ID,
+            'name': '默认AI填充-WIH接口',
+            'scene': AI_WIH_ENDPOINT_FILL_SCENE,
+            'content': (
+                "你是 WIH 接口参数补全与安全测试助手。请基于站点信息、页面URL、接口URL、HTTP方法、"
+                "请求报文、请求模板、Content-Type、参数名和已有参数值，输出尽可能可用、类型正确、低副作用的请求填充建议。"
+                "要求："
+                "1) 优先保留原始请求中已有的稳定值，仅填充缺失值、<value> 占位符、空字符串或明显无效值；"
+                "2) 输出时必须标注参数位置（query/body/path）、推断类型（string/int/bool/date/id/keyword/enum/url 等）和建议值；"
+                "3) GET/POST/HEAD/OPTIONS 可给出 safe 测试建议；DELETE/PUT/PATCH/TRACE/CONNECT 等高风险方法只允许给出 hint_only 提示，不建议自动实测；"
+                "4) 对 multipart、文件上传、二进制体、签名/验证码/一次性 token 等高副作用或高不确定参数要保守；"
+                "5) 仅输出 JSON 对象，不要输出 Markdown。"
             ),
             'updated_at': '',
         },
@@ -1267,6 +1303,7 @@ def _extract_ai_config(config_obj):
         'custom_compat_providers': _normalize_ai_custom_providers(ai_conf.get('CUSTOM_COMPAT_PROVIDERS')),
         'ai_poc_scan_enable': _safe_bool(ai_conf.get('AI_POC_SCAN_ENABLE'), True),
         'ai_denoise_enable': _safe_bool(ai_conf.get('AI_DENOISE_ENABLE'), True),
+        'ai_wih_endpoint_fill_enable': _safe_bool(ai_conf.get('AI_WIH_ENDPOINT_FILL_ENABLE'), True),
         'ai_pen_test_enable': _safe_bool(ai_conf.get('AI_PEN_TEST_ENABLE'), True),
         'ai_pen_mcp_enable': _safe_bool(ai_conf.get('AI_PEN_MCP_ENABLE'), True),
         'ai_pen_mcp_max_tool_calls': _safe_int(ai_conf.get('AI_PEN_MCP_MAX_TOOL_CALLS'), 6, min_value=1),
@@ -1533,6 +1570,7 @@ def _merge_ai_config(config_obj, ai_config):
     )
     ai_conf['AI_POC_SCAN_ENABLE'] = _safe_bool(ai_config.get('ai_poc_scan_enable'), True)
     ai_conf['AI_DENOISE_ENABLE'] = _safe_bool(ai_config.get('ai_denoise_enable'), True)
+    ai_conf['AI_WIH_ENDPOINT_FILL_ENABLE'] = _safe_bool(ai_config.get('ai_wih_endpoint_fill_enable'), True)
     ai_conf['AI_PEN_TEST_ENABLE'] = _safe_bool(ai_config.get('ai_pen_test_enable'), True)
     ai_conf['AI_PEN_MCP_ENABLE'] = _safe_bool(ai_config.get('ai_pen_mcp_enable'), True)
     ai_conf['AI_PEN_MCP_MAX_TOOL_CALLS'] = max(
@@ -2788,10 +2826,12 @@ def _extract_wih_endpoint_request_summary(item):
     body_obj = request_template.get('body') if isinstance(request_template.get('body'), dict) else {}
     path_obj = request_template.get('path') if isinstance(request_template.get('path'), dict) else {}
     query_string = str(request_template.get('query_string') or '').strip().lstrip('?')
+    ai_fill_params = item.get('ai_fill_params') if isinstance(item.get('ai_fill_params'), list) else []
 
     query_params = []
     body_params = []
     path_params = []
+    filled_params = []
     param_names = []
     seen = set()
 
@@ -2820,11 +2860,27 @@ def _extract_wih_endpoint_request_summary(item):
         except Exception:
             pass
 
+    for entry in ai_fill_params:
+        if not isinstance(entry, dict):
+            continue
+        location = str(entry.get('location') or '').strip().lower()
+        key_text = str(entry.get('name') or '').strip()
+        if not key_text:
+            continue
+        if location == 'query':
+            append_param(query_params, key_text)
+        elif location == 'body':
+            append_param(body_params, key_text)
+        elif location == 'path':
+            append_param(path_params, key_text)
+        filled_params.append(key_text[:80])
+
     return {
         'query_params': query_params[:16],
         'body_params': body_params[:16],
         'path_params': path_params[:16],
         'param_names': param_names[:20],
+        'filled_params': filled_params[:20],
         'header_names': _safe_wih_request_header_names(request_template.get('headers')),
     }
 
@@ -3055,6 +3111,11 @@ def _rule_analyze_wih_endpoint_item(item):
     status_code = _safe_int_any(item.get('status_code') or item.get('response_status'), 0)
     response_size = _safe_int_any(item.get('response_size'), 0)
     body_kind = _normalize_item_text(item.get('body_kind'), 80).lower()
+    ai_fill_status = _normalize_item_text(item.get('ai_fill_status'), 40).lower()
+    ai_fill_source = _normalize_item_text(item.get('ai_fill_source'), 40).lower()
+    ai_fill_note = _normalize_item_text(item.get('ai_fill_note'), 240)
+    ai_fill_response_summary = _normalize_item_text(item.get('ai_fill_response_summary'), 600)
+    ai_fill_hint_only = _safe_bool(item.get('ai_fill_hint_only'), False)
     source_types = _normalize_string_list_value(item.get('source_types'), max_items=8, max_item_len=40)
     request_summary = _extract_wih_endpoint_request_summary(item)
     site_summary = _build_wih_endpoint_site_summary(item)
@@ -3067,6 +3128,8 @@ def _rule_analyze_wih_endpoint_item(item):
             str(site_summary.get('title') or ''),
             ' '.join(site_summary.get('finger') or []),
             ' '.join(request_summary.get('param_names') or []),
+            ai_fill_response_summary,
+            ai_fill_note,
         ]
     ).lower()
     param_names_lower = [
@@ -3120,6 +3183,26 @@ def _rule_analyze_wih_endpoint_item(item):
     if body_kind == 'multipart':
         result_level = _merge_ai_denoise_result_level(result_level, 'danger')
         evidence.append('请求体为 multipart，优先关注上传、导入和解析链路。')
+
+    if ai_fill_status in ('tested', 'filled') and request_summary.get('filled_params'):
+        evidence.append(
+            'AI填充补齐参数 {} 个：{}。'.format(
+                len(request_summary.get('filled_params') or []),
+                ', '.join(list(request_summary.get('filled_params') or [])[:8]),
+            )
+        )
+    if ai_fill_response_summary:
+        evidence.append('AI填充测试响应摘要：{}。'.format(ai_fill_response_summary))
+        if any(keyword in ai_fill_response_summary.lower() for keyword in ('token', 'role', 'user', 'tenant', 'order', 'invoice', 'config', 'upload', 'export')):
+            result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+    if ai_fill_hint_only:
+        evidence.append('AI填充判定该接口副作用较高，仅给出提示未主动实测。')
+        if method_text in ('DELETE', 'PUT', 'PATCH'):
+            result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+    if ai_fill_note and ai_fill_status in ('tested', 'filled', 'hint_only'):
+        evidence.append('AI填充说明：{}。'.format(ai_fill_note))
+    if ai_fill_source == 'ai':
+        evidence.append('该接口参数补全由 AI 结合请求报文与参数语义生成。')
 
     if site_summary.get('title'):
         evidence.append('关联站点标题：{}。'.format(site_summary.get('title')))
@@ -3517,9 +3600,16 @@ def _build_ai_denoise_context(module_id, item):
             'query_params': request_summary.get('query_params') or [],
             'body_params': request_summary.get('body_params') or [],
             'path_params': request_summary.get('path_params') or [],
+            'filled_params': request_summary.get('filled_params') or [],
             'request_header_names': request_summary.get('header_names') or [],
             'site_title': _normalize_item_text(site_summary.get('title'), 320),
             'site_finger': _normalize_string_list_value(site_summary.get('finger'), max_items=8, max_item_len=80),
+            'ai_fill_status': _normalize_item_text(item.get('ai_fill_status'), 40),
+            'ai_fill_source': _normalize_item_text(item.get('ai_fill_source'), 40),
+            'ai_fill_hint_only': _safe_bool(item.get('ai_fill_hint_only'), False),
+            'ai_fill_params': item.get('ai_fill_params') if isinstance(item.get('ai_fill_params'), list) else [],
+            'ai_fill_note': _normalize_item_text(item.get('ai_fill_note'), 240),
+            'ai_fill_response_summary': _normalize_item_text(item.get('ai_fill_response_summary'), 600),
         }
     if module_id == 'cert':
         cert_obj = item.get('cert') if isinstance(item.get('cert'), dict) else {}
@@ -6376,7 +6466,7 @@ class ApiConsoleAiConfigSopUpload(ARLResource):
     @auth
     def post(self):
         module_id = str(request.form.get('module_id') or '').strip()
-        if module_id not in AI_DENOISE_MODULE_SCENE_MAP:
+        if module_id not in AI_SOP_MODULE_SCENE_MAP:
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
@@ -6401,9 +6491,9 @@ class ApiConsoleAiConfigSopUpload(ARLResource):
             return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
 
         config_path = _resolve_config_path()
-        prompt_id = str(AI_DENOISE_MODULE_PROMPT_ID_MAP.get(module_id) or '').strip()
-        scene = str(AI_DENOISE_MODULE_SCENE_MAP.get(module_id) or '').strip()
-        module_label = str(AI_DENOISE_MODULE_LABEL_MAP.get(module_id) or module_id)
+        prompt_id = str(AI_SOP_MODULE_PROMPT_ID_MAP.get(module_id) or '').strip()
+        scene = str(AI_SOP_MODULE_SCENE_MAP.get(module_id) or '').strip()
+        module_label = str(AI_SOP_MODULE_LABEL_MAP.get(module_id) or module_id)
         if not prompt_id:
             return utils.build_ret(ErrorMsg.Error, {'error': '当前模块未配置内置 SOP 模板映射'})
         sop_file = _resolve_ai_prompt_template_file(prompt_id, '')
@@ -6430,7 +6520,7 @@ class ApiConsoleAiConfigSopUpload(ARLResource):
                             target_index = index
                             break
 
-                fallback_name = '默认AI去噪-{}'.format(module_label)
+                fallback_name = '默认AI-{}'.format(module_label)
                 target_item = {
                     'id': prompt_id,
                     'name': str(sop_payload.get('name') or fallback_name).strip() or fallback_name,
@@ -6449,9 +6539,10 @@ class ApiConsoleAiConfigSopUpload(ARLResource):
                         **target_item,
                     }
 
-                ai_denoise_prompt_ids[module_id] = prompt_id
                 ai_config['prompt_templates'] = prompt_templates
-                ai_config['ai_denoise_prompt_ids'] = ai_denoise_prompt_ids
+                if module_id in AI_DENOISE_MODULE_SCENE_MAP:
+                    ai_denoise_prompt_ids[module_id] = prompt_id
+                    ai_config['ai_denoise_prompt_ids'] = ai_denoise_prompt_ids
 
                 config_obj = _merge_ai_config(config_obj, ai_config)
                 _ensure_json_like_config(config_obj)

@@ -119,6 +119,42 @@ class TestAiDenoiseWihEndpoint(unittest.TestCase):
         self.assertIn("wih_endpoint", normalized)
         self.assertTrue(normalized["wih_endpoint"])
 
+    def test_rule_analyze_uses_ai_fill_summary_and_params(self):
+        item = {
+            "task_id": "task-3",
+            "target": "https://api.example.com",
+            "page_url": "https://api.example.com/report/list",
+            "url": "https://api.example.com/api/report/export",
+            "method": "POST",
+            "body_kind": "form_urlencoded",
+            "ai_fill_status": "tested",
+            "ai_fill_source": "ai",
+            "ai_fill_note": "已补齐导出参数并验证成功",
+            "ai_fill_params": [
+                {"name": "tenantId", "location": "body", "type": "id", "value": "1"},
+                {"name": "exportType", "location": "body", "type": "enum", "value": "full"},
+            ],
+            "ai_fill_response_summary": "JSON键: token, user, tenantId, exportUrl",
+            "request_template": {
+                "body": {
+                    "tenantId": "<value>",
+                    "exportType": "<value>",
+                }
+            },
+        }
+
+        with patch.object(
+            api_console_module,
+            "_build_wih_endpoint_site_summary",
+            return_value={"site": "https://api.example.com", "title": "报表管理后台", "finger": ["Spring Boot"]},
+        ):
+            result = api_console_module._rule_analyze_wih_endpoint_item(item)
+
+        self.assertEqual("danger", result["result_level"])
+        self.assertEqual("高价值", result["display_text"])
+        self.assertTrue(any("AI填充测试响应摘要" in text for text in result["evidence"]))
+        self.assertTrue(any("AI填充补齐参数" in text for text in result["evidence"]))
+
 
 if __name__ == "__main__":
     unittest.main()

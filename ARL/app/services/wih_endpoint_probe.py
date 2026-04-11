@@ -15,6 +15,7 @@ logger = utils.get_logger()
 _ACTIVE_METHODS = {"GET", "HEAD", "POST", "OPTIONS"}
 _DANGEROUS_METHODS = {"DELETE", "PUT", "PATCH", "TRACE", "CONNECT"}
 _SKIP_BODY_KINDS = {"multipart", "octet_stream", "binary"}
+_RESPONSE_PACKET_MAX_CHARS = 4000
 _SENSITIVE_REQUEST_HEADERS = {
     "authorization",
     "cookie",
@@ -145,6 +146,52 @@ def _response_size(response) -> int:
         return 0
 
 
+def _decode_response_body(response) -> str:
+    body = getattr(response, "content", b"") or b""
+    if isinstance(body, str):
+        return body
+    encoding = str(getattr(response, "encoding", "") or "").strip()
+    for candidate in [encoding, "utf-8", "gbk", "latin-1"]:
+        if not candidate:
+            continue
+        try:
+            return body.decode(candidate, errors="ignore")
+        except Exception:
+            continue
+    return ""
+
+
+def _build_response_packet(response) -> str:
+    status_code = int(getattr(response, "status_code", 0) or 0)
+    reason = str(getattr(response, "reason", "") or "").strip()
+    headers = getattr(response, "headers", {}) or {}
+    status_line = "HTTP/1.1 {}{}".format(status_code, " {}".format(reason) if reason else "")
+    header_lines = []
+    for key, value in list(headers.items())[:24]:
+        key_text = str(key or "").strip()
+        if not key_text:
+            continue
+        header_lines.append("{}: {}".format(key_text[:80], str(value or "").strip()[:400]))
+
+    content_type = str(headers.get("Content-Type") or headers.get("content-type") or "").strip().lower()
+    body_text = _decode_response_body(response)
+    if body_text:
+        body_text = body_text.replace("\r\n", "\n").replace("\r", "\n")
+        if len(body_text) > _RESPONSE_PACKET_MAX_CHARS:
+            body_text = "{}\n...[truncated]".format(body_text[:_RESPONSE_PACKET_MAX_CHARS])
+    elif _response_size(response) > 0:
+        body_text = "[binary {} bytes]".format(_response_size(response))
+    elif content_type:
+        body_text = "[empty body, content-type={}]".format(content_type)
+
+    parts = [status_line]
+    if header_lines:
+        parts.extend(header_lines)
+    if body_text:
+        parts.extend(["", body_text])
+    return "\n".join(parts).strip()
+
+
 def _should_skip(item: Dict) -> str:
     method = str(item.get("method") or "GET").strip().upper() or "GET"
     body_kind = str(item.get("body_kind") or "").strip().lower()
@@ -218,6 +265,9 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None) -> Dict:
         item["status_code"] = status_code if status_code > 0 else None
         item["response_status"] = item["status_code"]
         item["response_size"] = _response_size(response)
+        item["verification_response_packet"] = _build_response_packet(response)
+        if not str(item.get("response_packet") or "").strip():
+            item["response_packet"] = item["verification_response_packet"]
         return _mark_probe_state(item, "probed", "已按 {} 方法轻量验证".format(method), method)
     except Exception as exc:
         logger.debug("wih endpoint probe failed url:{} method:{} err:{}".format(url, method, exc))

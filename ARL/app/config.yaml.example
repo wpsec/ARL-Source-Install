@@ -157,6 +157,7 @@ AI:
   ACTIVE_PROMPT_ID: "default_ai_report"
   AI_POC_SCAN_ENABLE: true
   AI_DENOISE_ENABLE: true
+  AI_WIH_ENDPOINT_FILL_ENABLE: true
   AI_DENOISE_MODULES:
     site: true
     fileleak: true
@@ -207,7 +208,12 @@ AI:
     - id: "default_ai_denoise_wih_endpoint"
       name: "默认AI去噪-WIH接口"
       scene: "ai_denoise_wih_endpoint"
-      content: "你是WIH结构化接口价值分析助手。请基于站点信息、页面URL、接口URL、HTTP方法、参数名、请求体形态、状态码与响应大小，输出高价值/中价值/无价值结论，并给出关键证据与优先验证方向。"
+      content: "你是WIH结构化接口价值分析助手。请基于站点信息、页面URL、接口URL、HTTP方法、参数名、请求体形态、状态码、响应大小、AI填充后的参数建议与测试响应摘要，输出高价值/中价值/无价值结论，并给出关键证据与优先验证方向。"
+      updated_at: ""
+    - id: "default_ai_fill_wih_endpoint"
+      name: "默认AI填充-WIH接口"
+      scene: "ai_fill_wih_endpoint"
+      content: "你是WIH接口参数补全与安全测试助手。请基于站点信息、页面URL、接口URL、HTTP方法、请求报文、请求模板、Content-Type、参数名和已有参数值，输出尽可能可用、类型正确、低副作用的请求填充建议。优先保留已有稳定值，只填充缺失值、<value>占位符、空字符串或明显无效值；必须标注参数位置（query/body/path）、推断类型和建议值；GET/POST/HEAD/OPTIONS可给出safe测试建议；DELETE/PUT/PATCH/TRACE/CONNECT及高副作用请求仅允许hint_only提示；只输出JSON对象，不输出Markdown。"
       updated_at: ""
     - id: "default_ai_denoise_vuln"
       name: "默认AI去噪-风险"
@@ -473,6 +479,16 @@ ARL:
   WIH_CONCURRENCY_PER_SITE: 2
   # WIH 单批最大站点数，避免超时后把大批次整批重跑
   WIH_MAX_BATCH_SIZE: 12
+  # WIH 接口 AI 填充单次最多处理接口数
+  WIH_ENDPOINT_AI_FILL_MAX_TARGETS: 60
+  # WIH 接口 AI 填充并发
+  WIH_ENDPOINT_AI_FILL_CONCURRENCY: 4
+  # WIH 接口 AI 填充单请求超时（秒）
+  WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC: 12
+  # WIH 接口 AI 填充响应摘要最大字符数
+  WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS: 1200
+  # WIH 接口 AI 填充单次读取响应最大字节数
+  WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES: 65536
   # 是否启用 WIH 运行时采集
   WIH_RUNTIME_ENABLE: true
   # WIH 运行时驱动：playwright / external / noop

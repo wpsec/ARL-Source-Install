@@ -2867,6 +2867,62 @@ function buildWihEndpointRequestPacket(row: any): string {
   }
 }
 
+function buildWihEndpointAiFillPacket(row: any): string {
+  const packet = normalizeValueNoTruncate(row?.ai_fill_request_packet);
+  if (packet && packet !== '-') return packet;
+
+  const template = row?.ai_fill_request_template && typeof row.ai_fill_request_template === 'object'
+    ? row.ai_fill_request_template
+    : null;
+  if (!template) return '-';
+  try {
+    return JSON.stringify(template, null, 2);
+  } catch {
+    return normalizeValueNoTruncate(template);
+  }
+}
+
+function buildWihEndpointDisplayRequestPacket(row: any): string {
+  const aiFillStatus = String(row?.ai_fill_status || '').trim().toLowerCase();
+  if (aiFillStatus && !['disabled', 'skipped', 'error'].includes(aiFillStatus)) {
+    const aiPacket = buildWihEndpointAiFillPacket(row);
+    if (aiPacket && aiPacket !== '-') return aiPacket;
+  }
+  return buildWihEndpointRequestPacket(row);
+}
+
+function buildWihEndpointResponsePacket(row: any): string {
+  const aiPacket = normalizeValueNoTruncate(row?.ai_fill_response_packet);
+  if (aiPacket && aiPacket !== '-') return aiPacket;
+
+  const probePacket = normalizeValueNoTruncate(row?.verification_response_packet);
+  if (probePacket && probePacket !== '-') return probePacket;
+
+  const responsePacket = normalizeValueNoTruncate(row?.response_packet);
+  if (responsePacket && responsePacket !== '-') return responsePacket;
+
+  const aiSummary = normalizeValueNoTruncate(row?.ai_fill_response_summary);
+  if (aiSummary && aiSummary !== '-') return aiSummary;
+
+  const verificationNote = normalizeValueNoTruncate(row?.verification_note);
+  if (verificationNote && verificationNote !== '-') return verificationNote;
+
+  return '-';
+}
+
+function formatWihEndpointAiFillStatus(row: any): string {
+  const value = String(row?.ai_fill_status || '').trim().toLowerCase();
+  const mapping: Record<string, string> = {
+    tested: '已测试',
+    filled: '已填充',
+    hint_only: '仅提示',
+    disabled: '已关闭',
+    skipped: '已跳过',
+    error: '失败',
+  };
+  return mapping[value] || '-';
+}
+
 function isAiPenWeakOutcome(row: any): boolean {
   if (!row || typeof row !== 'object') return false;
   const decisionText = String(row?.decision || '').trim().toLowerCase();
@@ -12673,7 +12729,10 @@ function TableModuleView({
         const detailRow = wihEndpointDetail.row || {};
         const methodText = String(detailRow?.method || '').trim().toUpperCase() || '-';
         const detailUrl = buildWihEndpointDetailUrl(detailRow);
-        const requestPacket = buildWihEndpointRequestPacket(detailRow);
+        const requestPacket = buildWihEndpointDisplayRequestPacket(detailRow);
+        const responsePacket = buildWihEndpointResponsePacket(detailRow);
+        const aiFillParams = Array.isArray(detailRow?.ai_fill_params) ? detailRow.ai_fill_params : [];
+        const aiFillStatusText = formatWihEndpointAiFillStatus(detailRow);
         const urlLabel = methodText === 'GET' ? '带参数URL' : '请求URL';
         return (
           <div
@@ -12711,6 +12770,9 @@ function TableModuleView({
                   <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
                     响应大小：{formatWihEndpointMetric(detailRow, 'response_size')}
                   </span>
+                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                    AI填充：{aiFillStatusText}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -12740,22 +12802,99 @@ function TableModuleView({
                   <div className="text-sm break-all leading-relaxed">{renderTextWithHyperlink(detailUrl)}</div>
                 </div>
 
-                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs font-black tracking-wide text-brand-text">请求报文</div>
-                    {requestPacket && requestPacket !== '-' ? (
-                      <button
-                        type="button"
-                        onClick={() => void copyTextToClipboard(requestPacket, '请求报文')}
-                        className="text-xs font-semibold text-brand-accent hover:underline"
-                      >
-                        复制
-                      </button>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
+                    <div className="text-xs font-black tracking-wide text-brand-text">AI填充结果</div>
+                    <div className="text-xs text-brand-text-muted">
+                      状态：{aiFillStatusText}
+                      {normalizeValueNoTruncate(detailRow?.ai_fill_source) !== '-' ? ` / 来源：${normalizeValueNoTruncate(detailRow?.ai_fill_source)}` : ''}
+                      {detailRow?.ai_fill_hint_only ? ' / 高风险，仅提示' : ''}
+                    </div>
+                    {normalizeValueNoTruncate(detailRow?.ai_fill_note) !== '-' ? (
+                      <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                        {normalizeValueNoTruncate(detailRow?.ai_fill_note)}
+                      </div>
+                    ) : null}
+                    {aiFillParams.length > 0 ? (
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-brand-text-muted">参数建议</div>
+                        <div className="flex flex-wrap gap-2">
+                          {aiFillParams.map((item: any, index: number) => {
+                            const nameText = String(item?.name || '').trim() || `param_${index + 1}`;
+                            const locationText = String(item?.location || '').trim() || '-';
+                            const typeText = String(item?.type || '').trim() || '-';
+                            const valueText = normalizeValueNoTruncate(item?.value);
+                            return (
+                              <span
+                                key={`${nameText}-${index}`}
+                                className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold break-all"
+                              >
+                                {nameText} [{locationText}/{typeText}] = {valueText}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-brand-text-muted">当前没有生成可用的 AI 填充参数。</div>
+                    )}
+                    {normalizeValueNoTruncate(detailRow?.ai_fill_response_summary) !== '-' ? (
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-brand-text-muted">测试响应摘要</div>
+                        <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
+                          {normalizeValueNoTruncate(detailRow?.ai_fill_response_summary)}
+                        </div>
+                      </div>
                     ) : null}
                   </div>
-                  <pre className="max-h-[420px] overflow-auto rounded-xl border border-brand-border bg-brand-bg/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
-                    {requestPacket || '-'}
-                  </pre>
+                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                    <div className="text-xs font-black tracking-wide text-brand-text">验证信息</div>
+                    <div className="text-xs text-brand-text-muted">
+                      {normalizeValueNoTruncate(detailRow?.verification_note)}
+                    </div>
+                    {normalizeValueNoTruncate(detailRow?.verification_method) !== '-' ? (
+                      <div className="text-xs text-brand-text-muted">
+                        探测方法：{normalizeValueNoTruncate(detailRow?.verification_method)}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs font-black tracking-wide text-brand-text">请求报文</div>
+                      {requestPacket && requestPacket !== '-' ? (
+                        <button
+                          type="button"
+                          onClick={() => void copyTextToClipboard(requestPacket, '请求报文')}
+                          className="text-xs font-semibold text-brand-accent hover:underline"
+                        >
+                          复制
+                        </button>
+                      ) : null}
+                    </div>
+                    <pre className="max-h-[420px] overflow-auto rounded-xl border border-brand-border bg-brand-bg/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
+                      {requestPacket || '-'}
+                    </pre>
+                  </div>
+                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs font-black tracking-wide text-brand-text">回复报文</div>
+                      {responsePacket && responsePacket !== '-' ? (
+                        <button
+                          type="button"
+                          onClick={() => void copyTextToClipboard(responsePacket, '回复报文')}
+                          className="text-xs font-semibold text-brand-accent hover:underline"
+                        >
+                          复制
+                        </button>
+                      ) : null}
+                    </div>
+                    <pre className="max-h-[420px] overflow-auto rounded-xl border border-brand-border bg-brand-bg/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
+                      {responsePacket || '-'}
+                    </pre>
+                  </div>
                 </div>
               </div>
 
@@ -18649,6 +18788,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   };
 
   type AiDenoiseModuleId = 'site' | 'fileleak' | 'cert' | 'url' | 'wih_endpoint' | 'vuln' | 'nuclei_result';
+  type AiSopModuleId = AiDenoiseModuleId | 'wih_endpoint_fill';
 
   type AiDenoiseModules = Record<AiDenoiseModuleId, boolean>;
   type AiDenoisePromptIds = Record<AiDenoiseModuleId, string>;
@@ -18676,6 +18816,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     custom_compat_providers: AiCustomCompatProvider[];
     ai_poc_scan_enable: boolean;
     ai_denoise_enable: boolean;
+    ai_wih_endpoint_fill_enable: boolean;
     ai_pen_test_enable: boolean;
     ai_pen_mcp_enable: boolean;
     ai_pen_external_enable: boolean;
@@ -18823,9 +18964,18 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       name: '默认AI去噪-WIH接口',
       scene: 'ai_denoise_wih_endpoint',
       content:
-        '你是WIH结构化接口价值分析助手。请基于站点信息、页面URL、接口URL、HTTP方法、参数名、请求体形态、状态码与响应大小，输出高价值/中价值/无价值结论，并给出关键证据与优先验证方向。不要仅因存在POST或query参数就夸大为高价值。',
+        '你是WIH结构化接口价值分析助手。请基于站点信息、页面URL、接口URL、HTTP方法、参数名、AI填充后的参数类型、请求体形态、状态码、响应大小与响应摘要，输出高价值/中价值/无价值结论，并给出关键证据与优先验证方向。不要仅因存在POST或query参数就夸大为高价值。',
       updated_at: '',
       file: 'ai/sop/default_ai_denoise_wih_endpoint.yaml',
+    },
+    {
+      id: 'default_ai_fill_wih_endpoint',
+      name: '默认AI填充-WIH接口',
+      scene: 'ai_fill_wih_endpoint',
+      content:
+        '你是WIH接口参数补全助手。请基于站点信息、页面URL、接口URL、HTTP方法、请求报文、请求模板、Content-Type、参数名和已有参数值，补全尽可能可用、类型正确、低副作用的参数值，并返回是否适合自动测试。DELETE、PUT、PATCH、TRACE、CONNECT及上传/二进制等高风险请求只允许给出提示，不建议自动实测。仅输出JSON对象。',
+      updated_at: '',
+      file: 'ai/sop/default_ai_fill_wih_endpoint.yaml',
     },
     {
       id: 'default_ai_denoise_vuln',
@@ -18859,6 +19009,14 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     { id: 'wih_endpoint', label: 'WIH接口', scene: 'ai_denoise_wih_endpoint' },
     { id: 'vuln', label: '风险', scene: 'ai_denoise_vuln' },
     { id: 'nuclei_result', label: 'PoC风险', scene: 'ai_denoise_nuclei_result' },
+  ];
+  const aiSopModuleConfigs: Array<{
+    id: AiSopModuleId;
+    label: string;
+    scene: string;
+  }> = [
+    ...aiDenoiseModuleConfigs,
+    { id: 'wih_endpoint_fill', label: 'WIH接口AI填充', scene: 'ai_fill_wih_endpoint' },
   ];
 
   const defaultAiDenoiseModules: AiDenoiseModules = {
@@ -19092,6 +19250,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
       ai_poc_scan_enable: rawForm?.ai_poc_scan_enable !== false,
       ai_denoise_enable: rawForm?.ai_denoise_enable !== false,
+      ai_wih_endpoint_fill_enable: rawForm?.ai_wih_endpoint_fill_enable !== false,
       ai_pen_test_enable: rawForm?.ai_pen_test_enable !== false,
       ai_pen_mcp_enable: rawForm?.ai_pen_mcp_enable !== false,
       ai_pen_external_enable: rawForm?.ai_pen_external_enable !== false,
@@ -19137,7 +19296,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     model: '',
   });
   const [compatDialogOpen, setCompatDialogOpen] = useState(false);
-  const [sopUploadModuleId, setSopUploadModuleId] = useState<AiDenoiseModuleId>('site');
+  const [sopUploadModuleId, setSopUploadModuleId] = useState<AiSopModuleId>('site');
   const [sopUploadFile, setSopUploadFile] = useState<File | null>(null);
   const [sopUploading, setSopUploading] = useState(false);
   const sopUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -19286,13 +19445,13 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     return map;
   }, [form.active_model_profile_id, form.model_profiles]);
 
-  const denoiseSopTemplateMap = useMemo(() => {
+  const sopTemplateMap = useMemo(() => {
     const promptById = new Map<string, AiPromptTemplate>();
     form.prompt_templates.forEach((item) => {
       promptById.set(String(item.id || '').trim(), item);
     });
 
-    const result: Record<AiDenoiseModuleId, AiPromptTemplate | null> = {
+    const result: Record<AiSopModuleId, AiPromptTemplate | null> = {
       site: null,
       fileleak: null,
       cert: null,
@@ -19300,10 +19459,13 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       wih_endpoint: null,
       vuln: null,
       nuclei_result: null,
+      wih_endpoint_fill: null,
     };
 
-    aiDenoiseModuleConfigs.forEach((configItem) => {
-      const configuredPromptId = String(form.ai_denoise_prompt_ids[configItem.id] || '').trim();
+    aiSopModuleConfigs.forEach((configItem) => {
+      const configuredPromptId = (configItem.id === 'wih_endpoint_fill')
+        ? ''
+        : String(form.ai_denoise_prompt_ids[configItem.id] || '').trim();
       const byId = configuredPromptId ? promptById.get(configuredPromptId) || null : null;
       if (byId) {
         result[configItem.id] = byId;
@@ -19314,7 +19476,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     });
 
     return result;
-  }, [form.ai_denoise_prompt_ids, form.prompt_templates]);
+  }, [aiSopModuleConfigs, form.ai_denoise_prompt_ids, form.prompt_templates]);
 
   const isActionBusy = loading || saving || testing;
   const aiInputClass = CONSOLE_INPUT_CLASS;
@@ -19500,6 +19662,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
       ai_poc_scan_enable: Boolean(currentForm.ai_poc_scan_enable),
       ai_denoise_enable: Boolean(currentForm.ai_denoise_enable),
+      ai_wih_endpoint_fill_enable: Boolean(currentForm.ai_wih_endpoint_fill_enable),
       ai_pen_test_enable: Boolean(currentForm.ai_pen_test_enable),
       ai_pen_mcp_enable: Boolean(currentForm.ai_pen_mcp_enable),
       ai_pen_external_enable: Boolean(currentForm.ai_pen_external_enable),
@@ -20073,7 +20236,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedSavedForm));
       setConfigPath(String(data?.config_path || configPath));
       setUpdatedAt(String(data?.saved_at || updatedAt));
-      const moduleLabel = String(data?.module_label || aiDenoiseModuleConfigs.find((item) => item.id === sopUploadModuleId)?.label || sopUploadModuleId);
+      const moduleLabel = String(data?.module_label || aiSopModuleConfigs.find((item) => item.id === sopUploadModuleId)?.label || sopUploadModuleId);
       const sopFilePath = String(data?.sop_file || '');
       setSuccess(`SOP 上传成功：${moduleLabel}${sopFilePath ? `（${sopFilePath}）` : ''}`);
       setShowRestartModal(data?.runtime_refreshed === false);
@@ -20615,15 +20778,42 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               />
               <span className="text-xs font-semibold">启用AI去噪</span>
             </label>
+            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+              <input
+                type="checkbox"
+                checked={form.ai_wih_endpoint_fill_enable}
+                onChange={(event) => setForm((prev) => ({ ...prev, ai_wih_endpoint_fill_enable: event.target.checked }))}
+                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              />
+              <span className="text-xs font-semibold">启用WIH接口AI填充</span>
+            </label>
           </div>
         </div>
         <div className="text-xs text-brand-text-muted">
-          AI-POC 扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 候选 PoC。AI去噪支持站点、目录扫描、SSL证书、URL信息、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。AI渗透测试功能当前已临时下线，不再在此处展示配置入口。
+          AI-POC 扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 候选 PoC。WIH接口AI填充会优先根据请求报文、参数名和请求体形态补齐低副作用测试值，再把测试摘要交给后续 AI 去噪使用。AI去噪支持站点、目录扫描、SSL证书、URL信息、WIH接口、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。AI渗透测试功能当前已临时下线，不再在此处展示配置入口。
+        </div>
+        <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center">
+          <div className="text-sm font-semibold">WIH接口AI填充</div>
+          <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
+            <input
+              type="checkbox"
+              checked={Boolean(form.ai_wih_endpoint_fill_enable)}
+              onChange={(event) => setForm((prev) => ({ ...prev, ai_wih_endpoint_fill_enable: event.target.checked }))}
+              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+            />
+            <span className="text-xs font-semibold">{form.ai_wih_endpoint_fill_enable ? '已开启' : '已关闭'}</span>
+          </label>
+          <div className="text-xs text-brand-text-muted break-all">
+            <div>
+              SOP：{sopTemplateMap.wih_endpoint_fill?.name || '-'}{sopTemplateMap.wih_endpoint_fill?.scene ? ` (${sopTemplateMap.wih_endpoint_fill?.scene})` : ''}
+            </div>
+            <div className="font-mono mt-1">{sopTemplateMap.wih_endpoint_fill?.file || '-'}</div>
+          </div>
         </div>
         <div className="space-y-2">
           {aiDenoiseModuleConfigs.map((moduleConfig) => {
             const moduleEnabled = Boolean(form.ai_denoise_modules[moduleConfig.id]);
-            const sopTemplate = denoiseSopTemplateMap[moduleConfig.id];
+            const sopTemplate = sopTemplateMap[moduleConfig.id];
             return (
               <div
                 key={moduleConfig.id}
@@ -20657,7 +20847,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <div className="text-xs font-black tracking-wide text-brand-text">SOP管理</div>
         </div>
         <div className="text-xs text-brand-text-muted">
-          提示词管理已改为 SOP 管理。仅支持上传 `.yaml/.yml` SOP 文件，不支持页面内在线编辑。内置模块为：站点、目录扫描、SSL证书、URL信息、风险、PoC风险。
+          提示词管理已改为 SOP 管理。仅支持上传 `.yaml/.yml` SOP 文件，不支持页面内在线编辑。内置模块包括：站点、目录扫描、SSL证书、URL信息、WIH接口AI填充、WIH接口价值去噪、风险、PoC风险。
         </div>
         <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_auto] gap-3 items-end">
           <div className="space-y-2">
@@ -20665,11 +20855,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <div className="relative">
               <select
                 value={sopUploadModuleId}
-                onChange={(event) => setSopUploadModuleId(event.target.value as AiDenoiseModuleId)}
+                onChange={(event) => setSopUploadModuleId(event.target.value as AiSopModuleId)}
                 className={CONSOLE_SELECT_CLASS}
                 disabled={sopUploading}
               >
-                {aiDenoiseModuleConfigs.map((item) => (
+                {aiSopModuleConfigs.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}
                   </option>
@@ -20726,8 +20916,8 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
 
         <div className="space-y-2">
-          {aiDenoiseModuleConfigs.map((moduleConfig) => {
-            const template = denoiseSopTemplateMap[moduleConfig.id];
+          {aiSopModuleConfigs.map((moduleConfig) => {
+            const template = sopTemplateMap[moduleConfig.id];
             return (
               <div key={moduleConfig.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
                 <div className="grid grid-cols-1 xl:grid-cols-[140px_220px_1fr_160px] gap-3 text-xs">

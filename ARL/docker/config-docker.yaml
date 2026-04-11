@@ -163,6 +163,7 @@ AI:
   ACTIVE_PROMPT_ID: "default_ai_report"
   AI_POC_SCAN_ENABLE: true
   AI_DENOISE_ENABLE: true
+  AI_WIH_ENDPOINT_FILL_ENABLE: true
   AI_PEN_TEST_ENABLE: true # AI渗透测试总开关（任务勾选 ai_penetration_test 后仍受该项控制）
   AI_PEN_MCP_ENABLE: true # 启用后自动执行基础 MCP 工具链（重放 + Payload 探针）
   AI_PEN_MCP_MAX_TOOL_CALLS: 6 # 单条候选最多工具调用次数（过低会退化成浅探针）
@@ -224,6 +225,11 @@ AI:
       name: "默认AI去噪-WIH接口"
       scene: "ai_denoise_wih_endpoint"
       file: "ai/sop/default_ai_denoise_wih_endpoint.yaml"
+      updated_at: ""
+    - id: "default_ai_fill_wih_endpoint"
+      name: "默认AI填充-WIH接口"
+      scene: "ai_fill_wih_endpoint"
+      file: "ai/sop/default_ai_fill_wih_endpoint.yaml"
       updated_at: ""
     - id: "default_ai_denoise_vuln"
       name: "默认AI去噪-风险"
@@ -496,6 +502,16 @@ ARL:
   WIH_CONCURRENCY_PER_SITE: 2
   # WIH 单批最大站点数，避免超时后把大批次整批重跑
   WIH_MAX_BATCH_SIZE: 12
+  # WIH 接口 AI 填充单次最多处理接口数
+  WIH_ENDPOINT_AI_FILL_MAX_TARGETS: 60
+  # WIH 接口 AI 填充并发
+  WIH_ENDPOINT_AI_FILL_CONCURRENCY: 4
+  # WIH 接口 AI 填充单请求超时（秒）
+  WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC: 12
+  # WIH 接口 AI 填充响应摘要最大字符数
+  WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS: 1200
+  # WIH 接口 AI 填充单次读取响应最大字节数
+  WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES: 65536
   # 是否启用 WIH 运行时采集
   WIH_RUNTIME_ENABLE: true
   # WIH 运行时驱动：playwright / external / noop

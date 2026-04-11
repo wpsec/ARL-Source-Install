@@ -20792,6 +20792,14 @@ class WebSiteFetch(object):
                 )
                 or wih_endpoints
             )
+            wih_endpoints = list(
+                self._run_substage(
+                    "wih_endpoint_ai_fill",
+                    lambda: services.run_wih_endpoint_ai_fill(self.task_id, wih_endpoints, waf_guard=self.waf_guard),
+                    detail="endpoints={}".format(len(wih_endpoints)),
+                )
+                or wih_endpoints
+            )
             self._save_wih_endpoints(wih_endpoints)
 
         urlfinder_records = set()

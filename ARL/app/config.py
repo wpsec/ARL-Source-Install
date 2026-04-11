@@ -309,6 +309,11 @@ def refresh_runtime_config_best_effort(force=False):
             "WIH_CONCURRENCY",
             "WIH_CONCURRENCY_PER_SITE",
             "WIH_MAX_BATCH_SIZE",
+            "WIH_ENDPOINT_AI_FILL_MAX_TARGETS",
+            "WIH_ENDPOINT_AI_FILL_CONCURRENCY",
+            "WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC",
+            "WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS",
+            "WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES",
             "WIH_RUNTIME_ENABLE",
             "WIH_RUNTIME_DRIVER",
             "WIH_RUNTIME_COMMAND",
@@ -459,6 +464,10 @@ def refresh_runtime_config_best_effort(force=False):
                 ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS"),
                 Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
                 min_value=1,
+            )
+        if ai_conf.get("AI_WIH_ENDPOINT_FILL_ENABLE") is not None:
+            Config.AI_WIH_ENDPOINT_FILL_ENABLE = _safe_runtime_bool(
+                ai_conf.get("AI_WIH_ENDPOINT_FILL_ENABLE"), Config.AI_WIH_ENDPOINT_FILL_ENABLE
             )
 
         # 保持环境变量覆盖优先级（与启动阶段一致）
@@ -649,6 +658,7 @@ class Config(object):
     AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = "sqlmap,httpx"
     AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = 45
     AI_PEN_MCP_EXTERNAL_MAX_RUNS = 2
+    AI_WIH_ENDPOINT_FILL_ENABLE = True
     # TruffleHog 可执行文件路径（优先使用 tools 目录）
     TRUFFLEHOG_BIN = os.path.join(project_root, "tools", "TruffleHog", "trufflehog")
     # 是否启用 TruffleHog JS 二次扫描
@@ -758,6 +768,16 @@ class Config(object):
     WIH_CONCURRENCY_PER_SITE = 2
     # WIH 单批最大站点数，避免大批次超时后整批重跑
     WIH_MAX_BATCH_SIZE = 12
+    # WIH 接口 AI 填充单次最多处理目标数
+    WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 60
+    # WIH 接口 AI 填充并发
+    WIH_ENDPOINT_AI_FILL_CONCURRENCY = 4
+    # WIH 接口 AI 填充单请求超时（秒）
+    WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC = 12
+    # WIH 接口 AI 填充摘要最大长度
+    WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS = 1200
+    # WIH 接口 AI 填充单次读取响应的最大字节数
+    WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES = 65536
     # 是否启用 WIH 运行时采集
     WIH_RUNTIME_ENABLE = True
     # WIH 运行时驱动类型：playwright / external / noop
@@ -1359,6 +1379,26 @@ try:
         Config.WIH_MAX_BATCH_SIZE = safe_positive_int(
             int(y["ARL"]["WIH_MAX_BATCH_SIZE"]), Config.WIH_MAX_BATCH_SIZE
         )
+    if y["ARL"].get("WIH_ENDPOINT_AI_FILL_MAX_TARGETS") is not None:
+        Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_positive_int(
+            int(y["ARL"]["WIH_ENDPOINT_AI_FILL_MAX_TARGETS"]), Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS
+        )
+    if y["ARL"].get("WIH_ENDPOINT_AI_FILL_CONCURRENCY") is not None:
+        Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY = safe_positive_int(
+            int(y["ARL"]["WIH_ENDPOINT_AI_FILL_CONCURRENCY"]), Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY
+        )
+    if y["ARL"].get("WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC") is not None:
+        Config.WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC"]), Config.WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC
+        )
+    if y["ARL"].get("WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS") is not None:
+        Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS = safe_positive_int(
+            int(y["ARL"]["WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS"]), Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS
+        )
+    if y["ARL"].get("WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES") is not None:
+        Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES = safe_positive_int(
+            int(y["ARL"]["WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES"]), Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES
+        )
 
     if y["ARL"].get("WIH_RUNTIME_ENABLE") is not None:
         Config.WIH_RUNTIME_ENABLE = safe_bool(
@@ -1712,6 +1752,11 @@ try:
         "WIH_CONCURRENCY",
         "WIH_CONCURRENCY_PER_SITE",
         "WIH_MAX_BATCH_SIZE",
+        "WIH_ENDPOINT_AI_FILL_MAX_TARGETS",
+        "WIH_ENDPOINT_AI_FILL_CONCURRENCY",
+        "WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC",
+        "WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS",
+        "WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES",
         "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
         "SSL_CERT_FETCH_CONCURRENCY",
         "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
@@ -1905,6 +1950,9 @@ try:
         Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
         min_value=1,
     )
+    Config.AI_WIH_ENDPOINT_FILL_ENABLE = env_bool(
+        "ARL_AI_WIH_ENDPOINT_FILL_ENABLE", Config.AI_WIH_ENDPOINT_FILL_ENABLE
+    )
     Config.AFROG_CONCURRENCY = safe_positive_int(
         env_int("ARL_AFROG_CONCURRENCY", Config.AFROG_CONCURRENCY),
         Config.AFROG_CONCURRENCY
@@ -1948,6 +1996,26 @@ try:
     Config.WIH_MAX_BATCH_SIZE = safe_positive_int(
         env_int("ARL_WIH_MAX_BATCH_SIZE", Config.WIH_MAX_BATCH_SIZE),
         Config.WIH_MAX_BATCH_SIZE
+    )
+    Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_positive_int(
+        env_int("ARL_WIH_ENDPOINT_AI_FILL_MAX_TARGETS", Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS),
+        Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS
+    )
+    Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY = safe_positive_int(
+        env_int("ARL_WIH_ENDPOINT_AI_FILL_CONCURRENCY", Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY),
+        Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY
+    )
+    Config.WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC", Config.WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC),
+        Config.WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC
+    )
+    Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS = safe_positive_int(
+        env_int("ARL_WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS", Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS),
+        Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_CHARS
+    )
+    Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES = safe_positive_int(
+        env_int("ARL_WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES", Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES),
+        Config.WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES
     )
     Config.WIH_RUNTIME_ENABLE = env_bool("ARL_WIH_RUNTIME_ENABLE", Config.WIH_RUNTIME_ENABLE)
     Config.WIH_RUNTIME_DRIVER = env_str("ARL_WIH_RUNTIME_DRIVER", Config.WIH_RUNTIME_DRIVER).strip().lower() or Config.WIH_RUNTIME_DRIVER
