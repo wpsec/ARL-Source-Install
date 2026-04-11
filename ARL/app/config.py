@@ -769,7 +769,7 @@ class Config(object):
     # WIH 单批最大站点数，避免大批次超时后整批重跑
     WIH_MAX_BATCH_SIZE = 12
     # WIH 接口 AI 填充单次最多处理目标数
-    WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 60
+    WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 200
     # WIH 接口 AI 填充并发
     WIH_ENDPOINT_AI_FILL_CONCURRENCY = 4
     # WIH 接口 AI 填充单请求超时（秒）

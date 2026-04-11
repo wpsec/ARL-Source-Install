@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+import requests
+
 
 IMPORT_ERROR = None
 try:
@@ -123,6 +125,121 @@ class TestWihEndpointAiFill(unittest.TestCase):
         self.assertFalse(result.get("ai_fill_tested"))
         self.assertIn("DELETE", str(result.get("ai_fill_note") or ""))
         mock_request.assert_not_called()
+
+    def test_ai_transport_error_falls_back_to_heuristic_fill(self):
+        packet = (
+            "POST /_rest/st/ajax_st_app_news.ashx HTTP/1.1\r\n"
+            "Host: zsbgs.scwxzyxy.cn\r\n"
+            "Content-Type: application/x-www-form-urlencoded\r\n"
+            "\r\n"
+            "FolderId=<value>&TabId=<value>&action=ToSearchUrl&kw=<value>&said=<value>"
+        )
+        endpoint = {
+            "target": "https://zsbgs.scwxzyxy.cn",
+            "page_url": "https://zsbgs.scwxzyxy.cn/p/0/",
+            "url": "https://zsbgs.scwxzyxy.cn/_rest/st/ajax_st_app_news.ashx",
+            "method": "POST",
+            "request_packet": packet,
+            "request_template": {},
+            "status_code": None,
+            "response_size": None,
+        }
+
+        class _FakeApiConsole(object):
+            AI_WIH_ENDPOINT_FILL_SCENE = "ai_fill_wih_endpoint"
+            AI_WIH_ENDPOINT_FILL_MODULE_ID = "wih_endpoint_fill"
+
+            @staticmethod
+            def _normalize_ai_provider_id(value):
+                return str(value or "openai")
+
+            @staticmethod
+            def _normalize_ai_model_name(provider_id, model_name):
+                return str(model_name or "deepseek-chat")
+
+            @staticmethod
+            def _build_ai_proxy_dict(proxy_url):
+                return None
+
+            @staticmethod
+            def _safe_int(value, default=0, min_value=None):
+                try:
+                    number = int(value)
+                except Exception:
+                    number = default
+                if min_value is not None and number < min_value:
+                    return min_value
+                return number
+
+            @staticmethod
+            def _safe_float(value, default=0.0, min_value=None):
+                try:
+                    number = float(value)
+                except Exception:
+                    number = default
+                if min_value is not None and number < min_value:
+                    return min_value
+                return number
+
+            @staticmethod
+            def _normalize_ai_usage_dict(value):
+                return {}
+
+            @staticmethod
+            def _is_ai_model_unavailable_error(message):
+                return False
+
+            @staticmethod
+            def _pick_ai_retry_model(provider_id, current_model):
+                return ""
+
+            @staticmethod
+            def _write_ai_usage_log(**kwargs):
+                return None
+
+            @staticmethod
+            def _extract_json_object_from_text(value):
+                return None
+
+        runtime = {
+            "enabled": True,
+            "ai_available": True,
+            "prompt_id": "default_ai_fill_wih_endpoint",
+            "prompt_name": "默认AI填充-WIH接口",
+            "prompt_content": "你是 WIH 接口参数补全助手，请返回结构化 JSON。",
+            "ai_config": {},
+            "active_profile": {
+                "provider": "deepseek",
+                "model": "deepseek-chat",
+                "base_url": "https://api.deepseek.com/v1",
+                "api_key": "demo-key",
+                "timeout_sec": 40,
+                "temperature": 0.1,
+                "max_tokens": 1600,
+                "proxy": "",
+                "name": "DeepSeek",
+            },
+            "request_delay_ms": 0,
+            "api_console": _FakeApiConsole(),
+        }
+
+        with patch.object(fill_module, "_load_ai_fill_runtime", return_value=runtime), \
+             patch.object(fill_module.utils, "check_dns_policy_for_url", return_value=(True, {})), \
+             patch.object(fill_module.Config, "WIH_ENDPOINT_AI_FILL_MAX_TARGETS", 10), \
+             patch.object(fill_module.Config, "WIH_ENDPOINT_AI_FILL_CONCURRENCY", 1), \
+             patch.object(fill_module.utils, "http_req", side_effect=requests.exceptions.ConnectionError("api.deepseek.com connect failed")) as mock_ai_req, \
+             patch.object(fill_module.requests, "request", return_value=_FakeResponse()) as mock_probe_req:
+            results = fill_module.run_wih_endpoint_ai_fill("task-3", [endpoint])
+
+        self.assertEqual(1, len(results))
+        result = results[0]
+        self.assertEqual("tested", result.get("ai_fill_status"))
+        self.assertEqual("heuristic", result.get("ai_fill_source"))
+        self.assertTrue(result.get("ai_fill_tested"))
+        self.assertIn("已回退启发式补全", str(result.get("ai_fill_note") or ""))
+        self.assertIn("ConnectionError", str(result.get("ai_fill_note") or ""))
+        self.assertGreaterEqual(mock_ai_req.call_count, 2)
+        mock_probe_req.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -18811,6 +18811,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     dialog_language: string;
     dialog_context_messages: number;
     request_delay_ms: number;
+    wih_endpoint_ai_fill_max_targets: number;
     active_prompt_id: string;
     prompt_templates: AiPromptTemplate[];
     custom_compat_providers: AiCustomCompatProvider[];
@@ -19212,6 +19213,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const activePromptId = promptIds.includes(activePromptIdRaw) ? activePromptIdRaw : promptIds[0] || '';
     const dialogContextMessages = Number(rawForm?.dialog_context_messages ?? 8);
     const requestDelayMs = Number(rawForm?.request_delay_ms ?? 0);
+    const wihEndpointAiFillMaxTargets = Number(rawForm?.wih_endpoint_ai_fill_max_targets ?? 200);
     const aiPenMcpMaxToolCalls = Number(rawForm?.ai_pen_mcp_max_tool_calls ?? 6);
     const aiPenMcpTimeoutSec = Number(rawForm?.ai_pen_mcp_timeout_sec ?? 12);
     const aiPenExternalTimeoutSec = Number(rawForm?.ai_pen_external_timeout_sec ?? 45);
@@ -19245,6 +19247,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       dialog_context_messages:
         Number.isFinite(dialogContextMessages) && dialogContextMessages > 0 ? dialogContextMessages : 8,
       request_delay_ms: Number.isFinite(requestDelayMs) && requestDelayMs >= 0 ? Math.floor(requestDelayMs) : 0,
+      wih_endpoint_ai_fill_max_targets:
+        Number.isFinite(wihEndpointAiFillMaxTargets) && wihEndpointAiFillMaxTargets > 0
+          ? Math.floor(wihEndpointAiFillMaxTargets)
+          : 200,
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
@@ -19588,6 +19594,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const maxTokens = Number(currentForm.max_tokens);
     const dialogContextMessages = Number(currentForm.dialog_context_messages);
     const requestDelayMs = Number(currentForm.request_delay_ms);
+    const wihEndpointAiFillMaxTargets = Number(currentForm.wih_endpoint_ai_fill_max_targets);
     const temperature = Number(currentForm.temperature);
     const promptTemplates = normalizePromptTemplates(currentForm.prompt_templates);
     const promptIds = promptTemplates.map((item) => item.id);
@@ -19657,6 +19664,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       dialog_context_messages:
         Number.isFinite(dialogContextMessages) && dialogContextMessages > 0 ? Math.floor(dialogContextMessages) : 8,
       request_delay_ms: Number.isFinite(requestDelayMs) && requestDelayMs >= 0 ? Math.floor(requestDelayMs) : 0,
+      wih_endpoint_ai_fill_max_targets:
+        Number.isFinite(wihEndpointAiFillMaxTargets) && wihEndpointAiFillMaxTargets > 0
+          ? Math.min(5000, Math.floor(wihEndpointAiFillMaxTargets))
+          : 200,
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
@@ -20706,6 +20717,29 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               }
               className={aiInputClass}
             />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="ai-wih-endpoint-max-targets" className="text-xs font-bold text-brand-text-muted block">
+              WIH接口AI填充上限
+            </label>
+            <input
+              id="ai-wih-endpoint-max-targets"
+              type="number"
+              min={1}
+              max={5000}
+              value={String(form.wih_endpoint_ai_fill_max_targets)}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  wih_endpoint_ai_fill_max_targets: Number(event.target.value || 0),
+                }))
+              }
+              className={aiInputClass}
+              placeholder="默认 200"
+            />
+            <div className="text-[11px] text-brand-text-muted">
+              单次任务里允许进入 AI 填充的 `WIH` 接口数量上限，超过后会被跳过。
+            </div>
           </div>
           <div className="space-y-2 xl:col-span-3">
             <div className="flex flex-wrap items-center justify-between gap-2">

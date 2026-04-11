@@ -1260,6 +1260,9 @@ def _extract_ai_config(config_obj):
     ai_conf = config_obj.get('AI', {})
     if not isinstance(ai_conf, dict):
         ai_conf = {}
+    arl_conf = config_obj.get('ARL', {})
+    if not isinstance(arl_conf, dict):
+        arl_conf = {}
 
     model_profiles = _normalize_ai_model_profiles(ai_conf.get('MODEL_PROFILES'), legacy_ai_conf=ai_conf)
     active_model_profile_id = str(ai_conf.get('ACTIVE_MODEL_PROFILE_ID') or '').strip()
@@ -1298,6 +1301,11 @@ def _extract_ai_config(config_obj):
         'dialog_language': str(ai_conf.get('DIALOG_LANGUAGE') or 'zh-CN').strip(),
         'dialog_context_messages': _safe_int(ai_conf.get('DIALOG_CONTEXT_MESSAGES'), 8, min_value=1),
         'request_delay_ms': _safe_int(ai_conf.get('REQUEST_DELAY_MS'), 0, min_value=0),
+        'wih_endpoint_ai_fill_max_targets': _safe_int(
+            arl_conf.get('WIH_ENDPOINT_AI_FILL_MAX_TARGETS'),
+            Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS,
+            min_value=1,
+        ),
         'active_prompt_id': active_prompt_id,
         'prompt_templates': prompt_templates,
         'custom_compat_providers': _normalize_ai_custom_providers(ai_conf.get('CUSTOM_COMPAT_PROVIDERS')),
@@ -1523,7 +1531,10 @@ def _merge_ai_config(config_obj, ai_config):
 
     if not isinstance(config_obj.get('AI'), dict):
         config_obj['AI'] = {}
+    if not isinstance(config_obj.get('ARL'), dict):
+        config_obj['ARL'] = {}
     ai_conf = config_obj['AI']
+    arl_conf = config_obj['ARL']
     existing_prompt_templates = ai_conf.get('PROMPT_TEMPLATES') if isinstance(ai_conf.get('PROMPT_TEMPLATES'), list) else []
 
     model_profiles = _normalize_ai_model_profiles(ai_config.get('model_profiles'), legacy_ai_conf=ai_config)
@@ -1563,6 +1574,10 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['DIALOG_LANGUAGE'] = str(ai_config.get('dialog_language') or 'zh-CN').strip()
     ai_conf['DIALOG_CONTEXT_MESSAGES'] = _safe_int(ai_config.get('dialog_context_messages'), 8, min_value=1)
     ai_conf['REQUEST_DELAY_MS'] = _safe_int(ai_config.get('request_delay_ms'), 0, min_value=0)
+    arl_conf['WIH_ENDPOINT_AI_FILL_MAX_TARGETS'] = max(
+        1,
+        min(5000, _safe_int(ai_config.get('wih_endpoint_ai_fill_max_targets'), 200, min_value=1)),
+    )
     ai_conf['ACTIVE_PROMPT_ID'] = active_prompt_id
     ai_conf['PROMPT_TEMPLATES'] = _persist_ai_prompt_templates_for_config(prompt_templates, existing_prompt_templates)
     ai_conf['CUSTOM_COMPAT_PROVIDERS'] = _normalize_ai_custom_providers(

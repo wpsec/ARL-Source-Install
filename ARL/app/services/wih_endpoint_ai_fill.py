@@ -89,6 +89,16 @@ def _truncate_text(value, max_length=240):
     return "{}...".format(text[: max(0, max_length - 3)])
 
 
+def _format_exception_message(exc, max_length=240):
+    if exc is None:
+        return ""
+    class_name = str(getattr(exc, "__class__", type(exc)).__name__ or "Exception").strip() or "Exception"
+    detail = str(exc or "").strip()
+    if detail:
+        return _truncate_text("{}: {}".format(class_name, detail), max_length)
+    return _truncate_text(class_name, max_length)
+
+
 def _normalize_lower_text(value):
     return str(value or "").strip().lower()
 
@@ -753,62 +763,94 @@ def _call_ai_fill(runtime: Dict, item: Dict, heuristic_params: List[Dict]) -> Di
     }
 
     def _chat_with_model(target_model):
-        started_at = time.perf_counter()
-        call_body = dict(request_body)
-        call_body["model"] = str(target_model or "").strip()
-        kwargs = {
-            "headers": headers,
-            "json": call_body,
-            "timeout": (8, timeout_sec),
-        }
-        if request_proxies:
-            kwargs["proxies"] = request_proxies
-        if request_delay_ms > 0:
-            time.sleep(float(request_delay_ms) / 1000.0)
-        conn = utils.http_req(request_url, "post", **kwargs)
-        status_code = int(getattr(conn, "status_code", 0) or 0)
-        payload = {}
-        try:
-            payload = conn.json() if conn is not None else {}
-        except Exception:
-            payload = {}
-        elapsed_ms = int((time.perf_counter() - started_at) * 1000.0)
-        usage = api_console_module._normalize_ai_usage_dict(payload.get("usage") if isinstance(payload, dict) else {})
+        last_error_message = ""
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            started_at = time.perf_counter()
+            call_body = dict(request_body)
+            call_body["model"] = str(target_model or "").strip()
+            kwargs = {
+                "headers": headers,
+                "json": call_body,
+                "timeout": (8, timeout_sec),
+            }
+            if request_proxies:
+                kwargs["proxies"] = request_proxies
+            try:
+                if request_delay_ms > 0:
+                    time.sleep(float(request_delay_ms) / 1000.0)
+                conn = utils.http_req(request_url, "post", **kwargs)
+                status_code = int(getattr(conn, "status_code", 0) or 0)
+                payload = {}
+                try:
+                    payload = conn.json() if conn is not None else {}
+                except Exception:
+                    payload = {}
+                elapsed_ms = int((time.perf_counter() - started_at) * 1000.0)
+                usage = api_console_module._normalize_ai_usage_dict(payload.get("usage") if isinstance(payload, dict) else {})
 
-        reply_text = ""
-        if status_code == 200:
-            choices = payload.get("choices", []) if isinstance(payload, dict) else []
-            message_obj = choices[0].get("message") if isinstance(choices, list) and choices else {}
-            if isinstance(message_obj, dict):
-                content_obj = message_obj.get("content")
-                if isinstance(content_obj, str):
-                    reply_text = content_obj.strip()
-                elif isinstance(content_obj, list):
-                    parts = []
-                    for fragment in content_obj:
-                        if isinstance(fragment, dict) and str(fragment.get("type") or "").strip() == "text":
-                            text_value = str(fragment.get("text") or "").strip()
-                            if text_value:
-                                parts.append(text_value)
-                    reply_text = "\n".join(parts).strip()
+                reply_text = ""
+                if status_code == 200:
+                    choices = payload.get("choices", []) if isinstance(payload, dict) else []
+                    message_obj = choices[0].get("message") if isinstance(choices, list) and choices else {}
+                    if isinstance(message_obj, dict):
+                        content_obj = message_obj.get("content")
+                        if isinstance(content_obj, str):
+                            reply_text = content_obj.strip()
+                        elif isinstance(content_obj, list):
+                            parts = []
+                            for fragment in content_obj:
+                                if isinstance(fragment, dict) and str(fragment.get("type") or "").strip() == "text":
+                                    text_value = str(fragment.get("text") or "").strip()
+                                    if text_value:
+                                        parts.append(text_value)
+                            reply_text = "\n".join(parts).strip()
 
-        error_message = ""
-        if status_code != 200:
-            if isinstance(payload, dict):
-                error_obj = payload.get("error")
-                if isinstance(error_obj, dict):
-                    error_message = str(error_obj.get("message") or "").strip()
-                if not error_message:
-                    error_message = str(payload.get("message") or "").strip()
-            if not error_message:
-                error_message = "HTTP {}".format(status_code)
+                error_message = ""
+                if status_code != 200:
+                    if isinstance(payload, dict):
+                        error_obj = payload.get("error")
+                        if isinstance(error_obj, dict):
+                            error_message = str(error_obj.get("message") or "").strip()
+                        if not error_message:
+                            error_message = str(payload.get("message") or "").strip()
+                    if not error_message:
+                        error_message = "HTTP {}".format(status_code)
+                return {
+                    "ok": status_code == 200,
+                    "status_code": status_code,
+                    "message": error_message,
+                    "reply_text": reply_text,
+                    "usage": usage,
+                    "elapsed_ms": elapsed_ms,
+                }
+            except Exception as exc:
+                last_error_message = _format_exception_message(exc, 320)
+                logger.warning(
+                    "wih endpoint ai fill request failed provider:%s model:%s attempt:%s/%s err:%s",
+                    provider_id,
+                    target_model,
+                    attempt,
+                    max_attempts,
+                    last_error_message,
+                )
+                if attempt >= max_attempts:
+                    return {
+                        "ok": False,
+                        "status_code": 0,
+                        "message": last_error_message or "AI 请求异常",
+                        "reply_text": "",
+                        "usage": {},
+                        "elapsed_ms": int((time.perf_counter() - started_at) * 1000.0),
+                    }
+                time.sleep(min(1.2, 0.35 * attempt))
         return {
-            "ok": status_code == 200,
-            "status_code": status_code,
-            "message": error_message,
-            "reply_text": reply_text,
-            "usage": usage,
-            "elapsed_ms": elapsed_ms,
+            "ok": False,
+            "status_code": 0,
+            "message": last_error_message or "AI 请求异常",
+            "reply_text": "",
+            "usage": {},
+            "elapsed_ms": 0,
         }
 
     call_ret = _chat_with_model(model_name)
@@ -981,7 +1023,7 @@ def _fill_one(task_id: str, item: Dict, runtime: Dict, waf_guard=None, dns_polic
                     result["ai_fill_note"] = _truncate_text(ai_data.get("reason") or ai_data.get("summary"), 180)
         else:
             result["ai_fill_source"] = "heuristic"
-            result["ai_fill_note"] = "AI 填充失败，已回退启发式补全: {}".format(_truncate_text(ai_ret.get("message"), 120))
+            result["ai_fill_note"] = "AI 填充失败，已回退启发式补全: {}".format(_truncate_text(ai_ret.get("message"), 180))
     elif not runtime.get("enabled"):
         result["ai_fill_status"] = "disabled"
         result["ai_fill_note"] = "AI 管理中已关闭 WIH 接口 AI 填充"
@@ -1060,7 +1102,7 @@ def run_wih_endpoint_ai_fill(task_id: str, endpoints: List[Dict], waf_guard=None
                 item = dict(items[index] or {})
                 item["task_id"] = str(task_id or "").strip()
                 item["ai_fill_status"] = "error"
-                item["ai_fill_note"] = "AI 填充失败: {}".format(exc.__class__.__name__)
+                item["ai_fill_note"] = "AI 填充失败: {}".format(_format_exception_message(exc, 180))
                 item["ai_fill_source"] = "error"
                 results[index] = item
                 logger.warning("run wih endpoint ai fill failed task_id:%s err:%s", task_id, exc)
