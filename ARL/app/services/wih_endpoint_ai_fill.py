@@ -966,9 +966,8 @@ def _probe_with_filled_request(item: Dict, waf_guard=None, dns_policy_cache=None
     except Exception as exc:
         logger.debug("wih endpoint ai fill probe failed url:%s method:%s err:%s", url, method, exc)
         result["ai_fill_tested"] = False
+        result["ai_fill_status"] = "test_failed"
         result["ai_fill_note"] = "填充后测试失败: {}".format(exc.__class__.__name__)
-        if not str(result.get("ai_fill_status") or "").strip():
-            result["ai_fill_status"] = "error"
     return result
 
 

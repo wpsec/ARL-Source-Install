@@ -2895,14 +2895,24 @@ function buildWihEndpointResponsePacket(row: any): string {
   const aiPacket = normalizeValueNoTruncate(row?.ai_fill_response_packet);
   if (aiPacket && aiPacket !== '-') return aiPacket;
 
+  const aiSummary = normalizeValueNoTruncate(row?.ai_fill_response_summary);
+  if (aiSummary && aiSummary !== '-') return aiSummary;
+
+  const aiFillStatus = String(row?.ai_fill_status || '').trim().toLowerCase();
+  const aiFillNote = normalizeValueNoTruncate(row?.ai_fill_note);
+  if (
+    aiFillNote &&
+    aiFillNote !== '-' &&
+    ['test_failed', 'error'].includes(aiFillStatus)
+  ) {
+    return aiFillNote;
+  }
+
   const probePacket = normalizeValueNoTruncate(row?.verification_response_packet);
   if (probePacket && probePacket !== '-') return probePacket;
 
   const responsePacket = normalizeValueNoTruncate(row?.response_packet);
   if (responsePacket && responsePacket !== '-') return responsePacket;
-
-  const aiSummary = normalizeValueNoTruncate(row?.ai_fill_response_summary);
-  if (aiSummary && aiSummary !== '-') return aiSummary;
 
   const verificationNote = normalizeValueNoTruncate(row?.verification_note);
   if (verificationNote && verificationNote !== '-') return verificationNote;
@@ -2915,6 +2925,7 @@ function formatWihEndpointAiFillStatus(row: any): string {
   const mapping: Record<string, string> = {
     tested: '已测试',
     filled: '已填充',
+    test_failed: '测试失败',
     hint_only: '仅提示',
     disabled: '已关闭',
     skipped: '已跳过',

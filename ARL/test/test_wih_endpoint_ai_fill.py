@@ -241,6 +241,42 @@ class TestWihEndpointAiFill(unittest.TestCase):
         self.assertGreaterEqual(mock_ai_req.call_count, 2)
         mock_probe_req.assert_called_once()
 
+    def test_probe_timeout_marks_test_failed(self):
+        packet = (
+            "POST /_rest/st/ajax_st_app_news.ashx HTTP/1.1\r\n"
+            "Host: yhxy.scwxzyxy.cn\r\n"
+            "Content-Type: application/x-www-form-urlencoded\r\n"
+            "\r\n"
+            "FolderId=<value>&TabId=<value>&action=ToSearchUrl&kw=<value>&said=<value>"
+        )
+        endpoint = {
+            "target": "https://yhxy.scwxzyxy.cn",
+            "page_url": "https://yhxy.scwxzyxy.cn/",
+            "url": "https://yhxy.scwxzyxy.cn/_rest/st/ajax_st_app_news.ashx",
+            "method": "POST",
+            "request_packet": packet,
+            "request_template": {},
+            "status_code": None,
+            "response_size": None,
+        }
+
+        with patch.object(fill_module, "_load_ai_fill_runtime", return_value=self._runtime()), \
+             patch.object(fill_module.utils, "check_dns_policy_for_url", return_value=(True, {})), \
+             patch.object(fill_module.Config, "WIH_ENDPOINT_AI_FILL_MAX_TARGETS", 10), \
+             patch.object(fill_module.Config, "WIH_ENDPOINT_AI_FILL_CONCURRENCY", 1), \
+             patch.object(fill_module.requests, "request", side_effect=requests.exceptions.ReadTimeout("timed out")):
+            results = fill_module.run_wih_endpoint_ai_fill("task-4", [endpoint])
+
+        self.assertEqual(1, len(results))
+        result = results[0]
+        self.assertEqual("test_failed", result.get("ai_fill_status"))
+        self.assertFalse(result.get("ai_fill_tested"))
+        self.assertEqual("heuristic", result.get("ai_fill_source"))
+        self.assertIn("填充后测试失败", str(result.get("ai_fill_note") or ""))
+        self.assertIn("ReadTimeout", str(result.get("ai_fill_note") or ""))
+        self.assertIsNone(result.get("status_code"))
+        self.assertIsNone(result.get("response_size"))
+
 
 if __name__ == "__main__":
     unittest.main()
