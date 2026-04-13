@@ -9830,6 +9830,12 @@ function TableModuleView({
   }, [closeRiskDialog, riskDialogOpen]);
 
   useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => setSuccess(''), 2200);
+    return () => window.clearTimeout(timer);
+  }, [success]);
+
+  useEffect(() => {
     if (!taskReportExportMenu) return;
 
     const handlePointerDown = (event: MouseEvent) => {
@@ -10757,6 +10763,14 @@ function TableModuleView({
 
   return (
     <div ref={tableRootRef} className="p-8 space-y-6">
+      {success ? (
+        <div className="fixed top-5 right-5 z-[80] pointer-events-none">
+          <div className="inline-flex max-w-[26rem] items-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-400/12 px-4 py-3 text-sm font-semibold text-emerald-200 shadow-xl shadow-black/20 backdrop-blur-sm">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" />
+            <span className="whitespace-pre-wrap break-all leading-relaxed">{success}</span>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
         <div>
           <h2 className="text-4xl font-black tracking-tight">{module.label}</h2>
@@ -10765,7 +10779,6 @@ function TableModuleView({
 
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill text={selectionStatus} type="info" />
-          {success ? <StatusPill text={success} type="success" /> : null}
           {error ? <StatusPill text={error} type="error" /> : null}
         </div>
       </div>

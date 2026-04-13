@@ -128,6 +128,14 @@ WIH_ENDPOINT_EXPORT_PROJECTION = {
     "content_length": 1,
     "request_packet": 1,
     "request_template": 1,
+    "response_packet": 1,
+    "verification_response_packet": 1,
+    "verification_note": 1,
+    "ai_fill_status": 1,
+    "ai_fill_note": 1,
+    "ai_fill_params": 1,
+    "ai_fill_response_packet": 1,
+    "ai_fill_response_summary": 1,
 }
 SERVICE_EXPORT_PROJECTION = {
     "task_id": 1,
@@ -2529,6 +2537,64 @@ def _extract_wih_endpoint_request_packet(item):
     return ""
 
 
+def _format_wih_endpoint_ai_fill_params(item):
+    """
+    将 AI 填充参数整理为便于导出的多行文本。
+    """
+    params = item.get("ai_fill_params") if isinstance(item, dict) else []
+    if not isinstance(params, list):
+        return ""
+
+    lines = []
+    for entry in params:
+        if not isinstance(entry, dict):
+            continue
+        name = sanitize_excel_value(entry.get("name", "")).strip()
+        if not name:
+            continue
+        location = sanitize_excel_value(entry.get("location", "")).strip() or "-"
+        type_text = sanitize_excel_value(entry.get("type", "")).strip() or "-"
+        value = sanitize_excel_value(entry.get("value", "")).strip() or "-"
+        lines.append("{} [{}/{}] = {}".format(name, location, type_text, value))
+        if len(lines) >= 24:
+            break
+    return "\n".join(lines)
+
+
+def _extract_wih_endpoint_response_packet(item):
+    """
+    对齐详情页展示逻辑，优先返回 AI 填充后的响应包，其次返回验证响应或失败原因。
+    """
+    ai_packet = sanitize_excel_value(item.get("ai_fill_response_packet", "")).strip()
+    if ai_packet:
+        return ai_packet
+
+    ai_summary = sanitize_excel_value(item.get("ai_fill_response_summary", "")).strip()
+    if ai_summary:
+        return ai_summary
+
+    ai_fill_status = sanitize_excel_value(item.get("ai_fill_status", "")).strip().lower()
+    ai_fill_note = sanitize_excel_value(item.get("ai_fill_note", "")).strip()
+    if ai_fill_note and ai_fill_status in ("test_failed", "error"):
+        return ai_fill_note
+
+    verification_packet = sanitize_excel_value(item.get("verification_response_packet", "")).strip()
+    if verification_packet:
+        return verification_packet
+
+    response_packet = sanitize_excel_value(item.get("response_packet", "")).strip()
+    if response_packet:
+        return response_packet
+
+    verification_note = sanitize_excel_value(item.get("verification_note", "")).strip()
+    if verification_note:
+        return verification_note
+
+    if ai_fill_note:
+        return ai_fill_note
+    return ""
+
+
 def _format_wih_endpoint_status(item):
     status_text = sanitize_excel_value(item.get("status_code") or item.get("response_status", "")).strip()
     try:
@@ -2564,6 +2630,7 @@ def _extract_wih_endpoint_rows(task_ids):
     汇总 WIH 接口提取导出行，按目标+页面URL+方法+请求URL+请求报文去重。
     """
     task_id_list = _normalize_task_id_list(task_ids)
+    ai_lookup = _build_ai_denoise_lookup(task_id_list, "wih_endpoint")
     rows = []
     dedup_keys = set()
 
@@ -2576,6 +2643,8 @@ def _extract_wih_endpoint_rows(task_ids):
             response_size = _format_wih_endpoint_response_size(item)
             request_url = sanitize_excel_value(item.get("url") or item.get("request_url") or "").strip()
             request_packet = _extract_wih_endpoint_request_packet(item)
+            ai_fill_params = _format_wih_endpoint_ai_fill_params(item)
+            response_packet = _extract_wih_endpoint_response_packet(item)
 
             if not request_url and not request_packet:
                 continue
@@ -2584,6 +2653,8 @@ def _extract_wih_endpoint_rows(task_ids):
             if dedup_key in dedup_keys:
                 continue
             dedup_keys.add(dedup_key)
+            item_id = _normalize_ai_lookup_key(item.get("_id", ""))
+            ai_result = _resolve_ai_lookup_result(ai_lookup, data_id=item_id, row_key=item_id)
             rows.append(
                 [
                     len(rows) + 1,
@@ -2594,6 +2665,9 @@ def _extract_wih_endpoint_rows(task_ids):
                     response_size,
                     request_url,
                     request_packet,
+                    ai_fill_params,
+                    response_packet,
+                    sanitize_excel_value(ai_result.get("text", "未分析")),
                 ]
             )
 
@@ -2867,7 +2941,10 @@ def _build_wih_endpoint_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['F'].width = 12.0
     ws.column_dimensions['G'].width = 72.0
     ws.column_dimensions['H'].width = 96.0
-    ws.append(["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文"])
+    ws.column_dimensions['I'].width = 72.0
+    ws.column_dimensions['J'].width = 96.0
+    ws.column_dimensions['K'].width = 24.0
+    ws.append(["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文", "AI填充参数", "回复报文", "AI分析"])
 
     for row in _extract_wih_endpoint_rows(task_ids):
         ws.append(row)
