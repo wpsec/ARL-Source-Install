@@ -309,6 +309,17 @@ def refresh_runtime_config_best_effort(force=False):
             "WIH_CONCURRENCY",
             "WIH_CONCURRENCY_PER_SITE",
             "WIH_MAX_BATCH_SIZE",
+            "WIH_PERIODIC_REUSE_ENABLE",
+            "WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS",
+            "WIH_PERIODIC_REUSE_LOG_DETAIL",
+            "WIH_ADAPTIVE_RUNTIME_ENABLE",
+            "WIH_LIGHT_TIMEOUT_SEC",
+            "WIH_LIGHT_RUNTIME_TIMEOUT_SEC",
+            "WIH_LIGHT_RUNTIME_MAX_PAGES",
+            "WIH_LIGHT_RUNTIME_MAX_ACTIONS",
+            "WIH_LIGHT_RUNTIME_MAX_REQUESTS",
+            "WIH_MINIMAL_TIMEOUT_SEC",
+            "WIH_MINIMAL_RUNTIME_ENABLE",
             "WIH_ENDPOINT_AI_FILL_MAX_TARGETS",
             "WIH_ENDPOINT_AI_FILL_CONCURRENCY",
             "WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC",
@@ -321,6 +332,7 @@ def refresh_runtime_config_best_effort(force=False):
             "WIH_RUNTIME_MAX_PAGES",
             "WIH_RUNTIME_MAX_ACTIONS",
             "WIH_RUNTIME_MAX_REQUESTS",
+            "URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT",
             "FILE_LEAK_CONCURRENCY",
             "FILE_LEAK_TARGET_CONCURRENCY",
             "FILE_LEAK_SITE_TIMEOUT_SEC",
@@ -683,6 +695,8 @@ class Config(object):
     URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC = 10 * 60
     # URLFinder 二次敏感扫描阶段总预算（秒，0=不限制）
     URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC = 30 * 60
+    # URLFinder 二次敏感扫描连续无新增批次数上限（0=不提前止损）
+    URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT = 2
     # 是否启用 URLFinder 提取 URL 的可达性探测并写入 URL 信息
     URLFINDER_URL_PROBE_ENABLE = True
     # URLFinder URL 可达性探测单次最多目标数
@@ -768,6 +782,28 @@ class Config(object):
     WIH_CONCURRENCY_PER_SITE = 2
     # WIH 单批最大站点数，避免大批次超时后整批重跑
     WIH_MAX_BATCH_SIZE = 12
+    # 是否启用周期任务 WIH 结果复用骨架（仅同 schedule + 同 target + 同站点签名命中）
+    WIH_PERIODIC_REUSE_ENABLE = False
+    # 查找上一轮可复用基线时，最多回看多少条同计划同目标任务
+    WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS = 5
+    # 是否输出周期任务 WIH 复用详细日志
+    WIH_PERIODIC_REUSE_LOG_DETAIL = True
+    # 是否启用计划任务下的 WIH 自适应 runtime：先轻量运行，再按需升级完整 runtime
+    WIH_ADAPTIVE_RUNTIME_ENABLE = True
+    # 轻量 runtime 主扫描的进程级超时（秒）
+    WIH_LIGHT_TIMEOUT_SEC = 15 * 60
+    # 轻量 runtime 单次运行时超时（秒）
+    WIH_LIGHT_RUNTIME_TIMEOUT_SEC = 20
+    # 轻量 runtime 最大页面数
+    WIH_LIGHT_RUNTIME_MAX_PAGES = 4
+    # 轻量 runtime 最大动作数
+    WIH_LIGHT_RUNTIME_MAX_ACTIONS = 10
+    # 轻量 runtime 最大请求数
+    WIH_LIGHT_RUNTIME_MAX_REQUESTS = 60
+    # minimal 回退阶段的独立超时（秒）
+    WIH_MINIMAL_TIMEOUT_SEC = 15 * 60
+    # minimal 回退阶段是否保留 runtime（默认关闭，避免重试时再次进入高成本动态链路）
+    WIH_MINIMAL_RUNTIME_ENABLE = False
     # WIH 接口 AI 填充单次最多处理目标数
     WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 200
     # WIH 接口 AI 填充并发
@@ -1379,6 +1415,45 @@ try:
         Config.WIH_MAX_BATCH_SIZE = safe_positive_int(
             int(y["ARL"]["WIH_MAX_BATCH_SIZE"]), Config.WIH_MAX_BATCH_SIZE
         )
+    if y["ARL"].get("WIH_PERIODIC_REUSE_ENABLE") is not None:
+        Config.WIH_PERIODIC_REUSE_ENABLE = bool(y["ARL"]["WIH_PERIODIC_REUSE_ENABLE"])
+    if y["ARL"].get("WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS") is not None:
+        Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS = safe_positive_int(
+            int(y["ARL"]["WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS"]),
+            Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS,
+        )
+    if y["ARL"].get("WIH_PERIODIC_REUSE_LOG_DETAIL") is not None:
+        Config.WIH_PERIODIC_REUSE_LOG_DETAIL = bool(y["ARL"]["WIH_PERIODIC_REUSE_LOG_DETAIL"])
+    if y["ARL"].get("WIH_ADAPTIVE_RUNTIME_ENABLE") is not None:
+        Config.WIH_ADAPTIVE_RUNTIME_ENABLE = bool(y["ARL"]["WIH_ADAPTIVE_RUNTIME_ENABLE"])
+    if y["ARL"].get("WIH_LIGHT_TIMEOUT_SEC") is not None:
+        Config.WIH_LIGHT_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["WIH_LIGHT_TIMEOUT_SEC"]), Config.WIH_LIGHT_TIMEOUT_SEC
+        )
+    if y["ARL"].get("WIH_LIGHT_RUNTIME_TIMEOUT_SEC") is not None:
+        Config.WIH_LIGHT_RUNTIME_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["WIH_LIGHT_RUNTIME_TIMEOUT_SEC"]), Config.WIH_LIGHT_RUNTIME_TIMEOUT_SEC
+        )
+    if y["ARL"].get("WIH_LIGHT_RUNTIME_MAX_PAGES") is not None:
+        Config.WIH_LIGHT_RUNTIME_MAX_PAGES = safe_positive_int(
+            int(y["ARL"]["WIH_LIGHT_RUNTIME_MAX_PAGES"]), Config.WIH_LIGHT_RUNTIME_MAX_PAGES
+        )
+    if y["ARL"].get("WIH_LIGHT_RUNTIME_MAX_ACTIONS") is not None:
+        Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS = safe_int(
+            y["ARL"]["WIH_LIGHT_RUNTIME_MAX_ACTIONS"], Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS
+        )
+        if Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS < 0:
+            Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS = 0
+    if y["ARL"].get("WIH_LIGHT_RUNTIME_MAX_REQUESTS") is not None:
+        Config.WIH_LIGHT_RUNTIME_MAX_REQUESTS = safe_positive_int(
+            int(y["ARL"]["WIH_LIGHT_RUNTIME_MAX_REQUESTS"]), Config.WIH_LIGHT_RUNTIME_MAX_REQUESTS
+        )
+    if y["ARL"].get("WIH_MINIMAL_TIMEOUT_SEC") is not None:
+        Config.WIH_MINIMAL_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["WIH_MINIMAL_TIMEOUT_SEC"]), Config.WIH_MINIMAL_TIMEOUT_SEC
+        )
+    if y["ARL"].get("WIH_MINIMAL_RUNTIME_ENABLE") is not None:
+        Config.WIH_MINIMAL_RUNTIME_ENABLE = bool(y["ARL"]["WIH_MINIMAL_RUNTIME_ENABLE"])
     if y["ARL"].get("WIH_ENDPOINT_AI_FILL_MAX_TARGETS") is not None:
         Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_positive_int(
             int(y["ARL"]["WIH_ENDPOINT_AI_FILL_MAX_TARGETS"]), Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS
@@ -1481,6 +1556,14 @@ try:
         )
         if Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC < 0:
             Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC = 0
+    if y["ARL"].get("URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT") is not None:
+        Config.URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT = max(
+            0,
+            safe_int(
+                y["ARL"]["URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT"],
+                Config.URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT,
+            ),
+        )
 
     if y["ARL"].get("URLFINDER_URL_PROBE_ENABLE") is not None:
         Config.URLFINDER_URL_PROBE_ENABLE = bool(y["ARL"]["URLFINDER_URL_PROBE_ENABLE"])
@@ -1752,6 +1835,18 @@ try:
         "WIH_CONCURRENCY",
         "WIH_CONCURRENCY_PER_SITE",
         "WIH_MAX_BATCH_SIZE",
+        "WIH_PERIODIC_REUSE_ENABLE",
+        "WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS",
+        "WIH_PERIODIC_REUSE_LOG_DETAIL",
+        "WIH_ADAPTIVE_RUNTIME_ENABLE",
+        "WIH_LIGHT_TIMEOUT_SEC",
+        "WIH_LIGHT_RUNTIME_TIMEOUT_SEC",
+        "WIH_LIGHT_RUNTIME_MAX_PAGES",
+        "WIH_LIGHT_RUNTIME_MAX_ACTIONS",
+        "WIH_LIGHT_RUNTIME_MAX_REQUESTS",
+        "WIH_MINIMAL_TIMEOUT_SEC",
+        "WIH_MINIMAL_RUNTIME_ENABLE",
+        "URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT",
         "WIH_ENDPOINT_AI_FILL_MAX_TARGETS",
         "WIH_ENDPOINT_AI_FILL_CONCURRENCY",
         "WIH_ENDPOINT_AI_FILL_TIMEOUT_SEC",
@@ -1997,6 +2092,48 @@ try:
         env_int("ARL_WIH_MAX_BATCH_SIZE", Config.WIH_MAX_BATCH_SIZE),
         Config.WIH_MAX_BATCH_SIZE
     )
+    Config.WIH_PERIODIC_REUSE_ENABLE = env_bool(
+        "ARL_WIH_PERIODIC_REUSE_ENABLE", Config.WIH_PERIODIC_REUSE_ENABLE
+    )
+    Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS = safe_positive_int(
+        env_int("ARL_WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS", Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS),
+        Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS
+    )
+    Config.WIH_PERIODIC_REUSE_LOG_DETAIL = env_bool(
+        "ARL_WIH_PERIODIC_REUSE_LOG_DETAIL", Config.WIH_PERIODIC_REUSE_LOG_DETAIL
+    )
+    Config.WIH_ADAPTIVE_RUNTIME_ENABLE = env_bool(
+        "ARL_WIH_ADAPTIVE_RUNTIME_ENABLE", Config.WIH_ADAPTIVE_RUNTIME_ENABLE
+    )
+    Config.WIH_LIGHT_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_WIH_LIGHT_TIMEOUT_SEC", Config.WIH_LIGHT_TIMEOUT_SEC),
+        Config.WIH_LIGHT_TIMEOUT_SEC
+    )
+    Config.WIH_LIGHT_RUNTIME_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_WIH_LIGHT_RUNTIME_TIMEOUT_SEC", Config.WIH_LIGHT_RUNTIME_TIMEOUT_SEC),
+        Config.WIH_LIGHT_RUNTIME_TIMEOUT_SEC
+    )
+    Config.WIH_LIGHT_RUNTIME_MAX_PAGES = safe_positive_int(
+        env_int("ARL_WIH_LIGHT_RUNTIME_MAX_PAGES", Config.WIH_LIGHT_RUNTIME_MAX_PAGES),
+        Config.WIH_LIGHT_RUNTIME_MAX_PAGES
+    )
+    Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS = safe_int(
+        env_int("ARL_WIH_LIGHT_RUNTIME_MAX_ACTIONS", Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS),
+        Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS
+    )
+    if Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS < 0:
+        Config.WIH_LIGHT_RUNTIME_MAX_ACTIONS = 0
+    Config.WIH_LIGHT_RUNTIME_MAX_REQUESTS = safe_positive_int(
+        env_int("ARL_WIH_LIGHT_RUNTIME_MAX_REQUESTS", Config.WIH_LIGHT_RUNTIME_MAX_REQUESTS),
+        Config.WIH_LIGHT_RUNTIME_MAX_REQUESTS
+    )
+    Config.WIH_MINIMAL_TIMEOUT_SEC = safe_positive_int(
+        env_int("ARL_WIH_MINIMAL_TIMEOUT_SEC", Config.WIH_MINIMAL_TIMEOUT_SEC),
+        Config.WIH_MINIMAL_TIMEOUT_SEC
+    )
+    Config.WIH_MINIMAL_RUNTIME_ENABLE = env_bool(
+        "ARL_WIH_MINIMAL_RUNTIME_ENABLE", Config.WIH_MINIMAL_RUNTIME_ENABLE
+    )
     Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_positive_int(
         env_int("ARL_WIH_ENDPOINT_AI_FILL_MAX_TARGETS", Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS),
         Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS
@@ -2074,6 +2211,16 @@ try:
     )
     if Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC < 0:
         Config.URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC = 0
+    Config.URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT = max(
+        0,
+        safe_int(
+            env_int(
+                "ARL_URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT",
+                Config.URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT,
+            ),
+            Config.URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT,
+        ),
+    )
     Config.URLFINDER_URL_PROBE_ENABLE = env_bool(
         "ARL_URLFINDER_URL_PROBE_ENABLE", Config.URLFINDER_URL_PROBE_ENABLE
     )

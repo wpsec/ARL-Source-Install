@@ -20765,15 +20765,76 @@ class WebSiteFetch(object):
             except Exception as e:
                 logger.warning("save wih endpoint failed task_id:{} err:{}".format(self.task_id, e))
 
+    def _apply_reused_wih_records(self, records):
+        record_list = list(records or [])
+        if not record_list:
+            return 0
+
+        applied = 0
+        for record in record_list:
+            normalized = InfoHunter.normalize_wih_record(record)
+            if not normalized:
+                continue
+            if normalized.fnv_hash in self.wih_record_set:
+                continue
+
+            self.add_wih_domain_set(normalized)
+            self._save_wih_risk(normalized)
+            self.wih_record_set.add(normalized.fnv_hash)
+            applied += 1
+
+        return applied
+
     def run_web_info_hunter(self):
         wih_targets = self._filter_waf_blocked_targets(self.sites, stage_name="wih")
-        scan_sites = list(wih_targets or [])
-        wih_endpoints = []
+        reuse_summary = {}
+        reused_sites = set()
         if wih_targets:
+            reuse_summary = services.run_wih_periodic_reuse(
+                task_id=self.task_id,
+                sites=wih_targets,
+                options=self.options,
+            ) or {}
+            reused_sites = {
+                str(item or "").strip()
+                for item in list(reuse_summary.get("reused_sites", []) or [])
+                if str(item or "").strip()
+            }
+            effective_reused_records = self._apply_reused_wih_records(reuse_summary.get("records", []) or [])
+            for reused_url in list(reuse_summary.get("reused_urls", []) or []):
+                reused_url_text = str(reused_url or "").strip()
+                if reused_url_text:
+                    self.page_url_set.add(reused_url_text)
+            if reused_sites:
+                logger.info(
+                    "task_id:{} wih periodic reuse applied schedule_id:{} baseline_task:{} reused_sites:{} reused_records:{} reused_endpoints:{} reused_urls:{} effective_records:{}".format(
+                        self.task_id,
+                        str(reuse_summary.get("schedule_id", "") or ""),
+                        str(reuse_summary.get("previous_task_id", "") or ""),
+                        len(reused_sites),
+                        int(reuse_summary.get("reused_record_count", 0) or 0),
+                        int(reuse_summary.get("reused_endpoint_count", 0) or 0),
+                        int(reuse_summary.get("reused_url_count", 0) or 0),
+                        effective_reused_records,
+                    )
+                )
+
+        scan_sites = [site for site in list(wih_targets or []) if str(site or "").strip() not in reused_sites]
+        wih_endpoints = []
+        if scan_sites:
             wih_result = self._run_substage(
                 "wih_primary_scan",
-                lambda: services.run_wih(wih_targets, include_endpoints=True),
-                detail="targets={}".format(len(wih_targets)),
+                lambda: services.run_wih(
+                    scan_sites,
+                    include_endpoints=True,
+                    prefer_fast_mode=bool(self.options.get("from_task_schedule", False)),
+                ),
+                detail="targets={} reused={} scan={} fast_mode={}".format(
+                    len(wih_targets),
+                    len(reused_sites),
+                    len(scan_sites),
+                    bool(self.options.get("from_task_schedule", False)),
+                ),
             )
             if isinstance(wih_result, tuple):
                 raw_records, wih_endpoints = wih_result

@@ -53,6 +53,7 @@ def _load_urlfinder_sensitive_module():
             "URLFINDER_SENSITIVE_INCLUDE_JS": True,
             "URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC": 600,
             "URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC": 1800,
+            "URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT": 2,
         },
     )
 
@@ -138,6 +139,7 @@ def _load_urlfinder_sensitive_module():
 urlfinder_sensitive_module = _load_urlfinder_sensitive_module()
 Config = urlfinder_sensitive_module.Config
 WihRecord = urlfinder_sensitive_module.WihRecord
+UrlfinderSensitiveScanner = urlfinder_sensitive_module.UrlfinderSensitiveScanner
 run_urlfinder_sensitive_scan = urlfinder_sensitive_module.run_urlfinder_sensitive_scan
 
 
@@ -157,6 +159,46 @@ def _build_urlfinder_records(count, host="example.com"):
 
 
 class TestUrlfinderSensitiveScan(unittest.TestCase):
+    def test_collect_targets_prioritizes_api_like_candidates(self):
+        records = [
+            WihRecord(
+                "urlfinder_url",
+                "https://example.com/static/logo.png",
+                "https://example.com/assets/app.js",
+                "https://example.com",
+                1,
+            ),
+            WihRecord(
+                "urlfinder_url",
+                "https://example.com/api/user/list?page=1",
+                "https://example.com/assets/app.js",
+                "https://example.com",
+                2,
+            ),
+            WihRecord(
+                "urlfinder_js",
+                "https://example.com/assets/runtime.js",
+                "https://example.com/assets/runtime.js",
+                "https://example.com",
+                3,
+            ),
+            WihRecord(
+                "urlfinder_url",
+                "https://example.com/admin/report/export",
+                "https://example.com/assets/admin.js",
+                "https://example.com",
+                4,
+            ),
+        ]
+
+        with patch.object(Config, "URLFINDER_SENSITIVE_MAX_TARGETS", 3):
+            scanner = UrlfinderSensitiveScanner(["https://example.com"], records)
+            targets = scanner._collect_targets()
+
+        self.assertEqual(3, len(targets))
+        self.assertEqual("https://example.com/admin/report/export", targets[0])
+        self.assertEqual("https://example.com/api/user/list?page=1", targets[1])
+
     def test_secondary_scan_batches_targets_and_disables_runtime(self):
         instances = []
 
@@ -249,6 +291,46 @@ class TestUrlfinderSensitiveScan(unittest.TestCase):
         self.assertEqual(1, len(instances))
         self.assertEqual(1, len(results))
         self.assertEqual(90, instances[0].wih_timeout_sec)
+
+    def test_secondary_scan_early_stops_after_consecutive_no_gain_batches(self):
+        instances = []
+
+        class FakeInfoHunter(object):
+            def __init__(self, targets):
+                self.targets = list(targets or [])
+                self.wih_timeout_sec = 0
+                self.wih_runtime_enable = True
+                self.wih_runtime_driver = "playwright"
+                self.wih_runtime_command = "node runtime"
+                instances.append(self)
+
+            def run(self):
+                if len(instances) == 1:
+                    return [
+                        WihRecord(
+                            "token",
+                            "secret-batch-1",
+                            self.targets[0],
+                            "https://example.com",
+                            "batch-1",
+                        )
+                    ]
+                return []
+
+        with patch.object(Config, "URLFINDER_SENSITIVE_ENABLE", True):
+            with patch.object(Config, "URLFINDER_SENSITIVE_MAX_TARGETS", 80):
+                with patch.object(Config, "URLFINDER_SENSITIVE_INCLUDE_JS", True):
+                    with patch.object(Config, "URLFINDER_SENSITIVE_WIH_TIMEOUT_SEC", 120):
+                        with patch.object(Config, "URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC", 1200):
+                            with patch.object(Config, "URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT", 2):
+                                with patch.object(urlfinder_sensitive_module, "InfoHunter", FakeInfoHunter):
+                                    results = run_urlfinder_sensitive_scan(
+                                        sites=["https://example.com"],
+                                        wih_records=_build_urlfinder_records(80),
+                                    )
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(3, len(instances))
 
 
 if __name__ == "__main__":

@@ -25,6 +25,39 @@ logger = utils.get_logger()
 
 class UrlfinderSensitiveScanner:
     SECONDARY_WIH_BATCH_SIZE = 24
+    _SENSITIVE_PATH_KEYWORDS = (
+        "api",
+        "ajax",
+        "admin",
+        "auth",
+        "login",
+        "logout",
+        "upload",
+        "download",
+        "export",
+        "import",
+        "graphql",
+        "search",
+        "query",
+        "config",
+        "report",
+        "token",
+        "user",
+        "account",
+        "order",
+        "payment",
+        "invoice",
+    )
+    _CRITICAL_PATH_KEYWORDS = (
+        "admin",
+        "export",
+        "upload",
+        "download",
+        "report",
+        "graphql",
+        "config",
+        "token",
+    )
 
     def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
         self.sites = list(sites or [])
@@ -39,6 +72,9 @@ class UrlfinderSensitiveScanner:
         self.stage_timeout_sec = int(
             getattr(Config, "URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC", 30 * 60) or (30 * 60)
         )
+        self.no_gain_batch_limit = int(
+            getattr(Config, "URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT", 2) or 2
+        )
 
         if self.max_targets < 1:
             self.max_targets = 1
@@ -46,6 +82,8 @@ class UrlfinderSensitiveScanner:
             self.secondary_wih_timeout_sec = 60
         if self.stage_timeout_sec < 0:
             self.stage_timeout_sec = 0
+        if self.no_gain_batch_limit < 0:
+            self.no_gain_batch_limit = 0
 
         self.allowed_hosts = self._collect_allowed_hosts()
 
@@ -102,17 +140,52 @@ class UrlfinderSensitiveScanner:
             return ""
         return normalized
 
+    def _score_candidate(self, normalized_url: str, record_type: str = "", source: str = "") -> int:
+        parsed = urlparse(str(normalized_url or "").strip())
+        path_text = str(parsed.path or "").strip().lower()
+        query_text = str(parsed.query or "").strip().lower()
+        record_type_text = str(record_type or "").strip().lower()
+        source_host = self._extract_host(source)
+        target_host = self._extract_host(normalized_url)
+
+        score = 10
+        if self._is_js_url(normalized_url):
+            score += 4
+        else:
+            score += 6
+        if query_text:
+            score += 4
+        if source_host and target_host and source_host == target_host:
+            score += 2
+        if "urlfinder_js" in record_type_text:
+            score += 2
+        if "urlfinder_url" in record_type_text:
+            score += 3
+
+        for keyword in self._SENSITIVE_PATH_KEYWORDS:
+            if keyword in path_text:
+                score += 3
+        for keyword in self._CRITICAL_PATH_KEYWORDS:
+            if keyword in path_text:
+                score += 2
+        if path_text.count("/") >= 3:
+            score += 2
+        if any(token in query_text for token in ("id=", "token=", "kw=", "keyword=", "page=", "size=")):
+            score += 3
+        return score
+
     def _collect_targets(self) -> List[str]:
-        targets: Set[str] = set()
+        target_scores = {}
 
         for record in self.wih_records:
             record_type = str(getattr(record, "recordType", "") or "").strip().lower()
             if not record_type.startswith("urlfinder_"):
                 continue
+            source_text = str(getattr(record, "source", "") or "").strip()
 
             for candidate in (
                 str(getattr(record, "content", "") or "").strip(),
-                str(getattr(record, "source", "") or "").strip(),
+                source_text,
             ):
                 normalized = self._normalize_target_url(candidate)
                 if not normalized:
@@ -121,9 +194,15 @@ class UrlfinderSensitiveScanner:
                 if (not self.include_js) and self._is_js_url(normalized):
                     continue
 
-                targets.add(normalized)
+                score = self._score_candidate(normalized, record_type=record_type, source=source_text)
+                previous = target_scores.get(normalized)
+                if previous is None or score > previous:
+                    target_scores[normalized] = score
 
-        target_list = sorted(targets)
+        target_list = [
+            item[0]
+            for item in sorted(target_scores.items(), key=lambda item: (-int(item[1] or 0), item[0]))
+        ]
         if len(target_list) > self.max_targets:
             target_list = target_list[: self.max_targets]
 
@@ -161,6 +240,7 @@ class UrlfinderSensitiveScanner:
         start_at = time.time()
         merged_records: List[WihRecord] = []
         seen_fingerprints: Set[str] = set()
+        no_gain_batches = 0
 
         for index, batch_targets in enumerate(batches, start=1):
             elapsed = max(0.0, time.time() - start_at)
@@ -203,22 +283,43 @@ class UrlfinderSensitiveScanner:
                 )
                 continue
 
+            batch_new_records = 0
             for record in batch_records:
                 fingerprint = self._record_fingerprint(record)
                 if fingerprint in seen_fingerprints:
                     continue
                 seen_fingerprints.add(fingerprint)
                 merged_records.append(record)
+                batch_new_records += 1
+
+            if batch_new_records <= 0:
+                no_gain_batches += 1
+            else:
+                no_gain_batches = 0
 
             logger.info(
-                "urlfinder sensitive scan batch done batch:{}/{} records:{} cumulative:{} elapsed:{:.2f}s".format(
+                "urlfinder sensitive scan batch done batch:{}/{} records:{} new_records:{} cumulative:{} no_gain_batches:{} elapsed:{:.2f}s".format(
                     index,
                     len(batches),
                     len(batch_records),
+                    batch_new_records,
                     len(merged_records),
+                    no_gain_batches,
                     max(0.0, time.time() - start_at),
                 )
             )
+
+            if self.no_gain_batch_limit > 0 and no_gain_batches >= self.no_gain_batch_limit:
+                logger.info(
+                    "urlfinder sensitive scan early stop batch:{}/{} no_gain_batches:{} limit:{} cumulative:{}".format(
+                        index,
+                        len(batches),
+                        no_gain_batches,
+                        self.no_gain_batch_limit,
+                        len(merged_records),
+                    )
+                )
+                break
 
         return merged_records
 

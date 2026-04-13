@@ -128,9 +128,10 @@ _SECRET_DEBUG_RE = re.compile(r"(?i)\b(token|secret|password|authorization)\b\s*
 
 class InfoHunter(object):
     # 从JS中收集，子域名，AK SK 等信息
-    def __init__(self, sites: list):
+    def __init__(self, sites: list, prefer_fast_mode: bool = False):
         self.sites = set(sites)
         self.endpoint_results = []
+        self.prefer_fast_mode = bool(prefer_fast_mode)
 
         tmp_path = Config.TMP_PATH
         rand_str = utils.random_choices()
@@ -146,6 +147,7 @@ class InfoHunter(object):
         self.wih_concurrency = int(getattr(Config, "WIH_CONCURRENCY", 6) or 6)
         self.wih_concurrency_per_site = int(getattr(Config, "WIH_CONCURRENCY_PER_SITE", 2) or 2)
         self.wih_max_batch_size = int(getattr(Config, "WIH_MAX_BATCH_SIZE", 12) or 12)
+        self.wih_adaptive_runtime_enable = bool(getattr(Config, "WIH_ADAPTIVE_RUNTIME_ENABLE", True))
         self.wih_runtime_enable = bool(getattr(Config, "WIH_RUNTIME_ENABLE", True))
         self.wih_runtime_driver = str(getattr(Config, "WIH_RUNTIME_DRIVER", "playwright") or "playwright").strip().lower()
         self.wih_runtime_command = str(getattr(Config, "WIH_RUNTIME_COMMAND", "") or "").strip()
@@ -153,6 +155,13 @@ class InfoHunter(object):
         self.wih_runtime_max_pages = int(getattr(Config, "WIH_RUNTIME_MAX_PAGES", 12) or 12)
         self.wih_runtime_max_actions = int(getattr(Config, "WIH_RUNTIME_MAX_ACTIONS", 32) or 32)
         self.wih_runtime_max_requests = int(getattr(Config, "WIH_RUNTIME_MAX_REQUESTS", 180) or 180)
+        self.wih_light_timeout_sec = int(getattr(Config, "WIH_LIGHT_TIMEOUT_SEC", 15 * 60) or (15 * 60))
+        self.wih_light_runtime_timeout_sec = int(getattr(Config, "WIH_LIGHT_RUNTIME_TIMEOUT_SEC", 20) or 20)
+        self.wih_light_runtime_max_pages = int(getattr(Config, "WIH_LIGHT_RUNTIME_MAX_PAGES", 4) or 4)
+        self.wih_light_runtime_max_actions = int(getattr(Config, "WIH_LIGHT_RUNTIME_MAX_ACTIONS", 10) or 10)
+        self.wih_light_runtime_max_requests = int(getattr(Config, "WIH_LIGHT_RUNTIME_MAX_REQUESTS", 60) or 60)
+        self.wih_minimal_timeout_sec = int(getattr(Config, "WIH_MINIMAL_TIMEOUT_SEC", 15 * 60) or (15 * 60))
+        self.wih_minimal_runtime_enable = bool(getattr(Config, "WIH_MINIMAL_RUNTIME_ENABLE", False))
         if self.wih_timeout_sec < 60:
             self.wih_timeout_sec = 60
         if self.wih_concurrency < 1:
@@ -163,12 +172,24 @@ class InfoHunter(object):
             self.wih_max_batch_size = 12
         if self.wih_runtime_timeout_sec < 1:
             self.wih_runtime_timeout_sec = 60
+        if self.wih_light_timeout_sec < 60:
+            self.wih_light_timeout_sec = 60
+        if self.wih_light_runtime_timeout_sec < 1:
+            self.wih_light_runtime_timeout_sec = 20
         if self.wih_runtime_max_pages < 1:
             self.wih_runtime_max_pages = 1
+        if self.wih_light_runtime_max_pages < 1:
+            self.wih_light_runtime_max_pages = 1
         if self.wih_runtime_max_actions < 0:
             self.wih_runtime_max_actions = 0
+        if self.wih_light_runtime_max_actions < 0:
+            self.wih_light_runtime_max_actions = 0
         if self.wih_runtime_max_requests < 1:
             self.wih_runtime_max_requests = 1
+        if self.wih_light_runtime_max_requests < 1:
+            self.wih_light_runtime_max_requests = 1
+        if self.wih_minimal_timeout_sec < 60:
+            self.wih_minimal_timeout_sec = 60
         if self.wih_runtime_driver not in {"playwright", "external", "noop"}:
             self.wih_runtime_driver = "playwright"
         self._help_text = None
@@ -899,11 +920,113 @@ class InfoHunter(object):
         with open(self.wih_result_path, "w", encoding="utf-8") as f:
             f.write(merged_text)
 
-    def _run_wih_command(self, command: list, batch_sites: list, command_name: str):
+    def _build_runtime_profile(self, profile_name: str = "full") -> dict:
+        normalized_name = str(profile_name or "full").strip().lower()
+        runtime_enable = bool(self.wih_runtime_enable)
+
+        profile = {
+            "name": "full",
+            "timeout_sec": self.wih_timeout_sec,
+            "runtime_enable": runtime_enable,
+            "runtime_driver": self.wih_runtime_driver if runtime_enable else "noop",
+            "runtime_command": self.wih_runtime_command if runtime_enable else "",
+            "runtime_timeout_sec": self.wih_runtime_timeout_sec,
+            "runtime_max_pages": self.wih_runtime_max_pages,
+            "runtime_max_actions": self.wih_runtime_max_actions,
+            "runtime_max_requests": self.wih_runtime_max_requests,
+            "minimal": False,
+        }
+
+        if normalized_name == "light":
+            profile.update({
+                "name": "light",
+                "timeout_sec": min(self.wih_timeout_sec, self.wih_light_timeout_sec),
+                "runtime_enable": runtime_enable,
+                "runtime_driver": self.wih_runtime_driver if runtime_enable else "noop",
+                "runtime_command": self.wih_runtime_command if runtime_enable else "",
+                "runtime_timeout_sec": self.wih_light_runtime_timeout_sec,
+                "runtime_max_pages": self.wih_light_runtime_max_pages,
+                "runtime_max_actions": self.wih_light_runtime_max_actions,
+                "runtime_max_requests": self.wih_light_runtime_max_requests,
+            })
+        elif normalized_name == "minimal":
+            minimal_runtime_enable = bool(self.wih_runtime_enable and self.wih_minimal_runtime_enable)
+            profile.update({
+                "name": "minimal",
+                "timeout_sec": min(self.wih_timeout_sec, self.wih_minimal_timeout_sec),
+                "runtime_enable": minimal_runtime_enable,
+                "runtime_driver": self.wih_runtime_driver if minimal_runtime_enable else "noop",
+                "runtime_command": self.wih_runtime_command if minimal_runtime_enable else "",
+                "runtime_timeout_sec": min(self.wih_runtime_timeout_sec, self.wih_light_runtime_timeout_sec),
+                "runtime_max_pages": min(self.wih_runtime_max_pages, self.wih_light_runtime_max_pages),
+                "runtime_max_actions": min(self.wih_runtime_max_actions, self.wih_light_runtime_max_actions),
+                "runtime_max_requests": min(self.wih_runtime_max_requests, self.wih_light_runtime_max_requests),
+                "minimal": True,
+            })
+
+        return profile
+
+    def _select_primary_profile_name(self, batch_sites: list, depth: int = 0) -> str:
+        if not self.prefer_fast_mode:
+            return "full"
+        if not self.wih_adaptive_runtime_enable:
+            return "full"
+        if depth > 1:
+            return "full"
+        if len(list(batch_sites or [])) <= 0:
+            return "full"
+        return "light"
+
+    def _summarize_payload(self, raw_text: str) -> dict:
+        payload_items, invalid_items = self._parse_wih_payload_items(raw_text)
+        record_count = 0
+        endpoint_count = 0
+        completed_sites = self._extract_result_sites(payload_items)
+        for item in list(payload_items or []):
+            if not isinstance(item, dict):
+                continue
+            endpoints = item.get("endpoints")
+            if isinstance(endpoints, list):
+                endpoint_count += len(endpoints)
+
+            records = item.get("records")
+            if not isinstance(records, list):
+                records = item.get("result")
+            if not isinstance(records, list):
+                records = item.get("results")
+            if isinstance(records, list):
+                record_count += len(records)
+
+        return {
+            "payload_items": payload_items,
+            "invalid_items": invalid_items,
+            "completed_sites": completed_sites,
+            "record_count": record_count,
+            "endpoint_count": endpoint_count,
+        }
+
+    def _should_escalate_light_result(self, raw_text: str, batch_sites: list) -> bool:
+        summary = self._summarize_payload(raw_text)
+        site_count = max(1, len(list(batch_sites or [])))
+        completed_sites = summary.get("completed_sites", []) or []
+        record_count = int(summary.get("record_count", 0) or 0)
+        endpoint_count = int(summary.get("endpoint_count", 0) or 0)
+
+        if len(completed_sites) < site_count:
+            return True
+        if endpoint_count > 0:
+            return False
+
+        # 轻量 runtime 只在结果足够“厚”时直接接受，避免周期任务为了提速把稀疏站点过早放行。
+        min_record_threshold = max(8, site_count * 6)
+        return record_count < min_record_threshold
+
+    def _run_wih_command(self, command: list, batch_sites: list, command_name: str, timeout_sec: int = None):
+        effective_timeout = max(60, int(timeout_sec or self.wih_timeout_sec))
         try:
             completed = utils.exec_system(
                 command,
-                timeout=self.wih_timeout_sec,
+                timeout=effective_timeout,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
@@ -911,7 +1034,7 @@ class InfoHunter(object):
             logger.warning(
                 "wih {} timeout:{}s batch_sites:{} cmd:{}".format(
                     command_name,
-                    self.wih_timeout_sec,
+                    effective_timeout,
                     len(list(batch_sites or [])),
                     " ".join(command),
                 )
@@ -972,96 +1095,138 @@ class InfoHunter(object):
             "error": "",
         }
 
+    def _execute_profile_once(self, batch_sites: list, aggregate_result_texts: list, depth: int, profile_name: str, stage_name: str) -> dict:
+        current_sites = [str(site or "").strip() for site in list(batch_sites or []) if str(site or "").strip()]
+        if not current_sites:
+            return {
+                "ok": False,
+                "timed_out": False,
+                "partial_saved": False,
+                "remaining_sites": [],
+                "raw_text": "",
+                "profile": self._build_runtime_profile(profile_name),
+            }
+
+        profile = self._build_runtime_profile(profile_name)
+        self._clear_result_file()
+        self._get_target_file(current_sites)
+
+        command = self._build_command(runtime_profile=profile)
+        logger.info(
+            "run wih batch stage:{} depth:{} sites:{} timeout:{}s concurrency:{} per_site:{} runtime:{} cmd:{}".format(
+                stage_name,
+                depth,
+                len(current_sites),
+                profile["timeout_sec"],
+                self.wih_concurrency,
+                self.wih_concurrency_per_site,
+                profile["runtime_enable"],
+                " ".join(command),
+            )
+        )
+        result = self._run_wih_command(
+            command,
+            current_sites,
+            stage_name,
+            timeout_sec=profile["timeout_sec"],
+        )
+        if result.get("ok"):
+            raw_text = self._read_current_result_text()
+            return {
+                "ok": True,
+                "timed_out": False,
+                "partial_saved": False,
+                "remaining_sites": [],
+                "raw_text": raw_text,
+                "profile": profile,
+            }
+
+        partial_saved = False
+        remaining_sites = list(current_sites)
+        if result.get("timed_out"):
+            completed_sites = self._salvage_partial_batch_results(
+                aggregate_result_texts,
+                current_sites,
+                depth,
+                stage_name,
+            )
+            if completed_sites:
+                partial_saved = True
+                completed_site_set = set(completed_sites)
+                remaining_sites = [site for site in current_sites if site not in completed_site_set]
+                logger.info(
+                    "wih {} timeout salvage depth:{} remaining_sites:{} completed_sites:{}".format(
+                        stage_name,
+                        depth,
+                        len(remaining_sites),
+                        len(completed_sites),
+                    )
+                )
+
+        return {
+            "ok": False,
+            "timed_out": bool(result.get("timed_out")),
+            "partial_saved": partial_saved,
+            "remaining_sites": remaining_sites,
+            "raw_text": "",
+            "profile": profile,
+        }
+
     def _exec_wih_batch(self, batch_sites: list, aggregate_result_texts: list, depth: int = 0) -> bool:
         current_sites = [str(site or "").strip() for site in list(batch_sites or []) if str(site or "").strip()]
         if not current_sites:
             return False
 
-        self._clear_result_file()
-        self._get_target_file(current_sites)
-
-        command = self._build_command(minimal=False)
-        logger.info(
-            "run wih batch depth:{} sites:{} timeout:{}s concurrency:{} per_site:{} cmd:{}".format(
-                depth,
-                len(current_sites),
-                self.wih_timeout_sec,
-                self.wih_concurrency,
-                self.wih_concurrency_per_site,
-                " ".join(command),
-            )
-        )
-        primary = self._run_wih_command(command, current_sites, "primary")
-        if primary.get("ok"):
-            raw_text = self._read_current_result_text()
-            if raw_text:
-                aggregate_result_texts.append(raw_text)
-            return True
-
         partial_saved = False
-        if primary.get("timed_out"):
-            completed_sites = self._salvage_partial_batch_results(
-                aggregate_result_texts,
-                current_sites,
-                depth,
-                "primary",
-            )
-            if completed_sites:
-                partial_saved = True
-                completed_site_set = set(completed_sites)
-                current_sites = [site for site in current_sites if site not in completed_site_set]
+        primary_sites = list(current_sites)
+        primary_profile_name = self._select_primary_profile_name(primary_sites, depth=depth)
+        primary_stage_name = "primary" if primary_profile_name == "full" else "primary_{}".format(primary_profile_name)
+        primary = self._execute_profile_once(primary_sites, aggregate_result_texts, depth, primary_profile_name, primary_stage_name)
+        if primary.get("ok"):
+            if primary_profile_name == "light" and self._should_escalate_light_result(primary.get("raw_text", ""), primary_sites):
                 logger.info(
-                    "wih primary timeout salvage depth:{} remaining_sites:{} completed_sites:{}".format(
+                    "wih light result thin, escalate to full depth:{} sites:{}".format(
                         depth,
-                        len(current_sites),
-                        len(completed_sites),
+                        len(primary_sites),
                     )
                 )
-            if not current_sites:
+                light_raw_text = str(primary.get("raw_text", "") or "").strip()
+                primary = self._execute_profile_once(primary_sites, aggregate_result_texts, depth, "full", "primary_escalated")
+                if (not primary.get("ok")) and light_raw_text:
+                    aggregate_result_texts.append(light_raw_text)
+                    partial_saved = True
+            else:
+                if primary.get("raw_text"):
+                    aggregate_result_texts.append(primary["raw_text"])
                 return True
+
+        partial_saved = bool(partial_saved or primary.get("partial_saved"))
+        current_sites = [str(site or "").strip() for site in list(primary.get("remaining_sites", []) or []) if str(site or "").strip()]
+        if primary.get("ok"):
+            if primary.get("raw_text"):
+                aggregate_result_texts.append(primary["raw_text"])
+            return True
+        if not current_sites:
+            return partial_saved
+        if primary.get("timed_out"):
             if len(current_sites) > 1:
                 mid = max(1, len(current_sites) // 2)
                 left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
                 right_ok = self._exec_wih_batch(current_sites[mid:], aggregate_result_texts, depth=depth + 1)
                 return bool(partial_saved or left_ok or right_ok)
-            self._clear_result_file()
-            self._get_target_file(current_sites)
 
-        fallback_command = self._build_command(minimal=True)
-        logger.info(
-            "retry wih batch minimal depth:{} sites:{} cmd:{}".format(
-                depth,
-                len(current_sites),
-                " ".join(fallback_command),
-            )
-        )
-        fallback = self._run_wih_command(fallback_command, current_sites, "minimal")
+        fallback = self._execute_profile_once(current_sites, aggregate_result_texts, depth, "minimal", "minimal")
+        partial_saved = bool(primary.get("partial_saved")) or bool(fallback.get("partial_saved"))
         if fallback.get("ok"):
-            raw_text = self._read_current_result_text()
-            if raw_text:
-                aggregate_result_texts.append(raw_text)
+            if fallback.get("raw_text"):
+                aggregate_result_texts.append(fallback["raw_text"])
             return True
 
+        current_sites = [str(site or "").strip() for site in list(fallback.get("remaining_sites", []) or []) if str(site or "").strip()]
+        if not current_sites:
+            return partial_saved
+
         if fallback.get("timed_out"):
-            completed_sites = self._salvage_partial_batch_results(
-                aggregate_result_texts,
-                current_sites,
-                depth,
-                "minimal",
-            )
-            if completed_sites:
-                partial_saved = True
-                completed_site_set = set(completed_sites)
-                current_sites = [site for site in current_sites if site not in completed_site_set]
-                logger.info(
-                    "wih minimal timeout salvage depth:{} remaining_sites:{} completed_sites:{}".format(
-                        depth,
-                        len(current_sites),
-                        len(completed_sites),
-                    )
-                )
-            if not current_sites:
-                return True
             if len(current_sites) > 1:
                 mid = max(1, len(current_sites) // 2)
                 left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
@@ -1153,7 +1318,8 @@ class InfoHunter(object):
 
         return ""
 
-    def _build_command(self, minimal=False) -> list:
+    def _build_command(self, minimal=False, runtime_profile: dict = None) -> list:
+        profile = runtime_profile or self._build_runtime_profile("minimal" if minimal else "full")
         command = [
             self.wih_bin_path,
             "-J",
@@ -1165,25 +1331,25 @@ class InfoHunter(object):
 
         self._append_wih_control_flags(command)
         if self._supports_flag("--runtime-enable"):
-            command.append("--runtime-enable={}".format("true" if self.wih_runtime_enable else "false"))
+            command.append("--runtime-enable={}".format("true" if profile["runtime_enable"] else "false"))
 
         if self._supports_flag("--runtime-driver"):
-            runtime_driver = self.wih_runtime_driver if self.wih_runtime_enable else "noop"
+            runtime_driver = profile["runtime_driver"] if profile["runtime_enable"] else "noop"
             command.extend(["--runtime-driver", runtime_driver])
 
-        if self.wih_runtime_enable:
-            if self._supports_flag("--runtime-command") and self.wih_runtime_command:
-                command.extend(["--runtime-command", self.wih_runtime_command])
+        if profile["runtime_enable"]:
+            if self._supports_flag("--runtime-command") and profile["runtime_command"]:
+                command.extend(["--runtime-command", profile["runtime_command"]])
             if self._supports_flag("--runtime-timeout"):
-                command.extend(["--runtime-timeout", str(self.wih_runtime_timeout_sec)])
+                command.extend(["--runtime-timeout", str(profile["runtime_timeout_sec"])])
             if self._supports_flag("--runtime-max-pages"):
-                command.extend(["--runtime-max-pages", str(self.wih_runtime_max_pages)])
+                command.extend(["--runtime-max-pages", str(profile["runtime_max_pages"])])
             if self._supports_flag("--runtime-max-actions"):
-                command.extend(["--runtime-max-actions", str(self.wih_runtime_max_actions)])
+                command.extend(["--runtime-max-actions", str(profile["runtime_max_actions"])])
             if self._supports_flag("--runtime-max-requests"):
-                command.extend(["--runtime-max-requests", str(self.wih_runtime_max_requests)])
+                command.extend(["--runtime-max-requests", str(profile["runtime_max_requests"])])
 
-        if minimal:
+        if minimal or profile.get("minimal", False):
             return command
 
         rule_path = self._resolve_rule_path()
@@ -1396,9 +1562,9 @@ class InfoHunter(object):
             self._delete_file()
 
 
-def run_wih(sites: List[str], include_endpoints: bool = False):
-    logger.info("run webInfoHunter, sites: {}".format(len(sites)))
-    hunter = InfoHunter(sites)
+def run_wih(sites: List[str], include_endpoints: bool = False, prefer_fast_mode: bool = False):
+    logger.info("run webInfoHunter, sites: {} prefer_fast_mode:{}".format(len(sites), bool(prefer_fast_mode)))
+    hunter = InfoHunter(sites, prefer_fast_mode=prefer_fast_mode)
     results = hunter.run()
 
     logger.info("webInfoHunter result: {}".format(len(results)))

@@ -79,19 +79,22 @@ recover_interrupted_tasks() {
 output="$(PYTHONPATH=/code python3 - <<'PY' 2>/dev/null || true
 from app import celerytask, utils
 
-interrupted_result = utils.recover_interrupted_tasks_on_worker_start()
+live_task_id_set, _ = celerytask._collect_live_celery_task_ids(timeout_sec=1.5)
+interrupted_result = utils.recover_interrupted_tasks_on_worker_start(live_task_id_set=live_task_id_set)
 requeue_waiting_result = celerytask.requeue_orphan_waiting_tasks_on_worker_start()
 orphan_waiting_result = celerytask.recover_orphan_waiting_tasks_on_worker_start()
 task_count = int((interrupted_result or {}).get("task", 0) or 0)
 github_count = int((interrupted_result or {}).get("github_task", 0) or 0)
+live_skip = int((interrupted_result or {}).get("live_skip", 0) or 0)
 requeue_task_count = int((requeue_waiting_result or {}).get("task", 0) or 0)
 requeue_github_count = int((requeue_waiting_result or {}).get("github_task", 0) or 0)
 orphan_task_count = int((orphan_waiting_result or {}).get("task", 0) or 0)
 orphan_github_count = int((orphan_waiting_result or {}).get("github_task", 0) or 0)
 print(
-    "recover interrupted tasks task={} github_task={} requeue_waiting_task={} requeue_waiting_github_task={} orphan_waiting_task={} orphan_waiting_github_task={}".format(
+    "recover interrupted tasks task={} github_task={} live_skip={} requeue_waiting_task={} requeue_waiting_github_task={} orphan_waiting_task={} orphan_waiting_github_task={}".format(
         task_count,
         github_count,
+        live_skip,
         requeue_task_count,
         requeue_github_count,
         orphan_task_count,

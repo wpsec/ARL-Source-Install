@@ -750,6 +750,7 @@ def mark_task_interrupted(signum):
 def recover_interrupted_tasks_on_worker_start(
     reason="worker restarted before task finished",
     max_logs=20,
+    live_task_id_set=None,
 ):
     """
     Worker 启动时恢复中断任务，避免任务长期卡在中间状态。
@@ -762,6 +763,11 @@ def recover_interrupted_tasks_on_worker_start(
     logger = get_logger()
     now = curr_date()
     safe_max_logs = max(1, int(max_logs))
+    live_ids = {
+        str(item or "").strip()
+        for item in list(live_task_id_set or [])
+        if str(item or "").strip()
+    }
 
     detail = {
         "time": now,
@@ -787,11 +793,18 @@ def recover_interrupted_tasks_on_worker_start(
         "status": {"$nin": ["waiting", "done", "stop", "error"]},
         "start_time": {"$nin": ["", "-"]},
     }
+    if live_ids:
+        query["$or"] = [
+            {"celery_id": {"$in": ["", None]}},
+            {"celery_id": {"$nin": list(live_ids)}},
+        ]
 
     result = {
         "task": 0,
         "github_task": 0,
     }
+    if live_ids:
+        result["live_skip"] = len(live_ids)
     for collection in ["task", "github_task"]:
         try:
             db_result = conn_db(collection).update_many(query, update)
@@ -805,8 +818,8 @@ def recover_interrupted_tasks_on_worker_start(
 
     if result["task"] or result["github_task"]:
         logger.warning(
-            "recover interrupted tasks on worker start task:{} github_task:{} reason:{}".format(
-                result["task"], result["github_task"], reason
+            "recover interrupted tasks on worker start task:{} github_task:{} live_skip:{} reason:{}".format(
+                result["task"], result["github_task"], int(result.get("live_skip", 0) or 0), reason
             )
         )
     else:

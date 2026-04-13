@@ -502,6 +502,28 @@ ARL:
   WIH_CONCURRENCY_PER_SITE: 2
   # WIH 单批最大站点数，避免超时后把大批次整批重跑
   WIH_MAX_BATCH_SIZE: 12
+  # 是否启用周期任务 WIH 结果复用骨架（第一阶段默认关闭，灰度后再打开）
+  WIH_PERIODIC_REUSE_ENABLE: false
+  # 查找可复用上一轮任务时，最多回看多少条同目标任务
+  WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS: 5
+  # 是否输出周期任务 WIH 复用详细日志
+  WIH_PERIODIC_REUSE_LOG_DETAIL: true
+  # 周期任务是否优先使用轻量 runtime，再按结果保守升级到完整预算
+  WIH_ADAPTIVE_RUNTIME_ENABLE: true
+  # 周期任务轻量 runtime 的进程级超时（秒）
+  WIH_LIGHT_TIMEOUT_SEC: 900
+  # 轻量 runtime 单页超时（秒）
+  WIH_LIGHT_RUNTIME_TIMEOUT_SEC: 20
+  # 轻量 runtime 最大页面数
+  WIH_LIGHT_RUNTIME_MAX_PAGES: 4
+  # 轻量 runtime 最大交互动作数
+  WIH_LIGHT_RUNTIME_MAX_ACTIONS: 10
+  # 轻量 runtime 最大请求采集数
+  WIH_LIGHT_RUNTIME_MAX_REQUESTS: 60
+  # WIH minimal 回退阶段进程级超时（秒）
+  WIH_MINIMAL_TIMEOUT_SEC: 900
+  # WIH minimal 回退是否保留 runtime（默认关闭，避免 fallback 继续重扫动态链路）
+  WIH_MINIMAL_RUNTIME_ENABLE: false
   # WIH 接口 AI 填充单次最多处理接口数
   WIH_ENDPOINT_AI_FILL_MAX_TARGETS: 200
   # WIH 接口 AI 填充并发
@@ -526,6 +548,8 @@ ARL:
   WIH_RUNTIME_MAX_ACTIONS: 32
   # WIH 运行时最大请求采集数
   WIH_RUNTIME_MAX_REQUESTS: 180
+  # URLFinder 二次敏感扫描连续无新增批次数上限（0=不提前止损）
+  URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT: 2
 
   # Web Gunicorn worker 数（默认按高性能预设）
   WEB_GUNICORN_WORKERS: 6

@@ -44,6 +44,7 @@ def _load_info_hunter_module():
             "WIH_CONCURRENCY": 6,
             "WIH_CONCURRENCY_PER_SITE": 2,
             "WIH_MAX_BATCH_SIZE": 12,
+            "WIH_ADAPTIVE_RUNTIME_ENABLE": True,
             "WIH_RUNTIME_ENABLE": True,
             "WIH_RUNTIME_DRIVER": "playwright",
             "WIH_RUNTIME_COMMAND": "",
@@ -51,6 +52,13 @@ def _load_info_hunter_module():
             "WIH_RUNTIME_MAX_PAGES": 12,
             "WIH_RUNTIME_MAX_ACTIONS": 32,
             "WIH_RUNTIME_MAX_REQUESTS": 180,
+            "WIH_LIGHT_TIMEOUT_SEC": 900,
+            "WIH_LIGHT_RUNTIME_TIMEOUT_SEC": 20,
+            "WIH_LIGHT_RUNTIME_MAX_PAGES": 4,
+            "WIH_LIGHT_RUNTIME_MAX_ACTIONS": 10,
+            "WIH_LIGHT_RUNTIME_MAX_REQUESTS": 60,
+            "WIH_MINIMAL_TIMEOUT_SEC": 900,
+            "WIH_MINIMAL_RUNTIME_ENABLE": False,
             "WIH_RULE_PATH": "",
             "PROXY_URL": "",
         },
@@ -190,8 +198,38 @@ class TestWihTimeoutSplit(unittest.TestCase):
 
         minimal_command = hunter._build_command(minimal=True)
         self.assertIn("--disable-structured-output", minimal_command)
-        self.assertIn("--runtime-enable=true", minimal_command)
+        self.assertIn("--runtime-enable=false", minimal_command)
         self.assertIn("--runtime-driver", minimal_command)
+        self.assertIn("noop", minimal_command)
+        self.assertNotIn("--runtime-max-pages", minimal_command)
+
+    def test_build_command_light_profile_uses_smaller_runtime_budget(self):
+        hunter = InfoHunter(["https://a.example.com"], prefer_fast_mode=True)
+        hunter._supports_flag = lambda flag_text: flag_text in {
+            "--concurrency",
+            "--concurrency-per-site",
+            "--log-level",
+            "--disable-ak-sk-output",
+            "--disable-structured-output",
+            "--runtime-enable",
+            "--runtime-driver",
+            "--runtime-timeout",
+            "--runtime-max-pages",
+            "--runtime-max-actions",
+            "--runtime-max-requests",
+        }
+
+        light_command = hunter._build_command(runtime_profile=hunter._build_runtime_profile("light"))
+
+        self.assertIn("--runtime-enable=true", light_command)
+        self.assertIn("--runtime-timeout", light_command)
+        self.assertIn("20", light_command)
+        self.assertIn("--runtime-max-pages", light_command)
+        self.assertIn("4", light_command)
+        self.assertIn("--runtime-max-actions", light_command)
+        self.assertIn("10", light_command)
+        self.assertIn("--runtime-max-requests", light_command)
+        self.assertIn("60", light_command)
 
     def test_normalize_wih_record_collapses_secret_duplicates_across_same_site_pages(self):
         record_a = types.SimpleNamespace(

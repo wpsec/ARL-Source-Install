@@ -29,6 +29,7 @@ RUN_PUSH_ERROR = "error"
 RUN_PUSH_SKIP = "skip"
 RUN_MISSING_RETRY_MAX = 8
 RUN_FINALIZE_GRACE_SEC = 300
+RUN_RECHECK_TERMINAL_GRACE_SEC = 24 * 60 * 60
 
 
 def task_scheduler():
@@ -111,6 +112,9 @@ def submit_task_schedule(item):
 
     # 标记来源为计划任务，避免普通任务完成通知重复推送
     options["from_task_schedule"] = True
+    options["task_schedule_id"] = str(item.get("_id", "") or "")
+    options["task_schedule_name"] = str(item.get("name", "") or "")
+    options["task_schedule_run_number"] = int(item.get("run_number", 0) or 0) + 1
     # 计划任务统一由 run 级别发送聚合通知，子任务不再单独推送钉钉
     options["dingding_notify"] = False
 
@@ -435,6 +439,17 @@ def should_push_schedule_run(notify_on, run_status):
     return run_status == RUN_STATUS_FINISHED
 
 
+def should_push_schedule_run_kb(run_status):
+    """
+    判断当前执行实例是否需要写入知识库。
+
+    说明：
+    - 知识库侧更适合作为“本轮结果快照”，不再与 notify_on 绑定。
+    - 只要执行实例已结束（finished / error）就允许写入，避免长任务中途误判后永久错过。
+    """
+    return str(run_status or "").lower() in [RUN_STATUS_FINISHED, RUN_STATUS_ERROR]
+
+
 def _build_kb_partial_summary(run_item):
     """
     构建知识库部分写入的提示文案。
@@ -578,9 +593,21 @@ def process_task_schedule_runs():
     - 全部完成后按配置触发钉钉推送
     - 将推送结果回写到 run 记录，避免重复推送
     """
-    query = {"status": RUN_STATUS_RUNNING}
+    now_ts = int(time.time())
+    query = {
+        "$or": [
+            {"status": RUN_STATUS_RUNNING},
+            {
+                "status": {"$in": [RUN_STATUS_ERROR, RUN_STATUS_FINISHED]},
+                "notify_kb_enable": True,
+                "kb_push_status": {"$in": [RUN_PUSH_PENDING, RUN_PUSH_SKIP]},
+                "end_time": {"$gte": now_ts - RUN_RECHECK_TERMINAL_GRACE_SEC},
+            },
+        ]
+    }
     run_items = list(utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find(query))
     for run_item in run_items:
+        previous_status = str(run_item.get("status", "") or "").lower()
         task_ids = run_item.get("task_ids", [])
         summary = build_schedule_run_summary(task_ids)
         run_item["summary"] = summary
@@ -620,16 +647,25 @@ def process_task_schedule_runs():
         run_item["end_time"] = int(time.time())
         run_item["end_date"] = utils.curr_date()
         run_item["compare_summary"] = build_schedule_run_compare_summary(run_item)
+        if previous_status and previous_status != run_item["status"]:
+            logger.info(
+                "task schedule run {} status corrected {} -> {}".format(
+                    str(run_item.get("_id", "")),
+                    previous_status,
+                    run_item["status"],
+                )
+            )
 
         notify_enable = bool(run_item.get("notify_enable", False))
         notify_channel = str(run_item.get("notify_channel", "dingding") or "dingding").lower()
         notify_on = run_item.get("notify_on", "finished")
         should_push = should_push_schedule_run(notify_on, run_item["status"])
+        should_push_kb = should_push_schedule_run_kb(run_item["status"])
 
         # 钉钉知识库推送（优先执行，便于在群通知中附带知识库链接）
         run_item["kb_push_status"] = RUN_PUSH_SKIP
         notify_kb_enable = bool(run_item.get("notify_kb_enable", False))
-        if notify_kb_enable and should_push:
+        if notify_kb_enable and should_push_kb:
             run_item["kb_push_status"] = RUN_PUSH_ERROR
             report_title = build_schedule_run_kb_title(run_item)
             markdown_report = build_schedule_run_markdown(run_item)
@@ -695,6 +731,13 @@ def process_task_schedule_runs():
                         run_item.get("kb_push_error", ""),
                     )
                 )
+        elif notify_kb_enable and not should_push_kb:
+            logger.info(
+                "task schedule run {} skip kb push by run_status:{}".format(
+                    str(run_item.get("_id", "")),
+                    run_item.get("status", ""),
+                )
+            )
 
         # 聚合通知：每轮计划任务仅推送一次
         run_item["push_status"] = RUN_PUSH_SKIP
