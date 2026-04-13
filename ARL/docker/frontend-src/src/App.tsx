@@ -10764,10 +10764,10 @@ function TableModuleView({
   return (
     <div ref={tableRootRef} className="p-8 space-y-6">
       {success ? (
-        <div className="fixed top-5 right-5 z-[80] pointer-events-none">
-          <div className="inline-flex max-w-[26rem] items-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-400/12 px-4 py-3 text-sm font-semibold text-emerald-200 shadow-xl shadow-black/20 backdrop-blur-sm">
+        <div className="fixed inset-x-0 top-5 z-[80] flex justify-center px-4 pointer-events-none">
+          <div className="inline-flex w-full max-w-[30rem] items-center justify-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-400/12 px-4 py-3 text-sm font-semibold text-emerald-200 shadow-xl shadow-black/20 backdrop-blur-sm">
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" />
-            <span className="whitespace-pre-wrap break-all leading-relaxed">{success}</span>
+            <span className="whitespace-pre-wrap break-all text-center leading-relaxed">{success}</span>
           </div>
         </div>
       ) : null}
@@ -21600,6 +21600,15 @@ function DingtalkIntegrationView({ token }: { token: string }) {
 
   type DingtalkBoolKey = 'kb_enable' | 'ssl_cert_notify_enable';
   type DingtalkStringKey = Exclude<keyof DingtalkConfigForm, DingtalkBoolKey | 'kb_timeout' | 'ssl_cert_notify_days'>;
+  type DingtalkSensitiveStringKey =
+    | 'dingding_access_token'
+    | 'dingding_secret'
+    | 'corp_id'
+    | 'app_key'
+    | 'app_secret'
+    | 'operator_id'
+    | 'workspace_id'
+    | 'parent_node_id';
 
   const defaultForm: DingtalkConfigForm = {
     dingding_access_token: '',
@@ -21632,6 +21641,38 @@ function DingtalkIntegrationView({ token }: { token: string }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [debugResult, setDebugResult] = useState('');
+  const [sensitiveVisible, setSensitiveVisible] = useState(false);
+  const [sensitiveVerifyDialogOpen, setSensitiveVerifyDialogOpen] = useState(false);
+  const [sensitiveVerifyUsername, setSensitiveVerifyUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || '');
+  const [sensitiveVerifyPassword, setSensitiveVerifyPassword] = useState('');
+  const [sensitiveVerifyLoading, setSensitiveVerifyLoading] = useState(false);
+  const [sensitiveVerifyError, setSensitiveVerifyError] = useState('');
+  const [sensitiveEditingFieldSet, setSensitiveEditingFieldSet] = useState<Set<DingtalkSensitiveStringKey>>(new Set());
+  const [sensitiveConfiguredMap, setSensitiveConfiguredMap] = useState<Partial<Record<DingtalkSensitiveStringKey, boolean>>>({});
+
+  const sensitiveFieldSet = useMemo(
+    () =>
+      new Set<DingtalkSensitiveStringKey>([
+        'dingding_access_token',
+        'dingding_secret',
+        'corp_id',
+        'app_key',
+        'app_secret',
+        'operator_id',
+        'workspace_id',
+        'parent_node_id',
+      ]),
+    []
+  );
+
+  const resetSensitiveState = useCallback(() => {
+    setSensitiveVisible(false);
+    setSensitiveVerifyDialogOpen(false);
+    setSensitiveVerifyPassword('');
+    setSensitiveVerifyError('');
+    setSensitiveVerifyLoading(false);
+    setSensitiveEditingFieldSet(new Set());
+  }, []);
 
   const normalizeForm = useCallback((rawValue: any): DingtalkConfigForm => {
     const raw = rawValue || {};
@@ -21657,7 +21698,17 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     };
   }, []);
 
+  const normalizeSensitiveConfigured = useCallback((rawValue: any) => {
+    const raw = rawValue && typeof rawValue === 'object' ? rawValue : {};
+    const normalized: Partial<Record<DingtalkSensitiveStringKey, boolean>> = {};
+    sensitiveFieldSet.forEach((fieldKey) => {
+      normalized[fieldKey] = Boolean((raw as Record<string, any>)?.[fieldKey]);
+    });
+    return normalized;
+  }, [sensitiveFieldSet]);
+
   const loadDingtalkConfig = useCallback(async () => {
+    resetSensitiveState();
     setLoading(true);
     setError('');
     setSuccess('');
@@ -21665,21 +21716,31 @@ function DingtalkIntegrationView({ token }: { token: string }) {
       const result = await requestApi(token, '/dingtalk_api/config/', { method: 'GET' });
       const data = result?.data || {};
       setForm(normalizeForm(data?.config));
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
       setRuntimeStatus(data?.runtime_status || {});
       setConfigPath(String(data.config_path || ''));
       setUpdatedAt(String(data.updated_at || ''));
+      setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
     } catch (err: any) {
       setError(err?.message || '加载钉钉集成配置失败');
     } finally {
       setLoading(false);
     }
-  }, [token, normalizeForm]);
+  }, [token, normalizeForm, normalizeSensitiveConfigured, resetSensitiveState]);
 
   useEffect(() => {
     void loadDingtalkConfig();
   }, [loadDingtalkConfig]);
 
   const updateStringField = (key: DingtalkStringKey, value: string) => {
+    if (sensitiveFieldSet.has(key as DingtalkSensitiveStringKey)) {
+      setSensitiveEditingFieldSet((prev) => {
+        if (prev.has(key as DingtalkSensitiveStringKey)) return prev;
+        const next = new Set(prev);
+        next.add(key as DingtalkSensitiveStringKey);
+        return next;
+      });
+    }
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -21693,6 +21754,82 @@ function DingtalkIntegrationView({ token }: { token: string }) {
 
   const updateSslNotifyDays = (value: string) => {
     setForm((prev) => ({ ...prev, ssl_cert_notify_days: Number(value || 0) }));
+  };
+
+  const buildDingtalkPayload = useCallback((currentForm: DingtalkConfigForm) => {
+    const payload: Record<string, any> = {
+      ...currentForm,
+      base_url: currentForm.base_url.trim(),
+      create_node_path: currentForm.create_node_path.trim(),
+      kb_timeout: Math.floor(currentForm.kb_timeout),
+      ssl_cert_notify_days: Math.floor(currentForm.ssl_cert_notify_days),
+      title_prefix: currentForm.title_prefix.trim(),
+      report_base_url: currentForm.report_base_url.trim(),
+    };
+    sensitiveFieldSet.forEach((fieldKey) => {
+      if (sensitiveEditingFieldSet.has(fieldKey)) {
+        payload[fieldKey] = String(currentForm[fieldKey] || '').trim();
+        return;
+      }
+      delete payload[fieldKey];
+    });
+    return payload;
+  }, [sensitiveEditingFieldSet, sensitiveFieldSet]);
+
+  const getSensitiveInputMeta = useCallback(
+    (fieldKey: DingtalkSensitiveStringKey, fallbackPlaceholder: string) => {
+      const isEditing = sensitiveEditingFieldSet.has(fieldKey);
+      const configured = Boolean(sensitiveConfiguredMap[fieldKey]);
+      const showRaw = sensitiveVisible || isEditing;
+      return {
+        type: showRaw ? 'text' : 'password',
+        placeholder: configured && !showRaw ? '已配置（留空保持不变，输入新值将覆盖）' : fallbackPlaceholder,
+        configuredHidden: configured && !showRaw,
+      };
+    },
+    [sensitiveConfiguredMap, sensitiveEditingFieldSet, sensitiveVisible]
+  );
+
+  const toggleSensitiveDisplay = () => {
+    if (sensitiveVisible) {
+      void loadDingtalkConfig();
+      return;
+    }
+    setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
+    setSensitiveVerifyPassword('');
+    setSensitiveVerifyError('');
+    setSensitiveVerifyDialogOpen(true);
+  };
+
+  const verifySensitiveDisplay = async () => {
+    if (!sensitiveVerifyUsername.trim() || !sensitiveVerifyPassword) {
+      setSensitiveVerifyError('请输入登录账号和密码');
+      return;
+    }
+    setSensitiveVerifyLoading(true);
+    setSensitiveVerifyError('');
+    setError('');
+    try {
+      const result = await requestApi(token, '/dingtalk_api/reveal/', {
+        method: 'POST',
+        body: {
+          username: sensitiveVerifyUsername.trim(),
+          password: sensitiveVerifyPassword,
+        },
+      });
+      const data = result?.data || {};
+      setForm(normalizeForm(data?.config));
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
+      setSensitiveEditingFieldSet(new Set());
+      setSensitiveVisible(true);
+      setSensitiveVerifyDialogOpen(false);
+      setSensitiveVerifyPassword('');
+      setSuccess('身份验证通过，已显示敏感配置');
+    } catch (err: any) {
+      setSensitiveVerifyError(err?.message || '验证失败');
+    } finally {
+      setSensitiveVerifyLoading(false);
+    }
   };
 
   const saveDingtalkConfig = async () => {
@@ -21716,32 +21853,21 @@ function DingtalkIntegrationView({ token }: { token: string }) {
       const result = await requestApi(token, '/dingtalk_api/config/', {
         method: 'POST',
         body: {
-          dingtalk_config: {
-            ...form,
-            dingding_access_token: form.dingding_access_token.trim(),
-            dingding_secret: form.dingding_secret.trim(),
-            base_url: form.base_url.trim(),
-            corp_id: form.corp_id.trim(),
-            app_key: form.app_key.trim(),
-            app_secret: form.app_secret.trim(),
-            operator_id: form.operator_id.trim(),
-            workspace_id: form.workspace_id.trim(),
-            parent_node_id: form.parent_node_id.trim(),
-            create_node_path: form.create_node_path.trim(),
-            kb_timeout: Math.floor(form.kb_timeout),
-            ssl_cert_notify_days: Math.floor(form.ssl_cert_notify_days),
-            title_prefix: form.title_prefix.trim(),
-            report_base_url: form.report_base_url.trim(),
-          },
+          dingtalk_config: buildDingtalkPayload(form),
         },
       });
       const data = result?.data || {};
       setForm(normalizeForm(data?.config));
+      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
       setRuntimeStatus(data?.runtime_status || {});
       setConfigPath(String(data.config_path || configPath));
       setUpdatedAt(String(data.saved_at || updatedAt));
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
       setSuccess(`钉钉集成配置已保存${backupPath}`);
+      setSensitiveVisible(false);
+      setSensitiveVerifyPassword('');
+      setSensitiveVerifyError('');
+      setSensitiveEditingFieldSet(new Set());
     } catch (err: any) {
       setError(err?.message || '保存钉钉集成配置失败');
     } finally {
@@ -21828,6 +21954,15 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               重新加载
             </button>
             <button
+              type="button"
+              onClick={toggleSensitiveDisplay}
+              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              disabled={saving || loading}
+            >
+              <Eye className="w-4 h-4" />
+              {sensitiveVisible ? '隐藏敏感配置' : '显示敏感配置'}
+            </button>
+            <button
               onClick={() => void saveDingtalkConfig()}
               className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
               disabled={saving || loading}
@@ -21872,24 +22007,46 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               钉钉机器人 Token
               <span className="ml-2 font-mono opacity-70">DINGDING.ACCESS_TOKEN</span>
             </label>
+            {(() => {
+              const meta = getSensitiveInputMeta('dingding_access_token', '用于群机器人通知');
+              return (
+                <>
             <input
+                  type={meta.type}
               value={form.dingding_access_token}
               onChange={(event) => updateStringField('dingding_access_token', event.target.value)}
               className={CONSOLE_INPUT_MONO_CLASS}
-              placeholder="用于群机器人通知"
+                  placeholder={meta.placeholder}
             />
+                  {meta.configuredHidden ? (
+                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               钉钉机器人 Secret
               <span className="ml-2 font-mono opacity-70">DINGDING.SECRET</span>
             </label>
+            {(() => {
+              const meta = getSensitiveInputMeta('dingding_secret', '机器人加签密钥（可选）');
+              return (
+                <>
             <input
+                  type={meta.type}
               value={form.dingding_secret}
               onChange={(event) => updateStringField('dingding_secret', event.target.value)}
               className={CONSOLE_INPUT_MONO_CLASS}
-              placeholder="机器人加签密钥（可选）"
+                  placeholder={meta.placeholder}
             />
+                  {meta.configuredHidden ? (
+                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
         </div>
 
@@ -21973,33 +22130,66 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               CorpID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.CORP_ID</span>
             </label>
+            {(() => {
+              const meta = getSensitiveInputMeta('corp_id', '请输入 CorpID');
+              return (
+                <>
             <input
+                  type={meta.type}
               value={form.corp_id}
               onChange={(event) => updateStringField('corp_id', event.target.value)}
               className={CONSOLE_INPUT_MONO_CLASS}
             />
+                  {meta.configuredHidden ? (
+                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               AppKey
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.APP_KEY</span>
             </label>
+            {(() => {
+              const meta = getSensitiveInputMeta('app_key', '请输入 AppKey');
+              return (
+                <>
             <input
+                  type={meta.type}
               value={form.app_key}
               onChange={(event) => updateStringField('app_key', event.target.value)}
               className={CONSOLE_INPUT_MONO_CLASS}
             />
+                  {meta.configuredHidden ? (
+                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
           <div className="space-y-2 xl:col-span-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               AppSecret
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.APP_SECRET</span>
             </label>
+            {(() => {
+              const meta = getSensitiveInputMeta('app_secret', '请输入 AppSecret');
+              return (
+                <>
             <input
+                  type={meta.type}
               value={form.app_secret}
               onChange={(event) => updateStringField('app_secret', event.target.value)}
               className={CONSOLE_INPUT_MONO_CLASS}
             />
+                  {meta.configuredHidden ? (
+                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
         </div>
 
@@ -22009,33 +22199,66 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               操作者ID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.OPERATOR_ID</span>
             </label>
+            {(() => {
+              const meta = getSensitiveInputMeta('operator_id', '请输入操作者ID');
+              return (
+                <>
             <input
+                  type={meta.type}
               value={form.operator_id}
               onChange={(event) => updateStringField('operator_id', event.target.value)}
               className={CONSOLE_INPUT_MONO_CLASS}
             />
+                  {meta.configuredHidden ? (
+                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               工作空间ID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.WORKSPACE_ID</span>
             </label>
+            {(() => {
+              const meta = getSensitiveInputMeta('workspace_id', '请输入工作空间ID');
+              return (
+                <>
             <input
+                  type={meta.type}
               value={form.workspace_id}
               onChange={(event) => updateStringField('workspace_id', event.target.value)}
               className={CONSOLE_INPUT_MONO_CLASS}
             />
+                  {meta.configuredHidden ? (
+                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
           <div className="space-y-2 xl:col-span-2">
             <label className="text-xs font-bold text-brand-text-muted block">
               父节点ID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.PARENT_NODE_ID</span>
             </label>
+            {(() => {
+              const meta = getSensitiveInputMeta('parent_node_id', '请输入父节点ID');
+              return (
+                <>
             <input
+                  type={meta.type}
               value={form.parent_node_id}
               onChange={(event) => updateStringField('parent_node_id', event.target.value)}
               className={CONSOLE_INPUT_MONO_CLASS}
             />
+                  {meta.configuredHidden ? (
+                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                  ) : null}
+                </>
+              );
+            })()}
           </div>
         </div>
 
@@ -22108,6 +22331,22 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           />
         </div>
       </div>
+      <SensitiveRevealVerifyModal
+        open={sensitiveVerifyDialogOpen}
+        title="显示钉钉敏感配置需要身份验证"
+        username={sensitiveVerifyUsername}
+        password={sensitiveVerifyPassword}
+        loading={sensitiveVerifyLoading}
+        error={sensitiveVerifyError}
+        onClose={() => {
+          setSensitiveVerifyDialogOpen(false);
+          setSensitiveVerifyPassword('');
+          setSensitiveVerifyError('');
+        }}
+        onConfirm={() => void verifySensitiveDisplay()}
+        onUsernameChange={setSensitiveVerifyUsername}
+        onPasswordChange={setSensitiveVerifyPassword}
+      />
     </div>
   );
 }

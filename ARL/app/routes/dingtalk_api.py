@@ -85,6 +85,25 @@ save_dingtalk_config_fields = ns.model(
     },
 )
 
+verify_sensitive_fields = ns.model(
+    "VerifyDingtalkSensitive",
+    {
+        "username": fields.String(required=True, description="当前登录用户名"),
+        "password": fields.String(required=True, description="当前登录密码"),
+    },
+)
+
+DINGTALK_SENSITIVE_FIELDS = (
+    "dingding_access_token",
+    "dingding_secret",
+    "corp_id",
+    "app_key",
+    "app_secret",
+    "operator_id",
+    "workspace_id",
+    "parent_node_id",
+)
+
 
 def _resolve_config_path() -> Path:
     """
@@ -180,6 +199,32 @@ def _safe_int(value, default_value, min_value=1):
     return parsed
 
 
+def _verify_sensitive_access(username: str, password: str):
+    """
+    二次验证当前用户身份，仅用于显示敏感配置。
+    """
+    username = str(username or "").strip()
+    password = str(password or "")
+    if not username or not password:
+        return False, "用户名和密码不能为空"
+
+    login_user = utils.user_login_header()
+    if isinstance(login_user, dict) and login_user.get("type") == "login":
+        current_username = str(login_user.get("username") or "").strip()
+        if current_username and current_username != username:
+            return False, "请使用当前登录账号进行验证"
+
+    password_hash = utils.gen_md5("arlsalt!@#" + password)
+    query = {
+        "username": username,
+        "password": password_hash,
+    }
+    data = utils.conn_db("user").find_one(query, {"_id": 1})
+    if not data:
+        return False, "账号或密码错误"
+    return True, "验证通过"
+
+
 def _extract_dingtalk_config(config_obj):
     dingding_conf = config_obj.get("DINGDING", {})
     if not isinstance(dingding_conf, dict):
@@ -214,6 +259,57 @@ def _extract_dingtalk_config(config_obj):
             dingtalk_api_conf.get("SSL_CERT_NOTIFY_DAYS"), Config.DINGTALK_SSL_CERT_NOTIFY_DAYS, min_value=1
         ),
     }
+
+
+def _build_dingtalk_sensitive_configured_map(dingtalk_config):
+    """
+    基于钉钉配置计算敏感字段是否已配置，仅返回布尔状态。
+    """
+    if not isinstance(dingtalk_config, dict):
+        dingtalk_config = {}
+
+    configured = {}
+    for field_name in DINGTALK_SENSITIVE_FIELDS:
+        configured[field_name] = bool(str(dingtalk_config.get(field_name, "") or "").strip())
+    return configured
+
+
+def _sanitize_dingtalk_config_for_client(dingtalk_config):
+    """
+    返回给前端时抹除敏感字段明文，并附带配置状态。
+    """
+    safe_dingtalk_config = dict(dingtalk_config or {})
+    sensitive_configured = _build_dingtalk_sensitive_configured_map(safe_dingtalk_config)
+    for field_name in DINGTALK_SENSITIVE_FIELDS:
+        safe_dingtalk_config[field_name] = ""
+    return safe_dingtalk_config, sensitive_configured
+
+
+def _fill_missing_sensitive_dingtalk_fields(dingtalk_config, config_obj):
+    """
+    对前端未提交的敏感字段回填当前配置，避免保存时被误清空。
+    """
+    if not isinstance(dingtalk_config, dict):
+        raise ValueError("dingtalk_config 必须为对象")
+
+    merged_dingtalk_config = dict(dingtalk_config)
+    current_dingtalk_config = _extract_dingtalk_config(config_obj if isinstance(config_obj, dict) else {})
+    for field_name in DINGTALK_SENSITIVE_FIELDS:
+        if field_name in merged_dingtalk_config:
+            continue
+        merged_dingtalk_config[field_name] = current_dingtalk_config.get(field_name, "")
+    return merged_dingtalk_config
+
+
+def _sanitize_dingtalk_runtime_status_for_client(runtime_status):
+    """
+    运行状态中的敏感标识也统一脱敏，避免抓包直接拿到真实值。
+    """
+    safe_runtime_status = dict(runtime_status or {})
+    for field_name in ("corp_id", "app_key", "operator_id", "workspace_id", "parent_node_id"):
+        if field_name in safe_runtime_status:
+            safe_runtime_status[field_name] = ""
+    return safe_runtime_status
 
 
 def _merge_dingtalk_config(config_obj, dingtalk_config):
@@ -331,11 +427,13 @@ class DingtalkApiConfig(ARLResource):
         config_path = _resolve_config_path()
         try:
             config_obj = _load_config_from_file(config_path)
-            dingtalk_config = _extract_dingtalk_config(config_obj)
-            runtime_status = dingtalk_openapi.get_runtime_status()
+            raw_dingtalk_config = _extract_dingtalk_config(config_obj)
+            dingtalk_config, sensitive_configured = _sanitize_dingtalk_config_for_client(raw_dingtalk_config)
+            runtime_status = _sanitize_dingtalk_runtime_status_for_client(dingtalk_openapi.get_runtime_status())
             return _build_dingtalk_success(
                 {
                     "config": dingtalk_config,
+                    "sensitive_configured": sensitive_configured,
                     "runtime_status": runtime_status,
                     "config_path": str(config_path),
                     "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -358,11 +456,13 @@ class DingtalkApiConfig(ARLResource):
         with DINGTALK_CONFIG_LOCK:
             try:
                 config_obj = _load_config_from_file(config_path)
-                config_obj = _merge_dingtalk_config(config_obj, dingtalk_config)
+                merged_dingtalk_config = _fill_missing_sensitive_dingtalk_fields(dingtalk_config, config_obj)
+                config_obj = _merge_dingtalk_config(config_obj, merged_dingtalk_config)
                 backup_path = _backup_config_file(config_path)
                 _atomic_write_yaml(config_path, config_obj)
-                saved_config = _extract_dingtalk_config(config_obj)
-                _apply_runtime_dingtalk_config(saved_config)
+                raw_saved_config = _extract_dingtalk_config(config_obj)
+                _apply_runtime_dingtalk_config(raw_saved_config)
+                saved_config, sensitive_configured = _sanitize_dingtalk_config_for_client(raw_saved_config)
             except Exception as exc:
                 logger.exception("save dingtalk config failed: %s", exc)
                 return _build_dingtalk_error(
@@ -374,10 +474,55 @@ class DingtalkApiConfig(ARLResource):
             {
                 "saved": True,
                 "config": saved_config,
-                "runtime_status": dingtalk_openapi.get_runtime_status(),
+                "sensitive_configured": sensitive_configured,
+                "runtime_status": _sanitize_dingtalk_runtime_status_for_client(dingtalk_openapi.get_runtime_status()),
                 "config_path": str(config_path),
                 "backup_path": backup_path,
                 "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+
+
+@ns.route("/reveal/")
+class DingtalkApiReveal(ARLResource):
+    """
+    二次验证后返回钉钉集成敏感字段明文，仅用于显式查看场景。
+    """
+
+    @auth
+    @ns.expect(verify_sensitive_fields)
+    def post(self):
+        payload = request.get_json(silent=True) or {}
+        username = str(payload.get("username") or "").strip()
+        password = str(payload.get("password") or "")
+        config_path = _resolve_config_path()
+
+        ok, message = _verify_sensitive_access(username, password)
+        if not ok:
+            return _build_dingtalk_error(
+                "verify sensitive access failed",
+                {"error": message},
+            )
+
+        try:
+            config_obj = _load_config_from_file(config_path)
+            dingtalk_config = _extract_dingtalk_config(config_obj)
+            sensitive_configured = _build_dingtalk_sensitive_configured_map(dingtalk_config)
+        except Exception as exc:
+            logger.exception("reveal dingtalk config failed: %s", exc)
+            return _build_dingtalk_error(
+                "reveal dingtalk config failed",
+                {"error": str(exc), "config_path": str(config_path)},
+            )
+
+        return _build_dingtalk_success(
+            {
+                "revealed": True,
+                "config": dingtalk_config,
+                "sensitive_configured": sensitive_configured,
+                "config_path": str(config_path),
+                "revealed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "message": message,
             }
         )
 
