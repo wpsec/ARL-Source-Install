@@ -40,6 +40,7 @@ base_search_fields = {
     'status_code': fields.Integer(description="HTTP状态码"),
     'title': fields.String(description="页面标题"),
     'source': fields.String(description="来源"),
+    'source__neq': fields.String(description="来源排除"),
     "task_id": fields.String(description="任务ID")
 }
 
@@ -94,6 +95,8 @@ class ARLFileLeak(ARLResource):
         - 用于发现安全风险和敏感信息
         """
         args = self.parser.parse_args()
+        if not args.get("source"):
+            args["source__neq"] = CollectSource.WIH_URL_PROBE
         data = self.build_data(args=args, collection='fileleak')
         for item in data.get("items", []):
             if not item.get("source"):
@@ -122,6 +125,8 @@ class ARLFileLeakExport(ARLResource):
             文本文件下载（每行一个泄露URL）
         """
         args = self.parser.parse_args()
+        if not args.get("source"):
+            args["source__neq"] = CollectSource.WIH_URL_PROBE
         response = self.send_export_file(args=args, _type="fileleak")
 
         return response

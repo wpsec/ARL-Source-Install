@@ -72,12 +72,10 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             page_url_set=page_url_set,
         )
 
-        self.assertEqual(inserted_count, 2)
+        self.assertEqual(inserted_count, 1)
         self.assertEqual(len(fake_db.url.inserted), 1)
         self.assertEqual(fake_db.url.inserted[0]["source"], CollectSource.WIH_URL_PROBE)
-        self.assertEqual(len(fake_db.fileleak.inserted), 1)
-        self.assertEqual(fake_db.fileleak.inserted[0]["source"], CollectSource.WIH_URL_PROBE)
-        self.assertEqual(fake_db.fileleak.inserted[0]["site"], "https://example.com")
+        self.assertEqual(len(fake_db.fileleak.inserted), 0)
         self.assertIn("https://example.com/api/user", page_url_set)
         mock_page_fetch.assert_called_once_with(
             ["https://example.com/api/user"],
@@ -115,10 +113,9 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             wih_records=records,
         )
 
-        self.assertEqual(inserted_count, 2)
+        self.assertEqual(inserted_count, 1)
         self.assertEqual(len(fake_db.url.inserted), 1)
-        self.assertEqual(len(fake_db.fileleak.inserted), 1)
-        self.assertEqual(fake_db.fileleak.inserted[0]["url"], "https://example.com/api/user")
+        self.assertEqual(len(fake_db.fileleak.inserted), 0)
         mock_page_fetch.assert_called_once_with(
             ["https://example.com/api/user"],
             concurrency=6,
@@ -150,10 +147,10 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(inserted_count, 2)
+        self.assertEqual(inserted_count, 1)
         self.assertEqual(len(fake_db.url.inserted), 1)
         self.assertEqual(fake_db.url.inserted[0]["site"], "https://example.com/portal?tenant=demo")
-        self.assertEqual(len(fake_db.fileleak.inserted), 1)
+        self.assertEqual(len(fake_db.fileleak.inserted), 0)
         mock_page_fetch.assert_called_once_with(
             ["https://example.com/portal?tenant=demo"],
             concurrency=6,
@@ -164,7 +161,7 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
     @patch("app.services.urlfinder_url_probe.page_fetch")
     @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
     @patch("app.services.urlfinder_url_probe.utils.conn_db")
-    def test_probe_inserts_fileleak_when_url_asset_exists(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
+    def test_probe_skips_when_url_asset_exists(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
         fake_db = _FakeDb(existing_url_assets=["https://example.com/api/user"])
         mock_conn_db.side_effect = fake_db.collection
         mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
@@ -186,10 +183,30 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             page_url_set={"https://example.com/api/user"},
         )
 
-        self.assertEqual(inserted_count, 1)
+        self.assertEqual(inserted_count, 0)
         self.assertEqual(len(fake_db.url.inserted), 0)
-        self.assertEqual(len(fake_db.fileleak.inserted), 1)
-        self.assertEqual(fake_db.fileleak.inserted[0]["source"], CollectSource.WIH_URL_PROBE)
+        self.assertEqual(len(fake_db.fileleak.inserted), 0)
+
+    @patch("app.services.urlfinder_url_probe.page_fetch")
+    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
+    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    def test_probe_skips_when_fileleak_asset_exists(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
+        fake_db = _FakeDb(existing_fileleak_urls=["https://example.com/api/user"])
+        mock_conn_db.side_effect = fake_db.collection
+        mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
+
+        inserted_count = run_urlfinder_url_probe(
+            task_id="task_5",
+            sites=["https://example.com"],
+            wih_records=[
+                WihRecord("path_url", "https://example.com/api/user", "https://example.com/a.js", "https://example.com", 22),
+            ],
+        )
+
+        self.assertEqual(inserted_count, 0)
+        self.assertEqual(len(fake_db.url.inserted), 0)
+        self.assertEqual(len(fake_db.fileleak.inserted), 0)
+        mock_page_fetch.assert_not_called()
 
     @patch("app.services.urlfinder_url_probe.utils.conn_db")
     def test_probe_skip_when_disabled(self, mock_conn_db):

@@ -89,6 +89,20 @@ class _FakeCollection(object):
                 return self._project(item, fields)
         return None
 
+    def distinct(self, field_name, query=None):
+        values = []
+        seen = set()
+        for item in list(self.bucket):
+            if not _match_query(item, query):
+                continue
+            value = _nested_get(item, field_name)
+            marker = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str) if isinstance(value, (dict, list)) else str(value)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            values.append(value)
+        return values
+
     def insert_many(self, docs):
         for doc in list(docs or []):
             copied = dict(doc)
@@ -283,6 +297,7 @@ class TestWihPeriodicReuseService(unittest.TestCase):
                     "fnv_hash": "endpoint-1",
                 }
             ],
+            "fileleak": [],
             "url": [
                 {
                     "_id": FakeObjectId(),
@@ -318,6 +333,92 @@ class TestWihPeriodicReuseService(unittest.TestCase):
         self.assertEqual(str(current_task_id), store["wih"][-1]["task_id"])
         self.assertEqual(str(current_task_id), store["wih_endpoint"][-1]["task_id"])
         self.assertEqual(str(current_task_id), store["url"][-1]["task_id"])
+
+    def test_run_skips_reused_url_when_fileleak_already_exists(self):
+        current_task_id = FakeObjectId()
+        previous_task_id = FakeObjectId()
+        store = {
+            "task": [
+                {
+                    "_id": current_task_id,
+                    "target": "example.com",
+                    "status": "running",
+                    "options": {
+                        "from_task_schedule": True,
+                        "task_schedule_id": "schedule-1",
+                    },
+                },
+                {
+                    "_id": previous_task_id,
+                    "target": "example.com",
+                    "status": "done",
+                    "end_time": "2026-04-12 10:00:00",
+                    "options": {
+                        "from_task_schedule": True,
+                        "task_schedule_id": "schedule-1",
+                    },
+                },
+            ],
+            "site": [
+                {
+                    "task_id": str(current_task_id),
+                    "site": "https://example.com",
+                    "title": "Portal",
+                    "status": 200,
+                    "http_server": "nginx",
+                    "body_length": 4096,
+                    "favicon": {"hash": 1001},
+                    "finger": [{"name": "Vue"}],
+                },
+                {
+                    "task_id": str(previous_task_id),
+                    "site": "https://example.com",
+                    "title": "Portal",
+                    "status": 200,
+                    "http_server": "nginx",
+                    "body_length": 4096,
+                    "favicon": {"hash": 1001},
+                    "finger": [{"name": "Vue"}],
+                },
+            ],
+            "wih": [],
+            "wih_endpoint": [],
+            "fileleak": [
+                {
+                    "_id": FakeObjectId(),
+                    "task_id": str(current_task_id),
+                    "url": "https://example.com/api/list",
+                }
+            ],
+            "url": [
+                {
+                    "_id": FakeObjectId(),
+                    "task_id": str(previous_task_id),
+                    "source": "wih_url_probe",
+                    "url": "https://example.com/api/list",
+                    "site": "https://example.com/api/list",
+                }
+            ],
+        }
+
+        reuse_module.utils.conn_db = lambda name: _FakeCollection(store[name])
+
+        service = WihPeriodicReuseService(
+            task_id=str(current_task_id),
+            sites=["https://example.com"],
+            options={
+                "from_task_schedule": True,
+                "task_schedule_id": "schedule-1",
+                "task_schedule_name": "周期任务",
+                "task_schedule_run_number": 3,
+            },
+        )
+        summary = service.run()
+
+        self.assertEqual("ok", summary["reason"])
+        self.assertEqual(0, summary["reused_url_count"])
+        self.assertEqual([], summary["reused_urls"])
+        self.assertEqual(1, len(store["url"]))
 
 
 if __name__ == "__main__":

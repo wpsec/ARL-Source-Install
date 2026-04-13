@@ -768,7 +768,8 @@ def _default_ai_prompt_templates():
                 "1) 正常/可疑/危险结论；"
                 "2) 最可能真实的技术栈/指纹（过滤明显误报）；"
                 "3) 可直接执行的验证建议（如目录探测、认证边界测试、WAF绕过前置检查）。"
-                "不要仅因标题包含后台、管理、swagger 等关键词就直接判危险；若缺少鉴权、入口、调试面、组件暴露等实证，优先给可疑。"
+                "不要仅因标题包含后台、管理、swagger 等关键词就直接判危险；若只是登录壳、401/403、统一认证入口或普通错误页，优先降为正常/可疑。"
+                "只有在接口文档、调试面、目录索引、真实管理组件或明确暴露证据出现时，才可提级为危险。"
                 "禁止编造不存在的信息。"
             ),
             'updated_at': '',
@@ -783,7 +784,8 @@ def _default_ai_prompt_templates():
                 "1) 是否存在可利用入口（备份/配置/调试/上传）；"
                 "2) 建议先做哪类验证（鉴权绕过、目录遍历、文件读取、上传执行）；"
                 "3) 给出2-3条可操作的验证建议。"
-                "若仅命中敏感路径但返回 401/403/404、空页面或普通错误页，不要直接判危险。"
+                "若仅命中敏感路径但返回 401/403/404、空页面、登录壳或普通错误页，不要直接判危险。"
+                "只有在目录索引、接口文档、调试面或真实敏感文件成功返回时，才可提级为危险。"
                 "禁止夸大风险，证据不足时明确标注待复核。"
             ),
             'updated_at': '',
@@ -811,7 +813,8 @@ def _default_ai_prompt_templates():
                 "1) 该URL属于登录、管理、调试、接口还是静态资源；"
                 "2) 是否值得进一步测试（鉴权、越权、注入、文件读取、重定向等）；"
                 "3) 明确下一步验证建议与优先级。"
-                "不要只因 URL 包含 admin、debug、swagger、token 等关键词就直接判危险；缺少成功访问或敏感反馈时优先给可疑。"
+                "不要只因 URL 包含 admin、debug、swagger、token 等关键词就直接判危险；若只是登录壳、401/403/404、静态资源或普通错误页，应优先降为安全/可疑。"
+                "只有在真实开放的接口文档、调试面、目录索引或明显凭据泄漏参数成功暴露时，才可提级为危险。"
             ),
             'updated_at': '',
         },
@@ -846,6 +849,7 @@ def _default_ai_prompt_templates():
                 "2) 复测前置条件与利用链关键点；"
                 "3) 若疑似误报，给出最小复核路径。"
                 "必须优先参考验证证据和命中URL，若只有模板名称或风险等级、没有利用证据，不要直接判高可信。"
+                "若验证信息只体现权限拒绝、未登录、404、网络异常、参数校验失败或纯规则描述，应优先降为疑似误报。"
             ),
             'updated_at': '',
         },
@@ -859,6 +863,7 @@ def _default_ai_prompt_templates():
                 "1) 是否值得人工复现；"
                 "2) 复现路径与关键请求点；"
                 "3) 哪些结果应降权为疑似误报。"
+                "若验证信息只体现权限拒绝、未登录、404、网络异常、参数校验失败或纯规则描述，应优先降权为疑似误报。"
             ),
             'updated_at': '',
         },
@@ -3135,6 +3140,162 @@ def _build_wih_endpoint_site_summary(item):
     }
 
 
+def _contains_any_keyword(text, keywords):
+    lowered = str(text or '').strip().lower()
+    if not lowered:
+        return False
+    return any(str(keyword or '').strip().lower() in lowered for keyword in list(keywords or []) if str(keyword or '').strip())
+
+
+def _normalize_url_path_text(url_text):
+    text = str(url_text or '').strip()
+    if not text:
+        return ''
+    try:
+        return str(urlparse(text).path or '').strip()
+    except Exception:
+        return ''
+
+
+def _build_surface_signal_summary(url_text='', title_text='', headers_text=''):
+    lower_url = str(url_text or '').strip().lower()
+    lower_title = str(title_text or '').strip().lower()
+    lower_headers = str(headers_text or '').strip().lower()
+    merged_text = ' '.join(item for item in (lower_url, lower_title, lower_headers) if item)
+
+    login_keywords = (
+        '登录', 'login', 'signin', 'sign in', 'sso', '单点登录', '统一认证',
+        '统一身份认证', '认证中心', 'captcha', '验证码', 'password', '密码登录',
+    )
+    auth_keywords = (
+        '未登录', '请先登录', 'login required', 'authentication', 'unauthorized',
+        'forbidden', '权限不足', '访问被拒绝', 'access denied',
+    )
+    error_keywords = (
+        '404', '403', '401', 'not found', 'forbidden', 'unauthorized',
+        'error', '错误', '访问出错', '出错了', '请求失败',
+    )
+    api_doc_keywords = (
+        'swagger', 'swagger-ui', 'api-doc', 'api docs', 'openapi',
+        'v2/api-docs', 'v3/api-docs', 'knife4j', 'redoc', 'rapi',
+    )
+    debug_keywords = (
+        'phpinfo', 'actuator', 'heapdump', 'prometheus', 'mappings',
+        'beans', 'env', 'jolokia', 'trace', 'debug',
+    )
+    admin_keywords = (
+        'admin', 'manage', '后台', '管理', 'console', 'dashboard',
+    )
+    directory_keywords = (
+        'index of', 'directory listing',
+    )
+    waf_keywords = (
+        'cloudflare', 'safedog', 'waf', 'f5 big-ip', 'akamai', 'aliyun',
+        'yundun', '安全狗', 'cdn',
+    )
+
+    return {
+        'login_shell': _contains_any_keyword(merged_text, login_keywords),
+        'auth_related': _contains_any_keyword(merged_text, auth_keywords),
+        'error_page': _contains_any_keyword(lower_title, error_keywords),
+        'api_doc': _contains_any_keyword('{} {}'.format(lower_url, lower_title), api_doc_keywords),
+        'debug_surface': _contains_any_keyword('{} {}'.format(lower_url, lower_title), debug_keywords),
+        'admin_surface': _contains_any_keyword('{} {}'.format(lower_url, lower_title), admin_keywords),
+        'directory_listing': _contains_any_keyword(lower_title, directory_keywords),
+        'waf_or_cdn': _contains_any_keyword('{} {}'.format(lower_title, lower_headers), waf_keywords),
+    }
+
+
+def _build_url_path_signal_summary(url_text):
+    path_text = _normalize_url_path_text(url_text)
+    normalized_path = str(path_text or '').strip()
+    basename = os.path.basename(normalized_path.rstrip('/')) if normalized_path else ''
+    basename_lower = basename.lower()
+    _, ext = os.path.splitext(basename_lower)
+
+    sensitive_exts = {
+        '.sql', '.zip', '.tar', '.gz', '.7z', '.rar', '.bak', '.old', '.db', '.sqlite',
+        '.env', '.pem', '.key', '.p12', '.pfx', '.crt', '.log', '.conf', '.ini', '.cfg',
+        '.properties', '.yaml', '.yml', '.war', '.jar',
+    }
+    static_exts = {
+        '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.woff', '.woff2',
+        '.ttf', '.ico', '.map', '.mp4', '.mp3', '.avi', '.webp',
+    }
+    sensitive_names = {
+        '.env', 'web.config', 'application.yml', 'application.yaml', 'application.properties',
+        'config.php', 'id_rsa', 'known_hosts', 'passwd', 'shadow',
+    }
+
+    lower_path = normalized_path.lower()
+    sensitive_file = (
+        ext in sensitive_exts
+        or basename_lower in sensitive_names
+        or '/.git/' in lower_path
+        or '/.svn/' in lower_path
+        or lower_path.endswith('/.git')
+        or lower_path.endswith('/.svn')
+    )
+    static_asset = ext in static_exts
+
+    return {
+        'path': normalized_path,
+        'basename': basename[:120],
+        'extension': ext,
+        'sensitive_file': sensitive_file,
+        'static_asset': static_asset,
+    }
+
+
+def _build_verify_signal_summary(verify_text, plg_type_text=''):
+    excerpt = _normalize_item_text(verify_text, 1200)
+    lower_text = excerpt.lower()
+    strong_signals = []
+    weak_signals = []
+
+    def append_unique(container, value):
+        if value and value not in container:
+            container.append(value)
+
+    if not lower_text:
+        return {
+            'excerpt': '',
+            'strong_signals': [],
+            'weak_signals': [],
+        }
+
+    strong_keyword_map = (
+        ('sensitive_disclosure', ('root:x:0:0:', '/etc/passwd', 'for 16-bit app support', 'c:\\windows\\win.ini')),
+        ('credential_material', ('-----begin', 'access_token', 'refresh_token', 'authorization:', 'set-cookie:', 'jsessionid=', 'phpsessid=')),
+        ('sql_error_evidence', ('sql syntax', 'syntax error', 'sqlstate', 'mysql', 'postgresql', 'unterminated quoted string', 'ora-')),
+        ('command_output', ('uid=', 'gid=', 'www-data', 'bin/bash', 'cmd.exe')),
+        ('api_doc_or_schema', ('"openapi"', '"swagger"', 'swagger-ui', 'openapi: 3', 'graphql schema')),
+    )
+    weak_keyword_map = (
+        ('auth_blocked', ('未登录', '请先登录', 'login required', 'forbidden', 'unauthorized', '权限不足', '访问被拒绝')),
+        ('not_found', ('not found', '404', '不存在', '资源不存在')),
+        ('validation_blocked', ('参数错误', '参数缺失', 'missing parameter', 'validation failed', 'bad request')),
+        ('network_error', ('timeout', 'connection refused', 'connection reset', 'proxyerror', 'readtimeout', 'connecttimeout', 'dns', 'sslerror')),
+        ('weak_hint_only', ('疑似', '可能存在', '待复核', '未验证', '规则命中', '无有效证据', '响应差异', '建议人工复测')),
+    )
+
+    for signal_name, keywords in strong_keyword_map:
+        if _contains_any_keyword(lower_text, keywords):
+            append_unique(strong_signals, signal_name)
+    for signal_name, keywords in weak_keyword_map:
+        if _contains_any_keyword(lower_text, keywords):
+            append_unique(weak_signals, signal_name)
+
+    if '敏感信息' in str(plg_type_text or '') and excerpt:
+        append_unique(strong_signals, 'sensitive_leak')
+
+    return {
+        'excerpt': excerpt,
+        'strong_signals': strong_signals,
+        'weak_signals': weak_signals,
+    }
+
+
 def _apply_wih_endpoint_response_adjustment(item, result_item):
     if not isinstance(result_item, dict):
         return {}
@@ -3215,21 +3376,18 @@ def _rule_analyze_site_item(item):
     header_text = _normalize_header_text(item.get('headers'))
     finger_names = _extract_site_finger_names(item.get('finger'))
     status_code = _safe_int_any(item.get('status_code') or item.get('status'), 0)
+    body_length = _safe_int_any(item.get('body_length'), 0)
 
-    lower_title = title_text.lower()
     lower_headers = header_text.lower()
     lower_fingers = [name.lower() for name in finger_names]
+    surface_signals = _build_surface_signal_summary(site_url, title_text, header_text)
 
-    high_value_title_keywords = (
-        'admin', '后台', '管理', 'console', 'dashboard', 'jenkins', 'grafana', 'kibana',
-        'swagger', 'phpinfo', 'index of', 'actuator'
-    )
     high_value_header_keywords = (
         'x-powered-by', 'server:', 'set-cookie', 'x-aspnet-version', 'x-generator'
     )
-    high_value_finger_keywords = (
-        'wordpress', 'drupal', 'jenkins', 'grafana', 'phpmyadmin', 'elasticsearch',
-        'weblogic', 'struts', 'spring', 'tomcat', 'nginx', 'apache'
+    management_finger_keywords = (
+        'jenkins', 'grafana', 'kibana', 'phpmyadmin', 'weblogic',
+        'nacos', 'harbor', 'gitlab', 'jira', 'confluence',
     )
 
     result_level = 'safe'
@@ -3238,25 +3396,39 @@ def _rule_analyze_site_item(item):
 
     if status_code in (401, 403):
         result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
-        evidence.append('站点返回鉴权状态码 {}，可能存在后台入口。'.format(status_code))
+        evidence.append('站点返回鉴权状态码 {}，当前更像认证/权限边界，不能仅据此判定为高价值暴露。'.format(status_code))
 
     if status_code in (200, 201, 206):
-        if any(keyword in lower_title for keyword in high_value_title_keywords):
+        if surface_signals.get('api_doc') or surface_signals.get('debug_surface') or surface_signals.get('directory_listing'):
             result_level = _merge_ai_denoise_result_level(result_level, 'danger')
-            evidence.append('标题命中高价值资产特征（后台/组件/调试入口）。')
+            evidence.append('站点已成功暴露接口文档、调试面或目录索引，这类入口应优先人工复核。')
+        elif surface_signals.get('admin_surface'):
+            result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+            evidence.append('站点更像后台或管理入口，但当前只有入口语义，仍需结合鉴权与实际功能确认。')
 
     if any(keyword in lower_headers for keyword in high_value_header_keywords):
         result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
         evidence.append('响应头暴露技术栈特征，可用于后续攻击面研判。')
 
-    if any(any(keyword in finger for keyword in high_value_finger_keywords) for finger in lower_fingers):
+    if any(any(keyword in finger for keyword in management_finger_keywords) for finger in lower_fingers):
         result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
-        evidence.append('指纹命中高价值中间件或常见攻击面组件。')
+        evidence.append('指纹命中管理类组件或常见后台系统，应结合版本与暴露面继续确认。')
+
+    if surface_signals.get('login_shell'):
+        result_level = _cap_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('页面更像登录壳或统一认证入口，不能仅因标题出现后台/管理词就直接提级为危险。')
+    if surface_signals.get('error_page'):
+        result_level = _cap_ai_denoise_result_level(result_level, 'safe')
+        evidence.append('标题更像通用错误页或占位页，当前缺少真实暴露证据。')
+    if surface_signals.get('waf_or_cdn'):
+        evidence.append('站点存在 WAF/CDN 类边界特征，后续验证时需区分真实业务响应与网关拦截页。')
 
     if not finger_names:
         evidence.append('未识别到稳定指纹，建议结合截图与源码二次确认。')
     else:
         evidence.append('识别到指纹 {} 个。'.format(len(finger_names)))
+    if body_length > 0:
+        evidence.append('首页响应体长度约 {} 字节。'.format(body_length))
 
     if not evidence:
         evidence.append('未发现明显高价值站点特征。')
@@ -3295,29 +3467,57 @@ def _rule_analyze_fileleak_item(item):
     status_code = _safe_int_any(item.get('status_code'), 0)
     content_length = _safe_int_any(item.get('content_length'), 0)
     lower_url = url_text.lower()
-    lower_title = title_text.lower()
+    surface_signals = _build_surface_signal_summary(url_text, title_text, '')
+    path_signals = _build_url_path_signal_summary(url_text)
 
-    sensitive_keywords = (
-        'admin', 'backup', 'bak', '.sql', '.zip', '.tar', '.gz', '.7z', '.env',
-        'config', 'secret', 'token', 'password', 'passwd', 'credential', 'swagger', 'actuator', '.git'
+    strong_surface_keywords = (
+        'swagger', 'v2/api-docs', 'v3/api-docs', 'openapi', 'knife4j',
+        'actuator', 'phpinfo', 'heapdump', 'jolokia',
     )
+    sensitive_keywords = (
+        'backup', 'bak', 'config', 'secret', 'token', 'password',
+        'passwd', 'credential', '.git', '.svn',
+    )
+    success_status = status_code in (200, 201, 206)
+    blocked_status = status_code in (401, 403)
+    missing_status = status_code in (404, 410)
 
     result_level = 'safe'
     evidence = []
-    if any(keyword in lower_url for keyword in sensitive_keywords) and status_code in (200, 201, 206):
-        result_level = 'danger'
-        evidence.append('URL 含敏感路径关键字且返回 {}。'.format(status_code))
-    elif any(keyword in lower_url for keyword in sensitive_keywords) and status_code in (401, 403):
-        result_level = 'suspicious'
-        evidence.append('敏感路径被鉴权拦截（{}），建议进一步验证。'.format(status_code))
-
-    if 'index of' in lower_title and status_code in (200, 206):
+    if success_status and (surface_signals.get('directory_listing') or surface_signals.get('api_doc') or surface_signals.get('debug_surface')):
         result_level = _merge_ai_denoise_result_level(result_level, 'danger')
-        evidence.append('页面标题存在目录索引特征。')
+        evidence.append('目录扫描目标已成功返回目录索引、接口文档或调试面。')
+    elif success_status and path_signals.get('sensitive_file'):
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+        evidence.append('路径更像真实敏感文件或备份文件，且已成功访问。')
+    elif success_status and any(keyword in lower_url for keyword in sensitive_keywords):
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('URL 命中敏感目录/文件语义，但当前缺少明确文件内容证据。')
+    elif blocked_status and (
+        path_signals.get('sensitive_file')
+        or any(keyword in lower_url for keyword in strong_surface_keywords)
+        or any(keyword in lower_url for keyword in sensitive_keywords)
+    ):
+        result_level = 'suspicious'
+        evidence.append('目录命中敏感路径但被鉴权拦截（{}），当前只能视为待复核入口。'.format(status_code))
+    elif missing_status and (
+        path_signals.get('sensitive_file')
+        or any(keyword in lower_url for keyword in sensitive_keywords)
+    ):
+        evidence.append('目标路径已返回 {}，当前更像失效路径或常规字典噪声。'.format(status_code))
 
-    if content_length >= 2 * 1024 * 1024 and status_code in (200, 206):
+    if content_length >= 2 * 1024 * 1024 and success_status:
         result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
         evidence.append('响应体积较大（{} 字节），可能存在打包文件暴露。'.format(content_length))
+    if surface_signals.get('login_shell'):
+        result_level = _cap_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('页面更像登录或认证入口，不支持仅按路径字典命中判定为危险目录暴露。')
+    if surface_signals.get('error_page'):
+        result_level = _cap_ai_denoise_result_level(result_level, 'safe')
+        evidence.append('页面标题更像错误页/占位页，当前缺少真实敏感内容证据。')
+    if path_signals.get('static_asset'):
+        result_level = _cap_ai_denoise_result_level(result_level, 'safe')
+        evidence.append('目标更像静态资源，不宜继续按目录泄露高风险处理。')
 
     if not evidence:
         evidence.append('未发现显著敏感目录暴露特征。')
@@ -3354,28 +3554,69 @@ def _rule_analyze_url_item(item):
     title_text = _normalize_item_text(item.get('title'), 300)
     status_code = _safe_int_any(item.get('status_code'), 0)
     lower_url = url_text.lower()
-    lower_title = title_text.lower()
+    surface_signals = _build_surface_signal_summary(url_text, title_text, '')
+    path_signals = _build_url_path_signal_summary(url_text)
+    parsed_url = urlparse(url_text)
+    query_items = []
+    try:
+        query_items = list(parse_qsl(parsed_url.query, keep_blank_values=True))
+    except Exception:
+        query_items = []
 
-    dangerous_patterns = (
-        'token=', 'apikey=', 'api_key=', 'password=', 'passwd=', 'secret=', 'debug=1',
-        '/.git', '/swagger', '/v2/api-docs', '/actuator', '/phpinfo', '/admin'
+    dangerous_paths = (
+        '/.git', '/swagger', '/v2/api-docs', '/v3/api-docs', '/openapi',
+        '/actuator', '/phpinfo', '/heapdump', '/jolokia',
     )
-    suspicious_patterns = (
-        '/login', '/manage', '/console', '/upload', '/download', '/backup', '/test'
+    suspicious_paths = (
+        '/login', '/manage', '/console', '/upload', '/download', '/backup', '/test', '/admin'
+    )
+    credential_param_keys = (
+        'token', 'access_token', 'refresh_token', 'apikey', 'api_key',
+        'secret', 'signature', 'authorization', 'password', 'passwd',
     )
 
     result_level = 'safe'
     evidence = []
-    if any(pattern in lower_url for pattern in dangerous_patterns) and status_code in (200, 201, 206):
-        result_level = 'danger'
-        evidence.append('URL 命中敏感参数/路径特征并返回 {}。'.format(status_code))
-    elif any(pattern in lower_url for pattern in suspicious_patterns) and status_code in (200, 401, 403):
-        result_level = 'suspicious'
-        evidence.append('URL 命中管理/调试路径特征，建议人工复核。')
+    success_status = status_code in (200, 201, 206)
+    blocked_status = status_code in (401, 403)
+    missing_status = status_code in (404, 410)
 
-    if 'index of' in lower_title or 'swagger ui' in lower_title:
+    credential_param_hit = False
+    for key_text, value_text in query_items:
+        key_lower = str(key_text or '').strip().lower()
+        value_lower = str(value_text or '').strip().lower()
+        if key_lower not in credential_param_keys:
+            continue
+        if len(str(value_text or '').strip()) >= 16 or value_lower.count('.') == 2:
+            credential_param_hit = True
+            break
+
+    if success_status and (surface_signals.get('api_doc') or surface_signals.get('debug_surface') or any(pattern in lower_url for pattern in dangerous_paths)):
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+        evidence.append('URL 已成功暴露接口文档、调试面或敏感框架路径。')
+    elif success_status and credential_param_hit:
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+        evidence.append('URL 查询参数中已出现疑似真实凭据或令牌值，应优先确认是否存在泄漏。')
+    elif (success_status or blocked_status) and (
+        surface_signals.get('admin_surface')
+        or surface_signals.get('login_shell')
+        or any(pattern in lower_url for pattern in suspicious_paths)
+    ):
         result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
-        evidence.append('标题包含目录索引或接口文档特征。')
+        evidence.append('URL 更像登录、后台、上传下载或测试入口，建议继续结合认证态与功能实测确认。')
+
+    if surface_signals.get('directory_listing') and success_status:
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+        evidence.append('页面标题命中目录索引特征，需优先排查目录遍历与文件暴露。')
+    if surface_signals.get('login_shell'):
+        result_level = _cap_ai_denoise_result_level(result_level, 'suspicious')
+        evidence.append('页面更像登录壳或认证入口，不能仅凭 admin/debug 等路径语义直接判为危险。')
+    if surface_signals.get('error_page') or missing_status:
+        result_level = _cap_ai_denoise_result_level(result_level, 'safe')
+        evidence.append('URL 当前返回错误页或 {}，缺少可利用暴露证据。'.format(status_code or 404))
+    if path_signals.get('static_asset'):
+        result_level = _cap_ai_denoise_result_level(result_level, 'safe')
+        evidence.append('URL 更像静态资源，默认不纳入高风险 URL 攻击面。')
 
     if not evidence:
         evidence.append('未发现明显的高风险 URL 特征。')
@@ -3707,15 +3948,28 @@ def _rule_analyze_vuln_item(item, module_id='vuln'):
 
     plg_type_text = _normalize_item_text(item.get('plg_type') or item.get('type'), 120)
     has_verify = bool(verify_text and verify_text != '-')
+    verify_signals = _build_verify_signal_summary(verify_text, plg_type_text=plg_type_text)
+    strong_verify_signals = list(verify_signals.get('strong_signals') or [])
+    weak_verify_signals = list(verify_signals.get('weak_signals') or [])
 
     # 风险模块规则仅做兜底，不在规则层硬编码“可信”细分逻辑。
     trust = '-'
     if not has_verify:
         trust = '疑似误报'
-        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        result_level = _cap_ai_denoise_result_level(result_level, 'suspicious')
     if target_text in ('', '-'):
         trust = '疑似误报'
-        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+        result_level = _cap_ai_denoise_result_level(result_level, 'suspicious')
+    if strong_verify_signals:
+        trust = '可信'
+        if result_level == 'safe':
+            result_level = 'suspicious'
+    if weak_verify_signals and not strong_verify_signals:
+        trust = '疑似误报'
+        if 'not_found' in weak_verify_signals or 'network_error' in weak_verify_signals:
+            result_level = _cap_ai_denoise_result_level(result_level, 'safe')
+        else:
+            result_level = _cap_ai_denoise_result_level(result_level, 'suspicious')
 
     evidence = [
         '风险名称：{}。'.format(vul_name or '-'),
@@ -3724,7 +3978,13 @@ def _rule_analyze_vuln_item(item, module_id='vuln'):
     if plg_type_text and plg_type_text != '-':
         evidence.append('风险类型：{}。'.format(plg_type_text))
     if has_verify:
-        evidence.append('存在验证信息，长度 {}（当前规则仅占位，建议以 AI 结果为准）。'.format(len(verify_text)))
+        evidence.append('存在验证信息，长度 {}。'.format(len(verify_text)))
+        if strong_verify_signals:
+            evidence.append('验证证据命中强信号：{}。'.format('、'.join(strong_verify_signals[:4])))
+        if weak_verify_signals:
+            evidence.append('验证证据同时出现弱信号：{}。'.format('、'.join(weak_verify_signals[:4])))
+        if verify_signals.get('excerpt'):
+            evidence.append('验证证据摘要：{}。'.format(verify_signals.get('excerpt')))
     else:
         evidence.append('缺少明确验证信息（verify_data/credential 为空），已降权为疑似误报。')
 
@@ -3733,6 +3993,11 @@ def _rule_analyze_vuln_item(item, module_id='vuln'):
         suggestions.extend([
             '建议使用原始插件或手工 PoC 二次复测，确认是否真实可利用。',
             '结合业务鉴权与返回差异补充证据后再定级。',
+        ])
+    elif strong_verify_signals:
+        suggestions.extend([
+            '建议优先围绕已命中的验证证据复现，确认影响范围与利用前置条件。',
+            '保留原始请求/响应和关键截图，避免后续只剩模板名无法复盘。',
         ])
     else:
         suggestions.extend([
@@ -3885,28 +4150,71 @@ def _format_ai_structured_dialogue_text(parsed_obj):
 
 def _build_ai_denoise_context(module_id, item):
     if module_id == 'site':
+        headers_text = _normalize_header_text(item.get('headers'))
+        surface_signals = _build_surface_signal_summary(
+            item.get('site') or item.get('url') or item.get('host'),
+            item.get('title'),
+            headers_text,
+        )
         return {
             'site': _normalize_item_text(item.get('site') or item.get('url') or item.get('host'), 1200),
             'title': _normalize_item_text(item.get('title'), 420),
             'status_code': _safe_int_any(item.get('status_code') or item.get('status'), 0),
-            'headers': _normalize_header_text(item.get('headers')),
+            'headers': headers_text,
+            'body_length': _safe_int_any(item.get('body_length'), 0),
+            'http_server': _normalize_item_text(item.get('http_server'), 160),
             'finger': _extract_site_finger_names(item.get('finger')),
+            'surface_signals': [key for key, value in dict(surface_signals or {}).items() if value],
         }
     if module_id == 'fileleak':
+        surface_signals = _build_surface_signal_summary(item.get('url'), item.get('title'), '')
+        path_signals = _build_url_path_signal_summary(item.get('url'))
         return {
             'url': _normalize_item_text(item.get('url'), 1200),
             'title': _normalize_item_text(item.get('title'), 400),
             'status_code': _safe_int_any(item.get('status_code'), 0),
             'content_length': _safe_int_any(item.get('content_length'), 0),
             'source': _normalize_item_text(item.get('source'), 200),
+            'file_extension': _normalize_item_text(path_signals.get('extension'), 24),
+            'basename': _normalize_item_text(path_signals.get('basename'), 160),
+            'surface_signals': [key for key, value in dict(surface_signals or {}).items() if value],
+            'path_signals': [
+                key for key, value in {
+                    'sensitive_file': path_signals.get('sensitive_file'),
+                    'static_asset': path_signals.get('static_asset'),
+                }.items() if value
+            ],
         }
     if module_id == 'url':
+        surface_signals = _build_surface_signal_summary(item.get('url'), item.get('title'), '')
+        path_signals = _build_url_path_signal_summary(item.get('url'))
+        query_params = []
+        try:
+            parsed = urlparse(str(item.get('url') or '').strip())
+            for key_text, _ in parse_qsl(parsed.query, keep_blank_values=True):
+                normalized_key = str(key_text or '').strip()
+                if normalized_key and normalized_key not in query_params:
+                    query_params.append(normalized_key[:80])
+                if len(query_params) >= 12:
+                    break
+        except Exception:
+            query_params = []
         return {
             'url': _normalize_item_text(item.get('url'), 1200),
             'title': _normalize_item_text(item.get('title'), 400),
             'status_code': _safe_int_any(item.get('status_code'), 0),
             'content_length': _safe_int_any(item.get('content_length'), 0),
             'source': _normalize_item_text(item.get('source'), 200),
+            'file_extension': _normalize_item_text(path_signals.get('extension'), 24),
+            'basename': _normalize_item_text(path_signals.get('basename'), 160),
+            'query_params': query_params,
+            'surface_signals': [key for key, value in dict(surface_signals or {}).items() if value],
+            'path_signals': [
+                key for key, value in {
+                    'sensitive_file': path_signals.get('sensitive_file'),
+                    'static_asset': path_signals.get('static_asset'),
+                }.items() if value
+            ],
         }
     if module_id == 'wih_endpoint':
         request_summary = _extract_wih_endpoint_request_summary(item)
@@ -3958,14 +4266,23 @@ def _build_ai_denoise_context(module_id, item):
             'subject_dn': _normalize_item_text(cert_obj.get('subject_dn'), 420),
         }
     if module_id == 'vuln':
+        verify_text = _normalize_item_text(item.get('verify_data') or item.get('credential') or item.get('verify_obj'), 800)
+        verify_signals = _build_verify_signal_summary(verify_text, plg_type_text=item.get('plg_type') or item.get('type'))
         return {
             'vul_name': _normalize_item_text(item.get('vul_name'), 260),
             'plg_type': _normalize_item_text(item.get('plg_type'), 120),
             'target': _normalize_item_text(item.get('target'), 420),
-            'credential': _normalize_item_text(item.get('verify_data') or item.get('credential') or item.get('verify_obj'), 800),
+            'credential': verify_text,
+            'description': _normalize_item_text(item.get('description') or item.get('detail'), 800),
+            'proof_type': _normalize_item_text(item.get('proof_type'), 120),
+            'proof_strength': _normalize_item_text(item.get('proof_strength'), 80),
+            'proof_summary': _normalize_item_text(item.get('proof_summary'), 600),
+            'verify_signals': list(verify_signals.get('strong_signals') or [])[:6] + list(verify_signals.get('weak_signals') or [])[:6],
             'save_date': _normalize_item_text(item.get('save_date'), 60),
         }
     if module_id == 'nuclei_result':
+        verify_text = _normalize_item_text(item.get('verify_data'), 1200)
+        verify_signals = _build_verify_signal_summary(verify_text, plg_type_text=item.get('vuln_name') or item.get('rule_id'))
         return {
             'scanner_type': _normalize_item_text(item.get('scanner_type'), 80),
             'rule_id': _normalize_item_text(item.get('rule_id'), 200),
@@ -3973,7 +4290,12 @@ def _build_ai_denoise_context(module_id, item):
             'vuln_url': _normalize_item_text(item.get('vuln_url'), 420),
             'vuln_name': _normalize_item_text(item.get('vuln_name'), 260),
             'vuln_severity': _normalize_item_text(item.get('vuln_severity'), 60),
-            'verify_data': _normalize_item_text(item.get('verify_data'), 1200),
+            'verify_data': verify_text,
+            'description': _normalize_item_text(item.get('description') or item.get('detail'), 800),
+            'proof_type': _normalize_item_text(item.get('proof_type'), 120),
+            'proof_strength': _normalize_item_text(item.get('proof_strength'), 80),
+            'proof_summary': _normalize_item_text(item.get('proof_summary'), 600),
+            'verify_signals': list(verify_signals.get('strong_signals') or [])[:6] + list(verify_signals.get('weak_signals') or [])[:6],
         }
     return {'raw': _normalize_item_text(item, 1800)}
 

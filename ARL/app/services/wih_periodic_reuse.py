@@ -202,9 +202,32 @@ class WihPeriodicReuseService(object):
         reused_urls = []
         current_date = getattr(utils, "curr_date", lambda: "")()
         reusable_hosts = {self._extract_host(item) for item in reusable_sites if self._extract_host(item)}
+        existing_fileleak_urls = set(
+            utils.conn_db("fileleak").distinct(
+                "url",
+                {
+                    "task_id": self.task_id,
+                },
+            )
+            or []
+        )
+        existing_url_assets = set(
+            utils.conn_db("url").distinct(
+                "url",
+                {
+                    "task_id": self.task_id,
+                },
+            )
+            or []
+        )
         for item in utils.conn_db("url").find({"task_id": previous_task_id, "source": CollectSource.WIH_URL_PROBE}):
             target_host = self._extract_host(item.get("url", "") or item.get("site", ""))
             if not target_host or target_host not in reusable_hosts:
+                continue
+            url_text = str(item.get("url", "") or item.get("site", "") or "").strip()
+            if not url_text:
+                continue
+            if url_text in existing_fileleak_urls or url_text in existing_url_assets:
                 continue
 
             doc = dict(item)
@@ -212,9 +235,8 @@ class WihPeriodicReuseService(object):
             doc["task_id"] = self.task_id
             doc["save_date"] = current_date
             docs.append(doc)
-            url_text = str(doc.get("url", "") or doc.get("site", "") or "").strip()
-            if url_text:
-                reused_urls.append(url_text)
+            reused_urls.append(url_text)
+            existing_url_assets.add(url_text)
 
         if docs:
             utils.conn_db("url").insert_many(docs)

@@ -5,6 +5,7 @@ URLFinder 提取 URL 可达性探测并入库
 - 从 WIH 的 `urlfinder_url/path_url/page_url` 记录中筛选当前任务同目标 URL
 - 探测 URL 可达性并提取页面基础信息
 - 将可访问 URL 写入 url 资产表，来源标记为 wih_url_probe
+- 若同任务目录扫描(fileleak)已存在同 URL，则不再重复写入 URL 信息
 """
 from typing import Dict, List, Optional, Set
 from urllib.parse import urlparse
@@ -120,22 +121,6 @@ class UrlfinderUrlProbeService:
             item["fld"] = domain_parsed["fld"]
         return item
 
-    @staticmethod
-    def _build_fileleak_item(url: str, task_id: str, source: str, site: str):
-        return {
-            "url": url,
-            "site": site,
-            "task_id": task_id,
-            "source": source,
-        }
-
-    @staticmethod
-    def _origin_url(url: str) -> str:
-        parsed = urlparse(str(url or "").strip())
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            return ""
-        return "{}://{}".format(parsed.scheme, parsed.netloc)
-
     def _filter_existing_urls(self, targets: List[str]) -> List[str]:
         if not targets:
             return []
@@ -152,23 +137,14 @@ class UrlfinderUrlProbeService:
             },
         )
         existing_urls |= set(db_existing or [])
-
-        return [url for url in targets if url not in existing_urls]
-
-    def _filter_existing_fileleak(self, targets: List[str]) -> List[str]:
-        if not targets:
-            return []
-
-        existing_urls = set(
-            utils.conn_db("fileleak").distinct(
-                "url",
-                {
-                    "task_id": self.task_id,
-                    "url": {"$in": targets},
-                },
-            )
-            or []
+        fileleak_existing = utils.conn_db("fileleak").distinct(
+            "url",
+            {
+                "task_id": self.task_id,
+                "url": {"$in": targets},
+            },
         )
+        existing_urls |= set(fileleak_existing or [])
         return [url for url in targets if url not in existing_urls]
 
     def _filter_dns_policy(self, targets: List[str]) -> List[str]:
@@ -205,24 +181,6 @@ class UrlfinderUrlProbeService:
 
         return inserted
 
-    def _insert_fileleak_pages(self, page_map: dict, pending_fileleak_targets: Set[str]) -> int:
-        inserted = 0
-        for url, page_data in (page_map or {}).items():
-            if url not in pending_fileleak_targets or not isinstance(page_data, dict):
-                continue
-
-            item = self._build_fileleak_item(
-                url,
-                self.task_id,
-                source=CollectSource.WIH_URL_PROBE,
-                site=self._origin_url(url),
-            )
-            item.update(page_data)
-            utils.conn_db("fileleak").insert_one(item)
-            inserted += 1
-
-        return inserted
-
     @staticmethod
     def _select_page_map(page_map: Dict[str, dict], targets: Set[str]) -> Dict[str, dict]:
         return {
@@ -246,17 +204,15 @@ class UrlfinderUrlProbeService:
             return 0
 
         pending_url_targets = self._filter_existing_urls(candidates)
-        pending_fileleak_targets = self._filter_existing_fileleak(candidates)
-        pending_targets = sorted(set(pending_url_targets) | set(pending_fileleak_targets))
+        pending_targets = list(pending_url_targets)
         if not pending_targets:
-            logger.info("urlfinder url probe skip, all candidates already collected")
+            logger.info("urlfinder url probe skip, all candidates already collected or shadowed by fileleak")
             return 0
 
         if len(pending_targets) > self.max_targets:
             pending_targets = pending_targets[: self.max_targets]
             pending_target_set = set(pending_targets)
             pending_url_targets = [url for url in pending_url_targets if url in pending_target_set]
-            pending_fileleak_targets = [url for url in pending_fileleak_targets if url in pending_target_set]
 
         probe_targets = self._filter_dns_policy(pending_targets)
         if not probe_targets:
@@ -271,21 +227,18 @@ class UrlfinderUrlProbeService:
         )
         probed_target_set = set(probe_targets)
         pending_url_target_set = set(pending_url_targets) & probed_target_set
-        pending_fileleak_target_set = set(pending_fileleak_targets) & probed_target_set
         inserted_url_count = self._insert_url_pages(self._select_page_map(page_map, pending_url_target_set))
-        inserted_fileleak_count = self._insert_fileleak_pages(page_map, pending_fileleak_target_set)
 
         logger.info(
-            "urlfinder url probe done, record_types:{} candidates:{} pending:{} dns_keep:{} url_inserted:{} fileleak_inserted:{}".format(
+            "urlfinder url probe done, record_types:{} candidates:{} pending:{} dns_keep:{} url_inserted:{}".format(
                 self.record_type_counter,
                 len(candidates),
                 len(pending_targets),
                 len(probe_targets),
                 inserted_url_count,
-                inserted_fileleak_count,
             )
         )
-        return inserted_url_count + inserted_fileleak_count
+        return inserted_url_count
 
 
 def run_urlfinder_url_probe(

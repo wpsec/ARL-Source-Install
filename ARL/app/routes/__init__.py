@@ -31,6 +31,7 @@ import time
 from app.utils import conn_db as conn
 from app.utils.cache import build_cache_key, cached_call
 from app.config import Config
+from app.modules import CollectSource
 
 # 基础查询字段定义
 # 这些字段用于分页、排序等通用查询功能
@@ -532,6 +533,8 @@ class ARLResource(Resource):
             if not task_id:
                 continue
             query = {"task_id": task_id}
+            if _type == "fileleak":
+                query["source"] = {"$ne": CollectSource.WIH_URL_PROBE}
             items = conn(_type).distinct(filed_name, query)
             items_set |= set(items)
 

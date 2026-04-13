@@ -1440,6 +1440,14 @@ class WebSiteFetch(object):
                 item["site"] = site
                 item.setdefault("source", CollectSource.FILE_LEAK_DICT_BRUTE)
                 utils.conn_db('fileleak').insert_one(item)
+                url_text = str(item.get("url", "") or "").strip()
+                if url_text:
+                    utils.conn_db("url").delete_many(
+                        {
+                            "task_id": self.task_id,
+                            "url": url_text,
+                        }
+                    )
 
     @property
     def poc_sites(self):

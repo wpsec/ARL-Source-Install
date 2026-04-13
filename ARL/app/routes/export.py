@@ -41,7 +41,7 @@ from app.utils import get_logger, auth
 from app.utils.tls_policy import get_ssl_security_compliance
 from app import utils
 from app.config import Config
-from app.modules import CeleryAction
+from app.modules import CeleryAction, CollectSource
 from urllib.parse import quote, urlparse
 
 ns = Namespace('export', description="任务报告导出接口")
@@ -1739,7 +1739,10 @@ def get_fileleak_data(task_id):
     获取任务的目录扫描（文件泄露）数据。
     """
     return utils.conn_db('fileleak').find(
-        {'task_id': task_id},
+        {
+            'task_id': task_id,
+            'source': {'$ne': CollectSource.WIH_URL_PROBE},
+        },
         projection=FILELEAK_EXPORT_PROJECTION,
     ).batch_size(MONGO_EXPORT_BATCH_SIZE)
 

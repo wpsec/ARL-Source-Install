@@ -1622,7 +1622,6 @@ const modules: ModuleConfig[] = [
         options: [
           { label: '全部', value: '' },
           { label: '字典爆破', value: 'dict_brute' },
-          { label: 'wih_url_probe', value: 'wih_url_probe' },
         ],
       },
       {
