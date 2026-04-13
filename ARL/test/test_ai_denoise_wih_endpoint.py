@@ -87,6 +87,35 @@ class TestAiDenoiseWihEndpoint(unittest.TestCase):
         self.assertIn("X-Trace-Id", context["request_header_names"])
         self.assertNotIn("Authorization", context["request_header_names"])
 
+    def test_build_context_includes_response_packet_evidence(self):
+        item = {
+            "task_id": "task-2b",
+            "target": "https://api.example.com",
+            "url": "https://api.example.com/api/importRule/copy.do",
+            "method": "POST",
+            "status_code": 200,
+            "response_size": 84,
+            "body_kind": "json",
+            "ai_fill_response_packet": (
+                "HTTP/1.1 200\r\n"
+                "Content-Type: application/json\r\n"
+                "\r\n"
+                "{\"code\":16,\"message\":\"[/api/importRule/copy.do]没有该资源访问权限\"}"
+            ),
+        }
+
+        with patch.object(
+            api_console_module,
+            "_build_wih_endpoint_site_summary",
+            return_value={"site": "https://api.example.com", "title": "海外业务系统", "finger": ["Spring Boot"]},
+        ):
+            context = api_console_module._build_ai_denoise_context("wih_endpoint", item)
+
+        self.assertIn("权限拒绝", context["response_semantics"])
+        self.assertIn("code", context["response_json_keys"])
+        self.assertIn("message", context["response_json_keys"])
+        self.assertIn("没有该资源访问权限", context["response_body_excerpt"])
+
     def test_normalize_output_keeps_value_labels(self):
         rule_result = {
             "result_level": "suspicious",
@@ -154,6 +183,41 @@ class TestAiDenoiseWihEndpoint(unittest.TestCase):
         self.assertEqual("高价值", result["display_text"])
         self.assertTrue(any("AI填充测试响应摘要" in text for text in result["evidence"]))
         self.assertTrue(any("AI填充补齐参数" in text for text in result["evidence"]))
+
+    def test_rule_analyze_caps_permission_denied_endpoint(self):
+        item = {
+            "task_id": "task-4",
+            "target": "https://overseas.example.com",
+            "url": "https://overseas.example.com/api-base/v1/importRule/copy.do",
+            "method": "POST",
+            "status_code": 200,
+            "response_size": 84,
+            "body_kind": "json",
+            "ai_fill_status": "filled",
+            "ai_fill_source": "ai",
+            "ai_fill_params": [
+                {"name": "id", "location": "body", "type": "id", "value": "1"},
+            ],
+            "ai_fill_response_packet": (
+                "HTTP/1.1 200\r\n"
+                "Content-Type: application/json;charset=UTF-8\r\n"
+                "\r\n"
+                "{\"code\":16,\"message\":\"[/api-base/v1/importRule/copy.do]没有该资源访问权限\"}"
+            ),
+        }
+
+        with patch.object(
+            api_console_module,
+            "_build_wih_endpoint_site_summary",
+            return_value={"site": "https://overseas.example.com", "title": "海外业务系统", "finger": ["Spring Boot"]},
+        ):
+            result = api_console_module._rule_analyze_wih_endpoint_item(item)
+            adjusted = api_console_module._apply_wih_endpoint_response_adjustment(item, result)
+
+        self.assertEqual("suspicious", adjusted["result_level"])
+        self.assertEqual("中价值", adjusted["trust"])
+        self.assertEqual("中价值", adjusted["display_text"])
+        self.assertTrue(any("权限" in text or "鉴权" in text for text in adjusted["evidence"]))
 
 
 if __name__ == "__main__":

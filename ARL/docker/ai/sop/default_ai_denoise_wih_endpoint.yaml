@@ -14,6 +14,7 @@ content: |
   - 站点信息：站点标题、指纹、页面URL、目标站点
   - 接口信息：接口URL、HTTP方法、状态码、响应大小、content_type、body_kind、source_types
   - 参数信息：param_names、query_params、body_params、path_params、request_header_names
+  - 响应证据：response_status_line、response_semantics、response_json_keys、response_body_excerpt、response_packet_excerpt、ai_fill_response_summary
   - 规则参考结论：rule_reference
 
   价值判断优先级：
@@ -28,7 +29,9 @@ content: |
 
   重点规则：
   - 不要仅因使用 POST、存在 query 参数或 URL 较长就判定为高价值
-  - 要结合站点标题/指纹、接口路径语义、参数名语义、请求体形态、响应状态共同判断
+  - 要结合站点标题/指纹、接口路径语义、参数名语义、请求体形态、响应状态和回复报文共同判断
+  - 若回复报文明确表示未登录、权限不足、访问被拒绝、资源不存在、参数校验失败，不要直接给高价值；通常只应判为中价值或无价值
+  - 只有当回复报文体现真实业务成功、敏感字段、用户/租户/权限信息、导出地址、文件地址或其它可利用业务反馈时，才可提级为高价值
   - 优先识别鉴权/越权、业务逻辑、上传解析、配置变更、敏感数据导出、调试面等高价值方向
   - 若证据不足，宁可给中价值，不要夸大为高价值
 

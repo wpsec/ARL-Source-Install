@@ -768,6 +768,7 @@ def _default_ai_prompt_templates():
                 "1) 正常/可疑/危险结论；"
                 "2) 最可能真实的技术栈/指纹（过滤明显误报）；"
                 "3) 可直接执行的验证建议（如目录探测、认证边界测试、WAF绕过前置检查）。"
+                "不要仅因标题包含后台、管理、swagger 等关键词就直接判危险；若缺少鉴权、入口、调试面、组件暴露等实证，优先给可疑。"
                 "禁止编造不存在的信息。"
             ),
             'updated_at': '',
@@ -782,6 +783,7 @@ def _default_ai_prompt_templates():
                 "1) 是否存在可利用入口（备份/配置/调试/上传）；"
                 "2) 建议先做哪类验证（鉴权绕过、目录遍历、文件读取、上传执行）；"
                 "3) 给出2-3条可操作的验证建议。"
+                "若仅命中敏感路径但返回 401/403/404、空页面或普通错误页，不要直接判危险。"
                 "禁止夸大风险，证据不足时明确标注待复核。"
             ),
             'updated_at': '',
@@ -809,6 +811,7 @@ def _default_ai_prompt_templates():
                 "1) 该URL属于登录、管理、调试、接口还是静态资源；"
                 "2) 是否值得进一步测试（鉴权、越权、注入、文件读取、重定向等）；"
                 "3) 明确下一步验证建议与优先级。"
+                "不要只因 URL 包含 admin、debug、swagger、token 等关键词就直接判危险；缺少成功访问或敏感反馈时优先给可疑。"
             ),
             'updated_at': '',
         },
@@ -818,9 +821,12 @@ def _default_ai_prompt_templates():
             'scene': 'ai_denoise_wih_endpoint',
             'content': (
                 "你是 WIH 结构化接口价值分析助手。请基于站点线索、页面URL、接口URL、HTTP方法、参数名、请求体形态、"
-                "状态码与响应大小，判断该接口是否值得优先进入渗透测试。"
+                "状态码、响应大小、响应语义、响应字段和回复报文摘要，判断该接口是否值得优先进入渗透测试。"
                 "你必须关注后台/鉴权/用户/角色/订单/支付/上传/导入导出/配置/租户/令牌/调试类接口，"
                 "同时降低新闻、公告、列表、帮助、静态内容、健康检查等低价值接口权重。"
+                "必须优先使用回复报文做校正：若响应明确为未登录、权限不足、访问被拒绝、资源不存在、参数校验失败，"
+                "不要仅因 POST、import/export、admin 等路径语义就直接判为高价值。"
+                "只有在响应已体现真实业务成功、敏感字段、导出地址、用户/租户/权限数据时，才可以提级为高价值。"
                 "输出时请给出："
                 "1) 高价值/中价值/无价值结论；"
                 "2) 关键证据；"
@@ -839,6 +845,7 @@ def _default_ai_prompt_templates():
                 "1) 哪些漏洞应优先复测；"
                 "2) 复测前置条件与利用链关键点；"
                 "3) 若疑似误报，给出最小复核路径。"
+                "必须优先参考验证证据和命中URL，若只有模板名称或风险等级、没有利用证据，不要直接判高可信。"
             ),
             'updated_at': '',
         },
@@ -2612,6 +2619,14 @@ def _merge_ai_denoise_result_level(current_level, next_level):
     return current
 
 
+def _cap_ai_denoise_result_level(current_level, max_level):
+    current = _normalize_ai_denoise_result_level(current_level, 'safe')
+    cap_level = _normalize_ai_denoise_result_level(max_level, 'safe')
+    if AI_DENOISE_RESULT_LEVEL_WEIGHT.get(current, 0) > AI_DENOISE_RESULT_LEVEL_WEIGHT.get(cap_level, 0):
+        return cap_level
+    return current
+
+
 def _normalize_risk_level_text(value):
     text = str(value or '').strip().lower()
     if text in ('无', 'none', 'no_value') or '无价值' in text or 'no value' in text:
@@ -2900,6 +2915,206 @@ def _extract_wih_endpoint_request_summary(item):
     }
 
 
+def _extract_response_packet_status_line(packet_text):
+    text = str(packet_text or '').strip()
+    if not text:
+        return ''
+    first_line = text.splitlines()[0] if text.splitlines() else ''
+    return _normalize_item_text(first_line, 180)
+
+
+def _extract_response_packet_body(packet_text):
+    text = str(packet_text or '').strip()
+    if not text:
+        return ''
+    parts = re.split(r'\r?\n\r?\n', text, maxsplit=1)
+    if len(parts) == 2:
+        return str(parts[1] or '').strip()
+    return ''
+
+
+def _extract_response_json_keys(value, limit=20):
+    result = []
+    seen = set()
+
+    def append_key(raw_key):
+        key_text = str(raw_key or '').strip()
+        if not key_text:
+            return
+        normalized = key_text.lower()
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        result.append(key_text[:80])
+
+    def walk(node):
+        if len(result) >= limit:
+            return
+        if isinstance(node, dict):
+            for key, nested in node.items():
+                append_key(key)
+                if len(result) >= limit:
+                    return
+                if isinstance(nested, (dict, list)):
+                    walk(nested)
+                    if len(result) >= limit:
+                        return
+        elif isinstance(node, list):
+            for nested in node[:5]:
+                if isinstance(nested, (dict, list)):
+                    walk(nested)
+                    if len(result) >= limit:
+                        return
+
+    walk(value)
+    return result[:limit]
+
+
+def _parse_response_json_payload(body_text):
+    text = str(body_text or '').strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        parsed_obj = _extract_json_object_from_text(text)
+        if isinstance(parsed_obj, dict):
+            return parsed_obj
+    return None
+
+
+def _build_wih_endpoint_response_insights(item):
+    source = ''
+    packet_text = ''
+    for field_name, source_name in (
+        ('ai_fill_response_packet', 'ai_fill'),
+        ('verification_response_packet', 'verification'),
+        ('response_packet', 'stored'),
+    ):
+        candidate = str(item.get(field_name) or '').strip()
+        if candidate:
+            source = source_name
+            packet_text = candidate
+            break
+
+    summary_text = _normalize_item_text(item.get('ai_fill_response_summary'), 600)
+    status_line = _extract_response_packet_status_line(packet_text)
+    body_text = _extract_response_packet_body(packet_text)
+    body_excerpt = _normalize_item_text(body_text, 800)
+    packet_excerpt = _normalize_item_text(packet_text, 1200)
+    parsed_json = _parse_response_json_payload(body_text)
+    json_keys = _extract_response_json_keys(parsed_json, limit=24) if parsed_json is not None else []
+    status_code = _safe_int_any(item.get('status_code') or item.get('response_status'), 0)
+
+    combined_text = ' '.join(
+        [
+            summary_text,
+            status_line,
+            body_excerpt,
+            ' '.join(json_keys),
+        ]
+    ).lower()
+    json_keys_lower = [str(key or '').strip().lower() for key in json_keys if str(key or '').strip()]
+
+    permission_denied_keywords = (
+        '没有该资源访问权限', '没有访问权限', '访问权限', '权限不足', '无权访问',
+        'permission denied', 'access denied', 'forbidden', 'forbidden request',
+        'not authorized', 'no permission',
+    )
+    auth_required_keywords = (
+        '未登录', '请先登录', '请登录', '登录后', '登录超时',
+        'unauthorized', 'authentication failed', 'login required',
+        'token invalid', 'token expired', 'invalid token',
+    )
+    resource_not_found_keywords = (
+        'resource not found', 'not found', '不存在', '未找到',
+        '没有该资源', '资源不存在',
+    )
+    validation_error_keywords = (
+        '参数错误', '参数缺失', '参数不能为空', '缺少参数', 'invalid parameter',
+        'missing parameter', 'validation failed', 'bad request', 'illegal argument',
+    )
+    success_keywords = (
+        '操作成功', '保存成功', '创建成功', '更新成功', '复制成功', '导出成功',
+        'success', '"success":true', '"ok":true',
+    )
+    sensitive_response_keywords = (
+        'token', 'access_token', 'refresh_token', 'userid', 'user_id', 'username',
+        'tenantid', 'tenant_id', 'roleid', 'role_id', 'permission', 'permissions',
+        'exporturl', 'export_url', 'downloadurl', 'download_url', 'filepath',
+        'file_url', 'oss', 'ak', 'sk',
+    )
+
+    semantics = []
+
+    def append_semantic(value):
+        if value not in semantics:
+            semantics.append(value)
+
+    if any(keyword in combined_text for keyword in permission_denied_keywords):
+        append_semantic('permission_denied')
+    if any(keyword in combined_text for keyword in auth_required_keywords):
+        append_semantic('auth_required')
+    if (
+        'permission_denied' not in semantics
+        and any(keyword in combined_text for keyword in resource_not_found_keywords)
+    ):
+        append_semantic('resource_not_found')
+    if any(keyword in combined_text for keyword in validation_error_keywords):
+        append_semantic('validation_error')
+
+    has_sensitive_response = (
+        any(keyword in combined_text for keyword in sensitive_response_keywords)
+        or any(
+            any(keyword in key for keyword in sensitive_response_keywords)
+            for key in json_keys_lower
+        )
+    )
+    if has_sensitive_response:
+        append_semantic('sensitive_response')
+
+    success_like = False
+    if any(keyword in combined_text for keyword in success_keywords):
+        success_like = True
+    if isinstance(parsed_json, dict):
+        if parsed_json.get('success') is True or parsed_json.get('ok') is True:
+            success_like = True
+        code_text = str(parsed_json.get('code') or '').strip().lower()
+        if code_text in ('0', '200', '20000', 'ok', 'success'):
+            success_like = True
+    if (
+        status_code in (200, 201, 202, 204)
+        and has_sensitive_response
+        and 'permission_denied' not in semantics
+        and 'auth_required' not in semantics
+        and 'resource_not_found' not in semantics
+    ):
+        success_like = True
+    if success_like and 'permission_denied' not in semantics and 'auth_required' not in semantics:
+        append_semantic('operation_success')
+
+    semantic_label_map = {
+        'permission_denied': '权限拒绝',
+        'auth_required': '鉴权失败/需要登录',
+        'resource_not_found': '资源不存在',
+        'validation_error': '参数校验失败',
+        'operation_success': '业务成功响应',
+        'sensitive_response': '返回敏感业务字段',
+    }
+    semantic_labels = [semantic_label_map.get(item, item) for item in semantics]
+
+    return {
+        'source': source,
+        'status_line': status_line,
+        'summary': summary_text,
+        'body_excerpt': body_excerpt,
+        'packet_excerpt': packet_excerpt,
+        'json_keys': json_keys[:12],
+        'semantics': semantics,
+        'semantic_labels': semantic_labels,
+    }
+
+
 def _build_wih_endpoint_site_summary(item):
     task_id_text = str(item.get('task_id') or '').strip()
     candidates = [
@@ -2918,6 +3133,80 @@ def _build_wih_endpoint_site_summary(item):
         'title': '',
         'finger': [],
     }
+
+
+def _apply_wih_endpoint_response_adjustment(item, result_item):
+    if not isinstance(result_item, dict):
+        return {}
+
+    adjusted = dict(result_item)
+    response_insights = _build_wih_endpoint_response_insights(item)
+    semantics = set(response_insights.get('semantics') or [])
+    changed = False
+
+    if not semantics:
+        return adjusted
+
+    evidence = _normalize_string_list_value(adjusted.get('evidence'), max_items=8, max_item_len=260)
+    suggestions = _normalize_string_list_value(adjusted.get('suggestions'), max_items=8, max_item_len=260)
+
+    has_success = 'operation_success' in semantics or 'sensitive_response' in semantics
+    if ('permission_denied' in semantics or 'auth_required' in semantics) and not has_success:
+        capped_level = _cap_ai_denoise_result_level(adjusted.get('result_level'), 'suspicious')
+        if capped_level != adjusted.get('result_level'):
+            adjusted['result_level'] = capped_level
+            adjusted['risk_level'] = '中'
+            adjusted['trust'] = '中价值'
+            changed = True
+        evidence.insert(0, '响应明确表现为权限/鉴权拒绝，当前仅证明接口位于受保护边界，不等于已成功触达敏感业务。')
+        suggestions.insert(0, '优先在不同认证态、不同角色和不同租户上下文下复测，再决定是否提级为高价值。')
+
+    if 'resource_not_found' in semantics and not has_success:
+        capped_level = _cap_ai_denoise_result_level(adjusted.get('result_level'), 'safe')
+        if capped_level != adjusted.get('result_level'):
+            adjusted['result_level'] = capped_level
+            adjusted['risk_level'] = '无'
+            adjusted['trust'] = '无价值'
+            changed = True
+        evidence.insert(0, '响应更像资源不存在或路径失效，当前不支持直接判定为高价值接口。')
+
+    if 'validation_error' in semantics and not has_success:
+        capped_level = _cap_ai_denoise_result_level(adjusted.get('result_level'), 'suspicious')
+        if capped_level != adjusted.get('result_level'):
+            adjusted['result_level'] = capped_level
+            adjusted['risk_level'] = '中'
+            adjusted['trust'] = '中价值'
+            changed = True
+        evidence.insert(0, '响应主要体现为参数校验失败，建议先补齐业务参数与认证上下文再复测。')
+
+    if 'operation_success' in semantics and 'sensitive_response' in semantics:
+        merged_level = _merge_ai_denoise_result_level(adjusted.get('result_level'), 'danger')
+        if merged_level != adjusted.get('result_level'):
+            adjusted['result_level'] = merged_level
+            adjusted['risk_level'] = '高'
+            adjusted['trust'] = '高价值'
+            changed = True
+        evidence.insert(0, '响应已出现成功业务信号，并伴随敏感字段或业务数据线索。')
+    elif 'operation_success' in semantics:
+        merged_level = _merge_ai_denoise_result_level(adjusted.get('result_level'), 'suspicious')
+        if merged_level != adjusted.get('result_level'):
+            adjusted['result_level'] = merged_level
+            adjusted['risk_level'] = '中'
+            adjusted['trust'] = '中价值'
+            changed = True
+
+    adjusted['evidence'] = evidence[:8]
+    adjusted['suggestions'] = suggestions[:6]
+    adjusted['display_text'] = _build_ai_denoise_display_text('wih_endpoint', adjusted.get('result_level'))
+    if changed:
+        method_text = _normalize_item_text(item.get('method'), 20).upper() or 'GET'
+        url_text = _normalize_item_text(item.get('url'), 900)
+        adjusted['summary'] = 'WIH接口价值分析结果：{}。接口：{} {}。已结合回复报文语义校正。'.format(
+            adjusted.get('display_text') or '-',
+            method_text,
+            url_text or '-',
+        )
+    return adjusted
 
 
 def _rule_analyze_site_item(item):
@@ -3134,6 +3423,8 @@ def _rule_analyze_wih_endpoint_item(item):
     source_types = _normalize_string_list_value(item.get('source_types'), max_items=8, max_item_len=40)
     request_summary = _extract_wih_endpoint_request_summary(item)
     site_summary = _build_wih_endpoint_site_summary(item)
+    response_insights = _build_wih_endpoint_response_insights(item)
+    response_semantics = set(response_insights.get('semantics') or [])
 
     combined_text = ' '.join(
         [
@@ -3145,6 +3436,9 @@ def _rule_analyze_wih_endpoint_item(item):
             ' '.join(request_summary.get('param_names') or []),
             ai_fill_response_summary,
             ai_fill_note,
+            response_insights.get('body_excerpt') or '',
+            ' '.join(response_insights.get('json_keys') or []),
+            ' '.join(response_insights.get('semantic_labels') or []),
         ]
     ).lower()
     param_names_lower = [
@@ -3210,6 +3504,12 @@ def _rule_analyze_wih_endpoint_item(item):
         evidence.append('AI填充测试响应摘要：{}。'.format(ai_fill_response_summary))
         if any(keyword in ai_fill_response_summary.lower() for keyword in ('token', 'role', 'user', 'tenant', 'order', 'invoice', 'config', 'upload', 'export')):
             result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+    if response_insights.get('status_line'):
+        evidence.append('响应状态行：{}。'.format(response_insights.get('status_line')))
+    if response_insights.get('semantic_labels'):
+        evidence.append('响应语义：{}。'.format('、'.join(response_insights.get('semantic_labels')[:4])))
+    if response_insights.get('json_keys'):
+        evidence.append('响应字段：{}。'.format(', '.join(list(response_insights.get('json_keys') or [])[:8])))
     if ai_fill_hint_only:
         evidence.append('AI填充判定该接口副作用较高，仅给出提示未主动实测。')
         if method_text in ('DELETE', 'PUT', 'PATCH'):
@@ -3234,6 +3534,16 @@ def _rule_analyze_wih_endpoint_item(item):
         evidence.append('接口已有响应指标：状态 {}，大小 {} 字节。'.format(status_code or '-', response_size))
     elif status_code > 0:
         evidence.append('接口已有响应状态：{}。'.format(status_code))
+    if 'operation_success' in response_semantics:
+        result_level = _merge_ai_denoise_result_level(result_level, 'suspicious')
+    if 'sensitive_response' in response_semantics:
+        result_level = _merge_ai_denoise_result_level(result_level, 'danger')
+    if ('permission_denied' in response_semantics or 'auth_required' in response_semantics) and 'operation_success' not in response_semantics and 'sensitive_response' not in response_semantics:
+        result_level = _cap_ai_denoise_result_level(result_level, 'suspicious')
+    if 'resource_not_found' in response_semantics and 'operation_success' not in response_semantics and 'sensitive_response' not in response_semantics:
+        result_level = _cap_ai_denoise_result_level(result_level, 'safe')
+    if 'validation_error' in response_semantics and 'operation_success' not in response_semantics and 'sensitive_response' not in response_semantics:
+        result_level = _cap_ai_denoise_result_level(result_level, 'suspicious')
     if source_types:
         evidence.append('来源类型：{}。'.format('、'.join(source_types[:4])))
     if result_level == 'safe' and any(keyword in combined_text for keyword in low_value_keywords):
@@ -3601,6 +3911,7 @@ def _build_ai_denoise_context(module_id, item):
     if module_id == 'wih_endpoint':
         request_summary = _extract_wih_endpoint_request_summary(item)
         site_summary = _build_wih_endpoint_site_summary(item)
+        response_insights = _build_wih_endpoint_response_insights(item)
         return {
             'target': _normalize_item_text(item.get('target') or item.get('site'), 320),
             'page_url': _normalize_item_text(item.get('page_url'), 900),
@@ -3625,6 +3936,12 @@ def _build_ai_denoise_context(module_id, item):
             'ai_fill_params': item.get('ai_fill_params') if isinstance(item.get('ai_fill_params'), list) else [],
             'ai_fill_note': _normalize_item_text(item.get('ai_fill_note'), 240),
             'ai_fill_response_summary': _normalize_item_text(item.get('ai_fill_response_summary'), 600),
+            'response_source': _normalize_item_text(response_insights.get('source'), 40),
+            'response_status_line': _normalize_item_text(response_insights.get('status_line'), 160),
+            'response_semantics': _normalize_string_list_value(response_insights.get('semantic_labels'), max_items=8, max_item_len=80),
+            'response_json_keys': _normalize_string_list_value(response_insights.get('json_keys'), max_items=12, max_item_len=80),
+            'response_body_excerpt': _normalize_item_text(response_insights.get('body_excerpt'), 800),
+            'response_packet_excerpt': _normalize_item_text(response_insights.get('packet_excerpt'), 1200),
         }
     if module_id == 'cert':
         cert_obj = item.get('cert') if isinstance(item.get('cert'), dict) else {}
@@ -4099,6 +4416,8 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False, pers
     for index, item in enumerate(normalized_items):
         row_key = _extract_row_key(item, index)
         rule_result = _build_ai_denoise_rule_result(module_id, item)
+        if module_id == 'wih_endpoint':
+            rule_result = _apply_wih_endpoint_response_adjustment(item, rule_result)
         source = 'rule'
         analysis_note = ''
         dialogue_records = _build_rule_dialogue_records(module_id, item, rule_result, note='当前为规则分析模式。')
@@ -4347,6 +4666,9 @@ def _analyze_ai_denoise_batch(ai_config, module_id, items, prefer_ai=False, pers
                 fallback_note = '当前为列表批量分析，默认使用规则模式避免阻塞页面。'
             analysis_note = fallback_note or '当前结果来自规则分析。'
             dialogue_records = _build_rule_dialogue_records(module_id, item, final_result, note=fallback_note)
+
+        if module_id == 'wih_endpoint':
+            final_result = _apply_wih_endpoint_response_adjustment(item, final_result)
 
         results.append(
             {
