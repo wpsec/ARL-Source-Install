@@ -169,6 +169,7 @@
    - 接口/参数恢复明显增量
 
 3. 对未命中升级条件的普通站点，停留在轻量 runtime。
+4. 当前实现中，轻量阶段除了看总记录量，还会额外看 `page_url / path / urlfinder_url / endpoint` 这类高价值信号密度；如果信号已经足够明确，则不再继续升级到完整 runtime。
 
 ## 5.3 第三阶段：URLFinder 二次敏感扫描止损
 
@@ -227,6 +228,52 @@
 - `WIH_MINIMAL_RUNTIME_ENABLE`
 - `URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT`
 
+### 6.1 超时口径说明
+
+这轮实现里，`WIH` 相关超时分成两类，不能混看：
+
+- `WIH_LIGHT_TIMEOUT_SEC`
+  - 作用对象：单批 `WIH` 子进程
+  - 含义：轻量阶段这整个 batch 最多允许跑多久
+  - 默认值：`120s`
+  - 备注：这不是单页超时
+
+- `WIH_LIGHT_RUNTIME_TIMEOUT_SEC`
+  - 作用对象：runtime 内部单页探索
+  - 含义：`Playwright` 处理单页时的超时预算
+  - 默认值：`20s`
+
+- `WIH_MINIMAL_TIMEOUT_SEC`
+  - 作用对象：单批 `WIH` 子进程
+  - 含义：`minimal` 回退阶段整批最多允许运行多久
+  - 默认值：`120s`
+
+- `WIH_RUNTIME_TIMEOUT_SEC`
+  - 作用对象：完整 runtime 单页探索
+  - 含义：深度 runtime 阶段内部单页预算
+  - 默认值：`60s`
+
+设计上，轻量阶段就是为了更激进地止损，所以默认值已经收到了 `120s`。如果现场目标极慢，可以再按需上调；如果主要是周期任务、站点又比较稳定，这个值继续收紧到 `90s` 也可以考虑。
+
+### 6.2 当前默认建议
+
+当前仓库建议默认值如下：
+
+- `ARL.WIH_CONCURRENCY = 8`
+- `ARL.WIH_CONCURRENCY_PER_SITE = 2`
+- `ARL.WIH_LIGHT_TIMEOUT_SEC = 120`
+- `ARL.WIH_LIGHT_RUNTIME_TIMEOUT_SEC = 20`
+- `ARL.WIH_MINIMAL_TIMEOUT_SEC = 120`
+- `ARL.URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT = 2`
+- `tools/wih --concurrency/-c = 4`
+- `tools/wih --concurrency-per-site/-P = 3`
+
+这一组的原则是：
+
+- 先提升“站点并发”，不先提升“单站点并发”
+- 先收紧轻量阶段和回退阶段的总预算
+- 保留完整 runtime 和 secondary scan 能力，但减少无效空转
+
 ## 7. 回归与验收
 
 ## 7.1 能力回归
@@ -284,10 +331,20 @@
 
 ## 9. 当前实施说明
 
-本次提交先落：
+当前已经完成：
 
-- 计划文档
+- 计划文档与实施边界收口
 - 周期任务上下文透传
-- `WIH` 周期复用骨架
+- 周期任务 `WIH` 保守复用骨架
+- `WIH` 轻量 runtime -> 完整 runtime 的保守升级
+- `minimal` 真正轻量回退
+- `urlfinder_sensitive` 候选优先级与无新增止损
+- 多 worker 启动恢复误判收口
+- `task_schedule_run` 终态重查与知识库补写
 
-后续在此基础上继续推进分级调度与一致性修复。
+下一轮继续优化的重点不再是“有没有能力”，而是更细的性能精修：
+
+1. 基于 `JS/resource hash` 的更细粒度增量缓存
+2. 基于产出密度的 runtime 升级信号细化
+3. 基于站点画像的自适应 batch / concurrency
+4. 周期任务与即时任务分层参数模板

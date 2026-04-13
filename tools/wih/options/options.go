@@ -26,7 +26,7 @@ func Options() *datatype.Option {
 		ParameterOutputPath: "",
 		LogLevel:            "info",
 		LogFile:             "-",
-		Concurrency:         2,
+		Concurrency:         4,
 		ConcurrencyPerSite:  3,
 		MaxCollect:          600,
 		LimitReaderSize:     10 * 1024 * 1024,
@@ -73,7 +73,7 @@ func Options() *datatype.Option {
 	)
 
 	flagset.CreateGroup("runtime", "运行参数",
-		flagset.IntVarP(&option.Concurrency, "concurrency", "c", 2, "并发数(针对站点)"),
+		flagset.IntVarP(&option.Concurrency, "concurrency", "c", 4, "并发数(针对站点)"),
 		flagset.IntVarP(&option.ConcurrencyPerSite, "concurrency-per-site", "P", 3, "每个站点的并发数"),
 		flagset.IntVarP(&option.MaxCollect, "max-collect", "M", 600, "用于表示所有收集类型的最大收集数量, 对于每个站点"),
 		flagset.IntVarP(&option.LimitReaderSize, "limit-reader-size", "", 10*1024*1024, "Maximum response size (in bytes)"),

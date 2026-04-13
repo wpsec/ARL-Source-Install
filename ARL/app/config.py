@@ -777,7 +777,7 @@ class Config(object):
     # WIH 扫描超时（秒）
     WIH_TIMEOUT_SEC = 2 * 60 * 60
     # WIH 全局并发（透传给 wih --concurrency / -c）
-    WIH_CONCURRENCY = 6
+    WIH_CONCURRENCY = 8
     # WIH 单站点并发（透传给 wih --concurrency-per-site）
     WIH_CONCURRENCY_PER_SITE = 2
     # WIH 单批最大站点数，避免大批次超时后整批重跑
@@ -790,8 +790,8 @@ class Config(object):
     WIH_PERIODIC_REUSE_LOG_DETAIL = True
     # 是否启用计划任务下的 WIH 自适应 runtime：先轻量运行，再按需升级完整 runtime
     WIH_ADAPTIVE_RUNTIME_ENABLE = True
-    # 轻量 runtime 主扫描的进程级超时（秒）
-    WIH_LIGHT_TIMEOUT_SEC = 15 * 60
+    # 轻量 runtime 主扫描的进程级超时（秒，针对单批 WIH 子进程，不是单页超时）
+    WIH_LIGHT_TIMEOUT_SEC = 2 * 60
     # 轻量 runtime 单次运行时超时（秒）
     WIH_LIGHT_RUNTIME_TIMEOUT_SEC = 20
     # 轻量 runtime 最大页面数
@@ -800,8 +800,8 @@ class Config(object):
     WIH_LIGHT_RUNTIME_MAX_ACTIONS = 10
     # 轻量 runtime 最大请求数
     WIH_LIGHT_RUNTIME_MAX_REQUESTS = 60
-    # minimal 回退阶段的独立超时（秒）
-    WIH_MINIMAL_TIMEOUT_SEC = 15 * 60
+    # minimal 回退阶段的独立超时（秒，针对单批 WIH 子进程）
+    WIH_MINIMAL_TIMEOUT_SEC = 2 * 60
     # minimal 回退阶段是否保留 runtime（默认关闭，避免重试时再次进入高成本动态链路）
     WIH_MINIMAL_RUNTIME_ENABLE = False
     # WIH 接口 AI 填充单次最多处理目标数

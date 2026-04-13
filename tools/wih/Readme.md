@@ -48,7 +48,7 @@ Usage:
 Flags:
       --ak-sk-output string        AK/SK 单独保存的文件名（相对文件名默认写入主输出目录） (default "ak_leak.txt")
   -a, --auto-save-name             根据站点自动生成保存的文件名
-  -c, --concurrency int            并发数(针对站点) (default 2)
+  -c, --concurrency int            并发数(针对站点) (default 4)
   -P, --concurrency-per-site int   每个站点的并发数 (default 3)
       --csv                        CSV 格式输出
       --dc                         禁止检查 AK/SK 有效性

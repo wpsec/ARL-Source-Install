@@ -981,13 +981,23 @@ class InfoHunter(object):
         payload_items, invalid_items = self._parse_wih_payload_items(raw_text)
         record_count = 0
         endpoint_count = 0
+        signal_record_count = 0
         completed_sites = self._extract_result_sites(payload_items)
+        signal_types = {
+            "endpoint",
+            "path",
+            "page_url",
+            "urlfinder_url",
+            "urlfinder_js",
+            "api_doc_url",
+        }
         for item in list(payload_items or []):
             if not isinstance(item, dict):
                 continue
             endpoints = item.get("endpoints")
             if isinstance(endpoints, list):
                 endpoint_count += len(endpoints)
+                signal_record_count += len(endpoints)
 
             records = item.get("records")
             if not isinstance(records, list):
@@ -996,6 +1006,14 @@ class InfoHunter(object):
                 records = item.get("results")
             if isinstance(records, list):
                 record_count += len(records)
+                for record in records:
+                    if not isinstance(record, dict):
+                        continue
+                    record_type = str(
+                        record.get("id") or record.get("type") or record.get("name") or ""
+                    ).strip().lower()
+                    if record_type in signal_types:
+                        signal_record_count += 1
 
         return {
             "payload_items": payload_items,
@@ -1003,6 +1021,7 @@ class InfoHunter(object):
             "completed_sites": completed_sites,
             "record_count": record_count,
             "endpoint_count": endpoint_count,
+            "signal_record_count": signal_record_count,
         }
 
     def _should_escalate_light_result(self, raw_text: str, batch_sites: list) -> bool:
@@ -1011,14 +1030,18 @@ class InfoHunter(object):
         completed_sites = summary.get("completed_sites", []) or []
         record_count = int(summary.get("record_count", 0) or 0)
         endpoint_count = int(summary.get("endpoint_count", 0) or 0)
+        signal_record_count = int(summary.get("signal_record_count", 0) or 0)
 
         if len(completed_sites) < site_count:
             return True
         if endpoint_count > 0:
             return False
 
-        # 轻量 runtime 只在结果足够“厚”时直接接受，避免周期任务为了提速把稀疏站点过早放行。
-        min_record_threshold = max(8, site_count * 6)
+        # 轻量 runtime 只在结果足够“厚”或信号足够明确时直接接受，避免周期任务为了提速把稀疏站点过早放行。
+        min_record_threshold = max(8, site_count * 5)
+        min_signal_threshold = max(3, site_count * 2)
+        if signal_record_count >= min_signal_threshold:
+            return False
         return record_count < min_record_threshold
 
     def _run_wih_command(self, command: list, batch_sites: list, command_name: str, timeout_sec: int = None):

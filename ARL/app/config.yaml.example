@@ -474,7 +474,7 @@ ARL:
   # WIH 扫描超时（秒）
   WIH_TIMEOUT_SEC: 7200
   # WIH 全局并发（若 wih 二进制支持 --concurrency / -c）
-  WIH_CONCURRENCY: 6
+  WIH_CONCURRENCY: 8
   # WIH 单站点并发（若 wih 二进制支持 --concurrency-per-site）
   WIH_CONCURRENCY_PER_SITE: 2
   # WIH 单批最大站点数，避免超时后把大批次整批重跑
@@ -487,9 +487,9 @@ ARL:
   WIH_PERIODIC_REUSE_LOG_DETAIL: true
   # 周期任务是否优先使用轻量 runtime，再按结果保守升级到完整预算
   WIH_ADAPTIVE_RUNTIME_ENABLE: true
-  # 周期任务轻量 runtime 的进程级超时（秒）
-  WIH_LIGHT_TIMEOUT_SEC: 900
-  # 轻量 runtime 单页超时（秒）
+  # 周期任务轻量 runtime 的进程级超时（秒，针对单批 WIH 子进程，不是单页超时）
+  WIH_LIGHT_TIMEOUT_SEC: 120
+  # 轻量 runtime 单页超时（秒，控制 runtime 内部单页探索）
   WIH_LIGHT_RUNTIME_TIMEOUT_SEC: 20
   # 轻量 runtime 最大页面数
   WIH_LIGHT_RUNTIME_MAX_PAGES: 4
@@ -497,8 +497,8 @@ ARL:
   WIH_LIGHT_RUNTIME_MAX_ACTIONS: 10
   # 轻量 runtime 最大请求采集数
   WIH_LIGHT_RUNTIME_MAX_REQUESTS: 60
-  # WIH minimal 回退阶段进程级超时（秒）
-  WIH_MINIMAL_TIMEOUT_SEC: 900
+  # WIH minimal 回退阶段进程级超时（秒，针对单批 WIH 子进程）
+  WIH_MINIMAL_TIMEOUT_SEC: 120
   # WIH minimal 回退是否保留 runtime（默认关闭，避免 fallback 继续重扫动态链路）
   WIH_MINIMAL_RUNTIME_ENABLE: false
   # WIH 接口 AI 填充单次最多处理接口数
