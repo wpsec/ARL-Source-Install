@@ -1065,7 +1065,8 @@ def run_wih_endpoint_ai_fill(task_id: str, endpoints: List[Dict], waf_guard=None
             item["ai_fill_source"] = "disabled"
         return items
 
-    max_targets = max(1, int(getattr(Config, "WIH_ENDPOINT_AI_FILL_MAX_TARGETS", 60) or 60))
+    raw_max_targets = _safe_int(getattr(Config, "WIH_ENDPOINT_AI_FILL_MAX_TARGETS", 0), 0)
+    max_targets = raw_max_targets if raw_max_targets > 0 else None
     concurrency = max(1, int(getattr(Config, "WIH_ENDPOINT_AI_FILL_CONCURRENCY", 4) or 4))
     dns_policy_cache = {}
     results = [None] * len(items)
@@ -1074,7 +1075,7 @@ def run_wih_endpoint_ai_fill(task_id: str, endpoints: List[Dict], waf_guard=None
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         for index, item in enumerate(items):
-            if active_count >= max_targets:
+            if max_targets is not None and active_count >= max_targets:
                 item["task_id"] = str(task_id or "").strip()
                 item["ai_fill_status"] = "skipped"
                 item["ai_fill_note"] = "超过 WIH 接口 AI 填充上限，未继续处理"

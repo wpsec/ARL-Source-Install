@@ -525,7 +525,7 @@ ARL:
   # WIH minimal 回退是否保留 runtime（默认关闭，避免 fallback 继续重扫动态链路）
   WIH_MINIMAL_RUNTIME_ENABLE: false
   # WIH 接口 AI 填充单次最多处理接口数
-  WIH_ENDPOINT_AI_FILL_MAX_TARGETS: 200
+  WIH_ENDPOINT_AI_FILL_MAX_TARGETS: 0
   # WIH 接口 AI 填充并发
   WIH_ENDPOINT_AI_FILL_CONCURRENCY: 4
   # WIH 接口 AI 填充单请求超时（秒）

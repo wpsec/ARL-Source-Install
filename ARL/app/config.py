@@ -804,8 +804,8 @@ class Config(object):
     WIH_MINIMAL_TIMEOUT_SEC = 2 * 60
     # minimal 回退阶段是否保留 runtime（默认关闭，避免重试时再次进入高成本动态链路）
     WIH_MINIMAL_RUNTIME_ENABLE = False
-    # WIH 接口 AI 填充单次最多处理目标数
-    WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 200
+    # WIH 接口 AI 填充单次最多处理目标数（0=不限制）
+    WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 1000
     # WIH 接口 AI 填充并发
     WIH_ENDPOINT_AI_FILL_CONCURRENCY = 4
     # WIH 接口 AI 填充单请求超时（秒）
@@ -1455,9 +1455,11 @@ try:
     if y["ARL"].get("WIH_MINIMAL_RUNTIME_ENABLE") is not None:
         Config.WIH_MINIMAL_RUNTIME_ENABLE = bool(y["ARL"]["WIH_MINIMAL_RUNTIME_ENABLE"])
     if y["ARL"].get("WIH_ENDPOINT_AI_FILL_MAX_TARGETS") is not None:
-        Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_positive_int(
-            int(y["ARL"]["WIH_ENDPOINT_AI_FILL_MAX_TARGETS"]), Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS
+        Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_int(
+            y["ARL"]["WIH_ENDPOINT_AI_FILL_MAX_TARGETS"], Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS
         )
+        if Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS < 0:
+            Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 0
     if y["ARL"].get("WIH_ENDPOINT_AI_FILL_CONCURRENCY") is not None:
         Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY = safe_positive_int(
             int(y["ARL"]["WIH_ENDPOINT_AI_FILL_CONCURRENCY"]), Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY
@@ -2134,10 +2136,12 @@ try:
     Config.WIH_MINIMAL_RUNTIME_ENABLE = env_bool(
         "ARL_WIH_MINIMAL_RUNTIME_ENABLE", Config.WIH_MINIMAL_RUNTIME_ENABLE
     )
-    Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_positive_int(
+    Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_int(
         env_int("ARL_WIH_ENDPOINT_AI_FILL_MAX_TARGETS", Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS),
         Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS
     )
+    if Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS < 0:
+        Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 0
     Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY = safe_positive_int(
         env_int("ARL_WIH_ENDPOINT_AI_FILL_CONCURRENCY", Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY),
         Config.WIH_ENDPOINT_AI_FILL_CONCURRENCY

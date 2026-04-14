@@ -3,6 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-04-14（v4.6.78）
+
+- `[v4.6.78]` `WIH接口AI填充默认不设上限`：针对任务详情里频繁出现“`AI填充结果` 状态为 `已跳过 / 来源：skipped`，提示 `超过 WIH 接口 AI 填充上限，未继续处理`”，导致大批量 `WIH接口` 在默认配置下被硬性截断的问题，这一轮将 `WIH_ENDPOINT_AI_FILL_MAX_TARGETS` 的默认值从固定上限改为 `0`，统一解释为“**不限制**”。后端执行链开始把 `<=0` 视为无限制，不再把 `0` 自动回退成旧默认值；配置文件读取、环境变量覆盖与 `AI管理` 前端表单也同步改为接受 `0`，输入框提示明确写成“`0` 表示不限制”。对应地，只有显式填写正整数时，`WIH接口AI填充` 才会按该值限流并落成 `skipped`，避免默认部署下大量接口因为预算阈值被无感跳过`
+
 ## 2026-04-14（v4.6.77）
 
 - `[v4.6.77]` `WIH长尾超时/任务恢复判定/耗时观测` 收口：针对近期计划任务与域名任务里出现的 `worker_bootstrap` 误报、任务总时长远大于已记录子阶段耗时，以及 `urlfinder_sensitive` 中二次 `WIH` 递归超时会把阶段预算跑穿的问题，这一轮同时收口了三条链。首先，worker 启动恢复不再在 `Celery inspect` 失败或回包不完整时直接批量恢复/标错 `running` 与 `waiting` 任务，启动日志新增 `inspect_ok / inspect_trusted / inspect_reply_workers / broker_consumer_total`，避免其它 Pod 仍在执行的长任务被误写成 `worker restarted before task finished`。其次，任务执行时间概览开始明确区分“已记录子阶段耗时、当前进行阶段、未计入耗时”，后端也为 `wih_domain_update / task_finalize` 等尾部流程补齐 `service` 埋点，减少“任务看起来跑了几个小时，但累计耗时只显示几分钟”的排障盲区。最后，`urlfinder_sensitive` 在构造二次 `InfoHunter` 时开始携带绝对 deadline，`WIH` 子批次 timeout 会按剩余预算自动收缩，deadline 耗尽后不再继续拆半递归，避免 `600s/120s` 的 timeout split 链把单个 batch 拖到几十分钟甚至更久；对应 `celery recovery / wih timeout split / urlfinder sensitive / 前端任务耗时概览` 回归与构建校验已同步补齐`

@@ -277,6 +277,34 @@ class TestWihEndpointAiFill(unittest.TestCase):
         self.assertIsNone(result.get("status_code"))
         self.assertIsNone(result.get("response_size"))
 
+    def test_zero_max_targets_means_unlimited(self):
+        endpoints = []
+        for index in range(3):
+            endpoints.append(
+                {
+                    "target": "https://api{}.example.com".format(index),
+                    "page_url": "https://api{}.example.com/docs".format(index),
+                    "url": "https://api{}.example.com/v1/users".format(index),
+                    "method": "GET",
+                    "request_template": {
+                        "query": {"id": "<value>"},
+                    },
+                    "status_code": None,
+                    "response_size": None,
+                }
+            )
+
+        with patch.object(fill_module, "_load_ai_fill_runtime", return_value=self._runtime()), \
+             patch.object(fill_module.utils, "check_dns_policy_for_url", return_value=(True, {})), \
+             patch.object(fill_module.Config, "WIH_ENDPOINT_AI_FILL_MAX_TARGETS", 0), \
+             patch.object(fill_module.Config, "WIH_ENDPOINT_AI_FILL_CONCURRENCY", 1), \
+             patch.object(fill_module.requests, "request", return_value=_FakeResponse()):
+            results = fill_module.run_wih_endpoint_ai_fill("task-5", endpoints)
+
+        self.assertEqual(3, len(results))
+        self.assertTrue(all(item.get("ai_fill_status") != "skipped" for item in results))
+        self.assertTrue(all(item.get("ai_fill_source") != "skipped" for item in results))
+
 
 if __name__ == "__main__":
     unittest.main()

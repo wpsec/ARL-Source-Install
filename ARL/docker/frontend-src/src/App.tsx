@@ -19325,7 +19325,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     const activePromptId = promptIds.includes(activePromptIdRaw) ? activePromptIdRaw : promptIds[0] || '';
     const dialogContextMessages = Number(rawForm?.dialog_context_messages ?? 8);
     const requestDelayMs = Number(rawForm?.request_delay_ms ?? 0);
-    const wihEndpointAiFillMaxTargets = Number(rawForm?.wih_endpoint_ai_fill_max_targets ?? 200);
+    const wihEndpointAiFillMaxTargets = Number(rawForm?.wih_endpoint_ai_fill_max_targets ?? 0);
     const aiPenMcpMaxToolCalls = Number(rawForm?.ai_pen_mcp_max_tool_calls ?? 6);
     const aiPenMcpTimeoutSec = Number(rawForm?.ai_pen_mcp_timeout_sec ?? 12);
     const aiPenExternalTimeoutSec = Number(rawForm?.ai_pen_external_timeout_sec ?? 45);
@@ -19360,9 +19360,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         Number.isFinite(dialogContextMessages) && dialogContextMessages > 0 ? dialogContextMessages : 8,
       request_delay_ms: Number.isFinite(requestDelayMs) && requestDelayMs >= 0 ? Math.floor(requestDelayMs) : 0,
       wih_endpoint_ai_fill_max_targets:
-        Number.isFinite(wihEndpointAiFillMaxTargets) && wihEndpointAiFillMaxTargets > 0
+        Number.isFinite(wihEndpointAiFillMaxTargets) && wihEndpointAiFillMaxTargets >= 0
           ? Math.floor(wihEndpointAiFillMaxTargets)
-          : 200,
+          : 0,
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
@@ -19777,9 +19777,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         Number.isFinite(dialogContextMessages) && dialogContextMessages > 0 ? Math.floor(dialogContextMessages) : 8,
       request_delay_ms: Number.isFinite(requestDelayMs) && requestDelayMs >= 0 ? Math.floor(requestDelayMs) : 0,
       wih_endpoint_ai_fill_max_targets:
-        Number.isFinite(wihEndpointAiFillMaxTargets) && wihEndpointAiFillMaxTargets > 0
+        Number.isFinite(wihEndpointAiFillMaxTargets) && wihEndpointAiFillMaxTargets >= 0
           ? Math.min(5000, Math.floor(wihEndpointAiFillMaxTargets))
-          : 200,
+          : 0,
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
@@ -20837,7 +20837,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <input
               id="ai-wih-endpoint-max-targets"
               type="number"
-              min={1}
+              min={0}
               max={5000}
               value={String(form.wih_endpoint_ai_fill_max_targets)}
               onChange={(event) =>
@@ -20847,10 +20847,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 }))
               }
               className={aiInputClass}
-              placeholder="默认 200"
+              placeholder="默认 0"
             />
             <div className="text-[11px] text-brand-text-muted">
-              单次任务里允许进入 AI 填充的 `WIH` 接口数量上限，超过后会被跳过。
+              单次任务里允许进入 AI 填充的 `WIH` 接口数量上限，`0` 表示不限制。
             </div>
           </div>
           <div className="space-y-2 xl:col-span-3">
