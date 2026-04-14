@@ -47,6 +47,69 @@ base_query_fields = {
 EQUAL_FIELDS = ["task_id", "task_tag", "ip_type", "scope_id", "type"]
 TASK_STATUS_RUNNING_EXCLUDE = ["waiting", "done", "stop", "error"]
 TASK_STATUS_COLLECTIONS = {"task", "github_task"}
+TASK_SERVICE_PARENT_PREFIXES = {
+    "web_info_hunter": ("wih_",),
+}
+
+
+def build_task_service_summary(service_list):
+    """
+    生成任务阶段耗时汇总，避免父子阶段重复累计。
+    """
+    if not isinstance(service_list, list):
+        return {}
+
+    service_names = set()
+    for item in service_list:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if name:
+            service_names.add(name)
+
+    skip_parent_names = set()
+    for parent_name, child_prefixes in TASK_SERVICE_PARENT_PREFIXES.items():
+        if parent_name not in service_names:
+            continue
+        for service_name in service_names:
+            if any(service_name.startswith(prefix) for prefix in child_prefixes):
+                skip_parent_names.add(parent_name)
+                break
+
+    total_elapsed = 0.0
+    dedup_elapsed = 0.0
+    phase_count = 0
+    dedup_phase_count = 0
+    skipped = []
+
+    for item in service_list:
+        if not isinstance(item, dict):
+            continue
+
+        name = str(item.get("name", "")).strip()
+        elapsed = item.get("elapsed", 0)
+        try:
+            elapsed = float(elapsed)
+        except Exception:
+            elapsed = 0.0
+
+        phase_count += 1
+        total_elapsed += elapsed
+
+        if name in skip_parent_names:
+            skipped.append(name)
+            continue
+
+        dedup_phase_count += 1
+        dedup_elapsed += elapsed
+
+    return {
+        "phase_count": phase_count,
+        "dedup_phase_count": dedup_phase_count,
+        "total_elapsed": round(total_elapsed, 2),
+        "dedup_elapsed": round(dedup_elapsed, 2),
+        "skipped_parent_phase": sorted(list(set(skipped))),
+    }
 
 
 class ARLResource(Resource):
@@ -264,6 +327,9 @@ class ARLResource(Resource):
             for key in item:
                 if key in special_keys:
                     item[key] = str(item[key])
+
+            if isinstance(item.get("service"), list):
+                item["service_summary"] = build_task_service_summary(item["service"])
 
             items.append(item)
 

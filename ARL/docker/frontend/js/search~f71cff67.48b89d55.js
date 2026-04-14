@@ -2281,13 +2281,6 @@
                 ),
             };
           },
-          mounted: function () {
-            var t = this;
-            this.record.statistic &&
-              Object.keys(this.record.statistic).forEach(function (e) {
-                t.href += "&".concat(e, "=").concat(t.record.statistic[e]);
-              });
-          },
         },
         a = n("2877"),
         s = Object(a.a)(

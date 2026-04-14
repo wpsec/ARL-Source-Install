@@ -54,7 +54,9 @@
         },
         watch: {
           $route: function (t, e) {
-            this.checkParams();
+            (this.checkParams(),
+              "function" == typeof this.loadTaskStatistic &&
+                this.loadTaskStatistic());
           },
         },
         computed: {
@@ -1821,6 +1823,7 @@
             (this.initTabNum(),
               (this.tableConfig = r.c),
               this.checkParams(),
+              this.loadTaskStatistic(),
               Object.keys(this.$route.query).forEach(function (e) {
                 t.currentComponent.searchGroup.find(function (t) {
                   return t.value === e;
@@ -1828,19 +1831,8 @@
               }));
           },
           methods: {
-            changeCallback: function (t, e, n) {
-              var a;
-              ((a = this.currentComponent.params.order
-                ? this.currentComponent.params.order.includes("-")
-                  ? ""
-                  : "-" + n.columnKey
-                : n.columnKey),
-                (this.currentComponent.params.order = a),
-                (this.tableConfig[this.currentIndex].params.order = a),
-                this.initData(this.currentIndex));
-            },
-            initTabNum: function () {
-              var t = [
+            syncTabNum: function (t) {
+              var e = [
                 { key: "site_cnt", num: 0 },
                 { key: "domain_cnt", num: 1 },
                 { key: "ip_cnt", num: 2 },
@@ -1855,12 +1847,39 @@
                 { key: "wih_cnt", num: 11 },
               ];
               this.tabList = JSON.parse(JSON.stringify(this.originList));
-              var e = this.$route.query;
-              if (e.site_cnt)
-                for (var n = 0; n < t.length; n++)
-                  this.tabList[n] = ""
+              for (var n = 0; n < e.length; n++)
+                void 0 !== t[e[n].key] &&
+                  null !== t[e[n].key] &&
+                  (this.tabList[n] = ""
                     .concat(this.originList[n], " - ")
-                    .concat(e[t[n].key]);
+                    .concat(t[e[n].key]));
+            },
+            loadTaskStatistic: function () {
+              var t = this,
+                e = this.$route.query.task_id;
+              e &&
+                Object(i.E)({ _id: e, size: 1 })
+                  .then(function (e) {
+                    if (200 === e.code && e.items && e.items.length) {
+                      var n = e.items[0].statistic;
+                      n && "object" == typeof n && t.syncTabNum(n);
+                    }
+                  })
+                  .catch(function () {});
+            },
+            changeCallback: function (t, e, n) {
+              var a;
+              ((a = this.currentComponent.params.order
+                ? this.currentComponent.params.order.includes("-")
+                  ? ""
+                  : "-" + n.columnKey
+                : n.columnKey),
+                (this.currentComponent.params.order = a),
+                (this.tableConfig[this.currentIndex].params.order = a),
+                this.initData(this.currentIndex));
+            },
+            initTabNum: function () {
+              this.syncTabNum(this.$route.query);
             },
             saveResult: function (t) {
               var e = this,
@@ -3055,13 +3074,6 @@
                     : this.record.target,
                 ),
             };
-          },
-          mounted: function () {
-            var t = this;
-            this.record.statistic &&
-              Object.keys(this.record.statistic).forEach(function (e) {
-                t.href += "&".concat(e, "=").concat(t.record.statistic[e]);
-              });
           },
         },
         r = n("2877"),

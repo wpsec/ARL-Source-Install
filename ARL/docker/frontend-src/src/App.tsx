@@ -4387,6 +4387,13 @@ function parseTaskServiceElapsedSeconds(rawValue: any): number | null {
   return parsed;
 }
 
+function parseTaskServiceSummaryCount(rawValue: any): number | null {
+  if (rawValue === null || rawValue === undefined) return null;
+  const parsed = Number(String(rawValue).trim());
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.floor(parsed);
+}
+
 function getTaskServiceStageLabel(rawName: any, fallback: string): string {
   const text = String(rawName ?? '').trim();
   if (!text) return fallback;
@@ -4401,12 +4408,28 @@ function buildTaskServiceDurationSummary(row: any): {
     elapsedSeconds: number | null;
     elapsedLabel: string;
     detail: string;
+    countedInTotal: boolean;
   }>;
+  totalStageCount: number;
   totalDurationSeconds: number | null;
   totalDurationLabel: string;
   countedStageCount: number;
+  rawTotalDurationSeconds: number | null;
+  rawTotalDurationLabel: string;
+  dedupApplied: boolean;
+  skippedParentStageNames: string[];
 } {
   const serviceItems = Array.isArray(row?.service) ? row.service : [];
+  const rawServiceSummary = row?.service_summary;
+  const serviceSummary = rawServiceSummary && typeof rawServiceSummary === 'object'
+    ? rawServiceSummary
+    : null;
+  const skippedParentStageKeys = Array.isArray(serviceSummary?.skipped_parent_phase)
+    ? serviceSummary.skipped_parent_phase
+      .map((item: any) => String(item ?? '').trim().toLowerCase())
+      .filter(Boolean)
+    : [];
+  const skippedParentStageKeySet = new Set(skippedParentStageKeys);
   const entries = serviceItems.map((item, index) => {
     const rawStageName = String(item?.name ?? item?.service_name ?? item?.stage ?? item ?? '').trim();
     const stageName = getTaskServiceStageLabel(
@@ -4423,18 +4446,38 @@ function buildTaskServiceDurationSummary(row: any): {
       elapsedSeconds,
       elapsedLabel: elapsedSeconds === null ? '-' : formatDurationSecondsLabel(elapsedSeconds),
       detail,
+      countedInTotal: !skippedParentStageKeySet.has(rawStageName.toLowerCase()),
     };
   });
   const entriesWithDuration = entries.filter((item) => item.elapsedSeconds !== null);
-  const totalDurationSeconds = entriesWithDuration.length > 0
+  const rawTotalDurationSeconds = entriesWithDuration.length > 0
     ? entriesWithDuration.reduce((sum, item) => sum + Number(item.elapsedSeconds || 0), 0)
     : null;
+  const dedupDurationSeconds = parseTaskServiceElapsedSeconds(serviceSummary?.dedup_elapsed);
+  const totalStageCount = parseTaskServiceSummaryCount(serviceSummary?.phase_count) ?? entries.length;
+  const countedStageCount = parseTaskServiceSummaryCount(serviceSummary?.dedup_phase_count) ?? entriesWithDuration.length;
+  const totalDurationSeconds = dedupDurationSeconds ?? rawTotalDurationSeconds;
+  const dedupApplied = Boolean(
+    dedupDurationSeconds !== null && (
+      skippedParentStageKeys.length > 0 ||
+      (rawTotalDurationSeconds !== null && Math.abs(rawTotalDurationSeconds - dedupDurationSeconds) >= 0.01) ||
+      countedStageCount !== entriesWithDuration.length
+    )
+  );
+  const skippedParentStageNames = skippedParentStageKeys.map((stageKey, index) =>
+    getTaskServiceStageLabel(stageKey, `汇总阶段${index + 1}`)
+  );
 
   return {
     entries,
+    totalStageCount,
     totalDurationSeconds,
     totalDurationLabel: formatDurationSecondsLabel(totalDurationSeconds),
-    countedStageCount: entriesWithDuration.length,
+    countedStageCount,
+    rawTotalDurationSeconds,
+    rawTotalDurationLabel: formatDurationSecondsLabel(rawTotalDurationSeconds),
+    dedupApplied,
+    skippedParentStageNames,
   };
 }
 
@@ -11927,11 +11970,19 @@ function TableModuleView({
                                       <div className="text-[11px] text-brand-text-muted">结束：{currentEndText}</div>
                                     </div>
                                     <div className="mt-2 text-[11px] text-brand-text-muted">
-                                      已记录子任务阶段 {taskServiceDuration.entries.length} 个，可统计耗时 {taskServiceDuration.countedStageCount} 个
+                                      已记录子任务阶段 {taskServiceDuration.totalStageCount} 个，可统计耗时 {taskServiceDuration.countedStageCount} 个
                                     </div>
                                     <div className="text-[11px] text-brand-text-muted">
                                       子任务累计耗时：{taskServiceDuration.totalDurationLabel}
                                     </div>
+                                    {taskServiceDuration.dedupApplied ? (
+                                      <div className="text-[11px] text-brand-text-muted">
+                                        已自动排除父阶段重复统计
+                                        {taskServiceDuration.skippedParentStageNames.length
+                                          ? `：${taskServiceDuration.skippedParentStageNames.join('、')}`
+                                          : ''}
+                                      </div>
+                                    ) : null}
                                     {taskAccountingSummary.currentStageVisible ? (
                                       <div className="text-[11px] text-brand-text-muted">
                                         当前进行阶段：{taskAccountingSummary.currentStageName}
@@ -11952,7 +12003,7 @@ function TableModuleView({
                                         taskServiceDuration.entries.map((entry, lineIndex) => (
                                           <React.Fragment key={`${lineIndex}-${entry.stageName}`}>
                                             <div className="font-mono break-all">
-                                              {`${lineIndex + 1}. ${entry.stageName}：${entry.elapsedLabel}`}
+                                              {`${lineIndex + 1}. ${entry.stageName}：${entry.elapsedLabel}${entry.countedInTotal ? '' : '（汇总阶段，未计入累计耗时）'}`}
                                             </div>
                                             {entry.detail ? (
                                               <div className="pl-4 text-brand-text-muted break-all">

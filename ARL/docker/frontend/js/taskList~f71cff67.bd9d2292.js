@@ -3108,13 +3108,6 @@
                 ),
             };
           },
-          mounted: function () {
-            var t = this;
-            this.record.statistic &&
-              Object.keys(this.record.statistic).forEach(function (e) {
-                t.href += "&".concat(e, "=").concat(t.record.statistic[e]);
-              });
-          },
         },
         s = a("2877"),
         r = Object(s.a)(
