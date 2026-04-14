@@ -406,6 +406,82 @@ class TestWihTimeoutSplit(unittest.TestCase):
             sorted([item.site for item in results]),
         )
 
+    def test_execute_profile_once_clamps_timeout_by_deadline(self):
+        hunter = InfoHunter(["https://a.example.com"])
+        hunter._supports_flag = lambda flag_text: flag_text in {"-c", "-v"}
+        hunter.wih_deadline_ts = 145
+        timeout_holder = {}
+
+        def _fake_run_wih_command(command, batch_sites, command_name, timeout_sec=None):
+            timeout_holder["timeout_sec"] = timeout_sec
+            return {
+                "ok": True,
+                "timed_out": False,
+                "completed": None,
+                "stderr": "",
+                "stdout": "",
+                "error": "",
+            }
+
+        with patch.object(info_hunter_module.time, "time", return_value=100):
+            with patch.object(hunter, "_run_wih_command", side_effect=_fake_run_wih_command):
+                with patch.object(hunter, "_read_current_result_text", return_value="[]"):
+                    result = hunter._execute_profile_once(
+                        ["https://a.example.com"],
+                        [],
+                        0,
+                        "minimal",
+                        "minimal",
+                    )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(45, timeout_holder["timeout_sec"])
+
+    def test_exec_wih_skips_timeout_split_when_deadline_exhausted(self):
+        hunter = InfoHunter(
+            [
+                "https://a.example.com",
+                "https://b.example.com",
+                "https://c.example.com",
+            ]
+        )
+        call_batches = []
+
+        def _fake_execute_profile_once(batch_sites, aggregate_result_texts, depth, profile_name, stage_name):
+            call_batches.append(list(batch_sites))
+            return {
+                "ok": False,
+                "timed_out": True,
+                "partial_saved": False,
+                "remaining_sites": list(batch_sites),
+                "raw_text": "",
+                "profile": {},
+                "deadline_exhausted": False,
+            }
+
+        hunter._execute_profile_once = _fake_execute_profile_once
+        hunter._is_wih_deadline_exhausted = lambda: True
+
+        result = hunter._exec_wih_batch(
+            [
+                "https://a.example.com",
+                "https://b.example.com",
+                "https://c.example.com",
+            ],
+            [],
+            depth=0,
+        )
+
+        self.assertFalse(result)
+        self.assertEqual(
+            [[
+                "https://a.example.com",
+                "https://b.example.com",
+                "https://c.example.com",
+            ]],
+            call_batches,
+        )
+
     def test_exec_wih_timeout_salvages_completed_sites_before_retry(self):
         hunter = InfoHunter(
             [

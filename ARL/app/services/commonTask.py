@@ -115,11 +115,30 @@ class CommonTask(object):
 
         services.sync_asset(task_id=self.task_id, scope_id=related_scope_id)
 
+    def _run_internal_stage(self, name: str, func: callable, detail: str = ""):
+        base_update_task = getattr(self, "base_update_task", None)
+        logger.info("start internal stage {} task_id:{} detail:{}".format(name, self.task_id, detail or "-"))
+        if base_update_task:
+            base_update_task.update_task_field("status", name)
+
+        t1 = time.time()
+        result = func()
+        elapse = time.time() - t1
+
+        if base_update_task:
+            base_update_task.append_service(name, elapse, detail=detail, trigger_ai=False)
+
+        logger.info("end internal stage {} ({:.2f}s) task_id:{}".format(name, elapse, self.task_id))
+        return result
+
     def common_run(self):
-        self.insert_finger_stat()
-        self.insert_cip_stat()
-        self.insert_task_stat()
-        self.sync_asset()
+        def _finalize():
+            self.insert_finger_stat()
+            self.insert_cip_stat()
+            self.insert_task_stat()
+            self.sync_asset()
+
+        self._run_internal_stage("task_finalize", _finalize)
 
 
 # *** 对用户提交的站点或者是发现的站点进行后续处理

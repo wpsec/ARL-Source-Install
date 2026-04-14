@@ -79,8 +79,23 @@ recover_interrupted_tasks() {
 output="$(PYTHONPATH=/code python3 - <<'PY' 2>/dev/null || true
 from app import celerytask, utils
 
-live_task_id_set, _ = celerytask._collect_live_celery_task_ids(timeout_sec=1.5)
-interrupted_result = utils.recover_interrupted_tasks_on_worker_start(live_task_id_set=live_task_id_set)
+recovery_guard = celerytask._collect_live_task_recovery_guard(
+    timeout_sec=1.5,
+    queue_names=celerytask._WAITING_ORPHAN_QUEUE_SET,
+)
+live_task_id_set = set(recovery_guard.get("task_id_set") or set())
+inspect_ok = bool(recovery_guard.get("live_ok"))
+inspect_trusted = bool(recovery_guard.get("trusted"))
+inspect_reply_workers = int(recovery_guard.get("reply_worker_count", 0) or 0)
+broker_consumer_total = int(recovery_guard.get("consumer_total", 0) or 0)
+if inspect_trusted:
+    interrupted_result = utils.recover_interrupted_tasks_on_worker_start(live_task_id_set=live_task_id_set)
+else:
+    interrupted_result = {
+        "task": 0,
+        "github_task": 0,
+        "live_skip": 0,
+    }
 requeue_waiting_result = celerytask.requeue_orphan_waiting_tasks_on_worker_start()
 orphan_waiting_result = celerytask.recover_orphan_waiting_tasks_on_worker_start()
 task_count = int((interrupted_result or {}).get("task", 0) or 0)
@@ -91,7 +106,11 @@ requeue_github_count = int((requeue_waiting_result or {}).get("github_task", 0) 
 orphan_task_count = int((orphan_waiting_result or {}).get("task", 0) or 0)
 orphan_github_count = int((orphan_waiting_result or {}).get("github_task", 0) or 0)
 print(
-    "recover interrupted tasks task={} github_task={} live_skip={} requeue_waiting_task={} requeue_waiting_github_task={} orphan_waiting_task={} orphan_waiting_github_task={}".format(
+    "recover interrupted tasks inspect_ok={} inspect_trusted={} inspect_reply_workers={} broker_consumer_total={} task={} github_task={} live_skip={} requeue_waiting_task={} requeue_waiting_github_task={} orphan_waiting_task={} orphan_waiting_github_task={}".format(
+        int(inspect_ok),
+        int(inspect_trusted),
+        inspect_reply_workers,
+        broker_consumer_total,
         task_count,
         github_count,
         live_skip,

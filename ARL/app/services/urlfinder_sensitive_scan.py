@@ -226,6 +226,7 @@ class UrlfinderSensitiveScanner:
     def _build_secondary_hunter(self, batch_targets: List[str], timeout_sec: int) -> InfoHunter:
         hunter = InfoHunter(batch_targets)
         hunter.wih_timeout_sec = max(60, int(timeout_sec or self.secondary_wih_timeout_sec))
+        hunter.wih_deadline_ts = time.time() + max(1, int(timeout_sec or self.secondary_wih_timeout_sec))
         # 二次敏感扫描的目标主要是 URL/HTML/JS，关闭 runtime 能明显降低耗时与资源占用。
         hunter.wih_runtime_enable = False
         hunter.wih_runtime_driver = "noop"

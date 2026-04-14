@@ -145,12 +145,18 @@ def _extract_live_task_ids(task_items):
     return task_id_set
 
 
-def _collect_live_celery_task_ids(timeout_sec=1.5):
+def _collect_live_celery_task_snapshot(timeout_sec=1.5):
     """
-    收集当前 worker 已知的 active/reserved/scheduled 任务 id。
+    收集当前 worker 已知的 active/reserved/scheduled 任务快照。
+
+    返回：
+    - task_id_set: 当前存活任务 id 集合
+    - reply_worker_set: 有响应的 worker 名称集合
+    - ok: inspect 调用是否成功
     """
     inspect = celery.control.inspect(timeout=timeout_sec)
     live_task_id_set = set()
+    reply_worker_set = set()
 
     try:
         result_list = [
@@ -160,24 +166,48 @@ def _collect_live_celery_task_ids(timeout_sec=1.5):
         ]
     except Exception as e:
         logger.warning("collect live celery task ids failed error:{}".format(e))
-        return live_task_id_set, False
+        return {
+            "task_id_set": live_task_id_set,
+            "reply_worker_set": reply_worker_set,
+            "ok": False,
+        }
 
     for result in result_list:
         if not isinstance(result, dict):
             continue
-        for _, task_items in result.items():
+        for worker_name, task_items in result.items():
+            worker_name = str(worker_name or "").strip()
+            if worker_name:
+                reply_worker_set.add(worker_name)
             live_task_id_set |= _extract_live_task_ids(task_items)
 
-    return live_task_id_set, True
+    return {
+        "task_id_set": live_task_id_set,
+        "reply_worker_set": reply_worker_set,
+        "ok": True,
+    }
 
 
-def _get_broker_queue_message_counts(queue_names):
+def _collect_live_celery_task_ids(timeout_sec=1.5):
     """
-    使用 broker 被动声明读取队列消息数，不修改队列状态。
+    收集当前 worker 已知的 active/reserved/scheduled 任务 id。
+    """
+    snapshot = _collect_live_celery_task_snapshot(timeout_sec=timeout_sec)
+    return set(snapshot.get("task_id_set") or set()), bool(snapshot.get("ok"))
+
+
+def _get_broker_queue_metrics(queue_names):
+    """
+    使用 broker 被动声明读取队列状态，不修改队列状态。
+
+    返回：
+    - message_count_map: 队列消息数
+    - consumer_count_map: 队列消费者数
     """
     from kombu import Queue
 
-    count_map = {}
+    message_count_map = {}
+    consumer_count_map = {}
     try:
         with celery.connection_or_acquire() as conn:
             channel = conn.channel()
@@ -186,24 +216,104 @@ def _get_broker_queue_message_counts(queue_names):
                     try:
                         queue = Queue(queue_name, channel=channel)
                         declared = queue.queue_declare(passive=True, channel=channel)
-                        count_map[queue_name] = int((declared or ("", 0, 0))[1] or 0)
+                        declared_tuple = declared or ("", 0, 0)
+                        message_count_map[queue_name] = int(declared_tuple[1] or 0)
+                        consumer_count_map[queue_name] = int(declared_tuple[2] or 0)
                     except Exception as e:
                         logger.warning(
-                            "get broker queue message count failed queue:{} error:{}".format(
+                            "get broker queue metrics failed queue:{} error:{}".format(
                                 queue_name, e
                             )
                         )
-                        return count_map, False
+                        return {
+                            "message_count_map": message_count_map,
+                            "consumer_count_map": consumer_count_map,
+                        }, False
             finally:
                 try:
                     channel.close()
                 except Exception:
                     pass
     except Exception as e:
-        logger.warning("connect broker for queue count failed error:{}".format(e))
-        return count_map, False
+        logger.warning("connect broker for queue metrics failed error:{}".format(e))
+        return {
+            "message_count_map": message_count_map,
+            "consumer_count_map": consumer_count_map,
+        }, False
 
-    return count_map, True
+    return {
+        "message_count_map": message_count_map,
+        "consumer_count_map": consumer_count_map,
+    }, True
+
+
+def _get_broker_queue_message_counts(queue_names):
+    """
+    使用 broker 被动声明读取队列消息数，不修改队列状态。
+    """
+    metrics, ok = _get_broker_queue_metrics(queue_names)
+    return dict(metrics.get("message_count_map") or {}), ok
+
+
+def _get_broker_queue_consumer_counts(queue_names):
+    """
+    使用 broker 被动声明读取队列消费者数，不修改队列状态。
+    """
+    metrics, ok = _get_broker_queue_metrics(queue_names)
+    return dict(metrics.get("consumer_count_map") or {}), ok
+
+
+def _build_live_task_recovery_guard(live_ok, reply_worker_set=None, consumer_ok=True, consumer_count_map=None):
+    """
+    构建启动恢复前的 inspect 可信度判断。
+
+    背景：
+    - 多 worker/长任务场景下，Celery inspect 可能只返回部分 worker。
+    - 若直接把“有返回”视为可信，就可能把另一个 worker 正在执行的任务误判成中断。
+    """
+    safe_reply_worker_set = {
+        str(item or "").strip()
+        for item in list(reply_worker_set or [])
+        if str(item or "").strip()
+    }
+    safe_consumer_count_map = {}
+    for key, value in dict(consumer_count_map or {}).items():
+        try:
+            safe_consumer_count_map[str(key or "").strip()] = max(int(value or 0), 0)
+        except Exception:
+            safe_consumer_count_map[str(key or "").strip()] = 0
+
+    reply_worker_count = len(safe_reply_worker_set)
+    consumer_total = sum(safe_consumer_count_map.values())
+    trusted = bool(live_ok and consumer_ok and reply_worker_count >= consumer_total)
+
+    return {
+        "trusted": trusted,
+        "live_ok": bool(live_ok),
+        "consumer_ok": bool(consumer_ok),
+        "reply_worker_count": reply_worker_count,
+        "consumer_total": consumer_total,
+        "reply_worker_set": safe_reply_worker_set,
+        "consumer_count_map": safe_consumer_count_map,
+    }
+
+
+def _collect_live_task_recovery_guard(timeout_sec=1.5, queue_names=None):
+    """
+    收集启动恢复所需的 live task 快照，并判断是否可信。
+    """
+    snapshot = _collect_live_celery_task_snapshot(timeout_sec=timeout_sec)
+    consumer_count_map, consumer_ok = _get_broker_queue_consumer_counts(
+        queue_names or _WAITING_ORPHAN_QUEUE_SET
+    )
+    guard = _build_live_task_recovery_guard(
+        live_ok=snapshot.get("ok"),
+        reply_worker_set=snapshot.get("reply_worker_set"),
+        consumer_ok=consumer_ok,
+        consumer_count_map=consumer_count_map,
+    )
+    guard["task_id_set"] = set(snapshot.get("task_id_set") or set())
+    return guard
 
 
 def _guess_waiting_task_dispatch_ts(item):
@@ -372,14 +482,25 @@ def requeue_orphan_waiting_tasks_on_worker_start(
     - 保留原 dispatch_queue，避免把历史重任务全部挤回主队列
     - 若重投失败，任务仍交由后续 orphan recovery 兜底标记 error
     """
-    live_task_id_set, live_ok = _collect_live_celery_task_ids(timeout_sec=inspect_timeout_sec)
-    queue_count_map, queue_ok = _get_broker_queue_message_counts(_WAITING_ORPHAN_QUEUE_SET)
-    if not live_ok or not queue_ok:
+    live_guard = _collect_live_task_recovery_guard(
+        timeout_sec=inspect_timeout_sec,
+        queue_names=_WAITING_ORPHAN_QUEUE_SET,
+    )
+    live_task_id_set = set(live_guard.get("task_id_set") or set())
+    if not live_guard.get("trusted"):
         logger.warning(
-            "skip orphan waiting task requeue live_ok:{} queue_ok:{}".format(
-                live_ok, queue_ok
+            "skip orphan waiting task requeue trusted:{} live_ok:{} consumer_ok:{} reply_workers:{} consumer_total:{}".format(
+                bool(live_guard.get("trusted")),
+                bool(live_guard.get("live_ok")),
+                bool(live_guard.get("consumer_ok")),
+                int(live_guard.get("reply_worker_count", 0) or 0),
+                int(live_guard.get("consumer_total", 0) or 0),
             )
         )
+        return {"task": 0, "github_task": 0}
+    queue_count_map, queue_ok = _get_broker_queue_message_counts(_WAITING_ORPHAN_QUEUE_SET)
+    if not queue_ok:
+        logger.warning("skip orphan waiting task requeue queue_ok:{}".format(queue_ok))
         return {"task": 0, "github_task": 0}
 
     now_text = utils.curr_date()
@@ -512,14 +633,25 @@ def recover_orphan_waiting_tasks_on_worker_start(
     now_ts = int(time.time())
     now_text = utils.curr_date()
 
-    live_task_id_set, live_ok = _collect_live_celery_task_ids(timeout_sec=inspect_timeout_sec)
-    queue_count_map, queue_ok = _get_broker_queue_message_counts(_WAITING_ORPHAN_QUEUE_SET)
-    if not live_ok or not queue_ok:
+    live_guard = _collect_live_task_recovery_guard(
+        timeout_sec=inspect_timeout_sec,
+        queue_names=_WAITING_ORPHAN_QUEUE_SET,
+    )
+    live_task_id_set = set(live_guard.get("task_id_set") or set())
+    if not live_guard.get("trusted"):
         logger.warning(
-            "skip orphan waiting task recovery live_ok:{} queue_ok:{}".format(
-                live_ok, queue_ok
+            "skip orphan waiting task recovery trusted:{} live_ok:{} consumer_ok:{} reply_workers:{} consumer_total:{}".format(
+                bool(live_guard.get("trusted")),
+                bool(live_guard.get("live_ok")),
+                bool(live_guard.get("consumer_ok")),
+                int(live_guard.get("reply_worker_count", 0) or 0),
+                int(live_guard.get("consumer_total", 0) or 0),
             )
         )
+        return {"task": 0, "github_task": 0}
+    queue_count_map, queue_ok = _get_broker_queue_message_counts(_WAITING_ORPHAN_QUEUE_SET)
+    if not queue_ok:
+        logger.warning("skip orphan waiting task recovery queue_ok:{}".format(queue_ok))
         return {"task": 0, "github_task": 0}
 
     detail = {

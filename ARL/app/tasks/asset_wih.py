@@ -99,7 +99,7 @@ class AssetWihUpdateTask(CommonTask):
             self.run_wih_domain_update()
 
         # 插入统计信息
-        self.insert_stat()
+        self._run_internal_stage("task_finalize", self.insert_stat)
 
         logger.info("end AssetWihUpdateTask, task_id:{} results: {}".format(self.task_id, len(self.wih_results)))
 
@@ -208,11 +208,15 @@ class AssetWihUpdateTask(CommonTask):
 
         # 如果有新域名，进行站点更新和资产同步
         if domains:
-            # 域名站点更新
-            domain_site_update(self.task_id, domains, "wih")
+            def _run_update():
+                domain_site_update(self.task_id, domains, "wih")
+                sync_asset(task_id=self.task_id, scope_id=self.scope_id)
 
-            # 同步到资产组
-            sync_asset(task_id=self.task_id, scope_id=self.scope_id)
+            self._run_internal_stage(
+                "wih_domain_update",
+                _run_update,
+                detail="domains={}".format(len(domains)),
+            )
 
 
 def asset_wih_update_task(task_id, scope_id, scheduler_id):

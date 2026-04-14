@@ -389,6 +389,23 @@ class TestCeleryRecovery(unittest.TestCase):
         self.assertEqual(int(celery.conf.broker_heartbeat), 120)
         self.assertEqual(float(celery.conf.broker_heartbeat_checkrate), 2.0)
 
+    def test_build_live_task_recovery_guard_marks_partial_inspect_untrusted(self):
+        guard = celerytask_module._build_live_task_recovery_guard(
+            live_ok=True,
+            reply_worker_set={"arlweb@worker-2"},
+            consumer_ok=True,
+            consumer_count_map={
+                "arltask": 1,
+                "arlheavy": 1,
+                "arlweb": 1,
+                "arlgithub": 1,
+            },
+        )
+
+        self.assertFalse(guard["trusted"])
+        self.assertEqual(guard["reply_worker_count"], 1)
+        self.assertEqual(guard["consumer_total"], 4)
+
     @patch.object(celerytask_module.utils, "curr_date", return_value="2026-04-10 12:30:00")
     @patch.object(celerytask_module.utils, "conn_db")
     @patch.object(celerytask_module.arl_task_web, "delay")
@@ -489,7 +506,7 @@ class TestCeleryRecovery(unittest.TestCase):
         logger.warning.assert_called()
 
     @patch.object(celerytask_module, "_get_broker_queue_message_counts")
-    @patch.object(celerytask_module, "_collect_live_celery_task_ids")
+    @patch.object(celerytask_module, "_collect_live_task_recovery_guard")
     @patch.object(celerytask_module.utils, "curr_date", return_value="2026-03-19 18:00:00")
     @patch.object(celerytask_module.time, "time", return_value=2000)
     @patch.object(celerytask_module.utils, "conn_db")
@@ -502,10 +519,17 @@ class TestCeleryRecovery(unittest.TestCase):
         mock_conn_db,
         _mock_time,
         _mock_curr_date,
-        mock_collect_live,
+        mock_live_guard,
         mock_queue_counts,
     ):
-        mock_collect_live.return_value = (set(), True)
+        mock_live_guard.return_value = {
+            "trusted": True,
+            "task_id_set": set(),
+            "live_ok": True,
+            "consumer_ok": True,
+            "reply_worker_count": 4,
+            "consumer_total": 4,
+        }
         mock_queue_counts.return_value = (
             {"arltask": 0, "arlheavy": 0, "arlweb": 0, "arlgithub": 0},
             True,
@@ -562,7 +586,7 @@ class TestCeleryRecovery(unittest.TestCase):
         self.assertEqual(result, {"task": 1, "github_task": 1})
 
     @patch.object(celerytask_module, "_get_broker_queue_message_counts")
-    @patch.object(celerytask_module, "_collect_live_celery_task_ids")
+    @patch.object(celerytask_module, "_collect_live_task_recovery_guard")
     @patch.object(celerytask_module.utils, "curr_date", return_value="2026-03-19 18:00:00")
     @patch.object(celerytask_module.time, "time", return_value=2000)
     @patch.object(celerytask_module.utils, "conn_db")
@@ -571,10 +595,17 @@ class TestCeleryRecovery(unittest.TestCase):
         mock_conn_db,
         _mock_time,
         _mock_curr_date,
-        mock_collect_live,
+        mock_live_guard,
         mock_queue_counts,
     ):
-        mock_collect_live.return_value = ({"live-task-id"}, True)
+        mock_live_guard.return_value = {
+            "trusted": True,
+            "task_id_set": {"live-task-id"},
+            "live_ok": True,
+            "consumer_ok": True,
+            "reply_worker_count": 4,
+            "consumer_total": 4,
+        }
         mock_queue_counts.return_value = (
             {"arltask": 0, "arlheavy": 3, "arlweb": 2, "arlgithub": 0},
             True,
@@ -636,6 +667,27 @@ class TestCeleryRecovery(unittest.TestCase):
         self.assertEqual(task_update_query["_id"]["$in"], ["task-orphan"])
         self.assertEqual(github_update_query["_id"]["$in"], ["github-orphan"])
         self.assertEqual(result, {"task": 1, "github_task": 1})
+
+    @patch.object(celerytask_module, "_get_broker_queue_message_counts")
+    @patch.object(celerytask_module, "_collect_live_task_recovery_guard")
+    def test_requeue_orphan_waiting_tasks_skips_when_live_inspect_untrusted(
+        self,
+        mock_live_guard,
+        mock_queue_counts,
+    ):
+        mock_live_guard.return_value = {
+            "trusted": False,
+            "task_id_set": set(),
+            "live_ok": True,
+            "consumer_ok": True,
+            "reply_worker_count": 1,
+            "consumer_total": 4,
+        }
+
+        result = requeue_orphan_waiting_tasks_on_worker_start(reason="worker restarted")
+
+        self.assertEqual(result, {"task": 0, "github_task": 0})
+        mock_queue_counts.assert_not_called()
 
 
 if __name__ == "__main__":

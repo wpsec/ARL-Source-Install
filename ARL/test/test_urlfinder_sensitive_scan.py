@@ -249,6 +249,38 @@ class TestUrlfinderSensitiveScan(unittest.TestCase):
         self.assertEqual("", instances[0].wih_runtime_command)
         self.assertEqual("", instances[1].wih_runtime_command)
 
+    def test_build_secondary_hunter_sets_absolute_deadline(self):
+        instances = []
+
+        class FakeInfoHunter(object):
+            def __init__(self, targets):
+                self.targets = list(targets or [])
+                self.wih_timeout_sec = 0
+                self.wih_deadline_ts = None
+                self.wih_runtime_enable = True
+                self.wih_runtime_driver = "playwright"
+                self.wih_runtime_command = "node runtime"
+                instances.append(self)
+
+        scanner = urlfinder_sensitive_module.UrlfinderSensitiveScanner(
+            sites=["https://example.com"],
+            wih_records=[],
+        )
+
+        with patch.object(urlfinder_sensitive_module, "InfoHunter", FakeInfoHunter):
+            with patch.object(urlfinder_sensitive_module.time, "time", return_value=100):
+                hunter = scanner._build_secondary_hunter(
+                    ["https://example.com/static/app.js"],
+                    180,
+                )
+
+        self.assertEqual(1, len(instances))
+        self.assertEqual(180, hunter.wih_timeout_sec)
+        self.assertEqual(280, hunter.wih_deadline_ts)
+        self.assertFalse(hunter.wih_runtime_enable)
+        self.assertEqual("noop", hunter.wih_runtime_driver)
+        self.assertEqual("", hunter.wih_runtime_command)
+
     def test_secondary_scan_honors_stage_timeout_budget(self):
         instances = []
 
@@ -281,7 +313,7 @@ class TestUrlfinderSensitiveScan(unittest.TestCase):
                                 with patch.object(
                                     urlfinder_sensitive_module.time,
                                     "time",
-                                    side_effect=[0, 0, 30, 95],
+                                    side_effect=[0, 0, 30, 95, 95],
                                 ):
                                     results = run_urlfinder_sensitive_scan(
                                         sites=["https://example.com"],

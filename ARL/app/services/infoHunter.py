@@ -10,6 +10,7 @@ import subprocess
 import hashlib
 import base64
 import re
+import time
 from urllib.parse import urlparse, urlunparse, urlencode, parse_qsl
 from app.modules import WihRecord
 from .url_candidate_filter import (
@@ -195,6 +196,7 @@ class InfoHunter(object):
         self._help_text = None
         self._wih_version_text = ""
         self._wih_binary_logged = False
+        self.wih_deadline_ts = None
 
     @staticmethod
     def _safe_int(value, default=0) -> int:
@@ -1045,7 +1047,10 @@ class InfoHunter(object):
         return record_count < min_record_threshold
 
     def _run_wih_command(self, command: list, batch_sites: list, command_name: str, timeout_sec: int = None):
-        effective_timeout = max(60, int(timeout_sec or self.wih_timeout_sec))
+        if timeout_sec is None:
+            effective_timeout = max(60, int(self.wih_timeout_sec))
+        else:
+            effective_timeout = max(1, int(timeout_sec))
         try:
             completed = utils.exec_system(
                 command,
@@ -1118,6 +1123,22 @@ class InfoHunter(object):
             "error": "",
         }
 
+    def _remaining_wih_deadline_sec(self):
+        deadline_ts = getattr(self, "wih_deadline_ts", None)
+        if deadline_ts is None:
+            return None
+        try:
+            deadline_float = float(deadline_ts)
+        except Exception:
+            return None
+        return max(0.0, deadline_float - time.time())
+
+    def _is_wih_deadline_exhausted(self):
+        remaining_sec = self._remaining_wih_deadline_sec()
+        if remaining_sec is None:
+            return False
+        return remaining_sec <= 0
+
     def _execute_profile_once(self, batch_sites: list, aggregate_result_texts: list, depth: int, profile_name: str, stage_name: str) -> dict:
         current_sites = [str(site or "").strip() for site in list(batch_sites or []) if str(site or "").strip()]
         if not current_sites:
@@ -1128,9 +1149,32 @@ class InfoHunter(object):
                 "remaining_sites": [],
                 "raw_text": "",
                 "profile": self._build_runtime_profile(profile_name),
+                "deadline_exhausted": False,
             }
 
         profile = self._build_runtime_profile(profile_name)
+        profile_timeout_sec = int(profile["timeout_sec"] or self.wih_timeout_sec)
+        remaining_deadline_sec = self._remaining_wih_deadline_sec()
+        if remaining_deadline_sec is not None:
+            if remaining_deadline_sec <= 0:
+                logger.warning(
+                    "skip wih batch stage:{} depth:{} sites:{} reason:deadline_exhausted".format(
+                        stage_name,
+                        depth,
+                        len(current_sites),
+                    )
+                )
+                return {
+                    "ok": False,
+                    "timed_out": False,
+                    "partial_saved": False,
+                    "remaining_sites": list(current_sites),
+                    "raw_text": "",
+                    "profile": profile,
+                    "deadline_exhausted": True,
+                }
+            profile_timeout_sec = min(profile_timeout_sec, max(1, int(remaining_deadline_sec)))
+
         self._clear_result_file()
         self._get_target_file(current_sites)
 
@@ -1140,7 +1184,7 @@ class InfoHunter(object):
                 stage_name,
                 depth,
                 len(current_sites),
-                profile["timeout_sec"],
+                profile_timeout_sec,
                 self.wih_concurrency,
                 self.wih_concurrency_per_site,
                 profile["runtime_enable"],
@@ -1151,7 +1195,7 @@ class InfoHunter(object):
             command,
             current_sites,
             stage_name,
-            timeout_sec=profile["timeout_sec"],
+            timeout_sec=profile_timeout_sec,
         )
         if result.get("ok"):
             raw_text = self._read_current_result_text()
@@ -1162,6 +1206,7 @@ class InfoHunter(object):
                 "remaining_sites": [],
                 "raw_text": raw_text,
                 "profile": profile,
+                "deadline_exhausted": False,
             }
 
         partial_saved = False
@@ -1193,6 +1238,7 @@ class InfoHunter(object):
             "remaining_sites": remaining_sites,
             "raw_text": "",
             "profile": profile,
+            "deadline_exhausted": False,
         }
 
     def _exec_wih_batch(self, batch_sites: list, aggregate_result_texts: list, depth: int = 0) -> bool:
@@ -1229,9 +1275,19 @@ class InfoHunter(object):
             if primary.get("raw_text"):
                 aggregate_result_texts.append(primary["raw_text"])
             return True
+        if primary.get("deadline_exhausted"):
+            return partial_saved
         if not current_sites:
             return partial_saved
         if primary.get("timed_out"):
+            if self._is_wih_deadline_exhausted():
+                logger.warning(
+                    "skip wih timeout split depth:{} sites:{} reason:deadline_exhausted".format(
+                        depth,
+                        len(current_sites),
+                    )
+                )
+                return partial_saved
             if len(current_sites) > 1:
                 mid = max(1, len(current_sites) // 2)
                 left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)
@@ -1246,10 +1302,20 @@ class InfoHunter(object):
             return True
 
         current_sites = [str(site or "").strip() for site in list(fallback.get("remaining_sites", []) or []) if str(site or "").strip()]
+        if fallback.get("deadline_exhausted"):
+            return partial_saved
         if not current_sites:
             return partial_saved
 
         if fallback.get("timed_out"):
+            if self._is_wih_deadline_exhausted():
+                logger.warning(
+                    "skip wih minimal timeout split depth:{} sites:{} reason:deadline_exhausted".format(
+                        depth,
+                        len(current_sites),
+                    )
+                )
+                return partial_saved
             if len(current_sites) > 1:
                 mid = max(1, len(current_sites) // 2)
                 left_ok = self._exec_wih_batch(current_sites[:mid], aggregate_result_texts, depth=depth + 1)

@@ -3,6 +3,10 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-04-14（v4.6.77）
+
+- `[v4.6.77]` `WIH长尾超时/任务恢复判定/耗时观测` 收口：针对近期计划任务与域名任务里出现的 `worker_bootstrap` 误报、任务总时长远大于已记录子阶段耗时，以及 `urlfinder_sensitive` 中二次 `WIH` 递归超时会把阶段预算跑穿的问题，这一轮同时收口了三条链。首先，worker 启动恢复不再在 `Celery inspect` 失败或回包不完整时直接批量恢复/标错 `running` 与 `waiting` 任务，启动日志新增 `inspect_ok / inspect_trusted / inspect_reply_workers / broker_consumer_total`，避免其它 Pod 仍在执行的长任务被误写成 `worker restarted before task finished`。其次，任务执行时间概览开始明确区分“已记录子阶段耗时、当前进行阶段、未计入耗时”，后端也为 `wih_domain_update / task_finalize` 等尾部流程补齐 `service` 埋点，减少“任务看起来跑了几个小时，但累计耗时只显示几分钟”的排障盲区。最后，`urlfinder_sensitive` 在构造二次 `InfoHunter` 时开始携带绝对 deadline，`WIH` 子批次 timeout 会按剩余预算自动收缩，deadline 耗尽后不再继续拆半递归，避免 `600s/120s` 的 timeout split 链把单个 batch 拖到几十分钟甚至更久；对应 `celery recovery / wih timeout split / urlfinder sensitive / 前端任务耗时概览` 回归与构建校验已同步补齐`
+
 ## 2026-04-13（v4.6.76）
 
 - `[v4.6.76]` `WIH去噪语义校正/URL资产去重` 收口：围绕 `WIH` 结果消费层继续把“看起来像风险”和“有证据证明是风险”拆开处理。`site / fileleak / url / vuln / nuclei_result` 的规则层与 `AI去噪` 默认提示词统一切到“证据优先”口径，新增对 `登录壳 / 统一认证入口 / 401/403/404 / 普通错误页 / 静态资源 / 参数校验失败 / 网络异常 / 仅规则命中无利用证据` 等弱信号的显式降权，只有在真实开放的 `接口文档 / 调试面 / 目录索引 / 敏感文件成功返回 / 凭据或业务成功证据` 出现时才允许提级。同时，`wih_url_probe` 不再向 `fileleak` 重复写入 URL 页面结果，`fileleak` 列表/导出/前端筛选默认排除 `wih_url_probe` 来源，目录扫描命中后也会反向清理同 URL 的 `url` 资产；周期任务复用上一轮 `wih_url_probe` 结果时也开始跳过当前任务里已存在于 `fileleak / url` 的同 URL，避免重复资产、重复导出和复用污染。`docs/WIH提速与调度优化实施计划.md` 也同步补齐了第五阶段“AI 去噪可信度收口”的目标、规则和观测项，方便后续继续沿文档推进`

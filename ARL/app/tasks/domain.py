@@ -2225,7 +2225,12 @@ class DomainTask(CommonTask):
 
     def start_wih_domain_update(self):
         if self.wih_domain_set:
-            domain_site_update(self.task_id, list(self.wih_domain_set), "wih")
+            domains = list(self.wih_domain_set)
+            self._run_internal_stage(
+                "wih_domain_update",
+                lambda: domain_site_update(self.task_id, domains, "wih"),
+                detail="domains={}".format(len(domains)),
+            )
 
     def run(self):
         self.update_task_field("start_time", utils.curr_date())

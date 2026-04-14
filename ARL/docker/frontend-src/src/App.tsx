@@ -4362,6 +4362,19 @@ const TASK_SERVICE_STAGE_LABEL_MAP: Record<string, string> = {
   ai_pen_test: 'AI渗透测试',
   waf_smart_skip: 'WAF智能跳过',
   waf_observe: 'WAF识别观察',
+  task_finalize: '任务收尾统计',
+  wih_monitor: 'WIH监控',
+  wih_domain_update: 'WIH域名更新',
+  wih_primary_scan: 'Wih primary scan',
+  wih_endpoint_probe: 'Wih endpoint probe',
+  wih_endpoint_ai_fill: 'Wih endpoint ai fill',
+  wih_urlfinder_extract: 'Wih urlfinder extract',
+  wih_page_intel: 'Wih page intel',
+  wih_api_doc: 'Wih api doc',
+  wih_js_intel: 'Wih js intel',
+  wih_urlfinder_sensitive: 'Wih sensitive rescan',
+  wih_trufflehog_js: 'Wih trufflehog js',
+  wih_url_probe: 'Wih url probe',
 };
 
 function parseTaskServiceElapsedSeconds(rawValue: any): number | null {
@@ -4383,6 +4396,7 @@ function getTaskServiceStageLabel(rawName: any, fallback: string): string {
 
 function buildTaskServiceDurationSummary(row: any): {
   entries: Array<{
+    stageKey: string;
     stageName: string;
     elapsedSeconds: number | null;
     elapsedLabel: string;
@@ -4394,8 +4408,9 @@ function buildTaskServiceDurationSummary(row: any): {
 } {
   const serviceItems = Array.isArray(row?.service) ? row.service : [];
   const entries = serviceItems.map((item, index) => {
+    const rawStageName = String(item?.name ?? item?.service_name ?? item?.stage ?? item ?? '').trim();
     const stageName = getTaskServiceStageLabel(
-      item?.name ?? item?.service_name ?? item?.stage ?? item,
+      rawStageName,
       `阶段${index + 1}`
     );
     const elapsedSeconds = parseTaskServiceElapsedSeconds(
@@ -4403,6 +4418,7 @@ function buildTaskServiceDurationSummary(row: any): {
     );
     const detail = sanitizeUiMessage(String(item?.detail || item?.message || '').trim(), 240) || '';
     return {
+      stageKey: rawStageName.toLowerCase(),
       stageName,
       elapsedSeconds,
       elapsedLabel: elapsedSeconds === null ? '-' : formatDurationSecondsLabel(elapsedSeconds),
@@ -4419,6 +4435,63 @@ function buildTaskServiceDurationSummary(row: any): {
     totalDurationSeconds,
     totalDurationLabel: formatDurationSecondsLabel(totalDurationSeconds),
     countedStageCount: entriesWithDuration.length,
+  };
+}
+
+function buildTaskExecutionAccountingSummary(row: any, nowMs: number): {
+  currentStageName: string;
+  currentStageVisible: boolean;
+  hasUncountedDuration: boolean;
+  uncountedDurationSeconds: number | null;
+  uncountedDurationLabel: string;
+  note: string;
+} {
+  const execution = buildTaskExecutionDurationInfo(row, nowMs);
+  const serviceSummary = buildTaskServiceDurationSummary(row);
+  const rawStatus = String(row?.status ?? '').trim();
+  const statusKey = rawStatus.toLowerCase();
+  const normalizedStatus = normalizeTaskStatus(rawStatus);
+  const runningLike = normalizedStatus === 'running' || normalizedStatus === 'waiting';
+  const currentStageVisible = Boolean(
+    runningLike &&
+    statusKey &&
+    statusKey !== 'running' &&
+    statusKey !== 'waiting'
+  );
+  const currentStageName = currentStageVisible
+    ? getTaskServiceStageLabel(rawStatus, '当前阶段')
+    : '-';
+
+  let uncountedDurationSeconds: number | null = null;
+  if (execution.durationSeconds !== null) {
+    const counted = serviceSummary.totalDurationSeconds;
+    if (counted === null) {
+      uncountedDurationSeconds = execution.durationSeconds;
+    } else {
+      uncountedDurationSeconds = Math.max(0, execution.durationSeconds - counted);
+    }
+  }
+
+  const hasUncountedDuration = Boolean(
+    uncountedDurationSeconds !== null && Number.isFinite(uncountedDurationSeconds) && uncountedDurationSeconds >= 1
+  );
+
+  let note = '';
+  if (hasUncountedDuration && currentStageVisible) {
+    note = '未计入耗时通常来自当前进行中的阶段，完成后才会写入子任务累计耗时。';
+  } else if (hasUncountedDuration && runningLike) {
+    note = '未计入耗时通常来自当前进行中的阶段，或任务收尾统计/同步流程。';
+  } else if (hasUncountedDuration) {
+    note = '未计入耗时通常来自任务收尾统计/同步流程。';
+  }
+
+  return {
+    currentStageName,
+    currentStageVisible,
+    hasUncountedDuration,
+    uncountedDurationSeconds,
+    uncountedDurationLabel: formatDurationSecondsLabel(uncountedDurationSeconds),
+    note,
   };
 }
 
@@ -11822,6 +11895,7 @@ function TableModuleView({
                           const statusText = formatModuleCellValue(module.id, column, row);
                           const durationDetail = buildTaskExecutionDurationInfo(row, Date.now());
                           const taskServiceDuration = buildTaskServiceDurationSummary(row);
+                          const taskAccountingSummary = buildTaskExecutionAccountingSummary(row, Date.now());
                           const currentDurationLabel = durationDetail.durationLabel || '-';
                           const currentStartText = durationDetail.startText || '-';
                           const currentEndText = durationDetail.endText || '-';
@@ -11858,6 +11932,21 @@ function TableModuleView({
                                     <div className="text-[11px] text-brand-text-muted">
                                       子任务累计耗时：{taskServiceDuration.totalDurationLabel}
                                     </div>
+                                    {taskAccountingSummary.currentStageVisible ? (
+                                      <div className="text-[11px] text-brand-text-muted">
+                                        当前进行阶段：{taskAccountingSummary.currentStageName}
+                                      </div>
+                                    ) : null}
+                                    {taskAccountingSummary.hasUncountedDuration ? (
+                                      <div className="text-[11px] text-brand-text-muted">
+                                        未计入耗时：{taskAccountingSummary.uncountedDurationLabel}
+                                      </div>
+                                    ) : null}
+                                    {taskAccountingSummary.note ? (
+                                      <div className="mt-1 text-[11px] text-brand-text-muted">
+                                        {taskAccountingSummary.note}
+                                      </div>
+                                    ) : null}
                                     <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-brand-border bg-brand-bg/40 p-2 text-[11px] leading-relaxed text-brand-text">
                                       {taskServiceDuration.entries.length > 0 ? (
                                         taskServiceDuration.entries.map((entry, lineIndex) => (
