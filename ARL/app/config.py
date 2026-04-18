@@ -805,7 +805,7 @@ class Config(object):
     # minimal 回退阶段是否保留 runtime（默认关闭，避免重试时再次进入高成本动态链路）
     WIH_MINIMAL_RUNTIME_ENABLE = False
     # WIH 接口 AI 填充单次最多处理目标数（0=不限制）
-    WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 1000
+    WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 0
     # WIH 接口 AI 填充并发
     WIH_ENDPOINT_AI_FILL_CONCURRENCY = 4
     # WIH 接口 AI 填充单请求超时（秒）

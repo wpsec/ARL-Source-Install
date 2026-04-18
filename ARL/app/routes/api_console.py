@@ -1587,8 +1587,8 @@ def _merge_ai_config(config_obj, ai_config):
     ai_conf['DIALOG_CONTEXT_MESSAGES'] = _safe_int(ai_config.get('dialog_context_messages'), 8, min_value=1)
     ai_conf['REQUEST_DELAY_MS'] = _safe_int(ai_config.get('request_delay_ms'), 0, min_value=0)
     arl_conf['WIH_ENDPOINT_AI_FILL_MAX_TARGETS'] = max(
-        1,
-        min(5000, _safe_int(ai_config.get('wih_endpoint_ai_fill_max_targets'), 200, min_value=1)),
+        0,
+        min(5000, _safe_int(ai_config.get('wih_endpoint_ai_fill_max_targets'), 0, min_value=0)),
     )
     ai_conf['ACTIVE_PROMPT_ID'] = active_prompt_id
     ai_conf['PROMPT_TEMPLATES'] = _persist_ai_prompt_templates_for_config(prompt_templates, existing_prompt_templates)

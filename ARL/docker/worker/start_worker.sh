@@ -158,6 +158,34 @@ terminate_children() {
   done
 }
 
+spawn_worker() {
+  local worker_name="$1"
+  local queue_name="$2"
+  local concurrency="$3"
+
+  celery -A app.celerytask.celery worker \
+    -l info \
+    -Q "${queue_name}" \
+    -n "${worker_name}@%h" \
+    -c "${concurrency}" \
+    -O fair \
+    -f "${LOG_FILE_PATH}" &
+  echo $!
+}
+
+handle_worker_exit() {
+  local worker_name="$1"
+  local exit_code="$2"
+
+  if [ "${exit_code}" -eq 0 ]; then
+    echo "[WARN] celery worker ${worker_name} exited with code 0, respawning in-place to avoid restarting the whole container."
+    return 0
+  fi
+
+  echo "[ERROR] celery worker ${worker_name} exited unexpectedly with code ${exit_code}, stopping sibling workers for container restart."
+  return 1
+}
+
 ensure_python_runtime
 
 echo "Syncing runtime config from template (missing keys only)..."
@@ -186,41 +214,10 @@ TASK_CONCURRENCY="$(get_cfg_int CELERY_TASK_WORKER_CONCURRENCY 2)"
 
 echo "start celery github=${GITHUB_CONCURRENCY} heavy=${HEAVY_CONCURRENCY} web=${WEB_CONCURRENCY} task=${TASK_CONCURRENCY} log=${LOG_FILE_PATH}"
 
-celery -A app.celerytask.celery worker \
-  -l info \
-  -Q arlgithub \
-  -n arlgithub@%h \
-  -c "${GITHUB_CONCURRENCY}" \
-  -O fair \
-  -f "${LOG_FILE_PATH}" &
-GITHUB_PID=$!
-
-celery -A app.celerytask.celery worker \
-  -l info \
-  -Q arlheavy \
-  -n arlheavy@%h \
-  -c "${HEAVY_CONCURRENCY}" \
-  -O fair \
-  -f "${LOG_FILE_PATH}" &
-HEAVY_PID=$!
-
-celery -A app.celerytask.celery worker \
-  -l info \
-  -Q arlweb \
-  -n arlweb@%h \
-  -c "${WEB_CONCURRENCY}" \
-  -O fair \
-  -f "${LOG_FILE_PATH}" &
-WEB_PID=$!
-
-celery -A app.celerytask.celery worker \
-  -l info \
-  -Q arltask \
-  -n arltask@%h \
-  -c "${TASK_CONCURRENCY}" \
-  -O fair \
-  -f "${LOG_FILE_PATH}" &
-TASK_PID=$!
+GITHUB_PID="$(spawn_worker "arlgithub" "arlgithub" "${GITHUB_CONCURRENCY}")"
+HEAVY_PID="$(spawn_worker "arlheavy" "arlheavy" "${HEAVY_CONCURRENCY}")"
+WEB_PID="$(spawn_worker "arlweb" "arlweb" "${WEB_CONCURRENCY}")"
+TASK_PID="$(spawn_worker "arltask" "arltask" "${TASK_CONCURRENCY}")"
 
 trap 'terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"; exit 143' TERM INT
 
@@ -237,9 +234,30 @@ while true; do
       continue
     fi
 
-    wait "${WORKER_PID}"
-    EXIT_CODE=$?
-    echo "[ERROR] celery worker ${WORKER_NAME} exited unexpectedly with code ${EXIT_CODE}, stopping sibling workers for container restart."
+    if wait "${WORKER_PID}"; then
+      EXIT_CODE=0
+    else
+      EXIT_CODE=$?
+    fi
+
+    if handle_worker_exit "${WORKER_NAME}" "${EXIT_CODE}"; then
+      case "${WORKER_NAME}" in
+        arlgithub)
+          GITHUB_PID="$(spawn_worker "arlgithub" "arlgithub" "${GITHUB_CONCURRENCY}")"
+          ;;
+        arlheavy)
+          HEAVY_PID="$(spawn_worker "arlheavy" "arlheavy" "${HEAVY_CONCURRENCY}")"
+          ;;
+        arlweb)
+          WEB_PID="$(spawn_worker "arlweb" "arlweb" "${WEB_CONCURRENCY}")"
+          ;;
+        arltask)
+          TASK_PID="$(spawn_worker "arltask" "arltask" "${TASK_CONCURRENCY}")"
+          ;;
+      esac
+      continue
+    fi
+
     terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
     exit "${EXIT_CODE}"
   done

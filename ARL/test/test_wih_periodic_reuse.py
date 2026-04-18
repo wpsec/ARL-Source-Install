@@ -4,6 +4,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 def _build_logger():
     return types.SimpleNamespace(
@@ -166,6 +167,7 @@ def _load_module():
 
     services_pkg = types.ModuleType("app.services")
     info_hunter_module = types.ModuleType("app.services.infoHunter")
+    wih_endpoint_probe_module = types.ModuleType("app.services.wih_endpoint_probe")
 
     class _InfoHunter(object):
         @staticmethod
@@ -185,6 +187,7 @@ def _load_module():
             )
 
     info_hunter_module.InfoHunter = _InfoHunter
+    wih_endpoint_probe_module.run_wih_endpoint_probe = lambda endpoints, waf_guard=None: list(endpoints or [])
 
     sys.modules.setdefault("app", app_module)
     sys.modules["bson"] = bson_module
@@ -193,6 +196,7 @@ def _load_module():
     sys.modules["app.modules"] = modules_module
     sys.modules["app.services"] = services_pkg
     sys.modules["app.services.infoHunter"] = info_hunter_module
+    sys.modules["app.services.wih_endpoint_probe"] = wih_endpoint_probe_module
 
     app_module.utils = utils_module
 
@@ -228,7 +232,8 @@ class TestWihPeriodicReuseService(unittest.TestCase):
         self.assertEqual(site_a, site_b)
         self.assertEqual(signature_a, signature_b)
 
-    def test_run_reuses_previous_task_when_site_signature_matches(self):
+    @patch.object(reuse_module, "run_wih_endpoint_probe")
+    def test_run_reuses_previous_task_when_site_signature_matches(self, mock_reprobe):
         current_task_id = FakeObjectId()
         previous_task_id = FakeObjectId()
         store = {
@@ -295,6 +300,12 @@ class TestWihPeriodicReuseService(unittest.TestCase):
                     "url": "https://example.com/api/list",
                     "method": "GET",
                     "fnv_hash": "endpoint-1",
+                    "status_code": 200,
+                    "response_status": 200,
+                    "verification_status": "probed",
+                    "verification_note": "历史响应",
+                    "ai_fill_status": "tested",
+                    "ai_fill_note": "历史 AI 填充",
                 }
             ],
             "fileleak": [],
@@ -310,6 +321,23 @@ class TestWihPeriodicReuseService(unittest.TestCase):
         }
 
         reuse_module.utils.conn_db = lambda name: _FakeCollection(store[name])
+        captured_probe_inputs = []
+
+        def fake_reprobe(endpoints, waf_guard=None):
+            captured_probe_inputs.extend(list(endpoints or []))
+            return [
+                {
+                    **dict((endpoints or [])[0]),
+                    "status_code": 401,
+                    "response_status": 401,
+                    "response_size": 128,
+                    "verification_status": "probed",
+                    "verification_note": "已按 GET 方法轻量验证",
+                    "verification_method": "GET",
+                }
+            ]
+
+        mock_reprobe.side_effect = fake_reprobe
 
         service = WihPeriodicReuseService(
             task_id=str(current_task_id),
@@ -328,11 +356,119 @@ class TestWihPeriodicReuseService(unittest.TestCase):
         self.assertEqual(["https://example.com"], summary["reused_sites"])
         self.assertEqual(1, summary["reused_record_count"])
         self.assertEqual(1, summary["reused_endpoint_count"])
+        self.assertEqual(1, summary["reused_endpoint_candidate_count"])
+        self.assertEqual(0, summary["dropped_endpoint_count"])
         self.assertEqual(1, summary["reused_url_count"])
         self.assertEqual(["https://example.com/api/list"], summary["reused_urls"])
         self.assertEqual(str(current_task_id), store["wih"][-1]["task_id"])
         self.assertEqual(str(current_task_id), store["wih_endpoint"][-1]["task_id"])
         self.assertEqual(str(current_task_id), store["url"][-1]["task_id"])
+        self.assertEqual(401, store["wih_endpoint"][-1]["status_code"])
+        self.assertEqual("probed", store["wih_endpoint"][-1]["verification_status"])
+        self.assertNotIn("ai_fill_status", store["wih_endpoint"][-1])
+        self.assertEqual(1, len(captured_probe_inputs))
+        self.assertNotIn("status_code", captured_probe_inputs[0])
+        self.assertNotIn("verification_status", captured_probe_inputs[0])
+        self.assertNotIn("ai_fill_status", captured_probe_inputs[0])
+
+    @patch.object(reuse_module, "run_wih_endpoint_probe")
+    def test_run_drops_reused_endpoint_when_reprobe_reports_404(self, mock_reprobe):
+        current_task_id = FakeObjectId()
+        previous_task_id = FakeObjectId()
+        store = {
+            "task": [
+                {
+                    "_id": current_task_id,
+                    "target": "example.com",
+                    "status": "running",
+                    "options": {
+                        "from_task_schedule": True,
+                        "task_schedule_id": "schedule-1",
+                    },
+                },
+                {
+                    "_id": previous_task_id,
+                    "target": "example.com",
+                    "status": "done",
+                    "end_time": "2026-04-12 10:00:00",
+                    "options": {
+                        "from_task_schedule": True,
+                        "task_schedule_id": "schedule-1",
+                    },
+                },
+            ],
+            "site": [
+                {
+                    "task_id": str(current_task_id),
+                    "site": "https://example.com",
+                    "title": "Portal",
+                    "status": 200,
+                    "http_server": "nginx",
+                    "body_length": 4096,
+                    "favicon": {"hash": 1001},
+                    "finger": [{"name": "Vue"}],
+                },
+                {
+                    "task_id": str(previous_task_id),
+                    "site": "https://example.com",
+                    "title": "Portal",
+                    "status": 200,
+                    "http_server": "nginx",
+                    "body_length": 4096,
+                    "favicon": {"hash": 1001},
+                    "finger": [{"name": "Vue"}],
+                },
+            ],
+            "wih": [],
+            "wih_endpoint": [
+                {
+                    "_id": FakeObjectId(),
+                    "task_id": str(previous_task_id),
+                    "target": "https://example.com",
+                    "page_url": "https://example.com/",
+                    "url": "https://example.com/api/legacy",
+                    "method": "GET",
+                    "fnv_hash": "endpoint-legacy",
+                }
+            ],
+            "fileleak": [],
+            "url": [],
+        }
+
+        reuse_module.utils.conn_db = lambda name: _FakeCollection(store[name])
+        mock_reprobe.return_value = [
+            {
+                "task_id": str(current_task_id),
+                "target": "https://example.com",
+                "page_url": "https://example.com/",
+                "url": "https://example.com/api/legacy",
+                "method": "GET",
+                "fnv_hash": "endpoint-legacy",
+                "status_code": 404,
+                "response_status": 404,
+                "verification_status": "probed",
+                "verification_note": "已按 GET 方法轻量验证",
+                "verification_method": "GET",
+            }
+        ]
+
+        service = WihPeriodicReuseService(
+            task_id=str(current_task_id),
+            sites=["https://example.com"],
+            options={
+                "from_task_schedule": True,
+                "task_schedule_id": "schedule-1",
+                "task_schedule_name": "周期任务",
+                "task_schedule_run_number": 2,
+            },
+        )
+        summary = service.run()
+
+        self.assertEqual("ok", summary["reason"])
+        self.assertEqual(1, summary["reused_endpoint_candidate_count"])
+        self.assertEqual(0, summary["reused_endpoint_count"])
+        self.assertEqual(1, summary["dropped_endpoint_count"])
+        self.assertEqual(1, len(store["wih_endpoint"]))
 
     def test_run_skips_reused_url_when_fileleak_already_exists(self):
         current_task_id = FakeObjectId()

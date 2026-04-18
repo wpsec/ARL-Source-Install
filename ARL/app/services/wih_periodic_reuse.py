@@ -17,11 +17,41 @@ from app import utils
 from app.config import Config
 from app.modules import CollectSource, TaskStatus
 from .infoHunter import InfoHunter
+from .wih_endpoint_probe import run_wih_endpoint_probe
 
 logger = utils.get_logger()
 
 
 class WihPeriodicReuseService(object):
+    _REUSED_ENDPOINT_RESET_FIELDS = {
+        "status_code",
+        "response_status",
+        "response_size",
+        "response_packet",
+        "verification_status",
+        "verification_note",
+        "verification_method",
+        "verification_response_packet",
+        "ai_fill_status",
+        "ai_fill_source",
+        "ai_fill_tested",
+        "ai_fill_test_method",
+        "ai_fill_status_code",
+        "ai_fill_response_size",
+        "ai_fill_response_summary",
+        "ai_fill_response_packet",
+        "ai_fill_response_content_type",
+        "ai_fill_hint_only",
+        "ai_fill_params",
+        "ai_fill_request_template",
+        "ai_fill_request_packet",
+        "ai_fill_note",
+        "ai_fill_reason",
+        "ai_fill_analyzed_at",
+        "ai_fill_prompt_id",
+        "ai_fill_prompt_name",
+    }
+
     def __init__(self, task_id: str, sites: list, options: dict):
         self.task_id = str(task_id or "").strip()
         self.sites = [str(item or "").strip() for item in list(sites or []) if str(item or "").strip()]
@@ -179,7 +209,28 @@ class WihPeriodicReuseService(object):
             utils.conn_db("wih").insert_many(docs)
         return len(docs), normalized_records
 
-    def _clone_wih_endpoints(self, previous_task_id: str, reusable_sites: set) -> int:
+    @classmethod
+    def _prepare_reused_endpoint(cls, item: dict, current_date: str) -> dict:
+        doc = dict(item or {})
+        doc.pop("_id", None)
+        for field_name in cls._REUSED_ENDPOINT_RESET_FIELDS:
+            doc.pop(field_name, None)
+        doc["save_date"] = current_date
+        return doc
+
+    @staticmethod
+    def _is_revalidated_endpoint_alive(item: dict) -> bool:
+        if not isinstance(item, dict):
+            return False
+        verification_status = str(item.get("verification_status", "") or "").strip().lower()
+        status_code = int(item.get("status_code") or item.get("response_status") or 0)
+        if verification_status != "probed":
+            return False
+        if status_code in {404, 410}:
+            return False
+        return status_code > 0
+
+    def _clone_wih_endpoints(self, previous_task_id: str, reusable_sites: set) -> tuple:
         docs = []
         current_date = getattr(utils, "curr_date", lambda: "")()
         for item in utils.conn_db("wih_endpoint").find({"task_id": previous_task_id}):
@@ -187,15 +238,30 @@ class WihPeriodicReuseService(object):
             if target not in reusable_sites:
                 continue
 
-            doc = dict(item)
-            doc.pop("_id", None)
+            doc = self._prepare_reused_endpoint(item, current_date)
             doc["task_id"] = self.task_id
-            doc["save_date"] = current_date
             docs.append(doc)
 
-        if docs:
-            utils.conn_db("wih_endpoint").insert_many(docs)
-        return len(docs)
+        candidate_count = len(docs)
+        if not docs:
+            return 0, 0
+
+        try:
+            probed_docs = list(run_wih_endpoint_probe(docs) or [])
+        except Exception as exc:
+            logger.warning(
+                "wih periodic reuse endpoint reprobe failed task_id:{} baseline_task:{} err:{}".format(
+                    self.task_id,
+                    previous_task_id,
+                    exc,
+                )
+            )
+            return candidate_count, 0
+
+        kept_docs = [item for item in probed_docs if self._is_revalidated_endpoint_alive(item)]
+        if kept_docs:
+            utils.conn_db("wih_endpoint").insert_many(kept_docs)
+        return candidate_count, len(kept_docs)
 
     def _clone_wih_urls(self, previous_task_id: str, reusable_sites: set) -> tuple:
         docs = []
@@ -253,6 +319,8 @@ class WihPeriodicReuseService(object):
             "reused_sites": [],
             "reused_record_count": 0,
             "reused_endpoint_count": 0,
+            "reused_endpoint_candidate_count": 0,
+            "dropped_endpoint_count": 0,
             "reused_url_count": 0,
             "reused_urls": [],
             "records": [],
@@ -294,19 +362,21 @@ class WihPeriodicReuseService(object):
 
         reusable_site_set = set(reusable_sites)
         reused_record_count, normalized_records = self._clone_wih_records(previous_task_id, reusable_site_set)
-        reused_endpoint_count = self._clone_wih_endpoints(previous_task_id, reusable_site_set)
+        reused_endpoint_candidate_count, reused_endpoint_count = self._clone_wih_endpoints(previous_task_id, reusable_site_set)
         reused_url_count, reused_urls = self._clone_wih_urls(previous_task_id, reusable_site_set)
 
         summary["reason"] = "ok"
         summary["reused_record_count"] = reused_record_count
         summary["reused_endpoint_count"] = reused_endpoint_count
+        summary["reused_endpoint_candidate_count"] = reused_endpoint_candidate_count
+        summary["dropped_endpoint_count"] = max(reused_endpoint_candidate_count - reused_endpoint_count, 0)
         summary["reused_url_count"] = reused_url_count
         summary["reused_urls"] = reused_urls
         summary["records"] = normalized_records
 
         if self.log_detail:
             logger.info(
-                "wih periodic reuse hit task_id:{} schedule_id:{} baseline_task:{} compared_sites:{} reused_sites:{} reused_records:{} reused_endpoints:{} reused_urls:{}".format(
+                "wih periodic reuse hit task_id:{} schedule_id:{} baseline_task:{} compared_sites:{} reused_sites:{} reused_records:{} reused_endpoints:{} reused_endpoint_candidates:{} dropped_reused_endpoints:{} reused_urls:{}".format(
                     self.task_id,
                     self.schedule_id,
                     previous_task_id,
@@ -314,6 +384,8 @@ class WihPeriodicReuseService(object):
                     len(reusable_sites),
                     reused_record_count,
                     reused_endpoint_count,
+                    reused_endpoint_candidate_count,
+                    summary["dropped_endpoint_count"],
                     reused_url_count,
                 )
             )

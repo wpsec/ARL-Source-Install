@@ -5,6 +5,12 @@
 
 ## 2026-04-14（v4.6.80）
 
+- `[v4.6.83]` `WIH接口AI填充上限口径统一`：针对 `AI管理` 页面与配置注释已经明确写成“`WIH_ENDPOINT_AI_FILL_MAX_TARGETS=0` 表示不限制”，但后端保存接口仍强制把该值夹到最小 `1`，导致用户在前台输入 `0` 后运行时依然会触发“超过 WIH 接口 AI 填充上限，未继续处理”的问题，这一轮统一收口了默认值与保存口径。`Config` 默认值改为 `0`，`/api_console/ai_config/save` 在持久化时也正式接受 `0` 并写入配置文件，不再把它偷偷回退成 `1`；这样默认部署与显式保存 `0` 的场景都会真正落成“AI 填充不设上限”`
+
+- `[v4.6.82]` `周期任务 WIH接口复用 freshness 收口`：针对周期任务命中 `WIH` 结果复用后，会把上一轮 `wih_endpoint` 直接复制到当前任务，导致站点首页签名未变化但接口已经下线、跳转链改变或历史 `AI填充/响应` 结果已过期时，前台仍继续展示旧接口的问题，这一轮把 `wih_endpoint` 复用改成“先清理历史验证与 AI 填充字段，再做当前轮轻量 re-probe，最后只保留当前轮仍可验证存在的接口”。复用接口现在仅在本轮探测得到明确响应且状态不是 `404/410` 时才会进入当前任务；`TooManyRedirects`、探测异常、危险方法无法验证等不再盲目沿用旧记录。同时，历史遗留的 `ai_fill_status/ai_fill_note/response_packet` 等瞬时字段在复用前会被清空，避免当前任务继续显示上一轮陈旧的 AI 填充结论与响应包；对应 `wih periodic reuse` 回归也补齐了“复用前先清状态”和“404 接口不再复用”的断言`
+
+- `[v4.6.81]` `worker 子进程平滑自愈`：针对 K8s 双副本场景下偶发出现某个 Celery 子 worker（如 `arlheavy`）以 `exit code 0` 正常退出，但外层 `start_worker.sh` 仍将其视为致命异常并主动结束整个容器，最终触发 Pod 重启、`worker_bootstrap` 恢复逻辑把长任务收敛为 `worker restarted before task finished` 的问题，这一轮将 worker 监护策略收口为“区分干净退出与异常退出”。当 `arlgithub/arlheavy/arlweb/arltask` 任一子 worker 以 `0` 退出时，容器不再整体退出，而是仅原地重拉该队列 worker，并记录 `WARN` 日志；只有非 `0` 退出码才继续终止兄弟进程并交给容器重启。与此同时，监护循环对 `wait` 返回码的处理也改为显式分支，避免 `set -e` 下潜在的非零返回提前打断监护逻辑，减少单队列偶发自退对正在执行任务的连带中断`
+
 - `[v4.6.80]` `任务统计展示/执行时间概览修复`：针对资产任务已经在 Mongo 中落下正确 `statistic` 与 `service`，但前端仍可能把 `URL信息/WIH` 显示成 `0`，同时“任务执行时间概览”会把 `web_info_hunter` 父阶段和 `wih_*` 子阶段重复累计，导致累计耗时明显大于真实任务时长的问题，这一轮统一收口了前后端口径。任务详情页不再依赖列表页进入时拼进 URL 的旧统计快照，而是按 `task_id` 主动回拉最新 `task.statistic` 刷新顶部页签数量；任务列表与搜索页也同步停止把 `site_cnt/url_cnt/wih_cnt` 等统计值塞进详情链接，避免详情页长期吃到过期 query。后端 `/task` 返回项新增 `service_summary`，对 `web_info_hunter + wih_*` 这类父子阶段做去重汇总；`newUI` 前端的“任务执行时间概览”开始优先读取 `dedup_elapsed / dedup_phase_count / skipped_parent_phase`，并在明细中明确标注“汇总阶段，未计入累计耗时”，把“子任务累计耗时”收口到和真实执行链一致的统计口径`
 
 ## 2026-04-14（v4.6.78）
