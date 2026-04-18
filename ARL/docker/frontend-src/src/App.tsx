@@ -835,12 +835,13 @@ const modules: ModuleConfig[] = [
               site_identify: false,
               site_capture: false,
               search_engines: false,
-            site_spider: false,
-            nuclei_scan: false,
-            afrog_scan: false,
-            web_info_hunter: false,
-            smart_skip_waf: false,
-          },
+              site_spider: false,
+              nuclei_scan: false,
+              afrog_scan: false,
+              web_info_hunter: false,
+              smart_skip_waf: false,
+              ai_denoise: true,
+            },
             domain_dict: '',
             file_leak_dict: '',
             file_leak: false,
@@ -6201,6 +6202,7 @@ function ActionDialog({
     { key: 'site_config.afrog_scan', label: 'afrog 调用' },
     { key: 'site_config.web_info_hunter', label: 'WIH 调用' },
     { key: 'site_config.smart_skip_waf', label: '跳过WAF' },
+    { key: 'site_config.ai_denoise', label: 'AI去噪分析' },
   ];
   const filteredPolicyOptions = policyOptionDefs.filter((item) => {
     const keyword = policySearchKeyword.trim().toLowerCase();

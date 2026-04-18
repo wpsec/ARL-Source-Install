@@ -111,6 +111,7 @@ site_config_fields = ns.model('siteConfig', {
     "afrog_scan": fields.Boolean(description="afrog 扫描", default=False),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="web JS 中的信息收集"),
     "smart_skip_waf": fields.Boolean(example=False, default=False, description="跳过WAF"),
+    "ai_denoise": fields.Boolean(example=True, default=True, description="AI去噪分析"),
 })
 
 # 资产组关联配置
