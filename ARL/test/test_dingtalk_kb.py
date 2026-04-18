@@ -7,12 +7,14 @@ try:
         push_dingtalk_kb,
         push_task_finish_notify,
         _build_ssl_cert_warning_markdown,
+        _push_ssl_cert_warning,
     )
     from app.utils import dingtalk_openapi
 except Exception as exc:
     push_dingtalk_kb = None
     push_task_finish_notify = None
     _build_ssl_cert_warning_markdown = None
+    _push_ssl_cert_warning = None
     dingtalk_openapi = None
     IMPORT_ERROR = exc
 
@@ -261,6 +263,42 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
 
         self.assertIn("SSL证书安全警告", markdown)
         self.assertNotIn("报告链接", markdown)
+
+    @patch('app.helpers.message_notify.push_dingding')
+    @patch('app.helpers.message_notify._collect_ssl_cert_warnings')
+    def test_push_ssl_cert_warning_should_notify_all_deduplicated_items_per_task(
+        self,
+        mock_collect_ssl_cert_warnings,
+        mock_push_dingding,
+    ):
+        """SSL 临期提醒应按当前任务去重后发送，不应被历史任务状态抑制。"""
+        mock_collect_ssl_cert_warnings.return_value = [
+            {
+                "domain": "cube.eytax.com.cn",
+                "start_time": "2025-05-16 00:00:00",
+                "end_time": "2026-05-15 23:59:59",
+                "remaining_days": 27,
+                "validity_text": "剩余 27 天",
+                "endpoints": ["1.1.1.1:443"],
+                "cert_identity_text": "SHA256:cube-demo",
+            },
+            {
+                "domain": "cube-uat.eytax.com.cn",
+                "start_time": "2025-04-24 00:00:00",
+                "end_time": "2026-04-23 23:59:59",
+                "remaining_days": 5,
+                "validity_text": "剩余 5 天",
+                "endpoints": ["2.2.2.2:443"],
+                "cert_identity_text": "SHA256:cube-uat-demo",
+            },
+        ]
+        mock_push_dingding.return_value = True
+
+        _push_ssl_cert_warning("65f1234567890abc12345678")
+
+        self.assertEqual(2, mock_push_dingding.call_count)
+        self.assertIn("cube.eytax.com.cn", mock_push_dingding.call_args_list[0].kwargs.get("markdown_report", ""))
+        self.assertIn("cube-uat.eytax.com.cn", mock_push_dingding.call_args_list[1].kwargs.get("markdown_report", ""))
 
 
 if __name__ == '__main__':

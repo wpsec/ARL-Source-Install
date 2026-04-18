@@ -672,94 +672,6 @@ def _build_ssl_cert_warning_markdown(warn_item, report_link):
     return markdown
 
 
-def _build_ssl_warning_level(remaining_days, alert_days):
-    """
-    告警分级（数值越大表示越紧急），用于跨任务抑制重复通知。
-    """
-    alert_days = max(int(alert_days or 30), 1)
-    try:
-        days = int(remaining_days)
-    except Exception:
-        return -1
-
-    if days < 0:
-        return 6
-    if days == 0:
-        return 5
-    if days <= 1:
-        return 4
-    if days <= 3:
-        return 3
-    if days <= 7:
-        return 2
-    if days <= 15:
-        return 1
-    if days <= alert_days:
-        return 0
-    return -1
-
-
-def _build_ssl_notify_state_key(warn_item):
-    """
-    生成跨任务通知去重键：域名 + 证书身份 + 到期时间。
-    """
-    domain = utils.normalize_domain(warn_item.get("domain", "")) or "-"
-    cert_identity = str(warn_item.get("cert_identity_key", "") or "").strip().lower()
-    if not cert_identity:
-        # 兜底使用端点，避免无指纹证书导致状态键缺失。
-        cert_identity = ",".join(warn_item.get("endpoints", [])) or "-"
-    end_time = str(warn_item.get("end_time", "") or "-").strip()
-    return "{}|{}|{}".format(domain, cert_identity, end_time)
-
-
-def _load_ssl_notify_state_level(state_key):
-    """
-    读取历史通知等级；不存在返回 -1。
-    """
-    if not state_key:
-        return -1
-
-    item = utils.conn_db("ssl_cert_notify_state").find_one(
-        {"state_key": state_key},
-        {"last_level": 1},
-    )
-    if not item:
-        return -1
-
-    try:
-        return int(item.get("last_level", -1))
-    except Exception:
-        return -1
-
-
-def _save_ssl_notify_state(state_key, warn_item, level, task_id):
-    """
-    保存通知状态（仅在发送成功后调用），避免重复推送。
-    """
-    if not state_key:
-        return
-
-    update_doc = {
-        "state_key": state_key,
-        "domain": utils.normalize_domain(warn_item.get("domain", "")) or "-",
-        "cert_identity_key": str(warn_item.get("cert_identity_key", "") or "").strip().lower(),
-        "end_time": str(warn_item.get("end_time", "") or "").strip(),
-        "remaining_days": int(warn_item.get("remaining_days", 0) or 0),
-        "last_level": int(level),
-        "last_task_id": str(task_id or ""),
-        "last_notify_date": utils.curr_date(),
-        "update_date": utils.curr_date(),
-    }
-    utils.conn_db("ssl_cert_notify_state").update_one(
-        {"state_key": state_key},
-        {
-            "$set": update_doc,
-            "$setOnInsert": {"create_date": utils.curr_date()},
-        },
-        upsert=True,
-    )
-
-
 def _push_ssl_cert_warning(task_id):
     """
     推送 SSL 证书临期告警（仅机器人消息，不写入知识库报告）。
@@ -772,40 +684,10 @@ def _push_ssl_cert_warning(task_id):
     if not warnings:
         return
 
-    # 跨任务告警降噪：仅首次出现或告警等级升级时发送。
-    pending_warnings = []
-    for warn_item in warnings:
-        level = _build_ssl_warning_level(warn_item.get("remaining_days", 0), alert_days=alert_days)
-        if level < 0:
-            continue
-        state_key = _build_ssl_notify_state_key(warn_item)
-        history_level = _load_ssl_notify_state_level(state_key)
-        if level <= history_level:
-            continue
-        pending_warnings.append(
-            {
-                "warn_item": warn_item,
-                "state_key": state_key,
-                "level": level,
-            }
-        )
-
-    if not pending_warnings:
-        logger.info("skip ssl cert warning notify task_id:%s reason:no level upgrade", task_id)
-        return
-
     report_link = _build_report_link_fallback(task_id)
-
-    for item in pending_warnings:
-        warn_item = item["warn_item"]
+    for warn_item in warnings:
         markdown_report = _build_ssl_cert_warning_markdown(warn_item, report_link=report_link)
-        if push_dingding(markdown_report=markdown_report):
-            _save_ssl_notify_state(
-                state_key=item["state_key"],
-                warn_item=warn_item,
-                level=item["level"],
-                task_id=task_id,
-            )
+        push_dingding(markdown_report=markdown_report)
 
 
 def push_task_finish_notify(task_id):
