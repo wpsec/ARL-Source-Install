@@ -888,6 +888,39 @@ def _column_index_to_name(index):
     return result
 
 
+def _column_name_to_index(name):
+    """
+    A1 列名转列号（A -> 1, AA -> 27）
+    """
+    text = str(name or "").strip().upper()
+    if not text or not re.fullmatch(r"[A-Z]+", text):
+        return 0
+
+    result = 0
+    for char in text:
+        result = result * 26 + (ord(char) - 64)
+    return result
+
+
+def _extract_range_col_count(range_a1):
+    """
+    从 A1 范围中提取列数，避免分块写入时因尾列空值被裁掉导致列宽不匹配。
+    """
+    text = str(range_a1 or "").strip().upper()
+    if not text:
+        return 0
+
+    match = re.fullmatch(r"([A-Z]+)\d+(?::([A-Z]+)\d+)?", text)
+    if not match:
+        return 0
+
+    start_col = _column_name_to_index(match.group(1))
+    end_col = _column_name_to_index(match.group(2) or match.group(1))
+    if start_col <= 0 or end_col <= 0 or end_col < start_col:
+        return 0
+    return end_col - start_col + 1
+
+
 def _build_a1_range(row_count, col_count=1, row_start=1):
     """
     构建 A1 范围
@@ -1726,8 +1759,20 @@ def update_workbook_range(workbook_id, sheet_name, range_a1, values, operator_id
                 col_limit = max(col_limit, len(row))
             else:
                 col_limit = max(col_limit, 1)
-    normalized = _normalize_sheet_values(values, max_rows=row_limit, max_cols=max(col_limit, 1), max_cell_len=1800)
+    expected_col_count = _extract_range_col_count(range_a1)
+    normalized = _normalize_sheet_values(
+        values,
+        max_rows=row_limit,
+        max_cols=max(col_limit, expected_col_count, 1),
+        max_cell_len=1800,
+    )
     request_values = normalized.get("values", [[""]])
+    if expected_col_count > 0:
+        for row in request_values:
+            if len(row) < expected_col_count:
+                row.extend([""] * (expected_col_count - len(row)))
+            elif len(row) > expected_col_count:
+                del row[expected_col_count:]
 
     # 仅提交 values，避免 wordWrap 等可选样式字段在不同版本接口上校验不一致
     payload = {

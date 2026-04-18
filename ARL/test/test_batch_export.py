@@ -307,6 +307,154 @@ class TestBatchExport(unittest.TestCase):
     @patch('app.routes.export.get_ip_data')
     @patch('app.routes.export.get_domain_data')
     @patch('app.routes.export.get_site_data')
+    def test_export_merge_tasks_should_deduplicate_ip_service_and_cert_rows(
+        self,
+        mock_get_site_data,
+        mock_get_domain_data,
+        mock_get_ip_data,
+        mock_get_task_data,
+        mock_get_service_data,
+        mock_get_cert_data,
+        mock_get_url_data,
+        mock_get_fileleak_data,
+        mock_get_wih_data,
+        mock_get_wih_endpoint_data,
+        mock_get_vuln_data,
+        mock_get_stat_finger_data,
+        mock_get_nuclei_result_data,
+    ):
+        """批量导出应在写入前收口重复的 IP/系统服务/证书记录。"""
+        mock_get_task_data.side_effect = lambda task_id: {
+            "task_1": {"_id": "task_1", "name": "任务1", "target": "example.com"},
+            "task_2": {"_id": "task_2", "name": "任务2", "target": "example.org"},
+        }.get(task_id)
+
+        mock_get_site_data.side_effect = lambda task_id: {
+            "task_1": [{"site": "https://portal.example.com", "title": "Portal", "finger": [], "status": 200, "favicon": {}}],
+            "task_2": [{"site": "https://portal.example.com", "title": "Portal", "finger": [], "status": 200, "favicon": {}}],
+        }.get(task_id, [])
+        mock_get_domain_data.side_effect = lambda task_id: {
+            "task_1": [{"domain": "a.example.com", "ips": ["1.1.1.1"]}],
+            "task_2": [{"domain": "b.example.org", "ips": ["1.1.1.1"]}],
+        }.get(task_id, [])
+        mock_get_ip_data.side_effect = lambda task_id: {
+            "task_1": [
+                {
+                    "ip": "1.1.1.1",
+                    "port_info": [{"port_id": 80, "service_name": "http", "product": "nginx", "version": "1.25.0"}],
+                    "geo_city": {},
+                    "geo_asn": {},
+                    "domain": ["a.example.com"],
+                    "os_info": {"name": "Linux"},
+                    "cdn_name": "",
+                    "ip_type": "公网",
+                },
+                {
+                    "ip": "1.1.1.1",
+                    "port_info": [{"port_id": 443, "service_name": "https", "product": "nginx", "version": "1.25.0"}],
+                    "geo_city": {},
+                    "geo_asn": {},
+                    "domain": ["a.example.com"],
+                    "os_info": {"name": "Linux"},
+                    "cdn_name": "",
+                    "ip_type": "公网",
+                },
+            ],
+            "task_2": [
+                {
+                    "ip": "1.1.1.1",
+                    "port_info": [{"port_id": 80, "service_name": "http", "product": "nginx", "version": "1.25.0"}],
+                    "geo_city": {},
+                    "geo_asn": {},
+                    "domain": ["b.example.org"],
+                    "os_info": {"name": "Linux"},
+                    "cdn_name": "",
+                    "ip_type": "公网",
+                }
+            ],
+        }.get(task_id, [])
+        mock_get_service_data.return_value = [
+            {
+                "task_id": "task_1",
+                "service_name": "http",
+                "service_info": [
+                    {"ip": "1.1.1.1", "port_id": 80, "product": "nginx", "version": "1.25.0"},
+                    {"ip": "1.1.1.1", "port_id": 80, "product": "nginx", "version": "1.25.0"},
+                ],
+            },
+            {
+                "task_id": "task_2",
+                "service_name": "http",
+                "service_info": [
+                    {"ip": "1.1.1.1", "port_id": 80, "product": "nginx", "version": "1.25.0"},
+                ],
+            },
+        ]
+        mock_get_cert_data.side_effect = lambda task_id: [
+            {
+                "_id": "{}-cert".format(task_id),
+                "task_id": task_id,
+                "ip": "1.1.1.1",
+                "port": 443,
+                "host": "1.1.1.1:443",
+                "domain": "cert.example.com",
+                "cert": {
+                    "subject_dn": "CN=cert.example.com",
+                    "issuer_dn": "CN=demo-ca",
+                    "validity": {
+                        "start": "2026-01-01 00:00:00",
+                        "end": "2027-01-01 00:00:00",
+                    },
+                    "ssl_security": {},
+                    "fingerprint": {"sha256": "sha256-demo"},
+                    "extensions": {"subjectAltName": "DNS:cert.example.com"},
+                },
+            }
+        ]
+        mock_get_url_data.return_value = []
+        mock_get_fileleak_data.return_value = []
+        mock_get_wih_data.return_value = []
+        mock_get_wih_endpoint_data.return_value = []
+        mock_get_vuln_data.return_value = []
+        mock_get_stat_finger_data.return_value = []
+        mock_get_nuclei_result_data.return_value = []
+
+        result = export_merge_tasks(["task_1", "task_2"])
+        wb = load_workbook(filename=BytesIO(result), read_only=True, data_only=True)
+        try:
+            ip_rows = list(wb["IP"].iter_rows(min_row=2, values_only=True))
+            service_rows = list(wb["系统服务"].iter_rows(min_row=2, values_only=True))
+            cert_rows = list(wb["SSL证书"].iter_rows(min_row=2, values_only=True))
+
+            self.assertEqual(1, len(ip_rows))
+            self.assertIn("80", str(ip_rows[0][1]))
+            self.assertIn("443", str(ip_rows[0][1]))
+            self.assertIn("a.example.com", str(ip_rows[0][5]))
+            self.assertIn("b.example.org", str(ip_rows[0][5]))
+
+            self.assertEqual(1, len(service_rows))
+            self.assertEqual("1.1.1.1", service_rows[0][0])
+            self.assertEqual(80, service_rows[0][1])
+
+            self.assertEqual(1, len(cert_rows))
+            self.assertEqual("cert.example.com", cert_rows[0][0])
+            self.assertEqual("1.1.1.1:443", cert_rows[0][1])
+        finally:
+            wb.close()
+
+    @patch('app.routes.export.get_nuclei_result_data')
+    @patch('app.routes.export.get_stat_finger_data')
+    @patch('app.routes.export.get_vuln_data')
+    @patch('app.routes.export.get_wih_endpoint_data')
+    @patch('app.routes.export.get_wih_data')
+    @patch('app.routes.export.get_fileleak_data')
+    @patch('app.routes.export.get_url_data')
+    @patch('app.routes.export.get_cert_data')
+    @patch('app.routes.export.get_service_data')
+    @patch('app.routes.export.get_task_data')
+    @patch('app.routes.export.get_ip_data')
+    @patch('app.routes.export.get_domain_data')
+    @patch('app.routes.export.get_site_data')
     def test_export_merge_tasks_html_function(
         self,
         mock_get_site_data,
@@ -459,8 +607,8 @@ class TestBatchExport(unittest.TestCase):
             "task_2": [{"domain": "shared.example.com"}, {"domain": "b.example.org"}],
         }.get(task_id, [])
         mock_get_ip_data.side_effect = lambda task_id: {
-            "task_1": [{"ip": "1.1.1.1"}, {"ip": "1.1.1.2"}],
-            "task_2": [{"ip": "2.2.2.2"}],
+            "task_1": [{"ip": "1.1.1.1"}, {"ip": "1.1.1.2"}, {"ip": "1.1.1.2"}],
+            "task_2": [{"ip": "2.2.2.2"}, {"ip": "1.1.1.2"}],
         }.get(task_id, [])
         mock_get_url_data.side_effect = lambda task_id: {
             "task_1": [
@@ -487,6 +635,8 @@ class TestBatchExport(unittest.TestCase):
         self.assertEqual(summary.get("vuln_cnt"), 2)
         self.assertEqual(summary.get("task_summaries", {}).get("task_1", {}).get("site_cnt"), 2)
         self.assertEqual(summary.get("task_summaries", {}).get("task_2", {}).get("site_cnt"), 2)
+        self.assertEqual(summary.get("task_summaries", {}).get("task_1", {}).get("ip_cnt"), 2)
+        self.assertEqual(summary.get("task_summaries", {}).get("task_2", {}).get("ip_cnt"), 2)
 
 
 @unittest.skipIf(IMPORT_ERROR is not None, "requires export test dependencies: {}".format(IMPORT_ERROR))

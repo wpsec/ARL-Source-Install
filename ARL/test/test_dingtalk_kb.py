@@ -21,6 +21,36 @@ except Exception as exc:
 class TestDingtalkKnowledgeBase(unittest.TestCase):
     """钉钉知识库写入相关回归测试。"""
 
+    @patch('app.utils.dingtalk_openapi.request_openapi')
+    def test_update_workbook_range_should_pad_values_to_match_range_width(
+        self,
+        mock_request_openapi,
+    ):
+        """写入分块时应按目标 range 列宽补齐尾部空列，避免钉钉报列数不匹配。"""
+        mock_request_openapi.return_value = (True, {"status_code": 200})
+
+        success, result = dingtalk_openapi.update_workbook_range(
+            workbook_id="workbook-1",
+            sheet_name="系统服务",
+            range_a1="A201:E288",
+            values=[
+                ["1.1.1.1", "80", "http", "nginx"],
+                ["2.2.2.2", "443", "https", ""],
+            ],
+            operator_id="operator-1",
+        )
+
+        self.assertTrue(success)
+        payload = mock_request_openapi.call_args.kwargs.get("json_data", {})
+        self.assertEqual(
+            [
+                ["1.1.1.1", "80", "http", "nginx", ""],
+                ["2.2.2.2", "443", "https", "", ""],
+            ],
+            payload.get("values"),
+        )
+        self.assertEqual("A201:E288", result.get("range"))
+
     @patch('app.utils.dingtalk_openapi.update_workbook_range')
     @patch('app.utils.dingtalk_openapi.list_workbook_sheets')
     def test_write_sheet_values_to_workbook_should_split_large_sheet(

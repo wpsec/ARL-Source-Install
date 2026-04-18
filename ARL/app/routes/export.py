@@ -1324,6 +1324,185 @@ def _format_domain_source_text(value):
     return " \r\n".join(source_list)
 
 
+def _choose_preferred_text(current, candidate):
+    """
+    选择更适合导出的文本值，优先非空、再优先信息量更高的候选。
+    """
+    current_text = sanitize_excel_value(current).strip()
+    candidate_text = sanitize_excel_value(candidate).strip()
+    if not candidate_text:
+        return current
+    if not current_text:
+        return candidate
+    if candidate_text in ["-", "未分析"] and current_text not in ["-", "未分析"]:
+        return current
+    if current_text in ["-", "未分析"] and candidate_text not in ["-", "未分析"]:
+        return candidate
+    if len(candidate_text) > len(current_text):
+        return candidate
+    return current
+
+
+def _merge_unique_text_list(values):
+    """
+    合并字符串列表并去重，保持首次出现顺序。
+    """
+    output = []
+    seen = set()
+    for value in as_list(values):
+        text = sanitize_excel_value(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+    return output
+
+
+def _normalize_port_info_sort_key(item):
+    port_text = sanitize_excel_value(item.get("port_id", "")).strip()
+    try:
+        port_sort = int(port_text)
+    except Exception:
+        port_sort = 0
+    protocol = sanitize_excel_value(item.get("protocol", "")).strip().lower()
+    service_name = sanitize_excel_value(item.get("service_name", "") or item.get("service", "")).strip().lower()
+    return (port_sort, protocol, service_name)
+
+
+def _normalize_port_info_dedup_key(item):
+    """
+    端口聚合以 protocol+port_id 为主，避免同一端口在批量导出中重复出现。
+    """
+    port_text = sanitize_excel_value(item.get("port_id", "")).strip()
+    protocol = sanitize_excel_value(item.get("protocol", "tcp") or "tcp").strip().lower()
+    if port_text:
+        return (protocol, port_text)
+
+    service_name = sanitize_excel_value(item.get("service_name", "") or item.get("service", "")).strip().lower()
+    product = sanitize_excel_value(item.get("product", "")).strip().lower()
+    version = sanitize_excel_value(item.get("version", "")).strip().lower()
+    return ("raw", protocol, service_name, product, version)
+
+
+def _merge_port_info_lists(port_items):
+    """
+    合并同一 IP 下的端口信息，端口重复时优先保留字段更完整的一条。
+    """
+    grouped = {}
+    order = []
+
+    for item in as_list(port_items):
+        if not isinstance(item, dict):
+            continue
+
+        normalized_item = dict(item)
+        key = _normalize_port_info_dedup_key(normalized_item)
+        current = grouped.get(key)
+        if not current:
+            grouped[key] = normalized_item
+            order.append(key)
+            continue
+
+        for field_name in ["service_name", "service", "product", "version", "protocol"]:
+            current[field_name] = _choose_preferred_text(current.get(field_name, ""), normalized_item.get(field_name, ""))
+
+    output = [grouped[key] for key in order]
+    output.sort(key=_normalize_port_info_sort_key)
+    return output
+
+
+def _merge_ip_export_items(ip_items):
+    """
+    批量导出时按 IP 合并明细，减少跨任务重复 IP 噪音。
+    """
+    grouped = {}
+    order = []
+
+    for item in ip_items:
+        if not isinstance(item, dict):
+            continue
+        ip = sanitize_excel_value(item.get("ip", "")).strip()
+        if not ip:
+            continue
+
+        current = grouped.get(ip)
+        if not current:
+            grouped[ip] = {
+                "ip": ip,
+                "port_info": _merge_port_info_lists(item.get("port_info", [])),
+                "geo_city": item.get("geo_city", {}) if isinstance(item.get("geo_city", {}), dict) else {},
+                "geo_asn": item.get("geo_asn", {}) if isinstance(item.get("geo_asn", {}), dict) else {},
+                "domain": _merge_unique_text_list(item.get("domain", [])),
+                "os_info": item.get("os_info", {}) if isinstance(item.get("os_info", {}), dict) else {},
+                "cdn_name": sanitize_excel_value(item.get("cdn_name", "")).strip(),
+                "ip_type": sanitize_excel_value(item.get("ip_type", "")).strip(),
+            }
+            order.append(ip)
+            continue
+
+        current["port_info"] = _merge_port_info_lists(current.get("port_info", []) + as_list(item.get("port_info", [])))
+        current["domain"] = _merge_unique_text_list(current.get("domain", []) + as_list(item.get("domain", [])))
+        if not current.get("geo_city") and isinstance(item.get("geo_city", {}), dict):
+            current["geo_city"] = item.get("geo_city", {})
+        if not current.get("geo_asn") and isinstance(item.get("geo_asn", {}), dict):
+            current["geo_asn"] = item.get("geo_asn", {})
+        if not current.get("os_info") and isinstance(item.get("os_info", {}), dict):
+            current["os_info"] = item.get("os_info", {})
+        current["cdn_name"] = _choose_preferred_text(current.get("cdn_name", ""), item.get("cdn_name", ""))
+        current["ip_type"] = _choose_preferred_text(current.get("ip_type", ""), item.get("ip_type", ""))
+
+    return [grouped[ip] for ip in order]
+
+
+def _deduplicate_service_rows(rows):
+    """
+    系统服务导出按 IP+端口+服务+产品+版本 去重。
+    """
+    output = []
+    seen = set()
+    for row in rows:
+        normalized = list(row or [])
+        if len(normalized) < 5:
+            normalized.extend([""] * (5 - len(normalized)))
+        key = tuple(sanitize_excel_value(item).strip() for item in normalized[:5])
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(normalized[:5])
+    return output
+
+
+def _merge_cert_export_row(current, candidate):
+    output = list(current or [])
+    incoming = list(candidate or [])
+    while len(output) < 16:
+        output.append("")
+    while len(incoming) < 16:
+        incoming.append("")
+    output[15] = _choose_preferred_text(output[15], incoming[15])
+    return output
+
+
+def _deduplicate_cert_rows(rows):
+    """
+    SSL 证书导出按证书核心字段去重，重复时保留信息量更高的 AI 分析。
+    """
+    output = []
+    index_map = {}
+    for row in rows:
+        normalized = list(row or [])
+        while len(normalized) < 16:
+            normalized.append("")
+        key = tuple(sanitize_excel_value(item).strip() for item in normalized[:15])
+        existing_index = index_map.get(key)
+        if existing_index is None:
+            index_map[key] = len(output)
+            output.append(normalized[:16])
+            continue
+        output[existing_index] = _merge_cert_export_row(output[existing_index], normalized[:16])
+    return output
+
+
 def _is_ip_address(value: str) -> bool:
     text = str(value or "").strip()
     if not text:
@@ -1865,7 +2044,7 @@ def _build_service_rows(task_ids, fallback_ip_items=None):
                 port_info.get("version", ""),
             ])
 
-    return rows
+    return _deduplicate_service_rows(rows)
 
 
 def get_vuln_data(task_id):
@@ -2312,7 +2491,7 @@ def _extract_ai_denoise_rows(task_ids):
             )
         row["target"] = target
 
-    return rows
+    return _deduplicate_cert_rows(rows)
 
 
 def _build_ai_denoise_overview(ai_rows):
@@ -3920,14 +4099,14 @@ def build_task_export_summary(task_ids):
         task_states[task_id] = {
             "site_keys": set(),
             "domain_keys": set(),
-            "ip_cnt": 0,
+            "ip_keys": set(),
             "url_keys": set(),
             "vuln_keys": set(),
         }
 
     merged_site_keys = set()
     merged_domain_keys = set()
-    merged_ip_cnt = 0
+    merged_ip_keys = set()
     merged_url_keys = set()
     merged_vuln_keys = set()
 
@@ -3952,8 +4131,8 @@ def build_task_export_summary(task_ids):
             ip = sanitize_excel_value(ip_item.get("ip", "")).strip()
             if not ip:
                 continue
-            state["ip_cnt"] += 1
-            merged_ip_cnt += 1
+            state["ip_keys"].add(ip)
+            merged_ip_keys.add(ip)
 
         for item in get_url_data(task_id):
             row = (
@@ -4011,7 +4190,7 @@ def build_task_export_summary(task_ids):
         task_summaries[task_id] = {
             "site_cnt": len(state.get("site_keys", set())),
             "domain_cnt": len(state.get("domain_keys", set())),
-            "ip_cnt": int(state.get("ip_cnt", 0) or 0),
+            "ip_cnt": len(state.get("ip_keys", set())),
             "url_cnt": len(state.get("url_keys", set())),
             "vuln_cnt": len(state.get("vuln_keys", set())),
         }
@@ -4020,7 +4199,7 @@ def build_task_export_summary(task_ids):
         "task_ids": valid_task_ids,
         "site_cnt": len(merged_site_keys),
         "domain_cnt": len(merged_domain_keys),
-        "ip_cnt": merged_ip_cnt,
+        "ip_cnt": len(merged_ip_keys),
         "url_cnt": len(merged_url_keys),
         "vuln_cnt": len(merged_vuln_keys),
         "task_summaries": task_summaries,
@@ -5118,8 +5297,8 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     说明：
     - 合并多个任务的所有扫描数据
     - 按照单个任务的导出格式生成报告
-    - 保留任务原始IP/服务明细（不做跨任务折叠），保证与页面口径一致
-    - 域名、站点仍按值合并去重，避免重复噪音
+    - 批量导出前统一按报告口径去重，降低跨任务重复噪音
+    - 域名、站点按值合并；IP 按地址合并；服务/证书按关键字段去重
     """
     wb = Workbook()
     if 'Sheet' in wb.sheetnames:
@@ -5265,6 +5444,8 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     if not merged_ip_items and not merged_domains and not merged_sites:
         raise ValueError("未找到可导出的任务数据")
 
+    deduped_ip_items = _merge_ip_export_items(merged_ip_items)
+
     # 站点（与单任务导出同结构）
     ws = wb.create_sheet(title="站点")
     ws.column_dimensions['A'].width = 35.0
@@ -5302,7 +5483,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     if is_ip_task:
         ws.column_dimensions['F'].width = 55.0
         ws.append(["IP", "端口信息", "开放端口数目", "geo", "as 编号", "操作系统"])
-        for item in merged_ip_items:
+        for item in deduped_ip_items:
             port_ids = [str(x.get("port_id")) for x in item.get("port_info", []) if x.get("port_id") is not None]
             geo_city = item.get("geo_city", {}) if isinstance(item.get("geo_city", {}), dict) else {}
             geo_asn = item.get("geo_asn", {}) if isinstance(item.get("geo_asn", {}), dict) else {}
@@ -5328,7 +5509,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
         ws.column_dimensions['H'].width = 40.0
         ws.column_dimensions['I'].width = 20.0
         ws.append(["IP", "端口信息", "开放端口数目", "geo", "as 编号", "domain", "操作系统", "CDN", "类别"])
-        for item in merged_ip_items:
+        for item in deduped_ip_items:
             port_ids = [str(x.get("port_id")) for x in item.get("port_info", []) if x.get("port_id") is not None]
             geo_city = item.get("geo_city", {}) if isinstance(item.get("geo_city", {}), dict) else {}
             geo_asn = item.get("geo_asn", {}) if isinstance(item.get("geo_asn", {}), dict) else {}
@@ -5406,7 +5587,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     _build_stat_finger_sheet(wb, valid_task_ids, apply_style=apply_style)
 
     # 资产统计（与单任务导出同结构）
-    statist = calc_port_service_product_statist_from_ip_items(merged_ip_items)
+    statist = calc_port_service_product_statist_from_ip_items(deduped_ip_items)
     ws = wb.create_sheet(title="资产统计")
     ws.column_dimensions['A'].width = 20.0
     ws.column_dimensions['F'].width = 20.0
