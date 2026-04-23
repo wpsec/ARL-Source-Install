@@ -170,7 +170,44 @@ spawn_worker() {
     -c "${concurrency}" \
     -O fair \
     -f "${LOG_FILE_PATH}" &
-  echo $!
+  LAST_SPAWNED_WORKER_PID="$!"
+}
+
+assign_spawned_worker_pid() {
+  local target_var="$1"
+  shift
+
+  # 不能使用 PID="$(spawn_worker ...)" 这种命令替换来捕获后台 celery PID。
+  # 在 bash 中，命令替换会等待子进程持有的管道关闭；而 celery 是长生命周期进程，
+  # 会导致脚本卡在第一个 worker 上，后续 arlheavy/arlweb/arltask 根本不会启动。
+  spawn_worker "$@"
+
+  if [ -z "${LAST_SPAWNED_WORKER_PID:-}" ]; then
+    echo "[ERROR] failed to capture spawned worker pid for $*"
+    return 1
+  fi
+
+  printf -v "${target_var}" '%s' "${LAST_SPAWNED_WORKER_PID}"
+}
+
+assert_worker_stable() {
+  local worker_name="$1"
+  local worker_pid="$2"
+  local stable_check_sec="${3:-2}"
+  local elapsed=0
+
+  while [ "${elapsed}" -lt "${stable_check_sec}" ]; do
+    if ! kill -0 "${worker_pid}" >/dev/null 2>&1; then
+      echo "[ERROR] celery worker ${worker_name} exited before startup stabilized pid=${worker_pid}"
+      wait "${worker_pid}" >/dev/null 2>&1 || true
+      return 1
+    fi
+
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  return 0
 }
 
 handle_worker_exit() {
@@ -214,10 +251,14 @@ TASK_CONCURRENCY="$(get_cfg_int CELERY_TASK_WORKER_CONCURRENCY 2)"
 
 echo "start celery github=${GITHUB_CONCURRENCY} heavy=${HEAVY_CONCURRENCY} web=${WEB_CONCURRENCY} task=${TASK_CONCURRENCY} log=${LOG_FILE_PATH}"
 
-GITHUB_PID="$(spawn_worker "arlgithub" "arlgithub" "${GITHUB_CONCURRENCY}")"
-HEAVY_PID="$(spawn_worker "arlheavy" "arlheavy" "${HEAVY_CONCURRENCY}")"
-WEB_PID="$(spawn_worker "arlweb" "arlweb" "${WEB_CONCURRENCY}")"
-TASK_PID="$(spawn_worker "arltask" "arltask" "${TASK_CONCURRENCY}")"
+assign_spawned_worker_pid GITHUB_PID "arlgithub" "arlgithub" "${GITHUB_CONCURRENCY}"
+assign_spawned_worker_pid HEAVY_PID "arlheavy" "arlheavy" "${HEAVY_CONCURRENCY}"
+assign_spawned_worker_pid WEB_PID "arlweb" "arlweb" "${WEB_CONCURRENCY}"
+assign_spawned_worker_pid TASK_PID "arltask" "arltask" "${TASK_CONCURRENCY}"
+assert_worker_stable "arlgithub" "${GITHUB_PID}"
+assert_worker_stable "arlheavy" "${HEAVY_PID}"
+assert_worker_stable "arlweb" "${WEB_PID}"
+assert_worker_stable "arltask" "${TASK_PID}"
 
 trap 'terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"; exit 143' TERM INT
 
@@ -243,16 +284,20 @@ while true; do
     if handle_worker_exit "${WORKER_NAME}" "${EXIT_CODE}"; then
       case "${WORKER_NAME}" in
         arlgithub)
-          GITHUB_PID="$(spawn_worker "arlgithub" "arlgithub" "${GITHUB_CONCURRENCY}")"
+          assign_spawned_worker_pid GITHUB_PID "arlgithub" "arlgithub" "${GITHUB_CONCURRENCY}"
+          assert_worker_stable "arlgithub" "${GITHUB_PID}"
           ;;
         arlheavy)
-          HEAVY_PID="$(spawn_worker "arlheavy" "arlheavy" "${HEAVY_CONCURRENCY}")"
+          assign_spawned_worker_pid HEAVY_PID "arlheavy" "arlheavy" "${HEAVY_CONCURRENCY}"
+          assert_worker_stable "arlheavy" "${HEAVY_PID}"
           ;;
         arlweb)
-          WEB_PID="$(spawn_worker "arlweb" "arlweb" "${WEB_CONCURRENCY}")"
+          assign_spawned_worker_pid WEB_PID "arlweb" "arlweb" "${WEB_CONCURRENCY}"
+          assert_worker_stable "arlweb" "${WEB_PID}"
           ;;
         arltask)
-          TASK_PID="$(spawn_worker "arltask" "arltask" "${TASK_CONCURRENCY}")"
+          assign_spawned_worker_pid TASK_PID "arltask" "arltask" "${TASK_CONCURRENCY}"
+          assert_worker_stable "arltask" "${TASK_PID}"
           ;;
       esac
       continue
