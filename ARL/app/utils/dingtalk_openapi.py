@@ -710,6 +710,346 @@ def _strip_task_id_column(values):
     return output
 
 
+def _normalize_kb_dedupe_text(value):
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = re.sub(r"\s+", " ", text)
+    return text.lower()
+
+
+def _normalize_kb_cell_text(value):
+    return str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _build_header_index_map(header):
+    index_map = {}
+    if not isinstance(header, list):
+        return index_map
+    for idx, value in enumerate(header):
+        key = _compact_sheet_cell_text(value)
+        if key and key not in index_map:
+            index_map[key] = idx
+    return index_map
+
+
+def _find_header_index(header_map, names):
+    for name in names:
+        key = _compact_sheet_cell_text(name)
+        if key in header_map:
+            return header_map[key]
+    return -1
+
+
+def _get_row_cell(row, idx):
+    if not isinstance(row, list) or idx < 0 or idx >= len(row):
+        return ""
+    return row[idx]
+
+
+def _build_kb_row_key(row, indexes):
+    parts = []
+    for idx in indexes:
+        parts.append(_normalize_kb_dedupe_text(_get_row_cell(row, idx)))
+    if not any(parts):
+        return None
+    return tuple(parts)
+
+
+def _is_kb_task_id_header(value):
+    return _compact_sheet_cell_text(value) in ["任务id", "taskid"]
+
+
+def _is_kb_sequence_header(value):
+    return _compact_sheet_cell_text(value) in ["序号", "编号", "index", "no"]
+
+
+def _is_kb_ai_header(value):
+    return _compact_sheet_cell_text(value) in ["ai分析", "ai去噪", "ai研判", "ai"]
+
+
+def _build_unknown_sheet_dedupe_key(header, row):
+    indexes = []
+    for idx, name in enumerate(header):
+        if _is_kb_task_id_header(name) or _is_kb_sequence_header(name) or _is_kb_ai_header(name):
+            continue
+        indexes.append(idx)
+    return _build_kb_row_key(row, indexes)
+
+
+def _build_sheet_dedupe_key(sheet_name, header, row):
+    header_map = _build_header_index_map(header)
+    sheet_key = _normalize_sheet_name_key(sheet_name)
+
+    if sheet_key == _normalize_sheet_name_key("站点"):
+        return _build_kb_row_key(row, [_find_header_index(header_map, ["site", "站点"])])
+
+    if sheet_key == _normalize_sheet_name_key("IP"):
+        return _build_kb_row_key(row, [_find_header_index(header_map, ["IP"])])
+
+    if sheet_key == _normalize_sheet_name_key("系统服务"):
+        return _build_kb_row_key(
+            row,
+            [
+                _find_header_index(header_map, ["IP"]),
+                _find_header_index(header_map, ["端口"]),
+                _find_header_index(header_map, ["服务"]),
+                _find_header_index(header_map, ["产品"]),
+                _find_header_index(header_map, ["版本"]),
+            ],
+        )
+
+    if sheet_key == _normalize_sheet_name_key("SSL证书"):
+        host_idx = _find_header_index(header_map, ["HOST", "主机"])
+        sha_idx = _find_header_index(header_map, ["SHA-256", "SHA256"])
+        if _normalize_kb_dedupe_text(_get_row_cell(row, sha_idx)):
+            return _build_kb_row_key(row, [host_idx, sha_idx])
+        return _build_kb_row_key(
+            row,
+            [
+                host_idx,
+                _find_header_index(header_map, ["主题名称"]),
+                _find_header_index(header_map, ["失效时间"]),
+            ],
+        )
+
+    if sheet_key == _normalize_sheet_name_key("域名"):
+        return _build_kb_row_key(
+            row,
+            [
+                _find_header_index(header_map, ["域名"]),
+                _find_header_index(header_map, ["解析类型"]),
+            ],
+        )
+
+    if sheet_key in [_normalize_sheet_name_key("URL信息"), _normalize_sheet_name_key("目录扫描")]:
+        return _build_kb_row_key(row, [_find_header_index(header_map, ["URL", "url"])])
+
+    if sheet_key == _normalize_sheet_name_key("WIH"):
+        return _build_kb_row_key(
+            row,
+            [
+                _find_header_index(header_map, ["记录类型"]),
+                _find_header_index(header_map, ["内容"]),
+                _find_header_index(header_map, ["来源"]),
+                _find_header_index(header_map, ["站点"]),
+            ],
+        )
+
+    if sheet_key == _normalize_sheet_name_key("WIH接口提取"):
+        return _build_kb_row_key(
+            row,
+            [
+                _find_header_index(header_map, ["目标"]),
+                _find_header_index(header_map, ["页面URL"]),
+                _find_header_index(header_map, ["方法"]),
+                _find_header_index(header_map, ["请求url", "请求URL"]),
+                _find_header_index(header_map, ["请求报文"]),
+            ],
+        )
+
+    if sheet_key in [_normalize_sheet_name_key("风险"), _normalize_sheet_name_key("PoC风险")]:
+        return _build_kb_row_key(
+            row,
+            [
+                _find_header_index(header_map, ["来源", "扫描器"]),
+                _find_header_index(header_map, ["模板/插件", "规则ID", "模板ID"]),
+                _find_header_index(header_map, ["目标"]),
+                _find_header_index(header_map, ["风险URL"]),
+                _find_header_index(header_map, ["风险名称"]),
+                _find_header_index(header_map, ["严重级别", "风险等级"]),
+            ],
+        )
+
+    return _build_unknown_sheet_dedupe_key(header, row)
+
+
+def _split_kb_multi_value(value):
+    text = _normalize_kb_cell_text(value)
+    if not text:
+        return []
+    return [item.strip() for item in re.split(r"\n+", text) if item.strip()]
+
+
+def _merge_kb_multi_value(current_value, candidate_value):
+    merged = []
+    seen = set()
+    for value in _split_kb_multi_value(current_value) + _split_kb_multi_value(candidate_value):
+        key = _normalize_kb_dedupe_text(value)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(value)
+    return " \r\n".join(merged)
+
+
+def _ai_analysis_quality_score(value):
+    text = _normalize_kb_cell_text(value)
+    normalized = _normalize_kb_dedupe_text(text)
+    if not normalized or normalized in ["-", "未分析", "分析中", "已关闭", "empty"]:
+        return 0
+    if "未分析" in normalized or "分析中" in normalized:
+        return 1
+
+    score = 20
+    if any(token in text for token in ["危险", "高价值", "高危", "严重"]):
+        score += 10
+    elif any(token in text for token in ["可疑", "中价值", "中危"]):
+        score += 6
+    elif any(token in text for token in ["正常", "低价值", "无价值", "低危"]):
+        score += 3
+    score += min(len(text), 200) / 1000.0
+    return score
+
+
+def _sheet_row_quality_score(header, row):
+    ai_idx = -1
+    for idx, value in enumerate(header):
+        if _is_kb_ai_header(value):
+            ai_idx = idx
+            break
+    ai_score = _ai_analysis_quality_score(_get_row_cell(row, ai_idx))
+    non_empty_count = 0
+    text_len = 0
+    for value in row:
+        text = _normalize_kb_cell_text(value)
+        if text:
+            non_empty_count += 1
+            text_len += min(len(text), 500)
+    return ai_score, non_empty_count, text_len
+
+
+def _is_kb_row_better(candidate, current, header):
+    return _sheet_row_quality_score(header, candidate) > _sheet_row_quality_score(header, current)
+
+
+def _merge_kb_deduped_row(sheet_name, header, current, candidate):
+    if _is_kb_row_better(candidate, current, header):
+        selected = list(candidate)
+        other = current
+    else:
+        selected = list(current)
+        other = candidate
+
+    header_map = _build_header_index_map(header)
+    sheet_key = _normalize_sheet_name_key(sheet_name)
+    merge_names = []
+    if sheet_key == _normalize_sheet_name_key("IP"):
+        merge_names = ["端口信息", "domain"]
+    elif sheet_key == _normalize_sheet_name_key("域名"):
+        merge_names = ["记录值", "关联ip", "来源"]
+
+    for name in merge_names:
+        idx = _find_header_index(header_map, [name])
+        if idx < 0:
+            continue
+        while len(selected) <= idx:
+            selected.append("")
+        selected[idx] = _merge_kb_multi_value(_get_row_cell(selected, idx), _get_row_cell(other, idx))
+    return selected
+
+
+def _renumber_wih_endpoint_rows(sheet_name, values):
+    if _normalize_sheet_name_key(sheet_name) != _normalize_sheet_name_key("WIH接口提取"):
+        return values
+    if not isinstance(values, list) or len(values) <= 1:
+        return values
+    header = values[0] if isinstance(values[0], list) else [values[0]]
+    header_map = _build_header_index_map(header)
+    seq_idx = _find_header_index(header_map, ["序号"])
+    if seq_idx < 0:
+        return values
+
+    output = [header]
+    for idx, row in enumerate(values[1:], 1):
+        row_cp = list(row) if isinstance(row, list) else [row]
+        while len(row_cp) <= seq_idx:
+            row_cp.append("")
+        row_cp[seq_idx] = idx
+        output.append(row_cp)
+    return output
+
+
+def _dedupe_sheet_values(sheet_name, values):
+    if not isinstance(values, list) or len(values) <= 1:
+        row_count = len(values) if isinstance(values, list) else 0
+        return values if isinstance(values, list) else [], {
+            "sheet_name": str(sheet_name or ""),
+            "before_rows": row_count,
+            "after_rows": row_count,
+            "removed_rows": 0,
+        }
+
+    sheet_key = _normalize_sheet_name_key(sheet_name)
+    if sheet_key in [_normalize_sheet_name_key("执行概览"), _normalize_sheet_name_key("资产统计")]:
+        return values, {
+            "sheet_name": str(sheet_name or ""),
+            "before_rows": len(values),
+            "after_rows": len(values),
+            "removed_rows": 0,
+        }
+
+    header = list(values[0]) if isinstance(values[0], list) else [values[0]]
+    rows_by_key = {}
+    key_order = []
+    passthrough_rows = []
+    for raw_row in values[1:]:
+        row = list(raw_row) if isinstance(raw_row, list) else [raw_row]
+        if all(_normalize_kb_cell_text(cell) == "" for cell in row):
+            continue
+        dedupe_key = _build_sheet_dedupe_key(sheet_name, header, row)
+        if not dedupe_key:
+            passthrough_rows.append(row)
+            continue
+        if dedupe_key not in rows_by_key:
+            rows_by_key[dedupe_key] = row
+            key_order.append(dedupe_key)
+            continue
+        rows_by_key[dedupe_key] = _merge_kb_deduped_row(sheet_name, header, rows_by_key[dedupe_key], row)
+
+    output_values = [header]
+    for key in key_order:
+        output_values.append(rows_by_key[key])
+    output_values.extend(passthrough_rows)
+    output_values = _renumber_wih_endpoint_rows(sheet_name, output_values)
+
+    before_rows = len(values)
+    after_rows = len(output_values)
+    return output_values, {
+        "sheet_name": str(sheet_name or ""),
+        "before_rows": before_rows,
+        "after_rows": after_rows,
+        "removed_rows": max(before_rows - after_rows, 0),
+    }
+
+
+def _deduplicate_task_export_sheet_items(sheet_items):
+    if not isinstance(sheet_items, list):
+        return [], {"sheet_count": 0, "before_rows": 0, "after_rows": 0, "removed_rows": 0, "items": []}
+
+    output_items = []
+    summary_items = []
+    total_before = 0
+    total_after = 0
+    for item in sheet_items:
+        if not isinstance(item, dict):
+            continue
+        sheet_name = str(item.get("sheet_name", "") or "")
+        deduped_values, item_summary = _dedupe_sheet_values(sheet_name, item.get("values", []))
+        current_item = dict(item)
+        current_item["values"] = deduped_values
+        output_items.append(current_item)
+        summary_items.append(item_summary)
+        total_before += int(item_summary.get("before_rows", 0) or 0)
+        total_after += int(item_summary.get("after_rows", 0) or 0)
+
+    return output_items, {
+        "sheet_count": len(output_items),
+        "before_rows": total_before,
+        "after_rows": total_after,
+        "removed_rows": max(total_before - total_after, 0),
+        "items": summary_items,
+    }
+
+
 def _build_expired_ssl_sheet_item(ssl_sheet_item):
     """
     从 SSL证书 工作表构建“过期证书”工作表（仅过期项）。
@@ -2346,17 +2686,6 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
     if not normalized_task_ids:
         return False, {"error": "task_ids is empty"}
 
-    if Config.DINGTALK_KB_DRY_RUN:
-        return True, {
-            "dry_run": True,
-            "title": title,
-            "task_count": len(normalized_task_ids),
-            "task_ids": normalized_task_ids,
-            "node_id": "",
-            "node_url": "",
-            "create_path": _resolve_create_doc_path(workspace_id=Config.DINGTALK_WORKSPACE_ID),
-        }
-
     try:
         from app.routes.export import export_merge_tasks, export_arl, build_task_export_summary
 
@@ -2385,6 +2714,40 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
     if not parse_success:
         return False, {"error": "parse export workbook failed", "detail": parse_result}
 
+    raw_sheet_items = parse_result.get("items", [])
+    prepared_sheet_items = _prepare_task_export_sheet_items(raw_sheet_items)
+    deduped_sheet_items, dedup_summary = _deduplicate_task_export_sheet_items(prepared_sheet_items)
+    if int(dedup_summary.get("removed_rows", 0) or 0) > 0:
+        logger.info(
+            "dingtalk kb task export dedupe title:{} removed_rows:{} before:{} after:{}".format(
+                title,
+                dedup_summary.get("removed_rows", 0),
+                dedup_summary.get("before_rows", 0),
+                dedup_summary.get("after_rows", 0),
+            )
+        )
+    ordered_sheet_items, ignored_sheet_names = _build_ordered_export_sheet_items(deduped_sheet_items)
+    if not isinstance(overview_context, dict):
+        overview_context = {}
+    else:
+        overview_context = dict(overview_context)
+    if isinstance(export_summary, dict):
+        overview_context["export_summary"] = export_summary
+
+    if Config.DINGTALK_KB_DRY_RUN:
+        return True, {
+            "dry_run": True,
+            "title": title,
+            "task_count": len(normalized_task_ids),
+            "task_ids": normalized_task_ids,
+            "node_id": "",
+            "node_url": "",
+            "create_path": _resolve_create_doc_path(workspace_id=Config.DINGTALK_WORKSPACE_ID),
+            "sheet_count": len(ordered_sheet_items) + 1,
+            "dedup_summary": dedup_summary,
+            "ignored_sheet_names": ignored_sheet_names,
+        }
+
     create_success, create_result = create_workbook(
         title=title,
         workspace_id=Config.DINGTALK_WORKSPACE_ID,
@@ -2393,24 +2756,17 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
         require_enable=True,
     )
     if not create_success:
+        if isinstance(create_result, dict):
+            create_result["dedup_summary"] = dedup_summary
         return False, create_result
 
     workbook_id = _normalize_workbook_id(create_result.get("dentry_uuid", ""))
     create_result["workbook_id"] = workbook_id
+    create_result["dedup_summary"] = dedup_summary
 
     if not workbook_id:
         create_result["error"] = "workbook_id missing from create response"
         return False, create_result
-
-    raw_sheet_items = parse_result.get("items", [])
-    prepared_sheet_items = _prepare_task_export_sheet_items(raw_sheet_items)
-    ordered_sheet_items, ignored_sheet_names = _build_ordered_export_sheet_items(prepared_sheet_items)
-    if not isinstance(overview_context, dict):
-        overview_context = {}
-    else:
-        overview_context = dict(overview_context)
-    if isinstance(export_summary, dict):
-        overview_context["export_summary"] = export_summary
 
     overview_values = _build_task_overview_sheet_values(
         title=title,
@@ -2516,6 +2872,7 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
         "items": write_items,
         "workbook_id": _normalize_workbook_id(detail_result.get("workbook_id", "")) or resolved_workbook_id,
         "ignored_sheet_names": ignored_sheet_names,
+        "dedup_summary": dedup_summary,
         "overview_rename": {
             "success": bool(rename_success),
             "result": rename_result,

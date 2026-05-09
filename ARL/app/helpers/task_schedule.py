@@ -30,6 +30,7 @@ RUN_PUSH_SKIP = "skip"
 RUN_MISSING_RETRY_MAX = 8
 RUN_FINALIZE_GRACE_SEC = 300
 RUN_RECHECK_TERMINAL_GRACE_SEC = 24 * 60 * 60
+AI_DENOISE_TERMINAL_STATUS_SET = {"done", "done_with_error", "error", "skipped"}
 
 
 def task_scheduler():
@@ -320,6 +321,80 @@ def build_schedule_run_summary(task_ids, prefer_export_summary=False):
                     ),
                     0,
                 ),
+            }
+        )
+
+    return summary
+
+
+def build_schedule_ai_denoise_wait_summary(task_ids):
+    """
+    汇总计划任务子任务的 AI 去噪终态。
+    """
+    summary = {
+        "total_task_count": len(task_ids) if isinstance(task_ids, list) else 0,
+        "ai_enabled_task_count": 0,
+        "ready_task_count": 0,
+        "waiting_task_count": 0,
+        "waiting_task_ids": [],
+        "status_stat": {},
+        "tasks": [],
+    }
+    if not isinstance(task_ids, list) or not task_ids:
+        return summary
+
+    object_ids = []
+    task_id_text_map = {}
+    for task_id in task_ids:
+        task_id_text = str(task_id or "").strip()
+        if not task_id_text:
+            continue
+        try:
+            object_id = bson.ObjectId(task_id_text)
+        except Exception:
+            continue
+        object_ids.append(object_id)
+        task_id_text_map[str(object_id)] = task_id_text
+
+    if not object_ids:
+        return summary
+
+    projection = {
+        "options.ai_denoise": 1,
+        "ai_denoise_status.status": 1,
+        "ai_denoise_status.pending_modules": 1,
+    }
+    items = list(utils.conn_db("task").find({"_id": {"$in": object_ids}}, projection))
+    for item in items:
+        task_id_text = task_id_text_map.get(str(item.get("_id", "")), str(item.get("_id", "")))
+        options = item.get("options", {}) if isinstance(item.get("options", {}), dict) else {}
+        if "ai_denoise" not in options or not bool(options.get("ai_denoise")):
+            continue
+
+        summary["ai_enabled_task_count"] += 1
+        ai_status_obj = item.get("ai_denoise_status") if isinstance(item.get("ai_denoise_status"), dict) else {}
+        pending_modules = ai_status_obj.get("pending_modules", []) if isinstance(ai_status_obj, dict) else []
+        if not isinstance(pending_modules, list):
+            pending_modules = []
+        pending_modules = [str(x or "").strip() for x in pending_modules if str(x or "").strip()]
+        status_text = str(ai_status_obj.get("status", "") if isinstance(ai_status_obj, dict) else "").strip().lower()
+        if not status_text:
+            status_text = "missing"
+
+        summary["status_stat"][status_text] = int(summary["status_stat"].get(status_text, 0) or 0) + 1
+        ready = status_text in AI_DENOISE_TERMINAL_STATUS_SET and not pending_modules
+        if ready:
+            summary["ready_task_count"] += 1
+        else:
+            summary["waiting_task_count"] += 1
+            summary["waiting_task_ids"].append(task_id_text)
+
+        summary["tasks"].append(
+            {
+                "task_id": task_id_text,
+                "status": status_text,
+                "pending_modules": pending_modules,
+                "ready": bool(ready),
             }
         )
 
@@ -637,6 +712,36 @@ def process_task_schedule_runs():
                 utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one_and_replace({"_id": run_item["_id"]}, run_item)
                 continue
 
+        notify_kb_enable = bool(run_item.get("notify_kb_enable", False))
+        failed_count = summary.get("error", 0) + summary.get("stop", 0) + summary.get("missing", 0)
+        next_run_status = RUN_STATUS_FINISHED if failed_count == 0 else RUN_STATUS_ERROR
+        if notify_kb_enable and should_push_schedule_run_kb(next_run_status):
+            ai_wait_summary = build_schedule_ai_denoise_wait_summary(task_ids)
+            run_item["ai_denoise_wait_summary"] = ai_wait_summary
+            if int(ai_wait_summary.get("waiting_task_count", 0) or 0) > 0:
+                run_item["status"] = RUN_STATUS_RUNNING
+                run_item["kb_push_status"] = RUN_PUSH_PENDING
+                run_item["push_status"] = RUN_PUSH_PENDING
+                logger.info(
+                    "task schedule run {} wait ai denoise before notify waiting:{} status_stat:{}".format(
+                        str(run_item.get("_id", "")),
+                        ai_wait_summary.get("waiting_task_ids", []),
+                        ai_wait_summary.get("status_stat", {}),
+                    )
+                )
+                utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one_and_replace({"_id": run_item["_id"]}, run_item)
+                continue
+        else:
+            run_item["ai_denoise_wait_summary"] = {
+                "total_task_count": len(task_ids) if isinstance(task_ids, list) else 0,
+                "ai_enabled_task_count": 0,
+                "ready_task_count": 0,
+                "waiting_task_count": 0,
+                "waiting_task_ids": [],
+                "status_stat": {},
+                "tasks": [],
+            }
+
         # 完成态通知与知识库报告改为使用导出口径汇总，避免摘要与报告内容不一致。
         summary = build_schedule_run_summary(task_ids, prefer_export_summary=True)
         run_item["summary"] = summary
@@ -664,7 +769,6 @@ def process_task_schedule_runs():
 
         # 钉钉知识库推送（优先执行，便于在群通知中附带知识库链接）
         run_item["kb_push_status"] = RUN_PUSH_SKIP
-        notify_kb_enable = bool(run_item.get("notify_kb_enable", False))
         if notify_kb_enable and should_push_kb:
             run_item["kb_push_status"] = RUN_PUSH_ERROR
             report_title = build_schedule_run_kb_title(run_item)
@@ -683,6 +787,7 @@ def process_task_schedule_runs():
                     "start_date": run_item.get("start_date", "-"),
                     "end_date": run_item.get("end_date", "-"),
                     "compare_summary": run_item.get("compare_summary", {}),
+                    "ai_denoise_wait_summary": run_item.get("ai_denoise_wait_summary", {}),
                 },
             )
             if kb_success:

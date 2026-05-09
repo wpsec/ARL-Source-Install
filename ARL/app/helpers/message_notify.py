@@ -153,6 +153,8 @@ def push_dingtalk_kb(
     result["node_url"] = api_result.get("node_url", "") if isinstance(api_result, dict) else ""
     result["workbook_id"] = api_result.get("workbook_id", "") if isinstance(api_result, dict) else ""
     result["sheet_count"] = api_result.get("sheet_count", 0) if isinstance(api_result, dict) else 0
+    if isinstance(api_result, dict) and isinstance(api_result.get("dedup_summary"), dict):
+        result["dedup_summary"] = api_result.get("dedup_summary", {})
     if isinstance(api_result, dict) and isinstance(api_result.get("write_result"), dict):
         result["sheet_name"] = api_result["write_result"].get("sheet_name", "")
         result["sheet_range"] = api_result["write_result"].get("range", "")

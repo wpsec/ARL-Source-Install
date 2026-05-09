@@ -9,14 +9,36 @@ try:
         _build_ssl_cert_warning_markdown,
         _push_ssl_cert_warning,
     )
+    from app.helpers import task_schedule as task_schedule_module
     from app.utils import dingtalk_openapi
 except Exception as exc:
     push_dingtalk_kb = None
     push_task_finish_notify = None
     _build_ssl_cert_warning_markdown = None
     _push_ssl_cert_warning = None
+    task_schedule_module = None
     dingtalk_openapi = None
     IMPORT_ERROR = exc
+
+
+class _FakeCollection(object):
+    def __init__(self, items=None):
+        self.items = list(items or [])
+        self.replaced_items = []
+
+    def find(self, query=None, projection=None):
+        return list(self.items)
+
+    def find_one(self, query=None, projection=None, sort=None):
+        return None
+
+    def find_one_and_replace(self, query, item):
+        self.replaced_items.append(dict(item))
+        return item
+
+    def insert_one(self, item):
+        self.items.append(dict(item))
+        return MagicMock()
 
 
 @unittest.skipIf(IMPORT_ERROR is not None, "requires dingtalk test dependencies: {}".format(IMPORT_ERROR))
@@ -156,7 +178,7 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
 
         success, result = dingtalk_openapi.publish_task_export_to_kb(
             title="demo",
-            task_ids=["task-1"],
+            task_ids=["task-1", "task-2"],
             overview_context={"schedule_name": "test"},
         )
 
@@ -217,6 +239,250 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
             [item.get("sheet_name") for item in ordered_items],
         )
         self.assertEqual([], ignored_sheet_names)
+
+    def test_deduplicate_task_export_sheet_items_should_prefer_analyzed_ai_result(self):
+        """知识库写入前应按语义去重，并优先保留已分析 AI 结果。"""
+        deduped_items, summary = dingtalk_openapi._deduplicate_task_export_sheet_items(
+            [
+                {
+                    "sheet_name": "URL信息",
+                    "values": [
+                        ["URL", "站点", "标题", "状态码", "body长度", "来源", "AI分析"],
+                        ["https://example.com/admin", "https://example.com", "Login", "200", "1024", "spider", "未分析"],
+                        ["https://example.com/admin", "https://example.com", "Login", "200", "1024", "spider", "可疑（中）"],
+                    ],
+                },
+                {
+                    "sheet_name": "风险",
+                    "values": [
+                        ["来源", "风险名称", "严重级别", "目标", "风险URL", "凭证", "模板/插件", "风险类型", "详情", "AI分析"],
+                        ["nuclei", "未授权访问", "high", "https://example.com", "https://example.com/api", "", "tpl-1", "auth", "detail", "未分析"],
+                        ["nuclei", "未授权访问", "high", "https://example.com", "https://example.com/api", "", "tpl-1", "auth", "detail", "危险（高）"],
+                    ],
+                },
+                {
+                    "sheet_name": "WIH接口提取",
+                    "values": [
+                        ["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文", "AI填充参数", "回复报文", "AI分析"],
+                        [1, "https://example.com", "/admin", "POST", "200", "80", "/api/export", "POST /api/export", "", "", "未分析"],
+                        [2, "https://example.com", "/admin", "POST", "200", "80", "/api/export", "POST /api/export", "", "", "高价值"],
+                    ],
+                },
+            ]
+        )
+
+        self.assertEqual(3, summary.get("removed_rows"))
+        url_values = deduped_items[0].get("values")
+        risk_values = deduped_items[1].get("values")
+        wih_values = deduped_items[2].get("values")
+        self.assertEqual(2, len(url_values))
+        self.assertEqual("可疑（中）", url_values[1][-1])
+        self.assertEqual("危险（高）", risk_values[1][-1])
+        self.assertEqual(1, wih_values[1][0])
+        self.assertEqual("高价值", wih_values[1][-1])
+
+    @patch('app.utils.dingtalk_openapi.create_workbook')
+    @patch('app.utils.dingtalk_openapi._load_workbook_sheet_items')
+    @patch('app.routes.export.export_merge_tasks')
+    @patch('app.routes.export.build_task_export_summary')
+    @patch('app.utils.dingtalk_openapi._is_config_ready')
+    @patch('app.utils.dingtalk_openapi.Config.DINGTALK_KB_DRY_RUN', True)
+    def test_publish_task_export_to_kb_dry_run_should_return_dedup_summary(
+        self,
+        mock_is_config_ready,
+        mock_build_task_export_summary,
+        mock_export_merge_tasks,
+        mock_load_workbook_sheet_items,
+        mock_create_workbook,
+    ):
+        """dry_run 下仍应生成去重统计，但不调用钉钉创建接口。"""
+        mock_is_config_ready.return_value = True
+        mock_export_merge_tasks.return_value = b"excel-bytes"
+        mock_build_task_export_summary.return_value = {}
+        mock_load_workbook_sheet_items.return_value = (
+            True,
+            {
+                "items": [
+                    {
+                        "sheet_name": "URL信息",
+                        "values": [
+                            ["URL", "站点", "标题", "状态码", "body长度", "来源", "AI分析"],
+                            ["https://example.com/a", "https://example.com", "A", "200", "10", "spider", "未分析"],
+                            ["https://example.com/a", "https://example.com", "A", "200", "10", "spider", "正常"],
+                        ],
+                    }
+                ],
+                "truncated_sheets": False,
+            },
+        )
+
+        success, result = dingtalk_openapi.publish_task_export_to_kb(
+            title="demo",
+            task_ids=["task-1", "task-2"],
+            overview_context={},
+        )
+
+        self.assertTrue(success)
+        self.assertTrue(result.get("dry_run"))
+        self.assertEqual(1, result.get("dedup_summary", {}).get("removed_rows"))
+        mock_create_workbook.assert_not_called()
+
+    @patch('app.helpers.task_schedule.push_dingtalk_kb')
+    @patch('app.helpers.task_schedule.push_dingding')
+    @patch('app.helpers.task_schedule.utils.conn_db')
+    def test_process_task_schedule_runs_should_wait_for_running_ai_denoise(
+        self,
+        mock_conn_db,
+        mock_push_dingding,
+        mock_push_dingtalk_kb,
+    ):
+        """AI 去噪仍在运行时，不应生成知识库报告或聚合通知。"""
+        task_id = task_schedule_module.bson.ObjectId()
+        run_id = task_schedule_module.bson.ObjectId()
+        run_collection = _FakeCollection(
+            [
+                {
+                    "_id": run_id,
+                    "status": task_schedule_module.RUN_STATUS_RUNNING,
+                    "task_ids": [str(task_id)],
+                    "summary": {},
+                    "missing_retry_count": 0,
+                    "notify_enable": True,
+                    "notify_kb_enable": True,
+                    "notify_channel": "dingding",
+                    "notify_on": "finished",
+                    "push_status": task_schedule_module.RUN_PUSH_PENDING,
+                    "kb_push_status": task_schedule_module.RUN_PUSH_PENDING,
+                    "start_time": 100,
+                    "start_date": "2026-01-01 00:00:00",
+                    "end_time": 0,
+                    "end_date": "-",
+                }
+            ]
+        )
+        task_collection = _FakeCollection(
+            [
+                {
+                    "_id": task_id,
+                    "status": task_schedule_module.TaskStatus.DONE,
+                    "name": "demo",
+                    "target": "example.com",
+                    "type": "domain",
+                    "statistic": {},
+                    "options": {"ai_denoise": True},
+                    "ai_denoise_status": {"status": "running", "pending_modules": []},
+                }
+            ]
+        )
+
+        def _conn_db(name):
+            return run_collection if name == task_schedule_module.TASK_SCHEDULE_RUN_COLLECTION else task_collection
+
+        mock_conn_db.side_effect = _conn_db
+
+        task_schedule_module.process_task_schedule_runs()
+
+        mock_push_dingtalk_kb.assert_not_called()
+        mock_push_dingding.assert_not_called()
+        self.assertEqual(1, len(run_collection.replaced_items))
+        saved_run = run_collection.replaced_items[-1]
+        self.assertEqual(task_schedule_module.RUN_STATUS_RUNNING, saved_run.get("status"))
+        self.assertEqual(task_schedule_module.RUN_PUSH_PENDING, saved_run.get("kb_push_status"))
+        self.assertEqual(1, saved_run.get("ai_denoise_wait_summary", {}).get("waiting_task_count"))
+
+    @patch('app.routes.export.build_task_export_summary')
+    @patch('app.helpers.task_schedule.push_dingtalk_kb')
+    @patch('app.helpers.task_schedule.push_dingding')
+    @patch('app.helpers.task_schedule.utils.conn_db')
+    def test_process_task_schedule_runs_should_push_after_ai_denoise_done(
+        self,
+        mock_conn_db,
+        mock_push_dingding,
+        mock_push_dingtalk_kb,
+        mock_build_task_export_summary,
+    ):
+        """AI 去噪进入终态后，计划任务应正常写入知识库。"""
+        task_id = task_schedule_module.bson.ObjectId()
+        run_id = task_schedule_module.bson.ObjectId()
+        mock_build_task_export_summary.return_value = {
+            "site_cnt": 1,
+            "domain_cnt": 1,
+            "ip_cnt": 0,
+            "url_cnt": 1,
+            "vuln_cnt": 0,
+            "task_summaries": {
+                str(task_id): {
+                    "site_cnt": 1,
+                    "domain_cnt": 1,
+                    "ip_cnt": 0,
+                    "url_cnt": 1,
+                    "vuln_cnt": 0,
+                }
+            },
+        }
+        mock_push_dingtalk_kb.return_value = (
+            True,
+            {
+                "node_id": "node-1",
+                "node_url": "https://alidocs.example/report",
+                "partial_success": False,
+                "sheet_success_count": 2,
+                "sheet_failed_count": 0,
+                "api_result": {},
+            },
+        )
+        run_collection = _FakeCollection(
+            [
+                {
+                    "_id": run_id,
+                    "schedule_id": "schedule-1",
+                    "schedule_name": "demo",
+                    "run_number": 1,
+                    "status": task_schedule_module.RUN_STATUS_RUNNING,
+                    "task_ids": [str(task_id)],
+                    "summary": {},
+                    "missing_retry_count": 0,
+                    "notify_enable": False,
+                    "notify_kb_enable": True,
+                    "notify_channel": "dingding",
+                    "notify_on": "finished",
+                    "push_status": task_schedule_module.RUN_PUSH_PENDING,
+                    "kb_push_status": task_schedule_module.RUN_PUSH_PENDING,
+                    "start_time": 100,
+                    "start_date": "2026-01-01 00:00:00",
+                    "end_time": 0,
+                    "end_date": "-",
+                }
+            ]
+        )
+        task_collection = _FakeCollection(
+            [
+                {
+                    "_id": task_id,
+                    "status": task_schedule_module.TaskStatus.DONE,
+                    "name": "demo",
+                    "target": "example.com",
+                    "type": "domain",
+                    "statistic": {},
+                    "options": {"ai_denoise": True},
+                    "ai_denoise_status": {"status": "done", "pending_modules": []},
+                }
+            ]
+        )
+
+        def _conn_db(name):
+            return run_collection if name == task_schedule_module.TASK_SCHEDULE_RUN_COLLECTION else task_collection
+
+        mock_conn_db.side_effect = _conn_db
+
+        task_schedule_module.process_task_schedule_runs()
+
+        mock_push_dingtalk_kb.assert_called_once()
+        self.assertEqual(1, len(run_collection.replaced_items))
+        saved_run = run_collection.replaced_items[-1]
+        self.assertEqual(task_schedule_module.RUN_STATUS_FINISHED, saved_run.get("status"))
+        self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("kb_push_status"))
+        self.assertEqual("https://alidocs.example/report", saved_run.get("kb_node_url"))
 
     @patch('app.helpers.message_notify._push_ssl_cert_warning')
     @patch('app.helpers.message_notify.push_dingding')
