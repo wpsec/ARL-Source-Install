@@ -5299,7 +5299,8 @@ function DashboardView({
   const loadFallback = useCallback(async () => {
     const targets = [
       { key: 'task', path: '/task/' },
-      { key: 'scheduler', path: '/scheduler/' },
+      { key: 'scheduler_recurrent', path: '/task_schedule/', query: { status: 'scheduled', schedule_type: 'recurrent_scan' } },
+      { key: 'scheduler_future_pending', path: '/task_schedule/', query: { status: 'scheduled', schedule_type: 'future_scan' } },
       { key: 'asset_scope', path: '/asset_scope/' },
       { key: 'asset_site', path: '/asset_site/' },
       { key: 'vuln', path: '/vuln/' },
@@ -5307,7 +5308,13 @@ function DashboardView({
     ] as const;
 
     const [responses, consoleInfo, recentTaskResponse, assetOverview] = await Promise.all([
-      Promise.all(targets.map((target) => requestApi(token, target.path, { method: 'GET', query: { page: 1, size: 1 } }))),
+      Promise.all(targets.map((target) => {
+        const extraQuery = 'query' in target ? target.query : {};
+        return requestApi(token, target.path, {
+          method: 'GET',
+          query: { page: 1, size: 1, ...extraQuery },
+        });
+      })),
       requestApi(token, '/console/info', { method: 'GET' }),
       requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } }),
       loadAssetOverviewCounts(),
@@ -5327,7 +5334,7 @@ function DashboardView({
     setStats((prev) => ({
       ...prev,
       task: Number(nextStats.task || 0),
-      scheduler: Number(nextStats.scheduler || 0),
+      scheduler: Number(nextStats.scheduler_recurrent || 0) + Number(nextStats.scheduler_future_pending || 0),
       asset_scope: Number(nextStats.asset_scope || 0),
       asset_site: Number(nextStats.asset_site || 0),
       domain_total: Number(assetOverview.domain_total || 0),
@@ -5386,7 +5393,7 @@ function DashboardView({
         : await loadAssetOverviewCounts();
       setStats({
         task: Number(nextStats.task_total || 0),
-        scheduler: Number(nextStats.scheduler_total || 0),
+        scheduler: Number(nextStats.task_schedule_total ?? nextStats.scheduler_total ?? 0),
         asset_scope: Number(nextStats.asset_scope_total || 0),
         asset_site: Number(nextStats.asset_site_total || 0),
         domain_total: Number(assetOverview.domain_total || 0),
@@ -11944,6 +11951,9 @@ function TableModuleView({
                           const currentDurationLabel = durationDetail.durationLabel || '-';
                           const currentStartText = durationDetail.startText || '-';
                           const currentEndText = durationDetail.endText || '-';
+                          const visibleStatusText = rawStatus === 'done' && currentDurationLabel !== '-'
+                            ? `${statusText}（${currentDurationLabel}）`
+                            : statusText;
                           const statusNode = rawStatus === 'error' ? (
                             <button
                               type="button"
@@ -11952,10 +11962,10 @@ function TableModuleView({
                               title="点击查看异常详情"
                             >
                               <AlertTriangle className="w-4 h-4" />
-                              <span>{statusText}</span>
+                              <span>{visibleStatusText}</span>
                             </button>
                           ) : (
-                            <span>{statusText}</span>
+                            <span>{visibleStatusText}</span>
                           );
 
                           return (

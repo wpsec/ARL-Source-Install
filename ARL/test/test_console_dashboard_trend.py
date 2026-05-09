@@ -103,6 +103,72 @@ console = _load_console_module()
 
 
 class TestConsoleDashboardTrend(unittest.TestCase):
+    def test_task_schedule_dashboard_counts_pending_future_and_active_recurrent(self):
+        original_count_documents = console._count_documents
+        try:
+            seen_queries = []
+
+            def _fake_count_documents(collection, query=None):
+                seen_queries.append((collection, query or {}))
+                if collection != "task_schedule":
+                    return 0
+                if query.get("status") != "scheduled":
+                    return 0
+                if query.get("schedule_type") == "recurrent_scan":
+                    return 2
+                if query.get("schedule_type") == "future_scan":
+                    return 1
+                return 0
+
+            console._count_documents = _fake_count_documents
+
+            counts = console._build_task_schedule_dashboard_counts()
+
+            self.assertEqual(3, counts["total"])
+            self.assertEqual(2, counts["recurrent_total"])
+            self.assertEqual(1, counts["future_pending_total"])
+            self.assertIn(
+                ("task_schedule", {"status": "scheduled", "schedule_type": "recurrent_scan"}),
+                seen_queries,
+            )
+            self.assertIn(
+                ("task_schedule", {"status": "scheduled", "schedule_type": "future_scan"}),
+                seen_queries,
+            )
+        finally:
+            console._count_documents = original_count_documents
+
+    def test_task_schedule_dashboard_counts_exclude_done_future_scan(self):
+        original_count_documents = console._count_documents
+        try:
+            schedule_items = [
+                {"status": "scheduled", "schedule_type": "future_scan"},
+                {"status": "done", "schedule_type": "future_scan"},
+                {"status": "scheduled", "schedule_type": "recurrent_scan"},
+                {"status": "stop", "schedule_type": "recurrent_scan"},
+            ]
+
+            def _fake_count_documents(collection, query=None):
+                if collection != "task_schedule":
+                    return 0
+                query_obj = query or {}
+                return sum(
+                    1
+                    for item in schedule_items
+                    if item.get("status") == query_obj.get("status")
+                    and item.get("schedule_type") == query_obj.get("schedule_type")
+                )
+
+            console._count_documents = _fake_count_documents
+
+            counts = console._build_task_schedule_dashboard_counts()
+
+            self.assertEqual(2, counts["total"])
+            self.assertEqual(1, counts["future_pending_total"])
+            self.assertEqual(1, counts["recurrent_total"])
+        finally:
+            console._count_documents = original_count_documents
+
     def test_asset_trend_uses_daily_growth_series(self):
         original_count_documents = console._count_documents
         original_count_daily_records = console._count_daily_records

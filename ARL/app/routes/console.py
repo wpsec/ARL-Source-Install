@@ -99,6 +99,10 @@ TASK_STAGE_TEXT_MAP = {
     "send notify": "发送通知",
 }
 
+TASK_SCHEDULE_TYPE_FUTURE_SCAN = "future_scan"
+TASK_SCHEDULE_TYPE_RECURRENT_SCAN = "recurrent_scan"
+TASK_SCHEDULE_STATUS_SCHEDULED = "scheduled"
+
 
 def _count_documents(collection: str, query=None) -> int:
     """
@@ -125,6 +129,36 @@ def _count_active_tasks() -> int:
             }
         },
     )
+
+
+def _build_task_schedule_dashboard_counts() -> dict:
+    """
+    统计仪表盘计划任务数量。
+
+    口径：
+    - 周期下发：只要仍处于 scheduled，就一直计入仪表盘
+    - 定时下发：下发前为 scheduled，触发后会变成 done，不再计入
+    """
+    recurrent_total = _count_documents(
+        "task_schedule",
+        {
+            "status": TASK_SCHEDULE_STATUS_SCHEDULED,
+            "schedule_type": TASK_SCHEDULE_TYPE_RECURRENT_SCAN,
+        },
+    )
+    future_pending_total = _count_documents(
+        "task_schedule",
+        {
+            "status": TASK_SCHEDULE_STATUS_SCHEDULED,
+            "schedule_type": TASK_SCHEDULE_TYPE_FUTURE_SCAN,
+        },
+    )
+    total = int(recurrent_total) + int(future_pending_total)
+    return {
+        "total": total,
+        "recurrent_total": int(recurrent_total),
+        "future_pending_total": int(future_pending_total),
+    }
 
 
 def _safe_float(value, default=0.0) -> float:
@@ -777,6 +811,8 @@ class ARLConsoleDashboard(ARLResource):
         # 纯运行态口径：仅 status=running（用于兼容观察）
         running_state_tasks = _count_documents("task", {"status": "running"})
         waiting_tasks = _count_documents("task", {"status": "waiting"})
+        task_schedule_counts = _build_task_schedule_dashboard_counts()
+        asset_monitor_scheduler_total = _count_documents("scheduler")
 
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         asset_site_total_raw = _count_documents("asset_site")
@@ -799,7 +835,11 @@ class ARLConsoleDashboard(ARLResource):
             "running_tasks": active_tasks,  # 兼容旧前端字段（活跃任务）
             "running_state_tasks": running_state_tasks,
             "waiting_tasks": waiting_tasks,
-            "scheduler_total": _count_documents("scheduler"),
+            "scheduler_total": task_schedule_counts["total"],  # 兼容旧前端字段（计划任务）
+            "asset_monitor_scheduler_total": asset_monitor_scheduler_total,
+            "task_schedule_total": task_schedule_counts["total"],
+            "task_schedule_recurrent_total": task_schedule_counts["recurrent_total"],
+            "task_schedule_future_pending_total": task_schedule_counts["future_pending_total"],
             "asset_scope_total": _count_documents("asset_scope"),
             "asset_site_total": asset_site_total,
             "asset_site_total_raw": asset_site_total_raw,
