@@ -566,6 +566,38 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         self.assertIn("cube.eytax.com.cn", mock_push_dingding.call_args_list[0].kwargs.get("markdown_report", ""))
         self.assertIn("cube-uat.eytax.com.cn", mock_push_dingding.call_args_list[1].kwargs.get("markdown_report", ""))
 
+    @patch('app.helpers.message_notify.push_dingding')
+    @patch('app.helpers.message_notify._collect_ssl_cert_warnings')
+    def test_push_ssl_cert_warning_should_notify_again_on_later_scan(
+        self,
+        mock_collect_ssl_cert_warnings,
+        mock_push_dingding,
+    ):
+        """相同证书在后续扫描中仍应继续提醒，不应被历史通知状态抑制。"""
+        mock_collect_ssl_cert_warnings.return_value = [
+            {
+                "domain": "cube.eytax.com.cn",
+                "start_time": "2025-05-16 00:00:00",
+                "end_time": "2026-05-15 23:59:59",
+                "remaining_days": 29,
+                "validity_text": "剩余 29 天",
+                "endpoints": ["1.1.1.1:443"],
+                "cert_identity_text": "SHA256:cube-demo",
+            }
+        ]
+        mock_push_dingding.return_value = True
+
+        _push_ssl_cert_warning("65f1234567890abc12345678")
+        _push_ssl_cert_warning("75f1234567890abc12345679")
+
+        self.assertEqual(2, mock_push_dingding.call_count)
+        first_markdown = mock_push_dingding.call_args_list[0].kwargs.get("markdown_report", "")
+        second_markdown = mock_push_dingding.call_args_list[1].kwargs.get("markdown_report", "")
+        self.assertIn("cube.eytax.com.cn", first_markdown)
+        self.assertIn("剩余 29 天", first_markdown)
+        self.assertIn("cube.eytax.com.cn", second_markdown)
+        self.assertIn("剩余 29 天", second_markdown)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -687,6 +687,8 @@ def _push_ssl_cert_warning(task_id):
         return
 
     report_link = _build_report_link_fallback(task_id)
+    # 证书提醒仅在当前任务内做聚合去重；跨任务/跨轮扫描不保留抑制状态，
+    # 这样同一目标在 29 天、20 天、7 天等不同扫描轮次都能持续收到提醒。
     for warn_item in warnings:
         markdown_report = _build_ssl_cert_warning_markdown(warn_item, report_link=report_link)
         push_dingding(markdown_report=markdown_report)
