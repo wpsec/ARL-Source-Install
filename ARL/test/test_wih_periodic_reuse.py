@@ -189,7 +189,7 @@ def _load_module():
     info_hunter_module.InfoHunter = _InfoHunter
     wih_endpoint_probe_module.run_wih_endpoint_probe = lambda endpoints, waf_guard=None: list(endpoints or [])
 
-    sys.modules.setdefault("app", app_module)
+    sys.modules["app"] = app_module
     sys.modules["bson"] = bson_module
     sys.modules["app.utils"] = utils_module
     sys.modules["app.config"] = config_module
@@ -469,6 +469,104 @@ class TestWihPeriodicReuseService(unittest.TestCase):
         self.assertEqual(0, summary["reused_endpoint_count"])
         self.assertEqual(1, summary["dropped_endpoint_count"])
         self.assertEqual(1, len(store["wih_endpoint"]))
+
+    @patch.object(reuse_module, "run_wih_endpoint_probe")
+    def test_run_keeps_reused_endpoint_when_reprobe_is_inconclusive(self, mock_reprobe):
+        current_task_id = FakeObjectId()
+        previous_task_id = FakeObjectId()
+        store = {
+            "task": [
+                {
+                    "_id": current_task_id,
+                    "target": "example.com",
+                    "status": "running",
+                    "options": {
+                        "from_task_schedule": True,
+                        "task_schedule_id": "schedule-1",
+                    },
+                },
+                {
+                    "_id": previous_task_id,
+                    "target": "example.com",
+                    "status": "done",
+                    "end_time": "2026-04-12 10:00:00",
+                    "options": {
+                        "from_task_schedule": True,
+                        "task_schedule_id": "schedule-1",
+                    },
+                },
+            ],
+            "site": [
+                {
+                    "task_id": str(current_task_id),
+                    "site": "https://example.com",
+                    "title": "Portal",
+                    "status": 200,
+                    "http_server": "nginx",
+                    "body_length": 4096,
+                    "favicon": {"hash": 1001},
+                    "finger": [{"name": "Vue"}],
+                },
+                {
+                    "task_id": str(previous_task_id),
+                    "site": "https://example.com",
+                    "title": "Portal",
+                    "status": 200,
+                    "http_server": "nginx",
+                    "body_length": 4096,
+                    "favicon": {"hash": 1001},
+                    "finger": [{"name": "Vue"}],
+                },
+            ],
+            "wih": [],
+            "wih_endpoint": [
+                {
+                    "_id": FakeObjectId(),
+                    "task_id": str(previous_task_id),
+                    "target": "https://example.com",
+                    "page_url": "https://example.com/",
+                    "url": "https://example.com/api/list",
+                    "method": "GET",
+                    "fnv_hash": "endpoint-list",
+                }
+            ],
+            "fileleak": [],
+            "url": [],
+        }
+
+        reuse_module.utils.conn_db = lambda name: _FakeCollection(store[name])
+        mock_reprobe.return_value = [
+            {
+                "task_id": str(current_task_id),
+                "target": "https://example.com",
+                "page_url": "https://example.com/",
+                "url": "https://example.com/api/list",
+                "method": "GET",
+                "fnv_hash": "endpoint-list",
+                "verification_status": "error",
+                "verification_note": "轻量验证失败: Timeout",
+            }
+        ]
+
+        service = WihPeriodicReuseService(
+            task_id=str(current_task_id),
+            sites=["https://example.com"],
+            options={
+                "from_task_schedule": True,
+                "task_schedule_id": "schedule-1",
+                "task_schedule_name": "周期任务",
+                "task_schedule_run_number": 2,
+            },
+        )
+        summary = service.run()
+
+        self.assertEqual("ok", summary["reason"])
+        self.assertEqual(1, summary["reused_endpoint_candidate_count"])
+        self.assertEqual(1, summary["reused_endpoint_count"])
+        self.assertEqual(0, summary["dropped_endpoint_count"])
+        self.assertEqual(str(current_task_id), store["wih_endpoint"][-1]["task_id"])
+        self.assertEqual("error", store["wih_endpoint"][-1]["verification_status"])
+        self.assertEqual("unverified", store["wih_endpoint"][-1]["reuse_verification_status"])
 
     def test_run_skips_reused_url_when_fileleak_already_exists(self):
         current_task_id = FakeObjectId()

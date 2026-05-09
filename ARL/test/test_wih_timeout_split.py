@@ -82,7 +82,7 @@ def _load_info_hunter_module():
     url_candidate_filter_module.strip_url_annotation = lambda value: str(value or "")
     url_candidate_filter_module.strip_route_method_suffix = lambda value: str(value or "")
 
-    sys.modules.setdefault("app", app_module)
+    sys.modules["app"] = app_module
     sys.modules["app.utils"] = utils_module
     sys.modules["app.config"] = config_module
     sys.modules["app.modules"] = modules_module
@@ -230,6 +230,45 @@ class TestWihTimeoutSplit(unittest.TestCase):
         self.assertIn("10", light_command)
         self.assertIn("--runtime-max-requests", light_command)
         self.assertIn("60", light_command)
+
+    def test_endpoint_sensitive_light_result_without_endpoint_escalates_to_full(self):
+        hunter = InfoHunter(["https://a.example.com"], prefer_fast_mode=True)
+        hunter.require_endpoint_results = True
+        raw_text = json.dumps(
+            [
+                {
+                    "target": "https://a.example.com",
+                    "records": [
+                        {"type": "path", "content": "/api/user"},
+                        {"type": "urlfinder_url", "content": "https://a.example.com/api/user"},
+                        {"type": "page_url", "content": "https://a.example.com/home"},
+                    ],
+                }
+            ],
+            ensure_ascii=False,
+        )
+
+        self.assertTrue(hunter._should_escalate_light_result(raw_text, ["https://a.example.com"]))
+
+    def test_endpoint_sensitive_light_result_with_endpoint_is_accepted(self):
+        hunter = InfoHunter(["https://a.example.com"], prefer_fast_mode=True)
+        hunter.require_endpoint_results = True
+        raw_text = json.dumps(
+            [
+                {
+                    "target": "https://a.example.com",
+                    "endpoints": [
+                        {
+                            "method": "GET",
+                            "url": "https://a.example.com/api/user",
+                        }
+                    ],
+                }
+            ],
+            ensure_ascii=False,
+        )
+
+        self.assertFalse(hunter._should_escalate_light_result(raw_text, ["https://a.example.com"]))
 
     def test_normalize_wih_record_collapses_secret_duplicates_across_same_site_pages(self):
         record_a = types.SimpleNamespace(

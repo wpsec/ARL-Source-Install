@@ -133,6 +133,7 @@ class InfoHunter(object):
         self.sites = set(sites)
         self.endpoint_results = []
         self.prefer_fast_mode = bool(prefer_fast_mode)
+        self.require_endpoint_results = False
 
         tmp_path = Config.TMP_PATH
         rand_str = utils.random_choices()
@@ -1036,6 +1037,8 @@ class InfoHunter(object):
 
         if len(completed_sites) < site_count:
             return True
+        if self.require_endpoint_results and endpoint_count <= 0:
+            return True
         if endpoint_count > 0:
             return False
 
@@ -1654,6 +1657,7 @@ class InfoHunter(object):
 def run_wih(sites: List[str], include_endpoints: bool = False, prefer_fast_mode: bool = False):
     logger.info("run webInfoHunter, sites: {} prefer_fast_mode:{}".format(len(sites), bool(prefer_fast_mode)))
     hunter = InfoHunter(sites, prefer_fast_mode=prefer_fast_mode)
+    hunter.require_endpoint_results = bool(include_endpoints)
     results = hunter.run()
 
     logger.info("webInfoHunter result: {}".format(len(results)))

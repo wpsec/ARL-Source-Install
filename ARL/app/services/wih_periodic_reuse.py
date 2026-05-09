@@ -219,16 +219,14 @@ class WihPeriodicReuseService(object):
         return doc
 
     @staticmethod
-    def _is_revalidated_endpoint_alive(item: dict) -> bool:
+    def _is_revalidated_endpoint_removed(item: dict) -> bool:
         if not isinstance(item, dict):
-            return False
+            return True
         verification_status = str(item.get("verification_status", "") or "").strip().lower()
         status_code = int(item.get("status_code") or item.get("response_status") or 0)
         if verification_status != "probed":
             return False
-        if status_code in {404, 410}:
-            return False
-        return status_code > 0
+        return status_code in {404, 410}
 
     def _clone_wih_endpoints(self, previous_task_id: str, reusable_sites: set) -> tuple:
         docs = []
@@ -258,7 +256,13 @@ class WihPeriodicReuseService(object):
             )
             return candidate_count, 0
 
-        kept_docs = [item for item in probed_docs if self._is_revalidated_endpoint_alive(item)]
+        kept_docs = []
+        for item in probed_docs:
+            if self._is_revalidated_endpoint_removed(item):
+                continue
+            if str(item.get("verification_status", "") or "").strip().lower() != "probed":
+                item["reuse_verification_status"] = "unverified"
+            kept_docs.append(item)
         if kept_docs:
             utils.conn_db("wih_endpoint").insert_many(kept_docs)
         return candidate_count, len(kept_docs)
