@@ -169,18 +169,18 @@ const USERNAME_KEY = 'arl-username';
 const ACTIVE_MODULE_KEY = 'arl-active-module';
 const UNIFIED_SELECT_CLASS =
   'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text appearance-none pr-9 ' +
-  'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
+  'focus:outline-none focus:border-brand-accent transition';
 const CONSOLE_INPUT_CLASS =
   'w-full h-10 rounded-xl border border-brand-border bg-brand-bg px-3 text-sm text-brand-text ' +
-  'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
+  'focus:outline-none focus:border-brand-accent transition';
 const CONSOLE_SELECT_CLASS = `${UNIFIED_SELECT_CLASS} h-10`;
 const CONSOLE_INPUT_MONO_CLASS = `${CONSOLE_INPUT_CLASS} font-mono`;
 const CONSOLE_TEXTAREA_MONO_CLASS =
   'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text font-mono ' +
-  'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition resize-y';
+  'focus:outline-none focus:border-brand-accent transition resize-y';
 const CONSOLE_FILE_INPUT_CLASS =
   'flex-1 h-10 rounded-xl border border-brand-border bg-brand-bg px-3 text-sm text-brand-text ' +
-  'focus:outline-none focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 transition';
+  'focus:outline-none focus:border-brand-accent transition';
 const CONSOLE_CHECKBOX_CARD_CLASS =
   'flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 h-10 text-sm';
 const TASK_REPORT_EXPORT_OPTIONS: Array<{ label: string; value: TaskReportExportFormat }> = [
@@ -387,7 +387,7 @@ const modules: ModuleConfig[] = [
           { label: '域名任务', value: 'domain' },
           { label: 'IP任务', value: 'ip' },
           { label: '风险巡航任务', value: 'risk_cruising' },
-          { label: 'FOFA任务', value: 'fofa' },
+          { label: '测绘任务', value: 'fofa' },
           { label: '添加站点任务', value: 'asset_site_add' },
         ],
       },
@@ -433,12 +433,13 @@ const modules: ModuleConfig[] = [
       },
       {
         id: 'fofa_submit',
-        label: 'FOFA任务下发',
+        label: '测绘任务下发',
         method: 'POST',
         path: '/task_fofa/submit',
         payloadTemplate: {
+          provider: 'fofa',
           query: 'domain="example.com"',
-          name: 'FOFA任务',
+          name: '测绘任务',
           policy_id: '',
         },
       },
@@ -2199,28 +2200,30 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'task_fofa',
-    label: 'FOFA管理',
-    description: 'FOFA 语法测试与任务下发',
+    label: '测绘任务',
+    description: 'FOFA / Hunter / Shodan / Zoomeye / Quake 语法测试与任务下发',
     group: '系统集成',
     icon: Search,
     actions: [
       {
         id: 'fofa_test',
-        label: '测试FOFA语法',
+        label: '测试测绘语法',
         method: 'POST',
         path: '/task_fofa/test',
         payloadTemplate: {
+          provider: 'fofa',
           query: 'domain="example.com"',
         },
       },
       {
         id: 'fofa_submit_center',
-        label: '提交FOFA任务',
+        label: '提交测绘任务',
         method: 'POST',
         path: '/task_fofa/submit',
         payloadTemplate: {
+          provider: 'fofa',
           query: 'domain="example.com"',
-          name: 'FOFA批量任务',
+          name: '测绘批量任务',
           policy_id: '',
         },
       },
@@ -3883,7 +3886,7 @@ function getTaskTypeLabel(rawType: any): string {
     domain: '域名任务',
     ip: 'IP任务',
     risk_cruising: '风险巡航任务',
-    fofa: 'FOFA任务',
+    fofa: '测绘任务',
     asset_site_add: '添加站点任务',
     asset_site_update: '站点更新任务',
     asset_wih_update: 'WIH更新任务',
@@ -6133,6 +6136,7 @@ function ActionDialog({
   const taskScheduleType = String(formPayload?.schedule_type ?? 'future_scan') === 'recurrent_scan' ? 'recurrent_scan' : 'future_scan';
   const taskSchedulePolicyId = String(formPayload?.policy_id ?? '');
   const fofaTaskName = String(formPayload?.name ?? '');
+  const fofaProvider = String(formPayload?.provider ?? 'fofa').trim() || 'fofa';
   const fofaQueryText = String(formPayload?.query ?? '');
   const fofaPolicyId = String(formPayload?.policy_id ?? '');
   const taskScheduleCron = String(formPayload?.cron ?? '');
@@ -6176,6 +6180,28 @@ function ActionDialog({
   const [taskFileLeakDictOptions, setTaskFileLeakDictOptions] = useState<TaskDomainDictOption[]>([]);
   const [taskFileLeakDictError, setTaskFileLeakDictError] = useState('');
   const [taskDefaultFileLeakDictPath, setTaskDefaultFileLeakDictPath] = useState('');
+  const measureProviderOptions = [
+    { label: 'FOFA', value: 'fofa' },
+    { label: 'Hunter', value: 'hunter_qax' },
+    { label: 'Shodan', value: 'shodan' },
+    { label: 'Zoomeye', value: 'zoomeye' },
+    { label: 'Quake360', value: 'quake_360' },
+  ];
+  const measureProviderLabelMap: Record<string, string> = {
+    fofa: 'FOFA',
+    hunter_qax: 'Hunter',
+    shodan: 'Shodan',
+    zoomeye: 'Zoomeye',
+    quake_360: 'Quake360',
+  };
+  const measureProviderExamples: Record<string, string> = {
+    fofa: 'app="Nginx"\ncountry="CN" && port="443"',
+    hunter_qax: 'web.title="后台"\nip="8.8.8.8"',
+    shodan: 'product:nginx country:CN\nssl:"example.com"',
+    zoomeye: 'app:"Nginx"\ncountry:"CN" +port:443',
+    quake_360: 'service:"nginx"\nport:443 AND country:"China"',
+  };
+  const currentMeasureProviderLabel = measureProviderLabelMap[fofaProvider] || 'FOFA';
 
   const getPolicyPath = (suffix: string) => `${policyRootPath}.${suffix}`;
   const updatePolicyValue = (suffix: string, value: any) => {
@@ -6360,13 +6386,13 @@ function ActionDialog({
 
       const result = await requestApi(token, '/task_fofa/test', {
         method: 'POST',
-        body: { query: normalizedQuery },
+        body: { provider: fofaProvider, query: normalizedQuery },
       });
       const totalSize = Number(result?.data?.size ?? 0);
       setFofaResultSize(Number.isFinite(totalSize) ? totalSize : 0);
     } catch (err: any) {
       setFofaResultSize(null);
-      setError(err?.message || 'FOFA 语法测试失败');
+      setError(err?.message || '测绘语法测试失败');
     } finally {
       setFofaTesting(false);
     }
@@ -6633,7 +6659,7 @@ function ActionDialog({
           ) : null}
 
           {isTaskCreate ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
                 <input
@@ -6788,7 +6814,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isFofaAction ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               {isFofaSubmitAction ? (
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
@@ -6803,6 +6829,29 @@ function ActionDialog({
               ) : null}
 
               <div className="space-y-1">
+                <label className="text-xs font-bold text-brand-text-muted">测绘引擎</label>
+                <div className="relative">
+                  <select
+                    value={fofaProvider}
+                    disabled={!editable}
+                    onChange={(event) => {
+                      const nextProvider = event.target.value;
+                      setFormPayload((prev) => updatePayloadValue(prev, 'provider', nextProvider));
+                      setFofaResultSize(null);
+                    }}
+                    className={UNIFIED_SELECT_CLASS}
+                  >
+                    {measureProviderOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">查询语句</label>
                 <textarea
                   value={fofaQueryText}
@@ -6812,10 +6861,10 @@ function ActionDialog({
                     setFofaResultSize(null);
                   }}
                   className="w-full min-h-[160px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
-                  placeholder={'请输入查询语句（支持多行输入）\napp="Nginx"\ncountry="CN" && port="443"'}
+                  placeholder={`请输入 ${currentMeasureProviderLabel} 原生语法（支持多行输入）\n${measureProviderExamples[fofaProvider] || measureProviderExamples.fofa}`}
                 />
                 <p className="text-[11px] text-brand-text-muted">
-                  一行一条 FOFA 语句，测试和提交时会自动去除空行并去重。
+                  一行一条 {currentMeasureProviderLabel} 语句，测试和提交时会自动去除空行并去重。
                 </p>
               </div>
 
@@ -6835,7 +6884,7 @@ function ActionDialog({
                     className="w-full px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center justify-center gap-2"
                   >
                     <Play className={`w-4 h-4 ${fofaTesting ? 'animate-spin' : ''}`} />
-                    {fofaTesting ? '测试中...' : '测试'}
+                    {fofaTesting ? '测试中...' : `测试${currentMeasureProviderLabel}`}
                   </button>
                 </div>
               </div>
@@ -6865,7 +6914,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : isTaskScheduleCreate ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-brand-text-muted">名称</label>
@@ -7009,7 +7058,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : isGithubSchedulerAction ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-brand-text-muted">任务名</label>
                 <input
@@ -7067,7 +7116,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isAssetScopeCreate ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">资产类别</label>
                 <div className="relative">
@@ -7114,7 +7163,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isAssetScopeAddScope ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">资产组名称</label>
                 <input
@@ -7137,7 +7186,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isAssetScopeAddScheduler ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">范围</label>
                 <textarea
@@ -7194,7 +7243,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : (isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">运行间隔</label>
                 <div className="relative">
@@ -7215,7 +7264,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isPolicyAction ? (
-            <div className="space-y-5 max-h-[62vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-5 max-h-[62vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted">策略名称</label>
@@ -7462,7 +7511,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : (
-            <div className="space-y-3 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-3 max-h-[52vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               {displayFields.map((field) => {
                 const value = field.value;
                 const disabled = !editable;

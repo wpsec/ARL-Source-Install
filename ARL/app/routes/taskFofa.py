@@ -1,247 +1,162 @@
 """
-Fofa任务管理模块
+测绘任务下发模块。
 
-功能说明：
-- 集成Fofa（网络空间测绘平台）进行资产发现
-- 支持通过Fofa查询语句批量获取IP地址
-- 自动提交扫描任务对Fofa查询结果进行深度探测
-
-Fofa简介：
-- Fofa是国内知名的网络空间测绘搜索引擎
-- 可通过特征语法快速定位互联网资产
-- 常用语法示例：
-  * domain="example.com" - 查询指定域名
-  * app="Apache" - 查询特定应用
-  * country="CN" - 查询指定国家
-  * port="80" - 查询指定端口
-
-主要功能：
-- 测试Fofa查询连接和语法
-- 提交Fofa任务并自动扫描结果IP
-- 支持策略配置自定义扫描选项
+兼容说明：
+- 历史命名沿用 task_fofa 路径，避免前端与外部调用立即失效
+- 实际能力已扩展为 FOFA / Hunter / Shodan / Zoomeye / Quake 通用任务下发
 """
 import time
-from flask_restx import Namespace, fields
-from app.utils import get_logger, auth, build_ret, conn_db
-from app.modules import ErrorMsg, CeleryAction
-from app.services.fofaClient import fofa_query, fofa_query_result
-from app import celerytask, utils
+
 from bson import ObjectId
+from flask_restx import Namespace, fields
+
+from app import celerytask, utils
+from app.modules import CeleryAction, ErrorMsg
+from app.services.measure_task import (
+    fetch_measure_query_ips,
+    get_measure_provider_label,
+    get_measure_provider_label_safe,
+    normalize_measure_provider,
+    run_measure_query_test,
+)
+from app.utils import auth, build_ret, conn_db, get_logger
+
 from . import ARLResource
 
 
-ns = Namespace('task_fofa', description="Fofa 任务下发")
+ns = Namespace('task_fofa', description="测绘任务下发")
 
 logger = get_logger()
 
 
-def normalize_fofa_queries(query_text):
-    """
-    归一化 FOFA 查询语句，支持多行输入。
+test_measure_fields = ns.model('taskMeasureTest', {
+    'provider': fields.String(required=False, description="测绘引擎，默认 fofa"),
+    'query': fields.String(required=True, description="原生查询语句"),
+})
 
-    说明：
-    - 一行视为一条 FOFA 语句；
-    - 自动去除空行；
-    - 自动去重（保留首次出现顺序）。
-    """
-    if not isinstance(query_text, str):
-        query_text = str(query_text or "")
-
-    query_lines = query_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    query_list = []
-    query_seen = set()
-    for query_item in query_lines:
-        query_item = query_item.strip()
-        if not query_item or query_item in query_seen:
-            continue
-        query_list.append(query_item)
-        query_seen.add(query_item)
-    return query_list
-
-
-# 测试Fofa查询请求模型
-test_fofa_fields = ns.model('taskFofaTest',  {
-    'query': fields.String(required=True, description="Fofa查询语句")
+add_measure_fields = ns.model('addTaskMeasure', {
+    'provider': fields.String(required=False, description="测绘引擎，默认 fofa"),
+    'query': fields.String(required=True, description="原生查询语句"),
+    'name': fields.String(required=True, description="任务名称"),
+    'policy_id': fields.String(description="策略ID（可选，自定义扫描配置）"),
 })
 
 
+def _resolve_provider(args):
+    raw_provider = args.pop('provider', 'fofa')
+    return normalize_measure_provider(raw_provider or 'fofa')
+
+
+def _unsupported_provider_ret(provider_text):
+    provider_label = get_measure_provider_label_safe(provider_text)
+    return build_ret(
+        ErrorMsg.FofaKeyError,
+        {
+            "error": "unsupported provider",
+            "provider": str(provider_text or "").strip(),
+            "provider_label": provider_label,
+        },
+    )
+
+
+def _provider_error_ret(provider, error_text, query_text=""):
+    provider_label = get_measure_provider_label(provider)
+    message = "{} API异常".format(provider_label)
+    error_text = str(error_text or "").strip()
+    lowered = error_text.lower()
+    if any(keyword in lowered for keyword in ("缺少配置", "请先", "无效", "forbidden", "unauthorized", "invalid")):
+        return build_ret(
+            ErrorMsg.FofaKeyError,
+            {"error": error_text, "provider": provider, "provider_label": provider_label, "query": query_text},
+        )
+
+    return build_ret(
+        ErrorMsg.FofaConnectError,
+        {"error": error_text, "provider": provider, "provider_label": provider_label, "query": query_text},
+    )
+
+
 @ns.route('/test')
-class TaskFofaTest(ARLResource):
-    """Fofa查询测试接口"""
+class TaskMeasureTest(ARLResource):
+    """测绘语法测试接口"""
 
     @auth
-    @ns.expect(test_fofa_fields)
+    @ns.expect(test_measure_fields)
     def post(self):
-        """
-        测试Fofa查询连接和语法
-        
-        请求体：
-            {
-                "query": "domain=\"example.com\""
-            }
-        
-        返回：
-            {
-                "code": 200,
-                "message": "成功",
-                "size": 结果数量,
-                "query": "查询语句"
-            }
-        
-        说明：
-        - 验证Fofa API连接是否正常
-        - 验证查询语法是否正确
-        - 返回查询结果数量（不返回具体数据）
-        - 用于提交任务前的预检查
-        
-        常见错误：
-        - FofaConnectError: 连接Fofa API失败
-        - FofaKeyError: API密钥错误或无权限
-        """
-        args = self.parse_args(test_fofa_fields)
+        args = self.parse_args(test_measure_fields)
         query = args.pop('query')
+        raw_provider = args.get('provider', 'fofa')
+        try:
+            provider = _resolve_provider(args)
+        except ValueError:
+            return _unsupported_provider_ret(raw_provider)
 
-        query_list = normalize_fofa_queries(query)
-        if len(query_list) == 0:
-            return build_ret(ErrorMsg.QueryResultIsEmpty, {'error': "query is empty"})
-
-        total_size = 0
-        query_items = []
-        for query_item in query_list:
-            # 查询Fofa（仅获取1条用于测试）
-            data = fofa_query(query_item, page_size=1)
-            if isinstance(data, str):
-                return build_ret(ErrorMsg.FofaConnectError, {'error': data, "query": query_item})
-
-            if data.get("error"):
-                return build_ret(ErrorMsg.FofaKeyError, {'error': data.get("errmsg"), "query": query_item})
-
-            size = int(data.get("size", 0))
-            total_size += size
-            query_items.append({
-                "query": query_item,
-                "size": size
-            })
-
-        item = {
-            "size": total_size,
-            "query": "\n".join(query_list),
-            "query_count": len(query_list),
-            "items": query_items
-        }
+        try:
+            item = run_measure_query_test(provider, query)
+        except ValueError as exc:
+            return build_ret(
+                ErrorMsg.QueryResultIsEmpty,
+                {"error": str(exc), "provider": provider, "provider_label": get_measure_provider_label(provider)},
+            )
+        except Exception as exc:
+            return _provider_error_ret(provider, exc, query)
 
         return build_ret(ErrorMsg.Success, item)
 
 
-# 添加Fofa任务请求模型
-add_fofa_fields = ns.model('addTaskFofa', {
-    'query': fields.String(required=True, description="Fofa查询语句"),
-    'name': fields.String(required=True, description="任务名称"),
-    'policy_id': fields.String(description="策略ID（可选，自定义扫描配置）")
-})
-
-
 @ns.route('/submit')
-class AddFofaTask(ARLResource):
-    """提交Fofa任务接口"""
+class AddMeasureTask(ARLResource):
+    """提交测绘任务接口"""
 
     @auth
-    @ns.expect(add_fofa_fields)
+    @ns.expect(add_measure_fields)
     def post(self):
-        """
-        提交Fofa查询任务并自动扫描结果IP
-        
-        请求体：
-            {
-                "query": "domain=\"example.com\" && port=\"80\"",
-                "name": "Fofa扫描任务",
-                "policy_id": "策略ID（可选）"
-            }
-        
-        返回：
-            {
-                "code": 200,
-                "message": "成功",
-                "task_id": "任务ID",
-                "celery_id": "Celery任务ID",
-                "name": "任务名称",
-                "target": "Fofa ip 数量"
-            }
-        
-        说明：
-        - 通过Fofa查询获取IP列表
-        - 自动提交扫描任务对这些IP进行端口探测和服务识别
-        - 默认执行轻量级扫描（测试级别端口扫描）
-        - 可指定策略ID使用自定义扫描配置
-        
-        执行流程：
-        1. 验证Fofa查询语法和连接
-        2. 获取完整的IP列表
-        3. 创建扫描任务
-        4. 提交到Celery队列执行
-        
-        注意事项：
-        - 需要配置有效的Fofa API密钥
-        - 查询结果为空时返回错误
-        - 大量IP可能需要较长扫描时间
-        """
-        args = self.parse_args(add_fofa_fields)
+        args = self.parse_args(add_measure_fields)
         query = args.pop('query')
         name = args.pop('name')
         policy_id = args.get('policy_id')
-        query_list = normalize_fofa_queries(query)
-        if len(query_list) == 0:
-            return build_ret(ErrorMsg.QueryResultIsEmpty, {'error': "query is empty"})
+        raw_provider = args.get('provider', 'fofa')
+        try:
+            provider = _resolve_provider(args)
+        except ValueError:
+            return _unsupported_provider_ret(raw_provider)
 
-        # 默认任务选项（轻量级扫描）
         task_options = {
-            "port_scan_type": "test",  # 测试级别端口扫描
-            "port_scan": True,  # 启用端口扫描
-            "service_detection": False,  # 服务识别
-            "service_brute": False,  # 服务暴力破解
-            "os_detection": False,  # 操作系统识别
-            "site_identify": False,  # 站点识别
-            "file_leak": False,  # 文件泄露检测
-            "afrog_scan": False,  # afrog 漏洞扫描
-            "ssl_cert": False  # SSL证书获取
+            "port_scan_type": "test",
+            "port_scan": True,
+            "service_detection": False,
+            "service_brute": False,
+            "os_detection": False,
+            "site_identify": False,
+            "file_leak": False,
+            "afrog_scan": False,
+            "ssl_cert": False,
         }
 
-        total_size = 0
-        fofa_ip_set = set()
-        for query_item in query_list:
-            # 测试查询（获取1条验证）
-            data = fofa_query(query_item, page_size=1)
-            if isinstance(data, str):
-                return build_ret(ErrorMsg.FofaConnectError, {'error': data, "query": query_item})
+        try:
+            query_result = fetch_measure_query_ips(provider, query)
+        except ValueError as exc:
+            return build_ret(
+                ErrorMsg.QueryResultIsEmpty,
+                {"error": str(exc), "provider": provider, "provider_label": get_measure_provider_label(provider)},
+            )
+        except Exception as exc:
+            return _provider_error_ret(provider, exc, query)
 
-            if data.get("error"):
-                return build_ret(ErrorMsg.FofaKeyError, {'error': data.get("errmsg"), "query": query_item})
+        target_ip_list = sorted(set(query_result.get("ips") or []))
+        if int(query_result.get("size") or 0) <= 0 or len(target_ip_list) == 0:
+            return build_ret(
+                ErrorMsg.FofaResultEmpty,
+                {"provider": provider, "provider_label": get_measure_provider_label(provider)},
+            )
 
-            query_size = int(data.get("size", 0))
-            total_size += query_size
-            if query_size <= 0:
-                continue
-
-            # 获取完整IP列表
-            fofa_ip_list = fofa_query_result(query_item)
-            if isinstance(fofa_ip_list, str):
-                return build_ret(ErrorMsg.FofaConnectError, {'error': fofa_ip_list, "query": query_item})
-
-            fofa_ip_set.update(fofa_ip_list)
-
-        if total_size <= 0 or len(fofa_ip_set) == 0:
-            return build_ret(ErrorMsg.FofaResultEmpty, {})
-
-        fofa_ip_list = sorted(fofa_ip_set)
-
-        # 如果指定了策略，使用策略配置
         if policy_id and len(policy_id) == 24:
             task_options.update(policy_2_task_options(policy_id))
 
-        # 构建任务数据
+        provider_label = get_measure_provider_label(provider)
         task_data = {
             "name": name,
-            "target": "Fofa ip {}".format(len(fofa_ip_list)),
+            "target": "{} ip {}".format(provider_label, len(target_ip_list)),
             "start_time": "-",
             "end_time": "-",
             "task_tag": "task",
@@ -249,30 +164,17 @@ class AddFofaTask(ARLResource):
             "status": "waiting",
             "options": task_options,
             "type": "fofa",
-            "fofa_ip": fofa_ip_list
+            "fofa_ip": target_ip_list,
+            "provider": provider,
+            "provider_label": provider_label,
+            "query": query_result.get("items", []),
         }
-        
-        # 提交任务
-        task_data = submit_fofa_task(task_data)
 
+        task_data = submit_measure_task(task_data)
         return build_ret(ErrorMsg.Success, task_data)
 
 
 def policy_2_task_options(policy_id):
-    """
-    将策略配置转换为任务选项
-    
-    参数：
-        policy_id: 策略ID
-    
-    返回：
-        dict: 任务选项字典
-    
-    说明：
-    - 提取策略中的IP和站点配置
-    - 移除域名配置（Fofa任务只扫描IP）
-    - 合并配置项
-    """
     options = {}
     query = {
         "_id": ObjectId(policy_id)
@@ -282,16 +184,13 @@ def policy_2_task_options(policy_id):
         return options
 
     policy_options = dict(data.get("policy") or {})
-    # 移除域名配置（Fofa任务不需要）
     policy_options.pop("domain_config", None)
 
-    # 提取IP和站点配置
     ip_config = policy_options.pop("ip_config", {})
     site_config = policy_options.pop("site_config", {})
     for key in ("host_timeout_type", "host_timeout", "port_parallelism", "port_min_rate"):
         ip_config.pop(key, None)
 
-    # 合并配置
     options.update(ip_config)
     options.update(site_config)
     options.update(policy_options)
@@ -299,38 +198,19 @@ def policy_2_task_options(policy_id):
     return options
 
 
-def submit_fofa_task(task_data):
-    """
-    提交Fofa扫描任务
-    
-    参数：
-        task_data: 任务数据字典
-    
-    返回：
-        dict: 包含task_id和celery_id的任务数据
-    
-    说明：
-    - 保存任务到数据库
-    - 提交到Celery队列执行
-    - 更新任务的celery_id
-    """
-    # 保存任务到数据库
+def submit_measure_task(task_data):
     conn_db('task').insert_one(task_data)
     task_id = str(task_data.pop("_id"))
     task_data["task_id"] = task_id
 
-    # 构建Celery任务选项
     task_options = {
         "celery_action": CeleryAction.FOFA_TASK,
         "data": task_data
     }
 
-    # 提交到Celery队列
     celery_id = celerytask.arl_task.delay(options=task_options)
-
     logger.info("target:{} celery_id:{}".format(task_id, celery_id))
 
-    # 更新任务的celery_id
     dispatch_now = utils.curr_date()
     dispatch_ts = int(time.time())
     values = {"$set": {
