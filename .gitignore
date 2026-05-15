@@ -87,3 +87,5 @@ tools/poc/
 htmlcov/
 .coverage
 .pytest_cache/
+# Added by code-review-graph
+.code-review-graph/
