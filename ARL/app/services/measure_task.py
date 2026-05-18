@@ -7,6 +7,7 @@
 - 提取命中的 IP 列表，用于后续复用现有 IP 扫描执行链
 """
 import base64
+import re
 from ipaddress import ip_address
 from urllib.parse import urlparse
 
@@ -27,6 +28,7 @@ PROVIDER_ALIAS = {
 }
 SHODAN_HOST_SEARCH_PAGE_SIZE = 100
 FOFA_PAGE_SIZE_MAX = 10000
+ZOOMEYE_HOST_SEARCH_URL = "https://api.zoomeye.org/host/search"
 PROVIDER_LABEL = {
     "fofa": "FOFA",
     "hunter_qax": "Hunter",
@@ -60,6 +62,24 @@ def normalize_measure_queries(query_text):
     return query_list
 
 
+def normalize_measure_query_for_provider(provider, query):
+    provider = normalize_measure_provider(provider)
+    query_text = str(query or "").strip()
+    match = re.match(r"^ip\s*={1,2}\s*['\"]?([^'\"\s]+)['\"]?$", query_text, re.IGNORECASE)
+    if not match:
+        return query_text
+
+    ip_text = _normalize_ip_candidate(match.group(1))
+    if not ip_text:
+        return query_text
+
+    if provider == "shodan":
+        return "ip:{}".format(ip_text)
+    if provider in ("zoomeye", "quake_360"):
+        return 'ip:"{}"'.format(ip_text)
+    return query_text
+
+
 def get_measure_provider_label(provider):
     normalized = normalize_measure_provider(provider)
     return PROVIDER_LABEL.get(normalized, normalized)
@@ -82,6 +102,61 @@ def _mask_secret(secret_text):
     return "{}***".format(secret_text[:8])
 
 
+def _mask_secret_values(text, secret_values):
+    text = str(text or "")
+    for secret in secret_values or []:
+        secret = str(secret or "")
+        if secret:
+            text = text.replace(secret, _mask_secret(secret))
+    return text
+
+
+def _response_text_snippet(conn, limit=200):
+    try:
+        text = getattr(conn, "text", "") or ""
+    except Exception:
+        text = ""
+    text = " ".join(str(text).split())
+    if len(text) > limit:
+        return "{}...".format(text[:limit])
+    return text
+
+
+def _format_request_exception(exc):
+    message = str(exc)
+    if "Name or service not known" in message or "nodename nor servname provided" in message:
+        return "网络连接失败或域名无法解析：{}".format(message)
+    if "Max retries exceeded" in message:
+        return "网络连接失败或远端不可达：{}".format(message)
+    return message
+
+
+def _request_provider_json(provider, url, method, secret_values=None, **kwargs):
+    label = get_measure_provider_label_safe(provider)
+    try:
+        conn = utils.http_req(url, method, **kwargs)
+    except Exception as exc:
+        message = _format_request_exception(exc)
+        message = _mask_secret_values(message, secret_values)
+        raise RuntimeError("{} 请求失败：{}".format(label, message))
+
+    status_code = _safe_int(getattr(conn, "status_code", 0), 0)
+    try:
+        data = conn.json() if conn is not None else {}
+    except Exception:
+        message = "{} 返回非 JSON 响应".format(label)
+        if status_code:
+            message = "{}，HTTP {}".format(message, status_code)
+        snippet = _response_text_snippet(conn)
+        if snippet:
+            message = "{}：{}".format(message, snippet)
+        raise RuntimeError(_mask_secret_values(message, secret_values))
+
+    if not isinstance(data, dict):
+        raise RuntimeError("{} 返回数据格式异常：{}".format(label, type(data).__name__))
+    return data
+
+
 def _safe_int(value, default_value=0):
     try:
         return int(value)
@@ -94,6 +169,12 @@ def _safe_float(value, default_value=0.0):
         return float(value)
     except Exception:
         return float(default_value)
+
+
+def _list_size(value):
+    if isinstance(value, list):
+        return len(value)
+    return 0
 
 
 def _normalize_ip_candidate(value):
@@ -241,13 +322,33 @@ def _extract_quake_ips(data):
         candidate_values = [
             item.get("ip"),
             item.get("ip_addr"),
+            item.get("ip_str"),
+            item.get("host"),
+            item.get("hostname"),
         ]
+        components = item.get("components")
+        if isinstance(components, list):
+            for component in components:
+                if isinstance(component, dict):
+                    candidate_values.extend([
+                        component.get("ip"),
+                        component.get("ip_addr"),
+                        component.get("ip_str"),
+                    ])
         service = item.get("service")
         if isinstance(service, dict):
             candidate_values.extend([
                 service.get("ip"),
                 service.get("ip_str"),
+                service.get("ip_addr"),
+                service.get("host"),
             ])
+            http_service = service.get("http")
+            if isinstance(http_service, dict):
+                candidate_values.extend([
+                    http_service.get("host"),
+                    http_service.get("hostname"),
+                ])
         for value in candidate_values:
             ip_text = _normalize_ip_candidate(value)
             if ip_text:
@@ -341,8 +442,14 @@ def _request_query(provider, query, page_size=1, page=1, start=0):
             "is_web": "1",
             "api-key": conf.get("api_key"),
         }
-        conn = utils.http_req("https://hunter.qianxin.com/openApi/search", "get", params=params, timeout=(30.1, 50.1))
-        return conn.json()
+        return _request_provider_json(
+            provider,
+            "https://hunter.qianxin.com/openApi/search",
+            "get",
+            secret_values=[conf.get("api_key")],
+            params=params,
+            timeout=(30.1, 50.1),
+        )
 
     if provider == "shodan":
         conf = _query_plugin_service_config(provider)
@@ -352,8 +459,14 @@ def _request_query(provider, query, page_size=1, page=1, start=0):
             "query": query,
             "page": page,
         }
-        conn = utils.http_req("https://api.shodan.io/shodan/host/search", "get", params=params, timeout=(30.1, 50.1))
-        return conn.json()
+        return _request_provider_json(
+            provider,
+            "https://api.shodan.io/shodan/host/search",
+            "get",
+            secret_values=[conf.get("api_key")],
+            params=params,
+            timeout=(30.1, 50.1),
+        )
 
     if provider == "zoomeye":
         conf = _query_plugin_service_config(provider)
@@ -365,8 +478,15 @@ def _request_query(provider, query, page_size=1, page=1, start=0):
         headers = {
             "API-KEY": conf.get("api_key"),
         }
-        conn = utils.http_req("https://api.zoomeye.hk/host/search", "get", params=params, headers=headers, timeout=(30.1, 50.1))
-        return conn.json()
+        return _request_provider_json(
+            provider,
+            ZOOMEYE_HOST_SEARCH_URL,
+            "get",
+            secret_values=[conf.get("api_key")],
+            params=params,
+            headers=headers,
+            timeout=(30.1, 50.1),
+        )
 
     if provider == "quake_360":
         conf = _query_plugin_service_config(provider)
@@ -381,8 +501,15 @@ def _request_query(provider, query, page_size=1, page=1, start=0):
         headers = {
             "X-QuakeToken": conf.get("quake_token"),
         }
-        conn = utils.http_req("https://quake.360.net/api/v3/search/quake_service", "post", json=json_data, headers=headers, timeout=(30.1, 100.1))
-        return conn.json()
+        return _request_provider_json(
+            provider,
+            "https://quake.360.net/api/v3/search/quake_service",
+            "post",
+            secret_values=[conf.get("quake_token")],
+            json=json_data,
+            headers=headers,
+            timeout=(30.1, 100.1),
+        )
 
     raise ValueError("unsupported provider")
 
@@ -398,20 +525,41 @@ def _extract_total_size(provider, data):
     if provider == "hunter_qax":
         payload = data.get("data", {})
         if isinstance(payload, dict):
-            return _safe_int(payload.get("total"), 0)
+            total = _safe_int(payload.get("total"), 0)
+            if total > 0:
+                return total
+            return _list_size(payload.get("arr"))
         return 0
 
     if provider == "shodan":
-        return _safe_int(data.get("total"), 0)
+        total = _safe_int(data.get("total"), 0)
+        if total > 0:
+            return total
+        return _list_size(data.get("matches"))
 
     if provider == "zoomeye":
-        return _safe_int(data.get("total"), 0)
+        total = _safe_int(data.get("total"), 0)
+        if total > 0:
+            return total
+        return _list_size(data.get("matches")) or _list_size(data.get("list"))
 
     if provider == "quake_360":
         meta = data.get("meta", {})
         if isinstance(meta, dict):
-            return _safe_int(meta.get("total"), 0)
-        return _safe_int(data.get("total"), 0)
+            for key in ("total", "pagination_total", "count", "size"):
+                total = _safe_int(meta.get(key), 0)
+                if total > 0:
+                    return total
+            pagination = meta.get("pagination")
+            if isinstance(pagination, dict):
+                for key in ("total", "count", "total_count"):
+                    total = _safe_int(pagination.get(key), 0)
+                    if total > 0:
+                        return total
+        total = _safe_int(data.get("total"), 0)
+        if total > 0:
+            return total
+        return _list_size(data.get("data"))
 
     return 0
 
@@ -669,7 +817,8 @@ def run_measure_query_test(provider, query):
     total_size = 0
     query_items = []
     for query_item in query_list:
-        data = _request_query(provider, query_item, page_size=1)
+        normalized_query_item = normalize_measure_query_for_provider(provider, query_item)
+        data = _request_query(provider, normalized_query_item, page_size=1)
         error_message = _extract_error_message(provider, data)
         if error_message:
             raise RuntimeError(error_message)
@@ -677,7 +826,7 @@ def run_measure_query_test(provider, query):
         size = _extract_total_size(provider, data)
         total_size += size
         query_items.append({
-            "query": query_item,
+            "query": normalized_query_item,
             "size": size,
         })
 
@@ -701,11 +850,12 @@ def fetch_measure_query_ips(provider, query):
     ip_set = set()
     query_items = []
     for query_item in query_list:
-        size, ips = _fetch_provider_query_ips(provider, query_item)
+        normalized_query_item = normalize_measure_query_for_provider(provider, query_item)
+        size, ips = _fetch_provider_query_ips(provider, normalized_query_item)
         total_size += size
         ip_set.update(ips)
         query_items.append({
-            "query": query_item,
+            "query": normalized_query_item,
             "size": size,
             "ip_count": len(ips),
         })

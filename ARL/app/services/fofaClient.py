@@ -28,7 +28,7 @@ class FofaClient:
         data = self._api(self.base_url + self.info_my_api_url)
         return data
 
-    def fofa_search_all(self, query):
+    def fofa_search_all(self, query, page=None):
         qbase64 = base64.b64encode(query.encode())
         param = {
             "email": self.email,
@@ -36,6 +36,8 @@ class FofaClient:
             "qbase64": qbase64.decode('utf-8'),
             "size": self.page_size
         }
+        if page is not None:
+            param["page"] = page
 
         self.param = param
         data = self._api(self.base_url + self.search_api_url)

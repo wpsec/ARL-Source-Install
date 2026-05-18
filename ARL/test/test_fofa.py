@@ -1,9 +1,24 @@
 import unittest
+from unittest.mock import patch
 from app.services.fofaClient import fofa_query_result, fofa_query, FofaClient
 from app.config import Config
 
 
 class TestFofa(unittest.TestCase):
+    @patch("app.services.fofaClient.utils.http_req")
+    def test_fofa_search_all_accepts_page(self, mock_http_req):
+        class FakeResponse:
+            def json(self):
+                return {"error": False, "results": []}
+
+        mock_http_req.return_value = FakeResponse()
+        client = FofaClient("user@example.com", "fake-key", page_size=50)
+
+        client.fofa_search_all('domain="example.com"', page=2)
+
+        self.assertEqual(client.param["page"], 2)
+        self.assertEqual(client.param["size"], 50)
+
     def test_vip_level(self):
         if not Config.FOFA_KEY or not Config.FOFA_KEY:
             self.fail("please set fofa key in config-docker.yaml")
