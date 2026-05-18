@@ -933,6 +933,18 @@ const modules: ModuleConfig[] = [
         },
       },
       {
+        id: 'asset_scope_update',
+        label: '编辑资产',
+        method: 'POST',
+        path: '/asset_scope/update/',
+        payloadTemplate: {
+          scope_id: '',
+          name: '',
+          scope: 'example.com',
+          black_scope: '',
+        },
+      },
+      {
         id: 'asset_scope_add_scheduler',
         label: '添加监控任务',
         method: 'POST',
@@ -6060,6 +6072,7 @@ function ActionDialog({
   const isTaskCreate = action.id === 'create_task';
   const isAssetScopeCreate = action.id === 'asset_scope_add';
   const isAssetScopeAddScope = action.id === 'asset_scope_add_scope';
+  const isAssetScopeUpdate = action.id === 'asset_scope_update';
   const isAssetScopeAddScheduler = action.id === 'asset_scope_add_scheduler';
   const isAssetScopeAddSiteMonitor = action.id === 'asset_scope_add_site_monitor';
   const isAssetScopeAddWihMonitor = action.id === 'asset_scope_add_wih_monitor';
@@ -6153,6 +6166,7 @@ function ActionDialog({
   const scopeType = String(formPayload?.scope_type ?? 'domain') === 'ip' ? 'ip' : 'domain';
   const scopeText = String(formPayload?.scope ?? '');
   const scopeAddTargetText = String(formPayload?.scope ?? '');
+  const scopeBlackText = String(formPayload?.black_scope ?? '');
   const scopeMonitorRangeText = String(formPayload?.domain ?? '');
   const scopeMonitorIntervalHours = Math.max(1, Math.round((Number(formPayload?.interval || 86400) || 86400) / 3600));
   const policyName = String(getPayloadValue(formPayload, policyNamePath) ?? '');
@@ -7162,19 +7176,22 @@ function ActionDialog({
                 </p>
               </div>
             </div>
-          ) : isAssetScopeAddScope ? (
+          ) : isAssetScopeAddScope || isAssetScopeUpdate ? (
             <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">资产组名称</label>
                 <input
                   value={scopeGroupName}
-                  disabled
+                  disabled={!isAssetScopeUpdate || !editable}
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
                   className="w-full rounded-xl border border-brand-border bg-brand-bg/60 px-3 py-2 text-sm"
                   placeholder="取资产组名称"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">资产范围</label>
+                <label className="text-xs font-bold text-brand-text-muted">
+                  {isAssetScopeUpdate ? '资产范围（保存后覆盖当前列表）' : '资产范围'}
+                </label>
                 <textarea
                   value={scopeAddTargetText}
                   disabled={!editable}
@@ -7184,6 +7201,19 @@ function ActionDialog({
                 />
                 <p className="text-[11px] text-brand-text-muted">支持多行或逗号分割。</p>
               </div>
+              {isAssetScopeUpdate ? (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-brand-text-muted">黑名单</label>
+                  <textarea
+                    value={scopeBlackText}
+                    disabled={!editable}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'black_scope', event.target.value))}
+                    className="w-full min-h-[96px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    placeholder={'test.example.com'}
+                  />
+                  <p className="text-[11px] text-brand-text-muted">可留空，支持多行或逗号分割。</p>
+                </div>
+              ) : null}
             </div>
           ) : isAssetScopeAddScheduler ? (
             <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
@@ -7789,9 +7819,16 @@ function ActionDialog({
                     payload.scope = normalizedScopes.join('\n');
                     payload.black_scope = '';
                   }
-                  if (isAssetScopeAddScope && editable) {
+                  if ((isAssetScopeAddScope || isAssetScopeUpdate) && editable) {
                     const scopeId = String(payload.scope_id || '').trim();
+                    const normalizedName = String(payload.name || '').trim();
                     const normalizedScopes = String(payload.scope || '')
+                      .replace(/,/g, '\n')
+                      .split(/\r?\n/)
+                      .flatMap((line) => line.split(/\s+/))
+                      .map((item) => item.trim())
+                      .filter((item) => item);
+                    const normalizedBlackScopes = String(payload.black_scope || '')
                       .replace(/,/g, '\n')
                       .split(/\r?\n/)
                       .flatMap((line) => line.split(/\s+/))
@@ -7801,14 +7838,26 @@ function ActionDialog({
                     if (!scopeId) {
                       throw new Error('资产范围ID无效，请刷新后重试');
                     }
+                    if (isAssetScopeUpdate && !normalizedName) {
+                      throw new Error('请填写资产组名称');
+                    }
                     if (normalizedScopes.length === 0) {
                       throw new Error('请填写资产范围，支持多行或逗号分割');
                     }
 
-                    payload = {
-                      scope_id: scopeId,
-                      scope: normalizedScopes.join(','),
-                    };
+                    if (isAssetScopeUpdate) {
+                      payload = {
+                        scope_id: scopeId,
+                        name: normalizedName,
+                        scope: normalizedScopes.join(','),
+                        black_scope: normalizedBlackScopes.join(','),
+                      };
+                    } else {
+                      payload = {
+                        scope_id: scopeId,
+                        scope: normalizedScopes.join(','),
+                      };
+                    }
                   }
                   if (isAssetScopeAddScheduler && editable) {
                     const scopeId = String(payload.scope_id || '').trim();
@@ -9718,6 +9767,9 @@ function TableModuleView({
   const assetScopeAddScopeAction = module.id === 'asset_scope'
     ? moduleActions.find((action) => action.id === 'asset_scope_add_scope') || null
     : null;
+  const assetScopeUpdateAction = module.id === 'asset_scope'
+    ? moduleActions.find((action) => action.id === 'asset_scope_update') || null
+    : null;
   const assetScopeAddSchedulerAction = module.id === 'asset_scope'
     ? moduleActions.find((action) => action.id === 'asset_scope_add_scheduler') || null
     : null;
@@ -10136,11 +10188,17 @@ function TableModuleView({
     if (module.id !== 'asset_scope') return;
     if (!action || !scopeId) return;
     const defaultName = String(row?.name || '').trim();
-    const defaultScope = String(row?.scope || row?.scope_array || '').trim();
+    const defaultScope = Array.isArray(row?.scope_array)
+      ? row.scope_array.map((item: any) => String(item || '').trim()).filter(Boolean).join('\n')
+      : String(row?.scope || '').replace(/,/g, '\n').trim();
+    const defaultBlackScope = Array.isArray(row?.black_scope_array)
+      ? row.black_scope_array.map((item: any) => String(item || '').trim()).filter(Boolean).join('\n')
+      : String(row?.black_scope || '').replace(/,/g, '\n').trim();
     openActionDialog(action, {
       scope_id: scopeId,
       name: defaultName || undefined,
       scope: defaultScope || undefined,
+      black_scope: defaultBlackScope || undefined,
       ...overrides,
     });
   };
@@ -12363,6 +12421,14 @@ function TableModuleView({
                           ) : null}
                           {showAssetScopeRowOperate ? (
                             <div className={rowOperateGroupClass}>
+                              {assetScopeUpdateAction ? (
+                                <button
+                                  onClick={() => openAssetScopeRowActionDialog(assetScopeUpdateAction, id, row)}
+                                  className={rowOperateButtonClass}
+                                >
+                                  编辑资产
+                                </button>
+                              ) : null}
                               {assetScopeAddScopeAction ? (
                                 <button
                                   onClick={() => openAssetScopeRowActionDialog(assetScopeAddScopeAction, id, row, { scope: '' })}

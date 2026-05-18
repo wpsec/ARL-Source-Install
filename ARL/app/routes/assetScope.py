@@ -45,6 +45,50 @@ base_fields.update({
 base_fields.update(base_query_fields)
 
 
+def normalize_scope_items(scope_text, scope_type):
+    """
+    归一化资产范围，按资产分组类型执行格式校验。
+    """
+    raw_items = re.split(r",|\s", str(scope_text or ""))
+    raw_items = [str(item or "").strip() for item in raw_items if str(item or "").strip()]
+    new_scope_array = []
+
+    for raw_item in raw_items:
+        if scope_type == AssetScopeType.DOMAIN:
+            normalized_scope = utils.normalize_domain(raw_item)
+            if not normalized_scope or not utils.is_valid_domain(normalized_scope):
+                return None, ErrorMsg.DomainInvalid, {"scope": raw_item}
+            if normalized_scope not in new_scope_array:
+                new_scope_array.append(normalized_scope)
+            continue
+
+        if scope_type == AssetScopeType.IP:
+            transfer = utils.ip.transfer_ip_scope(raw_item)
+            if transfer is None:
+                return None, ErrorMsg.ScopeTypeIsNotIP, {"scope": raw_item}
+            if transfer not in new_scope_array:
+                new_scope_array.append(transfer)
+            continue
+
+    if not new_scope_array:
+        return None, ErrorMsg.DomainInvalid, {"scope": ""}
+
+    return new_scope_array, None, None
+
+
+def normalize_black_scope_items(black_scope_text, scope_type):
+    raw_items = re.split(r",|\s", str(black_scope_text or ""))
+    black_scope_array = [str(item or "").strip() for item in raw_items if str(item or "").strip()]
+    if scope_type == AssetScopeType.DOMAIN:
+        normalized_black_scope = []
+        for raw_item in black_scope_array:
+            item = utils.normalize_domain(raw_item)
+            if item and item not in normalized_black_scope:
+                normalized_black_scope.append(item)
+        black_scope_array = normalized_black_scope
+    return black_scope_array
+
+
 @ns.route('/')
 class ARLAssetScope(ARLResource):
     """资产范围管理接口"""
@@ -126,45 +170,10 @@ class ARLAssetScope(ARLResource):
         if scope_type not in [AssetScopeType.IP, AssetScopeType.DOMAIN]:
             scope_type = AssetScopeType.DOMAIN
 
-        # 处理黑名单
-        black_scope_array = []
-        if black_scope:
-            black_scope_array = [x.strip() for x in re.split(r",|\s", black_scope) if x.strip()]
-            if scope_type == AssetScopeType.DOMAIN:
-                normalized_black_scope = []
-                for raw_item in black_scope_array:
-                    item = utils.normalize_domain(raw_item)
-                    if item:
-                        normalized_black_scope.append(item)
-                black_scope_array = normalized_black_scope
-
-        # 分割资产范围（支持逗号和空格）
-        scope_array = re.split(r",|\s", scope)
-        # 清除空白符
-        scope_array = list(filter(None, scope_array))
-        new_scope_array = []
-        
-        # 验证每个资产范围
-        for x in scope_array:
-            x = str(x or "").strip()
-            if scope_type == AssetScopeType.DOMAIN:
-                normalized_scope = utils.normalize_domain(x)
-                # 验证域名格式
-                if not normalized_scope or not utils.is_valid_domain(normalized_scope):
-                    return utils.build_ret(ErrorMsg.DomainInvalid, {"scope": x})
-
-                new_scope_array.append(normalized_scope)
-
-            if scope_type == AssetScopeType.IP:
-                # 转换IP范围格式（支持CIDR、IP段等）
-                transfer = utils.ip.transfer_ip_scope(x)
-                if transfer is None:
-                    return utils.build_ret(ErrorMsg.ScopeTypeIsNotIP, {"scope": x})
-
-                new_scope_array.append(transfer)
-
-        if not new_scope_array:
-            return utils.build_ret(ErrorMsg.DomainInvalid, {"scope": ""})
+        black_scope_array = normalize_black_scope_items(black_scope, scope_type)
+        new_scope_array, error_msg, error_data = normalize_scope_items(scope, scope_type)
+        if error_msg:
+            return utils.build_ret(error_msg, error_data)
 
         # 构建资产范围数据
         scope_data = {
@@ -401,6 +410,68 @@ class AddARLAssetScope(ARLResource):
         utils.conn_db(table).find_one_and_replace(query, scope_data)
 
         return utils.build_ret(ErrorMsg.Success, {"scope_id": scope_id, "scope": scope})
+
+
+update_scope_fields = ns.model('UpdateScope',  {
+    'scope_id': fields.String(description="资产范围ID", required=True),
+    'scope': fields.String(description="更新后的资产范围", required=True),
+    'black_scope': fields.String(description="更新后的资产黑名单", required=False),
+    'name': fields.String(description="资产组名称", required=False),
+})
+
+
+@ns.route('/update/')
+class UpdateARLAssetScope(ARLResource):
+    """编辑已有资产范围接口"""
+
+    @auth
+    @ns.expect(update_scope_fields)
+    def post(self):
+        """
+        覆盖更新已有资产组中的资产范围。
+        """
+        args = self.parse_args(update_scope_fields)
+        scope_id = str(args.pop('scope_id', "")).strip()
+        scope = str(args.pop('scope', "")).strip()
+        black_scope = str(args.pop('black_scope', "") or "")
+        name = str(args.pop('name', "") or "").strip()
+
+        table = 'asset_scope'
+        try:
+            query = {'_id': ObjectId(scope_id)}
+        except Exception:
+            return utils.build_ret(ErrorMsg.NotFoundScopeID, {"scope_id": scope_id})
+
+        scope_data = utils.conn_db(table).find_one(query)
+        if not scope_data:
+            return utils.build_ret(ErrorMsg.NotFoundScopeID, {"scope_id": scope_id})
+
+        scope_type = scope_data.get("scope_type")
+        if scope_type not in [AssetScopeType.IP, AssetScopeType.DOMAIN]:
+            scope_type = AssetScopeType.DOMAIN
+
+        new_scope_array, error_msg, error_data = normalize_scope_items(scope, scope_type)
+        if error_msg:
+            return utils.build_ret(error_msg, error_data)
+
+        if name:
+            scope_data["name"] = name
+        scope_data["scope"] = ",".join(new_scope_array)
+        scope_data["scope_array"] = new_scope_array
+        scope_data["black_scope"] = black_scope
+        scope_data["black_scope_array"] = normalize_black_scope_items(black_scope, scope_type)
+        utils.conn_db(table).find_one_and_replace(query, scope_data)
+
+        return utils.build_ret(
+            ErrorMsg.Success,
+            {
+                "scope_id": scope_id,
+                "name": scope_data.get("name", ""),
+                "scope": scope_data.get("scope", ""),
+                "scope_array": new_scope_array,
+                "black_scope_array": scope_data.get("black_scope_array", []),
+            },
+        )
 
 
 @ns.route('/export/')
