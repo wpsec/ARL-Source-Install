@@ -28,7 +28,11 @@ PROVIDER_ALIAS = {
 }
 SHODAN_HOST_SEARCH_PAGE_SIZE = 100
 FOFA_PAGE_SIZE_MAX = 10000
-ZOOMEYE_HOST_SEARCH_URL = "https://api.zoomeye.org/host/search"
+ZOOMEYE_HOST_SEARCH_URL = "https://api.zoomeye.ai/v2/search"
+API_JSON_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "ARL/measure-task",
+}
 PROVIDER_LABEL = {
     "fofa": "FOFA",
     "hunter_qax": "Hunter",
@@ -66,17 +70,23 @@ def normalize_measure_query_for_provider(provider, query):
     provider = normalize_measure_provider(provider)
     query_text = str(query or "").strip()
     match = re.match(r"^ip\s*={1,2}\s*['\"]?([^'\"\s]+)['\"]?$", query_text, re.IGNORECASE)
-    if not match:
-        return query_text
+    if match:
+        ip_text = _normalize_ip_candidate(match.group(1))
+        if ip_text:
+            if provider == "shodan":
+                return "ip:{}".format(ip_text)
+            if provider == "quake_360":
+                return 'ip:"{}"'.format(ip_text)
 
-    ip_text = _normalize_ip_candidate(match.group(1))
-    if not ip_text:
-        return query_text
+    domain_match = re.match(r"^domain\s*={1,2}\s*['\"]?([^'\"\s]+)['\"]?$", query_text, re.IGNORECASE)
+    if domain_match:
+        domain_text = domain_match.group(1).strip()
+        if domain_text:
+            if provider == "shodan":
+                return 'hostname:"{}"'.format(domain_text)
 
     if provider == "shodan":
-        return "ip:{}".format(ip_text)
-    if provider in ("zoomeye", "quake_360"):
-        return 'ip:"{}"'.format(ip_text)
+        return re.sub(r"(?i)(^|\s)host\s*:", r"\1hostname:", query_text)
     return query_text
 
 
@@ -148,6 +158,9 @@ def _request_provider_json(provider, url, method, secret_values=None, **kwargs):
         if status_code:
             message = "{}，HTTP {}".format(message, status_code)
         snippet = _response_text_snippet(conn)
+        if provider == "shodan" and re.search(r"(?i)(just a moment|cloudflare|cf-browser)", snippet):
+            message = "{}：API 请求被防护页拦截，请检查服务器出口网络、代理或 api.shodan.io 访问策略".format(message)
+            raise RuntimeError(_mask_secret_values(message, secret_values))
         if snippet:
             message = "{}：{}".format(message, snippet)
         raise RuntimeError(_mask_secret_values(message, secret_values))
@@ -201,6 +214,13 @@ def _normalize_ip_candidate(value):
         return str(ip_address(text))
     except Exception:
         return ""
+
+
+def _resolve_zoomeye_sub_type(query):
+    query_text = str(query or "")
+    if re.search(r"(?i)(^|[\s(])(?:domain|hostname|site|web\.|http\.|title)\s*(?:=|:)", query_text):
+        return "web"
+    return "v4"
 
 
 def _extract_ip_from_url_fields(item, field_names):
@@ -286,6 +306,8 @@ def _extract_zoomeye_ips(data):
     if not isinstance(items, list):
         items = data.get("list", []) if isinstance(data, dict) else []
     if not isinstance(items, list):
+        items = data.get("data", []) if isinstance(data, dict) else []
+    if not isinstance(items, list):
         items = []
 
     for item in items:
@@ -295,7 +317,14 @@ def _extract_zoomeye_ips(data):
             item.get("ip"),
             item.get("ip_address"),
             item.get("ip_str"),
+            item.get("host"),
         ]
+        port_info = item.get("portinfo")
+        if isinstance(port_info, dict):
+            candidate_values.extend([
+                port_info.get("ip"),
+                port_info.get("host"),
+            ])
         site = item.get("site")
         if isinstance(site, dict):
             candidate_values.extend([
@@ -465,25 +494,31 @@ def _request_query(provider, query, page_size=1, page=1, start=0):
             "get",
             secret_values=[conf.get("api_key")],
             params=params,
+            headers=API_JSON_HEADERS.copy(),
             timeout=(30.1, 50.1),
         )
 
     if provider == "zoomeye":
         conf = _query_plugin_service_config(provider)
         _ensure_query_plugin_credentials(provider, conf)
-        params = {
-            "query": query,
+        resolved_page_size = min(max(_safe_int(page_size, 1), 1), 1000)
+        json_data = {
+            "qbase64": base64.b64encode(query.encode("utf-8")).decode("utf-8"),
             "page": page,
+            "pagesize": resolved_page_size,
+            "sub_type": _resolve_zoomeye_sub_type(query),
         }
-        headers = {
+        headers = API_JSON_HEADERS.copy()
+        headers.update({
             "API-KEY": conf.get("api_key"),
-        }
+            "Content-Type": "application/json",
+        })
         return _request_provider_json(
             provider,
             ZOOMEYE_HOST_SEARCH_URL,
-            "get",
+            "post",
             secret_values=[conf.get("api_key")],
-            params=params,
+            json=json_data,
             headers=headers,
             timeout=(30.1, 50.1),
         )
@@ -541,7 +576,7 @@ def _extract_total_size(provider, data):
         total = _safe_int(data.get("total"), 0)
         if total > 0:
             return total
-        return _list_size(data.get("matches")) or _list_size(data.get("list"))
+        return _list_size(data.get("matches")) or _list_size(data.get("list")) or _list_size(data.get("data"))
 
     if provider == "quake_360":
         meta = data.get("meta", {})
@@ -585,7 +620,8 @@ def _extract_error_message(provider, data):
         return ""
 
     if provider == "zoomeye":
-        if str(data.get("message") or "").strip() and not isinstance(data.get("matches") or data.get("list"), list):
+        result_items = data.get("matches") or data.get("list") or data.get("data")
+        if str(data.get("message") or "").strip() and not isinstance(result_items, list):
             return str(data.get("message") or "")
         return ""
 
@@ -724,12 +760,13 @@ def _fetch_zoomeye_query_ips(query):
     _ensure_query_plugin_credentials("zoomeye", conf)
 
     page = 1
+    page_size = max(_safe_int(conf.get("page_size"), 20), 1)
     max_page = max(_safe_int(conf.get("max_page"), 20), 1)
     total_size = 0
     ip_set = set()
 
     while page <= max_page:
-        data = _request_query("zoomeye", query, page=page)
+        data = _request_query("zoomeye", query, page_size=page_size, page=page)
         error_message = _extract_error_message("zoomeye", data)
         if error_message:
             raise RuntimeError(error_message)
@@ -737,6 +774,8 @@ def _fetch_zoomeye_query_ips(query):
         items = data.get("matches", []) if isinstance(data, dict) else []
         if not isinstance(items, list):
             items = data.get("list", []) if isinstance(data, dict) else []
+        if not isinstance(items, list):
+            items = data.get("data", []) if isinstance(data, dict) else []
         if not isinstance(items, list):
             items = []
 
@@ -746,6 +785,9 @@ def _fetch_zoomeye_query_ips(query):
         ip_set.update(_extract_ips("zoomeye", data))
 
         if not items:
+            break
+
+        if len(items) < page_size:
             break
 
         if total_size > 0 and len(ip_set) >= total_size:

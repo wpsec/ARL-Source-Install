@@ -6211,8 +6211,8 @@ function ActionDialog({
   const measureProviderExamples: Record<string, string> = {
     fofa: 'app="Nginx"\ncountry="CN" && port="443"',
     hunter_qax: 'web.title="后台"\nip="203.0.113.10"',
-    shodan: 'ip:203.0.113.10\nproduct:nginx country:CN',
-    zoomeye: 'ip:"203.0.113.10"\napp:"Nginx"',
+    shodan: 'hostname:"example.com"\nproduct:nginx country:CN',
+    zoomeye: 'domain="example.com"\napp="Nginx"',
     quake_360: 'service:"nginx"\nport:443 AND country:"China"',
   };
   const currentMeasureProviderLabel = measureProviderLabelMap[fofaProvider] || 'FOFA';
