@@ -1,4 +1,3 @@
-import base64
 import importlib.util
 import unittest
 from pathlib import Path
@@ -16,6 +15,7 @@ normalize_measure_queries = measure_task_module.normalize_measure_queries
 normalize_measure_query_for_provider = measure_task_module.normalize_measure_query_for_provider
 run_measure_query_test = measure_task_module.run_measure_query_test
 ZOOMEYE_HOST_SEARCH_URL = measure_task_module.ZOOMEYE_HOST_SEARCH_URL
+ZOOMEYE_WEB_SEARCH_URL = measure_task_module.ZOOMEYE_WEB_SEARCH_URL
 
 
 class FakeResponse:
@@ -223,21 +223,31 @@ class TestMeasureTaskService(unittest.TestCase):
     @patch.object(measure_task_module, "refresh_runtime_config_best_effort", return_value=None)
     @patch.object(measure_task_module.Config, "QUERY_PLUGIN_CONFIG", {"zoomeye": {"api_key": "zoomeye-key"}})
     @patch("app.services.measure_task.utils.http_req")
-    def test_request_query_uses_zoomeye_v2_search_qbase64(self, mock_http_req, _refresh):
+    def test_request_query_uses_zoomeye_v1_get(self, mock_http_req, _refresh):
         mock_http_req.return_value = FakeResponse(data={"total": 0, "matches": []})
 
         data = measure_task_module._request_query("zoomeye", 'domain="example.com"')
 
         self.assertEqual(data, {"total": 0, "matches": []})
-        self.assertEqual(mock_http_req.call_args[0][0], ZOOMEYE_HOST_SEARCH_URL)
-        self.assertEqual(mock_http_req.call_args[0][1], "post")
-        json_data = mock_http_req.call_args.kwargs["json"]
-        self.assertEqual(base64.b64decode(json_data["qbase64"]).decode("utf-8"), 'domain="example.com"')
-        self.assertEqual(json_data["sub_type"], "web")
-        self.assertNotIn("query", json_data)
+        self.assertEqual(mock_http_req.call_args[0][0], ZOOMEYE_WEB_SEARCH_URL)
+        self.assertEqual(mock_http_req.call_args[0][1], "get")
+        params = mock_http_req.call_args.kwargs["params"]
+        self.assertEqual(params["query"], 'domain="example.com"')
+        self.assertNotIn("qbase64", params)
+        self.assertNotIn("json", mock_http_req.call_args.kwargs)
         headers = mock_http_req.call_args.kwargs["headers"]
-        self.assertEqual(headers["Accept"], "application/json")
-        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(headers["API-KEY"], "zoomeye-key")
+
+    @patch.object(measure_task_module, "refresh_runtime_config_best_effort", return_value=None)
+    @patch.object(measure_task_module.Config, "QUERY_PLUGIN_CONFIG", {"zoomeye": {"api_key": "zoomeye-key"}})
+    @patch("app.services.measure_task.utils.http_req")
+    def test_request_query_uses_zoomeye_v1_host_search_for_v4(self, mock_http_req, _refresh):
+        mock_http_req.return_value = FakeResponse(data={"total": 0, "matches": []})
+
+        measure_task_module._request_query("zoomeye", 'app:"nginx"')
+
+        self.assertEqual(mock_http_req.call_args[0][0], ZOOMEYE_HOST_SEARCH_URL)
+        self.assertEqual(mock_http_req.call_args[0][1], "get")
 
     def test_extract_quake_total_from_nested_pagination(self):
         total = measure_task_module._extract_total_size(

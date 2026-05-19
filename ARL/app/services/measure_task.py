@@ -28,7 +28,8 @@ PROVIDER_ALIAS = {
 }
 SHODAN_HOST_SEARCH_PAGE_SIZE = 100
 FOFA_PAGE_SIZE_MAX = 10000
-ZOOMEYE_HOST_SEARCH_URL = "https://api.zoomeye.ai/v2/search"
+ZOOMEYE_HOST_SEARCH_URL = "https://api.zoomeye.org/host/search"
+ZOOMEYE_WEB_SEARCH_URL = "https://api.zoomeye.org/web/search"
 API_JSON_HEADERS = {
     "Accept": "application/json",
     "User-Agent": "ARL/measure-task",
@@ -501,24 +502,23 @@ def _request_query(provider, query, page_size=1, page=1, start=0):
     if provider == "zoomeye":
         conf = _query_plugin_service_config(provider)
         _ensure_query_plugin_credentials(provider, conf)
-        resolved_page_size = min(max(_safe_int(page_size, 1), 1), 1000)
-        json_data = {
-            "qbase64": base64.b64encode(query.encode("utf-8")).decode("utf-8"),
+        sub_type = _resolve_zoomeye_sub_type(query)
+        search_url = ZOOMEYE_WEB_SEARCH_URL if sub_type == "web" else ZOOMEYE_HOST_SEARCH_URL
+        params = {
+            "query": query,
             "page": page,
-            "pagesize": resolved_page_size,
-            "sub_type": _resolve_zoomeye_sub_type(query),
         }
-        headers = API_JSON_HEADERS.copy()
-        headers.update({
+        if page_size and page_size > 1:
+            params["pagesize"] = page_size
+        headers = {
             "API-KEY": conf.get("api_key"),
-            "Content-Type": "application/json",
-        })
+        }
         return _request_provider_json(
             provider,
-            ZOOMEYE_HOST_SEARCH_URL,
-            "post",
+            search_url,
+            "get",
             secret_values=[conf.get("api_key")],
-            json=json_data,
+            params=params,
             headers=headers,
             timeout=(30.1, 50.1),
         )
@@ -615,11 +615,21 @@ def _extract_error_message(provider, data):
         return ""
 
     if provider == "shodan":
-        if data.get("error"):
-            return str(data.get("error") or "未知错误")
-        return ""
+        error_text = str(data.get("error") or "").strip().lower()
+        if not error_text:
+            return ""
+        if "insufficient query credits" in error_text:
+            return "Shodan API 查询配额不足，请升级 API 计划或等待月度配额重置"
+        if "invalid api key" in error_text or "unauthorized" in error_text:
+            return "Shodan API Key 无效，请检查配置"
+        if "rate limit" in error_text:
+            return "Shodan API 请求频率超限，请稍后重试"
+        return str(data.get("error") or "未知错误")
 
     if provider == "zoomeye":
+        code = str(data.get("code") or "").strip().lower()
+        if code == "credits_insufficent":
+            return "Zoomeye API 查询配额不足，请充值或等待月度配额重置"
         result_items = data.get("matches") or data.get("list") or data.get("data")
         if str(data.get("message") or "").strip() and not isinstance(result_items, list):
             return str(data.get("message") or "")
