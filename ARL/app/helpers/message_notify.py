@@ -119,6 +119,26 @@ def push_dingtalk_kb(
             normalized_task_ids.append(task_id)
 
     if normalized_task_ids:
+        # 推送前检查：若所有有效 ObjectId 任务均已推送过，跳过以避免重复推送
+        has_valid_ids = False
+        all_pushed = True
+        for tid in normalized_task_ids:
+            if len(tid) == 24:
+                has_valid_ids = True
+                task_doc = utils.conn_db("task").find_one({"_id": ObjectId(tid)}, {"kb_pushed": 1})
+                if not task_doc or not task_doc.get("kb_pushed"):
+                    all_pushed = False
+                    break
+        if has_valid_ids and all_pushed:
+            logger.info("all tasks already pushed to kb, skip task_ids:{}".format(normalized_task_ids))
+            result["status"] = "skipped"
+            result["skip_reason"] = "all tasks already kb_pushed"
+            try:
+                utils.conn_db("dingtalk_kb_push_log").insert_one(result)
+            except Exception as e:
+                logger.warning("save dingtalk kb push log error {}".format(e))
+            return True, result
+
         overview_context = extra_data if isinstance(extra_data, dict) else {}
         result["task_count"] = len(normalized_task_ids)
         success, api_result = dingtalk_openapi.publish_task_export_to_kb(
@@ -168,6 +188,25 @@ def push_dingtalk_kb(
         logger.warning("save dingtalk kb push log error {}".format(e))
 
     if success:
+        # 推送成功后标记各任务 kb_pushed 状态，支持断点续推和幂等去重
+        if normalized_task_ids:
+            now = datetime.now()
+            node_id = result.get("node_id", "")
+            for tid in normalized_task_ids:
+                if len(tid) != 24:
+                    continue
+                try:
+                    utils.conn_db("task").update_one(
+                        {"_id": ObjectId(tid)},
+                        {"$set": {
+                            "kb_pushed": True,
+                            "kb_push_time": now,
+                            "kb_node_id": node_id,
+                        }}
+                    )
+                except Exception as e:
+                    logger.warning("mark task kb_pushed error {}: {}".format(tid, e))
+
         if partial_success:
             logger.warning("push dingtalk knowledge base partial title:{} result:{}".format(report_title, api_result))
         else:
