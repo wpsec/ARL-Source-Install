@@ -35,6 +35,9 @@ MANIFEST
 # IDE
 .vscode/
 .idea/
+
+# Codegraph (local only)
+.codegraph/
 *.swp
 *.swo
 *~
