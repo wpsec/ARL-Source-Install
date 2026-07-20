@@ -41,8 +41,12 @@ class BuildDomainInfo(BaseThread):
             )
             return
 
-        # 不记录日志
-        ips = utils.get_ip(domain, log_flag=False)
+        preferred_ips = list(policy_detail.get("preferred_ips", []) or [])
+        # 优先使用 DNS policy 选出的公网视角 IP，避免双视角域名回落到内网。
+        if preferred_ips:
+            ips = preferred_ips
+        else:
+            ips = utils.get_ip(domain, log_flag=False)
         if not ips:
             return
 

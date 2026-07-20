@@ -4,9 +4,11 @@ MongoDB数据库连接和操作
 import urllib3
 import time
 import requests
+from urllib.parse import urlparse
 from app.config import Config
 from pymongo import MongoClient
 from requests.exceptions import ReadTimeout
+from requests.adapters import HTTPAdapter
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -15,6 +17,53 @@ CONTENT_CHUNK_SIZE = 10 * 1024
 
 
 UA = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36"
+
+
+class DirectIPHTTPAdapter(HTTPAdapter):
+    """
+    通过指定 IP 建立连接，同时保留原始域名用于 Host/SNI。
+    """
+    def __init__(self, connect_ip, server_hostname="", **kwargs):
+        self.connect_ip = str(connect_ip or "").strip()
+        self.server_hostname = str(server_hostname or "").strip()
+        super().__init__(**kwargs)
+
+    def get_connection(self, url, proxies=None):
+        parsed = urlparse(url)
+        scheme = str(parsed.scheme or "http").strip().lower() or "http"
+        pool_kwargs = {}
+        if scheme == "https" and self.server_hostname:
+            pool_kwargs["server_hostname"] = self.server_hostname
+            pool_kwargs["assert_hostname"] = self.server_hostname
+
+        return self.poolmanager.connection_from_host(
+            self.connect_ip,
+            port=parsed.port,
+            scheme=scheme,
+            pool_kwargs=pool_kwargs,
+        )
+
+
+def _remember_response_meta(response):
+    if response is None:
+        return
+
+    raw = getattr(response, "raw", None)
+    version = getattr(raw, "version", None)
+    if version == 10:
+        response._arl_http_version = "1.0"
+    else:
+        response._arl_http_version = "1.1"
+
+    response._arl_status = getattr(raw, "status", response.status_code)
+    response._arl_reason = getattr(raw, "reason", getattr(response, "reason", ""))
+
+    raw_headers = ""
+    raw_fp = getattr(raw, "_fp", None)
+    raw_fp_headers = getattr(raw_fp, "headers", None)
+    if raw_fp_headers is not None:
+        raw_headers = str(raw_fp_headers).strip()
+    response._arl_raw_headers = raw_headers
 
 
 # requests/models.py:824
@@ -44,6 +93,9 @@ def patch_content(response, timeout=None):
 def http_req(url, method='get', **kwargs):
     waf_guard = kwargs.pop("waf_guard", None)
     waf_module = kwargs.pop("waf_module", "")
+    connect_ip = str(kwargs.pop("connect_ip", "") or "").strip()
+    server_hostname = str(kwargs.pop("server_hostname", "") or "").strip()
+    host_header = str(kwargs.pop("host_header", "") or "").strip()
 
     kwargs.setdefault('verify', False)
     kwargs.setdefault('timeout', (10.1, 30.1))
@@ -53,6 +105,12 @@ def http_req(url, method='get', **kwargs):
     headers.setdefault("User-Agent", UA)
     # 不允许缓存
     headers.setdefault("Cache-Control", "max-age=0")
+    if connect_ip:
+        parsed = urlparse(str(url or ""))
+        if not host_header:
+            host_header = str(parsed.netloc or "").strip()
+        if host_header:
+            headers.setdefault("Host", host_header)
 
     if waf_guard:
         should_skip, detail = waf_guard.should_skip(url, module=waf_module)
@@ -83,19 +141,42 @@ def http_req(url, method='get', **kwargs):
         # 导致“DNS 解析结果与实际连接目标”不一致。
         kwargs.setdefault("proxies", {"http": None, "https": None})
 
-    conn = getattr(requests, method)(url, **kwargs)
+    if connect_ip:
+        # 指定 connect_ip 时强制直连，避免代理再次按域名转发。
+        kwargs["proxies"] = {"http": None, "https": None}
 
-    timeout = kwargs.get("timeout")
-    if isinstance(timeout, (list, tuple)):
-        if len(timeout) > 1 and timeout[1]:
-            timeout = timeout[1]
+    request_method = str(method or "get").strip().lower() or "get"
+    session = None
+    conn = None
+    try:
+        if connect_ip:
+            session = requests.Session()
+            session.trust_env = False
+            adapter = DirectIPHTTPAdapter(connect_ip=connect_ip, server_hostname=server_hostname)
+            session.mount("http://", adapter)
+            session.mount("https://", adapter)
+            conn = session.request(request_method, url, **kwargs)
+        else:
+            conn = getattr(requests, request_method)(url, **kwargs)
 
-    patch_content(conn, timeout)
+        timeout = kwargs.get("timeout")
+        if isinstance(timeout, (list, tuple)):
+            if len(timeout) > 1 and timeout[1]:
+                timeout = timeout[1]
 
-    if waf_guard:
-        waf_guard.observe_response(url, conn, module=waf_module)
+        patch_content(conn, timeout)
+        _remember_response_meta(conn)
 
-    return conn
+        if waf_guard:
+            waf_guard.observe_response(url, conn, module=waf_module)
+
+        if connect_ip and conn is not None:
+            conn.close()
+
+        return conn
+    finally:
+        if session is not None:
+            session.close()
 
 
 class ConnMongo(object):

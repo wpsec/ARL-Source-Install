@@ -23,6 +23,7 @@ class FetchSite(BaseThread):
         self.site_info_list = []
         self.fingerprint_list = load_fingerprint()
         self.dns_policy_cache = {}
+        self.http_connect_cache = {}
         self.http_timeout = http_timeout
         self.waf_guard = waf_guard
         if http_timeout is None:
@@ -88,7 +89,18 @@ class FetchSite(BaseThread):
 
         _, hostname, _ = get_host(site)
 
-        conn = utils.http_req(site, timeout=self.http_timeout, waf_guard=self.waf_guard, waf_module="fetch_site")
+        connect_kwargs = utils.build_http_connect_kwargs_for_url(
+            site,
+            policy_detail=policy_detail,
+            cache_map=self.http_connect_cache,
+        )
+        conn = utils.http_req(
+            site,
+            timeout=self.http_timeout,
+            waf_guard=self.waf_guard,
+            waf_module="fetch_site",
+            **connect_kwargs
+        )
         if str((conn.headers or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
             logger.info("skip fetch_site by waf smart skip site:{}".format(site))
             return
@@ -110,9 +122,12 @@ class FetchSite(BaseThread):
         domain_parsed = utils.domain_parsed(hostname)
         if domain_parsed:
             item["fld"] = domain_parsed["fld"]
-            ips = utils.get_ip(hostname)
-            if ips:
-                item["ip"] = ips[0]
+            if connect_kwargs.get("connect_ip"):
+                item["ip"] = connect_kwargs["connect_ip"]
+            else:
+                ips = utils.get_ip(hostname)
+                if ips:
+                    item["ip"] = ips[0]
         else:
             item["ip"] = hostname
 
@@ -210,6 +225,7 @@ class FetchFavicon(object):
         self.url = url
         self.favicon_url = None
         self.dns_policy_cache = {}
+        self.http_connect_cache = {}
         self.waf_guard = waf_guard
         pass
 
@@ -256,7 +272,12 @@ class FetchFavicon(object):
             )
             return
 
-        conn = http_req(favicon_url, waf_guard=self.waf_guard, waf_module="fetch_favicon")
+        connect_kwargs = utils.build_http_connect_kwargs_for_url(
+            favicon_url,
+            policy_detail=policy_detail,
+            cache_map=self.http_connect_cache,
+        )
+        conn = http_req(favicon_url, waf_guard=self.waf_guard, waf_module="fetch_favicon", **connect_kwargs)
         if conn.status_code != 200:
             return
 
@@ -291,7 +312,12 @@ class FetchFavicon(object):
             )
             return
 
-        conn = http_req(self.url, waf_guard=self.waf_guard, waf_module="fetch_favicon_html")
+        connect_kwargs = utils.build_http_connect_kwargs_for_url(
+            self.url,
+            policy_detail=policy_detail,
+            cache_map=self.http_connect_cache,
+        )
+        conn = http_req(self.url, waf_guard=self.waf_guard, waf_module="fetch_favicon_html", **connect_kwargs)
         if b"<link" not in conn.content:
             return
         d = pq(conn.content)

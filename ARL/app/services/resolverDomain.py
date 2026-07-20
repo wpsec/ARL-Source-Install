@@ -66,6 +66,11 @@ class ResolverDomain(BaseThread):
             )
             return
 
+        preferred_ips = list(policy_detail.get("preferred_ips", []) or [])
+        if preferred_ips:
+            self.resolver_map[curr_domain] = preferred_ips
+            return
+
         self.resolver_map[curr_domain] = utils.get_ip(curr_domain)
 
     def run(self):

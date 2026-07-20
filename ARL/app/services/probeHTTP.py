@@ -15,6 +15,7 @@ class ProbeHTTP(BaseThread):
         self.sites = []
         self.domains = domains
         self.dns_policy_cache = {}
+        self.http_connect_cache = {}
 
     def _build_targets(self, domains):
         _targets = []
@@ -41,7 +42,12 @@ class ProbeHTTP(BaseThread):
             )
             return
 
-        conn = utils.http_req(target, 'get', timeout=(3, 2), stream=True)
+        connect_kwargs = utils.build_http_connect_kwargs_for_url(
+            target,
+            policy_detail=policy_detail,
+            cache_map=self.http_connect_cache,
+        )
+        conn = utils.http_req(target, 'get', timeout=(3, 2), stream=True, **connect_kwargs)
         conn.close()
 
         if conn.status_code in [502, 504, 501, 422, 410]:

@@ -463,6 +463,57 @@ def get_ip_socket(domain, log_flag=True):
     return _normalize_ip_list(ips)
 
 
+def _select_preferred_resolver_ips(ip_list):
+    normalized_ips = _normalize_ip_list(ip_list or [])
+    public_ips = [ip for ip in normalized_ips if get_ip_type(ip) == "PUBLIC"]
+    if public_ips:
+        return public_ips
+    return normalized_ips
+
+
+def build_http_connect_kwargs_for_url(url, policy_detail=None, cache_map=None):
+    """
+    为 HTTP 请求生成“连接 IP + Host/SNI 域名”参数。
+    """
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except Exception:
+        return {}
+
+    hostname = normalize_domain(parsed.hostname) or str(parsed.hostname or "").strip().lower().rstrip(".")
+    if not hostname or is_vaild_ip_target(hostname):
+        return {}
+
+    preferred_ips = []
+    if isinstance(policy_detail, dict):
+        preferred_ips = _select_preferred_resolver_ips(policy_detail.get("preferred_ips", []))
+        if not preferred_ips:
+            preferred_ips = _select_preferred_resolver_ips(policy_detail.get("resolver_ips", []))
+
+    if not preferred_ips:
+        if isinstance(cache_map, dict) and hostname in cache_map:
+            preferred_ips = _select_preferred_resolver_ips(cache_map[hostname])
+        else:
+            preferred_ips = _select_preferred_resolver_ips(get_ip(hostname, log_flag=False))
+            if isinstance(cache_map, dict):
+                cache_map[hostname] = list(preferred_ips)
+
+    if not preferred_ips:
+        return {}
+
+    host_header = hostname
+    if parsed.port:
+        default_port = 443 if parsed.scheme == "https" else 80
+        if parsed.port != default_port:
+            host_header = "{}:{}".format(hostname, parsed.port)
+
+    return {
+        "connect_ip": preferred_ips[0],
+        "server_hostname": hostname,
+        "host_header": host_header,
+    }
+
+
 def check_dns_policy_for_host(hostname):
     """
     校验扫描目标域名在“自定义解析器”和“系统解析器”之间是否发生解析漂移。
@@ -482,8 +533,12 @@ def check_dns_policy_for_host(hostname):
         "host": host,
         "reason": "",
         "resolver_ips": [],
+        "preferred_ips": [],
+        "resolver_public_ips": [],
         "system_ips": [],
+        "system_private_ips": [],
         "socket_ips": [],
+        "socket_private_ips": [],
         "matched_ips": [],
         "matched_socket_ips": [],
     }
@@ -499,11 +554,15 @@ def check_dns_policy_for_host(hostname):
     # 未配置自定义解析器时尽量保持历史行为，但补充 socket 漂移兜底
     dns_resolvers = [x.strip() for x in Config.DNS_RESOLVERS if isinstance(x, str) and x.strip()]
     if not dns_resolvers:
-        resolver_ips = sorted(set(get_ip_system(host, log_flag=False)))
-        socket_ips = sorted(set(get_ip_socket(host, log_flag=False)))
+        resolver_ips = _normalize_ip_list(get_ip_system(host, log_flag=False))
+        socket_ips = _normalize_ip_list(get_ip_socket(host, log_flag=False))
         detail["resolver_ips"] = resolver_ips
+        detail["preferred_ips"] = _select_preferred_resolver_ips(resolver_ips)
+        detail["resolver_public_ips"] = [ip for ip in resolver_ips if get_ip_type(ip) == "PUBLIC"]
         detail["system_ips"] = resolver_ips
         detail["socket_ips"] = socket_ips
+        detail["system_private_ips"] = [ip for ip in resolver_ips if get_ip_type(ip) == "PRIVATE"]
+        detail["socket_private_ips"] = [ip for ip in socket_ips if get_ip_type(ip) == "PRIVATE"]
 
         if resolver_ips and socket_ips:
             resolver_set = set(resolver_ips)
@@ -535,12 +594,16 @@ def check_dns_policy_for_host(hostname):
         detail["reason"] = "no_custom_resolver"
         return True, detail
 
-    resolver_ips = sorted(set(get_ip(host, log_flag=False)))
-    system_ips = sorted(set(get_ip_system(host, log_flag=False)))
-    socket_ips = sorted(set(get_ip_socket(host, log_flag=False)))
+    resolver_ips = _normalize_ip_list(get_ip(host, log_flag=False))
+    system_ips = _normalize_ip_list(get_ip_system(host, log_flag=False))
+    socket_ips = _normalize_ip_list(get_ip_socket(host, log_flag=False))
     detail["resolver_ips"] = resolver_ips
+    detail["preferred_ips"] = _select_preferred_resolver_ips(resolver_ips)
+    detail["resolver_public_ips"] = [ip for ip in resolver_ips if get_ip_type(ip) == "PUBLIC"]
     detail["system_ips"] = system_ips
     detail["socket_ips"] = socket_ips
+    detail["system_private_ips"] = [ip for ip in system_ips if get_ip_type(ip) == "PRIVATE"]
+    detail["socket_private_ips"] = [ip for ip in socket_ips if get_ip_type(ip) == "PRIVATE"]
 
     if not resolver_ips:
         detail["reason"] = "resolver_no_a_record"
@@ -554,38 +617,58 @@ def check_dns_policy_for_host(hostname):
     system_set = set(system_ips)
     matched_ips = sorted(list(resolver_set & system_set))
     detail["matched_ips"] = matched_ips
+    resolver_public_ips = detail["resolver_public_ips"]
+    system_private_ips = detail["system_private_ips"]
+    socket_private_ips = detail["socket_private_ips"]
 
-    # 完全无交集：高风险漂移，拒绝扫描
     if not matched_ips:
-        detail["reason"] = "dns_drift_no_overlap"
-        return False, detail
-
-    # 系统解析出了自定义解析器未返回的内网/保留IP，也视为漂移风险
-    extra_system_ips = sorted(list(system_set - resolver_set))
-    for ip in extra_system_ips:
-        if get_ip_type(ip) == "PRIVATE":
-            detail["reason"] = "dns_drift_private_extra"
-            detail["extra_system_ips"] = extra_system_ips
+        # 公网解析器给出公网 IP，而系统解析仅落到内网时，允许按公网视角继续扫描。
+        if resolver_public_ips and system_private_ips and len(system_private_ips) == len(system_ips):
+            detail["reason"] = "split_horizon_system_private_only"
+        else:
+            detail["reason"] = "dns_drift_no_overlap"
             return False, detail
 
-    # 追加 socket 解析链路校验（覆盖 /etc/hosts / NSS 覆盖场景）
+    # 系统解析出了自定义解析器未返回的内网/保留IP：
+    # 若公网解析器已有公网结果，则视为 split-horizon 阴影内网，不阻断公网扫描。
+    extra_system_ips = _normalize_ip_list(list(system_set - resolver_set))
+    extra_system_private_ips = [ip for ip in extra_system_ips if get_ip_type(ip) == "PRIVATE"]
+    if extra_system_private_ips:
+        detail["extra_system_ips"] = extra_system_ips
+        if resolver_public_ips:
+            if not detail["reason"]:
+                detail["reason"] = "split_horizon_private_extra"
+        else:
+            detail["reason"] = "dns_drift_private_extra"
+            return False, detail
+
     if socket_ips:
         socket_set = set(socket_ips)
         matched_socket_ips = sorted(list(resolver_set & socket_set))
         detail["matched_socket_ips"] = matched_socket_ips
 
         if not matched_socket_ips:
-            detail["reason"] = "dns_drift_socket_no_overlap"
-            return False, detail
-
-        extra_socket_ips = sorted(list(socket_set - resolver_set))
-        for ip in extra_socket_ips:
-            if get_ip_type(ip) == "PRIVATE":
-                detail["reason"] = "dns_drift_socket_private_extra"
-                detail["extra_socket_ips"] = extra_socket_ips
+            if resolver_public_ips and socket_private_ips and len(socket_private_ips) == len(socket_ips):
+                if not detail["reason"]:
+                    detail["reason"] = "split_horizon_socket_private_only"
+            else:
+                detail["reason"] = "dns_drift_socket_no_overlap"
                 return False, detail
 
-    detail["reason"] = "pass"
+        extra_socket_ips = _normalize_ip_list(list(socket_set - resolver_set))
+        extra_socket_private_ips = [ip for ip in extra_socket_ips if get_ip_type(ip) == "PRIVATE"]
+        if extra_socket_private_ips:
+            detail["extra_socket_ips"] = extra_socket_ips
+            if resolver_public_ips:
+                if not detail["reason"]:
+                    detail["reason"] = "split_horizon_socket_private_extra"
+            else:
+                detail["reason"] = "dns_drift_socket_private_extra"
+                return False, detail
+
+    if not detail["reason"]:
+        detail["reason"] = "pass"
+
     return True, detail
 
 

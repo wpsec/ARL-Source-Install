@@ -17,6 +17,7 @@ class CheckHTTP(BaseThread):
         self.timeout = (5, 3)
         self.checkout_map = {}
         self.dns_policy_cache = {}
+        self.http_connect_cache = {}
 
     def check(self, url):
         allow_scan, policy_detail = utils.check_dns_policy_for_url(url, cache_map=self.dns_policy_cache)
@@ -31,7 +32,12 @@ class CheckHTTP(BaseThread):
             )
             return None
 
-        conn = utils.http_req(url, method="get", timeout=self.timeout, stream=True)
+        connect_kwargs = utils.build_http_connect_kwargs_for_url(
+            url,
+            policy_detail=policy_detail,
+            cache_map=self.http_connect_cache,
+        )
+        conn = utils.http_req(url, method="get", timeout=self.timeout, stream=True, **connect_kwargs)
         conn.close()
 
         if conn.status_code == 400:
@@ -49,7 +55,7 @@ class CheckHTTP(BaseThread):
             return None
 
         if conn.status_code == 403:
-            conn2 = utils.http_req(url)
+            conn2 = utils.http_req(url, **connect_kwargs)
             check = b'</title><style type="text/css">body{margin:5% auto 0 auto;padding:0 18px}'
             if check in conn2.content:
                 return None

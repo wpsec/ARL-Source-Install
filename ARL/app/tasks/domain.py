@@ -1313,7 +1313,11 @@ class DomainTask(CommonTask):
         cname = utils.get_cname(domain)
         if cname:
             _type = 'CNAME'
-        ips = utils.get_ip(domain)
+        preferred_ips = list(policy_detail.get("preferred_ips", []) or [])
+        if preferred_ips:
+            ips = preferred_ips
+        else:
+            ips = utils.get_ip(domain)
         if _type == "A":
             record = ips
         else:
