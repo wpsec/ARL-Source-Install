@@ -17,7 +17,7 @@ from crontab import CronTab
 import time
 
 from .policy import get_options_by_policy_id
-from .message_notify import push_dingding, push_dingtalk_kb
+from .message_notify import push_dingding, push_dingtalk_kb, push_task_schedule_ssl_cert_warning
 
 
 logger = utils.get_logger()
@@ -183,6 +183,7 @@ def create_task_schedule_run(item, task_data_list):
         "notify_on": str(item.get("notify_on", "finished") or "finished").lower(),
         "push_status": RUN_PUSH_PENDING,
         "kb_push_status": RUN_PUSH_PENDING if notify_kb_enable else RUN_PUSH_SKIP,
+        "ssl_push_status": RUN_PUSH_PENDING,
         "start_time": int(time.time()),
         "start_date": utils.curr_date(),
         "end_time": 0,
@@ -688,7 +689,7 @@ def _build_kb_partial_summary(run_item):
     return summary
 
 
-def build_schedule_run_markdown(run_item):
+def build_schedule_run_markdown(run_item, include_ai_denoise_degrade=True):
     """
     构建计划任务执行结果的钉钉 Markdown 摘要
     """
@@ -726,7 +727,7 @@ def build_schedule_run_markdown(run_item):
     markdown += "- 结束时间：`{}`\n\n".format(end_date)
 
     ai_denoise_degrade = run_item.get("ai_denoise_degrade", {})
-    if isinstance(ai_denoise_degrade, dict) and ai_denoise_degrade.get("enabled", False):
+    if include_ai_denoise_degrade and isinstance(ai_denoise_degrade, dict) and ai_denoise_degrade.get("enabled", False):
         markdown += "\n#### AI 降级说明\n\n"
         markdown += "- {}\n".format(str(ai_denoise_degrade.get("message", "") or "AI 去噪未完成，已按原始扫描结果继续输出。"))
         markdown += "- 超时任务数：`{}`\n".format(_safe_int(ai_denoise_degrade.get("timed_out_task_count", 0), 0))
@@ -860,6 +861,8 @@ def process_task_schedule_runs():
     run_items = list(utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find(query))
     for run_item in run_items:
         previous_status = str(run_item.get("status", "") or "").lower()
+        if "ssl_push_status" not in run_item:
+            run_item["ssl_push_status"] = RUN_PUSH_PENDING if previous_status == RUN_STATUS_RUNNING else RUN_PUSH_SKIP
         task_ids = run_item.get("task_ids", [])
         summary = build_schedule_run_summary(task_ids)
         run_item["summary"] = summary
@@ -956,7 +959,7 @@ def process_task_schedule_runs():
         if notify_kb_enable and should_push_kb:
             run_item["kb_push_status"] = RUN_PUSH_ERROR
             report_title = build_schedule_run_kb_title(run_item)
-            markdown_report = build_schedule_run_markdown(run_item)
+            markdown_report = build_schedule_run_markdown(run_item, include_ai_denoise_degrade=True)
             kb_success, kb_result = push_dingtalk_kb(
                 report_title=report_title,
                 markdown_report=markdown_report,
@@ -1029,12 +1032,52 @@ def process_task_schedule_runs():
                 )
             )
 
+        # SSL 证书提醒：计划任务子任务不单发，这里在 run 级聚合发送一次。
+        ssl_push_status = str(run_item.get("ssl_push_status", RUN_PUSH_PENDING) or RUN_PUSH_PENDING).lower()
+        if ssl_push_status == RUN_PUSH_PENDING:
+            if not bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE):
+                run_item["ssl_push_status"] = RUN_PUSH_SKIP
+            else:
+                ssl_result = push_task_schedule_ssl_cert_warning(task_ids)
+                warning_count = _safe_int(ssl_result.get("warning_count", 0), 0) if isinstance(ssl_result, dict) else 0
+                sent_count = _safe_int(ssl_result.get("sent_count", 0), 0) if isinstance(ssl_result, dict) else 0
+                run_item["ssl_warning_count"] = warning_count
+                run_item["ssl_sent_count"] = sent_count
+                run_item["ssl_push_date"] = utils.curr_date()
+                if warning_count <= 0:
+                    run_item["ssl_push_status"] = RUN_PUSH_SKIP
+                    logger.info(
+                        "task schedule run {} skip ssl cert notify because no warnings".format(
+                            str(run_item.get("_id", "")),
+                        )
+                    )
+                elif sent_count >= warning_count:
+                    run_item["ssl_push_status"] = RUN_PUSH_SUCCESS
+                    logger.info(
+                        "task schedule ssl cert notify succ schedule_id:{} run_id:{} warnings:{} sent:{}".format(
+                            run_item.get("schedule_id", ""),
+                            str(run_item.get("_id", "")),
+                            warning_count,
+                            sent_count,
+                        )
+                    )
+                else:
+                    run_item["ssl_push_status"] = RUN_PUSH_ERROR
+                    logger.warning(
+                        "task schedule ssl cert notify partial/error schedule_id:{} run_id:{} warnings:{} sent:{}".format(
+                            run_item.get("schedule_id", ""),
+                            str(run_item.get("_id", "")),
+                            warning_count,
+                            sent_count,
+                        )
+                    )
+
         # 聚合通知：每轮计划任务仅推送一次
         run_item["push_status"] = RUN_PUSH_SKIP
         if notify_enable and should_push:
             run_item["push_status"] = RUN_PUSH_ERROR
             if notify_channel == "dingding":
-                markdown_report = build_schedule_run_markdown(run_item)
+                markdown_report = build_schedule_run_markdown(run_item, include_ai_denoise_degrade=False)
                 if push_dingding(markdown_report=markdown_report):
                     run_item["push_status"] = RUN_PUSH_SUCCESS
             else:

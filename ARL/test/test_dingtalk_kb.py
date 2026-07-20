@@ -1,21 +1,211 @@
+import atexit
+import datetime
+import importlib
+import logging
+import pathlib
+import shutil
+import sys
+import types
 import unittest
 from unittest.mock import MagicMock, patch
 
+
+def _ensure_test_config_yaml():
+    app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
+    config_path = app_dir / "config.yaml"
+    if config_path.exists():
+        return
+
+    example_path = app_dir / "config.yaml.example"
+    if not example_path.exists():
+        return
+
+    shutil.copyfile(str(example_path), str(config_path))
+
+    def _cleanup():
+        try:
+            config_path.unlink()
+        except FileNotFoundError:
+            return
+        except Exception:
+            return
+
+    atexit.register(_cleanup)
+
+
+def _get_app_package():
+    return importlib.import_module("app")
+
+
+def _install_helpers_package_stub():
+    package_name = "app.helpers"
+    if package_name in sys.modules:
+        return
+
+    helpers_module = types.ModuleType(package_name)
+    helpers_module.__path__ = [str(pathlib.Path(__file__).resolve().parents[1] / "app" / "helpers")]
+    sys.modules[package_name] = helpers_module
+    setattr(_get_app_package(), "helpers", helpers_module)
+
+
+def _install_helpers_task_stub():
+    module_name = "app.helpers.task"
+    if module_name in sys.modules:
+        return
+
+    task_module = types.ModuleType(module_name)
+    task_module.strip_disabled_penetration_options = lambda options: (dict(options or {}), [])
+    task_module.submit_task_task = lambda target, name, options: []
+    task_module.submit_risk_cruising = lambda target, name, options: []
+    sys.modules[module_name] = task_module
+    sys.modules["app.helpers"].task = task_module
+
+
+def _install_routes_package_stub():
+    package_name = "app.routes"
+    if package_name in sys.modules:
+        return
+
+    routes_module = types.ModuleType(package_name)
+    routes_module.__path__ = [str(pathlib.Path(__file__).resolve().parents[1] / "app" / "routes")]
+    sys.modules[package_name] = routes_module
+    setattr(_get_app_package(), "routes", routes_module)
+
+    export_module = types.ModuleType("app.routes.export")
+    export_module.export_merge_tasks = lambda *args, **kwargs: b""
+    export_module.export_arl = lambda *args, **kwargs: b""
+    export_module.build_task_export_summary = lambda *args, **kwargs: {}
+    sys.modules["app.routes.export"] = export_module
+    routes_module.export = export_module
+
+
+def _install_test_import_stubs():
+    try:
+        import bson  # type: ignore  # noqa: F401
+    except ModuleNotFoundError:
+        bson_module = types.ModuleType("bson")
+
+        class ObjectId(str):
+            def __new__(cls, value=""):
+                text = str(value or "").strip()
+                if not text:
+                    text = "0" * 24
+                return str.__new__(cls, text)
+
+            @staticmethod
+            def is_valid(value):
+                return len(str(value or "").strip()) == 24
+
+            @property
+            def generation_time(self):
+                return datetime.datetime.utcnow()
+
+        bson_module.ObjectId = ObjectId
+        sys.modules["bson"] = bson_module
+
+    try:
+        import colorlog  # type: ignore  # noqa: F401
+    except ModuleNotFoundError:
+        colorlog_module = types.ModuleType("colorlog")
+        colorlog_module.StreamHandler = logging.StreamHandler
+        colorlog_module.ColoredFormatter = logging.Formatter
+        colorlog_module.getLogger = logging.getLogger
+        sys.modules["colorlog"] = colorlog_module
+
+    try:
+        import dns.resolver  # type: ignore  # noqa: F401
+    except ModuleNotFoundError:
+        dns_module = types.ModuleType("dns")
+        dns_resolver_module = types.ModuleType("dns.resolver")
+        dns_module.resolver = dns_resolver_module
+        sys.modules["dns"] = dns_module
+        sys.modules["dns.resolver"] = dns_resolver_module
+
+    try:
+        import tld  # type: ignore  # noqa: F401
+    except ModuleNotFoundError:
+        tld_module = types.ModuleType("tld")
+        tld_module.get_tld = lambda *args, **kwargs: None
+        sys.modules["tld"] = tld_module
+
+    try:
+        import pymongo  # type: ignore  # noqa: F401
+    except ModuleNotFoundError:
+        pymongo_module = types.ModuleType("pymongo")
+
+        class MongoClient(object):
+            def __init__(self, *args, **kwargs):
+                pass
+
+        pymongo_module.MongoClient = MongoClient
+        sys.modules["pymongo"] = pymongo_module
+
+    try:
+        import geoip2.database  # type: ignore  # noqa: F401
+    except ModuleNotFoundError:
+        geoip2_module = types.ModuleType("geoip2")
+        geoip2_database_module = types.ModuleType("geoip2.database")
+
+        class Reader(object):
+            def __init__(self, *args, **kwargs):
+                pass
+
+        geoip2_database_module.Reader = Reader
+        geoip2_module.database = geoip2_database_module
+        sys.modules["geoip2"] = geoip2_module
+        sys.modules["geoip2.database"] = geoip2_database_module
+
+    try:
+        import OpenSSL  # type: ignore  # noqa: F401
+    except ModuleNotFoundError:
+        openssl_module = types.ModuleType("OpenSSL")
+        openssl_module.crypto = types.SimpleNamespace(
+            FILETYPE_PEM=1,
+            load_certificate=lambda *args, **kwargs: None,
+            dump_publickey=lambda *args, **kwargs: b"",
+        )
+        sys.modules["OpenSSL"] = openssl_module
+
+    try:
+        import crontab  # type: ignore  # noqa: F401
+    except ModuleNotFoundError:
+        crontab_module = types.ModuleType("crontab")
+
+        class CronTab(object):
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def next(self, default_utc=False):
+                return 60
+
+        crontab_module.CronTab = CronTab
+        sys.modules["crontab"] = crontab_module
+
+
+_ensure_test_config_yaml()
+_install_helpers_package_stub()
+_install_helpers_task_stub()
+_install_routes_package_stub()
+_install_test_import_stubs()
+
 IMPORT_ERROR = None
 try:
-    from app.helpers.message_notify import (
-        push_dingtalk_kb,
-        push_task_finish_notify,
-        _build_ssl_cert_warning_markdown,
-        _push_ssl_cert_warning,
-    )
-    from app.helpers import task_schedule as task_schedule_module
-    from app.utils import dingtalk_openapi
+    message_notify_module = importlib.import_module("app.helpers.message_notify")
+    push_dingtalk_kb = message_notify_module.push_dingtalk_kb
+    push_task_finish_notify = message_notify_module.push_task_finish_notify
+    _build_ssl_cert_warning_markdown = message_notify_module._build_ssl_cert_warning_markdown
+    _push_ssl_cert_warning = message_notify_module._push_ssl_cert_warning
+    _push_ssl_cert_warning_for_task_ids = message_notify_module._push_ssl_cert_warning_for_task_ids
+    task_schedule_module = importlib.import_module("app.helpers.task_schedule")
+    dingtalk_openapi = importlib.import_module("app.utils.dingtalk_openapi")
+    sys.modules["app.helpers"].message_notify = message_notify_module
+    sys.modules["app.helpers"].task_schedule = task_schedule_module
 except Exception as exc:
     push_dingtalk_kb = None
     push_task_finish_notify = None
     _build_ssl_cert_warning_markdown = None
     _push_ssl_cert_warning = None
+    _push_ssl_cert_warning_for_task_ids = None
     task_schedule_module = None
     dingtalk_openapi = None
     IMPORT_ERROR = exc
@@ -45,10 +235,12 @@ class _FakeCollection(object):
 class TestDingtalkKnowledgeBase(unittest.TestCase):
     """钉钉知识库写入相关回归测试。"""
 
+    @patch('app.utils.dingtalk_openapi._missing_required_fields', return_value=[])
     @patch('app.utils.dingtalk_openapi.request_openapi')
     def test_update_workbook_range_should_pad_values_to_match_range_width(
         self,
         mock_request_openapi,
+        _mock_missing_required_fields,
     ):
         """写入分块时应按目标 range 列宽补齐尾部空列，避免钉钉报列数不匹配。"""
         mock_request_openapi.return_value = (True, {"status_code": 200})
@@ -117,6 +309,7 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
     @patch('app.utils.dingtalk_openapi.write_sheet_items_to_workbook')
     @patch('app.utils.dingtalk_openapi.rename_workbook_sheet')
     @patch('app.utils.dingtalk_openapi.write_sheet_values_to_workbook')
+    @patch('app.utils.dingtalk_openapi._build_task_overview_sheet_values')
     @patch('app.utils.dingtalk_openapi.create_workbook')
     @patch('app.utils.dingtalk_openapi._load_workbook_sheet_items')
     @patch('app.routes.export.export_merge_tasks')
@@ -127,6 +320,7 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         mock_export_merge_tasks,
         mock_load_workbook_sheet_items,
         mock_create_workbook,
+        mock_build_task_overview_sheet_values,
         mock_write_sheet_values_to_workbook,
         mock_rename_workbook_sheet,
         mock_write_sheet_items_to_workbook,
@@ -153,6 +347,7 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
                 "node_url": "https://alidocs.example/report",
             },
         )
+        mock_build_task_overview_sheet_values.return_value = [["字段", "值"], ["任务标题", "demo"]]
         mock_write_sheet_values_to_workbook.return_value = (
             True,
             {
@@ -329,10 +524,12 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
 
     @patch('app.helpers.task_schedule.push_dingtalk_kb')
     @patch('app.helpers.task_schedule.push_dingding')
+    @patch('app.helpers.task_schedule.push_task_schedule_ssl_cert_warning')
     @patch('app.helpers.task_schedule.utils.conn_db')
     def test_process_task_schedule_runs_should_wait_for_running_ai_denoise(
         self,
         mock_conn_db,
+        mock_push_task_schedule_ssl_cert_warning,
         mock_push_dingding,
         mock_push_dingtalk_kb,
     ):
@@ -382,6 +579,7 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
 
         task_schedule_module.process_task_schedule_runs()
 
+        mock_push_task_schedule_ssl_cert_warning.assert_not_called()
         mock_push_dingtalk_kb.assert_not_called()
         mock_push_dingding.assert_not_called()
         self.assertEqual(1, len(run_collection.replaced_items))
@@ -393,10 +591,13 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
     @patch('app.routes.export.build_task_export_summary')
     @patch('app.helpers.task_schedule.push_dingtalk_kb')
     @patch('app.helpers.task_schedule.push_dingding')
+    @patch('app.helpers.task_schedule.Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE', True)
+    @patch('app.helpers.task_schedule.push_task_schedule_ssl_cert_warning')
     @patch('app.helpers.task_schedule.utils.conn_db')
     def test_process_task_schedule_runs_should_push_after_ai_denoise_done(
         self,
         mock_conn_db,
+        mock_push_task_schedule_ssl_cert_warning,
         mock_push_dingding,
         mock_push_dingtalk_kb,
         mock_build_task_export_summary,
@@ -431,6 +632,10 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
                 "api_result": {},
             },
         )
+        mock_push_task_schedule_ssl_cert_warning.return_value = {
+            "warning_count": 1,
+            "sent_count": 1,
+        }
         run_collection = _FakeCollection(
             [
                 {
@@ -478,21 +683,28 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         task_schedule_module.process_task_schedule_runs()
 
         mock_push_dingtalk_kb.assert_called_once()
+        mock_push_task_schedule_ssl_cert_warning.assert_called_once_with([str(task_id)])
         self.assertEqual(1, len(run_collection.replaced_items))
         saved_run = run_collection.replaced_items[-1]
         self.assertEqual(task_schedule_module.RUN_STATUS_FINISHED, saved_run.get("status"))
         self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("kb_push_status"))
+        self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("ssl_push_status"))
+        self.assertEqual(1, saved_run.get("ssl_warning_count"))
+        self.assertEqual(1, saved_run.get("ssl_sent_count"))
         self.assertEqual("https://alidocs.example/report", saved_run.get("kb_node_url"))
 
     @patch('app.helpers.task_schedule.time.time', return_value=2000)
     @patch('app.routes.export.build_task_export_summary')
     @patch('app.helpers.task_schedule.push_dingtalk_kb')
     @patch('app.helpers.task_schedule.push_dingding', return_value=True)
+    @patch('app.helpers.task_schedule.Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE', True)
+    @patch('app.helpers.task_schedule.push_task_schedule_ssl_cert_warning')
     @patch('app.helpers.task_schedule.utils.conn_db')
     def test_process_task_schedule_runs_should_force_finalize_after_ai_denoise_timeout(
         self,
         mock_conn_db,
-        _mock_push_dingding,
+        mock_push_task_schedule_ssl_cert_warning,
+        mock_push_dingding,
         mock_push_dingtalk_kb,
         mock_build_task_export_summary,
         _mock_time,
@@ -527,6 +739,10 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
                 "api_result": {},
             },
         )
+        mock_push_task_schedule_ssl_cert_warning.return_value = {
+            "warning_count": 1,
+            "sent_count": 1,
+        }
         run_collection = _FakeCollection(
             [
                 {
@@ -578,18 +794,23 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         task_schedule_module.process_task_schedule_runs()
 
         mock_push_dingtalk_kb.assert_called_once()
+        mock_push_task_schedule_ssl_cert_warning.assert_called_once_with([str(task_id)])
         self.assertEqual(1, len(run_collection.replaced_items))
         saved_run = run_collection.replaced_items[-1]
         self.assertEqual(task_schedule_module.RUN_STATUS_FINISHED, saved_run.get("status"))
         self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("push_status"))
         self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("kb_push_status"))
+        self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("ssl_push_status"))
         self.assertTrue(saved_run.get("ai_denoise_degrade", {}).get("enabled"))
         self.assertIn("example.com", saved_run.get("ai_denoise_degrade", {}).get("timed_out_targets", []))
         kb_extra_data = mock_push_dingtalk_kb.call_args.kwargs.get("extra_data", {})
         self.assertTrue(kb_extra_data.get("ai_denoise_degrade", {}).get("enabled"))
+        notify_markdown = mock_push_dingding.call_args.kwargs.get("markdown_report", "")
+        self.assertNotIn("AI 降级说明", notify_markdown)
+        self.assertNotIn("待处理模块", notify_markdown)
 
     def test_build_schedule_run_markdown_should_include_ai_degrade_note(self):
-        """降级放行时，聚合通知应明确标记 AI 未完成。"""
+        """降级放行时，知识库摘要仍应保留 AI 降级说明。"""
         markdown = task_schedule_module.build_schedule_run_markdown(
             {
                 "schedule_name": "demo",
@@ -622,12 +843,55 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
                         }
                     ],
                 },
-            }
+            },
+            include_ai_denoise_degrade=True,
         )
 
         self.assertIn("AI 降级说明", markdown)
         self.assertIn("example.com", markdown)
         self.assertIn("待处理模块", markdown)
+
+    def test_build_schedule_run_markdown_should_hide_ai_degrade_note_for_notify(self):
+        """群通知摘要不应展示 AI 降级说明明细。"""
+        markdown = task_schedule_module.build_schedule_run_markdown(
+            {
+                "schedule_name": "demo",
+                "run_number": 1,
+                "status": task_schedule_module.RUN_STATUS_FINISHED,
+                "start_date": "2026-01-01 00:00:00",
+                "end_date": "2026-01-01 00:10:00",
+                "summary": {
+                    "done": 1,
+                    "error": 0,
+                    "stop": 0,
+                    "site_cnt": 1,
+                    "domain_cnt": 1,
+                    "ip_cnt": 0,
+                    "url_cnt": 2,
+                    "vuln_cnt": 0,
+                },
+                "ai_denoise_degrade": {
+                    "enabled": True,
+                    "message": "AI 去噪等待超时，已按原始扫描结果继续生成知识库与通知。",
+                    "timed_out_task_count": 1,
+                    "timed_out_targets": ["example.com"],
+                    "tasks": [
+                        {
+                            "task_id": "task-1",
+                            "target": "example.com",
+                            "status": "done",
+                            "wait_elapsed_sec": 600,
+                            "pending_modules": ["url", "fileleak"],
+                        }
+                    ],
+                },
+            },
+            include_ai_denoise_degrade=False,
+        )
+
+        self.assertNotIn("AI 降级说明", markdown)
+        self.assertNotIn("example.com", markdown)
+        self.assertNotIn("待处理模块", markdown)
 
     def test_build_task_overview_sheet_values_should_include_ai_degrade_summary(self):
         """知识库执行概览应展示 AI 降级放行说明。"""
@@ -648,19 +912,107 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         self.assertIn(["超时任务数", "2"], values)
         self.assertIn(["受影响目标", "example.com、demo.example.com"], values)
 
+    def test_collect_ssl_cert_warnings_should_group_same_cert_across_schedule_tasks(self):
+        """同一张证书跨多个计划任务子任务时，应聚合为一条提醒。"""
+        cert_items = [
+            {
+                "task_id": "65f1234567890abc12345678",
+                "ip": "1.1.1.1",
+                "port": "443",
+                "domain": "pc-in.example.com",
+                "cert": {
+                    "subject_dn": "CN=pc-in.example.com",
+                    "issuer_dn": "CN=Example Issuer",
+                    "validity": {
+                        "start": "2026-01-08 00:00:00",
+                        "end": "2026-08-08 23:59:59",
+                    },
+                    "fingerprint": {
+                        "sha256": "AA:BB:CC",
+                    },
+                },
+            },
+            {
+                "task_id": "75f1234567890abc12345679",
+                "ip": "2.2.2.2",
+                "port": "443",
+                "domain": "pc-in-uat.example.com",
+                "cert": {
+                    "subject_dn": "CN=pc-in-uat.example.com",
+                    "issuer_dn": "CN=Example Issuer",
+                    "validity": {
+                        "start": "2026-01-08 00:00:00",
+                        "end": "2026-08-08 23:59:59",
+                    },
+                    "fingerprint": {
+                        "sha256": "AA:BB:CC",
+                    },
+                },
+            },
+            {
+                "task_id": "75f1234567890abc12345679",
+                "ip": "3.3.3.3",
+                "port": "443",
+                "domain": "pc-in.example.com",
+                "cert": {
+                    "subject_dn": "CN=pc-in.example.com",
+                    "issuer_dn": "CN=Example Issuer",
+                    "validity": {
+                        "start": "2026-01-08 00:00:00",
+                        "end": "2026-08-08 23:59:59",
+                    },
+                    "fingerprint": {
+                        "sha256": "AA:BB:CC",
+                    },
+                },
+            },
+        ]
+
+        class _FixedDateTime(datetime.datetime):
+            @classmethod
+            def utcnow(cls):
+                return cls(2026, 7, 20, 0, 0, 0)
+
+        with patch('app.helpers.message_notify.datetime', _FixedDateTime), \
+                patch('app.helpers.message_notify._normalize_alert_domain', side_effect=lambda value: str(value or "").strip().lower()), \
+                patch('app.helpers.message_notify._build_ssl_alert_context_for_task_ids', return_value={
+                    "ip_type_map": {},
+                    "ip_domain_map": {},
+                    "task_domain_set": set(),
+                }), \
+                patch('app.helpers.message_notify.utils.conn_db', return_value=_FakeCollection(cert_items)):
+            warnings = message_notify_module._collect_ssl_cert_warnings_for_task_ids(
+                task_ids=["65f1234567890abc12345678", "75f1234567890abc12345679"],
+                alert_days=30,
+                max_items=20,
+            )
+
+        self.assertEqual(1, len(warnings))
+        warn_item = warnings[0]
+        self.assertEqual("sha256:aabbcc", warn_item.get("cert_identity_key"))
+        self.assertCountEqual(
+            ["pc-in.example.com", "pc-in-uat.example.com"],
+            warn_item.get("domains", []),
+        )
+        self.assertEqual(2, warn_item.get("domain_count"))
+        self.assertEqual(3, warn_item.get("endpoint_count"))
+        self.assertIn("1.1.1.1:443", warn_item.get("endpoints", []))
+        self.assertIn("2.2.2.2:443", warn_item.get("endpoints", []))
+        self.assertIn("3.3.3.3:443", warn_item.get("endpoints", []))
+
     @patch('app.helpers.message_notify._push_ssl_cert_warning')
     @patch('app.helpers.message_notify.push_dingding')
     @patch('app.helpers.message_notify.utils.conn_db')
     @patch('app.helpers.message_notify.dingtalk_openapi.refresh_runtime_dingtalk_config_best_effort')
     @patch('app.helpers.message_notify.Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE', True)
-    def test_push_task_finish_notify_should_keep_ssl_warning_for_schedule_sub_task(
+    def test_push_task_finish_notify_should_skip_ssl_warning_for_schedule_sub_task(
         self,
         mock_refresh_runtime,
         mock_conn_db,
         mock_push_dingding,
         mock_push_ssl_cert_warning,
     ):
-        """计划任务子任务应跳过完成通知，但保留 SSL 临期提醒。"""
+        """计划任务子任务应跳过完成通知与单独 SSL 临期提醒。"""
         mock_conn_db.return_value.find_one.return_value = {
             "_id": "65f1234567890abc12345678",
             "status": "done",
@@ -675,23 +1027,30 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         push_task_finish_notify("65f1234567890abc12345678")
 
         mock_push_dingding.assert_not_called()
-        mock_push_ssl_cert_warning.assert_called_once_with("65f1234567890abc12345678")
+        mock_push_ssl_cert_warning.assert_not_called()
 
     def test_build_ssl_cert_warning_markdown_should_not_include_report_link(self):
         """SSL 证书提醒不应再展示报告链接占位。"""
         markdown = _build_ssl_cert_warning_markdown(
             {
                 "domain": "policy.example.com",
+                "domains": ["policy.example.com", "demo.example.com"],
+                "domain_count": 2,
                 "start_time": "2025-01-01 00:00:00",
                 "end_time": "2026-01-01 00:00:00",
                 "validity_text": "剩余 7 天",
-                "endpoints": ["1.1.1.1:443"],
+                "endpoints": ["1.1.1.1:443", "2.2.2.2:443"],
+                "endpoint_count": 2,
                 "cert_identity_text": "SHA256:demo",
             },
             report_link="https://example.com/report",
         )
 
         self.assertIn("SSL证书安全警告", markdown)
+        self.assertIn("影响域名数", markdown)
+        self.assertIn("影响端点数", markdown)
+        self.assertIn("policy.example.com", markdown)
+        self.assertIn("demo.example.com", markdown)
         self.assertNotIn("报告链接", markdown)
 
     @patch('app.helpers.message_notify.push_dingding')
@@ -761,6 +1120,48 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         self.assertIn("剩余 29 天", first_markdown)
         self.assertIn("cube.example.com", second_markdown)
         self.assertIn("剩余 29 天", second_markdown)
+
+    @patch('app.helpers.message_notify.push_dingding')
+    @patch('app.helpers.message_notify._collect_ssl_cert_warnings_for_task_ids')
+    def test_push_ssl_cert_warning_for_task_ids_should_notify_once_per_aggregated_cert(
+        self,
+        mock_collect_ssl_cert_warnings_for_task_ids,
+        mock_push_dingding,
+    ):
+        """计划任务 run 级提醒应按聚合后的证书条目发送。"""
+        mock_collect_ssl_cert_warnings_for_task_ids.return_value = [
+            {
+                "domain": "pc-in.example.com",
+                "domains": ["pc-in.example.com", "pc-in-uat.example.com"],
+                "domain_count": 2,
+                "start_time": "2025-05-16 00:00:00",
+                "end_time": "2026-05-15 23:59:59",
+                "remaining_days": 27,
+                "validity_text": "剩余 27 天",
+                "endpoints": ["1.1.1.1:443", "2.2.2.2:443", "3.3.3.3:443"],
+                "endpoint_count": 3,
+                "cert_identity_text": "SHA256:shared-demo",
+            }
+        ]
+        mock_push_dingding.return_value = True
+
+        result = _push_ssl_cert_warning_for_task_ids([
+            "65f1234567890abc12345678",
+            "75f1234567890abc12345679",
+        ])
+
+        self.assertEqual(
+            {
+                "warning_count": 1,
+                "sent_count": 1,
+                "task_ids": ["65f1234567890abc12345678", "75f1234567890abc12345679"],
+            },
+            result,
+        )
+        mock_push_dingding.assert_called_once()
+        markdown = mock_push_dingding.call_args.kwargs.get("markdown_report", "")
+        self.assertIn("影响域名数：`2`", markdown)
+        self.assertIn("影响端点数：`3`", markdown)
 
 
 if __name__ == '__main__':

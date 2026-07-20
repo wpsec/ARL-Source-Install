@@ -606,18 +606,123 @@ def _format_cert_validity_text(remaining_days):
     return "剩余 {} 天".format(days)
 
 
-def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
+def _build_ssl_cert_warning_aggregate_key(cert_obj, identity_key, start_time, end_time, endpoint):
     """
-    收集任务中临期/过期证书列表，并在任务内按 域名+证书身份+到期时间 聚合去重。
+    构建证书告警聚合键，优先按证书身份聚合，缺失时退化到主题/签发者。
     """
+    aggregate_key = str(identity_key or "").strip().lower()
+    if not aggregate_key and isinstance(cert_obj, dict):
+        subject_dn = _normalize_cert_identity_value(cert_obj.get("subject_dn", ""))
+        issuer_dn = _normalize_cert_identity_value(cert_obj.get("issuer_dn", ""))
+        if subject_dn or issuer_dn:
+            aggregate_key = "subject:{}|issuer:{}".format(subject_dn, issuer_dn)
+
+    if not aggregate_key:
+        aggregate_key = "endpoint:{}".format(str(endpoint or "-").strip().lower())
+
+    return "{}|{}|{}".format(
+        aggregate_key,
+        str(start_time or "").strip(),
+        str(end_time or "").strip(),
+    )
+
+
+def _format_ssl_warning_preview(items, max_items=5):
+    """
+    将域名/端点列表格式化为适合机器人消息展示的摘要。
+    """
+    normalized = []
+    for item in items or []:
+        text = str(item or "").strip()
+        if not text or text in normalized:
+            continue
+        normalized.append(text)
+
+    if not normalized:
+        return "-"
+
+    preview = "、".join(normalized[:max_items])
+    if len(normalized) > max_items:
+        preview += " 等 {} 个".format(len(normalized))
+    return preview
+
+
+def _normalize_ssl_warning_task_ids(task_ids):
+    """
+    归一化任务 ID 列表，供聚合告警查询复用。
+    """
+    normalized = []
+    for task_id in task_ids or []:
+        task_id_text = str(task_id or "").strip()
+        if not task_id_text or task_id_text in normalized:
+            continue
+        normalized.append(task_id_text)
+    return normalized
+
+
+def _build_ssl_alert_context_for_task_ids(task_ids):
+    """
+    聚合多个任务的证书上下文，支持计划任务 run 级合并提醒。
+    """
+    task_ids = _normalize_ssl_warning_task_ids(task_ids)
+    if not task_ids:
+        return {
+            "ip_type_map": {},
+            "ip_domain_map": {},
+            "task_domain_set": set(),
+        }
+
+    ip_items = list(utils.conn_db("ip").find({"task_id": {"$in": task_ids}}))
+    ip_type_map = {}
+    ip_domain_map = {}
+    for item in ip_items:
+        ip = str(item.get("ip", "")).strip()
+        if not ip:
+            continue
+
+        ip_type = str(item.get("type", "")).strip().lower()
+        if ip_type:
+            ip_type_map[ip] = ip_type
+
+        domains = item.get("domains", []) if isinstance(item.get("domains"), list) else []
+        normalized_domains = []
+        for domain in domains:
+            normalized_domain = _normalize_alert_domain(domain)
+            if normalized_domain and normalized_domain not in normalized_domains:
+                normalized_domains.append(normalized_domain)
+        if normalized_domains:
+            ip_domain_map[ip] = normalized_domains
+
+    task_domain_set = set()
+    domain_items = list(utils.conn_db("domain").find({"task_id": {"$in": task_ids}}))
+    for item in domain_items:
+        normalized_domain = _normalize_alert_domain(item.get("domain", ""))
+        if normalized_domain:
+            task_domain_set.add(normalized_domain)
+
+    return {
+        "ip_type_map": ip_type_map,
+        "ip_domain_map": ip_domain_map,
+        "task_domain_set": task_domain_set,
+    }
+
+
+def _collect_ssl_cert_warnings_for_task_ids(task_ids, alert_days=30, max_items=10):
+    """
+    收集多个任务中的临期/过期证书列表，并按证书身份+有效期聚合去重。
+    """
+    task_ids = _normalize_ssl_warning_task_ids(task_ids)
+    if not task_ids:
+        return []
+
     alert_days = max(int(alert_days or 30), 1)
     warning_map = {}
     now_dt = datetime.utcnow()
-    alert_context = _build_ssl_alert_context(task_id)
+    alert_context = _build_ssl_alert_context_for_task_ids(task_ids)
     ip_type_map = alert_context.get("ip_type_map", {})
     ip_domain_map = alert_context.get("ip_domain_map", {})
     task_domain_set = alert_context.get("task_domain_set", set())
-    cert_items = list(utils.conn_db("cert").find({"task_id": task_id}))
+    cert_items = list(utils.conn_db("cert").find({"task_id": {"$in": task_ids}}))
 
     for item in _select_alert_preferred_certs(cert_items):
         cert_obj = item.get("cert", {}) if isinstance(item.get("cert"), dict) else {}
@@ -650,16 +755,18 @@ def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
         )
         endpoint = "{}:{}".format(ip, port) if ip and port else (ip or "-")
         identity_key, identity_text = _extract_cert_identity(cert_obj)
-        # 同域名同证书同到期时间视为同一告警，合并端点避免重复通知。
-        dedup_key = "{}|{}|{}".format(
-            str(domain or "-").strip().lower(),
-            identity_key or endpoint,
-            end_time,
+        dedup_key = _build_ssl_cert_warning_aggregate_key(
+            cert_obj=cert_obj,
+            identity_key=identity_key,
+            start_time=start_time,
+            end_time=end_time,
+            endpoint=endpoint,
         )
         warn_item = warning_map.get(dedup_key)
         if warn_item is None:
             warn_item = {
                 "domain": domain,
+                "domains": [],
                 "ip": ip,
                 "port": port,
                 "endpoints": [],
@@ -669,19 +776,47 @@ def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
                 "validity_text": _format_cert_validity_text(remaining_days),
                 "cert_identity_key": identity_key,
                 "cert_identity_text": identity_text,
+                "domain_count": 0,
+                "endpoint_count": 0,
             }
             warning_map[dedup_key] = warn_item
+
+        normalized_domain = _normalize_alert_domain(domain)
+        if normalized_domain and normalized_domain not in warn_item["domains"]:
+            warn_item["domains"].append(normalized_domain)
+            if not _normalize_alert_domain(warn_item.get("domain", "")):
+                warn_item["domain"] = normalized_domain
 
         if endpoint and endpoint not in warn_item["endpoints"]:
             warn_item["endpoints"].append(endpoint)
 
     warnings = list(warning_map.values())
     for warn_item in warnings:
+        warn_item["domains"] = sorted(warn_item.get("domains", []))
         warn_item["endpoints"] = sorted(warn_item.get("endpoints", []))
-    warnings.sort(key=lambda row: (row.get("remaining_days", 999999), str(row.get("domain", ""))))
+        if warn_item.get("domains"):
+            warn_item["domain_count"] = len(warn_item["domains"])
+            warn_item["domain"] = warn_item["domains"][0]
+        elif str(warn_item.get("domain", "") or "").strip():
+            warn_item["domain_count"] = 1
+        else:
+            warn_item["domain_count"] = 0
+        warn_item["endpoint_count"] = len(warn_item["endpoints"])
+    warnings.sort(key=lambda row: (row.get("remaining_days", 999999), str(row.get("domain", "")), str(row.get("cert_identity_key", ""))))
     if len(warnings) > max_items:
         warnings = warnings[:max_items]
     return warnings
+
+
+def _collect_ssl_cert_warnings(task_id, alert_days=30, max_items=10):
+    """
+    收集任务中临期/过期证书列表，并在任务内按证书身份+有效期聚合去重。
+    """
+    return _collect_ssl_cert_warnings_for_task_ids(
+        task_ids=[task_id],
+        alert_days=alert_days,
+        max_items=max_items,
+    )
 
 
 def _build_report_link_fallback(task_id):
@@ -699,14 +834,24 @@ def _build_ssl_cert_warning_markdown(warn_item, report_link):
     构建 SSL 证书告警消息模板。
     """
     _ = report_link
+    domain_items = warn_item.get("domains", [])
+    if not isinstance(domain_items, list) or not domain_items:
+        fallback_domain = str(warn_item.get("domain", "") or "").strip()
+        domain_items = [fallback_domain] if fallback_domain else []
+    domain_count = int(warn_item.get("domain_count", len(domain_items)) or 0)
+    endpoint_items = warn_item.get("endpoints", [])
+    if not isinstance(endpoint_items, list):
+        endpoint_items = []
+    endpoint_count = int(warn_item.get("endpoint_count", len(endpoint_items)) or 0)
     markdown = "### SSL证书安全警告\n\n"
-    markdown += "- 检测域名：`{}`\n".format(str(warn_item.get("domain", "") or "-"))
+    markdown += "- 影响域名数：`{}`\n".format(domain_count)
+    markdown += "- 影响域名：`{}`\n".format(_format_ssl_warning_preview(domain_items, max_items=5))
     markdown += "- 检测时间：`{}`\n".format(utils.curr_date())
     markdown += "- 生效时间：`{}`\n".format(str(warn_item.get("start_time", "") or "-"))
     markdown += "- 失效时间：`{}`\n".format(str(warn_item.get("end_time", "") or "-"))
     markdown += "- 证书有效期：`{}`\n".format(str(warn_item.get("validity_text", "") or "-"))
-    endpoint_text = ", ".join(warn_item.get("endpoints", [])) or "-"
-    markdown += "- 告警端点：`{}`\n".format(endpoint_text)
+    markdown += "- 影响端点数：`{}`\n".format(endpoint_count)
+    markdown += "- 告警端点：`{}`\n".format(_format_ssl_warning_preview(endpoint_items, max_items=5))
     cert_identity_text = str(warn_item.get("cert_identity_text", "") or "-")
     markdown += "- 证书标识：`{}`\n".format(cert_identity_text)
     markdown += "- 请在有效期内及时更新！\n"
@@ -723,14 +868,68 @@ def _push_ssl_cert_warning(task_id):
 
     warnings = _collect_ssl_cert_warnings(task_id=task_id, alert_days=alert_days, max_items=20)
     if not warnings:
-        return
+        return {
+            "task_ids": [str(task_id or "").strip()],
+            "warning_count": 0,
+            "sent_count": 0,
+        }
 
     report_link = _build_report_link_fallback(task_id)
-    # 证书提醒仅在当前任务内做聚合去重；跨任务/跨轮扫描不保留抑制状态，
+    sent_count = 0
+    for warn_item in warnings:
+        markdown_report = _build_ssl_cert_warning_markdown(warn_item, report_link=report_link)
+        if push_dingding(markdown_report=markdown_report):
+            sent_count += 1
+
+    return {
+        "task_ids": [str(task_id or "").strip()],
+        "warning_count": len(warnings),
+        "sent_count": sent_count,
+    }
+
+
+def _push_ssl_cert_warning_for_task_ids(task_ids, report_link_task_id=""):
+    """
+    基于多个任务聚合推送 SSL 证书临期告警。
+    """
+    alert_days = int(Config.DINGTALK_SSL_CERT_NOTIFY_DAYS or 30)
+    if alert_days <= 0:
+        alert_days = 30
+
+    normalized_task_ids = _normalize_ssl_warning_task_ids(task_ids)
+    warnings = _collect_ssl_cert_warnings_for_task_ids(
+        task_ids=normalized_task_ids,
+        alert_days=alert_days,
+        max_items=20,
+    )
+    if not warnings:
+        return {
+            "task_ids": normalized_task_ids,
+            "warning_count": 0,
+            "sent_count": 0,
+        }
+
+    report_link = _build_report_link_fallback(report_link_task_id)
+    sent_count = 0
+    # 证书提醒仅在本轮任务范围内做聚合去重；跨轮扫描不保留抑制状态，
     # 这样同一目标在 29 天、20 天、7 天等不同扫描轮次都能持续收到提醒。
     for warn_item in warnings:
         markdown_report = _build_ssl_cert_warning_markdown(warn_item, report_link=report_link)
-        push_dingding(markdown_report=markdown_report)
+        if push_dingding(markdown_report=markdown_report):
+            sent_count += 1
+
+    return {
+        "task_ids": normalized_task_ids,
+        "warning_count": len(warnings),
+        "sent_count": sent_count,
+    }
+
+
+def push_task_schedule_ssl_cert_warning(task_ids):
+    """
+    计划任务 run 级别聚合推送 SSL 证书临期告警。
+    """
+    return _push_ssl_cert_warning_for_task_ids(task_ids=task_ids, report_link_task_id="")
 
 
 def push_task_finish_notify(task_id):
@@ -740,7 +939,7 @@ def push_task_finish_notify(task_id):
     说明：
     - 仅对普通任务和风险巡航任务生效
     - 计划任务子任务不再发送“任务完成通知”，避免和计划任务聚合推送重复
-    - SSL 证书临期提醒仍允许在计划任务子任务完成后单独发送
+    - 计划任务子任务的 SSL 临期提醒也交由 run 级聚合发送
     """
     try:
         # Worker 进程常驻，任务完成回调前做一次配置热刷新，避免修改配置后必须重启容器。
@@ -767,7 +966,11 @@ def push_task_finish_notify(task_id):
 
         from_task_schedule = bool(options.get("from_task_schedule"))
         finish_notify_enabled = bool(options.get("dingding_notify")) and not from_task_schedule
-        ssl_cert_notify_enabled = bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE and options.get("ssl_cert"))
+        ssl_cert_notify_enabled = bool(
+            Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE and
+            options.get("ssl_cert") and
+            not from_task_schedule
+        )
         if not finish_notify_enabled and not ssl_cert_notify_enabled:
             logger.info(
                 "skip task finish notify task_id:%s dingding_notify:%s from_task_schedule:%s ssl_cert:%s ssl_cert_notify_enable:%s",
@@ -787,6 +990,8 @@ def push_task_finish_notify(task_id):
 
         if ssl_cert_notify_enabled:
             _push_ssl_cert_warning(task_id)
+        elif from_task_schedule and bool(Config.DINGTALK_SSL_CERT_NOTIFY_ENABLE) and bool(options.get("ssl_cert")):
+            logger.info("skip standalone ssl cert notify for task schedule sub task task_id:%s", task_id)
 
     except Exception as e:
         logger.warning("push task finish notify error {}".format(task_id))
