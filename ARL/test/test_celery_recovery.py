@@ -459,6 +459,76 @@ class TestCeleryRecovery(unittest.TestCase):
         )
         mock_task_web_delay.assert_not_called()
 
+    @patch.object(celerytask_module.utils, "curr_date", return_value="2026-04-10 12:30:00")
+    @patch.object(celerytask_module.utils, "conn_db")
+    @patch.object(celerytask_module.arl_task_web, "delay")
+    @patch.object(celerytask_module.arl_task, "delay", return_value="queued-ai-denoise-id")
+    def test_enqueue_ai_denoise_requeues_when_running_snapshot_is_stale(
+        self,
+        mock_task_delay,
+        mock_task_web_delay,
+        mock_conn_db,
+        _mock_curr_date,
+    ):
+        task_collection = MagicMock()
+        task_collection.find_one.side_effect = [
+            {
+                "_id": "69d86dc9bcb1c2046e6f0088",
+                "status": "running",
+                "options": {"ai_denoise": True},
+                "ai_denoise_status": {"status": "running", "pending_modules": ["site"]},
+            },
+            {
+                "_id": "69d86dc9bcb1c2046e6f0088",
+                "status": "done",
+                "options": {"ai_denoise": True},
+                "ai_denoise_status": {"status": "done", "pending_modules": ["site", "url"]},
+            },
+        ]
+        task_collection.update_one.side_effect = [
+            SimpleNamespace(matched_count=0, modified_count=0),
+            SimpleNamespace(matched_count=1, modified_count=1),
+        ]
+
+        def fake_conn_db(name):
+            if name == "task":
+                return task_collection
+            raise AssertionError("unexpected collection {}".format(name))
+
+        mock_conn_db.side_effect = fake_conn_db
+
+        celerytask_module._enqueue_ai_denoise_task(
+            task_id="69d86dc9bcb1c2046e6f0088",
+            task_options={"ai_denoise": True},
+            trigger="stage:ssl_cert",
+            modules=["cert"],
+            action=celerytask_module.CeleryAction.AI_DENOISE_MODULE_TASK,
+        )
+
+        self.assertEqual(task_collection.update_one.call_count, 2)
+        first_query = task_collection.update_one.call_args_list[0][0][0]
+        second_query, second_update_doc = task_collection.update_one.call_args_list[1][0]
+
+        self.assertEqual(first_query["ai_denoise_status.status"]["$in"], ["queued", "running"])
+        self.assertIn("_id", second_query)
+        self.assertEqual(second_update_doc["$set"]["ai_denoise_status"]["status"], "queued")
+        self.assertEqual(
+            second_update_doc["$set"]["ai_denoise_status"]["requested_modules"],
+            ["site", "cert", "url"],
+        )
+
+        mock_task_delay.assert_called_once_with(
+            options={
+                "celery_action": celerytask_module.CeleryAction.AI_DENOISE_MODULE_TASK,
+                "data": {
+                    "task_id": "69d86dc9bcb1c2046e6f0088",
+                    "trigger": "stage:ssl_cert",
+                    "modules": ["site", "cert", "url"],
+                },
+            }
+        )
+        mock_task_web_delay.assert_not_called()
+
     @patch.object(utils_recovery_module, "get_logger")
     @patch.object(utils_recovery_module, "curr_date", return_value="2026-03-19 17:00:00")
     @patch.object(utils_recovery_module, "conn_db")

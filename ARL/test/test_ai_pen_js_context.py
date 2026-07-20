@@ -21,12 +21,18 @@ def _load_common_task_module():
         return sys.modules[module_name]
 
     app_module = types.ModuleType("app")
+    app_module.__path__ = []
     utils_module = types.ModuleType("app.utils")
     utils_module.get_logger = _build_logger
 
     services_module = types.ModuleType("app.services")
     services_module.run_risk_cruising = lambda *args, **kwargs: None
     services_module.BaseUpdateTask = object
+
+    helpers_module = types.ModuleType("app.helpers")
+    helpers_module.__path__ = []
+    helpers_task_module = types.ModuleType("app.helpers.task")
+    helpers_task_module.strip_disabled_penetration_options = lambda options: (options or {}, [])
 
     config_module = types.ModuleType("app.config")
     config_module.Config = type("Config", (), {})
@@ -96,6 +102,8 @@ def _load_common_task_module():
     sys.modules.setdefault("app", app_module)
     sys.modules["app.utils"] = utils_module
     sys.modules["app.services"] = services_module
+    sys.modules["app.helpers"] = helpers_module
+    sys.modules["app.helpers.task"] = helpers_task_module
     sys.modules["app.config"] = config_module
     sys.modules["app.modules"] = modules_module
     sys.modules["app.services.nuclei_scan"] = nuclei_scan_module
@@ -123,6 +131,25 @@ def _load_common_task_module():
 common_task_module = _load_common_task_module()
 WebSiteFetch = common_task_module.WebSiteFetch
 Config = sys.modules["app.config"].Config
+
+
+class _FakeBaseUpdateTask(object):
+    def __init__(self):
+        self.status_updates = []
+        self.service_calls = []
+
+    def update_task_field(self, field=None, value=None):
+        self.status_updates.append((field, value))
+
+    def append_service(self, service_name: str, elapsed: float, detail: str = "", trigger_ai: bool = False):
+        self.service_calls.append(
+            {
+                "service_name": service_name,
+                "elapsed": elapsed,
+                "detail": detail,
+                "trigger_ai": trigger_ai,
+            }
+        )
 
 
 class TestAiPenJsContext(unittest.TestCase):
@@ -219,11 +246,11 @@ class TestAiPenJsContext(unittest.TestCase):
         target = WebSiteFetch._resolve_ai_pen_wih_target_url(
             record_type="urlfinder_url",
             content="/js/authorization",
-            source_url="https://policy.eytax.com.cn/js/index-BnVSq8In.js",
-            site_url="https://policy.eytax.com.cn",
+            source_url="https://policy.example.com/js/index-BnVSq8In.js",
+            site_url="https://policy.example.com",
         )
 
-        self.assertEqual("https://policy.eytax.com.cn/js/authorization", target)
+        self.assertEqual("https://policy.example.com/js/authorization", target)
 
     def test_resolve_wih_url_target_keeps_absolute_content_url(self):
         target = WebSiteFetch._resolve_ai_pen_wih_target_url(
@@ -4149,6 +4176,92 @@ class TestAiPenJsContext(unittest.TestCase):
             ssti_proof_type="",
         )
         self.assertIn("SSTI", reason)
+
+
+class TestAiOptionalStageDegrade(unittest.TestCase):
+    def _build_fetch(self):
+        fetch = WebSiteFetch.__new__(WebSiteFetch)
+        fetch.task_id = "task-1"
+        fetch.sites = []
+        fetch.available_sites = []
+        fetch.base_update_task = _FakeBaseUpdateTask()
+        fetch._service_detail_overrides = {}
+        fetch.ai_poc_runtime = {
+            "enabled": False,
+            "mode": "disabled",
+            "nuclei_scan_profile": None,
+            "afrog_keywords": "",
+            "afrog_severity": "",
+            "confidence": 0.0,
+            "reason": "",
+            "evidence": [],
+            "raw_ai_reply": "",
+        }
+        fetch._write_ai_poc_usage_log = lambda *args, **kwargs: None
+        fetch._write_ai_pen_test_usage_log = lambda *args, **kwargs: None
+        return fetch
+
+    def test_optional_ai_stage_should_return_fallback_and_record_override(self):
+        fetch = self._build_fetch()
+
+        result = fetch._run_optional_ai_stage_best_effort(
+            "ai_pen_test",
+            lambda: (_ for _ in ()).throw(RuntimeError("api key expired")),
+            fallback_result=["fallback"],
+            feature_name="ai_penetration_test",
+            fallback_note="跳过 AI 渗透阶段",
+        )
+
+        self.assertEqual(["fallback"], result)
+        detail = fetch._service_detail_overrides.get("ai_pen_test", "")
+        self.assertIn("degraded=true", detail)
+        self.assertIn("api key expired", detail)
+
+    def test_run_func_should_append_service_with_degrade_detail(self):
+        fetch = self._build_fetch()
+        fetch._mark_service_detail_override("ai_pen_test", "degraded=true | error=api key expired")
+
+        fetch.run_func("ai_pen_test", lambda: None)
+
+        self.assertEqual([("status", "ai_pen_test")], fetch.base_update_task.status_updates)
+        self.assertEqual(1, len(fetch.base_update_task.service_calls))
+        service_call = fetch.base_update_task.service_calls[0]
+        self.assertEqual("ai_pen_test", service_call["service_name"])
+        self.assertIn("degraded=true", service_call["detail"])
+        self.assertTrue(service_call["trigger_ai"])
+
+    def test_run_substage_should_merge_base_detail_with_degrade_detail(self):
+        fetch = self._build_fetch()
+        fetch._mark_service_detail_override("wih_endpoint_ai_fill", "degraded=true | error=timeout")
+
+        result = fetch._run_substage("wih_endpoint_ai_fill", lambda: ["ok"], detail="endpoints=3")
+
+        self.assertEqual(["ok"], result)
+        self.assertEqual(1, len(fetch.base_update_task.service_calls))
+        service_call = fetch.base_update_task.service_calls[0]
+        self.assertIn("endpoints=3", service_call["detail"])
+        self.assertIn("degraded=true", service_call["detail"])
+        self.assertFalse(service_call["trigger_ai"])
+
+    def test_optional_ai_stage_should_support_push_service_and_ai_poc_fallback(self):
+        fetch = self._build_fetch()
+
+        result = fetch._run_optional_ai_stage_best_effort(
+            "ai_poc_scan",
+            lambda: (_ for _ in ()).throw(ValueError("planner unavailable")),
+            feature_name="ai_poc_scan_plan",
+            fallback_note="保留原始 nuclei/afrog 扫描参数",
+            push_service_on_error=True,
+            on_error=fetch._handle_ai_poc_stage_degrade,
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual("error_fallback", fetch.ai_poc_runtime.get("mode"))
+        self.assertEqual(1, len(fetch.base_update_task.service_calls))
+        service_call = fetch.base_update_task.service_calls[0]
+        self.assertEqual("ai_poc_scan", service_call["service_name"])
+        self.assertIn("planner unavailable", service_call["detail"])
+        self.assertIn("degraded=true", service_call["detail"])
 
 
 if __name__ == "__main__":

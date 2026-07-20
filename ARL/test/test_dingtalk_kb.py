@@ -484,6 +484,170 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("kb_push_status"))
         self.assertEqual("https://alidocs.example/report", saved_run.get("kb_node_url"))
 
+    @patch('app.helpers.task_schedule.time.time', return_value=2000)
+    @patch('app.routes.export.build_task_export_summary')
+    @patch('app.helpers.task_schedule.push_dingtalk_kb')
+    @patch('app.helpers.task_schedule.push_dingding', return_value=True)
+    @patch('app.helpers.task_schedule.utils.conn_db')
+    def test_process_task_schedule_runs_should_force_finalize_after_ai_denoise_timeout(
+        self,
+        mock_conn_db,
+        _mock_push_dingding,
+        mock_push_dingtalk_kb,
+        mock_build_task_export_summary,
+        _mock_time,
+    ):
+        """AI 去噪等待超时后，应降级放行知识库与聚合通知。"""
+        task_id = task_schedule_module.bson.ObjectId()
+        run_id = task_schedule_module.bson.ObjectId()
+        mock_build_task_export_summary.return_value = {
+            "site_cnt": 1,
+            "domain_cnt": 1,
+            "ip_cnt": 0,
+            "url_cnt": 2,
+            "vuln_cnt": 0,
+            "task_summaries": {
+                str(task_id): {
+                    "site_cnt": 1,
+                    "domain_cnt": 1,
+                    "ip_cnt": 0,
+                    "url_cnt": 2,
+                    "vuln_cnt": 0,
+                }
+            },
+        }
+        mock_push_dingtalk_kb.return_value = (
+            True,
+            {
+                "node_id": "node-1",
+                "node_url": "https://alidocs.example/degraded-report",
+                "partial_success": False,
+                "sheet_success_count": 2,
+                "sheet_failed_count": 0,
+                "api_result": {},
+            },
+        )
+        run_collection = _FakeCollection(
+            [
+                {
+                    "_id": run_id,
+                    "schedule_id": "schedule-1",
+                    "schedule_name": "demo",
+                    "run_number": 1,
+                    "status": task_schedule_module.RUN_STATUS_RUNNING,
+                    "task_ids": [str(task_id)],
+                    "summary": {},
+                    "missing_retry_count": 0,
+                    "notify_enable": True,
+                    "notify_kb_enable": True,
+                    "notify_channel": "dingding",
+                    "notify_on": "finished",
+                    "push_status": task_schedule_module.RUN_PUSH_PENDING,
+                    "kb_push_status": task_schedule_module.RUN_PUSH_PENDING,
+                    "start_time": 100,
+                    "start_date": "2026-01-01 00:00:00",
+                    "end_time": 0,
+                    "end_date": "-",
+                }
+            ]
+        )
+        task_collection = _FakeCollection(
+            [
+                {
+                    "_id": task_id,
+                    "status": task_schedule_module.TaskStatus.DONE,
+                    "name": "demo",
+                    "target": "example.com",
+                    "type": "domain",
+                    "statistic": {},
+                    "options": {"ai_denoise": True},
+                    "ai_denoise_status": {
+                        "status": "done",
+                        "pending_modules": ["url"],
+                        "updated_at": 1000,
+                    },
+                }
+            ]
+        )
+
+        def _conn_db(name):
+            return run_collection if name == task_schedule_module.TASK_SCHEDULE_RUN_COLLECTION else task_collection
+
+        mock_conn_db.side_effect = _conn_db
+
+        task_schedule_module.process_task_schedule_runs()
+
+        mock_push_dingtalk_kb.assert_called_once()
+        self.assertEqual(1, len(run_collection.replaced_items))
+        saved_run = run_collection.replaced_items[-1]
+        self.assertEqual(task_schedule_module.RUN_STATUS_FINISHED, saved_run.get("status"))
+        self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("push_status"))
+        self.assertEqual(task_schedule_module.RUN_PUSH_SUCCESS, saved_run.get("kb_push_status"))
+        self.assertTrue(saved_run.get("ai_denoise_degrade", {}).get("enabled"))
+        self.assertIn("example.com", saved_run.get("ai_denoise_degrade", {}).get("timed_out_targets", []))
+        kb_extra_data = mock_push_dingtalk_kb.call_args.kwargs.get("extra_data", {})
+        self.assertTrue(kb_extra_data.get("ai_denoise_degrade", {}).get("enabled"))
+
+    def test_build_schedule_run_markdown_should_include_ai_degrade_note(self):
+        """降级放行时，聚合通知应明确标记 AI 未完成。"""
+        markdown = task_schedule_module.build_schedule_run_markdown(
+            {
+                "schedule_name": "demo",
+                "run_number": 1,
+                "status": task_schedule_module.RUN_STATUS_FINISHED,
+                "start_date": "2026-01-01 00:00:00",
+                "end_date": "2026-01-01 00:10:00",
+                "summary": {
+                    "done": 1,
+                    "error": 0,
+                    "stop": 0,
+                    "site_cnt": 1,
+                    "domain_cnt": 1,
+                    "ip_cnt": 0,
+                    "url_cnt": 2,
+                    "vuln_cnt": 0,
+                },
+                "ai_denoise_degrade": {
+                    "enabled": True,
+                    "message": "AI 去噪等待超时，已按原始扫描结果继续生成知识库与通知。",
+                    "timed_out_task_count": 1,
+                    "timed_out_targets": ["example.com"],
+                    "tasks": [
+                        {
+                            "task_id": "task-1",
+                            "target": "example.com",
+                            "status": "done",
+                            "wait_elapsed_sec": 600,
+                            "pending_modules": ["url", "fileleak"],
+                        }
+                    ],
+                },
+            }
+        )
+
+        self.assertIn("AI 降级说明", markdown)
+        self.assertIn("example.com", markdown)
+        self.assertIn("待处理模块", markdown)
+
+    def test_build_task_overview_sheet_values_should_include_ai_degrade_summary(self):
+        """知识库执行概览应展示 AI 降级放行说明。"""
+        values = dingtalk_openapi._build_task_overview_sheet_values(
+            title="demo",
+            task_ids=[],
+            overview_meta={
+                "ai_denoise_degrade": {
+                    "enabled": True,
+                    "message": "AI 去噪等待超时，已按原始扫描结果继续生成知识库与通知。",
+                    "timed_out_task_count": 2,
+                    "timed_out_targets": ["example.com", "demo.example.com"],
+                }
+            },
+        )
+
+        self.assertIn(["AI去噪状态", "降级放行"], values)
+        self.assertIn(["超时任务数", "2"], values)
+        self.assertIn(["受影响目标", "example.com、demo.example.com"], values)
+
     @patch('app.helpers.message_notify._push_ssl_cert_warning')
     @patch('app.helpers.message_notify.push_dingding')
     @patch('app.helpers.message_notify.utils.conn_db')
@@ -540,7 +704,7 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         """SSL 临期提醒应按当前任务去重后发送，不应被历史任务状态抑制。"""
         mock_collect_ssl_cert_warnings.return_value = [
             {
-                "domain": "cube.eytax.com.cn",
+                "domain": "cube.example.com",
                 "start_time": "2025-05-16 00:00:00",
                 "end_time": "2026-05-15 23:59:59",
                 "remaining_days": 27,
@@ -549,7 +713,7 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
                 "cert_identity_text": "SHA256:cube-demo",
             },
             {
-                "domain": "cube-uat.eytax.com.cn",
+                "domain": "cube-uat.example.com",
                 "start_time": "2025-04-24 00:00:00",
                 "end_time": "2026-04-23 23:59:59",
                 "remaining_days": 5,
@@ -563,8 +727,8 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         _push_ssl_cert_warning("65f1234567890abc12345678")
 
         self.assertEqual(2, mock_push_dingding.call_count)
-        self.assertIn("cube.eytax.com.cn", mock_push_dingding.call_args_list[0].kwargs.get("markdown_report", ""))
-        self.assertIn("cube-uat.eytax.com.cn", mock_push_dingding.call_args_list[1].kwargs.get("markdown_report", ""))
+        self.assertIn("cube.example.com", mock_push_dingding.call_args_list[0].kwargs.get("markdown_report", ""))
+        self.assertIn("cube-uat.example.com", mock_push_dingding.call_args_list[1].kwargs.get("markdown_report", ""))
 
     @patch('app.helpers.message_notify.push_dingding')
     @patch('app.helpers.message_notify._collect_ssl_cert_warnings')
@@ -576,7 +740,7 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         """相同证书在后续扫描中仍应继续提醒，不应被历史通知状态抑制。"""
         mock_collect_ssl_cert_warnings.return_value = [
             {
-                "domain": "cube.eytax.com.cn",
+                "domain": "cube.example.com",
                 "start_time": "2025-05-16 00:00:00",
                 "end_time": "2026-05-15 23:59:59",
                 "remaining_days": 29,
@@ -593,9 +757,9 @@ class TestDingtalkKnowledgeBase(unittest.TestCase):
         self.assertEqual(2, mock_push_dingding.call_count)
         first_markdown = mock_push_dingding.call_args_list[0].kwargs.get("markdown_report", "")
         second_markdown = mock_push_dingding.call_args_list[1].kwargs.get("markdown_report", "")
-        self.assertIn("cube.eytax.com.cn", first_markdown)
+        self.assertIn("cube.example.com", first_markdown)
         self.assertIn("剩余 29 天", first_markdown)
-        self.assertIn("cube.eytax.com.cn", second_markdown)
+        self.assertIn("cube.example.com", second_markdown)
         self.assertIn("剩余 29 天", second_markdown)
 
 

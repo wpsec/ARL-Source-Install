@@ -168,6 +168,38 @@ class ARLResource(Resource):
         text = str(value).strip().lower()
         return text in {"1", "true", "yes", "on", "refresh", "force"}
 
+    @staticmethod
+    def serialize_response_value(value):
+        """
+        将 MongoDB / Python 特有对象递归转换为 JSON 安全值。
+
+        说明：
+        - 任务文档后续可能新增 datetime/ObjectId 字段（如 kb_push_time）
+        - 统一在路由层兜底，避免列表接口因为单个字段未显式处理而整体 500
+        """
+        if isinstance(value, ObjectId):
+            return str(value)
+
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+
+        if isinstance(value, type(re.compile(""))):
+            return value.pattern
+
+        if isinstance(value, dict):
+            return {
+                key: ARLResource.serialize_response_value(item)
+                for key, item in value.items()
+            }
+
+        if isinstance(value, list):
+            return [ARLResource.serialize_response_value(item) for item in value]
+
+        if isinstance(value, tuple):
+            return [ARLResource.serialize_response_value(item) for item in value]
+
+        return value
+
     def get_parser(self, model, location='json'):
         """
         根据模型定义创建请求参数解析器
@@ -320,13 +352,8 @@ class ARLResource(Resource):
         """
         items = []
 
-        # 需要特殊处理的字段（转换为字符串）
-        special_keys = ["_id", "save_date", "update_date"]
-
         for item in data:
-            for key in item:
-                if key in special_keys:
-                    item[key] = str(item[key])
+            item = self.serialize_response_value(item)
 
             if isinstance(item.get("service"), list):
                 item["service_summary"] = build_task_service_summary(item["service"])
@@ -386,21 +413,7 @@ class ARLResource(Resource):
                 count = conn(collection).count_documents({})
             items = self.build_return_items(result)
 
-            # 处理查询条件中的特殊字段（用于返回）
-            special_keys = ["_id", "save_date", "update_date"]
-            for key in query:
-                if key in special_keys:
-                    query[key] = str(query[key])
-
-                raw_value = query[key]
-                if isinstance(raw_value, dict):
-                    if "$not" in raw_value:
-                        if isinstance(raw_value["$not"], type(re.compile(""))):
-                            raw_value["$not"] = raw_value["$not"].pattern
-                    if "$gt" in raw_value and isinstance(raw_value["$gt"], datetime):
-                        raw_value["$gt"] = raw_value["$gt"].strftime("%Y-%m-%d %H:%M:%S")
-                    if "$lt" in raw_value and isinstance(raw_value["$lt"], datetime):
-                        raw_value["$lt"] = raw_value["$lt"].strftime("%Y-%m-%d %H:%M:%S")
+            query = self.serialize_response_value(query)
 
             return {
                 "page": page,

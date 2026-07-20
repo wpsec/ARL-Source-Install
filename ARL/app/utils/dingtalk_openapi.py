@@ -1502,6 +1502,24 @@ def _build_task_overview_sheet_values(title, task_ids, overview_meta=None):
         else:
             rows.append(["对比基线", "首次执行（无历史基线）"])
 
+    ai_denoise_degrade = meta.get("ai_denoise_degrade", {})
+    if isinstance(ai_denoise_degrade, dict) and ai_denoise_degrade.get("enabled", False):
+        rows.append(["AI去噪状态", "降级放行"])
+        rows.append(
+            [
+                "降级说明",
+                str(ai_denoise_degrade.get("message", "") or "AI 去噪未完成，当前报告按原始扫描结果生成。"),
+            ]
+        )
+        timed_out_task_count = int(ai_denoise_degrade.get("timed_out_task_count", 0) or 0)
+        if timed_out_task_count > 0:
+            rows.append(["超时任务数", str(timed_out_task_count)])
+        timed_out_targets = ai_denoise_degrade.get("timed_out_targets", [])
+        if isinstance(timed_out_targets, list):
+            normalized_targets = [str(item or "").strip() for item in timed_out_targets if str(item or "").strip()]
+            if normalized_targets:
+                rows.append(["受影响目标", "、".join(normalized_targets[:10])])
+
     rows.extend(
         [
             [""],

@@ -7,6 +7,8 @@
 - 支持指定时间的定时任务
 - 自动触发任务执行
 """
+from datetime import datetime
+
 import bson
 from app import utils
 from app.config import Config
@@ -31,6 +33,8 @@ RUN_MISSING_RETRY_MAX = 8
 RUN_FINALIZE_GRACE_SEC = 300
 RUN_RECHECK_TERMINAL_GRACE_SEC = 24 * 60 * 60
 AI_DENOISE_TERMINAL_STATUS_SET = {"done", "done_with_error", "error", "skipped"}
+AI_DENOISE_TERMINAL_PENDING_TIMEOUT_SEC = 5 * 60
+AI_DENOISE_ACTIVE_WAIT_TIMEOUT_SEC = 30 * 60
 
 
 def task_scheduler():
@@ -327,19 +331,141 @@ def build_schedule_run_summary(task_ids, prefer_export_summary=False):
     return summary
 
 
-def build_schedule_ai_denoise_wait_summary(task_ids):
-    """
-    汇总计划任务子任务的 AI 去噪终态。
-    """
-    summary = {
-        "total_task_count": len(task_ids) if isinstance(task_ids, list) else 0,
+def _build_empty_ai_denoise_wait_summary(task_count=0):
+    return {
+        "total_task_count": int(task_count or 0),
         "ai_enabled_task_count": 0,
         "ready_task_count": 0,
         "waiting_task_count": 0,
         "waiting_task_ids": [],
+        "timed_out_waiting_task_count": 0,
+        "timed_out_task_ids": [],
         "status_stat": {},
         "tasks": [],
     }
+
+
+def _parse_datetime_value(value):
+    if isinstance(value, datetime):
+        return value
+
+    if isinstance(value, (int, float)):
+        try:
+            if float(value) <= 0:
+                return None
+            return datetime.fromtimestamp(float(value))
+        except Exception:
+            return None
+
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return None
+
+    for fmt in [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+    ]:
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            continue
+
+    return None
+
+
+def _get_ai_denoise_wait_timeout_sec(status_text, pending_modules):
+    status_text = str(status_text or "").strip().lower()
+    if status_text in AI_DENOISE_TERMINAL_STATUS_SET and pending_modules:
+        return AI_DENOISE_TERMINAL_PENDING_TIMEOUT_SEC
+    return AI_DENOISE_ACTIVE_WAIT_TIMEOUT_SEC
+
+
+def _build_ai_denoise_wait_task_detail(item, task_id_text, ai_status_obj, pending_modules, status_text):
+    wait_reference_dt = None
+    wait_reference_text = ""
+    for raw_value in [
+        ai_status_obj.get("updated_at"),
+        ai_status_obj.get("ended_at"),
+        ai_status_obj.get("started_at"),
+        item.get("end_time"),
+    ]:
+        parsed = _parse_datetime_value(raw_value)
+        if not parsed:
+            continue
+        wait_reference_dt = parsed
+        wait_reference_text = parsed.strftime("%Y-%m-%d %H:%M:%S")
+        break
+
+    timeout_sec = _get_ai_denoise_wait_timeout_sec(status_text, pending_modules)
+    wait_elapsed_sec = -1
+    timed_out = False
+    if wait_reference_dt:
+        wait_elapsed_sec = max(int(time.time() - wait_reference_dt.timestamp()), 0)
+        timed_out = wait_elapsed_sec >= int(timeout_sec or 0) > 0
+
+    return {
+        "task_id": task_id_text,
+        "name": str(item.get("name", "") or ""),
+        "target": str(item.get("target", "") or ""),
+        "status": status_text,
+        "pending_modules": pending_modules,
+        "ready": False,
+        "wait_reference_time": wait_reference_text,
+        "wait_elapsed_sec": wait_elapsed_sec,
+        "timeout_sec": int(timeout_sec or 0),
+        "timed_out": bool(timed_out),
+    }
+
+
+def _build_ai_denoise_degrade_summary(ai_wait_summary):
+    if not isinstance(ai_wait_summary, dict):
+        return {}
+
+    waiting_task_count = _safe_int(ai_wait_summary.get("waiting_task_count", 0), 0)
+    if waiting_task_count <= 0:
+        return {}
+
+    timed_out_tasks = []
+    target_text_list = []
+    for item in ai_wait_summary.get("tasks", []) or []:
+        if not isinstance(item, dict) or not bool(item.get("timed_out", False)):
+            continue
+        timed_out_tasks.append(
+            {
+                "task_id": str(item.get("task_id", "") or ""),
+                "name": str(item.get("name", "") or ""),
+                "target": str(item.get("target", "") or ""),
+                "status": str(item.get("status", "") or ""),
+                "pending_modules": list(item.get("pending_modules", []) or []),
+                "wait_elapsed_sec": _safe_int(item.get("wait_elapsed_sec", -1), -1),
+                "timeout_sec": _safe_int(item.get("timeout_sec", 0), 0),
+            }
+        )
+        target_text = str(item.get("target", "") or "").strip()
+        if target_text and target_text not in target_text_list:
+            target_text_list.append(target_text)
+
+    if len(timed_out_tasks) < waiting_task_count:
+        return {}
+
+    return {
+        "enabled": True,
+        "reason": "wait_timeout",
+        "message": "AI 去噪等待超时，已按原始扫描结果继续生成知识库与通知。",
+        "timed_out_task_count": len(timed_out_tasks),
+        "timed_out_task_ids": [item.get("task_id", "") for item in timed_out_tasks if item.get("task_id", "")],
+        "timed_out_targets": target_text_list,
+        "tasks": timed_out_tasks,
+    }
+
+
+def build_schedule_ai_denoise_wait_summary(task_ids):
+    """
+    汇总计划任务子任务的 AI 去噪终态。
+    """
+    summary = _build_empty_ai_denoise_wait_summary(len(task_ids) if isinstance(task_ids, list) else 0)
     if not isinstance(task_ids, list) or not task_ids:
         return summary
 
@@ -360,9 +486,15 @@ def build_schedule_ai_denoise_wait_summary(task_ids):
         return summary
 
     projection = {
+        "name": 1,
+        "target": 1,
+        "end_time": 1,
         "options.ai_denoise": 1,
         "ai_denoise_status.status": 1,
         "ai_denoise_status.pending_modules": 1,
+        "ai_denoise_status.started_at": 1,
+        "ai_denoise_status.updated_at": 1,
+        "ai_denoise_status.ended_at": 1,
     }
     items = list(utils.conn_db("task").find({"_id": {"$in": object_ids}}, projection))
     for item in items:
@@ -385,18 +517,33 @@ def build_schedule_ai_denoise_wait_summary(task_ids):
         ready = status_text in AI_DENOISE_TERMINAL_STATUS_SET and not pending_modules
         if ready:
             summary["ready_task_count"] += 1
+            task_detail = {
+                "task_id": task_id_text,
+                "name": str(item.get("name", "") or ""),
+                "target": str(item.get("target", "") or ""),
+                "status": status_text,
+                "pending_modules": pending_modules,
+                "ready": True,
+                "wait_reference_time": "",
+                "wait_elapsed_sec": 0,
+                "timeout_sec": 0,
+                "timed_out": False,
+            }
         else:
             summary["waiting_task_count"] += 1
             summary["waiting_task_ids"].append(task_id_text)
+            task_detail = _build_ai_denoise_wait_task_detail(
+                item=item,
+                task_id_text=task_id_text,
+                ai_status_obj=ai_status_obj,
+                pending_modules=pending_modules,
+                status_text=status_text,
+            )
+            if task_detail.get("timed_out", False):
+                summary["timed_out_waiting_task_count"] += 1
+                summary["timed_out_task_ids"].append(task_id_text)
 
-        summary["tasks"].append(
-            {
-                "task_id": task_id_text,
-                "status": status_text,
-                "pending_modules": pending_modules,
-                "ready": bool(ready),
-            }
-        )
+        summary["tasks"].append(task_detail)
 
     return summary
 
@@ -578,6 +725,36 @@ def build_schedule_run_markdown(run_item):
     markdown += "- 开始时间：`{}`\n".format(start_date)
     markdown += "- 结束时间：`{}`\n\n".format(end_date)
 
+    ai_denoise_degrade = run_item.get("ai_denoise_degrade", {})
+    if isinstance(ai_denoise_degrade, dict) and ai_denoise_degrade.get("enabled", False):
+        markdown += "\n#### AI 降级说明\n\n"
+        markdown += "- {}\n".format(str(ai_denoise_degrade.get("message", "") or "AI 去噪未完成，已按原始扫描结果继续输出。"))
+        markdown += "- 超时任务数：`{}`\n".format(_safe_int(ai_denoise_degrade.get("timed_out_task_count", 0), 0))
+        timed_out_targets = ai_denoise_degrade.get("timed_out_targets", [])
+        if isinstance(timed_out_targets, list) and timed_out_targets:
+            preview_targets = [str(item or "").strip() for item in timed_out_targets if str(item or "").strip()]
+            if preview_targets:
+                preview_text = "、".join(preview_targets[:5])
+                if len(preview_targets) > 5:
+                    preview_text += " 等 {} 个目标".format(len(preview_targets))
+                markdown += "- 受影响目标：`{}`\n".format(preview_text)
+        for item in (ai_denoise_degrade.get("tasks", []) or [])[:3]:
+            if not isinstance(item, dict):
+                continue
+            task_label = str(item.get("target", "") or item.get("task_id", "") or "-")
+            task_status = str(item.get("status", "") or "-")
+            wait_elapsed_sec = _safe_int(item.get("wait_elapsed_sec", -1), -1)
+            pending_modules = item.get("pending_modules", []) if isinstance(item.get("pending_modules"), list) else []
+            pending_text = ""
+            if pending_modules:
+                pending_text = "，待处理模块 `{}`".format(", ".join(pending_modules[:5]))
+            markdown += "- {}：状态 `{}`，已等待 `{}` 秒{}\n".format(
+                task_label,
+                task_status,
+                max(wait_elapsed_sec, 0),
+                pending_text,
+            )
+
     markdown += "\n#### 资产结果汇总\n\n"
     markdown += "- 站点总数：`{}`\n".format(site_cnt)
     markdown += "- 域名总数：`{}`\n".format(domain_cnt)
@@ -715,32 +892,39 @@ def process_task_schedule_runs():
         notify_kb_enable = bool(run_item.get("notify_kb_enable", False))
         failed_count = summary.get("error", 0) + summary.get("stop", 0) + summary.get("missing", 0)
         next_run_status = RUN_STATUS_FINISHED if failed_count == 0 else RUN_STATUS_ERROR
+        run_item["ai_denoise_degrade"] = {}
         if notify_kb_enable and should_push_schedule_run_kb(next_run_status):
             ai_wait_summary = build_schedule_ai_denoise_wait_summary(task_ids)
             run_item["ai_denoise_wait_summary"] = ai_wait_summary
             if int(ai_wait_summary.get("waiting_task_count", 0) or 0) > 0:
-                run_item["status"] = RUN_STATUS_RUNNING
-                run_item["kb_push_status"] = RUN_PUSH_PENDING
-                run_item["push_status"] = RUN_PUSH_PENDING
-                logger.info(
-                    "task schedule run {} wait ai denoise before notify waiting:{} status_stat:{}".format(
-                        str(run_item.get("_id", "")),
-                        ai_wait_summary.get("waiting_task_ids", []),
-                        ai_wait_summary.get("status_stat", {}),
+                ai_denoise_degrade = _build_ai_denoise_degrade_summary(ai_wait_summary)
+                if ai_denoise_degrade.get("enabled", False):
+                    run_item["ai_denoise_degrade"] = ai_denoise_degrade
+                    logger.warning(
+                        "task schedule run {} force finalize after ai denoise timeout waiting:{} timed_out:{} status_stat:{}".format(
+                            str(run_item.get("_id", "")),
+                            ai_wait_summary.get("waiting_task_ids", []),
+                            ai_wait_summary.get("timed_out_task_ids", []),
+                            ai_wait_summary.get("status_stat", {}),
+                        )
                     )
-                )
-                utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one_and_replace({"_id": run_item["_id"]}, run_item)
-                continue
+                else:
+                    run_item["status"] = RUN_STATUS_RUNNING
+                    run_item["kb_push_status"] = RUN_PUSH_PENDING
+                    run_item["push_status"] = RUN_PUSH_PENDING
+                    logger.info(
+                        "task schedule run {} wait ai denoise before notify waiting:{} status_stat:{}".format(
+                            str(run_item.get("_id", "")),
+                            ai_wait_summary.get("waiting_task_ids", []),
+                            ai_wait_summary.get("status_stat", {}),
+                        )
+                    )
+                    utils.conn_db(TASK_SCHEDULE_RUN_COLLECTION).find_one_and_replace({"_id": run_item["_id"]}, run_item)
+                    continue
         else:
-            run_item["ai_denoise_wait_summary"] = {
-                "total_task_count": len(task_ids) if isinstance(task_ids, list) else 0,
-                "ai_enabled_task_count": 0,
-                "ready_task_count": 0,
-                "waiting_task_count": 0,
-                "waiting_task_ids": [],
-                "status_stat": {},
-                "tasks": [],
-            }
+            run_item["ai_denoise_wait_summary"] = _build_empty_ai_denoise_wait_summary(
+                len(task_ids) if isinstance(task_ids, list) else 0
+            )
 
         # 完成态通知与知识库报告改为使用导出口径汇总，避免摘要与报告内容不一致。
         summary = build_schedule_run_summary(task_ids, prefer_export_summary=True)
@@ -788,6 +972,7 @@ def process_task_schedule_runs():
                     "end_date": run_item.get("end_date", "-"),
                     "compare_summary": run_item.get("compare_summary", {}),
                     "ai_denoise_wait_summary": run_item.get("ai_denoise_wait_summary", {}),
+                    "ai_denoise_degrade": run_item.get("ai_denoise_degrade", {}),
                 },
             )
             if kb_success:

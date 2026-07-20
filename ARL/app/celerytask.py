@@ -1129,7 +1129,14 @@ def _normalize_ai_denoise_modules(modules, default_all=True):
             modules = list(modules)
         elif not isinstance(modules, list):
             modules = []
-        normalized = [str(item).strip() for item in modules if str(item or "").strip()]
+        normalized = []
+        seen = set()
+        for item in modules:
+            module_id = str(item or "").strip()
+            if not module_id or module_id in seen:
+                continue
+            seen.add(module_id)
+            normalized.append(module_id)
         if default_all and not normalized:
             return ["site", "fileleak", "cert", "url", "wih_endpoint", "vuln", "nuclei_result"]
         return normalized
@@ -1208,8 +1215,8 @@ def _enqueue_ai_denoise_task(
                 pending_modules + requested_modules,
                 default_all=False,
             )
-            utils.conn_db("task").update_one(
-                {"_id": query_id},
+            merge_result = utils.conn_db("task").update_one(
+                {"_id": query_id, "ai_denoise_status.status": {"$in": ["queued", "running"]}},
                 {
                     "$set": {
                         "ai_denoise_status.pending_modules": merged_pending,
@@ -1218,14 +1225,61 @@ def _enqueue_ai_denoise_task(
                     }
                 },
             )
+            if int(getattr(merge_result, "matched_count", 0) or 0) > 0:
+                logger.info(
+                    "merge pending ai_denoise task_id:%s ai_status:%s pending:%s trigger:%s",
+                    task_id_text,
+                    ai_status_text,
+                    ",".join(merged_pending),
+                    trigger,
+                )
+                return
+
+            latest_doc = utils.conn_db("task").find_one(
+                {"_id": query_id},
+                {
+                    "_id": 1,
+                    "status": 1,
+                    "options.ai_denoise": 1,
+                    "ai_denoise_status.status": 1,
+                    "ai_denoise_status.pending_modules": 1,
+                },
+            )
+            if not isinstance(latest_doc, dict):
+                return
+
+            latest_task_options = latest_doc.get("options") if isinstance(latest_doc.get("options"), dict) else {}
+            if not bool(latest_task_options.get("ai_denoise", True)):
+                logger.info("skip enqueue ai_denoise task_id:%s reason:option_disabled(race_latest_doc)", task_id_text)
+                return
+
+            latest_status = str(latest_doc.get("status", "") or "").strip().lower()
+            if latest_status in (TaskStatus.STOP, TaskStatus.ERROR):
+                logger.info("skip enqueue ai_denoise task_id:%s latest_status:%s", task_id_text, latest_status)
+                return
+
+            latest_ai_status = (
+                latest_doc.get("ai_denoise_status")
+                if isinstance(latest_doc.get("ai_denoise_status"), dict)
+                else {}
+            )
+            latest_ai_status_text = str(latest_ai_status.get("status", "") or "").strip().lower()
+            latest_pending_modules = _normalize_ai_denoise_modules(
+                latest_ai_status.get("pending_modules"),
+                default_all=False,
+            )
+            requested_modules = _normalize_ai_denoise_modules(
+                merged_pending + latest_pending_modules,
+                default_all=False,
+            ) or merged_pending or requested_modules
             logger.info(
-                "merge pending ai_denoise task_id:%s ai_status:%s pending:%s trigger:%s",
+                "stale ai_denoise merge detected task_id:%s stale_ai_status:%s latest_ai_status:%s fallback_queue:%s trigger:%s",
                 task_id_text,
                 ai_status_text,
-                ",".join(merged_pending),
+                latest_ai_status_text,
+                ",".join(requested_modules),
                 trigger,
             )
-            return
 
         utils.conn_db("task").update_one(
             {"_id": query_id},

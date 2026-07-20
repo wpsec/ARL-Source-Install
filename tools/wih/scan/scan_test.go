@@ -110,17 +110,17 @@ func TestInferRuntimeBodyKindSupportsAdditionalPostTypes(t *testing.T) {
 // TestFilterRecordsByTargetScope 验证 domain/domain_url/email 仅保留同站点域范围。
 func TestFilterRecordsByTargetScope(t *testing.T) {
 	records := []datatype.ScanRecord{
-		{Id: "domain", Content: "cube.eytax.com.cn"},
-		{Id: "domain", Content: "api.eytax.com.cn"},
+		{Id: "domain", Content: "cube.example.com"},
+		{Id: "domain", Content: "api.example.com"},
 		{Id: "domain", Content: "vuejs.org"},
-		{Id: "domain_url", Content: "https://api.eytax.com.cn/open/api/list"},
+		{Id: "domain_url", Content: "https://api.example.com/open/api/list"},
 		{Id: "domain_url", Content: "https://v3-migration.vuejs.org/breaking-changes/v-model.html"},
-		{Id: "email", Content: "admin@eytax.com.cn"},
+		{Id: "email", Content: "admin@example.com"},
 		{Id: "email", Content: "jhruby.web@gmail.com"},
 		{Id: "path", Content: "/api/user/list"},
 	}
 
-	filtered := filterRecordsByTargetScope("https://cube.eytax.com.cn", records)
+	filtered := filterRecordsByTargetScope("https://cube.example.com", records)
 	if len(filtered) != 5 {
 		t.Fatalf("unexpected filtered record count: %d", len(filtered))
 	}
@@ -131,10 +131,10 @@ func TestFilterRecordsByTargetScope(t *testing.T) {
 	}
 
 	for _, expected := range []string{
-		"cube.eytax.com.cn",
-		"api.eytax.com.cn",
-		"https://api.eytax.com.cn/open/api/list",
-		"admin@eytax.com.cn",
+		"cube.example.com",
+		"api.example.com",
+		"https://api.example.com/open/api/list",
+		"admin@example.com",
 		"/api/user/list",
 	} {
 		if _, ok := contents[expected]; !ok {
@@ -155,11 +155,11 @@ func TestFilterRecordsByTargetScope(t *testing.T) {
 
 // TestIsHostInTargetScope 验证同注册域及其子域名会被视为站点范围内。
 func TestIsHostInTargetScope(t *testing.T) {
-	scope := buildTargetScope("https://cube.eytax.com.cn")
+	scope := buildTargetScope("https://cube.example.com")
 	cases := map[string]bool{
-		"cube.eytax.com.cn":      true,
-		"api.eytax.com.cn":       true,
-		"eytax.com.cn":           true,
+		"cube.example.com":       true,
+		"api.example.com":        true,
+		"example.com":            true,
 		"cube.other.com":         false,
 		"v3-migration.vuejs.org": false,
 	}

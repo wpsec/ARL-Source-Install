@@ -1077,6 +1077,7 @@ class WebSiteFetch(object):
         self.ai_pen_js_page_intel_cache = {}
         self.ai_pen_task_graph_context_cache = {}
         self._task_scope_context_cache = None
+        self._service_detail_overrides = {}
 
     def _filter_waf_blocked_targets(self, targets, stage_name="") -> list:
         target_list = list(targets or [])
@@ -20503,7 +20504,8 @@ class WebSiteFetch(object):
         t1 = time.time()
         func()
         elapse = time.time() - t1
-        self.base_update_task.update_services(name, elapse)
+        service_detail = self._consume_service_detail_override(name)
+        self.base_update_task.append_service(name, elapse, detail=service_detail, trigger_ai=True)
 
         logger.info("end run {} ({:.2f}s), {}".format(name, elapse, self.__str__()))
 
@@ -20513,9 +20515,138 @@ class WebSiteFetch(object):
         t1 = time.time()
         result = func()
         elapse = time.time() - t1
-        self.base_update_task.append_service(name, elapse, detail=detail, trigger_ai=False)
+        service_detail = self._consume_service_detail_override(name, detail)
+        self.base_update_task.append_service(name, elapse, detail=service_detail, trigger_ai=False)
         logger.info("end substage {} ({:.2f}s) task_id:{}".format(name, elapse, self.task_id))
         return result
+
+    def _mark_service_detail_override(self, service_name: str, detail: str):
+        service_key = str(service_name or "").strip()
+        detail_text = str(detail or "").strip()
+        if not service_key or not detail_text:
+            return
+        if not isinstance(self._service_detail_overrides, dict):
+            self._service_detail_overrides = {}
+        self._service_detail_overrides[service_key] = detail_text[:1200]
+
+    def _consume_service_detail_override(self, service_name: str, base_detail: str = "") -> str:
+        detail_text = str(base_detail or "").strip()
+        service_key = str(service_name or "").strip()
+        override_detail = ""
+        if isinstance(self._service_detail_overrides, dict) and service_key:
+            override_detail = str(self._service_detail_overrides.pop(service_key, "") or "").strip()
+        if detail_text and override_detail:
+            return "{} | {}".format(detail_text, override_detail)[:1200]
+        return override_detail or detail_text
+
+    def _build_optional_ai_stage_error_detail(self, stage_name: str, exc, fallback_note: str = "") -> str:
+        stage_text = str(stage_name or "ai_stage").strip() or "ai_stage"
+        error_text = self._clip_text(exc, 220) or "unknown_error"
+        detail_parts = [
+            "degraded=true",
+            "stage={}".format(stage_text),
+            "error={}".format(error_text),
+        ]
+        note_text = self._clip_text(fallback_note, 220)
+        if note_text:
+            detail_parts.append("fallback={}".format(note_text))
+        return " | ".join(detail_parts)[:1200]
+
+    def _handle_ai_poc_stage_degrade(self, exc, detail_text: str):
+        error_text = self._clip_text(exc, 220) or "unknown_error"
+        self.ai_poc_runtime = {
+            "enabled": False,
+            "mode": "error_fallback",
+            "nuclei_scan_profile": None,
+            "afrog_keywords": "",
+            "afrog_severity": "",
+            "confidence": 0.0,
+            "reason": "AI-POC 决策异常，已回退默认扫描参数",
+            "evidence": [error_text],
+            "raw_ai_reply": "",
+        }
+        self._write_ai_poc_usage_log(
+            scene="ai_poc_scan_decision",
+            status="error",
+            provider="-",
+            model="-",
+            profile="-",
+            request_text="AI-POC 扫描计划",
+            reply_text=detail_text,
+            error_message=error_text,
+            usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            meta={
+                "task_id": str(self.task_id or ""),
+                "run_mode": "error_fallback",
+                "fallback": "pass_through",
+            },
+        )
+
+    def _handle_ai_pen_stage_degrade(self, exc, detail_text: str):
+        error_text = self._clip_text(exc, self.AI_PEN_TEST_ERROR_MAX)
+        self._write_ai_pen_test_usage_log(
+            scene="ai_pen_test_exec",
+            status="error",
+            provider="-",
+            model="-",
+            profile="ai-pen-test",
+            request_text="AI渗透测试执行",
+            reply_text=detail_text,
+            error_message=error_text,
+            usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            meta={
+                "task_id": str(self.task_id or ""),
+                "fallback": "best_effort_skip",
+            },
+        )
+
+    def _run_optional_ai_stage_best_effort(
+        self,
+        service_name: str,
+        func: callable,
+        fallback_result=None,
+        feature_name: str = "",
+        fallback_note: str = "",
+        push_service_on_error: bool = False,
+        trigger_ai: bool = False,
+        on_error=None,
+    ):
+        started_at = time.time()
+        try:
+            return func()
+        except Exception as exc:
+            service_text = str(service_name or "").strip()
+            feature_text = str(feature_name or service_text or "ai_stage").strip() or "ai_stage"
+            detail_text = self._build_optional_ai_stage_error_detail(feature_text, exc, fallback_note=fallback_note)
+            logger.warning(
+                "task_id:{} optional ai stage degraded service:{} feature:{} err:{}".format(
+                    self.task_id,
+                    service_text or "-",
+                    feature_text,
+                    self._clip_text(exc, 220),
+                )
+            )
+            if callable(on_error):
+                try:
+                    on_error(exc, detail_text)
+                except Exception as callback_exc:
+                    logger.warning(
+                        "task_id:{} optional ai stage degrade callback failed service:{} err:{}".format(
+                            self.task_id,
+                            service_text or "-",
+                            self._clip_text(callback_exc, 220),
+                        )
+                    )
+            if push_service_on_error and service_text:
+                self.base_update_task.append_service(
+                    service_name=service_text,
+                    elapsed=max(time.time() - started_at, 0.0),
+                    detail=detail_text,
+                    trigger_ai=trigger_ai,
+                )
+            elif service_text:
+                self._mark_service_detail_override(service_text, detail_text)
+            return fallback_result
 
     def update_page_url_set(self):
         from app.helpers import get_url_by_task_id
@@ -20883,7 +21014,13 @@ class WebSiteFetch(object):
             wih_endpoints = list(
                 self._run_substage(
                     "wih_endpoint_ai_fill",
-                    lambda: services.run_wih_endpoint_ai_fill(self.task_id, wih_endpoints, waf_guard=self.waf_guard),
+                    lambda: self._run_optional_ai_stage_best_effort(
+                        "wih_endpoint_ai_fill",
+                        lambda: services.run_wih_endpoint_ai_fill(self.task_id, wih_endpoints, waf_guard=self.waf_guard),
+                        fallback_result=wih_endpoints,
+                        feature_name="wih_endpoint_ai_fill",
+                        fallback_note="保留原始 WIH 接口探测结果，不影响后续结果入库",
+                    ),
                     detail="endpoints={}".format(len(wih_endpoints)),
                 )
                 or wih_endpoints
@@ -21030,7 +21167,15 @@ class WebSiteFetch(object):
 
         # AI-POC 决策阶段：汇聚上下文并按开关注入 nuclei/afrog 扫描参数。
         if self.options.get(WebSiteFetchOption.NUCLEI_SCAN) or self.options.get(WebSiteFetchOption.AFROG_SCAN):
-            self.run_ai_poc_scan_plan()
+            self._run_optional_ai_stage_best_effort(
+                "ai_poc_scan",
+                self.run_ai_poc_scan_plan,
+                feature_name="ai_poc_scan_plan",
+                fallback_note="保留原始 nuclei/afrog 扫描参数，不影响后续扫描阶段",
+                push_service_on_error=True,
+                trigger_ai=False,
+                on_error=self._handle_ai_poc_stage_degrade,
+            )
 
         """ *** 对站点运行 nuclei """
         if self.options.get(WebSiteFetchOption.NUCLEI_SCAN):
@@ -21056,7 +21201,16 @@ class WebSiteFetch(object):
 
         """ *** AI 渗透测试（后验证阶段） """
         if self.options.get(WebSiteFetchOption.AI_PENETRATION_TEST):
-            self.run_func(WebSiteFetchStatus.AI_PEN_TEST, self.run_ai_penetration_test)
+            self.run_func(
+                WebSiteFetchStatus.AI_PEN_TEST,
+                lambda: self._run_optional_ai_stage_best_effort(
+                    WebSiteFetchStatus.AI_PEN_TEST,
+                    self.run_ai_penetration_test,
+                    feature_name="ai_penetration_test",
+                    fallback_note="跳过 AI 渗透阶段，不影响已完成扫描结果与后续收尾流程",
+                    on_error=self._handle_ai_pen_stage_degrade,
+                ),
+            )
 
         self._save_waf_skip_summary()
 
