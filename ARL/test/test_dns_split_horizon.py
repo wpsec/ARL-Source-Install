@@ -80,6 +80,10 @@ from app.services.buildDomainInfo import BuildDomainInfo
 from app.services.checkHTTP import CheckHTTP
 from app.services.fetchSite import FetchSite
 
+TEST_SPLIT_DOMAIN = "portal.example.test"
+TEST_PUBLIC_IP = "203.0.113.44"
+TEST_PRIVATE_IP = "10.10.10.10"
+
 
 class DummyResponse(object):
     def __init__(self, status_code=200, headers=None, content=b"ok", reason="OK"):
@@ -94,49 +98,49 @@ class DummyResponse(object):
 
 class TestDNSSplitHorizon(unittest.TestCase):
     @patch.object(Config, "DNS_RESOLVERS", ["8.8.8.8"])
-    @patch("app.utils.get_ip_socket", return_value=["192.168.166.69"])
-    @patch("app.utils.get_ip_system", return_value=["192.168.166.69"])
-    @patch("app.utils.get_ip", return_value=["47.100.89.44"])
+    @patch("app.utils.get_ip_socket", return_value=[TEST_PRIVATE_IP])
+    @patch("app.utils.get_ip_system", return_value=[TEST_PRIVATE_IP])
+    @patch("app.utils.get_ip", return_value=[TEST_PUBLIC_IP])
     @patch("app.utils.get_ip_type")
     def test_check_dns_policy_allow_split_horizon_public(self, mock_get_ip_type, *_args):
-        mock_get_ip_type.side_effect = lambda ip: "PUBLIC" if str(ip).startswith("47.") else "PRIVATE"
+        mock_get_ip_type.side_effect = lambda ip: "PUBLIC" if str(ip) == TEST_PUBLIC_IP else "PRIVATE"
 
-        allow_scan, detail = utils.check_dns_policy_for_host("firstr.eytax.com.cn")
+        allow_scan, detail = utils.check_dns_policy_for_host(TEST_SPLIT_DOMAIN)
 
         self.assertTrue(allow_scan)
-        self.assertEqual(detail.get("preferred_ips"), ["47.100.89.44"])
+        self.assertEqual(detail.get("preferred_ips"), [TEST_PUBLIC_IP])
         self.assertTrue(str(detail.get("reason", "")).startswith("split_horizon"))
 
     def test_build_http_connect_kwargs_for_url(self):
         detail = {
-            "preferred_ips": ["47.100.89.44"],
+            "preferred_ips": [TEST_PUBLIC_IP],
         }
 
         kwargs = utils.build_http_connect_kwargs_for_url(
-            "https://firstr.eytax.com.cn:8443/demo",
+            "https://{}:8443/demo".format(TEST_SPLIT_DOMAIN),
             policy_detail=detail,
         )
 
-        self.assertEqual(kwargs["connect_ip"], "47.100.89.44")
-        self.assertEqual(kwargs["server_hostname"], "firstr.eytax.com.cn")
-        self.assertEqual(kwargs["host_header"], "firstr.eytax.com.cn:8443")
+        self.assertEqual(kwargs["connect_ip"], TEST_PUBLIC_IP)
+        self.assertEqual(kwargs["server_hostname"], TEST_SPLIT_DOMAIN)
+        self.assertEqual(kwargs["host_header"], "{}:8443".format(TEST_SPLIT_DOMAIN))
 
     @patch("app.services.buildDomainInfo.utils.get_cname", return_value=[])
     @patch("app.services.buildDomainInfo.utils.get_ip", side_effect=AssertionError("should not fallback get_ip"))
     @patch(
         "app.services.buildDomainInfo.utils.check_dns_policy_for_host",
-        return_value=(True, {"preferred_ips": ["47.100.89.44"]}),
+        return_value=(True, {"preferred_ips": [TEST_PUBLIC_IP]}),
     )
     def test_build_domain_info_prefers_policy_ips(self, _mock_policy, _mock_get_ip, _mock_get_cname):
         worker = BuildDomainInfo([], concurrency=1)
-        worker.work("firstr.eytax.com.cn")
+        worker.work(TEST_SPLIT_DOMAIN)
 
         self.assertEqual(len(worker.domain_info_list), 1)
-        self.assertEqual(worker.domain_info_list[0].ip_list, ["47.100.89.44"])
+        self.assertEqual(worker.domain_info_list[0].ip_list, [TEST_PUBLIC_IP])
 
     @patch(
         "app.services.checkHTTP.utils.check_dns_policy_for_url",
-        return_value=(True, {"preferred_ips": ["47.100.89.44"], "resolver_ips": ["47.100.89.44"]}),
+        return_value=(True, {"preferred_ips": [TEST_PUBLIC_IP], "resolver_ips": [TEST_PUBLIC_IP]}),
     )
     @patch("app.services.checkHTTP.utils.http_req")
     def test_check_http_uses_direct_connect_kwargs(self, mock_http_req, _mock_policy):
@@ -147,17 +151,17 @@ class TestDNSSplitHorizon(unittest.TestCase):
         )
 
         checker = CheckHTTP([], concurrency=1)
-        checker.check("https://firstr.eytax.com.cn:8443/demo")
+        checker.check("https://{}:8443/demo".format(TEST_SPLIT_DOMAIN))
 
         kwargs = mock_http_req.call_args.kwargs
-        self.assertEqual(kwargs["connect_ip"], "47.100.89.44")
-        self.assertEqual(kwargs["server_hostname"], "firstr.eytax.com.cn")
-        self.assertEqual(kwargs["host_header"], "firstr.eytax.com.cn:8443")
+        self.assertEqual(kwargs["connect_ip"], TEST_PUBLIC_IP)
+        self.assertEqual(kwargs["server_hostname"], TEST_SPLIT_DOMAIN)
+        self.assertEqual(kwargs["host_header"], "{}:8443".format(TEST_SPLIT_DOMAIN))
 
     @patch("app.services.fetchSite.load_fingerprint", return_value=[])
     @patch(
         "app.services.fetchSite.utils.check_dns_policy_for_url",
-        return_value=(True, {"preferred_ips": ["47.100.89.44"], "resolver_ips": ["47.100.89.44"]}),
+        return_value=(True, {"preferred_ips": [TEST_PUBLIC_IP], "resolver_ips": [TEST_PUBLIC_IP]}),
     )
     @patch("app.services.fetchSite.fetch_favicon", return_value={})
     @patch("app.services.fetchSite.utils.get_title", return_value="Demo")
@@ -181,14 +185,14 @@ class TestDNSSplitHorizon(unittest.TestCase):
         )
 
         worker = FetchSite([], concurrency=1)
-        worker.work("https://firstr.eytax.com.cn/demo")
+        worker.work("https://{}/demo".format(TEST_SPLIT_DOMAIN))
 
         self.assertEqual(len(worker.site_info_list), 1)
-        self.assertEqual(worker.site_info_list[0]["ip"], "47.100.89.44")
+        self.assertEqual(worker.site_info_list[0]["ip"], TEST_PUBLIC_IP)
         kwargs = mock_http_req.call_args.kwargs
-        self.assertEqual(kwargs["connect_ip"], "47.100.89.44")
-        self.assertEqual(kwargs["server_hostname"], "firstr.eytax.com.cn")
-        self.assertEqual(kwargs["host_header"], "firstr.eytax.com.cn")
+        self.assertEqual(kwargs["connect_ip"], TEST_PUBLIC_IP)
+        self.assertEqual(kwargs["server_hostname"], TEST_SPLIT_DOMAIN)
+        self.assertEqual(kwargs["host_header"], TEST_SPLIT_DOMAIN)
 
 
 if __name__ == "__main__":
