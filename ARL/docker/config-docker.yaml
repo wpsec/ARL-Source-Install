@@ -495,7 +495,7 @@ ARL:
   # WIH 规则文件路径（默认使用镜像内只读副本，避免被共享 tools 目录中的旧规则覆盖）
   WIH_RULE_PATH: "/usr/local/share/arl/wih/config/rules.yml"
   # WIH 扫描超时（秒）
-  WIH_TIMEOUT_SEC: 7200
+  WIH_TIMEOUT_SEC: 600
   # WIH 全局并发（若 wih 二进制支持 --concurrency / -c）
   WIH_CONCURRENCY: 15
   # WIH 单站点并发（若 wih 二进制支持 --concurrency-per-site）
