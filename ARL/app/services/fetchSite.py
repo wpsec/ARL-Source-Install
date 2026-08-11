@@ -10,6 +10,7 @@ import mmh3
 from app import utils
 from app.config import Config
 from .baseThread import BaseThread
+from .fingerprint_cache import build_legacy_fingerprint_items, split_fingerprint_result_items
 
 logger = utils.get_logger()
 from .autoTag import auto_tag
@@ -46,30 +47,14 @@ class FetchSite(BaseThread):
             url=item["site"],
         )
 
-        merged = {}
-        for name in basic_names:
-            merged[name] = max(merged.get(name, 0), 80)
+        merged_items = build_legacy_fingerprint_items(basic_names)
+        merged_items.extend(detail_list)
 
-        for detail in detail_list:
-            name = str(detail.get("name", "")).strip()
-            if not name:
-                continue
-            merged[name] = max(merged.get(name, 0), int(detail.get("confidence", 80)))
-
-        finger = []
-        for name, confidence in sorted(merged.items(), key=lambda item: (-item[1], item[0])):
-            finger_item = {
-                "icon": "default.png",
-                "name": name,
-                "confidence": str(confidence),
-                "version": "",
-                "website": "https://www.riskivy.com",
-                "categories": []
-            }
-            finger.append(finger_item)
-
+        finger, finger_candidates = split_fingerprint_result_items(merged_items)
         if finger:
             item["finger"] = finger
+        if finger_candidates:
+            item["finger_candidates"] = finger_candidates
 
     def work(self, site, max_redirect=5):
         if max_redirect <= 0:

@@ -1308,6 +1308,8 @@ class WebSiteFetch(object):
         return host_in_scope(value, context.get("allowed_hosts", []), context.get("allowed_flds", []))
 
     def save_site_info(self):
+        from app.services.fingerprint_cache import split_fingerprint_result_items
+
         curr_date = utils.curr_date()
         for site_info in self.site_info_list:
             curr_site = site_info["site"]
@@ -1318,17 +1320,23 @@ class WebSiteFetch(object):
             site_info.setdefault("save_date", curr_date)
             site_info.setdefault("update_date", curr_date)
 
-            # 调用读取站点识别的结果，并且去重
-            if self.web_analyze_map:
-                finger_list = self.web_analyze_map.get(curr_site, [])
-                known_finger_set = set()
-                for finger_item in site_info["finger"]:
-                    known_finger_set.add(finger_item["name"].lower())
+            merged_finger_items = list(site_info.get("finger", []))
+            merged_finger_items.extend(site_info.get("finger_candidates", []))
 
-                for analyze_finger in finger_list:
-                    analyze_name = analyze_finger["name"].lower()
-                    if analyze_name not in known_finger_set:
-                        site_info["finger"].append(analyze_finger)
+            if self.web_analyze_map:
+                finger_result = self.web_analyze_map.get(curr_site, {})
+                if isinstance(finger_result, dict):
+                    merged_finger_items.extend(finger_result.get("confirmed", []))
+                    merged_finger_items.extend(finger_result.get("candidates", []))
+                elif isinstance(finger_result, list):
+                    merged_finger_items.extend(finger_result)
+
+            confirmed_fingers, candidate_fingers = split_fingerprint_result_items(merged_finger_items)
+            site_info["finger"] = confirmed_fingers
+            if candidate_fingers:
+                site_info["finger_candidates"] = candidate_fingers
+            else:
+                site_info.pop("finger_candidates", None)
 
         logger.info("save_site_info site:{}, {}".format(len(self.site_info_list), self.__str__()))
         if self.site_info_list:

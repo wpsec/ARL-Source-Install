@@ -1,15 +1,87 @@
 """
 域名泛解析判定辅助工具
 """
+from collections import Counter
+
 from app import utils
+from app.config import Config
 
 
 DEFAULT_WILDCARD_PROBE_COUNT = 3
+DEFAULT_WILDCARD_VERIFY_ROUNDS = 2
+DEFAULT_WILDCARD_MAX_LEVELS = 2
+
+
+def _safe_positive_int(value, default_value):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default_value
+
+    if number <= 0:
+        return default_value
+
+    return number
+
+
+def get_wildcard_probe_count():
+    return _safe_positive_int(
+        getattr(Config, "WILDCARD_PROBE_COUNT", DEFAULT_WILDCARD_PROBE_COUNT),
+        DEFAULT_WILDCARD_PROBE_COUNT,
+    )
+
+
+def get_wildcard_verify_rounds():
+    return _safe_positive_int(
+        getattr(Config, "WILDCARD_VERIFY_ROUNDS", DEFAULT_WILDCARD_VERIFY_ROUNDS),
+        DEFAULT_WILDCARD_VERIFY_ROUNDS,
+    )
+
+
+def get_wildcard_max_levels():
+    return _safe_positive_int(
+        getattr(Config, "WILDCARD_MAX_LEVELS", DEFAULT_WILDCARD_MAX_LEVELS),
+        DEFAULT_WILDCARD_MAX_LEVELS,
+    )
 
 
 def _normalize_dns_record(value):
-    text = str(value or "").strip().strip(".").lower()
-    return text
+    return str(value or "").strip().strip(".").lower()
+
+
+def _normalize_signature(records):
+    normalized = []
+    seen = set()
+    for item in records or []:
+        record = _normalize_dns_record(item)
+        if not record or record in seen:
+            continue
+        seen.add(record)
+        normalized.append(record)
+    normalized.sort()
+    return tuple(normalized)
+
+
+def _empty_record_detail():
+    return {
+        "records": set(),
+        "a_records": set(),
+        "cname_records": set(),
+    }
+
+
+def _empty_profile(root):
+    return {
+        "root": root,
+        "records": set(),
+        "a_records": set(),
+        "cname_records": set(),
+        "signatures": set(),
+        "record_counter": Counter(),
+        "signature_counter": Counter(),
+        "probe_domains": set(),
+        "sample_count": 0,
+    }
 
 
 def _get_probe_root(domain):
@@ -22,22 +94,44 @@ def _get_probe_root(domain):
     return cut_name or normalized
 
 
-def build_wildcard_probe_domains(domains, probe_count=DEFAULT_WILDCARD_PROBE_COUNT):
-    probe_domains = set()
-    roots = set()
+def build_wildcard_probe_roots(domains, max_levels=None):
+    roots = []
+    seen = set()
+    max_levels = _safe_positive_int(max_levels or get_wildcard_max_levels(), get_wildcard_max_levels())
 
     for domain in domains or []:
-        root = _get_probe_root(domain)
-        if root:
-            roots.add(root)
+        normalized = utils.normalize_domain(domain)
+        if not normalized:
+            continue
 
-    try:
-        probe_count = int(probe_count or DEFAULT_WILDCARD_PROBE_COUNT)
-    except (TypeError, ValueError):
-        probe_count = DEFAULT_WILDCARD_PROBE_COUNT
+        current = normalized
+        level_count = 0
+        while current and level_count < max_levels:
+            root = _get_probe_root(current)
+            if not root:
+                break
+            if root in seen:
+                if root == current:
+                    break
+                current = root
+                level_count += 1
+                continue
 
-    if probe_count <= 0:
-        probe_count = DEFAULT_WILDCARD_PROBE_COUNT
+            seen.add(root)
+            roots.append(root)
+            level_count += 1
+
+            if root == current:
+                break
+            current = root
+
+    return roots
+
+
+def build_wildcard_probe_domains(domains, probe_count=None, max_levels=None):
+    probe_domains = set()
+    roots = build_wildcard_probe_roots(domains, max_levels=max_levels)
+    probe_count = _safe_positive_int(probe_count or get_wildcard_probe_count(), get_wildcard_probe_count())
 
     for root in roots:
         for _ in range(probe_count):
@@ -46,44 +140,217 @@ def build_wildcard_probe_domains(domains, probe_count=DEFAULT_WILDCARD_PROBE_COU
     return probe_domains
 
 
-def resolve_domain_records(domain):
-    records = set()
+def resolve_domain_record_detail(domain):
+    detail = _empty_record_detail()
 
     for item in utils.get_ip(domain, log_flag=False):
         normalized = _normalize_dns_record(item)
-        if normalized:
-            records.add(normalized)
+        if not normalized:
+            continue
+        detail["records"].add(normalized)
+        detail["a_records"].add(normalized)
 
     for item in utils.get_cname(domain, log_flag=False):
         normalized = _normalize_dns_record(item)
-        if normalized:
-            records.add(normalized)
+        if not normalized:
+            continue
+        detail["records"].add(normalized)
+        detail["cname_records"].add(normalized)
 
-    return records
+    return detail
 
 
-def collect_wildcard_records_from_domains(domains, probe_count=DEFAULT_WILDCARD_PROBE_COUNT):
+def resolve_domain_records(domain):
+    return resolve_domain_record_detail(domain)["records"]
+
+
+def _collect_wildcard_profiles_for_roots(roots, probe_count=None, verify_rounds=None):
+    profile_map = {}
+    probe_count = _safe_positive_int(probe_count or get_wildcard_probe_count(), get_wildcard_probe_count())
+    verify_rounds = _safe_positive_int(verify_rounds or get_wildcard_verify_rounds(), get_wildcard_verify_rounds())
+
+    for root in roots or []:
+        normalized_root = utils.normalize_domain(root)
+        if not normalized_root:
+            continue
+        profile_map[normalized_root] = _empty_profile(normalized_root)
+
+    for root, profile in profile_map.items():
+        probe_domains = set()
+        for _ in range(probe_count):
+            probe_domains.add("{}.{}".format(utils.random_choices(8), root))
+        profile["probe_domains"] = probe_domains
+
+        for probe_domain in probe_domains:
+            for _ in range(verify_rounds):
+                detail = resolve_domain_record_detail(probe_domain)
+                signature = _normalize_signature(detail["records"])
+                profile["sample_count"] += 1
+                if not signature:
+                    continue
+
+                profile["records"].update(detail["records"])
+                profile["a_records"].update(detail["a_records"])
+                profile["cname_records"].update(detail["cname_records"])
+                profile["signatures"].add(signature)
+                profile["record_counter"].update(signature)
+                profile["signature_counter"][signature] += 1
+
+    return profile_map
+
+
+def collect_wildcard_profiles_from_roots(roots, probe_count=None, verify_rounds=None):
+    return _collect_wildcard_profiles_for_roots(
+        roots,
+        probe_count=probe_count,
+        verify_rounds=verify_rounds,
+    )
+
+
+def collect_wildcard_profiles_from_domains(domains, probe_count=None, max_levels=None, verify_rounds=None):
+    return _collect_wildcard_profiles_for_roots(
+        build_wildcard_probe_roots(domains, max_levels=max_levels),
+        probe_count=probe_count,
+        verify_rounds=verify_rounds,
+    )
+
+
+def collect_wildcard_records_from_domains(domains, probe_count=None, max_levels=None, verify_rounds=None):
     wildcard_records = set()
-    probe_domains = build_wildcard_probe_domains(domains, probe_count=probe_count)
+    profile_map = collect_wildcard_profiles_from_domains(
+        domains,
+        probe_count=probe_count,
+        max_levels=max_levels,
+        verify_rounds=verify_rounds,
+    )
 
-    for probe_domain in probe_domains:
-        wildcard_records |= resolve_domain_records(probe_domain)
+    for profile in profile_map.values():
+        wildcard_records |= set(profile.get("records", set()))
 
     return wildcard_records
 
 
-def extract_domain_info_records(domain_info):
-    records = set()
+def extract_domain_info_record_detail(domain_info):
+    detail = _empty_record_detail()
     if not domain_info:
-        return records
+        return detail
 
-    for attr_name in ("record_list", "ip_list"):
-        for item in getattr(domain_info, attr_name, []) or []:
-            normalized = _normalize_dns_record(item)
-            if normalized:
-                records.add(normalized)
+    domain_type = str(getattr(domain_info, "type", "") or "").strip().upper()
 
-    return records
+    for item in getattr(domain_info, "record_list", []) or []:
+        normalized = _normalize_dns_record(item)
+        if not normalized:
+            continue
+        detail["records"].add(normalized)
+        if domain_type == "CNAME":
+            detail["cname_records"].add(normalized)
+        else:
+            detail["a_records"].add(normalized)
+
+    for item in getattr(domain_info, "ip_list", []) or []:
+        normalized = _normalize_dns_record(item)
+        if not normalized:
+            continue
+        detail["records"].add(normalized)
+        detail["a_records"].add(normalized)
+
+    return detail
+
+
+def extract_domain_info_records(domain_info):
+    return extract_domain_info_record_detail(domain_info)["records"]
+
+
+def _verify_candidate_details(domain, base_detail=None, verify_rounds=None):
+    details = []
+    verify_rounds = _safe_positive_int(verify_rounds or get_wildcard_verify_rounds(), get_wildcard_verify_rounds())
+
+    if isinstance(base_detail, dict) and base_detail.get("records"):
+        details.append(base_detail)
+
+    while len(details) < verify_rounds:
+        details.append(resolve_domain_record_detail(domain))
+
+    return details
+
+
+def _candidate_hits_profile(candidate_details, profile):
+    if not candidate_details or not profile:
+        return False
+
+    profile_records = set(profile.get("records", set()))
+    if not profile_records:
+        return False
+
+    profile_signatures = set(profile.get("signatures", set()))
+    profile_cname_records = set(profile.get("cname_records", set()))
+    record_counter = profile.get("record_counter", Counter())
+
+    exact_match_count = 0
+    subset_match_count = 0
+    single_record_repeat_match = 0
+    non_empty_count = 0
+
+    for detail in candidate_details:
+        signature = _normalize_signature(detail.get("records", set()))
+        if not signature:
+            continue
+
+        non_empty_count += 1
+        signature_set = set(signature)
+
+        if detail.get("cname_records", set()) & profile_cname_records:
+            return True
+
+        if signature in profile_signatures:
+            exact_match_count += 1
+
+        if signature_set.issubset(profile_records):
+            subset_match_count += 1
+            if len(signature_set) == 1:
+                only_record = next(iter(signature_set))
+                if record_counter.get(only_record, 0) >= 2:
+                    single_record_repeat_match += 1
+
+    if non_empty_count <= 0:
+        return False
+
+    required_match_count = 2 if non_empty_count >= 2 else 1
+    if exact_match_count >= required_match_count:
+        return True
+    if subset_match_count >= required_match_count and single_record_repeat_match >= required_match_count:
+        return True
+
+    return False
+
+
+def domain_info_hits_wildcard_profile(domain_info, wildcard_profile_map, verify_rounds=None, max_levels=None):
+    if not domain_info or not wildcard_profile_map:
+        return False
+
+    domain = utils.normalize_domain(getattr(domain_info, "domain", ""))
+    if not domain:
+        return False
+
+    roots = build_wildcard_probe_roots([domain], max_levels=max_levels)
+    if not roots:
+        return False
+
+    base_detail = extract_domain_info_record_detail(domain_info)
+    candidate_details = None
+
+    for root in roots:
+        profile = wildcard_profile_map.get(root)
+        if not profile:
+            continue
+
+        if candidate_details is None:
+            candidate_details = _verify_candidate_details(domain, base_detail=base_detail, verify_rounds=verify_rounds)
+
+        if _candidate_hits_profile(candidate_details, profile):
+            return True
+
+    return False
 
 
 def domain_info_hits_wildcard_records(domain_info, wildcard_records):

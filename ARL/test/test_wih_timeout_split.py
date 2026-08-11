@@ -476,6 +476,55 @@ class TestWihTimeoutSplit(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(45, timeout_holder["timeout_sec"])
 
+    def test_exec_wih_sets_batch_deadline_when_missing(self):
+        hunter = InfoHunter(
+            [
+                "https://a.example.com",
+                "https://b.example.com",
+                "https://c.example.com",
+            ]
+        )
+        hunter.check_have_wih = lambda: True
+        hunter.wih_timeout_sec = 300
+        hunter.wih_minimal_timeout_sec = 120
+        observed_deadlines = []
+
+        def _fake_exec_wih_batch(batch_sites, aggregate_result_texts, depth=0):
+            observed_deadlines.append(hunter.wih_deadline_ts)
+            return True
+
+        hunter._exec_wih_batch = _fake_exec_wih_batch
+
+        with patch.object(info_hunter_module.time, "time", return_value=100):
+            self.assertTrue(hunter.exec_wih())
+
+        self.assertEqual([535], observed_deadlines)
+        self.assertIsNone(hunter.wih_deadline_ts)
+
+    def test_exec_wih_keeps_external_deadline(self):
+        hunter = InfoHunter(
+            [
+                "https://a.example.com",
+                "https://b.example.com",
+                "https://c.example.com",
+            ]
+        )
+        hunter.check_have_wih = lambda: True
+        hunter.wih_deadline_ts = 145
+        observed_deadlines = []
+
+        def _fake_exec_wih_batch(batch_sites, aggregate_result_texts, depth=0):
+            observed_deadlines.append(hunter.wih_deadline_ts)
+            return True
+
+        hunter._exec_wih_batch = _fake_exec_wih_batch
+
+        with patch.object(info_hunter_module.time, "time", return_value=100):
+            self.assertTrue(hunter.exec_wih())
+
+        self.assertEqual([145], observed_deadlines)
+        self.assertEqual(145, hunter.wih_deadline_ts)
+
     def test_exec_wih_skips_timeout_split_when_deadline_exhausted(self):
         hunter = InfoHunter(
             [

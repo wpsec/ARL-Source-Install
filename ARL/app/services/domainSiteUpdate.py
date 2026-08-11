@@ -8,7 +8,10 @@ from app.services.fetchSite import fetch_site
 from app.services.baseUpdateTask import BaseUpdateTask
 from app.services.wildcardDomain import (
     collect_wildcard_records_from_domains,
+    collect_wildcard_profiles_from_roots,
+    build_wildcard_probe_roots,
     domain_info_hits_wildcard_records,
+    domain_info_hits_wildcard_profile,
 )
 
 from app import utils
@@ -25,6 +28,7 @@ class DomainSiteUpdate(object):
         self.domain_info_list = []
         self.available_sites = []
         self.base_update_task = BaseUpdateTask(self.task_id)
+        self._wildcard_profile_cache = {}
 
     def save_domain_info(self):
         domain_info_list = build_domain_info(self.domains)
@@ -32,9 +36,10 @@ class DomainSiteUpdate(object):
         # WIH 结果容易混入泛解析噪声域名，这里在入库前做一次拦截。
         if self.source == "wih" and domain_info_list:
             wildcard_record_set = self._build_wildcard_record_set_from_domains(self.domains)
-            if wildcard_record_set:
+            wildcard_profile_map = self._build_wildcard_profile_map_from_domains(self.domains)
+            if wildcard_record_set or wildcard_profile_map:
                 filtered_list, drop_count = self._clear_wildcard_domain_info(
-                    domain_info_list, wildcard_record_set
+                    domain_info_list, wildcard_record_set, wildcard_profile_map
                 )
                 if drop_count > 0:
                     logger.info(
@@ -61,17 +66,23 @@ class DomainSiteUpdate(object):
         self.domain_info_list = domain_info_list
 
     @staticmethod
-    def _clear_wildcard_domain_info(domain_info_list, wildcard_record_set):
+    def _clear_wildcard_domain_info(domain_info_list, wildcard_record_set, wildcard_profile_map=None):
         """
         过滤命中泛解析记录的域名信息。
         """
-        if not domain_info_list or not wildcard_record_set:
+        if not domain_info_list or (not wildcard_record_set and not wildcard_profile_map):
             return domain_info_list, 0
 
         filtered = []
         drop_count = 0
         for info in domain_info_list:
-            if domain_info_hits_wildcard_records(info, wildcard_record_set):
+            wildcard_hit = False
+            if wildcard_profile_map:
+                wildcard_hit = domain_info_hits_wildcard_profile(info, wildcard_profile_map)
+            elif wildcard_record_set:
+                wildcard_hit = domain_info_hits_wildcard_records(info, wildcard_record_set)
+
+            if wildcard_hit:
                 drop_count += 1
                 continue
             filtered.append(info)
@@ -83,6 +94,16 @@ class DomainSiteUpdate(object):
         通过多次随机子域探测构建泛解析记录集合。
         """
         return collect_wildcard_records_from_domains(domains)
+
+    def _build_wildcard_profile_map_from_domains(self, domains):
+        roots = build_wildcard_probe_roots(domains)
+        profile_map = {}
+        for root in roots:
+            if root not in self._wildcard_profile_cache:
+                self._wildcard_profile_cache[root] = collect_wildcard_profiles_from_roots([root]).get(root)
+            if self._wildcard_profile_cache.get(root):
+                profile_map[root] = self._wildcard_profile_cache[root]
+        return profile_map
 
     def probe_sites(self):
         available_domains = []

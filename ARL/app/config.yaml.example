@@ -583,6 +583,12 @@ ARL:
   DOMAIN_BRUTE_CONCURRENT: 360
   # 组合生成的域名爆破并发数
   ALT_DNS_CONCURRENT: 1400
+  # 泛解析随机探测域名数量
+  WILDCARD_PROBE_COUNT: 8
+  # 泛解析同一探测域名复验轮数
+  WILDCARD_VERIFY_ROUNDS: 2
+  # 泛解析按层级向上补探测的最大层数
+  WILDCARD_MAX_LEVELS: 2
   # 域名解析并发
   DOMAIN_RESOLVE_CONCURRENCY: 10
   # 域名信息构建并发

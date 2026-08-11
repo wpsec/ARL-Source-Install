@@ -285,6 +285,9 @@ def refresh_runtime_config_best_effort(force=False):
             "TASK_HEAVY_TARGET_THRESHOLD",
             "DOMAIN_BRUTE_CONCURRENT",
             "ALT_DNS_CONCURRENT",
+            "WILDCARD_PROBE_COUNT",
+            "WILDCARD_VERIFY_ROUNDS",
+            "WILDCARD_MAX_LEVELS",
             "WEB_GUNICORN_WORKERS",
             "CELERY_TASK_WORKER_CONCURRENCY",
             "CELERY_GITHUB_WORKER_CONCURRENCY",
@@ -775,7 +778,7 @@ class Config(object):
     # WebInfoHunter 规则文件（默认使用镜像内只读副本，避免被共享 tools 目录中的旧规则覆盖）
     WIH_RULE_PATH = "/usr/local/share/arl/wih/config/rules.yml"
     # WIH 扫描超时（秒）
-    WIH_TIMEOUT_SEC = 2 * 60 * 60
+    WIH_TIMEOUT_SEC = 10 * 60
     # WIH 全局并发（透传给 wih --concurrency / -c）
     WIH_CONCURRENCY = 8
     # WIH 单站点并发（透传给 wih --concurrency-per-site）
@@ -998,6 +1001,12 @@ class Config(object):
     DOMAIN_BRUTE_CONCURRENT = 360
     # 组合生成的域名爆破并发数（altdns变异域名爆破）
     ALT_DNS_CONCURRENT = 1400
+    # 泛解析随机探测域名数量
+    WILDCARD_PROBE_COUNT = 8
+    # 泛解析同一探测域名复验轮数
+    WILDCARD_VERIFY_ROUNDS = 2
+    # 泛解析按层级向上补探测的最大层数
+    WILDCARD_MAX_LEVELS = 2
     # 域名解析并发
     DOMAIN_RESOLVE_CONCURRENCY = 10
     # 域名信息构建并发
@@ -1812,6 +1821,9 @@ try:
         "TASK_HEAVY_TARGET_THRESHOLD",
         "DOMAIN_BRUTE_CONCURRENT",
         "ALT_DNS_CONCURRENT",
+        "WILDCARD_PROBE_COUNT",
+        "WILDCARD_VERIFY_ROUNDS",
+        "WILDCARD_MAX_LEVELS",
         "DOMAIN_RESOLVE_CONCURRENCY",
         "DOMAIN_INFO_CONCURRENCY",
         "HTTP_CHECK_CONCURRENCY",

@@ -15,7 +15,7 @@ import os
 import sys
 from collections import defaultdict
 
-FINGERPRINT_REDIS_KEY = "arl:fingerprint:rules:v2"
+FINGERPRINT_REDIS_KEY = "arl:fingerprint:rules:v3"
 
 METHOD_FIELD_MAP = {
     "body": "body",

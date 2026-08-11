@@ -145,8 +145,8 @@ class InfoHunter(object):
         self.wih_result_path = os.path.join(tmp_path, "wih_result_{}.json".format(rand_str))
 
         self.wih_bin_path = self._resolve_wih_binary()
-        self.wih_timeout_sec = int(getattr(Config, "WIH_TIMEOUT_SEC", 2 * 60 * 60) or (2 * 60 * 60))
-        self.wih_concurrency = int(getattr(Config, "WIH_CONCURRENCY", 6) or 6)
+        self.wih_timeout_sec = int(getattr(Config, "WIH_TIMEOUT_SEC", 10 * 60) or (10 * 60))
+        self.wih_concurrency = int(getattr(Config, "WIH_CONCURRENCY", 8) or 8)
         self.wih_concurrency_per_site = int(getattr(Config, "WIH_CONCURRENCY_PER_SITE", 2) or 2)
         self.wih_max_batch_size = int(getattr(Config, "WIH_MAX_BATCH_SIZE", 12) or 12)
         self.wih_adaptive_runtime_enable = bool(getattr(Config, "WIH_ADAPTIVE_RUNTIME_ENABLE", True))
@@ -157,12 +157,12 @@ class InfoHunter(object):
         self.wih_runtime_max_pages = int(getattr(Config, "WIH_RUNTIME_MAX_PAGES", 12) or 12)
         self.wih_runtime_max_actions = int(getattr(Config, "WIH_RUNTIME_MAX_ACTIONS", 32) or 32)
         self.wih_runtime_max_requests = int(getattr(Config, "WIH_RUNTIME_MAX_REQUESTS", 180) or 180)
-        self.wih_light_timeout_sec = int(getattr(Config, "WIH_LIGHT_TIMEOUT_SEC", 15 * 60) or (15 * 60))
+        self.wih_light_timeout_sec = int(getattr(Config, "WIH_LIGHT_TIMEOUT_SEC", 2 * 60) or (2 * 60))
         self.wih_light_runtime_timeout_sec = int(getattr(Config, "WIH_LIGHT_RUNTIME_TIMEOUT_SEC", 20) or 20)
         self.wih_light_runtime_max_pages = int(getattr(Config, "WIH_LIGHT_RUNTIME_MAX_PAGES", 4) or 4)
         self.wih_light_runtime_max_actions = int(getattr(Config, "WIH_LIGHT_RUNTIME_MAX_ACTIONS", 10) or 10)
         self.wih_light_runtime_max_requests = int(getattr(Config, "WIH_LIGHT_RUNTIME_MAX_REQUESTS", 60) or 60)
-        self.wih_minimal_timeout_sec = int(getattr(Config, "WIH_MINIMAL_TIMEOUT_SEC", 15 * 60) or (15 * 60))
+        self.wih_minimal_timeout_sec = int(getattr(Config, "WIH_MINIMAL_TIMEOUT_SEC", 2 * 60) or (2 * 60))
         self.wih_minimal_runtime_enable = bool(getattr(Config, "WIH_MINIMAL_RUNTIME_ENABLE", False))
         if self.wih_timeout_sec < 60:
             self.wih_timeout_sec = 60
@@ -816,6 +816,17 @@ class InfoHunter(object):
             return []
         size = max(1, int(batch_size or 1))
         return [site_list[idx: idx + size] for idx in range(0, len(site_list), size)]
+
+    def _estimate_batch_deadline_sec(self, batch_sites: list, depth: int = 0) -> int:
+        primary_profile_name = self._select_primary_profile_name(batch_sites, depth=depth)
+        primary_timeout_sec = int(self._build_runtime_profile(primary_profile_name)["timeout_sec"] or self.wih_timeout_sec)
+        minimal_timeout_sec = int(self._build_runtime_profile("minimal")["timeout_sec"] or self.wih_minimal_timeout_sec)
+        total_budget_sec = max(1, primary_timeout_sec) + max(1, minimal_timeout_sec)
+        if primary_profile_name == "light":
+            total_budget_sec += max(1, int(self._build_runtime_profile("full")["timeout_sec"] or self.wih_timeout_sec))
+
+        # 递归拆分仍需共享同一批次预算，避免单个 batch 在 timeout split 中线性/指数式放大。
+        return max(60, total_budget_sec + 15)
 
     def _read_current_result_text(self) -> str:
         if not os.path.exists(self.wih_result_path):
@@ -1496,9 +1507,27 @@ class InfoHunter(object):
             )
         )
 
-        for batch_sites in batches:
-            if self._exec_wih_batch(batch_sites, aggregate_result_texts, depth=0):
-                success_batches += 1
+        for index, batch_sites in enumerate(batches, start=1):
+            inherited_deadline_ts = self.wih_deadline_ts
+            deadline_applied = False
+            if inherited_deadline_ts is None:
+                batch_deadline_sec = self._estimate_batch_deadline_sec(batch_sites, depth=0)
+                self.wih_deadline_ts = time.time() + batch_deadline_sec
+                deadline_applied = True
+                logger.info(
+                    "set wih batch deadline batch:{}/{} sites:{} budget:{}s".format(
+                        index,
+                        len(batches),
+                        len(batch_sites),
+                        batch_deadline_sec,
+                    )
+                )
+            try:
+                if self._exec_wih_batch(batch_sites, aggregate_result_texts, depth=0):
+                    success_batches += 1
+            finally:
+                if deadline_applied:
+                    self.wih_deadline_ts = inherited_deadline_ts
 
         self._write_aggregate_result_texts(aggregate_result_texts)
         logger.info(

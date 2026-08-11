@@ -250,12 +250,27 @@ def add_site_to_scope(site, scope_id):
     fetch_site_data = services.fetch_site([site])
     # Web指纹分析
     web_analyze_data = services.web_analyze([site])
-    finger = web_analyze_data.get(site, [])
     curr_date = utils.curr_date_obj()
     
     if fetch_site_data:
+        from app.services.fingerprint_cache import split_fingerprint_result_items
+
         item = fetch_site_data[0]
-        item["finger"] = finger
+        analyze_result = web_analyze_data.get(site, {})
+        merged_finger_items = list(item.get("finger", []))
+        merged_finger_items.extend(item.get("finger_candidates", []))
+        if isinstance(analyze_result, dict):
+            merged_finger_items.extend(analyze_result.get("confirmed", []))
+            merged_finger_items.extend(analyze_result.get("candidates", []))
+        elif isinstance(analyze_result, list):
+            merged_finger_items.extend(analyze_result)
+
+        confirmed_fingers, candidate_fingers = split_fingerprint_result_items(merged_finger_items)
+        item["finger"] = confirmed_fingers
+        if candidate_fingers:
+            item["finger_candidates"] = candidate_fingers
+        else:
+            item.pop("finger_candidates", None)
         item["screenshot"] = ""
         item["scope_id"] = scope_id
         item["save_date"] = curr_date

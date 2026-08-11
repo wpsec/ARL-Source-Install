@@ -6,6 +6,7 @@ import json
 from app import utils
 from app.config import Config
 from .baseThread import BaseThread
+from .fingerprint_cache import normalize_wappalyzer_fingerprint_items
 logger = utils.get_logger()
 
 
@@ -46,7 +47,12 @@ class WebAnalyze(BaseThread):
             return
 
         output = output.decode('utf-8')
-        self.analyze_map[site] = json.loads(output)["applications"]
+        applications = json.loads(output).get("applications", [])
+        confirmed, candidates = normalize_wappalyzer_fingerprint_items(applications)
+        self.analyze_map[site] = {
+            "confirmed": confirmed,
+            "candidates": candidates,
+        }
 
     def run(self):
         t1 = time.time()
@@ -60,6 +66,5 @@ class WebAnalyze(BaseThread):
 def web_analyze(sites, concurrency=3):
     s = WebAnalyze(sites, concurrency=concurrency)
     return s.run()
-
 
 

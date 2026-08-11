@@ -39,7 +39,10 @@ from app.services import fetchCert, run_risk_cruising, run_sniffer, BaseUpdateTa
 from app.services.commonTask import CommonTask, WebSiteFetch, build_url_item
 from app.services.wildcardDomain import (
     collect_wildcard_records_from_domains,
+    collect_wildcard_profiles_from_roots,
     domain_info_hits_wildcard_records,
+    domain_info_hits_wildcard_profile,
+    build_wildcard_probe_roots,
 )
 from app.helpers.domain import find_private_domain_by_task_id, find_public_ip_by_task_id
 from app.services.findVhost import find_vhost
@@ -562,6 +565,8 @@ class DomainTask(CommonTask):
 
         # 历史命名保留为 not_found_domain_ips，但这里实际缓存的是泛解析返回记录集合。
         self._wildcard_domain_records = None
+        self._wildcard_profile_cache = {}
+        self._wildcard_domain_hit_cache = {}
         self._domain_dict_size = None
         self._domain_word_file = None
 
@@ -780,9 +785,7 @@ class DomainTask(CommonTask):
     @property
     def wildcard_domain_records(self):
         if self._wildcard_domain_records is None:
-            self._wildcard_domain_records = sorted(
-                collect_wildcard_records_from_domains([self.base_domain])
-            )
+            self._wildcard_domain_records = sorted(self._get_wildcard_records_for_domains([self.base_domain]))
             if self._wildcard_domain_records:
                 logger.info(
                     "wildcard_domain_records {} {}".format(
@@ -796,6 +799,34 @@ class DomainTask(CommonTask):
     def not_found_domain_ips(self):
         # 兼容历史调用方，返回值已扩展为 A/CNAME 泛解析记录集合。
         return self.wildcard_domain_records
+
+    def _get_wildcard_profile(self, root):
+        root = utils.normalize_domain(root)
+        if not root:
+            return None
+
+        if root not in self._wildcard_profile_cache:
+            profile_map = collect_wildcard_profiles_from_roots([root])
+            self._wildcard_profile_cache[root] = profile_map.get(root)
+
+        return self._wildcard_profile_cache.get(root)
+
+    def _get_wildcard_profile_map_for_domain(self, domain):
+        profile_map = {}
+        for root in build_wildcard_probe_roots([domain]):
+            profile = self._get_wildcard_profile(root)
+            if profile:
+                profile_map[root] = profile
+        return profile_map
+
+    def _get_wildcard_records_for_domains(self, domains):
+        wildcard_records = set()
+        for root in build_wildcard_probe_roots(domains):
+            profile = self._get_wildcard_profile(root)
+            if not profile:
+                continue
+            wildcard_records.update(profile.get("records", set()))
+        return wildcard_records
 
     def save_domain_info_list(self, domain_info_list, source=CollectSource.DOMAIN_BRUTE):
         for domain_info_obj in domain_info_list:
@@ -874,8 +905,20 @@ class DomainTask(CommonTask):
                 )
                 continue
 
-            if domain_info_hits_wildcard_records(info, self.wildcard_domain_records):
-                continue
+            if domain in self._wildcard_domain_hit_cache:
+                if self._wildcard_domain_hit_cache[domain]:
+                    continue
+            else:
+                wildcard_profile_map = self._get_wildcard_profile_map_for_domain(domain)
+                wildcard_hit = False
+                if wildcard_profile_map:
+                    wildcard_hit = domain_info_hits_wildcard_profile(info, wildcard_profile_map)
+                elif domain_info_hits_wildcard_records(info, self.wildcard_domain_records):
+                    wildcard_hit = True
+
+                self._wildcard_domain_hit_cache[domain] = wildcard_hit
+                if wildcard_hit:
+                    continue
 
             record = info.record_list[0]
             cnt = self.record_map.get(record, 0)
