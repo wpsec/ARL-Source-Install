@@ -37,6 +37,10 @@ from app import modules
 from app.modules import ScanPortType, CollectSource, TaskStatus
 from app.services import fetchCert, run_risk_cruising, run_sniffer, BaseUpdateTask
 from app.services.commonTask import CommonTask, WebSiteFetch, build_url_item
+from app.services.wildcardDomain import (
+    collect_wildcard_records_from_domains,
+    domain_info_hits_wildcard_records,
+)
 from app.helpers.domain import find_private_domain_by_task_id, find_public_ip_by_task_id
 from app.services.findVhost import find_vhost
 from app.services.dns_query import run_query_plugin, run_query_plugin_by_ip, run_query_plugin_by_cert
@@ -556,8 +560,8 @@ class DomainTask(CommonTask):
         self.domain_source_map = {}
         self._dns_policy_cache = {}
 
-        # 用来存放泛解析域名映射的IP
-        self._not_found_domain_ips = None
+        # 历史命名保留为 not_found_domain_ips，但这里实际缓存的是泛解析返回记录集合。
+        self._wildcard_domain_records = None
         self._domain_dict_size = None
         self._domain_word_file = None
 
@@ -774,19 +778,24 @@ class DomainTask(CommonTask):
         return self._domain_dict_size
 
     @property
+    def wildcard_domain_records(self):
+        if self._wildcard_domain_records is None:
+            self._wildcard_domain_records = sorted(
+                collect_wildcard_records_from_domains([self.base_domain])
+            )
+            if self._wildcard_domain_records:
+                logger.info(
+                    "wildcard_domain_records {} {}".format(
+                        self.base_domain, self._wildcard_domain_records
+                    )
+                )
+
+        return self._wildcard_domain_records
+
+    @property
     def not_found_domain_ips(self):
-        # ** 用来判断是否是泛解析域名
-        if self._not_found_domain_ips is None:
-            fake_domain = "at" + utils.random_choices(4) + "." + self.base_domain
-            self._not_found_domain_ips = utils.get_ip(fake_domain, log_flag=False)
-
-            if self._not_found_domain_ips:
-                self._not_found_domain_ips.extend(utils.get_cname(fake_domain, log_flag=False))
-
-            if self._not_found_domain_ips:
-                logger.info("not_found_domain_ips  {} {}".format(fake_domain, self._not_found_domain_ips))
-
-        return self._not_found_domain_ips
+        # 兼容历史调用方，返回值已扩展为 A/CNAME 泛解析记录集合。
+        return self.wildcard_domain_records
 
     def save_domain_info_list(self, domain_info_list, source=CollectSource.DOMAIN_BRUTE):
         for domain_info_obj in domain_info_list:
@@ -865,14 +874,10 @@ class DomainTask(CommonTask):
                 )
                 continue
 
-            record = info.record_list[0]
-
-            ip = info.ip_list[0]
-
-            # 解决泛解析域名问题，果断剔除
-            if ip in self.not_found_domain_ips:
+            if domain_info_hits_wildcard_records(info, self.wildcard_domain_records):
                 continue
 
+            record = info.record_list[0]
             cnt = self.record_map.get(record, 0)
             cnt += 1
             self.record_map[record] = cnt

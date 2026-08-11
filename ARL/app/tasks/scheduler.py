@@ -32,6 +32,10 @@ from .ip import IPTask
 from app import utils
 from app.modules import TaskStatus, CollectSource, SchedulerStatus
 from app.services import sync_asset, build_domain_info, sync_asset
+from app.services.wildcardDomain import (
+    collect_wildcard_records_from_domains,
+    domain_info_hits_wildcard_records,
+)
 import time
 import traceback
 from app.scheduler import update_job_run
@@ -203,7 +207,7 @@ class DomainExecutor(DomainTask):
         self.scope_domain_set = None  # 资产组现有域名
         self.new_domain_set = None  # 新发现的域名
         self.task_tag = "monitor"  # 标记为监控任务
-        self.wildcard_ip_set = None  # 泛解析IP集合
+        self.wildcard_record_set = None  # 泛解析记录集合
 
     def run(self):
         """
@@ -235,7 +239,7 @@ class DomainExecutor(DomainTask):
         self.new_domain_set = new_domain_set
 
         # 4. 泛解析检测
-        self.set_wildcard_ip_set()
+        self.set_wildcard_record_set()
 
         # 5. 重建domain_info_list（仅包含新域名）
         self.set_domain_info_list()
@@ -293,7 +297,7 @@ class DomainExecutor(DomainTask):
         self.task_tag = "monitor"
 
         # 泛解析过滤
-        if self.wildcard_ip_set:
+        if self.wildcard_record_set:
             new = self.clear_wildcard_domain_info(new)
 
         elapse = time.time() - t1
@@ -307,31 +311,17 @@ class DomainExecutor(DomainTask):
         self.save_domain_info_list_by_source_map(new, default_source=CollectSource.MONITOR)
         self.domain_info_list = new
 
-    def set_wildcard_ip_set(self):
+    def set_wildcard_record_set(self):
         """
-        检测泛解析IP集合
+        检测泛解析记录集合
         
         说明：
         - 对新域名的父域名进行泛解析检测
-        - 生成随机子域名查询DNS
-        - 如果能解析出IP，说明存在泛解析
-        - 保存泛解析IP集合，用于后续过滤
+        - 多次生成随机子域名查询 DNS
+        - 合并 A/CNAME 结果，用于后续过滤
         """
-        cut_set = set()
-        random_name = utils.random_choices(6)
-        for domain in self.new_domain_set:
-            cut_name = utils.domain.cut_first_name(domain)
-            if cut_name:
-                cut_set.add("{}.{}".format(random_name, cut_name))
-
-        # 查询随机子域名的IP
-        info_list = build_domain_info(cut_set)
-        wildcard_ip_set = set()
-        for info in info_list:
-            wildcard_ip_set |= set(info.ip_list)
-
-        self.wildcard_ip_set = wildcard_ip_set
-        logger.info("start get wildcard_ip_set {}".format(len(self.wildcard_ip_set)))
+        self.wildcard_record_set = collect_wildcard_records_from_domains(self.new_domain_set)
+        logger.info("start get wildcard_record_set {}".format(len(self.wildcard_record_set)))
 
     def clear_wildcard_domain_info(self, info_list):
         """
@@ -344,16 +334,14 @@ class DomainExecutor(DomainTask):
             list: 过滤后的域名信息列表
         
         说明：
-        - 对比域名解析的IP和泛解析IP集合
-        - 如果IP在泛解析IP集合中，说明是泛解析域名，过滤掉
+        - 对比域名解析的 A/CNAME 记录和泛解析记录集合
+        - 如果命中泛解析记录集合，说明是泛解析域名，过滤掉
         - 保留非泛解析的真实域名
         """
         cnt = 0
         new = []
         for info in info_list:
-            # 检查IP是否在泛解析集合中
-            common_set = self.wildcard_ip_set & set(info.ip_list)
-            if common_set:
+            if domain_info_hits_wildcard_records(info, self.wildcard_record_set):
                 cnt += 1
                 continue
             new.append(info)

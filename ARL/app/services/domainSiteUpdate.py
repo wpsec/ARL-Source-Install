@@ -6,6 +6,10 @@ from app.services.buildDomainInfo import build_domain_info
 from app.services.probeHTTP import probe_http
 from app.services.fetchSite import fetch_site
 from app.services.baseUpdateTask import BaseUpdateTask
+from app.services.wildcardDomain import (
+    collect_wildcard_records_from_domains,
+    domain_info_hits_wildcard_records,
+)
 
 from app import utils
 
@@ -27,20 +31,20 @@ class DomainSiteUpdate(object):
 
         # WIH 结果容易混入泛解析噪声域名，这里在入库前做一次拦截。
         if self.source == "wih" and domain_info_list:
-            wildcard_ip_set = self._build_wildcard_ip_set_from_domains(self.domains)
-            if wildcard_ip_set:
+            wildcard_record_set = self._build_wildcard_record_set_from_domains(self.domains)
+            if wildcard_record_set:
                 filtered_list, drop_count = self._clear_wildcard_domain_info(
-                    domain_info_list, wildcard_ip_set
+                    domain_info_list, wildcard_record_set
                 )
                 if drop_count > 0:
                     logger.info(
-                        "domain_site_update filter wildcard task_id:{} source:{} total:{} drop:{} keep:{} wildcard_ip_cnt:{}".format(
+                        "domain_site_update filter wildcard task_id:{} source:{} total:{} drop:{} keep:{} wildcard_record_cnt:{}".format(
                             self.task_id,
                             self.source,
                             len(domain_info_list),
                             drop_count,
                             len(filtered_list),
-                            len(wildcard_ip_set),
+                            len(wildcard_record_set),
                         )
                     )
                 domain_info_list = filtered_list
@@ -57,52 +61,28 @@ class DomainSiteUpdate(object):
         self.domain_info_list = domain_info_list
 
     @staticmethod
-    def _clear_wildcard_domain_info(domain_info_list, wildcard_ip_set):
+    def _clear_wildcard_domain_info(domain_info_list, wildcard_record_set):
         """
-        过滤命中泛解析 IP 的域名信息。
+        过滤命中泛解析记录的域名信息。
         """
-        if not domain_info_list or not wildcard_ip_set:
+        if not domain_info_list or not wildcard_record_set:
             return domain_info_list, 0
 
         filtered = []
         drop_count = 0
         for info in domain_info_list:
-            ip_list = set(getattr(info, "ip_list", []) or [])
-            if ip_list and (ip_list & wildcard_ip_set):
+            if domain_info_hits_wildcard_records(info, wildcard_record_set):
                 drop_count += 1
                 continue
             filtered.append(info)
 
         return filtered, drop_count
 
-    @staticmethod
-    def _build_wildcard_probe_domains(domains):
+    def _build_wildcard_record_set_from_domains(self, domains):
         """
-        为候选域名构造同层随机探测域名，用于判断是否存在泛解析。
+        通过多次随机子域探测构建泛解析记录集合。
         """
-        probe_domains = set()
-        random_name = utils.random_choices(6)
-        for domain in domains:
-            cut_name = utils.domain.cut_first_name(domain)
-            if not cut_name:
-                continue
-            probe_domains.add("{}.{}".format(random_name, cut_name))
-        return probe_domains
-
-    def _build_wildcard_ip_set_from_domains(self, domains):
-        """
-        通过随机子域探测构建泛解析 IP 集合。
-        """
-        probe_domains = self._build_wildcard_probe_domains(domains)
-        if not probe_domains:
-            return set()
-
-        info_list = build_domain_info(list(probe_domains))
-        wildcard_ip_set = set()
-        for info in info_list:
-            wildcard_ip_set |= set(getattr(info, "ip_list", []) or [])
-
-        return wildcard_ip_set
+        return collect_wildcard_records_from_domains(domains)
 
     def probe_sites(self):
         available_domains = []
