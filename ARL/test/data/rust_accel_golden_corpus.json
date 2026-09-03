@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "extract-relative-recursive-js",
+      "kind": "extract",
+      "input": {
+        "allowed_hosts": ["example.test"],
+        "allow_js": true,
+        "max_url_records": 20,
+        "max_js_files": 20,
+        "max_js_depth": 2,
+        "pages": [
+          {
+            "base_url": "https://example.test/app/index.html",
+            "text": "<script src=\"/static/app.js\"></script><a href=\"/api/users\">users</a><a href=\"//example.test/admin\">admin</a>",
+            "source_url": "https://example.test/app/index.html",
+            "depth": 0,
+            "is_js": false
+          },
+          {
+            "base_url": "https://example.test/static/app.js",
+            "text": "const next = './child.js'; const endpoint = '../api/orders?id=1';",
+            "source_url": "https://example.test/app/index.html",
+            "depth": 1,
+            "is_js": true
+          }
+        ]
+      },
+      "python": [
+        ["urlfinder_js", "https://example.test/static/app.js", "https://example.test/app/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/api/users", "https://example.test/app/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/admin", "https://example.test/app/index.html", "https://example.test"],
+        ["urlfinder_js", "https://example.test/static/child.js", "https://example.test/app/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/api/orders?id=1", "https://example.test/static/app.js", "https://example.test"]
+      ],
+      "rust": [
+        ["urlfinder_js", "https://example.test/static/app.js", "https://example.test/app/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/api/users", "https://example.test/app/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/admin", "https://example.test/app/index.html", "https://example.test"],
+        ["urlfinder_js", "https://example.test/static/child.js", "https://example.test/app/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/api/orders?id=1", "https://example.test/static/app.js", "https://example.test"]
+      ]
+    },
+    {
+      "id": "rank-sensitive-targets",
+      "kind": "rank",
+      "input": {
+        "sites": ["https://example.test"],
+        "blocked_hosts": [],
+        "include_js": true,
+        "max_targets": 10,
+        "records": [
+          ["urlfinder_url", "https://example.test/static/logo.png", "https://example.test/app.js", "https://example.test"],
+          ["urlfinder_url", "https://example.test/admin/export?id=1", "https://example.test/app.js", "https://example.test"],
+          ["urlfinder_url", "https://other.test/admin", "https://example.test/app.js", "https://example.test"]
+        ]
+      },
+      "python": [
+        ["https://example.test/admin/export?id=1", 38],
+        ["https://example.test/app.js", 19]
+      ],
+      "rust": [
+        ["https://example.test/admin/export?id=1", 38],
+        ["https://example.test/app.js", 19]
+      ]
+    },
+    {
+      "id": "html-links-forms-scripts-domains",
+      "kind": "html",
+      "input": {
+        "allowed_hosts": ["example.test"],
+        "allowed_flds": ["example.test"],
+        "exclude_hosts": ["example.test"],
+        "pages": [
+          {
+            "base_url": "https://example.test/index.html",
+            "text": "<a href=\"/admin\">admin</a><iframe src=\"//example.test/frame\"></iframe><form action=\"/login\" method=\"post\"><input name=\"username\"><input name=\"password\"></form><script src=\"/static/app.js\"></script><span>api.example.test</span><span>other.test</span>",
+            "source_url": "https://example.test/index.html",
+            "depth": 0,
+            "is_js": false
+          }
+        ]
+      },
+      "python": [
+        ["page_link", "https://example.test/admin", "https://example.test/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/admin", "https://example.test/index.html", "https://example.test"],
+        ["page_link", "https://example.test/frame", "https://example.test/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/frame", "https://example.test/index.html", "https://example.test"],
+        ["page_form", "POST https://example.test/login [password,username]", "https://example.test/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/login", "https://example.test/index.html", "https://example.test"],
+        ["urlfinder_js", "https://example.test/static/app.js", "https://example.test/index.html", "https://example.test"],
+        ["domain", "api.example.test", "https://example.test/index.html", "https://example.test"]
+      ],
+      "rust": [
+        ["page_link", "https://example.test/admin", "https://example.test/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/admin", "https://example.test/index.html", "https://example.test"],
+        ["page_link", "https://example.test/frame", "https://example.test/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/frame", "https://example.test/index.html", "https://example.test"],
+        ["page_form", "POST https://example.test/login [password,username]", "https://example.test/index.html", "https://example.test"],
+        ["urlfinder_url", "https://example.test/login", "https://example.test/index.html", "https://example.test"],
+        ["urlfinder_js", "https://example.test/static/app.js", "https://example.test/index.html", "https://example.test"],
+        ["domain", "api.example.test", "https://example.test/index.html", "https://example.test"]
+      ]
+    },
+    {
+      "id": "js-endpoint-api-doc",
+      "kind": "js_endpoint",
+      "input": {
+        "allowed_hosts": ["example.test"],
+        "max_records": 100,
+        "pages": [
+          {
+            "base_url": "https://example.test/static/app.js",
+            "text": "fetch(\"/api/v1/users\"); const docs = \"/v3/api-docs\";",
+            "source_url": "https://example.test/static/app.js",
+            "depth": 0,
+            "is_js": true
+          }
+        ]
+      },
+      "python": [
+        ["urlfinder_url", "https://example.test/api/v1/users", "https://example.test/static/app.js", "https://example.test"],
+        ["api_doc_url", "https://example.test/v3/api-docs", "https://example.test/static/app.js", "https://example.test"],
+        ["urlfinder_url", "https://example.test/v3/api-docs", "https://example.test/static/app.js", "https://example.test"]
+      ],
+      "rust": [
+        ["urlfinder_url", "https://example.test/api/v1/users", "https://example.test/static/app.js", "https://example.test"],
+        ["api_doc_url", "https://example.test/v3/api-docs", "https://example.test/static/app.js", "https://example.test"],
+        ["urlfinder_url", "https://example.test/v3/api-docs", "https://example.test/static/app.js", "https://example.test"]
+      ]
+    }
+  ]
+}
