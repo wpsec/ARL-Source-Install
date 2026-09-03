@@ -2,6 +2,7 @@
 MongoDB数据库连接和操作
 """
 import urllib3
+import threading
 import time
 import requests
 from urllib.parse import urlparse
@@ -9,6 +10,14 @@ from app.config import Config
 from pymongo import MongoClient
 from requests.exceptions import ReadTimeout
 from requests.adapters import HTTPAdapter
+from .provider_http import (
+    current_provider_context,
+    current_stage_remaining_sec,
+    provider_deadline_exceeded,
+    provider_proxy_fallback_enabled,
+    provider_timeout,
+    record_request,
+)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -42,6 +51,43 @@ class DirectIPHTTPAdapter(HTTPAdapter):
             scheme=scheme,
             pool_kwargs=pool_kwargs,
         )
+
+
+_PLAIN_POOL_ADAPTER = None
+_PLAIN_POOL_LOCK = threading.Lock()
+
+
+def _plain_pool_adapter():
+    """普通 HTTP 路径共享的 urllib3 连接适配器(连接池)。
+
+    为什么安全：
+    - 每次请求仍使用新建 requests.Session 并挂接本适配器 → cookie/鉴权状态按请求隔离，
+      与既有 `requests.get()` 语义一致，不会把上一个目标的 Set-Cookie 带给新目标;
+    - 半读错误(读超时/断流)由 urllib3 `_error_catcher` 关闭并丢弃底层连接，池自愈，
+      不会把脏连接归还后造成响应错位;
+    - 直连 IP(connect_ip)与 provider 分支不经过此池：其连接目标与 DNS policy
+      钉定语义强相关，按 `(类别 × 直连IP)` 分池需另行方案评审。
+
+    注意：使用本适配器的 Session 不得调用 close()——requests 会连带关闭挂载的
+    适配器从而摧毁共享连接池。
+    """
+    global _PLAIN_POOL_ADAPTER
+    if _PLAIN_POOL_ADAPTER is None:
+        with _PLAIN_POOL_LOCK:
+            if _PLAIN_POOL_ADAPTER is None:
+                try:
+                    pool_connections = int(getattr(Config, "HTTP_POOL_CONNECTIONS", 10) or 10)
+                except (TypeError, ValueError):
+                    pool_connections = 10
+                try:
+                    pool_maxsize = int(getattr(Config, "HTTP_POOL_MAXSIZE", 64) or 64)
+                except (TypeError, ValueError):
+                    pool_maxsize = 64
+                _PLAIN_POOL_ADAPTER = HTTPAdapter(
+                    pool_connections=max(1, pool_connections),
+                    pool_maxsize=max(1, pool_maxsize),
+                )
+    return _PLAIN_POOL_ADAPTER
 
 
 def _remember_response_meta(response):
@@ -78,12 +124,14 @@ def patch_content(response, timeout=None):
         if response.status_code == 0 or response.raw is None:
             response._content = None
         else:
-            body = b''
+            chunks = []
             for part in response.iter_content(CONTENT_CHUNK_SIZE):
-                body += part
+                chunks.append(part)
                 if timeout is not None and time.time() - start_at >= timeout:
                     raise ReadTimeout(f"patch_content read http response timeout: {timeout}")
-            response._content = body
+                if provider_deadline_exceeded():
+                    raise ReadTimeout("stage/provider deadline exceeded while reading response")
+            response._content = b"".join(chunks)
     response._content_consumed = True
     # don't need to release the connection; that's been handled by urllib3
     # since we exhausted the data.
@@ -98,7 +146,29 @@ def http_req(url, method='get', **kwargs):
     host_header = str(kwargs.pop("host_header", "") or "").strip()
 
     kwargs.setdefault('verify', False)
+    provider_context = current_provider_context()
+    explicit_proxies = "proxies" in kwargs
     kwargs.setdefault('timeout', (10.1, 30.1))
+    if provider_context:
+        kwargs["timeout"] = provider_timeout(kwargs.get("timeout"))
+    else:
+        stage_remaining = current_stage_remaining_sec()
+        if stage_remaining is not None:
+            stage_timeout = max(0.001, stage_remaining)
+            raw_timeout = kwargs.get("timeout")
+            if isinstance(raw_timeout, (tuple, list)):
+                values = []
+                for value in raw_timeout[:2]:
+                    try:
+                        values.append(min(max(float(value), 0.1), stage_timeout))
+                    except (TypeError, ValueError):
+                        values.append(stage_timeout)
+                kwargs["timeout"] = tuple(values or [stage_timeout])
+            else:
+                try:
+                    kwargs["timeout"] = min(max(float(raw_timeout), 0.1), stage_timeout)
+                except (TypeError, ValueError):
+                    kwargs["timeout"] = stage_timeout
     kwargs.setdefault('allow_redirects', False)
 
     headers = kwargs.get("headers", {})
@@ -130,7 +200,10 @@ def http_req(url, method='get', **kwargs):
     kwargs["headers"] = headers
     kwargs["stream"] = True
 
-    if Config.PROXY_URL:
+    if provider_context:
+        # provider 请求由下方的直连/代理兜底循环决定，不能在这里提前写入默认代理。
+        pass
+    elif Config.PROXY_URL:
         _proxies = {
             'https': Config.PROXY_URL,
             'http': Config.PROXY_URL,
@@ -146,37 +219,112 @@ def http_req(url, method='get', **kwargs):
         kwargs["proxies"] = {"http": None, "https": None}
 
     request_method = str(method or "get").strip().lower() or "get"
-    session = None
-    conn = None
-    try:
-        if connect_ip:
-            session = requests.Session()
-            session.trust_env = False
-            adapter = DirectIPHTTPAdapter(connect_ip=connect_ip, server_hostname=server_hostname)
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
-            conn = session.request(request_method, url, **kwargs)
-        else:
-            conn = getattr(requests, request_method)(url, **kwargs)
+    provider_attempts = [None]
+    if provider_context and not connect_ip and not explicit_proxies:
+        try:
+            retry_max = max(0, int(getattr(Config, "SEARCH_PROVIDER_RETRY_MAX", 1) or 0))
+        except (TypeError, ValueError):
+            retry_max = 1
+        provider_attempts = [None] * (retry_max + 1)
+        configured_proxy = str(getattr(Config, "PROXY_URL", "") or "").strip()
+        if configured_proxy and provider_proxy_fallback_enabled():
+            provider_attempts.append(configured_proxy)
 
-        timeout = kwargs.get("timeout")
-        if isinstance(timeout, (list, tuple)):
-            if len(timeout) > 1 and timeout[1]:
-                timeout = timeout[1]
+    last_error = None
+    for attempt_index, provider_proxy in enumerate(provider_attempts):
+        session = None
+        conn = None
+        # pooled_session=True 的 Session 关闭会摧毁共享连接池，必须跳过 close()。
+        pooled_session = False
+        attempt_kwargs = dict(kwargs)
+        using_provider_proxy = provider_context and provider_proxy is not None
+        attempt_started = time.monotonic()
+        if provider_context:
+            attempt_kwargs["proxies"] = (
+                {"http": provider_proxy, "https": provider_proxy}
+                if using_provider_proxy
+                else {"http": None, "https": None}
+            )
+        try:
+            if provider_deadline_exceeded():
+                raise requests.exceptions.Timeout("provider stage timeout")
+            if connect_ip or provider_context:
+                session = requests.Session()
+                session.trust_env = False
+                if connect_ip:
+                    adapter = DirectIPHTTPAdapter(connect_ip=connect_ip, server_hostname=server_hostname)
+                    session.mount("http://", adapter)
+                    session.mount("https://", adapter)
+                conn = session.request(request_method, url, **attempt_kwargs)
+            else:
+                session = requests.Session()
+                session.trust_env = False
+                pooled_adapter = _plain_pool_adapter()
+                session.mount("http://", pooled_adapter)
+                session.mount("https://", pooled_adapter)
+                pooled_session = True
+                conn = session.request(request_method, url, **attempt_kwargs)
 
-        patch_content(conn, timeout)
-        _remember_response_meta(conn)
+            timeout = attempt_kwargs.get("timeout")
+            if isinstance(timeout, (list, tuple)):
+                if len(timeout) > 1 and timeout[1]:
+                    timeout = timeout[1]
 
-        if waf_guard:
-            waf_guard.observe_response(url, conn, module=waf_module)
+            patch_content(conn, timeout)
+            elapsed = max(0.0, time.monotonic() - attempt_started)
+            _remember_response_meta(conn)
 
-        if connect_ip and conn is not None:
-            conn.close()
+            if waf_guard:
+                waf_guard.observe_response(url, conn, module=waf_module)
 
-        return conn
-    finally:
-        if session is not None:
-            session.close()
+            if provider_context:
+                record_request(
+                    success=True,
+                    retry=attempt_index > 0,
+                    proxy_fallback=using_provider_proxy,
+                    elapsed_sec=elapsed,
+                )
+
+            if (connect_ip or provider_context) and conn is not None:
+                conn.close()
+            return conn
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            if provider_context:
+                text = str(exc).lower()
+                record_request(
+                    success=False,
+                    timeout=isinstance(exc, requests.exceptions.Timeout) or "timeout" in text,
+                    retry=attempt_index > 0,
+                    proxy_fallback=using_provider_proxy,
+                    elapsed_sec=max(0.0, time.monotonic() - attempt_started),
+                )
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            if session is not None and not pooled_session:
+                session.close()
+            retryable = isinstance(
+                exc,
+                (
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.ConnectTimeout,
+                ),
+            )
+            if not retryable and not using_provider_proxy:
+                # 读取超时通常表示目标或 provider 已经接受连接，重复请求只会继续放大等待。
+                raise
+            if attempt_index + 1 >= len(provider_attempts):
+                raise
+        finally:
+            if session is not None and not pooled_session:
+                session.close()
+
+    if last_error is not None:
+        raise last_error
+    raise requests.RequestException("provider request failed")
 
 
 class ConnMongo(object):

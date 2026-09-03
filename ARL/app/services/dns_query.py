@@ -2,12 +2,66 @@
 DNS查询和解析
 """
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 
 from app import utils
 from app.config import Config
+from app.utils.log_safety import safe_error_text, sanitize_log_text
+from app.utils.provider_http import (
+    acquire_provider_slot,
+    current_stage_remaining_sec,
+    provider_request_context,
+    stage_execution_context,
+)
 
 
 PREFERRED_MEASURE_QUERY_SOURCES = ("fofa", "shodan")
+
+
+class QueryPluginResult(list):
+    """保持查询结果列表兼容，同时携带本次 provider 批次指标。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
+
+
+def _build_query_metrics(provider_stats, input_count, output_count, unique_count):
+    stats = list(provider_stats or [])
+    http_metrics = {}
+    for item in stats:
+        _merge_provider_http_metrics(http_metrics, item.get("http_metrics") or {})
+    failed_count = len(
+        [item for item in stats if str(item.get("status") or "") == "error"]
+    )
+    degraded_count = len(
+        [item for item in stats if str(item.get("status") or "") in {"warning", "partial"}]
+    )
+    return {
+        "input_count": max(int(input_count or 0), 0),
+        "output_count": max(int(output_count or 0), 0),
+        "provider_count": len(stats),
+        "provider_success_count": len(
+            [item for item in stats if str(item.get("status") or "") == "success"]
+        ),
+        "failed_count": failed_count,
+        "degraded_count": degraded_count,
+        "dedup_count": max(int(sum(int(item.get("source_result_count") or 0) for item in stats) - int(unique_count or 0)), 0),
+        "request_count": int(http_metrics.get("request_count") or 0),
+        "timeout_count": int(http_metrics.get("timeout_count") or 0),
+        "retry_count": int(http_metrics.get("retry_count") or 0),
+        "network_wait_sec": float(http_metrics.get("network_wait_sec") or 0.0),
+        "provider_status": [
+            {
+                "provider": str(item.get("source") or ""),
+                "status": str(item.get("status") or ""),
+                "reason": str(item.get("reason") or ""),
+                "result_count": int(item.get("source_result_count") or 0),
+                "new_count": int(item.get("new_count") or 0),
+            }
+            for item in stats
+        ],
+    }
 
 
 class DNSQueryBase(object):
@@ -66,7 +120,21 @@ class DNSQueryBase(object):
             "target": str(target or ""),
             "source_result_count": 0,
             "result_count": 0,
+            "http_metrics": {},
         }
+
+    def _execute_provider_call(self, mode, target, func):
+        """在不改变插件接口的前提下，为一次 provider 调用收集网络指标。"""
+        with provider_request_context(
+            self.source_name,
+            mode=mode,
+            target=target,
+            stage_timeout_sec=current_stage_remaining_sec(),
+        ) as metrics:
+            try:
+                return func()
+            finally:
+                self.last_query_state["http_metrics"] = dict(metrics)
 
     def _set_last_query_state(
         self,
@@ -84,7 +152,7 @@ class DNSQueryBase(object):
             self.last_query_state["target"] = str(target or "")
         self.last_query_state["status"] = str(status or "")
         self.last_query_state["reason"] = str(reason or "")
-        self.last_query_state["detail"] = str(detail or "")
+        self.last_query_state["detail"] = sanitize_log_text(detail)
         if source_result_count is not None:
             self.last_query_state["source_result_count"] = int(self._safe_to_int(source_result_count, 0))
         if result_count is not None:
@@ -165,7 +233,7 @@ class DNSQueryBase(object):
             self._set_last_query_state(
                 status=issue["status"],
                 reason=issue["reason"],
-                detail=(str(message or "").strip() or str(error_text or "").strip()),
+                detail=(safe_error_text(message).strip() or safe_error_text(error_text).strip()),
             )
         return issue
 
@@ -224,12 +292,15 @@ class DNSQueryBase(object):
         t1 = time.time()
         self.logger.info("start query {} on {}".format(target, self.source_name))
         try:
-            domains = self.sub_domains(target)
+            domains = self._execute_provider_call(
+                "domain", target, lambda: self.sub_domains(target)
+            )
         except Exception as e:
-            issue = self._mark_query_issue(error_text=str(e))
+            error_text = safe_error_text(e)
+            issue = self._mark_query_issue(error_text=error_text)
             self._log_query_issue(
                 issue,
-                "{} {}: {}".format(self.source_name, issue.get("reason", "unexpected_error"), e),
+                "{} {}: {}".format(self.source_name, issue.get("reason", "unexpected_error"), error_text),
             )
             return []
 
@@ -279,13 +350,16 @@ class DNSQueryBase(object):
         t1 = time.time()
         self.logger.info("start query ip {} on {}".format(ip, self.source_name))
         try:
-            domains = self.sub_domains_by_ip(ip)
+            domains = self._execute_provider_call(
+                "ip", ip, lambda: self.sub_domains_by_ip(ip)
+            )
         except Exception as e:
-            issue = self._mark_query_issue(error_text=str(e))
+            error_text = safe_error_text(e)
+            issue = self._mark_query_issue(error_text=error_text)
             self._log_query_issue(
                 issue,
                 "{} ip {} {}: {}".format(
-                    self.source_name, ip, issue.get("reason", "unexpected_error"), e
+                    self.source_name, ip, issue.get("reason", "unexpected_error"), error_text
                 ),
             )
             return []
@@ -337,13 +411,16 @@ class DNSQueryBase(object):
         t1 = time.time()
         self.logger.info("start query cert {} on {}".format(show_cert_id, self.source_name))
         try:
-            domains = self.sub_domains_by_cert(cert)
+            domains = self._execute_provider_call(
+                "cert", show_cert_id, lambda: self.sub_domains_by_cert(cert)
+            )
         except Exception as e:
-            issue = self._mark_query_issue(error_text=str(e))
+            error_text = safe_error_text(e)
+            issue = self._mark_query_issue(error_text=error_text)
             self._log_query_issue(
                 issue,
                 "{} cert {} {}: {}".format(
-                    self.source_name, show_cert_id, issue.get("reason", "unexpected_error"), e
+                    self.source_name, show_cert_id, issue.get("reason", "unexpected_error"), error_text
                 ),
             )
             return []
@@ -458,6 +535,10 @@ def _prepare_query_plugin(p, source_filter_set, query_key, logger):
     if source_filter_set and source_name not in source_filter_set:
         return False, "source_filter"
 
+    # FOFA 使用全局 FOFA 配置，不在 QUERY_PLUGIN 节点重复填写凭据。
+    if source_name == "fofa" and (not Config.FOFA_EMAIL or not Config.FOFA_KEY):
+        return False, "required_config_missing"
+
     if query_key.get(source_name):
         source_conf = query_key[source_name]
         if not isinstance(source_conf, dict):
@@ -521,6 +602,99 @@ def _sort_plugins_for_auto_mode(plugins):
     )
 
 
+def _clone_query_plugin(plugin, query_key):
+    """为并发 IP 反查创建独立插件实例，避免 last_query_state 相互覆盖。"""
+    try:
+        clone = plugin.__class__()
+    except Exception:
+        return None
+
+    source_name = str(getattr(plugin, "source_name", "") or "").strip()
+    source_conf = query_key.get(source_name) if isinstance(query_key, dict) else None
+    if isinstance(source_conf, dict):
+        source_kwargs = dict(source_conf)
+        source_kwargs.pop("enable", None)
+        if source_kwargs:
+            try:
+                clone.init_key(**source_kwargs)
+            except Exception:
+                # 原实例已经通过 _prepare_query_plugin 校验；初始化失败交给调用方记录。
+                return None
+    return clone
+
+
+def _run_ip_query_worker(plugin, ip, target_domain, stage_timeout_sec=None, source_name=""):
+    source_name = str(source_name or getattr(plugin, "source_name", "") or "-")
+    if plugin is None:
+        return [], {
+            "source": source_name,
+            "status": "error",
+            "reason": "plugin_clone_failed",
+            "source_result_count": 0,
+            "result_count": 0,
+            "new_count": 0,
+            "detail": "provider plugin isolation failed",
+            "http_metrics": {},
+        }, "provider plugin isolation failed"
+
+    interval = getattr(plugin, "request_interval", 0.0)
+    acquire_provider_slot(source_name, interval)
+    try:
+        with stage_execution_context("dns_ip_query", stage_timeout_sec):
+            results = plugin.query_by_ip(ip, target_domain=target_domain)
+        return list(results or []), _read_plugin_state(plugin, result_count=len(results or [])), ""
+    except Exception as exc:
+        return [], {
+            "source": source_name,
+            "status": "error",
+            "reason": "worker_exception",
+            "source_result_count": 0,
+            "result_count": 0,
+            "new_count": 0,
+            "detail": safe_error_text(exc, max_length=240),
+            "http_metrics": {},
+        }, safe_error_text(exc),
+
+
+def _run_domain_query_worker(plugin, target, stage_timeout_sec=None):
+    source_name = str(getattr(plugin, "source_name", "") or "-")
+    try:
+        with stage_execution_context("dns_query_provider", stage_timeout_sec):
+            results = list(plugin.query(target) or [])
+        return results, _read_plugin_state(plugin, result_count=len(results)), ""
+    except Exception as exc:
+        error_text = safe_error_text(exc, max_length=240)
+        return [], {
+            "source": source_name,
+            "status": "error",
+            "reason": "worker_exception",
+            "source_result_count": 0,
+            "result_count": 0,
+            "new_count": 0,
+            "detail": error_text,
+            "http_metrics": {},
+        }, error_text
+
+
+def _merge_provider_http_metrics(total, current):
+    if not isinstance(current, dict):
+        return
+    for key, value in current.items():
+        if key == "elapsed_sec":
+            try:
+                total[key] = round(max(float(total.get(key, 0.0)), float(value or 0.0)), 6)
+            except (TypeError, ValueError):
+                continue
+            continue
+        try:
+            total[key] = total.get(key, 0) + int(value or 0)
+        except (TypeError, ValueError):
+            try:
+                total[key] = total.get(key, 0.0) + float(value or 0.0)
+            except (TypeError, ValueError):
+                continue
+
+
 def _read_plugin_state(plugin, result_count=0, new_count=0):
     state = getattr(plugin, "last_query_state", {})
     if not isinstance(state, dict):
@@ -535,6 +709,8 @@ def _read_plugin_state(plugin, result_count=0, new_count=0):
         "result_count": int(state.get("result_count") or result_count or 0),
         "new_count": int(new_count or 0),
         "detail": str(state.get("detail") or ""),
+        "http_metrics": dict(state.get("http_metrics") or {})
+        if isinstance(state.get("http_metrics"), dict) else {},
     }
 
 
@@ -547,9 +723,17 @@ def _format_provider_summary(provider_stats):
         source_result_count = int(item.get("source_result_count") or 0)
         new_count = int(item.get("new_count") or 0)
         detail = str(item.get("detail") or "").strip()
-        part = "{}:{}:{}({}/{})".format(source, status, reason, new_count, source_result_count)
+        http_metrics = item.get("http_metrics") or {}
+        timeout_count = int(http_metrics.get("timeout_count") or 0)
+        retry_count = int(http_metrics.get("retry_count") or 0)
+        metric_suffix = ""
+        if timeout_count or retry_count:
+            metric_suffix = ",timeout={},retry={}".format(timeout_count, retry_count)
+        part = "{}:{}:{}({}/{}){}".format(
+            source, status, reason, new_count, source_result_count, metric_suffix
+        )
         if detail:
-            part = "{}[{}]".format(part, detail[:120])
+            part = "{}[{}]".format(part, sanitize_log_text(detail, max_length=120))
         parts.append(part)
     return " | ".join(parts) if parts else "-"
 
@@ -593,7 +777,8 @@ def run_query_plugin(target, sources=None):
             return []
         plugins = _sort_plugins_for_auto_mode(plugins)
     ret = []
-    # 全局去重：同一域名只保留一条记录（来源保留首次命中插件）
+    # 保留“域名 + 来源”关系；域名本身仍单独去重用于任务统计。
+    source_domain_pairs = set()
     subdomains = set()
     t1 = time.time()
     run_count = 0
@@ -601,13 +786,15 @@ def run_query_plugin(target, sources=None):
     error_count = 0
     warning_count = 0
     provider_stats = []
-    for p in plugins:
+    runnable_plugins = []
+    for plugin_index, p in enumerate(plugins):
+        source_name = str(getattr(p, "source_name", "") or "-")
         try:
-            source_name = p.source_name
             should_run, reason = _prepare_query_plugin(p, source_filter_set, query_key, logger)
             if not should_run:
                 skip_count += 1
                 provider_stats.append({
+                    "_order": plugin_index,
                     "source": source_name,
                     "status": "skip",
                     "reason": reason,
@@ -620,59 +807,136 @@ def run_query_plugin(target, sources=None):
                 elif reason == "enable=false":
                     logger.info("skip query plugin {} because enable=false".format(source_name))
                 continue
-
-            run_count += 1
-            logger.info("start query plugin {} target:{}".format(source_name, target))
-            results = p.query(target)
-            source_new_cnt = 0
-            for result in results:
-                if result in subdomains:
-                    continue
-                item = {
-                    "domain": result,
-                    "source": source_name
-                }
-                ret.append(item)
-                subdomains.add(result)
-                source_new_cnt += 1
-
-            provider_state = _read_plugin_state(p, result_count=len(results), new_count=source_new_cnt)
-            provider_stats.append(provider_state)
-            if provider_state["status"] == "warning":
-                warning_count += 1
-            elif provider_state["status"] == "error":
-                error_count += 1
-            logger.info(
-                "end query plugin {} status:{} reason:{} source_result:{} new_result:{}".format(
-                    source_name,
-                    provider_state["status"],
-                    provider_state["reason"],
-                    len(results),
-                    source_new_cnt,
-                )
-            )
-
-        except Exception as e:
-            error_str = str(e)
+            runnable_plugins.append((plugin_index, p))
+        except Exception as exc:
+            error_str = safe_error_text(exc)
             if "please set fofa key" in error_str:
                 logger.debug(error_str)
             else:
-                logger.error("{} error {} {}".format(p.source_name, type(e), str(e)))
+                logger.error("{} prepare error {} {}".format(source_name, type(exc), error_str))
             error_count += 1
             provider_stats.append({
-                "source": str(getattr(p, "source_name", "") or "-"),
+                "_order": plugin_index,
+                "source": source_name,
                 "status": "error",
-                "reason": "unexpected_error",
+                "reason": "prepare_failed",
                 "source_result_count": 0,
                 "new_count": 0,
                 "detail": error_str,
             })
 
+    run_count = len(runnable_plugins)
+    if runnable_plugins:
+        try:
+            provider_concurrency = max(
+                1,
+                int(getattr(Config, "SEARCH_PROVIDER_CONCURRENCY", 4) or 4),
+            )
+        except (TypeError, ValueError):
+            provider_concurrency = 4
+        provider_concurrency = min(provider_concurrency, len(runnable_plugins))
+        stage_remaining = current_stage_remaining_sec()
+        executor = ThreadPoolExecutor(max_workers=provider_concurrency)
+        future_map = {
+            executor.submit(
+                _run_domain_query_worker,
+                plugin,
+                target,
+                stage_remaining,
+            ): (plugin_index, plugin)
+            for plugin_index, plugin in runnable_plugins
+        }
+        pending = set(future_map)
+        timed_out = False
+        try:
+            remaining = stage_remaining
+            try:
+                for future in as_completed(pending, timeout=remaining):
+                    pending.remove(future)
+                    plugin_index, plugin = future_map[future]
+                    source_name = str(getattr(plugin, "source_name", "") or "-")
+                    try:
+                        results, provider_state, worker_error = future.result()
+                    except Exception as exc:
+                        results = []
+                        provider_state = {
+                            "source": source_name,
+                            "status": "error",
+                            "reason": "worker_exception",
+                            "source_result_count": 0,
+                            "new_count": 0,
+                            "detail": safe_error_text(exc, max_length=240),
+                        }
+                        worker_error = provider_state["detail"]
+
+                    source_new_cnt = 0
+                    for result in results:
+                        pair_key = (source_name, result)
+                        if pair_key in source_domain_pairs:
+                            continue
+                        item = {
+                            "domain": result,
+                            "source": source_name,
+                        }
+                        ret.append(item)
+                        source_domain_pairs.add(pair_key)
+                        subdomains.add(result)
+                        source_new_cnt += 1
+
+                    provider_state = dict(provider_state or {})
+                    provider_state["_order"] = plugin_index
+                    provider_state["source"] = source_name
+                    provider_state["new_count"] = source_new_cnt
+                    if worker_error and provider_state.get("status") not in {"warning", "error"}:
+                        provider_state["status"] = "error"
+                        provider_state["reason"] = "worker_exception"
+                    provider_stats.append(provider_state)
+                    if provider_state.get("status") in {"warning", "partial"}:
+                        warning_count += 1
+                    elif provider_state.get("status") == "error":
+                        error_count += 1
+                    logger.info(
+                        "end query plugin {} status:{} reason:{} source_result:{} new_result:{}".format(
+                            source_name,
+                            provider_state.get("status", "error"),
+                            provider_state.get("reason", "worker_exception"),
+                            len(results),
+                            source_new_cnt,
+                        )
+                    )
+            except TimeoutError:
+                timed_out = True
+        finally:
+            if timed_out:
+                for future in pending:
+                    future.cancel()
+            executor.shutdown(wait=not timed_out, cancel_futures=timed_out)
+
+        if timed_out:
+            for future in pending:
+                plugin_index, plugin = future_map[future]
+                source_name = str(getattr(plugin, "source_name", "") or "-")
+                provider_stats.append({
+                    "_order": plugin_index,
+                    "source": source_name,
+                    "status": "partial",
+                    "reason": "stage_timeout",
+                    "source_result_count": 0,
+                    "new_count": 0,
+                    "detail": "provider call pending at stage deadline",
+                })
+                warning_count += 1
+
+    provider_stats.sort(key=lambda item: int(item.get("_order", 0)))
+    for item in provider_stats:
+        item.pop("_order", None)
+
     t2 = time.time()
     logger.info(
-        "{} subdomains result {} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
+        "{} subdomains result:{} source_relation:{} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
             target,
             len(subdomains),
+            len(source_domain_pairs),
             run_count,
             skip_count,
             warning_count,
@@ -681,7 +945,15 @@ def run_query_plugin(target, sources=None):
             _format_provider_summary(provider_stats),
         )
     )
-    return ret
+    return QueryPluginResult(
+        ret,
+        metrics=_build_query_metrics(
+            provider_stats,
+            input_count=1,
+            output_count=len(ret),
+            unique_count=len(subdomains),
+        ),
+    )
 
 
 def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=0):
@@ -726,6 +998,7 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
         plugins = _sort_plugins_for_auto_mode(plugins)
 
     ret = []
+    source_domain_pairs = set()
     subdomains = set()
     t1 = time.time()
     run_count = 0
@@ -771,33 +1044,196 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
             run_count += 1
             source_result_cnt = 0
             source_new_cnt = 0
-            for ip in normalized_ip_list:
-                logger.info("start ip query plugin {} target:{}".format(source_name, ip))
-                results = p.query_by_ip(ip, target_domain=target_domain)
-                source_result_cnt += len(results)
-                for result in results:
-                    if result in subdomains:
-                        continue
+            failed_calls = 0
+            timeout_calls = 0
+            pending_calls = 0
+            consecutive_failures = 0
+            circuit_open = False
+            circuit_threshold = max(
+                1,
+                int(getattr(Config, "SEARCH_PROVIDER_CIRCUIT_BREAKER_THRESHOLD", 3) or 3),
+            )
+            provider_http_metrics = {}
+            provider_stage_start = time.monotonic()
+            provider_stage_budget = max(
+                0,
+                int(getattr(Config, "SEARCH_PROVIDER_STAGE_TIMEOUT_SEC", 300) or 0),
+            )
+            provider_concurrency = max(
+                1,
+                int(getattr(Config, "SEARCH_PROVIDER_CONCURRENCY", 4) or 4),
+            )
+            executor = ThreadPoolExecutor(max_workers=provider_concurrency)
+            future_map = {}
+            pending = set()
+            next_ip_index = 0
+            stop_scheduling = False
 
-                    item = {
-                        "domain": result,
-                        "source": source_name,
-                        "pivot_ip": ip
-                    }
-                    ret.append(item)
-                    subdomains.add(result)
-                    source_new_cnt += 1
+            def submit_next_ip():
+                """只保持一个并发窗口，避免熔断前把所有 IP 压入线程池。"""
+                nonlocal next_ip_index
+                if next_ip_index >= len(normalized_ip_list):
+                    return False
+                ip = normalized_ip_list[next_ip_index]
+                next_ip_index += 1
+                worker_plugin = _clone_query_plugin(p, query_key)
+                remaining_budget = None
+                if provider_stage_budget > 0:
+                    remaining_budget = provider_stage_budget - (
+                        time.monotonic() - provider_stage_start
+                    )
+                    if remaining_budget <= 0:
+                        next_ip_index -= 1
+                        return False
+                future = executor.submit(
+                    _run_ip_query_worker,
+                    worker_plugin,
+                    ip,
+                    target_domain,
+                    remaining_budget,
+                    source_name,
+                )
+                future_map[future] = ip
+                pending.add(future)
+                return True
 
-                    if max_domains > 0 and len(subdomains) >= max_domains:
-                        limit_hit = True
+            try:
+                for _ in range(min(provider_concurrency, len(normalized_ip_list))):
+                    submit_next_ip()
+
+                while pending:
+                    remaining = None
+                    if provider_stage_budget > 0:
+                        remaining = provider_stage_budget - (time.monotonic() - provider_stage_start)
+                        if remaining <= 0:
+                            pending_calls += len(pending) + max(
+                                len(normalized_ip_list) - next_ip_index,
+                                0,
+                            )
+                            stop_scheduling = True
+                            break
+                    completed_set, pending = wait(
+                        pending,
+                        timeout=remaining,
+                        return_when=FIRST_COMPLETED,
+                    )
+                    if not completed_set:
+                        pending_calls += len(pending) + max(
+                            len(normalized_ip_list) - next_ip_index,
+                            0,
+                        )
+                        stop_scheduling = True
                         break
 
-                if limit_hit:
-                    break
+                    completed_list = list(completed_set)
+                    for completed_index, completed in enumerate(completed_list):
+                        ip = future_map[completed]
+                        results, call_state, worker_error = completed.result()
+                        call_status = str(call_state.get("status") or "")
+                        call_failed = bool(worker_error) or call_status in {"error", "warning"}
+                        if call_failed:
+                            failed_calls += 1
+                            consecutive_failures += 1
+                            logger.warning(
+                                "ip query provider worker failed source:{} target:{} error:{}".format(
+                                    source_name,
+                                    ip,
+                                    (worker_error or call_state.get("reason") or "request_failed")[:240],
+                                )
+                            )
+                        else:
+                            consecutive_failures = 0
+                        http_metrics = call_state.get("http_metrics") or {}
+                        timeout_calls += int(http_metrics.get("timeout_count") or 0)
+                        _merge_provider_http_metrics(provider_http_metrics, http_metrics)
+                        source_result_cnt += len(results)
+                        for result in results:
+                            pair_key = (source_name, result)
+                            if pair_key in source_domain_pairs:
+                                continue
 
-            provider_state = _read_plugin_state(p, result_count=source_result_cnt, new_count=source_new_cnt)
+                            item = {
+                                "domain": result,
+                                "source": source_name,
+                                "pivot_ip": ip
+                            }
+                            ret.append(item)
+                            source_domain_pairs.add(pair_key)
+                            source_new_cnt += 1
+                            subdomains.add(result)
+
+                            if max_domains > 0 and len(subdomains) >= max_domains:
+                                limit_hit = True
+                                stop_scheduling = True
+                                break
+
+                        if limit_hit:
+                            unprocessed_done = len(completed_list) - completed_index - 1
+                            pending_calls += unprocessed_done + len(pending) + max(
+                                len(normalized_ip_list) - next_ip_index,
+                                0,
+                            )
+                            break
+                        if consecutive_failures >= circuit_threshold:
+                            circuit_open = True
+                            stop_scheduling = True
+                            unprocessed_done = len(completed_list) - completed_index - 1
+                            pending_calls += unprocessed_done + len(pending) + max(
+                                len(normalized_ip_list) - next_ip_index,
+                                0,
+                            )
+                            logger.warning(
+                                "ip query provider circuit open source:{} consecutive_failures:{} pending_calls:{}".format(
+                                    source_name,
+                                    consecutive_failures,
+                                    pending_calls,
+                                )
+                            )
+                            break
+
+                    if stop_scheduling:
+                        break
+
+                    while len(pending) < provider_concurrency and submit_next_ip():
+                        pass
+            finally:
+                for future in future_map:
+                    if not future.done():
+                        future.cancel()
+                executor.shutdown(
+                    wait=not stop_scheduling,
+                    cancel_futures=stop_scheduling,
+                )
+
+            if circuit_open:
+                provider_status = "partial"
+                provider_reason = "circuit_open"
+            elif pending_calls:
+                provider_status = "partial"
+                provider_reason = "stage_timeout" if provider_stage_budget > 0 else "pending_cancelled"
+            elif failed_calls:
+                provider_status = "warning" if source_result_cnt or source_new_cnt else "error"
+                provider_reason = "request_failed"
+            elif source_result_cnt:
+                provider_status = "success"
+                provider_reason = "ok"
+            else:
+                provider_status = "empty"
+                provider_reason = "no_result"
+            provider_state = {
+                "source": source_name,
+                "status": provider_status,
+                "reason": provider_reason,
+                "source_result_count": source_result_cnt,
+                "result_count": source_result_cnt,
+                "new_count": source_new_cnt,
+                "detail": "pending_calls:{} failed_calls:{} timeout_calls:{}".format(
+                    pending_calls, failed_calls, timeout_calls
+                ) if pending_calls or failed_calls or timeout_calls else "",
+                "http_metrics": provider_http_metrics,
+            }
             provider_stats.append(provider_state)
-            if provider_state["status"] == "warning":
+            if provider_state["status"] in {"warning", "partial"}:
                 warning_count += 1
             elif provider_state["status"] == "error":
                 error_count += 1
@@ -816,11 +1252,11 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
                 break
 
         except Exception as e:
-            error_str = str(e)
+            error_str = safe_error_text(e)
             if "please set fofa key" in error_str:
                 logger.debug(error_str)
             else:
-                logger.error("{} ip query error {} {}".format(source_name, type(e), str(e)))
+                logger.error("{} ip query error {} {}".format(source_name, type(e), error_str))
             error_count += 1
             provider_stats.append({
                 "source": source_name,
@@ -833,10 +1269,11 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
 
     t2 = time.time()
     logger.info(
-        "ip_query target_domain:{} ip:{} result:{} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
+        "ip_query target_domain:{} ip:{} result:{} source_relation:{} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
             target_domain or "-",
             len(normalized_ip_list),
             len(subdomains),
+            len(source_domain_pairs),
             run_count,
             skip_count,
             warning_count,
@@ -845,7 +1282,15 @@ def run_query_plugin_by_ip(ip_list, target_domain="", sources=None, max_domains=
             _format_provider_summary(provider_stats),
         )
     )
-    return ret
+    return QueryPluginResult(
+        ret,
+        metrics=_build_query_metrics(
+            provider_stats,
+            input_count=len(normalized_ip_list),
+            output_count=len(ret),
+            unique_count=len(subdomains),
+        ),
+    )
 
 
 def _build_cert_query_key(cert):
@@ -934,6 +1379,7 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
         plugins = _sort_plugins_for_auto_mode(plugins)
 
     ret = []
+    source_domain_pairs = set()
     subdomains = set()
     t1 = time.time()
     run_count = 0
@@ -986,7 +1432,8 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
                 results = p.query_by_cert(cert_obj, target_domain=target_domain, cert_id=cert_key)
                 source_result_cnt += len(results)
                 for result in results:
-                    if result in subdomains:
+                    pair_key = (source_name, result)
+                    if pair_key in source_domain_pairs:
                         continue
 
                     item = {
@@ -995,8 +1442,11 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
                         "pivot_cert": cert_key
                     }
                     ret.append(item)
-                    subdomains.add(result)
+                    source_domain_pairs.add(pair_key)
                     source_new_cnt += 1
+
+                    if result not in subdomains:
+                        subdomains.add(result)
 
                     if max_domains > 0 and len(subdomains) >= max_domains:
                         limit_hit = True
@@ -1026,11 +1476,11 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
                 break
 
         except Exception as e:
-            error_str = str(e)
+            error_str = safe_error_text(e)
             if "please set fofa key" in error_str:
                 logger.debug(error_str)
             else:
-                logger.error("{} cert query error {} {}".format(source_name, type(e), str(e)))
+                logger.error("{} cert query error {} {}".format(source_name, type(e), error_str))
             error_count += 1
             provider_stats.append({
                 "source": source_name,
@@ -1043,10 +1493,11 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
 
     t2 = time.time()
     logger.info(
-        "cert_query target_domain:{} cert:{} result:{} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
+        "cert_query target_domain:{} cert:{} result:{} source_relation:{} run:{} skip:{} warning:{} error:{} ({:.2f}s) provider_summary:{}".format(
             target_domain or "-",
             len(normalized_cert_list),
             len(subdomains),
+            len(source_domain_pairs),
             run_count,
             skip_count,
             warning_count,
@@ -1055,4 +1506,12 @@ def run_query_plugin_by_cert(cert_list, target_domain="", sources=None, max_doma
             _format_provider_summary(provider_stats),
         )
     )
-    return ret
+    return QueryPluginResult(
+        ret,
+        metrics=_build_query_metrics(
+            provider_stats,
+            input_count=len(normalized_cert_list),
+            output_count=len(ret),
+            unique_count=len(subdomains),
+        ),
+    )

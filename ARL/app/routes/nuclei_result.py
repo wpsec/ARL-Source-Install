@@ -42,8 +42,6 @@ base_search_fields = {
     'vuln_url': fields.String(description="风险URL"),
     'target': fields.String(description="扫描目标"),
     "task_id": fields.String(description="任务ID"),
-    "ai_pen_decision": fields.String(description="AI渗透结论(verified/likely_false_positive/needs_manual_review)"),
-    "ai_pen_status": fields.String(description="AI渗透状态(ok/error/skipped)"),
 }
 
 base_search_fields.update(base_query_fields)

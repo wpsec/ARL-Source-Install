@@ -25,7 +25,7 @@ class Query(DNSQueryBase):
         self.api_key = None
         self.page_size = 100
         self.max_page = 5
-        self.request_interval = 1.0
+        self.request_interval = 2.0
         self.rate_limit_retry = 4
         self.rate_limit_backoff = 2
         self.rate_limit_max_sleep = 60
@@ -35,7 +35,7 @@ class Query(DNSQueryBase):
         api_key=None,
         page_size=100,
         max_page=5,
-        request_interval=1.0,
+        request_interval=2.0,
         rate_limit_retry=4,
         rate_limit_backoff=2,
         rate_limit_max_sleep=60,
@@ -43,7 +43,8 @@ class Query(DNSQueryBase):
         self.api_key = api_key
         self.page_size = max(self._safe_to_int(page_size, 100), 1)
         self.max_page = max(self._safe_to_int(max_page, 5), 1)
-        self.request_interval = max(self._safe_to_float(request_interval, 1.0), 0.0)
+        # Hunter.how 公开套餐说明要求所有 API 至少间隔 2 秒。
+        self.request_interval = max(self._safe_to_float(request_interval, 2.0), 2.0)
         self.rate_limit_retry = max(self._safe_to_int(rate_limit_retry, 4), 0)
         self.rate_limit_backoff = max(self._safe_to_int(rate_limit_backoff, 2), 1)
         self.rate_limit_max_sleep = max(self._safe_to_int(rate_limit_max_sleep, 60), self.rate_limit_backoff)
@@ -169,6 +170,8 @@ class Query(DNSQueryBase):
                 "search": encoded_search,
                 "page": 1,
                 "page_size": self.page_size,
+                # 当前 Search API 将请求起点作为必填参数，使用毫秒时间戳并在分页内保持不变。
+                "start_time": int(time.time() * 1000),
                 "api-key": self.api_key,
             }
 
@@ -278,7 +281,7 @@ class Query(DNSQueryBase):
 
         searches = [
             "domain=\"{}\"".format(target),
-            "domain.suffix=\"{}\"".format(target),
+            "domain.suffix==\"{}\"".format(target),
         ]
         return self._query_domains_by_searches(searches, log_target=target)
 

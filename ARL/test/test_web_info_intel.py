@@ -92,6 +92,9 @@ class TestWebInfoIntel(unittest.TestCase):
         self.assertIn(("urlfinder_js", "https://example.com/static/app.js"), result_map)
         self.assertIn(("domain", "api.example.com"), result_map)
         self.assertTrue(any(item.recordType == "page_form" and "https://example.com/login" in item.content for item in results))
+        self.assertEqual("rust", results.metrics["backend"])
+        self.assertEqual(2, results.metrics["network_request_count"])
+        self.assertGreaterEqual(results.metrics["network_wait_sec"], 0)
 
     @patch("app.services.js_intel_scan.utils.check_dns_policy_for_url")
     @patch("app.services.js_intel_scan.utils.http_req")
@@ -125,6 +128,9 @@ class TestWebInfoIntel(unittest.TestCase):
         self.assertIn(("urlfinder_url", "https://example.com/api/v1/users"), result_map)
         self.assertIn(("urlfinder_url", "https://example.com/static/api/profile/list"), result_map)
         self.assertIn(("api_doc_url", "https://example.com/v3/api-docs"), result_map)
+        self.assertEqual("rust", results.metrics["backend"])
+        self.assertEqual(1, results.metrics["network_request_count"])
+        self.assertGreaterEqual(results.metrics["network_wait_sec"], 0)
 
     @patch("app.services.api_doc_scan.utils.check_dns_policy_for_url")
     @patch("app.services.api_doc_scan.utils.http_req")
@@ -196,7 +202,7 @@ class TestWebInfoIntel(unittest.TestCase):
         mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
 
         def _http_req(url, *args, **kwargs):
-            if url == "https://example.com":
+            if url == "https://example.test":
                 return _FakeResponse(
                     """
                     <html>
@@ -207,7 +213,7 @@ class TestWebInfoIntel(unittest.TestCase):
                     """,
                     content_type="text/html",
                 )
-            if url == "https://example.com/static/app.js":
+            if url == "https://example.test/static/app.js":
                 return _FakeResponse(
                     """
                     const good = "/api/users";
@@ -220,12 +226,15 @@ class TestWebInfoIntel(unittest.TestCase):
 
         mock_http_req.side_effect = _http_req
 
-        results = run_urlfinder_extract(["https://example.com"], [])
+        results = run_urlfinder_extract(["https://example.test"], [])
         result_map = {(item.recordType, item.content) for item in results}
 
-        self.assertIn(("urlfinder_js", "https://example.com/static/app.js"), result_map)
-        self.assertIn(("urlfinder_url", "https://example.com/api/users"), result_map)
+        self.assertIn(("urlfinder_js", "https://example.test/static/app.js"), result_map)
+        self.assertIn(("urlfinder_url", "https://example.test/api/users"), result_map)
         self.assertFalse(any("前缀吗" in item.content for item in results))
+        self.assertEqual("rust", results.metrics["backend"])
+        self.assertEqual(2, results.metrics["network_request_count"])
+        self.assertGreaterEqual(results.metrics["network_wait_sec"], 0)
 
 
 if __name__ == "__main__":

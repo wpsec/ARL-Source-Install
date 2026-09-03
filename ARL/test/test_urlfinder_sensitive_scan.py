@@ -198,6 +198,8 @@ class TestUrlfinderSensitiveScan(unittest.TestCase):
         self.assertEqual(3, len(targets))
         self.assertEqual("https://example.com/admin/report/export", targets[0])
         self.assertEqual("https://example.com/api/user/list?page=1", targets[1])
+        self.assertIn("low_value_target_count", scanner.last_target_metrics)
+        self.assertGreaterEqual(scanner.last_target_metrics["low_value_target_count"], 0)
 
     def test_secondary_scan_batches_targets_and_disables_runtime(self):
         instances = []
@@ -323,6 +325,8 @@ class TestUrlfinderSensitiveScan(unittest.TestCase):
         self.assertEqual(1, len(instances))
         self.assertEqual(1, len(results))
         self.assertEqual(90, instances[0].wih_timeout_sec)
+        self.assertEqual("timeout", results.metrics["end_reason"])
+        self.assertEqual("partial", results.metrics["status"])
 
     def test_secondary_scan_early_stops_after_consecutive_no_gain_batches(self):
         instances = []
@@ -363,6 +367,9 @@ class TestUrlfinderSensitiveScan(unittest.TestCase):
 
         self.assertEqual(1, len(results))
         self.assertEqual(3, len(instances))
+        self.assertEqual("no_gain", results.metrics["end_reason"])
+        self.assertEqual(2, results.metrics["no_gain_batches"])
+        self.assertEqual(0, results.metrics["duplicate_record_count"])
 
 
 if __name__ == "__main__":

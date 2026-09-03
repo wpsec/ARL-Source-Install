@@ -59,10 +59,11 @@ class ApiDocScanner:
         re.compile(r"https?://[^\s\"'<>`]{4,2048}", re.I),
     ]
 
-    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
+    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None, discovery_context=None):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.waf_guard = waf_guard
+        self.discovery_context = discovery_context
 
         self.enable = bool(getattr(Config, "API_DOC_ENABLE", True))
         self.max_docs = int(getattr(Config, "API_DOC_MAX_CANDIDATES", 20) or 20)
@@ -373,6 +374,7 @@ class ApiDocScanner:
                 timeout=self.timeout,
                 max_bytes=self.max_body_bytes,
                 waf_module="api_doc_scan",
+                discovery_context=self.discovery_context,
             )
             if not raw_text:
                 continue
@@ -389,6 +391,11 @@ class ApiDocScanner:
         return self.records
 
 
-def run_api_doc_scan(sites: List[str], wih_records: List[WihRecord], waf_guard=None) -> List[WihRecord]:
-    scanner = ApiDocScanner(sites=sites, wih_records=wih_records, waf_guard=waf_guard)
+def run_api_doc_scan(sites: List[str], wih_records: List[WihRecord], waf_guard=None, discovery_context=None) -> List[WihRecord]:
+    scanner = ApiDocScanner(
+        sites=sites,
+        wih_records=wih_records,
+        waf_guard=waf_guard,
+        discovery_context=discovery_context,
+    )
     return scanner.run()

@@ -1,12 +1,31 @@
 """
 端口扫描执行
 """
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+import threading
 import time
 from app import utils
 from app.utils import nmap
 from app.config import Config
+from app.utils.log_safety import safe_error_text
 
 logger = utils.get_logger()
+
+
+class PortScanResult(list):
+    """保持 list 兼容，同时携带本次扫描的独立批次指标。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
+
+
+class PortScanBatchResult(list):
+    """保持批次结果的 list 兼容，同时携带本批次执行指标。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
 
 
 class PortScan:
@@ -25,7 +44,15 @@ class PortScan:
         self.base_host_timeout = 60 * 5
         self.parallelism = self._safe_positive_int(port_parallelism, Config.PORT_PARALLELISM)
         self.min_rate = self._safe_positive_int(port_min_rate, Config.PORT_MIN_RATE)
-        self.base_nmap_arguments = "-sT -n --open"
+        self.syn_scan_enabled = bool(getattr(Config, "PORT_SCAN_SYN_ENABLE", True))
+        self.syn_scan_fallback_enabled = bool(
+            getattr(Config, "PORT_SCAN_SYN_FALLBACK_ENABLE", True)
+        )
+        self._syn_scan_unavailable = False
+        self._syn_scan_state_lock = threading.Lock()
+        self.base_nmap_arguments = "{} -n --open".format(
+            "-sS" if self.syn_scan_enabled else "-sT"
+        )
 
         # 扫描分片大小：避免一次性 nmap 扫描过多目标导致任务长时间无输出。
         self.port_scan_target_batch_size = self._safe_positive_int(
@@ -35,8 +62,21 @@ class PortScan:
             getattr(Config, "PORT_SCAN_HEAVY_TARGET_BATCH_SIZE", 8), 8
         )
         self.port_scan_all_target_batch_size = self._safe_positive_int(
-            getattr(Config, "PORT_SCAN_ALL_TARGET_BATCH_SIZE", 2), 2
+            getattr(Config, "PORT_SCAN_ALL_TARGET_BATCH_SIZE", 1), 1
         )
+        # 只并行独立 nmap 批次；上限由配置约束，避免把全端口扫描变成进程洪峰。
+        self.batch_concurrency = min(
+            max(1, self._safe_positive_int(
+                getattr(Config, "PORT_SCAN_BATCH_CONCURRENCY", 3), 3
+            )),
+            4,
+        )
+        self.batch_timeout_sec = self._safe_positive_int(
+            getattr(Config, "PORT_SCAN_BATCH_TIMEOUT_SEC", 600),
+            600,
+            min_value=0,
+        )
+        self.last_scan_metrics = {}
 
         # 二阶段精扫端口分段大小：
         # 说明：这里不做“裁剪”，仅做“分段”，确保结果完整不缩水。
@@ -124,6 +164,35 @@ class PortScan:
         args += " --min-parallelism {}".format(self.parallelism)
         args += " --max-retries {}".format(self.max_retries)
         return args
+
+    @staticmethod
+    def _is_syn_permission_error(error):
+        """只把 raw socket 权限错误降级为 connect scan，避免掩盖真实故障。"""
+        message = str(error or "").strip().lower()
+        if not message:
+            return False
+        return any(
+            marker in message
+            for marker in (
+                "requires root",
+                "raw socket",
+                "cap_net_raw",
+                "operation not permitted",
+                "permission denied",
+                "not permitted",
+            )
+        )
+
+    def _mark_syn_scan_unavailable(self):
+        with self._syn_scan_state_lock:
+            self._syn_scan_unavailable = True
+
+    def _effective_scan_arguments(self, arguments):
+        if not self._syn_scan_unavailable:
+            return arguments, "syn" if "-sS" in arguments.split() else "connect"
+        if "-sS" not in arguments.split():
+            return arguments, "connect"
+        return arguments.replace("-sS", "-sT", 1), "connect_fallback"
 
     @staticmethod
     def _estimate_port_count(ports):
@@ -288,12 +357,7 @@ class PortScan:
             port_info_list = []
             for proto in nm[host].all_protocols():
                 proto_ports = nm[host][proto]
-                port_len = len(proto_ports)
                 for port in proto_ports:
-                    # 对于开了很多端口的直接丢弃
-                    if port_len > 600 and (port not in [80, 443]):
-                        continue
-
                     port_info = proto_ports[port]
                     item = {
                         "port_id": port,
@@ -305,12 +369,11 @@ class PortScan:
                     port_info_list.append(item)
 
             total_open_count = len(port_info_list)
-            if self._is_suspected_all_open(total_open_count):
-                old_count = total_open_count
-                port_info_list = self._filter_suspected_ports(port_info_list)
+            suspected_all_open = self._is_suspected_all_open(total_open_count)
+            if suspected_all_open:
                 logger.warning(
-                    "suspected fake all-open host:{} open_ports:{} requested_ports:{} kept_ports:{}".format(
-                        host, old_count, self.requested_port_count, len(port_info_list)
+                    "suspected fake all-open host:{} open_ports:{} requested_ports:{} preserve_all:true".format(
+                        host, total_open_count, self.requested_port_count
                     )
                 )
 
@@ -319,7 +382,9 @@ class PortScan:
             ip_info_list.append({
                 "ip": host,
                 "port_info": port_info_list,
-                "os_info": os_info
+                "os_info": os_info,
+                # 仅作为当前扫描链路的内部标记，IPInfo 落库时不会改变既有文档字段。
+                "_suspected_all_open": suspected_all_open,
             })
 
         return ip_info_list
@@ -336,7 +401,8 @@ class PortScan:
                 ip_info_map[host] = {
                     "ip": host,
                     "port_info": [PortScan._normalize_port_info_item(x) for x in item.get("port_info", [])],
-                    "os_info": item.get("os_info", {}) or {}
+                    "os_info": item.get("os_info", {}) or {},
+                    "_suspected_all_open": bool(item.get("_suspected_all_open")),
                 }
                 continue
 
@@ -362,8 +428,20 @@ class PortScan:
             old["port_info"] = list(port_map.values())
             if item.get("os_info"):
                 old["os_info"] = item["os_info"]
+            old["_suspected_all_open"] = bool(
+                old.get("_suspected_all_open") or item.get("_suspected_all_open")
+            )
 
-    def _run_batch_scan(self, target_batch, ports, arguments, stage_name, batch_index, batch_total):
+    def _run_batch_scan(
+        self,
+        target_batch,
+        ports,
+        arguments,
+        stage_name,
+        batch_index,
+        batch_total,
+        stage_deadline_ts=None,
+    ):
         ports_text = str(ports or "")
         if len(ports_text) > 64:
             ports_text = "{}...".format(ports_text[:64])
@@ -380,24 +458,133 @@ class PortScan:
             )
         )
 
-        nm = nmap.PortScanner()
-        try:
-            nm.scan(hosts=" ".join(target_batch), ports=ports, arguments=arguments)
-        except Exception as e:
-            logger.exception(
-                "nmap stage:{} batch:{}/{} failed targets:{} err:{}".format(
-                    stage_name, batch_index, batch_total, len(target_batch), e
+        if stage_deadline_ts and time.time() >= stage_deadline_ts:
+            logger.warning(
+                "nmap stage:{} batch:{}/{} pending before start reason:stage_budget".format(
+                    stage_name, batch_index, batch_total
                 )
             )
-            return []
+            return None
 
-        result = self._extract_scan_result(nm)
+        scan_arguments, scan_type = self._effective_scan_arguments(arguments)
+        scan_kwargs = {
+            "hosts": " ".join(target_batch),
+            "ports": ports,
+            "arguments": scan_arguments,
+        }
+        if self.batch_timeout_sec > 0:
+            batch_timeout = self.batch_timeout_sec
+            if stage_deadline_ts:
+                batch_timeout = min(
+                    batch_timeout,
+                    max(1, int(stage_deadline_ts - time.time())),
+                )
+            scan_kwargs["timeout"] = batch_timeout
+
+        fallback_count = 0
+        fallback_reason = ""
+        nm = nmap.PortScanner()
+        try:
+            nm.scan(**scan_kwargs)
+        except Exception as error:
+            if not (
+                scan_type == "syn"
+                and self.syn_scan_fallback_enabled
+                and self._is_syn_permission_error(error)
+            ):
+                logger.error(
+                    "nmap stage:{} batch:{}/{} failed targets:{} scan_type:{} err:{}".format(
+                        stage_name,
+                        batch_index,
+                        batch_total,
+                        len(target_batch),
+                        scan_type,
+                        safe_error_text(error),
+                    )
+                )
+                return PortScanBatchResult(
+                    [],
+                    metrics={
+                        "status": "failed",
+                        "scan_type": scan_type,
+                        "fallback_count": 0,
+                        "error_type": type(error).__name__,
+                    },
+                )
+
+            fallback_count = 1
+            fallback_reason = type(error).__name__
+            self._mark_syn_scan_unavailable()
+            scan_kwargs["arguments"] = scan_arguments.replace("-sS", "-sT", 1)
+            logger.warning(
+                "nmap stage:{} batch:{}/{} syn_scan_fallback targets:{} reason:{}".format(
+                    stage_name,
+                    batch_index,
+                    batch_total,
+                    len(target_batch),
+                    fallback_reason,
+                )
+            )
+            try:
+                nm = nmap.PortScanner()
+                nm.scan(**scan_kwargs)
+                scan_type = "connect_fallback"
+            except Exception as fallback_error:
+                logger.error(
+                    "nmap stage:{} batch:{}/{} fallback_failed targets:{} err:{}".format(
+                        stage_name,
+                        batch_index,
+                        batch_total,
+                        len(target_batch),
+                        safe_error_text(fallback_error),
+                    )
+                )
+                return PortScanBatchResult(
+                    [],
+                    metrics={
+                        "status": "failed",
+                        "scan_type": "connect_fallback",
+                        "fallback_count": fallback_count,
+                        "fallback_reason": fallback_reason,
+                        "error_type": type(fallback_error).__name__,
+                    },
+                )
+
+        try:
+            result = self._extract_scan_result(nm)
+        except Exception as e:
+            logger.error(
+                "nmap stage:{} batch:{}/{} result_parse_failed targets:{} err:{}".format(
+                    stage_name, batch_index, batch_total, len(target_batch), safe_error_text(e)
+                )
+            )
+            return PortScanBatchResult(
+                [],
+                metrics={
+                    "status": "failed",
+                    "scan_type": scan_type,
+                    "fallback_count": fallback_count,
+                    "fallback_reason": fallback_reason,
+                    "error_type": type(e).__name__,
+                },
+            )
         logger.info(
             "nmap stage:{} batch:{}/{} host_result:{}".format(
                 stage_name, batch_index, batch_total, len(result)
             )
         )
-        return result
+        suspected_all_open_count = sum(
+            1 for item in result if item.get("_suspected_all_open")
+        )
+        return PortScanBatchResult(
+            result,
+            metrics={
+                "scan_type": scan_type,
+                "fallback_count": fallback_count,
+                "fallback_reason": fallback_reason,
+                "suspected_all_open_count": suspected_all_open_count,
+            },
+        )
 
     def _scan_with_batches(self, targets, ports, arguments, stage_name, force_batch_size=None, stage_timeout_sec=0):
         target_list = [str(x or "").strip() for x in (targets or []) if str(x or "").strip()]
@@ -410,29 +597,163 @@ class PortScan:
         result_map = {}
         stage_start_ts = time.time()
         timeout_hit = False
-        for index, batch in enumerate(batches, 1):
-            elapsed = time.time() - stage_start_ts
-            if stage_timeout_sec > 0 and elapsed >= stage_timeout_sec:
-                logger.warning(
-                    "port_scan stage:{} timeout elapsed:{:.2f}s timeout:{}s processed_batch:{}/{} partial_host:{}".format(
-                        stage_name, elapsed, stage_timeout_sec, index - 1, total, len(result_map)
-                    )
-                )
-                timeout_hit = True
-                break
-            batch_result = self._run_batch_scan(
-                target_batch=batch,
+        failed_batches = 0
+        failed_target_count = 0
+        processed_batches = 0
+        successful_batches = 0
+        executor = ThreadPoolExecutor(max_workers=min(self.batch_concurrency, total))
+        future_map = {}
+        pending = set()
+        next_batch_index = 0
+        fallback_count = 0
+        fallback_reasons = {}
+        failed_reasons = {}
+        suspected_all_open_count = 0
+
+        def submit_next_batch():
+            nonlocal next_batch_index
+            if next_batch_index >= total:
+                return False
+            next_batch_index += 1
+            batch_index = next_batch_index
+            future = executor.submit(
+                self._run_batch_scan,
+                target_batch=batches[batch_index - 1],
                 ports=ports,
                 arguments=arguments,
                 stage_name=stage_name,
-                batch_index=index,
+                batch_index=batch_index,
                 batch_total=total,
+                stage_deadline_ts=(
+                    stage_start_ts + stage_timeout_sec
+                    if stage_timeout_sec > 0
+                    else None
+                ),
             )
-            self._merge_ip_info(result_map, batch_result)
+            future_map[future] = batch_index
+            pending.add(future)
+            return True
+
+        for _ in range(min(self.batch_concurrency, total)):
+            submit_next_batch()
+
+        try:
+            while pending:
+                remaining = None
+                if stage_timeout_sec > 0:
+                    remaining = stage_timeout_sec - (time.time() - stage_start_ts)
+                    if remaining <= 0:
+                        timeout_hit = True
+                        break
+                completed_set, _ = wait(
+                    pending,
+                    timeout=remaining,
+                    return_when=FIRST_COMPLETED,
+                )
+                if not completed_set:
+                    timeout_hit = True
+                    break
+                for completed in completed_set:
+                    pending.remove(completed)
+                    processed_batches += 1
+                    batch_index = future_map[completed]
+                    try:
+                        batch_result = completed.result()
+                    except Exception as error:
+                        failed_batches += 1
+                        failed_target_count += len(batches[batch_index - 1])
+                        error_type = type(error).__name__
+                        failed_reasons[error_type] = failed_reasons.get(error_type, 0) + 1
+                        logger.error(
+                            "nmap stage:{} batch:{} worker_failed err:{}".format(
+                                stage_name, batch_index, safe_error_text(error)
+                            )
+                        )
+                        if not timeout_hit:
+                            submit_next_batch()
+                        continue
+                    batch_metrics = dict(getattr(batch_result, "metrics", {}) or {})
+                    batch_fallback_count = int(batch_metrics.get("fallback_count", 0) or 0)
+                    fallback_count += batch_fallback_count
+                    suspected_all_open_count += int(
+                        batch_metrics.get("suspected_all_open_count", 0) or 0
+                    )
+                    fallback_reason = str(batch_metrics.get("fallback_reason", "") or "").strip()
+                    if fallback_reason:
+                        fallback_reasons[fallback_reason] = fallback_reasons.get(fallback_reason, 0) + 1
+                    if batch_result is None or batch_metrics.get("status") == "failed":
+                        failed_batches += 1
+                        failed_target_count += len(batches[batch_index - 1])
+                        error_type = str(batch_metrics.get("error_type", "unknown") or "unknown")
+                        failed_reasons[error_type] = failed_reasons.get(error_type, 0) + 1
+                        if not timeout_hit:
+                            submit_next_batch()
+                        continue
+                    successful_batches += 1
+                    self._merge_ip_info(result_map, batch_result)
+
+                    if not timeout_hit:
+                        submit_next_batch()
+        finally:
+            for future in pending:
+                future.cancel()
+            # 阶段超时后不能继续等待未完成的 nmap 批次，否则上层看到的超时只是日志。
+            executor.shutdown(wait=not timeout_hit, cancel_futures=timeout_hit)
+
+        queued_pending_batches = max(0, total - next_batch_index)
+        pending_batches = len(pending) + queued_pending_batches
+        pending_target_count = sum(
+            len(batches[future_map[future] - 1])
+            for future in pending
+        ) + sum(len(batch) for batch in batches[next_batch_index:])
+        if timeout_hit:
+            logger.warning(
+                "port_scan stage:{} timeout elapsed:{:.2f}s timeout:{}s processed_batch:{}/{} pending_batch:{} partial_host:{}".format(
+                    stage_name,
+                    time.time() - stage_start_ts,
+                    stage_timeout_sec,
+                    processed_batches,
+                    total,
+                    pending_batches,
+                    len(result_map),
+                )
+            )
+
+        self.last_scan_metrics = {
+            "stage": stage_name,
+            "target_count": len(target_list),
+            "requested_port_count": self.requested_port_count,
+            "batch_count": total,
+            "processed_batch_count": processed_batches,
+            "successful_batch_count": successful_batches,
+            "failed_batch_count": failed_batches,
+            "pending_batch_count": pending_batches,
+            "failed_target_count": failed_target_count,
+            "pending_target_count": pending_target_count,
+            "result_host_count": len(result_map),
+            "timeout_hit": bool(timeout_hit),
+            "degraded_count": int(failed_batches + pending_batches),
+            "fallback_count": fallback_count,
+            "fallback_reasons": fallback_reasons,
+            "failed_reasons": failed_reasons,
+            "suspected_all_open_count": suspected_all_open_count,
+            "scan_type": "connect_fallback" if fallback_count else (
+                "syn" if self.syn_scan_enabled and not self._syn_scan_unavailable else "connect"
+            ),
+            "elapsed_sec": round(max(0.0, time.time() - stage_start_ts), 3),
+        }
 
         logger.info(
-            "nmap stage:{} done targets:{} batches:{} host_result:{} timeout_hit:{} timeout_budget:{}".format(
-                stage_name, len(target_list), total, len(result_map), timeout_hit, self._format_timeout(stage_timeout_sec)
+            "nmap stage:{} done targets:{} batches:{} processed:{} failed:{} pending:{} host_result:{} timeout_hit:{} timeout_budget:{}".format(
+                stage_name,
+                len(target_list),
+                total,
+                processed_batches,
+                failed_batches,
+                pending_batches,
+                len(result_map),
+                timeout_hit,
+                self._format_timeout(stage_timeout_sec),
             )
         )
         return result_map, timeout_hit
@@ -446,6 +767,15 @@ class PortScan:
         """
         plan = []
         for host, item in fast_map.items():
+            if item.get("_suspected_all_open"):
+                # 原始开放端口已经完整保留；对疑似 WAF/蜜罐全开主机不再为数千端口
+                # 逐段执行 -sV，避免深度识别把整个任务重新放大。
+                logger.warning(
+                    "skip precise service scan for suspected all-open host:{} ports:{}".format(
+                        host, len(item.get("port_info", []))
+                    )
+                )
+                continue
             port_ids = sorted(
                 list({int(x.get("port_id", 0) or 0) for x in item.get("port_info", []) if int(x.get("port_id", 0) or 0) > 0})
             )
@@ -459,6 +789,66 @@ class PortScan:
 
         plan.sort(key=lambda x: str(x["host"]))
         return plan
+
+    def _build_two_stage_metrics(self, fast_metrics, precise_metrics=None,
+                                 output_count=0, timeout_hit=False):
+        """把快扫和精扫的批次状态提升到阶段顶层，供任务状态和告警查询。"""
+        fast = dict(fast_metrics or {})
+        precise = dict(precise_metrics or {})
+        metrics = {
+            "stage": "two_stage",
+            "target_count": len(self.target_list),
+            "requested_port_count": self.requested_port_count,
+            "fast": fast,
+            "precise": precise,
+            "output_count": max(int(output_count or 0), 0),
+            "timeout_hit": bool(timeout_hit),
+        }
+        for key in (
+            "batch_count",
+            "processed_batch_count",
+            "successful_batch_count",
+            "failed_batch_count",
+            "pending_batch_count",
+            "failed_target_count",
+            "pending_target_count",
+        ):
+            metrics[key] = int(fast.get(key, 0) or 0) + int(precise.get(key, 0) or 0)
+        metrics["timeout_count"] = int(bool(timeout_hit))
+        metrics["failed_count"] = metrics["failed_batch_count"]
+        metrics["pending_count"] = metrics["pending_batch_count"]
+        metrics["degraded_count"] = metrics["failed_batch_count"] + metrics["pending_batch_count"]
+        metrics["fallback_count"] = int(fast.get("fallback_count", 0) or 0) + int(
+            precise.get("fallback_count", 0) or 0
+        )
+        metrics["suspected_all_open_count"] = int(
+            fast.get("suspected_all_open_count", 0) or 0
+        ) + int(precise.get("suspected_all_open_count", 0) or 0)
+        fallback_reasons = {}
+        for source in (fast, precise):
+            for reason, count in (source.get("fallback_reasons", {}) or {}).items():
+                fallback_reasons[str(reason)] = fallback_reasons.get(str(reason), 0) + int(count or 0)
+        metrics["fallback_reasons"] = fallback_reasons
+        failed_reasons = {}
+        for source in (fast, precise):
+            for reason, count in (source.get("failed_reasons", {}) or {}).items():
+                failed_reasons[str(reason)] = failed_reasons.get(str(reason), 0) + int(count or 0)
+        metrics["failed_reasons"] = failed_reasons
+        metrics["scan_type"] = (
+            "connect_fallback"
+            if metrics["fallback_count"] > 0
+            else str(fast.get("scan_type") or precise.get("scan_type") or "syn")
+        )
+        if timeout_hit:
+            metrics["status"] = "partial"
+            metrics["end_reason"] = "budget_exhausted"
+        elif metrics["degraded_count"] > 0:
+            metrics["status"] = "partial"
+            metrics["end_reason"] = "batch_failed"
+        else:
+            metrics["status"] = "success"
+            metrics["end_reason"] = "completed"
+        return metrics
 
     def _run_two_stage_scan(self):
         logger.info(
@@ -486,19 +876,40 @@ class PortScan:
             stage_name="fast",
             stage_timeout_sec=fast_stage_timeout_sec,
         )
+        fast_metrics = dict(self.last_scan_metrics)
         if not fast_map:
-            return []
+            metrics = self._build_two_stage_metrics(
+                fast_metrics,
+                output_count=0,
+                timeout_hit=fast_timeout_hit,
+            )
+            self.last_scan_metrics = metrics
+            return PortScanResult([], metrics=metrics)
         if fast_timeout_hit:
             logger.warning(
                 "port_scan skip precise stage because fast stage timeout host_result:{}".format(
                     len(fast_map)
                 )
             )
-            return self._sort_ip_info_list(fast_map)
+            result = self._sort_ip_info_list(fast_map)
+            metrics = self._build_two_stage_metrics(
+                fast_metrics,
+                output_count=len(result),
+                timeout_hit=True,
+            )
+            self.last_scan_metrics = metrics
+            return PortScanResult(result, metrics=metrics)
 
         precise_plan = self._build_precise_plan(fast_map)
         if not precise_plan:
-            return self._sort_ip_info_list(fast_map)
+            result = self._sort_ip_info_list(fast_map)
+            metrics = self._build_two_stage_metrics(
+                fast_metrics,
+                output_count=len(result),
+                timeout_hit=False,
+            )
+            self.last_scan_metrics = metrics
+            return PortScanResult(result, metrics=metrics)
 
         precise_args = self._build_nmap_arguments(
             enable_service=self.service_detect,
@@ -519,6 +930,18 @@ class PortScan:
 
         precise_stage_start_ts = time.time()
         precise_timeout_hit = False
+        precise_metrics = {
+            "stage": "precise",
+            "batch_count": 0,
+            "processed_batch_count": 0,
+            "failed_batch_count": 0,
+            "pending_batch_count": 0,
+            "result_host_count": 0,
+            "fallback_count": 0,
+            "fallback_reasons": {},
+            "failed_reasons": {},
+            "suspected_all_open_count": 0,
+        }
         for host_index, item in enumerate(precise_plan, 1):
             if precise_stage_timeout_sec > 0 and (time.time() - precise_stage_start_ts) >= precise_stage_timeout_sec:
                 precise_timeout_hit = True
@@ -549,6 +972,29 @@ class PortScan:
                     force_batch_size=1,
                     stage_timeout_sec=0,
                 )
+                current_metrics = dict(self.last_scan_metrics)
+                for key in (
+                    "batch_count",
+                    "processed_batch_count",
+                    "failed_batch_count",
+                    "pending_batch_count",
+                ):
+                    precise_metrics[key] += int(current_metrics.get(key, 0) or 0)
+                precise_metrics["fallback_count"] += int(current_metrics.get("fallback_count", 0) or 0)
+                precise_metrics["suspected_all_open_count"] += int(
+                    current_metrics.get("suspected_all_open_count", 0) or 0
+                )
+                for reason, count in (current_metrics.get("failed_reasons", {}) or {}).items():
+                    precise_metrics["failed_reasons"][str(reason)] = (
+                        precise_metrics["failed_reasons"].get(str(reason), 0) + int(count or 0)
+                    )
+                for reason, count in (current_metrics.get("fallback_reasons", {}) or {}).items():
+                    precise_metrics["fallback_reasons"][str(reason)] = (
+                        precise_metrics["fallback_reasons"].get(str(reason), 0) + int(count or 0)
+                    )
+                if current_metrics.get("scan_type"):
+                    precise_metrics["scan_type"] = current_metrics["scan_type"]
+                precise_metrics["result_host_count"] = len(precise_map)
                 self._merge_ip_info(fast_map, list(precise_map.values()))
                 logger.info(
                     "port_scan stage2 progress host:{}/{} chunk:{}/{} current_host:{} chunk_ports:{}".format(
@@ -566,12 +1012,26 @@ class PortScan:
         if precise_timeout_hit:
             logger.warning("port_scan precise stage timeout return partial result host:{}".format(len(fast_map)))
 
-        return self._sort_ip_info_list(fast_map)
+        result = self._sort_ip_info_list(fast_map)
+        precise_metrics["timeout_hit"] = bool(precise_timeout_hit)
+        precise_metrics["elapsed_sec"] = round(max(0.0, time.time() - precise_stage_start_ts), 3)
+        self.last_scan_metrics = self._build_two_stage_metrics(
+            fast_metrics,
+            precise_metrics,
+            output_count=len(result),
+            timeout_hit=bool(fast_timeout_hit or precise_timeout_hit),
+        )
+        return PortScanResult(result, metrics=self.last_scan_metrics)
 
     def run(self):
         if not self.target_list:
             logger.info("skip port_scan, empty target list")
-            return []
+            self.last_scan_metrics = {
+                "stage": "empty",
+                "target_count": 0,
+                "output_count": 0,
+            }
+            return PortScanResult([], metrics=self.last_scan_metrics)
 
         if self.service_detect or self.os_detect:
             return self._run_two_stage_scan()
@@ -603,7 +1063,10 @@ class PortScan:
             stage_name="single",
             stage_timeout_sec=single_stage_timeout_sec,
         )
-        return self._sort_ip_info_list(single_map)
+        result = self._sort_ip_info_list(single_map)
+        metrics = dict(self.last_scan_metrics)
+        metrics["output_count"] = len(result)
+        return PortScanResult(result, metrics=metrics)
 
     def os_match_by_accuracy(self, os_match_list):
         for os_match in os_match_list:
@@ -645,7 +1108,11 @@ def port_scan(targets, ports=Config.TOP_10, service_detect=False, os_detect=Fals
     targets = sorted(list(set(valid_targets)))
     if not targets:
         logger.info("skip port_scan, no valid targets")
-        return []
+        return PortScanResult([], metrics={
+            "stage": "empty",
+            "target_count": 0,
+            "output_count": 0,
+        })
 
     ps = PortScan(targets=targets, ports=ports, service_detect=service_detect, os_detect=os_detect,
                   port_parallelism=port_parallelism, port_min_rate=port_min_rate,

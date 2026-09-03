@@ -7,6 +7,7 @@ URLFinder 提取 URL 可达性探测并入库
 - 将可访问 URL 写入 url 资产表，来源标记为 wih_url_probe
 - 若同任务目录扫描(fileleak)已存在同 URL，则不再重复写入 URL 信息
 """
+import time
 from typing import Dict, List, Optional, Set
 from urllib.parse import urlparse
 
@@ -17,6 +18,15 @@ from app.services.pageFetch import page_fetch
 from app.services.url_candidate_filter import normalize_http_url_candidate
 
 logger = utils.get_logger()
+
+
+class UrlfinderUrlProbeResult(int):
+    """保持旧 int 返回类型，同时携带探测阶段指标。"""
+
+    def __new__(cls, value=0, metrics=None):
+        instance = int.__new__(cls, int(value or 0))
+        instance.metrics = dict(metrics or {})
+        return instance
 
 
 class UrlfinderUrlProbeService:
@@ -39,17 +49,21 @@ class UrlfinderUrlProbeService:
         wih_records: List[WihRecord],
         page_url_set: Optional[Set[str]] = None,
         waf_guard=None,
+        discovery_context=None,
     ):
         self.task_id = str(task_id or "").strip()
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.page_url_set = page_url_set if isinstance(page_url_set, set) else None
         self.waf_guard = waf_guard
+        self.discovery_context = discovery_context
 
         self.enable = bool(getattr(Config, "URLFINDER_URL_PROBE_ENABLE", True))
         self.max_targets = int(getattr(Config, "URLFINDER_URL_PROBE_MAX_TARGETS", 300) or 300)
         self.concurrency = int(getattr(Config, "URLFINDER_URL_PROBE_CONCURRENCY", 6) or 6)
         self.dns_policy_cache = {}
+        self.network_wait_sec = 0.0
+        self.network_request_count = 0
 
         if self.max_targets < 1:
             self.max_targets = 1
@@ -58,6 +72,19 @@ class UrlfinderUrlProbeService:
 
         self.allowed_hosts = self._collect_allowed_hosts()
         self.record_type_counter = {}
+
+    def _result(self, count=0, end_reason="completed"):
+        return UrlfinderUrlProbeResult(
+            count,
+            metrics={
+                "backend": "python",
+                "output_count": max(0, int(count or 0)),
+                "network_wait_sec": round(max(0.0, self.network_wait_sec), 6),
+                "network_request_count": int(self.network_request_count),
+                "network_concurrency": int(self.concurrency),
+                "end_reason": str(end_reason or "completed"),
+            },
+        )
 
     @staticmethod
     def _extract_host(value: str) -> str:
@@ -173,7 +200,16 @@ class UrlfinderUrlProbeService:
 
             item = self._build_url_item(url, self.task_id, source=CollectSource.WIH_URL_PROBE)
             item.update(page_data)
-            utils.conn_db("url").insert_one(item)
+            # worker 恢复/重试路径幂等：(task_id, source, url) 唯一。
+            utils.conn_db("url").update_one(
+                {
+                    "task_id": self.task_id,
+                    "source": item.get("source", CollectSource.WIH_URL_PROBE),
+                    "url": item.get("url", ""),
+                },
+                {"$set": item},
+                upsert=True,
+            )
             inserted += 1
 
             if self.page_url_set is not None:
@@ -192,22 +228,22 @@ class UrlfinderUrlProbeService:
     def run(self) -> int:
         if not self.enable:
             logger.info("urlfinder url probe skip, disabled")
-            return 0
+            return self._result(0, "disabled")
 
         if not self.task_id:
             logger.info("urlfinder url probe skip, task_id is empty")
-            return 0
+            return self._result(0, "missing_task_id")
 
         candidates = self._collect_candidates()
         if not candidates:
             logger.info("urlfinder url probe skip, no urlfinder_url/path_url/page_url records")
-            return 0
+            return self._result(0, "no_candidates")
 
         pending_url_targets = self._filter_existing_urls(candidates)
         pending_targets = list(pending_url_targets)
         if not pending_targets:
             logger.info("urlfinder url probe skip, all candidates already collected or shadowed by fileleak")
-            return 0
+            return self._result(0, "no_pending_targets")
 
         if len(pending_targets) > self.max_targets:
             pending_targets = pending_targets[: self.max_targets]
@@ -217,17 +253,33 @@ class UrlfinderUrlProbeService:
         probe_targets = self._filter_dns_policy(pending_targets)
         if not probe_targets:
             logger.info("urlfinder url probe skip, no targets after dns policy filtering")
-            return 0
+            return self._result(0, "dns_policy_filtered")
 
-        page_map = page_fetch(
-            probe_targets,
-            concurrency=self.concurrency,
-            waf_guard=self.waf_guard,
-            waf_module="urlfinder_url_probe",
-        )
+        self.network_request_count += len(probe_targets)
+        network_started_at = time.monotonic()
+        try:
+            page_fetch_kwargs = {
+                "concurrency": self.concurrency,
+                "waf_guard": self.waf_guard,
+                "waf_module": "urlfinder_url_probe",
+            }
+            if self.discovery_context is not None:
+                page_fetch_kwargs["discovery_context"] = self.discovery_context
+                page_fetch_kwargs["traffic_class"] = "wih"
+            page_map = page_fetch(probe_targets, **page_fetch_kwargs)
+        finally:
+            self.network_wait_sec += max(0.0, time.monotonic() - network_started_at)
         probed_target_set = set(probe_targets)
         pending_url_target_set = set(pending_url_targets) & probed_target_set
-        inserted_url_count = self._insert_url_pages(self._select_page_map(page_map, pending_url_target_set))
+        page_map_for_insert = self._select_page_map(page_map, pending_url_target_set)
+        inserted_url_count = self._insert_url_pages(page_map_for_insert)
+
+        if self.discovery_context is not None:
+            # 探测完成的候选迁移状态：写过 URL 的记 covered，仅完成请求的记 fetched。
+            inserted_target_set = set(page_map_for_insert.keys())
+            for probe_url in probed_target_set:
+                final_status = "covered" if probe_url in inserted_target_set else "fetched"
+                self.discovery_context.mark_candidate_status(probe_url, "url", final_status)
 
         logger.info(
             "urlfinder url probe done, record_types:{} candidates:{} pending:{} dns_keep:{} url_inserted:{}".format(
@@ -238,7 +290,7 @@ class UrlfinderUrlProbeService:
                 inserted_url_count,
             )
         )
-        return inserted_url_count
+        return self._result(inserted_url_count)
 
 
 def run_urlfinder_url_probe(
@@ -247,12 +299,14 @@ def run_urlfinder_url_probe(
     wih_records: List[WihRecord],
     page_url_set: Optional[Set[str]] = None,
     waf_guard=None,
-) -> int:
+    discovery_context=None,
+) -> UrlfinderUrlProbeResult:
     service = UrlfinderUrlProbeService(
         task_id=task_id,
         sites=sites,
         wih_records=wih_records,
         page_url_set=page_url_set,
         waf_guard=waf_guard,
+        discovery_context=discovery_context,
     )
     return service.run()

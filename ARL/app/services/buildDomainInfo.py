@@ -2,6 +2,7 @@
 域名信息构建与保存
 """
 import time
+import threading
 from app import  modules
 from app import  utils
 from app.config import Config
@@ -10,10 +11,23 @@ logger = utils.get_logger()
 
 
 class BuildDomainInfo(BaseThread):
-    def __init__(self, domains, concurrency=6):
+    def __init__(self, domains, concurrency=6, dns_policy_cache=None):
         super().__init__(domains, concurrency=concurrency)
         self.domain_info_list = []
-        self.dns_policy_cache = {}
+        # 同一任务内不同来源共享策略结果，避免重复 DNS 视角检查。
+        self.dns_policy_cache = dns_policy_cache if isinstance(dns_policy_cache, dict) else {}
+        self._dns_policy_cache_lock = threading.Lock()
+
+    def _get_dns_policy(self, domain):
+        with self._dns_policy_cache_lock:
+            cached = self.dns_policy_cache.get(domain)
+        if cached is not None:
+            return cached
+
+        policy = utils.check_dns_policy_for_host(domain)
+        with self._dns_policy_cache_lock:
+            # 并发调用方只保留首次结果，避免同一域名跨来源重复写入。
+            return self.dns_policy_cache.setdefault(domain, policy)
 
     def work(self, target):
         domain = target
@@ -24,11 +38,7 @@ class BuildDomainInfo(BaseThread):
         if not domain:
             return
 
-        if domain in self.dns_policy_cache:
-            allow_scan, policy_detail = self.dns_policy_cache[domain]
-        else:
-            allow_scan, policy_detail = utils.check_dns_policy_for_host(domain)
-            self.dns_policy_cache[domain] = (allow_scan, policy_detail)
+        allow_scan, policy_detail = self._get_dns_policy(domain)
 
         if not allow_scan:
             logger.info(
@@ -75,8 +85,12 @@ class BuildDomainInfo(BaseThread):
         return self.domain_info_list
 
 
-def build_domain_info(domains, concurrency=None):
+def build_domain_info(domains, concurrency=None, dns_policy_cache=None):
     if concurrency is None:
         concurrency = Config.DOMAIN_INFO_CONCURRENCY
-    p = BuildDomainInfo(domains, concurrency=concurrency)
+    p = BuildDomainInfo(
+        domains,
+        concurrency=concurrency,
+        dns_policy_cache=dns_policy_cache,
+    )
     return p.run()

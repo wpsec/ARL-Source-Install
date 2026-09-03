@@ -24,6 +24,14 @@ from .url_candidate_filter import (
 
 logger = utils.get_logger()
 
+
+class WihRunResult(list):
+    """保留 list 兼容性，同时携带本次 WIH 阶段的运行元数据。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
+
 _EMAIL_STATIC_SUFFIXES = {
     "png",
     "jpg",
@@ -146,6 +154,7 @@ class InfoHunter(object):
 
         self.wih_bin_path = self._resolve_wih_binary()
         self.wih_timeout_sec = int(getattr(Config, "WIH_TIMEOUT_SEC", 10 * 60) or (10 * 60))
+        self.wih_total_budget_sec = int(getattr(Config, "WIH_TOTAL_BUDGET_SEC", 0) or 0)
         self.wih_concurrency = int(getattr(Config, "WIH_CONCURRENCY", 8) or 8)
         self.wih_concurrency_per_site = int(getattr(Config, "WIH_CONCURRENCY_PER_SITE", 2) or 2)
         self.wih_max_batch_size = int(getattr(Config, "WIH_MAX_BATCH_SIZE", 12) or 12)
@@ -166,6 +175,8 @@ class InfoHunter(object):
         self.wih_minimal_runtime_enable = bool(getattr(Config, "WIH_MINIMAL_RUNTIME_ENABLE", False))
         if self.wih_timeout_sec < 60:
             self.wih_timeout_sec = 60
+        if self.wih_total_budget_sec < 0:
+            self.wih_total_budget_sec = 0
         if self.wih_concurrency < 1:
             self.wih_concurrency = 1
         if self.wih_concurrency_per_site < 1:
@@ -198,6 +209,7 @@ class InfoHunter(object):
         self._wih_version_text = ""
         self._wih_binary_logged = False
         self.wih_deadline_ts = None
+        self.last_run_metrics = {}
 
     @staticmethod
     def _safe_int(value, default=0) -> int:
@@ -212,6 +224,14 @@ class InfoHunter(object):
         if parsed <= 0:
             return None
         return parsed
+
+    def _increment_run_metric(self, key: str, amount: int = 1):
+        if not isinstance(self.last_run_metrics, dict):
+            self.last_run_metrics = {}
+        try:
+            self.last_run_metrics[key] = int(self.last_run_metrics.get(key, 0) or 0) + int(amount or 0)
+        except (TypeError, ValueError):
+            return
 
     @staticmethod
     def _append_query_string(url: str, query_string: str) -> str:
@@ -1167,10 +1187,15 @@ class InfoHunter(object):
             }
 
         profile = self._build_runtime_profile(profile_name)
+        if not isinstance(self.last_run_metrics, dict):
+            self.last_run_metrics = {}
+        profile_counts = self.last_run_metrics.setdefault("profile_counts", {})
+        profile_counts[profile_name] = int(profile_counts.get(profile_name, 0) or 0) + 1
         profile_timeout_sec = int(profile["timeout_sec"] or self.wih_timeout_sec)
         remaining_deadline_sec = self._remaining_wih_deadline_sec()
         if remaining_deadline_sec is not None:
             if remaining_deadline_sec <= 0:
+                self._increment_run_metric("budget_exhausted_count")
                 logger.warning(
                     "skip wih batch stage:{} depth:{} sites:{} reason:deadline_exhausted".format(
                         stage_name,
@@ -1226,6 +1251,7 @@ class InfoHunter(object):
         partial_saved = False
         remaining_sites = list(current_sites)
         if result.get("timed_out"):
+            self._increment_run_metric("timeout_count")
             completed_sites = self._salvage_partial_batch_results(
                 aggregate_result_texts,
                 current_sites,
@@ -1233,6 +1259,7 @@ class InfoHunter(object):
                 stage_name,
             )
             if completed_sites:
+                self._increment_run_metric("salvage_count")
                 partial_saved = True
                 completed_site_set = set(completed_sites)
                 remaining_sites = [site for site in current_sites if site not in completed_site_set]
@@ -1267,6 +1294,7 @@ class InfoHunter(object):
         primary = self._execute_profile_once(primary_sites, aggregate_result_texts, depth, primary_profile_name, primary_stage_name)
         if primary.get("ok"):
             if primary_profile_name == "light" and self._should_escalate_light_result(primary.get("raw_text", ""), primary_sites):
+                self._increment_run_metric("primary_escalated_count")
                 logger.info(
                     "wih light result thin, escalate to full depth:{} sites:{}".format(
                         depth,
@@ -1491,50 +1519,153 @@ class InfoHunter(object):
     def exec_wih(self):
         site_list = [str(site or "").strip() for site in sorted(list(self.sites or [])) if str(site or "").strip()]
         if not site_list:
+            self.last_run_metrics = {
+                "status": "skipped",
+                "end_reason": "no_targets",
+                "input_count": 0,
+                "output_count": 0,
+                "budget_sec": max(0, int(self.wih_total_budget_sec or 0)) or None,
+                "fast_mode": bool(self.prefer_fast_mode),
+            }
             return False
 
         batch_size = self._initial_batch_size()
         batches = self._split_site_batches(site_list, batch_size)
         aggregate_result_texts = []
         success_batches = 0
+        started_at = time.time()
+        total_budget_sec = max(0, int(self.wih_total_budget_sec or 0))
+        self.last_run_metrics = {
+            "status": "running",
+            "end_reason": "running",
+            "input_count": len(site_list),
+            "output_count": 0,
+            "budget_sec": total_budget_sec or None,
+            "batch_size": batch_size,
+            "batch_count": len(batches),
+            "completed_batch_count": 0,
+            "failed_batch_count": 0,
+            "result_chunks": 0,
+            "profile_counts": {},
+            "timeout_count": 0,
+            "salvage_count": 0,
+            "budget_exhausted_count": 0,
+            "primary_escalated_count": 0,
+            "fast_mode": bool(self.prefer_fast_mode),
+            "started_at": started_at,
+        }
+        inherited_deadline_ts = self.wih_deadline_ts
+        total_deadline_applied = False
+        if inherited_deadline_ts is None and total_budget_sec > 0:
+            self.wih_deadline_ts = started_at + total_budget_sec
+            total_deadline_applied = True
 
         logger.info(
-            "run wih batched total_sites:{} batch_size:{} batches:{} timeout:{}s".format(
+            "run wih batched total_sites:{} batch_size:{} batches:{} timeout:{}s total_budget:{}s fast_mode:{}".format(
                 len(site_list),
                 batch_size,
                 len(batches),
                 self.wih_timeout_sec,
+                total_budget_sec or "unlimited",
+                bool(self.prefer_fast_mode),
             )
         )
 
-        for index, batch_sites in enumerate(batches, start=1):
-            inherited_deadline_ts = self.wih_deadline_ts
-            deadline_applied = False
-            if inherited_deadline_ts is None:
-                batch_deadline_sec = self._estimate_batch_deadline_sec(batch_sites, depth=0)
-                self.wih_deadline_ts = time.time() + batch_deadline_sec
-                deadline_applied = True
-                logger.info(
-                    "set wih batch deadline batch:{}/{} sites:{} budget:{}s".format(
-                        index,
-                        len(batches),
-                        len(batch_sites),
-                        batch_deadline_sec,
+        try:
+            for index, batch_sites in enumerate(batches, start=1):
+                if self._is_wih_deadline_exhausted():
+                    self._increment_run_metric("budget_exhausted_count")
+                    self.last_run_metrics["end_reason"] = "budget_exhausted"
+                    logger.warning(
+                        "skip wih batch batch:{}/{} sites:{} reason:budget_exhausted".format(
+                            index,
+                            len(batches),
+                            len(batch_sites),
+                        )
                     )
+                    break
+
+                batch_deadline_parent = self.wih_deadline_ts
+                deadline_applied = False
+                if batch_deadline_parent is None:
+                    batch_deadline_sec = self._estimate_batch_deadline_sec(batch_sites, depth=0)
+                    self.wih_deadline_ts = time.time() + batch_deadline_sec
+                    deadline_applied = True
+                    logger.info(
+                        "set wih batch deadline batch:{}/{} sites:{} budget:{}s".format(
+                            index,
+                            len(batches),
+                            len(batch_sites),
+                            batch_deadline_sec,
+                        )
+                    )
+                try:
+                    if self._exec_wih_batch(batch_sites, aggregate_result_texts, depth=0):
+                        success_batches += 1
+                        self._increment_run_metric("completed_batch_count")
+                    else:
+                        self._increment_run_metric("failed_batch_count")
+                finally:
+                    if deadline_applied:
+                        self.wih_deadline_ts = batch_deadline_parent
+        except Exception as exc:
+            finished_at = time.time()
+            self.last_run_metrics.update(
+                {
+                    "status": "error",
+                    "end_reason": "exception",
+                    "finished_at": finished_at,
+                    "elapsed": max(0.0, finished_at - started_at),
+                    "error_type": type(exc).__name__,
+                }
+            )
+            logger.warning(
+                "wih batch execution failed status:error end_reason:exception error_type:{} error:{}".format(
+                    type(exc).__name__,
+                    exc,
                 )
-            try:
-                if self._exec_wih_batch(batch_sites, aggregate_result_texts, depth=0):
-                    success_batches += 1
-            finally:
-                if deadline_applied:
-                    self.wih_deadline_ts = inherited_deadline_ts
+            )
+            raise
+        finally:
+            if total_deadline_applied:
+                self.wih_deadline_ts = inherited_deadline_ts
 
         self._write_aggregate_result_texts(aggregate_result_texts)
+        result_summary = self._summarize_payload(self._read_current_result_text())
+        output_count = int(result_summary.get("record_count", 0) or 0) + int(
+            result_summary.get("endpoint_count", 0) or 0
+        )
+        finished_at = time.time()
+        deadline_reached = self.last_run_metrics.get("end_reason") == "budget_exhausted"
+        if deadline_reached:
+            status = "partial" if success_batches > 0 else "timeout"
+        elif success_batches == len(batches):
+            status = "success"
+            self.last_run_metrics["end_reason"] = "completed"
+        elif success_batches > 0:
+            status = "partial"
+            self.last_run_metrics["end_reason"] = "partial_failure"
+        else:
+            status = "error"
+            self.last_run_metrics["end_reason"] = "failure"
+        self.last_run_metrics.update(
+            {
+                "status": status,
+                "finished_at": finished_at,
+                "elapsed": max(0.0, finished_at - started_at),
+                "output_count": output_count,
+                "result_chunks": len(aggregate_result_texts),
+            }
+        )
         logger.info(
-            "wih batch summary success_batches:{} total_batches:{} result_chunks:{}".format(
+            "wih batch summary success_batches:{} total_batches:{} result_chunks:{} status:{} end_reason:{} elapsed:{:.3f}s output_count:{}".format(
                 success_batches,
                 len(batches),
                 len(aggregate_result_texts),
+                status,
+                self.last_run_metrics.get("end_reason", ""),
+                self.last_run_metrics.get("elapsed", 0.0),
+                output_count,
             )
         )
         return success_batches > 0
@@ -1673,12 +1804,20 @@ class InfoHunter(object):
     def run(self):
         if not self.check_have_wih():
             logger.warning("not found webInfoHunter binary")
-            return []
+            self.last_run_metrics = {
+                "status": "error",
+                "end_reason": "wih_unavailable",
+                "input_count": len(list(self.sites or [])),
+                "output_count": 0,
+                "budget_sec": max(0, int(self.wih_total_budget_sec or 0)) or None,
+                "fast_mode": bool(self.prefer_fast_mode),
+            }
+            return WihRunResult(metrics=self.last_run_metrics)
 
         try:
             if not self.exec_wih():
-                return []
-            return self.dump_result()
+                return WihRunResult(metrics=self.last_run_metrics)
+            return WihRunResult(self.dump_result(), metrics=self.last_run_metrics)
         finally:
             self._delete_file()
 

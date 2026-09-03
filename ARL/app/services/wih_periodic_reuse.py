@@ -8,6 +8,7 @@
 """
 import hashlib
 import json
+from datetime import datetime
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
@@ -16,6 +17,7 @@ from bson import ObjectId
 from app import utils
 from app.config import Config
 from app.modules import CollectSource, TaskStatus
+from app.utils.log_safety import safe_error_text
 from .infoHunter import InfoHunter
 from .wih_endpoint_probe import run_wih_endpoint_probe
 
@@ -61,9 +63,13 @@ class WihPeriodicReuseService(object):
         self.schedule_run_number = int(self.options.get("task_schedule_run_number", 0) or 0)
         self.enable = bool(getattr(Config, "WIH_PERIODIC_REUSE_ENABLE", False))
         self.max_baseline_tasks = int(getattr(Config, "WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS", 5) or 5)
+        self.max_age_sec = int(getattr(Config, "WIH_PERIODIC_REUSE_MAX_AGE_SEC", 24 * 60 * 60) or 0)
         self.log_detail = bool(getattr(Config, "WIH_PERIODIC_REUSE_LOG_DETAIL", True))
         if self.max_baseline_tasks < 1:
             self.max_baseline_tasks = 1
+        if self.max_age_sec < 1:
+            self.max_age_sec = 24 * 60 * 60
+        self._baseline_reason = "baseline_not_found"
 
     @staticmethod
     def _extract_host(value: str) -> str:
@@ -151,12 +157,78 @@ class WihPeriodicReuseService(object):
             signature_map[site] = signature
         return signature_map
 
+    def _upsert_reused_documents(self, collection_name: str, docs: list, identity_fields: tuple) -> int:
+        """复用写入必须按当前任务和稳定标识幂等，避免恢复时重复插入。"""
+        collection = utils.conn_db(collection_name)
+        written = 0
+        for doc in list(docs or []):
+            query = {"task_id": self.task_id}
+            valid_identity = True
+            for field_name in identity_fields:
+                value = doc.get(field_name)
+                if value in (None, ""):
+                    valid_identity = False
+                    break
+                query[field_name] = value
+            if not valid_identity:
+                logger.warning(
+                    "wih periodic reuse skip document without identity task_id:{} collection:{} fields:{}".format(
+                        self.task_id,
+                        collection_name,
+                        ",".join(identity_fields),
+                    )
+                )
+                continue
+
+            replace_one = getattr(collection, "replace_one", None)
+            if callable(replace_one):
+                replace_one(query, doc, upsert=True)
+            elif not collection.find_one(query):
+                # 仅用于轻量测试替身；生产 CachedCollectionProxy 支持原子 upsert。
+                collection.insert_many([doc])
+            written += 1
+        return written
+
+    @staticmethod
+    def _parse_task_time(value):
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None)
+        text = str(value or "").strip()
+        if not text:
+            return None
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+        ):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.replace(tzinfo=None)
+
+    def _is_recent_baseline(self, end_time) -> bool:
+        finished_at = self._parse_task_time(end_time)
+        current_at = self._parse_task_time(getattr(utils, "curr_date", lambda: "")())
+        if finished_at is None or current_at is None:
+            return False
+        age_sec = (current_at - finished_at).total_seconds()
+        return 0 <= age_sec <= self.max_age_sec
+
     def _find_previous_task_id(self) -> str:
+        self._baseline_reason = "baseline_not_found"
         if not self.schedule_id:
+            self._baseline_reason = "missing_schedule_id"
             return ""
 
         current_target = self._current_task_target()
         if not current_target:
+            self._baseline_reason = "missing_target"
             return ""
 
         query = {
@@ -172,10 +244,18 @@ class WihPeriodicReuseService(object):
         cursor = utils.conn_db("task").find(query, {"_id": 1, "end_time": 1}).sort(
             [("end_time", -1), ("_id", -1)]
         ).limit(self.max_baseline_tasks)
+        stale_baseline = False
         for item in cursor:
             previous_task_id = str(item.get("_id", "") or "").strip()
+            if not previous_task_id:
+                continue
+            if not self._is_recent_baseline(item.get("end_time")):
+                stale_baseline = True
+                continue
             if previous_task_id:
                 return previous_task_id
+        if stale_baseline:
+            self._baseline_reason = "baseline_expired"
         return ""
 
     def _clone_wih_records(self, previous_task_id: str, reusable_sites: set) -> tuple:
@@ -188,25 +268,27 @@ class WihPeriodicReuseService(object):
             if site not in reusable_sites:
                 continue
 
+            normalized = InfoHunter.normalize_wih_record(
+                SimpleNamespace(
+                    record_type=item.get("record_type", ""),
+                    content=item.get("content", ""),
+                    source=item.get("source", ""),
+                    site=item.get("site", ""),
+                )
+            )
+            if not normalized:
+                continue
+
             doc = dict(item)
             doc.pop("_id", None)
             doc["task_id"] = self.task_id
             doc["save_date"] = current_date
+            doc["fnv_hash"] = normalized.fnv_hash
             docs.append(doc)
-
-            normalized = InfoHunter.normalize_wih_record(
-                SimpleNamespace(
-                    record_type=doc.get("record_type", ""),
-                    content=doc.get("content", ""),
-                    source=doc.get("source", ""),
-                    site=doc.get("site", ""),
-                )
-            )
-            if normalized:
-                normalized_records.append(normalized)
+            normalized_records.append(normalized)
 
         if docs:
-            utils.conn_db("wih").insert_many(docs)
+            self._upsert_reused_documents("wih", docs, ("fnv_hash",))
         return len(docs), normalized_records
 
     @classmethod
@@ -238,6 +320,17 @@ class WihPeriodicReuseService(object):
 
             doc = self._prepare_reused_endpoint(item, current_date)
             doc["task_id"] = self.task_id
+            endpoint_hash = str(doc.get("fnv_hash") or "").strip()
+            if not endpoint_hash:
+                endpoint_hash = hashlib.sha256(
+                    "{}|{}|{}|{}".format(
+                        doc.get("target", ""),
+                        doc.get("page_url", ""),
+                        doc.get("method", ""),
+                        doc.get("url", ""),
+                    ).encode("utf-8", errors="ignore")
+                ).hexdigest()
+                doc["fnv_hash"] = endpoint_hash
             docs.append(doc)
 
         candidate_count = len(docs)
@@ -251,7 +344,7 @@ class WihPeriodicReuseService(object):
                 "wih periodic reuse endpoint reprobe failed task_id:{} baseline_task:{} err:{}".format(
                     self.task_id,
                     previous_task_id,
-                    exc,
+                    safe_error_text(exc),
                 )
             )
             return candidate_count, 0
@@ -264,7 +357,7 @@ class WihPeriodicReuseService(object):
                 item["reuse_verification_status"] = "unverified"
             kept_docs.append(item)
         if kept_docs:
-            utils.conn_db("wih_endpoint").insert_many(kept_docs)
+            self._upsert_reused_documents("wih_endpoint", kept_docs, ("fnv_hash",))
         return candidate_count, len(kept_docs)
 
     def _clone_wih_urls(self, previous_task_id: str, reusable_sites: set) -> tuple:
@@ -309,7 +402,7 @@ class WihPeriodicReuseService(object):
             existing_url_assets.add(url_text)
 
         if docs:
-            utils.conn_db("url").insert_many(docs)
+            self._upsert_reused_documents("url", docs, ("url", "source"))
         return len(docs), reused_urls
 
     def run(self) -> dict:
@@ -345,7 +438,7 @@ class WihPeriodicReuseService(object):
 
         previous_task_id = self._find_previous_task_id()
         if not previous_task_id:
-            summary["reason"] = "baseline_not_found"
+            summary["reason"] = self._baseline_reason
             return summary
 
         current_map = self._load_site_signature_map(self.task_id)

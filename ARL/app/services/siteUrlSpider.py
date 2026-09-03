@@ -37,7 +37,7 @@ class URLInfo(object):
     def __eq__(self, other):
         if not isinstance(other, URLInfo):
             return False
-        return self.crawl_url == self.crawl_url
+        return self.crawl_url == other.crawl_url
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -73,12 +73,14 @@ class URLList(object):
         """
         正常添加
         :param element: URLInfo
-        :return:
+        :return: 是否实际追加（True=新增，False=已存在被去重）
         """
         if not isinstance(element, URLInfo):
             raise TypeError("need URLInfo")
         if element not in self.result:
             self.result.append(element)
+            return True
+        return False
 
     def __repr__(self):
         return str(self.result)
@@ -98,7 +100,7 @@ class URLSimilarList(URLList):
         """
         URL去除相似后添加
         :param element: URLInfo
-        :return:
+        :return: 是否实际追加（True=新增，False=相似去重命中）
         """
         if not isinstance(element, URLInfo):
             raise TypeError("need URLinfo")
@@ -106,10 +108,25 @@ class URLSimilarList(URLList):
         if element.similar_hash() not in self.similar_hash_pool:
             self.result.append(element)
             self.similar_hash_pool.append(element.similar_hash())
+            return True
+        return False
+
+
+class _SpiderCachedResponse(object):
+    """把任务级缓存响应包装成爬虫需要的最小 conn 形态。"""
+
+    def __init__(self, response):
+        self.status_code = int(getattr(response, "status_code", 0) or 0)
+        self.headers = dict(getattr(response, "headers", {}) or {})
+        self.content = bytes(getattr(response, "body", b"") or b"")
+
+    @property
+    def text(self):
+        return self.content.decode("utf-8", "ignore")
 
 
 class SiteURLSpider(object):
-    def __init__(self, entry_urls=None, deep_num=3, waf_guard=None):
+    def __init__(self, entry_urls=None, deep_num=3, waf_guard=None, discovery_context=None):
         entry_url_list = URLSimilarList()
         for url in entry_urls:
             entry_url_list.add(URLInfo(url, url, URLTYPE.document))
@@ -123,6 +140,7 @@ class SiteURLSpider(object):
         self.scope_url = entry_urls[0]
         self.dns_policy_cache = {}
         self.waf_guard = waf_guard
+        self.discovery_context = discovery_context
 
         self.tagMap = [{'name': 'a', 'attr': 'href', 'type': URLTYPE.document},
                        {'name': 'form', 'attr': 'action', 'type': URLTYPE.document},
@@ -133,6 +151,103 @@ class SiteURLSpider(object):
 
         self.ignore_ext = [".pdf", ".xls", ".xlsx", ".doc", ".docx", ".ppt", ".pptx", ".zip", ".rar"]
         self.ignore_ext.extend([".png", ".jpg", ".gif", ".js", ".css", ".ico"])
+
+    def _release_inflight_url(self, url, inflight_owner):
+        if not inflight_owner or self.discovery_context is None:
+            return
+        try:
+            self.discovery_context.release_fetch_slot(url, request_profile="html_get")
+        except Exception:
+            pass
+
+    def _fetch_conn(self, url):
+        """统一抓取原语：先消费任务内共享响应，未命中再按 crawler 类别受控请求。"""
+
+        inflight_owner = False
+        if self.discovery_context is not None:
+            cached_response = self.discovery_context.get_response(
+                url,
+                request_profile="html_get",
+                consumer="site_spider",
+            )
+            if cached_response is not None:
+                if str((getattr(cached_response, "headers", {}) or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
+                    return None
+                if getattr(cached_response, "body_truncated", False):
+                    # 登记时被正文预算截断：回源取全量，避免漏掉后部链接/表单。
+                    self.discovery_context.record_metric("truncated_cache_refetch_count")
+                    cached_response = None
+
+            if cached_response is not None:
+                return _SpiderCachedResponse(cached_response)
+
+            cached_response, follower = self.discovery_context.await_singleflight_leader(
+                url, request_profile="html_get", consumer="site_spider")
+            inflight_owner = not follower
+            if cached_response is not None:
+                if str((getattr(cached_response, "headers", {}) or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
+                    self._release_inflight_url(url, inflight_owner)
+                    return None
+                return _SpiderCachedResponse(cached_response)
+
+            lease, lease_reason = self.discovery_context.acquire_request(url, "crawler")
+            if lease is None and lease_reason == "blocked":
+                logger.info("skip site_spider by waf traffic policy url:{}".format(url))
+                self._release_inflight_url(url, inflight_owner)
+                return None
+            if lease is None:
+                logger.warning("site_spider over capacity, continue request url:{}".format(url))
+        else:
+            lease = None
+
+        try:
+            conn = utils.http_req(url, waf_guard=self.waf_guard, waf_module="site_spider")
+        except Exception:
+            if self.discovery_context is not None:
+                self.discovery_context.record_metric("failed_count")
+                self._release_inflight_url(url, inflight_owner)
+            raise
+        finally:
+            if lease is not None:
+                lease.release()
+
+        if str((getattr(conn, "headers", {}) or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
+            self._release_inflight_url(url, inflight_owner)
+            return None
+        if self.discovery_context is not None:
+            self.discovery_context.put_response(
+                url=url,
+                method="GET",
+                request_profile="html_get",
+                status_code=getattr(conn, "status_code", 0),
+                headers=getattr(conn, "headers", {}) or {},
+                content_type=(getattr(conn, "headers", {}) or {}).get("Content-Type", ""),
+                body=getattr(conn, "content", b"") or b"",
+                source="site_spider",
+                consumer="site_spider",
+            )
+        return conn
+
+    def _register_crawl_candidate(self, url, parent_url):
+        if self.discovery_context is None:
+            return
+        try:
+            self.discovery_context.register_candidate(
+                event_type="UrlCandidateDiscovered",
+                candidate=url,
+                candidate_type="url",
+                source="site_spider",
+                source_detail=str(parent_url or "")[:200],
+                parent_target=self.scope_url,
+                metadata={"stage": "site_spider"},
+            )
+        except Exception as exc:
+            # 候选图登记失败不能打断爬虫主流程，但要留下可诊断记录。
+            logger.debug(
+                "site spider candidate register failed url:{} error_type:{}".format(
+                    url, type(exc).__name__
+                )
+            )
 
     @staticmethod
     def _extract_text_body(conn) -> str:
@@ -170,8 +285,8 @@ class SiteURLSpider(object):
         try:
             allow_scan, policy_detail = utils.check_dns_policy_for_url(robots_url, cache_map=self.dns_policy_cache)
             if allow_scan:
-                conn = utils.http_req(robots_url, waf_guard=self.waf_guard, waf_module="site_spider")
-                if str((getattr(conn, "headers", {}) or {}).get("X-ARL-WAF-SMART-SKIP", "")) != "1":
+                conn = self._fetch_conn(robots_url)
+                if conn is not None:
                     body_text = self._extract_text_body(conn)
                     for line in body_text.splitlines():
                         if not re.match(r"^\s*sitemap\s*:", line, flags=re.I):
@@ -230,9 +345,9 @@ class SiteURLSpider(object):
                     )
                     continue
 
-                conn = utils.http_req(sitemap_url, waf_guard=self.waf_guard, waf_module="site_spider")
-                if str((getattr(conn, "headers", {}) or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
-                    logger.info("skip site_spider sitemap by waf smart skip url:{}".format(sitemap_url))
+                conn = self._fetch_conn(sitemap_url)
+                if conn is None:
+                    logger.info("skip site_spider sitemap url:{}".format(sitemap_url))
                     continue
                 body_text = self._extract_text_body(conn)
                 if not body_text or "<loc" not in body_text.lower():
@@ -285,9 +400,9 @@ class SiteURLSpider(object):
                 )
                 return URLSimilarList()
 
-            conn = utils.http_req(entry_url, waf_guard=self.waf_guard, waf_module="site_spider")
-            if str((conn.headers or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
-                logger.info("skip site_spider by waf smart skip url:{}".format(entry_url))
+            conn = self._fetch_conn(entry_url)
+            if conn is None:
+                logger.info("skip site_spider no usable response url:{}".format(entry_url))
                 return URLSimilarList()
 
             if conn.status_code in [301, 302, 307]:
@@ -312,9 +427,9 @@ class SiteURLSpider(object):
                 if utils.same_netloc(entry_url, _url) and (url_info not in self.done_url_list):
                     entry_url = _url
                     logger.info("[{}] req 302 = > {}".format(len(self.done_url_list), entry_url))
-                    conn = utils.http_req(_url, waf_guard=self.waf_guard, waf_module="site_spider")
-                    if str((conn.headers or {}).get("X-ARL-WAF-SMART-SKIP", "")) == "1":
-                        logger.info("skip site_spider redirect by waf smart skip url:{}".format(_url))
+                    conn = self._fetch_conn(_url)
+                    if conn is None:
+                        logger.info("skip site_spider redirect url:{}".format(_url))
                         return URLSimilarList()
                     self.done_url_list.add(url_info)
                     self.all_url_list.add(url_info)
@@ -342,8 +457,11 @@ class SiteURLSpider(object):
                     _type = tag["type"]
                     if utils.same_netloc(_url, entry_url):
                         url_info = URLInfo(entry_url, _url, _type)
-                        ret_url.add(url_info)
-                        self.all_url_list.add(url_info)
+                        # 只在相似去重实际通过时登记候选：日历翻页/SessionID 类
+                        # 站点每页可产生上千唯一 href，无条件登记会放大候选图。
+                        if ret_url.add(url_info):
+                            self.all_url_list.add(url_info)
+                            self._register_crawl_candidate(_url, entry_url)
             return ret_url
         except Exception as e:
             logger.warning("skip site spider parse {} {}".format(entry_url, e))
@@ -379,16 +497,22 @@ class SiteURLSpider(object):
 
 
 class SiteURLSpiderThread(BaseThread):
-    def __init__(self, entry_urls_list, concurrency=6, deep_num=5, waf_guard=None):
+    def __init__(self, entry_urls_list, concurrency=6, deep_num=5, waf_guard=None, discovery_context=None):
         super().__init__(entry_urls_list, concurrency=concurrency)
         self.site_url_map = {}
         self.deep_num = deep_num
         self.waf_guard = waf_guard
+        self.discovery_context = discovery_context
 
     def work(self, entry_urls):
         # entry_urls 是一个数组，第一个是当前站点
         site = entry_urls[0]
-        self.site_url_map[site] = site_spider(entry_urls, self.deep_num, waf_guard=self.waf_guard)
+        self.site_url_map[site] = site_spider(
+            entry_urls,
+            self.deep_num,
+            waf_guard=self.waf_guard,
+            discovery_context=self.discovery_context,
+        )
 
     def run(self):
         t1 = time.time()
@@ -399,17 +523,23 @@ class SiteURLSpiderThread(BaseThread):
         return self.site_url_map
 
 
-def site_spider_thread(entry_urls_list, deep_num=5, waf_guard=None):
-    s = SiteURLSpiderThread(entry_urls_list, concurrency=6, deep_num=deep_num, waf_guard=waf_guard)
+def site_spider_thread(entry_urls_list, deep_num=5, waf_guard=None, discovery_context=None):
+    s = SiteURLSpiderThread(
+        entry_urls_list,
+        concurrency=6,
+        deep_num=deep_num,
+        waf_guard=waf_guard,
+        discovery_context=discovery_context,
+    )
     return s.run()
 
 
-def site_spider(entry_url, deep_num=3, waf_guard=None):
+def site_spider(entry_url, deep_num=3, waf_guard=None, discovery_context=None):
     if isinstance(entry_url, str):
         entry_url = [entry_url]
 
     ret = []
-    s = SiteURLSpider(entry_url, deep_num, waf_guard=waf_guard)
+    s = SiteURLSpider(entry_url, deep_num, waf_guard=waf_guard, discovery_context=discovery_context)
     for x in s.run():
         if urlparse(x.crawl_url).path == "/" or (not urlparse(x.crawl_url).path):
             continue

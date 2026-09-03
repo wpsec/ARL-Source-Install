@@ -29,7 +29,8 @@ class TestWihEndpointProbeIntegration(unittest.TestCase):
             append_service=lambda *args, **kwargs: None,
         )
         task._filter_waf_blocked_targets = lambda sites, stage_name="": list(sites or [])
-        task._run_substage = lambda name, func, detail="": func()
+        # 阶段执行器会附带 input_count/budget_sec 等观测参数，fake 需与真实签名兼容。
+        task._run_substage = lambda name, func, detail="", **kwargs: func()
         task._url_in_task_scope = lambda value: True
         task._wih_record_in_task_scope = lambda record: True
         task.add_wih_domain_set = lambda record: None

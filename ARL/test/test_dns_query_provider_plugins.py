@@ -15,6 +15,7 @@ class TestHunterHowQuery(unittest.TestCase):
         captured_queries = []
 
         def fake_search_page(params, headers, target, curr_page):
+            self.assertGreater(int(params["start_time"]), 0)
             decoded = base64.urlsafe_b64decode(params["query"]).decode("utf-8")
             captured_queries.append(decoded)
             if decoded == 'domain="google.com"':
@@ -25,7 +26,7 @@ class TestHunterHowQuery(unittest.TestCase):
             results = plugin.sub_domains("google.com")
 
         self.assertIn('domain="google.com"', captured_queries)
-        self.assertIn('domain.suffix="google.com"', captured_queries)
+        self.assertIn('domain.suffix=="google.com"', captured_queries)
         self.assertEqual(set(results), {"www.google.com", "mail.google.com"})
 
     @patch("app.services.dns_query_plugin.hunter_how.time.sleep", return_value=None)

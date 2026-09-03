@@ -82,23 +82,41 @@ def _load_info_hunter_module():
     url_candidate_filter_module.strip_url_annotation = lambda value: str(value or "")
     url_candidate_filter_module.strip_route_method_suffix = lambda value: str(value or "")
 
-    sys.modules["app"] = app_module
-    sys.modules["app.utils"] = utils_module
-    sys.modules["app.config"] = config_module
-    sys.modules["app.modules"] = modules_module
-    sys.modules["app.services"] = services_module
-    sys.modules["app.services.url_candidate_filter"] = url_candidate_filter_module
+    managed_module_names = [
+        "app",
+        "app.utils",
+        "app.config",
+        "app.modules",
+        "app.services",
+        "app.services.url_candidate_filter",
+    ]
+    backup_modules = {
+        name: sys.modules.get(name) for name in managed_module_names
+    }
+    try:
+        sys.modules["app"] = app_module
+        sys.modules["app.utils"] = utils_module
+        sys.modules["app.config"] = config_module
+        sys.modules["app.modules"] = modules_module
+        sys.modules["app.services"] = services_module
+        sys.modules["app.services.url_candidate_filter"] = url_candidate_filter_module
 
-    app_module.utils = utils_module
-    app_module.services = services_module
+        app_module.utils = utils_module
+        app_module.services = services_module
 
-    module_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "services" / "infoHunter.py"
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    return module
+        module_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "services" / "infoHunter.py"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for name, original in backup_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
 
 info_hunter_module = _load_info_hunter_module()
@@ -499,6 +517,37 @@ class TestWihTimeoutSplit(unittest.TestCase):
             self.assertTrue(hunter.exec_wih())
 
         self.assertEqual([535], observed_deadlines)
+        self.assertIsNone(hunter.wih_deadline_ts)
+
+    def test_exec_wih_enforces_total_budget_across_batches(self):
+        hunter = InfoHunter(
+            [
+                "https://a.example.com",
+                "https://b.example.com",
+            ]
+        )
+        hunter.wih_max_batch_size = 1
+        hunter.wih_total_budget_sec = 30
+        hunter.check_have_wih = lambda: True
+        executed_batches = []
+
+        def _fake_exec_wih_batch(batch_sites, aggregate_result_texts, depth=0):
+            executed_batches.append(list(batch_sites))
+            return True
+
+        hunter._exec_wih_batch = _fake_exec_wih_batch
+
+        with patch.object(
+            info_hunter_module.time,
+            "time",
+            side_effect=[100, 100, 131, 131],
+        ):
+            self.assertTrue(hunter.exec_wih())
+
+        self.assertEqual([["https://a.example.com"]], executed_batches)
+        self.assertEqual("budget_exhausted", hunter.last_run_metrics["end_reason"])
+        self.assertEqual("partial", hunter.last_run_metrics["status"])
+        self.assertEqual(1, hunter.last_run_metrics["completed_batch_count"])
         self.assertIsNone(hunter.wih_deadline_ts)
 
     def test_exec_wih_keeps_external_deadline(self):

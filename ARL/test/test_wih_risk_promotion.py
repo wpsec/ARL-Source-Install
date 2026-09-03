@@ -4,9 +4,10 @@ from types import SimpleNamespace
 try:
     from app.services.commonTask import WebSiteFetch
 except Exception:
-    from test.test_ai_pen_js_context import WebSiteFetch
+    WebSiteFetch = None
 
 
+@unittest.skipIf(WebSiteFetch is None, "requires commonTask import dependencies")
 class TestWihRiskPromotion(unittest.TestCase):
     def setUp(self):
         self.task = WebSiteFetch.__new__(WebSiteFetch)

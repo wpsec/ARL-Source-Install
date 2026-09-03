@@ -20,6 +20,14 @@ from app import utils
 logger = utils.get_logger()
 
 
+class NucleiScanResult(list):
+    """保持结果列表兼容，同时携带本次阶段的独立执行指标。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
+
+
 class NucleiScan(object):
     """
     Nuclei 扫描执行器
@@ -172,6 +180,37 @@ class NucleiScan(object):
 
         # 在nuclei 2.9.1 中 将-json 参数改成了 -jsonl 参数。
         self.nuclei_json_flag = None
+        self.scan_metrics = {
+            "status": "success",
+            "input_count": len(self.targets),
+            "target_count": len(self.targets),
+            "queued_count": 0,
+            "batch_count": 0,
+            "processed_batch_count": 0,
+            "successful_batch_count": 0,
+            "failed_batch_count": 0,
+            "pending_batch_count": 0,
+            "command_count": 0,
+            "success_count": 0,
+            "timeout_count": 0,
+            "retry_count": 0,
+            "failed_count": 0,
+            "degraded_count": 0,
+            "fallback_count": 0,
+            "filtered_count": 0,
+            "duplicate_batch_skipped": 0,
+        }
+        # 已成功执行的 (目标集合, tags, auto_scan, 模板目录) 指纹，收敛同目标/profile 重复执行。
+        self._executed_batch_signatures = set()
+
+    def _result(self, values=None, status=None, end_reason=None):
+        metrics = dict(self.scan_metrics)
+        if status:
+            metrics["status"] = str(status).strip().lower()
+        if end_reason:
+            metrics["end_reason"] = str(end_reason).strip().lower()
+        metrics["output_count"] = len(values or [])
+        return NucleiScanResult(values, metrics=metrics)
 
     @staticmethod
     def _normalize_profile_tags(tags):
@@ -367,6 +406,71 @@ class NucleiScan(object):
             logger.warning(
                 "nuclei template dir has zero templates: {}".format(self.nuclei_template_dir)
             )
+
+    def _preflight_templates(self):
+        """启动期模板预校验：只读解析 YAML 结构，暴露坏模板/缺 id 模板的数量与样本。
+
+        坏模板的实际剔除由 nuclei 自身跳过逻辑完成；这里解决的是
+        "扫描 0 结果但无法判断模板是否可用" 的可观测缺口，不改动任何模板文件。
+        """
+        scanned = 0
+        broken = 0
+        missing_id = 0
+        samples = []
+        try:
+            max_files = int(getattr(Config, "NUCLEI_PREFLIGHT_MAX_FILES", 4000) or 4000)
+        except Exception:
+            max_files = 4000
+        if max_files < 1:
+            max_files = 1
+
+        if self.nuclei_template_dir and os.path.isdir(self.nuclei_template_dir):
+            try:
+                import yaml
+            except Exception as exc:
+                logger.warning(
+                    "nuclei preflight yaml unavailable error_type:{}".format(type(exc).__name__)
+                )
+                return
+
+            try:
+                for root, _, files in os.walk(self.nuclei_template_dir):
+                    if scanned >= max_files:
+                        break
+                    for file_name in sorted(files):
+                        if scanned >= max_files:
+                            break
+                        if not str(file_name).endswith((".yaml", ".yml")):
+                            continue
+                        file_path = os.path.join(root, file_name)
+                        scanned += 1
+                        try:
+                            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                                # 部分模板为多文档结构，取首个文档做结构校验。
+                                docs = list(yaml.safe_load_all(f))
+                            data = docs[0] if docs else None
+                            if not isinstance(data, dict) or not data.get("id"):
+                                missing_id += 1
+                                if len(samples) < 5:
+                                    samples.append(file_path)
+                        except Exception:
+                            broken += 1
+                            if len(samples) < 5:
+                                samples.append(file_path)
+            except Exception as e:
+                logger.warning("nuclei template preflight walk failed: {}".format(e))
+
+        self.scan_metrics["template_preflight_scanned"] = scanned
+        self.scan_metrics["template_preflight_broken"] = broken
+        self.scan_metrics["template_preflight_missing_id"] = missing_id
+        if broken or missing_id:
+            logger.warning(
+                "nuclei template preflight scanned:{} broken:{} missing_id:{} samples:{}".format(
+                    scanned, broken, missing_id, ";".join(samples)[:400]
+                )
+            )
+        else:
+            logger.info("nuclei template preflight scanned:{} no structural issue".format(scanned))
 
     @staticmethod
     def _default_nuclei_ignore_content():
@@ -969,6 +1073,7 @@ class NucleiScan(object):
             keep_targets.append(item)
 
         if skip_count > 0:
+            self.scan_metrics["filtered_count"] += skip_count
             logger.info(
                 "nuclei dns policy filter skip:{} keep:{}".format(skip_count, len(keep_targets))
             )
@@ -993,6 +1098,8 @@ class NucleiScan(object):
         )
         skipped = max(total - limit, 0)
         self.targets = sorted_targets[:limit]
+        self.scan_metrics["pending_target_count"] = skipped
+        self.scan_metrics["pending_count"] = skipped
         logger.warning(
             "nuclei stage target cap reached total:{} limit:{} skipped:{}".format(
                 total, limit, skipped
@@ -1152,6 +1259,7 @@ class NucleiScan(object):
         """
         执行 nuclei 命令并输出统一日志
         """
+        self.scan_metrics["command_count"] += 1
         timeout_sec = self._calc_exec_timeout(target_count=target_count)
         if self.nuclei_stage_timeout_sec > 0 and self.stage_start_time > 0:
             remaining = self._stage_remaining_sec()
@@ -1162,6 +1270,7 @@ class NucleiScan(object):
                         stage, batch_type, self.nuclei_stage_timeout_sec, self._stage_elapsed_sec()
                     )
                 )
+                self.scan_metrics["timeout_count"] += 1
                 return {
                     "returncode": 124,
                     "stdout": "",
@@ -1195,6 +1304,7 @@ class NucleiScan(object):
                     stage, batch_type, timeout_sec, result_size, stderr_text[:800], stdout_text[:800]
                 )
             )
+            self.scan_metrics["timeout_count"] += 1
             return {
                 "returncode": 124,
                 "stdout": stdout_text,
@@ -1205,6 +1315,7 @@ class NucleiScan(object):
             logger.warning(
                 "nuclei run exception stage={} batch={} error={}".format(stage, batch_type, e)
             )
+            self.scan_metrics["failed_count"] += 1
             return {
                 "returncode": 1,
                 "stdout": "",
@@ -1221,6 +1332,12 @@ class NucleiScan(object):
                 stage, batch_type, completed.returncode, result_size
             )
         )
+        if completed.returncode == 0:
+            self.scan_metrics["success_count"] += 1
+        elif completed.returncode == 124:
+            self.scan_metrics["timeout_count"] += 1
+        else:
+            self.scan_metrics["failed_count"] += 1
         if completed.returncode != 0:
             logger.warning(
                 "nuclei run failed stage={} batch={} rc={} stderr={} stdout={}".format(
@@ -1235,12 +1352,45 @@ class NucleiScan(object):
             "result_size": result_size,
         }
 
+    def _batch_signature(self, batch: dict):
+        targets = tuple(sorted(str(item or "") for item in list(batch.get("targets", []) or [])))
+        return (
+            targets,
+            str(batch.get("tags", "") or "").strip().lower(),
+            bool(batch.get("auto_scan", False)),
+            str(self.nuclei_template_dir or ""),
+        )
+
+    def _remember_batch(self, signature, command_result: dict):
+        try:
+            returncode = int((command_result or {}).get("returncode"))
+        except (TypeError, ValueError):
+            return
+        if returncode == 0:
+            self._executed_batch_signatures.add(signature)
+
     def exec_nuclei(self, batch: dict, index: int):
+        batch_targets = batch.get("targets", [])
+        signature = self._batch_signature(batch)
+        if signature in self._executed_batch_signatures:
+            # 相同目标集合 + tags + 模板目录的组合本轮已成功执行,不再重复消耗预算。
+            self.scan_metrics["duplicate_batch_skipped"] += 1
+            logger.info(
+                "nuclei skip duplicate batch type:{} targets:{}".format(
+                    batch.get("batch_type"), len(batch_targets)
+                )
+            )
+            return {
+                "returncode": 0,
+                "stdout": "",
+                "stderr": "skipped_duplicate_batch",
+                "result_size": 0,
+            }
+
         target_file = self._gen_tmp_file_path("nuclei_target", index, "txt")
         result_file = self._gen_tmp_file_path("nuclei_result", index, "json")
         self.tmp_target_files.append(target_file)
         self.tmp_result_files.append(result_file)
-        batch_targets = batch.get("targets", [])
         self._gen_target_file(batch_targets, target_file)
         target_count = len(batch_targets)
 
@@ -1276,6 +1426,7 @@ class NucleiScan(object):
                 logger.warning(
                     "nuclei auto-scan detected invalid .nuclei-ignore, try rewrite and retry once"
                 )
+                self.scan_metrics["retry_count"] += 1
                 self._prepare_nuclei_runtime(force_rewrite=True)
                 auto_result = self._run_nuclei_command(
                     command=command + ["-as"],
@@ -1299,38 +1450,46 @@ class NucleiScan(object):
                 auto_need_fallback = True
 
             if auto_need_fallback and fallback_tags:
+                self.scan_metrics["degraded_count"] += 1
+                self.scan_metrics["fallback_count"] += 1
                 logger.info(
                     "nuclei auto-scan fallback to tags, batch={} tags={}".format(
                         batch_type, fallback_tags
                     )
                 )
-                self._run_nuclei_command(
+                fallback_result = self._run_nuclei_command(
                     command=command + ["-tags {}".format(fallback_tags)],
                     batch_type=batch_type,
                     stage="tags-fallback",
                     result_file=result_file,
                     target_count=target_count,
                 )
-            return
+                self._remember_batch(signature, fallback_result)
+                return fallback_result
+            self._remember_batch(signature, auto_result)
+            return auto_result
 
         if fallback_tags:
-            self._run_nuclei_command(
+            tags_result = self._run_nuclei_command(
                 command=command + ["-tags {}".format(fallback_tags)],
                 batch_type=batch_type,
                 stage="tags",
                 result_file=result_file,
                 target_count=target_count,
             )
-            return
+            self._remember_batch(signature, tags_result)
+            return tags_result
 
         # 禁止回退到全模板扫描，避免内部任务被全量模板拖慢
-        self._run_nuclei_command(
+        default_result = self._run_nuclei_command(
             command=command + ["-tags cve"],
             batch_type=batch_type,
             stage="tags-default",
             result_file=result_file,
             target_count=target_count,
         )
+        self._remember_batch(signature, default_result)
+        return default_result
 
     @staticmethod
     def _split_targets(targets: list, chunk_size: int):
@@ -1366,54 +1525,77 @@ class NucleiScan(object):
 
     def exec_scan_batches(self):
         target_batches = self._build_target_batches()
-        run_index = 1
+        split_batches = []
         for batch in target_batches:
-            split_batches = self._split_batch_targets(batch)
-            for split_batch in split_batches:
-                if not split_batch.get("targets"):
-                    continue
-                if self.nuclei_stage_timeout_sec > 0 and self.stage_start_time > 0:
-                    remaining = self._stage_remaining_sec()
-                    if remaining <= 0:
-                        self.stage_timeout_reached = True
-                        logger.warning(
-                            "nuclei stage timeout reached elapsed:{:.2f}s timeout:{}s finished_batch:{}".format(
-                                self._stage_elapsed_sec(),
-                                self.nuclei_stage_timeout_sec,
-                                run_index - 1,
-                            )
+            split_batches.extend(self._split_batch_targets(batch))
+        self.scan_metrics["batch_count"] = len(split_batches)
+        self.scan_metrics["queued_count"] = len(self.targets)
+        run_index = 1
+        for split_batch in split_batches:
+            if not split_batch.get("targets"):
+                continue
+            if self.nuclei_stage_timeout_sec > 0 and self.stage_start_time > 0:
+                remaining = self._stage_remaining_sec()
+                if remaining <= 0:
+                    self.stage_timeout_reached = True
+                    logger.warning(
+                        "nuclei stage timeout reached elapsed:{:.2f}s timeout:{}s finished_batch:{}".format(
+                            self._stage_elapsed_sec(),
+                            self.nuclei_stage_timeout_sec,
+                            run_index - 1,
                         )
-                        return
-                self.exec_nuclei(batch=split_batch, index=run_index)
-                run_index += 1
+                    )
+                    break
+            command_result = self.exec_nuclei(batch=split_batch, index=run_index)
+            self.scan_metrics["processed_batch_count"] += 1
+            if command_result and command_result.get("returncode") == 0:
+                self.scan_metrics["successful_batch_count"] += 1
+            else:
+                self.scan_metrics["failed_batch_count"] += 1
+            run_index += 1
+        self.scan_metrics["pending_batch_count"] = max(
+            self.scan_metrics["batch_count"]
+            - self.scan_metrics["processed_batch_count"],
+            0,
+        )
 
     def run(self):
         if not self.targets:
-            return []
+            self.scan_metrics["status"] = "skipped"
+            return self._result(status="skipped", end_reason="no_targets")
 
         self.stage_start_time = time.time()
         self.stage_timeout_reached = False
 
         self._filter_targets_by_dns_policy()
+        self.scan_metrics["target_count"] = len(self.targets)
         if not self.targets:
             logger.info("nuclei targets all skipped by dns policy")
-            return []
+            self.scan_metrics["status"] = "skipped"
+            self.scan_metrics["filtered_count"] = self.scan_metrics["input_count"]
+            return self._result(status="skipped", end_reason="dns_policy")
         self._apply_stage_target_limit()
+        self.scan_metrics["target_count"] = len(self.targets)
         if not self.targets:
             logger.info("nuclei targets all skipped after stage target cap")
-            return []
+            self.scan_metrics["status"] = "skipped"
+            return self._result(status="skipped", end_reason="target_limit")
 
         if not self.check_have_nuclei():
             logger.warning("not found nuclei")
-            return []
+            self.scan_metrics["status"] = "skipped"
+            return self._result(status="skipped", end_reason="binary_not_found")
 
         self._resolve_template_dir()
         self._log_template_summary()
+        self._preflight_templates()
         self._load_template_tag_index()
         self._prepare_nuclei_runtime()
 
         if not self._check_json_flag():
-            return []
+            self.scan_metrics["status"] = "error"
+            self.scan_metrics["failed_count"] += 1
+            return self._result(status="error", end_reason="json_flag_unavailable")
 
         try:
             self.exec_scan_batches()
@@ -1430,14 +1612,26 @@ class NucleiScan(object):
                     len(results),
                 )
             )
+            self.scan_metrics["status"] = "partial"
+            self.scan_metrics["end_reason"] = "budget_exhausted"
+        elif self.scan_metrics.get("failed_count") or self.scan_metrics.get("timeout_count"):
+            self.scan_metrics["status"] = "partial"
+            self.scan_metrics["end_reason"] = "batch_degraded"
+        elif self.scan_metrics.get("pending_target_count"):
+            self.scan_metrics["status"] = "partial"
+            self.scan_metrics["end_reason"] = "target_budget_pending"
         logger.info("nuclei scan finish result:{}".format(len(results)))
 
-        return results
+        return self._result(
+            results,
+            status=self.scan_metrics.get("status", "success"),
+            end_reason=self.scan_metrics.get("end_reason", "completed"),
+        )
 
 
 def nuclei_scan(targets: list, scan_profile: dict = None):
     if not targets:
-        return []
+        return NucleiScanResult([], metrics={"status": "skipped", "end_reason": "no_targets"})
 
     n = NucleiScan(targets=targets, scan_profile=scan_profile)
     return n.run()

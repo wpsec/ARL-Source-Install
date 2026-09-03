@@ -168,7 +168,43 @@ def fetch_text(
     timeout: Tuple[int, int] = (5, 12),
     max_bytes: int = 512 * 1024,
     waf_module: str = "web_info_intel",
+    discovery_context=None,
+    traffic_class: str = "wih",
 ):
+    inflight_owner = False
+    if discovery_context is not None:
+        cached_response = discovery_context.get_response(
+            url,
+            request_profile="html_get",
+            consumer=waf_module,
+        )
+        if cached_response is None:
+            # 并发 miss 合并：等待先行者结果，拿不到才自己抓。
+            cached_response, follower = discovery_context.await_singleflight_leader(
+                url, request_profile="html_get", consumer=waf_module)
+            inflight_owner = not follower
+        if cached_response is not None:
+            status_code = int(getattr(cached_response, "status_code", 0) or 0)
+            body = bytes(getattr(cached_response, "body", b"") or b"")
+            if status_code >= 400 or not body:
+                return "", cached_response
+            request_max_bytes = max(1024, int(max_bytes or 1024))
+            if bool(getattr(cached_response, "body_truncated", False)) and len(body) < request_max_bytes:
+                # 登记时被正文预算截断且短于本次消费者需求：回源真实请求，避免漏提取。
+                pass
+            else:
+                body = body[:request_max_bytes]
+                return body.decode("utf-8", errors="ignore"), cached_response
+
+    def _release_inflight():
+        """先行者未走 put_response 的退出路径必须释放槽位（幂等，已释放则 no-op）。"""
+        if not inflight_owner or discovery_context is None:
+            return
+        try:
+            discovery_context.release_fetch_slot(url, request_profile="html_get")
+        except Exception:
+            pass
+
     allow_scan, policy_detail = utils.check_dns_policy_for_url(url, cache_map=DNS_POLICY_CACHE)
     if not allow_scan:
         utils.get_logger().info(
@@ -180,7 +216,22 @@ def fetch_text(
                 policy_detail.get("system_ips", []),
             )
         )
+        _release_inflight()
         return "", None
+
+    lease = None
+    if discovery_context is not None:
+        lease, lease_reason = discovery_context.acquire_request(url, traffic_class)
+        if lease is None and lease_reason == "blocked":
+            utils.get_logger().info(
+                "{} skipped by waf traffic policy url:{}".format(waf_module, url)
+            )
+            _release_inflight()
+            return "", None
+        if lease is None:
+            utils.get_logger().warning(
+                "{} over capacity, continue request url:{}".format(waf_module, url)
+            )
 
     try:
         conn = utils.http_req(
@@ -190,18 +241,52 @@ def fetch_text(
             waf_guard=waf_guard,
             waf_module=waf_module,
         )
-    except Exception:
+    except Exception as exc:
+        if discovery_context is not None:
+            discovery_context.record_metric("failed_count")
+        _release_inflight()
+        utils.get_logger().warning(
+            "{} request failed task context error_type:{}".format(waf_module, type(exc).__name__)
+        )
         return "", None
+    finally:
+        if lease is not None:
+            lease.release()
 
     status_code = int(getattr(conn, "status_code", 0) or 0)
     if status_code >= 400:
+        if discovery_context is not None:
+            discovery_context.put_response(
+                url=url,
+                method="GET",
+                request_profile="html_get",
+                status_code=status_code,
+                headers=getattr(conn, "headers", {}) or {},
+                content_type=(getattr(conn, "headers", {}) or {}).get("Content-Type", ""),
+                body=getattr(conn, "content", b"") or b"",
+                source=waf_module,
+                consumer=waf_module,
+            )
         return "", conn
 
     body = bytes(getattr(conn, "content", b"") or b"")
     if not body:
+        _release_inflight()
         return "", conn
 
     body = body[: max(1024, int(max_bytes or 1024))]
+    if discovery_context is not None:
+        discovery_context.put_response(
+            url=url,
+            method="GET",
+            request_profile="html_get",
+            status_code=status_code,
+            headers=getattr(conn, "headers", {}) or {},
+            content_type=(getattr(conn, "headers", {}) or {}).get("Content-Type", ""),
+            body=body,
+            source=waf_module,
+            consumer=waf_module,
+        )
     return body.decode("utf-8", errors="ignore"), conn
 
 

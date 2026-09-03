@@ -6,6 +6,7 @@ from app.services.buildDomainInfo import build_domain_info
 from app.services.probeHTTP import probe_http
 from app.services.fetchSite import fetch_site
 from app.services.baseUpdateTask import BaseUpdateTask
+from app.repositories import DomainRepository
 from app.services.wildcardDomain import (
     collect_wildcard_records_from_domains,
     collect_wildcard_profiles_from_roots,
@@ -56,12 +57,15 @@ class DomainSiteUpdate(object):
 
         for domain_info_obj in domain_info_list:
             domain_info = domain_info_obj.dump_json(flag=False)
-            domain_info["task_id"] = self.task_id
-            domain_info["source"] = self.source
             domain_parsed = utils.domain_parsed(domain_info["domain"])
             if domain_parsed:
                 domain_info["fld"] = domain_parsed["fld"]
-            utils.conn_db('domain').insert_one(domain_info)
+            DomainRepository.upsert_discovered_domain(
+                task_id=self.task_id,
+                domain_info=domain_info,
+                primary_source=self.source,
+                sources=[self.source],
+            )
 
         self.domain_info_list = domain_info_list
 

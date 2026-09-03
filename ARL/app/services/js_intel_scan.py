@@ -7,6 +7,7 @@ JS 情报扫描服务。
 - 故意不重复承担 WIH 已覆盖的 secrets / 子域名识别职责
 """
 import re
+import time
 from typing import List, Set
 
 from app import utils
@@ -22,8 +23,45 @@ from .web_info_intel_utils import (
     safe_site,
     stable_hash,
 )
+from .discovery_context import register_intel_candidate
 
 logger = utils.get_logger()
+
+try:
+    from .rust_accel import extract_js_endpoint_candidates as rust_extract_js_endpoint_candidates
+except Exception as exc:
+    logger.warning(
+        "rust acceleration adapter unavailable stage:js_endpoint reason_type:{}".format(
+            type(exc).__name__
+        )
+    )
+
+    class _UnavailableRustBatchResult(list):
+        def __init__(self, batch_size=0):
+            super().__init__()
+            self.used_native = False
+            self.metrics = {
+                "stage": "js_endpoint",
+                "backend": "python",
+                "used_native": False,
+                "fallback_count": 1,
+                "fallback_reason": "adapter_import_error",
+                "batch_size": int(batch_size or 0),
+            }
+
+    def rust_extract_js_endpoint_candidates(*args, **kwargs):
+        if not bool(getattr(Config, "RUST_ACCEL_FALLBACK_ENABLE", True)):
+            raise RuntimeError("Rust acceleration adapter unavailable at js_endpoint")
+        pages = kwargs.get("pages") if "pages" in kwargs else (args[0] if args else [])
+        return _UnavailableRustBatchResult(len(list(pages or [])))
+
+
+class JsIntelResult(list):
+    """保持旧 list 返回类型，同时携带 JS 批处理指标。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
 
 
 class JsIntelScanner:
@@ -50,10 +88,11 @@ class JsIntelScanner:
         ),
     ]
 
-    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
+    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None, discovery_context=None):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.waf_guard = waf_guard
+        self.discovery_context = discovery_context
 
         self.enable = bool(getattr(Config, "JS_INTEL_ENABLE", True))
         self.max_files = int(getattr(Config, "JS_INTEL_MAX_FILES", 80) or 80)
@@ -68,6 +107,15 @@ class JsIntelScanner:
         self.allowed_hosts = collect_allowed_hosts(self.sites)
         self.records: List[WihRecord] = []
         self.record_hash_set: Set[int] = set()
+        self.js_batch_size = 16
+        self.rust_metrics = {
+            "batch_count": 0,
+            "native_batch_count": 0,
+            "fallback_count": 0,
+            "fallback_reasons": {},
+        }
+        self.network_wait_sec = 0.0
+        self.network_request_count = 0
 
     def _append_record(self, record_type: str, content: str, source: str, site: str):
         record_type = str(record_type or "").strip()
@@ -76,6 +124,9 @@ class JsIntelScanner:
         site = str(site or "").strip()
         if not record_type or not content or not site:
             return
+
+        # 候选图先于记录去重登记：不同来源命中同一候选时要合并 sources。
+        register_intel_candidate(self.discovery_context, record_type, content, source, site)
 
         fnv_hash = stable_hash(record_type, content, site)
         if fnv_hash in self.record_hash_set:
@@ -128,6 +179,45 @@ class JsIntelScanner:
                     self._append_record("api_doc_url", normalized, js_url, safe_site(normalized))
                 self._append_record("urlfinder_url", normalized, js_url, safe_site(normalized))
 
+    def _record_rust_batch(self, batch_result):
+        self.rust_metrics["batch_count"] += 1
+        metrics = getattr(batch_result, "metrics", {}) or {}
+        fallback_count = int(metrics.get("fallback_count", 0) or 0)
+        self.rust_metrics["fallback_count"] += fallback_count
+        if fallback_count:
+            reason = str(metrics.get("fallback_reason", "unknown") or "unknown")
+            reasons = self.rust_metrics.setdefault("fallback_reasons", {})
+            reasons[reason] = int(reasons.get(reason, 0) or 0) + fallback_count
+        if bool(getattr(batch_result, "used_native", False)):
+            self.rust_metrics["native_batch_count"] += 1
+
+    def _process_js_batch(self, pages):
+        if not pages:
+            return
+        max_records = max(
+            1,
+            sum(max(1, len(str(item.get("text", "") or ""))) for item in pages),
+        )
+        batch_result = rust_extract_js_endpoint_candidates(
+            pages=pages,
+            allowed_hosts=self.allowed_hosts,
+            max_records=max_records,
+        )
+        if batch_result is not None:
+            self._record_rust_batch(batch_result)
+        if bool(getattr(batch_result, "used_native", False)):
+            for item in list(batch_result or []):
+                self._append_record(
+                    str(item.get("record_type", "") or ""),
+                    str(item.get("content", "") or ""),
+                    str(item.get("source", "") or ""),
+                    str(item.get("site", "") or ""),
+                )
+            return
+
+        for item in pages:
+            self._extract_endpoint_records(item["base_url"], item["text"])
+
     def run(self) -> List[WihRecord]:
         if not self.enable:
             logger.info("js intel scan skip, disabled")
@@ -142,18 +232,37 @@ class JsIntelScanner:
             logger.info("js intel scan skip, no js urls found from current wih records")
             return []
 
+        pages = []
         for js_url in js_urls:
-            text, _ = fetch_text(
-                js_url,
-                waf_guard=self.waf_guard,
-                timeout=self.timeout,
-                max_bytes=self.max_file_bytes,
-                waf_module="js_intel_scan",
-            )
+            network_started_at = time.monotonic()
+            self.network_request_count += 1
+            try:
+                text, _ = fetch_text(
+                    js_url,
+                    waf_guard=self.waf_guard,
+                    timeout=self.timeout,
+                    max_bytes=self.max_file_bytes,
+                    waf_module="js_intel_scan",
+                    discovery_context=self.discovery_context,
+                    traffic_class="wih",
+                )
+            finally:
+                self.network_wait_sec += max(0.0, time.monotonic() - network_started_at)
             if not text:
                 continue
-
-            self._extract_endpoint_records(js_url, text)
+            pages.append(
+                {
+                    "base_url": js_url,
+                    "text": text,
+                    "source_url": js_url,
+                    "depth": 0,
+                    "is_js": True,
+                }
+            )
+            if len(pages) >= self.js_batch_size:
+                self._process_js_batch(pages)
+                pages = []
+        self._process_js_batch(pages)
 
         logger.info(
             "js intel scan done, hosts:{} js:{} records:{}".format(
@@ -165,6 +274,35 @@ class JsIntelScanner:
         return self.records
 
 
-def run_js_intel_scan(sites: List[str], wih_records: List[WihRecord], waf_guard=None) -> List[WihRecord]:
-    scanner = JsIntelScanner(sites=sites, wih_records=wih_records, waf_guard=waf_guard)
-    return scanner.run()
+def run_js_intel_scan(
+    sites: List[str],
+    wih_records: List[WihRecord],
+    waf_guard=None,
+    discovery_context=None,
+) -> List[WihRecord]:
+    scanner = JsIntelScanner(
+        sites=sites,
+        wih_records=wih_records,
+        waf_guard=waf_guard,
+        discovery_context=discovery_context,
+    )
+    records = scanner.run()
+    native_batch_count = int(scanner.rust_metrics.get("native_batch_count", 0) or 0)
+    fallback_count = int(scanner.rust_metrics.get("fallback_count", 0) or 0)
+    if native_batch_count > 0 and fallback_count > 0:
+        backend = "mixed"
+    elif native_batch_count > 0:
+        backend = "rust"
+    else:
+        backend = "python"
+    metrics = {
+        "backend": backend,
+        "batch_count": int(scanner.rust_metrics.get("batch_count", 0) or 0),
+        "native_batch_count": native_batch_count,
+        "fallback_count": fallback_count,
+        "fallback_reasons": dict(scanner.rust_metrics.get("fallback_reasons") or {}),
+        "output_count": len(records or []),
+        "network_wait_sec": round(max(0.0, scanner.network_wait_sec), 6),
+        "network_request_count": int(scanner.network_request_count),
+    }
+    return JsIntelResult(records, metrics=metrics)

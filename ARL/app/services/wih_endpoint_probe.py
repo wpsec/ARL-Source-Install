@@ -1,8 +1,13 @@
 """
 WIH 接口提取结果的轻量可达性探测。
+
+请求统一走任务级响应缓存（DiscoveryContext）：命中即复用、miss 走
+single-flight 合并并发抓取、成功响应回填 registry 供其它策略消费。
 """
+import hashlib
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -11,6 +16,8 @@ from app.config import Config
 
 
 logger = utils.get_logger()
+
+_PROBE_CONSUMER = "wih_endpoint_probe"
 
 _ACTIVE_METHODS = {"GET", "HEAD", "POST", "OPTIONS"}
 _DANGEROUS_METHODS = {"DELETE", "PUT", "PATCH", "TRACE", "CONNECT"}
@@ -209,7 +216,77 @@ def _should_skip(item: Dict) -> str:
     return ""
 
 
-def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None) -> Dict:
+def _probe_request_profile(method: str, item: Dict) -> str:
+    """按 method + 请求体构造 endpoint 探测的缓存 profile。
+
+    GET 与页面抓取链路（fetchSite/pageFetch/urlfinder_extract 等）共用
+    html_get，探测与抓取结果可互相复用；POST 以请求体摘要入 key，
+    避免不同 body 的同 URL 记录互相污染。
+    """
+    method = str(method or "GET").strip().upper() or "GET"
+    if method == "GET":
+        return "html_get"
+    if method != "POST":
+        return "endpoint_{}".format(method.lower())
+    request_template = item.get("request_template") if isinstance(item.get("request_template"), dict) else {}
+    signature = json.dumps(
+        {
+            "body": request_template.get("body"),
+            "body_text": request_template.get("body_text"),
+            "content_type": str(item.get("content_type") or "").strip().lower(),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    digest = hashlib.sha256(signature.encode("utf-8")).hexdigest()[:16]
+    return "endpoint_post_{}".format(digest)
+
+
+class _RecordedResponse(object):
+    """把 ResponseRecord 适配成 packet 构造可读的响应视图。"""
+
+    def __init__(self, record):
+        self.status_code = int(getattr(record, "status_code", 0) or 0)
+        self.headers = dict(getattr(record, "headers", {}) or {})
+        self.content = bytes(getattr(record, "body", b"") or b"")
+        self.reason = ""
+        content_type = str(getattr(record, "content_type", "") or "")
+        self.encoding = (
+            content_type.split("charset=", 1)[1].split(";")[0].strip()
+            if "charset=" in content_type.lower() else "")
+
+
+def _resolve_cached_response(discovery_context, url: str, method: str,
+                             profile: str) -> Tuple[Optional[object], bool]:
+    """返回 (可复用记录|None, 是否 single-flight 先行者)。"""
+    cached = discovery_context.get_response(
+        url, method=method, request_profile=profile,
+        consumer=_PROBE_CONSUMER)
+    if cached is not None:
+        return cached, False
+    cached, follower = discovery_context.await_singleflight_leader(
+        url, method=method, request_profile=profile,
+        consumer=_PROBE_CONSUMER)
+    return cached, not follower
+
+
+def _apply_cached_record(item: Dict, record, method: str) -> Dict:
+    status_code = int(getattr(record, "status_code", 0) or 0)
+    item["status_code"] = status_code if status_code > 0 else None
+    item["response_status"] = item["status_code"]
+    body = bytes(getattr(record, "body", b"") or b"")
+    item["response_size"] = len(body)
+    packet = _build_response_packet(_RecordedResponse(record))
+    item["verification_response_packet"] = packet
+    if not str(item.get("response_packet") or "").strip():
+        item["response_packet"] = packet
+    return _mark_probe_state(
+        item, "probed",
+        "复用任务内缓存响应的 {} 结果".format(method), method)
+
+
+def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_context=None) -> Dict:
     item = dict(item or {})
     method = str(item.get("method") or "GET").strip().upper() or "GET"
     url = str(item.get("url") or "").strip()
@@ -233,8 +310,25 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None) -> Dict:
             method,
         )
 
+    profile = _probe_request_profile(method, item)
+    inflight_owner = False
+    if discovery_context is not None:
+        cached, inflight_owner = _resolve_cached_response(
+            discovery_context, url, method, profile)
+        if cached is not None:
+            return _apply_cached_record(item, cached, method)
+
+    lease = None
     headers = _safe_headers(item)
     try:
+        if discovery_context is not None:
+            lease, lease_reason = discovery_context.acquire_request(url, "wih")
+            if lease is None and lease_reason == "blocked":
+                return _mark_probe_state(
+                    item, "skipped", "WAF 流量策略暂停 wih 类别，未主动验证", method)
+            if lease is None:
+                logger.debug("endpoint probe over capacity, continue url:{}".format(url[:200]))
+
         if waf_guard:
             should_skip, detail = waf_guard.should_skip(url, module="wih_endpoint_probe")
             if should_skip:
@@ -262,6 +356,19 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None) -> Dict:
             waf_guard.observe_response(url, response, module="wih_endpoint_probe")
 
         status_code = int(getattr(response, "status_code", 0) or 0)
+        if discovery_context is not None:
+            discovery_context.put_response(
+                url=url,
+                method=method,
+                request_profile=profile,
+                status_code=status_code,
+                headers=getattr(response, "headers", {}) or {},
+                content_type=str(
+                    (getattr(response, "headers", {}) or {}).get("Content-Type", "") or ""),
+                body=getattr(response, "content", b"") or b"",
+                source=_PROBE_CONSUMER,
+                consumer=_PROBE_CONSUMER,
+            )
         item["status_code"] = status_code if status_code > 0 else None
         item["response_status"] = item["status_code"]
         item["response_size"] = _response_size(response)
@@ -272,9 +379,16 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None) -> Dict:
     except Exception as exc:
         logger.debug("wih endpoint probe failed url:{} method:{} err:{}".format(url, method, exc))
         return _mark_probe_state(item, "error", "轻量验证失败: {}".format(exc.__class__.__name__), method)
+    finally:
+        if lease is not None:
+            lease.release()
+        if inflight_owner and discovery_context is not None:
+            # 幂等释放：put_response 成功路径已释放时此处为 no-op。
+            discovery_context.release_fetch_slot(
+                url, method=method, request_profile=profile)
 
 
-def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None) -> List[Dict]:
+def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None, discovery_context=None) -> List[Dict]:
     """
     对 WIH 接口记录补充验证状态与可获取的响应状态。
     """
@@ -292,7 +406,12 @@ def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None) -> List[Dict]:
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         for index, item in enumerate(items):
             if _has_response(item) or _should_skip(item):
-                results[index] = _probe_one(item, waf_guard=waf_guard, dns_policy_cache=dns_policy_cache)
+                results[index] = _probe_one(
+                    item,
+                    waf_guard=waf_guard,
+                    dns_policy_cache=dns_policy_cache,
+                    discovery_context=discovery_context,
+                )
                 continue
 
             if active_count >= max_targets:
@@ -305,7 +424,7 @@ def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None) -> List[Dict]:
                 continue
 
             active_count += 1
-            futures[executor.submit(_probe_one, item, waf_guard, dns_policy_cache)] = index
+            futures[executor.submit(_probe_one, item, waf_guard, dns_policy_cache, discovery_context)] = index
 
         for future in as_completed(futures):
             index = futures[future]
@@ -323,7 +442,7 @@ def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None) -> List[Dict]:
     return [item for item in results if isinstance(item, dict)]
 
 
-def run_wih_endpoint_probe(endpoints: List[Dict], waf_guard=None) -> List[Dict]:
+def run_wih_endpoint_probe(endpoints: List[Dict], waf_guard=None, discovery_context=None) -> List[Dict]:
     """
     运行 WIH 接口轻量探测，并返回补全后的接口记录。
     """
@@ -333,7 +452,8 @@ def run_wih_endpoint_probe(endpoints: List[Dict], waf_guard=None) -> List[Dict]:
         return []
 
     logger.info("wih endpoint probe start endpoints:{}".format(len(endpoint_list)))
-    results = enrich_wih_endpoints(endpoint_list, waf_guard=waf_guard)
+    results = enrich_wih_endpoints(
+        endpoint_list, waf_guard=waf_guard, discovery_context=discovery_context)
     observed_count = sum(1 for item in results if _has_response(item))
     logger.info(
         "wih endpoint probe finish endpoints:{} observed:{}".format(

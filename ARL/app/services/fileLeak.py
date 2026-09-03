@@ -1,7 +1,9 @@
 """
 敏感文件泄露扫描
 """
+import base64
 import difflib
+import hashlib
 import json
 import os
 import shutil
@@ -21,7 +23,9 @@ import itertools
 
 from app import utils
 from app.config import Config
+from app.utils.log_safety import safe_error_text
 from .baseThread import BaseThread
+from .page_semantics import enrich_page_item
 
 logger = utils.get_logger()
 DNS_POLICY_CACHE = {}
@@ -35,6 +39,14 @@ HEARTBEAT_UPDATE_INTERVAL_SEC = 1.0
 
 class FileLeakPolicySkip(Exception):
     """File leak request is skipped by DNS policy."""
+
+
+class FileLeakResult(list):
+    """保持文件泄漏结果列表兼容，同时携带站点队列指标。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
 
 
 class URL():
@@ -86,6 +98,35 @@ class URL():
 
         return self._path
 
+
+def _url_priority(url):
+    """为高价值泄漏路径排序，不删除低优先级候选。"""
+    path = str(getattr(url, "path", "") or "").lower()
+    score = 0
+    high_value_tokens = (
+        "/.env", "/.git", "config", "backup", "dump", "database", "swagger",
+        "actuator", "admin", "manage", "console", "debug",
+    )
+    for token in high_value_tokens:
+        if token in path:
+            score += 10
+    if getattr(url, "is_backup_path", False):
+        score += 15
+    return (-score, path, str(getattr(url, "url", "")))
+
+class _LeakCachedResponse(object):
+    """任务内已获取响应的最小 conn 形态；raw 为 None 走既有非流式分支。"""
+
+    def __init__(self, status_code, headers, content):
+        self.status_code = int(status_code or 0)
+        self.headers = dict(headers or {})
+        self.content = bytes(content or b"")
+        self.raw = None
+
+    def close(self):
+        return None
+
+
 class HTTPReq():
     def __init__(
         self,
@@ -95,6 +136,7 @@ class HTTPReq():
         waf_guard=None,
         waf_module="file_leak",
         progress_callback=None,
+        response_cache=None,
     ):
         self.url = url
         self.read_timeout = read_timeout
@@ -105,6 +147,33 @@ class HTTPReq():
         self.waf_guard = waf_guard
         self.waf_module = waf_module
         self.progress_callback = progress_callback
+        self.response_cache = response_cache or {}
+
+    def _cached_conn(self):
+        """目录扫描只消费同 profile 已完成覆盖的响应；带 WAF 跳过标记的不消费。"""
+
+        if not self.response_cache:
+            return None
+        try:
+            key = normal_url(str(self.url.url or "").strip())
+        except Exception:
+            return None
+        entry = self.response_cache.get(key)
+        if not isinstance(entry, dict):
+            return None
+        headers = dict(entry.get("headers") or {})
+        if str(headers.get("X-ARL-WAF-SMART-SKIP", "")) == "1":
+            return None
+        body_b64 = str(entry.get("body_b64") or "")
+        if not body_b64:
+            return None
+        try:
+            body = base64.b64decode(body_b64)
+        except Exception:
+            return None
+        if not body:
+            return None
+        return _LeakCachedResponse(int(entry.get("status_code") or 0), headers, body)
 
     def _touch_progress(self):
         if callable(self.progress_callback):
@@ -115,6 +184,16 @@ class HTTPReq():
 
     def req(self):
         self._touch_progress()
+        cached_conn = self._cached_conn()
+        if cached_conn is not None:
+            self.conn = cached_conn
+            self.status_code = cached_conn.status_code
+            self.content = cached_conn.content[: self.max_length]
+            content_len = self.conn.headers.get("Content-Length", len(self.content))
+            self.conn.headers["Content-Length"] = content_len
+            cached_conn.close()
+            self._touch_progress()
+            return self.status_code, self.content
         content = b''
         allow_scan, policy_detail = utils.check_dns_policy_for_url(self.url.url, cache_map=DNS_POLICY_CACHE)
         if not allow_scan:
@@ -301,15 +380,33 @@ class Page():
             "status_code": self.status_code,
         }
 
+        # 证据采集：fileleak 结果经 subprocess 序列化回传，excerpt/tags 必须在此生成。
+        try:
+            headers = getattr(self.raw_req, "conn", None)
+            headers = getattr(headers, "headers", None) if headers is not None else None
+            enrich_page_item(item, body=self.content, headers=headers)
+        except Exception as exc:
+            # 采集失败不能影响 fileleak 结果回传，仅记录类型。
+            logger.debug("fileleak semantics failed error_type:{}".format(type(exc).__name__))
+
         return item
 
 
 class FileLeak(BaseThread):
-    def __init__(self, target, urls, concurrency=None, waf_guard=None, progress_callback=None):
+    def __init__(
+        self,
+        target,
+        urls,
+        concurrency=None,
+        waf_guard=None,
+        progress_callback=None,
+        response_cache=None,
+    ):
         if concurrency is None:
             concurrency = Config.FILE_LEAK_CONCURRENCY
         super().__init__(urls, concurrency=concurrency)
         self.target = target.rstrip("/") + "/"
+        self.response_cache = response_cache or {}
         self.urls = urls
         self.path_404 = "not_found_2222_111"
         self.page404_set = set()
@@ -426,6 +523,9 @@ class FileLeak(BaseThread):
             logger.warning("fileleak build_404_page failed target:{}".format(self.target))
             return set()
 
+        # BaseThread 按 targets 顺序提交；高价值路径先进入受控并发队列，
+        # 低优先级路径仍会继续执行，避免排序演变成结果裁剪。
+        self.targets = sorted(self.urls, key=_url_priority)
         self._run()
 
         self.check_page_200()
@@ -453,6 +553,7 @@ class FileLeak(BaseThread):
                 waf_guard=self.waf_guard,
                 waf_module="file_leak",
                 progress_callback=self.progress_callback,
+                response_cache=self.response_cache,
             )
             req.req()
             self._touch_progress()
@@ -685,7 +786,7 @@ class GenURL():
 
 def _serialize_urls(urls) -> List[dict]:
     items = []
-    for url in sorted(urls):
+    for url in sorted(urls, key=_url_priority):
         items.append(
             {
                 "url": url.url,
@@ -819,13 +920,41 @@ def _kill_file_leak_subprocess(proc):
         pass
 
 
-def _scan_file_leak_site(target, url_items, concurrency, waf_guard_context=None, progress_callback=None):
+def _collect_child_waf_blocks(waf_guard):
+    """把目录子进程内 guard 确认的阻断主机带回父进程，转成 directory 类别信号。"""
+
+    if waf_guard is None:
+        return []
+    blocks = []
+    try:
+        summary = waf_guard.summary() or {}
+        # 子进程只承载 file_leak 流量：主机级与类别级阻断都按 directory 证据回流。
+        for key in ("blocked_hosts", "class_blocked_hosts"):
+            for item in summary.get(key) or []:
+                host = str(item.get("host", "") or "").strip()
+                if not host:
+                    continue
+                blocks.append({"host": host, "reason": str(item.get("reason", "") or "")[:160]})
+    except Exception as exc:
+        logger.debug("fileleak waf block summary failed error_type:{}".format(type(exc).__name__))
+    return blocks
+
+
+def _scan_file_leak_site(
+    target,
+    url_items,
+    concurrency,
+    waf_guard_context=None,
+    progress_callback=None,
+    response_cache=None,
+):
     if callable(progress_callback):
         try:
             progress_callback()
         except Exception:
             pass
 
+    waf_guard = None
     try:
         urls = _deserialize_urls(url_items)
         waf_guard = _build_waf_guard_from_context(waf_guard_context)
@@ -835,6 +964,7 @@ def _scan_file_leak_site(target, url_items, concurrency, waf_guard_context=None,
             concurrency=concurrency,
             waf_guard=waf_guard,
             progress_callback=progress_callback,
+            response_cache=response_cache,
         )
         pages = file_leak_runner.run()
 
@@ -853,15 +983,16 @@ def _scan_file_leak_site(target, url_items, concurrency, waf_guard_context=None,
             "ok": True,
             "pages": page_items,
             "skip_by_policy": bool(file_leak_runner.skip_by_policy),
+            "waf_block_hosts": _collect_child_waf_blocks(waf_guard),
             "error": "",
         }
     except Exception as e:
-        logger.info("error on {}, {}".format(target, e))
-        logger.exception(e)
+        logger.warning("fileleak worker error target:{} error:{}".format(target, safe_error_text(e)))
         return {
             "ok": False,
             "pages": [],
             "skip_by_policy": False,
+            "waf_block_hosts": _collect_child_waf_blocks(waf_guard),
             "error": str(e),
         }
 
@@ -878,9 +1009,10 @@ def run_file_leak_worker_from_files(job_path: str, result_path: str, heartbeat_p
             int(job.get("concurrency") or Config.FILE_LEAK_CONCURRENCY),
             waf_guard_context=job.get("waf_guard_context") or {},
             progress_callback=heartbeat_callback,
+            response_cache=job.get("response_cache") or {},
         )
     except Exception as e:
-        logger.exception(e)
+        logger.warning("fileleak worker bootstrap error:{}".format(safe_error_text(e)))
         result = {
             "ok": False,
             "pages": [],
@@ -905,6 +1037,80 @@ def _build_file_leak_worker_command(job_path: str, result_path: str, heartbeat_p
     return [sys.executable, "-c", bootstrap, job_path, result_path, heartbeat_path]
 
 
+def _build_file_leak_response_cache(discovery_context, target_urls, max_entries=64, max_body_bytes=50 * 1024):
+    """只导出与本次目录候选重叠的已完成响应，避免子进程重复请求 robots/sitemap 等路径。"""
+
+    if discovery_context is None:
+        return {}
+    cache = {}
+    for url_obj in target_urls:
+        if len(cache) >= max_entries:
+            break
+        raw_url = str(getattr(url_obj, "url", url_obj) or "").strip()
+        if not raw_url:
+            continue
+        try:
+            cached = discovery_context.get_response(raw_url, request_profile="html_get", consumer="file_leak")
+        except Exception as exc:
+            logger.debug(
+                "fileleak response cache lookup failed url:{} error_type:{}".format(
+                    raw_url[:200], type(exc).__name__
+                )
+            )
+            continue
+        if cached is None or getattr(cached, "body_truncated", False):
+            continue
+        body = bytes(getattr(cached, "body", b"") or b"")
+        if not body or len(body) > max_body_bytes:
+            continue
+        headers = {str(k): str(v) for k, v in dict(getattr(cached, "headers", {}) or {}).items()}
+        try:
+            cache_key = normal_url(raw_url)
+        except Exception:
+            continue
+        cache[cache_key] = {
+            "status_code": int(getattr(cached, "status_code", 0) or 0),
+            "headers": headers,
+            "body_b64": base64.b64encode(body).decode("ascii"),
+        }
+    return cache
+
+
+def _apply_directory_waf_blocks(discovery_context, result):
+    """目录子进程确认的阻断只暂停 directory 队列，不影响其它流量类别。"""
+
+    if discovery_context is None or not isinstance(result, dict):
+        return
+    for item in list(result.get("waf_block_hosts") or []):
+        host = str(item.get("host", "") or "").strip() if isinstance(item, dict) else ""
+        if not host:
+            continue
+        reason = str(item.get("reason", "") or "directory_worker_block")[:160]
+        try:
+            discovery_context.record_waf_signal(host, "directory", reason=reason, force=True)
+        except Exception as exc:
+            logger.debug(
+                "fileleak directory waf signal failed host:{} error_type:{}".format(
+                    host, type(exc).__name__
+                )
+            )
+
+
+def _file_leak_dict_signature(dicts) -> str:
+    """字典内容签名：数量 + 内容摘要，作为账本 input_signature。"""
+    items = [str(item or "") for item in list(dicts or [])]
+    payload = "\n".join(items)
+    digest = hashlib.md5(payload.encode("utf-8", "ignore")).hexdigest()[:16]
+    return "n{}:{}".format(len(items), digest)
+
+
+def _file_leak_ledger(discovery_context):
+    if discovery_context is None:
+        return None, None
+    ledger = getattr(discovery_context, "ledger", None)
+    return (ledger, discovery_context) if ledger is not None else (None, None)
+
+
 def _run_file_leak_site_with_watchdog(
     target,
     urls,
@@ -915,9 +1121,28 @@ def _run_file_leak_site_with_watchdog(
     popen_factory=None,
     sleep_fn=None,
     time_fn=None,
+    discovery_context=None,
 ) -> List[dict]:
     if not urls:
-        return []
+        return FileLeakResult([], metrics={"status": "skipped", "end_reason": "no_urls"})
+
+    if discovery_context is not None and not discovery_context.waf_policy.allow(target, "directory"):
+        # 目录类别已被目录自身触发的 WAF 证据熔断：暂停队列并保留待处理计数，
+        # 不静默丢弃，也不连坐爬虫/WIH 流量。
+        logger.info("fileleak directory queue paused by waf policy target:{}".format(target))
+        return FileLeakResult(
+            [],
+            metrics={
+                "status": "partial",
+                "end_reason": "directory_waf_block",
+                "input_count": len(urls),
+                "output_count": 0,
+                "pending_count": len(urls),
+                "degraded_count": 1,
+            },
+        )
+
+    response_cache = _build_file_leak_response_cache(discovery_context, urls)
 
     popen_factory = popen_factory or subprocess.Popen
     sleep_fn = sleep_fn or time.sleep
@@ -936,6 +1161,7 @@ def _run_file_leak_site_with_watchdog(
                 "url_items": _serialize_urls(urls),
                 "concurrency": int(concurrency or Config.FILE_LEAK_CONCURRENCY),
                 "waf_guard_context": _build_waf_guard_context(waf_guard),
+                "response_cache": response_cache,
             },
         )
         _touch_heartbeat_file(heartbeat_path)
@@ -946,7 +1172,7 @@ def _run_file_leak_site_with_watchdog(
         except Exception as e:
             logger.warning(
                 "fileleak watchdog spawn_failed target:{} err:{} fallback:inline".format(
-                    target, str(e)[:300]
+                    target, safe_error_text(e, max_length=300)
                 )
             )
             result = _scan_file_leak_site(
@@ -954,8 +1180,20 @@ def _run_file_leak_site_with_watchdog(
                 _serialize_urls(urls),
                 concurrency=concurrency,
                 waf_guard_context=_build_waf_guard_context(waf_guard),
+                response_cache=response_cache,
             )
-            return list(result.get("pages") or [])
+            _apply_directory_waf_blocks(discovery_context, result)
+            return FileLeakResult(
+                result.get("pages") or [],
+                metrics={
+                    "status": "success" if result.get("ok") else "error",
+                    "end_reason": "inline_fallback",
+                    "input_count": len(urls),
+                    "output_count": len(result.get("pages") or []),
+                    "failed_count": 0 if result.get("ok") else 1,
+                    "degraded_count": 1,
+                },
+            )
 
         start_at = float(time_fn())
         last_progress_at = start_at
@@ -992,7 +1230,18 @@ def _run_file_leak_site_with_watchdog(
                 )
             )
             _kill_file_leak_subprocess(proc)
-            return []
+            return FileLeakResult(
+                [],
+                metrics={
+                    "status": "partial",
+                    "end_reason": timeout_reason,
+                    "input_count": len(urls),
+                    "output_count": 0,
+                    "pending_count": len(urls),
+                    "timeout_count": 1,
+                    "degraded_count": 1,
+                },
+            )
 
         try:
             proc.wait(timeout=1)
@@ -1006,17 +1255,49 @@ def _run_file_leak_site_with_watchdog(
                     target, getattr(proc, "returncode", None)
                 )
             )
-            return []
+            return FileLeakResult(
+                [],
+                metrics={
+                    "status": "error",
+                    "end_reason": "missing_result",
+                    "input_count": len(urls),
+                    "output_count": 0,
+                    "pending_count": len(urls),
+                    "failed_count": 1,
+                },
+            )
+
+        _apply_directory_waf_blocks(discovery_context, result)
 
         if not result.get("ok"):
             logger.warning(
                 "fileleak watchdog worker_error target:{} err:{}".format(
-                    target, str(result.get("error", "") or "")[:300]
+                    target, safe_error_text(result.get("error", "") or "", max_length=300)
                 )
             )
-            return []
+            return FileLeakResult(
+                [],
+                metrics={
+                    "status": "error",
+                    "end_reason": "worker_error",
+                    "input_count": len(urls),
+                    "output_count": 0,
+                    "pending_count": len(urls),
+                    "failed_count": 1,
+                },
+            )
 
-        return list(result.get("pages") or [])
+        pages = list(result.get("pages") or [])
+        return FileLeakResult(
+            pages,
+            metrics={
+                "status": "success",
+                "end_reason": "completed",
+                "input_count": len(urls),
+                "output_count": len(pages),
+                "success_count": 1,
+            },
+        )
     finally:
         _cleanup_file_leak_watchdog_dir(temp_dir)
 
@@ -1063,7 +1344,7 @@ def _calc_file_leak_target_timeouts(url_count: int):
     return site_timeout, no_progress_timeout
 
 
-def file_leak(targets, dicts, gen_dict=True, waf_guard=None) -> List[dict]:
+def file_leak(targets, dicts, gen_dict=True, waf_guard=None, discovery_context=None, scan_profile="") -> List[dict]:
     all_gen_url = set()
     map_url = dict()
 
@@ -1080,8 +1361,17 @@ def file_leak(targets, dicts, gen_dict=True, waf_guard=None) -> List[dict]:
         map_url[url.scope].add(url)
 
     ret = []
-    target_items = list(map_url.items())
+    site_metrics = []
+    # 高价值站点先开始，站点内部仍保留完整候选并按路径优先级提交。
+    target_items = sorted(
+        map_url.items(),
+        key=lambda item: (
+            min([_url_priority(url)[0] for url in item[1]] or [0]),
+            item[0],
+        ),
+    )
     total = len(target_items)
+    dict_signature = _file_leak_dict_signature(dicts)
     target_concurrency = max(1, int(Config.FILE_LEAK_TARGET_CONCURRENCY or 1))
 
     def _scan_one_target(index: int, item):
@@ -1099,6 +1389,34 @@ def file_leak(targets, dicts, gen_dict=True, waf_guard=None) -> List[dict]:
                 no_progress_timeout,
             )
         )
+        ledger, ledger_context = _file_leak_ledger(discovery_context)
+        ledger_key = ""
+        if ledger is not None:
+            ledger_key = ledger_context.idempotency_key(
+                "file_leak",
+                target,
+                scan_profile=str(scan_profile or "default"),
+                input_signature=dict_signature,
+            )
+            entry = ledger.get(ledger_key)
+            if entry is not None and getattr(entry, "status", "") == "covered":
+                # 账本只加速恢复路径；covered 目标视为已完成，不计失败或待处理。
+                logger.info(
+                    "fileleak target skipped by ledger covered target:{} out:{}".format(
+                        target, int(getattr(entry, "output_count", 0) or 0)
+                    )
+                )
+                return FileLeakResult(
+                    [],
+                    metrics={
+                        "status": "success",
+                        "end_reason": "ledger_covered",
+                        "input_count": int(getattr(entry, "input_count", 0) or 0),
+                        "output_count": int(getattr(entry, "output_count", 0) or 0),
+                        "reused_count": 1,
+                    },
+                )
+
         pages = _run_file_leak_site_with_watchdog(
             target,
             target_urls,
@@ -1106,17 +1424,68 @@ def file_leak(targets, dicts, gen_dict=True, waf_guard=None) -> List[dict]:
             site_timeout_sec=site_timeout,
             no_progress_timeout_sec=no_progress_timeout,
             waf_guard=waf_guard,
+            discovery_context=discovery_context,
         )
+        page_metrics = getattr(pages, "metrics", {}) or {}
+        if (
+            ledger is not None
+            and ledger_key
+            and str(page_metrics.get("end_reason") or "") == "completed"
+            and str(page_metrics.get("status") or "success") == "success"
+        ):
+            ledger.finish(
+                ledger_key,
+                "covered",
+                input_count=len(target_urls),
+                output_count=int(page_metrics.get("output_count") or len(pages or [])),
+            )
         return pages
 
     if target_concurrency <= 1 or total <= 1:
         for index, item in enumerate(target_items, start=1):
             try:
-                ret.extend(_scan_one_target(index, item))
+                pages = _scan_one_target(index, item)
+                ret.extend(pages or [])
+                site_metrics.append(getattr(pages, "metrics", {}) or {})
             except Exception as e:
-                logger.info("error on {}, {}".format(item[0], e))
-                logger.exception(e)
-        return ret
+                logger.warning("error on {}: {}".format(item[0], safe_error_text(e)))
+                site_metrics.append(
+                    {
+                        "status": "error",
+                        "end_reason": "worker_exception",
+                        "failed_count": 1,
+                    }
+                )
+        return FileLeakResult(
+            ret,
+            metrics={
+                "status": (
+                    "error"
+                    if any(int(item.get("failed_count", 0) or 0) for item in site_metrics) and not ret
+                    else "partial"
+                    if any(
+                        int(item.get(key, 0) or 0)
+                        for item in site_metrics
+                        for key in ("failed_count", "timeout_count", "degraded_count", "pending_count")
+                    )
+                    else "success"
+                ),
+                "end_reason": "completed" if not any(
+                    int(item.get(key, 0) or 0)
+                    for item in site_metrics
+                    for key in ("failed_count", "timeout_count", "degraded_count", "pending_count")
+                ) else "site_degraded",
+                "target_count": total,
+                "input_count": len(all_gen_url),
+                "queued_count": total,
+                "completed_target_count": len(site_metrics),
+                "output_count": len(ret),
+                "failed_count": sum(int(item.get("failed_count", 0) or 0) for item in site_metrics),
+                "timeout_count": sum(int(item.get("timeout_count", 0) or 0) for item in site_metrics),
+                "degraded_count": sum(int(item.get("degraded_count", 0) or 0) for item in site_metrics),
+                "pending_count": sum(int(item.get("pending_count", 0) or 0) for item in site_metrics),
+            },
+        )
 
     logger.info("fileleak target parallel enabled total:{} target_concurrency:{}".format(total, target_concurrency))
     with ThreadPoolExecutor(max_workers=target_concurrency) as executor:
@@ -1130,8 +1499,40 @@ def file_leak(targets, dicts, gen_dict=True, waf_guard=None) -> List[dict]:
             try:
                 pages = future.result()
                 ret.extend(pages or [])
+                site_metrics.append(getattr(pages, "metrics", {}) or {})
             except Exception as e:
-                logger.info("error on {}, {}".format(target, e))
-                logger.exception(e)
+                logger.warning("error on {}: {}".format(target, safe_error_text(e)))
+                site_metrics.append(
+                    {
+                        "status": "error",
+                        "end_reason": "worker_exception",
+                        "failed_count": 1,
+                    }
+                )
 
-    return ret
+    failed_count = sum(int(item.get("failed_count", 0) or 0) for item in site_metrics)
+    timeout_count = sum(int(item.get("timeout_count", 0) or 0) for item in site_metrics)
+    degraded_count = sum(int(item.get("degraded_count", 0) or 0) for item in site_metrics)
+    pending_count = sum(int(item.get("pending_count", 0) or 0) for item in site_metrics)
+    if failed_count and not ret:
+        status = "error"
+    elif failed_count or timeout_count or degraded_count or pending_count:
+        status = "partial"
+    else:
+        status = "success"
+    return FileLeakResult(
+        ret,
+        metrics={
+            "status": status,
+            "end_reason": "completed" if status == "success" else "site_degraded",
+            "input_count": len(all_gen_url),
+            "target_count": total,
+            "queued_count": total,
+            "completed_target_count": len(site_metrics),
+            "output_count": len(ret),
+            "failed_count": failed_count,
+            "timeout_count": timeout_count,
+            "degraded_count": degraded_count,
+            "pending_count": pending_count,
+        },
+    )

@@ -108,6 +108,31 @@ class TestDnsQueryPriority(unittest.TestCase):
             },
         )
 
+    def test_auto_mode_preserves_same_domain_from_multiple_sources(self):
+        Config.FOFA_EMAIL = "user@example.com"
+        Config.FOFA_KEY = "fofa-key"
+        Config.QUERY_PLUGIN_CONFIG = {
+            "fofa": {"enable": True},
+            "hunter_how": {"enable": True, "api_key": "hunter-key"},
+        }
+
+        fofa_plugin = FakePlugin("fofa", ["same.example.com"])
+        hunter_plugin = FakePlugin("hunter_how", ["same.example.com"])
+
+        with patch("app.services.dns_query.utils.load_query_plugins", return_value=[
+            fofa_plugin,
+            hunter_plugin,
+        ]):
+            results = run_query_plugin("example.com", [])
+
+        self.assertEqual(
+            {(item["domain"], item["source"]) for item in results},
+            {
+                ("same.example.com", "fofa"),
+                ("same.example.com", "hunter_how"),
+            },
+        )
+
     def test_explicit_sources_still_allow_running_lower_priority_measurement_provider(self):
         Config.FOFA_EMAIL = "user@example.com"
         Config.FOFA_KEY = "fofa-key"

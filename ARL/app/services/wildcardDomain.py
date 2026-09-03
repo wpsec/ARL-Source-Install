@@ -2,6 +2,7 @@
 域名泛解析判定辅助工具
 """
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app import utils
 from app.config import Config
@@ -42,6 +43,20 @@ def get_wildcard_max_levels():
     return _safe_positive_int(
         getattr(Config, "WILDCARD_MAX_LEVELS", DEFAULT_WILDCARD_MAX_LEVELS),
         DEFAULT_WILDCARD_MAX_LEVELS,
+    )
+
+
+def get_wildcard_profile_concurrency():
+    return _safe_positive_int(
+        getattr(Config, "WILDCARD_PROFILE_CONCURRENCY", 8),
+        8,
+    )
+
+
+def get_wildcard_probe_concurrency():
+    return _safe_positive_int(
+        getattr(Config, "WILDCARD_PROBE_CONCURRENCY", 2),
+        2,
     )
 
 
@@ -164,37 +179,116 @@ def resolve_domain_records(domain):
     return resolve_domain_record_detail(domain)["records"]
 
 
+def _collect_wildcard_profile_for_root(root, probe_count, verify_rounds):
+    profile = _empty_profile(root)
+    probe_domains = set()
+    for _ in range(probe_count):
+        probe_domains.add("{}.{}".format(utils.random_choices(8), root))
+    profile["probe_domains"] = probe_domains
+
+    probe_jobs = [
+        (probe_domain, round_index)
+        for probe_domain in sorted(probe_domains)
+        for round_index in range(verify_rounds)
+    ]
+    probe_results = {}
+    worker_count = min(get_wildcard_probe_concurrency(), len(probe_jobs))
+    if worker_count <= 1:
+        for index, (probe_domain, _round_index) in enumerate(probe_jobs):
+            probe_results[index] = resolve_domain_record_detail(probe_domain)
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_map = {
+                executor.submit(resolve_domain_record_detail, probe_domain): index
+                for index, (probe_domain, _round_index) in enumerate(probe_jobs)
+            }
+            for future in as_completed(future_map):
+                probe_results[future_map[future]] = future.result()
+
+    for index in range(len(probe_jobs)):
+        detail = probe_results[index]
+        signature = _normalize_signature(detail["records"])
+        profile["sample_count"] += 1
+        if not signature:
+            continue
+
+        profile["records"].update(detail["records"])
+        profile["a_records"].update(detail["a_records"])
+        profile["cname_records"].update(detail["cname_records"])
+        profile["signatures"].add(signature)
+        profile["record_counter"].update(signature)
+        profile["signature_counter"][signature] += 1
+
+    return profile
+
+
 def _collect_wildcard_profiles_for_roots(roots, probe_count=None, verify_rounds=None):
     profile_map = {}
     probe_count = _safe_positive_int(probe_count or get_wildcard_probe_count(), get_wildcard_probe_count())
     verify_rounds = _safe_positive_int(verify_rounds or get_wildcard_verify_rounds(), get_wildcard_verify_rounds())
 
+    normalized_roots = []
+    seen_roots = set()
     for root in roots or []:
         normalized_root = utils.normalize_domain(root)
-        if not normalized_root:
+        if not normalized_root or normalized_root in seen_roots:
             continue
-        profile_map[normalized_root] = _empty_profile(normalized_root)
+        seen_roots.add(normalized_root)
+        normalized_roots.append(normalized_root)
 
-    for root, profile in profile_map.items():
-        probe_domains = set()
-        for _ in range(probe_count):
-            probe_domains.add("{}.{}".format(utils.random_choices(8), root))
-        profile["probe_domains"] = probe_domains
+    if not normalized_roots:
+        return profile_map
 
-        for probe_domain in probe_domains:
-            for _ in range(verify_rounds):
-                detail = resolve_domain_record_detail(probe_domain)
-                signature = _normalize_signature(detail["records"])
-                profile["sample_count"] += 1
-                if not signature:
-                    continue
+    logger = None
+    get_logger = getattr(utils, "get_logger", None)
+    if callable(get_logger):
+        logger = get_logger()
 
-                profile["records"].update(detail["records"])
-                profile["a_records"].update(detail["a_records"])
-                profile["cname_records"].update(detail["cname_records"])
-                profile["signatures"].add(signature)
-                profile["record_counter"].update(signature)
-                profile["signature_counter"][signature] += 1
+    def collect_one(root):
+        try:
+            return root, _collect_wildcard_profile_for_root(
+                root,
+                probe_count=probe_count,
+                verify_rounds=verify_rounds,
+            )
+        except Exception as exc:
+            # 画像探测失败时不执行过滤，避免把网络故障误报成泛解析结果。
+            if logger:
+                logger.warning(
+                    "wildcard profile degraded root:{} error_type:{}".format(
+                        root,
+                        type(exc).__name__,
+                    )
+                )
+            return root, _empty_profile(root)
+
+    worker_count = min(get_wildcard_profile_concurrency(), len(normalized_roots))
+    if worker_count <= 1:
+        for root in normalized_roots:
+            key, profile = collect_one(root)
+            profile_map[key] = profile
+        return profile_map
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_map = {
+            executor.submit(collect_one, root): root
+            for root in normalized_roots
+        }
+        for future in as_completed(future_map):
+            root = future_map[future]
+            try:
+                key, profile = future.result()
+            except Exception as exc:
+                # collect_one 已覆盖普通异常；保留最后一道防线，避免整批失败。
+                if logger:
+                    logger.warning(
+                        "wildcard profile batch degraded root:{} error_type:{}".format(
+                            root,
+                            type(exc).__name__,
+                        )
+                    )
+                key, profile = root, _empty_profile(root)
+            profile_map[key] = profile
 
     return profile_map
 
@@ -274,6 +368,19 @@ def _verify_candidate_details(domain, base_detail=None, verify_rounds=None):
     return details
 
 
+def build_wildcard_candidate_details(domain_info, verify_rounds=None):
+    """构建单个候选的泛解析复验详情，供批次调度复用。"""
+    domain = utils.normalize_domain(getattr(domain_info, "domain", ""))
+    if not domain:
+        return []
+
+    return _verify_candidate_details(
+        domain,
+        base_detail=extract_domain_info_record_detail(domain_info),
+        verify_rounds=verify_rounds,
+    )
+
+
 def _candidate_hits_profile(candidate_details, profile):
     if not candidate_details or not profile:
         return False
@@ -324,7 +431,13 @@ def _candidate_hits_profile(candidate_details, profile):
     return False
 
 
-def domain_info_hits_wildcard_profile(domain_info, wildcard_profile_map, verify_rounds=None, max_levels=None):
+def _domain_info_hits_wildcard_profile(
+    domain_info,
+    wildcard_profile_map,
+    verify_rounds=None,
+    max_levels=None,
+    candidate_details=None,
+):
     if not domain_info or not wildcard_profile_map:
         return False
 
@@ -336,21 +449,47 @@ def domain_info_hits_wildcard_profile(domain_info, wildcard_profile_map, verify_
     if not roots:
         return False
 
-    base_detail = extract_domain_info_record_detail(domain_info)
-    candidate_details = None
+    if candidate_details is None:
+        candidate_details = build_wildcard_candidate_details(
+            domain_info,
+            verify_rounds=verify_rounds,
+        )
 
     for root in roots:
         profile = wildcard_profile_map.get(root)
         if not profile:
             continue
 
-        if candidate_details is None:
-            candidate_details = _verify_candidate_details(domain, base_detail=base_detail, verify_rounds=verify_rounds)
-
         if _candidate_hits_profile(candidate_details, profile):
             return True
 
     return False
+
+
+def domain_info_hits_wildcard_profile(domain_info, wildcard_profile_map, verify_rounds=None, max_levels=None):
+    return _domain_info_hits_wildcard_profile(
+        domain_info,
+        wildcard_profile_map,
+        verify_rounds=verify_rounds,
+        max_levels=max_levels,
+    )
+
+
+def domain_info_hits_wildcard_profile_with_details(
+    domain_info,
+    wildcard_profile_map,
+    candidate_details,
+    verify_rounds=None,
+    max_levels=None,
+):
+    """使用已批量复验详情判断泛解析，避免在过滤循环中重复发起 DNS 请求。"""
+    return _domain_info_hits_wildcard_profile(
+        domain_info,
+        wildcard_profile_map,
+        verify_rounds=verify_rounds,
+        max_levels=max_levels,
+        candidate_details=candidate_details,
+    )
 
 
 def domain_info_hits_wildcard_records(domain_info, wildcard_records):

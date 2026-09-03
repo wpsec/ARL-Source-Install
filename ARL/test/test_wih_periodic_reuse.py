@@ -150,6 +150,7 @@ def _load_module():
         {
             "WIH_PERIODIC_REUSE_ENABLE": True,
             "WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS": 5,
+            "WIH_PERIODIC_REUSE_MAX_AGE_SEC": 86400,
             "WIH_PERIODIC_REUSE_LOG_DETAIL": False,
         },
     )
@@ -189,24 +190,44 @@ def _load_module():
     info_hunter_module.InfoHunter = _InfoHunter
     wih_endpoint_probe_module.run_wih_endpoint_probe = lambda endpoints, waf_guard=None: list(endpoints or [])
 
-    sys.modules["app"] = app_module
-    sys.modules["bson"] = bson_module
-    sys.modules["app.utils"] = utils_module
-    sys.modules["app.config"] = config_module
-    sys.modules["app.modules"] = modules_module
-    sys.modules["app.services"] = services_pkg
-    sys.modules["app.services.infoHunter"] = info_hunter_module
-    sys.modules["app.services.wih_endpoint_probe"] = wih_endpoint_probe_module
+    saved_modules = {
+        name: sys.modules.get(name)
+        for name in (
+            "app",
+            "bson",
+            "app.utils",
+            "app.config",
+            "app.modules",
+            "app.services",
+            "app.services.infoHunter",
+            "app.services.wih_endpoint_probe",
+        )
+    }
+    try:
+        sys.modules["app"] = app_module
+        sys.modules["bson"] = bson_module
+        sys.modules["app.utils"] = utils_module
+        sys.modules["app.config"] = config_module
+        sys.modules["app.modules"] = modules_module
+        sys.modules["app.services"] = services_pkg
+        sys.modules["app.services.infoHunter"] = info_hunter_module
+        sys.modules["app.services.wih_endpoint_probe"] = wih_endpoint_probe_module
 
-    app_module.utils = utils_module
+        app_module.utils = utils_module
 
-    module_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "services" / "wih_periodic_reuse.py"
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    return module
+        module_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "services" / "wih_periodic_reuse.py"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for name, original in saved_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
 
 reuse_module = _load_module()
@@ -232,6 +253,45 @@ class TestWihPeriodicReuseService(unittest.TestCase):
         self.assertEqual(site_a, site_b)
         self.assertEqual(signature_a, signature_b)
 
+    def test_find_previous_task_rejects_expired_baseline(self):
+        current_task_id = FakeObjectId()
+        previous_task_id = FakeObjectId()
+        store = {
+            "task": [
+                {
+                    "_id": current_task_id,
+                    "target": "example.com",
+                    "status": "running",
+                    "options": {
+                        "from_task_schedule": True,
+                        "task_schedule_id": "schedule-1",
+                    },
+                },
+                {
+                    "_id": previous_task_id,
+                    "target": "example.com",
+                    "status": "done",
+                    "end_time": "2026-04-12 00:00:00",
+                    "options": {
+                        "from_task_schedule": True,
+                        "task_schedule_id": "schedule-1",
+                    },
+                },
+            ]
+        }
+        reuse_module.utils.conn_db = lambda name: _FakeCollection(store[name])
+        service = WihPeriodicReuseService(
+            task_id=str(current_task_id),
+            sites=["https://example.com"],
+            options={
+                "from_task_schedule": True,
+                "task_schedule_id": "schedule-1",
+            },
+        )
+
+        self.assertEqual("", service._find_previous_task_id())
+        self.assertEqual("baseline_expired", service._baseline_reason)
+
     @patch.object(reuse_module, "run_wih_endpoint_probe")
     def test_run_reuses_previous_task_when_site_signature_matches(self, mock_reprobe):
         current_task_id = FakeObjectId()
@@ -251,7 +311,7 @@ class TestWihPeriodicReuseService(unittest.TestCase):
                     "_id": previous_task_id,
                     "target": "example.com",
                     "status": "done",
-                    "end_time": "2026-04-12 10:00:00",
+                    "end_time": "2026-04-13 10:00:00",
                     "options": {
                         "from_task_schedule": True,
                         "task_schedule_id": "schedule-1",
@@ -390,7 +450,7 @@ class TestWihPeriodicReuseService(unittest.TestCase):
                     "_id": previous_task_id,
                     "target": "example.com",
                     "status": "done",
-                    "end_time": "2026-04-12 10:00:00",
+                    "end_time": "2026-04-13 10:00:00",
                     "options": {
                         "from_task_schedule": True,
                         "task_schedule_id": "schedule-1",
@@ -489,7 +549,7 @@ class TestWihPeriodicReuseService(unittest.TestCase):
                     "_id": previous_task_id,
                     "target": "example.com",
                     "status": "done",
-                    "end_time": "2026-04-12 10:00:00",
+                    "end_time": "2026-04-13 10:00:00",
                     "options": {
                         "from_task_schedule": True,
                         "task_schedule_id": "schedule-1",
@@ -586,7 +646,7 @@ class TestWihPeriodicReuseService(unittest.TestCase):
                     "_id": previous_task_id,
                     "target": "example.com",
                     "status": "done",
-                    "end_time": "2026-04-12 10:00:00",
+                    "end_time": "2026-04-13 10:00:00",
                     "options": {
                         "from_task_schedule": True,
                         "task_schedule_id": "schedule-1",

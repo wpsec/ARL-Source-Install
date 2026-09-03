@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from app.config import Config
 from app.modules import CollectSource, WihRecord
 from app.services.urlfinder_url_probe import run_urlfinder_url_probe
 
@@ -18,6 +19,10 @@ class _FakeUrlCollection:
 
     def insert_one(self, item):
         self.inserted.append(item)
+
+    def update_one(self, query, update, upsert=False):
+        # 幂等写路径：记录最终文档，模拟 upsert 命中即覆盖。
+        self.inserted.append(dict((update or {}).get("$set") or {}))
 
 
 class _FakeDb:
@@ -79,7 +84,7 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertIn("https://example.com/api/user", page_url_set)
         mock_page_fetch.assert_called_once_with(
             ["https://example.com/api/user"],
-            concurrency=6,
+            concurrency=Config.URLFINDER_URL_PROBE_CONCURRENCY,
             waf_guard=None,
             waf_module="urlfinder_url_probe",
         )
@@ -118,7 +123,7 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertEqual(len(fake_db.fileleak.inserted), 0)
         mock_page_fetch.assert_called_once_with(
             ["https://example.com/api/user"],
-            concurrency=6,
+            concurrency=Config.URLFINDER_URL_PROBE_CONCURRENCY,
             waf_guard=None,
             waf_module="urlfinder_url_probe",
         )
@@ -153,7 +158,7 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertEqual(len(fake_db.fileleak.inserted), 0)
         mock_page_fetch.assert_called_once_with(
             ["https://example.com/portal?tenant=demo"],
-            concurrency=6,
+            concurrency=Config.URLFINDER_URL_PROBE_CONCURRENCY,
             waf_guard=None,
             waf_module="urlfinder_url_probe",
         )

@@ -8,6 +8,7 @@ URL/JS 提取增强服务（自研实现，借鉴 URLFinder 思路）
 - 结果输出为 WihRecord，复用现有 WIH 入库链路
 """
 import re
+import time
 from collections import deque
 from typing import Deque, List, Set, Tuple
 from urllib.parse import unquote, urljoin, urlparse
@@ -20,15 +21,53 @@ from .url_candidate_filter import (
     is_noise_single_segment_path,
     strip_route_method_suffix,
 )
+from .discovery_context import register_intel_candidate
 
 logger = utils.get_logger()
 DNS_POLICY_CACHE = {}
+
+try:
+    from .rust_accel import (
+        extract_urlfinder_candidates as rust_extract_urlfinder_candidates,
+    )
+except Exception as exc:
+    logger.warning(
+        "rust acceleration adapter unavailable stage:extract reason_type:{}".format(type(exc).__name__)
+    )
+
+    class _UnavailableRustBatchResult(list):
+        def __init__(self, batch_size=0):
+            super().__init__()
+            self.used_native = False
+            self.metrics = {
+                "stage": "extract",
+                "backend": "python",
+                "used_native": False,
+                "fallback_count": 1,
+                "fallback_reason": "adapter_import_error",
+                "batch_size": int(batch_size or 0),
+            }
+
+    def rust_extract_urlfinder_candidates(*args, **kwargs):
+        if not bool(getattr(Config, "RUST_ACCEL_FALLBACK_ENABLE", True)):
+            raise RuntimeError("Rust acceleration adapter unavailable at extract")
+        pages = kwargs.get("pages") if "pages" in kwargs else (args[0] if args else [])
+        return _UnavailableRustBatchResult(len(list(pages or [])))
+
+
+class UrlfinderExtractResult(list):
+    """保持旧 list 返回类型，同时携带批量后端和降级统计。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
 
 
 class UrlfinderExtractService:
     """
     站点 URL/JS 提取增强器
     """
+    RUST_BATCH_SIZE = 16
 
     JS_PATTERNS = [
         # 绝对 JS URL
@@ -80,10 +119,17 @@ class UrlfinderExtractService:
         ".map",
     )
 
-    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
+    def __init__(
+        self,
+        sites: List[str],
+        wih_records: List[WihRecord],
+        waf_guard=None,
+        discovery_context=None,
+    ):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.waf_guard = waf_guard
+        self.discovery_context = discovery_context
 
         self.max_seed_pages = 80
         self.max_js_files = 120
@@ -115,6 +161,14 @@ class UrlfinderExtractService:
         self.record_hash_set: Set[int] = set()
         self.js_seen: Set[str] = set()
         self.page_seen: Set[str] = set()
+        self.rust_metrics = {
+            "batch_count": 0,
+            "native_batch_count": 0,
+            "fallback_count": 0,
+            "fallback_reasons": {},
+        }
+        self.network_wait_sec = 0.0
+        self.network_request_count = 0
 
     @staticmethod
     def _extract_host(value: str) -> str:
@@ -277,6 +331,9 @@ class UrlfinderExtractService:
         return int(digest[:16], 16)
 
     def _append_record(self, record_type: str, content: str, source: str, site: str):
+        # 候选图先于记录去重登记：不同来源命中同一候选时要合并 sources。
+        register_intel_candidate(self.discovery_context, record_type, content, source, site)
+
         hash_text = "{}|{}|{}|{}".format(record_type, content, source, site)
         fnv_hash = self._stable_hash(hash_text)
         if fnv_hash in self.record_hash_set:
@@ -294,39 +351,102 @@ class UrlfinderExtractService:
         )
 
     def _fetch_text(self, url: str) -> str:
-        allow_scan, policy_detail = utils.check_dns_policy_for_url(url, cache_map=DNS_POLICY_CACHE)
-        if not allow_scan:
-            logger.info(
-                "skip urlfinder extract by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
-                    url,
-                    policy_detail.get("reason", ""),
-                    policy_detail.get("resolver_ips", []),
-                    policy_detail.get("system_ips", []),
-                )
-            )
-            return ""
-
-        try:
-            conn = utils.http_req(
+        inflight_owner = False
+        if self.discovery_context is not None:
+            cached_response = self.discovery_context.get_response(
                 url,
-                "get",
-                timeout=self.fetch_timeout,
-                waf_guard=self.waf_guard,
-                waf_module="urlfinder_extract",
+                request_profile="html_get",
+                consumer="urlfinder_extract",
             )
-        except Exception as e:
-            logger.debug("urlfinder fetch failed {} {}".format(url, e))
-            return ""
+            if cached_response is None:
+                # 并发 miss 合并：等待先行者结果，拿不到才自己抓。
+                cached_response, follower = self.discovery_context.await_singleflight_leader(
+                    url, request_profile="html_get", consumer="urlfinder_extract")
+                inflight_owner = not follower
+            if cached_response is not None:
+                status_code = int(getattr(cached_response, "status_code", 0) or 0)
+                if status_code >= 400:
+                    return ""
+                body = bytes(getattr(cached_response, "body", b"") or b"")
+                return body[: self.max_page_bytes].decode("utf-8", errors="ignore")
 
-        status_code = int(getattr(conn, "status_code", 0) or 0)
-        if status_code >= 400:
-            return ""
+        network_started_at = time.monotonic()
+        lease = None
+        try:
+            allow_scan, policy_detail = utils.check_dns_policy_for_url(url, cache_map=DNS_POLICY_CACHE)
+            if not allow_scan:
+                logger.info(
+                    "skip urlfinder extract by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
+                        url,
+                        policy_detail.get("reason", ""),
+                        policy_detail.get("resolver_ips", []),
+                        policy_detail.get("system_ips", []),
+                    )
+                )
+                return ""
 
-        body = bytes(getattr(conn, "content", b"") or b"")
-        if not body:
-            return ""
-        body = body[: self.max_page_bytes]
-        return body.decode("utf-8", errors="ignore")
+            if self.discovery_context is not None:
+                lease, lease_reason = self.discovery_context.acquire_request(url, "wih")
+                if lease is None and lease_reason == "blocked":
+                    logger.info("urlfinder skipped by waf traffic policy url:%s", url)
+                    return ""
+                if lease is None:
+                    logger.warning("urlfinder over capacity, continue request url:%s", url)
+
+            self.network_request_count += 1
+
+            try:
+                conn = utils.http_req(
+                    url,
+                    "get",
+                    timeout=self.fetch_timeout,
+                    waf_guard=self.waf_guard,
+                    waf_module="urlfinder_extract",
+                )
+            except Exception as e:
+                logger.debug("urlfinder fetch failed {} {}".format(url, e))
+                return ""
+
+            status_code = int(getattr(conn, "status_code", 0) or 0)
+            if status_code >= 400:
+                if self.discovery_context is not None:
+                    self.discovery_context.put_response(
+                        url=url,
+                        method="GET",
+                        request_profile="html_get",
+                        status_code=status_code,
+                        headers=getattr(conn, "headers", {}) or {},
+                        content_type=(getattr(conn, "headers", {}) or {}).get("Content-Type", ""),
+                        body=getattr(conn, "content", b"") or b"",
+                        source="urlfinder_extract",
+                        consumer="urlfinder_extract",
+                    )
+                return ""
+
+            body = bytes(getattr(conn, "content", b"") or b"")
+            if not body:
+                return ""
+            body = body[: self.max_page_bytes]
+            if self.discovery_context is not None:
+                self.discovery_context.put_response(
+                    url=url,
+                    method="GET",
+                    request_profile="html_get",
+                    status_code=status_code,
+                    headers=getattr(conn, "headers", {}) or {},
+                    content_type=(getattr(conn, "headers", {}) or {}).get("Content-Type", ""),
+                    body=body,
+                    source="urlfinder_extract",
+                    consumer="urlfinder_extract",
+                )
+            return body.decode("utf-8", errors="ignore")
+        finally:
+            if lease is not None:
+                lease.release()
+            if inflight_owner and self.discovery_context is not None:
+                # 幂等释放：put_response 成功路径已释放时此处为 no-op。
+                self.discovery_context.release_fetch_slot(url, request_profile="html_get")
+            self.network_wait_sec += max(0.0, time.monotonic() - network_started_at)
 
     def _collect_seed_pages(self) -> List[str]:
         pages: Set[str] = set()
@@ -357,7 +477,68 @@ class UrlfinderExtractService:
             page_list = page_list[: self.max_seed_pages]
         return page_list
 
+    def _extract_with_rust(
+        self,
+        pages: List[dict],
+        js_queue: Deque[Tuple[str, int, str]],
+    ) -> bool:
+        batch_result = rust_extract_urlfinder_candidates(
+            pages=pages,
+            allowed_hosts=self.allowed_hosts,
+            allow_js=True,
+            max_url_records=self.max_url_records,
+            max_js_files=self.max_js_files,
+            max_js_depth=self.max_js_depth,
+        )
+        batch_metrics = getattr(batch_result, "metrics", {})
+        self.rust_metrics["batch_count"] += 1
+        fallback_count = int(batch_metrics.get("fallback_count", 0) or 0)
+        self.rust_metrics["fallback_count"] += fallback_count
+        if fallback_count:
+            reason = str(batch_metrics.get("fallback_reason", "unknown") or "unknown")
+            reasons = self.rust_metrics.setdefault("fallback_reasons", {})
+            reasons[reason] = int(reasons.get(reason, 0) or 0) + fallback_count
+
+        if not bool(getattr(batch_result, "used_native", False)):
+            return False
+        self.rust_metrics["native_batch_count"] += 1
+
+        for item in batch_result:
+            record_type = str(item.get("record_type", "") or "").strip()
+            content = str(item.get("content", "") or "").strip()
+            source = str(item.get("source", "") or "").strip()
+            site = str(item.get("site", "") or "").strip()
+            if not content:
+                continue
+
+            if record_type == "urlfinder_js":
+                if content in self.js_seen or len(self.js_seen) >= self.max_js_files:
+                    continue
+                self.js_seen.add(content)
+                next_depth = max(1, int(item.get("next_depth", 1) or 1))
+                js_queue.append((content, next_depth, source))
+                self._append_record(record_type, content, source, site)
+                continue
+
+            if record_type == "urlfinder_url":
+                if len(self.records) >= self.max_url_records:
+                    break
+                self._append_record(record_type, content, source, site)
+        return True
+
     def _extract_page_data(self, page_url: str, text: str, js_queue: Deque[Tuple[str, int, str]]):
+        if not text:
+            return
+
+        if self._extract_with_rust(
+            [{"base_url": page_url, "text": text, "source_url": page_url, "depth": 0, "is_js": False}],
+            js_queue,
+        ):
+            return
+
+        self._extract_page_data_python(page_url, text, js_queue)
+
+    def _extract_page_data_python(self, page_url: str, text: str, js_queue: Deque[Tuple[str, int, str]]):
         if not text:
             return
 
@@ -392,6 +573,25 @@ class UrlfinderExtractService:
             self._append_record("urlfinder_url", normalized, page_url, self._safe_site(normalized))
 
     def _extract_js_data(self, js_url: str, depth: int, source_url: str, text: str, js_queue: Deque[Tuple[str, int, str]]):
+        if not text:
+            return
+
+        if self._extract_with_rust(
+            [{"base_url": js_url, "text": text, "source_url": source_url, "depth": depth, "is_js": True}],
+            js_queue,
+        ):
+            return
+
+        self._extract_js_data_python(js_url, depth, source_url, text, js_queue)
+
+    def _extract_js_data_python(
+        self,
+        js_url: str,
+        depth: int,
+        source_url: str,
+        text: str,
+        js_queue: Deque[Tuple[str, int, str]],
+    ):
         if not text:
             return
 
@@ -441,18 +641,62 @@ class UrlfinderExtractService:
         js_queue: Deque[Tuple[str, int, str]] = deque()
 
         # 扫描种子页面，提取首批 JS/URL
+        page_batch = []
         for page_url in seed_pages:
             if page_url in self.page_seen:
                 continue
             self.page_seen.add(page_url)
             text = self._fetch_text(page_url)
-            self._extract_page_data(page_url, text, js_queue)
+            if not text:
+                continue
+            page_batch.append(
+                {
+                    "base_url": page_url,
+                    "text": text,
+                    "source_url": page_url,
+                    "depth": 0,
+                    "is_js": False,
+                }
+            )
+            if len(page_batch) >= self.RUST_BATCH_SIZE:
+                if not self._extract_with_rust(page_batch, js_queue):
+                    for page in page_batch:
+                        self._extract_page_data_python(page["base_url"], page["text"], js_queue)
+                page_batch = []
+
+        if page_batch:
+            if not self._extract_with_rust(page_batch, js_queue):
+                for page in page_batch:
+                    self._extract_page_data_python(page["base_url"], page["text"], js_queue)
 
         # 递归扫描 JS（深度受控）
         while js_queue:
-            js_url, depth, source_url = js_queue.popleft()
-            text = self._fetch_text(js_url)
-            self._extract_js_data(js_url, depth, source_url, text, js_queue)
+            js_batch = []
+            while js_queue and len(js_batch) < self.RUST_BATCH_SIZE:
+                js_url, depth, source_url = js_queue.popleft()
+                text = self._fetch_text(js_url)
+                if not text:
+                    continue
+                js_batch.append(
+                    {
+                        "base_url": js_url,
+                        "text": text,
+                        "source_url": source_url,
+                        "depth": depth,
+                        "is_js": True,
+                    }
+                )
+            if not js_batch:
+                continue
+            if not self._extract_with_rust(js_batch, js_queue):
+                for page in js_batch:
+                    self._extract_js_data_python(
+                        page["base_url"],
+                        page["depth"],
+                        page["source_url"],
+                        page["text"],
+                        js_queue,
+                    )
 
         logger.info(
             "urlfinder extract done, hosts:{} pages:{} js:{} records:{}".format(
@@ -465,6 +709,44 @@ class UrlfinderExtractService:
         return self.records
 
 
-def run_urlfinder_extract(sites: List[str], wih_records: List[WihRecord], waf_guard=None) -> List[WihRecord]:
-    extractor = UrlfinderExtractService(sites=sites, wih_records=wih_records, waf_guard=waf_guard)
-    return extractor.run()
+def run_urlfinder_extract(
+    sites: List[str],
+    wih_records: List[WihRecord],
+    waf_guard=None,
+    discovery_context=None,
+) -> List[WihRecord]:
+    extractor = UrlfinderExtractService(
+        sites=sites,
+        wih_records=wih_records,
+        waf_guard=waf_guard,
+        discovery_context=discovery_context,
+    )
+    started_at = time.monotonic()
+    records = extractor.run()
+    rust_metrics = dict(extractor.rust_metrics)
+    extract_calls = int(rust_metrics.get("batch_count", 0) or 0)
+    fallback_count = int(rust_metrics.get("fallback_count", 0) or 0)
+    native_batch_count = int(rust_metrics.get("native_batch_count", 0) or 0)
+    if native_batch_count > 0 and fallback_count > 0:
+        backend = "mixed"
+    elif native_batch_count > 0:
+        backend = "rust"
+    else:
+        backend = "python"
+    metrics = {
+        "backend": backend,
+        "fallback_count": fallback_count,
+        "fallback_reason": str(
+            next(iter((rust_metrics.get("fallback_reasons") or {}).keys()), "")
+        ) if fallback_count else "",
+        "fallback_reasons": dict(rust_metrics.get("fallback_reasons") or {}),
+        "batch_count": extract_calls,
+        "native_batch_count": native_batch_count,
+        "page_count": len(extractor._collect_seed_pages()),
+        "js_count": len(extractor.js_seen),
+        "output_count": len(records or []),
+        "network_wait_sec": round(max(0.0, extractor.network_wait_sec), 6),
+        "network_request_count": int(extractor.network_request_count),
+        "elapsed": max(0.0, time.monotonic() - started_at),
+    }
+    return UrlfinderExtractResult(records, metrics=metrics)
