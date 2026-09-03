@@ -110,6 +110,7 @@ class TestFileLeakWatchdog(unittest.TestCase):
                 "status_code": 200,
                 "task_id": "task-1",
                 "site": "https://example.com",
+                "source": "dict_brute",
             }
         )
 

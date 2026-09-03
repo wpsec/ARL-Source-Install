@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
-from app.tasks.domain import scan_port
-from app.modules import ScanPortType, DomainInfo
+from app.tasks.domain import FindSite, scan_port
+from app.modules import IPInfo, ScanPortType, DomainInfo
 from app import services
 
 
@@ -36,7 +36,40 @@ class TestCDNName(unittest.TestCase):
         ip_info_list = scan_port(domain_info, scan_port_option)
         for info in ip_info_list:
             self.assertTrue(info.cdn_name)
-            self.assertTrue(len(info.port_info_list) == 2)
+            self.assertEqual([], info.port_info_list)
+
+    def test_find_site_uses_domain_http_candidates_for_skipped_cdn_ip(self):
+        info = IPInfo(
+            ip="203.0.113.10",
+            port_info=[],
+            os_info={},
+            domain=["cdn.example.com"],
+            cdn_name="CDN",
+        )
+
+        urls = set(FindSite([info])._build())
+
+        self.assertEqual(
+            {"http://cdn.example.com", "https://cdn.example.com"},
+            urls,
+        )
+
+    @patch("app.tasks.domain.services.check_http")
+    def test_find_site_passes_prevalidated_public_domains(self, mock_check_http):
+        mock_check_http.return_value = {"https://cdn.example.com": {"status": 200}}
+        info = IPInfo(
+            ip="8.8.8.8",
+            port_info=[],
+            os_info={},
+            domain=["cdn.example.com"],
+            cdn_name="CDN",
+        )
+
+        self.assertEqual(FindSite([info]).run(), ["https://cdn.example.com"])
+        self.assertEqual(
+            mock_check_http.call_args.kwargs["prevalidated_dns_domains"],
+            {"cdn.example.com"},
+        )
 
     def test_scan_port_option_reuse_not_mutated(self):
         scan_port_option = {

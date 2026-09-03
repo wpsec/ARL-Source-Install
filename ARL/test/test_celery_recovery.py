@@ -278,6 +278,7 @@ def _load_celerytask_module():
     utils_module.get_logger = _build_logger
     utils_module.curr_date = lambda: "2026-04-10 12:00:00"
     utils_module.conn_db = lambda *args, **kwargs: None
+    utils_module.safe_error_text = lambda error, max_length=1200: str(error or "")[:max_length]
 
     tasks_module = types.ModuleType("app.tasks")
 
@@ -290,6 +291,7 @@ def _load_celerytask_module():
             "DOMAIN_EXEC_TASK": "domain_exec_task",
             "IP_EXEC_TASK": "ip_exec_task",
             "DOMAIN_TASK": "domain_task",
+            "DOMAIN_DEEP_TASK": "domain_deep_task",
             "IP_TASK": "ip_task",
             "RUN_RISK_CRUISING": "run_risk_cruising",
             "FOFA_TASK": "fofa_task",
@@ -342,23 +344,42 @@ def _load_celerytask_module():
         },
     )
 
-    sys.modules["app"] = app_module
-    sys.modules["app.config"] = config_module
-    sys.modules["app.utils"] = utils_module
-    sys.modules["app.tasks"] = tasks_module
-    sys.modules["app.modules"] = modules_module
+    # 与其它隔离加载型测试保持同一约定：替身仅存活到目标模块 exec 完成，
+    # 避免 import 期污染合跑进程中其它测试的 "app.services.*" mock 目标解析。
+    managed_module_names = [
+        "app",
+        "app.config",
+        "app.utils",
+        "app.tasks",
+        "app.modules",
+        module_name,
+    ]
+    backup_modules = {name: sys.modules.get(name) for name in managed_module_names}
+    try:
+        sys.modules["app"] = app_module
+        sys.modules["app.config"] = config_module
+        sys.modules["app.utils"] = utils_module
+        sys.modules["app.tasks"] = tasks_module
+        sys.modules["app.modules"] = modules_module
 
-    app_module.config = config_module
-    app_module.utils = utils_module
-    app_module.tasks = tasks_module
+        app_module.config = config_module
+        app_module.utils = utils_module
+        app_module.tasks = tasks_module
 
-    module_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "celerytask.py"
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    return module
+        module_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "celerytask.py"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for name, original in backup_modules.items():
+            if original is None:
+                if name != module_name:
+                    sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
 
 utils_recovery_module = _load_utils_recovery_module()

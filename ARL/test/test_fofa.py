@@ -19,6 +19,30 @@ class TestFofa(unittest.TestCase):
         self.assertEqual(client.param["page"], 2)
         self.assertEqual(client.param["size"], 50)
 
+    @patch.object(FofaClient, "_wait_for_request_slot")
+    @patch("app.services.fofaClient.time.sleep", return_value=None)
+    @patch("app.services.fofaClient.utils.http_req")
+    def test_rate_limit_response_is_retried(self, mock_http_req, _sleep, _slot):
+        class FakeResponse:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def json(self):
+                return self.payload
+
+        mock_http_req.side_effect = [
+            FakeResponse({"error": True, "code": 45012, "errmsg": "请求速度过快"}),
+            FakeResponse({"error": False, "results": []}),
+        ]
+        client = FofaClient("user@example.com", "fake-key", page_size=50)
+        client.param = {"page": 1}
+
+        result = client._api("https://fofa.info/api/v1/search/all")
+
+        self.assertEqual(result, {"error": False, "results": []})
+        self.assertEqual(mock_http_req.call_count, 2)
+        self.assertEqual(_sleep.call_count, 1)
+
     def test_vip_level(self):
         if not Config.FOFA_KEY or not Config.FOFA_KEY:
             self.fail("please set fofa key in config-docker.yaml")

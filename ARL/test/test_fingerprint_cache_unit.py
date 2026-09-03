@@ -177,24 +177,38 @@ def _bootstrap_test_modules():
     return expr_module, fingerprint_module, kscan_module, fingerprint_cache_module
 
 
-try:
-    _, fingerprint_module, _, fingerprint_cache_module = _bootstrap_test_modules()
+FingerPrint = None
+estimate_human_rule_confidence = None
+finger_db_identify_detail = None
+normalize_wappalyzer_fingerprint_items = None
+split_fingerprint_result_items = None
+
+
+def setUpModule():
+    # 替身环境延迟到本模块用例执行前安装、结束后全量还原：
+    # import 期替换 sys.modules["app"] 会在合跑进程中污染其它测试的 mock 目标解析。
+    global FingerPrint, estimate_human_rule_confidence, finger_db_identify_detail
+    global normalize_wappalyzer_fingerprint_items, split_fingerprint_result_items
+    global _ORIGINAL_SYS_MODULES
+    _ORIGINAL_SYS_MODULES = dict(sys.modules)
+    try:
+        _, fingerprint_module, _, fingerprint_cache_module = _bootstrap_test_modules()
+    except Exception as exc:
+        raise unittest.SkipTest("requires fingerprint test dependencies: {}".format(exc))
     FingerPrint = fingerprint_module.FingerPrint
     estimate_human_rule_confidence = fingerprint_cache_module.estimate_human_rule_confidence
     finger_db_identify_detail = fingerprint_cache_module.finger_db_identify_detail
     normalize_wappalyzer_fingerprint_items = fingerprint_cache_module.normalize_wappalyzer_fingerprint_items
     split_fingerprint_result_items = fingerprint_cache_module.split_fingerprint_result_items
-    IMPORT_ERROR = None
-except Exception as exc:
-    FingerPrint = None
-    estimate_human_rule_confidence = None
-    finger_db_identify_detail = None
-    normalize_wappalyzer_fingerprint_items = None
-    split_fingerprint_result_items = None
-    IMPORT_ERROR = exc
 
 
-@unittest.skipIf(IMPORT_ERROR is not None, "requires fingerprint test dependencies: {}".format(IMPORT_ERROR))
+def tearDownModule():
+    original_modules = globals().get("_ORIGINAL_SYS_MODULES")
+    if original_modules is not None:
+        sys.modules.clear()
+        sys.modules.update(original_modules)
+
+
 class TestFingerprintCacheUnit(unittest.TestCase):
     """
     验证指纹详情聚合与置信度估算逻辑

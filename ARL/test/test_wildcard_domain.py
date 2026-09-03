@@ -83,6 +83,38 @@ class TestDomainTaskWildcardFilter(unittest.TestCase):
 
         self.assertEqual([item.domain for item in filtered], ["www.example.com"])
 
+    @patch(
+        "app.tasks.domain.collect_wildcard_profiles_from_roots",
+        side_effect=lambda roots: {
+            root: {"root": root, "records": {"1.1.1.1"}}
+            for root in roots
+        },
+    )
+    def test_clear_domain_info_prewarm_wildcard_profiles_by_batch(self, mock_collect):
+        task = DomainTask(
+            base_domain="example.com",
+            task_id="64b7d749c97bead7f83d0de4",
+            options={},
+        )
+        info = modules.DomainInfo(
+            domain="api.dev.example.com",
+            record=["2.2.2.2"],
+            type="A",
+            ips=["2.2.2.2"],
+        )
+
+        task._prewarm_wildcard_profiles([info])
+
+        mock_collect.assert_called_once()
+        self.assertEqual(
+            set(mock_collect.call_args.args[0]),
+            {"dev.example.com", "example.com"},
+        )
+        self.assertEqual(
+            set(task._wildcard_profile_cache),
+            {"dev.example.com", "example.com"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

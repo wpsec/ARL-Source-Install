@@ -121,7 +121,25 @@ def _load_site_spider_module():
     return module
 
 
-site_spider_module = _load_site_spider_module()
+site_spider_module = None
+
+
+def setUpModule():
+    global site_spider_module, _ORIGINAL_SYS_MODULES
+    _ORIGINAL_SYS_MODULES = dict(sys.modules)
+    site_spider_module = _load_site_spider_module()
+
+
+def tearDownModule():
+    # 替身环境只服务本文件的字符串 patch；退出时全量还原 sys.modules，
+    # 避免合跑进程中污染其它测试对真实 app 包的解析。
+    original_modules = globals().get("_ORIGINAL_SYS_MODULES")
+    if original_modules is not None:
+        sys.modules.clear()
+        sys.modules.update(original_modules)
+
+
+
 
 
 class _FakeResponse:

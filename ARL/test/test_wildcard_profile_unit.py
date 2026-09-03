@@ -73,7 +73,25 @@ def _bootstrap_test_module():
     return wildcard_module
 
 
-wildcard_module = _bootstrap_test_module()
+wildcard_module = None
+
+
+def setUpModule():
+    global wildcard_module, _ORIGINAL_SYS_MODULES
+    _ORIGINAL_SYS_MODULES = dict(sys.modules)
+    wildcard_module = _bootstrap_test_module()
+
+
+def tearDownModule():
+    # 替身环境只服务本文件的字符串 patch；退出时全量还原 sys.modules，
+    # 避免合跑进程中污染其它测试对真实 app 包的解析。
+    original_modules = globals().get("_ORIGINAL_SYS_MODULES")
+    if original_modules is not None:
+        sys.modules.clear()
+        sys.modules.update(original_modules)
+
+
+
 
 
 class TestWildcardProfileUnit(unittest.TestCase):
@@ -121,6 +139,34 @@ class TestWildcardProfileUnit(unittest.TestCase):
 
         self.assertIn("dev.example.com", profiles)
         self.assertNotIn("example.com", profiles)
+
+    @patch("app.services.wildcardDomain.utils.get_cname", return_value=[])
+    @patch("app.services.wildcardDomain.utils.get_ip", return_value=["9.9.9.9"])
+    @patch("app.services.wildcardDomain.utils.random_choices", return_value="probeunit")
+    def test_collect_wildcard_profiles_from_multiple_roots(self, _mock_random, _mock_get_ip, _mock_get_cname):
+        profiles = wildcard_module.collect_wildcard_profiles_from_roots(
+            ["one.example.com", "two.example.com"],
+            probe_count=1,
+            verify_rounds=1,
+        )
+
+        self.assertEqual(set(profiles), {"one.example.com", "two.example.com"})
+        self.assertEqual(profiles["one.example.com"]["records"], {"9.9.9.9"})
+        self.assertEqual(profiles["two.example.com"]["records"], {"9.9.9.9"})
+
+    @patch(
+        "app.services.wildcardDomain.resolve_domain_record_detail",
+        side_effect=RuntimeError("dns probe failed"),
+    )
+    def test_failed_wildcard_profile_keeps_empty_profile_for_no_filter_fallback(self, _mock_resolve):
+        profiles = wildcard_module.collect_wildcard_profiles_from_roots(
+            ["one.example.com"],
+            probe_count=1,
+            verify_rounds=1,
+        )
+
+        self.assertIn("one.example.com", profiles)
+        self.assertEqual(profiles["one.example.com"]["records"], set())
 
     @patch("app.services.wildcardDomain.utils.get_cname", return_value=[])
     @patch("app.services.wildcardDomain.utils.get_ip", return_value=["3.3.3.3"])

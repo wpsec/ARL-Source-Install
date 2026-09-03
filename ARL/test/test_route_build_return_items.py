@@ -26,6 +26,19 @@ def _load_routes_base_module():
     cache_module = types.ModuleType("app.utils.cache")
     config_module = types.ModuleType("app.config")
     modules_module = types.ModuleType("app.modules")
+    # routes/__init__ 头部 import collection_query_service；本文件不驱动其语义，给空壳即可。
+    services_module = types.ModuleType("app.services")
+    services_module.__path__ = []
+    query_service_module = types.ModuleType("app.services.collection_query_service")
+    for _fn_name in (
+        "build_collection_data",
+        "build_db_query",
+        "get_default_field",
+        "normalize_task_status_query",
+        "parse_refresh_flag",
+    ):
+        setattr(query_service_module, _fn_name, lambda *args, **kwargs: None)
+    services_module.collection_query_service = query_service_module
     bson_module = types.ModuleType("bson")
     bson_objectid_module = types.ModuleType("bson.objectid")
     flask_restx_module = types.ModuleType("flask_restx")
@@ -77,6 +90,8 @@ def _load_routes_base_module():
     sys.modules["app.utils.cache"] = cache_module
     sys.modules["app.config"] = config_module
     sys.modules["app.modules"] = modules_module
+    sys.modules["app.services"] = services_module
+    sys.modules["app.services.collection_query_service"] = query_service_module
     sys.modules["bson"] = bson_module
     sys.modules["bson.objectid"] = bson_objectid_module
     sys.modules["flask_restx"] = flask_restx_module
@@ -93,7 +108,25 @@ def _load_routes_base_module():
     return module
 
 
-routes_base_module = _load_routes_base_module()
+routes_base_module = None
+
+
+def setUpModule():
+    global routes_base_module, _ORIGINAL_SYS_MODULES
+    _ORIGINAL_SYS_MODULES = dict(sys.modules)
+    routes_base_module = _load_routes_base_module()
+
+
+def tearDownModule():
+    # 替身环境只服务本文件的字符串 patch；退出时全量还原 sys.modules，
+    # 避免合跑进程中污染其它测试对真实 app 包的解析。
+    original_modules = globals().get("_ORIGINAL_SYS_MODULES")
+    if original_modules is not None:
+        sys.modules.clear()
+        sys.modules.update(original_modules)
+
+
+
 
 
 class TestRouteBuildReturnItems(unittest.TestCase):
