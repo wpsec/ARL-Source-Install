@@ -243,6 +243,9 @@ RUN set -eux; \
       echo "[WARN] playwright browser install failed, screenshot will fallback when unavailable"; \
     fi
 
+# 与 ncrack/python/go 同规：tools/rust/ 下有离线包则优先使用（国内网络
+# 对 static.rust-lang.org 不稳，镜像站 rust-static 路径全部 404/假 200）。
+COPY tools/rust/ /tmp/rust-offline/
 # 在与生产运行时相同的 Rocky/glibc 基线中构建 abi3 wheel，避免构建机 glibc 版本高于运行时。
 RUN set -eux; \
     ARCH="${TARGETARCH:-$(uname -m)}"; \
@@ -252,12 +255,18 @@ RUN set -eux; \
       *) echo "[ERROR] unsupported arch for rust/arl_accel build: $ARCH"; exit 1 ;; \
     esac; \
     RUST_TARBALL="/tmp/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; \
-    for URL in \
-      "https://mirrors.huaweicloud.com/rust-static/${RUST_VERSION}/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
-      "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; do \
-      echo "try download ${URL}"; \
-      wget -q --timeout=30 --tries=1 -O "${RUST_TARBALL}" "${URL}" && break || true; \
-    done; \
+    if [ -s "/tmp/rust-offline/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" ]; then \
+      echo "use offline rust toolchain"; \
+      cp "/tmp/rust-offline/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" "${RUST_TARBALL}"; \
+    else \
+      for URL in \
+        "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
+        "https://mirrors.huaweicloud.com/rust-static/${RUST_VERSION}/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; do \
+        echo "try download ${URL}"; \
+        wget -q --timeout=60 --tries=1 -O "${RUST_TARBALL}" "${URL}" && break || true; \
+      done; \
+    fi; \
+    xz -t "${RUST_TARBALL}" 2>/dev/null || { echo "[ERROR] rust tarball corrupt or HTML error page"; rm -f "${RUST_TARBALL}"; exit 1; }; \
     test -s "${RUST_TARBALL}" || (echo "[ERROR] Rust toolchain package not found: ${RUST_TARBALL}" && exit 1); \
     cd /tmp; \
     tar -xJf "${RUST_TARBALL}"; \
