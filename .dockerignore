@@ -18,3 +18,8 @@ ARL/docker/frontend
 # 通用临时文件
 **/__pycache__/
 *.log
+
+# Rust 构建产物只在镜像构建阶段生成，避免把本机架构产物带入上下文。
+**/target/
+**/*.whl
+**/.cargo/

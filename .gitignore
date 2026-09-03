@@ -9,6 +9,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+**/target/
+**/*.whl
 .Python
 env/
 venv/
@@ -81,7 +83,6 @@ ARL/app/dicts/kscan_fingerprint.local.json
 ARL/docker/config-runtime.yaml
 ARL/docker/config-runtime.yaml.bak.*
 ARL/docker/ai/sop/poc_index.json
-ARL/docker/ai/sop/ai_pen_knowledge_index.json
 
 # Local optional PoC knowledge libraries
 tools/poc/
@@ -90,3 +91,8 @@ tools/poc/
 htmlcov/
 .coverage
 .pytest_cache/
+
+# 运行期产物（截图/导出/临时），不入库
+ARL/docker/image/
+ARL/docker/tmp_screenshot/
+ARL/app/tmp_screenshot/
