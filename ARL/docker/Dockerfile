@@ -270,7 +270,16 @@ RUN --mount=type=bind,src=tools/rust,dst=/tmp/rust-offline set -eux; \
     test -s "${RUST_TARBALL}" || (echo "[ERROR] Rust toolchain package not found: ${RUST_TARBALL}" && exit 1); \
     cd /tmp; \
     RUST_DIR="rust-${RUST_VERSION}-${RUST_ARCH}"; \
-    tar -xJf "${RUST_TARBALL}" --exclude="${RUST_DIR}/rust-docs"; \
+    tar -xJf "${RUST_TARBALL}" \
+      --exclude="${RUST_DIR}/rust-docs" \
+      --exclude="${RUST_DIR}/rust-docs-json-preview" \
+      --exclude="${RUST_DIR}/rust-analysis-${RUST_ARCH}" \
+      --exclude="${RUST_DIR}/clippy-preview" \
+      --exclude="${RUST_DIR}/rustfmt-preview" \
+      --exclude="${RUST_DIR}/rls-preview" \
+      --exclude="${RUST_DIR}/rust-analyzer-preview" \
+      --exclude="${RUST_DIR}/llvm-tools-preview" \
+      --exclude="${RUST_DIR}/llvm-bitcode-linker-preview"; \
     "./${RUST_DIR}/install.sh" --prefix=/usr/local --disable-ldconfig \
       --components="rustc,cargo,rust-std-${RUST_ARCH}"; \
     rustc --version; \
