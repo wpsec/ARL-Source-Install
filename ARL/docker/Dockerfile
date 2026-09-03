@@ -245,9 +245,9 @@ RUN set -eux; \
 
 # 与 ncrack/python/go 同规：tools/rust/ 下有离线包则优先使用（国内网络
 # 对 static.rust-lang.org 不稳，镜像站 rust-static 路径全部 404/假 200）。
-COPY tools/rust/ /tmp/rust-offline/
+# BuildKit bind mount：离线包只进构建过程，不作为 174MB 层烘进镜像。
 # 在与生产运行时相同的 Rocky/glibc 基线中构建 abi3 wheel，避免构建机 glibc 版本高于运行时。
-RUN set -eux; \
+RUN --mount=type=bind,src=tools/rust,dst=/tmp/rust-offline set -eux; \
     ARCH="${TARGETARCH:-$(uname -m)}"; \
     case "$ARCH" in \
       amd64|x86_64) RUST_ARCH="x86_64-unknown-linux-gnu" ;; \
@@ -269,8 +269,10 @@ RUN set -eux; \
     xz -t "${RUST_TARBALL}" 2>/dev/null || { echo "[ERROR] rust tarball corrupt or HTML error page"; rm -f "${RUST_TARBALL}"; exit 1; }; \
     test -s "${RUST_TARBALL}" || (echo "[ERROR] Rust toolchain package not found: ${RUST_TARBALL}" && exit 1); \
     cd /tmp; \
-    tar -xJf "${RUST_TARBALL}"; \
-    "rust-${RUST_VERSION}-${RUST_ARCH}/install.sh" --prefix=/usr/local; \
+    RUST_DIR="rust-${RUST_VERSION}-${RUST_ARCH}"; \
+    tar -xJf "${RUST_TARBALL}" --exclude="${RUST_DIR}/rust-docs"; \
+    "./${RUST_DIR}/install.sh" --prefix=/usr/local --disable-ldconfig \
+      --components="rustc,cargo,rust-std-${RUST_ARCH}"; \
     rustc --version; \
     cargo --version; \
     pip3 install --no-cache-dir "maturin==${MATURIN_VERSION}"; \
