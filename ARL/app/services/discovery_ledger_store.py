@@ -300,16 +300,17 @@ class MongoLedgerBackend(object):
     def record_finish_rejected(self):
         type(self)._finish_rejected_count = getattr(type(self), "_finish_rejected_count", 0) + 1
 
-    def list_pending(self, key_prefix, limit=2000):
-        """读取 overflow 区未消费记录：返回 [(key, payload)]，不改变状态。"""
+    def list_by_prefix(self, key_prefix, statuses=("pending",), limit=2000):
+        """按前缀+状态读取 [(key, payload)]，不改变状态（overflow 回读/WAF 回灌共用）。"""
         prefix = str(key_prefix or "")
         if not prefix:
             return []
+        status_list = [str(item or "") for item in (statuses or ())] or ["pending"]
         try:
             cursor = self._db().find(
                 {
                     "key": {"$regex": "^" + re.escape(prefix)},
-                    "status": "pending",
+                    "status": {"$in": status_list},
                     "task_id": self.task_id,
                 },
                 {"key": 1, "payload": 1},
@@ -327,6 +328,10 @@ class MongoLedgerBackend(object):
                 "ledger list_pending degraded task_id:{} prefix:{} error_type:{}".format(
                     self.task_id, prefix[:64], type(exc).__name__))
             return []
+
+    def list_pending(self, key_prefix, limit=2000):
+        """overflow 回读旧入口：pending 状态的 list_by_prefix 别名。"""
+        return self.list_by_prefix(key_prefix, statuses=("pending",), limit=limit)
 
     def is_covered(self, idempotency_key):
         entry = self.get(idempotency_key)

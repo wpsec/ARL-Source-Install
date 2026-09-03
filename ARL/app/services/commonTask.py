@@ -327,6 +327,13 @@ class WebSiteFetch(CommonTask):
             logger.debug(
                 "task_id:{} overflow restore skipped error_type:{}".format(
                     self.task_id, type(exc).__name__))
+        try:
+            # worker 恢复：回灌账本中已确认的 WAF 阻断，重投不留熔断空窗。
+            self.discovery_context.restore_waf_state()
+        except Exception as exc:
+            logger.debug(
+                "task_id:{} waf state restore skipped error_type:{}".format(
+                    self.task_id, type(exc).__name__))
 
     def _on_waf_guard_block(self, url, module, reason, block_scope=""):
         """WAF 守卫确认阻断时回流类别化熔断状态。

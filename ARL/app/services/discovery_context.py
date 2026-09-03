@@ -429,8 +429,14 @@ class CandidateRegistry:
                 if self._on_evict is not None:
                     try:
                         self._on_evict(evicted_now, evicted_records)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # 回调失败=这批候选没落进 overflow 账本，跨重启
+                        # 恢复面直接缺失，必须计数可观测而非静默吞。
+                        self.evict_callback_failed_count = (
+                            getattr(self, "evict_callback_failed_count", 0) + 1)
+                        logger.warning(
+                            "candidate evict callback failed count:%d error_type:%s",
+                            evicted_now, type(exc).__name__)
             return item, created, source_added
 
     def get(self, candidate_key: str) -> Optional[CandidateRecord]:
@@ -471,6 +477,10 @@ class DiscoveryEvent:
     priority: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
+    # 一级审计字段：事件脱离 Context（日志/订阅者透传）后仍可归属任务与输入。
+    # 带默认值追加在尾部，不破坏既有位置参数构造。
+    task_id: str = ""
+    input_signature: str = ""
 
 
 @dataclass
@@ -522,6 +532,24 @@ class DiscoveryLedger:
         with self._lock:
             self._items[entry.idempotency_key] = entry
             return entry
+
+    def list_by_prefix(self, prefix: str, statuses=("blocked",), limit: int = 2000):
+        """按 key 前缀与状态读取条目 [(key, payload)]，供 WAF 状态回灌。"""
+        prefix_text = str(prefix or "")
+        if not prefix_text:
+            return []
+        status_set = set(str(item or "") for item in (statuses or ()))
+        if self.backend is not None and hasattr(self.backend, "list_by_prefix"):
+            try:
+                return list(self.backend.list_by_prefix(prefix_text, tuple(status_set), limit))
+            except Exception:
+                return []
+        with self._lock:
+            return [
+                (key, dict(entry.payload or {}))
+                for key, entry in self._items.items()
+                if key.startswith(prefix_text) and entry.status in status_set
+            ]
 
     def claim(self, idempotency_key: str, input_count: int = 0) -> bool:
         key = str(idempotency_key or "")
@@ -606,12 +634,18 @@ class WafPolicy:
         reason_text = str(reason or "waf_signal")[:160]
         with self._lock:
             if host_wide:
+                was_blocked = host in self._host_blocks
                 self._host_blocks[host] = reason_text
-                return {"host": host, "traffic_class": category, "blocked": True, "scope": "host"}
+                return {
+                    "host": host, "traffic_class": category,
+                    "blocked": True, "scope": "host",
+                    "newly_blocked": not was_blocked,
+                }
             state = self._class_blocks.setdefault(
                 (host, category),
                 {"count": 0, "blocked": False, "reason": reason_text},
             )
+            was_blocked = bool(state.get("blocked"))
             state["count"] = int(state.get("count", 0) or 0) + 1
             state["reason"] = reason_text
             # force 用于已确认的子进程/外部证据（如目录 worker 内 guard 已判定阻断），
@@ -622,6 +656,7 @@ class WafPolicy:
                 "host": host,
                 "traffic_class": category,
                 "blocked": bool(state["blocked"]),
+                "newly_blocked": bool(state["blocked"]) and not was_blocked,
                 "scope": "traffic_class",
                 "count": state["count"],
             }
@@ -686,7 +721,9 @@ class RequestScheduler:
                 return None
             self._in_flight[category] += 1
             self._host_in_flight[host_key] = self._host_in_flight.get(host_key, 0) + 1
-            self.context.record_metric("request_count")
+            # granted 租约 ≈ 一次真实网络请求发起；与缓存层的
+            # cache_miss_count/duplicate 口径分开，避免"miss 当请求数"。
+            self.context.record_metric("network_request_count")
 
         def _release() -> None:
             with self._cond:
@@ -779,10 +816,10 @@ class DiscoveryContext:
             per_host_limit=scheduler_per_host_limit,
         )
         self.metrics: Dict[str, int] = {
-            "request_count": 0,
-            "unique_request_count": 0,
+            "network_request_count": 0,
+            "cache_miss_count": 0,
             "cache_hit_count": 0,
-            "duplicate_request_count": 0,
+            "actual_duplicate_request_count": 0,
             "cross_strategy_reuse_count": 0,
             "candidate_discovered_count": 0,
             "candidate_source_merge_count": 0,
@@ -796,7 +833,6 @@ class DiscoveryContext:
         }
         self.event_counts: Dict[str, int] = {}
         self._subscribers: Dict[str, List[Callable[[DiscoveryEvent], None]]] = {}
-        self._response_consumers: Dict[Tuple[str, str, str], Set[str]] = {}
         # 并发请求合并：同 URL 并发 miss 时只有一个线程真实请求，其余等其结果。
         self._inflight: Dict[Tuple[str, str, str], threading.Event] = {}
         self._lock = threading.RLock()
@@ -847,14 +883,28 @@ class DiscoveryContext:
 
         等待方拿到先行者结果则直接消费缓存；超时则调用方自行抓取。
         put_response 成功后统一释放槽位唤醒等待方。
+
+        未显式传 wait_sec 时，等待上界收敛到 min(10s, 阶段剩余预算)：
+        先行者若拖满预算必然带 deadline 失败，等待方干等满 10s 后再
+        重复发一次请求纯属放大；提前止损并保留最小 1s 让快响应可复用。
         """
         waiter = self.acquire_fetch_slot(url, method, request_profile)
         if waiter is None:
             return None, False
-        timeout = (
-            DEFAULT_SINGLEFLIGHT_WAIT_SEC
-            if wait_sec is None else float(wait_sec)
-        )
+        if wait_sec is not None:
+            timeout = float(wait_sec)
+        else:
+            timeout = DEFAULT_SINGLEFLIGHT_WAIT_SEC
+            try:
+                from app.utils.provider_http import current_stage_remaining_sec
+                stage_remaining = current_stage_remaining_sec()
+            except Exception as exc:
+                stage_remaining = None
+                logger.debug(
+                    "singleflight stage budget unavailable error_type:%s",
+                    type(exc).__name__)
+            if stage_remaining is not None:
+                timeout = max(1.0, min(timeout, stage_remaining))
         if waiter.wait(timeout):
             cached = self.get_response(
                 url, method, request_profile, consumer=consumer)
@@ -960,18 +1010,22 @@ class DiscoveryContext:
         request_profile: Any = "default",
         consumer: str = "",
     ) -> Optional[ResponseRecord]:
-        cache_key = self.response_registry.key(url, method, request_profile)
-        item = self.response_registry.get(url, method, request_profile, consumer=consumer)
+        item = self.response_registry.get(url, method, request_profile)
         if item is None:
-            self.record_metric("unique_request_count")
+            # 口径说明：miss ≠ 网络请求（single-flight 跟随者、驱逐后重取
+            # 都计 miss），真实发起数看 network_request_count。
+            self.record_metric("cache_miss_count")
             return None
         self.record_metric("cache_hit_count")
-        with self._lock:
-            consumers = self._response_consumers.setdefault(cache_key, set())
-            if consumer and consumers and consumer not in consumers:
+        consumer_text = str(consumer or "")
+        if consumer_text:
+            # 复用判定基于记录自身 consumers（随条目驱逐消失），
+            # 不再有全局字典的跨条目污染。
+            with self._lock:
+                had_other_consumers = bool(item.consumers) and consumer_text not in item.consumers
+                item.consumers.add(consumer_text)
+            if had_other_consumers:
                 self.record_metric("cross_strategy_reuse_count")
-            if consumer:
-                consumers.add(consumer)
         return item
 
     def put_response(
@@ -998,13 +1052,10 @@ class DiscoveryContext:
             source=source,
             consumer=consumer,
         )
-        with self._lock:
-            consumers = self._response_consumers.setdefault(cache_key, set())
-            consumer_text = str(consumer or "")
-            if consumer_text and consumers:
-                self.record_metric("duplicate_request_count")
-            if consumer_text:
-                consumers.add(consumer_text)
+        if not created:
+            # put 时 key 已存在 = 同一资源被再次真实抓取回写
+            # （leader 竞态兜底或驱逐后重取），这才是有意义的"重复请求"。
+            self.record_metric("actual_duplicate_request_count")
         if created:
             # PageFetched 只对新登记的响应发布一次，重复登记不产生第二份事件。
             self.publish(
@@ -1018,6 +1069,7 @@ class DiscoveryContext:
                         "content_type": item.content_type,
                         "request_profile": item.request_profile,
                     },
+                    task_id=self.task_id,
                 )
             )
         # 无论新旧记录，写入即代表本 (url,method,profile) 的在途请求已结束。
@@ -1115,6 +1167,8 @@ class DiscoveryContext:
                     depth=item.depth,
                     priority=item.priority,
                     metadata=dict(metadata or {}),
+                    task_id=self.task_id,
+                    input_signature=str((metadata or {}).get("input_signature") or ""),
                 )
             )
         return item
@@ -1130,6 +1184,9 @@ class DiscoveryContext:
         result = self.waf_policy.record_signal(target, traffic_class, reason, host_wide, force=force)
         if result.get("blocked"):
             self.record_metric("waf_block_count")
+        if result.get("newly_blocked"):
+            # 首次进入阻断态才落账本（幂等写去抖），worker 重投后回灌。
+            self._persist_waf_block(result)
         self.publish(
             DiscoveryEvent(
                 event_type="WafSignalDetected",
@@ -1137,9 +1194,79 @@ class DiscoveryContext:
                 candidate_key="waf|{}|{}".format(result.get("host", ""), traffic_class),
                 source=str(reason or "waf_signal"),
                 metadata=dict(result),
+                task_id=self.task_id,
             )
         )
         return result
+
+    @staticmethod
+    def _waf_block_ledger_key(host: str, category: str) -> str:
+        return "waf_block|{}|{}".format(host, category or "*")
+
+    def _persist_waf_block(self, result: Mapping[str, Any]) -> None:
+        ledger = self.ledger
+        host = str((result or {}).get("host") or "")
+        if ledger is None or not host:
+            return
+        scope = str((result or {}).get("scope") or "")
+        category = "*" if scope == "host" else str((result or {}).get("traffic_class") or "")
+        try:
+            ledger.upsert(LedgerEntry(
+                idempotency_key=self._waf_block_ledger_key(host, category),
+                status="blocked",
+                payload={
+                    "host": host,
+                    "class": category,
+                    "reason": str((result or {}).get("reason") or "")[:160],
+                },
+            ))
+        except Exception as exc:
+            self.record_metric("waf_persist_failed_count")
+            logger.debug(
+                "waf block persist failed host:%s error_type:%s",
+                host[:120], type(exc).__name__)
+
+    def restore_waf_state(self) -> int:
+        """从账本回灌已确认的 WAF 阻断（worker 重启/消息重投后不留空窗）。
+
+        直接写 WafPolicy，绕开 record_waf_signal：避免重放事件与重复落账。
+        """
+        ledger = self.ledger
+        if ledger is None or not hasattr(ledger, "list_by_prefix"):
+            return 0
+        try:
+            entries = ledger.list_by_prefix("waf_block|", statuses=("blocked",))
+        except Exception as exc:
+            logger.debug(
+                "waf state restore failed error_type:%s", type(exc).__name__)
+            return 0
+        restored = 0
+        for _key, payload in entries or []:
+            if not isinstance(payload, dict):
+                continue
+            host = str(payload.get("host") or "").strip()
+            category = str(payload.get("class") or "*").strip()
+            if not host:
+                continue
+            try:
+                reason = str(payload.get("reason") or "ledger_restore")
+                if category in ("", "*"):
+                    self.waf_policy.record_signal(
+                        host, "normal", reason=reason, host_wide=True)
+                else:
+                    self.waf_policy.record_signal(
+                        host, category, reason=reason, force=True)
+                restored += 1
+            except Exception as exc:
+                logger.debug(
+                    "waf state restore entry skipped host:%s error_type:%s",
+                    host[:120], type(exc).__name__)
+        if restored:
+            self.record_metric("waf_state_restored_count", restored)
+            logger.info(
+                "waf state restored from ledger task_id:%s blocks:%s",
+                self.task_id, restored)
+        return restored
 
     def iter_candidates(
         self,
@@ -1178,6 +1305,8 @@ class DiscoveryContext:
             "events": dict(self.event_counts),
             "responses": len(self.response_registry),
             "candidates": len(self.candidate_registry),
+            "candidate_evict_callback_failures": getattr(
+                self.candidate_registry, "evict_callback_failed_count", 0),
             "waf": self.waf_policy.snapshot(),
         }
 
