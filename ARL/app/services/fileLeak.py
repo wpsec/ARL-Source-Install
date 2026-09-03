@@ -969,9 +969,27 @@ def _scan_file_leak_site(
         pages = file_leak_runner.run()
 
         page_items = []
+        response_items = []
         for page in pages:
             logger.info("found => {}".format(page))
             page_items.append(page.dump_json())
+            if len(response_items) < 64:
+                try:
+                    conn = getattr(page.raw_req, "conn", None)
+                    body = getattr(page, "content", b"") or b""
+                    if isinstance(body, str):
+                        body = body.encode("utf-8", errors="ignore")
+                    response_items.append({
+                        "url": str(page.url),
+                        "status_code": int(getattr(page, "status_code", 0) or 0),
+                        "headers": {str(k): str(v) for k, v in
+                                    dict(getattr(conn, "headers", {}) or {}).items()},
+                        "body_b64": base64.b64encode(bytes(body)[:50 * 1024]).decode("ascii"),
+                    })
+                except Exception as exc:
+                    logger.debug(
+                        "fileleak response snapshot failed error_type:{}".format(
+                            type(exc).__name__))
 
         if callable(progress_callback):
             try:
@@ -982,6 +1000,7 @@ def _scan_file_leak_site(
         return {
             "ok": True,
             "pages": page_items,
+            "responses": response_items,
             "skip_by_policy": bool(file_leak_runner.skip_by_policy),
             "waf_block_hosts": _collect_child_waf_blocks(waf_guard),
             "error": "",
@@ -1096,6 +1115,43 @@ def _apply_directory_waf_blocks(discovery_context, result):
             )
 
 
+def _apply_child_responses(discovery_context, result):
+    """子进程命中页响应回登记：目录探测结果可被其它策略按 file_leak_get profile 复用。
+
+    不复用 html_get profile——目录字典请求与站点探测语义不同，混用会让
+    页面抓取误吃字典命中响应。失败静默降级（与缓存快照同为尽力而为）。
+    """
+
+    if discovery_context is None or not isinstance(result, dict):
+        return
+    for item in list(result.get("responses") or []):
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        try:
+            body = base64.b64decode(str(item.get("body_b64") or ""))
+            headers = dict(item.get("headers") or {})
+            discovery_context.put_response(
+                url=url,
+                method="GET",
+                request_profile="file_leak_get",
+                status_code=int(item.get("status_code") or 0),
+                headers=headers,
+                content_type=str(headers.get("Content-Type", "") or ""),
+                body=body,
+                source="file_leak",
+                consumer="file_leak",
+            )
+        except Exception as exc:
+            logger.debug(
+                "fileleak response reflow failed url:{} error_type:{}".format(
+                    url[:200], type(exc).__name__
+                )
+            )
+
+
 def _file_leak_dict_signature(dicts) -> str:
     """字典内容签名：数量 + 内容摘要，作为账本 input_signature。"""
     items = [str(item or "") for item in list(dicts or [])]
@@ -1183,6 +1239,7 @@ def _run_file_leak_site_with_watchdog(
                 response_cache=response_cache,
             )
             _apply_directory_waf_blocks(discovery_context, result)
+            _apply_child_responses(discovery_context, result)
             return FileLeakResult(
                 result.get("pages") or [],
                 metrics={
@@ -1268,6 +1325,7 @@ def _run_file_leak_site_with_watchdog(
             )
 
         _apply_directory_waf_blocks(discovery_context, result)
+        _apply_child_responses(discovery_context, result)
 
         if not result.get("ok"):
             logger.warning(
