@@ -77,6 +77,17 @@ def env_int(name, default=0):
         return default
 
 
+def env_float(name, default=0.0):
+    """从环境变量读取非负浮点数。"""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
 def safe_positive_int(value, default, min_value=1):
     """
     安全转换为正整数，非法值回退默认值
@@ -105,6 +116,17 @@ def safe_int(value, default, min_value=None):
         return default
 
     return num
+
+
+def safe_nonnegative_float(value, default):
+    """安全转换非负浮点数，非法值回退默认值。"""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if number < 0:
+        return default
+    return number
 
 
 def safe_bool(value, default=False):
@@ -236,6 +258,10 @@ def refresh_runtime_config_best_effort(force=False):
             if fofa_conf.get("KEY") is not None:
                 Config.FOFA_KEY = str(fofa_conf.get("KEY") or "")
 
+        proxy_conf = loaded.get("PROXY", {})
+        if isinstance(proxy_conf, dict) and proxy_conf.get("HTTP_URL") is not None:
+            Config.PROXY_URL = str(proxy_conf.get("HTTP_URL") or "").strip()
+
         github_conf = loaded.get("GITHUB", {})
         if isinstance(github_conf, dict) and github_conf.get("TOKEN") is not None:
             Config.GITHUB_TOKEN = str(github_conf.get("TOKEN") or "")
@@ -288,6 +314,8 @@ def refresh_runtime_config_best_effort(force=False):
             "WILDCARD_PROBE_COUNT",
             "WILDCARD_VERIFY_ROUNDS",
             "WILDCARD_MAX_LEVELS",
+            "WILDCARD_PROFILE_CONCURRENCY",
+            "WILDCARD_PROBE_CONCURRENCY",
             "WEB_GUNICORN_WORKERS",
             "CELERY_TASK_WORKER_CONCURRENCY",
             "CELERY_GITHUB_WORKER_CONCURRENCY",
@@ -309,11 +337,13 @@ def refresh_runtime_config_best_effort(force=False):
             "AFROG_STAGE_TIMEOUT_SEC",
             "AFROG_STAGE_MAX_TARGETS",
             "WIH_TIMEOUT_SEC",
+            "WIH_TOTAL_BUDGET_SEC",
             "WIH_CONCURRENCY",
             "WIH_CONCURRENCY_PER_SITE",
             "WIH_MAX_BATCH_SIZE",
             "WIH_PERIODIC_REUSE_ENABLE",
             "WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS",
+            "WIH_PERIODIC_REUSE_MAX_AGE_SEC",
             "WIH_PERIODIC_REUSE_LOG_DETAIL",
             "WIH_ADAPTIVE_RUNTIME_ENABLE",
             "WIH_LIGHT_TIMEOUT_SEC",
@@ -347,14 +377,31 @@ def refresh_runtime_config_best_effort(force=False):
             "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
             "SSL_CERT_FETCH_CONCURRENCY",
             "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
+            "DNS_QUERY_PLUGIN_DOMAIN_BATCH_SIZE",
             "URLFINDER_URL_PROBE_MAX_TARGETS",
             "URLFINDER_URL_PROBE_CONCURRENCY",
+            "SEARCH_PROVIDER_CONNECT_TIMEOUT_SEC",
+            "SEARCH_PROVIDER_READ_TIMEOUT_SEC",
+            "SEARCH_PROVIDER_RETRY_MAX",
+            "SEARCH_PROVIDER_STAGE_TIMEOUT_SEC",
+            "SEARCH_PROVIDER_CONCURRENCY",
+            "SEARCH_PROVIDER_CIRCUIT_BREAKER_THRESHOLD",
+            "PORT_SCAN_BATCH_CONCURRENCY",
+            "PORT_SCAN_BATCH_TIMEOUT_SEC",
         ]
         for key_name in positive_keys:
             value = arl_conf.get(key_name)
             if value is None:
                 continue
             setattr(Config, key_name, safe_positive_int(value, getattr(Config, key_name)))
+
+        for key_name in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
+            if arl_conf.get(key_name) is not None:
+                setattr(
+                    Config,
+                    key_name,
+                    safe_nonnegative_float(arl_conf.get(key_name), getattr(Config, key_name)),
+                )
 
         if arl_conf.get("PORT_SCAN_STAGE_TIMEOUT_SEC") is not None:
             Config.PORT_SCAN_STAGE_TIMEOUT_SEC = safe_positive_int(
@@ -441,6 +488,35 @@ def refresh_runtime_config_best_effort(force=False):
             Config.URLFINDER_URL_PROBE_ENABLE = _safe_runtime_bool(
                 arl_conf.get("URLFINDER_URL_PROBE_ENABLE"), Config.URLFINDER_URL_PROBE_ENABLE
             )
+        if arl_conf.get("RUST_ACCEL_ENABLE") is not None:
+            Config.RUST_ACCEL_ENABLE = _safe_runtime_bool(
+                arl_conf.get("RUST_ACCEL_ENABLE"), Config.RUST_ACCEL_ENABLE
+            )
+        if arl_conf.get("RUST_ACCEL_FALLBACK_ENABLE") is not None:
+            Config.RUST_ACCEL_FALLBACK_ENABLE = _safe_runtime_bool(
+                arl_conf.get("RUST_ACCEL_FALLBACK_ENABLE"), Config.RUST_ACCEL_FALLBACK_ENABLE
+            )
+        if arl_conf.get("PROGRESSIVE_SCAN_ENABLE") is not None:
+            Config.PROGRESSIVE_SCAN_ENABLE = _safe_runtime_bool(
+                arl_conf.get("PROGRESSIVE_SCAN_ENABLE"), Config.PROGRESSIVE_SCAN_ENABLE
+            )
+        if arl_conf.get("PORT_SCAN_SYN_ENABLE") is not None:
+            Config.PORT_SCAN_SYN_ENABLE = _safe_runtime_bool(
+                arl_conf.get("PORT_SCAN_SYN_ENABLE"), Config.PORT_SCAN_SYN_ENABLE
+            )
+        if arl_conf.get("PORT_SCAN_SYN_FALLBACK_ENABLE") is not None:
+            Config.PORT_SCAN_SYN_FALLBACK_ENABLE = _safe_runtime_bool(
+                arl_conf.get("PORT_SCAN_SYN_FALLBACK_ENABLE"), Config.PORT_SCAN_SYN_FALLBACK_ENABLE
+            )
+        if arl_conf.get("PORT_SCAN_SKIP_CDN_IP_DEFAULT") is not None:
+            Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT = _safe_runtime_bool(
+                arl_conf.get("PORT_SCAN_SKIP_CDN_IP_DEFAULT"), Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT
+            )
+        if arl_conf.get("SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE") is not None:
+            Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = _safe_runtime_bool(
+                arl_conf.get("SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE"),
+                Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE,
+            )
 
         if arl_conf.get("AFROG_BIN"):
             Config.AFROG_BIN = str(arl_conf.get("AFROG_BIN") or "").strip()
@@ -459,27 +535,6 @@ def refresh_runtime_config_best_effort(force=False):
             Config.SQLMAP_BIN = str(arl_conf.get("SQLMAP_BIN") or "").strip()
         if arl_conf.get("HTTPX_BIN") is not None:
             Config.HTTPX_BIN = str(arl_conf.get("HTTPX_BIN") or "").strip()
-        if arl_conf.get("AI_PEN_EXTERNAL_TOOL_DIR") is not None:
-            Config.AI_PEN_EXTERNAL_TOOL_DIR = str(arl_conf.get("AI_PEN_EXTERNAL_TOOL_DIR") or "").strip()
-
-        if ai_conf.get("AI_PEN_EXTERNAL_ENABLE") is not None:
-            Config.AI_PEN_MCP_EXTERNAL_ENABLE = _safe_runtime_bool(
-                ai_conf.get("AI_PEN_EXTERNAL_ENABLE"), Config.AI_PEN_MCP_EXTERNAL_ENABLE
-            )
-        if ai_conf.get("AI_PEN_EXTERNAL_TOOLS") is not None:
-            Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = str(ai_conf.get("AI_PEN_EXTERNAL_TOOLS") or "").strip()
-        if ai_conf.get("AI_PEN_EXTERNAL_TIMEOUT_SEC") is not None:
-            Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = safe_positive_int(
-                ai_conf.get("AI_PEN_EXTERNAL_TIMEOUT_SEC"),
-                Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC,
-                min_value=5,
-            )
-        if ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS") is not None:
-            Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS = safe_positive_int(
-                ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS"),
-                Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
-                min_value=1,
-            )
         if ai_conf.get("AI_WIH_ENDPOINT_FILL_ENABLE") is not None:
             Config.AI_WIH_ENDPOINT_FILL_ENABLE = _safe_runtime_bool(
                 ai_conf.get("AI_WIH_ENDPOINT_FILL_ENABLE"), Config.AI_WIH_ENDPOINT_FILL_ENABLE
@@ -507,6 +562,24 @@ def refresh_runtime_config_best_effort(force=False):
         Config.URLFINDER_URL_PROBE_ENABLE = env_bool(
             "ARL_URLFINDER_URL_PROBE_ENABLE", Config.URLFINDER_URL_PROBE_ENABLE
         )
+        Config.RUST_ACCEL_ENABLE = env_bool(
+            "ARL_RUST_ACCEL_ENABLE", Config.RUST_ACCEL_ENABLE
+        )
+        Config.RUST_ACCEL_FALLBACK_ENABLE = env_bool(
+            "ARL_RUST_ACCEL_FALLBACK_ENABLE", Config.RUST_ACCEL_FALLBACK_ENABLE
+        )
+        Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
+            "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE
+        )
+        for key_name in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
+            setattr(
+                Config,
+                key_name,
+                safe_nonnegative_float(
+                    env_float("ARL_{}".format(key_name), getattr(Config, key_name)),
+                    getattr(Config, key_name),
+                ),
+            )
         Config.AFROG_BIN = env_str("ARL_AFROG_BIN", Config.AFROG_BIN).strip()
         Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
         Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
@@ -514,25 +587,6 @@ def refresh_runtime_config_best_effort(force=False):
         Config.POC_UPDATE_PROXY = env_str("ARL_POC_UPDATE_PROXY", Config.POC_UPDATE_PROXY).strip()
         Config.SQLMAP_BIN = env_str("ARL_SQLMAP_BIN", Config.SQLMAP_BIN).strip()
         Config.HTTPX_BIN = env_str("ARL_HTTPX_BIN", Config.HTTPX_BIN).strip()
-        Config.AI_PEN_EXTERNAL_TOOL_DIR = env_str(
-            "ARL_AI_PEN_EXTERNAL_TOOL_DIR", Config.AI_PEN_EXTERNAL_TOOL_DIR
-        ).strip()
-        Config.AI_PEN_MCP_EXTERNAL_ENABLE = env_bool(
-            "ARL_AI_PEN_MCP_EXTERNAL_ENABLE", Config.AI_PEN_MCP_EXTERNAL_ENABLE
-        )
-        Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = env_str(
-            "ARL_AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS", Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS
-        ).strip()
-        Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = safe_positive_int(
-            env_int("ARL_AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC),
-            Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC,
-            min_value=5,
-        )
-        Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS = safe_positive_int(
-            env_int("ARL_AI_PEN_MCP_EXTERNAL_MAX_RUNS", Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS),
-            Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
-            min_value=1,
-        )
         dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
         if dns_resolvers_env:
             Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]
@@ -663,16 +717,8 @@ class Config(object):
     AFROG_STAGE_TIMEOUT_SEC = 0
     # afrog 阶段最多扫描目标数（0=不限制）
     AFROG_STAGE_MAX_TARGETS = 0
-    # AI渗透外部执行器工具路径
     SQLMAP_BIN = "sqlmap"
     HTTPX_BIN = "httpx"
-    # AI渗透外部工具说明目录（用户可在该目录追加 *.yaml/*.json 定义）
-    AI_PEN_EXTERNAL_TOOL_DIR = os.path.join(project_root, "tools", "ai_pen_tools")
-    # AI渗透外部执行器默认配置（AI 配置缺失时兜底）
-    AI_PEN_MCP_EXTERNAL_ENABLE = True
-    AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = "sqlmap,httpx"
-    AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = 45
-    AI_PEN_MCP_EXTERNAL_MAX_RUNS = 2
     AI_WIH_ENDPOINT_FILL_ENABLE = True
     # TruffleHog 可执行文件路径（优先使用 tools 目录）
     TRUFFLEHOG_BIN = os.path.join(project_root, "tools", "TruffleHog", "trufflehog")
@@ -702,6 +748,10 @@ class Config(object):
     URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT = 2
     # 是否启用 URLFinder 提取 URL 的可达性探测并写入 URL 信息
     URLFINDER_URL_PROBE_ENABLE = True
+    # 是否启用 Rust URL/JS 数据处理加速
+    RUST_ACCEL_ENABLE = True
+    # Rust 加速不可用时是否按当前批次回退 Python
+    RUST_ACCEL_FALLBACK_ENABLE = True
     # URLFinder URL 可达性探测单次最多目标数
     URLFINDER_URL_PROBE_MAX_TARGETS = 800
     # URLFinder URL 可达性探测并发
@@ -732,7 +782,7 @@ class Config(object):
     PLAYWRIGHT_WAIT_MS = 1000
     # Playwright Chromium 可执行路径（为空时使用内置浏览器）
     PLAYWRIGHT_CHROMIUM_BIN = ""
-    # 是否启用浏览器情报采集（AI渗透测试开启时默认跟随启用，仅高价值站点使用）
+    # 是否启用浏览器情报采集（仅高价值站点使用）
     BROWSER_INTEL_ENABLE = True
     # 浏览器情报单次最多采集目标数
     BROWSER_INTEL_MAX_TARGETS = 8
@@ -779,6 +829,8 @@ class Config(object):
     WIH_RULE_PATH = "/usr/local/share/arl/wih/config/rules.yml"
     # WIH 扫描超时（秒）
     WIH_TIMEOUT_SEC = 10 * 60
+    # WIH 单任务总预算（秒），覆盖批次、升级、回退和重试
+    WIH_TOTAL_BUDGET_SEC = 45 * 60
     # WIH 全局并发（透传给 wih --concurrency / -c）
     WIH_CONCURRENCY = 8
     # WIH 单站点并发（透传给 wih --concurrency-per-site）
@@ -789,6 +841,8 @@ class Config(object):
     WIH_PERIODIC_REUSE_ENABLE = False
     # 查找上一轮可复用基线时，最多回看多少条同计划同目标任务
     WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS = 5
+    # 周期任务 WIH 结果最多复用多长时间（秒）
+    WIH_PERIODIC_REUSE_MAX_AGE_SEC = 24 * 60 * 60
     # 是否输出周期任务 WIH 复用详细日志
     WIH_PERIODIC_REUSE_LOG_DETAIL = True
     # 是否启用计划任务下的 WIH 自适应 runtime：先轻量运行，再按需升级完整 runtime
@@ -971,12 +1025,17 @@ class Config(object):
     PORT_PARALLELISM = 64
     # nmap 最少发包速率默认值
     PORT_MIN_RATE = 260
+    # 优先使用 SYN 扫描；raw socket 不可用时按批次降级为 connect 扫描。
+    PORT_SCAN_SYN_ENABLE = True
+    PORT_SCAN_SYN_FALLBACK_ENABLE = True
+    # 未显式传入任务选项时，CDN IP 默认不做全端口扫描。
+    PORT_SCAN_SKIP_CDN_IP_DEFAULT = True
     # 端口扫描每批目标数量（常规）
     PORT_SCAN_TARGET_BATCH_SIZE = 48
     # 端口扫描每批目标数量（重负载端口集，如 top1000）
     PORT_SCAN_HEAVY_TARGET_BATCH_SIZE = 16
     # 全端口扫描每批目标数量
-    PORT_SCAN_ALL_TARGET_BATCH_SIZE = 4
+    PORT_SCAN_ALL_TARGET_BATCH_SIZE = 1
     # 两阶段精扫单主机端口分段大小（仅分段，不裁剪结果）
     PORT_SCAN_STAGE2_PORT_CHUNK_SIZE = 300
     # 端口扫描阶段超时预算基础值（秒），0 表示不限制
@@ -997,6 +1056,8 @@ class Config(object):
     TASK_HEAVY_TARGET_THRESHOLD = 24
     # 是否启用重任务队列分流；若未检测到 arlheavy 消费者会自动回退到 arltask
     TASK_HEAVY_QUEUE_ENABLE = True
+    # 一次性域名任务先完成发现并落库，再通过深度队列继续端口和 Web 阶段。
+    PROGRESSIVE_SCAN_ENABLE = True
     # 域名爆破并发数（普通域名字典爆破）
     DOMAIN_BRUTE_CONCURRENT = 360
     # 组合生成的域名爆破并发数（altdns变异域名爆破）
@@ -1007,6 +1068,10 @@ class Config(object):
     WILDCARD_VERIFY_ROUNDS = 2
     # 泛解析按层级向上补探测的最大层数
     WILDCARD_MAX_LEVELS = 2
+    # 泛解析画像探测并发；仅加速无副作用 DNS 探测，不改变过滤规则。
+    WILDCARD_PROFILE_CONCURRENCY = 8
+    # 单个泛解析画像内部的探测并发；与 root 并发相乘后受控。
+    WILDCARD_PROBE_CONCURRENCY = 2
     # 域名解析并发
     DOMAIN_RESOLVE_CONCURRENCY = 10
     # 域名信息构建并发
@@ -1033,6 +1098,22 @@ class Config(object):
     # ==================== 代理配置 ====================
     # HTTP代理地址（用于需要代理的网络请求）
     PROXY_URL = ""
+
+    # ==================== provider 网络治理 ====================
+    # provider 请求连接/读取超时上限；插件传入更大的 timeout 时按这里收敛。
+    SEARCH_PROVIDER_CONNECT_TIMEOUT_SEC = 5
+    SEARCH_PROVIDER_READ_TIMEOUT_SEC = 15
+    SEARCH_PROVIDER_RETRY_MAX = 1
+    # provider 阶段预算；单请求仍受上面的 timeout 约束。
+    SEARCH_PROVIDER_STAGE_TIMEOUT_SEC = 300
+    # 每个 provider 的 IP/证书反查并发，受 provider 自身限频器约束。
+    SEARCH_PROVIDER_CONCURRENCY = 4
+    SEARCH_PROVIDER_CIRCUIT_BREAKER_THRESHOLD = 3
+    # 配置了 PROXY_URL 时，provider 直连失败后是否尝试代理。
+    SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = True
+    # 搜索引擎分页和扩展查询的最小间隔；避免固定长等待阻塞整个任务。
+    SEARCH_ENGINE_PAGE_INTERVAL_SEC = 0.5
+    SEARCH_ENGINE_EXPANSION_INTERVAL_SEC = 1.0
 
     # ==================== 插件配置 ====================
     # DNS查询插件配置字典
@@ -1071,12 +1152,18 @@ class Config(object):
     SSL_CERT_STAGE_TIMEOUT_MAX_SEC = 3600
     # 域名插件查询阶段每批来源数
     DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE = 4
+    # 测绘结果按域名分批校验，避免大量候选一次性阻塞后续阶段
+    DNS_QUERY_PLUGIN_DOMAIN_BATCH_SIZE = 100
     # 域名插件查询阶段总超时（秒），0 表示不限制
     DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC = 900
     # 域名插件查询阶段超时预算：每个来源额外追加（秒）
     DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC = 45
     # 域名插件查询阶段超时预算上限（秒），0 表示不限制
     DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC = 1800
+    # 同一 worker 同时运行的 nmap 批次数，避免把网络和内存压力无限放大。
+    PORT_SCAN_BATCH_CONCURRENCY = 4
+    # 单个 nmap 批次的进程级预算；0 表示由 nmap 自身运行，不额外终止。
+    PORT_SCAN_BATCH_TIMEOUT_SEC = 600
 
     # ==================== WebHook配置 ====================
     # 自定义WebHook推送地址
@@ -1373,31 +1460,8 @@ try:
     if y["ARL"].get("HTTPX_BIN") is not None:
         Config.HTTPX_BIN = str(y["ARL"]["HTTPX_BIN"] or "").strip()
 
-    if y["ARL"].get("AI_PEN_EXTERNAL_TOOL_DIR") is not None:
-        Config.AI_PEN_EXTERNAL_TOOL_DIR = str(y["ARL"]["AI_PEN_EXTERNAL_TOOL_DIR"] or "").strip()
-
     if y.get("AI"):
         ai_conf = y.get("AI") or {}
-        if ai_conf.get("AI_PEN_EXTERNAL_ENABLE") is not None:
-            Config.AI_PEN_MCP_EXTERNAL_ENABLE = safe_bool(
-                ai_conf.get("AI_PEN_EXTERNAL_ENABLE"), Config.AI_PEN_MCP_EXTERNAL_ENABLE
-            )
-        if ai_conf.get("AI_PEN_EXTERNAL_TOOLS") is not None:
-            Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = str(
-                ai_conf.get("AI_PEN_EXTERNAL_TOOLS") or ""
-            ).strip()
-        if ai_conf.get("AI_PEN_EXTERNAL_TIMEOUT_SEC") is not None:
-            Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = safe_positive_int(
-                ai_conf.get("AI_PEN_EXTERNAL_TIMEOUT_SEC"),
-                Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC,
-                min_value=5,
-            )
-        if ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS") is not None:
-            Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS = safe_positive_int(
-                ai_conf.get("AI_PEN_EXTERNAL_MAX_RUNS"),
-                Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
-                min_value=1,
-            )
 
     if y["ARL"].get("WIH_BIN_PATH"):
         Config.WIH_BIN_PATH = str(y["ARL"]["WIH_BIN_PATH"]).strip()
@@ -1408,6 +1472,11 @@ try:
     if y["ARL"].get("WIH_TIMEOUT_SEC") is not None:
         Config.WIH_TIMEOUT_SEC = safe_positive_int(
             int(y["ARL"]["WIH_TIMEOUT_SEC"]), Config.WIH_TIMEOUT_SEC
+        )
+
+    if y["ARL"].get("WIH_TOTAL_BUDGET_SEC") is not None:
+        Config.WIH_TOTAL_BUDGET_SEC = safe_positive_int(
+            int(y["ARL"]["WIH_TOTAL_BUDGET_SEC"]), Config.WIH_TOTAL_BUDGET_SEC
         )
 
     if y["ARL"].get("WIH_CONCURRENCY") is not None:
@@ -1430,6 +1499,11 @@ try:
         Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS = safe_positive_int(
             int(y["ARL"]["WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS"]),
             Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS,
+        )
+    if y["ARL"].get("WIH_PERIODIC_REUSE_MAX_AGE_SEC") is not None:
+        Config.WIH_PERIODIC_REUSE_MAX_AGE_SEC = safe_positive_int(
+            int(y["ARL"]["WIH_PERIODIC_REUSE_MAX_AGE_SEC"]),
+            Config.WIH_PERIODIC_REUSE_MAX_AGE_SEC,
         )
     if y["ARL"].get("WIH_PERIODIC_REUSE_LOG_DETAIL") is not None:
         Config.WIH_PERIODIC_REUSE_LOG_DETAIL = bool(y["ARL"]["WIH_PERIODIC_REUSE_LOG_DETAIL"])
@@ -1575,6 +1649,14 @@ try:
                 Config.URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT,
             ),
         )
+
+    if y["ARL"].get("RUST_ACCEL_ENABLE") is not None:
+        Config.RUST_ACCEL_ENABLE = bool(y["ARL"]["RUST_ACCEL_ENABLE"])
+
+    if y["ARL"].get("RUST_ACCEL_FALLBACK_ENABLE") is not None:
+        Config.RUST_ACCEL_FALLBACK_ENABLE = bool(y["ARL"]["RUST_ACCEL_FALLBACK_ENABLE"])
+    if y["ARL"].get("PROGRESSIVE_SCAN_ENABLE") is not None:
+        Config.PROGRESSIVE_SCAN_ENABLE = bool(y["ARL"]["PROGRESSIVE_SCAN_ENABLE"])
 
     if y["ARL"].get("URLFINDER_URL_PROBE_ENABLE") is not None:
         Config.URLFINDER_URL_PROBE_ENABLE = bool(y["ARL"]["URLFINDER_URL_PROBE_ENABLE"])
@@ -1824,6 +1906,8 @@ try:
         "WILDCARD_PROBE_COUNT",
         "WILDCARD_VERIFY_ROUNDS",
         "WILDCARD_MAX_LEVELS",
+        "WILDCARD_PROFILE_CONCURRENCY",
+        "WILDCARD_PROBE_CONCURRENCY",
         "DOMAIN_RESOLVE_CONCURRENCY",
         "DOMAIN_INFO_CONCURRENCY",
         "HTTP_CHECK_CONCURRENCY",
@@ -1846,11 +1930,13 @@ try:
         "FILE_LEAK_NO_PROGRESS_TIMEOUT_PER_1000_URLS_SEC",
         "FILE_LEAK_NO_PROGRESS_TIMEOUT_MAX_SEC",
         "WIH_TIMEOUT_SEC",
+        "WIH_TOTAL_BUDGET_SEC",
         "WIH_CONCURRENCY",
         "WIH_CONCURRENCY_PER_SITE",
         "WIH_MAX_BATCH_SIZE",
         "WIH_PERIODIC_REUSE_ENABLE",
         "WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS",
+        "WIH_PERIODIC_REUSE_MAX_AGE_SEC",
         "WIH_PERIODIC_REUSE_LOG_DETAIL",
         "WIH_ADAPTIVE_RUNTIME_ENABLE",
         "WIH_LIGHT_TIMEOUT_SEC",
@@ -1869,12 +1955,28 @@ try:
         "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
         "SSL_CERT_FETCH_CONCURRENCY",
         "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
+        "DNS_QUERY_PLUGIN_DOMAIN_BATCH_SIZE",
         "AFROG_TARGETS_PER_BATCH",
+        "SEARCH_PROVIDER_CONNECT_TIMEOUT_SEC",
+        "SEARCH_PROVIDER_READ_TIMEOUT_SEC",
+        "SEARCH_PROVIDER_RETRY_MAX",
+        "SEARCH_PROVIDER_STAGE_TIMEOUT_SEC",
+        "SEARCH_PROVIDER_CONCURRENCY",
+        "SEARCH_PROVIDER_CIRCUIT_BREAKER_THRESHOLD",
+        "PORT_SCAN_BATCH_CONCURRENCY",
+        "PORT_SCAN_BATCH_TIMEOUT_SEC",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
         if _val is not None:
             setattr(Config, _key, safe_positive_int(_val, getattr(Config, _key)))
+    for _key in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
+        if y["ARL"].get(_key) is not None:
+            setattr(
+                Config,
+                _key,
+                safe_nonnegative_float(y["ARL"].get(_key), getattr(Config, _key)),
+            )
     if y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_SEC") is not None:
         Config.PORT_SCAN_STAGE_TIMEOUT_SEC = safe_positive_int(
             y["ARL"].get("PORT_SCAN_STAGE_TIMEOUT_SEC"),
@@ -1899,6 +2001,13 @@ try:
             Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC,
             min_value=0,
         )
+    for _key in (
+        "PORT_SCAN_SYN_ENABLE",
+        "PORT_SCAN_SYN_FALLBACK_ENABLE",
+        "PORT_SCAN_SKIP_CDN_IP_DEFAULT",
+    ):
+        if y["ARL"].get(_key) is not None:
+            setattr(Config, _key, safe_bool(y["ARL"].get(_key), getattr(Config, _key)))
     if y["ARL"].get("TASK_HEAVY_QUEUE_ENABLE") is not None:
         Config.TASK_HEAVY_QUEUE_ENABLE = safe_bool(
             y["ARL"].get("TASK_HEAVY_QUEUE_ENABLE"), Config.TASK_HEAVY_QUEUE_ENABLE
@@ -1908,6 +2017,13 @@ try:
     if y.get("PROXY"):
         if y["PROXY"].get("HTTP_URL"):
             Config.PROXY_URL = y["PROXY"]["HTTP_URL"]
+
+    Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = bool(
+        y["ARL"].get(
+            "SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE",
+            Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE,
+        )
+    )
 
     # --- 域名查询插件配置 ---
     if y.get("QUERY_PLUGIN"):
@@ -2040,25 +2156,6 @@ try:
     Config.POC_UPDATE_PROXY = env_str("ARL_POC_UPDATE_PROXY", Config.POC_UPDATE_PROXY).strip()
     Config.SQLMAP_BIN = env_str("ARL_SQLMAP_BIN", Config.SQLMAP_BIN).strip()
     Config.HTTPX_BIN = env_str("ARL_HTTPX_BIN", Config.HTTPX_BIN).strip()
-    Config.AI_PEN_EXTERNAL_TOOL_DIR = env_str(
-        "ARL_AI_PEN_EXTERNAL_TOOL_DIR", Config.AI_PEN_EXTERNAL_TOOL_DIR
-    ).strip()
-    Config.AI_PEN_MCP_EXTERNAL_ENABLE = env_bool(
-        "ARL_AI_PEN_MCP_EXTERNAL_ENABLE", Config.AI_PEN_MCP_EXTERNAL_ENABLE
-    )
-    Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS = env_str(
-        "ARL_AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS", Config.AI_PEN_MCP_EXTERNAL_ALLOWED_TOOLS
-    ).strip()
-    Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC = safe_positive_int(
-        env_int("ARL_AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC", Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC),
-        Config.AI_PEN_MCP_EXTERNAL_TIMEOUT_SEC,
-        min_value=5,
-    )
-    Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS = safe_positive_int(
-        env_int("ARL_AI_PEN_MCP_EXTERNAL_MAX_RUNS", Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS),
-        Config.AI_PEN_MCP_EXTERNAL_MAX_RUNS,
-        min_value=1,
-    )
     Config.AI_WIH_ENDPOINT_FILL_ENABLE = env_bool(
         "ARL_AI_WIH_ENDPOINT_FILL_ENABLE", Config.AI_WIH_ENDPOINT_FILL_ENABLE
     )
@@ -2094,6 +2191,10 @@ try:
         env_int("ARL_WIH_TIMEOUT_SEC", Config.WIH_TIMEOUT_SEC),
         Config.WIH_TIMEOUT_SEC
     )
+    Config.WIH_TOTAL_BUDGET_SEC = safe_positive_int(
+        env_int("ARL_WIH_TOTAL_BUDGET_SEC", Config.WIH_TOTAL_BUDGET_SEC),
+        Config.WIH_TOTAL_BUDGET_SEC
+    )
     Config.WIH_CONCURRENCY = safe_positive_int(
         env_int("ARL_WIH_CONCURRENCY", Config.WIH_CONCURRENCY),
         Config.WIH_CONCURRENCY
@@ -2112,6 +2213,10 @@ try:
     Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS = safe_positive_int(
         env_int("ARL_WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS", Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS),
         Config.WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS
+    )
+    Config.WIH_PERIODIC_REUSE_MAX_AGE_SEC = safe_positive_int(
+        env_int("ARL_WIH_PERIODIC_REUSE_MAX_AGE_SEC", Config.WIH_PERIODIC_REUSE_MAX_AGE_SEC),
+        Config.WIH_PERIODIC_REUSE_MAX_AGE_SEC
     )
     Config.WIH_PERIODIC_REUSE_LOG_DETAIL = env_bool(
         "ARL_WIH_PERIODIC_REUSE_LOG_DETAIL", Config.WIH_PERIODIC_REUSE_LOG_DETAIL
@@ -2237,6 +2342,24 @@ try:
             Config.URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT,
         ),
     )
+    Config.RUST_ACCEL_ENABLE = env_bool(
+        "ARL_RUST_ACCEL_ENABLE", Config.RUST_ACCEL_ENABLE
+    )
+    Config.RUST_ACCEL_FALLBACK_ENABLE = env_bool(
+        "ARL_RUST_ACCEL_FALLBACK_ENABLE", Config.RUST_ACCEL_FALLBACK_ENABLE
+    )
+    Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
+        "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE
+    )
+    for key_name in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
+        setattr(
+            Config,
+            key_name,
+            safe_nonnegative_float(
+                env_float("ARL_{}".format(key_name), getattr(Config, key_name)),
+                getattr(Config, key_name),
+            ),
+        )
     Config.URLFINDER_URL_PROBE_ENABLE = env_bool(
         "ARL_URLFINDER_URL_PROBE_ENABLE", Config.URLFINDER_URL_PROBE_ENABLE
     )
@@ -2388,9 +2511,32 @@ try:
         Config.PORT_SCAN_STAGE_TIMEOUT_MAX_SEC,
         min_value=0,
     )
+    Config.PORT_SCAN_SYN_ENABLE = env_bool(
+        "ARL_PORT_SCAN_SYN_ENABLE", Config.PORT_SCAN_SYN_ENABLE
+    )
+    Config.PORT_SCAN_SYN_FALLBACK_ENABLE = env_bool(
+        "ARL_PORT_SCAN_SYN_FALLBACK_ENABLE", Config.PORT_SCAN_SYN_FALLBACK_ENABLE
+    )
+    Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT = env_bool(
+        "ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT", Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT
+    )
     Config.TASK_HEAVY_QUEUE_ENABLE = env_bool(
         "ARL_TASK_HEAVY_QUEUE_ENABLE", Config.TASK_HEAVY_QUEUE_ENABLE
     )
+    Config.PROXY_URL = env_str("ARL_PROXY_URL", Config.PROXY_URL).strip()
+    Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = env_bool(
+        "ARL_SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE",
+        Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE,
+    )
+    for _key in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
+        setattr(
+            Config,
+            _key,
+            safe_nonnegative_float(
+                env_float("ARL_{}".format(_key), getattr(Config, _key)),
+                getattr(Config, _key),
+            ),
+        )
     # --- 环境变量覆盖：并发数配置（声明式） ---
     for _key in _ARL_POSITIVE_INT_KEYS:
         _env_name = "ARL_{}".format(_key)

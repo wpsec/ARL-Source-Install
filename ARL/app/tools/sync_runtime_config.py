@@ -9,6 +9,7 @@
 """
 import argparse
 import copy
+import errno
 import hashlib
 import os
 import sys
@@ -52,7 +53,21 @@ def _atomic_write_yaml(path_obj, data):
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_name, str(path_obj))
+        try:
+            os.replace(tmp_name, str(path_obj))
+        except OSError as exc:
+            if exc.errno not in (errno.EBUSY, errno.EXDEV, errno.EPERM):
+                raise
+            print(
+                "runtime config atomic replace unavailable (errno={}), fallback to direct write: {}".format(
+                    exc.errno, path_obj
+                ),
+                file=sys.stderr,
+            )
+            with path_obj.open("w", encoding="utf-8") as f:
+                f.write(text)
+                f.flush()
+                os.fsync(f.fileno())
     finally:
         try:
             if os.path.exists(tmp_name):

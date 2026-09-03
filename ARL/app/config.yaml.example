@@ -36,7 +36,7 @@ QUERY_PLUGIN:
     api_key: ""
     page_size: 100
     max_page: 5
-    request_interval: 1.0
+    request_interval: 2.0
     rate_limit_retry: 4
     rate_limit_backoff: 2
     rate_limit_max_sleep: 60
@@ -379,12 +379,32 @@ ARL:
   SSL_CERT_STAGE_TIMEOUT_MAX_SEC: 3600
   # 域名插件查询阶段每批来源数
   DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE: 4
+  # 测绘结果按域名分批校验，避免大量候选一次性阻塞后续阶段
+  DNS_QUERY_PLUGIN_DOMAIN_BATCH_SIZE: 100
   # 域名插件查询阶段超时预算基础值（秒，0=不限制）
   DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC: 900
   # 域名插件查询阶段超时预算：每个来源额外追加（秒）
   DNS_QUERY_PLUGIN_STAGE_TIMEOUT_PER_SOURCE_SEC: 45
   # 域名插件查询阶段超时预算上限（秒，0=不限制）
   DNS_QUERY_PLUGIN_STAGE_TIMEOUT_MAX_SEC: 1800
+  # provider 请求连接超时上限（秒）
+  SEARCH_PROVIDER_CONNECT_TIMEOUT_SEC: 5
+  # provider 请求读取超时上限（秒）
+  SEARCH_PROVIDER_READ_TIMEOUT_SEC: 15
+  # provider 网络错误最大重试次数
+  SEARCH_PROVIDER_RETRY_MAX: 1
+  # provider 阶段预算（秒，0=不提前截断）
+  SEARCH_PROVIDER_STAGE_TIMEOUT_SEC: 300
+  # 单个 provider 的 IP/证书反查并发
+  SEARCH_PROVIDER_CONCURRENCY: 4
+  # 连续失败达到阈值后记录 provider 熔断
+  SEARCH_PROVIDER_CIRCUIT_BREAKER_THRESHOLD: 3
+  # 配置 PROXY.HTTP_URL 时，provider 直连失败后允许代理兜底
+  SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE: true
+  # 搜索引擎分页间隔（秒）
+  SEARCH_ENGINE_PAGE_INTERVAL_SEC: 0.5
+  # Bing 扩展关键词间隔（秒）
+  SEARCH_ENGINE_EXPANSION_INTERVAL_SEC: 1.0
   # 指纹到 nuclei 标签映射（可按内部资产特征扩充）
   NUCLEI_FINGER_TAG_MAP:
     wordpress:
@@ -423,12 +443,23 @@ ARL:
   PORT_PARALLELISM: 64
   # nmap 最少发包速率默认值
   PORT_MIN_RATE: 260
+  # 优先使用 SYN 扫描；raw socket 不可用时按批次降级为 connect 扫描
+  PORT_SCAN_SYN_ENABLE: true
+  PORT_SCAN_SYN_FALLBACK_ENABLE: true
+  # 未显式传入任务选项时，CDN IP 默认不做全端口扫描
+  PORT_SCAN_SKIP_CDN_IP_DEFAULT: true
   # 端口扫描分片：常规模式每批目标数
   PORT_SCAN_TARGET_BATCH_SIZE: 48
   # 端口扫描分片：重负载端口集每批目标数
   PORT_SCAN_HEAVY_TARGET_BATCH_SIZE: 16
   # 端口扫描分片：全端口每批目标数
-  PORT_SCAN_ALL_TARGET_BATCH_SIZE: 4
+  PORT_SCAN_ALL_TARGET_BATCH_SIZE: 1
+  # 同一 worker 同时运行的 nmap 批次数
+  PORT_SCAN_BATCH_CONCURRENCY: 4
+  # 单个 nmap 批次进程级超时（秒，0=不额外终止）
+  PORT_SCAN_BATCH_TIMEOUT_SEC: 600
+  # 一次性域名任务先落库发现结果，再投递深度队列
+  PROGRESSIVE_SCAN_ENABLE: true
   # 两阶段精扫单主机端口分段大小（仅分段，不裁剪结果）
   PORT_SCAN_STAGE2_PORT_CHUNK_SIZE: 300
   # 端口扫描阶段超时预算基础值（秒，0=不限制）
@@ -473,6 +504,8 @@ ARL:
   WIH_RULE_PATH: "/usr/local/share/arl/wih/config/rules.yml"
   # WIH 扫描超时（秒）
   WIH_TIMEOUT_SEC: 600
+  # WIH 单任务总预算（秒），覆盖批次、升级、回退和重试
+  WIH_TOTAL_BUDGET_SEC: 2700
   # WIH 全局并发（若 wih 二进制支持 --concurrency / -c）
   WIH_CONCURRENCY: 8
   # WIH 单站点并发（若 wih 二进制支持 --concurrency-per-site）
@@ -483,6 +516,8 @@ ARL:
   WIH_PERIODIC_REUSE_ENABLE: false
   # 查找可复用上一轮任务时，最多回看多少条同目标任务
   WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS: 5
+  # 周期任务 WIH 结果最多复用 24 小时（秒）
+  WIH_PERIODIC_REUSE_MAX_AGE_SEC: 86400
   # 是否输出周期任务 WIH 复用详细日志
   WIH_PERIODIC_REUSE_LOG_DETAIL: true
   # 周期任务是否优先使用轻量 runtime，再按结果保守升级到完整预算
@@ -551,6 +586,10 @@ ARL:
   URLFINDER_SENSITIVE_STAGE_TIMEOUT_SEC: 1800
   # URLFinder 二次敏感扫描连续无新增批次数上限（0=不提前止损）
   URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT: 2
+  # 是否启用 Rust URL/JS 数据处理加速
+  RUST_ACCEL_ENABLE: true
+  # Rust 加速不可用或单批异常时是否回退 Python
+  RUST_ACCEL_FALLBACK_ENABLE: true
   # 是否启用 URLFinder URL 可达性探测并写入 URL 信息
   URLFINDER_URL_PROBE_ENABLE: true
   # URLFinder URL 可达性探测单次最多目标数
@@ -589,6 +628,10 @@ ARL:
   WILDCARD_VERIFY_ROUNDS: 2
   # 泛解析按层级向上补探测的最大层数
   WILDCARD_MAX_LEVELS: 2
+  # 泛解析画像探测并发，仅控制无副作用 DNS 探测
+  WILDCARD_PROFILE_CONCURRENCY: 8
+  # 单个泛解析画像内部的探测并发；与 root 并发相乘后受控
+  WILDCARD_PROBE_CONCURRENCY: 2
   # 域名解析并发
   DOMAIN_RESOLVE_CONCURRENCY: 10
   # 域名信息构建并发
