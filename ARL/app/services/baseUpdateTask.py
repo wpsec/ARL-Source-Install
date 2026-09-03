@@ -39,6 +39,24 @@ class BaseUpdateTask(object):
         return rss / 1024
 
     @staticmethod
+    def _children_cpu_seconds():
+        """已 wait 回收的子进程 CPU 累计（nuclei/afrog/wih/fileLeak watchdog 均有 wait）。"""
+        if resource is None:
+            return None
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return max(0.0, float(usage.ru_utime or 0.0) + float(usage.ru_stime or 0.0))
+
+    @staticmethod
+    def _children_rss_mb():
+        if resource is None:
+            return None
+        rss = max(0.0, float(
+            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss or 0.0))
+        if sys.platform == "darwin":
+            return rss / (1024 * 1024)
+        return rss / 1024
+
+    @staticmethod
     def _service_stage_status(metrics):
         if not isinstance(metrics, dict):
             return "success"
@@ -242,6 +260,7 @@ class BaseUpdateTask(object):
             "started_monotonic": started_monotonic,
             "cpu_started_sec": cpu_started_sec,
             "rss_started_mb": self._process_rss_mb(),
+            "children_cpu_started_sec": self._children_cpu_seconds(),
             "input_count": input_count,
             "budget_sec": budget_sec,
             "stage_kind": stage_kind,
@@ -291,6 +310,24 @@ class BaseUpdateTask(object):
         if rss_peak is not None:
             resource_metrics.setdefault("rss_peak_mb", round(rss_peak, 3))
             resource_metrics.setdefault("rss_scope", "process_lifetime_max")
+        # 子进程 CPU/RSS 独立字段：不改写 cpu_elapsed_sec 既有口径，
+        # 基线聚合侧按需相加。CHILDREN 计数只含已 wait 回收的
+        # 子进程（nuclei/afrog/wih/fileLeak 均有 wait），且
+        # ru_maxrss 是跨阶段单调累计——以 scope 标签明示近似语义。
+        children_cpu_started = context.get("children_cpu_started_sec")
+        children_cpu_finished = self._children_cpu_seconds()
+        if children_cpu_started is not None and children_cpu_finished is not None:
+            resource_metrics.setdefault(
+                "children_cpu_elapsed_sec",
+                round(max(0.0, children_cpu_finished - float(children_cpu_started)), 6))
+        children_rss_finished = self._children_rss_mb()
+        if children_rss_finished is not None:
+            # CHILDREN.ru_maxrss 是跨阶段单调的历史峰值，做差无意义，
+            # 直接记录并以 scope 标签声明"已回收子进程全局峰值"口径。
+            resource_metrics.setdefault(
+                "children_rss_peak_mb", round(children_rss_finished, 3))
+            resource_metrics.setdefault(
+                "children_rss_scope", "waited_children_lifetime_max")
         stage_metric = context.get("stage_metric")
         if not isinstance(stage_metric, StageMetric):
             stage_metric = StageMetric(
