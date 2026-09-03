@@ -19,7 +19,12 @@ class _Logger(object):
 
 
 class _Record(object):
+    """对齐真实 WihRecord 的属性形态：构造参数叫 record_type，属性是 recordType。"""
     fnv_hash = "record-1"
+    recordType = "domain"
+    content = "api.example.test"
+    source = "runtime"
+    site = "https://example.test"
 
     def dump_json(self):
         return {"fnv_hash": self.fnv_hash}
@@ -212,6 +217,22 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
         self.assertEqual(2, len(task.saved_endpoint_batches))
         self.assertEqual(("https://api.example.test/pet/list", "fetched"),
                          ctx.marked[-1])
+
+    def test_wih_records_reach_candidate_registry_with_recordType_attr(self):
+        # WihRecord 属性名是 recordType，读成 record_type 不会抛错而是
+        # 静默丢候选（新子域/新 API 无法分发）——用真实属性形态锁定。
+        ctx = _FakeDiscoveryContext([])
+        task = _Task()
+        task.assertEqual = self.assertEqual
+        task.discovery_context = ctx
+
+        WihOrchestrator(task).run()
+
+        self.assertTrue(ctx.registered, "WIH 记录必须登记进候选图")
+        entry = ctx.registered[0]
+        self.assertEqual("NewHostDiscovered", entry.get("event_type"))
+        self.assertEqual("api.example.test", entry.get("candidate"))
+        self.assertEqual("host", entry.get("candidate_type"))
 
 
 class TestWihOrchestrator(unittest.TestCase):

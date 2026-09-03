@@ -51,6 +51,7 @@ class TestStageObservability(unittest.TestCase):
             "input_count": 300,
             "budget_sec": 1800,
             "stage_kind": "execution",
+            "children_cpu_started_sec": 0.0,
         }
 
         with patch.object(base_update_task_module.time, "monotonic", return_value=10.734):
@@ -78,6 +79,14 @@ class TestStageObservability(unittest.TestCase):
         self.assertIn("non_cpu_elapsed_sec", service_item["metrics"])
         self.assertIn("rss_peak_mb", service_item["metrics"])
         self.assertEqual("process_lifetime_max", service_item["metrics"]["rss_scope"])
+        # 子进程（nuclei/afrog/wih/fileLeak 等 OS 子进程）资源不再缺席
+        self.assertGreaterEqual(
+            service_item["metrics"]["children_cpu_elapsed_sec"], 0.0)
+        self.assertGreaterEqual(
+            service_item["metrics"]["children_rss_peak_mb"], 0)
+        self.assertEqual(
+            "waited_children_lifetime_max",
+            service_item["metrics"]["children_rss_scope"])
 
     def test_rss_unit_conversion_matches_platform(self):
         usage = SimpleNamespace(ru_maxrss=2 * 1024 * 1024)

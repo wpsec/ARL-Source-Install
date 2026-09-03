@@ -119,6 +119,24 @@ class TestSingleFlight(unittest.TestCase):
         self.assertEqual({"a", "b"}, set(results))
         self.assertIn("fetched", results.values())
 
+    def test_wait_bounded_by_stage_budget(self):
+        # 先行者占坑不释放、阶段预算近尾：等待方必须按
+        # max(1s, min(10s, 阶段剩余)) 止损，而非固定 10s 后再重复发请求。
+        from app.utils.provider_http import stage_execution_context
+        context = DiscoveryContext("task-1")
+        url = "https://example.com/slow"
+        self.assertIsNone(
+            context.acquire_fetch_slot(url, request_profile="html_get"))
+        started = time.monotonic()
+        with stage_execution_context("slow_stage", 0.4):
+            cached, follower = context.await_singleflight_leader(
+                url, request_profile="html_get")
+        elapsed = time.monotonic() - started
+        self.assertIsNone(cached)
+        self.assertTrue(follower)
+        self.assertGreaterEqual(elapsed, 0.9, "floor 1s 允许快响应复用")
+        self.assertLess(elapsed, 3.0, "旧行为会固定等满 10 秒")
+
     def test_leader_failure_releases_slot(self):
         context = DiscoveryContext("task-1")
         waiter = context.acquire_fetch_slot("https://example.com/y", request_profile="html_get")

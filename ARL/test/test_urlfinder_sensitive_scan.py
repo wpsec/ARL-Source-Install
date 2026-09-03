@@ -372,5 +372,60 @@ class TestUrlfinderSensitiveScan(unittest.TestCase):
         self.assertEqual(0, results.metrics["duplicate_record_count"])
 
 
+class _FakeEntry(object):
+    def __init__(self, status):
+        self.status = status
+
+
+class _FakeLedger(object):
+    def __init__(self, covered_targets):
+        self._covered = set(covered_targets)
+        self.finished = []
+
+    def get(self, key):
+        # key 形态 "k|wih_sensitive_target|<target>"
+        target = key.split("|", 2)[-1]
+        if target in self._covered:
+            return _FakeEntry("covered")
+        return None
+
+    def finish(self, key, status, **_kwargs):
+        if status == "covered":
+            self.finished.append(key.split("|", 2)[-1])
+
+
+class _FakeContext(object):
+    def __init__(self, ledger):
+        self.ledger = ledger
+
+    def idempotency_key(self, stage, target, scan_profile="default", input_signature=""):
+        return "k|{}|{}".format(stage, target)
+
+
+class TestSensitiveLedgerRecovery(unittest.TestCase):
+    def test_covered_targets_skipped_and_success_marks_covered(self):
+        ledger = _FakeLedger(["https://example.com/api/done"])
+        scanner = UrlfinderSensitiveScanner(
+            ["https://example.com"], [],
+            discovery_context=_FakeContext(ledger))
+        kept, meta = scanner._filter_covered_targets([
+            "https://example.com/api/done",
+            "https://example.com/api/todo",
+        ])
+        self.assertEqual(["https://example.com/api/todo"], kept)
+        self.assertEqual(1, meta["skipped_covered"])
+
+        scanner._ledger_context = meta
+        scanner._mark_batch_covered(["https://example.com/api/todo"])
+        self.assertEqual(["https://example.com/api/todo"], ledger.finished)
+
+    def test_no_context_keeps_targets_untouched(self):
+        scanner = UrlfinderSensitiveScanner(["https://example.com"], [])
+        kept, meta = scanner._filter_covered_targets(["https://example.com/a"])
+        self.assertEqual(["https://example.com/a"], kept)
+        self.assertEqual({}, meta)
+        scanner._mark_batch_covered(["https://example.com/a"])  # 无账本不炸
+
+
 if __name__ == "__main__":
     unittest.main()

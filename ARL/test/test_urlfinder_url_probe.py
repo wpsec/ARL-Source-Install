@@ -229,6 +229,57 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertEqual(inserted_count, 0)
         mock_conn_db.assert_not_called()
 
+    @patch("app.services.urlfinder_url_probe.page_fetch")
+    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
+    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    def test_candidate_graph_urls_feed_probe(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
+        # "发布了却无人消费"的断链修复：url/page 候选进入探测源，探后状态迁移。
+        import types
+
+        fake_db = _FakeDb()
+        mock_conn_db.side_effect = fake_db.collection
+        mock_dns_policy.return_value = (
+            True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
+        mock_page_fetch.return_value = {
+            "https://example.com/from/graph": {
+                "url": "https://example.com/from/graph",
+                "title": "ok",
+                "content_length": 9,
+                "status_code": 200,
+            }
+        }
+
+        candidates = [
+            types.SimpleNamespace(candidate="https://example.com/from/graph",
+                                  candidate_type="url", status="discovered"),
+            types.SimpleNamespace(candidate="https://example.com/covered",
+                                  candidate_type="url", status="covered"),
+            types.SimpleNamespace(candidate="https://example.com/js.js",
+                                  candidate_type="js", status="discovered"),
+        ]
+
+        class _GraphCtx:
+            def __init__(self):
+                self.candidate_registry = types.SimpleNamespace(
+                    values=lambda: list(candidates))
+                self.marked = []
+
+            def mark_candidate_status(self, candidate, ctype, status, **_kw):
+                self.marked.append((candidate, status))
+
+        ctx = _GraphCtx()
+        run_urlfinder_url_probe(
+            task_id="task_1",
+            sites=["https://example.com"],
+            wih_records=[],
+            discovery_context=ctx,
+        )
+
+        probed = mock_page_fetch.call_args[0][0]
+        self.assertIn("https://example.com/from/graph", probed)
+        self.assertNotIn("https://example.com/covered", probed)
+        self.assertIn(("https://example.com/from/graph", "covered"), ctx.marked)
+
 
 if __name__ == "__main__":
     unittest.main()
