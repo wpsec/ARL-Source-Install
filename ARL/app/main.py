@@ -19,7 +19,6 @@ from flask import Flask
 from flask_restx import Api
 
 from app import routes
-from app.utils import arl_update
 
 # 创建 Flask 应用实例
 arl_app = Flask(__name__)
@@ -106,15 +105,18 @@ api.add_namespace(routes.nuclei_result_ns)     # Nuclei 扫描结果
 api.add_namespace(routes.wih_ns)               # WIH (Web Information Hunter) 
 api.add_namespace(routes.wih_endpoint_ns)      # WIH 接口提取
 api.add_namespace(routes.waf_host_ns)          # WAF 识别结果
-api.add_namespace(routes.ai_pen_test_ns)       # AI 渗透测试结果
 api.add_namespace(routes.asset_wih_ns)         # 资产 WIH
 api.add_namespace(routes.api_console_ns)       # 配置中心
 
-# 执行系统更新检查
-arl_update()
+# 导入期不再执行 arl_update：生产由 start_web.sh 在 gunicorn 前显式调用
+# app.tools.arl_bootstrap，避免任何仅导入本模块的进程带上 Mongo 写副作用。
 
 # 应用入口 - 仅用于开发调试
 if __name__ == '__main__':
+    # 开发直跑保留启动前修复语义（幂等由 arl_update 锁文件保证）。
+    from app.utils import arl_update
+
+    arl_update()
     # 启动开发服务器
     # debug=True: 开启调试模式，代码修改后自动重载
     # port=5018: 监听端口

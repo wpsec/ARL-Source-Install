@@ -24,7 +24,6 @@ import time
 from app import utils
 from app.modules import TaskStatus, TaskTag, TaskType, CeleryAction
 from app.config import Config
-from app import celerytask
 
 logger = utils.get_logger()
 _QUEUE_AVAILABILITY_CACHE = {}
@@ -37,11 +36,9 @@ _WEB_HEAVY_OPTION_KEYS = (
     "afrog_scan",
     "web_info_hunter",
     "penetration_test",
-    "ai_penetration_test",
 )
 _DISABLED_PENETRATION_OPTION_KEYS = (
     "penetration_test",
-    "ai_penetration_test",
     "waf_bypass",
 )
 _DISABLED_PENETRATION_REASON = "渗透测试功能已临时下线，后端统一强制关闭相关开关"
@@ -49,39 +46,13 @@ _DISABLED_PENETRATION_REASON = "渗透测试功能已临时下线，后端统一
 
 def apply_arch_compat_options(options):
     """
-    非 x86_64 环境下，自动关闭当前仓库内仅提供 x86_64 二进制支持的功能开关。
+    保留任务选项，架构差异由镜像构建阶段提供对应的工具实现。
+
+    生产镜像会按目标架构编译 MassDNS，因此 ARM64 不应再静默关闭域名能力；
+    若工具构建或运行失败，应由具体阶段记录失败并按既有策略处理。
     """
     options_cp = options.copy()
-    notices = []
-
-    if utils.is_x86_64_arch():
-        return options_cp, notices
-
-    arch = utils.get_runtime_arch()
-    disable_reason_map = {
-        "domain_brute": "massdns 当前仅提供 x86_64 二进制",
-        "alt_dns": "massdns 当前仅提供 x86_64 二进制",
-    }
-
-    for option_key, reason in disable_reason_map.items():
-        if not options_cp.get(option_key):
-            continue
-
-        options_cp[option_key] = False
-        notices.append({
-            "option": option_key,
-            "reason": reason
-        })
-
-    if notices:
-        detail = ["{}={}".format(item["option"], "false") for item in notices]
-        logger.warning(
-            "arch compatibility mode enabled arch:{} auto disable options: {}".format(
-                arch, ", ".join(detail)
-            )
-        )
-
-    return options_cp, notices
+    return options_cp, []
 
 
 def strip_disabled_penetration_options(options):
@@ -113,6 +84,8 @@ def _refresh_dispatch_queue_cache(timeout_sec=1.5):
     available = set()
 
     try:
+        from app import celerytask
+
         inspect = celerytask.celery.control.inspect(timeout=timeout_sec)
         active_queues = inspect.active_queues() or {}
         for _, queue_items in active_queues.items():
@@ -405,6 +378,8 @@ def _resolve_queue_task(queue_name):
     """
     根据队列名返回对应的 Celery 任务入口。
     """
+    from app import celerytask
+
     queue_name = str(queue_name or "").strip().lower()
     if queue_name == "arlheavy":
         return celerytask.arl_task_heavy
@@ -578,6 +553,8 @@ def submit_task(task_data):
     }
 
     try:
+        from app import celerytask
+
         queue_name = "arltask"
         queue_reason = ""
         queue_task = celerytask.arl_task

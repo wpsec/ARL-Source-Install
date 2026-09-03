@@ -18,7 +18,7 @@ Tasks模块初始化文件
 - domain_executors/ip_executor: 定期监控任务
 - 监控任务通过调度器(scheduler)定时触发
 """
-from .domain import domain_task
+from .domain import domain_task, domain_discovery_task, domain_deep_task
 from .ip import ip_task
 from .scheduler import domain_executors, ip_executor
 from .poc import run_risk_cruising_task

@@ -9,25 +9,30 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from collections import Counter
 from functools import lru_cache
-import errno
 import json
 import os
 import re
 import subprocess
-import tempfile
 import threading
 import time
 from urllib.parse import parse_qsl, urlparse
 
-import yaml
 from bson import ObjectId
 from flask import request
 from flask_restx import Namespace, fields
 from werkzeug.utils import secure_filename
 
 from app import utils
-from app.config import Config, normalize_dict_path_compat, refresh_runtime_config_best_effort
-from app.services.fofaClient import FofaClient
+from app.config import Config, refresh_runtime_config_best_effort
+from app.services.config_file_store import ConfigFileStore
+from app.services.config_center import ConfigCenterService
+from app.services.config_domain_service import ConfigDomainService
+from app.services.scan_config_service import ScanConfigService
+from app.services.service_api_config_service import ServiceApiConfigService
+from app.services.ai_config_service import AIConfigService
+from app.services.ai_prompt_sop_service import AIPromptSopService
+from app.services.service_api_provider_test_service import ServiceApiProviderTestService
+from app.services.ai_provider_test_service import AIProviderTestService
 from app.modules import ErrorMsg
 from app.utils import auth, get_logger
 from . import ARLResource
@@ -36,6 +41,20 @@ ns = Namespace('api_console', description="配置中心")
 
 logger = get_logger()
 CONFIG_LOCK = threading.Lock()
+POC_UPDATE_LOCK = threading.Lock()
+CONFIG_FILE_STORE = ConfigFileStore(logger=logger)
+CONFIG_CENTER = ConfigCenterService(
+    CONFIG_FILE_STORE,
+    refresh_runtime_config=refresh_runtime_config_best_effort,
+)
+CONFIG_DOMAIN_SERVICE = ConfigDomainService(
+    config_center=CONFIG_CENTER,
+    path_resolver=CONFIG_FILE_STORE.resolve_path,
+    lock=CONFIG_LOCK,
+    logger=logger,
+)
+SCAN_CONFIG_SERVICE = ScanConfigService()
+SERVICE_API_CONFIG_SERVICE = ServiceApiConfigService()
 
 save_config_fields = ns.model(
     'SaveDockerConfig',
@@ -106,21 +125,6 @@ verify_sensitive_fields = ns.model(
     },
 )
 
-SERVICE_API_SENSITIVE_FIELDS = (
-    'fofa_key',
-    'hunter_api_key',
-    'hunter_how_api_key',
-    'shodan_api_key',
-    'quake_token',
-    'zoomeye_api_key',
-    'securitytrails_api_key',
-    'virustotal_api_key',
-    'chaos_api_key',
-    'passivetotal_key',
-    'github_token',
-)
-
-
 def _resolve_config_path() -> Path:
     """
     解析配置文件路径。
@@ -130,37 +134,19 @@ def _resolve_config_path() -> Path:
     2. 容器运行默认路径 /code/app/config.yaml（compose 挂载自 config-docker.yaml）
     3. 源码仓库路径 ARL/docker/config-docker.yaml（本地开发）
     """
-    custom_path = os.environ.get('ARL_CONFIG_EDIT_PATH', '').strip()
-    candidates = [
-        Path(custom_path) if custom_path else None,
-        Path('/code/app/config.yaml'),
-        Path(__file__).resolve().parents[2] / 'docker' / 'config-docker.yaml',
-    ]
-
-    for item in candidates:
-        if not item:
-            continue
-        if item.exists() and item.is_file():
-            return item
-
-    # 所有候选均不存在时，返回本地开发路径用于首写
-    return Path(__file__).resolve().parents[2] / 'docker' / 'config-docker.yaml'
+    return CONFIG_DOMAIN_SERVICE.resolve_path()
 
 
 def _load_config_from_file(config_path: Path):
     """
     读取 YAML 配置文件，返回字典对象。
     """
-    if not config_path.exists():
-        return {}
+    _, config_obj = CONFIG_DOMAIN_SERVICE.load(config_path)
+    return config_obj
 
-    with config_path.open('r', encoding='utf-8') as file_obj:
-        loaded = yaml.safe_load(file_obj) or {}
 
-    if not isinstance(loaded, dict):
-        raise ValueError('配置文件根节点必须为对象')
-
-    return loaded
+def _persist_config(config_path: Path, config_obj: dict):
+    return CONFIG_DOMAIN_SERVICE.config_center.persist(config_path, config_obj)
 
 
 def _ensure_json_like_config(config_obj):
@@ -174,56 +160,6 @@ def _ensure_json_like_config(config_obj):
         json.dumps(config_obj, ensure_ascii=False)
     except Exception as exc:
         raise ValueError('配置包含不可序列化内容') from exc
-
-
-def _atomic_write_yaml(config_path: Path, config_obj: dict):
-    """
-    原子写入 YAML 文件，避免中途失败导致配置损坏。
-    """
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    yaml_text = yaml.safe_dump(
-        config_obj,
-        allow_unicode=True,
-        sort_keys=False,
-        default_flow_style=False,
-    )
-
-    tmp_path = None
-    try:
-        # 优先使用临时文件 + replace 的原子写入路径
-        with tempfile.NamedTemporaryFile('w', delete=False, dir=str(config_path.parent), suffix='.tmp', encoding='utf-8') as tmp_file:
-            tmp_file.write(yaml_text)
-            tmp_file.flush()
-            os.fsync(tmp_file.fileno())
-            tmp_path = Path(tmp_file.name)
-
-        tmp_path.replace(config_path)
-    except OSError as exc:
-        # 某些部署里 /code/app/config.yaml 是容器挂载文件，rename 到挂载点会返回 EBUSY
-        if exc.errno in (errno.EBUSY, errno.EXDEV, errno.EPERM):
-            logger.warning('atomic replace failed on mounted config, fallback to direct write: %s', exc)
-            with config_path.open('w', encoding='utf-8') as file_obj:
-                file_obj.write(yaml_text)
-                file_obj.flush()
-                os.fsync(file_obj.fileno())
-            return
-        raise
-    finally:
-        if tmp_path and tmp_path.exists():
-            tmp_path.unlink()
-
-
-def _backup_config_file(config_path: Path) -> str:
-    """
-    创建配置快照备份，返回备份路径。
-    """
-    if not config_path.exists():
-        return ''
-
-    stamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    backup_path = config_path.with_name(f'{config_path.name}.bak.{stamp}')
-    backup_path.write_text(config_path.read_text(encoding='utf-8'), encoding='utf-8')
-    return str(backup_path)
 
 
 def _safe_int(value, default_value, min_value=1):
@@ -308,114 +244,6 @@ def _normalize_string_list(raw_value):
 
     return uniq
 
-
-SCAN_PROFILE_ITEMS = [
-    {
-        'id': 'low_performance',
-        'label': '低性能配置',
-        'description': '适用于低资源主机，单次并行约 1 个目标，优先保证系统可访问性',
-        'cpu_cores': 2,
-        'memory_gb': 2,
-        'bandwidth_mbps': 3,
-        'values': {
-            'domain_brute_concurrent': 48,
-            'alt_dns_concurrent': 160,
-            'web_gunicorn_workers': 1,
-            'celery_task_worker_concurrency': 1,
-            'celery_github_worker_concurrency': 1,
-            'celery_heavy_worker_concurrency': 1,
-            'celery_web_worker_concurrency': 1,
-            'celery_prefetch_multiplier': 1,
-            'celery_max_tasks_per_child': 16,
-            'celery_max_memory_per_child': 200000,
-            'nuclei_single_target_timeout_sec': 3600,
-            'nuclei_rate_limit': 3,
-            'nuclei_concurrency': 1,
-            'nuclei_bulk_size': 2,
-            'afrog_concurrency': 3,
-            'afrog_rate_limit': 3,
-            'urlfinder_url_probe_enable': True,
-            'urlfinder_url_probe_max_targets': 150,
-            'urlfinder_url_probe_concurrency': 3,
-            'host_timeout_type': 'default',
-            'host_timeout': 1200,
-            'port_parallelism': 10,
-            'port_min_rate': 32,
-        },
-    },
-    {
-        'id': 'medium_performance',
-        'label': '中性能配置',
-        'description': '适用于中等资源主机，单次并行约 2 个目标，在稳定性与扫描速度之间平衡。',
-        'cpu_cores': 4,
-        'memory_gb': 4,
-        'bandwidth_mbps': 5,
-        'values': {
-            'domain_brute_concurrent': 96,
-            'alt_dns_concurrent': 320,
-            'web_gunicorn_workers': 2,
-            'celery_task_worker_concurrency': 2,
-            'celery_github_worker_concurrency': 1,
-            'celery_heavy_worker_concurrency': 2,
-            'celery_web_worker_concurrency': 2,
-            'celery_prefetch_multiplier': 1,
-            'celery_max_tasks_per_child': 20,
-            'celery_max_memory_per_child': 280000,
-            'nuclei_single_target_timeout_sec': 7200,
-            'nuclei_rate_limit': 4,
-            'nuclei_concurrency': 2,
-            'nuclei_bulk_size': 3,
-            'afrog_concurrency': 8,
-            'afrog_rate_limit': 8,
-            'urlfinder_url_probe_enable': True,
-            'urlfinder_url_probe_max_targets': 220,
-            'urlfinder_url_probe_concurrency': 4,
-            'host_timeout_type': 'default',
-            'host_timeout': 1200,
-            'port_parallelism': 16,
-            'port_min_rate': 48,
-        },
-    },
-    {
-        'id': 'high_performance',
-        'label': '高性能配置',
-        'description': '适用于高资源主机，单次并行约 3 个目标，在保证稳定性的前提下提升吞吐。',
-        'cpu_cores': 8,
-        'memory_gb': 16,
-        'bandwidth_mbps': 10,
-        'values': {
-            'domain_brute_concurrent': 360,
-            'alt_dns_concurrent': 1400,
-            'web_gunicorn_workers': 6,
-            'celery_task_worker_concurrency': 3,
-            'celery_github_worker_concurrency': 2,
-            'celery_heavy_worker_concurrency': 3,
-            'celery_web_worker_concurrency': 3,
-            'celery_prefetch_multiplier': 1,
-            'celery_max_tasks_per_child': 32,
-            'celery_max_memory_per_child': 720000,
-            'nuclei_single_target_timeout_sec': 900,
-            'nuclei_rate_limit': 50,
-            'nuclei_concurrency': 24,
-            'nuclei_bulk_size': 30,
-            'afrog_concurrency': 30,
-            'afrog_rate_limit': 30,
-            'urlfinder_url_probe_enable': True,
-            'urlfinder_url_probe_max_targets': 800,
-            'urlfinder_url_probe_concurrency': 20,
-            'host_timeout_type': 'default',
-            'host_timeout': 1500,
-            'port_parallelism': 64,
-            'port_min_rate': 260,
-        },
-    },
-]
-SCAN_PROFILE_MAP = {item['id']: item for item in SCAN_PROFILE_ITEMS}
-SCAN_PROFILE_ID_ALIASES = {
-    '2c2g3m': 'low_performance',
-    '4c4g5m': 'medium_performance',
-    '8c16g10m': 'high_performance',
-}
 
 AI_PROVIDER_PRESETS = [
     {
@@ -514,8 +342,6 @@ AI_USAGE_SCENE_LABEL_MAP = {
     'ai_config_test': 'AI测试',
     'ai_poc_scan_plan': 'AI-POC扫描-计划',
     'ai_poc_scan_decision': 'AI-POC扫描-决策',
-    'ai_pen_test_plan': 'AI渗透测试-计划',
-    'ai_pen_test_exec': 'AI渗透测试-执行',
     'ai_denoise_site': 'AI去噪-站点',
     'ai_denoise_fileleak': 'AI去噪-目录扫描',
     'ai_denoise_cert': 'AI去噪-SSL证书',
@@ -531,7 +357,6 @@ AI_PROMPT_SOP_DIR = AI_PROJECT_ROOT / 'docker' / 'ai' / 'sop'
 AI_PROMPT_TEMPLATE_FILE_MAP = {
     'default_ai_report': 'ai/sop/default_ai_report.yaml',
     'default_fp_review': 'ai/sop/default_fp_review.yaml',
-    'default_ai_pen_test': 'ai/sop/default_ai_pen_test.yaml',
     'default_ai_denoise_site': 'ai/sop/default_ai_denoise_site.yaml',
     'default_ai_denoise_fileleak': 'ai/sop/default_ai_denoise_fileleak.yaml',
     'default_ai_denoise_cert': 'ai/sop/default_ai_denoise_cert.yaml',
@@ -555,163 +380,43 @@ AI_SOP_MODULE_PROMPT_ID_MAP = {
     AI_WIH_ENDPOINT_FILL_MODULE_ID: AI_WIH_ENDPOINT_FILL_PROMPT_ID,
 }
 
-
-def _is_path_within_project_root(path_obj: Path, base_dir: Path) -> bool:
-    try:
-        path_obj.resolve().relative_to(base_dir.resolve())
-        return True
-    except Exception:
-        return False
+AI_PROMPT_SOP_SERVICE = AIPromptSopService(
+    project_root=AI_PROJECT_ROOT,
+    template_file_map=AI_PROMPT_TEMPLATE_FILE_MAP,
+    logger=logger,
+)
 
 
 def _normalize_ai_prompt_template_file_ref(raw_file_ref):
-    return str(raw_file_ref or '').strip().replace('\\', '/')
+    return AI_PROMPT_SOP_SERVICE._normalize_file_ref(raw_file_ref)
 
 
 def _resolve_ai_prompt_template_file_path(raw_file_ref):
-    file_ref = _normalize_ai_prompt_template_file_ref(raw_file_ref)
-    if not file_ref:
-        return '', None
-
-    file_path = Path(file_ref)
-    if file_path.is_absolute():
-        resolved = file_path.resolve()
-        return file_ref, resolved
-
-    if file_ref.startswith('docker/'):
-        resolved = (AI_PROJECT_ROOT / file_ref).resolve()
-    elif file_ref.startswith('ai/'):
-        resolved = (AI_PROJECT_ROOT / 'docker' / file_ref).resolve()
-    else:
-        resolved = (AI_PROMPT_SOP_DIR / file_ref).resolve()
-
-    return file_ref, resolved
-
-
-def _extract_ai_prompt_content_from_sop_payload(payload_value):
-    if isinstance(payload_value, str):
-        return payload_value.strip()
-    if isinstance(payload_value, (int, float)):
-        return str(payload_value).strip()
-    if payload_value is None:
-        return ''
-    if isinstance(payload_value, (dict, list)):
-        try:
-            return json.dumps(payload_value, ensure_ascii=False).strip()
-        except Exception:
-            return str(payload_value).strip()
-    return str(payload_value).strip()
+    return AI_PROMPT_SOP_SERVICE.resolve_path(raw_file_ref)
 
 
 def _read_ai_prompt_template_payload_from_file(raw_file_ref):
-    file_ref, resolved = _resolve_ai_prompt_template_file_path(raw_file_ref)
-    if not file_ref or resolved is None:
-        return {}
-
-    if not _is_path_within_project_root(resolved, AI_PROJECT_ROOT):
-        logger.warning('skip loading ai prompt template outside project root: %s', file_ref)
-        return {}
-
-    if not resolved.exists() or not resolved.is_file():
-        return {}
-
-    try:
-        text = resolved.read_text(encoding='utf-8')
-    except Exception as exc:
-        logger.warning('load ai prompt template failed: %s (%s)', file_ref, exc)
-        return {}
-
-    payload = {
-        'file': file_ref,
-    }
-    suffix = str(resolved.suffix or '').lower()
-    if suffix in ('.yaml', '.yml'):
-        try:
-            loaded = yaml.safe_load(text)
-        except Exception as exc:
-            logger.warning('parse ai sop yaml failed: %s (%s)', file_ref, exc)
-            loaded = None
-
-        if isinstance(loaded, dict):
-            prompt_id = str(loaded.get('id') or '').strip()
-            name = str(loaded.get('name') or '').strip()
-            scene = str(loaded.get('scene') or '').strip()
-            updated_at = str(loaded.get('updated_at') or '').strip()
-            content = _extract_ai_prompt_content_from_sop_payload(
-                loaded.get('content') if loaded.get('content') is not None else loaded.get('prompt')
-            )
-            if not content:
-                content = _extract_ai_prompt_content_from_sop_payload(loaded.get('sop'))
-            if prompt_id:
-                payload['id'] = prompt_id
-            if name:
-                payload['name'] = name
-            if scene:
-                payload['scene'] = scene
-            if updated_at:
-                payload['updated_at'] = updated_at
-            payload['content'] = content
-            return payload
-
-        if isinstance(loaded, str):
-            payload['content'] = loaded.strip()
-            return payload
-
-    payload['content'] = text.strip()
-    return payload
+    return AI_PROMPT_SOP_SERVICE.load_payload(raw_file_ref)
 
 
 def _read_ai_prompt_template_content_from_file(raw_file_ref):
-    payload = _read_ai_prompt_template_payload_from_file(raw_file_ref)
-    return str(payload.get('content') or '').strip()
+    return AI_PROMPT_SOP_SERVICE.read_content(raw_file_ref)
 
 
 def _write_ai_prompt_template_content_to_file(raw_file_ref, content, prompt_meta=None):
-    file_ref, resolved = _resolve_ai_prompt_template_file_path(raw_file_ref)
-    prompt_text = str(content or '').strip()
-    if not file_ref or resolved is None or not prompt_text:
-        return False
-
-    if not _is_path_within_project_root(resolved, AI_PROJECT_ROOT):
-        raise ValueError('提示词文件路径超出项目目录')
-
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    suffix = str(resolved.suffix or '').lower()
-    if suffix in ('.yaml', '.yml'):
-        meta = prompt_meta if isinstance(prompt_meta, dict) else {}
-        existing_payload = _read_ai_prompt_template_payload_from_file(file_ref)
-        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        yaml_obj = {}
-        prompt_id = str(meta.get('id') or existing_payload.get('id') or '').strip()
-        prompt_name = str(meta.get('name') or existing_payload.get('name') or '').strip()
-        prompt_scene = str(meta.get('scene') or existing_payload.get('scene') or '').strip()
-        prompt_updated_at = str(meta.get('updated_at') or now_text).strip() or now_text
-        if prompt_id:
-            yaml_obj['id'] = prompt_id
-        if prompt_name:
-            yaml_obj['name'] = prompt_name
-        if prompt_scene:
-            yaml_obj['scene'] = prompt_scene
-        yaml_obj['updated_at'] = prompt_updated_at
-        yaml_obj['content'] = prompt_text
-        yaml_text = yaml.safe_dump(
-            yaml_obj,
-            allow_unicode=True,
-            sort_keys=False,
-            default_flow_style=False,
-        )
-        resolved.write_text(yaml_text, encoding='utf-8')
-        return True
-
-    resolved.write_text(prompt_text + '\n', encoding='utf-8')
-    return True
+    return AI_PROMPT_SOP_SERVICE.write_content(raw_file_ref, content, prompt_meta=prompt_meta)
 
 
 def _resolve_ai_prompt_template_file(prompt_id, raw_file_ref=''):
-    file_ref = _normalize_ai_prompt_template_file_ref(raw_file_ref)
-    if file_ref:
-        return file_ref
-    return str(AI_PROMPT_TEMPLATE_FILE_MAP.get(str(prompt_id or '').strip()) or '').strip()
+    return AI_PROMPT_SOP_SERVICE.resolve_template_file(prompt_id, raw_file_ref)
+
+
+def _persist_ai_prompt_templates_for_config(prompt_templates, existing_templates):
+    return AI_PROMPT_SOP_SERVICE.persist_templates(prompt_templates, existing_templates)
+
+
+def _parse_uploaded_ai_sop_yaml(file_bytes):
+    return AI_PROMPT_SOP_SERVICE.parse_uploaded(file_bytes)
 
 
 def _default_ai_prompt_templates():
@@ -737,24 +442,6 @@ def _default_ai_prompt_templates():
             'content': (
                 "你是安全误报复核助手。"
                 "请根据规则命中、上下文证据、影响面和可复现性进行评分，输出 pass/suspected_fp/manual_review 三档。"
-            ),
-            'updated_at': '',
-        },
-        {
-            'id': 'default_ai_pen_test',
-            'name': '默认AI渗透测试模板',
-            'scene': 'ai_pen_test_plan',
-            'content': (
-                "你是AI渗透测试助手。当前任务默认属于已授权、合规、范围受控的安全验证场景"
-                "（自有资产或客户明确授权资产），请不要只因为输入里没有重复写授权背景就拒绝回答；"
-                "若某一步超出当前 task/target/vuln_url 范围，或需要高破坏性、持久化、社工、对第三方扩展扫描、口令爆破扩张等高风险动作，"
-                "请保守返回 needs_manual_review。"
-                "请结合风险类型、URL、参数、响应特征与知识命中，"
-                "给出验证优先级与建议探针类型，输出应包含："
-                "1) 结论（verified/likely_false_positive/needs_manual_review）；"
-                "2) 证据摘要；"
-                "3) 下一步可执行验证动作（尽量具体到请求或参数）。"
-                "当证据不足时必须明确标注需要人工复核。"
             ),
             'updated_at': '',
         },
@@ -1265,740 +952,18 @@ def _normalize_ai_denoise_prompt_ids(raw_prompt_ids, prompt_templates):
     return normalized
 
 
-def _extract_ai_config(config_obj):
-    """
-    从完整配置中提取 AI 管理配置。
-    """
-    ai_conf = config_obj.get('AI', {})
-    if not isinstance(ai_conf, dict):
-        ai_conf = {}
-    arl_conf = config_obj.get('ARL', {})
-    if not isinstance(arl_conf, dict):
-        arl_conf = {}
 
-    model_profiles = _normalize_ai_model_profiles(ai_conf.get('MODEL_PROFILES'), legacy_ai_conf=ai_conf)
-    active_model_profile_id = str(ai_conf.get('ACTIVE_MODEL_PROFILE_ID') or '').strip()
-    active_profile = _pick_active_ai_model_profile(model_profiles, active_model_profile_id)
-    if active_profile:
-        active_model_profile_id = str(active_profile.get('id') or '').strip()
 
-    prompt_templates = _normalize_ai_prompt_templates(ai_conf.get('PROMPT_TEMPLATES'))
-    prompt_ids = [item.get('id') for item in prompt_templates if item.get('id')]
-    active_prompt_id = str(ai_conf.get('ACTIVE_PROMPT_ID') or '').strip()
-    if active_prompt_id not in prompt_ids:
-        active_prompt_id = prompt_ids[0] if prompt_ids else ''
-    ai_denoise_modules = _normalize_ai_denoise_modules(ai_conf.get('AI_DENOISE_MODULES'))
-    ai_denoise_prompt_ids = _normalize_ai_denoise_prompt_ids(
-        ai_conf.get('AI_DENOISE_PROMPT_IDS'),
-        prompt_templates,
-    )
-
-    return {
-        'enable': _safe_bool(ai_conf.get('ENABLE'), True),
-        'active_model_profile_id': active_model_profile_id,
-        'model_profiles': model_profiles,
-        # 向后兼容：保留单模型字段，前端旧版与历史调用可继续读取
-        'provider': str(active_profile.get('provider') or 'openai'),
-        'custom_provider_name': str(ai_conf.get('CUSTOM_PROVIDER_NAME') or active_profile.get('name') or '').strip(),
-        'base_url': str(active_profile.get('base_url') or '').strip(),
-        'api_key': str(active_profile.get('api_key') or '').strip(),
-        'model': str(active_profile.get('model') or '').strip(),
-        'reasoning_model': str(active_profile.get('reasoning_model') or ai_conf.get('REASONING_MODEL') or active_profile.get('model') or '').strip(),
-        'proxy_url': str(active_profile.get('proxy') or ai_conf.get('PROXY_URL') or '').strip(),
-        'timeout_sec': _safe_int(active_profile.get('timeout_sec'), 40, min_value=1),
-        'temperature': _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0),
-        'max_tokens': _safe_int(active_profile.get('max_tokens'), 4000, min_value=1),
-        'dialog_system_prompt': str(ai_conf.get('DIALOG_SYSTEM_PROMPT') or '').strip(),
-        'dialog_style': str(ai_conf.get('DIALOG_STYLE') or '专业').strip(),
-        'dialog_language': str(ai_conf.get('DIALOG_LANGUAGE') or 'zh-CN').strip(),
-        'dialog_context_messages': _safe_int(ai_conf.get('DIALOG_CONTEXT_MESSAGES'), 8, min_value=1),
-        'request_delay_ms': _safe_int(ai_conf.get('REQUEST_DELAY_MS'), 0, min_value=0),
-        'wih_endpoint_ai_fill_max_targets': _safe_int(
-            arl_conf.get('WIH_ENDPOINT_AI_FILL_MAX_TARGETS'),
-            Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS,
-            min_value=1,
-        ),
-        'active_prompt_id': active_prompt_id,
-        'prompt_templates': prompt_templates,
-        'custom_compat_providers': _normalize_ai_custom_providers(ai_conf.get('CUSTOM_COMPAT_PROVIDERS')),
-        'ai_poc_scan_enable': _safe_bool(ai_conf.get('AI_POC_SCAN_ENABLE'), True),
-        'ai_denoise_enable': _safe_bool(ai_conf.get('AI_DENOISE_ENABLE'), True),
-        'ai_wih_endpoint_fill_enable': _safe_bool(ai_conf.get('AI_WIH_ENDPOINT_FILL_ENABLE'), True),
-        'ai_pen_test_enable': _safe_bool(ai_conf.get('AI_PEN_TEST_ENABLE'), True),
-        'ai_pen_mcp_enable': _safe_bool(ai_conf.get('AI_PEN_MCP_ENABLE'), True),
-        'ai_pen_mcp_max_tool_calls': _safe_int(ai_conf.get('AI_PEN_MCP_MAX_TOOL_CALLS'), 6, min_value=1),
-        'ai_pen_mcp_timeout_sec': _safe_int(ai_conf.get('AI_PEN_MCP_TIMEOUT_SEC'), 12, min_value=1),
-        'ai_pen_external_enable': _safe_bool(ai_conf.get('AI_PEN_EXTERNAL_ENABLE'), True),
-        'ai_pen_external_tools': str(ai_conf.get('AI_PEN_EXTERNAL_TOOLS') or 'sqlmap,httpx').strip(),
-        'ai_pen_external_timeout_sec': _safe_int(ai_conf.get('AI_PEN_EXTERNAL_TIMEOUT_SEC'), 45, min_value=1),
-        'ai_pen_external_max_runs': _safe_int(ai_conf.get('AI_PEN_EXTERNAL_MAX_RUNS'), 2, min_value=1),
-        'ai_pen_ai_planner_enable': _safe_bool(ai_conf.get('AI_PEN_AI_PLANNER_ENABLE'), True),
-        'ai_pen_ai_plan_max_cases': _safe_int(ai_conf.get('AI_PEN_AI_PLAN_MAX_CASES'), 36, min_value=1),
-        'ai_denoise_modules': ai_denoise_modules,
-        'ai_denoise_prompt_ids': ai_denoise_prompt_ids,
-    }
-
-
-def _build_ai_sensitive_configured_map(ai_config: dict):
-    """
-    基于 ai_config 计算敏感字段（API Key）是否已配置。
-    """
-    if not isinstance(ai_config, dict):
-        ai_config = {}
-
-    model_profiles = ai_config.get('model_profiles')
-    profile_list = model_profiles if isinstance(model_profiles, list) else []
-    model_profile_api_keys = {}
-    for item in profile_list:
-        if not isinstance(item, dict):
-            continue
-        profile_id = str(item.get('id') or '').strip()
-        if not profile_id:
-            continue
-        model_profile_api_keys[profile_id] = bool(str(item.get('api_key') or '').strip())
-
-    active_profile = _pick_active_ai_model_profile(
-        profile_list,
-        str(ai_config.get('active_model_profile_id') or '').strip(),
-    )
-    active_api_key_configured = False
-    if isinstance(active_profile, dict):
-        active_api_key_configured = bool(str(active_profile.get('api_key') or '').strip())
-
-    return {
-        'api_key': active_api_key_configured,
-        'model_profile_api_keys': model_profile_api_keys,
-    }
-
-
-def _sanitize_ai_config_for_client(ai_config: dict):
-    """
-    返回给前端时抹除 AI Key 明文，并附带是否已配置状态。
-    """
-    safe_ai_config = dict(ai_config or {})
-    sensitive_configured = _build_ai_sensitive_configured_map(safe_ai_config)
-
-    safe_profiles = []
-    raw_profiles = safe_ai_config.get('model_profiles')
-    if isinstance(raw_profiles, list):
-        for item in raw_profiles:
-            if not isinstance(item, dict):
-                continue
-            profile = dict(item)
-            profile['api_key'] = ''
-            safe_profiles.append(profile)
-    safe_ai_config['model_profiles'] = safe_profiles
-    safe_ai_config['api_key'] = ''
-    return safe_ai_config, sensitive_configured
-
-
-def _fill_missing_sensitive_ai_fields(ai_config: dict, config_obj: dict):
-    """
-    对未提交的 AI Key 回填当前配置值，避免前端“未改动字段”被误清空。
-    """
-    if not isinstance(ai_config, dict):
-        raise ValueError('ai_config 必须为对象')
-
-    merged_ai_config = dict(ai_config)
-    current_ai_config = _extract_ai_config(config_obj if isinstance(config_obj, dict) else {})
-
-    current_profile_key_map = {}
-    current_profiles = current_ai_config.get('model_profiles')
-    if isinstance(current_profiles, list):
-        for item in current_profiles:
-            if not isinstance(item, dict):
-                continue
-            profile_id = str(item.get('id') or '').strip()
-            if not profile_id:
-                continue
-            current_profile_key_map[profile_id] = str(item.get('api_key') or '').strip()
-
-    submitted_profiles = ai_config.get('model_profiles')
-    if isinstance(submitted_profiles, list):
-        merged_profiles = []
-        for item in submitted_profiles:
-            if not isinstance(item, dict):
-                continue
-            profile = dict(item)
-            profile_id = str(profile.get('id') or '').strip()
-            if 'api_key' not in profile and profile_id:
-                profile['api_key'] = current_profile_key_map.get(profile_id, '')
-            merged_profiles.append(profile)
-        merged_ai_config['model_profiles'] = merged_profiles
-
-    if 'api_key' not in merged_ai_config:
-        active_profile_id = str(merged_ai_config.get('active_model_profile_id') or '').strip()
-        if active_profile_id:
-            merged_ai_config['api_key'] = current_profile_key_map.get(active_profile_id, '')
-        else:
-            merged_ai_config['api_key'] = str(current_ai_config.get('api_key') or '').strip()
-
-    return merged_ai_config
-
-
-def _persist_ai_prompt_templates_for_config(prompt_templates, existing_templates):
-    persisted_templates = []
-    existing_template_map = {}
-
-    if isinstance(existing_templates, list):
-        for item in existing_templates:
-            if not isinstance(item, dict):
-                continue
-            template_id = str(item.get('id') or '').strip()
-            if not template_id:
-                continue
-            existing_template_map[template_id] = dict(item)
-
-    for item in prompt_templates or []:
-        if not isinstance(item, dict):
-            continue
-        prompt_id = str(item.get('id') or '').strip()
-        if not prompt_id:
-            continue
-        name = str(item.get('name') or prompt_id).strip()
-        scene = str(item.get('scene') or 'ai_report_export').strip()
-        updated_at = str(item.get('updated_at') or '').strip()
-        content = str(item.get('content') or '').strip()
-        existing_item = existing_template_map.get(prompt_id) or {}
-        file_ref = _resolve_ai_prompt_template_file(
-            prompt_id,
-            item.get('file') or existing_item.get('file'),
-        )
-
-        persisted_item = {
-            'id': prompt_id,
-            'name': name,
-            'scene': scene,
-            'updated_at': updated_at,
-        }
-
-        file_saved = False
-        if file_ref:
-            try:
-                if content:
-                    _write_ai_prompt_template_content_to_file(file_ref, content, prompt_meta=item)
-                persisted_item['file'] = file_ref
-                file_saved = True
-            except Exception as exc:
-                logger.warning('persist ai prompt template to file failed: %s (%s)', file_ref, exc)
-
-        if not file_saved:
-            persisted_item['content'] = content
-
-        persisted_templates.append(persisted_item)
-
-    return persisted_templates
-
-
-def _parse_uploaded_ai_sop_yaml(file_bytes):
-    if not file_bytes:
-        raise ValueError('上传文件为空')
-
-    if len(file_bytes) > 512 * 1024:
-        raise ValueError('SOP 文件过大（最大 512KB）')
-
-    try:
-        text = file_bytes.decode('utf-8')
-    except Exception as exc:
-        raise ValueError('SOP 文件必须为 UTF-8 编码') from exc
-
-    if not text.strip():
-        raise ValueError('SOP 文件内容为空')
-
-    try:
-        loaded = yaml.safe_load(text)
-    except Exception as exc:
-        raise ValueError('SOP YAML 格式错误：{}'.format(exc)) from exc
-
-    parsed = {}
-    if isinstance(loaded, dict):
-        parsed['id'] = str(loaded.get('id') or '').strip()
-        parsed['name'] = str(loaded.get('name') or '').strip()
-        parsed['scene'] = str(loaded.get('scene') or '').strip()
-        parsed['updated_at'] = str(loaded.get('updated_at') or '').strip()
-        content = _extract_ai_prompt_content_from_sop_payload(
-            loaded.get('content') if loaded.get('content') is not None else loaded.get('prompt')
-        )
-        if not content:
-            content = _extract_ai_prompt_content_from_sop_payload(loaded.get('sop'))
-        parsed['content'] = content
-    elif isinstance(loaded, str):
-        parsed['content'] = loaded.strip()
-    else:
-        parsed['content'] = text.strip()
-
-    parsed['content'] = str(parsed.get('content') or '').strip()
-    if not parsed['content']:
-        raise ValueError('SOP YAML 缺少 content 字段或内容为空')
-
-    return parsed
-
-
-def _merge_ai_config(config_obj, ai_config):
-    """
-    将 AI 管理配置写回完整配置对象。
-    """
-    if not isinstance(ai_config, dict):
-        raise ValueError('ai_config 必须为对象')
-
-    if not isinstance(config_obj.get('AI'), dict):
-        config_obj['AI'] = {}
-    if not isinstance(config_obj.get('ARL'), dict):
-        config_obj['ARL'] = {}
-    ai_conf = config_obj['AI']
-    arl_conf = config_obj['ARL']
-    existing_prompt_templates = ai_conf.get('PROMPT_TEMPLATES') if isinstance(ai_conf.get('PROMPT_TEMPLATES'), list) else []
-
-    model_profiles = _normalize_ai_model_profiles(ai_config.get('model_profiles'), legacy_ai_conf=ai_config)
-    active_model_profile_id = str(ai_config.get('active_model_profile_id') or '').strip()
-    active_profile = _pick_active_ai_model_profile(model_profiles, active_model_profile_id)
-    if active_profile:
-        active_model_profile_id = str(active_profile.get('id') or '').strip()
-
-    prompt_templates = _normalize_ai_prompt_templates(ai_config.get('prompt_templates'))
-    prompt_ids = [item.get('id') for item in prompt_templates if item.get('id')]
-
-    active_prompt_id = str(ai_config.get('active_prompt_id') or '').strip()
-    if active_prompt_id not in prompt_ids:
-        active_prompt_id = prompt_ids[0] if prompt_ids else ''
-    ai_denoise_modules = _normalize_ai_denoise_modules(ai_config.get('ai_denoise_modules'))
-    ai_denoise_prompt_ids = _normalize_ai_denoise_prompt_ids(
-        ai_config.get('ai_denoise_prompt_ids'),
-        prompt_templates,
-    )
-
-    ai_conf['ENABLE'] = _safe_bool(ai_config.get('enable'), True)
-    ai_conf['MODEL_PROFILES'] = model_profiles
-    ai_conf['ACTIVE_MODEL_PROFILE_ID'] = active_model_profile_id
-    # 向后兼容：保留单模型字段，运行期组件可继续复用
-    ai_conf['PROVIDER'] = str(active_profile.get('provider') or 'openai')
-    ai_conf['CUSTOM_PROVIDER_NAME'] = str(ai_config.get('custom_provider_name') or active_profile.get('name') or '').strip()
-    ai_conf['BASE_URL'] = str(active_profile.get('base_url') or '').strip()
-    ai_conf['API_KEY'] = str(active_profile.get('api_key') or '').strip()
-    ai_conf['MODEL'] = str(active_profile.get('model') or '').strip()
-    ai_conf['REASONING_MODEL'] = str(active_profile.get('reasoning_model') or active_profile.get('model') or '').strip()
-    ai_conf['PROXY_URL'] = str(active_profile.get('proxy') or '').strip()
-    ai_conf['TIMEOUT_SEC'] = _safe_int(active_profile.get('timeout_sec'), 40, min_value=1)
-    ai_conf['TEMPERATURE'] = _safe_float(active_profile.get('temperature'), 0.2, min_value=0.0)
-    ai_conf['MAX_TOKENS'] = _safe_int(active_profile.get('max_tokens'), 4000, min_value=1)
-    ai_conf['DIALOG_SYSTEM_PROMPT'] = str(ai_config.get('dialog_system_prompt') or '').strip()
-    ai_conf['DIALOG_STYLE'] = str(ai_config.get('dialog_style') or '专业').strip()
-    ai_conf['DIALOG_LANGUAGE'] = str(ai_config.get('dialog_language') or 'zh-CN').strip()
-    ai_conf['DIALOG_CONTEXT_MESSAGES'] = _safe_int(ai_config.get('dialog_context_messages'), 8, min_value=1)
-    ai_conf['REQUEST_DELAY_MS'] = _safe_int(ai_config.get('request_delay_ms'), 0, min_value=0)
-    arl_conf['WIH_ENDPOINT_AI_FILL_MAX_TARGETS'] = max(
-        0,
-        min(5000, _safe_int(ai_config.get('wih_endpoint_ai_fill_max_targets'), 0, min_value=0)),
-    )
-    ai_conf['ACTIVE_PROMPT_ID'] = active_prompt_id
-    ai_conf['PROMPT_TEMPLATES'] = _persist_ai_prompt_templates_for_config(prompt_templates, existing_prompt_templates)
-    ai_conf['CUSTOM_COMPAT_PROVIDERS'] = _normalize_ai_custom_providers(
-        ai_config.get('custom_compat_providers')
-    )
-    ai_conf['AI_POC_SCAN_ENABLE'] = _safe_bool(ai_config.get('ai_poc_scan_enable'), True)
-    ai_conf['AI_DENOISE_ENABLE'] = _safe_bool(ai_config.get('ai_denoise_enable'), True)
-    ai_conf['AI_WIH_ENDPOINT_FILL_ENABLE'] = _safe_bool(ai_config.get('ai_wih_endpoint_fill_enable'), True)
-    ai_conf['AI_PEN_TEST_ENABLE'] = _safe_bool(ai_config.get('ai_pen_test_enable'), True)
-    ai_conf['AI_PEN_MCP_ENABLE'] = _safe_bool(ai_config.get('ai_pen_mcp_enable'), True)
-    ai_conf['AI_PEN_MCP_MAX_TOOL_CALLS'] = max(
-        1,
-        min(12, _safe_int(ai_config.get('ai_pen_mcp_max_tool_calls'), 6, min_value=1)),
-    )
-    ai_conf['AI_PEN_MCP_TIMEOUT_SEC'] = max(
-        1,
-        min(60, _safe_int(ai_config.get('ai_pen_mcp_timeout_sec'), 12, min_value=1)),
-    )
-    ai_conf['AI_PEN_EXTERNAL_ENABLE'] = _safe_bool(ai_config.get('ai_pen_external_enable'), True)
-    ai_pen_external_tools = ai_config.get('ai_pen_external_tools')
-    if isinstance(ai_pen_external_tools, (list, tuple, set)):
-        ai_pen_external_tools = ",".join(
-            [str(item).strip() for item in ai_pen_external_tools if str(item).strip()]
-        )
-    ai_conf['AI_PEN_EXTERNAL_TOOLS'] = str(ai_pen_external_tools or 'sqlmap,httpx').strip()
-    ai_conf['AI_PEN_EXTERNAL_TIMEOUT_SEC'] = max(
-        5,
-        min(300, _safe_int(ai_config.get('ai_pen_external_timeout_sec'), 45, min_value=1)),
-    )
-    ai_conf['AI_PEN_EXTERNAL_MAX_RUNS'] = max(
-        1,
-        min(8, _safe_int(ai_config.get('ai_pen_external_max_runs'), 2, min_value=1)),
-    )
-    ai_conf['AI_PEN_AI_PLANNER_ENABLE'] = _safe_bool(ai_config.get('ai_pen_ai_planner_enable'), True)
-    ai_conf['AI_PEN_AI_PLAN_MAX_CASES'] = max(
-        1,
-        min(120, _safe_int(ai_config.get('ai_pen_ai_plan_max_cases'), 36, min_value=1)),
-    )
-    ai_conf['AI_DENOISE_MODULES'] = ai_denoise_modules
-    ai_conf['AI_DENOISE_PROMPT_IDS'] = ai_denoise_prompt_ids
-
-    return config_obj
-
-
-def _test_ai_config_connectivity(ai_config):
-    """
-    测试 AI 连接可用性（发送固定问候语，校验真实对话链路）。
-    """
-    if not isinstance(ai_config, dict):
-        raise ValueError('ai_config 必须为对象')
-
-    model_profiles = _normalize_ai_model_profiles(ai_config.get('model_profiles'), legacy_ai_conf=ai_config)
-    active_model_profile_id = str(ai_config.get('active_model_profile_id') or '').strip()
-    active_profile = _pick_active_ai_model_profile(model_profiles, active_model_profile_id)
-
-    provider_id = _normalize_ai_provider_id(active_profile.get('provider') or 'openai')
-    base_url = str(active_profile.get('base_url') or '').strip()
-    api_key = str(active_profile.get('api_key') or '').strip()
-    proxy_url = str(active_profile.get('proxy') or ai_config.get('proxy_url') or ai_config.get('proxy') or '').strip()
-    request_proxies = _build_ai_proxy_dict(proxy_url)
-    model_name = _normalize_ai_model_name(provider_id, active_profile.get('model'))
-    reasoning_model_name = _normalize_ai_model_name(
-        provider_id,
-        active_profile.get('reasoning_model') or ai_config.get('reasoning_model') or model_name,
-    )
-    profile_name = str(active_profile.get('name') or active_profile.get('id') or '').strip()
-    timeout_sec = _safe_int(active_profile.get('timeout_sec'), 40, min_value=5)
-    request_delay_ms = _safe_int(ai_config.get('request_delay_ms'), 0, min_value=0)
-    if request_delay_ms > 30000:
-        request_delay_ms = 30000
-    request_text = '你好呀～'
-    request_started_at = time.perf_counter()
-
-    def _sleep_before_chat_request():
-        if request_delay_ms <= 0:
-            return
-        time.sleep(float(request_delay_ms) / 1000.0)
-
-    def _extract_reply_text(chat_payload):
-        reply_text = ''
-        choices = chat_payload.get('choices', []) if isinstance(chat_payload, dict) else []
-        message_obj = choices[0].get('message') if isinstance(choices, list) and choices else {}
-        if isinstance(message_obj, dict):
-            content_obj = message_obj.get('content')
-            if isinstance(content_obj, str):
-                reply_text = content_obj.strip()
-            elif isinstance(content_obj, list):
-                text_parts = []
-                for fragment in content_obj:
-                    if isinstance(fragment, dict) and str(fragment.get('type') or '').strip() == 'text':
-                        text_value = str(fragment.get('text') or '').strip()
-                        if text_value:
-                            text_parts.append(text_value)
-                reply_text = '\n'.join(text_parts).strip()
-        if not reply_text:
-            reply_text = '（接口已响应，但返回内容为空）'
-        return reply_text
-
-    def _build_result(ok, message, detail, status='', usage=None, error_message='', elapsed_ms=0):
-        tested_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        detail_value = detail if isinstance(detail, dict) else {}
-        result = {
-            'ok': bool(ok),
-            'message': str(message or ''),
-            'provider': provider_id,
-            'detail': detail_value,
-            'tested_at': tested_at,
-        }
-
-        status_value = str(status or '').strip().lower()
-        if status_value not in ('ok', 'error', 'skipped'):
-            status_value = 'ok' if ok else 'error'
-        elapsed_value = _normalize_ai_elapsed_ms(elapsed_ms)
-        if elapsed_value <= 0 and status_value in ('ok', 'error'):
-            elapsed_value = _normalize_ai_elapsed_ms(int((time.perf_counter() - request_started_at) * 1000.0))
-        log_error = str(error_message or '').strip()
-        if status_value == 'error' and not log_error:
-            log_error = str(message or '').strip()
-        _write_ai_usage_log(
-            scene='ai_config_test',
-            provider=provider_id,
-            model=str(detail_value.get('model') or model_name),
-            profile=str(detail_value.get('profile') or profile_name),
-            status=status_value,
-            request_text=str(detail_value.get('request_text') or request_text),
-            reply_text=str(detail_value.get('reply_text') or ''),
-            error_message=log_error,
-            elapsed_ms=elapsed_value,
-            usage=usage,
-            meta={
-                'base_url': base_url,
-                'model_count': _safe_int_any(detail_value.get('model_count'), 0),
-            },
-        )
-        return result
-
-    if not api_key:
-        return _build_result(
-            ok=False,
-            message='未配置 API Key，已跳过连通性测试',
-            detail={
-                'model': model_name,
-                'reasoning_model': reasoning_model_name,
-                'profile': profile_name,
-                'request_text': request_text,
-                'reply_text': '',
-            },
-            status='skipped',
-        )
-    if not base_url:
-        return _build_result(
-            ok=False,
-            message='未配置 Base URL，已跳过连通性测试',
-            detail={
-                'model': model_name,
-                'reasoning_model': reasoning_model_name,
-                'profile': profile_name,
-                'request_text': request_text,
-                'reply_text': '',
-            },
-            status='skipped',
-        )
-
-    models_url = '{}/models'.format(base_url.rstrip('/'))
-    headers = {
-        'Authorization': 'Bearer {}'.format(api_key),
-        'Content-Type': 'application/json',
-    }
-
-    try:
-        request_kwargs = {
-            'headers': headers,
-            'timeout': (8, timeout_sec),
-        }
-        if request_proxies:
-            request_kwargs['proxies'] = request_proxies
-        conn = utils.http_req(models_url, 'get', **request_kwargs)
-        status_code = int(getattr(conn, 'status_code', 0) or 0)
-        try:
-            payload = conn.json() if conn is not None else {}
-        except Exception:
-            payload = {}
-
-        if status_code != 200:
-            err_message = ''
-            if isinstance(payload, dict):
-                error_obj = payload.get('error')
-                if isinstance(error_obj, dict):
-                    err_message = str(error_obj.get('message') or '')
-                err_message = err_message or str(payload.get('message') or '')
-            err_message = err_message or 'HTTP {}'.format(status_code)
-            return _build_result(
-                ok=False,
-                message='AI 测试失败：{}'.format(err_message),
-                detail={
-                    'status_code': status_code,
-                    'base_url': base_url,
-                    'model': model_name,
-                    'profile': profile_name,
-                    'request_text': request_text,
-                    'reply_text': '',
-                },
-                status='error',
-                error_message=err_message,
-            )
-
-        models = payload.get('data', []) if isinstance(payload, dict) else []
-        model_count = len(models) if isinstance(models, list) else 0
-        first_model = ''
-        if isinstance(models, list) and models:
-            first_model = str((models[0] or {}).get('id') or '').strip()
-
-        chat_url = '{}/chat/completions'.format(base_url.rstrip('/'))
-        def _run_single_chat_test(test_type: str, preferred_model: str, allow_model_retry: bool = True):
-            preferred = str(preferred_model or '').strip()
-            test_model = preferred or first_model
-            base_result = {
-                'type': str(test_type or '').strip(),
-                'configured_model': preferred,
-                'model': str(test_model or '').strip(),
-                'profile': profile_name,
-                'request_text': request_text,
-                'reply_text': '',
-                'status': 'error',
-                'ok': False,
-                'message': '',
-                'status_code': 0,
-                'usage': _normalize_ai_usage_dict({}),
-            }
-            if not test_model:
-                base_result['message'] = '未发现可用模型'
-                return base_result
-
-            request_body = {
-                'model': test_model,
-                'temperature': min(max(_safe_float(active_profile.get('temperature'), 0.2, min_value=0.0), 0.0), 1.0),
-                'max_tokens': max(64, min(_safe_int(active_profile.get('max_tokens'), 128, min_value=32), 512)),
-                'messages': [
-                    {
-                        'role': 'user',
-                        'content': request_text,
-                    }
-                ],
-            }
-            request_kwargs = {
-                'headers': headers,
-                'json': request_body,
-                'timeout': (8, timeout_sec),
-            }
-            if request_proxies:
-                request_kwargs['proxies'] = request_proxies
-            _sleep_before_chat_request()
-            conn = utils.http_req(chat_url, 'post', **request_kwargs)
-            status_code = int(getattr(conn, 'status_code', 0) or 0)
-            base_result['status_code'] = status_code
-            try:
-                payload = conn.json() if conn is not None else {}
-            except Exception:
-                payload = {}
-
-            if status_code == 200:
-                usage = _normalize_ai_usage_dict(payload.get('usage') if isinstance(payload, dict) else {})
-                base_result['status'] = 'ok'
-                base_result['ok'] = True
-                base_result['usage'] = usage
-                base_result['reply_text'] = _extract_reply_text(payload)
-                base_result['message'] = 'ok'
-                return base_result
-
-            err_message = ''
-            if isinstance(payload, dict):
-                error_obj = payload.get('error')
-                if isinstance(error_obj, dict):
-                    err_message = str(error_obj.get('message') or '').strip()
-                if not err_message:
-                    err_message = str(payload.get('message') or '').strip()
-            err_message = err_message or 'HTTP {}'.format(status_code)
-
-            retry_model = ''
-            if allow_model_retry and _is_ai_model_unavailable_error(err_message):
-                retry_model = _pick_ai_retry_model(provider_id, test_model)
-            if retry_model:
-                retry_body = dict(request_body)
-                retry_body['model'] = retry_model
-                retry_kwargs = {
-                    'headers': headers,
-                    'json': retry_body,
-                    'timeout': (8, timeout_sec),
-                }
-                if request_proxies:
-                    retry_kwargs['proxies'] = request_proxies
-                _sleep_before_chat_request()
-                retry_conn = utils.http_req(chat_url, 'post', **retry_kwargs)
-                retry_status_code = int(getattr(retry_conn, 'status_code', 0) or 0)
-                base_result['status_code'] = retry_status_code
-                try:
-                    retry_payload = retry_conn.json() if retry_conn is not None else {}
-                except Exception:
-                    retry_payload = {}
-                if retry_status_code == 200:
-                    retry_usage = _normalize_ai_usage_dict(
-                        retry_payload.get('usage') if isinstance(retry_payload, dict) else {}
-                    )
-                    base_result['status'] = 'ok'
-                    base_result['ok'] = True
-                    base_result['model'] = retry_model
-                    base_result['usage'] = retry_usage
-                    base_result['reply_text'] = _extract_reply_text(retry_payload)
-                    base_result['message'] = '模型已从 {} 自动切换为 {}'.format(test_model, retry_model)
-                    return base_result
-                retry_err_message = ''
-                if isinstance(retry_payload, dict):
-                    retry_error_obj = retry_payload.get('error')
-                    if isinstance(retry_error_obj, dict):
-                        retry_err_message = str(retry_error_obj.get('message') or '').strip()
-                    if not retry_err_message:
-                        retry_err_message = str(retry_payload.get('message') or '').strip()
-                err_message = retry_err_message or 'HTTP {}'.format(retry_status_code)
-
-            if (not allow_model_retry) and _is_ai_model_unavailable_error(err_message):
-                base_result['message'] = '{}（已禁用自动切换模型，请确认当前模型可用）'.format(err_message)
-            else:
-                base_result['message'] = err_message
-            return base_result
-
-        analysis_test = _run_single_chat_test('analysis', model_name, allow_model_retry=True)
-        reasoning_reference = reasoning_model_name or model_name
-        reasoning_same_model = (
-            bool(reasoning_reference)
-            and bool(model_name)
-            and str(reasoning_reference).strip() == str(model_name).strip()
-        )
-        if reasoning_same_model:
-            reasoning_test = dict(analysis_test)
-            reasoning_test['type'] = 'reasoning'
-            reasoning_test['configured_model'] = str(reasoning_reference or '').strip()
-            reasoning_test['message'] = '思考模型与分析模型相同，复用测试结果'
-        else:
-            reasoning_test = _run_single_chat_test('reasoning', reasoning_reference, allow_model_retry=False)
-
-        total_usage = _normalize_ai_usage_dict(
-            {
-                'prompt_tokens': _safe_int_any(
-                    analysis_test.get('usage', {}).get('prompt_tokens'),
-                    0,
-                ) + _safe_int_any(reasoning_test.get('usage', {}).get('prompt_tokens'), 0),
-                'completion_tokens': _safe_int_any(
-                    analysis_test.get('usage', {}).get('completion_tokens'),
-                    0,
-                ) + _safe_int_any(reasoning_test.get('usage', {}).get('completion_tokens'), 0),
-                'total_tokens': _safe_int_any(
-                    analysis_test.get('usage', {}).get('total_tokens'),
-                    0,
-                ) + _safe_int_any(reasoning_test.get('usage', {}).get('total_tokens'), 0),
-            }
-        )
-
-        all_ok = bool(analysis_test.get('ok')) and bool(reasoning_test.get('ok'))
-        failed_parts = []
-        if not analysis_test.get('ok'):
-            failed_parts.append('分析模型({})'.format(str(analysis_test.get('message') or 'unknown_error')))
-        if not reasoning_test.get('ok'):
-            failed_parts.append('思考模型({})'.format(str(reasoning_test.get('message') or 'unknown_error')))
-
-        if all_ok:
-            if reasoning_same_model:
-                summary_message = 'AI 测试成功（分析模型与思考模型相同，已完成连通性测试）'
-            else:
-                summary_message = 'AI 测试成功（分析模型 + 思考模型）'
-        else:
-            summary_message = 'AI 测试失败：{}'.format('；'.join(failed_parts)[:240])
-
-        detail = {
-            'base_url': base_url,
-            'model_count': model_count,
-            'first_model': first_model,
-            'model': str(analysis_test.get('model') or model_name),
-            'reasoning_model': str(reasoning_test.get('model') or reasoning_reference),
-            'profile': profile_name,
-            'request_text': request_text,
-            'reply_text': str(analysis_test.get('reply_text') or ''),
-            'usage': total_usage,
-            'analysis_test': analysis_test,
-            'reasoning_test': reasoning_test,
-        }
-        return _build_result(
-            ok=all_ok,
-            message=summary_message,
-            detail=detail,
-            status='ok' if all_ok else 'error',
-            usage=total_usage,
-            error_message='' if all_ok else '；'.join(failed_parts)[:300],
-        )
-    except Exception as exc:
-        message = str(exc)
-        return _build_result(
-            ok=False,
-            message='AI 测试失败：{}'.format(message),
-            detail={
-                'base_url': base_url,
-                'model': model_name,
-                'reasoning_model': reasoning_model_name,
-                'profile': profile_name,
-                'request_text': request_text,
-                'reply_text': '',
-            },
-            status='error',
-            error_message=message,
-        )
+AI_CONFIG_SERVICE = AIConfigService(
+    config=Config,
+    normalize_model_profiles=_normalize_ai_model_profiles,
+    pick_active_model_profile=_pick_active_ai_model_profile,
+    normalize_prompt_templates=_normalize_ai_prompt_templates,
+    normalize_denoise_modules=_normalize_ai_denoise_modules,
+    normalize_denoise_prompt_ids=_normalize_ai_denoise_prompt_ids,
+    normalize_custom_providers=_normalize_ai_custom_providers,
+    persist_prompt_templates=_persist_ai_prompt_templates_for_config,
+)
 
 
 def _safe_int_any(value, default_value=0):
@@ -2230,6 +1195,29 @@ def _write_ai_usage_log(
         utils.conn_db(AI_USAGE_LOG_COLLECTION).insert_one(record)
     except Exception as exc:
         logger.warning('write ai usage log failed: %s', exc)
+
+
+AI_PROVIDER_TEST_SERVICE = AIProviderTestService(
+    http_req=utils.http_req,
+    normalize_profiles=_normalize_ai_model_profiles,
+    pick_active_profile=_pick_active_ai_model_profile,
+    normalize_provider=_normalize_ai_provider_id,
+    normalize_model=_normalize_ai_model_name,
+    pick_retry_model=_pick_ai_retry_model,
+    is_model_unavailable=_is_ai_model_unavailable_error,
+    build_proxy_dict=_build_ai_proxy_dict,
+    normalize_usage=_normalize_ai_usage_dict,
+    normalize_elapsed_ms=_normalize_ai_elapsed_ms,
+    safe_int=_safe_int,
+    safe_float=_safe_float,
+    usage_logger=_write_ai_usage_log,
+    logger=logger,
+)
+
+
+def _test_ai_config_connectivity(ai_config):
+    """保留旧入口，实际连通性测试由 AI Provider service 执行。"""
+    return AI_PROVIDER_TEST_SERVICE.test(ai_config)
 
 
 def _serialize_ai_usage_log_record(item):
@@ -5065,69 +4053,6 @@ def _verify_sensitive_access(username: str, password: str):
     return True, '验证通过'
 
 
-def _extract_scan_profile_id(scan_config):
-    """
-    根据当前扫描参数匹配预定义硬件配置，完全匹配时返回 profile id。
-    """
-    if not isinstance(scan_config, dict):
-        return ''
-
-    for profile in SCAN_PROFILE_ITEMS:
-        profile_values = profile.get('values', {})
-        matched = True
-        for key, value in profile_values.items():
-            if scan_config.get(key) != value:
-                matched = False
-                break
-        if matched:
-            return profile['id']
-    return ''
-
-
-def _build_scan_profiles_payload(active_profile_id=''):
-    """
-    组装扫描预定义配置返回结构，供前端展示与一键应用。
-    """
-    payload = []
-    for profile in SCAN_PROFILE_ITEMS:
-        payload.append(
-            {
-                'id': profile['id'],
-                'label': profile['label'],
-                'description': profile['description'],
-                'cpu_cores': profile['cpu_cores'],
-                'memory_gb': profile['memory_gb'],
-                'bandwidth_mbps': profile['bandwidth_mbps'],
-                'selected': bool(active_profile_id and active_profile_id == profile['id']),
-                'values': dict(profile.get('values', {})),
-            }
-        )
-    return payload
-
-
-def _apply_scan_profile_overrides(scan_config):
-    """
-    若提交了 scan_profile_id，则先注入预定义参数，再应用请求中的显式覆盖项。
-    """
-    if not isinstance(scan_config, dict):
-        raise ValueError('scan_config 必须为对象')
-
-    normalized = dict(scan_config)
-    profile_id_raw = str(normalized.get('scan_profile_id', '') or '').strip().lower()
-    if not profile_id_raw:
-        return normalized, ''
-
-    profile_id = SCAN_PROFILE_ID_ALIASES.get(profile_id_raw, profile_id_raw)
-    profile = SCAN_PROFILE_MAP.get(profile_id)
-    if profile is None:
-        raise ValueError(f'未知扫描预定义配置: {profile_id_raw}')
-
-    merged_config = dict(profile.get('values', {}))
-    merged_config.update(normalized)
-    merged_config['scan_profile_id'] = profile_id
-    return merged_config, profile_id
-
-
 def _resolve_domain_dict_custom_dir() -> Path:
     """
     解析域名爆破自定义字典目录。
@@ -5698,940 +4623,36 @@ def _collect_file_leak_dict_options(current_path=''):
     return options
 
 
-def _extract_service_api_config(config_obj):
-    """
-    从完整配置中提取 FOFA / Hunter / Zoomeye 等 API 配置。
-    """
-    fofa_conf = config_obj.get('FOFA', {})
-    if not isinstance(fofa_conf, dict):
-        fofa_conf = {}
-
-    riskiq_conf = config_obj.get('RISKIQ', {})
-    if not isinstance(riskiq_conf, dict):
-        riskiq_conf = {}
-
-    query_plugin = config_obj.get('QUERY_PLUGIN', {})
-    if not isinstance(query_plugin, dict):
-        query_plugin = {}
-    github_conf = config_obj.get('GITHUB', {})
-    if not isinstance(github_conf, dict):
-        github_conf = {}
-
-    def plugin_config(name):
-        plugin = query_plugin.get(name, {})
-        if not isinstance(plugin, dict):
-            return {}
-        return plugin
-
-    fofa_plugin = plugin_config('fofa')
-    certspotter_plugin = plugin_config('certspotter')
-    hunter_plugin = plugin_config('hunter_qax')
-    hunter_how_plugin = plugin_config('hunter_how')
-    shodan_plugin = plugin_config('shodan')
-    quake_plugin = plugin_config('quake_360')
-    zoomeye_plugin = plugin_config('zoomeye')
-    securitytrails_plugin = plugin_config('securitytrails')
-    virustotal_plugin = plugin_config('virustotal')
-    chaos_plugin = plugin_config('chaos')
-    passivetotal_plugin = plugin_config('passivetotal')
-
-    passivetotal_email = str(
-        passivetotal_plugin.get('auth_email') or
-        riskiq_conf.get('EMAIL') or
-        ''
-    )
-    passivetotal_key = str(
-        passivetotal_plugin.get('auth_key') or
-        riskiq_conf.get('KEY') or
-        ''
-    )
-
-    return {
-        'fofa_url': str(fofa_conf.get('URL') or Config.FOFA_URL or 'https://fofa.info'),
-        'fofa_email': str(fofa_conf.get('EMAIL') or Config.FOFA_EMAIL or ''),
-        'fofa_key': str(fofa_conf.get('KEY') or Config.FOFA_KEY or ''),
-        'fofa_enable': _safe_bool(fofa_plugin.get('enable'), True),
-        'certspotter_enable': _safe_bool(certspotter_plugin.get('enable'), True),
-        'hunter_api_key': str(hunter_plugin.get('api_key') or ''),
-        'hunter_enable': _safe_bool(hunter_plugin.get('enable'), True),
-        'hunter_request_interval': _safe_float(hunter_plugin.get('request_interval'), 1.0, min_value=0.0),
-        'hunter_rate_limit_retry': _safe_int(hunter_plugin.get('rate_limit_retry'), 4, min_value=0),
-        'hunter_rate_limit_backoff': _safe_int(hunter_plugin.get('rate_limit_backoff'), 2, min_value=1),
-        'hunter_rate_limit_max_sleep': _safe_int(hunter_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
-        'hunter_how_api_key': str(hunter_how_plugin.get('api_key') or ''),
-        'hunter_how_enable': _safe_bool(hunter_how_plugin.get('enable'), False),
-        'hunter_how_page_size': _safe_int(hunter_how_plugin.get('page_size'), 100, min_value=1),
-        'hunter_how_max_page': _safe_int(hunter_how_plugin.get('max_page'), 5, min_value=1),
-        'hunter_how_request_interval': _safe_float(hunter_how_plugin.get('request_interval'), 1.0, min_value=0.0),
-        'hunter_how_rate_limit_retry': _safe_int(hunter_how_plugin.get('rate_limit_retry'), 4, min_value=0),
-        'hunter_how_rate_limit_backoff': _safe_int(hunter_how_plugin.get('rate_limit_backoff'), 2, min_value=1),
-        'hunter_how_rate_limit_max_sleep': _safe_int(hunter_how_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
-        'shodan_api_key': str(shodan_plugin.get('api_key') or ''),
-        'shodan_enable': _safe_bool(shodan_plugin.get('enable'), False),
-        'shodan_max_page': _safe_int(shodan_plugin.get('max_page'), 20, min_value=1),
-        'shodan_request_interval': _safe_float(shodan_plugin.get('request_interval'), 1.0, min_value=0.0),
-        'shodan_rate_limit_retry': _safe_int(shodan_plugin.get('rate_limit_retry'), 4, min_value=0),
-        'shodan_rate_limit_backoff': _safe_int(shodan_plugin.get('rate_limit_backoff'), 2, min_value=1),
-        'shodan_rate_limit_max_sleep': _safe_int(shodan_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
-        'quake_token': str(quake_plugin.get('quake_token') or ''),
-        'quake_enable': _safe_bool(quake_plugin.get('enable'), True),
-        'quake_rate_limit_retry': _safe_int(quake_plugin.get('rate_limit_retry'), 4, min_value=0),
-        'quake_rate_limit_backoff': _safe_int(quake_plugin.get('rate_limit_backoff'), 3, min_value=1),
-        'quake_rate_limit_max_sleep': _safe_int(quake_plugin.get('rate_limit_max_sleep'), 90, min_value=1),
-        'zoomeye_api_key': str(zoomeye_plugin.get('api_key') or ''),
-        'zoomeye_enable': _safe_bool(zoomeye_plugin.get('enable'), True),
-        'zoomeye_max_page': _safe_int(zoomeye_plugin.get('max_page'), 20, min_value=1),
-        'zoomeye_request_interval': _safe_float(zoomeye_plugin.get('request_interval'), 1.0, min_value=0.0),
-        'zoomeye_rate_limit_retry': _safe_int(zoomeye_plugin.get('rate_limit_retry'), 4, min_value=0),
-        'zoomeye_rate_limit_backoff': _safe_int(zoomeye_plugin.get('rate_limit_backoff'), 2, min_value=1),
-        'zoomeye_rate_limit_max_sleep': _safe_int(zoomeye_plugin.get('rate_limit_max_sleep'), 60, min_value=1),
-        'securitytrails_api_key': str(securitytrails_plugin.get('api_key') or ''),
-        'securitytrails_enable': _safe_bool(securitytrails_plugin.get('enable'), False),
-        'virustotal_api_key': str(virustotal_plugin.get('api_key') or ''),
-        'virustotal_enable': _safe_bool(virustotal_plugin.get('enable'), True),
-        'chaos_api_key': str(chaos_plugin.get('api_key') or ''),
-        'chaos_enable': _safe_bool(chaos_plugin.get('enable'), False),
-        'passivetotal_email': passivetotal_email,
-        'passivetotal_key': passivetotal_key,
-        'passivetotal_enable': _safe_bool(passivetotal_plugin.get('enable'), False),
-        # GitHub 搜索独立走 GITHUB.TOKEN，不属于 QUERY_PLUGIN。
-        'github_token': str(github_conf.get('TOKEN') or Config.GITHUB_TOKEN or ''),
-    }
-
-
-def _build_service_api_sensitive_configured_map(service_api: dict):
-    """
-    基于 service_api 计算敏感字段是否已配置（仅返回布尔状态，不返回明文）。
-    """
-    if not isinstance(service_api, dict):
-        service_api = {}
-
-    configured = {}
-    for field_name in SERVICE_API_SENSITIVE_FIELDS:
-        configured[field_name] = bool(str(service_api.get(field_name, '') or '').strip())
-    return configured
-
-
-def _sanitize_service_api_for_client(service_api: dict):
-    """
-    返回给前端时抹除敏感字段明文，并附带是否已配置状态。
-    """
-    safe_service_api = dict(service_api or {})
-    sensitive_configured = _build_service_api_sensitive_configured_map(safe_service_api)
-    for field_name in SERVICE_API_SENSITIVE_FIELDS:
-        safe_service_api[field_name] = ''
-    return safe_service_api, sensitive_configured
-
-
-def _fill_missing_sensitive_service_api_fields(service_api: dict, config_obj: dict):
-    """
-    对未提交的敏感字段回填当前配置值，避免前端“未改动字段”被误清空。
-    """
-    if not isinstance(service_api, dict):
-        raise ValueError('service_api 必须为对象')
-
-    merged_service_api = dict(service_api)
-    current_service_api = _extract_service_api_config(config_obj if isinstance(config_obj, dict) else {})
-    for field_name in SERVICE_API_SENSITIVE_FIELDS:
-        if field_name in merged_service_api:
-            continue
-        merged_service_api[field_name] = current_service_api.get(field_name, '')
-
-    return merged_service_api
-
-
-def _merge_service_api_config(config_obj, service_api):
-    """
-    将三方 API 配置写回完整配置对象。
-    """
-    if not isinstance(service_api, dict):
-        raise ValueError('service_api 必须为对象')
-
-    if not isinstance(config_obj.get('FOFA'), dict):
-        config_obj['FOFA'] = {}
-    if not isinstance(config_obj.get('QUERY_PLUGIN'), dict):
-        config_obj['QUERY_PLUGIN'] = {}
-    if not isinstance(config_obj.get('RISKIQ'), dict):
-        config_obj['RISKIQ'] = {}
-    if not isinstance(config_obj.get('GITHUB'), dict):
-        config_obj['GITHUB'] = {}
-
-    query_plugin = config_obj['QUERY_PLUGIN']
-
-    def ensure_plugin(name):
-        plugin = query_plugin.get(name)
-        if not isinstance(plugin, dict):
-            plugin = {}
-        query_plugin[name] = plugin
-        return plugin
-
-    fofa_url = str(service_api.get('fofa_url', '')).strip() or 'https://fofa.info'
-    fofa_email = str(service_api.get('fofa_email', '')).strip()
-    fofa_key = str(service_api.get('fofa_key', '')).strip()
-
-    config_obj['FOFA']['URL'] = fofa_url
-    config_obj['FOFA']['EMAIL'] = fofa_email
-    config_obj['FOFA']['KEY'] = fofa_key
-
-    fofa_plugin = ensure_plugin('fofa')
-    fofa_plugin['enable'] = _safe_bool(service_api.get('fofa_enable'), fofa_plugin.get('enable', True))
-
-    certspotter_plugin = ensure_plugin('certspotter')
-    certspotter_plugin['enable'] = _safe_bool(service_api.get('certspotter_enable'), certspotter_plugin.get('enable', True))
-
-    hunter_plugin = ensure_plugin('hunter_qax')
-    hunter_plugin['api_key'] = str(service_api.get('hunter_api_key', '')).strip()
-    hunter_plugin['enable'] = _safe_bool(service_api.get('hunter_enable'), hunter_plugin.get('enable', True))
-    hunter_plugin['request_interval'] = _safe_float(
-        service_api.get('hunter_request_interval'),
-        hunter_plugin.get('request_interval', 1.0),
-        min_value=0.0
-    )
-    hunter_plugin['rate_limit_retry'] = _safe_int(
-        service_api.get('hunter_rate_limit_retry'),
-        hunter_plugin.get('rate_limit_retry', 4),
-        min_value=0
-    )
-    hunter_plugin['rate_limit_backoff'] = _safe_int(
-        service_api.get('hunter_rate_limit_backoff'),
-        hunter_plugin.get('rate_limit_backoff', 2),
-        min_value=1
-    )
-    hunter_plugin['rate_limit_max_sleep'] = _safe_int(
-        service_api.get('hunter_rate_limit_max_sleep'),
-        hunter_plugin.get('rate_limit_max_sleep', 60),
-        min_value=1
-    )
-
-    hunter_how_plugin = ensure_plugin('hunter_how')
-    hunter_how_plugin['api_key'] = str(service_api.get('hunter_how_api_key', '')).strip()
-    hunter_how_plugin['enable'] = _safe_bool(service_api.get('hunter_how_enable'), hunter_how_plugin.get('enable', False))
-    hunter_how_plugin['page_size'] = _safe_int(
-        service_api.get('hunter_how_page_size'),
-        hunter_how_plugin.get('page_size', 100),
-        min_value=1
-    )
-    hunter_how_plugin['max_page'] = _safe_int(
-        service_api.get('hunter_how_max_page'),
-        hunter_how_plugin.get('max_page', 5),
-        min_value=1
-    )
-    hunter_how_plugin['request_interval'] = _safe_float(
-        service_api.get('hunter_how_request_interval'),
-        hunter_how_plugin.get('request_interval', 1.0),
-        min_value=0.0
-    )
-    hunter_how_plugin['rate_limit_retry'] = _safe_int(
-        service_api.get('hunter_how_rate_limit_retry'),
-        hunter_how_plugin.get('rate_limit_retry', 4),
-        min_value=0
-    )
-    hunter_how_plugin['rate_limit_backoff'] = _safe_int(
-        service_api.get('hunter_how_rate_limit_backoff'),
-        hunter_how_plugin.get('rate_limit_backoff', 2),
-        min_value=1
-    )
-    hunter_how_plugin['rate_limit_max_sleep'] = _safe_int(
-        service_api.get('hunter_how_rate_limit_max_sleep'),
-        hunter_how_plugin.get('rate_limit_max_sleep', 60),
-        min_value=1
-    )
-
-    shodan_plugin = ensure_plugin('shodan')
-    shodan_plugin['api_key'] = str(service_api.get('shodan_api_key', '')).strip()
-    shodan_plugin['enable'] = _safe_bool(service_api.get('shodan_enable'), shodan_plugin.get('enable', False))
-    shodan_plugin['max_page'] = _safe_int(
-        service_api.get('shodan_max_page'),
-        shodan_plugin.get('max_page', 20),
-        min_value=1
-    )
-    shodan_plugin['request_interval'] = _safe_float(
-        service_api.get('shodan_request_interval'),
-        shodan_plugin.get('request_interval', 1.0),
-        min_value=0.0
-    )
-    shodan_plugin['rate_limit_retry'] = _safe_int(
-        service_api.get('shodan_rate_limit_retry'),
-        shodan_plugin.get('rate_limit_retry', 4),
-        min_value=0
-    )
-    shodan_plugin['rate_limit_backoff'] = _safe_int(
-        service_api.get('shodan_rate_limit_backoff'),
-        shodan_plugin.get('rate_limit_backoff', 2),
-        min_value=1
-    )
-    shodan_plugin['rate_limit_max_sleep'] = _safe_int(
-        service_api.get('shodan_rate_limit_max_sleep'),
-        shodan_plugin.get('rate_limit_max_sleep', 60),
-        min_value=1
-    )
-
-    quake_plugin = ensure_plugin('quake_360')
-    quake_plugin['quake_token'] = str(service_api.get('quake_token', '')).strip()
-    quake_plugin['enable'] = _safe_bool(service_api.get('quake_enable'), quake_plugin.get('enable', True))
-    quake_plugin['rate_limit_retry'] = _safe_int(
-        service_api.get('quake_rate_limit_retry'),
-        quake_plugin.get('rate_limit_retry', 4),
-        min_value=0
-    )
-    quake_plugin['rate_limit_backoff'] = _safe_int(
-        service_api.get('quake_rate_limit_backoff'),
-        quake_plugin.get('rate_limit_backoff', 3),
-        min_value=1
-    )
-    quake_plugin['rate_limit_max_sleep'] = _safe_int(
-        service_api.get('quake_rate_limit_max_sleep'),
-        quake_plugin.get('rate_limit_max_sleep', 90),
-        min_value=1
-    )
-
-    zoomeye_plugin = ensure_plugin('zoomeye')
-    zoomeye_plugin['api_key'] = str(service_api.get('zoomeye_api_key', '')).strip()
-    zoomeye_plugin['enable'] = _safe_bool(service_api.get('zoomeye_enable'), zoomeye_plugin.get('enable', True))
-    zoomeye_plugin['max_page'] = _safe_int(
-        service_api.get('zoomeye_max_page'),
-        zoomeye_plugin.get('max_page', 20),
-        min_value=1
-    )
-    zoomeye_plugin['request_interval'] = _safe_float(
-        service_api.get('zoomeye_request_interval'),
-        zoomeye_plugin.get('request_interval', 1.0),
-        min_value=0.0
-    )
-    zoomeye_plugin['rate_limit_retry'] = _safe_int(
-        service_api.get('zoomeye_rate_limit_retry'),
-        zoomeye_plugin.get('rate_limit_retry', 4),
-        min_value=0
-    )
-    zoomeye_plugin['rate_limit_backoff'] = _safe_int(
-        service_api.get('zoomeye_rate_limit_backoff'),
-        zoomeye_plugin.get('rate_limit_backoff', 2),
-        min_value=1
-    )
-    zoomeye_plugin['rate_limit_max_sleep'] = _safe_int(
-        service_api.get('zoomeye_rate_limit_max_sleep'),
-        zoomeye_plugin.get('rate_limit_max_sleep', 60),
-        min_value=1
-    )
-
-    securitytrails_plugin = ensure_plugin('securitytrails')
-    securitytrails_plugin['api_key'] = str(service_api.get('securitytrails_api_key', '')).strip()
-    securitytrails_plugin['enable'] = _safe_bool(
-        service_api.get('securitytrails_enable'),
-        securitytrails_plugin.get('enable', False)
-    )
-
-    virustotal_plugin = ensure_plugin('virustotal')
-    virustotal_plugin['api_key'] = str(service_api.get('virustotal_api_key', '')).strip()
-    virustotal_plugin['enable'] = _safe_bool(service_api.get('virustotal_enable'), virustotal_plugin.get('enable', True))
-
-    chaos_plugin = ensure_plugin('chaos')
-    chaos_plugin['api_key'] = str(service_api.get('chaos_api_key', '')).strip()
-    chaos_plugin['enable'] = _safe_bool(service_api.get('chaos_enable'), chaos_plugin.get('enable', False))
-
-    passivetotal_email = str(service_api.get('passivetotal_email', '')).strip()
-    passivetotal_key = str(service_api.get('passivetotal_key', '')).strip()
-    passivetotal_plugin = ensure_plugin('passivetotal')
-    passivetotal_plugin['auth_email'] = passivetotal_email
-    passivetotal_plugin['auth_key'] = passivetotal_key
-    passivetotal_plugin['enable'] = _safe_bool(
-        service_api.get('passivetotal_enable'),
-        passivetotal_plugin.get('enable', False)
-    )
-
-    # 保留对旧字段的兼容（某些部署仍沿用 RISKIQ）
-    config_obj['RISKIQ']['EMAIL'] = passivetotal_email
-    config_obj['RISKIQ']['KEY'] = passivetotal_key
-
-    # GitHub 搜索任务凭据（用于 github_task / github_scheduler）。
-    config_obj['GITHUB']['TOKEN'] = str(service_api.get('github_token', '')).strip()
-
-    return config_obj
-
-
 def _normalize_service_api_provider(provider: str) -> str:
-    """
-    规范化 provider 标识，兼容前端别名与插件 source_name。
-    """
-    normalized = str(provider or '').strip().lower()
-    provider_alias = {
-        'hunter': 'hunter_qax',
-        'quake': 'quake_360',
-    }
-    return provider_alias.get(normalized, normalized)
+    return SERVICE_API_PROVIDER_TEST_SERVICE.normalize_provider(provider)
 
 
 def _normalize_test_target_domain(test_target: str) -> str:
-    """
-    规范化 API 测试域名；输入无效时回退 example.com。
-    """
-    candidate = str(test_target or '').strip().lower().rstrip('.')
-    if candidate and utils.is_valid_domain(candidate):
-        return candidate
-    return 'example.com'
+    return SERVICE_API_PROVIDER_TEST_SERVICE.normalize_target(test_target)
 
 
 def _get_service_api_test_provider_specs():
-    """
-    定义支持批量测试的 provider 及其必填凭据字段。
-    """
-    return [
-        {'provider': 'fofa', 'label': 'FOFA', 'required_fields': ['fofa_email', 'fofa_key']},
-        {'provider': 'hunter', 'label': 'Hunter', 'required_fields': ['hunter_api_key']},
-        {'provider': 'hunter_how', 'label': 'hunter.how', 'required_fields': ['hunter_how_api_key']},
-        {'provider': 'shodan', 'label': 'Shodan', 'required_fields': ['shodan_api_key']},
-        {'provider': 'quake', 'label': 'Quake360', 'required_fields': ['quake_token']},
-        {'provider': 'zoomeye', 'label': 'Zoomeye', 'required_fields': ['zoomeye_api_key']},
-        {'provider': 'securitytrails', 'label': 'SecurityTrails', 'required_fields': ['securitytrails_api_key']},
-        {'provider': 'virustotal', 'label': 'VirusTotal', 'required_fields': ['virustotal_api_key']},
-        {'provider': 'chaos', 'label': 'Chaos', 'required_fields': ['chaos_api_key']},
-        {'provider': 'github', 'label': 'GitHub', 'required_fields': ['github_token']},
-    ]
+    return SERVICE_API_PROVIDER_TEST_SERVICE.provider_specs()
 
 
 def _collect_configured_service_api_providers(service_api: dict):
-    """
-    找出当前表单里已经填写完必需凭据的 provider。
-    """
-    configured_specs = []
-    for spec in _get_service_api_test_provider_specs():
-        required_fields = spec.get('required_fields', [])
-        if all(str(service_api.get(field, '') or '').strip() for field in required_fields):
-            configured_specs.append(spec)
-    return configured_specs
+    return SERVICE_API_PROVIDER_TEST_SERVICE.configured_providers(service_api)
 
 
 def _build_runtime_service_api_config_for_test(service_api: dict) -> dict:
-    """
-    根据当前表单值构建运行期配置对象，仅用于测试，不会写入磁盘。
-    """
-    runtime_config = {
-        'FOFA': {},
-        'QUERY_PLUGIN': {},
-        'RISKIQ': {},
-        'GITHUB': {},
-    }
-    return _merge_service_api_config(runtime_config, service_api)
-
-
-def _find_query_plugin_by_source(source_name: str):
-    """
-    动态加载并定位指定 source_name 的查询插件实例。
-    """
-    plugins = utils.load_query_plugins(Config.dns_query_plugin_path)
-    for plugin in plugins:
-        if getattr(plugin, 'source_name', '') == source_name:
-            return plugin
-    return None
-
-
-def _test_fofa_provider(service_api: dict):
-    """
-    测试 FOFA 凭据是否有效，使用 info_my 轻量接口避免大结果查询。
-    """
-    fofa_url = str(service_api.get('fofa_url', '') or '').strip() or 'https://fofa.info'
-    fofa_email = str(service_api.get('fofa_email', '') or '').strip()
-    fofa_key = str(service_api.get('fofa_key', '') or '').strip()
-
-    if not fofa_email or not fofa_key:
-        return False, 'FOFA 测试失败：请填写邮箱和 KEY', {}
-
-    try:
-        client = FofaClient(fofa_email, fofa_key, page_size=1)
-        client.base_url = fofa_url
-        profile = client.info_my() or {}
-        if not isinstance(profile, dict):
-            return False, 'FOFA 测试失败：返回数据格式异常', {}
-
-        is_error = bool(profile.get('error'))
-        if is_error:
-            return False, 'FOFA 测试失败：{}'.format(profile.get('errmsg') or '未知错误'), {}
-
-        email = str(profile.get('email') or '')
-        fcoin = profile.get('fcoin', 0)
-        is_vip = bool(profile.get('isvip', False))
-        return True, 'FOFA 测试成功', {'email': email, 'fcoin': fcoin, 'isvip': is_vip}
-    except Exception as exc:
-        return False, 'FOFA 测试失败：{}'.format(exc), {}
-
-
-def _test_github_provider(service_api: dict):
-    """
-    测试 GitHub Token 可用性，调用 /user 接口获取当前账号。
-    """
-    github_token = str(service_api.get('github_token', '') or '').strip()
-    if not github_token:
-        return False, 'GitHub 测试失败：请填写 TOKEN', {}
-
-    headers = {
-        'Authorization': 'Bearer {}'.format(github_token),
-        'Accept': 'application/vnd.github+json',
-    }
-    try:
-        conn = utils.http_req('https://api.github.com/user', 'get', headers=headers, timeout=(10, 20))
-        data = conn.json() if conn is not None else {}
-        if int(getattr(conn, 'status_code', 0) or 0) != 200:
-            message = ''
-            if isinstance(data, dict):
-                message = str(data.get('message') or '')
-            return False, 'GitHub 测试失败：HTTP {} {}'.format(getattr(conn, 'status_code', 0), message), {}
-
-        login = ''
-        if isinstance(data, dict):
-            login = str(data.get('login') or '')
-        return True, 'GitHub 测试成功', {'login': login}
-    except Exception as exc:
-        return False, 'GitHub 测试失败：{}'.format(exc), {}
-
-
-def _test_virustotal_provider(service_api: dict, test_target: str):
-    """
-    轻量测试 VirusTotal 凭据可用性，避免走完整子域名分页查询导致 502。
-    """
-    api_key = str(service_api.get('virustotal_api_key', '') or '').strip()
-    if not api_key:
-        return False, 'VirusTotal 测试失败：请填写 API KEY', {}
-
-    normalized_target = _normalize_test_target_domain(test_target)
-    request_url = 'https://www.virustotal.com/api/v3/domains/{}'.format(normalized_target)
-    headers = {
-        'x-apikey': api_key,
-    }
-
-    try:
-        conn = utils.http_req(request_url, 'get', headers=headers, timeout=(10, 20))
-        status_code = int(getattr(conn, 'status_code', 0) or 0)
-        try:
-            data = conn.json() if conn is not None else {}
-        except Exception:
-            data = {}
-
-        if status_code != 200:
-            error_message = ''
-            if isinstance(data, dict):
-                error_obj = data.get('error')
-                if isinstance(error_obj, dict):
-                    error_message = str(error_obj.get('message') or '')
-                error_message = error_message or str(data.get('message') or '')
-            logger.warning(
-                'virustotal lightweight test failed status:%s target:%s message:%s',
-                status_code,
-                normalized_target,
-                error_message,
-            )
-            return False, 'VirusTotal 测试失败：HTTP {} {}'.format(status_code, error_message).strip(), {}
-
-        payload = data.get('data') if isinstance(data, dict) else {}
-        if not isinstance(payload, dict):
-            payload = {}
-        attributes = payload.get('attributes') if isinstance(payload.get('attributes'), dict) else {}
-        stats = attributes.get('last_analysis_stats') if isinstance(attributes.get('last_analysis_stats'), dict) else {}
-        detail = {
-            'domain': str(payload.get('id') or normalized_target),
-            'reputation': attributes.get('reputation', ''),
-            'harmless': stats.get('harmless', ''),
-            'suspicious': stats.get('suspicious', ''),
-            'malicious': stats.get('malicious', ''),
-        }
-        logger.info('virustotal lightweight test success target:%s', normalized_target)
-        return True, 'VirusTotal 测试成功', detail
-    except Exception as exc:
-        logger.exception('virustotal lightweight test error target:%s err:%s', normalized_target, exc)
-        return False, 'VirusTotal 测试失败：{}'.format(exc), {}
-
-
-def _test_query_plugin_provider(provider: str, service_api: dict, test_target: str):
-    """
-    通用查询插件测试：
-    - 用当前表单值构建临时 QUERY_PLUGIN 配置
-    - 仅执行 1 页/小样本探测，降低测试开销
-    """
-    source_name = _normalize_service_api_provider(provider)
-    runtime_config = _build_runtime_service_api_config_for_test(service_api)
-    query_plugin_conf = runtime_config.get('QUERY_PLUGIN', {}) if isinstance(runtime_config, dict) else {}
-    plugin_conf = query_plugin_conf.get(source_name, {}) if isinstance(query_plugin_conf, dict) else {}
-    if not isinstance(plugin_conf, dict):
-        plugin_conf = {}
-
-    required_conf_fields = {
-        'hunter_qax': ['api_key'],
-        'hunter_how': ['api_key'],
-        'shodan': ['api_key'],
-        'quake_360': ['quake_token'],
-        'zoomeye': ['api_key'],
-        'securitytrails': ['api_key'],
-        'virustotal': ['api_key'],
-        'chaos': ['api_key'],
-    }
-    required_fields = required_conf_fields.get(source_name, [])
-    missing_fields = [k for k in required_fields if not str(plugin_conf.get(k, '') or '').strip()]
-    if missing_fields:
-        return False, '{} 测试失败：缺少配置 {}'.format(source_name, ','.join(missing_fields)), {}
-
-    plugin = _find_query_plugin_by_source(source_name)
-    if not plugin:
-        return False, '{} 测试失败：插件未加载'.format(source_name), {}
-
-    init_kwargs = plugin_conf.copy()
-    init_kwargs.pop('enable', None)
-
-    # 测试场景使用小样本配置，避免大页数导致按钮响应过慢。
-    if source_name in ('hunter_qax', 'hunter_how'):
-        init_kwargs['max_page'] = 1
-        init_kwargs['page_size'] = min(_safe_int(init_kwargs.get('page_size'), 20, min_value=1), 20)
-    elif source_name == 'zoomeye':
-        init_kwargs['max_page'] = 1
-    elif source_name == 'shodan':
-        init_kwargs['max_page'] = 1
-    elif source_name == 'quake_360':
-        init_kwargs['max_size'] = min(_safe_int(init_kwargs.get('max_size'), 50, min_value=1), 50)
-
-    try:
-        if init_kwargs:
-            plugin.init_key(**init_kwargs)
-        domains = plugin.query(test_target)
-        if not isinstance(domains, list):
-            domains = []
-        sample = domains[:5]
-        return True, '{} 测试成功'.format(source_name), {'result_count': len(domains), 'sample': sample}
-    except Exception as exc:
-        return False, '{} 测试失败：{}'.format(source_name, exc), {}
+    return SERVICE_API_PROVIDER_TEST_SERVICE._build_runtime_config(service_api)
 
 
 def _run_service_api_provider_test(provider: str, service_api: dict, test_target: str):
-    """
-    按 provider 分发测试逻辑，并统一返回结构。
-    """
-    normalized_provider = _normalize_service_api_provider(provider)
-    normalized_target = _normalize_test_target_domain(test_target)
-
-    if normalized_provider == 'fofa':
-        ok, message, detail = _test_fofa_provider(service_api)
-    elif normalized_provider == 'github':
-        ok, message, detail = _test_github_provider(service_api)
-    elif normalized_provider == 'virustotal':
-        ok, message, detail = _test_virustotal_provider(service_api, normalized_target)
-    else:
-        ok, message, detail = _test_query_plugin_provider(
-            provider=normalized_provider,
-            service_api=service_api,
-            test_target=normalized_target,
-        )
-
-    return {
-        'provider': normalized_provider,
-        'ok': bool(ok),
-        'message': str(message or ''),
-        'test_target': normalized_target,
-        'detail': detail if isinstance(detail, dict) else {},
-        'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-    }
+    return SERVICE_API_PROVIDER_TEST_SERVICE.test_provider(provider, service_api, test_target)
 
 
-def _extract_scan_config(config_obj):
-    """
-    从完整配置中提取扫描配置子集。
-    """
-    arl_config = config_obj.get('ARL', {})
-    if not isinstance(arl_config, dict):
-        arl_config = {}
-
-    # 兼容历史路径：页面展示时统一折叠到当前可用路径。
-    domain_dict = normalize_dict_path_compat(arl_config.get('DOMAIN_DICT') or Config.DOMAIN_DICT_2W)
-    file_leak_dict = normalize_dict_path_compat(arl_config.get('FILE_LEAK_DICT') or Config.FILE_LEAK_TOP_2k)
-    domain_brute_concurrent = _safe_int(
-        arl_config.get('DOMAIN_BRUTE_CONCURRENT'),
-        Config.DOMAIN_BRUTE_CONCURRENT
-    )
-    alt_dns_concurrent = _safe_int(
-        arl_config.get('ALT_DNS_CONCURRENT'),
-        Config.ALT_DNS_CONCURRENT
-    )
-    web_gunicorn_workers = _safe_int(
-        arl_config.get('WEB_GUNICORN_WORKERS'),
-        Config.WEB_GUNICORN_WORKERS
-    )
-    celery_task_worker_concurrency = _safe_int(
-        arl_config.get('CELERY_TASK_WORKER_CONCURRENCY'),
-        Config.CELERY_TASK_WORKER_CONCURRENCY
-    )
-    celery_github_worker_concurrency = _safe_int(
-        arl_config.get('CELERY_GITHUB_WORKER_CONCURRENCY'),
-        Config.CELERY_GITHUB_WORKER_CONCURRENCY
-    )
-    celery_heavy_worker_concurrency = _safe_int(
-        arl_config.get('CELERY_HEAVY_WORKER_CONCURRENCY'),
-        Config.CELERY_HEAVY_WORKER_CONCURRENCY
-    )
-    celery_web_worker_concurrency = _safe_int(
-        arl_config.get('CELERY_WEB_WORKER_CONCURRENCY'),
-        Config.CELERY_WEB_WORKER_CONCURRENCY
-    )
-    celery_prefetch_multiplier = _safe_int(
-        arl_config.get('CELERY_PREFETCH_MULTIPLIER'),
-        Config.CELERY_PREFETCH_MULTIPLIER
-    )
-    celery_max_tasks_per_child = _safe_int(
-        arl_config.get('CELERY_MAX_TASKS_PER_CHILD'),
-        Config.CELERY_MAX_TASKS_PER_CHILD
-    )
-    celery_max_memory_per_child = _safe_int(
-        arl_config.get('CELERY_MAX_MEMORY_PER_CHILD'),
-        Config.CELERY_MAX_MEMORY_PER_CHILD
-    )
-    nuclei_single_target_timeout_sec = _safe_int(
-        arl_config.get('NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'),
-        Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
-    )
-    nuclei_rate_limit = _safe_int(
-        arl_config.get('NUCLEI_RATE_LIMIT'),
-        Config.NUCLEI_RATE_LIMIT
-    )
-    nuclei_concurrency = _safe_int(
-        arl_config.get('NUCLEI_CONCURRENCY'),
-        Config.NUCLEI_CONCURRENCY
-    )
-    nuclei_bulk_size = _safe_int(
-        arl_config.get('NUCLEI_BULK_SIZE'),
-        Config.NUCLEI_BULK_SIZE
-    )
-    afrog_concurrency = _safe_int(
-        arl_config.get('AFROG_CONCURRENCY'),
-        Config.AFROG_CONCURRENCY
-    )
-    afrog_rate_limit = _safe_int(
-        arl_config.get('AFROG_RATE_LIMIT'),
-        Config.AFROG_RATE_LIMIT
-    )
-    poc_update_proxy = str(arl_config.get('POC_UPDATE_PROXY') or getattr(Config, 'POC_UPDATE_PROXY', '') or '').strip()
-    urlfinder_url_probe_enable = _safe_bool(
-        arl_config.get('URLFINDER_URL_PROBE_ENABLE'),
-        Config.URLFINDER_URL_PROBE_ENABLE
-    )
-    urlfinder_url_probe_max_targets = _safe_int(
-        arl_config.get('URLFINDER_URL_PROBE_MAX_TARGETS'),
-        Config.URLFINDER_URL_PROBE_MAX_TARGETS
-    )
-    urlfinder_url_probe_concurrency = _safe_int(
-        arl_config.get('URLFINDER_URL_PROBE_CONCURRENCY'),
-        Config.URLFINDER_URL_PROBE_CONCURRENCY
-    )
-    host_timeout_type = _normalize_host_timeout_type(
-        arl_config.get('HOST_TIMEOUT_TYPE'),
-        Config.HOST_TIMEOUT_TYPE
-    )
-    host_timeout = _safe_int(
-        arl_config.get('HOST_TIMEOUT'),
-        Config.HOST_TIMEOUT
-    )
-    port_parallelism = _safe_int(
-        arl_config.get('PORT_PARALLELISM'),
-        Config.PORT_PARALLELISM
-    )
-    port_min_rate = _safe_int(
-        arl_config.get('PORT_MIN_RATE'),
-        Config.PORT_MIN_RATE
-    )
-    black_ips = _normalize_string_list(arl_config.get('BLACK_IPS', Config.BLACK_IPS))
-    if not black_ips:
-        black_ips = _normalize_string_list(Config.BLACK_IPS)
-    dns_resolvers = _normalize_string_list(arl_config.get('DNS_RESOLVERS', Config.DNS_RESOLVERS))
-
-    scan_config = {
-        'domain_dict': domain_dict,
-        'file_leak_dict': file_leak_dict,
-        'domain_brute_concurrent': domain_brute_concurrent,
-        'alt_dns_concurrent': alt_dns_concurrent,
-        'web_gunicorn_workers': web_gunicorn_workers,
-        'celery_task_worker_concurrency': celery_task_worker_concurrency,
-        'celery_github_worker_concurrency': celery_github_worker_concurrency,
-        'celery_heavy_worker_concurrency': celery_heavy_worker_concurrency,
-        'celery_web_worker_concurrency': celery_web_worker_concurrency,
-        'celery_prefetch_multiplier': celery_prefetch_multiplier,
-        'celery_max_tasks_per_child': celery_max_tasks_per_child,
-        'celery_max_memory_per_child': celery_max_memory_per_child,
-        'nuclei_single_target_timeout_sec': nuclei_single_target_timeout_sec,
-        'nuclei_rate_limit': nuclei_rate_limit,
-        'nuclei_concurrency': nuclei_concurrency,
-        'nuclei_bulk_size': nuclei_bulk_size,
-        'afrog_concurrency': afrog_concurrency,
-        'afrog_rate_limit': afrog_rate_limit,
-        'poc_update_proxy': poc_update_proxy,
-        'urlfinder_url_probe_enable': urlfinder_url_probe_enable,
-        'urlfinder_url_probe_max_targets': urlfinder_url_probe_max_targets,
-        'urlfinder_url_probe_concurrency': urlfinder_url_probe_concurrency,
-        'host_timeout_type': host_timeout_type,
-        'host_timeout': host_timeout,
-        'port_parallelism': port_parallelism,
-        'port_min_rate': port_min_rate,
-        'black_ips': black_ips,
-        'dns_resolvers': dns_resolvers,
-    }
-
-    scan_config['scan_profile_id'] = _extract_scan_profile_id(scan_config)
-    return scan_config
-
-
-def _merge_scan_config(config_obj, scan_config):
-    """
-    将扫描配置写回完整配置对象（仅修改 ARL 下指定字段）。
-    """
-    scan_config, _ = _apply_scan_profile_overrides(scan_config)
-
-    domain_dict = normalize_dict_path_compat(scan_config.get('domain_dict', ''))
-    domain_dict = str(domain_dict or '').strip()
-    if not domain_dict:
-        raise ValueError('请先选择域名爆破字典')
-    if not os.path.isfile(domain_dict):
-        raise ValueError('所选域名字典文件不存在，请重新选择')
-
-    arl_config = config_obj.get('ARL', {})
-    if not isinstance(arl_config, dict):
-        arl_config = {}
-
-    file_leak_dict = normalize_dict_path_compat(
-        scan_config.get('file_leak_dict', '') or
-        arl_config.get('FILE_LEAK_DICT') or
-        Config.FILE_LEAK_TOP_2k
-    )
-    file_leak_dict = str(file_leak_dict or '').strip()
-    if not file_leak_dict:
-        raise ValueError('请先选择敏感文件泄漏字典')
-    if not os.path.isfile(file_leak_dict):
-        raise ValueError('所选敏感文件泄漏字典文件不存在，请重新选择')
-
-    domain_brute_concurrent = _safe_int(
-        scan_config.get('domain_brute_concurrent'),
-        Config.DOMAIN_BRUTE_CONCURRENT
-    )
-    alt_dns_concurrent = _safe_int(
-        scan_config.get('alt_dns_concurrent'),
-        Config.ALT_DNS_CONCURRENT
-    )
-    web_gunicorn_workers = _safe_int(
-        scan_config.get('web_gunicorn_workers'),
-        Config.WEB_GUNICORN_WORKERS
-    )
-    celery_task_worker_concurrency = _safe_int(
-        scan_config.get('celery_task_worker_concurrency'),
-        Config.CELERY_TASK_WORKER_CONCURRENCY
-    )
-    celery_github_worker_concurrency = _safe_int(
-        scan_config.get('celery_github_worker_concurrency'),
-        Config.CELERY_GITHUB_WORKER_CONCURRENCY
-    )
-    celery_heavy_worker_concurrency = _safe_int(
-        scan_config.get('celery_heavy_worker_concurrency'),
-        Config.CELERY_HEAVY_WORKER_CONCURRENCY
-    )
-    celery_web_worker_concurrency = _safe_int(
-        scan_config.get('celery_web_worker_concurrency'),
-        Config.CELERY_WEB_WORKER_CONCURRENCY
-    )
-    celery_prefetch_multiplier = _safe_int(
-        scan_config.get('celery_prefetch_multiplier'),
-        Config.CELERY_PREFETCH_MULTIPLIER
-    )
-    celery_max_tasks_per_child = _safe_int(
-        scan_config.get('celery_max_tasks_per_child'),
-        Config.CELERY_MAX_TASKS_PER_CHILD
-    )
-    celery_max_memory_per_child = _safe_int(
-        scan_config.get('celery_max_memory_per_child'),
-        Config.CELERY_MAX_MEMORY_PER_CHILD
-    )
-    nuclei_single_target_timeout_sec = _safe_int(
-        scan_config.get('nuclei_single_target_timeout_sec'),
-        Config.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC
-    )
-    nuclei_rate_limit = _safe_int(
-        scan_config.get('nuclei_rate_limit'),
-        Config.NUCLEI_RATE_LIMIT
-    )
-    nuclei_concurrency = _safe_int(
-        scan_config.get('nuclei_concurrency'),
-        Config.NUCLEI_CONCURRENCY
-    )
-    nuclei_bulk_size = _safe_int(
-        scan_config.get('nuclei_bulk_size'),
-        Config.NUCLEI_BULK_SIZE
-    )
-    afrog_concurrency = _safe_int(
-        scan_config.get('afrog_concurrency'),
-        Config.AFROG_CONCURRENCY
-    )
-    afrog_rate_limit = _safe_int(
-        scan_config.get('afrog_rate_limit'),
-        Config.AFROG_RATE_LIMIT
-    )
-    poc_update_proxy = str(scan_config.get('poc_update_proxy') or '').strip()
-    urlfinder_url_probe_enable = _safe_bool(
-        scan_config.get('urlfinder_url_probe_enable'),
-        Config.URLFINDER_URL_PROBE_ENABLE
-    )
-    urlfinder_url_probe_max_targets = _safe_int(
-        scan_config.get('urlfinder_url_probe_max_targets'),
-        Config.URLFINDER_URL_PROBE_MAX_TARGETS
-    )
-    urlfinder_url_probe_concurrency = _safe_int(
-        scan_config.get('urlfinder_url_probe_concurrency'),
-        Config.URLFINDER_URL_PROBE_CONCURRENCY
-    )
-    host_timeout_type = _normalize_host_timeout_type(
-        scan_config.get('host_timeout_type'),
-        Config.HOST_TIMEOUT_TYPE
-    )
-    host_timeout = _safe_int(
-        scan_config.get('host_timeout'),
-        Config.HOST_TIMEOUT
-    )
-    port_parallelism = _safe_int(
-        scan_config.get('port_parallelism'),
-        Config.PORT_PARALLELISM
-    )
-    port_min_rate = _safe_int(
-        scan_config.get('port_min_rate'),
-        Config.PORT_MIN_RATE
-    )
-    black_ips = _normalize_string_list(scan_config.get('black_ips'))
-    dns_resolvers = _normalize_string_list(scan_config.get('dns_resolvers'))
-
-    if not black_ips:
-        raise ValueError('黑名单IP配置不能为空')
-
-    if not isinstance(config_obj.get('ARL'), dict):
-        config_obj['ARL'] = {}
-
-    config_obj['ARL']['DOMAIN_DICT'] = domain_dict
-    config_obj['ARL']['FILE_LEAK_DICT'] = file_leak_dict
-    config_obj['ARL']['DOMAIN_BRUTE_CONCURRENT'] = domain_brute_concurrent
-    config_obj['ARL']['ALT_DNS_CONCURRENT'] = alt_dns_concurrent
-    config_obj['ARL']['WEB_GUNICORN_WORKERS'] = web_gunicorn_workers
-    config_obj['ARL']['CELERY_TASK_WORKER_CONCURRENCY'] = celery_task_worker_concurrency
-    config_obj['ARL']['CELERY_GITHUB_WORKER_CONCURRENCY'] = celery_github_worker_concurrency
-    config_obj['ARL']['CELERY_HEAVY_WORKER_CONCURRENCY'] = celery_heavy_worker_concurrency
-    config_obj['ARL']['CELERY_WEB_WORKER_CONCURRENCY'] = celery_web_worker_concurrency
-    config_obj['ARL']['CELERY_PREFETCH_MULTIPLIER'] = celery_prefetch_multiplier
-    config_obj['ARL']['CELERY_MAX_TASKS_PER_CHILD'] = celery_max_tasks_per_child
-    config_obj['ARL']['CELERY_MAX_MEMORY_PER_CHILD'] = celery_max_memory_per_child
-    config_obj['ARL']['NUCLEI_SINGLE_TARGET_TIMEOUT_SEC'] = nuclei_single_target_timeout_sec
-    config_obj['ARL']['NUCLEI_RATE_LIMIT'] = nuclei_rate_limit
-    config_obj['ARL']['NUCLEI_CONCURRENCY'] = nuclei_concurrency
-    config_obj['ARL']['NUCLEI_BULK_SIZE'] = nuclei_bulk_size
-    config_obj['ARL']['AFROG_CONCURRENCY'] = afrog_concurrency
-    config_obj['ARL']['AFROG_RATE_LIMIT'] = afrog_rate_limit
-    config_obj['ARL']['POC_UPDATE_PROXY'] = poc_update_proxy
-    config_obj['ARL']['URLFINDER_URL_PROBE_ENABLE'] = urlfinder_url_probe_enable
-    config_obj['ARL']['URLFINDER_URL_PROBE_MAX_TARGETS'] = urlfinder_url_probe_max_targets
-    config_obj['ARL']['URLFINDER_URL_PROBE_CONCURRENCY'] = urlfinder_url_probe_concurrency
-    config_obj['ARL']['HOST_TIMEOUT_TYPE'] = host_timeout_type
-    config_obj['ARL']['HOST_TIMEOUT'] = host_timeout
-    config_obj['ARL']['PORT_PARALLELISM'] = port_parallelism
-    config_obj['ARL']['PORT_MIN_RATE'] = port_min_rate
-    config_obj['ARL']['BLACK_IPS'] = black_ips
-    config_obj['ARL']['DNS_RESOLVERS'] = dns_resolvers
-
-    return config_obj
+SERVICE_API_PROVIDER_TEST_SERVICE = ServiceApiProviderTestService(
+    config=Config,
+    service_api_config_service=SERVICE_API_CONFIG_SERVICE,
+    utils_module=utils,
+    logger=logger,
+)
 
 
 @ns.route('/config/')
@@ -6679,20 +4700,21 @@ class ApiConsoleConfig(ARLResource):
         except Exception as exc:
             return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
 
-        with CONFIG_LOCK:
-            try:
-                backup_path = _backup_config_file(config_path)
-                _atomic_write_yaml(config_path, config_obj)
-                refresh_runtime_config_best_effort(force=True)
-            except Exception as exc:
-                logger.exception('save config failed: %s', exc)
-                return utils.build_ret(
-                    ErrorMsg.Error,
-                    {
-                        'error': str(exc),
-                        'config_path': str(config_path),
-                    }
-                )
+        try:
+            _, persist_result = CONFIG_DOMAIN_SERVICE.save(
+                config_obj,
+                validator=_ensure_json_like_config,
+            )
+            backup_path = persist_result['backup_path']
+        except Exception as exc:
+            logger.exception('save config failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -6716,8 +4738,8 @@ class ApiConsoleServiceApi(ARLResource):
         config_path = _resolve_config_path()
         try:
             config_obj = _load_config_from_file(config_path)
-            raw_service_api = _extract_service_api_config(config_obj)
-            service_api, sensitive_configured = _sanitize_service_api_for_client(raw_service_api)
+            raw_service_api = SERVICE_API_CONFIG_SERVICE.extract(config_obj)
+            service_api, sensitive_configured = SERVICE_API_CONFIG_SERVICE.sanitize(raw_service_api)
             return utils.build_ret(
                 ErrorMsg.Success,
                 {
@@ -6744,26 +4766,27 @@ class ApiConsoleServiceApi(ARLResource):
         service_api = payload.get('service_api')
         config_path = _resolve_config_path()
 
-        with CONFIG_LOCK:
-            try:
-                config_obj = _load_config_from_file(config_path)
-                merged_service_api = _fill_missing_sensitive_service_api_fields(service_api, config_obj)
-                config_obj = _merge_service_api_config(config_obj, merged_service_api)
-                _ensure_json_like_config(config_obj)
-                backup_path = _backup_config_file(config_path)
-                _atomic_write_yaml(config_path, config_obj)
-                refresh_runtime_config_best_effort(force=True)
-                raw_saved_service_api = _extract_service_api_config(config_obj)
-                saved_service_api, sensitive_configured = _sanitize_service_api_for_client(raw_saved_service_api)
-            except Exception as exc:
-                logger.exception('save service_api failed: %s', exc)
-                return utils.build_ret(
-                    ErrorMsg.Error,
-                    {
-                        'error': str(exc),
-                        'config_path': str(config_path),
-                    }
-                )
+        try:
+            _, config_obj, persist_result = CONFIG_DOMAIN_SERVICE.update(
+                service_api,
+                merger=lambda current_config, payload: SERVICE_API_CONFIG_SERVICE.merge(
+                    current_config,
+                    SERVICE_API_CONFIG_SERVICE.fill_missing_sensitive(payload, current_config),
+                ),
+                validator=_ensure_json_like_config,
+            )
+            backup_path = persist_result['backup_path']
+            raw_saved_service_api = SERVICE_API_CONFIG_SERVICE.extract(config_obj)
+            saved_service_api, sensitive_configured = SERVICE_API_CONFIG_SERVICE.sanitize(raw_saved_service_api)
+        except Exception as exc:
+            logger.exception('save service_api failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -6803,8 +4826,8 @@ class ApiConsoleServiceApiReveal(ARLResource):
         config_path = _resolve_config_path()
         try:
             config_obj = _load_config_from_file(config_path)
-            service_api = _extract_service_api_config(config_obj)
-            sensitive_configured = _build_service_api_sensitive_configured_map(service_api)
+            service_api = SERVICE_API_CONFIG_SERVICE.extract(config_obj)
+            sensitive_configured = SERVICE_API_CONFIG_SERVICE.sensitive_configured(service_api)
         except Exception as exc:
             logger.exception('reveal service_api failed: %s', exc)
             return utils.build_ret(
@@ -6854,7 +4877,7 @@ class ApiConsoleServiceApiTest(ARLResource):
 
         try:
             config_obj = _load_config_from_file(_resolve_config_path())
-            merged_service_api = _fill_missing_sensitive_service_api_fields(service_api, config_obj)
+            merged_service_api = SERVICE_API_CONFIG_SERVICE.fill_missing_sensitive(service_api, config_obj)
         except Exception as exc:
             logger.exception('load config for service_api test failed: %s', exc)
             merged_service_api = service_api
@@ -6898,7 +4921,7 @@ class ApiConsoleServiceApiBatchTest(ARLResource):
 
         try:
             config_obj = _load_config_from_file(_resolve_config_path())
-            merged_service_api = _fill_missing_sensitive_service_api_fields(service_api, config_obj)
+            merged_service_api = SERVICE_API_CONFIG_SERVICE.fill_missing_sensitive(service_api, config_obj)
         except Exception as exc:
             logger.exception('load config for service_api batch test failed: %s', exc)
             merged_service_api = service_api
@@ -6966,8 +4989,8 @@ class ApiConsoleAiConfig(ARLResource):
         config_path = _resolve_config_path()
         try:
             config_obj = _load_config_from_file(config_path)
-            ai_config_raw = _extract_ai_config(config_obj)
-            ai_config, sensitive_configured = _sanitize_ai_config_for_client(ai_config_raw)
+            ai_config_raw = AI_CONFIG_SERVICE.extract(config_obj)
+            ai_config, sensitive_configured = AI_CONFIG_SERVICE.sanitize(ai_config_raw)
             return utils.build_ret(
                 ErrorMsg.Success,
                 {
@@ -6995,26 +5018,28 @@ class ApiConsoleAiConfig(ARLResource):
         ai_config = payload.get('ai_config')
         config_path = _resolve_config_path()
 
-        with CONFIG_LOCK:
-            try:
-                config_obj = _load_config_from_file(config_path)
-                merged_ai_config = _fill_missing_sensitive_ai_fields(ai_config, config_obj)
-                config_obj = _merge_ai_config(config_obj, merged_ai_config)
-                _ensure_json_like_config(config_obj)
-                backup_path = _backup_config_file(config_path)
-                _atomic_write_yaml(config_path, config_obj)
-                runtime_refreshed = bool(refresh_runtime_config_best_effort(force=True))
-                saved_ai_config_raw = _extract_ai_config(config_obj)
-                saved_ai_config, sensitive_configured = _sanitize_ai_config_for_client(saved_ai_config_raw)
-            except Exception as exc:
-                logger.exception('save ai_config failed: %s', exc)
-                return utils.build_ret(
-                    ErrorMsg.Error,
-                    {
-                        'error': str(exc),
-                        'config_path': str(config_path),
-                    }
-                )
+        try:
+            _, config_obj, persist_result = CONFIG_DOMAIN_SERVICE.update(
+                ai_config,
+                merger=lambda current_config, payload: AI_CONFIG_SERVICE.merge(
+                    current_config,
+                    AI_CONFIG_SERVICE.fill_missing_sensitive(payload, current_config),
+                ),
+                validator=_ensure_json_like_config,
+            )
+            backup_path = persist_result['backup_path']
+            runtime_refreshed = persist_result['runtime_refreshed']
+            saved_ai_config_raw = AI_CONFIG_SERVICE.extract(config_obj)
+            saved_ai_config, sensitive_configured = AI_CONFIG_SERVICE.sanitize(saved_ai_config_raw)
+        except Exception as exc:
+            logger.exception('save ai_config failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -7056,8 +5081,8 @@ class ApiConsoleAiConfigReveal(ARLResource):
 
         try:
             config_obj = _load_config_from_file(config_path)
-            ai_config_raw = _extract_ai_config(config_obj)
-            ai_config, sensitive_configured = _sanitize_ai_config_for_client(ai_config_raw)
+            ai_config_raw = AI_CONFIG_SERVICE.extract(config_obj)
+            ai_config, sensitive_configured = AI_CONFIG_SERVICE.sanitize(ai_config_raw)
         except Exception as exc:
             logger.exception('reveal ai_config failed: %s', exc)
             return utils.build_ret(
@@ -7103,7 +5128,7 @@ class ApiConsoleAiConfigTest(ARLResource):
 
         try:
             config_obj = _load_config_from_file(config_path)
-            merged_ai_config = _fill_missing_sensitive_ai_fields(ai_config, config_obj)
+            merged_ai_config = AI_CONFIG_SERVICE.fill_missing_sensitive(ai_config, config_obj)
             result = _test_ai_config_connectivity(merged_ai_config)
             return utils.build_ret(ErrorMsg.Success, result)
         except Exception as exc:
@@ -7158,67 +5183,70 @@ class ApiConsoleAiConfigSopUpload(ARLResource):
         sop_file = _resolve_ai_prompt_template_file(prompt_id, '')
         now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        with CONFIG_LOCK:
-            try:
-                config_obj = _load_config_from_file(config_path)
-                ai_config = _extract_ai_config(config_obj)
-                prompt_templates = _normalize_ai_prompt_templates(ai_config.get('prompt_templates'))
-                ai_denoise_prompt_ids = _normalize_ai_denoise_prompt_ids(
-                    ai_config.get('ai_denoise_prompt_ids'),
-                    prompt_templates,
-                )
+        def merge_uploaded_sop(current_config, _payload):
+            ai_config = AI_CONFIG_SERVICE.extract(current_config)
+            prompt_templates = _normalize_ai_prompt_templates(ai_config.get('prompt_templates'))
+            ai_denoise_prompt_ids = _normalize_ai_denoise_prompt_ids(
+                ai_config.get('ai_denoise_prompt_ids'),
+                prompt_templates,
+            )
 
-                target_index = None
+            target_index = None
+            for index, item in enumerate(prompt_templates):
+                if str(item.get('id') or '').strip() == prompt_id:
+                    target_index = index
+                    break
+            if target_index is None:
                 for index, item in enumerate(prompt_templates):
-                    if str(item.get('id') or '').strip() == prompt_id:
+                    if str(item.get('scene') or '').strip() == scene:
                         target_index = index
                         break
-                if target_index is None:
-                    for index, item in enumerate(prompt_templates):
-                        if str(item.get('scene') or '').strip() == scene:
-                            target_index = index
-                            break
 
-                fallback_name = '默认AI-{}'.format(module_label)
-                target_item = {
-                    'id': prompt_id,
-                    'name': str(sop_payload.get('name') or fallback_name).strip() or fallback_name,
-                    'scene': scene,
-                    'content': str(sop_payload.get('content') or '').strip(),
-                    'updated_at': str(sop_payload.get('updated_at') or now_text).strip() or now_text,
-                    'file': sop_file,
+            fallback_name = '默认AI-{}'.format(module_label)
+            target_item = {
+                'id': prompt_id,
+                'name': str(sop_payload.get('name') or fallback_name).strip() or fallback_name,
+                'scene': scene,
+                'content': str(sop_payload.get('content') or '').strip(),
+                'updated_at': str(sop_payload.get('updated_at') or now_text).strip() or now_text,
+                'file': sop_file,
+            }
+
+            if target_index is None:
+                prompt_templates.append(target_item)
+            else:
+                existing_item = prompt_templates[target_index] if isinstance(prompt_templates[target_index], dict) else {}
+                prompt_templates[target_index] = {
+                    **existing_item,
+                    **target_item,
                 }
 
-                if target_index is None:
-                    prompt_templates.append(target_item)
-                else:
-                    existing_item = prompt_templates[target_index] if isinstance(prompt_templates[target_index], dict) else {}
-                    prompt_templates[target_index] = {
-                        **existing_item,
-                        **target_item,
-                    }
+            ai_config['prompt_templates'] = prompt_templates
+            if module_id in AI_DENOISE_MODULE_SCENE_MAP:
+                ai_denoise_prompt_ids[module_id] = prompt_id
+                ai_config['ai_denoise_prompt_ids'] = ai_denoise_prompt_ids
 
-                ai_config['prompt_templates'] = prompt_templates
-                if module_id in AI_DENOISE_MODULE_SCENE_MAP:
-                    ai_denoise_prompt_ids[module_id] = prompt_id
-                    ai_config['ai_denoise_prompt_ids'] = ai_denoise_prompt_ids
+            return AI_CONFIG_SERVICE.merge(current_config, ai_config)
 
-                config_obj = _merge_ai_config(config_obj, ai_config)
-                _ensure_json_like_config(config_obj)
-                backup_path = _backup_config_file(config_path)
-                _atomic_write_yaml(config_path, config_obj)
-                runtime_refreshed = bool(refresh_runtime_config_best_effort(force=True))
-                saved_ai_config_raw = _extract_ai_config(config_obj)
-                saved_ai_config, sensitive_configured = _sanitize_ai_config_for_client(saved_ai_config_raw)
-            except Exception as exc:
-                logger.exception('upload ai sop failed module:%s err:%s', module_id, exc)
-                return utils.build_ret(
-                    ErrorMsg.Error,
-                    {
-                        'error': str(exc),
-                        'config_path': str(config_path),
-                    }
-                )
+        try:
+            _, config_obj, persist_result = CONFIG_DOMAIN_SERVICE.update(
+                sop_payload,
+                merger=merge_uploaded_sop,
+                validator=_ensure_json_like_config,
+            )
+            backup_path = persist_result['backup_path']
+            runtime_refreshed = persist_result['runtime_refreshed']
+            saved_ai_config_raw = AI_CONFIG_SERVICE.extract(config_obj)
+            saved_ai_config, sensitive_configured = AI_CONFIG_SERVICE.sanitize(saved_ai_config_raw)
+        except Exception as exc:
+            logger.exception('upload ai sop failed module:%s err:%s', module_id, exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -7498,7 +5526,7 @@ class ApiConsoleAiDenoiseAnalyze(ARLResource):
         config_path = _resolve_config_path()
         try:
             config_obj = _load_config_from_file(config_path)
-            ai_config = _extract_ai_config(config_obj)
+            ai_config = AI_CONFIG_SERVICE.extract(config_obj)
             result = _analyze_ai_denoise_batch(
                 ai_config=ai_config,
                 module_id=module_id,
@@ -7564,7 +5592,7 @@ class ApiConsoleScanConfig(ARLResource):
         config_path = _resolve_config_path()
         try:
             config_obj = _load_config_from_file(config_path)
-            scan_config = _extract_scan_config(config_obj)
+            scan_config = SCAN_CONFIG_SERVICE.extract(config_obj)
             active_scan_profile = str(scan_config.get('scan_profile_id', '') or '')
             domain_options = _collect_domain_dict_options(scan_config.get('domain_dict'))
             file_leak_options = _collect_file_leak_dict_options(scan_config.get('file_leak_dict'))
@@ -7573,7 +5601,7 @@ class ApiConsoleScanConfig(ARLResource):
                 {
                     'scan_config': scan_config,
                     'active_scan_profile': active_scan_profile,
-                    'scan_profiles': _build_scan_profiles_payload(active_scan_profile),
+                    'scan_profiles': SCAN_CONFIG_SERVICE.build_profiles_payload(active_scan_profile),
                     'available_domain_dicts': domain_options,
                     'available_file_leak_dicts': file_leak_options,
                     'config_path': str(config_path),
@@ -7597,27 +5625,26 @@ class ApiConsoleScanConfig(ARLResource):
         scan_config = payload.get('scan_config')
         config_path = _resolve_config_path()
 
-        with CONFIG_LOCK:
-            try:
-                config_obj = _load_config_from_file(config_path)
-                config_obj = _merge_scan_config(config_obj, scan_config)
-                _ensure_json_like_config(config_obj)
-                backup_path = _backup_config_file(config_path)
-                _atomic_write_yaml(config_path, config_obj)
-                refresh_runtime_config_best_effort(force=True)
-                saved_scan_config = _extract_scan_config(config_obj)
-                active_scan_profile = str(saved_scan_config.get('scan_profile_id', '') or '')
-                domain_options = _collect_domain_dict_options(saved_scan_config.get('domain_dict'))
-                file_leak_options = _collect_file_leak_dict_options(saved_scan_config.get('file_leak_dict'))
-            except Exception as exc:
-                logger.exception('save scan_config failed: %s', exc)
-                return utils.build_ret(
-                    ErrorMsg.Error,
-                    {
-                        'error': str(exc),
-                        'config_path': str(config_path),
-                    }
-                )
+        try:
+            _, config_obj, persist_result = CONFIG_DOMAIN_SERVICE.update(
+                scan_config,
+                merger=SCAN_CONFIG_SERVICE.merge,
+                validator=_ensure_json_like_config,
+            )
+            backup_path = persist_result['backup_path']
+            saved_scan_config = SCAN_CONFIG_SERVICE.extract(config_obj)
+            active_scan_profile = str(saved_scan_config.get('scan_profile_id', '') or '')
+            domain_options = _collect_domain_dict_options(saved_scan_config.get('domain_dict'))
+            file_leak_options = _collect_file_leak_dict_options(saved_scan_config.get('file_leak_dict'))
+        except Exception as exc:
+            logger.exception('save scan_config failed: %s', exc)
+            return utils.build_ret(
+                ErrorMsg.Error,
+                {
+                    'error': str(exc),
+                    'config_path': str(config_path),
+                }
+            )
 
         return utils.build_ret(
             ErrorMsg.Success,
@@ -7625,7 +5652,7 @@ class ApiConsoleScanConfig(ARLResource):
                 'saved': True,
                 'scan_config': saved_scan_config,
                 'active_scan_profile': active_scan_profile,
-                'scan_profiles': _build_scan_profiles_payload(active_scan_profile),
+                'scan_profiles': SCAN_CONFIG_SERVICE.build_profiles_payload(active_scan_profile),
                 'available_domain_dicts': domain_options,
                 'available_file_leak_dicts': file_leak_options,
                 'config_path': str(config_path),
@@ -7644,7 +5671,7 @@ class ApiConsoleNucleiPocUpdate(ARLResource):
     @auth
     def post(self):
         try:
-            with CONFIG_LOCK:
+            with POC_UPDATE_LOCK:
                 update_info = _sync_poc_repo(
                     'nuclei',
                     NUCLEI_TEMPLATE_REPO_URL,
@@ -7680,7 +5707,7 @@ class ApiConsoleAfrogPocUpdate(ARLResource):
     @auth
     def post(self):
         try:
-            with CONFIG_LOCK:
+            with POC_UPDATE_LOCK:
                 update_info = _sync_poc_repo(
                     'afrog',
                     AFROG_POC_REPO_URL,

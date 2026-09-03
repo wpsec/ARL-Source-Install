@@ -83,7 +83,6 @@ TASK_STAGE_TEXT_MAP = {
     "waf_smart_skip": "智能跳过WAF",
     "afrog_scan": "afrog漏洞扫描",
     "penetration_test": "渗透测试",
-    "ai_pen_test": "AI渗透测试",
     "wih_primary_scan": "WIH主扫描",
     "wih_urlfinder_extract": "URL候选提取",
     "wih_page_intel": "页面线索提取",

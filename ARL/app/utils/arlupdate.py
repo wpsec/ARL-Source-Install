@@ -53,6 +53,7 @@ def create_index():
     compound_indexes = {
         "domain": [
             [("task_id", 1), ("domain", 1)],
+            [("task_id", 1), ("sources", 1)],
         ],
         "site": [
             [("task_id", 1), ("status", 1)],
@@ -66,6 +67,7 @@ def create_index():
         ],
         "asset_domain": [
             [("scope_id", 1), ("domain", 1)],
+            [("scope_id", 1), ("sources", 1)],
         ],
         "asset_site": [
             [("scope_id", 1), ("site", 1)],
@@ -90,6 +92,29 @@ def create_index():
             except Exception as e:
                 logger.warning("create compound index failed: table=%s, keys=%s, error=%s",
                                table, index_keys, e)
+
+    # 结果写入采用 task_id + 稳定标识 upsert；唯一索引负责兜住并发恢复场景。
+    # 历史重复数据不会在启动时自动删除，若索引创建失败只记录告警，交由维护窗口清理。
+    unique_indexes = {
+        "task_stage_ledger": [("key", 1)],
+        "wih": [("task_id", 1), ("fnv_hash", 1)],
+        "wih_endpoint": [("task_id", 1), ("fnv_hash", 1)],
+        "url": [("task_id", 1), ("source", 1), ("url", 1)],
+    }
+    for table, index_keys in unique_indexes.items():
+        try:
+            conn_db(table).create_index(
+                index_keys,
+                unique=True,
+                name="uniq_{}_task_identity".format(table),
+            )
+        except Exception as e:
+            logger.warning(
+                "create unique result index failed: table=%s, keys=%s, error=%s",
+                table,
+                index_keys,
+                e,
+            )
 
 
 def arl_update():

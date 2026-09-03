@@ -13,6 +13,7 @@ import re
 import sys
 import hashlib
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from bson import ObjectId
 from urllib.parse import urlparse
 from celery.utils.log import get_task_logger
@@ -22,6 +23,7 @@ import logging
 import dns.resolver
 from tld import get_tld
 from .conn import http_req, conn_db
+from .log_safety import safe_error_text
 from .http import get_title, get_headers
 from .domain import (
     check_domain_black,
@@ -199,7 +201,7 @@ def append_task_error(task_id: str, error: Exception = None, stage: str = "", tr
         return
 
     stage = str(stage or "").strip()
-    message = str(error or "").strip()
+    message = safe_error_text(error).strip()
     if not message:
         message = error.__class__.__name__ if error else "unknown error"
 
@@ -214,7 +216,7 @@ def append_task_error(task_id: str, error: Exception = None, stage: str = "", tr
         "stage": stage,
         "message": message,
     }
-    traceback_text = str(traceback_text or "").strip()
+    traceback_text = safe_error_text(traceback_text, max_length=12000).strip()
     if traceback_text:
         detail["traceback"] = traceback_text
 
@@ -326,6 +328,10 @@ def get_dns_resolver():
                 logger.error("dns resolver config is empty after parse and custom resolver required")
         else:
             resolver = dns.resolver.Resolver()
+            # 系统 resolver 也必须有明确上限，否则大量候选域名的单次异常解析
+            # 会在线程池中累积，最终表现为阶段长时间无进度。
+            resolver.timeout = 3
+            resolver.lifetime = 6
             logger = get_logger()
             logger.info("dns resolver use system default")
     except Exception as e:
@@ -375,6 +381,24 @@ def _normalize_ip_list(ip_list):
     return public_ips + other_ips + private_ips
 
 
+def _dns_resolution_lifetime(default=6):
+    """将单次 DNS 解析限制在当前阶段仍可使用的时间内。"""
+    try:
+        from .provider_http import current_stage_remaining_sec
+
+        remaining = current_stage_remaining_sec()
+    except Exception:
+        remaining = None
+
+    try:
+        default_value = max(float(default), 0.1)
+    except (TypeError, ValueError):
+        default_value = 6.0
+    if remaining is None:
+        return default_value
+    return max(0.1, min(default_value, float(remaining)))
+
+
 def get_ip(domain, log_flag=True):
     domain = normalize_domain(domain) or str(domain or "").strip().lower().rstrip(".")
     if not domain:
@@ -384,7 +408,11 @@ def get_ip(domain, log_flag=True):
     ips = []
     try:
         resolver = get_dns_resolver()
-        answers = resolver.resolve(domain, 'A')
+        answers = resolver.resolve(
+            domain,
+            'A',
+            lifetime=_dns_resolution_lifetime(getattr(resolver, "lifetime", 6)),
+        )
         for rdata in answers:
             if rdata.address == '0.0.0.1':
                 continue
@@ -414,7 +442,11 @@ def get_ip_system(domain, log_flag=True):
         resolver = dns.resolver.Resolver()
         resolver.lifetime = 6
         resolver.timeout = 3
-        answers = resolver.resolve(domain, 'A')
+        answers = resolver.resolve(
+            domain,
+            'A',
+            lifetime=_dns_resolution_lifetime(getattr(resolver, "lifetime", 6)),
+        )
         for rdata in answers:
             if rdata.address == '0.0.0.1':
                 continue
@@ -469,6 +501,38 @@ def _select_preferred_resolver_ips(ip_list):
     if public_ips:
         return public_ips
     return normalized_ips
+
+
+def _resolve_dns_policy_views(host, has_custom_resolver):
+    """并行获取 DNS policy 所需的解析视角，避免单域名串行等待多个超时。"""
+    lookup_items = [
+        ("resolver", get_ip if has_custom_resolver else get_ip_system),
+        ("system", get_ip_system),
+        ("socket", get_ip_socket),
+    ]
+    if not has_custom_resolver:
+        lookup_items = [lookup_items[0], lookup_items[2]]
+
+    values = {}
+    with ThreadPoolExecutor(max_workers=len(lookup_items)) as executor:
+        future_map = {
+            executor.submit(lookup, host, log_flag=False): name
+            for name, lookup in lookup_items
+        }
+        for future, name in future_map.items():
+            try:
+                values[name] = future.result()
+            except Exception as exc:
+                logger = get_logger()
+                logger.warning(
+                    "dns policy lookup failed view:{} error:{}".format(
+                        name,
+                        safe_error_text(exc),
+                    )
+                )
+                values[name] = []
+
+    return values
 
 
 def build_http_connect_kwargs_for_url(url, policy_detail=None, cache_map=None):
@@ -554,8 +618,9 @@ def check_dns_policy_for_host(hostname):
     # 未配置自定义解析器时尽量保持历史行为，但补充 socket 漂移兜底
     dns_resolvers = [x.strip() for x in Config.DNS_RESOLVERS if isinstance(x, str) and x.strip()]
     if not dns_resolvers:
-        resolver_ips = _normalize_ip_list(get_ip_system(host, log_flag=False))
-        socket_ips = _normalize_ip_list(get_ip_socket(host, log_flag=False))
+        policy_views = _resolve_dns_policy_views(host, has_custom_resolver=False)
+        resolver_ips = _normalize_ip_list(policy_views.get("resolver", []))
+        socket_ips = _normalize_ip_list(policy_views.get("socket", []))
         detail["resolver_ips"] = resolver_ips
         detail["preferred_ips"] = _select_preferred_resolver_ips(resolver_ips)
         detail["resolver_public_ips"] = [ip for ip in resolver_ips if get_ip_type(ip) == "PUBLIC"]
@@ -594,9 +659,10 @@ def check_dns_policy_for_host(hostname):
         detail["reason"] = "no_custom_resolver"
         return True, detail
 
-    resolver_ips = _normalize_ip_list(get_ip(host, log_flag=False))
-    system_ips = _normalize_ip_list(get_ip_system(host, log_flag=False))
-    socket_ips = _normalize_ip_list(get_ip_socket(host, log_flag=False))
+    policy_views = _resolve_dns_policy_views(host, has_custom_resolver=True)
+    resolver_ips = _normalize_ip_list(policy_views.get("resolver", []))
+    system_ips = _normalize_ip_list(policy_views.get("system", []))
+    socket_ips = _normalize_ip_list(policy_views.get("socket", []))
     detail["resolver_ips"] = resolver_ips
     detail["preferred_ips"] = _select_preferred_resolver_ips(resolver_ips)
     detail["resolver_public_ips"] = [ip for ip in resolver_ips if get_ip_type(ip) == "PUBLIC"]
@@ -706,14 +772,19 @@ def get_cname(domain, log_flag=True):
     cnames = []
     try:
         resolver = get_dns_resolver()
-        answers = resolver.resolve(domain, 'CNAME')
+        answers = resolver.resolve(
+            domain,
+            'CNAME',
+            lifetime=_dns_resolution_lifetime(getattr(resolver, "lifetime", 6)),
+        )
         for rdata in answers:
             cnames.append(str(rdata.target).strip(".").lower())
     except dns.resolver.NoAnswer as e:
         if log_flag:
             logger.debug(e)
     except Exception as e:
-        logger.warning("{} {}".format(domain, e))
+        if log_flag:
+            logger.warning("{} {}".format(domain, safe_error_text(e)))
 
     return cnames
 

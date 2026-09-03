@@ -32,6 +32,13 @@ from app.utils import conn_db as conn
 from app.utils.cache import build_cache_key, cached_call
 from app.config import Config
 from app.modules import CollectSource
+from app.services.collection_query_service import (
+    build_collection_data as build_collection_data_service,
+    build_db_query as build_db_query_service,
+    get_default_field as get_default_field_service,
+    normalize_task_status_query as normalize_task_status_query_service,
+    parse_refresh_flag as parse_refresh_flag_service,
+)
 
 # 基础查询字段定义
 # 这些字段用于分页、排序等通用查询功能
@@ -68,6 +75,14 @@ def build_task_service_summary(service_list):
             service_names.add(name)
 
     skip_parent_names = set()
+    for item in service_list:
+        if not isinstance(item, dict):
+            continue
+        stage_name = str(item.get("name", "")).strip()
+        stage_kind = str(item.get("stage_kind", "")).strip().lower()
+        if stage_name and stage_kind == "aggregate":
+            skip_parent_names.add(stage_name)
+
     for parent_name, child_prefixes in TASK_SERVICE_PARENT_PREFIXES.items():
         if parent_name not in service_names:
             continue
@@ -131,42 +146,11 @@ class ARLResource(Resource):
         - status=running -> 真实阶段状态聚合（排除 waiting/done/stop/error）
         - status=waiting/done/stop/error -> 精确匹配
         """
-        if collection not in TASK_STATUS_COLLECTIONS:
-            return query
-        if not isinstance(args, dict) or not isinstance(query, dict):
-            return query
-
-        raw_status = args.get("status")
-        if raw_status is None:
-            return query
-
-        status_text = str(raw_status).strip().lower()
-        if not status_text:
-            return query
-
-        if status_text == "running":
-            query["status"] = {
-                "$exists": True,
-                "$nin": TASK_STATUS_RUNNING_EXCLUDE,
-            }
-            return query
-
-        if status_text in TASK_STATUS_RUNNING_EXCLUDE:
-            query["status"] = status_text
-
-        return query
+        return normalize_task_status_query_service(collection, args, query)
 
     @staticmethod
     def parse_refresh_flag(value):
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return False
-        if isinstance(value, (int, float)):
-            return value > 0
-
-        text = str(value).strip().lower()
-        return text in {"1", "true", "yes", "on", "refresh", "force"}
+        return parse_refresh_flag_service(value)
 
     @staticmethod
     def serialize_response_value(value):
@@ -254,86 +238,7 @@ class ARLResource(Resource):
         返回：
             MongoDB 查询条件字典
         """
-        query_args = {}
-        for key in args:
-            # 跳过分页、排序等基础字段
-            if key in base_query_fields:
-                continue
-
-            # 处理 _id 字段（转换为 ObjectId）
-            if key == '_id':
-                if args[key]:
-                    query_args[key] = ObjectId(args[key])
-
-                continue
-
-            # 跳过空值
-            if args[key] is None:
-                continue
-
-            # 日期大于查询
-            if key.endswith("__dgt"):
-                real_key = key.split('__dgt')[0]
-                raw_value = query_args.get(real_key, {})
-                raw_value.update({
-                    "$gt": datetime.strptime(args[key],
-                                             "%Y-%m-%d %H:%M:%S")
-                })
-                query_args[real_key] = raw_value
-
-            # 日期小于查询
-            elif key.endswith("__dlt"):
-                real_key = key.split('__dlt')[0]
-                raw_value = query_args.get(real_key, {})
-                raw_value.update({
-                    "$lt": datetime.strptime(args[key],
-                                             "%Y-%m-%d %H:%M:%S")
-                })
-                query_args[real_key] = raw_value
-
-            # 不等于查询
-            elif key.endswith("__neq"):
-                real_key = key.split('__neq')[0]
-                raw_value = {
-                    "$ne": args[key]
-                }
-                query_args[real_key] = raw_value
-
-            # 正则不匹配查询
-            elif key.endswith("__not"):
-                real_key = key.split('__not')[0]
-                raw_value = {
-                    "$not": re.compile(re.escape(args[key]))
-                }
-                query_args[real_key] = raw_value
-
-            # 字符串查询（模糊或精确）
-            elif isinstance(args[key], str):
-                if key in EQUAL_FIELDS:
-                    # 支持多值精确匹配：task_id/scope_id 可传入逗号或空白分隔值，自动转换为 $in 查询
-                    raw_text = args[key].strip()
-                    if key in ["task_id", "scope_id"]:
-                        values = [item for item in re.split(r"[,\s]+", raw_text) if item]
-                        if len(values) > 1:
-                            query_args[key] = {"$in": values}
-                        elif len(values) == 1:
-                            query_args[key] = values[0]
-                        else:
-                            query_args[key] = raw_text
-                    else:
-                        # 其它等值字段保持单值精确匹配
-                        query_args[key] = raw_text
-                else:
-                    # 模糊匹配（不区分大小写）
-                    query_args[key] = {
-                        "$regex": re.escape(args[key]),
-                        '$options': "i"
-                    }
-            else:
-                # 其他类型直接赋值
-                query_args[key] = args[key]
-
-        return query_args
+        return build_db_query_service(args, ignored_fields=base_query_fields.keys())
 
     def build_return_items(self, data):
         """
@@ -382,69 +287,12 @@ class ARLResource(Resource):
                 "code": 状态码
             }
         """
-        if not isinstance(args, dict):
-            args = {}
-
-        # _refresh 仅用于控制缓存，不参与 DB 查询条件
-        refresh_cache = self.parse_refresh_flag(args.pop("_refresh", None))
-
-        # 复制原始参数用于构建缓存键，避免 get_default_field 修改原字典导致键不稳定
-        raw_args = args.copy()
-
-        # 获取分页、排序参数
-        default_field = self.get_default_field(args)
-        page = default_field.get("page", 1)
-        size = default_field.get("size", 10)
-        orderby_list = default_field.get('order', [("_id", -1)])
-
-        def _loader():
-            # 构建查询条件
-            query = self.build_db_query(args)
-            query = self.normalize_task_status_query(collection, args, query)
-
-            # 执行分页查询
-            result = conn(collection).find(query).sort(orderby_list).skip(size * (page - 1)).limit(size)
-            # 无过滤条件时允许切换为估算总数，避免全量 count 开销
-            if query:
-                count = conn(collection).count_documents(query)
-            elif Config.API_USE_ESTIMATED_COUNT:
-                count = conn(collection).estimated_document_count()
-            else:
-                count = conn(collection).count_documents({})
-            items = self.build_return_items(result)
-
-            query = self.serialize_response_value(query)
-
-            return {
-                "page": page,
-                "size": size,
-                "total": count,
-                "items": items,
-                "query": query,
-                "code": 200
-            }
-
-        # 大分页请求通常一次性查询，不进入缓存，避免缓存超大对象
-        if size > 5000:
-            return _loader()
-
-        # 列表查询缓存键：按 collection + 分页排序 + 原始参数稳定化
-        cache_raw = {
-            "collection": collection,
-            "page": page,
-            "size": size,
-            "order": orderby_list,
-            "args": raw_args,
-        }
-        cache_key = build_cache_key(
-            "route:build_data:{}".format(collection),
-            json.dumps(cache_raw, ensure_ascii=False, sort_keys=True, default=str)
+        return build_collection_data_service(
+            args=args,
+            collection=collection,
+            item_builder=self.build_return_items,
+            query_serializer=self.serialize_response_value,
         )
-        cache_expire = int(getattr(Config, "API_LIST_CACHE_EXPIRE", 60) or 0)
-        if cache_expire <= 0:
-            return _loader()
-
-        return cached_call(cache_key, _loader, expire=cache_expire, force_refresh=refresh_cache)
 
     def get_default_field(self, args):
         """
@@ -462,50 +310,7 @@ class ARLResource(Resource):
                 "order": 排序列表 [("field", 1/-1), ...]
             }
         """
-        default_field_map = {
-            "page": 1,
-            "size": 10,
-            "order": "-_id"
-        }
-
-        ret = default_field_map.copy()
-        # 导出场景通过内部标记放宽分页上限，且该标记必须提前移除避免进入查询条件
-        _is_export = bool(args.pop("_export", False))
-        _max_size = 100000 if _is_export else Config.API_PAGE_SIZE_MAX
-        if _is_export:
-            # 导出默认拉取最大记录数，避免未传 size 时只导出默认 10 条
-            ret["size"] = _max_size
-
-        for x in default_field_map:
-            if x in args and args[x]:
-                ret[x] = args.pop(x)
-                if x == "size":
-                    if ret[x] <= 0:
-                        ret[x] = 10
-                    if ret[x] >= _max_size:
-                        ret[x] = _max_size
-
-                if x == "page":
-                    # 页码最小为 1
-                    if ret[x] <= 0:
-                        ret[x] = 1
-
-        # 解析排序字段
-        # 支持格式："-field1,+field2,field3"
-        # -: 降序，+: 升序，无符号: 升序
-        orderby_list = []
-        orderby_field = ret.get("order", "-_id")
-        for field in orderby_field.split(","):
-            field = field.strip()
-            if field.startswith("-"):
-                orderby_list.append((field.split("-")[1], -1))
-            elif field.startswith("+"):
-                orderby_list.append((field.split("+")[1], 1))
-            else:
-                orderby_list.append((field, 1))
-
-        ret['order'] = orderby_list
-        return ret
+        return get_default_field_service(args)
 
     def send_export_file(self, args, _type):
         """
@@ -730,6 +535,5 @@ from .nuclei_result import ns as nuclei_result_ns            # Nuclei 扫描结�
 from .wih import ns as wih_ns                                # WIH
 from .wih_endpoint import ns as wih_endpoint_ns              # WIH 接口提取
 from .waf_host import ns as waf_host_ns                      # WAF 识别结果
-from .ai_pen_test import ns as ai_pen_test_ns                # AI 渗透测试结果
 from .assetWih import ns as asset_wih_ns                     # 资产 WIH
 from .api_console import ns as api_console_ns                # 配置中心

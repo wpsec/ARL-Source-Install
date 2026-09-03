@@ -34,8 +34,6 @@ base_search_fields = {
     'app_name': fields.String(description="应用名称（受影响的应用）"),
     'target': fields.String(description="漏洞目标（URL或IP）"),
     "task_id": fields.String(description="任务ID"),
-    "ai_pen_decision": fields.String(description="AI渗透结论(verified/likely_false_positive/needs_manual_review)"),
-    "ai_pen_status": fields.String(description="AI渗透状态(ok/error/skipped)"),
 }
 
 base_search_fields.update(base_query_fields)

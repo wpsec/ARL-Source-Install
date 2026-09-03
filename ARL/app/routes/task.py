@@ -44,10 +44,11 @@ from flask_restx import Resource, Api, reqparse, fields, Namespace
 from bson import ObjectId
 from app import celerytask
 from app.utils import get_logger, auth
-from . import base_query_fields, ARLResource, get_arl_parser, conn
+from . import base_query_fields, ARLResource, get_arl_parser
 from app import utils
 from app.config import normalize_dict_path_compat
 from app.modules import TaskStatus, ErrorMsg, TaskSyncStatus, CeleryAction, TaskTag, TaskType
+from app.repositories import ResultSetRepository, TaskRepository
 from app.helpers import get_options_by_policy_id, submit_task_task,\
     submit_risk_cruising, get_scope_by_scope_id, check_target_in_scope
 from app.helpers.task import get_task_data, restart_task, strip_disabled_penetration_options
@@ -114,7 +115,6 @@ base_search_task_fields = {
     'options.findvhost': fields.Boolean(description="是否开启虚拟主机碰撞检测"),
     'options.web_info_hunter': fields.Boolean(description="是否开启WebInfoHunter（JS信息收集）"),
     'options.penetration_test': fields.Boolean(description="是否开启Web专项渗透测试"),
-    'options.ai_penetration_test': fields.Boolean(description="是否开启AI渗透测试"),
     'options.waf_bypass': fields.Boolean(description="是否开启WAF绕过（仅渗透测试）"),
     'options.smart_skip_waf': fields.Boolean(description="是否开启跳过WAF"),
     'options.ai_denoise': fields.Boolean(description="是否开启AI去噪分析"),
@@ -150,7 +150,7 @@ add_task_fields = ns.model('AddTask', {
     "alt_dns": fields.Boolean(example=False, description="DNS字典智能生成"),
     "ssl_cert": fields.Boolean(example=False, description="SSL证书收集"),
     "dns_query_plugin": fields.Boolean(example=False, default=False, description="DNS查询插件"),
-    "skip_scan_cdn_ip": fields.Boolean(example=False, default=False, description="跳过CDN IP"),
+    "skip_scan_cdn_ip": fields.Boolean(example=True, default=True, description="跳过CDN IP"),
     "nuclei_scan": fields.Boolean(description="Nuclei漏洞扫描", example=False, default=False),
     "afrog_scan": fields.Boolean(description="afrog漏洞扫描", example=False, default=False),
     "findvhost": fields.Boolean(example=False, default=False, description="虚拟主机碰撞"),
@@ -407,7 +407,7 @@ def stop_task(task_id):
     done_status = [TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR]
 
     # 查询任务信息
-    task_data = utils.conn_db('task').find_one({'_id': ObjectId(task_id)})
+    task_data = TaskRepository.find_by_id(task_id)
     if not task_data:
         return utils.build_ret(ErrorMsg.NotFoundTask, {"task_id": task_id})
 
@@ -425,10 +425,10 @@ def stop_task(task_id):
     control.revoke(celery_id, signal='SIGTERM', terminate=True)
 
     # 更新任务状态为停止
-    utils.conn_db('task').update_one({'_id': ObjectId(task_id)}, {"$set": {"status": TaskStatus.STOP}})
+    TaskRepository.update_by_id(task_id, {"$set": {"status": TaskStatus.STOP}})
 
     # 记录任务结束时间
-    utils.conn_db('task').update_one({'_id': ObjectId(task_id)}, {"$set": {"end_time": utils.curr_date()}})
+    TaskRepository.update_by_id(task_id, {"$set": {"end_time": utils.curr_date()}})
 
     return utils.build_ret(ErrorMsg.Success, {"task_id": task_id})
 
@@ -476,7 +476,7 @@ class DeleteTask(ARLResource):
 
         # 第一步：验证所有任务是否可以删除
         for task_id in task_id_list:
-            task_data = utils.conn_db('task').find_one({'_id': ObjectId(task_id)})
+            task_data = TaskRepository.find_by_id(task_id)
             if not task_data:
                 return utils.build_ret(ErrorMsg.NotFoundTask, {"task_id": task_id})
 
@@ -487,21 +487,8 @@ class DeleteTask(ARLResource):
         # 第二步：执行删除操作
         for task_id in task_id_list:
             # 删除任务记录
-            utils.conn_db('task').delete_many({'_id': ObjectId(task_id)})
-            # AI 去噪结果与任务强关联，任务删除时一并清理。
-            utils.conn_db('ai_denoise_result').delete_many({'task_id': task_id})
-            # AI 渗透测试结果与任务强关联，任务删除时一并清理。
-            utils.conn_db('ai_pen_test_result').delete_many({'task_id': task_id})
-            
-            # 相关资产数据表列表
-            table_list = ["cert", "domain", "fileleak", "ip", "service",
-                          "site", "url", "vuln", "cip", "npoc_service", "wih", "wih_endpoint",
-                          "nuclei_result", "stat_finger", "ai_pen_test_result"]
-
-            # 如果选择删除任务数据，则删除所有相关资产
-            if del_task_data_flag:
-                for name in table_list:
-                    utils.conn_db(name).delete_many({'task_id': task_id})
+            TaskRepository.delete_by_id(task_id)
+            TaskRepository.delete_related_data(task_id, del_task_data_flag)
 
         return utils.build_ret(ErrorMsg.Success, {"task_id": task_id_list})
 
@@ -553,13 +540,12 @@ class SyncTask(ARLResource):
         scope_id = args.pop('scope_id')
 
         # 查询任务信息
-        query = {'_id': ObjectId(task_id)}
-        task_data = utils.conn_db('task').find_one(query)
+        task_data = TaskRepository.find_by_id(task_id)
         if not task_data:
             return utils.build_ret(ErrorMsg.NotFoundTask, {"task_id": task_id})
 
         # 查询资产范围信息
-        asset_scope_data = utils.conn_db('asset_scope').find_one({'_id': ObjectId(scope_id)})
+        asset_scope_data = get_scope_by_scope_id(scope_id)
         if not asset_scope_data:
             return utils.build_ret(ErrorMsg.NotFoundScopeID, {"task_id": task_id})
 
@@ -596,7 +582,7 @@ class SyncTask(ARLResource):
         celerytask.arl_task.delay(options=options)
 
         # 更新任务数据
-        conn('task').find_one_and_replace(query, task_data)
+        TaskRepository.replace_by_id(task_id, task_data)
 
         return utils.build_ret(ErrorMsg.Success, {"task_id": task_id})
 
@@ -752,8 +738,7 @@ class TaskByPolicy(ARLResource):
             if task_tag == TaskTag.RISK_CRUISING:
                 # 如果指定了结果集ID，从结果集中获取目标
                 if result_set_id:
-                    query = {"_id": ObjectId(result_set_id)}
-                    item = utils.conn_db('result_set').find_one(query, {"total": 1})
+                    item = ResultSetRepository.find_total_by_id(result_set_id)
                     if not item:
                         return utils.build_ret(ErrorMsg.ResultSetIDNotFound, {"result_set_id": result_set_id})
 

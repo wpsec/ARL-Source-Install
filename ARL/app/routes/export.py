@@ -32,7 +32,6 @@ from datetime import datetime, timedelta
 from collections import Counter
 from html import escape
 import ipaddress
-import yaml
 from openpyxl.writer.excel import save_virtual_workbook
 from openpyxl.styles import Font, Color, PatternFill, Alignment, Border, Side
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -42,11 +41,14 @@ from app.utils.tls_policy import get_ssl_security_compliance
 from app import utils
 from app.config import Config
 from app.modules import CeleryAction, CollectSource
+from app.repositories import DomainRepository, ExportRepository, SiteRepository, TaskRepository
+from app.services.config_file_store import ConfigFileStore
 from urllib.parse import quote, urlparse
 
 ns = Namespace('export', description="任务报告导出接口")
 
 logger = get_logger()
+EXPORT_CONFIG_FILE_STORE = ConfigFileStore(logger=logger)
 
 MONGO_EXPORT_BATCH_SIZE = 500
 EXPORT_JOB_STATUS_QUEUED = "queued"
@@ -91,6 +93,7 @@ DOMAIN_EXPORT_PROJECTION = {
     "record": 1,
     "ips": 1,
     "source": 1,
+    "sources": 1,
 }
 URL_EXPORT_PROJECTION = {
     "url": 1,
@@ -182,71 +185,6 @@ CERT_EXPORT_PROJECTION = {
     "domain": 1,
     "domains": 1,
     "cert": 1,
-}
-AI_PEN_TEST_EXPORT_PROJECTION = {
-    "task_id": 1,
-    "source_collection": 1,
-    "source_module": 1,
-    "risk_type": 1,
-    "risk_name": 1,
-    "target": 1,
-    "vuln_url": 1,
-    "decision": 1,
-    "confidence": 1,
-    "status": 1,
-    "verification_step": 1,
-    "payload_type": 1,
-    "payload_variant": 1,
-    "payload_expected_signal": 1,
-    "payload": 1,
-    "request_method": 1,
-    "request_url": 1,
-    "request_path": 1,
-    "request_packet": 1,
-    "request_template_mode": 1,
-    "request_template_content_type": 1,
-    "request_template_summary": 1,
-    "evidence_snippet": 1,
-    "http_status": 1,
-    "response_hash_diff": 1,
-    "proof_family": 1,
-    "proof_type": 1,
-    "proof_strength": 1,
-    "unauth_access_hit": 1,
-    "unauth_access_type": 1,
-    "unauth_access_reason": 1,
-    "unauth_probe_summary": 1,
-    "unauth_negative_type": 1,
-    "decision_guard_action": 1,
-    "decision_guard_reason": 1,
-    "proof_signals": 1,
-    "proof_summary": 1,
-    "reason": 1,
-    "high_value_summary": 1,
-    "high_value_family": 1,
-    "high_value_family_rank": 1,
-    "high_value_keywords": 1,
-    "tool_trace": 1,
-    "agent_trace": 1,
-    "tool_calls": 1,
-    "tool_results": 1,
-    "stop_reason": 1,
-    "budget_used": 1,
-    "runtime_version": 1,
-    "session_summary": 1,
-    "tool_plan_source": 1,
-    "ai_status": 1,
-    "ai_plan_decision": 1,
-    "ai_plan_confidence": 1,
-    "ai_plan_reason": 1,
-    "ai_plan_actions": 1,
-    "ai_plan_tool_plan": 1,
-    "ai_plan_request": 1,
-    "ai_plan_reply": 1,
-    "external_tool_hit": 1,
-    "external_tool_runs": 1,
-    "save_date": 1,
-    "update_date": 1,
 }
 AI_DENOISE_RESULT_EXPORT_PROJECTION = {
     "task_id": 1,
@@ -347,16 +285,9 @@ def _resolve_export_job_dir() -> Path:
     return export_dir
 
 
-def _get_export_job_collection():
-    return utils.conn_db("export_job")
-
-
 def _ensure_export_job_indexes():
     try:
-        collection = _get_export_job_collection()
-        collection.create_index("created_at", background=True)
-        collection.create_index("status", background=True)
-        collection.create_index("expire_at", expireAfterSeconds=0, background=True)
+        ExportRepository.ensure_job_indexes()
     except Exception as exc:
         logger.warning("ensure export_job indexes failed: %s", exc)
 
@@ -442,14 +373,13 @@ def run_export_report_job(job_id: str):
         raise ValueError("job_id missing")
 
     _ensure_export_job_indexes()
-    collection = _get_export_job_collection()
     now_text = utils.curr_date()
-    collection.update_one(
-        {"_id": ObjectId(job_id_text)},
+    ExportRepository.update_job(
+        job_id_text,
         {"$set": {"status": EXPORT_JOB_STATUS_RUNNING, "started_at": now_text, "updated_at": now_text}},
     )
 
-    job_doc = collection.find_one({"_id": ObjectId(job_id_text)})
+    job_doc = ExportRepository.find_job(job_id_text)
     if not job_doc:
         raise ValueError("export job not found")
 
@@ -460,8 +390,8 @@ def run_export_report_job(job_id: str):
 
     completed_text = utils.curr_date()
     expire_at = datetime.utcnow() + timedelta(days=max(1, int(getattr(Config, "EXPORT_REPORT_KEEP_DAYS", 3) or 3)))
-    collection.update_one(
-        {"_id": ObjectId(job_id_text)},
+    ExportRepository.update_job(
+        job_id_text,
         {
             "$set": {
                 "status": EXPORT_JOB_STATUS_DONE,
@@ -508,7 +438,7 @@ def enqueue_export_report_job(task_ids, export_format="excel"):
         "task_target": sanitize_excel_value(first_task.get("target", "")).strip(),
         "task_count": len(normalized_task_ids),
     }
-    insert_ret = _get_export_job_collection().insert_one(doc)
+    insert_ret = ExportRepository.insert_job(doc)
     job_id_text = str(insert_ret.inserted_id)
 
     from app import celerytask
@@ -521,8 +451,8 @@ def enqueue_export_report_job(task_ids, export_format="excel"):
             }
         )
     )
-    _get_export_job_collection().update_one(
-        {"_id": insert_ret.inserted_id},
+    ExportRepository.update_job(
+        insert_ret.inserted_id,
         {"$set": {"celery_id": celery_id}},
     )
     return {
@@ -537,18 +467,7 @@ def _resolve_export_config_path() -> Path:
     """
     解析导出模块读取配置的路径，优先使用运行时挂载配置。
     """
-    custom_path = str(os.environ.get("ARL_CONFIG_EDIT_PATH", "") or "").strip()
-    candidates = [
-        Path(custom_path) if custom_path else None,
-        Path("/code/app/config.yaml"),
-        Path(__file__).resolve().parents[2] / "docker" / "config-docker.yaml",
-    ]
-    for item in candidates:
-        if not item:
-            continue
-        if item.exists() and item.is_file():
-            return item
-    return Path(__file__).resolve().parents[2] / "docker" / "config-docker.yaml"
+    return EXPORT_CONFIG_FILE_STORE.resolve_path()
 
 
 def _load_ai_export_config():
@@ -556,16 +475,9 @@ def _load_ai_export_config():
     从配置文件读取 AI 导出相关配置。
     """
     config_path = _resolve_export_config_path()
-    if not config_path.exists():
-        return {}
-
     try:
-        with config_path.open("r", encoding="utf-8") as file_obj:
-            loaded = yaml.safe_load(file_obj) or {}
+        loaded = EXPORT_CONFIG_FILE_STORE.load(config_path)
     except Exception:
-        loaded = {}
-
-    if not isinstance(loaded, dict):
         return {}
 
     ai_conf = loaded.get("AI", {})
@@ -1294,15 +1206,23 @@ def _extract_domain_source_list(value):
     将 domain.source 统一转为列表，兼容 str/list/None。
     """
     items = []
-    for raw in as_list(value):
+
+    def append_value(raw):
+        if isinstance(raw, (list, tuple, set)):
+            for child in raw:
+                append_value(child)
+            return
         text = sanitize_excel_value(raw).strip()
         if not text:
-            continue
+            return
         if "," in text:
             parts = [x.strip() for x in text.split(",") if x.strip()]
             items.extend(parts)
-            continue
+            return
         items.append(text)
+
+    for raw in as_list(value):
+        append_value(raw)
 
     dedup = []
     seen = set()
@@ -1774,7 +1694,7 @@ class ARLExportJobStatus(Resource):
         if not normalized_job_id:
             return {"error": "job_id 不能为空"}, 400
         try:
-            job_doc = _get_export_job_collection().find_one({"_id": ObjectId(normalized_job_id)})
+            job_doc = ExportRepository.find_job(normalized_job_id)
         except Exception:
             return {"error": "无效的 job_id"}, 400
         if not job_doc:
@@ -1806,7 +1726,7 @@ class ARLExportJobDownload(Resource):
         if not normalized_job_id:
             return {"error": "job_id 不能为空"}, 400
         try:
-            job_doc = _get_export_job_collection().find_one({"_id": ObjectId(normalized_job_id)})
+            job_doc = ExportRepository.find_job(normalized_job_id)
         except Exception:
             return {"error": "无效的 job_id"}, 400
         if not job_doc:
@@ -1843,13 +1763,10 @@ def get_task_data(task_id):
         任务数据字典或None
     """
     try:
-        task_data = utils.conn_db('task').find_one(
-            {'_id': ObjectId(task_id)},
-            projection=TASK_EXPORT_PROJECTION,
-        )
-        return task_data
-    except Exception as e:
-        pass
+        return TaskRepository.find_by_id(task_id, projection=TASK_EXPORT_PROJECTION)
+    except Exception as exc:
+        logger.warning("load export task failed task_id=%s error=%s", task_id, exc)
+        return None
 
 
 def get_ip_data(task_id):
@@ -1862,11 +1779,9 @@ def get_ip_data(task_id):
     返回：
         IP数据游标
     """
-    data = utils.conn_db('ip').find(
-        {'task_id': task_id},
-        projection=IP_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
-    return data
+    return ExportRepository.find_by_task_id(
+        'ip', task_id, projection=IP_EXPORT_PROJECTION, batch_size=MONGO_EXPORT_BATCH_SIZE
+    )
 
 
 def get_site_data(task_id):
@@ -1879,11 +1794,11 @@ def get_site_data(task_id):
     返回：
         站点数据游标
     """
-    data = utils.conn_db('site').find(
-        {'task_id': task_id},
+    return SiteRepository.find_by_task_id(
+        task_id,
         projection=SITE_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
-    return data
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    )
 
 
 def get_domain_data(task_id):
@@ -1896,54 +1811,52 @@ def get_domain_data(task_id):
     返回：
         域名数据游标
     """
-    data = utils.conn_db('domain').find(
-        {'task_id': task_id},
+    return DomainRepository.find_by_task_id(
+        task_id,
         projection=DOMAIN_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
-    return data
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    )
 
 
 def get_url_data(task_id):
     """
     获取任务的 URL 信息数据。
     """
-    return utils.conn_db('url').find(
-        {'task_id': task_id},
-        projection=URL_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+    return ExportRepository.find_by_task_id(
+        'url', task_id, projection=URL_EXPORT_PROJECTION, batch_size=MONGO_EXPORT_BATCH_SIZE
+    )
 
 
 def get_fileleak_data(task_id):
     """
     获取任务的目录扫描（文件泄露）数据。
     """
-    return utils.conn_db('fileleak').find(
-        {
-            'task_id': task_id,
-            'source': {'$ne': CollectSource.WIH_URL_PROBE},
-        },
+    return ExportRepository.find_fileleak_by_task_id(
+        task_id,
+        excluded_source=CollectSource.WIH_URL_PROBE,
         projection=FILELEAK_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    )
 
 
 def get_wih_data(task_id):
     """
     获取任务的 WIH 数据。
     """
-    return utils.conn_db('wih').find(
-        {'task_id': task_id},
-        projection=WIH_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+    return ExportRepository.find_by_task_id(
+        'wih', task_id, projection=WIH_EXPORT_PROJECTION, batch_size=MONGO_EXPORT_BATCH_SIZE
+    )
 
 
 def get_wih_endpoint_data(task_id):
     """
     获取任务的 WIH 接口提取数据。
     """
-    return utils.conn_db('wih_endpoint').find(
-        {'task_id': task_id},
+    return ExportRepository.find_by_task_id(
+        'wih_endpoint', task_id,
         projection=WIH_ENDPOINT_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    )
 
 
 def _normalize_task_id_list(task_ids):
@@ -1973,14 +1886,12 @@ def get_service_data(task_ids):
     if not task_id_list:
         return []
 
-    if len(task_id_list) == 1:
-        query = {"task_id": task_id_list[0]}
-    else:
-        query = {"task_id": {"$in": task_id_list}}
-    return utils.conn_db('service').find(
-        query,
+    return ExportRepository.find_by_task_ids(
+        'service',
+        task_id_list,
         projection=SERVICE_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    )
 
 
 def _build_service_rows(task_ids, fallback_ip_items=None):
@@ -2051,50 +1962,40 @@ def get_vuln_data(task_id):
     """
     获取任务的漏洞数据（nPoc/风险巡航等）
     """
-    return utils.conn_db('vuln').find(
-        {'task_id': task_id},
-        projection=VULN_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+    return ExportRepository.find_by_task_id(
+        'vuln', task_id, projection=VULN_EXPORT_PROJECTION, batch_size=MONGO_EXPORT_BATCH_SIZE
+    )
 
 
 def get_nuclei_result_data(task_id):
     """
     获取任务的 nuclei 漏洞结果
     """
-    return utils.conn_db('nuclei_result').find(
-        {'task_id': task_id},
+    return ExportRepository.find_by_task_id(
+        'nuclei_result', task_id,
         projection=NUCLEI_RESULT_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    )
 
 
 def get_stat_finger_data(task_id):
     """
     获取任务的指纹统计结果。
     """
-    return utils.conn_db('stat_finger').find(
-        {'task_id': task_id},
+    return ExportRepository.find_by_task_id(
+        'stat_finger', task_id,
         projection=STAT_FINGER_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    )
 
 
 def get_cert_data(task_id):
     """
     获取任务的 SSL 证书结果
     """
-    return utils.conn_db('cert').find(
-        {'task_id': task_id},
-        projection=CERT_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
-
-
-def get_ai_pen_test_data(task_id):
-    """
-    获取任务的 AI 渗透测试结果。
-    """
-    return utils.conn_db('ai_pen_test_result').find(
-        {'task_id': task_id},
-        projection=AI_PEN_TEST_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+    return ExportRepository.find_by_task_id(
+        'cert', task_id, projection=CERT_EXPORT_PROJECTION, batch_size=MONGO_EXPORT_BATCH_SIZE
+    )
 
 
 def get_ai_denoise_result_data(task_ids):
@@ -2104,14 +2005,11 @@ def get_ai_denoise_result_data(task_ids):
     task_id_list = _normalize_task_id_list(task_ids)
     if not task_id_list:
         return []
-    if len(task_id_list) == 1:
-        query = {"task_id": task_id_list[0]}
-    else:
-        query = {"task_id": {"$in": task_id_list}}
-    return utils.conn_db("ai_denoise_result").find(
-        query,
+    return ExportRepository.find_by_task_ids(
+        "ai_denoise_result", task_id_list,
         projection=AI_DENOISE_RESULT_EXPORT_PROJECTION,
-    ).batch_size(MONGO_EXPORT_BATCH_SIZE)
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    )
 
 
 def _normalize_ai_denoise_module_id(value):
@@ -2238,28 +2136,21 @@ def _query_docs_by_ids(collection_name, id_values, projection):
         return {}
 
     text_ids = set()
-    object_ids = []
-    seen_object_ids = set()
     for raw_id in id_values or []:
         data_id = sanitize_excel_value(raw_id).strip()
         if not data_id:
             continue
         text_ids.add(data_id)
-        if ObjectId.is_valid(data_id) and data_id not in seen_object_ids:
-            seen_object_ids.add(data_id)
-            object_ids.append(ObjectId(data_id))
-
-    query_parts = []
-    if object_ids:
-        query_parts.append({"_id": {"$in": object_ids}})
-    if text_ids:
-        query_parts.append({"_id": {"$in": list(text_ids)}})
-    if not query_parts:
+    if not text_ids:
         return {}
 
-    query = query_parts[0] if len(query_parts) == 1 else {"$or": query_parts}
     doc_map = {}
-    for item in utils.conn_db(collection_name).find(query, projection=projection).batch_size(MONGO_EXPORT_BATCH_SIZE):
+    for item in ExportRepository.find_by_ids(
+        collection_name,
+        text_ids,
+        projection=projection,
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    ):
         doc_id = sanitize_excel_value(item.get("_id", "")).strip()
         if doc_id:
             doc_map[doc_id] = item
@@ -2370,11 +2261,6 @@ def _build_ai_denoise_lookup(task_ids, module_id):
     if not task_id_list or not module_id_text:
         return {"by_data_id": {}, "by_row_key": {}}
 
-    if len(task_id_list) == 1:
-        query = {"task_id": task_id_list[0], "module_id": module_id_text}
-    else:
-        query = {"task_id": {"$in": task_id_list}, "module_id": module_id_text}
-
     by_data_id = {}
     by_row_key = {}
     projection = {
@@ -2386,7 +2272,12 @@ def _build_ai_denoise_lookup(task_ids, module_id):
         "trust": 1,
         "source": 1,
     }
-    for item in utils.conn_db("ai_denoise_result").find(query, projection=projection).batch_size(MONGO_EXPORT_BATCH_SIZE):
+    for item in ExportRepository.find_ai_denoise_by_task_ids(
+        task_id_list,
+        module_id_text,
+        projection=projection,
+        batch_size=MONGO_EXPORT_BATCH_SIZE,
+    ):
         result = _build_ai_lookup_result_from_doc(item)
         data_id = _normalize_ai_lookup_key(item.get("data_id", ""))
         row_key = _normalize_ai_lookup_key(item.get("row_key", ""))
@@ -3169,286 +3060,6 @@ def _build_stat_finger_sheet(wb, task_ids, apply_style=True):
     ws.append(["finger", "数量"])
 
     for row in _extract_stat_finger_rows(task_ids):
-        ws.append(row)
-
-    if apply_style:
-        set_sheet_style(ws)
-
-
-def _extract_ai_pen_rows(task_ids):
-    """
-    汇总 AI 渗透测试导出行。
-    """
-    def _safe_list(value):
-        return list(value or []) if isinstance(value, (list, tuple)) else []
-
-    def _parse_json_object(value):
-        text = sanitize_excel_value(value).strip()
-        if not text:
-            return {}
-        try:
-            parsed = json.loads(text)
-            return parsed if isinstance(parsed, dict) else {}
-        except Exception:
-            return {}
-
-    def _normalize_text_list(items, max_items=32):
-        result = []
-        seen = set()
-        for item in _safe_list(items):
-            text = sanitize_excel_value(item).strip()
-            lowered = text.lower()
-            if not text or lowered in seen:
-                continue
-            seen.add(lowered)
-            result.append(text)
-            if len(result) >= max(1, int(max_items or 1)):
-                break
-        return result
-
-    def _extract_ai_pen_interface_fetch_counts(item):
-        summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
-        sample_interfaces = [entry for entry in _safe_list(summary.get("sample_interfaces")) if isinstance(entry, dict)]
-        runtime_calls = [entry for entry in _safe_list(item.get("runtime_api_calls")) if isinstance(entry, dict)]
-        seen = set()
-        get_count = 0
-        post_count = 0
-
-        source_items = sample_interfaces if sample_interfaces else runtime_calls
-        for entry in source_items:
-            method_text = sanitize_excel_value(entry.get("method", "GET")).strip().upper() or "GET"
-            target_text = sanitize_excel_value(
-                entry.get("url")
-                or entry.get("url_template")
-                or entry.get("path_template")
-                or entry.get("path")
-            ).strip()
-            if not target_text:
-                continue
-            cache_key = "{}|{}".format(method_text, target_text)
-            if cache_key in seen:
-                continue
-            seen.add(cache_key)
-            if method_text == "GET":
-                get_count += 1
-            elif method_text in {"POST", "PUT", "PATCH"}:
-                post_count += 1
-        return {
-            "get_count": get_count,
-            "post_count": post_count,
-            "summary": "POST：{}条\nGET：{}条".format(post_count, get_count),
-        }
-
-    def _build_ai_pen_curl_payload(item):
-        method_text = sanitize_excel_value(item.get("request_method", "")).strip().upper() or "GET"
-        request_url = sanitize_excel_value(item.get("request_url") or item.get("vuln_url") or item.get("target") or "").strip()
-        if not request_url:
-            return ""
-
-        parts = ["curl", "-X", method_text]
-        request_headers = item.get("request_headers") if isinstance(item.get("request_headers"), dict) else {}
-        for header_key, header_value in request_headers.items():
-            key_text = sanitize_excel_value(header_key).strip()
-            value_text = sanitize_excel_value(header_value).strip()
-            lowered = key_text.lower()
-            if not key_text or not value_text:
-                continue
-            if lowered in {"host", "content-length"}:
-                continue
-            parts.extend(["-H", "'{}: {}'".format(key_text, value_text.replace("'", "\\'"))])
-
-        body_text = sanitize_excel_value(item.get("request_body") or "").strip()
-        if not body_text:
-            request_packet = sanitize_excel_value(item.get("request_packet") or "").strip()
-            if request_packet:
-                split_token = "\r\n\r\n" if "\r\n\r\n" in request_packet else "\n\n"
-                if split_token in request_packet:
-                    body_text = request_packet.split(split_token, 1)[1].strip()
-        if body_text:
-            parts.extend(["--data-raw", "'{}'".format(body_text.replace("'", "\\'"))])
-
-        parts.append("'{}'".format(request_url.replace("'", "\\'")))
-        return _truncate_report_text(" ".join(parts), 1600)
-
-    def _build_ai_pen_effective_interfaces_text(item):
-        summary = item.get("api_surface_summary") if isinstance(item.get("api_surface_summary"), dict) else {}
-        sample_interfaces = [entry for entry in _safe_list(summary.get("sample_interfaces")) if isinstance(entry, dict)]
-        runtime_calls = [entry for entry in _safe_list(item.get("runtime_api_calls")) if isinstance(entry, dict)]
-        source_items = sample_interfaces if sample_interfaces else runtime_calls
-        lines = []
-        seen = set()
-        for entry in source_items:
-            method_text = sanitize_excel_value(entry.get("method", "GET")).strip().upper() or "GET"
-            target_text = sanitize_excel_value(
-                entry.get("url_template")
-                or entry.get("path_template")
-                or entry.get("url")
-                or entry.get("path")
-            ).strip()
-            if not target_text:
-                continue
-            cache_key = "{}|{}".format(method_text, target_text)
-            if cache_key in seen:
-                continue
-            seen.add(cache_key)
-            lines.append("{} {}".format(method_text, target_text))
-            if len(lines) >= 16:
-                break
-        return _truncate_report_text("\n".join(lines), 1200)
-
-    def _format_ai_plan_request_text(value):
-        parsed = _parse_json_object(value)
-        if not parsed:
-            return _truncate_report_text(value, 1200)
-        lines = []
-
-        def append(label, raw):
-            text = sanitize_excel_value(raw).strip()
-            if not text:
-                return
-            lines.append("{}: {}".format(label, text))
-
-        append("目标", parsed.get("target", ""))
-        append("漏洞URL", parsed.get("vuln_url", ""))
-        append("来源", parsed.get("source_collection", ""))
-        append("来源模块", parsed.get("source_module", ""))
-        append("风险类型", parsed.get("risk_type", ""))
-        append("风险名称", parsed.get("risk_name", ""))
-        append("严重级别", parsed.get("severity", ""))
-        append("路由提示", parsed.get("route_hint", ""))
-        append("默认探针类型", parsed.get("default_payload_type", ""))
-        append("默认Payload", parsed.get("default_payload", ""))
-        capability_profile = parsed.get("capability_profile", {})
-        if isinstance(capability_profile, dict):
-            append("能力画像", capability_profile.get("name", ""))
-        surface_hints = [sanitize_excel_value(x).strip() for x in (parsed.get("surface_hints") or []) if sanitize_excel_value(x).strip()]
-        if surface_hints:
-            lines.append("能力线索: {}".format(", ".join(surface_hints[:8])))
-        browser_surface_summary = parsed.get("browser_surface_summary", {})
-        if isinstance(browser_surface_summary, dict):
-            append("页面标题", browser_surface_summary.get("page_title", ""))
-            append("页面URL", browser_surface_summary.get("page_url", ""))
-        login_surface_summary = parsed.get("login_surface_summary", {})
-        if isinstance(login_surface_summary, dict):
-            if bool(login_surface_summary.get("login_page_hint")):
-                lines.append("登录页提示: 是")
-            append("密码表单数", login_surface_summary.get("password_form_count", ""))
-            append("验证码表单数", login_surface_summary.get("captcha_form_count", ""))
-        return _truncate_report_text("\n".join(lines), 1200)
-
-    def _format_ai_plan_reply_text(value):
-        parsed = _parse_json_object(value)
-        if not parsed:
-            return _truncate_report_text(value, 1200)
-        lines = []
-
-        def append(label, raw):
-            text = sanitize_excel_value(raw).strip()
-            if not text:
-                return
-            lines.append("{}: {}".format(label, text))
-
-        append("结论", parsed.get("decision", ""))
-        append("置信度", parsed.get("confidence", ""))
-        append("原因", parsed.get("reason", ""))
-        append("探针类型", parsed.get("payload_type", ""))
-        append("Payload", parsed.get("payload", ""))
-        evidence_list = [sanitize_excel_value(x).strip() for x in (parsed.get("evidence") or []) if sanitize_excel_value(x).strip()]
-        if evidence_list:
-            lines.append("关键证据:")
-            for idx, item in enumerate(evidence_list[:6], 1):
-                lines.append("{}. {}".format(idx, item))
-        next_actions = [sanitize_excel_value(x).strip() for x in (parsed.get("next_actions") or []) if sanitize_excel_value(x).strip()]
-        if next_actions:
-            lines.append("下一步动作:")
-            for idx, item in enumerate(next_actions[:6], 1):
-                lines.append("{}. {}".format(idx, item))
-        return _truncate_report_text("\n".join(lines), 1200)
-
-    task_id_list = _normalize_task_id_list(task_ids)
-    rows = []
-    dedup_keys = set()
-
-    for task_id in task_id_list:
-        for item in get_ai_pen_test_data(task_id):
-            source_collection = sanitize_excel_value(item.get("source_collection", "")).strip()
-            risk_type = sanitize_excel_value(item.get("risk_type", "")).strip()
-            risk_name = sanitize_excel_value(item.get("risk_name", "")).strip()
-            target = sanitize_excel_value(item.get("target", "")).strip()
-            vuln_url = sanitize_excel_value(item.get("vuln_url", "")).strip()
-            status = sanitize_excel_value(item.get("status", "")).strip()
-            payload = _build_ai_pen_curl_payload(item)
-            interface_fetch_summary = _extract_ai_pen_interface_fetch_counts(item).get("summary", "")
-            effective_interfaces = _build_ai_pen_effective_interfaces_text(item)
-            request_packet = _truncate_report_text(item.get("request_packet", ""), 1200)
-            reason = _truncate_report_text(item.get("reason", ""), 800)
-            save_date = sanitize_excel_value(item.get("save_date") or item.get("update_date") or "").strip()
-
-            dedup_key = (
-                task_id,
-                source_collection,
-                risk_type,
-                risk_name,
-                target,
-                vuln_url,
-                payload,
-            )
-            if dedup_key in dedup_keys:
-                continue
-            dedup_keys.add(dedup_key)
-
-            rows.append([
-                source_collection,
-                risk_type,
-                risk_name,
-                target,
-                status,
-                effective_interfaces,
-                interface_fetch_summary,
-                payload,
-                request_packet,
-                reason,
-                save_date,
-            ])
-
-    return rows
-
-
-def _build_ai_pen_sheet(wb, task_ids, apply_style=True):
-    """
-    在导出工作簿中新增 AI 渗透测试工作表。
-    """
-    ws = wb.create_sheet(title="AI渗透测试")
-    for key, width in {
-        "A": 12.0,
-        "B": 14.0,
-        "C": 26.0,
-        "D": 34.0,
-        "E": 18.0,
-        "F": 46.0,
-        "G": 18.0,
-        "H": 96.0,
-        "I": 96.0,
-        "J": 88.0,
-        "K": 21.0,
-    }.items():
-        ws.column_dimensions[key].width = width
-
-    ws.append([
-        "来源",
-        "风险类型",
-        "风险名称",
-        "目标",
-        "状态",
-        "有效接口",
-        "获取接口",
-        "Payload",
-        "Request请求包",
-        "说明",
-        "时间",
-    ])
-
-    for row in _extract_ai_pen_rows(task_ids):
         ws.append(row)
 
     if apply_style:
@@ -5077,7 +4688,7 @@ class SaveTask(object):
             row.append(item["type"])
             row.append(" \r\n".join(item["record"]))
             row.append(" \r\n".join(item["ips"]))
-            row.append(_format_domain_source_text(item.get("source", "")))
+            row.append(_format_domain_source_text([item.get("sources", []), item.get("source", "")]))
             ws.append(row)
 
         self.set_style(ws)
@@ -5117,12 +4728,6 @@ class SaveTask(object):
         构建 PoC 风险工作表。
         """
         _build_nuclei_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
-
-    def build_ai_pen_xl(self):
-        """
-        构建 AI 渗透测试工作表。
-        """
-        _build_ai_pen_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_stat_finger_xl(self):
         """
@@ -5232,7 +4837,6 @@ class SaveTask(object):
         self.build_waf_xl()
         self.build_vuln_xl()
         self.build_nuclei_xl()
-        self.build_ai_pen_xl()
         self.build_stat_finger_xl()
         self.build_statist()
 
@@ -5374,7 +4978,10 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                     "type": domain_item.get("type", ""),
                     "record": as_list(domain_item.get("record", [])),
                     "ips": as_list(domain_item.get("ips", [])),
-                    "sources": _extract_domain_source_list(domain_item.get("source", "")),
+                    "sources": _extract_domain_source_list([
+                        domain_item.get("sources", []),
+                        domain_item.get("source", ""),
+                    ]),
                 }
             else:
                 merged = merged_domains[domain]
@@ -5386,7 +4993,10 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                     list(
                         set(
                             as_list(merged.get("sources", []))
-                            + _extract_domain_source_list(domain_item.get("source", ""))
+                            + _extract_domain_source_list([
+                                domain_item.get("sources", []),
+                                domain_item.get("source", ""),
+                            ])
                         )
                     )
                 )
@@ -5583,7 +5193,6 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
     _build_waf_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_vuln_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_nuclei_sheet(wb, valid_task_ids, apply_style=apply_style)
-    _build_ai_pen_sheet(wb, valid_task_ids, apply_style=apply_style)
     _build_stat_finger_sheet(wb, valid_task_ids, apply_style=apply_style)
 
     # 资产统计（与单任务导出同结构）

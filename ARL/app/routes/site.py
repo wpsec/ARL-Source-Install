@@ -19,6 +19,7 @@ from app.utils import get_logger, auth
 from app.modules import ErrorMsg
 from app import utils
 from . import base_query_fields, ARLResource, get_arl_parser
+from app.repositories import ResultSetRepository, SiteRepository
 
 
 ns = Namespace('site', description="站点信息")
@@ -159,7 +160,7 @@ class ARLSaveResultSet(ARLResource):
         args = self.parser.parse_args()
         query = self.build_db_query(args)
         # 获取所有匹配的站点URL
-        items = utils.conn_db('site').distinct("site", query)
+        items = SiteRepository.distinct_sites(query)
 
         # 去重并去除文件名（只保留到路径）
         items = list(set([utils.url.cut_filename(x) for x in items]))
@@ -174,7 +175,7 @@ class ARLSaveResultSet(ARLResource):
             "type": "site",
             "total": len(items)
         }
-        result = utils.conn_db('result_set').insert_one(data)
+        result = ResultSetRepository.insert(items=data["items"], result_type=data["type"])
 
         ret_data = {
             "result_set_id": str(result.inserted_id),
@@ -220,8 +221,7 @@ class AddSiteTagARL(ARLResource):
         site_id = args.pop("_id")
         tag = args.pop("tag")
 
-        query = {"_id": ObjectId(site_id)}
-        data = utils.conn_db('site').find_one(query)
+        data = SiteRepository.find_by_id(site_id)
         if not data:
             return utils.build_ret(ErrorMsg.SiteIdNotFound, {"site_id": site_id})
 
@@ -242,7 +242,7 @@ class AddSiteTagARL(ARLResource):
         # 添加新标签
         tag_list.append(tag)
 
-        utils.conn_db('site').update_one(query, {"$set": {"tag": tag_list}})
+        SiteRepository.update_tags(site_id, tag_list)
 
         return utils.build_ret(ErrorMsg.Success, {"tag": tag})
 
@@ -281,8 +281,7 @@ class DeleteSiteTagARL(ARLResource):
         site_id = args.pop("_id")
         tag = args.pop("tag")
 
-        query = {"_id": ObjectId(site_id)}
-        data = utils.conn_db('site').find_one(query)
+        data = SiteRepository.find_by_id(site_id)
         if not data:
             return utils.build_ret(ErrorMsg.SiteIdNotFound, {"site_id": site_id})
 
@@ -303,7 +302,7 @@ class DeleteSiteTagARL(ARLResource):
         # 删除标签
         tag_list.remove(tag)
 
-        utils.conn_db('site').update_one(query, {"$set": {"tag": tag_list}})
+        SiteRepository.update_tags(site_id, tag_list)
 
         return utils.build_ret(ErrorMsg.Success, {"tag": tag})
 
@@ -346,9 +345,6 @@ class DeleteARLSite(ARLResource):
         args = self.parse_args(delete_site_fields)
         id_list = args.pop('_id', [])
         
-        # 遍历删除每个站点
-        for _id in id_list:
-            query = {'_id': ObjectId(_id)}
-            utils.conn_db('site').delete_one(query)
+        SiteRepository.delete_many_by_ids(id_list)
 
         return utils.build_ret(ErrorMsg.Success, {'_id': id_list})

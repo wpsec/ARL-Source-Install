@@ -25,31 +25,44 @@
 """
 import time
 import random
-import copy
 import os
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 from collections import Counter
 from app import utils
 from app.config import Config, normalize_dict_path_compat
 from app import services
 from app import modules
-from app.modules import ScanPortType, CollectSource, TaskStatus
+from app.modules import ScanPortType, CollectSource
 from app.services import fetchCert, run_risk_cruising, run_sniffer, BaseUpdateTask
 from app.services.commonTask import CommonTask, WebSiteFetch, build_url_item
 from app.services.wildcardDomain import (
     collect_wildcard_records_from_domains,
     collect_wildcard_profiles_from_roots,
+    build_wildcard_candidate_details,
     domain_info_hits_wildcard_records,
     domain_info_hits_wildcard_profile,
+    domain_info_hits_wildcard_profile_with_details,
     build_wildcard_probe_roots,
 )
 from app.helpers.domain import find_private_domain_by_task_id, find_public_ip_by_task_id
 from app.services.findVhost import find_vhost
 from app.services.dns_query import run_query_plugin, run_query_plugin_by_ip, run_query_plugin_by_cert
+from app.utils.provider_http import stage_execution_context
+from app.utils.log_safety import safe_error_text
 from app.services.searchEngines import search_engines
 from app.services.domainSiteUpdate import domain_site_update
-from app.helpers.message_notify import push_task_finish_notify
+from app.repositories import DomainRepository
+from app.services.task_orchestrator import DomainTaskOrchestrator
+from app.services.task_pipeline import TaskPipeline
+from app.services.waf_guard import WAFSmartSkipGuard
+from app.services.domain_stage_services import (
+    DomainDiscoveryStageService,
+    DomainNetworkStageService,
+    DomainPostProcessStageService,
+    DomainSiteStageService,
+)
 
 logger = utils.get_logger()
 
@@ -237,6 +250,14 @@ class DomainBrute(object):
         return self.domain_info_list
 
 
+class DomainScanResult(list):
+    """保持历史 IPInfo 列表接口，同时传递端口批次指标。"""
+
+    def __init__(self, values=None, metrics=None):
+        super().__init__(values or [])
+        self.metrics = dict(metrics or {})
+
+
 # 端口扫描
 class ScanPort(object):
     def __init__(self, domain_info_list, option):
@@ -244,7 +265,7 @@ class ScanPort(object):
         self.ipv4_map = {}
         self.ip_cdn_map = {}
         self.have_cdn_ip_list = []
-        self.skip_scan_cdn_ip = False
+        self.skip_scan_cdn_ip = Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT
 
         if option is None:
             default_custom_host_timeout = None
@@ -262,7 +283,9 @@ class ScanPort(object):
             # 避免修改调用方复用的配置对象（例如 DomainTask.scan_port_option）
             option = dict(option)
 
-        self.skip_scan_cdn_ip = option.pop("skip_scan_cdn_ip", False)
+        self.skip_scan_cdn_ip = option.pop(
+            "skip_scan_cdn_ip", Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT
+        )
 
         self.option = option
 
@@ -274,6 +297,12 @@ class ScanPort(object):
         cname = ""
         if domain_info.type == "CNAME" and domain_info.record_list:
             cname = domain_info.record_list[0]
+
+        # 厂商专属 CNAME 属于高特异性证据，优先于通用 CDN 关键词，
+        # 让端口调度可以直接跳过已确认的 CDN/WAF 边缘 IP。
+        dns_vendor, _, _ = WAFSmartSkipGuard.identify_vendor_from_dns(cname=cname)
+        if dns_vendor:
+            return dns_vendor
 
         # 吸收 kscan 启发式能力：CNAME 关键词 + 多IP跨网段
         cdn_name = utils.infer_cdn_by_dns(cname=cname, ip_list=domain_info.ip_list)
@@ -295,9 +324,21 @@ class ScanPort(object):
                     if cdn_name:
                         self.have_cdn_ip_list.append(ip)
 
-        all_ipv4_list = self.ipv4_map.keys()
+        all_ipv4_list = list(self.ipv4_map.keys())
+        skipped_cdn_ip_count = 0
         if self.skip_scan_cdn_ip:
-            all_ipv4_list = list(set(all_ipv4_list) - set(self.have_cdn_ip_list))
+            cdn_ip_set = set(self.have_cdn_ip_list)
+            skipped_cdn_ip_count = len(cdn_ip_set)
+            all_ipv4_list = [ip for ip in all_ipv4_list if ip not in cdn_ip_set]
+
+        logger.info(
+            "port_scan target_summary total:{} selected:{} skipped_cdn:{} skip_cdn_enabled:{}".format(
+                len(self.ipv4_map),
+                len(all_ipv4_list),
+                skipped_cdn_ip_count,
+                bool(self.skip_scan_cdn_ip),
+            )
+        )
 
         start_time = time.time()
         logger.info("start port_scan {}".format(len(all_ipv4_list)))
@@ -315,38 +356,45 @@ class ScanPort(object):
 
             port_info_obj_list = []
             for port_info in result["port_info"]:
-                port_info_obj_list.append(modules.PortInfo(**port_info))
+                if isinstance(port_info, modules.PortInfo):
+                    port_info_obj_list.append(port_info)
+                else:
+                    port_info_obj_list.append(modules.PortInfo(**port_info))
 
             result["port_info"] = port_info_obj_list
 
-            ip_info_obj.append(modules.IPInfo(**result))
+            # 该标记只服务于端口扫描内部的两阶段调度，不能进入既有 IPInfo 模型。
+            ip_info_data = dict(result)
+            ip_info_data.pop("_suspected_all_open", None)
+            ip_info_obj.append(modules.IPInfo(**ip_info_data))
 
         if self.skip_scan_cdn_ip:
-            fake_cdn_ip_info = self.build_fake_cdn_ip_info()
-            ip_info_obj.extend(fake_cdn_ip_info)
+            skipped_cdn_ip_info = self.build_fake_cdn_ip_info()
+            ip_info_obj.extend(skipped_cdn_ip_info)
 
-        return ip_info_obj
+        scan_metrics = dict(getattr(ip_port_result, "metrics", {}) or {})
+        scan_metrics.update({
+            "cdn_skip_enabled": bool(self.skip_scan_cdn_ip),
+            "cdn_target_count": len(self.have_cdn_ip_list),
+            "cdn_skipped_target_count": skipped_cdn_ip_count,
+        })
+        if not all_ipv4_list and skipped_cdn_ip_count:
+            scan_metrics.update({
+                "stage": "cdn_filter",
+                "status": "skipped",
+                "end_reason": "all_targets_cdn",
+                "target_count": len(self.ipv4_map),
+                "output_count": len(ip_info_obj),
+            })
+
+        return DomainScanResult(
+            ip_info_obj,
+            metrics=scan_metrics,
+        )
 
     def build_fake_cdn_ip_info(self):
+        """保留 CDN IP 资产记录，但不伪造未经探测的开放端口。"""
         ret = []
-        map_80_port = {
-            "port_id": 80,
-            "service_name": "http",
-            "version": "",
-            "protocol": "tcp",
-            "product": ""
-        }
-        fake_80_port = modules.PortInfo(**map_80_port)
-
-        map_443_port = {
-            "port_id": 443,
-            "service_name": "https",
-            "version": "",
-            "protocol": "tcp",
-            "product": ""
-        }
-        fake_443_port = modules.PortInfo(**map_443_port)
-        fake_port_info = [fake_80_port, fake_443_port]
 
         for ip in self.ip_cdn_map:
             cdn_name = self.ip_cdn_map[ip]
@@ -356,7 +404,7 @@ class ScanPort(object):
             item = {
                 "ip": ip,
                 "domain": list(self.ipv4_map[ip]),
-                "port_info": copy.deepcopy(fake_port_info),
+                "port_info": [],
                 "cdn_name": cdn_name,
                 "os_info": {}
 
@@ -375,11 +423,31 @@ class FindSite(object):
     def __init__(self, ip_info_list):
         self.ip_info_list = ip_info_list
 
+    def _build_prevalidated_dns_domains(self):
+        """为站点探测传递端口阶段已经确认过的公网域名关系。"""
+        domains = set()
+        for info in self.ip_info_list:
+            if utils.get_ip_type(str(getattr(info, "ip", ""))) != "PUBLIC":
+                continue
+            for domain in getattr(info, "domain", []) or []:
+                normalized_domain = utils.normalize_domain(domain)
+                if normalized_domain:
+                    domains.add(normalized_domain)
+        return domains
+
     def _build(self):
         url_temp_list = []
         for info in self.ip_info_list:
             for domain in info.domain:
-                for port_info in info.port_info_list:
+                port_info_list = list(info.port_info_list or [])
+                if not port_info_list and info.cdn_name:
+                    # CDN IP 跳过端口扫描时，仍以业务域名探测 80/443，避免把
+                    # CDN 边缘 IP 的未验证端口写成资产结果。
+                    port_info_list = [
+                        modules.PortInfo(port_id=80, service_name="http"),
+                        modules.PortInfo(port_id=443, service_name="https"),
+                    ]
+                for port_info in port_info_list:
                     port_id = port_info.port_id
                     if port_id == 80:
                         url_temp = "http://{}".format(domain)
@@ -400,8 +468,18 @@ class FindSite(object):
 
     def run(self):
         url_temp_list = set(self._build())
+        prevalidated_dns_domains = self._build_prevalidated_dns_domains()
         start_time = time.time()
-        check_map = services.check_http(url_temp_list)
+        logger.info(
+            "start site check candidates:{} prevalidated_public_domains:{}".format(
+                len(url_temp_list),
+                len(prevalidated_dns_domains),
+            )
+        )
+        check_map = services.check_http(
+            url_temp_list,
+            prevalidated_dns_domains=prevalidated_dns_domains,
+        )
 
         # 去除https和http相同的
         alive_site = []
@@ -515,7 +593,7 @@ def ssl_cert(ip_info_list, base_domain):
         f = fetchCert.SSLCert(ip_info_list, base_domain)
         return f.run()
     except Exception as e:
-        logger.exception(e)
+        logger.error("ssl certificate stage failed error:{}".format(safe_error_text(e)))
 
     return {}
 
@@ -566,11 +644,15 @@ class DomainTask(CommonTask):
         # 历史命名保留为 not_found_domain_ips，但这里实际缓存的是泛解析返回记录集合。
         self._wildcard_domain_records = None
         self._wildcard_profile_cache = {}
+        self._wildcard_candidate_detail_cache = {}
         self._wildcard_domain_hit_cache = {}
         self._domain_dict_size = None
         self._domain_word_file = None
 
         self.npoc_service_target_set = set()
+        self._last_port_scan_metrics = {}
+        self._last_dns_query_metrics = {}
+        self._last_ip_query_metrics = {}
 
         self.web_site_fetch = None
 
@@ -590,7 +672,9 @@ class DomainTask(CommonTask):
             # 协议识别仍由 npoc(sniffer) 做二次增强。
             "service_detect": bool(self.options.get("service_detection")),
             "os_detect": self.options.get("os_detection", False),
-            "skip_scan_cdn_ip": self.options.get("skip_scan_cdn_ip", False),  # 跳过扫描CDN IP
+            "skip_scan_cdn_ip": self.options.get(
+                "skip_scan_cdn_ip", Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT
+            ),  # 跳过扫描CDN IP
             # 任务未显式配置时，回退到配置管理中的全局默认参数。
             "port_parallelism": self.options.get("port_parallelism", Config.PORT_PARALLELISM),  # 探测报文并行度
             "port_min_rate": self.options.get("port_min_rate", Config.PORT_MIN_RATE),  # 最少发包速率
@@ -814,10 +898,133 @@ class DomainTask(CommonTask):
     def _get_wildcard_profile_map_for_domain(self, domain):
         profile_map = {}
         for root in build_wildcard_probe_roots([domain]):
+            # 目标根的画像已在初始泛解析校准中处理，继续使用原有记录集合兜底。
+            if root == self.base_domain and self._wildcard_domain_records is not None:
+                continue
             profile = self._get_wildcard_profile(root)
-            if profile:
+            if profile and profile.get("records"):
                 profile_map[root] = profile
         return profile_map
+
+    def _prewarm_wildcard_profiles(self, domain_info_list):
+        """按当前批次并发收集泛解析画像，避免逐候选串行探测。"""
+        roots = []
+        seen = set()
+        for info in domain_info_list or []:
+            if not getattr(info, "record_list", None):
+                continue
+            domain = utils.normalize_domain(getattr(info, "domain", ""))
+            if not domain:
+                continue
+            for root in build_wildcard_probe_roots([domain]):
+                if root == self.base_domain and self._wildcard_domain_records is not None:
+                    continue
+                if root in seen or root in self._wildcard_profile_cache:
+                    continue
+                seen.add(root)
+                roots.append(root)
+
+        if not roots:
+            return
+
+        started_at = time.time()
+        logger.info(
+            "wildcard profile prewarm start task_id:{} domains:{} roots:{}".format(
+                self.task_id,
+                len(domain_info_list or []),
+                len(roots),
+            )
+        )
+        profile_map = collect_wildcard_profiles_from_roots(roots)
+        for root in roots:
+            # 缺失/异常画像写入 None，当前批次后续不再重复发起同一探测。
+            self._wildcard_profile_cache[root] = profile_map.get(root)
+        logger.info(
+            "wildcard profile prewarm end task_id:{} roots:{} profiles:{} elapsed:{:.2f}s".format(
+                self.task_id,
+                len(roots),
+                len([root for root in roots if self._wildcard_profile_cache.get(root)]),
+                time.time() - started_at,
+            )
+        )
+
+    def _prewarm_wildcard_candidate_details(self, domain_info_list):
+        """按当前批次并发完成候选复验，避免过滤循环逐条等待 DNS。"""
+        candidates = []
+        seen = set()
+        for info in domain_info_list or []:
+            if not getattr(info, "record_list", None):
+                continue
+            domain = utils.normalize_domain(getattr(info, "domain", ""))
+            if not domain or domain in seen or domain in self._wildcard_candidate_detail_cache:
+                continue
+            if not self._get_wildcard_profile_map_for_domain(domain):
+                continue
+            seen.add(domain)
+            candidates.append(info)
+
+        if not candidates:
+            return
+
+        started_at = time.time()
+        concurrency = max(
+            1,
+            int(getattr(Config, "WILDCARD_PROFILE_CONCURRENCY", 8) or 8),
+        )
+        logger.info(
+            "wildcard candidate verify prewarm start task_id:{} candidates:{} concurrency:{}".format(
+                self.task_id,
+                len(candidates),
+                concurrency,
+            )
+        )
+
+        def verify_one(info):
+            domain = utils.normalize_domain(getattr(info, "domain", ""))
+            try:
+                return domain, build_wildcard_candidate_details(info)
+            except Exception as exc:
+                # 复验失败时保留基础记录，避免网络故障导致候选被误过滤。
+                logger.warning(
+                    "wildcard candidate verify degraded task_id:{} domain:{} error_type:{}".format(
+                        self.task_id,
+                        domain,
+                        type(exc).__name__,
+                    )
+                )
+                return domain, []
+
+        worker_count = min(concurrency, len(candidates))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_map = {
+                executor.submit(verify_one, info): info
+                for info in candidates
+            }
+            for future in as_completed(future_map):
+                info = future_map[future]
+                domain = utils.normalize_domain(getattr(info, "domain", ""))
+                try:
+                    key, details = future.result()
+                except Exception as exc:
+                    logger.warning(
+                        "wildcard candidate verify batch degraded task_id:{} domain:{} error_type:{}".format(
+                            self.task_id,
+                            domain,
+                            type(exc).__name__,
+                        )
+                    )
+                    key, details = domain, []
+                if key:
+                    self._wildcard_candidate_detail_cache[key] = details
+
+        logger.info(
+            "wildcard candidate verify prewarm end task_id:{} candidates:{} cached:{} elapsed:{:.2f}s".format(
+                self.task_id,
+                len(candidates),
+                len([item for item in candidates if utils.normalize_domain(getattr(item, "domain", "")) in self._wildcard_candidate_detail_cache]),
+                time.time() - started_at,
+            )
+        )
 
     def _get_wildcard_records_for_domains(self, domains):
         wildcard_records = set()
@@ -831,25 +1038,68 @@ class DomainTask(CommonTask):
     def save_domain_info_list(self, domain_info_list, source=CollectSource.DOMAIN_BRUTE):
         for domain_info_obj in domain_info_list:
             domain_info = domain_info_obj.dump_json(flag=False)
-            domain_info["task_id"] = self.task_id
-            domain_info["source"] = source
             domain_parsed = utils.domain_parsed(domain_info["domain"])
             if domain_parsed:
                 domain_info["fld"] = domain_parsed["fld"]
-            utils.conn_db('domain').insert_one(domain_info)
+            domain = utils.normalize_domain(domain_info.get("domain"))
+            source_list = self._get_domain_sources(domain, source)
+            DomainRepository.upsert_discovered_domain(
+                task_id=self.task_id,
+                domain_info=domain_info,
+                primary_source=source,
+                sources=source_list,
+            )
 
     def save_domain_info_list_by_source_map(self, domain_info_list, default_source=CollectSource.DOMAIN_BRUTE):
         """
         按域名来源映射进行保存（一个域名可对应多个来源）
         """
         for domain_info_obj in domain_info_list:
-            domain = getattr(domain_info_obj, "domain", "")
-            source_set = self.domain_source_map.get(domain, set())
-            if not source_set:
-                source_set = {default_source}
+            domain = utils.normalize_domain(getattr(domain_info_obj, "domain", ""))
+            source_list = self._get_domain_sources(domain, default_source)
+            self.save_domain_info_list([domain_info_obj], source=default_source)
+            logger.debug(
+                "save domain source aggregation task_id:{} domain:{} sources:{}".format(
+                    self.task_id, domain, ",".join(source_list)
+                )
+            )
 
-            for source in source_set:
-                self.save_domain_info_list([domain_info_obj], source=source)
+    def _get_domain_sources(self, domain, default_source):
+        domain = utils.normalize_domain(domain)
+        source_set = set(self.domain_source_map.get(domain, set()))
+        if default_source:
+            source_set.add(str(default_source).strip())
+        return sorted(source for source in source_set if source)
+
+    def add_domain_source_names(self, domains, source):
+        """在去重前记录原始发现来源，避免后到的数据源被首次命中覆盖。"""
+        source = str(source or "").strip()
+        if not source:
+            return
+
+        normalized_domains = []
+        for item in domains or []:
+            domain = item
+            if isinstance(item, dict):
+                domain = item.get("domain", "")
+            else:
+                domain = getattr(item, "domain", domain)
+
+            domain = utils.normalize_domain(domain)
+            if not domain:
+                continue
+
+            source_set = self.domain_source_map.get(domain, set())
+            source_set.add(source)
+            self.domain_source_map[domain] = source_set
+            normalized_domains.append(domain)
+
+        if self.task_id and normalized_domains:
+            DomainRepository.add_sources_by_domains(
+                task_id=self.task_id,
+                domains=normalized_domains,
+                sources=[source],
+            )
 
     def add_domain_source_map(self, domain_info_list, source):
         """
@@ -858,14 +1108,7 @@ class DomainTask(CommonTask):
         if not source:
             return
 
-        for domain_info_obj in domain_info_list:
-            domain = getattr(domain_info_obj, "domain", "")
-            if not domain:
-                continue
-
-            source_set = self.domain_source_map.get(domain, set())
-            source_set.add(source)
-            self.domain_source_map[domain] = source_set
+        self.add_domain_source_names(domain_info_list, source)
 
     def domain_brute(self):
         # 调用工具去进行域名爆破，如果存在泛解析，会把包含泛解析的IP的域名给删除
@@ -873,12 +1116,14 @@ class DomainTask(CommonTask):
                                         wildcard_domain_ip=self.not_found_domain_ips)
 
         domain_info_list = self.clear_domain_info_by_record(domain_info_list)
+        self.add_domain_source_map(domain_info_list, CollectSource.DOMAIN_BRUTE)
         if self.task_tag == "task":
             self.save_domain_info_list(domain_info_list, source=CollectSource.DOMAIN_BRUTE)
-        self.add_domain_source_map(domain_info_list, CollectSource.DOMAIN_BRUTE)
         self.domain_info_list.extend(domain_info_list)
 
     def clear_domain_info_by_record(self, domain_info_list):
+        self._prewarm_wildcard_profiles(domain_info_list)
+        self._prewarm_wildcard_candidate_details(domain_info_list)
         new_list = []
         for info in domain_info_list:
             if not info.record_list:
@@ -912,7 +1157,15 @@ class DomainTask(CommonTask):
                 wildcard_profile_map = self._get_wildcard_profile_map_for_domain(domain)
                 wildcard_hit = False
                 if wildcard_profile_map:
-                    wildcard_hit = domain_info_hits_wildcard_profile(info, wildcard_profile_map)
+                    candidate_details = self._wildcard_candidate_detail_cache.get(domain)
+                    if candidate_details is None:
+                        wildcard_hit = domain_info_hits_wildcard_profile(info, wildcard_profile_map)
+                    else:
+                        wildcard_hit = domain_info_hits_wildcard_profile_with_details(
+                            info,
+                            wildcard_profile_map,
+                            candidate_details,
+                        )
                 elif domain_info_hits_wildcard_records(info, self.wildcard_domain_records):
                     wildcard_hit = True
 
@@ -935,6 +1188,7 @@ class DomainTask(CommonTask):
         arl_t1 = time.time()
         logger.info("start arl fetch {}".format(self.base_domain))
         arl_all_domains = utils.arl_domain(self.base_domain)
+        self.add_domain_source_names(arl_all_domains, CollectSource.ARL)
         domain_info_list = self.build_domain_info(arl_all_domains)
         if self.task_tag == "task":
             domain_info_list = self.clear_domain_info_by_record(domain_info_list)
@@ -980,7 +1234,10 @@ class DomainTask(CommonTask):
 
         if self.task_tag == "monitor":
             return fake_list
-        domain_info_list = services.build_domain_info(fake_list)
+        domain_info_list = services.build_domain_info(
+            fake_list,
+            dns_policy_cache=self._dns_policy_cache,
+        )
 
         return domain_info_list
 
@@ -1021,6 +1278,7 @@ class DomainTask(CommonTask):
         if len(alt_dns_out) <= 0:
             return
 
+        self.add_domain_source_names(alt_dns_out, CollectSource.ALTDNS)
         alt_domain_info_list = self.build_domain_info(alt_dns_out)
         if self.task_tag == "task":
             alt_domain_info_list = self.clear_domain_info_by_record(alt_domain_info_list)
@@ -1036,14 +1294,20 @@ class DomainTask(CommonTask):
 
     def port_scan(self):
         ip_info_list = scan_port(self.domain_info_list, self.scan_port_option)
+        self._last_port_scan_metrics = dict(getattr(ip_info_list, "metrics", {}) or {})
 
         for ip_info_obj in ip_info_list:
             ip_info = ip_info_obj.dump_json(flag=False)
             ip_info["task_id"] = self.task_id
 
-            utils.conn_db('ip').insert_one(ip_info)
+            utils.conn_db("ip").update_one(
+                {"task_id": self.task_id, "ip": ip_info_obj.ip},
+                {"$set": ip_info},
+                upsert=True,
+            )
 
         self.ip_info_list.extend(ip_info_list)
+        return ip_info_list
 
     def find_site(self):
         if self.options.get("port_scan"):
@@ -1052,10 +1316,19 @@ class DomainTask(CommonTask):
         else:
             sites = services.probe_http(self.domain_info_list)
 
-        self.site_list.extend(sites)
+        existing_sites = set(self.site_list)
+        for site in sites:
+            if site in existing_sites:
+                continue
+            existing_sites.add(site)
+            self.site_list.append(site)
 
-    def update_services(self, service_name, elapsed):
-        self.base_update_task.update_services(service_name=service_name, elapsed=elapsed)
+    def update_services(self, service_name, elapsed, metrics=None):
+        self.base_update_task.update_services(
+            service_name=service_name,
+            elapsed=elapsed,
+            metrics=metrics,
+        )
 
     def update_task_field(self, field=None, value=None):
         self.base_update_task.update_task_field(field=field, value=value)
@@ -1089,7 +1362,11 @@ class DomainTask(CommonTask):
         for ip_info_obj in fake_ip_info_list:
             ip_info = ip_info_obj.dump_json(flag=False)
             ip_info["task_id"] = self.task_id
-            utils.conn_db('ip').insert_one(ip_info)
+            utils.conn_db("ip").update_one(
+                {"task_id": self.task_id, "ip": ip_info_obj.ip},
+                {"$set": ip_info},
+                upsert=True,
+            )
 
     def save_service_info(self):
         self.service_info_list = []
@@ -1475,7 +1752,14 @@ class DomainTask(CommonTask):
 
     # *** 执行域名查询插件
     def dns_query_plugin(self):
+        source_list = self._resolve_dns_query_sources()
+        stage_timeout_sec = self._calc_dns_query_plugin_stage_timeout(len(source_list))
+        with stage_execution_context("dns_query_plugin", stage_timeout_sec):
+            return self._dns_query_plugin_impl()
+
+    def _dns_query_plugin_impl(self):
         logger.info("start run dns_query_plugin {}".format(self.base_domain))
+        self._last_dns_query_metrics = {}
         source_batch_size = int(getattr(Config, "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE", 4) or 4)
         if source_batch_size <= 0:
             source_batch_size = 1
@@ -1485,8 +1769,27 @@ class DomainTask(CommonTask):
             logger.warning("dns_query_plugin {} no available source".format(self.base_domain))
             return
         stage_timeout_sec = self._calc_dns_query_plugin_stage_timeout(len(source_list))
+        validation_batch_size = int(
+            getattr(Config, "DNS_QUERY_PLUGIN_DOMAIN_BATCH_SIZE", 100) or 100
+        )
+        if validation_batch_size <= 0:
+            validation_batch_size = 100
 
         source_batches = list(self._chunk_list(source_list, source_batch_size))
+        aggregate_metrics = {
+            "input_count": 0,
+            "output_count": 0,
+            "provider_count": 0,
+            "provider_success_count": 0,
+            "failed_count": 0,
+            "degraded_count": 0,
+            "dedup_count": 0,
+            "request_count": 0,
+            "timeout_count": 0,
+            "retry_count": 0,
+            "network_wait_sec": 0.0,
+            "provider_status": [],
+        }
         logger.info(
             "dns_query_plugin timeout_budget:{} sources:{} batches:{} batch_size:{}".format(
                 self._format_timeout(stage_timeout_sec),
@@ -1514,6 +1817,26 @@ class DomainTask(CommonTask):
                 )
             )
             batch_results = run_query_plugin(self.base_domain, source_batch)
+            batch_metrics = dict(getattr(batch_results, "metrics", {}) or {})
+            for key in (
+                "input_count",
+                "output_count",
+                "provider_count",
+                "provider_success_count",
+                "failed_count",
+                "degraded_count",
+                "dedup_count",
+                "request_count",
+                "timeout_count",
+                "retry_count",
+            ):
+                aggregate_metrics[key] += int(batch_metrics.get(key, 0) or 0)
+            aggregate_metrics["network_wait_sec"] += float(
+                batch_metrics.get("network_wait_sec", 0.0) or 0.0
+            )
+            aggregate_metrics["provider_status"].extend(
+                list(batch_metrics.get("provider_status") or [])
+            )
             for result in batch_results:
                 domain = str(result.get("domain", "")).strip()
                 source = str(result.get("source", "")).strip()
@@ -1530,31 +1853,95 @@ class DomainTask(CommonTask):
                 )
             )
 
-        sources_map = dict()
+        domain_sources = {}
+        primary_source_map = {}
         for result in results:
-            domain = result["domain"]
-            source = result["source"]
-            source_domains = sources_map.get(source, [])
-            source_domains.append(domain)
-            sources_map[source] = source_domains
+            domain = utils.normalize_domain(result.get("domain", ""))
+            source = str(result.get("source", "")).strip()
+            if not domain or not source:
+                continue
+            domain_sources.setdefault(domain, set()).add(source)
+            primary_source_map.setdefault(domain, source)
+
+        # 先按来源写入关系，再按域名只执行一次 DNS 校验。
+        source_domains_map = {}
+        for domain, source_set in domain_sources.items():
+            for source in source_set:
+                source_domains_map.setdefault(source, []).append(domain)
+        for source, source_domains in source_domains_map.items():
+            self.add_domain_source_names(source_domains, source)
+
+        unique_domains = list(domain_sources)
+        domain_dedup_count = max(len(results) - len(unique_domains), 0)
+        logger.info(
+            "dns_query_plugin domain validation start {} source_relations:{} unique_domains:{} dedup:{}".format(
+                self.base_domain,
+                len(results),
+                len(unique_domains),
+                domain_dedup_count,
+            )
+        )
 
         cnt = 0  # 统计真实数据
-        for source in sources_map:
-            source_domains = sources_map[source]
-            if not source_domains:
-                continue
-            logger.info("start build domain info, source:{}".format(source))
-            domain_info_list = self.build_domain_info(source_domains)
+        validation_batch_count = 0
+        validation_batch_total = (
+            (len(unique_domains) + validation_batch_size - 1) // validation_batch_size
+            if unique_domains
+            else 0
+        )
+        for batch_index, domain_batch in enumerate(
+            self._chunk_list(unique_domains, validation_batch_size), start=1
+        ):
+            batch_started = time.time()
+            domain_info_list = self.build_domain_info(domain_batch)
             if self.task_tag == "task":
                 domain_info_list = self.clear_domain_info_by_record(domain_info_list)
-                self.save_domain_info_list(domain_info_list, source=source)
 
-            self.add_domain_source_map(domain_info_list, source)
+                # 按首次来源分组保存，保证每个域名只 upsert 一次，同时保留完整 sources。
+                info_by_primary_source = {}
+                for info in domain_info_list:
+                    domain = utils.normalize_domain(getattr(info, "domain", ""))
+                    source = primary_source_map.get(domain, "")
+                    if source:
+                        info_by_primary_source.setdefault(source, []).append(info)
+                for source, source_infos in info_by_primary_source.items():
+                    self.save_domain_info_list(source_infos, source=source)
+
             cnt += len(domain_info_list)
             self.domain_info_list.extend(domain_info_list)
+            validation_batch_count += 1
+            logger.info(
+                "dns_query_plugin domain validation batch {} {}/{} input:{} output:{} elapsed:{:.2f}s".format(
+                    self.base_domain,
+                    batch_index,
+                    validation_batch_total,
+                    len(domain_batch),
+                    len(domain_info_list),
+                    time.time() - batch_started,
+                )
+            )
+
+        logger.info(
+            "dns_query_plugin domain validation end {} input:{} output:{} pending:0".format(
+                self.base_domain,
+                len(unique_domains),
+                cnt,
+            )
+        )
 
         logger.info("end run dns_query_plugin {}, result {}, real result:{}".format(
             self.base_domain, len(results), cnt))
+        aggregate_metrics["output_count"] = len(results)
+        aggregate_metrics["unique_domain_count"] = len(domain_sources)
+        aggregate_metrics["domain_dedup_count"] = domain_dedup_count
+        aggregate_metrics["dns_validation_input_count"] = len(domain_sources)
+        aggregate_metrics["dns_validation_output_count"] = cnt
+        aggregate_metrics["dns_validation_batch_count"] = validation_batch_count
+        aggregate_metrics["dns_validation_pending_count"] = 0
+        aggregate_metrics["network_wait_sec"] = round(
+            aggregate_metrics["network_wait_sec"], 6
+        )
+        self._last_dns_query_metrics = aggregate_metrics
 
     def get_ip_pivot_candidates(self):
         """
@@ -1637,6 +2024,7 @@ class DomainTask(CommonTask):
             target_domain=target_domain,
             max_domains=max_domains,
         )
+        self._last_ip_query_metrics = dict(getattr(results, "metrics", {}) or {})
         if not results:
             logger.info("end run ip_query_plugin_enhance {} result 0".format(self.base_domain))
             return
@@ -1657,6 +2045,7 @@ class DomainTask(CommonTask):
 
             # 与常规来源区分，便于排查“域名来源”
             source_name = "{}_ip_pivot".format(source)
+            self.add_domain_source_names(source_domains, source_name)
             logger.info("start build domain info, source:{}".format(source_name))
             domain_info_list = self.build_domain_info(source_domains)
             if self.task_tag == "task":
@@ -1893,7 +2282,11 @@ class DomainTask(CommonTask):
         for ip_info_obj in ip_info_list:
             ip_info = ip_info_obj.dump_json(flag=False)
             ip_info["task_id"] = self.task_id
-            utils.conn_db('ip').insert_one(ip_info)
+            utils.conn_db("ip").update_one(
+                {"task_id": self.task_id, "ip": ip_info_obj.ip},
+                {"$set": ip_info},
+                upsert=True,
+            )
 
         self.ip_info_list.extend(ip_info_list)
         logger.info(
@@ -1977,6 +2370,7 @@ class DomainTask(CommonTask):
                 continue
 
             source_name = "{}_cert_pivot".format(source)
+            self.add_domain_source_names(source_domains, source_name)
             logger.info("start build domain info, source:{}".format(source_name))
             domain_info_list = self.build_domain_info(source_domains)
             if self.task_tag == "task":
@@ -1996,106 +2390,13 @@ class DomainTask(CommonTask):
         return cnt
 
     def domain_fetch(self):
-        '''****域名爆破开始****'''
-        if self.options.get("domain_brute"):
-            self.update_task_field("status", "domain_brute")
-            t1 = time.time()
-            self.domain_brute()
-            elapse = time.time() - t1
-            self.update_services("domain_brute", elapse)
-
-            # 保底种子：即使开启域名爆破，也要保留用户输入的目标域名本身。
-            # 否则当爆破/插件都无结果时，会出现后续流程空跑（sites=0）。
-            base_domain_info = self.build_single_domain_info(self.base_domain)
-            if base_domain_info and base_domain_info not in self.domain_info_list:
-                self.domain_info_list.append(base_domain_info)
-                if self.task_tag == "task":
-                    self.save_domain_info_list([base_domain_info], source=CollectSource.DOMAIN_BRUTE)
-                self.add_domain_source_map([base_domain_info], CollectSource.DOMAIN_BRUTE)
-        else:
-            domain_info = self.build_single_domain_info(self.base_domain)
-            if domain_info:
-                self.domain_info_list.append(domain_info)
-                self.save_domain_info_list([domain_info])
-                self.add_domain_source_map([domain_info], CollectSource.DOMAIN_BRUTE)
-
-        if "{fuzz}" in self.base_domain:
-            return
-
-        # ***域名插件查询****
-        if self.options.get("dns_query_plugin"):
-            self.update_task_field("status", "dns_query_plugin")
-            t1 = time.time()
-            self.dns_query_plugin()
-            elapse = time.time() - t1
-            self.update_services("dns_query_plugin", elapse)
-
-        if self.options.get("arl_search"):
-            self.update_task_field("status", "arl_search")
-            t1 = time.time()
-            self.arl_search()
-            elapse = time.time() - t1
-            self.update_services("arl_search", elapse)
-
-        '''***智能域名生成****'''
-        if self.options.get("alt_dns"):
-            self.update_task_field("status", "alt_dns")
-            t1 = time.time()
-            self.alt_dns()
-            elapse = time.time() - t1
-            self.update_services("alt_dns", elapse)
+        return DomainDiscoveryStageService(self).run()
 
     def start_ip_fetch(self):
-        self.gen_ipv4_map()
-
-        '''***端口扫描开始***'''
-        if self.options.get("port_scan"):
-            self.update_task_field("status", "port_scan")
-            t1 = time.time()
-            self.port_scan()
-            elapse = time.time() - t1
-            self.update_services("port_scan", elapse)
-
-        '''***证书获取***'''
-        if self.options.get("ssl_cert"):
-            self.update_task_field("status", "ssl_cert")
-            t1 = time.time()
-            self.ssl_cert()
-            elapse = time.time() - t1
-            self.update_services("ssl_cert", elapse)
-
-        if Config.CERT_PIVOT_QUERY_ENABLE and self.options.get("ssl_cert"):
-            self.update_task_field("status", "cert_query_plugin")
-            t1 = time.time()
-            cert_new_domain_count = self.cert_query_plugin_enhance()
-            if cert_new_domain_count > 0:
-                self.gen_ipv4_map()
-                if self.options.get("port_scan"):
-                    self.incremental_port_scan_for_new_ips()
-                self.sync_ip_domain_from_ipv4_map()
-            elapse = time.time() - t1
-            self.update_services("cert_query_plugin", elapse)
-
-        self.save_ip_info()
+        return DomainNetworkStageService(self).run()
 
     def start_site_fetch(self):
-        self.update_task_field("status", "find_site")
-        t1 = time.time()
-        self.find_site()
-        elapse = time.time() - t1
-        self.update_services("find_site", elapse)
-
-        # 对 domain_info_list 进行清空，回收内存
-        self.domain_info_list = []
-
-        web_site_fetch = WebSiteFetch(task_id=self.task_id,
-                                      sites=self.site_list, options=self.options,
-                                      scope_domain=[self.base_domain])
-        web_site_fetch.run()
-
-        self.wih_domain_set = web_site_fetch.wih_domain_set
-
-        self.web_site_fetch = web_site_fetch
+        return DomainSiteStageService(self).run()
 
     def npoc_service_detection(self, full_port=False):
         targets, total_targets, low_conf_targets, mode = self._build_sniffer_targets(
@@ -2127,40 +2428,7 @@ class DomainTask(CommonTask):
             utils.conn_db('npoc_service').insert_one(item)
 
     def start_poc_run(self):
-        """poc run"""
-        """服务识别（python）实现"""
-        if self._enable_protocol_detection():
-            self.update_task_field("status", "npoc_service_detection")
-            t1 = time.time()
-            # 兼容历史开关：
-            # - npoc_service_detection=True: 全端口模式
-            # - service_detection=True: 智能模式（只扫低置信度端口）
-            self.npoc_service_detection(
-                full_port=bool(self.options.get("npoc_service_detection"))
-            )
-            elapse = time.time() - t1
-            self.update_services("npoc_service_detection", elapse)
-
-        # 存储服务信息（放到协议识别之后，优先保留更高质量的服务名）
-        # 端口扫描已包含基础服务名（nmap service map），即使未开启 -sV / npoc 也应落库。
-        if self.options.get("port_scan") or self.options.get("service_detection") or self.options.get("npoc_service_detection"):
-            self.save_service_info()
-
-        """ *** npoc 调用 """
-        if self.options.get("poc_config"):
-            self.update_task_field("status", "poc_run")
-            t1 = time.time()
-            self.web_site_fetch.risk_cruising(self.npoc_service_target_set)
-            elapse = time.time() - t1
-            self.update_services("poc_run", elapse)
-
-        """弱口令爆破服务"""
-        if self.options.get("brute_config"):
-            self.update_task_field("status", "weak_brute")
-            t1 = time.time()
-            self.brute_config()
-            elapse = time.time() - t1
-            self.update_services("weak_brute", elapse)
+        return DomainPostProcessStageService(self).run_poc()
 
     def brute_config(self):
         plugins = []
@@ -2209,12 +2477,7 @@ class DomainTask(CommonTask):
             utils.conn_db('vuln').insert_one(save_item)
 
     def start_find_vhost(self):
-        if self.options.get("findvhost"):
-            self.update_task_field("status", "findvhost")
-            t1 = time.time()
-            self.find_vhost_vuln()
-            elapse = time.time() - t1
-            self.update_services("findvhost", elapse)
+        return DomainPostProcessStageService(self).run_find_vhost()
 
     # 搜索引擎调用
     def search_engines(self):
@@ -2227,6 +2490,7 @@ class DomainTask(CommonTask):
         self.update_task_field("status", "search_engines")
         t1 = time.time()
         search_engines_urls = search_engines(self.base_domain)
+        search_engine_metrics = dict(getattr(search_engines_urls, "metrics", {}) or {})
 
         urls = set()  # 保存通过搜索引擎获取到的URL
         domains = set()
@@ -2253,6 +2517,7 @@ class DomainTask(CommonTask):
         # 可能发现新的域名， 这里保存起来
         domain_info_list = []
         if len(domains) > 0:
+            self.add_domain_source_names(domains, CollectSource.SEARCHENGINE)
             domain_info_list = self.build_domain_info(domains)
             if self.task_tag == "task":
                 domain_info_list = self.clear_domain_info_by_record(domain_info_list)
@@ -2261,7 +2526,7 @@ class DomainTask(CommonTask):
             self.domain_info_list.extend(domain_info_list)
 
         elapse = time.time() - t1
-        self.update_services("search_engines", elapse)
+        self.update_services("search_engines", elapse, metrics=search_engine_metrics)
 
         logger.info("search_engines {}, result domain:{} url:{}".format(self.base_domain,
                                                                         len(domain_info_list),
@@ -2284,38 +2549,114 @@ class DomainTask(CommonTask):
                 detail="domains={}".format(len(domains)),
             )
 
+    def _load_saved_domain_info(self):
+        """从当前任务已落库的域名记录恢复深度阶段输入，避免重跑发现阶段。"""
+        if self.domain_info_list:
+            return len(self.domain_info_list)
+
+        restored = []
+        source_map = {}
+        cursor = DomainRepository.find_by_task_id(
+            self.task_id,
+            projection={"domain": 1, "record": 1, "type": 1, "ips": 1, "source": 1, "sources": 1},
+            batch_size=500,
+        )
+        for item in cursor:
+            domain = utils.normalize_domain(item.get("domain"))
+            if not domain:
+                continue
+            restored.append(modules.DomainInfo(
+                domain=domain,
+                record=item.get("record") or [],
+                type=item.get("type") or "CNAME",
+                ips=item.get("ips") or [],
+            ))
+            sources = item.get("sources")
+            if not isinstance(sources, list):
+                sources = [item.get("source", "")]
+            source_map[domain] = {
+                str(source or "").strip()
+                for source in sources
+                if str(source or "").strip()
+            }
+
+        self.domain_info_list = restored
+        self.domain_source_map.update(source_map)
+        logger.info(
+            "restore domain info for deep scan task_id:{} count:{}".format(
+                self.task_id, len(restored)
+            )
+        )
+        return len(restored)
+
+    def _seed_base_domain(self):
+        """先落库用户目标，避免字典爆破或 provider 阻塞首批结果。"""
+        base_domain_info = self.build_single_domain_info(self.base_domain)
+        if not base_domain_info:
+            return 0
+        if base_domain_info not in self.domain_info_list:
+            self.domain_info_list.append(base_domain_info)
+        self.add_domain_source_map([base_domain_info], CollectSource.DOMAIN_BRUTE)
+        if self.task_tag == "task":
+            self.save_domain_info_list([base_domain_info], source=CollectSource.DOMAIN_BRUTE)
+        return 1
+
+    def _run_discovery_preview(self):
+        """为渐进式任务快速落库基础 IP/站点，不改变深度扫描范围。"""
+        started_at = time.time()
+        preview_ip_count = 0
+        preview_site_count = 0
+        try:
+            self.gen_ipv4_map()
+            preview_ip_count = len(self.ipv4_map)
+            self.save_ip_info()
+
+            preview_sites = services.probe_http(self.domain_info_list)
+            preview_sites = list(
+                dict.fromkeys(
+                    str(site).strip()
+                    for site in preview_sites
+                    if str(site).strip()
+                )
+            )
+            if preview_sites:
+                preview_fetch = WebSiteFetch(
+                    task_id=self.task_id,
+                    sites=preview_sites,
+                    options=self.options,
+                    scope_domain=[self.base_domain],
+                )
+                preview_fetch.fetch_site()
+                preview_fetch.save_site_info()
+                preview_site_count = len(preview_fetch.site_info_list)
+            self.update_services("discovery_preview", time.time() - started_at)
+            logger.info(
+                "discovery preview task_id:{} ips:{} sites:{} elapsed:{:.2f}s".format(
+                    self.task_id,
+                    preview_ip_count,
+                    preview_site_count,
+                    time.time() - started_at,
+                )
+            )
+        except Exception as exc:
+            # 预览失败不阻断后续完整深度链路，但必须留下 degraded 证据。
+            logger.warning(
+                "discovery preview degraded task_id:{} ips:{} sites:{} error:{}".format(
+                    self.task_id, preview_ip_count, preview_site_count, exc
+                )
+            )
+            self.update_services("discovery_preview_degraded", time.time() - started_at)
+
+    def run_discovery(self, include_preview=False):
+        """先完成可快速落库的基础发现，深度枚举由后续队列继续。"""
+        return DomainTaskOrchestrator(self).run_discovery(include_preview=include_preview)
+
+    def run_deep(self):
+        """执行可恢复的深度阶段；可由新的 Celery 消息独立运行。"""
+        return DomainTaskOrchestrator(self).run_deep()
+
     def run(self):
-        self.update_task_field("start_time", utils.curr_date())
-
-        self.domain_fetch()
-
-        # 搜索引擎调用
-        self.search_engines()
-
-        # 公网A记录IP反查增强（可选）
-        if Config.IP_PIVOT_QUERY_ENABLE:
-            self.update_task_field("status", "ip_query_plugin")
-            t1 = time.time()
-            self.ip_query_plugin_enhance()
-            elapse = time.time() - t1
-            self.update_services("ip_query_plugin", elapse)
-
-        self.start_ip_fetch()
-
-        self.start_site_fetch()
-
-        self.start_find_vhost()
-
-        self.start_poc_run()
-
-        self.start_wih_domain_update()
-
-        # 执行统计和同步操作
-        self.common_run()
-
-        self.update_task_field("status", TaskStatus.DONE)
-        self.update_task_field("end_time", utils.curr_date())
-        push_task_finish_notify(self.task_id)
+        return DomainTaskOrchestrator(self).run()
 
 
 def domain_task(base_domain, task_id, options):
@@ -2323,10 +2664,45 @@ def domain_task(base_domain, task_id, options):
     try:
         d.run()
     except Exception as e:
-        logger.exception(e)
+        logger.error("domain task failed task_id:{} error:{}".format(task_id, safe_error_text(e)))
         utils.append_task_error(
             task_id=task_id,
             error=e,
             stage="domain_task",
             traceback_text=traceback.format_exc(),
         )
+
+
+def domain_discovery_task(base_domain, task_id, options):
+    """渐进式任务的发现阶段；成功后由 Celery 继续投递深度阶段。"""
+    d = DomainTask(base_domain=base_domain, task_id=task_id, options=options)
+    try:
+        d.run_discovery(include_preview=True)
+        d.update_task_field("status", "deep_scan_pending")
+        return True
+    except Exception as e:
+        logger.error("domain discovery task failed task_id:{} error:{}".format(task_id, safe_error_text(e)))
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="domain_discovery",
+            traceback_text=traceback.format_exc(),
+        )
+        return False
+
+
+def domain_deep_task(base_domain, task_id, options):
+    """渐进式任务的深度阶段；只恢复已落库发现结果，不重复发现。"""
+    d = DomainTask(base_domain=base_domain, task_id=task_id, options=options)
+    try:
+        d.run_deep()
+        return True
+    except Exception as e:
+        logger.error("domain deep task failed task_id:{} error:{}".format(task_id, safe_error_text(e)))
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="domain_deep",
+            traceback_text=traceback.format_exc(),
+        )
+        return False

@@ -8,6 +8,7 @@ import requests.exceptions
 from lxml import etree
 from app import utils
 from app.modules import DomainInfo
+from app.utils.log_safety import safe_error_text
 logger = utils.get_logger()
 
 
@@ -24,10 +25,22 @@ class BaseThread(object):
         try:
             self.work(url)
         except requests.exceptions.RequestException as e:
-            pass
+            logger.warning(
+                "request worker failed target:{} error_type:{} error:{}".format(
+                    url,
+                    type(e).__name__,
+                    safe_error_text(e),
+                )
+            )
 
         except etree.Error as e:
-            pass
+            logger.warning(
+                "parse worker failed target:{} error_type:{} error:{}".format(
+                    url,
+                    type(e).__name__,
+                    safe_error_text(e),
+                )
+            )
 
         except Exception as e:
             logger.warning("error on {}".format(url))
@@ -93,5 +106,4 @@ class ThreadMap(BaseThread):
 def thread_map(fun, items, arg=None, concurrency=6):
     t = ThreadMap(fun=fun, items=items, arg=arg, concurrency=concurrency)
     return t.run()
-
 

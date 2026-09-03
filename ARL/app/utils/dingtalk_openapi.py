@@ -1148,9 +1148,9 @@ def _prepare_task_export_sheet_items(raw_sheet_items):
 def _build_ordered_export_sheet_items(raw_sheet_items):
     """
     按固定顺序重排导出工作表
-    期望顺序：站点、IP、系统服务、SSL证书、域名、URL信息、目录扫描、WIH、WIH接口提取、风险、PoC风险、AI渗透测试、资产统计
+    期望顺序：站点、IP、系统服务、SSL证书、域名、URL信息、目录扫描、WIH、WIH接口提取、WAF识别、风险、PoC风险、资产统计
     """
-    preferred_order = ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "WIH接口提取", "风险", "PoC风险", "AI渗透测试", "资产统计"]
+    preferred_order = ["站点", "IP", "系统服务", "SSL证书", "域名", "URL信息", "目录扫描", "WIH", "WIH接口提取", "WAF识别", "风险", "PoC风险", "资产统计"]
     alias_map = {
         _normalize_sheet_name_key("url"): _normalize_sheet_name_key("URL信息"),
         _normalize_sheet_name_key("url信息"): _normalize_sheet_name_key("URL信息"),
@@ -1161,7 +1161,6 @@ def _build_ordered_export_sheet_items(raw_sheet_items):
         _normalize_sheet_name_key("wih接口提取"): _normalize_sheet_name_key("WIH接口提取"),
         _normalize_sheet_name_key("wih_endpoint"): _normalize_sheet_name_key("WIH接口提取"),
         _normalize_sheet_name_key("漏洞"): _normalize_sheet_name_key("风险"),
-        _normalize_sheet_name_key("ai渗透"): _normalize_sheet_name_key("AI渗透测试"),
     }
     preferred_keys = [_normalize_sheet_name_key(name) for name in preferred_order]
     sheet_map = {}

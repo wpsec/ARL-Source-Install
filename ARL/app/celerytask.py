@@ -20,6 +20,11 @@ from celery import Celery, platforms
 from app import utils
 from app import tasks as wrap_tasks
 from app.modules import CeleryAction, TaskSyncStatus, TaskStatus, TaskTag, TaskType
+try:
+    from app.utils.log_safety import safe_error_text
+except ImportError:
+    # 允许最小化任务测试替换 app.utils 模块，同时生产路径仍使用统一脱敏实现。
+    safe_error_text = utils.safe_error_text
 
 # 获取日志记录器
 logger = utils.get_logger()
@@ -469,6 +474,269 @@ def _build_waiting_requeue_options(collection, item):
     }
 
 
+def _task_query_id(task_id):
+    """将任务 ID 转为 Mongo 查询值，兼容测试和历史字符串 ID。"""
+    task_id_text = str(task_id or "").strip()
+    if ObjectId.is_valid(task_id_text):
+        return ObjectId(task_id_text)
+    return task_id
+
+
+def _mark_domain_deep_dispatch_ready(task_id, target, task_options):
+    """为深度消息建立可恢复的持久状态，再发送 broker 消息。"""
+    query_id = _task_query_id(task_id)
+    try:
+        item = utils.conn_db("task").find_one({"_id": query_id}, {"status": 1, "deep_scan": 1})
+    except Exception as exc:
+        logger.warning(
+            "prepare domain deep task failed task_id:%s error:%s",
+            task_id,
+            safe_error_text(exc),
+        )
+        return False, False
+
+    if not isinstance(item, dict):
+        logger.warning("prepare domain deep task skipped task_id:%s reason:not_found", task_id)
+        return False, False
+    status = str(item.get("status", "") or "").strip().lower()
+    if status in {TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR}:
+        return False, False
+
+    deep_scan = item.get("deep_scan") if isinstance(item.get("deep_scan"), dict) else {}
+    deep_status = str(deep_scan.get("status", "") or "").strip().lower()
+    if deep_status == "done":
+        return False, False
+    if deep_status in {"queued", "running"}:
+        # 已经有一个发布者或消费者接管该任务时，调用方不能再次发送消息。
+        return True, False
+
+    now_ts = int(time.time())
+    now_text = utils.curr_date()
+    update = {
+        "$set": {
+            "status": "deep_scan_pending",
+            "deep_scan": {
+                "stage": "domain_deep",
+                "status": "queued",
+                "target": str(target or "").strip(),
+                "queue": "arlheavy",
+                "queued_at": now_text,
+                "dispatch_ts": now_ts,
+                "celery_id": "",
+            },
+            "dispatch_queue": "arlheavy",
+            "dispatch_queue_reason": "progressive_domain_deep",
+            "dispatch_ts": now_ts,
+        }
+    }
+    result = utils.conn_db("task").update_one(
+        {
+            "_id": query_id,
+            "status": {"$nin": [TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR]},
+            "$or": [
+                {"deep_scan.status": {"$exists": False}},
+                {"deep_scan.status": {"$in": ["", "pending", "failed"]}},
+            ],
+        },
+        update,
+    )
+    if int(getattr(result, "modified_count", 0) or 0) > 0:
+        return True, True
+
+    latest = utils.conn_db("task").find_one({"_id": query_id}, {"deep_scan.status": 1})
+    latest_deep = latest.get("deep_scan") if isinstance(latest, dict) else {}
+    latest_status = str((latest_deep or {}).get("status", "") or "").strip().lower()
+    if latest_status in {"queued", "running"}:
+        return True, False
+    return False, False
+
+
+def _mark_domain_deep_dispatch_failed(task_id, reason):
+    query_id = _task_query_id(task_id)
+    safe_reason = str(reason or "dispatch_failed").strip()[:240] or "dispatch_failed"
+    try:
+        utils.conn_db("task").update_one(
+            {"_id": query_id, "deep_scan.status": {"$in": ["pending", "queued", "running"]}},
+            {
+                "$set": {
+                    "status": TaskStatus.ERROR,
+                    "end_time": utils.curr_date(),
+                    "deep_scan.status": "failed",
+                    "deep_scan.end_reason": "dispatch_failed",
+                    "deep_scan.error": safe_reason,
+                }
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "mark domain deep dispatch failed task_id:%s error:%s",
+            task_id,
+            safe_error_text(exc),
+        )
+
+
+def enqueue_domain_deep_task(task_id, target, task_options):
+    """投递深度阶段，并把 broker 状态写入任务文档以支持重启恢复。"""
+    dispatch_ready, should_dispatch = _mark_domain_deep_dispatch_ready(
+        task_id, target, task_options
+    )
+    if not dispatch_ready:
+        return False
+    if not should_dispatch:
+        logger.info("skip duplicate domain deep dispatch task_id:%s", task_id)
+        return True
+
+    payload = {
+        "celery_action": CeleryAction.DOMAIN_DEEP_TASK,
+        "data": {
+            "target": target,
+            "options": task_options,
+            "task_id": str(task_id),
+            "dispatch_queue": "arlheavy",
+        },
+    }
+    try:
+        async_result = arl_task_heavy.apply_async(args=[payload], queue="arlheavy")
+        celery_id = str(getattr(async_result, "id", "") or async_result or "")
+        query_id = _task_query_id(task_id)
+        utils.conn_db("task").update_one(
+            {"_id": query_id, "status": "deep_scan_pending", "deep_scan.status": "queued"},
+            {"$set": {"deep_scan.celery_id": celery_id}},
+        )
+        logger.info("domain deep task queued task_id:%s queue:arlheavy", task_id)
+        return True
+    except Exception as exc:
+        safe_error = safe_error_text(exc)
+        logger.error("queue domain deep task failed task_id:%s error:%s", task_id, safe_error)
+        _mark_domain_deep_dispatch_failed(task_id, safe_error)
+        utils.append_task_error(
+            task_id=task_id,
+            error=exc,
+            stage="domain_deep_queue",
+            traceback_text=traceback.format_exc(),
+        )
+        return False
+
+
+def _claim_domain_deep_task(task_id, celery_id=""):
+    """用 Mongo 条件更新保证重复深度消息只有一个执行者。"""
+    query_id = _task_query_id(task_id)
+    update = {
+        "$set": {
+            "status": "deep_scan_running",
+            "deep_scan.status": "running",
+            "deep_scan.started_at": utils.curr_date(),
+        }
+    }
+    if celery_id:
+        update["$set"]["deep_scan.celery_id"] = str(celery_id)
+    try:
+        result = utils.conn_db("task").update_one(
+            {"_id": query_id, "status": "deep_scan_pending", "deep_scan.status": "queued"},
+            update,
+        )
+        return int(getattr(result, "modified_count", 0) or 0) > 0
+    except Exception as exc:
+        logger.warning(
+            "claim domain deep task failed task_id:%s error:%s",
+            task_id,
+            safe_error_text(exc),
+        )
+        return False
+
+
+def recover_orphan_domain_deep_tasks_on_worker_start(
+    grace_sec=_WAITING_ORPHAN_GRACE_SEC,
+    inspect_timeout_sec=1.5,
+):
+    """恢复已持久化但未完成投递或 worker 中断的深度阶段。"""
+    live_guard = _collect_live_task_recovery_guard(
+        timeout_sec=inspect_timeout_sec,
+        queue_names=("arlheavy",),
+    )
+    if not live_guard.get("trusted"):
+        logger.warning("skip orphan domain deep recovery because live inspection is untrusted")
+        return {"requeued": 0, "skipped": 0, "failed": 0}
+
+    queue_count_map, queue_ok = _get_broker_queue_message_counts(("arlheavy",))
+    if not queue_ok:
+        logger.warning("skip orphan domain deep recovery because broker inspection failed")
+        return {"requeued": 0, "skipped": 0, "failed": 0}
+
+    now_ts = int(time.time())
+    cutoff_ts = now_ts - max(int(grace_sec or 0), 10)
+    projection = {"target": 1, "options": 1, "deep_scan": 1, "status": 1}
+    try:
+        items = list(utils.conn_db("task").find(
+            {
+                "status": {"$in": ["deep_scan_pending", "deep_scan_running"]},
+                "deep_scan.status": {"$in": ["pending", "queued", "running"]},
+            },
+            projection,
+        ))
+    except Exception as exc:
+        logger.warning("query orphan domain deep tasks failed error:%s", safe_error_text(exc))
+        return {"requeued": 0, "skipped": 0, "failed": 0}
+
+    live_task_id_set = set(live_guard.get("task_id_set") or set())
+    result = {"requeued": 0, "skipped": 0, "failed": 0}
+    for item in items:
+        deep_scan = item.get("deep_scan") if isinstance(item.get("deep_scan"), dict) else {}
+        try:
+            dispatch_ts = int(deep_scan.get("dispatch_ts") or 0)
+        except (TypeError, ValueError):
+            dispatch_ts = 0
+        if dispatch_ts <= 0 or dispatch_ts > cutoff_ts:
+            result["skipped"] += 1
+            continue
+
+        celery_id = str(deep_scan.get("celery_id") or "").strip()
+        if celery_id and celery_id in live_task_id_set:
+            result["skipped"] += 1
+            continue
+        if str(deep_scan.get("status") or "").strip().lower() == "queued" and int(
+            queue_count_map.get("arlheavy", 0) or 0
+        ) > 0:
+            result["skipped"] += 1
+            continue
+
+        query_id = item.get("_id")
+        reset = utils.conn_db("task").update_one(
+            {
+                "_id": query_id,
+                "status": {"$in": ["deep_scan_pending", "deep_scan_running"]},
+                "deep_scan.status": {"$in": ["pending", "queued", "running"]},
+            },
+            {
+                "$set": {
+                    "status": "deep_scan_pending",
+                    "deep_scan.status": "pending",
+                    "deep_scan.celery_id": "",
+                    "deep_scan.recovery_at": utils.curr_date(),
+                }
+            },
+        )
+        if int(getattr(reset, "modified_count", 0) or 0) <= 0:
+            result["skipped"] += 1
+            continue
+
+        task_id = str(query_id)
+        target = item.get("target")
+        task_options = item.get("options") if isinstance(item.get("options"), dict) else {}
+        if not target:
+            result["failed"] += 1
+            _mark_domain_deep_dispatch_failed(task_id, "missing_target")
+            continue
+        if enqueue_domain_deep_task(task_id, target, task_options):
+            result["requeued"] += 1
+        else:
+            result["failed"] += 1
+
+    if any(result.values()):
+        logger.warning("recover orphan domain deep tasks result:%s", result)
+    return result
+
+
 def requeue_orphan_waiting_tasks_on_worker_start(
     reason="worker restarted and waiting task message missing",
     grace_sec=_WAITING_ORPHAN_GRACE_SEC,
@@ -818,6 +1086,7 @@ def _should_skip_stale_task_message(action, data):
     collection = ""
     if action in [
         CeleryAction.DOMAIN_TASK,
+        CeleryAction.DOMAIN_DEEP_TASK,
         CeleryAction.IP_TASK,
         CeleryAction.RUN_RISK_CRUISING,
         CeleryAction.FOFA_TASK,
@@ -914,6 +1183,7 @@ def run_task(options):
         CeleryAction.DOMAIN_EXEC_TASK: domain_exec,
         CeleryAction.IP_EXEC_TASK: ip_exec,
         CeleryAction.DOMAIN_TASK: domain_task,
+        CeleryAction.DOMAIN_DEEP_TASK: domain_deep_task,
         CeleryAction.IP_TASK: ip_task,
         CeleryAction.RUN_RISK_CRUISING: run_risk_cruising_task,
         CeleryAction.FOFA_TASK: fofa_task,
@@ -1072,9 +1342,60 @@ def domain_task(options):
         logger.info("domain_task not found {} {}".format(target, item))
         return
     
-    # 执行域名扫描任务
+    # 发现阶段完成后，将端口、站点、WIH 和外部工具阶段投递到独立深度消息。
+    # 仍保留总开关，便于兼容旧部署和排障时恢复单消息语义。
+    if bool(getattr(Config, "PROGRESSIVE_SCAN_ENABLE", True)):
+        discovery_ok = wrap_tasks.domain_discovery_task(target, task_id, task_options)
+        if not discovery_ok:
+            return
+        enqueue_domain_deep_task(task_id, target, task_options)
+        return
+
+    # 兼容旧的单消息执行链
     wrap_tasks.domain_task(target, task_id, task_options)
     _enqueue_ai_denoise_task(task_id=task_id, task_options=task_options, trigger="domain_task_done")
+
+
+def domain_deep_task(options):
+    """处理渐进式域名任务的深度消息，并仅在全链路结束后触发 AI 去噪。"""
+    target = options.get("target")
+    task_options = options.get("options")
+    task_id = options.get("task_id")
+    query_id = ObjectId(task_id) if ObjectId.is_valid(str(task_id or "")) else task_id
+    item = utils.conn_db("task").find_one({"_id": query_id}, {"status": 1})
+    if not item:
+        logger.warning("domain deep task not found task_id:{}".format(task_id))
+        return
+
+    status = str(item.get("status", "") or "").strip().lower()
+    if status in {TaskStatus.STOP, TaskStatus.DONE, TaskStatus.ERROR}:
+        logger.info("skip domain deep task task_id:{} status:{}".format(task_id, status))
+        return
+
+    celery_id = str(getattr(getattr(arl_task_heavy, "request", None), "id", "") or "")
+    if not _claim_domain_deep_task(task_id, celery_id=celery_id):
+        logger.info("skip duplicate domain deep task task_id:%s", task_id)
+        return
+
+    deep_ok = wrap_tasks.domain_deep_task(target, task_id, task_options)
+    if deep_ok:
+        utils.conn_db("task").update_one(
+            {"_id": query_id, "deep_scan.status": "running"},
+            {
+                "$set": {
+                    "deep_scan.status": "done",
+                    "deep_scan.end_reason": "completed",
+                    "deep_scan.finished_at": utils.curr_date(),
+                }
+            },
+        )
+        _enqueue_ai_denoise_task(
+            task_id=task_id,
+            task_options=task_options,
+            trigger="domain_deep_task_done",
+        )
+    else:
+        _mark_domain_deep_dispatch_failed(task_id, "deep_stage_failed")
 
 
 def ip_task(options):

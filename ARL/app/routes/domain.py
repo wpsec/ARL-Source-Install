@@ -30,6 +30,7 @@ from app.utils import get_logger, auth
 from app import utils
 from app.modules import ErrorMsg
 from . import base_query_fields, ARLResource, get_arl_parser
+from app.repositories import DomainRepository
 
 # 创建域名信息命名空间
 ns = Namespace('domain', description="域名信息")
@@ -42,7 +43,7 @@ base_search_fields = {
     'record': fields.String(description="DNS解析值（IP地址或域名）"),
     'type': fields.String(description="DNS记录类型（A、AAAA、CNAME、MX等）"),
     'ips': fields.String(description="解析到的IP地址"),
-    'source': fields.String(description="域名来源（domain_brute、alt_dns、cert等）"),
+    'source': fields.String(description="域名来源（同时匹配首个来源 source 与完整来源集合 sources）"),
     "task_id": fields.String(description="关联的任务ID")
 }
 
@@ -147,9 +148,6 @@ class DeleteARLDomain(ARLResource):
         args = self.parse_args(delete_domain_fields)
         id_list = args.pop('_id', [])
         
-        # 遍历删除每个域名记录
-        for _id in id_list:
-            query = {'_id': ObjectId(_id)}
-            utils.conn_db('domain').delete_one(query)
+        DomainRepository.delete_many_by_ids(id_list)
 
         return utils.build_ret(ErrorMsg.Success, {'_id': id_list})

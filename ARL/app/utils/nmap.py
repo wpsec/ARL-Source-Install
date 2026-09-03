@@ -193,7 +193,7 @@ class PortScanner(object):
 
         return self.all_hosts()
 
-    def scan(self, hosts='127.0.0.1', ports=None, arguments='-sV', sudo=False):
+    def scan(self, hosts='127.0.0.1', ports=None, arguments='-sV', sudo=False, timeout=None):
         """
         Scan given hosts
 
@@ -207,6 +207,7 @@ class PortScanner(object):
         :param ports: string for ports as nmap use it '22,53,110,143-4564'
         :param arguments: string of arguments for nmap '-sU -sX -sC'
         :param sudo: launch nmap with sudo if True
+        :param timeout: terminate the nmap process after this many seconds
 
         :returns: scan_result as dictionnary
         """
@@ -237,7 +238,14 @@ class PortScanner(object):
 
         # wait until finished
         # get output
-        (self._nmap_last_output, nmap_err) = p.communicate()
+        try:
+            (self._nmap_last_output, nmap_err) = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            self._nmap_last_output, nmap_err = p.communicate()
+            raise PortScannerError(
+                'nmap scan timeout after {} seconds'.format(timeout)
+            )
         self._nmap_last_output = bytes.decode(self._nmap_last_output)
         nmap_err = bytes.decode(nmap_err)
 
