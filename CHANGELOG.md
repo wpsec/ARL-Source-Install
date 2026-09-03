@@ -3,6 +3,56 @@
 本文件记录 `newUI` 分支的重要变更。  
 日志按日期合并维护：同一天内的修复统一写在同一条日期记录下，并在条目前标注版本号（PATCH 级别详细变更以本文件为准），版本号从下往上。
 
+## 2026-09-03（未发布）
+
+- `Rust + Python 架构解耦第二批`：新增 `ConfigDomainService`，统一扫描配置、服务 API、AI 配置和 SOP 上传的读取、合并、校验、加锁持久化流程；新增 `TaskPipeline`，统一 DomainTask/IPTask 的阶段执行、预算、耗时和结果回写入口。保留现有 HTTP API、Mongo 文档字段和 Python 公共函数签名，并补充配置服务、流水线及端口扫描重试兼容回归。
+- `Rust + Python 架构解耦增量收口`：新增 `ScanConfigService`、`ServiceApiConfigService`、`DomainTaskOrchestrator`、`IPTaskOrchestrator` 和 `WebSiteFetchOrchestrator`，将扫描/第三方服务配置转换、任务高层顺序和站点阶段编排从路由及 `CommonTask` 抽出；保留兼容入口、HTTP API、Mongo 文档字段和 Python 公共函数签名。64 目标真实性能门禁、生产部署验收及扫描 stage 业务的进一步抽取仍待完成。
+- `Rust + Python 架构解耦第三批增量`：新增 `AIConfigService`，将 AI 配置读取、敏感字段脱敏/回填和配置写回从 `api_console.py` 抽出；SOP 文件处理、规范化回调和 provider 连通性测试仍保留原有行为。新增 Python/Rust 任务双基线比较工具，支持 64 目标热点 p95 CPU、估算吞吐、端到端耗时、结果数量和 fallback 门禁。
+- `域名阶段服务化与 WAF 指纹收口`：将域名发现、网络/IP、站点移交和后置处理分别抽取到独立 stage service，`DomainTask` 保留兼容入口；WAF 观测补充网宿、知道创宇、安犬、安域、字节跳动及多家主流厂商特征，增加响应头/响应体分离和严格 DNS CNAME 证据识别，避免通用文本误判。旧 AI 渗透活动展示/注释残留同步清理；`AI_POC`、AI 去噪和 WIH 接口辅助保持为现行能力。
+- `扫描阶段业务服务化第二批`：新增 `IPNetworkStageService`、`IPPostProcessStageService` 以及 `WebSiteDiscoveryStageService`、`WebSiteExternalScanStageService`、`WebSiteIntelStageService`、`WebSitePostProcessStageService`，让 IP 与站点编排器只负责顺序和任务终态，保留原有兼容入口、阶段顺序、Nuclei 延迟重试和结果字段；新增站点阶段边界回归，未重启运行中的扫描容器。
+- `任务生命周期服务化`：新增 `TaskLifecycleService`，统一统计、C 段统计、指纹统计、资产同步和 `task_finalize` 收尾；`CommonTask` 原有方法保留为兼容代理，IP 编排器改用统一生命周期服务，未改变 Mongo 字段、资产同步条件或终态顺序。
+- `任务结果写回边界收口`：新增 `TaskResultWriteService`，集中 CommonTask 的 Mongo 写操作和 URL 清理；结果字段组装、scope 校验、幂等条件与 AI 去噪触发保持在业务层，未改变 HTTP API、Mongo 文档字段或现有任务入口。
+- `配置测试、结果组装与单阶段服务化增量`：新增 `AIPromptSopService`、`AIProviderTestService`、`ServiceApiProviderTestService` 和 `TaskResultItemService`，将 SOP/Provider 测试与 site/fileleak/nuclei/afrog/penetration/WIH/risk 结果文档组装移出路由和 `CommonTask`；新增 `WebSiteSingleStageService`、`IPSingleStageService`，可选阶段仅在显式 fallback 下继续并记录 degraded。保留 HTTP API、Mongo 字段、幂等条件和旧 Python 入口。
+- `具体网络扫描 stage 服务化增量`：新增 `IPPortScanStageService`、`IPSiteDiscoveryStageService`、`WebSiteFetchStageService`、`WebSiteSpiderStageService`、`WebSiteScreenshotStageService` 和 `WebSiteFileLeakStageService`，将端口扫描、站点探测、站点获取、爬虫、截图和文件泄漏的具体业务移出任务类；保留原端口档位、扫描参数、结果字段、URL 清理、Mongo 写回和兼容入口。64 目标性能门禁与 amd64 生产部署验收继续留到最后阶段。
+- `后置扫描 stage 服务化增量`：新增 `WebSiteIdentifyStageService`、`IPNPOCServiceDetectionStageService` 和 `IPBruteConfigStageService`，将站点识别、NPoC 协议识别和弱口令配置执行边界移出任务类；保留 WAF 过滤、目标集合、插件选择、Mongo 结果字段和兼容入口。64 目标性能门禁与 amd64 生产部署验收继续留到最后阶段。
+- `共享发现上下文接线增量`：在任务级 `DiscoveryContext` 上补齐六类发现事件发布（`PageFetched`、`UrlCandidateDiscovered`、`NewHostDiscovered`、`DirectoryCandidateDiscovered`、`EndpointCandidateDiscovered`、`WafSignalDetected`）与候选图登记（爬虫、page_intel、urlfinder、js_intel、WIH 记录、目录命中、URL 探测状态迁移）；站点爬虫、文件泄漏目录扫描和 JS 情报接入共享响应缓存与流量类别调度；WAF 确认阻断改为类别化：目录字典流量只暂停该主机 directory 队列并可从目录子进程回流任务上下文，非目录来源维持既有主机级口径；请求调度新增有界等待后 fail-open，消除限流静默丢结果，响应登记新增总字节预算防止内存放大，候选图加容量上限（默认 20000、最旧驱逐、`candidate_evicted_count` 计数）且爬虫仅在相似去重通过时登记，封死无界 URL 形态（日历翻页/SessionID）撑爆 worker 的路径；收尾观测仅输出日志，Mongo 侧仅在既有 `waf_skip_summary` 子文档内新增 `class_blocked_hosts` 观测字段，旧查询口径不变。保留 HTTP API、任务状态语义与 Python 公共入口签名。`DiscoveryLedger` 持久化 backend、真实连接池管控、64 目标双基线及生产部署验收仍待完成。
+
+- `共享上下文容量与测试基础设施收口增量`：候选图加容量上限（默认 20000、最旧驱逐、`candidate_evicted_count`），爬虫仅在相似去重通过时登记，封死无界 URL 形态撑爆 worker 的路径；`arl_update` 从 `app.main` 导入期副作用收口为 `app.tools.arl_bootstrap` 显式入口（`start_web.sh` 在 gunicorn 前调用，开发直跑保留同语义）；Nuclei 增加启动期模板预校验（只读解析 YAML，坏模板/缺 id 计数与样本进 metrics）与相同目标+tags+模板目录批次的成功去重（`duplicate_batch_skipped`，失败批次仍可重试）；`transfer_ip_scope` 支持非对齐 IPv4 区间保留规范 start-end 文本，`ip_in_scope` 按整数区间直比匹配（修复 HEAD 既有 `test_asset_scope` 失败）；修复 5 个单元测试 import 期替换 `sys.modules["app"]` 不恢复导致的合跑污染（改为 setUpModule/tearDownModule 快照还原）。35 套件 168 项合跑全绿，`app.main` 导入不再依赖 Mongo 可达。
+- `P1 解耦收尾增量`：新增 `IPCertStageService`、`IPServiceSummaryStageService`、`WebSiteNucleiScanStageService`、`WebSiteAfrogScanStageService` 与 `WihResultPersistService`，将 IPTask 证书/服务汇总、WebSiteFetch 的 Nuclei/afrog 扫描与 WIH 记录/接口/风险落库和敏感提升判定从任务类移出；`ssl_cert`/`save_service_info`/`nuclei_scan`/`afrog_scan`/`build_nuclei_targets`/`_save_wih_*` 等同名方法保留兼容委托，Mongo 写回 key、延迟重试与 AI profile 注入语义不变，`commonTask.py` 由 2744 行收缩至 2261 行。`TaskResultItemService` 完成按 collection 幂等复审（写语义与历史一致，补回退键稳定性回归）。39 套件 180 项单进程合跑全绿。
+- `AI-POC 规划器迁移（批次 12/13 收尾）`：新增 `AIPocPlannerService`，将 AI-POC 常量、poc 索引缓存、站点上下文/别名/索引候选收集、模型规划调用、决策注入与用量日志从 `WebSiteFetch` 移出；`run_ai_poc_scan_plan` 等同名方法保留兼容委托，`_handle_ai_poc_stage_degrade` 与 pass-through 降级语义留在任务侧不变；顺带恢复上批重构中丢失的 `_AI_POC_INDEX_CACHE` 类级初始化（索引文件命中时会触发 AttributeError 降级的回归）。`commonTask.py` 降至 1158 行；39 套件 182 项合跑全绿。
+- `阶段账本持久化与重启恢复首批`：新增 `MongoLedgerBackend`（`task_stage_ledger` 独立集合 + `key` 唯一索引，claim 原子可接管崩溃遗留 fetching，后端故障 fail-open），`DiscoveryLedger` 优先走后端原子 claim；文件泄漏按目标（含字典内容签名）在重跑时跳过已 covered 站点且不再派生 watchdog 子进程，WIH 主扫描按站点记账且仅全绿批次可标 covered（超时/抢救/失败批次必重扫），周期复用语义不变；任务删除无条件级联清理账本。重启后高成本阶段不再全量重扫，结果集合不回退。40 套件 189 项合跑全绿（账本回归 7 项）。
+- `功能补齐批次（证据采集/恢复深化/连接池）`：新增 `page_semantics`，`site/url/fileleak` 文档补 `body_excerpt`（≤600 字符、去标签、二进制拒绝）与 `semantic_tags`（auth_wall/not_found/login_page/error_page/placeholder_page/static_asset/api_json 等弱形态标签，上限 8），覆盖真实抓取、任务内缓存与子进程序列化三条路径，为 AI"证据优先去噪"补齐采集侧（WIH 专项 §5.5-5 闭环）；候选图新子域在同一任务内进入目录扫描队列（范围校验+有界+消费去重）；Nuclei 阶段接入账本（目标集合+profile 指纹，仅全绿批次记账，重跑跳过）；普通 HTTP 路径连接池收编（模块级共享 `HTTPAdapter`、每请求独立 Session 保 cookie 隔离、pooled Session 禁 close，直连 IP/provider 分支保持钉定语义待分池评审）。仅新增 Mongo 字段，不改旧字段与 HTTP API。42 套件 218 项合跑全绿（新增 17 项）。
+- `第二轮 review 修复批次`：账本 `claim` 改单次原子 find_one_and_update + owner/租约（covered 不可抢、过期 claiming 可接管、竞争判负、故障 fail-open）；`DiscoveryContext` single-flight 并发 miss 合并（六站接线，等待上界 10s，`put_response` 统一释放）；`NewHostQueue` 订阅 `NewHostDiscovered` 事件→有界队列→WIH 主扫描注入 + 动态扩 WAF scope（站点注入维持周期语义）；WAF 弱证据仅暂停来源类别、强证据才主机阻断；favicon 复用页面正文与独立 profile 缓存消除重复请求；api_doc_scan 接入共享获取、endpoint_probe 接入类别租约（Go WIH 子进程登记为缓存边界外）；stage 超预算强制 success→partial 降级；config-runtime.yaml 删除 11 行 `AI_PEN_*`（01 验收闭环）；Dockerfile ARL-NPoC fail-fast + xing 校验、wih 冒烟改 `test -x`、删冗余静默行。43 套件 235 项合跑全绿（新增 15 项）。
+- `ARM64 离线扫描器包补齐`：新增 `tools/afrog/afrog_3.5.0_linux_arm64.zip` 与 `tools/nuclei/nuclei_3.7.0_linux_arm64.zip`（sha256 与 GitHub 官方 release digest 逐一比对一致，ARM 容器内实测两二进制原生可执行；此前 ARM 上 afrog 只有 amd64 包，实际不可用）。afrog 无需改 Dockerfile（`COPY tools/afrog/` 已含新包，运行期 `_find_linux_afrog_zip` 按架构 token 选择）；Dockerfile 将 nuclei 离线路径从 amd64 特判改为按 `TARGETARCH` 通用选择（`COPY tools/nuclei/nuclei_*_linux_*.zip`，本地缺失仍在线兜底）。PoC 包（nuclei-templates/afrog-pocs）为架构无关数据（快照 2026-08-11），不按架构更新，可经配置中心在线 git 更新。compose 栈内 afrog 经宿主 tools 挂载即可生效；nuclei 二进制在镜像内需重建。两个新 zip 与既有 amd64 包同入库策略，随验收 `git add`。
+
+## 2026-09-02（v4.7.24）
+
+- [v4.7.24] 端口扫描调度优化：worker 在具备 `CAP_NET_RAW` 时优先使用 Nmap SYN 扫描（`-sS`），仅在确认 raw socket 权限错误时按批次回退 `-sT` 并记录原因；`all` 模式改为单 IP 批次和最多 4 路受控并发，批次失败、待处理和疑似全开放主机均保留明确指标。CDN IP 默认跳过端口扫描但保留业务域名的 HTTP/HTTPS 站点探测，避免伪造 CDN 边缘节点开放端口。
+
+- [v4.7.24] 站点探测误拦截修复：对端口阶段已经确认关联公网 IP 的业务域名，仅在自定义解析器与系统解析器都返回公网地址但无交集时允许继续 HTTP/HTTPS 探测；私网漂移和未确认域名仍按 DNS policy 拦截。站点探测新增候选数、DNS 跳过/例外、请求数和请求失败数日志；端口批次默认并发从 3 提升到 4。
+
+- [v4.7.24] 任务路由仓储收口：任务删除的关联数据清理和风险巡航结果集总数查询移入 `TaskRepository` / `ResultSetRepository`，保留原有接口、Mongo 字段和删除范围；任务路由不再直接拼接这些 Mongo 操作。
+
+- [v4.7.24] Provider 反查有界调度：IP 反查改为按并发窗口逐步投递，熔断或阶段预算触发时不再继续执行已排队请求；未启动的 IP 会以 pending_calls 记录，保留部分成功结果并避免目标数量放大拖慢任务。
+
+- [v4.7.24] 端口扫描内部标记兼容：疑似全端口开放的内部调度字段不再传入既有 `IPInfo` 模型，保留端口批次合并和精扫计划语义，修复端口扫描阶段因模型构造参数不兼容导致的任务中断。
+
+- [v4.7.24] DNS 校验去重与分批：跨 Provider 按规范化域名只执行一次 DomainInfo 构建，任务级复用 DNS policy 缓存，保留同一域名的完整 `sources` 关系；大批候选按批次校验并增量回写，同时记录去重、输入输出和待处理 metrics，减少重复 DNS 请求造成的长尾等待。
+
+- [v4.7.24] DNS 多视角并行：自定义解析器、系统解析器和 socket 解析视角改为受单域名边界控制的并行获取，在保留解析漂移和内网地址校验的前提下，减少多个 DNS 视角串行超时叠加造成的批次长尾。
+
+- [v4.7.24] 泛解析画像批次并发：同一 DNS 校验批次先合并待探测根域名，再按受控并发收集泛解析画像并复用任务级缓存；单个画像探测异常只关闭该根域名的过滤，不丢弃候选资产，同时记录降级原因，减少逐域名串行探测造成的长尾等待。
+
+- `[v4.7.24]` `Rust + Python 扫描速度优化第一批`：扩展 Rust 纯数据处理边界，新增 URL/JS 批量提取、HTML 链接/表单/脚本/域名提取、JS 接口候选提取和敏感目标归一化排序；Python 继续负责网络请求、DNS/WAF、Playwright、Celery、Mongo 和任务编排。每个批次独立记录 backend、batch、fallback、网络等待和请求数量，Rust 加载失败或单批异常只回退当前批次并记录原因。周期任务 WIH 复用增加 24 小时 freshness 门禁。ARM64 与 amd64 的 release wheel、同一套 native smoke test 和 golden corpus 对比已通过；64 目标 p95 性能门禁仍待真实对照基线。
+
+## 2026-09-01（v4.7.24）
+
+- `[v4.7.24]` `Rust + Python 重构审查修复`：修正 Rust URL 处理在去重前截断导致有效结果减少的问题，并统一大小写 URL 与 Python 实现的处理语义；阶段 RSS 指标按 macOS/Linux 单位分别换算并标注为进程生命周期峰值，阶段结果元数据异常会正常落入失败收尾和日志；同步修正文档与 Compose 的 Basic Auth 前置条件。当前 ARM64 已完成验证，amd64 构建和 64 目标性能门禁仍待完成。
+- `[v4.7.24]` `Rust + Python 混合架构与关键接口加速`：使用 Rust 重构并接入 URLFinder 批量文本提取、URL 归一化、过滤、去重和敏感候选排序等 CPU 密集型关键接口，用于降低处理开销并提升批量任务效率；Python 继续负责 Flask、Celery、Mongo、配置、AI、Playwright、网络策略、预算控制和任务生命周期，现有 Python 公共函数签名、HTTP API、Mongo 文档结构和任务结果字段保持不变。
+- `[v4.7.24]` `Rust adapter 与多架构构建收口`：新增 `ARL/native/arl_accel` PyO3/maturin 模块，采用批量输入和单批 fallback，Rust 不直接访问 Mongo、Redis、Celery、LLM、浏览器或外部扫描器；增加 `RUST_ACCEL_ENABLE` 与 `RUST_ACCEL_FALLBACK_ENABLE` 配置，Rust 加载失败或单批异常会记录阶段、原因和降级次数并回退 Python 实现。生产镜像按 Python 3.10+ 构建并支持 amd64/arm64，现有 Go 版 `tools/wih` 暂不迁移；64 个代表性目标的最终性能收益仍以冷启动/热缓存基线验证为准。
+- `[v4.7.24]` `域名多来源溯源与 Provider 稳定性修复`：域名记录继续保留兼容字段 `source`，同时新增并聚合完整来源集合 `sources`；FOFA、Hunter、证书、爆破等多个 Provider 命中同一域名时不再丢弃后续来源，列表筛选、前端展示和 Excel 导出均支持完整来源。Hunter 请求补齐必填 `start_time` 并遵守 2 秒间隔，FOFA 对 45012 限频增加串行间隔、指数退避和明确日志；旧任务无法凭空恢复历史 Provider 来源，需在新版本下重新扫描。
+- `[v4.7.24]` `WIH 风险提升兼容入口修复`：补回 `WebSiteFetch` 风险提升链依赖的敏感信息噪声判定和敏感类型判定入口，统一复用 `InfoHunter` 的占位值、调试代码和模板噪声过滤规则，修复 WIH 在 `wih_url_probe` 阶段因 `_is_obvious_wih_secret_noise` 缺失而中断的问题。
+
 ## 2026-04-18（v4.7.1）
 
 - `[v4.7.1]` `批量导出与钉钉知识库报告去重收口`：针对周期任务和批量任务导出的 `xlsx/html` 报告，以及基于同一份导出工作簿写入钉钉知识库时，`IP/系统服务/SSL证书` 等工作表存在大量跨任务重复行的问题，这一轮把去重逻辑前移到了导出构建阶段。批量导出的 `IP` 工作表现在按 IP 地址合并，端口、域名和补充字段会做 union 聚合；`系统服务` 按 `IP+端口+服务+产品+版本` 去重；`SSL证书` 按证书核心字段去重，重复记录会保留信息量更高的 AI 分析文本。与此同时，任务执行概览里的 `IP总数` 也改成和报告一致的去重口径，避免通知、导出和钉钉知识库三边统计不一致；对应批量导出回归测试补齐了“跨任务重复 IP/服务/证书应收口到单行”的断言`

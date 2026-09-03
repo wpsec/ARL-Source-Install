@@ -12,6 +12,8 @@
 1. 周期任务下，同一批站点会被反复全量深扫，`WIH` 阶段耗时容易被拉到数小时甚至十几小时。
 2. 长时间运行会放大 `worker` 重启、计划任务提前收尾、知识库推送跳过等连锁问题。
 
+此外，WIH 与站点爬虫、URLFinder、目录扫描之间没有共享发现上下文，导致相同页面和路径被重复请求，新 API 和新子域也不能稳定进入后续阶段。
+
 本次方案的目标不是削减 `WIH` 的静态/动态能力，而是在 **不明显降低接口发现能力** 的前提下，把耗时集中收敛到真正发生变化的站点和资源上。
 
 ## 2. 目标
@@ -111,14 +113,15 @@
 
 ## 4. 设计原则
 
-### 4.1 主改 `ARL`，辅改 `WIH`
+### 4.1 先统一发现上下文，再优化 WIH
 
-优先在 `ARL` 侧做：
+优先在任务级 `DiscoveryContext` 和统一请求层做：
 
-- 周期任务上下文透传
-- 历史结果复用
-- 分级扫描
-- 候选打分与止损
+- 响应注册与任务内复用
+- 候选资产图和来源聚合
+- 爬虫、URLFinder、WIH、目录扫描事件分发
+- 流量类别隔离和 WAF 熔断
+- 周期任务上下文透传与历史结果复用
 - 调度一致性修复
 
 `WIH` 本体只做配合型增强，例如：
@@ -146,6 +149,15 @@
 - `runtime` 动态提取
 - `endpoint` 恢复
 - `URL` 二次敏感发现
+
+### 4.4 跨工具协同规则
+
+- `fetch_site` 获取的页面响应必须先登记到 `ResponseRegistry`，爬虫、URLFinder、WIH 和站点识别按请求 profile 复用。
+- URLFinder 不再为提取目的独立重新获取已登记页面；新 JS/API 通过候选事件进入 `CandidateRegistry`。
+- WIH 消费候选图中的页面、JS、API 和新子域，不再依赖自身私有结果才能继续探测。
+- 目录扫描只对尚未被相同 profile 完成覆盖的路径执行请求；爬虫已经处理过的路径直接消费响应或标记 `covered`。
+- 目录扫描、爬虫、WIH 和浏览器请求使用独立流量类别、预算和 WAF 状态；目录扫描降级不能静默影响正常请求。
+- 新子域必须经过范围、DNS 和 WAF 校验后，同时分发到站点发现、WIH 和目录扫描队列。
 
 ## 5. 分阶段方案
 
@@ -426,6 +438,21 @@
 2. `task_schedule_run` 二次校正
 3. 知识库推送与通知策略解耦
 
+### 第四批：统一发现上下文
+
+状态（2026-09-03）：第 1–4 项首批已完成；账本持久化 backend 与连接池收编待下一增量，第 5 项 Rust 决策继续保持后置。
+
+1. 建立任务级 `DiscoveryContext`、`ResponseRegistry`、`CandidateRegistry` 和持久化账本。
+   - 已完成内存实现：注册中心含请求 profile 键、消费者记账、总字节预算；候选图含容量上限（默认 20000，最旧驱逐并计数）；`DiscoveryLedger` 预留 backend 注入接口，恢复语义与深度队列消费方同批落地。
+2. 将站点获取、爬虫、URLFinder、WIH URL 探测和目录扫描接入统一请求调度。
+   - 已完成：`fetch_site`、站点爬虫、`site_spider_probe`、urlfinder/page_intel/js_intel、URL 探测与目录扫描子进程均按 `html_get` profile 共享响应；目录扫描经 job 文件消费重叠候选的已获取响应。
+3. 增加页面、API、JS、新子域和目录候选事件分发。
+   - 已完成首批：六类事件发布与候选图登记，候选状态含 `discovered/fetched/covered/failed` 迁移。
+4. 增加 `normal/crawler/wih/directory/browser` 流量隔离和独立 WAF 熔断。
+   - 已完成：类别配额调度（有界等待后 fail-open，杜绝静默丢结果）；目录字典流量的 WAF 证据只暂停该主机 directory 队列，非目录来源维持主机级阻断口径。
+5. 通过请求计数和结果集合回归后，再决定是否启用 Rust 内容解析层。
+   - 待执行：以共享上下文观测日志和 64 目标双基线为准入依据。
+
 ## 9. 当前实施说明
 
 当前已经完成：
@@ -440,6 +467,7 @@
 - `task_schedule_run` 终态重查与知识库补写
 - `WIH接口` 回复报文语义校正
 - `site / fileleak / url / vuln / nuclei_result` 规则层弱证据降权与 AI 上下文补强
+- 统一发现上下文首批接线：WIH 情报链共享响应消费、候选图与六类事件、目录流量类别隔离与子进程 WAF 证据回流
 
 下一轮继续优化的重点不再是“有没有能力”，而是更细的性能精修：
 
@@ -448,3 +476,4 @@
 3. 基于站点画像的自适应 batch / concurrency
 4. 周期任务与即时任务分层参数模板
 5. `site / fileleak / url` 的响应摘要与语义标签补采集
+   - 已完成（2026-09-03）：`page_semantics` 统一派生 `body_excerpt`（≤600 字符、去标签、二进制拒绝）与 `semantic_tags`（auth_wall/not_found/server_error/login_page/error_page/placeholder_page/static_asset/api_json/empty_body，上限 8），在 `fetch_site`、`page_fetch`（含缓存路径）、`fileLeak.Page.dump_json`（子进程序列化出口）三处生产点落库；只新增字段不改旧字段，AI 去噪链按“形态弱证据”消费，价值判断仍由去噪侧决定
