@@ -17,6 +17,9 @@ from app import utils
 from app.config import Config
 
 
+logger = utils.get_logger()
+
+
 def normalize_scope_host(value: str) -> str:
     text = str(value or "").strip()
     if not text:
@@ -117,7 +120,11 @@ def load_task_scope_context(task_id: str, seed_sites=None, scope_domains=None):
             {"name": 1, "target": 1},
             max_time_ms=Config.MONGO_SOCKET_TIMEOUT_MS,
         )
-    except Exception:
+    except Exception as exc:
+        # 读失败会让授权 scope 静默缩小（漏扫而非越权，但必须可见）
+        logger.warning(
+            "scope guard task doc load failed task_id:{} error_type:{}".format(
+                task_id_text, type(exc).__name__))
         task_doc = None
 
     task_name = str(task_doc.get("name", "") or "").strip() if isinstance(task_doc, dict) else ""
@@ -144,8 +151,11 @@ def load_task_scope_context(task_id: str, seed_sites=None, scope_domains=None):
                     related_task_ids.append(row_task_id)
                 for value in _split_target_values(row.get("target", "")):
                     _append_host(allowed_hosts, allowed_flds, value)
-        except Exception:
-            pass
+        except Exception as exc:
+            # 同名任务扩展失败会让 scope 静默缩小，影响授权边界判断
+            logger.warning(
+                "scope guard same-name expansion failed task_name:{} error_type:{}".format(
+                    task_name[:64], type(exc).__name__))
 
     if related_task_ids:
         query = {"task_id": {"$in": related_task_ids}}

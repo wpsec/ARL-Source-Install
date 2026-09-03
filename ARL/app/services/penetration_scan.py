@@ -212,6 +212,15 @@ class PenetrationScanService(object):
         self.wih_records_cache = None
         self.js_analysis_cache = {}
         self.request_policy = PenetrationRequestPolicy()
+        # 探针请求失败计数：把"探测请求没发出去/中途失败"与
+        # "探测完成且未发现漏洞"区分开，避免静默假阴性。
+        self.probe_failure_counts = {}
+
+    def _note_probe_failure(self, probe: str, exc: Exception) -> None:
+        self.probe_failure_counts[probe] = self.probe_failure_counts.get(probe, 0) + 1
+        logger.debug(
+            "penetration probe request failed probe:{} error_type:{}".format(
+                probe, type(exc).__name__))
 
     @staticmethod
     def _normalize_host(value: str) -> str:
@@ -1439,7 +1448,8 @@ class PenetrationScanService(object):
         for candidate in self._collect_admin_candidates(records):
             try:
                 resp = self._request("GET", candidate.get("url", ""), params={})
-            except Exception:
+            except Exception as exc:
+                self._note_probe_failure("admin_unauthorized", exc)
                 continue
 
             status_code = int(getattr(resp, "status_code", 0) or 0)
@@ -1494,7 +1504,8 @@ class PenetrationScanService(object):
             test_params[param_name] = mutated_value
             try:
                 resp = self._request(target.get("method"), target.get("url"), params=test_params)
-            except Exception:
+            except Exception as exc:
+                self._note_probe_failure("horizontal_privilege_escalation", exc)
                 continue
 
             status_code = int(getattr(resp, "status_code", 0) or 0)
@@ -1550,7 +1561,8 @@ class PenetrationScanService(object):
                 test_params[param_name] = probe_value
                 try:
                     resp = self._request(target.get("method"), target.get("url"), params=test_params)
-                except Exception:
+                except Exception as exc:
+                    self._note_probe_failure("vertical_privilege_escalation", exc)
                     continue
 
                 status_code = int(getattr(resp, "status_code", 0) or 0)
@@ -1598,7 +1610,8 @@ class PenetrationScanService(object):
                 started_at = time.time()
                 try:
                     resp = self._request(target.get("method"), target.get("url"), params=test_params)
-                except Exception:
+                except Exception as exc:
+                    self._note_probe_failure("sqli", exc)
                     continue
                 elapsed = time.time() - started_at
                 body = str(getattr(resp, "text", "") or "")
@@ -1638,7 +1651,8 @@ class PenetrationScanService(object):
             try:
                 true_resp = self._request(target.get("method"), target.get("url"), params=true_params)
                 false_resp = self._request(target.get("method"), target.get("url"), params=false_params)
-            except Exception:
+            except Exception as exc:
+                self._note_probe_failure("sqli_true_diff", exc)
                 true_resp = None
                 false_resp = None
 
@@ -1725,7 +1739,8 @@ class PenetrationScanService(object):
             test_params[param_name] = payload
             try:
                 resp = self._request(target.get("method"), target.get("url"), params=test_params)
-            except Exception:
+            except Exception as exc:
+                self._note_probe_failure("xss", exc)
                 continue
 
             body = str(getattr(resp, "text", "") or "")
@@ -1761,7 +1776,8 @@ class PenetrationScanService(object):
                 test_params[param_name] = payload
                 try:
                     resp = self._request(target.get("method"), target.get("url"), params=test_params)
-                except Exception:
+                except Exception as exc:
+                    self._note_probe_failure("lfi", exc)
                     continue
                 body = str(getattr(resp, "text", "") or "")
                 if any(keyword in body.lower() for keyword in [item.lower() for item in self.FILE_DISCLOSURE_KEYWORDS]):
@@ -1829,7 +1845,8 @@ class PenetrationScanService(object):
             echo_params[param_name] = echo_payload
             try:
                 resp = self._request(target.get("method"), target.get("url"), params=echo_params)
-            except Exception:
+            except Exception as exc:
+                self._note_probe_failure("rce", exc)
                 continue
             body = str(getattr(resp, "text", "") or "")
             if "ARL_RCE_MARK" in body:
@@ -1865,7 +1882,8 @@ class PenetrationScanService(object):
                 test_params[param_name] = payload
                 try:
                     resp = self._request(target.get("method"), target.get("url"), params=test_params)
-                except Exception:
+                except Exception as exc:
+                    self._note_probe_failure("ssti", exc)
                     continue
                 body = str(getattr(resp, "text", "") or "")
                 if "1337" in body and "1337" not in baseline_body and payload not in body:
@@ -1901,7 +1919,8 @@ class PenetrationScanService(object):
             test_params[param_name] = payload
             try:
                 resp = self._request(target.get("method"), target.get("url"), params=test_params)
-            except Exception:
+            except Exception as exc:
+                self._note_probe_failure("ssrf", exc)
                 continue
             body = str(getattr(resp, "text", "") or "")
             lowered = body.lower()
@@ -2123,12 +2142,21 @@ class PenetrationScanService(object):
             self._test_xxe(target, findings)
         self._test_dom_xss(findings, wih_records)
 
+        if self.probe_failure_counts:
+            logger.warning(
+                "penetration probe failures task_id:{} total:{} by_probe:{}".format(
+                    self.task_id,
+                    sum(self.probe_failure_counts.values()),
+                    sorted(self.probe_failure_counts.items()),
+                )
+            )
         logger.info(
-            "penetration scan done task_id:{} targets:{} findings:{} js_cache:{}".format(
+            "penetration scan done task_id:{} targets:{} findings:{} js_cache:{} probe_failures:{}".format(
                 self.task_id,
                 len(targets),
                 len(findings),
                 len(self.js_analysis_cache),
+                sum(self.probe_failure_counts.values()),
             )
         )
         return {
