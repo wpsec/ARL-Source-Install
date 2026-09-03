@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 # 颜色定义
@@ -9,44 +9,42 @@ NC='\033[0m' # No Color
 
 # 获取环境变量
 USERNAME=${BASIC_AUTH_USERNAME:-admin}
-PASSWORD=${BASIC_AUTH_PASSWORD:-admin123456}
+PASSWORD=${BASIC_AUTH_PASSWORD:-}
 HTPASSWD_FILE="/etc/nginx/.htpasswd"
 
-echo -e "${GREEN}=== ARL Nginx Reverse Proxy Startup ===${NC}"
-echo -e "${YELLOW}Username: $USERNAME${NC}"
+printf '%b\n' "${GREEN}=== ARL Nginx Reverse Proxy Startup ===${NC}"
+printf '%b\n' "${YELLOW}Username: ${USERNAME}${NC}"
 
 # 生成 .htpasswd 文件
 if [ -z "$PASSWORD" ]; then
-    echo -e "${RED}Error: BASIC_AUTH_PASSWORD environment variable is not set!${NC}"
+    printf '%b\n' "${RED}Error: BASIC_AUTH_PASSWORD environment variable is not set!${NC}"
     exit 1
 fi
 
 # 创建 .htpasswd 文件（使用 htpasswd 生成 bcrypt 密码哈希）
-# 注意：-b 表示从命令行读取密码，-B 表示使用 bcrypt 哈希
-htpasswd -b -B -c "$HTPASSWD_FILE" "$USERNAME" "$PASSWORD" > /dev/null 2>&1
-
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ .htpasswd file generated successfully${NC}"
-    echo -e "${YELLOW}Auth file: $HTPASSWD_FILE${NC}"
-else
-    echo -e "${RED}✗ Failed to generate .htpasswd file${NC}"
+# 通过标准输入传递密码，避免密码出现在进程参数中。
+if ! printf '%s\n' "$PASSWORD" | htpasswd -i -B -c "$HTPASSWD_FILE" "$USERNAME" > /dev/null 2>&1; then
+    printf '%b\n' "${RED}✗ Failed to generate .htpasswd file${NC}"
     exit 1
 fi
+
+printf '%b\n' "${GREEN}✓ .htpasswd file generated successfully${NC}"
+printf '%b\n' "${YELLOW}Auth file: $HTPASSWD_FILE${NC}"
 
 # 设置正确的权限
 chmod 644 "$HTPASSWD_FILE"
 
 # 验证 nginx 配置
-echo -e "${YELLOW}Validating nginx configuration...${NC}"
+printf '%b\n' "${YELLOW}Validating nginx configuration...${NC}"
 nginx -t
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Nginx configuration is valid${NC}"
+    printf '%b\n' "${GREEN}✓ Nginx configuration is valid${NC}"
 else
-    echo -e "${RED}✗ Nginx configuration validation failed${NC}"
+    printf '%b\n' "${RED}✗ Nginx configuration validation failed${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ All checks passed, starting nginx...${NC}"
+printf '%b\n' "${GREEN}✓ All checks passed, starting nginx...${NC}"
 
 # 启动 nginx（传递命令行参数）
 exec "$@"

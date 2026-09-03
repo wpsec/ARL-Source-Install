@@ -8,8 +8,17 @@ COPY ARL/docker/frontend-src/package*.json ./
 RUN set -eux; \
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; \
     if command -v apt-get >/dev/null 2>&1; then \
-      apt-get update; \
-      apt-get install -y --no-install-recommends python3 make g++; \
+      for SOURCE_LIST in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do \
+        if [ -f "${SOURCE_LIST}" ]; then \
+          sed -i \
+            -e 's|deb.debian.org/debian-security|mirrors.aliyun.com/debian-security|g' \
+            -e 's|security.debian.org/debian-security|mirrors.aliyun.com/debian-security|g' \
+            -e 's|deb.debian.org/debian|mirrors.aliyun.com/debian|g' \
+            "${SOURCE_LIST}"; \
+        fi; \
+      done; \
+      apt-get -o Acquire::Retries=5 update; \
+      apt-get -o Acquire::Retries=5 install -y --no-install-recommends python3 make g++; \
       rm -rf /var/lib/apt/lists/*; \
     elif command -v apk >/dev/null 2>&1; then \
       apk add --no-cache python3 make g++; \
@@ -88,7 +97,10 @@ ARG TARGETARCH
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG PYTHON_VERSION=3.10.20
 ARG GO_VERSION=1.22.4
+ARG RUST_VERSION=1.85.1
+ARG MATURIN_VERSION=1.8.6
 ARG NCRACK_VERSION=0.7
+ARG NUCLEI_VERSION=3.7.0
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV LANG=en_US.UTF-8
 
@@ -116,6 +128,11 @@ RUN set -eux; \
       libXScrnSaver libXtst nss nspr pango xorg-x11-fonts-Type1 xorg-x11-fonts-misc; \
     dnf clean all
 
+# Rust 官方工具链以 xz 压缩包提供；单独安装解包工具以保持系统依赖层缓存稳定。
+RUN set -eux; \
+    dnf install -y xz; \
+    dnf clean all
+
 COPY --from=frontend_builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=frontend_builder /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
 RUN set -eux; \
@@ -138,7 +155,7 @@ RUN set -eux; \
         "https://nmap.org/ncrack/dist/ncrack-${NCRACK_VERSION}.tar.gz" \
         "https://nmap.org/svn/ncrack/ncrack-${NCRACK_VERSION}.tar.gz"; do \
         echo "try download ${URL}"; \
-        wget -q --no-check-certificate -O "${NCRACK_TGZ}" "${URL}" && break || true; \
+        wget -q --timeout=30 --tries=1 --no-check-certificate -O "${NCRACK_TGZ}" "${URL}" && break || true; \
       done; \
     fi; \
     test -s "${NCRACK_TGZ}" || (echo "[ERROR] ncrack source package not found: ${NCRACK_TGZ}" && exit 1); \
@@ -165,7 +182,7 @@ RUN set -eux; \
         "https://mirrors.huaweicloud.com/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
         "https://mirrors.aliyun.com/python-release/source/Python-${PYTHON_VERSION}.tgz"; do \
         echo "try download ${URL}"; \
-        wget -q -O "${PYTHON_TGZ}" "${URL}" && break || true; \
+        wget -q --timeout=30 --tries=1 -O "${PYTHON_TGZ}" "${URL}" && break || true; \
       done; \
     fi; \
     test -s "${PYTHON_TGZ}" || (echo "[ERROR] Python source package not found: ${PYTHON_TGZ}" && exit 1); \
@@ -185,14 +202,15 @@ RUN set -eux; \
 
 COPY ARL-NPoC/ /opt/ARL-NPoC/
 COPY ARL/requirements.txt /code/requirements.txt
+COPY ARL/native/arl_accel/ /code/native/arl_accel/
 COPY tools/playwright/ /tmp/playwright-offline/
 # 安装 Python 依赖，并安装 Playwright 浏览器（离线优先）
 RUN set -eux; \
     pip3 install --upgrade "pip<24.1" "setuptools<81" wheel; \
     pip3 install --no-cache-dir -r /code/requirements.txt; \
-    pip3 install --no-cache-dir -e /opt/ARL-NPoC/ || true; \
+    pip3 install --no-cache-dir -e /opt/ARL-NPoC/; \
+    python3 -c 'import xing' >/dev/null 2>&1 || { echo '[ERROR] ARL-NPoC xing import validation failed'; exit 1; }; \
     pip3 install --no-cache-dir dnslib==0.9.16 pycryptodomex==3.16.0 requests_ntlm==1.1.0; \
-    pip3 install --no-cache-dir psutil flask pymongo celery || true; \
     OFFLINE_DIR="/tmp/playwright-offline"; \
     ARCH="${TARGETARCH:-$(uname -m)}"; \
     case "$ARCH" in \
@@ -224,13 +242,57 @@ RUN set -eux; \
       echo "[WARN] playwright browser install failed, screenshot will fallback when unavailable"; \
     fi
 
+# 在与生产运行时相同的 Rocky/glibc 基线中构建 abi3 wheel，避免构建机 glibc 版本高于运行时。
+RUN set -eux; \
+    ARCH="${TARGETARCH:-$(uname -m)}"; \
+    case "$ARCH" in \
+      amd64|x86_64) RUST_ARCH="x86_64-unknown-linux-gnu" ;; \
+      arm64|aarch64) RUST_ARCH="aarch64-unknown-linux-gnu" ;; \
+      *) echo "[ERROR] unsupported arch for rust/arl_accel build: $ARCH"; exit 1 ;; \
+    esac; \
+    RUST_TARBALL="/tmp/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; \
+    for URL in \
+      "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
+      "https://mirrors.aliyun.com/rustup/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; do \
+      echo "try download ${URL}"; \
+      wget -q --timeout=30 --tries=1 -O "${RUST_TARBALL}" "${URL}" && break || true; \
+    done; \
+    test -s "${RUST_TARBALL}" || (echo "[ERROR] Rust toolchain package not found: ${RUST_TARBALL}" && exit 1); \
+    cd /tmp; \
+    tar -xJf "${RUST_TARBALL}"; \
+    "rust-${RUST_VERSION}-${RUST_ARCH}/install.sh" --prefix=/usr/local; \
+    rustc --version; \
+    cargo --version; \
+    pip3 install --no-cache-dir "maturin==${MATURIN_VERSION}"; \
+    cd /code/native/arl_accel; \
+    python3 -m maturin build --release --strip --compatibility manylinux_2_28 --interpreter python3; \
+    pip3 install --no-cache-dir target/wheels/arl_accel-*.whl; \
+    python3 /code/native/arl_accel/smoke_test.py; \
+    cd /code; \
+    rm -rf "/tmp/rust-${RUST_VERSION}-${RUST_ARCH}" "${RUST_TARBALL}" /root/.cargo /root/.rustup /code/native/arl_accel
+
 COPY ARL/app/ app/
+COPY ARL/docker/config-docker.yaml /code/docker/config-docker.yaml
+
+# MassDNS 必须在目标架构内编译；仓库中的历史二进制仅作为源码安装兼容文件，不能直接进入多架构镜像。
+ARG MASSDNS_COMMIT=6bfa47197d78e68b79041d494e280174cb2d6ae1
+RUN set -eux; \
+    MASSDNS_SRC="/tmp/massdns"; \
+    timeout 180 git clone --depth 1 https://github.com/blechschmidt/massdns.git "${MASSDNS_SRC}"; \
+    git -C "${MASSDNS_SRC}" checkout --detach "${MASSDNS_COMMIT}"; \
+    make -C "${MASSDNS_SRC}"; \
+    install -m 0755 "${MASSDNS_SRC}/bin/massdns" /code/app/tools/massdns; \
+    /code/app/tools/massdns --version; \
+    rm -rf "${MASSDNS_SRC}"
+
+RUN mkdir -p /usr/local/share/arl
+COPY ARL/native/arl_accel/smoke_test.py /usr/local/share/arl/arl_accel_smoke_test.py
 COPY ARL/test/ test/
 COPY --from=0 /frontend/dist/ frontend/
 COPY ARL/docker/nginx.conf /etc/nginx/nginx.conf
 COPY ARL/docker/worker/*.sh /usr/bin/
 
-COPY tools/nuclei/nuclei_*_linux_amd64.zip /tmp/
+COPY tools/nuclei/nuclei_*_linux_*.zip /tmp/
 COPY tools/nuclei/nuclei-templates/ /code/tools/nuclei-templates/
 COPY tools/afrog/ /code/tools/afrog/
 COPY tools/finger.json /code/tools/finger.json
@@ -256,7 +318,7 @@ RUN set -eux; \
         "https://dl.google.com/go/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" \
         "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; do \
         echo "try download ${URL}"; \
-        wget -q -O "${GO_TGZ}" "${URL}" && break || true; \
+        wget -q --timeout=30 --tries=1 -O "${GO_TGZ}" "${URL}" && break || true; \
       done; \
     fi; \
     test -s "${GO_TGZ}" || (echo "[ERROR] go toolchain package not found: ${GO_TGZ}" && exit 1); \
@@ -280,10 +342,24 @@ RUN set -eux; \
     cd /code; \
     rm -rf /usr/local/go /root/go /tmp/go-build "${GO_TGZ}"; \
     ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs; \
-    NUCLEI_ZIP=$(ls -1 /tmp/nuclei_*_linux_amd64.zip | head -n 1); \
+    case "$ARCH" in \
+      amd64|x86_64) NUCLEI_ARCH="amd64" ;; \
+      arm64|aarch64) NUCLEI_ARCH="arm64" ;; \
+      *) echo "[ERROR] unsupported arch for nuclei build: $ARCH"; exit 1 ;; \
+    esac; \
+    NUCLEI_ZIP="/tmp/nuclei_${NUCLEI_VERSION}_linux_${NUCLEI_ARCH}.zip"; \
+    if [ ! -s "$NUCLEI_ZIP" ]; then \
+      for URL in \
+        "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${NUCLEI_ARCH}.zip" \
+        "https://mirror.ghproxy.com/https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${NUCLEI_ARCH}.zip"; do \
+        echo "try download ${URL}"; \
+        wget -q --timeout=30 --tries=1 --no-check-certificate -O "$NUCLEI_ZIP" "$URL" && break || true; \
+      done; \
+    fi; \
+    test -s "$NUCLEI_ZIP" || (echo "[ERROR] nuclei package not found: $NUCLEI_ZIP" && exit 1); \
     unzip -q "${NUCLEI_ZIP}" nuclei; \
     mv nuclei /usr/bin/; \
-    rm -f /tmp/nuclei_*_linux_amd64.zip; \
+    rm -f /tmp/nuclei_*.zip; \
     chmod +x /usr/local/bin/ncrack /usr/bin/wih /usr/bin/*.sh /usr/bin/nuclei; \
     cp app/config.yaml.example app/config.yaml; \
     python3 -c "import psutil, flask, pymongo, celery, dnslib, playwright"; \
@@ -292,4 +368,4 @@ RUN set -eux; \
     ncrack -V >/dev/null; \
     nmap --version >/dev/null; \
     nuclei -version >/dev/null; \
-    /usr/bin/wih -h >/dev/null 2>&1 || true
+    test -x /usr/bin/wih

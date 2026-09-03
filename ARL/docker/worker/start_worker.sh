@@ -98,6 +98,7 @@ else:
     }
 requeue_waiting_result = celerytask.requeue_orphan_waiting_tasks_on_worker_start()
 orphan_waiting_result = celerytask.recover_orphan_waiting_tasks_on_worker_start()
+orphan_domain_deep_result = celerytask.recover_orphan_domain_deep_tasks_on_worker_start()
 task_count = int((interrupted_result or {}).get("task", 0) or 0)
 github_count = int((interrupted_result or {}).get("github_task", 0) or 0)
 live_skip = int((interrupted_result or {}).get("live_skip", 0) or 0)
@@ -105,8 +106,10 @@ requeue_task_count = int((requeue_waiting_result or {}).get("task", 0) or 0)
 requeue_github_count = int((requeue_waiting_result or {}).get("github_task", 0) or 0)
 orphan_task_count = int((orphan_waiting_result or {}).get("task", 0) or 0)
 orphan_github_count = int((orphan_waiting_result or {}).get("github_task", 0) or 0)
+orphan_domain_deep_requeued = int((orphan_domain_deep_result or {}).get("requeued", 0) or 0)
+orphan_domain_deep_failed = int((orphan_domain_deep_result or {}).get("failed", 0) or 0)
 print(
-    "recover interrupted tasks inspect_ok={} inspect_trusted={} inspect_reply_workers={} broker_consumer_total={} task={} github_task={} live_skip={} requeue_waiting_task={} requeue_waiting_github_task={} orphan_waiting_task={} orphan_waiting_github_task={}".format(
+    "recover interrupted tasks inspect_ok={} inspect_trusted={} inspect_reply_workers={} broker_consumer_total={} task={} github_task={} live_skip={} requeue_waiting_task={} requeue_waiting_github_task={} orphan_waiting_task={} orphan_waiting_github_task={} orphan_domain_deep_requeued={} orphan_domain_deep_failed={}".format(
         int(inspect_ok),
         int(inspect_trusted),
         inspect_reply_workers,
@@ -118,6 +121,8 @@ print(
         requeue_github_count,
         orphan_task_count,
         orphan_github_count,
+        orphan_domain_deep_requeued,
+        orphan_domain_deep_failed,
     )
 )
 PY
