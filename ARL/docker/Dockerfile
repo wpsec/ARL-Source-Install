@@ -238,7 +238,8 @@ RUN set -eux; \
     elif [ -f "${OFFLINE_DIR}/ms-playwright.tar.gz" ]; then \
       extract_playwright_tar "${OFFLINE_DIR}/ms-playwright.tar.gz"; \
     else \
-      python3 -m playwright install chromium || \
+      PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright \
+        python3 -m playwright install chromium || \
       echo "[WARN] playwright browser install failed, screenshot will fallback when unavailable"; \
     fi
 
@@ -252,8 +253,8 @@ RUN set -eux; \
     esac; \
     RUST_TARBALL="/tmp/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; \
     for URL in \
-      "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
-      "https://mirrors.aliyun.com/rustup/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; do \
+      "https://mirrors.huaweicloud.com/rust-static/${RUST_VERSION}/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
+      "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; do \
       echo "try download ${URL}"; \
       wget -q --timeout=30 --tries=1 -O "${RUST_TARBALL}" "${URL}" && break || true; \
     done; \
