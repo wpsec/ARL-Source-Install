@@ -362,6 +362,7 @@ class WihOrchestrator(object):
                         scan_sites,
                         list(records),
                         waf_guard=task.waf_guard,
+                        discovery_context=getattr(task, "discovery_context", None),
                     ),
                     detail="records={}".format(len(records)),
                     input_count=len(records),
@@ -421,9 +422,11 @@ class WihOrchestrator(object):
             task._save_wih_record(record)
 
             # WIH 记录同步进共享候选图，供目录/探测等后续 stage 复用来源关系。
+            # WihRecord 的属性名是 recordType（构造参数才叫 record_type），
+            # 读错属性不抛异常只会静默丢候选，两种形态都要兼容。
             register_intel_candidate(
                 getattr(task, "discovery_context", None),
-                getattr(record, "record_type", "") or "",
+                getattr(record, "recordType", "") or getattr(record, "record_type", "") or "",
                 getattr(record, "content", "") or "",
                 getattr(record, "source", "") or "",
                 getattr(record, "site", "") or "",

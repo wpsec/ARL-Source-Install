@@ -134,6 +134,24 @@ class UrlfinderUrlProbeService:
             normalized = self._normalize_url(getattr(record, "content", ""))
             if normalized:
                 urls.add(normalized)
+
+        # 候选图消费：爬虫/情报链登记的 URL 候选（不经过 wih_records）也进入
+        # 探测队列，封住"发布了却无人消费"的断链。去重靠 urls 集合 +
+        # _filter_existing_urls，范围靠 _normalize_url 的 allowed_hosts 校验。
+        if self.discovery_context is not None:
+            try:
+                for candidate in self.discovery_context.candidate_registry.values():
+                    if str(getattr(candidate, "candidate_type", "") or "") not in ("url", "page"):
+                        continue
+                    if str(getattr(candidate, "status", "") or "") not in ("discovered", "queued"):
+                        continue
+                    normalized = self._normalize_url(getattr(candidate, "candidate", ""))
+                    if normalized:
+                        urls.add(normalized)
+            except Exception as exc:
+                logger.debug(
+                    "url probe candidate graph read failed error_type:{}".format(
+                        type(exc).__name__))
         return sorted(urls)
 
     @staticmethod

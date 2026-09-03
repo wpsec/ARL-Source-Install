@@ -96,10 +96,15 @@ class UrlfinderSensitiveScanner:
         "token",
     )
 
-    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
+    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None,
+                 discovery_context=None):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.waf_guard = waf_guard
+        # 账本恢复粒度：二次敏感扫描的目标级 covered（worker 重投不重复扫）。
+        # 注意：不做"缓存命中即跳过"预检——敏感规则由 Go 引擎抓取时执行，
+        # 缓存 body 从未过规则，跳过即漏检。
+        self.discovery_context = discovery_context
 
         self.max_targets = int(getattr(Config, "URLFINDER_SENSITIVE_MAX_TARGETS", 300) or 300)
         self.include_js = bool(getattr(Config, "URLFINDER_SENSITIVE_INCLUDE_JS", True))
@@ -125,6 +130,7 @@ class UrlfinderSensitiveScanner:
         self.allowed_hosts = self._collect_allowed_hosts()
         self.last_target_metrics = {}
         self.last_run_metrics = {}
+        self._ledger_context = {}
         self.rust_metrics = {
             "call_count": 0,
             "native_call_count": 0,
@@ -311,6 +317,63 @@ class UrlfinderSensitiveScanner:
 
         return target_list
 
+    def _ledger(self):
+        if self.discovery_context is None:
+            return None
+        return getattr(self.discovery_context, "ledger", None)
+
+    def _target_ledger_key(self, target: str) -> str:
+        if self.discovery_context is None:
+            return ""
+        try:
+            return self.discovery_context.idempotency_key(
+                "wih_sensitive_target", target,
+                scan_profile="sensitive_v1", input_signature="")
+        except Exception as exc:
+            logger.debug(
+                "sensitive ledger key failed target:{} error_type:{}".format(
+                    str(target)[:200], type(exc).__name__))
+            return ""
+
+    def _filter_covered_targets(self, targets: List[str]) -> "tuple":
+        ledger = self._ledger()
+        if ledger is None or not targets:
+            return targets, {}
+        key_map = {}
+        kept = []
+        skipped = 0
+        for target in targets:
+            key = self._target_ledger_key(target)
+            if key:
+                try:
+                    entry = ledger.get(key)
+                except Exception as exc:
+                    entry = None
+                    logger.debug(
+                        "sensitive ledger get failed error_type:{}".format(type(exc).__name__))
+                if entry is not None and str(getattr(entry, "status", "") or "") == "covered":
+                    skipped += 1
+                    continue
+                key_map[target] = key
+            kept.append(target)
+        return kept, {"keys": key_map, "skipped_covered": skipped, "ledger": ledger}
+
+    def _mark_batch_covered(self, batch_targets: List[str]) -> None:
+        ledger = (self._ledger_context or {}).get("ledger")
+        key_map = (self._ledger_context or {}).get("keys") or {}
+        if ledger is None:
+            return
+        for target in batch_targets:
+            key = key_map.get(target)
+            if not key:
+                continue
+            try:
+                ledger.finish(key, "covered", input_count=1, output_count=0)
+            except Exception as exc:
+                logger.debug(
+                    "sensitive ledger finish failed target:{} error_type:{}".format(
+                        str(target)[:200], type(exc).__name__))
+
     @staticmethod
     def _record_fingerprint(record: WihRecord) -> str:
         return "|".join([
@@ -409,6 +472,8 @@ class UrlfinderSensitiveScanner:
                 slow_batch_count += 1
                 slow_candidate_count += len(batch_targets)
             processed_batches += 1
+            # 批次完整成功才记账目标 covered；失败/超时批次留给重投。
+            self._mark_batch_covered(batch_targets)
 
             batch_new_records = 0
             for record in batch_records:
@@ -471,6 +536,8 @@ class UrlfinderSensitiveScanner:
             # 二次敏感扫描经 InfoHunter 拉起 Go WIH 子进程，任务内缓存不可见。
             "external_network": "wih_go",
             "input_count": len(targets),
+            "ledger_skipped_covered_count": int(
+                (self._ledger_context or {}).get("skipped_covered", 0) or 0),
             "output_count": len(merged_records),
             "batch_count": len(batches),
             "processed_batch_count": processed_batches,
@@ -525,6 +592,7 @@ class UrlfinderSensitiveScanner:
             return []
 
         targets = self._collect_targets()
+        targets, self._ledger_context = self._filter_covered_targets(targets)
         if not targets:
             self.last_run_metrics = {
                 "status": "skipped",
@@ -574,8 +642,11 @@ class UrlfinderSensitiveScanner:
         return filtered
 
 
-def run_urlfinder_sensitive_scan(sites: List[str], wih_records: List[WihRecord], waf_guard=None) -> List[WihRecord]:
-    scanner = UrlfinderSensitiveScanner(sites=sites, wih_records=wih_records, waf_guard=waf_guard)
+def run_urlfinder_sensitive_scan(sites: List[str], wih_records: List[WihRecord], waf_guard=None,
+                                 discovery_context=None) -> List[WihRecord]:
+    scanner = UrlfinderSensitiveScanner(
+        sites=sites, wih_records=wih_records, waf_guard=waf_guard,
+        discovery_context=discovery_context)
     results = scanner.run()
     rust_metrics = dict(scanner.rust_metrics)
     rank_calls = int(rust_metrics.get("call_count", 0) or 0)
