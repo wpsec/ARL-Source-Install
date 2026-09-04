@@ -191,6 +191,7 @@ class Merger:
             "dropped_branches_too_short": 0, "demoted": 0, "conflicts": 0,
         }
         self.rejected_rule_keys = set()
+        self.rejected_rule_detail = []  # 拒绝名单是审计面（对照工具归因的数据源），必须导出
         self.dropped_branch_values = {}
 
     def add(self, name, match, source):
@@ -207,6 +208,11 @@ class Merger:
         if not kept_branches:
             self.stats["rejected_rules"] += 1
             self.rejected_rule_keys.add(key)
+            self.rejected_rule_detail.append({
+                "name": str(name).strip(),
+                "reason": "all_branches_rejected",
+                "sources": [source],
+            })
             return
         entry = self.by_key.setdefault(key, {"name": str(name).strip(), "branches": [], "rule_count": 0})
         entry["branches"].extend(kept_branches)
@@ -217,6 +223,11 @@ class Merger:
     def reject_malformed(self, name):
         self.stats["malformed_rules"] += 1
         self.rejected_rule_keys.add(merge_key(name))
+        self.rejected_rule_detail.append({
+            "name": str(name).strip(),
+            "reason": "malformed_expression",
+            "sources": [],
+        })
 
     def finalize(self):
         rules = []
@@ -499,6 +510,7 @@ def build_site(args, merger):
             "branch_level_rejection": True,
         },
         "stats": dict(merger.stats),
+        "rejected_rules_detail": merger.rejected_rule_detail,
     }
     if args.stamp:
         meta["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
