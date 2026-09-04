@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ROUTES_DIR = ROOT / "ARL" / "app" / "routes"
 MAIN_PY = ROOT / "ARL" / "app" / "main.py"
-APP_TSX = ROOT / "ARL" / "docker" / "frontend-src" / "src" / "App.tsx"
+FE_SRC = ROOT / "ARL" / "docker" / "frontend-src" / "src"
 
 HTTP_METHODS = {"get": "GET", "post": "POST", "put": "PUT", "delete": "DELETE", "patch": "PATCH"}
 MODULE_RE = re.compile(r"^\s*module\s*=\s*\"([^\"]+)\"|^\s*module\s*=\s*'([^']+)'", re.M)
@@ -110,9 +110,16 @@ def extract_endpoints():
     return rows
 
 
+def _fe_text():
+    parts = []
+    for f in sorted(FE_SRC.rglob("*.ts")) + sorted(FE_SRC.rglob("*.tsx")):
+        parts.append(f.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 def frontend_endpoints():
-    """App.tsx 中 UI 消费的 /api/... 端点（requestApi 第二参静态串 + 模板串归一）。"""
-    src = APP_TSX.read_text(encoding="utf-8")
+    """UI 消费的 /api/... 端点（requestApi 第二参静态串 + 模板串归一；Phase2 后扫描全 src）。"""
+    src = _fe_text()
     found = set()
     for m in re.finditer(r"requestApi\([^,]+,\s*(['\"`])([^'\"`]+)\1", src):
         u = m.group(2)
@@ -132,8 +139,8 @@ def frontend_modules():
 
     行级状态机解析（配置为规整 TS 对象字面量），只取冻结所需的键。
     """
-    src = APP_TSX.read_text(encoding="utf-8")
-    start = src.index("const modules: ModuleConfig[] = [")
+    src = (FE_SRC / "config" / "modules.ts").read_text(encoding="utf-8")
+    start = src.index("export const modules: ModuleConfig[] = [")
     end = src.index("\n];", start)
     mods = []
     cur = None
