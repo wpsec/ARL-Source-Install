@@ -17,6 +17,12 @@ class _Logger(object):
     def info(self, _message):
         return None
 
+    def debug(self, *_args, **_kwargs):
+        return None
+
+    def warning(self, *_args, **_kwargs):
+        return None
+
 
 class _Record(object):
     """对齐真实 WihRecord 的属性形态：构造参数叫 record_type，属性是 recordType。"""
@@ -233,6 +239,71 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
         self.assertEqual("NewHostDiscovered", entry.get("event_type"))
         self.assertEqual("api.example.test", entry.get("candidate"))
         self.assertEqual("host", entry.get("candidate_type"))
+
+
+class _FakeLedger(object):
+    def __init__(self):
+        self.finished = []
+
+    def get(self, key):
+        return None
+
+    def finish(self, key, status, **_kwargs):
+        self.finished.append((key, status))
+
+
+class _FakePolicy(object):
+    def __init__(self, blocked_hosts=()):
+        self.blocked_hosts = tuple(blocked_hosts)
+
+    def allow(self, target, traffic_class):
+        return not any(h in str(target) for h in self.blocked_hosts)
+
+
+class _FakeCtx(_FakeDiscoveryContext):
+    def __init__(self, blocked_hosts=()):
+        _FakeDiscoveryContext.__init__(self, [])
+        self.ledger = _FakeLedger()
+        self.waf_policy = _FakePolicy(blocked_hosts)
+
+    def idempotency_key(self, stage, target, scan_profile="default", input_signature=""):
+        return "k|{}|{}".format(stage, target)
+
+
+class _WihResult(list):
+    """模拟 Go 结果对象：list 载荷 + metrics 全绿字段。"""
+    metrics = {"end_reason": "completed"}
+
+
+class TestWihCoveredGuard(unittest.TestCase):
+    """真实环境教训：Go 引擎撞 403 墙也"成功返回"，covered 不能照记。"""
+
+    def _run(self, run_wih_result, blocked_hosts=()):
+        run_wih_result = (_WihResult(run_wih_result[0]), run_wih_result[1])
+        original_wih = fake_services.run_wih
+        try:
+            fake_services.run_wih = lambda *_a, **_k: run_wih_result
+            task = _Task()
+            task.assertEqual = self.assertEqual
+            ctx = _FakeCtx(blocked_hosts=blocked_hosts)
+            task.discovery_context = ctx
+            WihOrchestrator(task).run()
+            return ctx
+        finally:
+            fake_services.run_wih = original_wih
+
+    def test_zero_result_batch_not_marked_covered(self):
+        ctx = self._run(([], []))
+        self.assertEqual([], ctx.ledger.finished)
+
+    def test_blocked_site_not_marked_covered(self):
+        ctx = self._run((["raw-record"], []), blocked_hosts=["example.test"])
+        self.assertEqual([], ctx.ledger.finished)
+
+    def test_normal_batch_still_covered(self):
+        ctx = self._run((["raw-record"], []))
+        self.assertEqual(1, len(ctx.ledger.finished))
+        self.assertTrue(all(status == "covered" for _k, status in ctx.ledger.finished))
 
 
 class TestWihOrchestrator(unittest.TestCase):

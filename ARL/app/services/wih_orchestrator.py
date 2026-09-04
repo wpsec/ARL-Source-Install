@@ -157,8 +157,22 @@ class WihOrchestrator(object):
             primary_raw = wih_result[0] if isinstance(wih_result, tuple) else wih_result
             primary_metrics = getattr(primary_raw, "metrics", None)
             if ledger is not None and wih_site_keys and _wih_primary_fully_succeeded(primary_metrics):
-                for site, site_key in wih_site_keys.items():
-                    ledger.finish(site_key, "covered", input_count=1, output_count=0)
+                if not records and not wih_endpoints:
+                    # Go 引擎"成功返回"但零产出（真实环境见过撞 403 墙）：
+                    # covered 会把空手而归变成重投永久跳过，宁可不记账。
+                    logger.info(
+                        "task_id:{} wih primary zero result, skip ledger covered sites:{}".format(
+                            task.task_id, len(wih_site_keys)))
+                else:
+                    for site, site_key in wih_site_keys.items():
+                        if (discovery_context is not None
+                                and not discovery_context.waf_policy.allow(site, "wih")):
+                            # 该站 wih 类处于熔断态时引擎结果不可信，留给重投重试。
+                            logger.info(
+                                "task_id:{} wih site blocked class, skip covered site:{}".format(
+                                    task.task_id, str(site)[:120]))
+                            continue
+                        ledger.finish(site_key, "covered", input_count=1, output_count=0)
         else:
             records = set()
 

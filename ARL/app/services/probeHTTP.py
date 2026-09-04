@@ -23,6 +23,10 @@ class ProbeHTTP(BaseThread):
             domain = item
             if hasattr(item, 'domain'):
                 domain = item.domain
+            # 存量 domain 表可能仍留有 "host:" 脏值，出口侧再收敛一次
+            domain = str(domain or "").strip().rstrip(":")
+            if not domain:
+                continue
 
             _targets.append("https://{}".format(domain))
             _targets.append("http://{}".format(domain))

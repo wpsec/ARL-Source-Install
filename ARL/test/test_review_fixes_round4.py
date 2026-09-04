@@ -87,6 +87,24 @@ class TestWafLedgerReflow(unittest.TestCase):
                 ctx2.waf_policy.allow("http://wide.test/x", traffic_class))
 
 
+class TestDomainTrailingColonNormalize(unittest.TestCase):
+    """x86 真实扫描发现 https://host:/ 脏 URL：入口+出口双向收敛。"""
+
+    def test_domain_info_strips_empty_port_colon(self):
+        from app.modules.domainInfo import DomainInfo
+        info = DomainInfo("host.example.com:", [], "A", [])
+        self.assertEqual("host.example.com", info.domain)
+
+    def test_probe_targets_normalized_and_empty_skipped(self):
+        from app.services.probeHTTP import ProbeHTTP
+        self_arg = object.__new__(ProbeHTTP)
+        targets = ProbeHTTP._build_targets(
+            self_arg, ["dirty.example.com:", "ok.example.com", " ", ""])
+        self.assertIn("https://dirty.example.com", targets)
+        self.assertNotIn("https://dirty.example.com:", targets)
+        self.assertNotIn("https://", targets)
+
+
 class TestScopeGuardFailureVisible(unittest.TestCase):
     def test_task_doc_db_failure_logs(self):
         from app.services import task_scope_guard as guard_mod
