@@ -32,6 +32,23 @@ if [ ! -f "docker-compose.yml" ]; then
     exit 1
 fi
 
+# 与 start.sh 对称：compose v1 会对 nginx 的 ${BASIC_AUTH_PASSWORD:?} 强制插值，
+# 未加载 .env 时 down 直接报错；根目录优先、ARL/docker 回退。
+ENV_FILE_ROOT="$SCRIPT_DIR/.env"
+ENV_FILE_DOCKER="$DOCKER_DIR/.env"
+ENV_FILE=""
+if [ -f "$ENV_FILE_ROOT" ]; then
+    ENV_FILE="$ENV_FILE_ROOT"
+elif [ -f "$ENV_FILE_DOCKER" ]; then
+    ENV_FILE="$ENV_FILE_DOCKER"
+fi
+if [ -n "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+fi
+
 echo "正在停止并移除 ARL 相关容器（保留数据卷）..."
 $COMPOSE_CMD down --remove-orphans
 
