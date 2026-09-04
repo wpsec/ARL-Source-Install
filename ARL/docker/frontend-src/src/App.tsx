@@ -42,6 +42,7 @@ import {
 import Sidebar from './components/Sidebar';
 import BrandLogo from './components/BrandLogo';
 import { ThemeProvider } from './context/ThemeContext';
+import { PageHeader } from './layout/PageHeader';
 import {
   AreaChart,
   Area,
@@ -201,30 +202,6 @@ const HYPERLINK_MODULE_COLUMN_MAP: Record<string, string[]> = {
   wih: ['content', 'source', 'site'],
   wih_endpoint: ['target', 'page_url', 'url'],
 };
-const TABLE_HEADER_FREEZE_MODULE_IDS = new Set([
-  'task',
-  'task_schedule',
-  'github_task',
-  'github_scheduler',
-  'asset_site',
-  'asset_domain',
-  'asset_ip',
-  'asset_wih',
-  'site',
-  'domain',
-  'ip',
-  'cert',
-  'service',
-  'fileleak',
-  'url',
-  'vuln',
-  'nuclei_result',
-  'stat_finger',
-  'wih',
-  'wih_endpoint',
-  'waf_host',
-  'cip',
-]);
 const AI_ANALYSIS_SEARCH_OPTIONS: Array<{ label: string; value: string }> = [
   { label: '全部', value: '' },
   { label: '未分析', value: 'unanalyzed' },
@@ -290,10 +267,6 @@ function canToggleHyperlink(moduleId: string): boolean {
 function isHyperlinkEnabledColumn(moduleId: string, column: string): boolean {
   const columns = HYPERLINK_MODULE_COLUMN_MAP[moduleId];
   return Array.isArray(columns) && columns.includes(column);
-}
-
-function canToggleTableHeaderFreeze(moduleId: string): boolean {
-  return TABLE_HEADER_FREEZE_MODULE_IDS.has(moduleId);
 }
 
 function normalizeHttpHyperlink(value: any): string {
@@ -4554,12 +4527,11 @@ function DashboardView({
 
   return (
     <div className="p-8 space-y-10">
-      <div className="flex justify-between items-end gap-4 flex-wrap">
-        <div>
-          <h2 className="text-6xl font-black tracking-tighter leading-none mb-2">我的仪表盘</h2>
-          <p className="text-brand-text-muted font-medium">互联网资产自动化收集系统 · 实时监控中</p>
-        </div>
-        <div className="text-right space-y-2">
+      <PageHeader
+        title="我的仪表盘"
+        description="互联网资产自动化收集系统 · 实时监控中"
+        actions={
+          <div className="text-right space-y-2">
           <p className="text-xs font-black text-brand-accent uppercase tracking-widest">最后更新</p>
           <p className="text-sm font-mono">{lastUpdatedAt || '-'}</p>
           <div className="flex gap-2 justify-end">
@@ -4578,8 +4550,9 @@ function DashboardView({
               刷新
             </button>
           </div>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {error ? <div className="text-sm text-brand-danger border border-brand-danger/30 bg-brand-danger/10 rounded-xl px-4 py-3">{error}</div> : null}
 
@@ -4953,12 +4926,11 @@ function SystemMonitorView({ token }: { token: string }) {
 
   return (
     <div className="p-8 space-y-8">
-      <div className="flex justify-between items-end gap-4 flex-wrap">
-        <div>
-          <h2 className="text-6xl font-black tracking-tighter leading-none mb-2">系统监控</h2>
-          <p className="text-brand-text-muted font-medium">实时监控主机资源、CPU、内存、磁盘与网络流量趋势</p>
-        </div>
-        <div className="text-right space-y-2">
+      <PageHeader
+        title="系统监控"
+        description="实时监控主机资源、CPU、内存、磁盘与网络流量趋势"
+        actions={
+          <div className="text-right space-y-2">
           <p className="text-xs font-black text-brand-accent uppercase tracking-widest">最后更新</p>
           <p className="text-sm font-mono">{updatedAt || '-'}</p>
           <button
@@ -4970,7 +4942,8 @@ function SystemMonitorView({ token }: { token: string }) {
             刷新
           </button>
         </div>
-      </div>
+        }
+      />
 
       {error ? <div className="text-sm text-brand-danger border border-brand-danger/30 bg-brand-danger/10 rounded-xl px-4 py-3">{error}</div> : null}
 
@@ -5687,7 +5660,7 @@ function ActionDialog({
           ) : null}
 
           {isTaskCreate ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
                 <input
@@ -5842,7 +5815,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isFofaAction ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               {isFofaSubmitAction ? (
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
@@ -5942,7 +5915,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : isTaskScheduleCreate ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-brand-text-muted">名称</label>
@@ -6086,7 +6059,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : isGithubSchedulerAction ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-brand-text-muted">任务名</label>
                 <input
@@ -6144,7 +6117,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isAssetScopeCreate ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">资产类别</label>
                 <div className="relative">
@@ -6191,7 +6164,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isAssetScopeAddScope || isAssetScopeUpdate ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">资产组名称</label>
                 <input
@@ -6230,7 +6203,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : isAssetScopeAddScheduler ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">范围</label>
                 <textarea
@@ -6287,7 +6260,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : (isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? (
-            <div className="space-y-4 max-h-[56vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-brand-text-muted">运行间隔</label>
                 <div className="relative">
@@ -6308,7 +6281,7 @@ function ActionDialog({
               </div>
             </div>
           ) : isPolicyAction ? (
-            <div className="space-y-5 max-h-[62vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-5 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-brand-text-muted">策略名称</label>
@@ -6555,7 +6528,7 @@ function ActionDialog({
               ) : null}
             </div>
           ) : (
-            <div className="space-y-3 max-h-[52vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
+            <div className="space-y-3 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               {displayFields.map((field) => {
                 const value = field.value;
                 const disabled = !editable;
@@ -7036,7 +7009,6 @@ function TableModuleView({
   const [expandedSiteHeaderRows, setExpandedSiteHeaderRows] = useState<Record<string, boolean>>({});
   const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
   const [hyperlinkEnabled, setHyperlinkEnabled] = useState(false);
-  const [tableHeaderFreezeEnabled, setTableHeaderFreezeEnabled] = useState(false);
   const [taskCompactMode, setTaskCompactMode] = useState(true);
   const [aiDenoiseConfig, setAiDenoiseConfig] = useState<AiDenoiseConfigSnapshot>({
     enable: true,
@@ -7113,7 +7085,6 @@ function TableModuleView({
   const hasList = Boolean(module.listPath);
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
   const showHyperlinkToggle = canToggleHyperlink(module.id);
-  const showTableHeaderFreezeToggle = canToggleTableHeaderFreeze(module.id);
   const taskNameSearchText = String(searchForm?.name ?? '').trim();
   const aiAnalysisFilterValue = String(searchForm?.ai_analysis ?? '').trim();
   const hasSearchCriteria = useMemo(() => {
@@ -7436,7 +7407,6 @@ function TableModuleView({
     setTaskStopAndDeleteLoading(false);
     setTaskCompactMode(true);
     setHyperlinkEnabled(false);
-    setTableHeaderFreezeEnabled(false);
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
     setAiDenoiseResultMap({});
@@ -9877,17 +9847,16 @@ function TableModuleView({
           </div>
         </div>
       ) : null}
-      <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
-        <div>
-          <h2 className="text-4xl font-black tracking-tight">{module.label}</h2>
-          <p className="text-brand-text-muted mt-2 text-sm">{module.description}</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusPill text={selectionStatus} type="info" />
-          {error ? <StatusPill text={error} type="error" /> : null}
-        </div>
-      </div>
+      <PageHeader
+        title={module.label}
+        description={module.description}
+        actions={
+          <>
+            <StatusPill text={selectionStatus} type="info" />
+            {error ? <StatusPill text={error} type="error" /> : null}
+          </>
+        }
+      />
 
       {['scheduler', 'asset_scope', 'asset_site', 'asset_domain', 'asset_ip', 'asset_wih'].includes(module.id) ? (
         <div className="flex items-center gap-2">
@@ -10075,20 +10044,6 @@ function TableModuleView({
                   超链接
                 </button>
               ) : null}
-              {showTableHeaderFreezeToggle ? (
-                <button
-                  type="button"
-                  onClick={() => setTableHeaderFreezeEnabled((prev) => !prev)}
-                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
-                    tableHeaderFreezeEnabled
-                      ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                      : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
-                  }`}
-                  title={tableHeaderFreezeEnabled ? '首行冻结已开启，点击关闭' : '首行冻结已关闭，点击开启'}
-                >
-                  首行冻结
-                </button>
-              ) : null}
               {module.exportPath && module.id !== 'task' && module.id !== 'asset_scope' ? (
                 <button
                   onClick={() => void runExport()}
@@ -10215,20 +10170,6 @@ function TableModuleView({
                 超链接
               </button>
             ) : null}
-            {showTableHeaderFreezeToggle ? (
-              <button
-                type="button"
-                onClick={() => setTableHeaderFreezeEnabled((prev) => !prev)}
-                className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
-                  tableHeaderFreezeEnabled
-                    ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                    : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
-                }`}
-                title={tableHeaderFreezeEnabled ? '首行冻结已开启，点击关闭' : '首行冻结已关闭，点击开启'}
-              >
-                首行冻结
-              </button>
-            ) : null}
           </div>
         )}
 
@@ -10308,11 +10249,11 @@ function TableModuleView({
 
       {hasList ? (
         <div className="bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
-          <div className={tableHeaderFreezeEnabled ? 'overflow-auto max-h-[72vh]' : 'overflow-auto'}>
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full border-collapse text-sm md:text-[15px]">
               <thead className="bg-brand-bg/40 border-b border-brand-border">
                 <tr>
-                  <th className={`px-4 py-3 w-12 text-center ${tableHeaderFreezeEnabled ? 'sticky top-0 z-20 bg-brand-bg/90 backdrop-blur' : ''}`}>
+                  <th className="px-4 py-3 w-12 text-center">
                     <input
                       type="checkbox"
                       checked={selectAllChecked}
@@ -10330,7 +10271,7 @@ function TableModuleView({
                     />
                   </th>
                   {showIndexColumn ? (
-                    <th className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${tableHeaderFreezeEnabled ? 'sticky top-0 z-20 bg-brand-bg/90 backdrop-blur' : ''}`}>序号</th>
+                    <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">序号</th>
                   ) : null}
                   {columns.map((column) => {
                     const sortable = isColumnSortable(column);
@@ -10338,7 +10279,7 @@ function TableModuleView({
                     return (
                       <th
                         key={column}
-                        className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${tableHeaderFreezeEnabled ? 'sticky top-0 z-20 bg-brand-bg/90 backdrop-blur' : ''}`}
+                        className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center"
                       >
                         {sortable ? (
                           <button
@@ -10365,7 +10306,7 @@ function TableModuleView({
                     );
                   })}
                   {hasRowOperate ? (
-                    <th className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass} ${tableHeaderFreezeEnabled ? 'sticky top-0 z-20 bg-brand-bg/90 backdrop-blur' : ''}`}>操作</th>
+                    <th className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>操作</th>
                   ) : null}
                 </tr>
               </thead>
@@ -11842,7 +11783,7 @@ function TableModuleView({
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="p-6 space-y-4 max-h-[72vh] overflow-auto">
+              <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {fields.map(([label, text]) => (
                     <div key={label} className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-3">
@@ -11906,7 +11847,7 @@ function TableModuleView({
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 max-h-[72vh] overflow-auto">
+              <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
                     方法：{methodText}
@@ -12086,7 +12027,7 @@ function TableModuleView({
               </button>
             </div>
 
-            <div className="p-6 space-y-4 max-h-[70vh] overflow-auto">
+            <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={getAiDenoiseCellClass(aiDenoiseDetail.analysis.result_level, false)}>
                   {aiDenoiseDetail.analysis.display_text || '-'}
@@ -12267,7 +12208,7 @@ function TableModuleView({
               <div><span className="text-brand-text-muted">Task_ID：</span><span className="font-mono">{taskErrorDialog.taskId || '-'}</span></div>
             </div>
 
-            <div className="p-6 max-h-[65vh] overflow-auto space-y-4">
+            <div className="p-6 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar space-y-4">
               {taskErrorDialog.logs.length > 0 ? taskErrorDialog.logs.map((log, index) => (
                 <div key={`${log.time}-${log.stage}-${index}`} className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
@@ -12355,7 +12296,7 @@ function TableModuleView({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 max-h-[82vh] overflow-auto bg-brand-bg/40">
+            <div className="p-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar bg-brand-bg/40">
               <img
                 src={screenshotPreview.url}
                 alt={screenshotPreview.title}
@@ -13268,10 +13209,7 @@ function ApiConsoleView({ token }: { token: string }) {
 
   return (
     <div className="p-8 space-y-6">
-      <div>
-        <h2 className="text-4xl font-black tracking-tight">API 管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">统一维护 FOFA、Hunter、hunter.how、Shodan、Quake、Zoomeye 等第三方 API 配置并同步保存。</p>
-      </div>
+      <PageHeader title="API 管理" description="统一维护 FOFA、Hunter、hunter.how、Shodan、Quake、Zoomeye 等第三方 API 配置并同步保存。" />
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
@@ -13513,7 +13451,7 @@ function ApiConsoleView({ token }: { token: string }) {
               ) : null}
 
               {batchTestResults.length > 0 ? (
-                <div className="max-h-[55vh] overflow-auto space-y-3 pr-1">
+                <div className="max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar space-y-3 pr-1">
                   {batchTestResults.map((item) => (
                     <div
                       key={`${item.providerId}-${item.testedAt || item.message}`}
@@ -14313,10 +14251,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
   return (
     <div className="p-8 space-y-6">
-      <div>
-        <h2 className="text-4xl font-black tracking-tight">配置管理</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），重启后生效。</p>
-      </div>
+      <PageHeader title="配置管理" description="支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），重启后生效。" />
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
@@ -17307,9 +17242,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <span>最近对话日志（显示最新 {usageLogs.length} / 总计 {usageLogsTotal}）</span>
             <span>{usageLogsUpdatedAt ? `更新时间：${usageLogsUpdatedAt}` : ''}</span>
           </div>
-          <div className="overflow-auto max-h-[520px]">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="min-w-full text-xs">
-              <thead className="bg-brand-bg/60 sticky top-0 z-10">
+              <thead className="bg-brand-bg/60">
                 <tr>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">时间</th>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">场景</th>
@@ -18119,12 +18054,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
 
   return (
     <div className="p-8 space-y-6">
-      <div>
-        <h2 className="text-4xl font-black tracking-tight">钉钉集成</h2>
-        <p className="text-brand-text-muted mt-2 text-sm">
-          在浏览器中维护钉钉机器人与知识库配置，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），支持资产报告链接等参数统一管理。
-        </p>
-      </div>
+      <PageHeader title="钉钉集成" description="在浏览器中维护钉钉机器人与知识库配置，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），支持资产报告链接等参数统一管理。" />
 
       <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
