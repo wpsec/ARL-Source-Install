@@ -160,14 +160,23 @@ sync_runtime_config_from_template() {
 FRONTEND_NPM_REGISTRY="${ARL_FRONTEND_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
 FRONTEND_NODE_IMAGE_DEFAULT="$(resolve_frontend_node_image)"
 FRONTEND_NODE_IMAGE="${ARL_FRONTEND_BUILD_IMAGE:-$FRONTEND_NODE_IMAGE_DEFAULT}"
-# 构建后端配置：有 buildx 时优先使用 buildx（可通过 DOCKER_BUILD_PREFER_BUILDX=0 关闭）
+# Dockerfile 使用 RUN --mount，classic builder 无法构建；没有 buildx 时使用 Docker 内置 BuildKit。
+# 只有显式设置 DOCKER_BUILDKIT=0 才拒绝构建，避免失败后再进入必然失败的 classic 回退。
 DOCKER_BUILD_PREFER_BUILDX="${DOCKER_BUILD_PREFER_BUILDX:-1}"
+DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
+export DOCKER_BUILDKIT
+
+MASSDNS_COMMIT_DEFAULT="6bfa47197d78e68b79041d494e280174cb2d6ae1"
+MASSDNS_REPOSITORY="${ARL_MASSDNS_REPOSITORY:-https://github.com/blechschmidt/massdns.git}"
+MASSDNS_OFFLINE_ARCHIVE="${ARL_MASSDNS_OFFLINE_ARCHIVE:-massdns-${MASSDNS_COMMIT_DEFAULT}.tar.gz}"
 
 detect_build_backend() {
     if [ "$DOCKER_BUILD_PREFER_BUILDX" = "1" ] && docker buildx version >/dev/null 2>&1; then
         echo "buildx"
+    elif [ "$DOCKER_BUILDKIT" = "1" ]; then
+        echo "buildkit"
     else
-        echo "classic"
+        echo "unsupported"
     fi
 }
 
@@ -245,6 +254,12 @@ run_docker_build() {
     local image_tag="$2"
     local no_cache="${3:-0}"
 
+    if [ "$BUILD_BACKEND" = "unsupported" ]; then
+        echo -e "${RED}错误: 当前 Docker 构建后端不支持 Dockerfile 所需的 BuildKit${NC}" >&2
+        echo "请安装 buildx，或移除 DOCKER_BUILDKIT=0 后重试。" >&2
+        return 1
+    fi
+
     local -a cmd
     if [ "$BUILD_BACKEND" = "buildx" ]; then
         cmd=(
@@ -257,7 +272,7 @@ run_docker_build() {
             --build-arg BUILDKIT_INLINE_CACHE=1
             --build-arg "NPM_REGISTRY=$FRONTEND_NPM_REGISTRY"
         )
-    else
+    elif [ "$BUILD_BACKEND" = "buildkit" ]; then
         cmd=(
             docker build
             --pull=false
@@ -269,11 +284,29 @@ run_docker_build() {
         )
     fi
 
+    cmd+=(
+        --build-arg "MASSDNS_REPOSITORY=$MASSDNS_REPOSITORY"
+        --build-arg "MASSDNS_OFFLINE_ARCHIVE=$MASSDNS_OFFLINE_ARCHIVE"
+    )
+    # Docker 的预定义代理参数不会写入镜像历史；只在用户显式配置时传入构建步骤。
+    local proxy_name=""
+    local proxy_value=""
+    for proxy_name in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+        proxy_value="${!proxy_name:-}"
+        if [ -n "$proxy_value" ]; then
+            cmd+=(--build-arg "${proxy_name}=${proxy_value}")
+        fi
+    done
+
     if [ "$no_cache" = "1" ]; then
         cmd+=(--no-cache)
     fi
 
-    "${cmd[@]}"
+    if [ "$BUILD_BACKEND" = "buildkit" ]; then
+        DOCKER_BUILDKIT=1 "${cmd[@]}"
+    else
+        "${cmd[@]}"
+    fi
 }
 
 # 检查 tools 目录结构（适配新目录布局）
@@ -393,8 +426,8 @@ build_frontend_dist_for_hot_update() {
     return 0
 }
 
-# 构建镜像（含离线回退）
-# 功能说明：先按常规 quick 方式构建；若因网络/鉴权失败，再尝试把 Dockerfile 中 FROM 镜像替换为本地镜像 ID 构建
+# 构建镜像（含本地基础镜像回退）
+# 功能说明：首次构建失败时仅替换本地可用的 FROM 镜像，回退仍使用 BuildKit；不会把远端源码失败伪装成离线成功。
 build_image_with_offline_fallback() {
     local image_tag="$1"
     local dockerfile="$DOCKERFILE_PATH/Dockerfile"
@@ -404,7 +437,8 @@ build_image_with_offline_fallback() {
         return 0
     fi
 
-    echo -e "${YELLOW}常规构建失败，尝试离线回退模式...${NC}"
+    echo -e "${YELLOW}常规构建失败，尝试使用本地基础镜像回退（仍使用 BuildKit）...${NC}"
+    echo -e "${YELLOW}提示：该回退只解决基础镜像拉取问题；MassDNS 等源码仍需配置代理、镜像仓库或离线源码包。${NC}"
 
     local from_images_text
     from_images_text="$(awk '/^[[:space:]]*FROM[[:space:]]+/ {print $2}' "$dockerfile")"
@@ -447,8 +481,8 @@ build_image_with_offline_fallback() {
 $from_images_text
 EOF
 
-    echo -e "${YELLOW}离线回退: 使用本地基础镜像 ID 构建${NC}"
-    if ! DOCKER_BUILDKIT=0 docker build --pull=false -f "$temp_dockerfile" -t "$image_tag" "$BUILD_CONTEXT" --build-arg BUILDKIT_INLINE_CACHE=1 --build-arg "NPM_REGISTRY=$FRONTEND_NPM_REGISTRY"; then
+    echo -e "${YELLOW}本地基础镜像回退: 使用本地镜像 ID 构建${NC}"
+    if ! run_docker_build "$temp_dockerfile" "$image_tag" "0"; then
         rm -f "$temp_dockerfile"
         return 1
     fi

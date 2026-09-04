@@ -297,15 +297,30 @@ COPY ARL/app/ app/
 COPY ARL/docker/config-docker.yaml /code/docker/config-docker.yaml
 
 # MassDNS 必须在目标架构内编译；仓库中的历史二进制仅作为源码安装兼容文件，不能直接进入多架构镜像。
+# 网络受限环境可通过构建参数指定可达镜像仓库，或将指定 commit 的源码包放入 tools/massdns/。
 ARG MASSDNS_COMMIT=6bfa47197d78e68b79041d494e280174cb2d6ae1
+ARG MASSDNS_REPOSITORY=https://github.com/blechschmidt/massdns.git
+ARG MASSDNS_OFFLINE_ARCHIVE=massdns-6bfa47197d78e68b79041d494e280174cb2d6ae1.tar.gz
+COPY tools/massdns/ /tmp/massdns-offline/
 RUN set -eux; \
     MASSDNS_SRC="/tmp/massdns"; \
-    timeout 180 git clone --depth 1 https://github.com/blechschmidt/massdns.git "${MASSDNS_SRC}"; \
-    git -C "${MASSDNS_SRC}" checkout --detach "${MASSDNS_COMMIT}"; \
+    OFFLINE_DIR="/tmp/massdns-offline"; \
+    if [ -n "${MASSDNS_OFFLINE_ARCHIVE}" ] && [ -s "${OFFLINE_DIR}/${MASSDNS_OFFLINE_ARCHIVE}" ]; then \
+      echo "use offline massdns source: ${OFFLINE_DIR}/${MASSDNS_OFFLINE_ARCHIVE}"; \
+      EXTRACT_DIR="/tmp/massdns-offline-extract"; \
+      mkdir -p "${EXTRACT_DIR}"; \
+      tar -xzf "${OFFLINE_DIR}/${MASSDNS_OFFLINE_ARCHIVE}" -C "${EXTRACT_DIR}"; \
+      MASSDNS_SRC="$(find "${EXTRACT_DIR}" -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
+      test -n "${MASSDNS_SRC}"; \
+    else \
+      echo "download massdns source from ${MASSDNS_REPOSITORY}"; \
+      timeout 180 git clone --depth 1 "${MASSDNS_REPOSITORY}" "${MASSDNS_SRC}"; \
+      git -C "${MASSDNS_SRC}" checkout --detach "${MASSDNS_COMMIT}"; \
+    fi; \
     make -C "${MASSDNS_SRC}"; \
     install -m 0755 "${MASSDNS_SRC}/bin/massdns" /code/app/tools/massdns; \
     /code/app/tools/massdns --version; \
-    rm -rf "${MASSDNS_SRC}"
+    rm -rf "${MASSDNS_SRC}" /tmp/massdns-offline /tmp/massdns-offline-extract
 
 RUN mkdir -p /usr/local/share/arl
 COPY ARL/native/arl_accel/smoke_test.py /usr/local/share/arl/arl_accel_smoke_test.py

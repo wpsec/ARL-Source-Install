@@ -100,3 +100,8 @@ ARL/app/tmp_screenshot/
 # rust 工具链离线包：本地中转，不入库
 !tools/rust/.gitkeep
 tools/rust/*.tar.xz
+
+# MassDNS 源码离线包：本地中转，不入库
+!tools/massdns/.gitkeep
+!tools/massdns/README.md
+tools/massdns/*.tar.gz
