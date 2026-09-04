@@ -29,7 +29,7 @@ def bootstrap():
     if os.environ.get("FINGERPRINT_REAL_DB") == "1":
         # 容器工作布局 /code（arl_web 镜像根），本地开发布局 ARL/；取存在 app/ 的那个
         for cand in ("/code", str(ARL)):
-            if (Path(cand) / "app" / "__init__.py").exists():
+            if (pathlib.Path(cand) / "app" / "__init__.py").exists():
                 sys.path.insert(0, cand)
                 break
         else:
