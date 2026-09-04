@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -19,15 +21,21 @@ import { TASK_DETAIL_TABS, getModuleById, resolveStoredModuleId } from './config
 import { ThemeProvider } from './context/ThemeContext';
 import { applyPathTemplate, deepClone } from './domain/format';
 import type {JsonValue, ModuleAction, OpenModuleHandler} from './domain/types';
-import { ActionDialog } from './views/ActionDialog';
-import { ConfigAiManagementPanel } from './views/AiConsoleView';
-import { ApiConsoleView } from './views/ApiConsoleView';
-import { ConfigConsoleView } from './views/ConfigConsoleView';
-import { DashboardView } from './views/DashboardView';
-import { DingtalkIntegrationView } from './views/DingtalkIntegrationView';
 import { LoginView } from './views/LoginView';
-import { SystemMonitorView } from './views/SystemMonitorView';
-import { TableModuleView } from './views/TableModuleView';
+
+// 路由级代码分割（docs/04 Phase 4）：视图按需加载，首屏 bundle 不再包含全部页面。
+const DashboardView = lazy(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
+const SystemMonitorView = lazy(() => import('./views/SystemMonitorView').then((m) => ({ default: m.SystemMonitorView })));
+const ApiConsoleView = lazy(() => import('./views/ApiConsoleView').then((m) => ({ default: m.ApiConsoleView })));
+const ConfigConsoleView = lazy(() => import('./views/ConfigConsoleView').then((m) => ({ default: m.ConfigConsoleView })));
+const ConfigAiManagementPanel = lazy(() => import('./views/AiConsoleView').then((m) => ({ default: m.ConfigAiManagementPanel })));
+const DingtalkIntegrationView = lazy(() => import('./views/DingtalkIntegrationView').then((m) => ({ default: m.DingtalkIntegrationView })));
+const TableModuleView = lazy(() => import('./views/TableModuleView').then((m) => ({ default: m.TableModuleView })));
+const ActionDialog = lazy(() => import('./views/ActionDialog').then((m) => ({ default: m.ActionDialog })));
+
+function ViewFallback() {
+  return <div className="p-8 text-sm text-content-muted">页面加载中…</div>;
+}
 
 export function MainShell() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
@@ -334,6 +342,7 @@ export function MainShell() {
             </button>
           </div>
         </div>
+        <Suspense fallback={<ViewFallback />}>
         {activeModule.id === 'dashboard' ? (
           <DashboardView token={token} onOpenModule={openModule} onQuickCreateTask={openQuickCreateTask} />
         ) : null}
@@ -357,9 +366,11 @@ export function MainShell() {
             scrollResetToken={moduleScrollResetTokens[activeModuleCacheKey] || 0}
           />
         ) : null}
+        </Suspense>
       </main>
 
       {globalAction ? (
+        <Suspense fallback={null}>
         <ActionDialog
           token={token}
           action={globalAction}
@@ -369,6 +380,7 @@ export function MainShell() {
             await executeGlobalAction(globalAction, payload, file);
           }}
         />
+        </Suspense>
       ) : null}
 
       {passwdDialogOpen ? (
