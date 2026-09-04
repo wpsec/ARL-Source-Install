@@ -103,6 +103,8 @@ supervisord.conf
 
 node_modules/
 package-lock.json
+# 前端构建需要 lock 强制（docs/04）：可复现构建要求提交 package-lock.json
+!docker/frontend-src/package-lock.json
 
 # FileChangeMonitor
 lib-cov

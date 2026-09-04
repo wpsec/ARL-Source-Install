@@ -43,6 +43,9 @@ import Sidebar from './components/Sidebar';
 import BrandLogo from './components/BrandLogo';
 import { ThemeProvider } from './context/ThemeContext';
 import { PageHeader } from './layout/PageHeader';
+import { Badge } from './components/ui/Badge';
+import { Modal } from './components/ui/Modal';
+import { CHECKBOX_CARD_CLASS } from './components/ui/CheckboxCard';
 import {
   AreaChart,
   Area,
@@ -168,21 +171,20 @@ const TOKEN_KEY = 'arl-token';
 const USERNAME_KEY = 'arl-username';
 const ACTIVE_MODULE_KEY = 'arl-active-module';
 const UNIFIED_SELECT_CLASS =
-  'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text appearance-none pr-9 ' +
-  'focus:outline-none focus:border-brand-accent transition';
+  'w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm text-base-content appearance-none pr-9 ' +
+  'focus:outline-none focus:border-accent transition';
 const CONSOLE_INPUT_CLASS =
-  'w-full h-10 rounded-xl border border-brand-border bg-brand-bg px-3 text-sm text-brand-text ' +
-  'focus:outline-none focus:border-brand-accent transition';
+  'w-full h-10 rounded-xl border border-base-300 bg-base-100 px-3 text-sm text-base-content ' +
+  'focus:outline-none focus:border-accent transition';
 const CONSOLE_SELECT_CLASS = `${UNIFIED_SELECT_CLASS} h-10`;
 const CONSOLE_INPUT_MONO_CLASS = `${CONSOLE_INPUT_CLASS} font-mono`;
 const CONSOLE_TEXTAREA_MONO_CLASS =
-  'w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text font-mono ' +
-  'focus:outline-none focus:border-brand-accent transition resize-y';
+  'w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm text-base-content font-mono ' +
+  'focus:outline-none focus:border-accent transition resize-y';
 const CONSOLE_FILE_INPUT_CLASS =
-  'flex-1 h-10 rounded-xl border border-brand-border bg-brand-bg px-3 text-sm text-brand-text ' +
-  'focus:outline-none focus:border-brand-accent transition';
-const CONSOLE_CHECKBOX_CARD_CLASS =
-  'flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 h-10 text-sm';
+  'flex-1 h-10 rounded-xl border border-base-300 bg-base-100 px-3 text-sm text-base-content ' +
+  'focus:outline-none focus:border-accent transition';
+const CONSOLE_CHECKBOX_CARD_CLASS = CHECKBOX_CARD_CLASS;
 const TASK_REPORT_EXPORT_OPTIONS: Array<{ label: string; value: TaskReportExportFormat }> = [
   { label: '表格格式', value: 'excel' },
   { label: 'HTML格式', value: 'html' },
@@ -2458,17 +2460,16 @@ function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProps) {
   if (!props.open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+    <Modal open onClose={props.onClose} boxClass="w-full max-w-md!">
+        <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
           <div>
             <h4 className="text-lg font-black">{props.title}</h4>
-            <p className="text-xs text-brand-text-muted mt-1">请输入当前登录账号和密码后显示敏感 key。</p>
+            <p className="text-xs text-content-muted mt-1">请输入当前登录账号和密码后显示敏感 key。</p>
           </div>
           <button
             type="button"
             onClick={props.onClose}
-            className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+            className="p-2 rounded-lg hover:bg-base-100/70 transition"
             title="关闭"
           >
             <X className="w-5 h-5" />
@@ -2476,7 +2477,7 @@ function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProps) {
         </div>
         <div className="p-6 space-y-3">
           <div className="space-y-1">
-            <label className="text-xs font-bold text-brand-text-muted block">登录账号</label>
+            <label className="text-xs font-bold text-content-muted block">登录账号</label>
             <input
               value={props.username}
               onChange={(event) => props.onUsernameChange(event.target.value)}
@@ -2486,7 +2487,7 @@ function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProps) {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-bold text-brand-text-muted block">登录密码</label>
+            <label className="text-xs font-bold text-content-muted block">登录密码</label>
             <input
               type="password"
               value={props.password}
@@ -2503,16 +2504,16 @@ function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProps) {
             />
           </div>
           {props.error ? (
-            <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+            <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
               {props.error}
             </div>
           ) : null}
         </div>
-        <div className="px-6 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/30">
+        <div className="px-6 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/30">
           <button
             type="button"
             onClick={props.onClose}
-            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
             disabled={props.loading}
           >
             取消
@@ -2526,8 +2527,7 @@ function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProps) {
             {props.loading ? '验证中...' : '验证并显示'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -2791,12 +2791,12 @@ function isSensitiveWihRow(row: any): boolean {
 function getWihRecordTypeTagClass(recordType: string, sensitive: boolean): string {
   const normalized = String(recordType || '').trim().toLowerCase();
   if (normalized.startsWith('trufflehog_')) {
-    return 'inline-flex items-center rounded-full border border-brand-danger/45 bg-brand-danger/15 px-2.5 py-1 text-[11px] font-black text-brand-danger';
+    return 'inline-flex items-center rounded-full border border-error/45 bg-error/15 px-2.5 py-1 text-[11px] font-black text-error';
   }
   if (sensitive) {
-    return 'inline-flex items-center rounded-full border border-brand-warning/45 bg-brand-warning/15 px-2.5 py-1 text-[11px] font-black text-brand-warning';
+    return 'inline-flex items-center rounded-full border border-warning/45 bg-warning/15 px-2.5 py-1 text-[11px] font-black text-warning';
   }
-  return 'inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-[11px] font-semibold text-brand-text-muted';
+  return 'inline-flex items-center rounded-full border border-base-300 bg-base-100/70 px-2.5 py-1 text-[11px] font-semibold text-content-muted';
 }
 
 function buildCidrPrefix(value: any): string {
@@ -4135,10 +4135,10 @@ function LoginView({
   const [password, setPassword] = useState('');
 
   return (
-    <div className="min-h-screen bg-brand-bg text-brand-text flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-base-100 text-base-content flex items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute inset-0 theme-atmosphere-layer-login pointer-events-none" />
 
-      <div className="relative z-10 w-full max-w-3xl bg-brand-card/50 border border-brand-border backdrop-blur-xl rounded-[2rem] p-12 sm:p-14 shadow-2xl">
+      <div className="relative z-10 w-full max-w-3xl bg-base-200/50 border border-base-300 backdrop-blur-xl rounded-[2rem] p-12 sm:p-14 shadow-2xl">
         <div className="flex items-start sm:items-center gap-4 mb-10">
           {/* 登录页与侧边栏复用同一品牌 Logo，避免出现两套不一致样式 */}
           <BrandLogo size="lg" />
@@ -4146,7 +4146,7 @@ function LoginView({
             <h1 className="text-xl sm:text-3xl md:text-[2.15rem] font-black tracking-tight leading-tight sm:whitespace-nowrap">
               互联网资产自动化收集系统
             </h1>
-            <p className="text-base text-brand-text-muted font-semibold mt-1">
+            <p className="text-base text-content-muted font-semibold mt-1">
               版本：{__ARL_VERSION__}
             </p>
           </div>
@@ -4161,38 +4161,38 @@ function LoginView({
           }}
         >
           <div className="space-y-2">
-            <label className="text-sm font-black text-brand-text-muted uppercase tracking-wider">用户名</label>
+            <label className="text-sm font-black text-content-muted uppercase tracking-wider">用户名</label>
             <div className="relative">
-              <User className="w-5 h-5 text-brand-text-muted absolute left-4 top-1/2 -translate-y-1/2" />
+              <User className="w-5 h-5 text-content-muted absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 name="arl_username"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 autoComplete="off"
-                className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-14 pr-4 text-lg focus:outline-none focus:border-brand-accent"
+                className="w-full bg-base-100 border border-base-300 rounded-xl py-4 pl-14 pr-4 text-lg focus:outline-none focus:border-accent"
                 placeholder="请输入用户名"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-black text-brand-text-muted uppercase tracking-wider">密码</label>
+            <label className="text-sm font-black text-content-muted uppercase tracking-wider">密码</label>
             <div className="relative">
-              <Lock className="w-5 h-5 text-brand-text-muted absolute left-4 top-1/2 -translate-y-1/2" />
+              <Lock className="w-5 h-5 text-content-muted absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 type="password"
                 name="arl_password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="new-password"
-                className="w-full bg-brand-bg border border-brand-border rounded-xl py-4 pl-14 pr-4 text-lg focus:outline-none focus:border-brand-accent"
+                className="w-full bg-base-100 border border-base-300 rounded-xl py-4 pl-14 pr-4 text-lg focus:outline-none focus:border-accent"
                 placeholder="请输入密码"
               />
             </div>
           </div>
 
           {error ? (
-            <div className="text-sm text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-4 py-2.5">
+            <div className="text-sm text-error bg-error/10 border border-error/30 rounded-xl px-4 py-2.5">
               {error}
             </div>
           ) : null}
@@ -4200,7 +4200,7 @@ function LoginView({
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-brand-accent hover:opacity-90 disabled:opacity-60 transition px-6 py-4 rounded-xl font-black text-lg shadow-lg shadow-brand-accent/20"
+            className="w-full bg-brand-accent hover:opacity-90 disabled:opacity-60 transition px-6 py-4 rounded-xl font-black text-lg shadow-lg shadow-accent/20"
           >
             {loading ? '登录中...' : '登录系统'}
           </button>
@@ -4211,20 +4211,10 @@ function LoginView({
 }
 
 function StatusPill({ text, type }: { text: string; type: 'success' | 'error' | 'info' }) {
-  const className =
-    type === 'success'
-      ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
-      : type === 'error'
-        ? 'text-brand-danger bg-brand-danger/10 border-brand-danger/30'
-        : 'text-brand-accent bg-brand-accent/10 border-brand-accent/30';
-
   return (
-    <span
-      title={text}
-      className={`inline-flex items-center max-w-[72vw] md:max-w-[36rem] text-xs px-3 py-1 rounded-full border font-semibold ${className}`}
-    >
+    <Badge tone={type} title={text} className="max-w-[72vw] md:max-w-[36rem] rounded-full px-3 py-1 font-semibold">
       <span className="truncate">{text}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -4453,10 +4443,10 @@ function DashboardView({
   const diskPercent = parseNumericValue(diskInfo?.percent) || 0;
   const highRisk = Number((riskDistribution.find((item) => item?.name === '高危') || {}).value || 0);
   const cards = [
-    { title: '总资产数', value: stats.asset_site, change: `今日 +${stats.new_assets_today}`, isUp: true, icon: Globe, color: 'text-brand-accent' },
-    { title: '活跃任务', value: stats.running_task, change: `总计 ${stats.task}`, isUp: true, icon: Activity, color: 'text-brand-secondary' },
-    { title: '高危风险', value: highRisk, change: `总计 ${stats.vuln}`, isUp: highRisk === 0, icon: AlertTriangle, color: 'text-brand-danger' },
-    { title: '计划任务', value: stats.scheduler, change: `资产分组 ${stats.asset_scope}`, isUp: stats.scheduler > 0, icon: Settings, color: 'text-brand-warning' },
+    { title: '总资产数', value: stats.asset_site, change: `今日 +${stats.new_assets_today}`, isUp: true, icon: Globe, color: 'text-accent' },
+    { title: '活跃任务', value: stats.running_task, change: `总计 ${stats.task}`, isUp: true, icon: Activity, color: 'text-secondary' },
+    { title: '高危风险', value: highRisk, change: `总计 ${stats.vuln}`, isUp: highRisk === 0, icon: AlertTriangle, color: 'text-error' },
+    { title: '计划任务', value: stats.scheduler, change: `资产分组 ${stats.asset_scope}`, isUp: stats.scheduler > 0, icon: Settings, color: 'text-warning' },
   ];
   const buildEmptyAssetTrend = () => {
     const today = new Date();
@@ -4484,17 +4474,17 @@ function DashboardView({
   const netData = networkTrend.length > 0 ? networkTrend : [{ time: '13:40', in: 120, out: 80 }];
   const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', source: 'SCAN', msg: '暂无扫描日志数据', time: '' }];
   const quickModules = [
-    { id: 'task', label: '任务管理', desc: '下发、停止、导出扫描任务', icon: Activity, color: 'text-brand-accent' },
-    { id: 'policy', label: '策略配置', desc: '维护标准化扫描策略模板', icon: FileCode, color: 'text-brand-secondary' },
-    { id: 'scheduler', label: '资产监控', desc: '周期监控资产组与站点变化', icon: Monitor, color: 'text-brand-warning' },
-    { id: 'asset_scope', label: '资产分组', desc: '维护范围并执行批量导出', icon: Globe, color: 'text-brand-danger' },
+    { id: 'task', label: '任务管理', desc: '下发、停止、导出扫描任务', icon: Activity, color: 'text-accent' },
+    { id: 'policy', label: '策略配置', desc: '维护标准化扫描策略模板', icon: FileCode, color: 'text-secondary' },
+    { id: 'scheduler', label: '资产监控', desc: '周期监控资产组与站点变化', icon: Monitor, color: 'text-warning' },
+    { id: 'asset_scope', label: '资产分组', desc: '维护范围并执行批量导出', icon: Globe, color: 'text-error' },
   ];
   const levelClassMap: Record<string, string> = {
     INFO: 'text-emerald-400',
-    WARN: 'text-brand-warning',
-    WARNING: 'text-brand-warning',
-    ERROR: 'text-brand-danger',
-    CRIT: 'text-brand-danger',
+    WARN: 'text-warning',
+    WARNING: 'text-warning',
+    ERROR: 'text-error',
+    CRIT: 'text-error',
     DEBUG: 'text-sky-400',
   };
 
@@ -4514,14 +4504,14 @@ function DashboardView({
 
   const renderUsageBar = (title: string, percent: number, detail: string) => (
     <div className="space-y-2">
-      <div className="flex items-center justify-between text-[10px] font-black text-brand-text-muted uppercase tracking-widest">
+      <div className="flex items-center justify-between text-[10px] font-black text-content-muted uppercase tracking-widest">
         <span>{title}</span>
         <span className="text-white">{formatPercent(percent)}</span>
       </div>
-      <div className="h-1.5 bg-brand-bg rounded-full overflow-hidden border border-brand-border">
+      <div className="h-1.5 bg-base-100 rounded-full overflow-hidden border border-base-300">
         <div className="h-full bg-brand-accent rounded-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
       </div>
-      <p className="text-[10px] text-brand-text-muted">{detail}</p>
+      <p className="text-[10px] text-content-muted">{detail}</p>
     </div>
   );
 
@@ -4532,7 +4522,7 @@ function DashboardView({
         description="互联网资产自动化收集系统 · 实时监控中"
         actions={
           <div className="text-right space-y-2">
-          <p className="text-xs font-black text-brand-accent uppercase tracking-widest">最后更新</p>
+          <p className="text-xs font-black text-accent uppercase tracking-widest">最后更新</p>
           <p className="text-sm font-mono">{lastUpdatedAt || '-'}</p>
           <div className="flex gap-2 justify-end">
             <button
@@ -4544,7 +4534,7 @@ function DashboardView({
             </button>
             <button
               onClick={() => void load()}
-              className="px-5 py-2.5 border border-brand-border rounded-xl text-sm font-semibold hover:bg-brand-card/60 transition flex items-center gap-2"
+              className="px-5 py-2.5 border border-base-300 rounded-xl text-sm font-semibold hover:bg-base-200/60 transition flex items-center gap-2"
             >
               <RefreshCw className={`w-[18px] h-[18px] ${loading ? 'animate-spin' : ''}`} />
               刷新
@@ -4554,28 +4544,28 @@ function DashboardView({
         }
       />
 
-      {error ? <div className="text-sm text-brand-danger border border-brand-danger/30 bg-brand-danger/10 rounded-xl px-4 py-3">{error}</div> : null}
+      {error ? <div className="text-sm text-error border border-error/30 bg-error/10 rounded-xl px-4 py-3">{error}</div> : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {cards.map((card) => (
-          <div key={card.title} className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl hover:border-brand-accent/50 transition-all group shadow-xl shadow-black/20">
+          <div key={card.title} className="bg-base-200/30 backdrop-blur-md border border-base-300 p-6 rounded-3xl hover:border-accent/50 transition-all group shadow-xl shadow-black/20">
             <div className="flex justify-between items-start mb-4">
-              <div className={`p-3 rounded-2xl bg-brand-bg border border-brand-border group-hover:scale-110 transition-transform ${card.color}`}>
+              <div className={`p-3 rounded-2xl bg-base-100 border border-base-300 group-hover:scale-110 transition-transform ${card.color}`}>
                 <card.icon className="w-6 h-6" />
               </div>
-              <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${card.isUp ? 'text-emerald-400 bg-emerald-400/10' : 'text-brand-danger bg-brand-danger/10'}`}>
+              <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${card.isUp ? 'text-emerald-400 bg-emerald-400/10' : 'text-error bg-error/10'}`}>
                 {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                 {card.change}
               </div>
             </div>
-            <h3 className="text-brand-text-muted text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
+            <h3 className="text-content-muted text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
             <p className="text-3xl font-black tracking-tighter">{card.value.toLocaleString()}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-brand-card/30 backdrop-blur-md border border-brand-border p-8 rounded-3xl shadow-xl shadow-black/20">
+        <div className="lg:col-span-2 bg-base-200/30 backdrop-blur-md border border-base-300 p-8 rounded-3xl shadow-xl shadow-black/20">
           <h3 className="text-xl font-black tracking-tight mb-8">资产增长趋势 (7日)</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -4596,7 +4586,7 @@ function DashboardView({
           </div>
         </div>
 
-        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-8 rounded-3xl shadow-xl shadow-black/20">
+        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-8 rounded-3xl shadow-xl shadow-black/20">
           <h3 className="text-xl font-black tracking-tight mb-8">资产分布概览</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -4622,10 +4612,10 @@ function DashboardView({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
+        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-brand-secondary/10 rounded-xl">
-              <Activity className="w-5 h-5 text-brand-secondary" />
+            <div className="p-2 bg-secondary/10 rounded-xl">
+              <Activity className="w-5 h-5 text-secondary" />
             </div>
             <h3 className="text-xl font-black tracking-tight">系统监控</h3>
           </div>
@@ -4643,24 +4633,24 @@ function DashboardView({
           </div>
         </div>
 
-        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
+        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-brand-accent/10 rounded-xl">
-                <Terminal className="w-5 h-5 text-brand-accent" />
+              <div className="p-2 bg-accent/10 rounded-xl">
+                <Terminal className="w-5 h-5 text-accent" />
               </div>
               <h3 className="text-xl font-black tracking-tight">实时扫描日志</h3>
             </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsLogPaused((prev) => !prev)}
-                className={`text-xs font-black uppercase tracking-wider px-2 hover:underline ${isLogPaused ? 'text-brand-warning' : 'text-brand-secondary'}`}
+                className={`text-xs font-black uppercase tracking-wider px-2 hover:underline ${isLogPaused ? 'text-warning' : 'text-secondary'}`}
               >
                 {isLogPaused ? '继续' : '暂停'}
               </button>
               <button
                 onClick={() => void loadRecentLogs(true)}
-                className="text-xs font-black text-brand-accent uppercase tracking-wider hover:underline px-2"
+                className="text-xs font-black text-accent uppercase tracking-wider hover:underline px-2"
               >
                 刷新日志
               </button>
@@ -4668,7 +4658,7 @@ function DashboardView({
           </div>
           <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[11px] overflow-y-auto max-h-[520px] min-h-[460px]">
             {isLogPaused ? (
-              <div className="mb-2 text-brand-warning border border-brand-warning/30 bg-brand-warning/10 rounded-lg px-2 py-1">扫描日志已暂停自动刷新</div>
+              <div className="mb-2 text-warning border border-warning/30 bg-warning/10 rounded-lg px-2 py-1">扫描日志已暂停自动刷新</div>
             ) : null}
             {logsData.map((log, index) => {
               const level = String(log?.level || 'INFO').toUpperCase();
@@ -4676,9 +4666,9 @@ function DashboardView({
               return (
                 <div key={`${source}-${level}-${index}`} className="py-2 border-b border-white/5 last:border-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-brand-text-muted'}`}>{level}</span>
-                    <span className="text-brand-text-muted">{source}</span>
-                    <span className="ml-auto text-brand-text-muted">{formatLogTime(log?.time)}</span>
+                    <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-content-muted'}`}>{level}</span>
+                    <span className="text-content-muted">{source}</span>
+                    <span className="ml-auto text-content-muted">{formatLogTime(log?.time)}</span>
                   </div>
                   <p className="text-white/80 break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
                 </div>
@@ -4689,12 +4679,12 @@ function DashboardView({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <div className="xl:col-span-2 bg-brand-card/35 border border-brand-border rounded-3xl p-6 space-y-4">
+        <div className="xl:col-span-2 bg-base-200/35 border border-base-300 rounded-3xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black tracking-tight">最近任务</h3>
             <button
               onClick={() => onOpenModule('task')}
-              className="text-sm font-black text-brand-accent border border-brand-accent/30 px-4 py-2 rounded-xl hover:bg-brand-accent/10 transition"
+              className="text-sm font-black text-accent border border-accent/30 px-4 py-2 rounded-xl hover:bg-accent/10 transition"
             >
               查看全部
             </button>
@@ -4702,17 +4692,17 @@ function DashboardView({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-brand-border">
-                  <th className="py-2 pr-4 uppercase tracking-widest text-brand-text-muted">名称</th>
-                  <th className="py-2 pr-4 uppercase tracking-widest text-brand-text-muted">状态</th>
-                  <th className="py-2 pr-4 uppercase tracking-widest text-brand-text-muted">目标</th>
-                  <th className="py-2 uppercase tracking-widest text-brand-text-muted">时间</th>
+                <tr className="border-b border-base-300">
+                  <th className="py-2 pr-4 uppercase tracking-widest text-content-muted">名称</th>
+                  <th className="py-2 pr-4 uppercase tracking-widest text-content-muted">状态</th>
+                  <th className="py-2 pr-4 uppercase tracking-widest text-content-muted">目标</th>
+                  <th className="py-2 uppercase tracking-widest text-content-muted">时间</th>
                 </tr>
               </thead>
               <tbody>
                 {recentTasks.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-6 text-center text-brand-text-muted">
+                    <td colSpan={4} className="py-6 text-center text-content-muted">
                       暂无任务数据
                     </td>
                   </tr>
@@ -4721,12 +4711,12 @@ function DashboardView({
                     const statusInfo = resolveTaskStatus(task?.status);
                     const taskId = String(task?._id || task?.task_id || task?.id || '').trim();
                     return (
-                      <tr key={String(task?._id || task?.task_id || task?.id || Math.random())} className="border-b border-brand-border/60 last:border-b-0">
+                      <tr key={String(task?._id || task?.task_id || task?.id || Math.random())} className="border-b border-base-300/60 last:border-b-0">
                         <td className="py-3 pr-4 font-semibold">
                           {taskId ? (
                             <button
                               onClick={() => onOpenModule('site', { task_id: taskId })}
-                              className="text-brand-accent hover:underline text-left"
+                              className="text-accent hover:underline text-left"
                               title="点击查看该任务详情"
                             >
                               {normalizeValue(task?.name)}
@@ -4739,7 +4729,7 @@ function DashboardView({
                           <StatusPill text={statusInfo.text} type={statusInfo.type} />
                         </td>
                         <td className="py-3 pr-4 font-mono">{normalizeValue(task?.target)}</td>
-                        <td className="py-3 text-brand-text-muted">{formatTime(task?.create_time || task?.update_time || task?.start_time)}</td>
+                        <td className="py-3 text-content-muted">{formatTime(task?.create_time || task?.update_time || task?.start_time)}</td>
                       </tr>
                     );
                   })
@@ -4749,22 +4739,22 @@ function DashboardView({
           </div>
         </div>
 
-        <div className="bg-brand-card/35 border border-brand-border rounded-3xl p-6">
+        <div className="bg-base-200/35 border border-base-300 rounded-3xl p-6">
           <h3 className="text-lg font-black mb-4">快捷入口</h3>
           <div className="grid grid-cols-1 gap-3">
             {quickModules.map((entry) => (
               <button
                 key={entry.id}
                 onClick={() => onOpenModule(entry.id)}
-                className="text-left bg-brand-bg/40 border border-brand-border rounded-2xl p-4 hover:border-brand-accent/45 hover:bg-brand-card/55 transition"
+                className="text-left bg-base-100/40 border border-base-300 rounded-2xl p-4 hover:border-accent/45 hover:bg-base-200/55 transition"
               >
                 <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg bg-brand-card/60 border border-brand-border ${entry.color}`}>
+                  <div className={`p-2 rounded-lg bg-base-200/60 border border-base-300 ${entry.color}`}>
                     <entry.icon className="w-4 h-4" />
                   </div>
                   <div>
                     <p className="font-black text-sm">{entry.label}</p>
-                    <p className="text-xs text-brand-text-muted mt-1">{entry.desc}</p>
+                    <p className="text-xs text-content-muted mt-1">{entry.desc}</p>
                   </div>
                 </div>
               </button>
@@ -4896,7 +4886,7 @@ function SystemMonitorView({ token }: { token: string }) {
       detail: `${normalizeValue(resource?.cpu_count)} 核`,
       percent: cpuPercent,
       icon: Cpu,
-      color: 'text-brand-accent',
+      color: 'text-accent',
     },
     {
       title: '内存占用',
@@ -4904,7 +4894,7 @@ function SystemMonitorView({ token }: { token: string }) {
       detail: formatPercent(memoryPercent),
       percent: memoryPercent,
       icon: Database,
-      color: 'text-brand-secondary',
+      color: 'text-secondary',
     },
     {
       title: '磁盘占用',
@@ -4912,7 +4902,7 @@ function SystemMonitorView({ token }: { token: string }) {
       detail: formatPercent(diskPercent),
       percent: diskPercent,
       icon: Server,
-      color: 'text-brand-warning',
+      color: 'text-warning',
     },
     {
       title: '网络速率',
@@ -4931,11 +4921,11 @@ function SystemMonitorView({ token }: { token: string }) {
         description="实时监控主机资源、CPU、内存、磁盘与网络流量趋势"
         actions={
           <div className="text-right space-y-2">
-          <p className="text-xs font-black text-brand-accent uppercase tracking-widest">最后更新</p>
+          <p className="text-xs font-black text-accent uppercase tracking-widest">最后更新</p>
           <p className="text-sm font-mono">{updatedAt || '-'}</p>
           <button
             onClick={() => void load()}
-            className="px-5 py-2.5 border border-brand-border rounded-xl text-sm font-semibold hover:bg-brand-card/60 transition flex items-center gap-2"
+            className="px-5 py-2.5 border border-base-300 rounded-xl text-sm font-semibold hover:bg-base-200/60 transition flex items-center gap-2"
             disabled={loading}
           >
             <RefreshCw className={`w-[18px] h-[18px] ${loading ? 'animate-spin' : ''}`} />
@@ -4945,20 +4935,20 @@ function SystemMonitorView({ token }: { token: string }) {
         }
       />
 
-      {error ? <div className="text-sm text-brand-danger border border-brand-danger/30 bg-brand-danger/10 rounded-xl px-4 py-3">{error}</div> : null}
+      {error ? <div className="text-sm text-error border border-error/30 bg-error/10 rounded-xl px-4 py-3">{error}</div> : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         {resourceCards.map((item) => (
-          <div key={item.title} className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-6 rounded-3xl shadow-xl shadow-black/20">
+          <div key={item.title} className="bg-base-200/30 backdrop-blur-md border border-base-300 p-6 rounded-3xl shadow-xl shadow-black/20">
             <div className="flex items-center justify-between mb-5">
-              <div className={`p-2.5 rounded-xl bg-brand-bg border border-brand-border ${item.color}`}>
+              <div className={`p-2.5 rounded-xl bg-base-100 border border-base-300 ${item.color}`}>
                 <item.icon className="w-5 h-5" />
               </div>
-              <span className="text-xs font-black text-brand-text-muted">{item.detail}</span>
+              <span className="text-xs font-black text-content-muted">{item.detail}</span>
             </div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-brand-text-muted mb-1">{item.title}</h3>
+            <h3 className="text-xs font-black uppercase tracking-wider text-content-muted mb-1">{item.title}</h3>
             <p className="text-2xl font-black tracking-tight">{item.value}</p>
-            <div className="h-2 mt-4 rounded-full bg-brand-bg border border-brand-border overflow-hidden">
+            <div className="h-2 mt-4 rounded-full bg-base-100 border border-base-300 overflow-hidden">
               <div className="h-full bg-brand-accent transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, item.percent))}%` }} />
             </div>
           </div>
@@ -4966,7 +4956,7 @@ function SystemMonitorView({ token }: { token: string }) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-8 rounded-3xl shadow-xl shadow-black/20">
+        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-8 rounded-3xl shadow-xl shadow-black/20">
           <h3 className="text-xl font-black tracking-tight mb-6">资源使用趋势</h3>
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -4983,7 +4973,7 @@ function SystemMonitorView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="bg-brand-card/30 backdrop-blur-md border border-brand-border p-8 rounded-3xl shadow-xl shadow-black/20">
+        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-8 rounded-3xl shadow-xl shadow-black/20">
           <h3 className="text-xl font-black tracking-tight mb-6">网络流量趋势</h3>
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -5011,16 +5001,16 @@ function SystemMonitorView({ token }: { token: string }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4">
-          <p className="text-xs text-brand-text-muted uppercase tracking-wider">累计发送流量</p>
+        <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4">
+          <p className="text-xs text-content-muted uppercase tracking-wider">累计发送流量</p>
           <p className="text-2xl font-black mt-1">{normalizeValue(resource?.network_total_sent)}</p>
         </div>
-        <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4">
-          <p className="text-xs text-brand-text-muted uppercase tracking-wider">累计接收流量</p>
+        <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4">
+          <p className="text-xs text-content-muted uppercase tracking-wider">累计接收流量</p>
           <p className="text-2xl font-black mt-1">{normalizeValue(resource?.network_total_recv)}</p>
         </div>
-        <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4">
-          <p className="text-xs text-brand-text-muted uppercase tracking-wider">进程数量 / 启动时间</p>
+        <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4">
+          <p className="text-xs text-content-muted uppercase tracking-wider">进程数量 / 启动时间</p>
           <p className="text-lg font-black mt-1">{normalizeValue(resource?.process_count)} / {normalizeValue(resource?.boot_time)}</p>
         </div>
       </div>
@@ -5627,26 +5617,29 @@ function ActionDialog({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full ${isTaskCreate || isPolicyAction || isTaskScheduleCreate ? 'max-w-5xl' : 'max-w-3xl'} bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden`}>
-        <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between">
+    <Modal
+      open
+      onClose={onClose}
+      boxClass={`w-full ${isTaskCreate || isPolicyAction || isTaskScheduleCreate ? 'max-w-5xl!' : 'max-w-3xl!'}`}
+    >
+        <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between">
           <div>
             <h4 className="text-lg font-black">{action.label}</h4>
-            <p className="text-xs text-brand-text-muted font-mono mt-1">
+            <p className="text-xs text-content-muted font-mono mt-1">
               {action.method} {action.path}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-brand-bg/70 transition">
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-base-100/70 transition">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-6 space-y-4">
-          {action.description ? <p className="text-sm text-brand-text-muted">{action.description}</p> : null}
+          {action.description ? <p className="text-sm text-content-muted">{action.description}</p> : null}
 
           {action.fileFieldName ? (
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wider font-bold text-brand-text-muted">上传文件</label>
+              <label className="text-xs uppercase tracking-wider font-bold text-content-muted">上传文件</label>
               <input
                 type="file"
                 accept={action.fileAccept}
@@ -5654,7 +5647,7 @@ function ActionDialog({
                   const nextFile = event.target.files?.[0] || null;
                   setFile(nextFile);
                 }}
-                className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border file:border-brand-border file:bg-brand-bg file:text-white"
+                className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border file:border-base-300 file:bg-base-100 file:text-white"
               />
             </div>
           ) : null}
@@ -5662,18 +5655,18 @@ function ActionDialog({
           {isTaskCreate ? (
             <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                <label className="text-xs font-bold text-content-muted">任务名称</label>
                 <input
                   value={taskName}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="例如：生产资产扫描-03"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">域名爆破字典</label>
+                <label className="text-xs font-bold text-content-muted">域名爆破字典</label>
                 <div className="relative">
                   <select
                     value={taskDomainDict}
@@ -5688,22 +5681,22 @@ function ActionDialog({
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
-                <p className="text-[11px] text-brand-text-muted">
+                <p className="text-[11px] text-content-muted">
                   默认自动选择 `domain_2w.txt`；你可以按任务改选其它字典。当前默认：
                   {taskDefaultDomainDictPath ? ` ${taskDefaultDomainDictPath}` : '（未找到，需手动选择）'}
                 </p>
               </div>
 
               {taskDomainDictError ? (
-                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
                   {taskDomainDictError}
                 </div>
               ) : null}
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">目录扫描字典</label>
+                <label className="text-xs font-bold text-content-muted">目录扫描字典</label>
                 <div className="relative">
                   <select
                     value={taskFileLeakDict}
@@ -5718,34 +5711,34 @@ function ActionDialog({
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
-                <p className="text-[11px] text-brand-text-muted">
+                <p className="text-[11px] text-content-muted">
                   默认使用配置管理中的目录扫描字典；你可以按任务改选其它字典。当前默认：
                   {taskDefaultFileLeakDictPath ? ` ${taskDefaultFileLeakDictPath}` : '（未找到，需手动选择）'}
                 </p>
               </div>
 
               {taskFileLeakDictError ? (
-                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
                   {taskFileLeakDictError}
                 </div>
               ) : null}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">目标（支持一行一个）</label>
+                  <label className="text-xs font-bold text-content-muted">目标（支持一行一个）</label>
                   <textarea
                     value={taskTarget}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'target', event.target.value))}
-                    className="w-full min-h-[132px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    className="w-full min-h-[132px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                     placeholder={'example.com\napi.example.com\n1.2.3.4'}
                   />
-                  <p className="text-[11px] text-brand-text-muted">可输入多个目标，支持换行、空格或逗号分隔，提交时会自动归一化。</p>
+                  <p className="text-[11px] text-content-muted">可输入多个目标，支持换行、空格或逗号分隔，提交时会自动归一化。</p>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">端口扫描范围</label>
+                  <label className="text-xs font-bold text-content-muted">端口扫描范围</label>
                   <div className="relative">
                     <select
                       value={taskPortScanType}
@@ -5759,18 +5752,18 @@ function ActionDialog({
                       <option value="all">all（全端口）</option>
                       <option value="custom">custom（自定义）</option>
                     </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                   </div>
                   {taskPortScanType === 'custom' ? (
                     <input
                       value={taskPortCustom}
                       disabled={!editable}
                       onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'port_custom', event.target.value))}
-                      className="mt-2 w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                      className="mt-2 w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                       placeholder="例如：80,443,8080,10000-10100"
                     />
                   ) : null}
-                  <div className="mt-3 p-3 rounded-xl border border-brand-border bg-brand-bg/40 text-[11px] text-brand-text-muted leading-relaxed">
+                  <div className="mt-3 p-3 rounded-xl border border-base-300 bg-base-100/40 text-[11px] text-content-muted leading-relaxed">
                     建议仅勾选需要的扫描项。目标多时优先开启核心能力（端口扫描、服务识别、站点识别），可提升效率。
                   </div>
                 </div>
@@ -5778,11 +5771,11 @@ function ActionDialog({
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <label className="text-xs font-bold text-brand-text-muted">扫描功能</label>
+                  <label className="text-xs font-bold text-content-muted">扫描功能</label>
                   <button
                     type="button"
                     onClick={() => setAllTaskFeatures(!allTaskFeaturesEnabled)}
-                    className="text-xs font-bold text-brand-accent hover:underline"
+                    className="text-xs font-bold text-accent hover:underline"
                     disabled={!editable || taskFeatureKeys.length === 0}
                   >
                     {allTaskFeaturesEnabled ? '取消全选' : '全选'}
@@ -5791,18 +5784,18 @@ function ActionDialog({
                 <div className="space-y-3">
                   {taskFeatureSections.map((section) => (
                     <div key={section.title} className="space-y-2">
-                      <p className="text-[11px] font-bold text-brand-text-muted tracking-wide">{section.title}</p>
+                      <p className="text-[11px] font-bold text-content-muted tracking-wide">{section.title}</p>
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                         {section.keys.map((fieldKey) => (
                           <label
                             key={fieldKey}
-                            className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition"
+                            className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition"
                           >
                             <input
                               type="checkbox"
                               checked={Boolean(formPayload?.[fieldKey])}
                               disabled={!editable}
-                              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                               onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, fieldKey, event.target.checked))}
                             />
                             <span className="font-medium truncate">{humanizeField(fieldKey)}</span>
@@ -5818,19 +5811,19 @@ function ActionDialog({
             <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               {isFofaSubmitAction ? (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                  <label className="text-xs font-bold text-content-muted">任务名称</label>
                   <input
                     value={fofaTaskName}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                     placeholder="请输入任务名称"
                   />
                 </div>
               ) : null}
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">测绘引擎</label>
+                <label className="text-xs font-bold text-content-muted">测绘引擎</label>
                 <div className="relative">
                   <select
                     value={fofaProvider}
@@ -5848,12 +5841,12 @@ function ActionDialog({
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">查询语句</label>
+                <label className="text-xs font-bold text-content-muted">查询语句</label>
                 <textarea
                   value={fofaQueryText}
                   disabled={!editable}
@@ -5861,28 +5854,28 @@ function ActionDialog({
                     setFormPayload((prev) => updatePayloadValue(prev, 'query', event.target.value));
                     setFofaResultSize(null);
                   }}
-                  className="w-full min-h-[160px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  className="w-full min-h-[160px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                   placeholder={`请输入 ${currentMeasureProviderLabel} 原生语法（支持多行输入）\n${measureProviderExamples[fofaProvider] || measureProviderExamples.fofa}`}
                 />
-                <p className="text-[11px] text-brand-text-muted">
+                <p className="text-[11px] text-content-muted">
                   一行一条 {currentMeasureProviderLabel} 语句，测试和提交时会自动去除空行并去重。
                 </p>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">结果数</label>
-                  <div className="w-full rounded-xl border border-brand-border bg-brand-bg/60 px-3 py-2 text-sm font-mono">
+                  <label className="text-xs font-bold text-content-muted">结果数</label>
+                  <div className="w-full rounded-xl border border-base-300 bg-base-100/60 px-3 py-2 text-sm font-mono">
                     {fofaResultSize === null ? '-' : String(fofaResultSize)}
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">测试</label>
+                  <label className="text-xs font-bold text-content-muted">测试</label>
                   <button
                     type="button"
                     onClick={() => void runFofaQueryTest()}
                     disabled={!editable || fofaTesting}
-                    className="w-full px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center justify-center gap-2"
+                    className="w-full px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-60 flex items-center justify-center gap-2"
                   >
                     <Play className={`w-4 h-4 ${fofaTesting ? 'animate-spin' : ''}`} />
                     {fofaTesting ? '测试中...' : `测试${currentMeasureProviderLabel}`}
@@ -5892,7 +5885,7 @@ function ActionDialog({
 
               {isFofaSubmitAction ? (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">关联策略</label>
+                  <label className="text-xs font-bold text-content-muted">关联策略</label>
                   <div className="relative">
                     <select
                       value={fofaPolicyId}
@@ -5909,7 +5902,7 @@ function ActionDialog({
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                   </div>
                 </div>
               ) : null}
@@ -5918,17 +5911,17 @@ function ActionDialog({
             <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-sm font-semibold text-brand-text-muted">名称</label>
+                  <label className="text-sm font-semibold text-content-muted">名称</label>
                   <input
                     value={taskScheduleName}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                     placeholder="请输入计划任务名称"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-semibold text-brand-text-muted">策略</label>
+                  <label className="text-sm font-semibold text-content-muted">策略</label>
                   <div className="relative">
                     <select
                       value={taskSchedulePolicyId}
@@ -5943,14 +5936,14 @@ function ActionDialog({
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                   </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-sm font-semibold text-brand-text-muted">计划类型</label>
+                  <label className="text-sm font-semibold text-content-muted">计划类型</label>
                   <div className="relative">
                     <select
                       value={taskScheduleType}
@@ -5970,11 +5963,11 @@ function ActionDialog({
                       <option value="future_scan">定时任务</option>
                       <option value="recurrent_scan">周期任务</option>
                     </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-semibold text-brand-text-muted">任务类别</label>
+                  <label className="text-sm font-semibold text-content-muted">任务类别</label>
                   <div className="relative">
                     <select
                       value={taskScheduleTag}
@@ -5985,42 +5978,42 @@ function ActionDialog({
                       <option value="task">资产发现任务</option>
                       <option value="risk_cruising">风险巡航任务</option>
                     </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                   </div>
                 </div>
               </div>
 
               {taskScheduleType === 'future_scan' ? (
                 <div className="space-y-1">
-                  <label className="text-sm font-semibold text-brand-text-muted">开始时间</label>
+                  <label className="text-sm font-semibold text-content-muted">开始时间</label>
                   <input
                     type="datetime-local"
                     value={taskScheduleStartDate}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'start_date', fromDatetimeLocalValue(event.target.value)))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   />
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <label className="text-sm font-semibold text-brand-text-muted">CRON</label>
+                  <label className="text-sm font-semibold text-content-muted">CRON</label>
                   <input
                     value={taskScheduleCron}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'cron', event.target.value))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                     placeholder="例如：0 */6 * * *"
                   />
                 </div>
               )}
 
               <div className="space-y-1">
-                <label className="text-sm font-semibold text-brand-text-muted">目标（支持多行，一行一个目标资产）</label>
+                <label className="text-sm font-semibold text-content-muted">目标（支持多行，一行一个目标资产）</label>
                 <textarea
                   value={taskScheduleTarget}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'target', event.target.value))}
-                  className="w-full min-h-[148px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  className="w-full min-h-[148px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                   placeholder={
                     taskScheduleTag === 'risk_cruising'
                       ? 'http://10.0.1.1:8081/\n10.0.1.1:2222'
@@ -6030,22 +6023,22 @@ function ActionDialog({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition">
+                <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
                   <input
                     type="checkbox"
                     checked={taskScheduleNotifyEnable}
                     disabled={!editable}
-                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'notify_enable', event.target.checked))}
                   />
                   <span className="font-medium">钉钉通知</span>
                 </label>
-                <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition">
+                <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
                   <input
                     type="checkbox"
                     checked={taskScheduleNotifyKbEnable}
                     disabled={!editable}
-                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'notify_kb_enable', event.target.checked))}
                   />
                   <span className="font-medium">推送钉钉知识库</span>
@@ -6053,7 +6046,7 @@ function ActionDialog({
               </div>
 
               {taskSchedulePolicyError ? (
-                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
                   {taskSchedulePolicyError}
                 </div>
               ) : null}
@@ -6061,55 +6054,55 @@ function ActionDialog({
           ) : isGithubSchedulerAction ? (
             <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
-                <label className="text-sm font-semibold text-brand-text-muted">任务名</label>
+                <label className="text-sm font-semibold text-content-muted">任务名</label>
                 <input
                   value={githubSchedulerName}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="请输入任务名"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-sm font-semibold text-brand-text-muted">关键字</label>
+                <label className="text-sm font-semibold text-content-muted">关键字</label>
                 <input
                   value={githubSchedulerKeyword}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'keyword', event.target.value))}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                   placeholder="例如：AKIA"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-sm font-semibold text-brand-text-muted">cron表达式</label>
+                <label className="text-sm font-semibold text-content-muted">cron表达式</label>
                 <input
                   value={githubSchedulerCron}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'cron', event.target.value))}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                   placeholder="例如：0 */6 * * *"
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition">
+                <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
                   <input
                     type="checkbox"
                     checked={githubSchedulerDingdingNotify}
                     disabled={!editable}
-                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'dingding_notify', event.target.checked))}
                   />
                   <span className="font-medium">钉钉通知</span>
                 </label>
-                <label className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm hover:border-brand-accent/50 transition">
+                <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
                   <input
                     type="checkbox"
                     checked={githubSchedulerKbNotifyEnable}
                     disabled={!editable}
-                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'kb_notify_enable', event.target.checked))}
                   />
                   <span className="font-medium">推送钉钉知识库</span>
@@ -6119,7 +6112,7 @@ function ActionDialog({
           ) : isAssetScopeCreate ? (
             <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">资产类别</label>
+                <label className="text-xs font-bold text-content-muted">资产类别</label>
                 <div className="relative">
                   <select
                     value={scopeType}
@@ -6130,35 +6123,35 @@ function ActionDialog({
                     <option value="domain">域名资产</option>
                     <option value="ip">IP资产</option>
                   </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">资产组名称</label>
+                <label className="text-xs font-bold text-content-muted">资产组名称</label>
                 <input
                   value={scopeGroupName}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="例如：生产外网资产"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">资产范围（支持一行一个）</label>
+                <label className="text-xs font-bold text-content-muted">资产范围（支持一行一个）</label>
                 <textarea
                   value={scopeText}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'scope', event.target.value))}
-                  className="w-full min-h-[168px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  className="w-full min-h-[168px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                   placeholder={
                     scopeType === 'ip'
                       ? '1.1.1.1\n1.1.1.0/24\n1.1.1.1-1.1.1.100'
                       : 'example.com\napi.example.com'
                   }
                 />
-                <p className="text-[11px] text-brand-text-muted">
+                <p className="text-[11px] text-content-muted">
                   支持换行、空格或逗号分隔，提交时会自动归一化为多条资产范围。
                 </p>
               </div>
@@ -6166,57 +6159,57 @@ function ActionDialog({
           ) : isAssetScopeAddScope || isAssetScopeUpdate ? (
             <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">资产组名称</label>
+                <label className="text-xs font-bold text-content-muted">资产组名称</label>
                 <input
                   value={scopeGroupName}
                   disabled={!isAssetScopeUpdate || !editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg/60 px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100/60 px-3 py-2 text-sm"
                   placeholder="取资产组名称"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">
+                <label className="text-xs font-bold text-content-muted">
                   {isAssetScopeUpdate ? '资产范围（保存后覆盖当前列表）' : '资产范围'}
                 </label>
                 <textarea
                   value={scopeAddTargetText}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'scope', event.target.value))}
-                  className="w-full min-h-[168px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  className="w-full min-h-[168px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                   placeholder={'example.com\napi.example.com'}
                 />
-                <p className="text-[11px] text-brand-text-muted">支持多行或逗号分割。</p>
+                <p className="text-[11px] text-content-muted">支持多行或逗号分割。</p>
               </div>
               {isAssetScopeUpdate ? (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">黑名单</label>
+                  <label className="text-xs font-bold text-content-muted">黑名单</label>
                   <textarea
                     value={scopeBlackText}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'black_scope', event.target.value))}
-                    className="w-full min-h-[96px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    className="w-full min-h-[96px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                     placeholder={'test.example.com'}
                   />
-                  <p className="text-[11px] text-brand-text-muted">可留空，支持多行或逗号分割。</p>
+                  <p className="text-[11px] text-content-muted">可留空，支持多行或逗号分割。</p>
                 </div>
               ) : null}
             </div>
           ) : isAssetScopeAddScheduler ? (
             <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">范围</label>
+                <label className="text-xs font-bold text-content-muted">范围</label>
                 <textarea
                   value={scopeMonitorRangeText}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain', event.target.value))}
-                  className="w-full min-h-[148px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  className="w-full min-h-[148px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                   placeholder={'example.com\napi.example.com'}
                 />
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">运行间隔</label>
+                  <label className="text-xs font-bold text-content-muted">运行间隔</label>
                   <div className="relative">
                     <input
                       type="number"
@@ -6228,13 +6221,13 @@ function ActionDialog({
                         const safeHours = Number.isFinite(nextHours) ? Math.max(1, Math.floor(nextHours)) : 1;
                         setFormPayload((prev) => updatePayloadValue(prev, 'interval', safeHours * 3600));
                       }}
-                      className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 pr-10 text-sm"
+                      className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 pr-10 text-sm"
                     />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-brand-text-muted">小时</span>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-content-muted">小时</span>
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">策略</label>
+                  <label className="text-xs font-bold text-content-muted">策略</label>
                   <div className="relative">
                     <select
                       value={taskSchedulePolicyId}
@@ -6249,12 +6242,12 @@ function ActionDialog({
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                    <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                   </div>
                 </div>
               </div>
               {taskSchedulePolicyError ? (
-                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
                   {taskSchedulePolicyError}
                 </div>
               ) : null}
@@ -6262,7 +6255,7 @@ function ActionDialog({
           ) : (isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? (
             <div className="space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">运行间隔</label>
+                <label className="text-xs font-bold text-content-muted">运行间隔</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -6274,9 +6267,9 @@ function ActionDialog({
                       const safeHours = Number.isFinite(nextHours) ? Math.max(1, Math.floor(nextHours)) : 1;
                       setFormPayload((prev) => updatePayloadValue(prev, 'interval', safeHours * 3600));
                     }}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 pr-10 text-sm"
+                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 pr-10 text-sm"
                   />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-brand-text-muted">小时</span>
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-content-muted">小时</span>
                 </div>
               </div>
             </div>
@@ -6284,32 +6277,32 @@ function ActionDialog({
             <div className="space-y-5 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">策略名称</label>
+                  <label className="text-xs font-bold text-content-muted">策略名称</label>
                   <input
                     value={policyName}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, policyNamePath, event.target.value))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                     placeholder="请输入策略名称"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">策略描述</label>
+                  <label className="text-xs font-bold text-content-muted">策略描述</label>
                   <input
                     value={policyDesc}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, policyDescPath, event.target.value))}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                     placeholder="请输入策略描述"
                   />
                 </div>
               </div>
 
-              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+              <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
                 <h5 className="text-sm font-black">字典配置</h5>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted">域名爆破字典</label>
+                    <label className="text-xs font-bold text-content-muted">域名爆破字典</label>
                     <div className="relative">
                       <select
                         value={policyDomainDict}
@@ -6324,15 +6317,15 @@ function ActionDialog({
                           </option>
                         ))}
                       </select>
-                      <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                      <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                     </div>
-                    <p className="text-[11px] text-brand-text-muted">
+                    <p className="text-[11px] text-content-muted">
                       不选择时，按配置管理默认字典执行。当前默认：
                       {taskDefaultDomainDictPath ? ` ${taskDefaultDomainDictPath}` : '（未配置）'}
                     </p>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted">目录扫描字典</label>
+                    <label className="text-xs font-bold text-content-muted">目录扫描字典</label>
                     <div className="relative">
                       <select
                         value={policyFileLeakDict}
@@ -6347,9 +6340,9 @@ function ActionDialog({
                           </option>
                         ))}
                       </select>
-                      <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                      <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                     </div>
-                    <p className="text-[11px] text-brand-text-muted">
+                    <p className="text-[11px] text-content-muted">
                       不选择时，按配置管理默认字典执行。当前默认：
                       {taskDefaultFileLeakDictPath ? ` ${taskDefaultFileLeakDictPath}` : '（未配置）'}
                     </p>
@@ -6358,18 +6351,18 @@ function ActionDialog({
               </div>
 
               {taskDomainDictError ? (
-                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
                   {taskDomainDictError}
                 </div>
               ) : null}
               {taskFileLeakDictError ? (
-                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
                   {taskFileLeakDictError}
                 </div>
               ) : null}
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">端口扫描类型</label>
+                <label className="text-xs font-bold text-content-muted">端口扫描类型</label>
                 <div className="relative">
                   <select
                     value={policyPortScanType}
@@ -6383,29 +6376,29 @@ function ActionDialog({
                     <option value="all">全端口</option>
                     <option value="custom">自定义</option>
                   </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
 
               {policyPortScanType === 'custom' ? (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text-muted">自定义端口</label>
+                  <label className="text-xs font-bold text-content-muted">自定义端口</label>
                   <input
                     value={policyPortCustom}
                     disabled={!editable}
                     onChange={(event) => updatePolicyValue('ip_config.port_custom', event.target.value)}
-                    className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                     placeholder="80,443,8080"
                   />
                 </div>
               ) : null}
 
-              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+              <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <h5 className="text-sm font-black">基础扫描配置</h5>
                   <button
                     type="button"
-                    className="text-xs font-bold text-brand-accent hover:underline"
+                    className="text-xs font-bold text-accent hover:underline"
                     onClick={() => setPolicyOptionAll(!policyOptionAllEnabled)}
                     disabled={!editable}
                   >
@@ -6415,18 +6408,18 @@ function ActionDialog({
                 <input
                   value={policySearchKeyword}
                   onChange={(event) => setPolicySearchKeyword(event.target.value)}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="请输入关键字进行查询"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                   {filteredPolicyOptions.map((item) => (
-                    <label key={item.key} className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                    <label key={item.key} className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
                         checked={Boolean(getPayloadValue(formPayload, getPolicyPath(item.key)))}
                         disabled={!editable}
                         onChange={(event) => updatePolicyValue(item.key, event.target.checked)}
-                        className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                        className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                       />
                       <span className="truncate">{item.label}</span>
                     </label>
@@ -6434,12 +6427,12 @@ function ActionDialog({
                 </div>
               </div>
 
-              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+              <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <h5 className="text-sm font-black">PoC 配置</h5>
                   <button
                     type="button"
-                    className="text-xs font-bold text-brand-accent hover:underline"
+                    className="text-xs font-bold text-accent hover:underline"
                     onClick={() =>
                       setPolicyPluginConfig(
                         'poc_config',
@@ -6454,34 +6447,34 @@ function ActionDialog({
                 <input
                   value={policyPocKeyword}
                   onChange={(event) => setPolicyPocKeyword(event.target.value)}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="请输入关键字筛选 PoC"
                 />
                 <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
                   {filteredPolicyPocOptions.map((item) => (
-                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
                         checked={selectedPolicyPocNames.includes(item.plugin_name)}
                         disabled={!editable}
                         onChange={(event) => togglePolicyPluginSelection('poc_config', item.plugin_name, event.target.checked)}
-                        className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                        className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                       />
                       <span className="truncate">{item.vul_name || item.plugin_name}</span>
                     </label>
                   ))}
                   {!policyPluginLoading && filteredPolicyPocOptions.length === 0 ? (
-                    <p className="text-xs text-brand-text-muted">暂无匹配的 PoC 项</p>
+                    <p className="text-xs text-content-muted">暂无匹配的 PoC 项</p>
                   ) : null}
                 </div>
               </div>
 
-              <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+              <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <h5 className="text-sm font-black">弱口令爆破配置</h5>
                   <button
                     type="button"
-                    className="text-xs font-bold text-brand-accent hover:underline"
+                    className="text-xs font-bold text-accent hover:underline"
                     onClick={() =>
                       setPolicyPluginConfig(
                         'brute_config',
@@ -6496,33 +6489,33 @@ function ActionDialog({
                 <input
                   value={policyBruteKeyword}
                   onChange={(event) => setPolicyBruteKeyword(event.target.value)}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="请输入关键字筛选弱口令插件"
                 />
                 <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
                   {filteredPolicyBruteOptions.map((item) => (
-                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm">
+                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
                         checked={selectedPolicyBruteNames.includes(item.plugin_name)}
                         disabled={!editable}
                         onChange={(event) => togglePolicyPluginSelection('brute_config', item.plugin_name, event.target.checked)}
-                        className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                        className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                       />
                       <span className="truncate">{item.vul_name || item.plugin_name}</span>
                     </label>
                   ))}
                   {!policyPluginLoading && filteredPolicyBruteOptions.length === 0 ? (
-                    <p className="text-xs text-brand-text-muted">暂无匹配的弱口令插件</p>
+                    <p className="text-xs text-content-muted">暂无匹配的弱口令插件</p>
                   ) : null}
                 </div>
               </div>
 
               {policyPluginLoading ? (
-                <div className="text-xs text-brand-text-muted">PoC 列表加载中...</div>
+                <div className="text-xs text-content-muted">PoC 列表加载中...</div>
               ) : null}
               {policyPluginError ? (
-                <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
                   {policyPluginError}
                 </div>
               ) : null}
@@ -6538,18 +6531,18 @@ function ActionDialog({
 
                 return (
                   <div key={field.path} className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted">
+                    <label className="text-xs font-bold text-content-muted">
                       {humanizeField(field.path)}
                       {!isTaskCreate && !isPolicyAction ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
                     </label>
                     {isBoolean ? (
-                      <label className="flex items-center justify-between rounded-xl border border-brand-border bg-brand-bg px-3 py-2.5 text-sm">
+                      <label className="flex items-center justify-between rounded-xl border border-base-300 bg-base-100 px-3 py-2.5 text-sm">
                         <span className="font-semibold">{value ? '启用' : '关闭'}</span>
                         <input
                           type="checkbox"
                           checked={value}
                           disabled={disabled}
-                          className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
+                          className="h-5 w-5 cursor-pointer rounded-md border border-base-300 bg-base-100"
                           onChange={(event) => {
                             setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
                           }}
@@ -6564,7 +6557,7 @@ function ActionDialog({
                           const next = Number(event.target.value || '0');
                           setFormPayload((prev) => updatePayloadValue(prev, field.path, next));
                         }}
-                        className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                        className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                       />
                     ) : isComplex ? (
                       <input
@@ -6579,7 +6572,7 @@ function ActionDialog({
                           setError('');
                         }}
                         placeholder="多个值请用逗号分隔"
-                        className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                        className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                       />
                     ) : (
                       <input
@@ -6588,7 +6581,7 @@ function ActionDialog({
                         onChange={(event) => {
                           setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.value));
                         }}
-                        className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                        className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                       />
                     )}
                   </div>
@@ -6599,19 +6592,19 @@ function ActionDialog({
           )}
 
           {!editable ? (
-            <div className="text-xs text-brand-text-muted bg-brand-bg/60 border border-brand-border rounded-lg px-3 py-2">
+            <div className="text-xs text-content-muted bg-base-100/60 border border-base-300 rounded-lg px-3 py-2">
               当前动作使用固定参数，已禁用编辑。
             </div>
           ) : null}
 
           {error ? (
-            <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">{error}</div>
+            <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{error}</div>
           ) : null}
 
           <div className="flex justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+              className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
             >
               取消
             </button>
@@ -6948,8 +6941,7 @@ function ActionDialog({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -7429,7 +7421,7 @@ function TableModuleView({
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-brand-accent hover:underline font-medium break-all"
+              className="text-accent hover:underline font-medium break-all"
             >
               {line}
             </a>
@@ -8357,9 +8349,9 @@ function TableModuleView({
     const base = clickable
       ? 'inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border text-xs font-black transition hover:opacity-85'
       : 'inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border text-xs font-black';
-    if (resultLevel === 'danger') return `${base} border-brand-danger/40 bg-brand-danger/10 text-brand-danger`;
-    if (resultLevel === 'suspicious') return `${base} border-brand-warning/45 bg-brand-warning/12 text-brand-warning`;
-    if (resultLevel === 'disabled') return `${base} border-brand-border bg-brand-bg/65 text-brand-text-muted`;
+    if (resultLevel === 'danger') return `${base} border-error/40 bg-error/10 text-error`;
+    if (resultLevel === 'suspicious') return `${base} border-warning/45 bg-warning/12 text-warning`;
+    if (resultLevel === 'disabled') return `${base} border-base-300 bg-base-100/65 text-content-muted`;
     return `${base} border-emerald-400/35 bg-emerald-400/12 text-emerald-300`;
   }, []);
   const openAiDenoiseDetail = useCallback((row: any, rowIndex: number, currentAnalysis: AiDenoiseResultItem) => {
@@ -9819,10 +9811,10 @@ function TableModuleView({
     showGithubTaskRowOperate ||
     showGithubSchedulerRowOperate;
   const rowOperateGroupClass = 'inline-flex flex-nowrap items-center justify-center gap-2 min-w-max';
-  const rowOperateButtonClass = 'px-3 py-1.5 rounded-lg border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition shrink-0';
+  const rowOperateButtonClass = 'px-3 py-1.5 rounded-lg border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition shrink-0';
   const rowOperateButtonDisabledClass = `${rowOperateButtonClass} disabled:opacity-40 disabled:cursor-not-allowed`;
   const taskReportMenuItemClass =
-    'block w-full text-left px-3 py-2 text-sm font-medium hover:bg-brand-bg/70 transition';
+    'block w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-100/70 transition';
   const rowOperateColumnWidthClass = showAssetScopeRowOperate
     ? 'min-w-[760px]'
     : showTaskRowOperate
@@ -9873,8 +9865,8 @@ function TableModuleView({
               onClick={() => onOpenModule(item.id)}
               className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
                 module.id === item.id
-                  ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                  : 'border-brand-border bg-brand-bg/35 text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-base-300 bg-base-100/35 text-base-content hover:text-base-content hover:bg-base-100/70'
               }`}
             >
               {item.label}
@@ -9887,7 +9879,7 @@ function TableModuleView({
           {hasExternalFilters ? (
             <button
               onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
-              className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-brand-accent shadow-sm hover:bg-brand-accent/90 hover:shadow-md"
+              className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-accent shadow-sm hover:bg-accent/90 hover:shadow-md"
               title="返回任务管理"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -9900,8 +9892,8 @@ function TableModuleView({
               onClick={() => onOpenModule(item.id, hasExternalFilters ? activeExternalFilters : undefined)}
               className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
                 module.id === item.id
-                  ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                  : 'border-brand-border bg-brand-bg/35 text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-base-300 bg-base-100/35 text-base-content hover:text-base-content hover:bg-base-100/70'
               }`}
             >
               {`${item.label} - ${
@@ -9916,15 +9908,15 @@ function TableModuleView({
         </div>
       ) : null}
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-4 space-y-4">
+      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
         {hasExternalFilters ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-brand-text">查看筛选条件:</span>
+            <span className="text-xs font-semibold text-base-content">查看筛选条件:</span>
             {Object.entries(activeExternalFilters).map(([key, value]) => (
               <span
                 key={key}
                 title={`${key}=${String(value ?? '')}`}
-                className="text-xs px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/60 font-mono max-w-[42rem] whitespace-pre-wrap break-all leading-relaxed"
+                className="text-xs px-2.5 py-1 rounded-lg border border-base-300 bg-base-100/60 font-mono max-w-[42rem] whitespace-pre-wrap break-all leading-relaxed"
               >
                 {formatExternalFilterChipText(key, value)}
               </span>
@@ -9932,7 +9924,7 @@ function TableModuleView({
             {onClearExternalFilters ? (
               <button
                 onClick={onClearExternalFilters}
-                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition"
               >
                 清除筛选
               </button>
@@ -9944,7 +9936,7 @@ function TableModuleView({
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {(module.searchFields || []).map((field) => (
                 <div key={field.key} className="space-y-1">
-                  <label className="text-xs font-bold text-brand-text">{field.label}：</label>
+                  <label className="text-xs font-bold text-base-content">{field.label}：</label>
                   {field.inputType === 'select' ? (
                     <div className="relative">
                       <select
@@ -9961,7 +9953,7 @@ function TableModuleView({
                           </option>
                         ))}
                       </select>
-                      <ChevronDown className="w-4 h-4 text-brand-text pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                      <ChevronDown className="w-4 h-4 text-base-content pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                     </div>
                   ) : (
                     (() => {
@@ -9976,7 +9968,7 @@ function TableModuleView({
                             type={field.inputType === 'number' ? 'number' : 'text'}
                             value={String(searchForm?.[field.key] ?? '')}
                             placeholder={field.placeholder}
-                            className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 px-3 text-sm text-brand-text placeholder:text-brand-text-muted focus:outline-none focus:border-brand-accent"
+                            className="w-full bg-base-100 border border-base-300 rounded-xl py-2.5 px-3 text-sm text-base-content placeholder:text-content-muted focus:outline-none focus:border-accent"
                             onChange={(event) => {
                               const value = event.target.value;
                               setSearchForm((prev) => ({ ...prev, [field.key]: value }));
@@ -10013,7 +10005,7 @@ function TableModuleView({
                     setPage(1);
                     void loadRows({ page: 1, forceRefresh: true });
                   }}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
                   disabled={loading || !hasList}
                 >
                   <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -10023,7 +10015,7 @@ function TableModuleView({
               {hasList ? (
                 <button
                   onClick={clearSearchFilters}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
                   disabled={loading || !hasList}
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -10036,8 +10028,8 @@ function TableModuleView({
                   onClick={() => setHyperlinkEnabled((prev) => !prev)}
                   className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
                     hyperlinkEnabled
-                      ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                      : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                      ? 'border-accent bg-accent/10 text-accent'
+                      : 'border-base-300 text-base-content hover:text-base-content hover:bg-base-100/70'
                   }`}
                   title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
                 >
@@ -10047,7 +10039,7 @@ function TableModuleView({
               {module.exportPath && module.id !== 'task' && module.id !== 'asset_scope' ? (
                 <button
                   onClick={() => void runExport()}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   {module.id === 'asset_site' || module.id === 'site'
@@ -10062,7 +10054,7 @@ function TableModuleView({
               {module.id === 'asset_site' ? (
                 <button
                   onClick={() => void openAssetSiteRiskDialog()}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
                   disabled={riskDialogLoading}
                 >
                   <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
@@ -10072,7 +10064,7 @@ function TableModuleView({
               {module.id === 'task' ? (
                 <button
                   onClick={openTaskGlobalView}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
                 >
                   <Eye className="w-4 h-4" />
                   全局查看
@@ -10082,7 +10074,7 @@ function TableModuleView({
                 <button
                   onClick={() => void openTaskViewByName()}
                   disabled={!taskNameSearchText}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                   title="使用上方“任务名”搜索框内容查看同名任务"
                 >
                   <Eye className="w-4 h-4" />
@@ -10095,8 +10087,8 @@ function TableModuleView({
                   onClick={() => setTaskCompactMode((prev) => !prev)}
                   className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
                     taskCompactMode
-                      ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                      : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                      ? 'border-accent bg-accent/10 text-accent'
+                      : 'border-base-300 text-base-content hover:text-base-content hover:bg-base-100/70'
                   }`}
                   title={taskCompactMode ? '当前为简洁模式，点击切换完整模式' : '当前为完整模式，点击切换简洁模式'}
                 >
@@ -10106,7 +10098,7 @@ function TableModuleView({
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('ip')}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   导出IP列表
@@ -10115,7 +10107,7 @@ function TableModuleView({
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('domain')}
-                  className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   导出关联域名
@@ -10126,7 +10118,7 @@ function TableModuleView({
         ) : (
           <div className="flex flex-col lg:flex-row gap-3">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-brand-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-content-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 value={quickFilter}
                 onChange={(event) => {
@@ -10134,13 +10126,13 @@ function TableModuleView({
                   setPage(1);
                 }}
                 placeholder={module.quickFilterKey ? `快速筛选字段: ${module.quickFilterKey}` : '快速筛选'}
-                className="w-full bg-brand-bg border border-brand-border rounded-xl py-2.5 pl-9 pr-3 text-sm"
+                className="w-full bg-base-100 border border-base-300 rounded-xl py-2.5 pl-9 pr-3 text-sm"
               />
             </div>
 
             <button
               onClick={() => void loadRows({ forceRefresh: true })}
-              className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
               disabled={loading || !hasList}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -10150,7 +10142,7 @@ function TableModuleView({
             {module.exportPath && module.id !== 'task' ? (
               <button
                 onClick={() => void runExport()}
-                className="px-4 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+                className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
                 导出
@@ -10162,8 +10154,8 @@ function TableModuleView({
                 onClick={() => setHyperlinkEnabled((prev) => !prev)}
                 className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
                   hyperlinkEnabled
-                    ? 'border-brand-accent bg-brand-accent/10 text-brand-accent'
-                    : 'border-brand-border text-brand-text hover:text-brand-text hover:bg-brand-bg/70'
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-base-300 text-base-content hover:text-base-content hover:bg-base-100/70'
                 }`}
                 title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
               >
@@ -10189,7 +10181,7 @@ function TableModuleView({
                   key={action.id}
                   onClick={() => openActionDialog(action)}
                   disabled={disabled}
-                  className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-base-300 hover:bg-base-100/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
                   {action.label}
                 </button>
@@ -10200,7 +10192,7 @@ function TableModuleView({
                 type="button"
                 onClick={() => void stopAndDeleteSelectedTasks()}
                 disabled={selectedIds.length === 0 || taskStopAndDeleteLoading}
-                className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-base-300 hover:bg-base-100/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
                 title="先停止所选任务，再执行删除"
               >
                 {taskStopAndDeleteLoading ? '停止并删除中...' : '停止并删除'}
@@ -10212,14 +10204,14 @@ function TableModuleView({
                   type="button"
                   onClick={() => toggleTaskReportExportMenu('batch')}
                   disabled={taskReportExportDisabled}
-                  className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-base-300 hover:bg-base-100/70 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   {taskReportExportBusy ? '报告导出中...' : '报告导出'}
                   <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === 'batch' ? 'rotate-180' : ''}`} />
                 </button>
                 {taskReportExportMenu === 'batch' ? (
-                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] overflow-hidden rounded-xl border border-brand-border bg-brand-card shadow-2xl">
+                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] overflow-hidden rounded-xl border border-base-300 bg-base-200 shadow-2xl">
                     {TASK_REPORT_EXPORT_OPTIONS.map((option) => (
                       <button
                         key={option.value}
@@ -10237,7 +10229,7 @@ function TableModuleView({
             {module.id === 'asset_scope' && module.exportPath ? (
               <button
                 onClick={() => void runExport()}
-                className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-brand-border hover:bg-brand-bg/70 transition flex items-center gap-2"
+                className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-base-300 hover:bg-base-100/70 transition flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
                 批量导出
@@ -10248,16 +10240,16 @@ function TableModuleView({
       </div>
 
       {hasList ? (
-        <div className="bg-brand-card/35 border border-brand-border rounded-2xl overflow-hidden">
+        <div className="bg-base-200/35 border border-base-300 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full border-collapse text-sm md:text-[15px]">
-              <thead className="bg-brand-bg/40 border-b border-brand-border">
+              <thead className="bg-base-100/40 border-b border-base-300">
                 <tr>
                   <th className="px-4 py-3 w-12 text-center">
                     <input
                       type="checkbox"
                       checked={selectAllChecked}
-                      className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
+                      className="h-5 w-5 cursor-pointer rounded-md border border-base-300 bg-base-100"
                       onChange={(event) => {
                         if (event.target.checked) {
                           const ids = displayRows
@@ -10271,7 +10263,7 @@ function TableModuleView({
                     />
                   </th>
                   {showIndexColumn ? (
-                    <th className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center">序号</th>
+                    <th className="px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-center">序号</th>
                   ) : null}
                   {columns.map((column) => {
                     const sortable = isColumnSortable(column);
@@ -10279,17 +10271,17 @@ function TableModuleView({
                     return (
                       <th
                         key={column}
-                        className="px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center"
+                        className="px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-center"
                       >
                         {sortable ? (
                           <button
                             type="button"
                             onClick={() => toggleColumnSort(column)}
-                            className="inline-flex items-center justify-center gap-1.5 hover:text-brand-accent transition"
+                            className="inline-flex items-center justify-center gap-1.5 hover:text-accent transition"
                             title={direction === 'desc' ? '当前降序，点击切换升序' : '点击按此列降序'}
                           >
                             <span>{getColumnLabel(column)}</span>
-                            <span className={`inline-flex ${direction ? 'text-brand-accent' : 'text-brand-text-muted/70'}`}>
+                            <span className={`inline-flex ${direction ? 'text-accent' : 'text-content-muted/70'}`}>
                               {direction === 'desc' ? (
                                 <ChevronDown className="w-3.5 h-3.5" />
                               ) : direction === 'asc' ? (
@@ -10306,7 +10298,7 @@ function TableModuleView({
                     );
                   })}
                   {hasRowOperate ? (
-                    <th className={`px-4 py-3 text-sm font-black text-brand-text-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>操作</th>
+                    <th className={`px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>操作</th>
                   ) : null}
                 </tr>
               </thead>
@@ -10320,12 +10312,12 @@ function TableModuleView({
                   const siteFingerExpandKey = id || `site-finger-row-${page}-${rowIndex}`;
 
                   return (
-                    <tr key={id || Math.random()} className="border-b border-brand-border/60 hover:bg-white/5 transition">
+                    <tr key={id || Math.random()} className="border-b border-base-300/60 hover:bg-white/5 transition">
                       <td className="px-4 py-3 text-center align-middle">
                         <input
                           type="checkbox"
                           checked={checked}
-                          className="h-5 w-5 cursor-pointer rounded-md border border-brand-border bg-brand-bg"
+                          className="h-5 w-5 cursor-pointer rounded-md border border-base-300 bg-base-100"
                           onChange={(event) => {
                             if (!id) return;
                             if (event.target.checked) {
@@ -10359,7 +10351,7 @@ function TableModuleView({
                           if (pending) {
                             return (
                               <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]">
-                                <div className="inline-flex items-center justify-center gap-1.5 text-brand-text-muted">
+                                <div className="inline-flex items-center justify-center gap-1.5 text-content-muted">
                                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                   <span className="text-xs font-semibold">分析中...</span>
                                 </div>
@@ -10370,7 +10362,7 @@ function TableModuleView({
                           if (!analysis) {
                             return (
                               <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]">
-                                <span className="inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border border-brand-border bg-brand-bg/65 text-xs font-semibold text-brand-text-muted">
+                                <span className="inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border border-base-300 bg-base-100/65 text-xs font-semibold text-content-muted">
                                   待分析
                                 </span>
                               </td>
@@ -10425,7 +10417,7 @@ function TableModuleView({
                                         [scopeExpandKey]: !isExpanded,
                                       }))
                                     }
-                                    className="text-xs font-semibold text-brand-accent hover:underline"
+                                    className="text-xs font-semibold text-accent hover:underline"
                                   >
                                     {isExpanded ? '收起' : '显示全部'}
                                   </button>
@@ -10435,7 +10427,7 @@ function TableModuleView({
                                   onClick={() =>
                                     void copyTextToClipboard(scopeLines.length > 0 ? scopeLines.join('\n') : scopeText, '资产范围')
                                   }
-                                  className="text-xs font-semibold text-brand-accent hover:underline"
+                                  className="text-xs font-semibold text-accent hover:underline"
                                 >
                                   复制
                                 </button>
@@ -10468,7 +10460,7 @@ function TableModuleView({
                                       [scheduleTargetExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 block mx-auto text-xs font-semibold text-brand-accent hover:underline"
+                                  className="mt-2 block mx-auto text-xs font-semibold text-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
@@ -10501,7 +10493,7 @@ function TableModuleView({
                                       [taskOptionExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 block mx-auto text-xs font-semibold text-brand-accent hover:underline"
+                                  className="mt-2 block mx-auto text-xs font-semibold text-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
@@ -10527,7 +10519,7 @@ function TableModuleView({
                           const contentText = formatModuleCellValue(module.id, column, row);
                           // 敏感记录在 WIH 中添加显著色块与标识，便于人工优先复核。
                           const contentClass = sensitive
-                            ? 'whitespace-pre-wrap break-all leading-relaxed rounded-xl border border-brand-danger/45 bg-brand-danger/10 px-3 py-2'
+                            ? 'whitespace-pre-wrap break-all leading-relaxed rounded-xl border border-error/45 bg-error/10 px-3 py-2'
                             : 'whitespace-pre-wrap break-all leading-relaxed';
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[680px]">
@@ -10537,7 +10529,7 @@ function TableModuleView({
                                   : contentText}
                               </div>
                               {sensitive ? (
-                                <div className="mt-2 text-[11px] font-black text-brand-danger">敏感信息</div>
+                                <div className="mt-2 text-[11px] font-black text-error">敏感信息</div>
                               ) : null}
                             </td>
                           );
@@ -10547,10 +10539,10 @@ function TableModuleView({
                           const methodText = String(row?.method || '').trim().toUpperCase();
                           const tagClass =
                             methodText === 'POST'
-                              ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-warning/60 bg-brand-warning/15 text-brand-warning text-xs font-bold'
+                              ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-warning/60 bg-warning/15 text-warning text-xs font-bold'
                               : methodText === 'GET'
                                 ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-emerald-400/45 bg-emerald-400/12 text-emerald-300 text-xs font-bold'
-                                : 'inline-flex items-center px-2.5 py-1 rounded-lg border border-brand-border bg-brand-bg/50 text-brand-text-muted text-xs font-bold';
+                                : 'inline-flex items-center px-2.5 py-1 rounded-lg border border-base-300 bg-base-100/50 text-content-muted text-xs font-bold';
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
                               <span className={tagClass}>{methodText || '-'}</span>
@@ -10564,7 +10556,7 @@ function TableModuleView({
                               <button
                                 type="button"
                                 onClick={() => openRiskRecordDetail(module.id, row, rowIndex)}
-                                className="inline-flex items-center justify-center rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-1.5 text-xs font-semibold text-brand-accent hover:bg-brand-bg/80 transition"
+                                className="inline-flex items-center justify-center rounded-lg border border-base-300 bg-base-100/55 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-base-100/80 transition"
                               >
                                 查看详情
                               </button>
@@ -10578,7 +10570,7 @@ function TableModuleView({
                               <button
                                 type="button"
                                 onClick={() => openWihEndpointDetail(row, rowIndex)}
-                                className="inline-flex items-center justify-center rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-1.5 text-xs font-semibold text-brand-accent hover:bg-brand-bg/80 transition"
+                                className="inline-flex items-center justify-center rounded-lg border border-base-300 bg-base-100/55 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-base-100/80 transition"
                               >
                                 查看详情
                               </button>
@@ -10617,14 +10609,14 @@ function TableModuleView({
                           const copyLabel = scannerType === 'afrog' ? 'afrog curl命令' : '验证信息';
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[300px] max-w-[760px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed rounded-xl border border-brand-border bg-brand-bg/40 px-3 py-2 font-mono text-left">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed rounded-xl border border-base-300 bg-base-100/40 px-3 py-2 font-mono text-left">
                                 {verifyText}
                               </div>
                               {hasVerifyText ? (
                                 <button
                                   type="button"
                                   onClick={() => void copyTextToClipboard(copyPayload, copyLabel)}
-                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                  className="mt-2 text-xs font-semibold text-accent hover:underline"
                                 >
                                   复制
                                 </button>
@@ -10651,7 +10643,7 @@ function TableModuleView({
                               <button
                                 type="button"
                                 onClick={() => onOpenModule(destinationModule, nextFilters)}
-                                className="text-brand-accent hover:underline font-semibold"
+                                className="text-accent hover:underline font-semibold"
                                 title={column === 'ip_count' ? '跳转到IP并自动按C段筛选' : '跳转到子域名并自动按C段筛选'}
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -10665,10 +10657,10 @@ function TableModuleView({
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
                               <div className="mx-auto w-[170px] space-y-1 text-left">
                                 <div className="flex items-center justify-between gap-2 text-xs">
-                                  <span className="font-semibold text-brand-text-muted">进度</span>
+                                  <span className="font-semibold text-content-muted">进度</span>
                                   <span className="font-black text-white">{formatModuleCellValue(module.id, column, row)}</span>
                                 </div>
-                                <div className="h-2 bg-brand-bg rounded-full border border-brand-border overflow-hidden">
+                                <div className="h-2 bg-base-100 rounded-full border border-base-300 overflow-hidden">
                                   <div
                                     className="h-full bg-brand-accent rounded-full transition-all duration-300"
                                     style={{ width: `${getTaskProgressPercent(row)}%` }}
@@ -10705,7 +10697,7 @@ function TableModuleView({
                                 <button
                                   type="button"
                                   onClick={() => openTaskLocalView(id)}
-                                  className="text-brand-accent hover:underline font-mono whitespace-pre-wrap break-all text-center inline-block flex-1 leading-relaxed"
+                                  className="text-accent hover:underline font-mono whitespace-pre-wrap break-all text-center inline-block flex-1 leading-relaxed"
                                   title="点击查看该任务详情"
                                 >
                                   {targetText}
@@ -10716,41 +10708,41 @@ function TableModuleView({
                                     event.stopPropagation();
                                     void copyTextToClipboard(copyPayload, '目标');
                                   }}
-                                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-1 text-xs font-semibold text-brand-accent hover:bg-brand-bg/80 transition"
+                                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-base-300 bg-base-100/55 px-3 py-1 text-xs font-semibold text-accent hover:bg-base-100/80 transition"
                                   title="复制目标"
                                 >
                                   复制
                                 </button>
                                 {showTaskTargetStatTooltip ? (
                                   <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[320px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
-                                    <div className="rounded-xl border border-brand-border bg-brand-card/95 p-3 text-left shadow-2xl backdrop-blur-xl">
-                                      <div className="text-xs font-black tracking-wide text-brand-text">任务资产统计</div>
+                                    <div className="rounded-xl border border-base-300 bg-base-200/95 p-3 text-left shadow-2xl backdrop-blur-xl">
+                                      <div className="text-xs font-black tracking-wide text-base-content">任务资产统计</div>
                                       <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
-                                          <div className="text-brand-text-muted">站点</div>
-                                          <div className="mt-1 text-sm font-semibold text-brand-text">{siteCnt}</div>
+                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                          <div className="text-content-muted">站点</div>
+                                          <div className="mt-1 text-sm font-semibold text-base-content">{siteCnt}</div>
                                         </div>
-                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
-                                          <div className="text-brand-text-muted">子域名</div>
-                                          <div className="mt-1 text-sm font-semibold text-brand-text">{domainCnt}</div>
+                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                          <div className="text-content-muted">子域名</div>
+                                          <div className="mt-1 text-sm font-semibold text-base-content">{domainCnt}</div>
                                         </div>
-                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
-                                          <div className="text-brand-text-muted">IP</div>
-                                          <div className="mt-1 text-sm font-semibold text-brand-text">{ipCnt}</div>
+                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                          <div className="text-content-muted">IP</div>
+                                          <div className="mt-1 text-sm font-semibold text-base-content">{ipCnt}</div>
                                         </div>
-                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
-                                          <div className="text-brand-text-muted">URL</div>
-                                          <div className="mt-1 text-sm font-semibold text-brand-text">{urlCnt}</div>
+                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                          <div className="text-content-muted">URL</div>
+                                          <div className="mt-1 text-sm font-semibold text-base-content">{urlCnt}</div>
                                         </div>
-                                        <div className="rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2 col-span-2">
-                                          <div className="text-brand-text-muted">风险</div>
-                                          <div className="mt-1 text-sm font-semibold text-brand-text">{vulnCnt}</div>
+                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2 col-span-2">
+                                          <div className="text-content-muted">风险</div>
+                                          <div className="mt-1 text-sm font-semibold text-base-content">{vulnCnt}</div>
                                         </div>
                                       </div>
                                       {hasWafSummary ? (
-                                        <div className="mt-2 rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2 text-[11px]">
-                                          <div className="text-brand-text-muted">WAF识别概览</div>
-                                          <div className="mt-1 text-brand-text break-all">
+                                        <div className="mt-2 rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2 text-[11px]">
+                                          <div className="text-content-muted">WAF识别概览</div>
+                                          <div className="mt-1 text-base-content break-all">
                                             主机 {wafDetectedHostCount} / 站点 {wafObservedSiteCount} / 跳过主机 {wafBlockedHostCount} / 跳过站点 {wafSkipSiteCount} / 绕过 {wafBypassHostCount} / 请求 {wafSkipRequestCount}
                                           </div>
                                         </div>
@@ -10779,7 +10771,7 @@ function TableModuleView({
                             <button
                               type="button"
                               onClick={() => openTaskErrorDialog(row)}
-                              className="inline-flex items-center gap-1 text-brand-danger hover:underline font-semibold"
+                              className="inline-flex items-center gap-1 text-error hover:underline font-semibold"
                               title="点击查看异常详情"
                             >
                               <AlertTriangle className="w-4 h-4" />
@@ -10794,22 +10786,22 @@ function TableModuleView({
                               <div className="group relative inline-flex items-center justify-center">
                                 {statusNode}
                                 <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[420px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
-                                  <div className="rounded-xl border border-brand-border bg-brand-card/95 p-3 text-left shadow-2xl backdrop-blur-xl">
-                                    <div className="text-xs font-black tracking-wide text-brand-text">任务执行时间概览</div>
-                                    <div className="mt-2 rounded-lg border border-brand-border bg-brand-bg/35 px-2.5 py-2">
-                                      <div className="text-[11px] text-brand-text-muted">当前任务执行时长</div>
-                                      <div className="mt-1 text-sm font-semibold text-brand-text">{currentDurationLabel}</div>
-                                      <div className="mt-1 text-[11px] text-brand-text-muted">开始：{currentStartText}</div>
-                                      <div className="text-[11px] text-brand-text-muted">结束：{currentEndText}</div>
+                                  <div className="rounded-xl border border-base-300 bg-base-200/95 p-3 text-left shadow-2xl backdrop-blur-xl">
+                                    <div className="text-xs font-black tracking-wide text-base-content">任务执行时间概览</div>
+                                    <div className="mt-2 rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                      <div className="text-[11px] text-content-muted">当前任务执行时长</div>
+                                      <div className="mt-1 text-sm font-semibold text-base-content">{currentDurationLabel}</div>
+                                      <div className="mt-1 text-[11px] text-content-muted">开始：{currentStartText}</div>
+                                      <div className="text-[11px] text-content-muted">结束：{currentEndText}</div>
                                     </div>
-                                    <div className="mt-2 text-[11px] text-brand-text-muted">
+                                    <div className="mt-2 text-[11px] text-content-muted">
                                       已记录子任务阶段 {taskServiceDuration.totalStageCount} 个，可统计耗时 {taskServiceDuration.countedStageCount} 个
                                     </div>
-                                    <div className="text-[11px] text-brand-text-muted">
+                                    <div className="text-[11px] text-content-muted">
                                       子任务累计耗时：{taskServiceDuration.totalDurationLabel}
                                     </div>
                                     {taskServiceDuration.dedupApplied ? (
-                                      <div className="text-[11px] text-brand-text-muted">
+                                      <div className="text-[11px] text-content-muted">
                                         已自动排除父阶段重复统计
                                         {taskServiceDuration.skippedParentStageNames.length
                                           ? `：${taskServiceDuration.skippedParentStageNames.join('、')}`
@@ -10817,7 +10809,7 @@ function TableModuleView({
                                       </div>
                                     ) : null}
                                     {taskAccountingSummary.currentStageVisible ? (
-                                      <div className="text-[11px] text-brand-text-muted">
+                                      <div className="text-[11px] text-content-muted">
                                         当前进行阶段：{taskAccountingSummary.currentStageName}
                                       </div>
                                     ) : null}
@@ -10827,11 +10819,11 @@ function TableModuleView({
                                       </div>
                                     ) : null}
                                     {taskAccountingSummary.note ? (
-                                      <div className="mt-1 text-[11px] text-brand-text-muted">
+                                      <div className="mt-1 text-[11px] text-content-muted">
                                         {taskAccountingSummary.note}
                                       </div>
                                     ) : null}
-                                    <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-brand-border bg-brand-bg/40 p-2 text-[11px] leading-relaxed text-brand-text">
+                                    <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-base-300 bg-base-100/40 p-2 text-[11px] leading-relaxed text-base-content">
                                       {taskServiceDuration.entries.length > 0 ? (
                                         taskServiceDuration.entries.map((entry, lineIndex) => (
                                           <React.Fragment key={`${lineIndex}-${entry.stageName}`}>
@@ -10839,14 +10831,14 @@ function TableModuleView({
                                               {`${lineIndex + 1}. ${entry.stageName}：${entry.elapsedLabel}${entry.countedInTotal ? '' : '（汇总阶段，未计入累计耗时）'}`}
                                             </div>
                                             {entry.detail ? (
-                                              <div className="pl-4 text-brand-text-muted break-all">
+                                              <div className="pl-4 text-content-muted break-all">
                                                 {entry.detail}
                                               </div>
                                             ) : null}
                                           </React.Fragment>
                                         ))
                                       ) : (
-                                        <div className="text-brand-text-muted">暂无该任务子任务执行时间数据</div>
+                                        <div className="text-content-muted">暂无该任务子任务执行时间数据</div>
                                       )}
                                     </div>
                                   </div>
@@ -10861,7 +10853,7 @@ function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openTaskLocalView(id)}
-                                className="text-brand-accent hover:underline text-center inline-block w-full"
+                                className="text-accent hover:underline text-center inline-block w-full"
                                 title="点击查看该任务详情"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -10909,7 +10901,7 @@ function TableModuleView({
                                       [siteHeaderExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                  className="mt-2 text-xs font-semibold text-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '展开'}
                                 </button>
@@ -10945,7 +10937,7 @@ function TableModuleView({
                                       [siteFingerExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 text-xs font-semibold text-brand-accent hover:underline"
+                                  className="mt-2 text-xs font-semibold text-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '展开'}
                                 </button>
@@ -11008,13 +11000,13 @@ function TableModuleView({
                                     title: String(row?.site || row?.hostname || row?.title || '截图预览'),
                                   })
                                 }
-                                className="inline-flex items-center justify-center p-1 rounded-xl border border-transparent hover:border-brand-accent/60 transition"
+                                className="inline-flex items-center justify-center p-1 rounded-xl border border-transparent hover:border-accent/60 transition"
                                 title="点击预览截图"
                               >
                                 <img
                                   src={screenshotUrl}
                                   alt="screenshot"
-                                  className="w-32 h-20 rounded-lg border border-brand-border object-cover bg-brand-bg"
+                                  className="w-32 h-20 rounded-lg border border-base-300 object-cover bg-base-100"
                                   loading="lazy"
                                 />
                               </button>
@@ -11027,7 +11019,7 @@ function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openGithubSchedulerDetail(id)}
-                                className="text-brand-accent hover:underline text-center inline-block w-full"
+                                className="text-accent hover:underline text-center inline-block w-full"
                                 title="查看该监控任务结果"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -11041,7 +11033,7 @@ function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openGithubTaskDetail(id)}
-                                className="text-brand-accent hover:underline text-center inline-block w-full"
+                                className="text-accent hover:underline text-center inline-block w-full"
                                 title="查看该任务结果"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -11094,7 +11086,7 @@ function TableModuleView({
                                       <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === `row:${id}` ? 'rotate-180' : ''}`} />
                                     </button>
                                     {taskReportExportMenu === `row:${id}` && !taskRowPending && !taskReportExportBusy ? (
-                                      <div className="absolute right-0 top-full z-20 mt-2 min-w-[140px] overflow-hidden rounded-xl border border-brand-border bg-brand-card shadow-2xl">
+                                      <div className="absolute right-0 top-full z-20 mt-2 min-w-[140px] overflow-hidden rounded-xl border border-base-300 bg-base-200 shadow-2xl">
                                         {TASK_REPORT_EXPORT_OPTIONS.map((option) => (
                                           <button
                                             key={option.value}
@@ -11316,7 +11308,7 @@ function TableModuleView({
                   <tr>
                     <td
                       colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (hasRowOperate ? 1 : 0), 2)}
-                      className="px-4 py-10 text-center text-brand-text-muted"
+                      className="px-4 py-10 text-center text-content-muted"
                     >
                       {module.id === 'fileleak'
                         ? '暂无数据。请确认任务已开启目录扫描，且目标未被 DNS 策略过滤。'
@@ -11328,8 +11320,8 @@ function TableModuleView({
             </table>
           </div>
 
-          <div className="px-4 py-3 border-t border-brand-border bg-brand-bg/30 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="text-xs text-brand-text-muted font-semibold">
+          <div className="px-4 py-3 border-t border-base-300 bg-base-100/30 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="text-xs text-content-muted font-semibold">
               共 {total} 条，当前第 {page}/{totalPages} 页
             </div>
             <div className="flex items-center gap-2">
@@ -11342,7 +11334,7 @@ function TableModuleView({
                   void loadRows({ page: nextPage });
                 }}
                 disabled={page <= 1}
-                className="px-3.5 py-2 rounded-xl border border-brand-border text-sm disabled:opacity-40"
+                className="px-3.5 py-2 rounded-xl border border-base-300 text-sm disabled:opacity-40"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -11365,7 +11357,7 @@ function TableModuleView({
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
               </div>
               <div className="relative">
                 <select
@@ -11387,7 +11379,7 @@ function TableModuleView({
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
               </div>
               <button
                 type="button"
@@ -11398,7 +11390,7 @@ function TableModuleView({
                   void loadRows({ page: nextPage });
                 }}
                 disabled={page >= totalPages}
-                className="px-3.5 py-2 rounded-xl border border-brand-border text-sm disabled:opacity-40"
+                className="px-3.5 py-2 rounded-xl border border-base-300 text-sm disabled:opacity-40"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -11406,7 +11398,7 @@ function TableModuleView({
           </div>
         </div>
       ) : (
-        <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-10 text-center text-brand-text-muted text-sm">
+        <div className="bg-base-200/35 border border-base-300 rounded-2xl p-10 text-center text-content-muted text-sm">
           该模块为操作中心，无列表数据。请使用上方动作按钮执行。
         </div>
       )}
@@ -11424,22 +11416,15 @@ function TableModuleView({
       ) : null}
 
       {taskReportExportFeedback ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => {
+        <Modal open onClose={() => {
             if (!taskReportExportBusy) {
               closeTaskReportExportFeedback();
             }
-          }}
-        >
-          <div
-            className="w-full max-w-lg bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+          }} boxClass="w-full max-w-lg!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h4 className="text-lg font-black">{taskReportExportFeedback.title}</h4>
-                <p className="text-xs text-brand-text-muted mt-1 break-all">
+                <p className="text-xs text-content-muted mt-1 break-all">
                   {taskReportExportFeedback.jobId
                     ? `导出任务 ID: ${taskReportExportFeedback.jobId}`
                     : '正在初始化导出任务'}
@@ -11448,7 +11433,7 @@ function TableModuleView({
               <button
                 onClick={closeTaskReportExportFeedback}
                 disabled={taskReportExportBusy}
-                className="p-2 rounded-lg hover:bg-brand-bg/70 transition disabled:opacity-40"
+                className="p-2 rounded-lg hover:bg-base-100/70 transition disabled:opacity-40"
                 title={taskReportExportBusy ? '导出进行中，暂不可关闭' : '关闭'}
               >
                 <X className="w-5 h-5" />
@@ -11462,7 +11447,7 @@ function TableModuleView({
                     ? 'border-red-500/30 bg-red-500/10 text-red-200'
                     : taskReportExportFeedback.phase === 'success'
                       ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                      : 'border-brand-accent/30 bg-brand-accent/10 text-brand-text'
+                      : 'border-accent/30 bg-accent/10 text-base-content'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -11472,7 +11457,7 @@ function TableModuleView({
                     ) : taskReportExportFeedback.phase === 'error' ? (
                       <AlertTriangle className="w-5 h-5 text-red-300" />
                     ) : (
-                      <RefreshCw className="w-5 h-5 text-brand-accent animate-spin" />
+                      <RefreshCw className="w-5 h-5 text-accent animate-spin" />
                     )}
                   </div>
                   <div className="min-w-0">
@@ -11483,15 +11468,15 @@ function TableModuleView({
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-semibold text-brand-text-muted">
+                <div className="flex items-center justify-between text-xs font-semibold text-content-muted">
                   <span>导出进度</span>
                   <span>{taskReportExportFeedback.progress}%</span>
                 </div>
-                <div className="h-2.5 rounded-full border border-brand-border bg-brand-bg overflow-hidden">
+                <div className="h-2.5 rounded-full border border-base-300 bg-base-100 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-500 ${
                       taskReportExportFeedback.phase === 'error'
-                        ? 'bg-brand-danger'
+                        ? 'bg-error'
                         : taskReportExportFeedback.phase === 'success'
                           ? 'bg-emerald-400'
                           : 'bg-brand-accent'
@@ -11502,19 +11487,19 @@ function TableModuleView({
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-3 py-2">
-                  <div className="text-brand-text-muted">任务数量</div>
+                <div className="rounded-xl border border-base-300 bg-base-100/40 px-3 py-2">
+                  <div className="text-content-muted">任务数量</div>
                   <div className="mt-1 font-semibold text-sm">{taskReportExportFeedback.taskCount}</div>
                 </div>
-                <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-3 py-2">
-                  <div className="text-brand-text-muted">导出格式</div>
+                <div className="rounded-xl border border-base-300 bg-base-100/40 px-3 py-2">
+                  <div className="text-content-muted">导出格式</div>
                   <div className="mt-1 font-semibold text-sm break-all">{taskReportExportFeedback.formatLabel}</div>
                 </div>
               </div>
 
               {taskReportExportFeedback.fileName ? (
-                <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-3 py-2">
-                  <div className="text-xs text-brand-text-muted">导出文件</div>
+                <div className="rounded-xl border border-base-300 bg-base-100/40 px-3 py-2">
+                  <div className="text-xs text-content-muted">导出文件</div>
                   <div className="mt-1 text-sm font-semibold break-all">{taskReportExportFeedback.fileName}</div>
                 </div>
               ) : null}
@@ -11526,36 +11511,34 @@ function TableModuleView({
               ) : null}
 
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-brand-text-muted">
+                <p className="text-xs text-content-muted">
                   {taskReportExportBusy ? '导出进行中，请稍候...' : '导出流程已结束'}
                 </p>
                 <button
                   onClick={closeTaskReportExportFeedback}
                   disabled={taskReportExportBusy}
-                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-40"
                 >
                   {taskReportExportFeedback.phase === 'error' ? '关闭' : '知道了'}
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {riskDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between">
+        <Modal open onClose={closeRiskDialog} boxClass="w-full max-w-xl!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between">
               <div>
                 <h4 className="text-lg font-black">添加风险巡航任务</h4>
-                <p className="text-xs text-brand-text-muted mt-1">
+                <p className="text-xs text-content-muted mt-1">
                   已匹配站点 {riskResultTotal} 条，结果集 ID: {riskResultSetId}
                 </p>
               </div>
               <button
                 onClick={closeRiskDialog}
                 disabled={riskDialogSubmitting}
-                className="p-2 rounded-lg hover:bg-brand-bg/70 transition disabled:opacity-40"
+                className="p-2 rounded-lg hover:bg-base-100/70 transition disabled:opacity-40"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -11563,7 +11546,7 @@ function TableModuleView({
 
             <div className="p-6 space-y-4">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">策略</label>
+                <label className="text-xs font-bold text-content-muted">策略</label>
                 <div className="relative">
                   <select
                     value={riskPolicyId}
@@ -11585,17 +11568,17 @@ function TableModuleView({
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                <label className="text-xs font-bold text-content-muted">任务名称</label>
                 <input
                   value={riskTaskName}
                   onChange={(event) => setRiskTaskName(event.target.value)}
                   disabled={riskDialogSubmitting}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="风险巡航任务-策略名"
                 />
               </div>
@@ -11610,7 +11593,7 @@ function TableModuleView({
                 <button
                   onClick={closeRiskDialog}
                   disabled={riskDialogSubmitting}
-                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-40"
                 >
                   取消
                 </button>
@@ -11623,22 +11606,20 @@ function TableModuleView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {policyTaskDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between">
+        <Modal open onClose={closePolicyTaskDialog} boxClass="w-full max-w-2xl!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between">
               <div>
                 <h4 className="text-lg font-black">任务下发</h4>
-                <p className="text-xs text-brand-text-muted mt-1">策略：{policyTaskPolicyName || '-'}</p>
+                <p className="text-xs text-content-muted mt-1">策略：{policyTaskPolicyName || '-'}</p>
               </div>
               <button
                 onClick={closePolicyTaskDialog}
                 disabled={policyTaskSubmitting}
-                className="p-2 rounded-lg hover:bg-brand-bg/70 transition disabled:opacity-40"
+                className="p-2 rounded-lg hover:bg-base-100/70 transition disabled:opacity-40"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -11646,7 +11627,7 @@ function TableModuleView({
 
             <div className="p-6 space-y-4">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">任务类型</label>
+                <label className="text-xs font-bold text-content-muted">任务类型</label>
                 <div className="relative">
                   <select
                     value={policyTaskTag}
@@ -11667,35 +11648,35 @@ function TableModuleView({
                     <option value="task">资产侦查任务</option>
                     <option value="risk_cruising">风险巡航任务</option>
                   </select>
-                  <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">任务名称</label>
+                <label className="text-xs font-bold text-content-muted">任务名称</label>
                 <input
                   value={policyTaskName}
                   onChange={(event) => setPolicyTaskName(event.target.value)}
                   disabled={policyTaskSubmitting}
-                  className="w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="请输入任务名称"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-brand-text-muted">目标</label>
+                <label className="text-xs font-bold text-content-muted">目标</label>
                 <textarea
                   value={policyTaskTarget}
                   onChange={(event) => setPolicyTaskTarget(event.target.value)}
                   disabled={policyTaskSubmitting}
-                  className="w-full min-h-[180px] rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm font-mono"
+                  className="w-full min-h-[180px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
                   placeholder={
                     policyTaskTag === 'risk_cruising'
                       ? '请输入确定的目标，不会进行端口扫描,如: http://10.0.1.1:8081/ 10.0.1.1:2222'
                       : '请输入目标，支持IP、IP段、域名'
                   }
                 />
-                <p className="text-xs text-brand-text-muted">
+                <p className="text-xs text-content-muted">
                   {policyTaskTag === 'risk_cruising'
                     ? '请输入确定的目标，不会进行端口扫描,如: http://10.0.1.1:8081/ 10.0.1.1:2222'
                     : '请输入目标，支持IP、IP段、域名。支持一行一个。'}
@@ -11712,7 +11693,7 @@ function TableModuleView({
                 <button
                   onClick={closePolicyTaskDialog}
                   disabled={policyTaskSubmitting}
-                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-40"
+                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-40"
                 >
                   取消
                 </button>
@@ -11725,8 +11706,7 @@ function TableModuleView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {riskRecordDetail ? (() => {
@@ -11761,15 +11741,8 @@ function TableModuleView({
         const verifyScanner = String(detailRow?.scanner_type || '').trim().toLowerCase();
         const verifyLabel = verifyScanner === 'afrog' ? 'afrog curl命令' : '验证报文';
         return (
-          <div
-            className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={closeRiskRecordDetail}
-          >
-            <div
-              className="w-full max-w-5xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
+          <Modal open onClose={closeRiskRecordDetail} boxClass="w-full max-w-5xl!">
+              <div className="px-6 py-4 border-b border-base-300 flex items-start justify-between gap-3">
                 <div className="space-y-1 min-w-0">
                   <h4 className="text-lg font-black">{isNuclei ? 'PoC风险详情' : '风险详情'}</h4>
                   <p className="text-sm font-semibold break-all">{riskRecordDetail.rowTitle || '-'}</p>
@@ -11777,7 +11750,7 @@ function TableModuleView({
                 <button
                   type="button"
                   onClick={closeRiskRecordDetail}
-                  className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                  className="p-2 rounded-lg hover:bg-base-100/70 transition"
                   title="关闭"
                 >
                   <X className="w-5 h-5" />
@@ -11786,20 +11759,20 @@ function TableModuleView({
               <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {fields.map(([label, text]) => (
-                    <div key={label} className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-3">
-                      <div className="text-xs font-semibold text-brand-text-muted mb-1">{label}</div>
+                    <div key={label} className="rounded-xl border border-base-300 bg-base-100/40 px-4 py-3">
+                      <div className="text-xs font-semibold text-content-muted mb-1">{label}</div>
                       <div className="text-sm break-all whitespace-pre-wrap">{text}</div>
                     </div>
                   ))}
                 </div>
                 {verifyRaw && verifyRaw !== '-' ? (
-                  <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-3">
+                  <div className="rounded-xl border border-base-300 bg-base-100/40 px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-brand-text-muted">{verifyLabel}</span>
+                      <span className="text-xs font-semibold text-content-muted">{verifyLabel}</span>
                       <button
                         type="button"
                         onClick={() => void copyTextToClipboard(verifyRaw, verifyLabel)}
-                        className="text-xs font-semibold text-brand-accent hover:underline"
+                        className="text-xs font-semibold text-accent hover:underline"
                       >
                         复制
                       </button>
@@ -11808,8 +11781,7 @@ function TableModuleView({
                   </div>
                 ) : null}
               </div>
-            </div>
-          </div>
+          </Modal>
         );
       })() : null}
 
@@ -11823,24 +11795,17 @@ function TableModuleView({
         const aiFillStatusText = formatWihEndpointAiFillStatus(detailRow);
         const urlLabel = methodText === 'GET' ? '带参数URL' : '请求URL';
         return (
-          <div
-            className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={closeWihEndpointDetail}
-          >
-            <div
-              className="w-full max-w-5xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
+          <Modal open onClose={closeWihEndpointDetail} boxClass="w-full max-w-5xl!">
+              <div className="px-6 py-4 border-b border-base-300 flex items-start justify-between gap-3">
                 <div className="space-y-1 min-w-0">
                   <h4 className="text-lg font-black">WIH接口详情</h4>
-                  <p className="text-xs text-brand-text-muted">仅展示 WIH 扫描阶段已落库的接口与请求模板。</p>
+                  <p className="text-xs text-content-muted">仅展示 WIH 扫描阶段已落库的接口与请求模板。</p>
                   <p className="text-sm font-semibold break-all">{wihEndpointDetail.rowTitle || '-'}</p>
                 </div>
                 <button
                   type="button"
                   onClick={closeWihEndpointDetail}
-                  className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                  className="p-2 rounded-lg hover:bg-base-100/70 transition"
                   title="关闭"
                 >
                   <X className="w-5 h-5" />
@@ -11849,39 +11814,39 @@ function TableModuleView({
 
               <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                     方法：{methodText}
                   </span>
-                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                     状态码：{formatWihEndpointMetric(detailRow, 'status_code')}
                   </span>
-                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                     响应大小：{formatWihEndpointMetric(detailRow, 'response_size')}
                   </span>
-                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                     AI填充：{aiFillStatusText}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                    <div className="text-xs font-black tracking-wide text-brand-text">目标</div>
+                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                    <div className="text-xs font-black tracking-wide text-base-content">目标</div>
                     <div className="text-sm break-all leading-relaxed">{renderTextWithHyperlink(normalizeValueNoTruncate(detailRow?.target))}</div>
                   </div>
-                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                    <div className="text-xs font-black tracking-wide text-brand-text">页面URL</div>
+                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                    <div className="text-xs font-black tracking-wide text-base-content">页面URL</div>
                     <div className="text-sm break-all leading-relaxed">{renderTextWithHyperlink(normalizeValueNoTruncate(detailRow?.page_url))}</div>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs font-black tracking-wide text-brand-text">{urlLabel}</div>
+                    <div className="text-xs font-black tracking-wide text-base-content">{urlLabel}</div>
                     {detailUrl && detailUrl !== '-' ? (
                       <button
                         type="button"
                         onClick={() => void copyTextToClipboard(detailUrl, urlLabel)}
-                        className="text-xs font-semibold text-brand-accent hover:underline"
+                        className="text-xs font-semibold text-accent hover:underline"
                       >
                         复制
                       </button>
@@ -11891,9 +11856,9 @@ function TableModuleView({
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-3">
-                    <div className="text-xs font-black tracking-wide text-brand-text">AI填充结果</div>
-                    <div className="text-xs text-brand-text-muted">
+                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-3">
+                    <div className="text-xs font-black tracking-wide text-base-content">AI填充结果</div>
+                    <div className="text-xs text-content-muted">
                       状态：{aiFillStatusText}
                       {normalizeValueNoTruncate(detailRow?.ai_fill_source) !== '-' ? ` / 来源：${normalizeValueNoTruncate(detailRow?.ai_fill_source)}` : ''}
                       {detailRow?.ai_fill_hint_only ? ' / 高风险，仅提示' : ''}
@@ -11905,7 +11870,7 @@ function TableModuleView({
                     ) : null}
                     {aiFillParams.length > 0 ? (
                       <div className="space-y-2">
-                        <div className="text-xs font-semibold text-brand-text-muted">参数建议</div>
+                        <div className="text-xs font-semibold text-content-muted">参数建议</div>
                         <div className="flex flex-wrap gap-2">
                           {aiFillParams.map((item: any, index: number) => {
                             const nameText = String(item?.name || '').trim() || `param_${index + 1}`;
@@ -11915,7 +11880,7 @@ function TableModuleView({
                             return (
                               <span
                                 key={`${nameText}-${index}`}
-                                className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold break-all"
+                                className="inline-flex items-center rounded-full border border-base-300 bg-base-100/70 px-2.5 py-1 text-xs font-semibold break-all"
                               >
                                 {nameText} [{locationText}/{typeText}] = {valueText}
                               </span>
@@ -11924,24 +11889,24 @@ function TableModuleView({
                         </div>
                       </div>
                     ) : (
-                      <div className="text-sm text-brand-text-muted">当前没有生成可用的 AI 填充参数。</div>
+                      <div className="text-sm text-content-muted">当前没有生成可用的 AI 填充参数。</div>
                     )}
                     {normalizeValueNoTruncate(detailRow?.ai_fill_response_summary) !== '-' ? (
                       <div className="space-y-2">
-                        <div className="text-xs font-semibold text-brand-text-muted">测试响应摘要</div>
+                        <div className="text-xs font-semibold text-content-muted">测试响应摘要</div>
                         <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
                           {normalizeValueNoTruncate(detailRow?.ai_fill_response_summary)}
                         </div>
                       </div>
                     ) : null}
                   </div>
-                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                    <div className="text-xs font-black tracking-wide text-brand-text">验证信息</div>
-                    <div className="text-xs text-brand-text-muted">
+                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                    <div className="text-xs font-black tracking-wide text-base-content">验证信息</div>
+                    <div className="text-xs text-content-muted">
                       {normalizeValueNoTruncate(detailRow?.verification_note)}
                     </div>
                     {normalizeValueNoTruncate(detailRow?.verification_method) !== '-' ? (
-                      <div className="text-xs text-brand-text-muted">
+                      <div className="text-xs text-content-muted">
                         探测方法：{normalizeValueNoTruncate(detailRow?.verification_method)}
                       </div>
                     ) : null}
@@ -11949,70 +11914,62 @@ function TableModuleView({
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs font-black tracking-wide text-brand-text">请求报文</div>
+                      <div className="text-xs font-black tracking-wide text-base-content">请求报文</div>
                       {requestPacket && requestPacket !== '-' ? (
                         <button
                           type="button"
                           onClick={() => void copyTextToClipboard(requestPacket, '请求报文')}
-                          className="text-xs font-semibold text-brand-accent hover:underline"
+                          className="text-xs font-semibold text-accent hover:underline"
                         >
                           复制
                         </button>
                       ) : null}
                     </div>
-                    <pre className="max-h-[420px] overflow-auto rounded-xl border border-brand-border bg-brand-bg/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
+                    <pre className="max-h-[420px] overflow-auto rounded-xl border border-base-300 bg-base-100/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
                       {requestPacket || '-'}
                     </pre>
                   </div>
-                  <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
+                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs font-black tracking-wide text-brand-text">回复报文</div>
+                      <div className="text-xs font-black tracking-wide text-base-content">回复报文</div>
                       {responsePacket && responsePacket !== '-' ? (
                         <button
                           type="button"
                           onClick={() => void copyTextToClipboard(responsePacket, '回复报文')}
-                          className="text-xs font-semibold text-brand-accent hover:underline"
+                          className="text-xs font-semibold text-accent hover:underline"
                         >
                           复制
                         </button>
                       ) : null}
                     </div>
-                    <pre className="max-h-[420px] overflow-auto rounded-xl border border-brand-border bg-brand-bg/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
+                    <pre className="max-h-[420px] overflow-auto rounded-xl border border-base-300 bg-base-100/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
                       {responsePacket || '-'}
                     </pre>
                   </div>
                 </div>
               </div>
 
-              <div className="px-6 py-4 border-t border-brand-border bg-brand-bg/30 flex justify-end">
+              <div className="px-6 py-4 border-t border-base-300 bg-base-100/30 flex justify-end">
                 <button
                   type="button"
                   onClick={closeWihEndpointDetail}
-                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
                 >
                   关闭
                 </button>
               </div>
-            </div>
-          </div>
+          </Modal>
         );
       })() : null}
 
       {aiDenoiseDetail ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={closeAiDenoiseDetail}
-        >
-          <div
-            className="w-full max-w-4xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
+        <Modal open onClose={closeAiDenoiseDetail} boxClass="w-full max-w-4xl!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-start justify-between gap-3">
               <div className="space-y-1 min-w-0">
                 <h4 className="text-lg font-black">AI分析详情</h4>
-                <p className="text-xs text-brand-text-muted">
+                <p className="text-xs text-content-muted">
                   模块：{aiDenoiseModuleId ? AI_DENOISE_MODULE_LABEL_MAP[aiDenoiseModuleId] : '-'}
                 </p>
                 <p className="text-sm font-semibold break-all">目标：{aiDenoiseDetail.rowTitle || '-'}</p>
@@ -12020,7 +11977,7 @@ function TableModuleView({
               <button
                 type="button"
                 onClick={closeAiDenoiseDetail}
-                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                className="p-2 rounded-lg hover:bg-base-100/70 transition"
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -12032,13 +11989,13 @@ function TableModuleView({
                 <span className={getAiDenoiseCellClass(aiDenoiseDetail.analysis.result_level, false)}>
                   {aiDenoiseDetail.analysis.display_text || '-'}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                   {aiDenoiseModuleId === 'wih_endpoint' ? '价值等级' : '风险等级'}：{aiDenoiseDetail.analysis.risk_level || '-'}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                   {aiDenoiseModuleId === 'wih_endpoint' ? '价值标签' : '可信度'}：{aiDenoiseDetail.analysis.trust || '-'}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                   来源：{
                     aiDenoiseDetail.analysis.source === 'ai'
                       ? 'AI模型'
@@ -12048,12 +12005,12 @@ function TableModuleView({
                   }
                 </span>
                 {aiDenoiseDetail.analysis.analyzed_at ? (
-                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                     分析时间：{aiDenoiseDetail.analysis.analyzed_at}
                   </span>
                 ) : null}
                 {aiDenoiseModuleId === 'cert' ? (
-                  <span className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
                     到期：{aiDenoiseDetail.analysis.cert_expire_at || '-'}
                     {Number.isFinite(Number(aiDenoiseDetail.analysis.cert_expire_days))
                       ? `（${Number(aiDenoiseDetail.analysis.cert_expire_days) < 0 ? '已过期' : `剩余${Number(aiDenoiseDetail.analysis.cert_expire_days)}天`}）`
@@ -12062,50 +12019,50 @@ function TableModuleView({
                 ) : null}
               </div>
 
-              <div className="text-xs text-brand-text-muted">
+              <div className="text-xs text-content-muted">
                 说明：此处仅展示扫描阶段已落库的分析结果，点击详情不会再次触发 AI 调用。
               </div>
               {aiDenoiseDetail.analysis.note ? (
-                <div className="text-xs text-brand-text-muted">
+                <div className="text-xs text-content-muted">
                   当前记录说明：{aiDenoiseDetail.analysis.note}
                 </div>
               ) : null}
               {aiDenoiseDetail.analysis.prompt_name || aiDenoiseDetail.analysis.prompt_id ? (
-                <div className="text-xs text-brand-text-muted">
+                <div className="text-xs text-content-muted">
                   使用SOP：{aiDenoiseDetail.analysis.prompt_name || aiDenoiseDetail.analysis.prompt_id}
                 </div>
               ) : null}
 
-              <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                <div className="text-xs font-black tracking-wide text-brand-text">分析摘要</div>
+              <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                <div className="text-xs font-black tracking-wide text-base-content">分析摘要</div>
                 <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
                   {aiDenoiseDetail.analysis.summary || '-'}
                 </div>
               </div>
 
               {aiDenoiseModuleId === 'site' ? (
-                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                  <div className="text-xs font-black tracking-wide text-brand-text">AI分析后的指纹结果</div>
+                <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-base-content">AI分析后的指纹结果</div>
                   {Array.isArray(aiDenoiseDetail.analysis.finger_result) && aiDenoiseDetail.analysis.finger_result.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {aiDenoiseDetail.analysis.finger_result.map((item, index) => (
                         <span
                           key={`${index}-${item}`}
-                          className="inline-flex items-center rounded-full border border-brand-border bg-brand-bg/70 px-2.5 py-1 text-xs font-semibold"
+                          className="inline-flex items-center rounded-full border border-base-300 bg-base-100/70 px-2.5 py-1 text-xs font-semibold"
                         >
                           {item}
                         </span>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-sm text-brand-text-muted">暂无 AI 指纹修正结果</div>
+                    <div className="text-sm text-content-muted">暂无 AI 指纹修正结果</div>
                   )}
                 </div>
               ) : null}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                  <div className="text-xs font-black tracking-wide text-brand-text">分析依据</div>
+                <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-base-content">分析依据</div>
                   {aiDenoiseDetail.analysis.evidence.length > 0 ? (
                     <div className="space-y-1.5">
                       {aiDenoiseDetail.analysis.evidence.map((item, index) => (
@@ -12115,11 +12072,11 @@ function TableModuleView({
                       ))}
                     </div>
                   ) : (
-                    <div className="text-sm text-brand-text-muted">暂无依据</div>
+                    <div className="text-sm text-content-muted">暂无依据</div>
                   )}
                 </div>
-                <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                  <div className="text-xs font-black tracking-wide text-brand-text">处置建议</div>
+                <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                  <div className="text-xs font-black tracking-wide text-base-content">处置建议</div>
                   {aiDenoiseDetail.analysis.suggestions.length > 0 ? (
                     <div className="space-y-1.5">
                       {aiDenoiseDetail.analysis.suggestions.map((item, index) => (
@@ -12129,13 +12086,13 @@ function TableModuleView({
                       ))}
                     </div>
                   ) : (
-                    <div className="text-sm text-brand-text-muted">暂无建议</div>
+                    <div className="text-sm text-content-muted">暂无建议</div>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-4 space-y-2">
-                <div className="text-xs font-black tracking-wide text-brand-text">AI交互记录</div>
+              <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                <div className="text-xs font-black tracking-wide text-base-content">AI交互记录</div>
                 {Array.isArray(aiDenoiseDetail.analysis.dialogue_records) && aiDenoiseDetail.analysis.dialogue_records.length > 0 ? (
                   <div className="space-y-2 max-h-[300px] overflow-auto">
                     {aiDenoiseDetail.analysis.dialogue_records.map((item, index) => {
@@ -12149,12 +12106,12 @@ function TableModuleView({
                               : 'AI回复';
                       const roleClass =
                         item.role === 'system'
-                          ? 'border-brand-border bg-brand-bg/60 text-brand-text-muted'
+                          ? 'border-base-300 bg-base-100/60 text-content-muted'
                           : item.role === 'user'
-                            ? 'border-brand-accent/35 bg-brand-accent/10 text-brand-text'
+                            ? 'border-accent/35 bg-accent/10 text-base-content'
                             : item.role === 'tool'
-                              ? 'border-brand-warning/35 bg-brand-warning/10 text-brand-text'
-                              : 'border-emerald-400/35 bg-emerald-400/10 text-brand-text';
+                              ? 'border-warning/35 bg-warning/10 text-base-content'
+                              : 'border-emerald-400/35 bg-emerald-400/10 text-base-content';
                       return (
                         <div key={`${index}-${item.role}`} className={`rounded-xl border px-3 py-2 ${roleClass}`}>
                           <div className="text-[11px] font-black tracking-wide mb-1">{roleLabel}</div>
@@ -12166,87 +12123,83 @@ function TableModuleView({
                     })}
                   </div>
                 ) : (
-                  <div className="text-sm text-brand-text-muted">暂无对话记录</div>
+                  <div className="text-sm text-content-muted">暂无对话记录</div>
                 )}
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-brand-border bg-brand-bg/30 flex justify-end">
+            <div className="px-6 py-4 border-t border-base-300 bg-base-100/30 flex justify-end">
               <button
                 type="button"
                 onClick={closeAiDenoiseDetail}
-                className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
               >
                 关闭
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
 
       {taskErrorDialog ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-5xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+        <Modal open onClose={() => setTaskErrorDialog(null)} boxClass="w-full max-w-5xl!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-brand-danger" />
+                <AlertTriangle className="w-5 h-5 text-error" />
                 <h4 className="text-lg font-black">任务异常详情</h4>
               </div>
               <button
                 onClick={() => setTaskErrorDialog(null)}
-                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                className="p-2 rounded-lg hover:bg-base-100/70 transition"
                 title="关闭"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="px-6 py-4 border-b border-brand-border bg-brand-bg/30 text-sm space-y-1">
-              <div><span className="text-brand-text-muted">任务名：</span>{taskErrorDialog.taskName}</div>
-              <div><span className="text-brand-text-muted">目标：</span><span className="font-mono break-all">{taskErrorDialog.target}</span></div>
-              <div><span className="text-brand-text-muted">Task_ID：</span><span className="font-mono">{taskErrorDialog.taskId || '-'}</span></div>
+            <div className="px-6 py-4 border-b border-base-300 bg-base-100/30 text-sm space-y-1">
+              <div><span className="text-content-muted">任务名：</span>{taskErrorDialog.taskName}</div>
+              <div><span className="text-content-muted">目标：</span><span className="font-mono break-all">{taskErrorDialog.target}</span></div>
+              <div><span className="text-content-muted">Task_ID：</span><span className="font-mono">{taskErrorDialog.taskId || '-'}</span></div>
             </div>
 
             <div className="p-6 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar space-y-4">
               {taskErrorDialog.logs.length > 0 ? taskErrorDialog.logs.map((log, index) => (
-                <div key={`${log.time}-${log.stage}-${index}`} className="rounded-xl border border-brand-border bg-brand-bg/40 p-4 space-y-3">
+                <div key={`${log.time}-${log.stage}-${index}`} className="rounded-xl border border-base-300 bg-base-100/40 p-4 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-brand-text-muted">时间：</span><span className="font-mono">{log.time || '-'}</span></div>
-                    <div><span className="text-brand-text-muted">阶段：</span><span className="font-mono">{log.stage || '-'}</span></div>
+                    <div><span className="text-content-muted">时间：</span><span className="font-mono">{log.time || '-'}</span></div>
+                    <div><span className="text-content-muted">阶段：</span><span className="font-mono">{log.stage || '-'}</span></div>
                   </div>
                   <div className="text-sm">
-                    <span className="text-brand-text-muted">异常说明：</span>
+                    <span className="text-content-muted">异常说明：</span>
                     <div className="mt-1 whitespace-pre-wrap break-all leading-relaxed">{log.message || '-'}</div>
                   </div>
                   {log.traceback ? (
                     <div className="text-sm">
-                      <span className="text-brand-text-muted">日志信息：</span>
-                      <pre className="mt-1 whitespace-pre-wrap break-all leading-relaxed font-mono text-xs bg-brand-bg/70 border border-brand-border rounded-lg p-3 overflow-auto">{log.traceback}</pre>
+                      <span className="text-content-muted">日志信息：</span>
+                      <pre className="mt-1 whitespace-pre-wrap break-all leading-relaxed font-mono text-xs bg-base-100/70 border border-base-300 rounded-lg p-3 overflow-auto">{log.traceback}</pre>
                     </div>
                   ) : null}
                 </div>
               )) : (
-                <div className="text-sm text-brand-text-muted">
+                <div className="text-sm text-content-muted">
                   当前任务没有记录到详细异常日志（可能是历史任务或异常详情落库前的任务）。
                 </div>
               )}
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {deleteConfirmDialog ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+        <Modal open onClose={() => closeDeleteConfirmDialog(false)} boxClass="w-full max-w-lg!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-400" />
                 <h4 className="text-lg font-black">{deleteConfirmDialog.title}</h4>
               </div>
               <button
                 onClick={() => closeDeleteConfirmDialog(false)}
-                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                className="p-2 rounded-lg hover:bg-base-100/70 transition"
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -12254,57 +12207,48 @@ function TableModuleView({
             </div>
 
             <div className="px-6 py-5 space-y-5">
-              <p className="text-sm text-brand-text-muted whitespace-pre-wrap break-all leading-relaxed">
+              <p className="text-sm text-content-muted whitespace-pre-wrap break-all leading-relaxed">
                 {deleteConfirmDialog.message}
               </p>
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => closeDeleteConfirmDialog(false)}
-                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
                 >
                   取消
                 </button>
                 <button
                   onClick={() => closeDeleteConfirmDialog(true)}
-                  className="px-5 py-2.5 rounded-xl bg-brand-danger text-white text-sm font-black hover:opacity-90 transition"
+                  className="px-5 py-2.5 rounded-xl bg-error text-white text-sm font-black hover:opacity-90 transition"
                 >
                   {deleteConfirmDialog.confirmText}
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {screenshotPreview ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setScreenshotPreview(null)}
-        >
-          <div
-            className="w-full max-w-6xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="px-5 py-3 border-b border-brand-border flex items-center justify-between gap-3">
+        <Modal open onClose={() => setScreenshotPreview(null)} boxClass="w-full max-w-6xl!">
+            <div className="px-5 py-3 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="text-sm font-semibold truncate">截图预览: {screenshotPreview.title}</div>
               <button
                 type="button"
                 onClick={() => setScreenshotPreview(null)}
-                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                className="p-2 rounded-lg hover:bg-base-100/70 transition"
                 title="关闭预览"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar bg-brand-bg/40">
+            <div className="p-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar bg-base-100/40">
               <img
                 src={screenshotPreview.url}
                 alt={screenshotPreview.title}
-                className="mx-auto max-w-full h-auto rounded-xl border border-brand-border bg-brand-bg"
+                className="mx-auto max-w-full h-auto rounded-xl border border-base-300 bg-base-100"
               />
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </div>
   );
@@ -13211,13 +13155,13 @@ function ApiConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <PageHeader title="API 管理" description="统一维护 FOFA、Hunter、hunter.how、Shodan、Quake、Zoomeye 等第三方 API 配置并同步保存。" />
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">API 凭据配置</div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => void loadServiceApiConfig()}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
               disabled={loading || batchTesting || Boolean(testingProviderId)}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -13225,7 +13169,7 @@ function ApiConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void testConfiguredServiceApis()}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
               disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
             >
               <CheckCircle2 className={`w-4 h-4 ${batchTesting ? 'animate-pulse' : ''}`} />
@@ -13234,7 +13178,7 @@ function ApiConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={toggleSensitiveDisplay}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
               disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
             >
               <Eye className="w-4 h-4" />
@@ -13252,7 +13196,7 @@ function ApiConsoleView({ token }: { token: string }) {
         </div>
 
         {error ? (
-          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+          <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
             {error}
           </div>
         ) : null}
@@ -13263,36 +13207,36 @@ function ApiConsoleView({ token }: { token: string }) {
         ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
-            <span className="text-brand-text-muted">配置文件:</span>
+          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+            <span className="text-content-muted">配置文件:</span>
             <span className="font-mono ml-2">{configPath || '-'}</span>
           </div>
-          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
-            <span className="text-brand-text-muted">最近更新时间:</span>
+          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+            <span className="text-content-muted">最近更新时间:</span>
             <span className="font-mono ml-2">{updatedAt || '-'}</span>
           </div>
         </div>
 
-        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+        <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
           提示：保存后会写入配置文件，建议重启 `web` 与 `worker` 容器让 API 插件配置立即生效。
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {providers.map((provider) => (
-          <div key={provider.id} className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+          <div key={provider.id} className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="text-sm font-black tracking-wide break-all">
                   {provider.title}
-                  {provider.alias ? <span className="ml-2 text-brand-text-muted font-semibold">({provider.alias})</span> : null}
+                  {provider.alias ? <span className="ml-2 text-content-muted font-semibold">({provider.alias})</span> : null}
                 </h3>
                 {provider.website ? (
                   <a
                     href={provider.website}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs text-brand-accent hover:underline break-all font-mono"
+                    className="text-xs text-accent hover:underline break-all font-mono"
                     title={provider.website}
                   >
                     {provider.website}
@@ -13304,7 +13248,7 @@ function ApiConsoleView({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={() => void testServiceApiProvider(provider.id, provider.alias || provider.title)}
-                    className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-1 disabled:opacity-60"
+                    className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition flex items-center gap-1 disabled:opacity-60"
                     disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
                   >
                     <Play className={`w-3.5 h-3.5 ${testingProviderId === provider.id ? 'animate-spin' : ''}`} />
@@ -13312,12 +13256,12 @@ function ApiConsoleView({ token }: { token: string }) {
                   </button>
                 )}
                 {provider.enableKey ? (
-                  <label className="flex items-center gap-2 text-xs text-brand-text-muted shrink-0">
+                  <label className="flex items-center gap-2 text-xs text-content-muted shrink-0">
                     <input
                       type="checkbox"
                       checked={Boolean(form[provider.enableKey])}
                       onChange={(event) => updateBoolField(provider.enableKey, event.target.checked)}
-                      className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                      className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                     />
                     <span>{provider.enableLabel}</span>
                   </label>
@@ -13339,7 +13283,7 @@ function ApiConsoleView({ token }: { token: string }) {
                     : field.placeholder;
                 return (
                   <div key={field.key} className="space-y-1">
-                    <label className="text-xs font-bold text-brand-text-muted block">
+                    <label className="text-xs font-bold text-content-muted block">
                       {field.label}
                       {field.hint ? <span className="ml-2 font-mono opacity-70">{field.hint}</span> : null}
                     </label>
@@ -13363,7 +13307,7 @@ function ApiConsoleView({ token }: { token: string }) {
                       autoComplete="off"
                     />
                     {isSensitiveField && sensitiveConfigured && !showRaw ? (
-                      <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                      <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                     ) : null}
                   </div>
                 );
@@ -13375,7 +13319,7 @@ function ApiConsoleView({ token }: { token: string }) {
                 className={`text-xs rounded-lg px-3 py-2 border ${
                   providerTestResultMap[provider.id].ok
                     ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
-                    : 'text-brand-danger bg-brand-danger/10 border-brand-danger/30'
+                    : 'text-error bg-error/10 border-error/30'
                 }`}
               >
                 <div>{providerTestResultMap[provider.id].message}</div>
@@ -13388,17 +13332,16 @@ function ApiConsoleView({ token }: { token: string }) {
       </div>
 
       {batchTestDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+        <Modal open onClose={() => setBatchTestDialogOpen(false)} boxClass="w-full max-w-4xl!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div>
                 <h4 className="text-lg font-black">API 一键验证</h4>
-                <p className="text-xs text-brand-text-muted mt-1">仅验证已填写凭据的 API，未配置项会自动跳过。</p>
+                <p className="text-xs text-content-muted mt-1">仅验证已填写凭据的 API，未配置项会自动跳过。</p>
               </div>
               <button
                 type="button"
                 onClick={() => setBatchTestDialogOpen(false)}
-                className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                className="p-2 rounded-lg hover:bg-base-100/70 transition"
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -13407,45 +13350,45 @@ function ApiConsoleView({ token }: { token: string }) {
 
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
-                <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-3">
-                  <div className="text-brand-text-muted">已验证</div>
+                <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-3">
+                  <div className="text-content-muted">已验证</div>
                   <div className="mt-1 text-2xl font-black">{batchTestSummary.total}</div>
                 </div>
                 <div className="bg-emerald-400/10 border border-emerald-400/30 rounded-xl px-3 py-3">
                   <div className="text-emerald-300">成功</div>
                   <div className="mt-1 text-2xl font-black text-emerald-300">{batchTestSummary.successCount}</div>
                 </div>
-                <div className="bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-3 py-3">
-                  <div className="text-brand-danger">失败</div>
-                  <div className="mt-1 text-2xl font-black text-brand-danger">{batchTestSummary.failCount}</div>
+                <div className="bg-error/10 border border-error/30 rounded-xl px-3 py-3">
+                  <div className="text-error">失败</div>
+                  <div className="mt-1 text-2xl font-black text-error">{batchTestSummary.failCount}</div>
                 </div>
-                <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-3">
-                  <div className="text-brand-text-muted">完成时间</div>
+                <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-3">
+                  <div className="text-content-muted">完成时间</div>
                   <div className="mt-1 font-mono break-all">{batchTestSummary.testedAt || '-'}</div>
                 </div>
               </div>
 
               {batchTestSummary.message ? (
-                <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+                <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
                   {batchTestSummary.message}
                 </div>
               ) : null}
 
               {batchTestError ? (
-                <div className="text-sm text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-xl px-3 py-2">
+                <div className="text-sm text-error bg-error/10 border border-error/30 rounded-xl px-3 py-2">
                   {batchTestError}
                 </div>
               ) : null}
 
               {batchTesting ? (
-                <div className="flex items-center gap-3 rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-4 text-sm">
+                <div className="flex items-center gap-3 rounded-xl border border-base-300 bg-base-100/40 px-4 py-4 text-sm">
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>正在验证已配置的 API，请稍候...</span>
                 </div>
               ) : null}
 
               {!batchTesting && batchTestResults.length === 0 ? (
-                <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-8 text-sm text-brand-text-muted text-center">
+                <div className="rounded-xl border border-base-300 bg-base-100/40 px-4 py-8 text-sm text-content-muted text-center">
                   暂无需要验证的已配置 API。
                 </div>
               ) : null}
@@ -13455,14 +13398,14 @@ function ApiConsoleView({ token }: { token: string }) {
                   {batchTestResults.map((item) => (
                     <div
                       key={`${item.providerId}-${item.testedAt || item.message}`}
-                      className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-4"
+                      className="rounded-xl border border-base-300 bg-base-100/40 px-4 py-4"
                     >
                       <div className="flex items-start gap-3">
                         <div
                           className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-full shrink-0 ${
                             item.ok
                               ? 'bg-emerald-400/10 text-emerald-300 border border-emerald-400/30'
-                              : 'bg-brand-danger/10 text-brand-danger border border-brand-danger/30'
+                              : 'bg-error/10 text-error border border-error/30'
                           }`}
                         >
                           {item.ok ? <CheckCircle2 className="w-4 h-4" /> : <X className="w-4 h-4" />}
@@ -13470,18 +13413,18 @@ function ApiConsoleView({ token }: { token: string }) {
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <div className="text-sm font-black">{item.label}</div>
-                            <div className={`text-xs font-semibold ${item.ok ? 'text-emerald-300' : 'text-brand-danger'}`}>
+                            <div className={`text-xs font-semibold ${item.ok ? 'text-emerald-300' : 'text-error'}`}>
                               {item.ok ? '验证成功' : '验证失败'}
                             </div>
                           </div>
                           <div className="mt-1 text-sm break-all">{item.message}</div>
                           {item.detail ? (
-                            <div className="mt-2 text-xs font-mono text-brand-text-muted break-all whitespace-pre-wrap">
+                            <div className="mt-2 text-xs font-mono text-content-muted break-all whitespace-pre-wrap">
                               {item.detail}
                             </div>
                           ) : null}
                           {item.testedAt ? (
-                            <div className="mt-2 text-xs text-brand-text-muted">{item.testedAt}</div>
+                            <div className="mt-2 text-xs text-content-muted">{item.testedAt}</div>
                           ) : null}
                         </div>
                       </div>
@@ -13494,14 +13437,13 @@ function ApiConsoleView({ token }: { token: string }) {
                 <button
                   type="button"
                   onClick={() => setBatchTestDialogOpen(false)}
-                  className="px-5 py-2.5 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
                 >
                   关闭
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       <SensitiveRevealVerifyModal
         open={sensitiveVerifyDialogOpen}
@@ -14253,13 +14195,13 @@ function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <PageHeader title="配置管理" description="支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），重启后生效。" />
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">扫描配置</div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => void loadScanConfig()}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
               disabled={isConfigActionBusy}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -14267,7 +14209,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void updatePocRepo('nuclei')}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <GitBranch className={`w-4 h-4 ${nucleiPocUpdating ? 'animate-spin' : ''}`} />
@@ -14275,7 +14217,7 @@ function ConfigConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void updatePocRepo('afrog')}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <GitBranch className={`w-4 h-4 ${afrogPocUpdating ? 'animate-spin' : ''}`} />
@@ -14293,7 +14235,7 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
 
         {error ? (
-          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+          <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
             {error}
           </div>
         ) : null}
@@ -14304,26 +14246,26 @@ function ConfigConsoleView({ token }: { token: string }) {
         ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
-            <span className="text-brand-text-muted">配置文件:</span>
+          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+            <span className="text-content-muted">配置文件:</span>
             <span className="font-mono ml-2">{configPath || '-'}</span>
           </div>
-          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
-            <span className="text-brand-text-muted">最近更新时间:</span>
+          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+            <span className="text-content-muted">最近更新时间:</span>
             <span className="font-mono ml-2">{updatedAt || '-'}</span>
           </div>
         </div>
 
-        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+        <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
           提示：保存后会写入配置文件，建议重启 `web` 与 `worker` 容器让扫描参数完全生效。
         </div>
-        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+        <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
           PoC 更新说明：按钮会调用 git 同步远端仓库（nuclei: projectdiscovery/nuclei-templates，afrog: zan8in/afrog-pocs）。
         </div>
-        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-3 items-center rounded-xl border border-brand-border bg-brand-bg/25 px-3 py-3">
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-3 items-center rounded-xl border border-base-300 bg-base-100/25 px-3 py-3">
           <div className="space-y-1">
-            <div className="text-xs font-black tracking-wide text-brand-text">PoC 更新代理</div>
-            <div className="text-[11px] text-brand-text-muted">仅作用于 Nuclei / afrog PoC 仓库更新时的 `git clone/pull`。</div>
+            <div className="text-xs font-black tracking-wide text-base-content">PoC 更新代理</div>
+            <div className="text-[11px] text-content-muted">仅作用于 Nuclei / afrog PoC 仓库更新时的 `git clone/pull`。</div>
           </div>
           <input
             type="text"
@@ -14335,10 +14277,10 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
-        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-          <div className="text-xs font-black tracking-wide text-brand-text">预定义资源档位</div>
-          <div className="text-xs text-brand-text-muted">
+      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-5">
+        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+          <div className="text-xs font-black tracking-wide text-base-content">预定义资源档位</div>
+          <div className="text-xs text-content-muted">
             一键套用常见机型参数（CPU/内存/带宽），覆盖 Nuclei、afrog、域名爆破、端口扫描、URL 探测、Web/Celery 并发等关键项，降低低配主机被扫描压垮风险。
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
@@ -14351,43 +14293,43 @@ function ConfigConsoleView({ token }: { token: string }) {
                   onClick={() => applyScanProfile(profile)}
                   className={`text-left rounded-xl border p-3 transition ${
                     isMatched
-                      ? 'border-brand-accent bg-brand-accent/10'
-                      : 'border-brand-border hover:bg-brand-bg/70'
+                      ? 'border-accent bg-accent/10'
+                      : 'border-base-300 hover:bg-base-100/70'
                   }`}
                 >
                   <div className="text-sm font-bold">{profile.label}</div>
-                  <div className="mt-1 text-xs text-brand-text-muted">
+                  <div className="mt-1 text-xs text-content-muted">
                     规格：{profile.cpu_cores}核CPU · {profile.memory_gb}GB内存 · {profile.bandwidth_mbps}Mbps带宽
                   </div>
-                  <div className="mt-2 text-xs text-brand-text-muted">{profile.description || '预定义扫描参数模板'}</div>
+                  <div className="mt-2 text-xs text-content-muted">{profile.description || '预定义扫描参数模板'}</div>
                 </button>
               );
             })}
             <div
               className={`text-left rounded-xl border p-3 transition ${
                 isCustomScanProfileMatched
-                  ? 'border-brand-accent bg-brand-accent/10'
-                  : 'border-brand-border bg-brand-bg/30'
+                  ? 'border-accent bg-accent/10'
+                  : 'border-base-300 bg-base-100/30'
               }`}
             >
               <div className="text-sm font-bold">自定义配置</div>
-              <div className="mt-1 text-xs text-brand-text-muted">
+              <div className="mt-1 text-xs text-content-muted">
                 手动调整扫描参数，不套用预定义模板
               </div>
-              <div className="mt-2 text-xs text-brand-text-muted">
+              <div className="mt-2 text-xs text-content-muted">
                 {isCustomScanProfileMatched ? '当前生效' : '当前未生效'}
               </div>
             </div>
           </div>
-          <div className="text-xs text-brand-text-muted">
+          <div className="text-xs text-content-muted">
             当前命中档位：{matchedScanProfileLabel || '自定义配置'}
           </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-          <div className="text-xs font-black tracking-wide text-brand-text">字典管理</div>
+        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+          <div className="text-xs font-black tracking-wide text-base-content">字典管理</div>
         <div className="space-y-2">
-          <label htmlFor="config-domain-dict-select" className="text-xs font-bold text-brand-text-muted block">
+          <label htmlFor="config-domain-dict-select" className="text-xs font-bold text-content-muted block">
             域名爆破字典
             <span className="ml-2 font-mono opacity-70">ARL.DOMAIN_DICT</span>
           </label>
@@ -14405,12 +14347,12 @@ function ConfigConsoleView({ token }: { token: string }) {
                 </option>
               ))}
             </select>
-            <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
           </div>
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="config-domain-dict-upload" className="text-xs font-bold text-brand-text-muted block">上传域名爆破字典（.txt）</label>
+          <label htmlFor="config-domain-dict-upload" className="text-xs font-bold text-content-muted block">上传域名爆破字典（.txt）</label>
           <input
             id="config-domain-dict-upload"
             ref={domainUploadInputRef}
@@ -14426,18 +14368,18 @@ function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => domainUploadInputRef.current?.click()}
-              className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center disabled:opacity-60"
+              className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               选择文件
             </button>
-            <div className={`${compactFieldFilenameClass} flex items-center text-brand-text-muted truncate`}>
+            <div className={`${compactFieldFilenameClass} flex items-center text-content-muted truncate`}>
               {uploadDomainFile?.name || '未选择文件'}
             </div>
             <button
               type="button"
               onClick={() => void uploadDomainDict()}
-              className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <Upload className={`w-4 h-4 ${domainUploading ? 'animate-spin' : ''}`} />
@@ -14447,7 +14389,7 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="config-fileleak-dict-select" className="text-xs font-bold text-brand-text-muted block">
+          <label htmlFor="config-fileleak-dict-select" className="text-xs font-bold text-content-muted block">
             目录扫描字典
             <span className="ml-2 font-mono opacity-70">ARL.FILE_LEAK_DICT</span>
           </label>
@@ -14465,12 +14407,12 @@ function ConfigConsoleView({ token }: { token: string }) {
                 </option>
               ))}
             </select>
-            <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+            <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
           </div>
         </div>
 
         <div className="space-y-2">
-          <label htmlFor="config-fileleak-dict-upload" className="text-xs font-bold text-brand-text-muted block">上传敏感文件字典（.txt）</label>
+          <label htmlFor="config-fileleak-dict-upload" className="text-xs font-bold text-content-muted block">上传敏感文件字典（.txt）</label>
           <input
             id="config-fileleak-dict-upload"
             ref={fileLeakUploadInputRef}
@@ -14486,18 +14428,18 @@ function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => fileLeakUploadInputRef.current?.click()}
-              className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center disabled:opacity-60"
+              className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               选择文件
             </button>
-            <div className={`${compactFieldFilenameClass} flex items-center text-brand-text-muted truncate`}>
+            <div className={`${compactFieldFilenameClass} flex items-center text-content-muted truncate`}>
               {uploadFileLeakFile?.name || '未选择文件'}
             </div>
             <button
               type="button"
               onClick={() => void uploadFileLeakDict()}
-              className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <Upload className={`w-4 h-4 ${fileLeakUploading ? 'animate-spin' : ''}`} />
@@ -14507,11 +14449,11 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-          <div className="text-xs font-black tracking-wide text-brand-text">并发与资源配置</div>
+        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+          <div className="text-xs font-black tracking-wide text-base-content">并发与资源配置</div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label htmlFor="config-domain-brute-concurrent" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-domain-brute-concurrent" className="text-xs font-bold text-content-muted block">
               域名爆破并发数
               <span className="ml-2 font-mono opacity-70">ARL.DOMAIN_BRUTE_CONCURRENT</span>
             </label>
@@ -14526,7 +14468,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="config-alt-dns-concurrent" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-alt-dns-concurrent" className="text-xs font-bold text-content-muted block">
               组合生成域名爆破并发数
               <span className="ml-2 font-mono opacity-70">ARL.ALT_DNS_CONCURRENT</span>
             </label>
@@ -14543,7 +14485,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label htmlFor="config-web-gunicorn-workers" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-web-gunicorn-workers" className="text-xs font-bold text-content-muted block">
               Web API 服务并发数 (界面与接口响应进程)
               <span className="ml-2 font-mono opacity-70">ARL.WEB_GUNICORN_WORKERS</span>
             </label>
@@ -14558,7 +14500,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="config-celery-task-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-task-worker-concurrency" className="text-xs font-bold text-content-muted block">
               后台并行扫描任务数 (同时执行的最大任务数)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_TASK_WORKER_CONCURRENCY</span>
             </label>
@@ -14573,7 +14515,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="config-celery-heavy-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-heavy-worker-concurrency" className="text-xs font-bold text-content-muted block">
               后台并行重任务数 (全端口/深度识别队列)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_HEAVY_WORKER_CONCURRENCY</span>
             </label>
@@ -14588,7 +14530,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="config-celery-web-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-web-worker-concurrency" className="text-xs font-bold text-content-muted block">
               后台并行 Web 重任务数 (目录/PoC/截图/爬虫队列)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_WEB_WORKER_CONCURRENCY</span>
             </label>
@@ -14603,7 +14545,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="config-celery-github-worker-concurrency" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-github-worker-concurrency" className="text-xs font-bold text-content-muted block">
               后台并行 GitHub 任务数 (独立队列)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_GITHUB_WORKER_CONCURRENCY</span>
             </label>
@@ -14620,7 +14562,7 @@ function ConfigConsoleView({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label htmlFor="config-celery-prefetch-multiplier" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-prefetch-multiplier" className="text-xs font-bold text-content-muted block">
               任务预拉取数 (单进程一次从队列领取的排队数)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_PREFETCH_MULTIPLIER</span>
             </label>
@@ -14635,7 +14577,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="config-celery-max-tasks-per-child" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-max-tasks-per-child" className="text-xs font-bold text-content-muted block">
               进程回收阈值：单进程执行多少任务后重启 (防内存泄漏)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_TASKS_PER_CHILD</span>
             </label>
@@ -14650,7 +14592,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2 xl:col-span-2">
-            <label htmlFor="config-celery-max-memory-per-child" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-celery-max-memory-per-child" className="text-xs font-bold text-content-muted block">
               进程回收阈值：单进程达多少内存后重启(KB) (防内存泄漏)
               <span className="ml-2 font-mono opacity-70">ARL.CELERY_MAX_MEMORY_PER_CHILD</span>
             </label>
@@ -14666,12 +14608,12 @@ function ConfigConsoleView({ token }: { token: string }) {
         </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-          <div className="text-xs font-black tracking-wide text-brand-text">扫描超时与端口参数</div>
-        <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
+        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+          <div className="text-xs font-black tracking-wide text-base-content">扫描超时与端口参数</div>
+        <div className="space-y-3 rounded-xl border border-base-300 bg-base-100/35 p-4">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label htmlFor="config-nuclei-single-target-timeout-sec" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-nuclei-single-target-timeout-sec" className="text-xs font-bold text-content-muted block">
                 Nuclei 单个目标最多扫描时间（秒）
                 <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_SINGLE_TARGET_TIMEOUT_SEC</span>
               </label>
@@ -14685,7 +14627,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="config-nuclei-rate-limit" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-nuclei-rate-limit" className="text-xs font-bold text-content-muted block">
                 Nuclei 每秒请求上限
                 <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_RATE_LIMIT</span>
               </label>
@@ -14699,7 +14641,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="config-nuclei-concurrency" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-nuclei-concurrency" className="text-xs font-bold text-content-muted block">
                 Nuclei 模板并发
                 <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_CONCURRENCY</span>
               </label>
@@ -14713,7 +14655,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="config-nuclei-bulk-size" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-nuclei-bulk-size" className="text-xs font-bold text-content-muted block">
                 Nuclei bulk-size
                 <span className="ml-2 font-mono opacity-70">ARL.NUCLEI_BULK_SIZE</span>
               </label>
@@ -14727,7 +14669,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="config-afrog-concurrency" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-afrog-concurrency" className="text-xs font-bold text-content-muted block">
                 afrog 并发
                 <span className="ml-2 font-mono opacity-70">ARL.AFROG_CONCURRENCY</span>
               </label>
@@ -14741,7 +14683,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="config-afrog-rate-limit" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-afrog-rate-limit" className="text-xs font-bold text-content-muted block">
                 afrog 每秒请求上限
                 <span className="ml-2 font-mono opacity-70">ARL.AFROG_RATE_LIMIT</span>
               </label>
@@ -14755,28 +14697,28 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
           </div>
-          <div className="text-xs text-brand-text-muted">
+          <div className="text-xs text-content-muted">
             当前 Nuclei 超时约 {(nucleiSingleTargetTimeoutSec / 3600).toFixed(2)} 小时/目标，afrog 走站点级批量 PoC 扫描并会按这里的并发与限速执行。建议优先使用上方预定义资源档位统一调整。
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
+        <div className="space-y-3 rounded-xl border border-base-300 bg-base-100/35 p-4">
           <div className="flex items-center gap-3">
             <input
               id="config-urlfinder-url-probe-enable"
               type="checkbox"
               checked={Boolean(urlfinderUrlProbeEnable)}
               onChange={(event) => setUrlfinderUrlProbeEnable(event.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
             />
-            <label htmlFor="config-urlfinder-url-probe-enable" className="text-xs font-bold text-brand-text-muted">
+            <label htmlFor="config-urlfinder-url-probe-enable" className="text-xs font-bold text-content-muted">
               启用 URLFinder URL 可达性探测并入 URL 信息
               <span className="ml-2 font-mono opacity-70">ARL.URLFINDER_URL_PROBE_ENABLE</span>
             </label>
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label htmlFor="config-urlfinder-url-probe-max-targets" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-urlfinder-url-probe-max-targets" className="text-xs font-bold text-content-muted block">
                 URL 探测最大目标数
                 <span className="ml-2 font-mono opacity-70">ARL.URLFINDER_URL_PROBE_MAX_TARGETS</span>
               </label>
@@ -14790,7 +14732,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="config-urlfinder-url-probe-concurrency" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-urlfinder-url-probe-concurrency" className="text-xs font-bold text-content-muted block">
                 URL 探测并发
                 <span className="ml-2 font-mono opacity-70">ARL.URLFINDER_URL_PROBE_CONCURRENCY</span>
               </label>
@@ -14806,11 +14748,11 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-brand-border bg-brand-bg/35 p-4">
-          <div className="text-xs font-bold text-brand-text-muted">端口扫描全局默认参数（策略未显式设置时生效）</div>
+        <div className="space-y-3 rounded-xl border border-base-300 bg-base-100/35 p-4">
+          <div className="text-xs font-bold text-content-muted">端口扫描全局默认参数（策略未显式设置时生效）</div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label htmlFor="config-host-timeout-type" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-host-timeout-type" className="text-xs font-bold text-content-muted block">
                 主机超时策略
                 <span className="ml-2 font-mono opacity-70">ARL.HOST_TIMEOUT_TYPE</span>
               </label>
@@ -14824,11 +14766,11 @@ function ConfigConsoleView({ token }: { token: string }) {
                   <option value="default">default（按扫描模式自动估算）</option>
                   <option value="custom">custom（固定超时）</option>
                 </select>
-                <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
               </div>
             </div>
             <div className="space-y-2">
-              <label htmlFor="config-host-timeout" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-host-timeout" className="text-xs font-bold text-content-muted block">
                 主机超时（秒）
                 <span className="ml-2 font-mono opacity-70">ARL.HOST_TIMEOUT</span>
               </label>
@@ -14844,7 +14786,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label htmlFor="config-port-parallelism" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-port-parallelism" className="text-xs font-bold text-content-muted block">
                 探测报文并行度
                 <span className="ml-2 font-mono opacity-70">ARL.PORT_PARALLELISM</span>
               </label>
@@ -14858,7 +14800,7 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="config-port-min-rate" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="config-port-min-rate" className="text-xs font-bold text-content-muted block">
                 最少发包速率
                 <span className="ml-2 font-mono opacity-70">ARL.PORT_MIN_RATE</span>
               </label>
@@ -14872,17 +14814,17 @@ function ConfigConsoleView({ token }: { token: string }) {
               />
             </div>
           </div>
-          <div className="text-xs text-brand-text-muted">
+          <div className="text-xs text-content-muted">
             说明：该组参数作为全局默认值。历史任务策略中未显式传入时，会自动使用这里的配置。
           </div>
         </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-          <div className="text-xs font-black tracking-wide text-brand-text">安全过滤与解析器</div>
+        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+          <div className="text-xs font-black tracking-wide text-base-content">安全过滤与解析器</div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label htmlFor="config-black-ips" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-black-ips" className="text-xs font-bold text-content-muted block">
               黑名单IP配置
               <span className="ml-2 font-mono opacity-70">ARL.BLACK_IPS</span>
             </label>
@@ -14896,7 +14838,7 @@ function ConfigConsoleView({ token }: { token: string }) {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="config-dns-resolvers" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="config-dns-resolvers" className="text-xs font-bold text-content-muted block">
               域名解析器配置
               <span className="ml-2 font-mono opacity-70">ARL.DNS_RESOLVERS</span>
             </label>
@@ -14913,36 +14855,34 @@ function ConfigConsoleView({ token }: { token: string }) {
       </div>
 
       {showRestartModal ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-brand-border flex items-center gap-3">
+        <Modal open onClose={() => setShowRestartModal(false)} boxClass="w-full max-w-md!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-400" />
               <h4 className="text-lg font-black tracking-wide">需要重启容器</h4>
             </div>
             <div className="px-6 py-5 space-y-4">
               <p className="text-sm font-semibold">配置保存成功！</p>
-              <p className="text-sm text-brand-text-muted leading-relaxed">
+              <p className="text-sm text-content-muted leading-relaxed">
                 由于当前系统配置不支持热更新，请在服务器中执行容器重启以使新配置生效：
               </p>
-              <div className="bg-brand-bg/50 border border-brand-border rounded-lg p-3">
-                <code className="text-xs text-brand-accent font-mono block select-all">
+              <div className="bg-base-100/50 border border-base-300 rounded-lg p-3">
+                <code className="text-xs text-accent font-mono block select-all">
                   docker-compose restart
                 </code>
               </div>
-              <p className="text-xs text-brand-text-muted">
+              <p className="text-xs text-content-muted">
                 (或使用提供的 ./restart.sh 脚本)
               </p>
             </div>
-            <div className="px-6 py-4 border-t border-brand-border flex justify-end gap-3 bg-brand-bg/30">
+            <div className="px-6 py-4 border-t border-base-300 flex justify-end gap-3 bg-base-100/30">
               <button
                 onClick={() => setShowRestartModal(false)}
-                className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-brand-accent/20"
+                className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-accent/20"
               >
                 我知道了
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </div>
   );
@@ -15551,7 +15491,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         },
         openai: {
           logo: 'OA',
-          logoClass: 'bg-brand-accent/20 text-brand-accent border-brand-accent/40',
+          logoClass: 'bg-accent/20 text-accent border-accent/40',
           apiKeyUrl: 'https://platform.openai.com/api-keys',
         },
         glm: {
@@ -15653,7 +15593,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const aiInputMonoClass = CONSOLE_INPUT_MONO_CLASS;
   const aiSelectWrapClass = 'relative w-full';
   const aiUploadFilenameClass =
-    'flex-1 h-10 rounded-xl border border-brand-border bg-brand-bg px-3 text-sm text-brand-text-muted flex items-center truncate';
+    'flex-1 h-10 rounded-xl border border-base-300 bg-base-100 px-3 text-sm text-content-muted flex items-center truncate';
 
   const clearSopUploadSelection = useCallback(() => {
     setSopUploadFile(null);
@@ -16563,7 +16503,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const providerConfigLabel = providerPresetMap[providerConfigProviderId]?.label || providerConfigProviderId || 'AI';
   const providerConfigMeta = providerUiMetaMap[providerConfigProviderId] || {
     logo: 'AI',
-    logoClass: 'bg-brand-bg text-brand-text border-brand-border',
+    logoClass: 'bg-base-100 text-base-content border-base-300',
     apiKeyUrl: '',
   };
   const providerConfigApiKeyConfigured = providerConfigProfileId
@@ -16587,11 +16527,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
   const usageTopErrorReasonText = usageStats?.top_error_reasons?.map((item) => `${item.reason} (${item.count})`).join('；') || '';
 
   return (
-    <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
+    <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-5">
       <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
         <div>
           <div className="text-sm font-bold tracking-wide">AI管理</div>
-          <div className="text-xs text-brand-text-muted mt-1">
+          <div className="text-xs text-content-muted mt-1">
             统一管理 AI 提供方、默认模型选择、对话参数与 SOP。每家 AI 独立配置，运行期每次仅使用一个默认模型。
           </div>
         </div>
@@ -16599,7 +16539,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void loadAiConfig()}
-            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
             disabled={isActionBusy}
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -16608,7 +16548,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void runAiConnectivityTest()}
-            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
             disabled={isActionBusy}
           >
             <Play className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
@@ -16617,7 +16557,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={toggleSensitiveDisplay}
-            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
             disabled={isActionBusy}
           >
             <Eye className="w-4 h-4" />
@@ -16636,7 +16576,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       </div>
 
       {error ? (
-        <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+        <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
           {error}
         </div>
       ) : null}
@@ -16647,12 +16587,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-        <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
-          <span className="text-brand-text-muted">配置文件:</span>
+        <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+          <span className="text-content-muted">配置文件:</span>
           <span className="font-mono ml-2">{configPath || '-'}</span>
         </div>
-        <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
-          <span className="text-brand-text-muted">最近更新时间:</span>
+        <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+          <span className="text-content-muted">最近更新时间:</span>
           <span className="font-mono ml-2">{updatedAt || '-'}</span>
         </div>
       </div>
@@ -16661,15 +16601,15 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         提示：AI 去噪分析支持按模块独立开关与 SOP 绑定。详情页仅展示扫描阶段已落库的分析结果，不会因点击详情而再次触发 AI 调用。
       </div>
 
-      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">AI提供方独立配置</div>
+          <div className="text-xs font-black tracking-wide text-base-content">AI提供方独立配置</div>
           <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
             <input
               type="checkbox"
               checked={form.enable}
               onChange={(event) => setForm((prev) => ({ ...prev, enable: event.target.checked }))}
-              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
             />
             <span className="font-medium">启用 AI 能力</span>
           </label>
@@ -16677,7 +16617,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-[260px_minmax(0,1fr)] gap-3 items-end">
           <div className="space-y-2">
-            <label htmlFor="ai-default-provider" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-default-provider" className="text-xs font-bold text-content-muted block">
               默认 AI
             </label>
             <div className={aiSelectWrapClass}>
@@ -16693,10 +16633,10 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
           </div>
-          <div className="text-[11px] text-brand-text-muted">
+          <div className="text-[11px] text-content-muted">
             每家 AI 单独配置。点击下方卡片可弹窗设置 `API Key / 分析模型 / API Base URL / 网络代理`。卡片右上角绿色标记表示该提供方已配置 Key。
           </div>
         </div>
@@ -16712,11 +16652,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             const isDefault = normalizeProviderId(form.provider) === providerId;
             const providerMeta = providerUiMetaMap[providerId] || {
               logo: 'AI',
-              logoClass: 'bg-brand-bg text-brand-text border-brand-border',
+              logoClass: 'bg-base-100 text-base-content border-base-300',
               apiKeyUrl: '',
             };
             return (
-              <div key={provider.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 space-y-3">
+              <div key={provider.id} className="rounded-xl border border-base-300 bg-base-100/35 p-3 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className={`h-10 w-10 rounded-xl border flex items-center justify-center text-[11px] font-black tracking-wide ${providerMeta.logoClass}`}>
@@ -16724,7 +16664,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                     </div>
                     <div className="min-w-0">
                       <div className="text-sm font-black truncate">{provider.label}</div>
-                      <div className="text-[11px] text-brand-text-muted truncate">
+                      <div className="text-[11px] text-content-muted truncate">
                         {isDefault ? '当前默认 AI' : '可设为默认 AI'}
                       </div>
                     </div>
@@ -16732,13 +16672,13 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] ${
                     configured
                       ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
-                      : 'text-brand-text-muted border-brand-border bg-brand-bg/60'
+                      : 'text-content-muted border-base-300 bg-base-100/60'
                   }`}>
                     {configured ? <CheckCircle2 className="w-3.5 h-3.5" /> : null}
                     {configured ? '已配置' : '未配置'}
                   </div>
                 </div>
-                <div className="text-[11px] text-brand-text-muted space-y-1">
+                <div className="text-[11px] text-content-muted space-y-1">
                   <div className="truncate">分析模型：{profile?.model || provider.default_model || '-'}</div>
                   <div className="truncate">思考模型：{profile?.reasoning_model || provider.default_reasoning_model || '-'}</div>
                   <div className="font-mono truncate">API Base URL：{profile?.base_url || provider.base_url || '-'}</div>
@@ -16747,14 +16687,14 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={() => setDefaultAiProvider(providerId)}
-                    className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                    className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition"
                   >
                     设为默认
                   </button>
                   <button
                     type="button"
                     onClick={() => openProviderConfigDialog(providerId)}
-                    className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                    className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition"
                   >
                     配置
                   </button>
@@ -16765,11 +16705,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
-        <div className="text-xs font-black tracking-wide text-brand-text">AI对话高级参数（可选）</div>
+      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+        <div className="text-xs font-black tracking-wide text-base-content">AI对话高级参数（可选）</div>
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
           <div className="space-y-2">
-            <label htmlFor="ai-timeout" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-timeout" className="text-xs font-bold text-content-muted block">
               超时时间（秒）
             </label>
             <input
@@ -16787,7 +16727,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="ai-temperature" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-temperature" className="text-xs font-bold text-content-muted block">
               温度（Temperature）
             </label>
             <input
@@ -16806,7 +16746,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="ai-max-tokens" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-max-tokens" className="text-xs font-bold text-content-muted block">
               最大 Tokens
             </label>
             <input
@@ -16824,7 +16764,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="ai-request-delay" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-request-delay" className="text-xs font-bold text-content-muted block">
               请求延迟（毫秒）
             </label>
             <input
@@ -16840,7 +16780,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="ai-dialog-language" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-dialog-language" className="text-xs font-bold text-content-muted block">
               输出语言
             </label>
             <div className={aiSelectWrapClass}>
@@ -16853,11 +16793,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 <option value="zh-CN">中文</option>
                 <option value="en-US">英文</option>
               </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
           </div>
           <div className="space-y-2">
-            <label htmlFor="ai-dialog-context" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-dialog-context" className="text-xs font-bold text-content-muted block">
               上下文消息数
             </label>
             <input
@@ -16872,7 +16812,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="ai-wih-endpoint-max-targets" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-wih-endpoint-max-targets" className="text-xs font-bold text-content-muted block">
               WIH接口AI填充上限
             </label>
             <input
@@ -16890,19 +16830,19 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               className={aiInputClass}
               placeholder="默认 0"
             />
-            <div className="text-[11px] text-brand-text-muted">
+            <div className="text-[11px] text-content-muted">
               单次任务里允许进入 AI 填充的 `WIH` 接口数量上限，`0` 表示不限制。
             </div>
           </div>
           <div className="space-y-2 xl:col-span-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-brand-text-muted block">
+              <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-content-muted block">
                 更多可选参数（默认可不填）
               </label>
               <button
                 type="button"
                 onClick={() => setDialogSystemPromptOpen((prev) => !prev)}
-                className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition"
+                className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition"
               >
                 {dialogSystemPromptOpen ? '收起可选参数' : '展开可选参数'}
               </button>
@@ -16911,7 +16851,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               <div className="space-y-3">
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <label htmlFor="ai-dialog-style" className="text-xs font-bold text-brand-text-muted block">
+                    <label htmlFor="ai-dialog-style" className="text-xs font-bold text-content-muted block">
                       回复风格
                     </label>
                     <input
@@ -16924,7 +16864,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-brand-text-muted block">
+                  <label htmlFor="ai-dialog-system-prompt" className="text-xs font-bold text-content-muted block">
                     系统提示词
                   </label>
                   <textarea
@@ -16937,22 +16877,22 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 </div>
               </div>
             ) : (
-              <div className="text-[11px] text-brand-text-muted">默认使用“专业”回复风格，只有需要细调时再展开设置。</div>
+              <div className="text-[11px] text-content-muted">默认使用“专业”回复风格，只有需要细调时再展开设置。</div>
             )}
           </div>
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">AI功能开关配置</div>
+          <div className="text-xs font-black tracking-wide text-base-content">AI功能开关配置</div>
           <div className="flex flex-wrap items-center gap-2">
             <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
               <input
                 type="checkbox"
                 checked={form.ai_denoise_enable}
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_denoise_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
               />
               <span className="text-xs font-semibold">启用AI去噪</span>
             </label>
@@ -16961,27 +16901,27 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 type="checkbox"
                 checked={form.ai_wih_endpoint_fill_enable}
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_wih_endpoint_fill_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
               />
               <span className="text-xs font-semibold">启用WIH接口AI填充</span>
             </label>
           </div>
         </div>
-        <div className="text-xs text-brand-text-muted">
+        <div className="text-xs text-content-muted">
           WIH接口AI填充会优先根据请求报文、参数名和请求体形态补齐低副作用测试值，再把测试摘要交给后续 AI 去噪使用。AI去噪支持站点、目录扫描、SSL证书、URL信息、WIH接口、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
         </div>
-        <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center">
+        <div className="rounded-xl border border-base-300 bg-base-100/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center">
           <div className="text-sm font-semibold">WIH接口AI填充</div>
           <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
             <input
               type="checkbox"
               checked={Boolean(form.ai_wih_endpoint_fill_enable)}
               onChange={(event) => setForm((prev) => ({ ...prev, ai_wih_endpoint_fill_enable: event.target.checked }))}
-              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
             />
             <span className="text-xs font-semibold">{form.ai_wih_endpoint_fill_enable ? '已开启' : '已关闭'}</span>
           </label>
-          <div className="text-xs text-brand-text-muted break-all">
+          <div className="text-xs text-content-muted break-all">
             <div>
               SOP：{sopTemplateMap.wih_endpoint_fill?.name || '-'}{sopTemplateMap.wih_endpoint_fill?.scene ? ` (${sopTemplateMap.wih_endpoint_fill?.scene})` : ''}
             </div>
@@ -16995,7 +16935,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             return (
               <div
                 key={moduleConfig.id}
-                className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center"
+                className="rounded-xl border border-base-300 bg-base-100/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center"
               >
                 <div className="text-sm font-semibold">{moduleConfig.label}</div>
                 <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
@@ -17003,12 +16943,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                     type="checkbox"
                     checked={moduleEnabled}
                     onChange={(event) => updateAiDenoiseModuleEnabled(moduleConfig.id, event.target.checked)}
-                    className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
                     disabled={!form.ai_denoise_enable}
                   />
                   <span className="text-xs font-semibold">{moduleEnabled ? '已开启' : '已关闭'}</span>
                 </label>
-                <div className="text-xs text-brand-text-muted break-all">
+                <div className="text-xs text-content-muted break-all">
                   <div>
                     SOP：{sopTemplate?.name || '-'}{sopTemplate?.scene ? ` (${sopTemplate.scene})` : ''}
                   </div>
@@ -17020,16 +16960,16 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">SOP管理</div>
+          <div className="text-xs font-black tracking-wide text-base-content">SOP管理</div>
         </div>
-        <div className="text-xs text-brand-text-muted">
+        <div className="text-xs text-content-muted">
           提示词管理已改为 SOP 管理。仅支持上传 `.yaml/.yml` SOP 文件，不支持页面内在线编辑。内置模块包括：站点、目录扫描、SSL证书、URL信息、WIH接口AI填充、WIH接口价值去噪、风险、PoC风险。
         </div>
         <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)_auto] gap-3 items-end">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">目标模块</label>
+            <label className="text-xs font-bold text-content-muted block">目标模块</label>
             <div className="relative">
               <select
                 value={sopUploadModuleId}
@@ -17043,11 +16983,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
           </div>
           <div className="space-y-2">
-            <label htmlFor="ai-sop-upload-input" className="text-xs font-bold text-brand-text-muted block">
+            <label htmlFor="ai-sop-upload-input" className="text-xs font-bold text-content-muted block">
               选择SOP文件（.yaml/.yml）
             </label>
             <input
@@ -17066,7 +17006,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => sopUploadInputRef.current?.click()}
-                className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition flex items-center justify-center disabled:opacity-60"
+                className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center disabled:opacity-60"
                 disabled={sopUploading}
               >
                 选择文件
@@ -17075,7 +17015,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={clearSopUploadSelection}
-                className="px-3 py-2 h-10 rounded-xl border border-brand-border text-xs font-semibold whitespace-nowrap hover:bg-brand-bg/70 transition disabled:opacity-60"
+                className="px-3 py-2 h-10 rounded-xl border border-base-300 text-xs font-semibold whitespace-nowrap hover:bg-base-100/70 transition disabled:opacity-60"
                 disabled={sopUploading || !sopUploadFile}
               >
                 清空
@@ -17085,7 +17025,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void uploadAiSop()}
-            className="px-4 py-2 h-10 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-60 flex items-center gap-2"
             disabled={sopUploading}
           >
             <Upload className={`w-4 h-4 ${sopUploading ? 'animate-pulse' : ''}`} />
@@ -17097,23 +17037,23 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           {aiSopModuleConfigs.map((moduleConfig) => {
             const template = sopTemplateMap[moduleConfig.id];
             return (
-              <div key={moduleConfig.id} className="rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+              <div key={moduleConfig.id} className="rounded-xl border border-base-300 bg-base-100/35 p-3">
                 <div className="grid grid-cols-1 xl:grid-cols-[140px_220px_1fr_160px] gap-3 text-xs">
                   <div>
-                    <div className="text-brand-text-muted">模块</div>
-                    <div className="text-sm font-semibold text-brand-text">{moduleConfig.label}</div>
+                    <div className="text-content-muted">模块</div>
+                    <div className="text-sm font-semibold text-base-content">{moduleConfig.label}</div>
                   </div>
                   <div>
-                    <div className="text-brand-text-muted">SOP模板</div>
-                    <div className="text-brand-text">{template?.name || '-'}</div>
-                    <div className="text-brand-text-muted">{template?.scene || moduleConfig.scene}</div>
+                    <div className="text-content-muted">SOP模板</div>
+                    <div className="text-base-content">{template?.name || '-'}</div>
+                    <div className="text-content-muted">{template?.scene || moduleConfig.scene}</div>
                   </div>
                   <div className="min-w-0">
-                    <div className="text-brand-text-muted">文件</div>
+                    <div className="text-content-muted">文件</div>
                     <div className="font-mono break-all">{template?.file || '-'}</div>
                   </div>
                   <div>
-                    <div className="text-brand-text-muted">更新时间</div>
+                    <div className="text-content-muted">更新时间</div>
                     <div className="font-mono">{template?.updated_at || '-'}</div>
                   </div>
                 </div>
@@ -17123,9 +17063,9 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-brand-border/80 bg-brand-bg/25 p-4">
+      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-black tracking-wide text-brand-text">Token用量统计与AI对话日志</div>
+          <div className="text-xs font-black tracking-wide text-base-content">Token用量统计与AI对话日志</div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[120px]">
               <select
@@ -17139,7 +17079,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 <option value="error">失败</option>
                 <option value="skipped">跳过</option>
               </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
             <div className="relative min-w-[180px]">
               <select
@@ -17155,7 +17095,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
             <div className="relative min-w-[120px]">
               <select
@@ -17168,12 +17108,12 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 <option value="20">最近20条</option>
                 <option value="40">最近40条</option>
               </select>
-              <ChevronDown className="w-4 h-4 text-brand-text-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+              <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
             <button
               type="button"
               onClick={() => void loadAiUsageDashboard()}
-              className="px-3 py-1.5 rounded-lg border border-brand-border text-xs font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
               disabled={usageLoading}
             >
               <RefreshCw className={`w-4 h-4 ${usageLoading ? 'animate-spin' : ''}`} />
@@ -17184,67 +17124,67 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
         {usageStats ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
-              <div className="text-xs text-brand-text-muted">累计总量</div>
+            <div className="rounded-xl border border-base-300 bg-base-100/40 p-3 space-y-1">
+              <div className="text-xs text-content-muted">累计总量</div>
               <div className="text-sm font-black">Total {usageStats.all_time.total_tokens}</div>
-              <div className="text-[11px] text-brand-text-muted">
+              <div className="text-[11px] text-content-muted">
                 Prompt {usageStats.all_time.prompt_tokens} / Completion {usageStats.all_time.completion_tokens}
               </div>
-              <div className="text-[11px] text-brand-text-muted">
+              <div className="text-[11px] text-content-muted">
                 请求 {usageStats.all_time.request_count} | 成功 {usageStats.all_time.success_count} | 失败 {usageStats.all_time.error_count}
               </div>
             </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
-              <div className="text-xs text-brand-text-muted">总体成功率</div>
+            <div className="rounded-xl border border-base-300 bg-base-100/40 p-3 space-y-1">
+              <div className="text-xs text-content-muted">总体成功率</div>
               <div className="text-sm font-black">{usageSuccessRate}%</div>
-              <div className="text-[11px] text-brand-text-muted">
+              <div className="text-[11px] text-content-muted">
                 成功 {usageSuccessCount} / 请求 {usageRequestCount}
               </div>
-              <div className="text-[11px] text-brand-text-muted">
+              <div className="text-[11px] text-content-muted">
                 失败 {usageErrorCount} | 跳过 {usageSkipCount}
               </div>
             </div>
-            <div className="rounded-xl border border-brand-border bg-brand-bg/40 p-3 space-y-1">
-              <div className="text-xs text-brand-text-muted">平均响应耗时</div>
+            <div className="rounded-xl border border-base-300 bg-base-100/40 p-3 space-y-1">
+              <div className="text-xs text-content-muted">平均响应耗时</div>
               <div className="text-sm font-black">{usageAvgElapsedMs} ms</div>
-              <div className="text-[11px] text-brand-text-muted">
+              <div className="text-[11px] text-content-muted">
                 统计样本：{usageAvgElapsedSampleCount}
               </div>
-              <div className="text-[11px] text-brand-text-muted">
+              <div className="text-[11px] text-content-muted">
                 单次平均Token：{usageAvgTokens}
               </div>
             </div>
           </div>
         ) : (
-          <div className="text-xs text-brand-text-muted">暂无 Token 统计数据。</div>
+          <div className="text-xs text-content-muted">暂无 Token 统计数据。</div>
         )}
 
         {usageTopModelListText ? (
-          <div className="text-[11px] text-brand-text-muted">
+          <div className="text-[11px] text-content-muted">
             最近{usageStats?.window_days || 7}天高频模型Top5：{usageTopModelListText}
           </div>
         ) : null}
 
         {usageTopSceneListText ? (
-          <div className="text-[11px] text-brand-text-muted">
+          <div className="text-[11px] text-content-muted">
             最近{usageStats?.window_days || 7}天高消耗场景Top5：{usageTopSceneListText}
           </div>
         ) : null}
 
         {usageTopErrorReasonText ? (
-          <div className="text-[11px] text-brand-text-muted">
+          <div className="text-[11px] text-content-muted">
             最近{usageStats?.window_days || 7}天失败原因Top3：{usageTopErrorReasonText}
           </div>
         ) : null}
 
-        <div className="rounded-xl border border-brand-border bg-brand-bg/35 overflow-hidden">
-          <div className="px-3 py-2 text-xs text-brand-text-muted border-b border-brand-border flex items-center justify-between gap-2">
+        <div className="rounded-xl border border-base-300 bg-base-100/35 overflow-hidden">
+          <div className="px-3 py-2 text-xs text-content-muted border-b border-base-300 flex items-center justify-between gap-2">
             <span>最近对话日志（显示最新 {usageLogs.length} / 总计 {usageLogsTotal}）</span>
             <span>{usageLogsUpdatedAt ? `更新时间：${usageLogsUpdatedAt}` : ''}</span>
           </div>
           <div className="overflow-x-auto custom-scrollbar">
             <table className="min-w-full text-xs">
-              <thead className="bg-brand-bg/60">
+              <thead className="bg-base-100/60">
                 <tr>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">时间</th>
                   <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">场景</th>
@@ -17259,7 +17199,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               <tbody>
                 {usageLogs.length > 0 ? (
                   usageLogs.map((item) => (
-                    <tr key={item.id || `${item.created_at}-${item.scene}-${item.model}`} className="border-t border-brand-border/60 align-top">
+                    <tr key={item.id || `${item.created_at}-${item.scene}-${item.model}`} className="border-t border-base-300/60 align-top">
                       <td className="px-3 py-2 whitespace-nowrap">{item.created_at || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{item.scene_label || item.scene || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
@@ -17269,7 +17209,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                               ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
                               : item.status === 'skipped'
                                 ? 'text-amber-300 border-amber-300/40 bg-amber-300/10'
-                                : 'text-brand-danger border-brand-danger/40 bg-brand-danger/10'
+                                : 'text-error border-error/40 bg-error/10'
                           }`}
                         >
                           {item.status === 'ok' ? '成功' : item.status === 'skipped' ? '跳过' : '失败'}
@@ -17277,11 +17217,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <div>{item.provider || '-'}</div>
-                        <div className="text-[11px] text-brand-text-muted">{item.model || '-'}</div>
+                        <div className="text-[11px] text-content-muted">{item.model || '-'}</div>
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <div>Total {item.total_tokens}</div>
-                        <div className="text-[11px] text-brand-text-muted">
+                        <div className="text-[11px] text-content-muted">
                           P {item.prompt_tokens} / C {item.completion_tokens}
                         </div>
                       </td>
@@ -17295,7 +17235,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                         <button
                           type="button"
                           onClick={() => setUsageLogDetail(item)}
-                          className="px-2 py-1 rounded-lg border border-brand-border text-[11px] font-semibold hover:bg-brand-bg/70 transition"
+                          className="px-2 py-1 rounded-lg border border-base-300 text-[11px] font-semibold hover:bg-base-100/70 transition"
                         >
                           查看详情
                         </button>
@@ -17303,8 +17243,8 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                     </tr>
                   ))
                 ) : (
-                  <tr className="border-t border-brand-border/60">
-                    <td colSpan={8} className="px-3 py-4 text-center text-brand-text-muted">
+                  <tr className="border-t border-base-300/60">
+                    <td colSpan={8} className="px-3 py-4 text-center text-content-muted">
                       暂无日志记录
                     </td>
                   </tr>
@@ -17314,24 +17254,15 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </div>
         </div>
         {usageError ? (
-          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+          <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
             {usageError}
           </div>
         ) : null}
       </div>
 
       {providerConfigDialogOpen ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) closeProviderConfigDialog();
-          }}
-        >
-          <div
-            className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+        <Modal open onClose={closeProviderConfigDialog} boxClass="w-full max-w-2xl!">
+            <div className="px-5 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <div className={`h-8 w-8 rounded-lg border flex items-center justify-center text-[10px] font-black tracking-wide ${providerConfigMeta.logoClass}`}>
                   {providerConfigMeta.logo}
@@ -17341,7 +17272,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={closeProviderConfigDialog}
-                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
+                className="p-1.5 rounded-lg border border-base-300 hover:bg-base-100/70 transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -17349,7 +17280,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
 
             <div className="p-5 space-y-3">
               <div className="space-y-2">
-                <label htmlFor="provider-config-api-key" className="text-xs font-bold text-brand-text-muted block">
+                <label htmlFor="provider-config-api-key" className="text-xs font-bold text-content-muted block">
                   API Key
                 </label>
                 <input
@@ -17373,7 +17304,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                     href={providerConfigMeta.apiKeyUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs text-brand-accent hover:underline inline-flex items-center gap-1"
+                    className="text-xs text-accent hover:underline inline-flex items-center gap-1"
                   >
                     从{providerConfigLabel}获取 API Key
                   </a>
@@ -17381,7 +17312,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="provider-config-model" className="text-xs font-bold text-brand-text-muted block">
+                <label htmlFor="provider-config-model" className="text-xs font-bold text-content-muted block">
                   分析模型
                 </label>
                 <input
@@ -17394,7 +17325,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="provider-config-reasoning-model" className="text-xs font-bold text-brand-text-muted block">
+                <label htmlFor="provider-config-reasoning-model" className="text-xs font-bold text-content-muted block">
                   思考模型
                 </label>
                 <input
@@ -17407,7 +17338,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="provider-config-base-url" className="text-xs font-bold text-brand-text-muted block">
+                <label htmlFor="provider-config-base-url" className="text-xs font-bold text-content-muted block">
                   API Base URL
                 </label>
                 <input
@@ -17420,7 +17351,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="provider-config-proxy" className="text-xs font-bold text-brand-text-muted block">
+                <label htmlFor="provider-config-proxy" className="text-xs font-bold text-content-muted block">
                   网络代理
                 </label>
                 <input
@@ -17433,11 +17364,11 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/25">
               <button
                 type="button"
                 onClick={closeProviderConfigDialog}
-                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
               >
                 取消
               </button>
@@ -17449,27 +17380,17 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 保存
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {compatDialogOpen ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setCompatDialogOpen(false);
-          }}
-        >
-          <div
-            className="w-full max-w-2xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+        <Modal open onClose={() => setCompatDialogOpen(false)} boxClass="w-full max-w-2xl!">
+            <div className="px-5 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="text-sm font-black tracking-wide">添加 OpenAI 兼容接口</div>
               <button
                 type="button"
                 onClick={() => setCompatDialogOpen(false)}
-                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
+                className="p-1.5 rounded-lg border border-base-300 hover:bg-base-100/70 transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -17495,15 +17416,15 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                   placeholder="默认模型（可选）"
                 />
               </div>
-              <div className="text-xs text-brand-text-muted">
+              <div className="text-xs text-content-muted">
                 保存配置后，该接口会出现在「模型提供方 = OpenAI 兼容接口」的可套用列表中。
               </div>
             </div>
-            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/25">
               <button
                 type="button"
                 onClick={() => setCompatDialogOpen(false)}
-                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
               >
                 取消
               </button>
@@ -17518,65 +17439,53 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 确认添加
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {showRestartModal ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-brand-border flex items-center gap-3">
+        <Modal open onClose={() => setShowRestartModal(false)} boxClass="w-full max-w-md!">
+            <div className="px-6 py-4 border-b border-base-300 flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-400" />
               <h4 className="text-lg font-black tracking-wide">需要重启容器</h4>
             </div>
             <div className="px-6 py-5 space-y-4">
               <p className="text-sm font-semibold">AI 配置保存成功！</p>
-              <p className="text-sm text-brand-text-muted leading-relaxed">
+              <p className="text-sm text-content-muted leading-relaxed">
                 当前运行环境未完成热加载，请在服务器执行重启命令使配置生效：
               </p>
-              <div className="bg-brand-bg/50 border border-brand-border rounded-lg p-3">
-                <code className="text-xs text-brand-accent font-mono block select-all">
+              <div className="bg-base-100/50 border border-base-300 rounded-lg p-3">
+                <code className="text-xs text-accent font-mono block select-all">
                   docker-compose restart
                 </code>
               </div>
-              <p className="text-xs text-brand-text-muted">(或使用 ./restart.sh 脚本)</p>
+              <p className="text-xs text-content-muted">(或使用 ./restart.sh 脚本)</p>
             </div>
-            <div className="px-6 py-4 border-t border-brand-border flex justify-end bg-brand-bg/30">
+            <div className="px-6 py-4 border-t border-base-300 flex justify-end bg-base-100/30">
               <button
                 type="button"
                 onClick={() => setShowRestartModal(false)}
-                className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-brand-accent/20"
+                className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-accent/20"
               >
                 我知道了
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {usageLogDetail ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setUsageLogDetail(null);
-          }}
-        >
-          <div
-            className="w-full max-w-4xl max-h-[92vh] bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+        <Modal open onClose={() => setUsageLogDetail(null)} boxClass="w-full max-w-4xl!">
+            <div className="px-5 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="text-sm font-black tracking-wide min-w-0 break-all">AI对话日志详情</div>
               <button
                 type="button"
                 onClick={() => setUsageLogDetail(null)}
-                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition shrink-0"
+                className="p-1.5 rounded-lg border border-base-300 hover:bg-base-100/70 transition shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="p-5 space-y-3 overflow-y-auto min-h-0">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-brand-text-muted">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-content-muted">
                 <div className="break-all">时间：{usageLogDetail.created_at || '-'}</div>
                 <div className="break-all">场景：{usageLogDetail.scene_label || usageLogDetail.scene || '-'}</div>
                 <div className="break-all">状态：{usageLogDetail.status === 'ok' ? '成功' : usageLogDetail.status === 'skipped' ? '跳过' : '失败'}</div>
@@ -17584,47 +17493,37 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                 <div className="break-all">配置：{usageLogDetail.profile || '-'}</div>
                 <div className="break-all">Tokens：Total {usageLogDetail.total_tokens}（P {usageLogDetail.prompt_tokens} / C {usageLogDetail.completion_tokens}）</div>
               </div>
-              <div className="space-y-2 rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+              <div className="space-y-2 rounded-xl border border-base-300 bg-base-100/35 p-3">
                 <div className="text-xs font-semibold">用户输入</div>
-                <pre className="max-h-[220px] overflow-auto text-xs rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2 whitespace-pre-wrap break-all">
+                <pre className="max-h-[220px] overflow-auto text-xs rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
                   {usageLogDetail.request_text || '-'}
                 </pre>
                 <div className="text-xs font-semibold pt-1">AI回复</div>
-                <pre className="max-h-[260px] overflow-auto text-xs rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2 whitespace-pre-wrap break-all">
+                <pre className="max-h-[260px] overflow-auto text-xs rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
                   {usageLogDetail.reply_text || usageLogDetail.error_message || '-'}
                 </pre>
               </div>
             </div>
-            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/25">
               <button
                 type="button"
                 onClick={() => setUsageLogDetail(null)}
-                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
               >
                 关闭
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {aiTestDialogOpen && testResult ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setAiTestDialogOpen(false);
-          }}
-        >
-          <div
-            className="w-full max-w-2xl max-h-[92vh] bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between gap-3">
+        <Modal open onClose={() => setAiTestDialogOpen(false)} boxClass="w-full max-w-2xl!">
+            <div className="px-5 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="text-sm font-black tracking-wide">AI测试结果</div>
               <button
                 type="button"
                 onClick={() => setAiTestDialogOpen(false)}
-                className="p-1.5 rounded-lg border border-brand-border hover:bg-brand-bg/70 transition"
+                className="p-1.5 rounded-lg border border-base-300 hover:bg-base-100/70 transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -17636,47 +17535,46 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
                     ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
                     : testResult.message.includes('已跳过')
                       ? 'text-amber-300 bg-amber-300/10 border-amber-300/30'
-                      : 'text-brand-danger bg-brand-danger/10 border-brand-danger/30'
+                      : 'text-error bg-error/10 border-error/30'
                 }`}
               >
                 {testResult.message || '-'}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-brand-text-muted">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-content-muted">
                 <div>提供方：{testResult.provider || '-'}</div>
                 <div>模型：{testResult.model || '-'}</div>
                 <div>配置：{testResult.profile || '-'}</div>
                 <div>测试时间：{testResult.tested_at || '-'}</div>
               </div>
-              <div className="space-y-2 rounded-xl border border-brand-border bg-brand-bg/35 p-3">
+              <div className="space-y-2 rounded-xl border border-base-300 bg-base-100/35 p-3">
                 <div className="text-xs font-semibold">用户发送</div>
-                <div className="text-sm rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2 whitespace-pre-wrap break-all">
+                <div className="text-sm rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
                   {testResult.request_text || '你好呀～'}
                 </div>
                 <div className="text-xs font-semibold pt-1">AI回复</div>
-                <div className="text-sm rounded-lg border border-brand-border/70 bg-brand-bg px-3 py-2 whitespace-pre-wrap break-all min-h-[44px]">
+                <div className="text-sm rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all min-h-[44px]">
                   {testResult.reply_text || '-'}
                 </div>
               </div>
               {testResult.detail ? (
-                <details className="text-xs text-brand-text-muted">
+                <details className="text-xs text-content-muted">
                   <summary className="cursor-pointer select-none">调试详情</summary>
-                  <pre className="mt-2 max-h-[300px] overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] bg-brand-bg/45 border border-brand-border rounded-lg p-3">
+                  <pre className="mt-2 max-h-[300px] overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] bg-base-100/45 border border-base-300 rounded-lg p-3">
                     {testResult.detail}
                   </pre>
                 </details>
               ) : null}
             </div>
-            <div className="px-5 py-4 border-t border-brand-border flex justify-end gap-2 bg-brand-bg/25">
+            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/25">
               <button
                 type="button"
                 onClick={() => setAiTestDialogOpen(false)}
-                className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition"
+                className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
               >
                 关闭
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
       <SensitiveRevealVerifyModal
         open={sensitiveVerifyDialogOpen}
@@ -18056,13 +17954,13 @@ function DingtalkIntegrationView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <PageHeader title="钉钉集成" description="在浏览器中维护钉钉机器人与知识库配置，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），支持资产报告链接等参数统一管理。" />
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-4">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">配置状态</div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => void loadDingtalkConfig()}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2"
+              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
               disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -18071,7 +17969,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             <button
               type="button"
               onClick={toggleSensitiveDisplay}
-              className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
               disabled={saving || loading}
             >
               <Eye className="w-4 h-4" />
@@ -18089,7 +17987,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
         </div>
 
         {error ? (
-          <div className="text-xs text-brand-danger bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2">
+          <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
             {error}
           </div>
         ) : null}
@@ -18100,25 +17998,25 @@ function DingtalkIntegrationView({ token }: { token: string }) {
         ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
-            <span className="text-brand-text-muted">配置文件:</span>
+          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+            <span className="text-content-muted">配置文件:</span>
             <span className="font-mono ml-2">{configPath || '-'}</span>
           </div>
-          <div className="bg-brand-bg/60 border border-brand-border rounded-xl px-3 py-2">
-            <span className="text-brand-text-muted">最近更新时间:</span>
+          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+            <span className="text-content-muted">最近更新时间:</span>
             <span className="font-mono ml-2">{updatedAt || '-'}</span>
           </div>
         </div>
 
-        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+        <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
           提示：保存后 `web` 端调试会立即生效；扫描任务通知建议重启 `worker` 容器后完全生效。
         </div>
       </div>
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-5">
+      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-5">
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               钉钉机器人 Token
               <span className="ml-2 font-mono opacity-70">DINGDING.ACCESS_TOKEN</span>
             </label>
@@ -18134,14 +18032,14 @@ function DingtalkIntegrationView({ token }: { token: string }) {
                   placeholder={meta.placeholder}
             />
                   {meta.configuredHidden ? (
-                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                   ) : null}
                 </>
               );
             })()}
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               钉钉机器人 Secret
               <span className="ml-2 font-mono opacity-70">DINGDING.SECRET</span>
             </label>
@@ -18157,7 +18055,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
                   placeholder={meta.placeholder}
             />
                   {meta.configuredHidden ? (
-                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                   ) : null}
                 </>
               );
@@ -18171,7 +18069,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               type="checkbox"
               checked={form.kb_enable}
               onChange={(event) => updateBoolField('kb_enable', event.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
             />
             <span className="font-medium">启用知识库推送</span>
           </label>
@@ -18180,12 +18078,12 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               type="checkbox"
               checked={form.ssl_cert_notify_enable}
               onChange={(event) => updateBoolField('ssl_cert_notify_enable', event.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
+              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
             />
             <span className="font-medium">SSL证书过期通知</span>
           </label>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               SSL提醒天数
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.SSL_CERT_NOTIFY_DAYS</span>
             </label>
@@ -18198,7 +18096,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               API 超时时间(秒)
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.KB_TIMEOUT</span>
             </label>
@@ -18214,7 +18112,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               OpenAPI 地址
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.BASE_URL</span>
             </label>
@@ -18226,7 +18124,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               资产结果访问地址
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.REPORT_BASE_URL</span>
             </label>
@@ -18241,7 +18139,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               CorpID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.CORP_ID</span>
             </label>
@@ -18256,14 +18154,14 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className={CONSOLE_INPUT_MONO_CLASS}
             />
                   {meta.configuredHidden ? (
-                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                   ) : null}
                 </>
               );
             })()}
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               AppKey
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.APP_KEY</span>
             </label>
@@ -18278,14 +18176,14 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className={CONSOLE_INPUT_MONO_CLASS}
             />
                   {meta.configuredHidden ? (
-                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                   ) : null}
                 </>
               );
             })()}
           </div>
           <div className="space-y-2 xl:col-span-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               AppSecret
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.APP_SECRET</span>
             </label>
@@ -18300,7 +18198,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className={CONSOLE_INPUT_MONO_CLASS}
             />
                   {meta.configuredHidden ? (
-                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                   ) : null}
                 </>
               );
@@ -18310,7 +18208,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               操作者ID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.OPERATOR_ID</span>
             </label>
@@ -18325,14 +18223,14 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className={CONSOLE_INPUT_MONO_CLASS}
             />
                   {meta.configuredHidden ? (
-                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                   ) : null}
                 </>
               );
             })()}
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               工作空间ID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.WORKSPACE_ID</span>
             </label>
@@ -18347,14 +18245,14 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className={CONSOLE_INPUT_MONO_CLASS}
             />
                   {meta.configuredHidden ? (
-                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                   ) : null}
                 </>
               );
             })()}
           </div>
           <div className="space-y-2 xl:col-span-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               父节点ID
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.PARENT_NODE_ID</span>
             </label>
@@ -18369,7 +18267,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
               className={CONSOLE_INPUT_MONO_CLASS}
             />
                   {meta.configuredHidden ? (
-                    <div className="text-[11px] text-brand-text-muted">当前已配置，后端默认不回传明文。</div>
+                    <div className="text-[11px] text-content-muted">当前已配置，后端默认不回传明文。</div>
                   ) : null}
                 </>
               );
@@ -18379,7 +18277,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               创建文档接口路径
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.CREATE_NODE_PATH</span>
             </label>
@@ -18390,7 +18288,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-bold text-brand-text-muted block">
+            <label className="text-xs font-bold text-content-muted block">
               报告标题前缀
               <span className="ml-2 font-mono opacity-70">DINGTALK_API.TITLE_PREFIX</span>
             </label>
@@ -18403,11 +18301,11 @@ function DingtalkIntegrationView({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="bg-brand-card/35 border border-brand-border rounded-2xl p-5 space-y-4">
+      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => void runDingtalkTest()}
-            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-60 flex items-center gap-2"
             disabled={testing || loading}
           >
             <Play className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
@@ -18415,7 +18313,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </button>
           <button
             onClick={() => void loadWorkspaces()}
-            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-60 flex items-center gap-2"
             disabled={loadingWorkspaces || loading}
           >
             <Globe className={`w-4 h-4 ${loadingWorkspaces ? 'animate-spin' : ''}`} />
@@ -18423,7 +18321,7 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </button>
           <button
             onClick={() => void loadNodes()}
-            className="px-4 py-2 rounded-xl border border-brand-border text-sm font-semibold hover:bg-brand-bg/70 transition disabled:opacity-60 flex items-center gap-2"
+            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-60 flex items-center gap-2"
             disabled={loadingNodes || loading}
           >
             <Database className={`w-4 h-4 ${loadingNodes ? 'animate-spin' : ''}`} />
@@ -18431,13 +18329,13 @@ function DingtalkIntegrationView({ token }: { token: string }) {
           </button>
         </div>
 
-        <div className="text-xs text-brand-text-muted bg-brand-bg/50 border border-brand-border rounded-xl px-3 py-2">
+        <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
           运行状态：缺失基础字段 {Array.isArray(runtimeStatus?.missing_basic_fields) ? runtimeStatus.missing_basic_fields.join(', ') || '无' : '无'}；
           缺失发布字段 {Array.isArray(runtimeStatus?.missing_publish_fields) ? runtimeStatus.missing_publish_fields.join(', ') || '无' : '无'}
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-bold text-brand-text-muted block">调试输出</label>
+          <label className="text-xs font-bold text-content-muted block">调试输出</label>
           <textarea
             value={debugResult}
             readOnly
@@ -18743,7 +18641,7 @@ function MainShell() {
   }
 
   return (
-    <div className="h-screen flex bg-brand-bg text-brand-text overflow-hidden">
+    <div className="h-screen flex bg-base-100 text-base-content overflow-hidden">
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute inset-0 theme-atmosphere-layer" />
       </div>
@@ -18751,20 +18649,20 @@ function MainShell() {
       <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
 
       <main ref={mainScrollRef} className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
-        <div className="sticky top-0 z-20 px-6 py-4 backdrop-blur-xl bg-brand-bg/45 border-b border-brand-border/60 flex items-center justify-between gap-4">
-          <div className="text-xs text-brand-text-muted min-h-[20px]">{globalNotice || ' '}</div>
+        <div className="sticky top-0 z-20 px-6 py-4 backdrop-blur-xl bg-base-100/45 border-b border-base-300/60 flex items-center justify-between gap-4">
+          <div className="text-xs text-content-muted min-h-[20px]">{globalNotice || ' '}</div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-brand-text-muted px-3 py-1.5 border border-brand-border rounded-lg">{username}</span>
+            <span className="text-xs font-semibold text-content-muted px-3 py-1.5 border border-base-300 rounded-lg">{username}</span>
             <button
               onClick={() => setPasswdDialogOpen(true)}
-              className="p-2.5 rounded-xl border border-brand-border hover:bg-brand-bg/60"
+              className="p-2.5 rounded-xl border border-base-300 hover:bg-base-100/60"
               title="修改密码"
             >
               <Lock className="w-4 h-4" />
             </button>
             <button
               onClick={() => void doLogout()}
-              className="p-2.5 rounded-xl border border-brand-border hover:bg-brand-bg/60"
+              className="p-2.5 rounded-xl border border-base-300 hover:bg-base-100/60"
               title="退出"
             >
               <X className="w-4 h-4" />
@@ -18809,11 +18707,10 @@ function MainShell() {
       ) : null}
 
       {passwdDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-brand-card border border-brand-border rounded-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-brand-border flex items-center justify-between">
+        <Modal open onClose={() => setPasswdDialogOpen(false)} boxClass="w-full max-w-md!">
+            <div className="px-5 py-4 border-b border-base-300 flex items-center justify-between">
               <h4 className="font-black">修改密码</h4>
-              <button onClick={() => setPasswdDialogOpen(false)} className="p-2 hover:bg-brand-bg/60 rounded-xl">
+              <button onClick={() => setPasswdDialogOpen(false)} className="p-2 hover:bg-base-100/60 rounded-xl">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -18823,35 +18720,34 @@ function MainShell() {
                 placeholder="旧密码"
                 value={passwdForm.old_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, old_password: event.target.value }))}
-                className="w-full bg-brand-bg border border-brand-border rounded-xl px-3 py-2.5 text-sm"
+                className="w-full bg-base-100 border border-base-300 rounded-xl px-3 py-2.5 text-sm"
               />
               <input
                 type="password"
                 placeholder="新密码"
                 value={passwdForm.new_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, new_password: event.target.value }))}
-                className="w-full bg-brand-bg border border-brand-border rounded-xl px-3 py-2.5 text-sm"
+                className="w-full bg-base-100 border border-base-300 rounded-xl px-3 py-2.5 text-sm"
               />
               <input
                 type="password"
                 placeholder="确认新密码"
                 value={passwdForm.check_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, check_password: event.target.value }))}
-                className="w-full bg-brand-bg border border-brand-border rounded-xl px-3 py-2.5 text-sm"
+                className="w-full bg-base-100 border border-base-300 rounded-xl px-3 py-2.5 text-sm"
               />
 
-              {passwdError ? <div className="text-xs text-brand-danger">{passwdError}</div> : null}
+              {passwdError ? <div className="text-xs text-error">{passwdError}</div> : null}
 
               <button
                 onClick={() => void changePassword()}
                 disabled={passwdLoading}
-                className="w-full bg-brand-accent py-3 rounded-xl font-black text-sm shadow-lg shadow-brand-accent/20"
+                className="w-full bg-brand-accent py-3 rounded-xl font-black text-sm shadow-lg shadow-accent/20"
               >
                 {passwdLoading ? '提交中...' : '提交并重新登录'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </div>
   );

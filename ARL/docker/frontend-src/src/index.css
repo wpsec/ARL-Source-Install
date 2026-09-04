@@ -1,4 +1,215 @@
 @import "tailwindcss";
+@plugin "daisyui" {
+  themes: ;
+  logs: false;
+}
+
+/* daisyUI 主题注册（docs/04 token 映射）：全部取现有 --brand-* 变量，值唯一来源仍是
+   上方品牌变量块与 [data-theme] 切换，daisy 层不复制色值、氛围层 CSS 零改动。
+   primary=accent-strong（决策点1）；sandstone 为亮色主题，content 配对单独定。 */
+@plugin "daisyui/theme" {
+  name: "brand";
+  default: true;
+  prefersdark: false;
+  color-scheme: "dark";
+  --color-base-100: "var(--brand-bg)";
+  --color-base-200: "var(--brand-card)";
+  --color-base-300: "var(--brand-border)";
+  --color-base-content: "var(--brand-text)";
+  --color-primary: "var(--brand-accent-strong)";
+  --color-primary-content: "#ffffff";
+  --color-secondary: "var(--brand-secondary)";
+  --color-secondary-content: "var(--brand-bg)";
+  --color-accent: "var(--brand-accent)";
+  --color-accent-content: "var(--brand-bg)";
+  --color-neutral: "var(--brand-card)";
+  --color-neutral-content: "var(--brand-text)";
+  --color-info: "var(--brand-accent)";
+  --color-info-content: "var(--brand-bg)";
+  --color-success: "#34d399";
+  --color-success-content: "#06281e";
+  --color-warning: "var(--brand-warning)";
+  --color-warning-content: "#241a0e";
+  --color-error: "var(--brand-danger)";
+  --color-error-content: "#2b1214";
+  --radius-box: "1rem";
+  --radius-field: "0.75rem";
+  --radius-selector: "0.75rem";
+  --size-selector: "0.25rem";
+  --size-field: "0.25rem";
+  --border: "1px";
+  --depth: "0";
+  --noise: "0";
+}
+
+@plugin "daisyui/theme" {
+  name: "midnight";
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: "var(--brand-bg)";
+  --color-base-200: "var(--brand-card)";
+  --color-base-300: "var(--brand-border)";
+  --color-base-content: "var(--brand-text)";
+  --color-primary: "var(--brand-accent-strong)";
+  --color-primary-content: "var(--brand-accent-contrast)";
+  --color-secondary: "var(--brand-secondary)";
+  --color-secondary-content: "var(--brand-bg)";
+  --color-accent: "var(--brand-accent)";
+  --color-accent-content: "var(--brand-bg)";
+  --color-neutral: "var(--brand-card)";
+  --color-neutral-content: "var(--brand-text)";
+  --color-info: "var(--brand-accent)";
+  --color-info-content: "var(--brand-bg)";
+  --color-success: "#34d399";
+  --color-success-content: "#06281e";
+  --color-warning: "var(--brand-warning)";
+  --color-warning-content: "#241a0e";
+  --color-error: "var(--brand-danger)";
+  --color-error-content: "#2b1214";
+  --radius-box: "1rem";
+  --radius-field: "0.75rem";
+  --radius-selector: "0.75rem";
+  --size-selector: "0.25rem";
+  --size-field: "0.25rem";
+  --border: "1px";
+  --depth: "0";
+  --noise: "0";
+}
+
+@plugin "daisyui/theme" {
+  name: "slate";
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: "var(--brand-bg)";
+  --color-base-200: "var(--brand-card)";
+  --color-base-300: "var(--brand-border)";
+  --color-base-content: "var(--brand-text)";
+  --color-primary: "var(--brand-accent-strong)";
+  --color-primary-content: "var(--brand-accent-contrast)";
+  --color-secondary: "var(--brand-secondary)";
+  --color-secondary-content: "var(--brand-bg)";
+  --color-accent: "var(--brand-accent)";
+  --color-accent-content: "var(--brand-bg)";
+  --color-neutral: "var(--brand-card)";
+  --color-neutral-content: "var(--brand-text)";
+  --color-info: "var(--brand-accent)";
+  --color-info-content: "var(--brand-bg)";
+  --color-success: "#34d399";
+  --color-success-content: "#06281e";
+  --color-warning: "var(--brand-warning)";
+  --color-warning-content: "#241a0e";
+  --color-error: "var(--brand-danger)";
+  --color-error-content: "#2b1214";
+  --radius-box: "1rem";
+  --radius-field: "0.75rem";
+  --radius-selector: "0.75rem";
+  --size-selector: "0.25rem";
+  --size-field: "0.25rem";
+  --border: "1px";
+  --depth: "0";
+  --noise: "0";
+}
+
+@plugin "daisyui/theme" {
+  name: "nord";
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: "var(--brand-bg)";
+  --color-base-200: "var(--brand-card)";
+  --color-base-300: "var(--brand-border)";
+  --color-base-content: "var(--brand-text)";
+  --color-primary: "var(--brand-accent-strong)";
+  --color-primary-content: "var(--brand-accent-contrast)";
+  --color-secondary: "var(--brand-secondary)";
+  --color-secondary-content: "var(--brand-bg)";
+  --color-accent: "var(--brand-accent)";
+  --color-accent-content: "var(--brand-bg)";
+  --color-neutral: "var(--brand-card)";
+  --color-neutral-content: "var(--brand-text)";
+  --color-info: "var(--brand-accent)";
+  --color-info-content: "var(--brand-bg)";
+  --color-success: "#34d399";
+  --color-success-content: "#06281e";
+  --color-warning: "var(--brand-warning)";
+  --color-warning-content: "#241a0e";
+  --color-error: "var(--brand-danger)";
+  --color-error-content: "#2b1214";
+  --radius-box: "1rem";
+  --radius-field: "0.75rem";
+  --radius-selector: "0.75rem";
+  --size-selector: "0.25rem";
+  --size-field: "0.25rem";
+  --border: "1px";
+  --depth: "0";
+  --noise: "0";
+}
+
+@plugin "daisyui/theme" {
+  name: "titanium";
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: "var(--brand-bg)";
+  --color-base-200: "var(--brand-card)";
+  --color-base-300: "var(--brand-border)";
+  --color-base-content: "var(--brand-text)";
+  --color-primary: "var(--brand-accent-strong)";
+  --color-primary-content: "var(--brand-accent-contrast)";
+  --color-secondary: "var(--brand-secondary)";
+  --color-secondary-content: "var(--brand-bg)";
+  --color-accent: "var(--brand-accent)";
+  --color-accent-content: "var(--brand-bg)";
+  --color-neutral: "var(--brand-card)";
+  --color-neutral-content: "var(--brand-text)";
+  --color-info: "var(--brand-accent)";
+  --color-info-content: "var(--brand-bg)";
+  --color-success: "#34d399";
+  --color-success-content: "#06281e";
+  --color-warning: "var(--brand-warning)";
+  --color-warning-content: "#241a0e";
+  --color-error: "var(--brand-danger)";
+  --color-error-content: "#2b1214";
+  --radius-box: "1rem";
+  --radius-field: "0.75rem";
+  --radius-selector: "0.75rem";
+  --size-selector: "0.25rem";
+  --size-field: "0.25rem";
+  --border: "1px";
+  --depth: "0";
+  --noise: "0";
+}
+
+@plugin "daisyui/theme" {
+  name: "sandstone";
+  color-scheme: "light";
+  --color-base-100: "var(--brand-bg)";
+  --color-base-200: "var(--brand-card)";
+  --color-base-300: "var(--brand-border)";
+  --color-base-content: "var(--brand-text)";
+  --color-primary: "var(--brand-accent-strong)";
+  --color-primary-content: "#ffffff";
+  --color-secondary: "var(--brand-secondary)";
+  --color-secondary-content: "#ffffff";
+  --color-accent: "var(--brand-accent)";
+  --color-accent-content: "#ffffff";
+  --color-neutral: "#292524";
+  --color-neutral-content: "#f5f5f4";
+  --color-info: "var(--brand-accent)";
+  --color-info-content: "#ffffff";
+  --color-success: "#047857";
+  --color-success-content: "#ecfdf5";
+  --color-warning: "#92400e";
+  --color-warning-content: "#fffbeb";
+  --color-error: "#b91c1c";
+  --color-error-content: "#fef2f2";
+  --radius-box: "1rem";
+  --radius-field: "0.75rem";
+  --radius-selector: "0.75rem";
+  --size-selector: "0.25rem";
+  --size-field: "0.25rem";
+  --border: "1px";
+  --depth: "0";
+  --noise: "0";
+}
 
 :root {
   --brand-bg: #0f1722;
@@ -203,6 +414,7 @@
   --color-brand-danger: var(--brand-danger);
   --color-brand-text: var(--brand-text);
   --color-brand-text-muted: var(--brand-text-muted);
+  --color-content-muted: var(--brand-text-muted);
   --font-mono: "JetBrains Mono", "Roboto Mono", monospace;
 }
 
@@ -226,6 +438,21 @@
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: var(--brand-accent);
+  }
+
+  /* Modal 组件的 box 壳（components/ui/Modal.tsx）：覆盖 daisy modal-box 默认
+     padding/max-width/滚动，头部-滚动体-底部三段结构由内容自带（Phase0 的 72vh 白名单）。 */
+  .arl-modal-box {
+    width: 100%;
+    max-height: 92vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    background-color: var(--color-base-200);
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--radius-box);
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.45);
   }
 }
 
@@ -369,27 +596,27 @@
     transform: translateZ(0);
   }
 
-  html body .bg-brand-card\/30 {
+  html body .bg-base-200\/30, html body .bg-brand-card\/30 {
     background-color: rgba(var(--brand-card-rgb), var(--brand-card-surface-alpha)) !important;
   }
 
-  html body .bg-brand-card\/50 {
+  html body .bg-base-200\/50, html body .bg-brand-card\/50 {
     background-color: rgba(var(--brand-card-rgb), var(--brand-card-elevated-alpha)) !important;
   }
 
-  html body .bg-brand-card\/95 {
+  html body .bg-base-200\/95, html body .bg-brand-card\/95 {
     background-color: rgba(var(--brand-card-rgb), 0.92) !important;
   }
 
-  html body .bg-brand-bg\/45 {
+  html body .bg-base-100\/45, html body .bg-brand-bg\/45 {
     background-color: rgba(var(--brand-bg-rgb), var(--brand-shell-alpha)) !important;
   }
 
-  html body .bg-brand-bg\/50 {
+  html body .bg-base-100\/50, html body .bg-brand-bg\/50 {
     background-color: rgba(var(--brand-bg-rgb), calc(var(--brand-shell-alpha) + 0.04)) !important;
   }
 
-  html body .bg-brand-bg\/60 {
+  html body .bg-base-100\/60, html body .bg-brand-bg\/60 {
     background-color: rgba(var(--brand-bg-rgb), calc(var(--brand-shell-alpha) + 0.1)) !important;
   }
 
@@ -478,11 +705,11 @@
     background-color: #1c1917 !important;
   }
 
-  [data-theme='sandstone'] .text-brand-text-muted {
+  [data-theme='sandstone'] .text-brand-text-muted,\n  [data-theme='sandstone'] .text-content-muted {
     color: #57534e !important;
   }
 
-  [data-theme='sandstone'] .border-brand-border {
+  [data-theme='sandstone'] .border-brand-border,\n  [data-theme='sandstone'] .border-base-300 {
     border-color: #d6d3d1 !important;
   }
 
@@ -511,15 +738,15 @@
     color: #a8a29e !important;
   }
 
-  [data-theme='sandstone'] .bg-brand-bg {
+  [data-theme='sandstone'] .bg-brand-bg,\n  [data-theme='sandstone'] .bg-base-100 {
     background-color: #f5f5f4 !important;
   }
 
-  [data-theme='sandstone'] .bg-brand-bg\/50 {
+  [data-theme='sandstone'] .bg-base-100\/50, [data-theme='sandstone'] .bg-brand-bg\/50 {
     background-color: rgba(245, 245, 244, 0.8) !important;
   }
 
-  [data-theme='sandstone'] .bg-brand-card\/30 {
+  [data-theme='sandstone'] .bg-base-200\/30, [data-theme='sandstone'] .bg-brand-card\/30 {
     background-color: rgba(255, 255, 255, 0.6) !important;
   }
 
