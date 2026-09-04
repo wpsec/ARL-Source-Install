@@ -27,7 +27,13 @@ ARL = ROOT / "ARL"
 def bootstrap():
     # 容器内真实链：直接 import app.*（xing/真实 Mongo 齐备），不 fake 任何模块
     if os.environ.get("FINGERPRINT_REAL_DB") == "1":
-        sys.path.insert(0, str(ARL))
+        # 容器工作布局 /code（arl_web 镜像根），本地开发布局 ARL/；取存在 app/ 的那个
+        for cand in ("/code", str(ARL)):
+            if (Path(cand) / "app" / "__init__.py").exists():
+                sys.path.insert(0, cand)
+                break
+        else:
+            sys.path.insert(0, str(ARL))
         import app.services.fingerprint_cache as cache
         import app.services.site_fingerprint_registry as registry
         from app.config import Config as _C
