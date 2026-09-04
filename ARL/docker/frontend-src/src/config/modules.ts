@@ -63,6 +63,16 @@ export const AI_WIH_ENDPOINT_ANALYSIS_SEARCH_OPTIONS: Array<{ label: string; val
   { label: '无价值', value: 'no_value' },
 ];
 
+// 状态实时性要求高的模块（运行中/排队中语义）：列表缓存 staleTime 恒为 0，
+// 其余模块 30s 内复用缓存（docs/04 数据层规则：运行中短、已完结长）。
+export const LIVE_STATUS_MODULE_IDS = new Set([
+  'task',
+  'task_schedule',
+  'scheduler',
+  'github_task',
+  'github_scheduler',
+]);
+
 export const AI_DENOISE_MODULE_IDS = ['site', 'fileleak', 'cert', 'url', 'wih_endpoint', 'vuln', 'nuclei_result'] as const;
 
 export const AI_DENOISE_MODULE_LABEL_MAP: Record<AiDenoiseModuleId, string> = {

@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -41,6 +42,7 @@ import {
   isAiDenoiseModule,
   isDeleteAction,
   isHyperlinkEnabledColumn,
+  LIVE_STATUS_MODULE_IDS,
 } from '../config/modules';
 import { formatModuleCellValue } from '../domain/cells';
 import { buildCidrPrefix } from '../domain/finger';
@@ -187,6 +189,7 @@ export function TableModuleView({
   const tableRootRef = useRef<HTMLDivElement | null>(null);
   const keepBottomAfterSizeChangeRef = useRef(false);
   const pendingRestoreScrollTopRef = useRef<number | null>(null);
+  const queryClient = useQueryClient();
   const moduleListStateCacheRef = useRef<Record<string, ModuleListCacheEntry>>({});
   const moduleListLoadedRef = useRef<Record<string, boolean>>({});
   const latestLoadRowsRequestIdRef = useRef(0);
@@ -983,7 +986,14 @@ export function TableModuleView({
         query._refresh = '1';
       }
 
-      const response = await requestApi(token, module.listPath, { method: 'GET', query });
+      // react-query 只作读侧去重与短期缓存（docs/04 数据层规则）：
+      // key 含 [token, 模块, page, size, order, 全量筛选签名]；forceRefresh/状态类模块 staleTime=0。
+      const listQueryKey = ['module-list', token, module.id, nextPage, nextSize, orderValue, buildFilterSignature(filters)];
+      const normalized = await queryClient.fetchQuery({
+        queryKey: listQueryKey,
+        staleTime: loadOptions.forceRefresh || LIVE_STATUS_MODULE_IDS.has(module.id) ? 0 : 30_000,
+        queryFn: async () => normalizeListData(await requestApi(token, module.listPath, { method: 'GET', query })),
+      });
       if (
         requestId !== latestLoadRowsRequestIdRef.current
         || requestModuleCacheKey !== activeModuleCacheKeyRef.current
@@ -991,7 +1001,6 @@ export function TableModuleView({
         // 忽略旧模块/旧筛选条件/旧请求的迟到响应，避免列表串数据。
         return;
       }
-      const normalized = normalizeListData(response);
       setRows(normalized.items);
       setTotal(normalized.total);
       setSelectedIds([]);
@@ -1026,6 +1035,7 @@ export function TableModuleView({
   }, [
     buildFilters,
     isTaskDetailModule,
+    queryClient,
     module.defaultOrder,
     module.id,
     module.listPath,
