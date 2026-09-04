@@ -274,6 +274,9 @@ ARL:
   API_KEY: ""
   # 列表接口缓存时长（秒），0=禁用列表缓存
   API_LIST_CACHE_EXPIRE: 300
+  # 站点指纹数据源：legacy=旧双路径，unified=规范文件 site_fingerprints（第4阶段重编译联动就绪后切换）
+  SITE_FINGERPRINT_SOURCE: "legacy"
+  # SITE_FINGERPRINT_FILE: "/code/app/dicts/site_fingerprints.json.gz"
   BLACK_IPS:
     - 0.0.0.0/8
     - 10.0.0.0/8

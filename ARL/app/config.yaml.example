@@ -427,6 +427,9 @@ ARL:
   KSCAN_FINGERPRINT_MAX_RULES_PER_NAME: 30
   # 最大导入规则总数（0=不限制）
   KSCAN_FINGERPRINT_MAX_TOTAL_RULES: 12000
+  # 站点指纹数据源：legacy=旧双路径，unified=规范文件（第4阶段重编译联动就绪后切换）
+  SITE_FINGERPRINT_SOURCE: "legacy"
+  # SITE_FINGERPRINT_FILE: "/code/app/dicts/site_fingerprints.json.gz"
   ## 禁止域名，不可为空数组
   FORBIDDEN_DOMAINS:
     - edu.cn

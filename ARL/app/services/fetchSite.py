@@ -11,6 +11,7 @@ from app import utils
 from app.config import Config
 from .baseThread import BaseThread
 from .fingerprint_cache import build_legacy_fingerprint_items, split_fingerprint_result_items
+from .site_fingerprint_registry import get_site_registry, split_unified_items
 from .page_semantics import enrich_page_item
 
 logger = utils.get_logger()
@@ -50,6 +51,8 @@ class FetchSite(BaseThread):
 
     def fetch_fingerprint(self, item, content):
         favicon_hash = item["favicon"].get("hash", 0)
+        if self._try_unified_fingerprint(item, content, favicon_hash):
+            return
         basic_names = fetch_fingerprint(
             content=content,
             headers=item["headers"],
@@ -73,6 +76,29 @@ class FetchSite(BaseThread):
             item["finger"] = finger
         if finger_candidates:
             item["finger_candidates"] = finger_candidates
+
+    def _try_unified_fingerprint(self, item, content, favicon_hash) -> bool:
+        """SITE_FINGERPRINT_SOURCE=unified 时走规范文件链；返回 False 表示调用方继续 legacy。
+
+        降级是显式行为：加载失败必须带 ERROR 证据，不允许空规则静默出结果。
+        """
+        mode = str(getattr(Config, "SITE_FINGERPRINT_SOURCE", "legacy") or "legacy").strip().lower()
+        if mode != "unified":
+            return False
+        registry = get_site_registry()
+        if not registry.ok:
+            logger.warning(
+                "unified site fingerprint unavailable, fallback to legacy: %s", registry.load_error)
+            return False
+        variables = build_identify_variables(
+            content, item["headers"], item["title"], str(favicon_hash), item["site"])
+        items = registry.match(variables)
+        finger, finger_candidates = split_unified_items(items)
+        if finger:
+            item["finger"] = finger
+        if finger_candidates:
+            item["finger_candidates"] = finger_candidates
+        return True
 
     def _release_inflight_site(self, site, inflight_owner):
         """先行者未走 put_response 的退出路径必须释放槽位，避免等待方干等超时。"""
@@ -251,15 +277,14 @@ def finger_identify(content: bytes, header: str, title: str, favicon_hash: str, 
     return [item["name"] for item in detail_list]
 
 
-def finger_identify_detail(content: bytes, header: str, title: str, favicon_hash: str, url=""):
-    from app.services import finger_db_identify_detail
-
-    try:
-        content = content.decode("utf-8")
-    except UnicodeDecodeError:
-        content = content.decode("gbk", "ignore")
-
-    variables = {
+def build_identify_variables(content, header: str, title: str, favicon_hash: str, url=""):
+    """unified 与 legacy 明细链共用同一字段归一（两条路径必须看到同一变量空间）。"""
+    if isinstance(content, (bytes, bytearray)):
+        try:
+            content = bytes(content).decode("utf-8")
+        except UnicodeDecodeError:
+            content = bytes(content).decode("gbk", "ignore")
+    return {
         "body": content,
         "header": header,
         "title": title,
@@ -269,7 +294,13 @@ def finger_identify_detail(content: bytes, header: str, title: str, favicon_hash
         "url": str(url or ""),
     }
 
-    return finger_db_identify_detail(variables)
+
+def finger_identify_detail(content: bytes, header: str, title: str, favicon_hash: str, url=""):
+    from app.services import finger_db_identify_detail
+
+    return finger_db_identify_detail(
+        build_identify_variables(content, header, title, favicon_hash, url)
+    )
 
 
 def same_netloc_and_scheme(u1, u2):

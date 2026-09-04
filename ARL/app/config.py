@@ -770,6 +770,10 @@ class Config(object):
     KSCAN_FINGERPRINT_MAX_RULES_PER_NAME = 30
     # 最多接收规则总数（0=不限制）
     KSCAN_FINGERPRINT_MAX_TOTAL_RULES = 12000
+    # 站点指纹数据源：legacy=旧双路径（默认），unified=规范文件 site_fingerprints（需文件可用，失败自动降级 legacy）
+    SITE_FINGERPRINT_SOURCE = "legacy"
+    # 规范站点指纹文件（支持 .json 与 .json.gz），由 build_unified_fingerprints 生成
+    SITE_FINGERPRINT_FILE = os.path.join(basedir, "dicts", "site_fingerprints.json.gz")
     # 截图引擎：playwright / phantomjs / auto
     SCREENSHOT_ENGINE = "playwright"
     # PhantomJS 可执行文件路径（legacy 兼容路径）
@@ -1674,6 +1678,12 @@ try:
     nuclei_finger_tag_map = y["ARL"].get("NUCLEI_FINGER_TAG_MAP")
     if isinstance(nuclei_finger_tag_map, dict):
         Config.NUCLEI_FINGER_TAG_MAP = nuclei_finger_tag_map
+
+    if y["ARL"].get("SITE_FINGERPRINT_SOURCE"):
+        Config.SITE_FINGERPRINT_SOURCE = str(y["ARL"].get("SITE_FINGERPRINT_SOURCE")).strip().lower()
+
+    if y["ARL"].get("SITE_FINGERPRINT_FILE"):
+        Config.SITE_FINGERPRINT_FILE = y["ARL"].get("SITE_FINGERPRINT_FILE")
 
     if y["ARL"].get("KSCAN_FINGERPRINT_ENABLE") is not None:
         Config.KSCAN_FINGERPRINT_ENABLE = bool(y["ARL"]["KSCAN_FINGERPRINT_ENABLE"])
