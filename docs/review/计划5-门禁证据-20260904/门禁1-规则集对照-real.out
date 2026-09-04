@@ -1,0 +1,61 @@
+[32m[2026-09-04 23:08:35] [INFO] [MainThread] [fingerprint_cache.py:325] redis cache enabled host:redis port:6379 db:0[0m
+数据来源: real（真实 Mongo，作放行依据）
+- 产物 meta: content_hash=77ee86972743d4d0 拒绝明细 132 条
+# legacy vs unified 生效规则集对照
+- legacy 规则数（应用名去重）: 20702
+- unified 规则数（含 overlay）: 22267  overlay_error=无
+- 仅 unified 有: 1575（预期来源：faviconhash/webapp 进链、kscan_local 新增、用户规则）
+  + .net message framing
+  + 1024-cms
+  + 1039soft-jiaxiao
+  + 150mbps-wireless-router
+  + 17mail
+  + 360 web server
+  + 360-ngsoc
+  + 360-secfox
+  + 360-webmaster-platform
+  + 360站长平台
+  + 360网站卫士常用前端公共库
+  + 360网站安全检测
+  + 3com nbx v3000 ip telephony solution
+  + 3com officeconnect wireless 11g
+  + 3com officeconnect wireless 11g access point
+  + 3com-3cdsg8
+  + 3com-nj2000
+  + 3dusoft-esalersalessystem
+  + 3mp-network-camera
+  + 4ucms(foru cms)
+  + 51la
+  + 51yes
+  + 5mp-network-camera
+  + 68-classifieds-script
+  + 78-oa
+  + 8cms
+  + __viewstate
+  + a2b webserver
+  + aadserver http server
+  + ab-web-cms
+  + ability server
+  + abo_cms
+  + abt-deep-security-gateway
+  + abus-dvr
+  + access-control
+  + acclipse
+  + accordion content script
+  + account manager exhibition system
+  + accountmanagerexhibitionsystem
+  + accurateiot-aiot
+  …共 1575
+- 仅 legacy 有: 10（放行阻断项：非 policy 可归因的减少）
+  - h3cer3100  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - phicomm-fwr-router  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - vmwarevcenter  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - 云盾  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - 众拓  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - 深信服ngaf  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - 瑞星  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - 速致  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - 锐捷rg-ew1200g  [归因：all_branches_rejected，来源 ['kscan_local']]
+  - 锐捷sslvpn  [归因：all_branches_rejected，来源 ['kscan_local']]
+
+结论：减少全部可归因 policy 动作；放行仍需 x86 真实 Mongo 数据重跑本报告 + 观测期指标（05 第4阶段切换口径）。
