@@ -406,24 +406,24 @@ const modules: ModuleConfig[] = [
           port_scan: true,
           port_scan_type: 'test',
           port_custom: '80,443',
-          service_detection: false,
+          service_detection: true,
           service_brute: false,
-          os_detection: false,
-          site_identify: false,
+          os_detection: true,
+          site_identify: true,
           site_capture: false,
-          file_leak: false,
-          search_engines: false,
-          site_spider: false,
-          arl_search: false,
-          alt_dns: false,
-          ssl_cert: false,
-          dns_query_plugin: false,
+          file_leak: true,
+          search_engines: true,
+          site_spider: true,
+          arl_search: true,
+          alt_dns: true,
+          ssl_cert: true,
+          dns_query_plugin: true,
           skip_scan_cdn_ip: true,
-          nuclei_scan: false,
-          afrog_scan: false,
-          findvhost: false,
-          web_info_hunter: false,
-          smart_skip_waf: false,
+          nuclei_scan: true,
+          afrog_scan: true,
+          findvhost: true,
+          web_info_hunter: true,
+          smart_skip_waf: true,
           ai_denoise: true,
           dingding_notify: false,
         },
@@ -1475,7 +1475,7 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'vul_name',
-    columns: ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date', 'ai_analysis'],
+    columns: ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date', 'ai_analysis', 'detail_action'],
     columnLabels: {
       vul_name: '风险名称',
       plg_type: '类别',
@@ -1484,6 +1484,7 @@ const modules: ModuleConfig[] = [
       credential: '凭证',
       save_date: '发现时间',
       ai_analysis: 'AI分析',
+      detail_action: '详情信息',
     },
     searchFields: [
       { key: 'vul_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
@@ -1526,7 +1527,8 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'vuln_name',
-    columns: ['scanner_type', 'rule_id', 'target', 'vuln_url', 'vuln_name', 'vuln_severity', 'save_date', 'verify_data', 'ai_analysis'],
+    // 风险URL 从列表移除（易与目标混淆且冗长），详情弹窗内完整展示
+    columns: ['scanner_type', 'rule_id', 'target', 'vuln_name', 'vuln_severity', 'save_date', 'verify_data', 'ai_analysis', 'detail_action'],
     columnLabels: {
       scanner_type: '扫描器',
       rule_id: '规则ID',
@@ -1537,6 +1539,7 @@ const modules: ModuleConfig[] = [
       save_date: '保存时间',
       verify_data: '验证信息',
       ai_analysis: 'AI分析',
+      detail_action: '详情信息',
     },
     searchFields: [
       {
@@ -1552,7 +1555,6 @@ const modules: ModuleConfig[] = [
       },
       { key: 'rule_id', label: '规则ID', placeholder: '请输入模板ID或PoC ID进行搜索' },
       { key: 'target', label: '目标', placeholder: '请输入目标进行搜索' },
-      { key: 'vuln_url', label: '风险URL', placeholder: '请输入风险URL进行搜索' },
       { key: 'vuln_name', label: '风险名称', placeholder: '请输入风险名称进行搜索' },
       {
         key: 'ai_analysis',
@@ -1665,10 +1667,12 @@ const modules: ModuleConfig[] = [
     rowIdKey: '_id',
     showIndex: true,
     quickFilterKey: 'url',
-    columns: ['target', 'page_url', 'method', 'status_code', 'response_size', 'ai_analysis', 'detail_action'],
+    // 主列用接口自身的 url（请求报文目标）；page_url 仅保留在详情弹窗与搜索中
+    columns: ['target', 'url', 'method', 'status_code', 'response_size', 'ai_analysis', 'detail_action'],
     sortableColumns: ['status_code', 'response_size'],
     columnLabels: {
       target: '目标',
+      url: '接口URL',
       page_url: '页面URL',
       method: '方法',
       status_code: '状态码',
@@ -2868,12 +2872,10 @@ const TASK_RUNNING_STAGE_LABELS: Record<string, string> = {
   site_identify: '站点识别',
   site_capture: '站点截图',
   file_leak: '目录扫描',
-  ai_poc_scan: 'AI-POC扫描',
   poc_run: 'PoC扫描',
   nuclei_scan: 'Nuclei扫描',
   afrog_scan: 'afrog扫描',
   web_info_hunter: 'WIH扫描',
-  penetration_test: '渗透测试',
   nuclei_scan_retry: 'Nuclei补跑',
 };
 
@@ -3448,7 +3450,6 @@ const TASK_SERVICE_STAGE_LABEL_MAP: Record<string, string> = {
   site_spider: '站点爬虫',
   site_capture: '站点截图',
   file_leak: '目录扫描',
-  ai_poc_scan: 'AI-POC扫描',
   nuclei_scan: 'Nuclei扫描',
   afrog: 'afrog扫描',
   afrog_scan: 'afrog扫描',
@@ -3459,7 +3460,6 @@ const TASK_SERVICE_STAGE_LABEL_MAP: Record<string, string> = {
   npoc_service_detection: '服务识别',
   poc_run: 'PoC扫描',
   weak_brute: '弱口令爆破',
-  penetration_scan: '渗透测试',
   cloud_security_scan: '云安全扫描',
   waf_smart_skip: 'WAF智能跳过',
   waf_observe: 'WAF识别观察',
@@ -4065,7 +4065,6 @@ const fieldLabelMap: Record<string, string> = {
   ssl_cert: 'SSL 证书获取',
   dns_query_plugin: '测绘引擎查询',
   skip_scan_cdn_ip: '跳过CDN',
-  ai_poc_scan: 'AI-POC扫描',
   nuclei_scan: 'nuclei 调用',
   afrog_scan: 'afrog 调用',
   findvhost: 'Host 碰撞',
@@ -7057,6 +7056,12 @@ function TableModuleView({
     rowTitle: string;
     row: any;
   } | null>(null);
+  const [riskRecordDetail, setRiskRecordDetail] = useState<{
+    moduleId: string;
+    rowId: string;
+    rowTitle: string;
+    row: any;
+  } | null>(null);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
   const [taskReportExportFeedback, setTaskReportExportFeedback] = useState<TaskReportExportFeedback | null>(null);
@@ -8411,6 +8416,25 @@ function TableModuleView({
     setWihEndpointDetail({
       rowId,
       rowTitle: `${methodText} ${urlText && urlText !== '-' ? urlText : normalizeValueNoTruncate(row?.target)}`,
+      row,
+    });
+  }, [getRowId]);
+
+  const closeRiskRecordDetail = useCallback(() => {
+    setRiskRecordDetail(null);
+  }, []);
+  const openRiskRecordDetail = useCallback((moduleId: string, row: any, rowIndex: number) => {
+    const rowId = getRowId(row) || `${rowIndex}`;
+    const title = moduleId === 'nuclei_result'
+      ? normalizeValueNoTruncate(row?.vuln_name)
+      : normalizeValueNoTruncate(row?.vul_name);
+    const fallback = normalizeValueNoTruncate(row?.rule_id) !== '-'
+      ? normalizeValueNoTruncate(row?.rule_id)
+      : normalizeValueNoTruncate(row?.target);
+    setRiskRecordDetail({
+      moduleId,
+      rowId,
+      rowTitle: `${title && title !== '-' ? title : fallback}`,
       row,
     });
   }, [getRowId]);
@@ -10593,6 +10617,20 @@ function TableModuleView({
                           );
                         }
 
+                        if ((module.id === 'nuclei_result' || module.id === 'vuln') && column === 'detail_action') {
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <button
+                                type="button"
+                                onClick={() => openRiskRecordDetail(module.id, row, rowIndex)}
+                                className="inline-flex items-center justify-center rounded-lg border border-brand-border bg-brand-bg/55 px-3 py-1.5 text-xs font-semibold text-brand-accent hover:bg-brand-bg/80 transition"
+                              >
+                                查看详情
+                              </button>
+                            </td>
+                          );
+                        }
+
                         if (module.id === 'wih_endpoint' && column === 'detail_action') {
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
@@ -11749,6 +11787,90 @@ function TableModuleView({
           </div>
         </div>
       ) : null}
+
+      {riskRecordDetail ? (() => {
+        const detailRow = riskRecordDetail.row || {};
+        const isNuclei = riskRecordDetail.moduleId === 'nuclei_result';
+        const knownKeys = isNuclei
+          ? ['scanner_type', 'rule_id', 'vuln_name', 'vuln_severity', 'severity', 'target', 'vuln_url', 'matched', 'extracted_results', 'save_date']
+          : ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date', 'source'];
+        const usedKeys = new Set<string>([
+          ...knownKeys,
+          '_id', 'task_id', 'task_cid', 'time',
+          'ai_analysis', 'ai_analysis_reason', 'ai_fill',
+          'verify_data', 'request', 'headers',
+        ]);
+        const fields: Array<[string, string]> = [];
+        knownKeys.forEach((key) => {
+          const text = normalizeValueNoTruncate(detailRow[key]);
+          if (text && text !== '-' && text !== '[]' && text !== '{}') {
+            fields.push([humanizeField(key), text]);
+          }
+        });
+        Object.keys(detailRow).forEach((key) => {
+          if (usedKeys.has(key)) return;
+          const value = detailRow[key];
+          if (value === null || value === undefined || value === '') return;
+          if (typeof value === 'object') return;
+          const text = String(value);
+          if (!text || text === '-') return;
+          fields.push([humanizeField(key), text]);
+        });
+        const verifyRaw = normalizeValueNoTruncate(detailRow.verify_data);
+        const verifyScanner = String(detailRow?.scanner_type || '').trim().toLowerCase();
+        const verifyLabel = verifyScanner === 'afrog' ? 'afrog curl命令' : '验证报文';
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={closeRiskRecordDetail}
+          >
+            <div
+              className="w-full max-w-5xl bg-brand-card border border-brand-border rounded-2xl shadow-2xl overflow-hidden"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="px-6 py-4 border-b border-brand-border flex items-start justify-between gap-3">
+                <div className="space-y-1 min-w-0">
+                  <h4 className="text-lg font-black">{isNuclei ? 'PoC风险详情' : '风险详情'}</h4>
+                  <p className="text-sm font-semibold break-all">{riskRecordDetail.rowTitle || '-'}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeRiskRecordDetail}
+                  className="p-2 rounded-lg hover:bg-brand-bg/70 transition"
+                  title="关闭"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4 max-h-[72vh] overflow-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {fields.map(([label, text]) => (
+                    <div key={label} className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-3">
+                      <div className="text-xs font-semibold text-brand-text-muted mb-1">{label}</div>
+                      <div className="text-sm break-all whitespace-pre-wrap">{text}</div>
+                    </div>
+                  ))}
+                </div>
+                {verifyRaw && verifyRaw !== '-' ? (
+                  <div className="rounded-xl border border-brand-border bg-brand-bg/40 px-4 py-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-brand-text-muted">{verifyLabel}</span>
+                      <button
+                        type="button"
+                        onClick={() => void copyTextToClipboard(verifyRaw, verifyLabel)}
+                        className="text-xs font-semibold text-brand-accent hover:underline"
+                      >
+                        复制
+                      </button>
+                    </div>
+                    <pre className="whitespace-pre-wrap break-all leading-relaxed font-mono text-sm max-h-[40vh] overflow-auto">{verifyRaw}</pre>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
 
       {wihEndpointDetail ? (() => {
         const detailRow = wihEndpointDetail.row || {};
@@ -14958,7 +15080,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
     active_prompt_id: string;
     prompt_templates: AiPromptTemplate[];
     custom_compat_providers: AiCustomCompatProvider[];
-    ai_poc_scan_enable: boolean;
     ai_denoise_enable: boolean;
     ai_wih_endpoint_fill_enable: boolean;
     ai_denoise_modules: AiDenoiseModules;
@@ -15382,7 +15503,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(rawForm?.custom_compat_providers),
-      ai_poc_scan_enable: rawForm?.ai_poc_scan_enable !== false,
       ai_denoise_enable: rawForm?.ai_denoise_enable !== false,
       ai_wih_endpoint_fill_enable: rawForm?.ai_wih_endpoint_fill_enable !== false,
       ai_denoise_modules: normalizeAiDenoiseModules(rawForm?.ai_denoise_modules),
@@ -15780,7 +15900,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
       active_prompt_id: activePromptId,
       prompt_templates: promptTemplates,
       custom_compat_providers: normalizeCustomCompatProviders(currentForm.custom_compat_providers),
-      ai_poc_scan_enable: Boolean(currentForm.ai_poc_scan_enable),
       ai_denoise_enable: Boolean(currentForm.ai_denoise_enable),
       ai_wih_endpoint_fill_enable: Boolean(currentForm.ai_wih_endpoint_fill_enable),
       ai_denoise_modules: normalizeAiDenoiseModules(currentForm.ai_denoise_modules),
@@ -16896,15 +17015,6 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
             <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
               <input
                 type="checkbox"
-                checked={form.ai_poc_scan_enable}
-                onChange={(event) => setForm((prev) => ({ ...prev, ai_poc_scan_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
-              />
-              <span className="text-xs font-semibold">启用AI-POC扫描</span>
-            </label>
-            <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
-              <input
-                type="checkbox"
                 checked={form.ai_denoise_enable}
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_denoise_enable: event.target.checked }))}
                 className="h-4 w-4 cursor-pointer rounded border border-brand-border bg-brand-bg"
@@ -16923,7 +17033,7 @@ function ConfigAiManagementPanel({ token }: { token: string }) {
           </div>
         </div>
         <div className="text-xs text-brand-text-muted">
-          AI-POC 扫描用于基于指纹、Title、Body 等上下文智能匹配 nuclei/afrog 候选 PoC。WIH接口AI填充会优先根据请求报文、参数名和请求体形态补齐低副作用测试值，再把测试摘要交给后续 AI 去噪使用。AI去噪支持站点、目录扫描、SSL证书、URL信息、WIH接口、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
+          WIH接口AI填充会优先根据请求报文、参数名和请求体形态补齐低副作用测试值，再把测试摘要交给后续 AI 去噪使用。AI去噪支持站点、目录扫描、SSL证书、URL信息、WIH接口、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
         </div>
         <div className="rounded-xl border border-brand-border bg-brand-bg/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center">
           <div className="text-sm font-semibold">WIH接口AI填充</div>
