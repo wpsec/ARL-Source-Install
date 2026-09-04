@@ -29,8 +29,14 @@ class _DummyLogger:
 
 
 class _DummyCollection:
+    # 可注入的用户指纹集合内容（第4阶段 overlay 测试用）
+    docs = []
+    raise_error = False
+
     def find(self, *a, **k):
-        return iter([])
+        if self.raise_error:
+            raise RuntimeError("mongo down")
+        return iter(list(self.docs))
 
     def find_one(self, *a, **k):
         return None
@@ -212,6 +218,82 @@ class SiteFingerprintRegistryTest(unittest.TestCase):
                 json.dump(doc, f)
             reg.reload_if_stale()
             self.assertEqual(len(reg.rules), 2)
+
+
+class SiteFingerprintOverlayTest(unittest.TestCase):
+    """第4阶段：Mongo 用户规则 overlay（真相源在 Mongo，policy 豁免用户意图）。"""
+
+    def _make_registry(self, base_rules, docs):
+        import tempfile
+        _DummyCollection.docs = docs
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "site.json")
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump({"meta": {"format": "arl_site_fingerprint_v1"}, "fingerprints": base_rules}, f)
+                return REGISTRY.SiteFingerprintRegistry(path).load()
+        finally:
+            pass
+
+    def setUp(self):
+        _DummyCollection.raise_error = False
+        self.base = [{"id": "site:baseapp", "name": "BaseApp", "confidence": 90, "sources": ["kscan_local"],
+                      "match": {"any": [{"all": [{"field": "body", "operator": "contains", "value": "base-marker"}]}]},
+                      "canonical_rule": 'body="base-marker"', "enabled": True}]
+        self.vars = {"body": "base-marker and user-marker and login", "header": "", "title": "",
+                     "icon_hash": "0", "response": "", "url": ""}
+
+    def tearDown(self):
+        _DummyCollection.docs = []
+
+    def test_new_user_rule_and_same_name_merge(self):
+        reg = self._make_registry(self.base, [
+            {"name": "UserApp", "human_rule": 'body="user-marker"'},
+            {"name": "baseapp", "human_rule": 'title="x-marker-y"'},
+        ])
+        self.assertTrue(reg.ok)
+        by_name = {r["name"]: r for r in reg.rules}
+        self.assertIn("UserApp", by_name)
+        merged = [r for r in reg.rules if r["id"] == "site:baseapp"]
+        self.assertEqual(len(merged), 1)
+        rule = merged[0]
+        self.assertIn("mongo_user", rule["sources"])
+        self.assertEqual(len(rule["match"]["any"]), 2)  # 基线分支 + 用户分支
+        names = {i["name"] for i in reg.match(self.vars)}
+        self.assertEqual(names, {"BaseApp", "UserApp"})
+
+    def test_user_intent_exempt_from_policy(self):
+        # 用户显式 body="login"：编译 policy 会拒绝，overlay 必须保留（用户意图优先）
+        reg = self._make_registry(self.base, [{"name": "MyLoginApp", "human_rule": 'body="login"'}])
+        names = {i["name"] for i in reg.match(self.vars)}
+        self.assertIn("MyLoginApp", names)
+
+    def test_malformed_user_rule_skipped(self):
+        reg = self._make_registry(self.base, [
+            {"name": "Broken", "human_rule": 'body="x" && (title="a" || title="b")'},
+            {"name": "Ok", "human_rule": 'body="ok-marker-z"'},
+        ])
+        ids = {r["id"] for r in reg.rules}
+        self.assertNotIn("site:broken", ids)
+        self.assertIn("site:ok", ids)
+
+    def test_mongo_down_baseline_only(self):
+        _DummyCollection.raise_error = True
+        reg = self._make_registry(self.base, [])
+        self.assertTrue(reg.ok, "Mongo 不可达时基线必须继续服务")
+        self.assertIn("overlay_unavailable", reg._overlay_error)
+        names = {i["name"] for i in reg.match(self.vars)}
+        self.assertEqual(names, {"BaseApp"})
+
+    def test_repeated_rebuild_does_not_pollute_base(self):
+        reg = self._make_registry(self.base, [{"name": "baseapp", "human_rule": 'title="x-marker-y"'}])
+        base_branches_before = len(reg._base_rules[0]["match"]["any"])
+        reg._rebuild_with_overlay()
+        reg._rebuild_with_overlay()
+        reg._rebuild_with_overlay()
+        self.assertEqual(len(reg._base_rules[0]["match"]["any"]), base_branches_before, "_base_rules 被 overlay 污染")
+        rule = [r for r in reg.rules if r["id"] == "site:baseapp"][0]
+        self.assertEqual(len(rule["match"]["any"]), 2, "重复 rebuild 后分支被叠加膨胀")
 
 
 if __name__ == "__main__":

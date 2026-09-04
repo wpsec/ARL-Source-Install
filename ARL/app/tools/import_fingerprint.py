@@ -365,6 +365,10 @@ def main():
             inserted, updated, skipped, invalid
         )
     )
+    if inserted or updated:
+        # 与 route 写入口同权：刷旧链缓存 + bump unified 版本（计划5 第4阶段）
+        from app.services.fingerprint_cache import finger_db_cache
+        finger_db_cache.update_cache(force_db=True)
     return 0
 
 

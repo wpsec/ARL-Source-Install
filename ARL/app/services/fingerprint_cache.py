@@ -452,6 +452,7 @@ class FingerPrintCache:
         """
         if force_db:
             self.cache = self.fetch_data_from_mongodb()
+            self._bump_unified_version()
             return self.cache
 
         redis_cache = self.get_cache_from_redis()
@@ -460,7 +461,18 @@ class FingerPrintCache:
             return self.cache
 
         self.cache = self.fetch_data_from_mongodb()
+        self._bump_unified_version()
         return self.cache
+
+    def _bump_unified_version(self):
+        """用户指纹真相变更 → 通知 unified Registry 重建 overlay（计划5 第4阶段）。"""
+        client = self.get_redis_client()
+        if client is None:
+            return
+        try:
+            client.incr("arl:fingerprint:unified:ver")
+        except Exception as exc:
+            logger.warning("bump unified fingerprint version failed: %s", exc)
 
 
 finger_db_cache = FingerPrintCache()

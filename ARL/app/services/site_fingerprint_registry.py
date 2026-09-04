@@ -10,6 +10,7 @@
   禁止空规则静默启动（05 第4阶段冷启动约束）。
 - 热重载：按 (mtime, size, sha256前16) 判定，规则文件重编译后各进程自然切换。
 """
+import copy
 import gzip
 import hashlib
 import json
@@ -18,8 +19,17 @@ import os
 import threading
 
 from app.config import Config
+from app.fp_common import estimate_human_rule_confidence
 from app.services.fingerprint import FingerPrint
 from app.services.fingerprint_cache import split_fingerprint_result_items
+
+# 编译端函数复用（build 工具只依赖 fp_common，零扫描器依赖）
+from app.tools.build_unified_fingerprints import merge_key, parse_human_rule, to_human_rule
+
+FINGERPRINT_VERSION_KEY = "arl:fingerprint:unified:ver"
+_OVERLAY_CHECK_INTERVAL = 60.0
+# ver 读不到（Redis 从未写过/曾故障）时的低频对账间隔：防 route bump 恰好丢失后永不定格
+_OVERLAY_FALLBACK_INTERVAL = 600.0
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +49,11 @@ class SiteFingerprintRegistry:
         self.icon_index = {}  # icon_hash 精确值 -> [rule]
         self.file_token = None
         self._parsed_lock = threading.Lock()
+        self._base_rules = []  # 文件基线（overlay 重建时复用）
+        self._overlay_error = ""
+        self._version = None
+        self._last_version_check = 0.0
+        self._redis_client = None
 
     # ---------- 加载 ----------
 
@@ -74,15 +89,11 @@ class SiteFingerprintRegistry:
                     for cond in branch.get("all", []):
                         if cond["field"] == "icon_hash" and cond["operator"] == "equals":
                             icon_index.setdefault(cond["value"], []).append(rule)
-            self.rules = rules
-            self.icon_index = icon_index
+            self._base_rules = rules
+            self._rebuild_with_overlay()
             self.file_token = token
             self.ok = True
             self.load_error = ""
-            logger.info(
-                "site fingerprint registry loaded rules=%d icon_buckets=%d token=%s",
-                len(rules), len(icon_index), token,
-            )
         except Exception as exc:
             self._fail("parse_failed: {}".format(exc))
         return self
@@ -105,6 +116,100 @@ class SiteFingerprintRegistry:
         self.icon_index = {}
         logger.error("site fingerprint registry load failed: %s (path=%s)", reason, self.path)
 
+    # ---------- Mongo 用户规则 overlay（第4阶段：真相源=Mongo，policy 豁免用户意图） ----------
+
+    def _rebuild_with_overlay(self):
+        # 深拷贝 match/sources：merge 分支会 extend/改写条目，绝不能污染 _base_rules
+        rules = [
+            {**r, "match": copy.deepcopy(r["match"]), "sources": list(r["sources"])}
+            for r in self._base_rules
+        ]
+        self._overlay_error = ""
+        overlay = 0
+        try:
+            from app.utils import conn_db
+            cursor = conn_db("fingerprint").find({}, {"name": 1, "human_rule": 1})
+            by_key = {merge_key(r["name"]): r for r in rules}
+            for doc in cursor:
+                name = str(doc.get("name") or "").strip()
+                rule_text = str(doc.get("human_rule") or "").strip()
+                if not name or not rule_text:
+                    continue
+                match, problems = parse_human_rule(rule_text)
+                if problems:
+                    # 用户规则只验格式不施 policy：body="login" 这类用户显式意图必须保留
+                    continue
+                key = merge_key(name)
+                existing = by_key.get(key)
+                if existing is None:
+                    rules.append(self._build_rule({
+                        "id": "site:" + key,
+                        "name": name,
+                        "confidence": int(estimate_human_rule_confidence(to_human_rule(match))),
+                        "sources": ["mongo_user"],
+                        "match": match,
+                        "canonical_rule": to_human_rule(match),
+                    }))
+                    by_key[key] = rules[-1]
+                else:
+                    existing["match"]["any"].extend(match["any"])
+                    if "mongo_user" not in existing["sources"]:
+                        existing["sources"].append("mongo_user")
+                    existing["canonical_rule"] = to_human_rule(existing["match"])
+                    existing["confidence"] = int(estimate_human_rule_confidence(existing["canonical_rule"]))
+                    existing["fp"] = FingerPrint(existing["name"], existing["canonical_rule"])
+                overlay += 1
+        except Exception as exc:
+            # Mongo 不可达：基线照常服务（冷启动兜底），显式记录不静默
+            self._overlay_error = "overlay_unavailable: {}".format(exc)
+            logger.warning("fingerprint mongo overlay unavailable, baseline only: %s", exc)
+        self.rules = rules
+        icon_index = {}
+        for rule in rules:
+            for branch in rule["match"].get("any", []):
+                for cond in branch.get("all", []):
+                    if cond["field"] == "icon_hash" and cond["operator"] == "equals":
+                        icon_index.setdefault(cond["value"], []).append(rule)
+        self.icon_index = icon_index
+        logger.info(
+            "site fingerprint registry built rules=%d overlay=%d icon_buckets=%d token=%s",
+            len(rules), overlay, len(icon_index), self.file_token,
+        )
+
+    def _maybe_check_version(self):
+        """Redis 版本号触发重建（update_cache 尾部 INCR）。
+
+        ver 读不到（键从未写过/Redis 曾故障）时退化为 _OVERLAY_FALLBACK_INTERVAL 低频对账，
+        防止"恰好在 bump 窗口丢失更新"后永不定格。Redis 关闭则仅靠文件变化重建。
+        """
+        import time as _time
+        now = _time.monotonic()
+        interval = _OVERLAY_CHECK_INTERVAL if self._version is not None else _OVERLAY_FALLBACK_INTERVAL
+        if now - self._last_version_check < interval:
+            return
+        self._last_version_check = now
+        try:
+            if self._redis_client is None:
+                from app.services.fingerprint_cache import finger_db_cache
+                client = finger_db_cache.get_redis_client()
+                if client is None:
+                    return
+                self._redis_client = client
+            raw = self._redis_client.get(FINGERPRINT_VERSION_KEY)
+            if raw is None:
+                self._version = None
+                return
+            version = int(raw)
+            if self._version is None:
+                self._version = version
+                self._rebuild_with_overlay()
+                return
+            if version != self._version:
+                self._version = version
+                self._rebuild_with_overlay()
+        except Exception as exc:
+            logger.warning("fingerprint unified version check failed: %s", exc)
+
     # ---------- 匹配 ----------
 
     def reload_if_stale(self):
@@ -114,9 +219,13 @@ class SiteFingerprintRegistry:
             if self.file_token is None or getattr(self, "_cheap_token", None) != cheap_token:
                 self._cheap_token = cheap_token
                 self.load()
+                return self
         except OSError:
             if self.ok:
                 self._fail("file_missing_on_reload")
+            return self
+        if self.ok:
+            self._maybe_check_version()
         return self
 
     def candidate_indices(self, variables):
