@@ -309,7 +309,10 @@ def main():
 - 构成：`responses.json` 12 个合成样本（覆盖 header/body/title/response/icon_hash/url + `&&`/`||`/`!=` 布尔组合）× 当前实现**三段链**输出快照：legacy `utils/fingerprint.fetch_fingerprint`（webapp）→ `finger_db_identify_detail`（kscan+Mongo空集）→ `build_legacy+split` 合并 → `normalize_wappalyzer_fingerprint_items`；快照 `golden_v1.json` 由 `ARL/test/test_fingerprint_golden.py` 生成并锁定，回归模式严格对比。
 - 无在线 DB：golden 只跑纯匹配函数（Redis/Mongo 以 fake 替身，先例见 test_route_build_return_items 的加载器模式）。
 
-## 七、待用户拍板
+## 七、决策记录（2026-09-04 用户拍板，详见 05 主文档"决策记录"节）
+
+已定：Q1 取 B（local 9673 为迁移基准，前置=第2阶段A 增量审计+golden 双文件对比）；Q2 取 A（Mongo 真相源、finger.json 仅种子）。原始待决问题与数据保留如下：
+
 
 1. `kscan_fingerprint.local.json` 是否进生产：local 较主 kscan 文件独有规则 **{local_only}** 条、重叠 {overlap} 条；若进，以哪份为准（建议：bundle 已含双源合并且做过 dedupe/accept 统计，以 local 为准、主文件退役为源输入）。
 2. tools/finger.json 17445 个 cms、28884 条规则经 sync 导入 Mongo 后与规范文件的关系（建议：Mongo 为用户真相源、finger.json 仅作首次导入源，见计划§Stage4 部署拓扑决策）。
