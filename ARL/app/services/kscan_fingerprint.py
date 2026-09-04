@@ -13,6 +13,11 @@ from collections import defaultdict
 
 from app.config import Config
 from app.utils import get_logger
+from app.fp_common import (
+    extract_literal_from_regex as _extract_literal_from_regex,
+    split_logic_expression as _split_logic_expression,
+    unquote_string as _unquote_string,
+)
 from .expr import check_expression_with_error
 
 logger = get_logger()
@@ -69,91 +74,6 @@ def _ensure_keyword_list(value):
     if value is None:
         return []
     return [value]
-
-
-def _unquote_string(value):
-    value = str(value).strip()
-    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
-        value = value[1:-1]
-    value = value.replace("\\\\", "\\")
-    value = value.replace('\\"', '"')
-    return value
-
-
-def _split_logic_expression(expression):
-    """
-    在双引号之外按 && / || 拆分表达式。
-    """
-    tokens = []
-    operators = []
-    buf = []
-    in_quotes = False
-    escaped = False
-    i = 0
-    while i < len(expression):
-        ch = expression[i]
-
-        if in_quotes and ch == "\\" and not escaped:
-            escaped = True
-            buf.append(ch)
-            i += 1
-            continue
-
-        if ch == '"' and not escaped:
-            in_quotes = not in_quotes
-
-        if not in_quotes and i + 1 < len(expression):
-            op = expression[i:i + 2]
-            if op in ("&&", "||"):
-                token = "".join(buf).strip()
-                if token:
-                    tokens.append(token)
-                operators.append(op)
-                buf = []
-                i += 2
-                escaped = False
-                continue
-
-        buf.append(ch)
-        escaped = False
-        i += 1
-
-    token = "".join(buf).strip()
-    if token:
-        tokens.append(token)
-
-    return tokens, operators
-
-
-def _extract_literal_from_regex(pattern, min_len=4):
-    """
-    将部分正则回退为稳定字面量，减少规则浪费。
-    """
-    text = _unquote_string(pattern)
-    text = text.replace("\\/", "/")
-    text = text.replace("\\.", ".")
-    text = text.replace("\\-", "-")
-    text = text.replace("\\_", "_")
-    text = text.replace("\\ ", " ")
-    text = re.sub(r"\\x[0-9a-fA-F]{2}", " ", text)
-    text = re.sub(r"\[[^\]]*\]", " ", text)
-    text = re.sub(r"[\^\$\(\)\{\}\|\?\*\+]", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-
-    candidates = re.findall(r"[A-Za-z0-9_\-./\u4e00-\u9fa5]{%d,}" % int(min_len), text)
-    if not candidates:
-        return ""
-
-    stopwords = {
-        "server", "title", "set-cookie", "cookie", "content", "http", "https", "www",
-        "meta", "body", "header", "location", "version",
-    }
-    candidates = [x for x in candidates if x.lower() not in stopwords]
-    if not candidates:
-        return ""
-
-    candidates.sort(key=lambda x: len(x), reverse=True)
-    return candidates[0]
 
 
 def _parse_token(raw_token, regex_fallback="literal", min_literal_len=5):

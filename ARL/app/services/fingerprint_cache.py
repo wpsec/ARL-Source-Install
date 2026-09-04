@@ -15,15 +15,13 @@ from app.config import Config
 from .fingerprint import FingerPrint
 from .kscan_fingerprint import load_kscan_fingerprint_rules
 from app.utils import get_logger, conn_db
+from app.fp_common import (
+    estimate_human_rule_confidence,
+    extract_human_rule_fields,
+    safe_int as _safe_int,
+)
 
 logger = get_logger()
-
-
-def _safe_int(value, default_value=0):
-    try:
-        return int(value)
-    except Exception:
-        return default_value
 
 
 def _normalize_text_list(value, lower=False):
@@ -67,46 +65,6 @@ def _get_wappalyzer_confidence_min():
 
 def _get_candidate_max_items():
     return max(0, _safe_int(getattr(Config, "FINGER_CANDIDATE_MAX_ITEMS", 8), 8))
-
-
-def extract_human_rule_fields(human_rule):
-    """
-    提取 human_rule 中出现过的字段，用于结果打分和说明
-    """
-    rule_text = str(human_rule or "")
-    ordered_fields = []
-    for field_name in ("icon_hash", "header", "title", "response", "url", "body"):
-        if re.search(r'(^|[\s!(]){}(\s*(~=|==|!=|=))'.format(re.escape(field_name)), rule_text):
-            ordered_fields.append(field_name)
-    return ordered_fields
-
-
-def estimate_human_rule_confidence(human_rule):
-    """
-    基于规则特征粗略估算识别置信度
-    """
-    fields = set(extract_human_rule_fields(human_rule))
-    fragment_count = max(str(human_rule or "").count("||") + str(human_rule or "").count("&&") + 1, 1)
-
-    if "icon_hash" in fields:
-        base_score = 95
-    elif "header" in fields and ({"body", "title", "response", "url"} & fields):
-        base_score = 90
-    elif "response" in fields:
-        base_score = 86
-    elif "header" in fields:
-        base_score = 82
-    elif "title" in fields:
-        base_score = 78
-    elif "url" in fields:
-        base_score = 76
-    elif "body" in fields:
-        base_score = 72
-    else:
-        base_score = 70
-
-    bonus = min(max(fragment_count - 1, 0) * 2, 8)
-    return min(base_score + bonus, 98)
 
 
 def classify_fingerprint_confidence(confidence):
