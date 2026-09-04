@@ -54,7 +54,6 @@ def _install_helpers_task_stub():
         return
 
     task_module = types.ModuleType(module_name)
-    task_module.strip_disabled_penetration_options = lambda options: (dict(options or {}), [])
     task_module.submit_task_task = lambda target, name, options: []
     task_module.submit_risk_cruising = lambda target, name, options: []
     sys.modules[module_name] = task_module

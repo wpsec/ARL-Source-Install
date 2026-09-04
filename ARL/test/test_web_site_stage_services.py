@@ -44,15 +44,9 @@ class _Task(object):
     def file_leak(self):
         self.calls.append("file_leak")
 
-    def run_ai_poc_scan_plan(self):
-        self.calls.append("run_ai_poc_scan_plan")
-
     def _run_optional_ai_stage_best_effort(self, *args, **kwargs):
         self.calls.append("optional_ai_stage")
         return args[1]()
-
-    def _handle_ai_poc_stage_degrade(self, *args, **kwargs):
-        self.calls.append("handle_ai_poc_stage_degrade")
 
     def nuclei_scan(self):
         self.calls.append("nuclei_scan")
@@ -62,9 +56,6 @@ class _Task(object):
 
     def run_web_info_hunter(self):
         self.calls.append("run_web_info_hunter")
-
-    def run_penetration_test(self):
-        self.calls.append("run_penetration_test")
 
     def run_deferred_nuclei_scan(self):
         self.calls.append("run_deferred_nuclei_scan")
@@ -111,8 +102,6 @@ class TestWebSiteStageServices(unittest.TestCase):
         self.assertEqual(
             [
                 "file_leak",
-                "optional_ai_stage",
-                "run_ai_poc_scan_plan",
                 "nuclei_scan",
                 "afrog_scan",
             ],
@@ -122,14 +111,12 @@ class TestWebSiteStageServices(unittest.TestCase):
     def test_intel_then_post_process_preserves_deferred_retry_order(self):
         task = _Task({WebSiteFetchOption.Info_Hunter: True})
         WebSiteIntelStageService(task).run()
-        task.options[WebSiteFetchOption.PENETRATION_TEST] = True
         task._nuclei_deferred_retry_needed = True
         WebSitePostProcessStageService(task).run()
 
         self.assertEqual(
             [
                 "run_web_info_hunter",
-                "run_penetration_test",
                 "run_deferred_nuclei_scan",
                 "save_waf_skip_summary",
             ],

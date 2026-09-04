@@ -38,14 +38,6 @@ class TestTaskResultItemService(unittest.TestCase):
         self.assertEqual("task-1", afrog["task_id"])
         self.assertEqual("now", afrog["save_date"])
 
-        penetration = service.build_penetration_document(
-            {"type": "header", "url": "https://example.com", "method": "GET"},
-            "https://example.com",
-        )
-        self.assertEqual("penetration:header", penetration["plg_name"])
-        self.assertIn("request_data", penetration)
-        self.assertIn("response_data", penetration)
-
     def test_wih_risk_builder_preserves_scope_and_hash_fields(self):
         service = self._service()
         item = service.build_wih_vuln_document(

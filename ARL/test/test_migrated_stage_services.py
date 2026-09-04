@@ -283,7 +283,6 @@ class TestPoCStageDelegation(unittest.TestCase):
             NUCLEI_TARGET_BUILD_RETRY_COUNT=1,
             NUCLEI_TARGET_BUILD_RETRY_SLEEP_SEC=1,
             RETRYABLE_MONGO_ERRORS=(RuntimeError,),
-            ai_poc_runtime={"nuclei_scan_profile": {"name": "ai-poc", "force_tags": ["tomcat"]}},
             _scan_result_in_task_scope=lambda item, target_keys=None: True,
             _result_item_service=SimpleNamespace(build_nuclei_document=lambda item: {"doc": item}),
             _result_writer=SimpleNamespace(insert_one=lambda *args: None),
@@ -303,11 +302,11 @@ class TestPoCStageDelegation(unittest.TestCase):
         results = service.run()
 
         self.assertEqual(1, len(results))
-        self.assertEqual(["tomcat"], calls["profile"]["force_tags"])
+        self.assertIsNone(calls["profile"])
         self.assertEqual(1, len(calls["targets"]))
         self.assertEqual(["tomcat"], calls["targets"][0]["finger"])
 
-    def test_afrog_service_passes_ai_keywords_and_saves(self):
+    def test_afrog_service_runs_with_default_params(self):
         saved = []
 
         def fake_afrog(targets, search_keywords=None, severity=None):
@@ -318,7 +317,6 @@ class TestPoCStageDelegation(unittest.TestCase):
             task_id="t-1",
             poc_sites={"https://a.example.com"},
             smart_skip_waf=False,
-            ai_poc_runtime={"afrog_keywords": "jenkins", "afrog_severity": "high"},
             _filter_waf_blocked_targets=lambda targets, stage_name="": list(targets),
             _scan_result_in_task_scope=lambda item, target_keys=None: True,
             _result_item_service=SimpleNamespace(build_afrog_document=lambda r, t, p: {"doc": p}),
@@ -327,67 +325,8 @@ class TestPoCStageDelegation(unittest.TestCase):
 
         WebSiteAfrogScanStageService(task, afrog_runner=fake_afrog).run()
 
-        self.assertEqual("jenkins", saved[0][1])
-        self.assertEqual("high", saved[0][2])
-
-
-@unittest.skipIf(IPCertStageService is None, "运行依赖未安装")
-class TestAIPocPlannerMigration(unittest.TestCase):
-    """AI-POC 规划器迁移后的常量别名与 disabled 路径等价性。"""
-
-    def test_task_constants_alias_service(self):
-        from app.services.commonTask import WebSiteFetch
-        from app.services.ai_poc_planner_service import AIPocPlannerService
-
-        self.assertIs(WebSiteFetch.AI_POC_ALIAS_TAG_MAP, AIPocPlannerService.AI_POC_ALIAS_TAG_MAP)
-        self.assertEqual(WebSiteFetch.AI_POC_MAX_TAGS, AIPocPlannerService.AI_POC_MAX_TAGS)
-        # 兼容委托与直调服务结果一致
-        raw = ["Jenkins", "jenkins", "bad tag!!", "tomcat"]
-        self.assertEqual(
-            WebSiteFetch._normalize_ai_poc_tags(raw, max_count=2),
-            AIPocPlannerService._normalize_ai_poc_tags(raw, max_count=2),
-        )
-
-    def test_disabled_run_keeps_pass_through_and_logs_plan(self):
-        from app.services.ai_poc_planner_service import AIPocPlannerService
-
-        pushed = []
-        logged = []
-        task = SimpleNamespace(
-            task_id="t-1",
-            options={"nuclei_scan": True, "afrog_scan": False},
-            poc_sites=set(),
-            ai_poc_runtime={},
-            build_nuclei_targets=lambda: [],
-            _preview_nuclei_batch_plan=lambda targets: {
-                "batch_count": 0,
-                "auto_scan_batch_count": 0,
-                "tag_sample": [],
-                "all_tags": [],
-            },
-            _result_writer=SimpleNamespace(
-                update_one=lambda *args, **kwargs: pushed.append(args),
-                insert_one=lambda *args: None,
-            ),
-        )
-        # run() 内按 ObjectId(task_id) 定位 task 文档，测试用合法 24 位 hex。
-        task.task_id = "507f1f77bcf86cd799439011"
-        planner = AIPocPlannerService(task)
-        planner._load_ai_runtime_config = lambda: {"ai_poc_scan_enable": False}
-        planner._collect_ai_poc_context = lambda sites: {"sites": [], "urls": [], "wih_hints": []}
-        planner._collect_alias_hits = lambda context_payload: []
-        planner._collect_ai_poc_index_candidates = lambda context_payload, alias_hits: {"loaded": False}
-        planner._write_ai_poc_usage_log = lambda **kwargs: logged.append(kwargs.get("scene"))
-
-        planner.run_ai_poc_scan_plan()
-
-        self.assertEqual("disabled", task.ai_poc_runtime["mode"])
-        self.assertFalse(task.ai_poc_runtime["enabled"])
-        self.assertIsNone(task.ai_poc_runtime["nuclei_scan_profile"])
-        self.assertEqual(1, len(pushed))
-        self.assertEqual("ai_poc_scan", pushed[0][2]["$push"]["service"]["name"])
-        # ai 关闭时只写计划日志，不写决策日志
-        self.assertEqual(["ai_poc_scan_plan"], logged)
+        self.assertIsNone(saved[0][1])
+        self.assertIsNone(saved[0][2])
 
 
 if __name__ == "__main__":

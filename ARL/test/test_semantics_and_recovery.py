@@ -194,7 +194,6 @@ class TestNucleiLedger(unittest.TestCase):
         task = SimpleNamespace(
             task_id="task-1",
             discovery_context=context,
-            ai_poc_runtime={},
             _scan_result_in_task_scope=lambda item, target_keys=None: True,
             _result_item_service=SimpleNamespace(build_nuclei_document=lambda item: {"doc": 1}),
             _result_writer=SimpleNamespace(insert_one=lambda *args: None),
@@ -216,16 +215,6 @@ class TestNucleiLedger(unittest.TestCase):
         service, _context, calls, _targets = self._service({"status": "partial", "end_reason": "batch_degraded"})
 
         service.run()
-        service.run()
-
-        self.assertEqual(2, calls["count"])
-
-    def test_profile_change_invalidates_skip(self):
-        service, context, calls, targets = self._service({"status": "success", "end_reason": "completed"})
-        service.run()
-        task = service.task
-        task.ai_poc_runtime = {"nuclei_scan_profile": {"name": "ai-poc", "force_tags": ["tomcat"]}}
-
         service.run()
 
         self.assertEqual(2, calls["count"])

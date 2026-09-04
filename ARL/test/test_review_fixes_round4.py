@@ -25,29 +25,6 @@ class TestEvictCallbackObservability(unittest.TestCase):
             ctx.observation_snapshot()["candidate_evict_callback_failures"], 1)
 
 
-class TestPenetrationProbeFailureInstrumentation(unittest.TestCase):
-    def test_note_probe_failure_counts(self):
-        from app.services.penetration_scan import PenetrationScanService
-        svc = PenetrationScanService("", [])
-        svc._note_probe_failure("sqli", RuntimeError("net"))
-        svc._note_probe_failure("sqli", RuntimeError("net"))
-        svc._note_probe_failure("xss", ValueError("x"))
-        self.assertEqual({"sqli": 2, "xss": 1}, svc.probe_failure_counts)
-
-    def test_admin_probe_swallow_site_now_counts(self):
-        from app.services import penetration_scan as mod
-        svc = mod.PenetrationScanService("", [])
-        findings = []
-        with patch.object(svc, "_collect_admin_candidates",
-                          return_value=[{"url": "http://t.test/admin"}]), \
-                patch.object(svc, "_request",
-                             side_effect=RuntimeError("connect refused")):
-            svc._test_admin_unauthorized_access(findings, [])
-        self.assertEqual([], findings)
-        self.assertEqual(1, svc.probe_failure_counts.get("admin_unauthorized"),
-                         "请求失败不得与'无漏洞'不可区分")
-
-
 class TestFileLeakResponseReflow(unittest.TestCase):
     def test_child_responses_registered_with_dedicated_profile(self):
         import base64
