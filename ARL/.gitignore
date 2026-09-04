@@ -129,3 +129,13 @@ node_modules
 docker/image/
 docker/arl_web.log
 docker/arl_worker.log
+
+# 计划5 规范指纹：提交 gzip 分发产物（含 content_hash/input_files，可重复生成）；
+# plain 大文件与写盘备份只留工作区
+app/dicts/site_fingerprints.json
+app/dicts/service_fingerprints.json
+*.fpbuild_*
+app/dicts/*.json.last-good
+# 例外：规范指纹 gzip 分发产物必须入库（解全局 *.gz 忽略）
+!app/dicts/site_fingerprints.json.gz
+!app/dicts/service_fingerprints.json.gz
