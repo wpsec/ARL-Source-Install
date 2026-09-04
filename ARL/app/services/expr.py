@@ -86,12 +86,36 @@ def evaluate_expression(parsed, variables):
         else:
             raise ValueError(f"Unknown variable: {parsed}")
 
-    elif len(parsed) == 1:
+    if parsed is None:
+        raise ValueError("empty expression tree")
+
+    if len(parsed) == 1:
         return evaluate_expression(parsed[0], variables)
-    elif len(parsed) == 2:
+    if len(parsed) == 2:
+        # 前缀 not：['!', operand]；其余偶数长度均为畸形树
+        if parsed[0] != "!":
+            raise ValueError(f"malformed expression tree: even-length node {len(parsed)}")
         return operators[parsed[0]](evaluate_expression(parsed[1], variables))
-    elif len(parsed) == 3:
-        return operators[parsed[1]](evaluate_expression(parsed[2], variables), evaluate_expression(parsed[0], variables))
+    if len(parsed) % 2 == 0:
+        raise ValueError(f"malformed expression tree: even-length node {len(parsed)}")
+
+    # pyparsing infixNotation 对连续同级运算产出扁平列表 [a, op, b, op, c...]。
+    # 旧实现只处理长度 1/2/3，≥3 运算数（如 6 分支 || 规则，长度 11）隐式返回 None，
+    # 生产里这类规则永远不命中且无告警（计划5 第2阶段核出的真实缺陷，golden 已锁定）。
+    # 修复后按左折叠求值；二元条件 [field, op, value] 参数序保持 (value, variable) 不变。
+    acc = evaluate_expression(parsed[0], variables)
+    index = 1
+    while index < len(parsed):
+        op = parsed[index]
+        operand = evaluate_expression(parsed[index + 1], variables)
+        if op == "||":
+            acc = bool(acc) or bool(operand)
+        elif op == "&&":
+            acc = bool(acc) and bool(operand)
+        else:
+            acc = operators[op](operand, acc)
+        index += 2
+    return acc
 
 
 def evaluate(expression, variables):

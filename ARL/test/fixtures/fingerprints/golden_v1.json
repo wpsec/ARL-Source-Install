@@ -72,7 +72,9 @@
   },
   "thinkphp": {
     "candidates": [],
-    "confirmed": [],
+    "confirmed": [
+      "ThinkPHP|99"
+    ],
     "legacy": [],
     "wappalyzer_candidates": [],
     "wappalyzer_confirmed": []
@@ -88,7 +90,9 @@
     "candidates": [
       "PHP|72"
     ],
-    "confirmed": [],
+    "confirmed": [
+      "WordPress|99"
+    ],
     "legacy": [
       "PHP"
     ],
