@@ -5,6 +5,7 @@
 
 ## 2026-09-04（未发布）
 
+- `真实环境诊断驱动修复`：x86 测试机 11 任务批次日志确认第四轮修复全面生效；据此修复 WIH 撞墙空产出仍记 covered（重投永久跳过）与 `host:` 空端口脏值生成非法 URL 两项实锤缺陷，并删除孤儿 `cloud_security_scan` 模块。详见 docs/03 第六批。
 - `统一发现架构第四轮修复`：按 12 项验收断言逐条核实落地——WIH 候选登记 `recordType` 属性错位修复（阻断级，新子域/新 API 此前静默不分发）、账本 finish 异常路径 fence 绕过封堵、endpoint 探测接入统一响应缓存并与 URLFinder 时序对调、singleflight 等待收敛到阶段预算、WAF 熔断账本持久化、fileLeak 子进程响应回登记、敏感扫描目标级账本恢复、候选图 url 断链接线、缓存指标口径拆分、`DiscoveryEvent` 审计字段、子进程资源指标与三处安全吞异常观测化；验收缺口（provider 硬取消、Go WIH 消费缓存、跨进程租约等）挂项待处置。详见 docs/03 第四轮批次。
 - `UI 调整与 AI-POC/渗透链移除`：新建任务 17 项功能默认勾选；WIH 接口列页主列改接口URL并优化探测文案；PoC风险删"风险URL"列、新增风险详情弹窗；`AI-POC` 规划链（含 poc_index 与 `AI_POC_SCAN_ENABLE` 配置）与僵尸 `penetration_scan` 模块、`waf_bypass` 派生开关整体删除，AI 去噪/WIH 接口 AI 填充/接口测试保留能力零改动。详见 docs/03 第五批。
 
