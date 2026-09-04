@@ -1,0 +1,100 @@
+{
+  "cisco_login": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "drupal_meta": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "empty_response": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "exchange_owa": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "generic_admin_title": {
+    "candidates": [
+      "后台|72"
+    ],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "hikvision": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "icon_hash_1panel": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "nginx_page": {
+    "candidates": [
+      "Nginx|72"
+    ],
+    "confirmed": [],
+    "legacy": [
+      "Nginx"
+    ],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": [
+      "Nginx|99"
+    ]
+  },
+  "php_short_generic": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "thinkphp": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "tomcat_404": {
+    "candidates": [],
+    "confirmed": [],
+    "legacy": [],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": []
+  },
+  "wp_content": {
+    "candidates": [
+      "PHP|72"
+    ],
+    "confirmed": [],
+    "legacy": [
+      "PHP"
+    ],
+    "wappalyzer_candidates": [],
+    "wappalyzer_confirmed": [
+      "PHP|99"
+    ]
+  }
+}

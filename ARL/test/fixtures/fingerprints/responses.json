@@ -1,0 +1,101 @@
+{
+  "comment": "计划5 第1阶段 golden 合成响应语料：覆盖 legacy(webapp) 与 fingerprint_cache(kscan+Mongo空) 双路径、header/body/title/icon_hash/response 字段通道、excludes、泛化关键字、空响应。期望值不手填——golden_v1.json 为当前实现输出快照（test_fingerprint_golden.py --update 生成）。",
+  "samples": [
+    {
+      "id": "nginx_page",
+      "header": "HTTP/1.1 200 OK\r\nServer: nginx/1.18.0\r\nContent-Type: text/html\r\n",
+      "body": "<html><head><title>Welcome to nginx!</title></head><body><h1>Welcome to nginx!</h1><p>nginx default page</p></body></html>",
+      "title": "Welcome to nginx!",
+      "icon_hash": "0",
+      "url": "http://example.com/"
+    },
+    {
+      "id": "generic_admin_title",
+      "header": "HTTP/1.1 200 OK\r\nServer: Apache\r\n",
+      "body": "<html><head><title>管理后台</title></head><body>请登录</body></html>",
+      "title": "管理后台",
+      "icon_hash": "0",
+      "url": "http://example.com/admin"
+    },
+    {
+      "id": "icon_hash_1panel",
+      "header": "HTTP/1.1 200 OK\r\n",
+      "body": "<html><body>blank</body></html>",
+      "title": "",
+      "icon_hash": "1300107149",
+      "url": "http://example.com/"
+    },
+    {
+      "id": "cisco_login",
+      "header": "HTTP/1.1 200 OK\r\nServer: Cisco-IO\r\n",
+      "body": "<html><head><title>Cisco Systems Login</title></head><body>Please login view_access</body></html>",
+      "title": "Cisco Systems Login",
+      "icon_hash": "0",
+      "url": "https://10.0.0.1/"
+    },
+    {
+      "id": "wp_content",
+      "header": "HTTP/1.1 200 OK\r\nX-Powered-By: PHP/7.4\r\n",
+      "body": "<html><head><title>Just another WordPress site</title><link rel='stylesheet' href='/wp-content/themes/x/style.css'></head><body>wp-json</body></html>",
+      "title": "Just another WordPress site",
+      "icon_hash": "0",
+      "url": "http://example.com/"
+    },
+    {
+      "id": "drupal_meta",
+      "header": "HTTP/1.1 200 OK\r\n",
+      "body": "<html><head><meta name=\"Generator\" content=\"Drupal 7 (http://drupal.org)\" /><title>Home</title></head><body></body></html>",
+      "title": "Home",
+      "icon_hash": "0",
+      "url": "http://example.com/"
+    },
+    {
+      "id": "php_short_generic",
+      "header": "HTTP/1.1 200 OK\r\n",
+      "body": "<html><body>PHP</body></html>",
+      "title": "PHP",
+      "icon_hash": "0",
+      "url": "http://example.com/"
+    },
+    {
+      "id": "hikvision",
+      "header": "HTTP/1.1 200 OK\r\nServer: webserver\r\n",
+      "body": "<html><head><title>Hikvision 视频监控</title></head><body><script>WebObject</script></body></html>",
+      "title": "Hikvision 视频监控",
+      "icon_hash": "0",
+      "url": "http://10.1.1.1/"
+    },
+    {
+      "id": "exchange_owa",
+      "header": "HTTP/1.1 200 OK\r\nSet-Cookie: exchangecookie=abc\r\n",
+      "body": "<html><head><title> Outlook Web App </title></head><body></body></html>",
+      "title": " Outlook Web App ",
+      "icon_hash": "0",
+      "url": "https://mail.example.com/owa/"
+    },
+    {
+      "id": "empty_response",
+      "header": "HTTP/1.1 200 OK\r\n",
+      "body": "",
+      "title": "",
+      "icon_hash": "0",
+      "url": "http://example.com/"
+    },
+    {
+      "id": "tomcat_404",
+      "header": "HTTP/1.1 404 Not Found\r\nServer: Apache-Coyote/1.1\r\n",
+      "body": "<html><head><title>HTTP Status 404 – Not Found</title></head><body><h1>Type Status Report</h1>Apache Tomcat</body></html>",
+      "title": "HTTP Status 404 – Not Found",
+      "icon_hash": "0",
+      "url": "http://example.com/miss"
+    },
+    {
+      "id": "thinkphp",
+      "header": "HTTP/1.1 200 OK\r\n",
+      "body": "<html><head><title>页面错误</title></head><body><div>ThinkPHP V5.0</div></body></html>",
+      "title": "页面错误",
+      "icon_hash": "0",
+      "url": "http://example.com/index.php"
+    }
+  ]
+}
