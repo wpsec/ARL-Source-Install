@@ -525,11 +525,11 @@ export function DashboardView({
                     </td>
                   </tr>
                 ) : (
-                  recentTasks.map((task) => {
+                  recentTasks.map((task, taskIndex) => {
                     const statusInfo = resolveTaskStatus(task?.status);
                     const taskId = String(task?._id || task?.task_id || task?.id || '').trim();
                     return (
-                      <tr key={String(task?._id || task?.task_id || task?.id || Math.random())} className="border-b border-base-300/60 last:border-b-0">
+                      <tr key={taskId || `recent-task-${taskIndex}`} className="border-b border-base-300/60 last:border-b-0">
                         <td className="py-3 pr-4 font-semibold">
                           {taskId ? (
                             <button

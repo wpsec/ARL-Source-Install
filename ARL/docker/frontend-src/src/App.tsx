@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Lock, X } from 'lucide-react';
 import {
   ACTIVE_MODULE_KEY,
@@ -39,6 +40,10 @@ function ViewFallback() {
 }
 
 export function MainShell() {
+  const queryClient = useQueryClient();
+  // 全局动作（侧边栏"新建扫描"等）成功后的列表失效信号：TableModuleView 激活 effect 依赖它重跑，
+  // 否则"已在任务页时新建任务"没有可见刷新路径（openModule 同模块不重挂载）。
+  const [listRefreshSignal, setListRefreshSignal] = useState(0);
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
   const [activeModuleId, setActiveModuleId] = useState(() => resolveStoredModuleId(localStorage.getItem(ACTIVE_MODULE_KEY)));
@@ -270,6 +275,11 @@ export function MainShell() {
     });
 
     setGlobalNotice(result?.message ? `执行成功: ${result.message}` : '操作执行成功');
+    if (!action.download) {
+      // 与模块内 runAction 同一套失效语义：标 stale 不后台重拉，激活视图由 signal 触发显式刷新
+      queryClient.invalidateQueries({ queryKey: ['module-list', token], refetchType: 'none' });
+      setListRefreshSignal((prev) => prev + 1);
+    }
     if (action.id === 'create_task') {
       openModule('task');
     }
@@ -366,6 +376,7 @@ export function MainShell() {
             externalFilters={activeExternalFilters}
             onClearExternalFilters={clearActiveExternalFilters}
             scrollResetToken={moduleScrollResetTokens[activeModuleCacheKey] || 0}
+            refreshSignal={listRefreshSignal}
           />
         ) : null}
         </Suspense>

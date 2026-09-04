@@ -90,6 +90,7 @@ export function TableModuleView({
   externalFilters,
   onClearExternalFilters,
   scrollResetToken = 0,
+  refreshSignal = 0,
 }: {
   module: ModuleConfig;
   token: string;
@@ -97,6 +98,8 @@ export function TableModuleView({
   externalFilters?: JsonValue;
   onClearExternalFilters?: () => void;
   scrollResetToken?: number;
+  /** 全局动作成功后的列表失效信号（App/MainShell 递增），变化即重跑激活取数。 */
+  refreshSignal?: number;
 }) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -484,7 +487,7 @@ export function TableModuleView({
     }
     setLoading(false);
     setSelectedIds([]);
-  }, [activeExternalFilters, buildDefaultSearchForm, hasList, module.defaultOrder, module.id, moduleCacheKey, scrollResetToken]);
+  }, [activeExternalFilters, buildDefaultSearchForm, hasList, module.defaultOrder, module.id, moduleCacheKey, refreshSignal, scrollResetToken]);
 
   useEffect(() => {
     if (!hasList) return;
