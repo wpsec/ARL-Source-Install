@@ -2,12 +2,12 @@
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771929911927-d85a6718-38c0-48e1-8841-aab9082b1c69.png)
 
-基于 ARL 的互联网资产自动化收集二开版本（挑来挑去，还是灯塔好用些）  
-这套平台利用成熟的平台ARL作为基础：支持批量导出、钉钉机器人通知、钉钉知识库结构化写入、计划任务聚合通知与对比统计、前后端稳定性修复，基础设施的升级维护。
+基于 ARL 的互联网资产自动化收集平台二开版本。
+本版本围绕资产发现、Web 情报、任务调度、结果治理和平台运维进行了深度重构，保留原有 API 与 Mongo 结果结构，便于平滑升级。
 
-> 站在外部的角度，如果不知道自己拥有什么，就无法保护什么
+> 站在外部的角度，如果不知道自己拥有什么，就无法保护什么。
 >
-> 帮助团队收集暴露的资产，一是让团队有哪些资产暴露在互联网上，避免因不小心的配置错误或者其它原因造成暴露在互联网上的遗留、边缘资产问题，二是尽可能避免项目代码不小心被推送到github上，出现泄漏问题。利用主流三方API做网络空间搜索引擎和传统的域名爆破、前端暴露的url拼接、端口扫描、host碰撞等方法进行资产信息的收集，自动化定时执行推送到知识库、群机器人。
+> 平台用于合法授权范围内的互联网资产梳理、安全验证和持续监测，覆盖域名、IP、站点、URL、端口、服务、指纹和 Web 情报等资产类型。
 
 ---
 
@@ -41,7 +41,7 @@ chmod +x build.sh start.sh scripts/quick-build.sh
 tools/playwright/README.md
 ```
 
-主生产运行时按 Python 3.10+ 规划，Rust 加速模块的镜像构建目标包含 amd64 与 arm64。已在 macOS Apple Silicon 的 ARM64 Docker 环境完成镜像构建、Rust native smoke、AArch64 工具链和核心回归测试；部署到 x86 服务器时仍应使用 amd64 builder 或对应架构的 buildx/runner 构建并验收。
+支持 amd64 与 arm64 部署，已在 macOS Apple Silicon ARM64 Docker 环境完成构建和核心回归；部署到 x86 服务器时使用 amd64 镜像或对应架构的 buildx/runner 验收。
 
 ### 密码修改
 
@@ -64,59 +64,13 @@ tools/playwright/README.md
 - 支持1-2个 Worker
   - 在 .env 中镜像配置
 
-### 升级
-
-### 常规更新
+### 更新
 
 ```bash
 # 日常更新
 git pull
 ./scripts/quick-build.sh
 ```
-
-### 配置说明
-
-```plain
-ARL/docker/config-docker.yaml   # 版本模板（随代码更新）
-ARL/docker/config-runtime.yaml  # 运行配置（用户实际生效，不进 git）
-```
-
-为避免升级后覆盖用户 key 与自定义参数，系统已采用“模板 + 运行配置”分离：
-
-- `config-docker.yaml`：版本模板，可随版本更新新增配置项
-- `config-runtime.yaml`：运行时配置，容器实际挂载此文件，UI 配置保存也写入此文件
-- `start.sh / restart.sh / scripts/quick-build.sh` 均会在缺失时自动从模板创建 `config-runtime.yaml`
-
-如果系统 UI 不支持某些配置项，可直接编辑 `config-runtime.yaml`
-
-### Rust + Python 混合加速层
-
-系统已使用 Rust 重构部分关键接口，以降低 CPU 密集型处理开销并提升批量处理效率。当前采用 Python 业务编排与 Rust CPU 加速相结合的方式，固定调用链为：
-
-```plain
-Celery -> Python Orchestrator -> Python Adapter -> Rust 批处理模块 -> WihRecord -> Mongo
-```
-
-- Python 保留 Flask、Celery、Mongo、配置、AI、Playwright、网络策略、预算控制和任务生命周期。
-- Rust 只处理无副作用、可批处理的 CPU 密集型逻辑：URL/JS/HTML 提取、URL 归一化、过滤、去重、候选排序和指纹计算。
-- 当前 Rust 加速已接入 URLFinder 批量提取、HTML 页面结构提取、JS 接口候选提取和敏感候选排序等关键接口；Python 公共函数签名保持不变，业务结果仍统一转换为现有 `WihRecord` 并写入 Mongo。
-- Rust 不直接访问 Mongo、Redis、Celery、LLM、浏览器、DNS/WAF 或外部扫描器；现有 Go 版 `tools/wih` 继续保持 Go 实现。
-- Rust 模块位于 `ARL/native/arl_accel`，通过 PyO3/maturin 构建 `abi3` wheel，主生产 Python 版本为 3.10+，使用 release 构建。
-- `RUST_ACCEL_ENABLE` 控制是否优先使用 Rust；`RUST_ACCEL_FALLBACK_ENABLE` 控制 Rust 不可用或单批异常时是否回退当前批次的 Python 实现。回退会记录阶段、批次、原因和次数，不会静默发生。
-- URL/HTML/JS 加速批次会记录独立的 Rust 执行、fallback、网络等待和请求数量指标，便于区分 CPU 处理瓶颈与外部网络探测耗时。
-
-域名发现结果保留兼容字段 `source`，并通过 `sources` 聚合 FOFA、Hunter、证书、爆破等所有命中来源；前端列表筛选和 Excel 导出会展示完整来源集合。该能力只对新版本运行期间捕获的命中生效，历史任务需要重新扫描才能补齐之前丢失的来源关系。
-
-对应环境变量为 `ARL_RUST_ACCEL_ENABLE` 和 `ARL_RUST_ACCEL_FALLBACK_ENABLE`。Rust 结果只有在 Python golden corpus 一致性和性能门禁通过后，才扩大生产覆盖范围。
-
-#### 性能验收口径
-
-Rust 加速层不以“已接入”直接等同于“已提速”。在 64 个代表性目标的冷启动、热缓存两轮基线中，候选热点必须满足以下任一条件，才扩大 Rust 覆盖范围：
-
-- p95 CPU 时间较 Python 基线降低至少 30%
-- 吞吐达到 Python 基线的 1.5 倍。
-
-同时，接入 Rust 后端到端阶段耗时不得较 Python 基线恶化超过 5%。若 CPU 并非该阶段的主要耗时来源，不强制迁移，保留 Python 实现和可观测 fallback。当前 Rust/Python 结果一致性以及 ARM64/amd64 release wheel、同一套 native smoke test 已通过，64 目标真实性能基线仍在采集中。
 
 ### Worker 横向扩展说明（v4.3.0）
 
@@ -127,29 +81,70 @@ Rust 加速层不以“已接入”直接等同于“已提速”。在 64 个�
 ARL_WORKER_REPLICAS=1   # 可选: 1 或 2，默认 1
 ```
 
+## 深度重构成果
+
+- **代码结构**：`commonTask.py` 由约 2744 行收敛至约 1002 行；任务编排、阶段执行、配置、结果写回和生命周期拆为独立服务。
+- **统一发现链路**：站点爬虫、URLFinder、WIH、目录扫描共享响应、候选、来源和 WAF 状态，减少重复请求与结果丢失。
+- **数据处理优化**：使用 Rust 深度优化 URL、HTML、JS 信息提取、归一化、过滤、去重、排序和指纹计算。
+- **扫描调度**：域名解析、测绘 provider、端口扫描采用分批、限流、超时、重试和熔断策略；`all` 端口保持完整扫描语义。
+- **指纹治理**：重新梳理指纹文件、规则映射、缓存和产品识别，支持本地扩展与结果去重。
+- **UI 重构**：新版 React UI，统一主题、页面骨架、卡片、表格、弹窗和任务状态展示；Plan 04 继续推进 daisyUI 与模块拆分。
+- **多架构支持**：兼容 amd64 与 arm64，已完成 macOS Apple Silicon ARM64 Docker 构建和核心回归。
+- **AI 能力**：旧 AI 渗透链路已清理；Strix 已完成集成方向和安全兼容性预研，暂不作为默认生产扫描链路。
+
 ## 二开功能总览
 
-### 资产发现
+### 资产发现与扫描
 
-- 域名、IP、站点、URL、目录扫描、证书、服务识别、指纹识别
-- 多测绘源接入与联动查询
-- `WIH -> URL/JS增强 -> API文档解析 -> URLFinder二次敏感扫描 -> TruffleHog` 的 Web 信息收集链路
-- 指纹库兼容增强，支持单文件指纹库合成与本地扩展
+- 域名爆破、DNS 解析、证书关联、测绘引擎、搜索引擎和 Host 碰撞
+- IP、端口、服务、OS、SSL、站点、URL、目录和指纹识别
+- CDN/WAF 识别、边缘 IP 跳过、异常开放端口识别
+- Nuclei、afrog、文件泄漏和 WIH 信息收集
 
-### Web 专项能力
+### Web 情报与结果治理
 
-- 页面情报提取：链接、表单、脚本入口
-- API 文档解析：`Swagger / OpenAPI / Postman`
-- WAF 观测、命中证据与失败后跳过
+- 统一提取页面链接、表单、脚本、API、目录和新子域
+- 支持 `Swagger / OpenAPI / Postman` 文档解析
+- URL、目录、JS 候选统一归一化、去重、排序和来源聚合
+- 保留 `source` 兼容字段，并聚合 `sources` 完整展示来源
+- WAF 按流量类型隔离，目录扫描受限不影响正常爬虫和 WIH
 
 ### 平台化增强
 
-- 同名任务查看、批量任务操作、任务同步
-- 计划任务、钉钉机器人通知、钉钉知识库结构化写入
-- `Excel / HTML / AI Markdown` 三格式任务报告导出（AI 未完整配置时自动降级为离线模板，不报错）
-- 配置管理新增 `AI管理`：支持多模型配置、上方生效模型切换、OpenAI 兼容接口、提示词管理与总测试按钮
-- 配置热刷新、扫描日志聚合、系统监控、任务可观测性增强
-- Celery / RabbitMQ 稳态增强与重任务队列隔离
+- 渐进式扫描：发现结果先展示，深度阶段完成后任务才标记完成
+- 任务阶段、批次、provider、队列、失败、降级和重试可观测
+- 计划任务、任务同步、批量操作、同名任务聚合和历史对比
+- Excel、HTML、AI Markdown 异步报告导出与轮询下载
+- 配置中心、热刷新、API/provider 测试、提示词管理和敏感字段保护
+- Celery/RabbitMQ 重任务队列隔离、Worker 横向扩展和任务恢复
+- 钉钉机器人通知、知识库结构化写入、系统监控和运行日志聚合
+
+## 重构后架构
+
+```mermaid
+flowchart TB
+    U[用户 / 计划任务] --> N[Nginx]
+    N --> A[Flask API<br/>鉴权 / 配置 / 查询 / 导出]
+    A --> Q[RabbitMQ + Celery]
+    Q --> O[Task Orchestrator<br/>Domain / IP / Web]
+    O --> C[DiscoveryContext<br/>任务级发现上下文]
+
+    C --> R[ResponseRegistry<br/>响应复用]
+    C --> G[CandidateRegistry<br/>候选资产图]
+    C --> S[RequestScheduler<br/>分类调度 / 限流]
+    C --> W[WafPolicy<br/>按流量隔离]
+
+    C --> D[域名发现 / DNS / 测绘]
+    C --> P[端口批次 / 服务识别]
+    C --> H[站点获取 / 爬虫 / URLFinder]
+    C --> I[WIH / 目录扫描 / URL Probe]
+    H --> X[统一 URL / HTML / JS 处理]
+    X --> Z[Rust 数据处理模块]
+
+    O --> M[MongoDB<br/>资产 / 结果 / 账本]
+    O --> K[Redis<br/>缓存 / 会话 / 指纹]
+    I --> E[Nuclei / afrog / 外部工具]
+```
 
 <!-- 这是一张图片，ocr 内容为： -->
 
@@ -225,14 +220,9 @@ ARL_WORKER_REPLICAS=1   # 可选: 1 或 2，默认 1
 | node         | `node:20.20.1-bookworm`           | 编译前端                                      |
 | golang       | `go1.22.4`                        | 构建阶段编译 `wih`（优先离线包，构建后清理）  |
 | Python       | `Python-3.10.20`                  | 后端（离线安装包）                            |
-| Rust         | `1.85.1`                          | 构建 `ARL/native/arl_accel` release wheel     |
-| PyO3/maturin | `PyO3 0.29.2` / `maturin 1.8.6`   | Python `abi3` 扩展与 manylinux 构建           |
-
-其它 bug 修复
+其它 bug 修复：补齐任务恢复、WAF 隔离、结果幂等、来源聚合和异常降级。
 
 ---
-
-![](https://cdn.nlark.com/yuque/__mermaid_v3/c4761538d01543e85d19f9792359b89c.svg)
 
 ## Bug？
 
