@@ -135,7 +135,7 @@ docker/arl_worker.log
 app/dicts/site_fingerprints.json
 app/dicts/service_fingerprints.json
 *.fpbuild_*
-app/dicts/*.json.last-good
+app/dicts/*.json*.last-good
 # 例外：规范指纹 gzip 分发产物必须入库（解全局 *.gz 忽略）
 !app/dicts/site_fingerprints.json.gz
 !app/dicts/service_fingerprints.json.gz
