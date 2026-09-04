@@ -140,33 +140,6 @@ class TaskResultItemService(object):
             "task_id": self.task_id,
             "save_date": self.curr_date(),
         }
-
-    def build_penetration_document(self, result, target):
-        if not isinstance(result, dict):
-            return {}
-        return {
-            "plg_name": "penetration:{}".format(
-                str(result.get("type", "") or "unknown").strip().lower() or "unknown"
-            ),
-            "plg_type": str(result.get("type", "") or "penetration").strip().lower() or "penetration",
-            "vul_name": str(result.get("name", "") or "专项渗透测试发现").strip(),
-            "app_name": "penetration_test",
-            "target": target,
-            "severity": str(result.get("severity", "") or "info").strip().lower(),
-            "description": str(result.get("detail", "") or "").strip(),
-            "detail": "source={} method={} param={} payload={}".format(
-                str(result.get("source", "") or "-").strip(),
-                str(result.get("method", "") or "GET").strip(),
-                str(result.get("param", "") or "-").strip(),
-                str(result.get("payload", "") or "-").strip()[:200],
-            ),
-            "verify_data": str(result.get("evidence", "") or "").strip(),
-            "request_data": str(result.get("request", "") or "").strip(),
-            "response_data": str(result.get("response", "") or "").strip(),
-            "task_id": self.task_id,
-            "save_date": self.curr_date(),
-        }
-
     def build_wih_record_document(self, record):
         if not hasattr(record, "dump_json"):
             return {}

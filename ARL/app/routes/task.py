@@ -33,8 +33,6 @@
 - nuclei_scan：Nuclei漏洞扫描
 - afrog_scan：afrog漏洞扫描
 - web_info_hunter：JS信息收集
-- penetration_test：Web专项渗透测试
-- waf_bypass：WAF绕过（仅渗透测试）
 等30+个可选项
 """
 import os
@@ -51,7 +49,7 @@ from app.modules import TaskStatus, ErrorMsg, TaskSyncStatus, CeleryAction, Task
 from app.repositories import ResultSetRepository, TaskRepository
 from app.helpers import get_options_by_policy_id, submit_task_task,\
     submit_risk_cruising, get_scope_by_scope_id, check_target_in_scope
-from app.helpers.task import get_task_data, restart_task, strip_disabled_penetration_options
+from app.helpers.task import get_task_data, restart_task
 
 # 创建任务信息命名空间
 ns = Namespace('task', description="资产发现任务信息")
@@ -114,8 +112,6 @@ base_search_task_fields = {
     'options.afrog_scan': fields.Boolean(description="是否开启afrog漏洞扫描"),
     'options.findvhost': fields.Boolean(description="是否开启虚拟主机碰撞检测"),
     'options.web_info_hunter': fields.Boolean(description="是否开启WebInfoHunter（JS信息收集）"),
-    'options.penetration_test': fields.Boolean(description="是否开启Web专项渗透测试"),
-    'options.waf_bypass': fields.Boolean(description="是否开启WAF绕过（仅渗透测试）"),
     'options.smart_skip_waf': fields.Boolean(description="是否开启跳过WAF"),
     'options.ai_denoise': fields.Boolean(description="是否开启AI去噪分析"),
     'options.dingding_notify': fields.Boolean(description="任务完成后是否钉钉通知"),
@@ -270,8 +266,6 @@ class ARLTask(ARLResource):
             args['port_custom'] = ",".join(port_list)
         else:
             args.pop('port_custom', None)
-
-        args, _ = strip_disabled_penetration_options(args)
 
         try:
             # 提交任务（会进行目标验证和任务创建）

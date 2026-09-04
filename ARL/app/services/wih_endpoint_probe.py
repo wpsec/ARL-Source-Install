@@ -292,7 +292,12 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_cont
     url = str(item.get("url") or "").strip()
 
     if _has_response(item):
-        return _mark_probe_state(item, "observed", "WIH runtime 已捕获响应", method)
+        # 文案会入库 verification_note 并在 UI 透传：说清"为什么没再探"而不是术语堆叠
+        return _mark_probe_state(
+            item, "observed",
+            "引擎运行期已捕获该响应（状态码 {}），未重复探测".format(
+                _safe_positive_int(item.get("status_code") or item.get("response_status")) or "-"),
+            method)
 
     skip_reason = _should_skip(item)
     if skip_reason:

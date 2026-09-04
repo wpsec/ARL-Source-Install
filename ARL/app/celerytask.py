@@ -122,7 +122,6 @@ _AI_DENOISE_STAGE_MODULE_MAP = {
     "poc_run": ["vuln"],
     "weak_brute": ["vuln"],
     "findvhost": ["vuln"],
-    "penetration_test": ["vuln"],
 }
 
 

@@ -62,20 +62,6 @@ class WebSiteExternalScanStageService(object):
                 fallback_note="仅回退当前文件泄漏阶段",
             )
 
-        if (
-            task.options.get(WebSiteFetchOption.NUCLEI_SCAN)
-            or task.options.get(WebSiteFetchOption.AFROG_SCAN)
-        ):
-            task._run_optional_ai_stage_best_effort(
-                "ai_poc_scan",
-                task.run_ai_poc_scan_plan,
-                feature_name="ai_poc_scan_plan",
-                fallback_note="保留原始 nuclei/afrog 扫描参数，不影响后续扫描阶段",
-                push_service_on_error=True,
-                trigger_ai=False,
-                on_error=task._handle_ai_poc_stage_degrade,
-            )
-
         if task.options.get(WebSiteFetchOption.NUCLEI_SCAN):
             stage.run(
                 WebSiteFetchStatus.NUCLEI_SCAN,
@@ -125,14 +111,6 @@ class WebSitePostProcessStageService(object):
     def run(self):
         task = self.task
         stage = WebSiteSingleStageService(task, logger=logger)
-        if task.options.get(WebSiteFetchOption.PENETRATION_TEST):
-            stage.run(
-                WebSiteFetchStatus.PENETRATION_TEST,
-                task.run_penetration_test,
-                fallback=None,
-                fallback_note="仅回退当前专项阶段",
-            )
-
         if task._nuclei_deferred_retry_needed:
             task.run_deferred_nuclei_scan()
 

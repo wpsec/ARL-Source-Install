@@ -35,15 +35,7 @@ _WEB_HEAVY_OPTION_KEYS = (
     "nuclei_scan",
     "afrog_scan",
     "web_info_hunter",
-    "penetration_test",
 )
-_DISABLED_PENETRATION_OPTION_KEYS = (
-    "penetration_test",
-    "waf_bypass",
-)
-_DISABLED_PENETRATION_REASON = "渗透测试功能已临时下线，后端统一强制关闭相关开关"
-
-
 def apply_arch_compat_options(options):
     """
     保留任务选项，架构差异由镜像构建阶段提供对应的工具实现。
@@ -53,23 +45,6 @@ def apply_arch_compat_options(options):
     """
     options_cp = options.copy()
     return options_cp, []
-
-
-def strip_disabled_penetration_options(options):
-    """
-    临时下线渗透测试能力：
-    - 无论入口来自新建任务、策略、资产组补扫还是历史任务重跑
-    - 统一将渗透测试相关开关收敛为 false，避免继续执行误报较高的主动验证链路
-    """
-    options_cp = dict(options or {}) if isinstance(options, dict) else {}
-    disabled_keys = []
-
-    for option_key in _DISABLED_PENETRATION_OPTION_KEYS:
-        if bool(options_cp.get(option_key)):
-            disabled_keys.append(option_key)
-        options_cp[option_key] = False
-
-    return options_cp, disabled_keys
 
 
 def _refresh_dispatch_queue_cache(timeout_sec=1.5):
@@ -512,18 +487,6 @@ def submit_task(task_data):
     """
     force_queue_name = str(task_data.pop("_dispatch_queue", "") or "").strip().lower()
     force_queue_reason = str(task_data.pop("_dispatch_queue_reason", "") or "").strip()
-    task_options = task_data.get("options") if isinstance(task_data.get("options"), dict) else {}
-    normalized_options, disabled_pen_keys = strip_disabled_penetration_options(task_options)
-    task_data["options"] = normalized_options
-    if disabled_pen_keys:
-        logger.info(
-            "task penetration options auto disabled target:{} keys:{} reason:{}".format(
-                task_data.get("target", "-"),
-                ",".join(disabled_pen_keys),
-                _DISABLED_PENETRATION_REASON,
-            )
-        )
-
     target = task_data["target"]
     utils.conn_db('task').insert_one(task_data)
     task_id = str(task_data.pop("_id"))

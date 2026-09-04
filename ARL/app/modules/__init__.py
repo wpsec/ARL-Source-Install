@@ -125,8 +125,6 @@ class WebSiteFetchOption:
     NUCLEI_SCAN = "nuclei_scan"  # nuclei 扫描
     AFROG_SCAN = "afrog_scan"  # afrog 扫描
     Info_Hunter = "web_info_hunter"  # 对 JS 调用WebInfoHunter
-    PENETRATION_TEST = "penetration_test"  # Web 专项渗透测试
-    WAF_BYPASS = "waf_bypass"  # 仅对主动渗透链路启用轻量 WAF 试探绕过
     SMART_SKIP_WAF = "smart_skip_waf"  # 智能跳过 WAF 拦截目标
 
 
@@ -142,7 +140,6 @@ class WebSiteFetchStatus:
     NUCLEI_SCAN = "nuclei_scan"
     AFROG_SCAN = "afrog_scan"
     Info_Hunter = "web_info_hunter"  # 对 JS 调用WebInfoHunter
-    PENETRATION_TEST = "penetration_test"  # Web 专项渗透测试
 
 
 class CeleryAction:

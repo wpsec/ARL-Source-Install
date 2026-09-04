@@ -130,9 +130,6 @@ class AIConfigService(object):
             "custom_compat_providers": self.normalize_custom_providers(
                 ai_conf.get("CUSTOM_COMPAT_PROVIDERS")
             ),
-            "ai_poc_scan_enable": self._safe_bool(
-                ai_conf.get("AI_POC_SCAN_ENABLE"), True
-            ),
             "ai_denoise_enable": self._safe_bool(
                 ai_conf.get("AI_DENOISE_ENABLE"), True
             ),
@@ -319,9 +316,6 @@ class AIConfigService(object):
         )
         ai_conf["CUSTOM_COMPAT_PROVIDERS"] = self.normalize_custom_providers(
             ai_config.get("custom_compat_providers")
-        )
-        ai_conf["AI_POC_SCAN_ENABLE"] = self._safe_bool(
-            ai_config.get("ai_poc_scan_enable"), True
         )
         ai_conf["AI_DENOISE_ENABLE"] = self._safe_bool(
             ai_config.get("ai_denoise_enable"), True

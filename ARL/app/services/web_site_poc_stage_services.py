@@ -185,23 +185,6 @@ class WebSiteNucleiScanStageService(object):
             )
         )
         scan_profile = None
-        runtime_profile = task.ai_poc_runtime.get("nuclei_scan_profile") if isinstance(task.ai_poc_runtime, dict) else None
-        if isinstance(runtime_profile, dict):
-            force_tags = runtime_profile.get("force_tags")
-            if isinstance(force_tags, str):
-                force_tags = [x for x in force_tags.split(",") if x]
-            if isinstance(force_tags, (list, tuple, set)) and force_tags:
-                scan_profile = {
-                    "name": str(runtime_profile.get("name", "ai-poc") or "ai-poc"),
-                    "force_tags": list(force_tags),
-                }
-                logger.info(
-                    "task_id:{} nuclei_scan use ai_poc profile:{} tags:{}".format(
-                        task.task_id,
-                        scan_profile.get("name"),
-                        ",".join([str(x) for x in scan_profile.get("force_tags", [])])[:300],
-                    )
-                )
 
         context, ledger = self._ledger_context()
         ledger_key = ""
@@ -248,55 +231,6 @@ class WebSiteNucleiScanStageService(object):
         logger.info("end nuclei_scan， result:{}".format(len(scan_results)))
         return scan_results
 
-    def preview_batch_plan(self, nuclei_targets: list):
-        """基于当前目标预览 nuclei 批次计划（不执行扫描）。"""
-        task = self.task
-        if not nuclei_targets:
-            return {
-                "batch_count": 0,
-                "auto_scan_batch_count": 0,
-                "tag_sample": [],
-                "all_tags": [],
-            }
-
-        try:
-            scanner = NucleiScan(targets=nuclei_targets)
-            batches = scanner._build_target_batches()
-            all_tags = []
-            auto_scan_batch_count = 0
-            for batch in batches:
-                if bool(batch.get("auto_scan", False)):
-                    auto_scan_batch_count += 1
-                tag_text = str(batch.get("tags", "") or "").strip()
-                if not tag_text:
-                    continue
-                all_tags.extend(scanner._split_tag_text(tag_text))
-
-            unique_tags = []
-            seen = set()
-            for tag in all_tags:
-                normalized = task._normalize_ai_poc_tag(tag)
-                if not normalized or normalized in seen:
-                    continue
-                seen.add(normalized)
-                unique_tags.append(normalized)
-
-            return {
-                "batch_count": len(batches),
-                "auto_scan_batch_count": auto_scan_batch_count,
-                "tag_sample": unique_tags[:18],
-                "all_tags": unique_tags[:120],
-            }
-        except Exception as e:
-            logger.warning("preview nuclei batch plan failed err:{}".format(safe_error_text(e)))
-            return {
-                "batch_count": 0,
-                "auto_scan_batch_count": 0,
-                "tag_sample": [],
-                "all_tags": [],
-            }
-
-
 class WebSiteAfrogScanStageService(object):
     """Afrog 扫描与 vuln 写回。"""
 
@@ -332,24 +266,7 @@ class WebSiteAfrogScanStageService(object):
                 task.smart_skip_waf,
             )
         )
-        ai_keywords = ""
-        ai_severity = ""
-        if isinstance(task.ai_poc_runtime, dict):
-            ai_keywords = str(task.ai_poc_runtime.get("afrog_keywords", "") or "").strip()
-            ai_severity = str(task.ai_poc_runtime.get("afrog_severity", "") or "").strip().lower()
-            if ai_keywords or ai_severity:
-                logger.info(
-                    "task_id:{} afrog_scan use ai_poc keywords:{} severity:{}".format(
-                        task.task_id,
-                        ai_keywords[:220] if ai_keywords else "-",
-                        ai_severity or "-",
-                    )
-                )
-        scan_results = self._run_afrog(
-            afrog_targets,
-            search_keywords=ai_keywords if ai_keywords else None,
-            severity=ai_severity if ai_severity else None,
-        )
+        scan_results = self._run_afrog(afrog_targets)
         saved_count = 0
         for result in scan_results:
             target = str(result.get("target", "") or "").strip()

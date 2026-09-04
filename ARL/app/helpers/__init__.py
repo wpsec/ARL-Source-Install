@@ -14,7 +14,6 @@ from .task import (
     get_ip_domain_list,
     submit_task_task,
     submit_risk_cruising,
-    strip_disabled_penetration_options,
 )
 from .scope import get_scope_by_scope_id, check_target_in_scope
 from .url import get_url_by_task_id

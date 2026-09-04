@@ -32,7 +32,6 @@ from app.services.discovery_ledger_store import MongoLedgerBackend
 from app.services.discovery_context import url_host
 from app.services.discovery_queue import NewHostQueue
 from app.services.wih_result_persist_services import WihResultPersistService
-from app.services.ai_poc_planner_service import AIPocPlannerService
 from app.services.web_site_poc_stage_services import (
     WebSiteNucleiScanStageService,
     WebSiteAfrogScanStageService,
@@ -45,7 +44,6 @@ from app.services.web_site_scan_stage_services import (
     WebSiteSpiderStageService,
 )
 from app.services import run_risk_cruising, BaseUpdateTask
-from app.helpers.task import strip_disabled_penetration_options
 from app.utils.log_safety import safe_error_text
 logger = utils.get_logger()
 
@@ -221,46 +219,17 @@ class WebSiteFetch(CommonTask):
         "admin", "manage", "ops", "dev", "test", "staging", "pre",
         "console", "panel", "oa", "vpn", "api",
     )
-    # AI-POC 常量与索引缓存已移至 AIPocPlannerService；此处保留兼容别名引用。
-    AI_POC_MAX_TAGS = AIPocPlannerService.AI_POC_MAX_TAGS
-    AI_POC_MAX_KEYWORDS = AIPocPlannerService.AI_POC_MAX_KEYWORDS
-    AI_POC_MAX_CONTEXT_SITES = AIPocPlannerService.AI_POC_MAX_CONTEXT_SITES
-    AI_POC_MAX_URL_HINTS = AIPocPlannerService.AI_POC_MAX_URL_HINTS
-    AI_POC_MAX_WIH_HINTS = AIPocPlannerService.AI_POC_MAX_WIH_HINTS
-    AI_POC_INDEX_MAX_MATCHED_TOKENS = AIPocPlannerService.AI_POC_INDEX_MAX_MATCHED_TOKENS
-    AI_POC_INDEX_MAX_CANDIDATE_TAGS = AIPocPlannerService.AI_POC_INDEX_MAX_CANDIDATE_TAGS
-    AI_POC_INDEX_MAX_CANDIDATE_KEYWORDS = AIPocPlannerService.AI_POC_INDEX_MAX_CANDIDATE_KEYWORDS
-    AI_POC_AI_INPUT_MAX_TAGS = AIPocPlannerService.AI_POC_AI_INPUT_MAX_TAGS
-    AI_POC_AI_INPUT_MAX_KEYWORDS = AIPocPlannerService.AI_POC_AI_INPUT_MAX_KEYWORDS
-    AI_POC_ALIAS_HINTS = AIPocPlannerService.AI_POC_ALIAS_HINTS
-    AI_POC_ALIAS_TAG_MAP = AIPocPlannerService.AI_POC_ALIAS_TAG_MAP
-    AI_POC_ALIAS_KEYWORD_MAP = AIPocPlannerService.AI_POC_ALIAS_KEYWORD_MAP
-    AI_POC_INDEX_ENV_KEY = AIPocPlannerService.AI_POC_INDEX_ENV_KEY
-    AI_POC_INDEX_REL_PATH = AIPocPlannerService.AI_POC_INDEX_REL_PATH
-    AI_POC_INDEX_REL_PATH_LEGACY = AIPocPlannerService.AI_POC_INDEX_REL_PATH_LEGACY
 
     def __init__(self, task_id: str, sites: list, options: dict, scope_domain: list = None):
         super(WebSiteFetch, self).__init__(task_id)
         self.task_id = task_id
         self.sites = sites  # ** 这个是用户提交的目标
         self.options = options or {}
-        self.options, disabled_pen_keys = strip_disabled_penetration_options(self.options)
-        if disabled_pen_keys and self.PENETRATION_FEATURES_TEMP_DISABLED:
-            logger.info(
-                "task_id:{} penetration features auto disabled at runtime keys:{}".format(
-                    self.task_id,
-                    ",".join(disabled_pen_keys),
-                )
-            )
         self.smart_skip_waf = bool(self.options.get("smart_skip_waf", False))
-        self.waf_bypass = bool(
-            self.options.get(WebSiteFetchOption.WAF_BYPASS, False)
-            and self.options.get(WebSiteFetchOption.PENETRATION_TEST, False)
-        )
         self.waf_guard = WAFSmartSkipGuard(
-            enabled=self.smart_skip_waf or self.waf_bypass,
+            enabled=self.smart_skip_waf,
             smart_skip_enabled=self.smart_skip_waf,
-            bypass_enabled=self.waf_bypass,
+            bypass_enabled=False,
             task_id=self.task_id,
             scope_sites=self.sites,
             signal_sink=self._on_waf_guard_block,
@@ -283,17 +252,6 @@ class WebSiteFetch(CommonTask):
         self._task_domain_set = None  # 用于保存任务中的域名
         self._nuclei_deferred_retry_needed = False
         self._nuclei_final_skip = False
-        self.ai_poc_runtime = {
-            "enabled": False,
-            "mode": "disabled",
-            "nuclei_scan_profile": None,
-            "afrog_keywords": "",
-            "afrog_severity": "",
-            "confidence": 0.0,
-            "reason": "",
-            "evidence": [],
-            "raw_ai_reply": "",
-        }
         self._task_scope_context_cache = None
         self._service_detail_overrides = {}
         self._waf_stage_stats = {}
@@ -751,65 +709,6 @@ class WebSiteFetch(CommonTask):
         return WebSiteNucleiScanStageService(self).build_targets()
 
     @staticmethod
-    # ---- AI-POC 规划器兼容委托：实现见 AIPocPlannerService ----
-
-    def _ai_poc_planner(self):
-        return AIPocPlannerService(self)
-
-    @staticmethod
-    def _count_yaml_files(dir_path: str) -> int:
-        return AIPocPlannerService._count_yaml_files(dir_path)
-
-    def _load_ai_runtime_config(self):
-        return self._ai_poc_planner()._load_ai_runtime_config()
-
-    @staticmethod
-    def _safe_float_value(value, default_value=0.0):
-        return AIPocPlannerService._safe_float_value(value, default_value)
-
-    @staticmethod
-    def _normalize_ai_poc_tag(tag: str) -> str:
-        return AIPocPlannerService._normalize_ai_poc_tag(tag)
-
-    @classmethod
-    def _normalize_ai_poc_tags(cls, value, max_count=None):
-        return AIPocPlannerService._normalize_ai_poc_tags(value, max_count=max_count)
-
-    @staticmethod
-    def _normalize_ai_poc_keyword(keyword: str) -> str:
-        return AIPocPlannerService._normalize_ai_poc_keyword(keyword)
-
-    @classmethod
-    def _normalize_ai_poc_keywords(cls, value, max_count=None):
-        return AIPocPlannerService._normalize_ai_poc_keywords(value, max_count=max_count)
-
-    @staticmethod
-    def _normalize_ai_poc_severity(value):
-        return AIPocPlannerService._normalize_ai_poc_severity(value)
-
-    def _preview_nuclei_batch_plan(self, nuclei_targets: list):
-        """基于当前目标预览 nuclei 批次计划（不执行扫描）。"""
-        return WebSiteNucleiScanStageService(self).preview_batch_plan(nuclei_targets)
-
-    def _collect_alias_hits(self, context_payload):
-        return self._ai_poc_planner()._collect_alias_hits(context_payload)
-
-    def _collect_ai_poc_index_candidates(self, context_payload, alias_hits):
-        return self._ai_poc_planner()._collect_ai_poc_index_candidates(context_payload, alias_hits)
-
-    def _collect_ai_poc_context(self, sites):
-        return self._ai_poc_planner()._collect_ai_poc_context(sites)
-
-    def _call_ai_poc_planner(self, **kwargs):
-        return self._ai_poc_planner()._call_ai_poc_planner(**kwargs)
-
-    def _write_ai_poc_usage_log(self, **kwargs):
-        return self._ai_poc_planner()._write_ai_poc_usage_log(**kwargs)
-
-    def run_ai_poc_scan_plan(self):
-        """AI-POC 预扫描决策（兼容入口，实现见 AIPocPlannerService）。"""
-        return self._ai_poc_planner().run_ai_poc_scan_plan()
-
     def nuclei_scan(self, deferred_retry=False):
         """Nuclei 扫描阶段（兼容入口，实现见 WebSiteNucleiScanStageService）。"""
         return WebSiteNucleiScanStageService(self).run(deferred_retry=deferred_retry)
@@ -845,60 +744,6 @@ class WebSiteFetch(CommonTask):
         """Afrog 扫描阶段（兼容入口，实现见 WebSiteAfrogScanStageService）。"""
         return WebSiteAfrogScanStageService(self).run()
 
-    def run_penetration_test(self):
-        """
-        运行 Web 专项渗透测试。
-
-        说明：
-        - 与 nuclei / afrog 的模板化 PoC 扫描解耦
-        - 在未显式开启 WIH 时，自动补做一次 Web 信息收集，便于承接页面表单 /
-          API 文档 / URL 资产等前置信息
-        """
-        if not self.options.get(WebSiteFetchOption.Info_Hunter) and not self.wih_record_set:
-            logger.info(
-                "task_id:{} penetration_test bootstrap web_info_hunter for prerequisite intel".format(
-                    self.task_id
-                )
-            )
-            self.run_web_info_hunter()
-
-        scan_result = services.run_penetration_scan(
-            task_id=self.task_id,
-            sites=self.sites,
-            page_url_set=self.page_url_set,
-            waf_guard=self.waf_guard,
-        )
-        cloud_result = services.run_cloud_security_scan(
-            task_id=self.task_id,
-            sites=self.sites,
-            page_url_set=self.page_url_set,
-            waf_guard=self.waf_guard,
-        )
-
-        saved_count = 0
-        all_findings = list(scan_result.get("findings", []) or []) + list(cloud_result.get("findings", []) or [])
-        for result in all_findings:
-            target = str(result.get("url", "") or "").strip()
-            if not target:
-                continue
-            if not self._scan_result_in_task_scope(result, target_keys=("url",)):
-                continue
-
-            item = self._result_item_service.build_penetration_document(result, target)
-            if not item:
-                continue
-            self._result_writer.insert_one("vuln", item)
-            saved_count += 1
-
-        logger.info(
-            "end penetration_test, active_targets:{} cloud_targets:{} findings_saved:{}".format(
-                len(scan_result.get("targets", [])),
-                len(cloud_result.get("targets", [])),
-                saved_count,
-            )
-        )
-
-    @staticmethod
     def _clip_text(value, max_len=220):
         text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
         if len(text) <= max_len:
@@ -997,36 +842,6 @@ class WebSiteFetch(CommonTask):
         if note_text:
             detail_parts.append("fallback={}".format(note_text))
         return " | ".join(detail_parts)[:1200]
-
-    def _handle_ai_poc_stage_degrade(self, exc, detail_text: str):
-        error_text = self._clip_text(exc, 220) or "unknown_error"
-        self.ai_poc_runtime = {
-            "enabled": False,
-            "mode": "error_fallback",
-            "nuclei_scan_profile": None,
-            "afrog_keywords": "",
-            "afrog_severity": "",
-            "confidence": 0.0,
-            "reason": "AI-POC 决策异常，已回退默认扫描参数",
-            "evidence": [error_text],
-            "raw_ai_reply": "",
-        }
-        self._write_ai_poc_usage_log(
-            scene="ai_poc_scan_decision",
-            status="error",
-            provider="-",
-            model="-",
-            profile="-",
-            request_text="AI-POC 扫描计划",
-            reply_text=detail_text,
-            error_message=error_text,
-            usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            meta={
-                "task_id": str(self.task_id or ""),
-                "run_mode": "error_fallback",
-                "fallback": "pass_through",
-            },
-        )
 
     def _run_optional_ai_stage_best_effort(
         self,

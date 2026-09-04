@@ -22,7 +22,6 @@ from app.config import normalize_dict_path_compat
 from bson import ObjectId
 from flask_restx.fields import Nested, String, Boolean, List
 from flask_restx.model import Model
-from app.helpers.task import strip_disabled_penetration_options
 
 ns = Namespace('policy', description="策略信息")
 
@@ -268,7 +267,6 @@ class AddARLPolicy(ARLResource):
         # 处理站点配置
         site_config = policy.pop("site_config", {})
         site_config = self._update_arg(site_config, site_config_fields)
-        site_config, _ = strip_disabled_penetration_options(site_config)
 
         # 处理PoC插件配置
         poc_config = policy.pop("poc_config", [])
@@ -580,8 +578,6 @@ class EditPolicy(ARLResource):
         if file_leak_dict_error:
             return utils.build_ret(ErrorMsg.Error, file_leak_dict_error)
         item["policy"]["file_leak_dict"] = file_leak_dict
-        sanitized_site_config, _ = strip_disabled_penetration_options(item["policy"].get("site_config", {}))
-        item["policy"]["site_config"] = sanitized_site_config
 
         # 更新时间戳并保存
         item["update_date"] = utils.curr_date()
