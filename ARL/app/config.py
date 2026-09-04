@@ -774,6 +774,8 @@ class Config(object):
     SITE_FINGERPRINT_SOURCE = "legacy"
     # 规范站点指纹文件（支持 .json 与 .json.gz），由 build_unified_fingerprints 生成
     SITE_FINGERPRINT_FILE = os.path.join(basedir, "dicts", "site_fingerprints.json.gz")
+    # 服务规范指纹文件（Nmap/NPoC 结果归一层；缺失时退化为透传，不中断识别链路）
+    SERVICE_FINGERPRINT_FILE = os.path.join(basedir, "dicts", "service_fingerprints.json.gz")
     # 截图引擎：playwright / phantomjs / auto
     SCREENSHOT_ENGINE = "playwright"
     # PhantomJS 可执行文件路径（legacy 兼容路径）
@@ -1684,6 +1686,9 @@ try:
 
     if y["ARL"].get("SITE_FINGERPRINT_FILE"):
         Config.SITE_FINGERPRINT_FILE = y["ARL"].get("SITE_FINGERPRINT_FILE")
+
+    if y["ARL"].get("SERVICE_FINGERPRINT_FILE"):
+        Config.SERVICE_FINGERPRINT_FILE = y["ARL"].get("SERVICE_FINGERPRINT_FILE")
 
     if y["ARL"].get("KSCAN_FINGERPRINT_ENABLE") is not None:
         Config.KSCAN_FINGERPRINT_ENABLE = bool(y["ARL"]["KSCAN_FINGERPRINT_ENABLE"])

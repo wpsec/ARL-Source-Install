@@ -206,7 +206,8 @@ class IPServiceSummaryStageService(object):
         nmap_merged = 0
         npoc_merged = 0
 
-        def _append_item(service_name, ip, port_id, product="", version="", source=""):
+        def _append_item(service_name, ip, port_id, product="", version="", source="",
+                         confidence=None, sources=None, conflict=None):
             nonlocal merged_total, nmap_merged, npoc_merged
             raw_name = task._extract_detected_service(
                 service_name=service_name,
@@ -235,12 +236,20 @@ class IPServiceSummaryStageService(object):
             if not normalized_product:
                 # -sV 未开启或未命中时，回退协议名，避免 Product 长期空白。
                 normalized_product = service
-            service_map[service].append({
+            doc = {
                 "ip": ip,
                 "port_id": port_id,
                 "product": normalized_product,
                 "version": str(version or "").strip(),
-            })
+            }
+            # 计划5 第5阶段增量观测字段（附加式，不改既有字段语义）
+            if confidence is not None:
+                doc["service_confidence"] = confidence
+            if sources:
+                doc["service_sources"] = list(sources)
+            if conflict:
+                doc["service_conflict"] = conflict
+            service_map[service].append(doc)
             merged_total += 1
             if source == "nmap":
                 nmap_merged += 1
@@ -258,6 +267,9 @@ class IPServiceSummaryStageService(object):
                     product=port_item.get("product", ""),
                     version=port_item.get("version", ""),
                     source="nmap",
+                    confidence=port_item.get("service_confidence"),
+                    sources=port_item.get("service_sources"),
+                    conflict=port_item.get("service_conflict"),
                 )
 
         # 2) npoc 明细补充（用于兜底合并来源）

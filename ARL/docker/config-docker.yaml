@@ -277,6 +277,7 @@ ARL:
   # 站点指纹数据源：legacy=旧双路径，unified=规范文件 site_fingerprints（第4阶段重编译联动就绪后切换）
   SITE_FINGERPRINT_SOURCE: "legacy"
   # SITE_FINGERPRINT_FILE: "/code/app/dicts/site_fingerprints.json.gz"
+  # SERVICE_FINGERPRINT_FILE: "/code/app/dicts/service_fingerprints.json.gz"
   BLACK_IPS:
     - 0.0.0.0/8
     - 10.0.0.0/8

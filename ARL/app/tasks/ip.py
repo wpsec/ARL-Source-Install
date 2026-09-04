@@ -129,6 +129,11 @@ class IPTask(CommonTask):
         value = str(value or "").strip().lower()
         if not value:
             return ""
+        # 计划5 第5阶段：规范别名优先（服务文件可用时）；硬编码表降级为兜底
+        from app.services.service_fingerprint_registry import get_service_registry
+        registry = get_service_registry()
+        if registry.ok:
+            return registry.canonical(value) or value
         alias_map = {
             "ssl/http": "https",
             "http/ssl": "https",
@@ -246,10 +251,17 @@ class IPTask(CommonTask):
 
                 scheme = scheme_map[key]
                 curr_service = str(port_info.get("service_name", "")).strip().lower()
-                # 服务识别以 sniffer 为准，nmap 结果作为回退
-                if curr_service != scheme:
+                # 服务识别以 sniffer 为准，nmap 结果作为回退；规范层记录来源与冲突证据（05 §六）
+                from app.services.service_fingerprint_registry import get_service_registry
+                result = get_service_registry().normalize_result(nmap_service=curr_service, npoc_scheme=scheme)
+                new_service = result["service"] or scheme
+                if curr_service != new_service:
                     updated += 1
-                port_info["service_name"] = scheme
+                port_info["service_name"] = new_service
+                port_info["service_confidence"] = result["confidence"]
+                port_info["service_sources"] = result["sources"]
+                if result["conflict"]:
+                    port_info["service_conflict"] = result["conflict"]
                 if not str(port_info.get("product", "")).strip() or self._is_low_conf_service(port_info):
                     port_info["product"] = scheme
 
