@@ -8,10 +8,14 @@
 输出 delta 及归因，核对两件事：
   1) 减少方向必须可归因（policy 拒绝的泛化噪声，附录B 清单交叉核对）；
   2) 新增方向必须可解释（faviconhash/webapp 进链、kscan_local 1760、用户规则 overlay）。
-容器内执行（真实 Mongo）：cd /code && python3 /code/app/tools/../../scripts/... 或挂载后运行；
-本地执行（fake Mongo=空）给出纯文件面预览，两者报告头标注数据来源。
+容器内执行（真实 Mongo）：
+    docker cp scripts/fingerprint-ruleset-diff.py arl_web:/tmp/fpdiff.py
+    docker exec -e FINGERPRINT_REAL_DB=1 arl_web python3 /tmp/fpdiff.py
+本地执行（fake Mongo=空，仅文件面预览）：python3 scripts/fingerprint-ruleset-diff.py
+报告首行标注数据来源（real/preview）。
 """
 import importlib.util
+import os
 import pathlib
 import sys
 import types
@@ -21,6 +25,15 @@ ARL = ROOT / "ARL"
 
 
 def bootstrap():
+    # 容器内真实链：直接 import app.*（xing/真实 Mongo 齐备），不 fake 任何模块
+    if os.environ.get("FINGERPRINT_REAL_DB") == "1":
+        sys.path.insert(0, str(ARL))
+        import app.services.fingerprint_cache as cache
+        import app.services.site_fingerprint_registry as registry
+        from app.config import Config as _C
+        source = "real"
+        _ = getattr(_C, "SITE_FINGERPRINT_FILE", "")
+        return cache, registry, source
     app_pkg = types.ModuleType("app")
     app_pkg.__path__ = [str(ARL / "app")]
     sys.modules["app"] = app_pkg
@@ -99,13 +112,19 @@ def bootstrap():
     svc.fingerprint_cache = cache
     _load("app.tools.build_unified_fingerprints", ARL / "app/tools/build_unified_fingerprints.py")
     registry = _load("app.services.site_fingerprint_registry", ARL / "app/services/site_fingerprint_registry.py")
-    return cache, registry
+    return cache, registry, "preview"
 
 
 def main():
-    cache, registry_mod = bootstrap()
+    cache, registry_mod, source = bootstrap()
+    print(f"数据来源: {source}{'（真实 Mongo，作放行依据）' if source == 'real' else '（本地空库预览，正式放行须容器内 real 重跑）'}")
     legacy_rules = cache.finger_db_cache.get_data() or []
-    reg = registry_mod.SiteFingerprintRegistry(str(ARL / "app/dicts/site_fingerprints.json.gz")).load()
+    if source == "real":
+        from app.config import Config as _C
+        site_path = str(_C.SITE_FINGERPRINT_FILE)
+    else:
+        site_path = str(ARL / "app/dicts/site_fingerprints.json.gz")
+    reg = registry_mod.SiteFingerprintRegistry(site_path).load()
     if not reg.ok:
         print("ERROR: unified registry unavailable:", reg.load_error)
         return 1
@@ -116,7 +135,7 @@ def main():
     only_legacy = sorted(legacy_names - unified_names)
 
     import gzip as _gz, json as _json
-    with _gz.open(ARL / "app/dicts/site_fingerprints.json.gz", "rt", encoding="utf-8") as f:
+    with _gz.open(site_path if not site_path.endswith(".gz") else site_path, "rt", encoding="utf-8") as f:
         _meta = _json.load(f)["meta"]
     rejected_detail = {str(r.get("name", "")).strip().casefold(): r for r in _meta.get("rejected_rules_detail", [])}
     print(f"- 产物 meta: content_hash={_meta.get('content_hash', '')[:16]} 拒绝明细 {len(rejected_detail)} 条")
