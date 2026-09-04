@@ -26,6 +26,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "autoprefixer": "^10.4.21",
     "daisyui": "^5.7.28",
     "tailwindcss": "^4.1.14",

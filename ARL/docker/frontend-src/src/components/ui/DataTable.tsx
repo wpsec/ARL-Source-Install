@@ -19,7 +19,7 @@ export type DataTableColumn<Row> = {
   getValue?: (row: Row) => unknown;
 };
 
-export function DataTable<Row extends Record<string, any>>({
+export function DataTable<Row extends object>({
   columns,
   rows,
   rowKey,
@@ -27,6 +27,7 @@ export function DataTable<Row extends Record<string, any>>({
   emptyText = '暂无数据',
   zebra = true,
   dense = false,
+  tableClass = '',
   virtualizedMaxHeightClass = 'max-h-[72vh]',
 }: {
   columns: Array<DataTableColumn<Row>>;
@@ -36,6 +37,8 @@ export function DataTable<Row extends Record<string, any>>({
   emptyText?: ReactNode;
   zebra?: boolean;
   dense?: boolean;
+  /** 追加到 table 元素的尺寸类（如 text-xs 密集表）。 */
+  tableClass?: string;
   /** 虚拟模式下的内部滚动高度来源（白名单要求确定高度）。 */
   virtualizedMaxHeightClass?: string;
 }) {
@@ -55,7 +58,7 @@ export function DataTable<Row extends Record<string, any>>({
       <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-center'}`}>
         {column.render
           ? column.render(row, index)
-          : String(column.getValue ? column.getValue(row) : (row[column.key] ?? '-'))
+          : String(column.getValue ? column.getValue(row) : ((row as Record<string, unknown>)[column.key] ?? '-'))
         }
       </td>
     ));
@@ -70,7 +73,7 @@ export function DataTable<Row extends Record<string, any>>({
       ref={parentRef}
       className={`overflow-x-auto custom-scrollbar${shouldVirtualize ? ` overflow-y-auto ${virtualizedMaxHeightClass}` : ''}`}
     >
-      <table className={`table text-sm md:text-[15px] ${zebra ? 'table-zebra' : ''}`}>
+      <table className={`table text-sm md:text-[15px] ${zebra ? 'table-zebra' : ''} ${tableClass}`}>
         <thead className="bg-base-100/40 border-b border-base-300">
           <tr>
             {columns.map((column) => (

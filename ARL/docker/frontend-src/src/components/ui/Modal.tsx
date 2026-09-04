@@ -23,6 +23,7 @@ export function Modal({
   labelledBy?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -32,6 +33,16 @@ export function Modal({
     } else if (!open && el.open) {
       el.close();
     }
+  }, [open]);
+
+  // 无障碍名：打开时把 box 内首个标题挂给 dialog，19 个调用点无需逐个传 labelledBy。
+  useEffect(() => {
+    if (!open) return;
+    const el = ref.current;
+    const heading = boxRef.current?.querySelector('h4, h3, [data-modal-title]');
+    if (!el || !heading) return;
+    if (!heading.id) heading.id = `modal-title-${Math.random().toString(36).slice(2, 8)}`;
+    el.setAttribute('aria-labelledby', heading.id);
   }, [open]);
 
   return (
@@ -47,7 +58,7 @@ export function Modal({
         if (dismissable && event.target === ref.current) onClose();
       }}
     >
-      <div className={`arl-modal-box ${boxClass}`}>{children}</div>
+      <div ref={boxRef} className={`arl-modal-box ${boxClass}`}>{children}</div>
     </dialog>
   );
 }

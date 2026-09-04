@@ -2,21 +2,21 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import {defineConfig} from 'vite';
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
+export default defineConfig(() => {
   const versionPath = path.resolve(__dirname, '../../version.txt');
   let arlVersion = 'unknown';
   try {
     arlVersion = fs.readFileSync(versionPath, 'utf-8').trim() || 'unknown';
-  } catch (error) {
+  } catch {
     arlVersion = 'unknown';
   }
   return {
     plugins: [react(), tailwindcss()],
+    // 仅注入版本号常量。禁止把任何环境变量 define 进浏览器 bundle
+    // （历史脚手架曾注入 GEMINI_API_KEY，构建环境存在该变量即泄露，AI 能力全部走后端 /api）。
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       __ARL_VERSION__: JSON.stringify(arlVersion),
     },
     resolve: {
@@ -25,9 +25,7 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
+      hmr: true,
     },
   };
 });

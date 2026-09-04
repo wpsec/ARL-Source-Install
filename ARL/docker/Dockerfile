@@ -55,11 +55,12 @@ RUN set -eux; \
     npm_exec config set fetch-retries 5; \
     npm_exec config set fetch-retry-mintimeout 20000; \
     npm_exec config set fetch-retry-maxtimeout 120000; \
-    if [ -f package-lock.json ]; then \
-      npm_exec ci --no-audit --no-fund; \
-    else \
-      npm_exec install --no-audit --no-fund; \
-    fi
+    # 生产镜像构建强制可复现：lock 缺失直接失败（回退 npm install 会让依赖漂移进镜像）
+    if [ ! -f package-lock.json ]; then \
+      echo "[ERROR] frontend-src/package-lock.json missing; production build must run npm ci" >&2; \
+      exit 1; \
+    fi; \
+    npm_exec ci --no-audit --no-fund
 
 # 前端构建会读取 ../../version.txt，这里映射到 /version.txt
 COPY ARL/version.txt /version.txt

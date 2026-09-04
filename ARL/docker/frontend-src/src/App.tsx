@@ -17,6 +17,7 @@ import {
 } from './api/client';
 import Sidebar from './components/Sidebar';
 import { Modal } from './components/ui/Modal';
+import { ViewErrorBoundary } from './components/ui/ErrorBoundary';
 import { TASK_DETAIL_TABS, getModuleById, resolveStoredModuleId } from './config/modules';
 import { ThemeProvider } from './context/ThemeContext';
 import { applyPathTemplate, deepClone } from './domain/format';
@@ -342,6 +343,7 @@ export function MainShell() {
             </button>
           </div>
         </div>
+        <ViewErrorBoundary key={activeModuleId}>
         <Suspense fallback={<ViewFallback />}>
         {activeModule.id === 'dashboard' ? (
           <DashboardView token={token} onOpenModule={openModule} onQuickCreateTask={openQuickCreateTask} />
@@ -367,6 +369,7 @@ export function MainShell() {
           />
         ) : null}
         </Suspense>
+        </ViewErrorBoundary>
       </main>
 
       {globalAction ? (

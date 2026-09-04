@@ -191,7 +191,6 @@ export function TableModuleView({
   const pendingRestoreScrollTopRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
   const moduleListStateCacheRef = useRef<Record<string, ModuleListCacheEntry>>({});
-  const moduleListLoadedRef = useRef<Record<string, boolean>>({});
   const latestLoadRowsRequestIdRef = useRef(0);
   const activeModuleCacheKeyRef = useRef('');
   const taskDetailCountCacheRef = useRef<Record<string, Record<string, number>>>({});
@@ -464,7 +463,9 @@ export function TableModuleView({
       setOrder(String(cachedState.order || module.defaultOrder || ''));
       setQuickFilter(String(cachedState.quickFilter || ''));
       setSearchForm(cachedState.searchForm ? deepClone(cachedState.searchForm) : buildDefaultSearchForm());
-      setShouldInitialLoad(Boolean(hasList) && !Boolean(moduleListLoadedRef.current[moduleCacheKey]));
+      // 缓存快照只用于即时绘制；新鲜度判断交给 react-query（fetchQuery 命中 fresh 缓存不发请求，
+      // stale/LIVE 模块自动打网络），不再用一次性 loaded 标记把模块永久钉在旧数据上。
+      setShouldInitialLoad(Boolean(hasList));
       pendingRestoreScrollTopRef.current = shouldResetScrollPosition
         ? 0
         : (Number.isFinite(Number(cachedState.scrollTop))
@@ -1004,7 +1005,6 @@ export function TableModuleView({
       setRows(normalized.items);
       setTotal(normalized.total);
       setSelectedIds([]);
-      moduleListLoadedRef.current[moduleCacheKey] = true;
       if (isTaskDetailModule) {
         const currentTotal = Number(normalized.total || 0);
         setTaskDetailCounts((prev) => ({ ...prev, [module.id]: currentTotal }));
@@ -1023,7 +1023,6 @@ export function TableModuleView({
       setError(err?.message || '加载失败');
       setRows([]);
       setTotal(0);
-      moduleListLoadedRef.current[moduleCacheKey] = true;
     } finally {
       if (
         requestId === latestLoadRowsRequestIdRef.current
@@ -1052,6 +1051,25 @@ export function TableModuleView({
     setShouldInitialLoad(false);
     void loadRows();
   }, [hasList, loadRows, shouldInitialLoad]);
+
+  // 任务列表存在 running/waiting 行时轮询刷新（15s，与系统监控既有节奏一致；
+  // task 属 LIVE_STATUS 模块 staleTime=0，loadRows 必然打网络）。无运行行即停表。
+  const hasLiveTaskRows = useMemo(
+    () =>
+      module.id === 'task' &&
+      rows.some((row: any) => {
+        const status = normalizeTaskStatus(row?.status);
+        return status === 'running' || status === 'waiting';
+      }),
+    [module.id, rows],
+  );
+  useEffect(() => {
+    if (!hasLiveTaskRows || !hasList || loading) return;
+    const timer = window.setInterval(() => {
+      void loadRows();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [hasLiveTaskRows, hasList, loading, loadRows]);
 
   const totalPages = Math.max(1, Math.ceil(total / size));
   const pageOptions = useMemo(
@@ -1944,6 +1962,9 @@ export function TableModuleView({
     }
 
     if (action.reloadAfter !== false && module.listPath) {
+      // 写成功后失效读侧缓存：只标 stale 不拉网络（refetchType none，避免后台视图并发重拉），
+      // 当前视图由下面 loadRows 显式刷新；其它页面下次激活时因 stale 自动取新。
+      queryClient.invalidateQueries({ queryKey: ['module-list', token], refetchType: 'none' });
       await loadRows({ forceRefresh: true });
     }
   };
@@ -3458,7 +3479,7 @@ export function TableModuleView({
                   const siteFingerExpandKey = id || `site-finger-row-${page}-${rowIndex}`;
 
                   return (
-                    <tr key={id || Math.random()} className="border-b border-base-300/60 hover:bg-white/5 transition">
+                    <tr key={id || `row-${page}-${rowIndex}`} className="border-b border-base-300/60 hover:bg-white/5 transition">
                       <td className="px-4 py-3 text-center align-middle">
                         <input
                           type="checkbox"

@@ -20,6 +20,7 @@ import {
 import { USERNAME_KEY, requestApi } from '../api/client';
 import { SensitiveRevealVerifyModal } from '../components/domain/SensitiveRevealVerifyModal';
 import { Modal } from '../components/ui/Modal';
+import { DataTable } from '../components/ui/DataTable';
 import type {AiDenoiseModuleId} from '../domain/types';
 import {
   CONSOLE_CHECKBOX_CARD_CLASS,
@@ -2323,76 +2324,79 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
             <span>最近对话日志（显示最新 {usageLogs.length} / 总计 {usageLogsTotal}）</span>
             <span>{usageLogsUpdatedAt ? `更新时间：${usageLogsUpdatedAt}` : ''}</span>
           </div>
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="min-w-full text-xs">
-              <thead className="bg-base-100/60">
-                <tr>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">时间</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">场景</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">状态</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">模型</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">Tokens</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">用户输入摘要</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">AI回复摘要</th>
-                  <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usageLogs.length > 0 ? (
-                  usageLogs.map((item) => (
-                    <tr key={item.id || `${item.created_at}-${item.scene}-${item.model}`} className="border-t border-base-300/60 align-top">
-                      <td className="px-3 py-2 whitespace-nowrap">{item.created_at || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{item.scene_label || item.scene || '-'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded border ${
-                            item.status === 'ok'
-                              ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
-                              : item.status === 'skipped'
-                                ? 'text-amber-300 border-amber-300/40 bg-amber-300/10'
-                                : 'text-error border-error/40 bg-error/10'
-                          }`}
-                        >
-                          {item.status === 'ok' ? '成功' : item.status === 'skipped' ? '跳过' : '失败'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div>{item.provider || '-'}</div>
-                        <div className="text-[11px] text-content-muted">{item.model || '-'}</div>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <div>Total {item.total_tokens}</div>
-                        <div className="text-[11px] text-content-muted">
-                          P {item.prompt_tokens} / C {item.completion_tokens}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 max-w-[260px] whitespace-normal break-all text-[11px] leading-5">
-                        {getUsageLogPreviewText(item.request_text, 88)}
-                      </td>
-                      <td className="px-3 py-2 max-w-[300px] whitespace-normal break-all text-[11px] leading-5">
-                        {getUsageLogPreviewText(item.reply_text || item.error_message, 96)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => setUsageLogDetail(item)}
-                          className="px-2 py-1 rounded-lg border border-base-300 text-[11px] font-semibold hover:bg-base-100/70 transition"
-                        >
-                          查看详情
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr className="border-t border-base-300/60">
-                    <td colSpan={8} className="px-3 py-4 text-center text-content-muted">
-                      暂无日志记录
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            dense
+            tableClass="text-xs"
+            emptyText="暂无日志记录"
+            rows={usageLogs}
+            rowKey={(item, index) => item.id || `${item.created_at}-${item.scene}-${item.model}-${index}`}
+            columns={[
+              { key: 'created_at', header: '时间', headerClass: 'text-content-muted text-left', cellClass: 'text-left whitespace-nowrap', render: (item: any) => item.created_at || '-' },
+              { key: 'scene', header: '场景', headerClass: 'text-content-muted text-left', cellClass: 'text-left whitespace-nowrap', render: (item: any) => item.scene_label || item.scene || '-' },
+              {
+                key: 'status',
+                header: '状态',
+                headerClass: 'text-content-muted text-left',
+                cellClass: 'text-left whitespace-nowrap',
+                render: (item: any) => (
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded border ${
+                      item.status === 'ok'
+                        ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
+                        : item.status === 'skipped'
+                          ? 'text-amber-300 border-amber-300/40 bg-amber-300/10'
+                          : 'text-error border-error/40 bg-error/10'
+                    }`}
+                  >
+                    {item.status === 'ok' ? '成功' : item.status === 'skipped' ? '跳过' : '失败'}
+                  </span>
+                ),
+              },
+              {
+                key: 'model',
+                header: '模型',
+                headerClass: 'text-content-muted text-left',
+                cellClass: 'text-left whitespace-nowrap',
+                render: (item: any) => (
+                  <>
+                    <div>{item.provider || '-'}</div>
+                    <div className="text-[11px] text-content-muted">{item.model || '-'}</div>
+                  </>
+                ),
+              },
+              {
+                key: 'tokens',
+                header: 'Tokens',
+                headerClass: 'text-content-muted text-left',
+                cellClass: 'text-left whitespace-nowrap',
+                render: (item: any) => (
+                  <>
+                    <div>Total {item.total_tokens}</div>
+                    <div className="text-[11px] text-content-muted">
+                      P {item.prompt_tokens} / C {item.completion_tokens}
+                    </div>
+                  </>
+                ),
+              },
+              { key: 'request_text', header: '用户输入摘要', headerClass: 'text-content-muted text-left', cellClass: 'text-left max-w-[260px] whitespace-normal break-all text-[11px] leading-5', render: (item: any) => getUsageLogPreviewText(item.request_text, 88) },
+              { key: 'reply_text', header: 'AI回复摘要', headerClass: 'text-content-muted text-left', cellClass: 'text-left max-w-[300px] whitespace-normal break-all text-[11px] leading-5', render: (item: any) => getUsageLogPreviewText(item.reply_text || item.error_message, 96) },
+              {
+                key: 'action',
+                header: '操作',
+                headerClass: 'text-content-muted text-left',
+                cellClass: 'text-left whitespace-nowrap',
+                render: (item: any) => (
+                  <button
+                    type="button"
+                    onClick={() => setUsageLogDetail(item)}
+                    className="px-2 py-1 rounded-lg border border-base-300 text-[11px] font-semibold hover:bg-base-100/70 transition"
+                  >
+                    查看详情
+                  </button>
+                ),
+              },
+            ]}
+          />
         </div>
         {usageError ? (
           <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
