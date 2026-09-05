@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple  # noqa: F401
@@ -53,6 +54,9 @@ _TEMPLATE_RE = re.compile(r"\{[^{}]+\}")
 _COLON_VAR_RE = re.compile(r"(^|/):[^/?#{}]+(?=[/?#]|$)")
 _SCHEMA_SUMMARY_MAX_DEPTH = 3
 _SCHEMA_SUMMARY_MAX_PROPERTIES = 50
+# openapi/swagger 痕迹：断裂文档只有命中痕迹才按 G4 显式 failed，
+# 无痕迹的载入失败（GraphQL SDL 等任意文本）skip 交解析器链后继。
+_OPENAPI_TRACE_RE = re.compile(r"(?:openapi|swagger)", re.IGNORECASE)
 _PARAM_LOCATIONS = ("path", "query", "header", "cookie", "formData", "body")
 
 # Review P0-01：不可信文档（server/base/soap:address）里的越界 host 只是发现
@@ -169,12 +173,24 @@ class UnifiedOpenApiParser:
                 return ParseResult(parser=self.parser_name, diagnostics=diag)
             doc, error_type = self._load(text)
             if doc is None:
-                diag.status = "failed"
-                diag.error_type = error_type
+                # G4 显式失败只覆盖带 openapi/swagger 痕迹的断裂文档（invalid_json
+                # 伪装"无 API"是本契约的核心场景）。任意文本的 YAML 载入失败不是
+                # 坏 openapi 的证据——GraphQL SDL 等文本形态必须 skipped，否则解析器
+                # 链在链首被截断，graphql/wsdl 永远无法经真实队列进入（与第 7 批
+                # "XML→skip"同一链式分发前置修复）。RecursionError 是成本边界信号，
+                # 不受痕迹门控，维持显式 failed。
+                if error_type == "load_error" and not _OPENAPI_TRACE_RE.search(text):
+                    diag.status = "skipped"
+                    diag.error_type = "not_openapi_document"
+                else:
+                    diag.status = "failed"
+                    diag.error_type = error_type
                 return ParseResult(parser=self.parser_name, diagnostics=diag)
         if not isinstance(doc, dict):
-            diag.status = "failed"
-            diag.error_type = "not_object"
+            # 载入成功但非标量以外形态（YAML scalar / JSON 数组）：同样不构成
+            # openapi 痕迹，failed 会截断链；交回链式分发按各格式自身判定。
+            diag.status = "skipped"
+            diag.error_type = "not_openapi_document"
             return ParseResult(parser=self.parser_name, diagnostics=diag)
 
         version = self._detect_version(doc)
@@ -578,8 +594,12 @@ class UnifiedPostmanParser:
                 return ParseResult(parser=self.parser_name, diagnostics=diag)
             doc, error_type = UnifiedOpenApiParser._load(text)
             if doc is None:
-                diag.status = "failed"
-                diag.error_type = error_type
+                # Collection v2.x 是 JSON-only 格式：载入失败即"非 postman 形态"，
+                # 必须 skipped 交链（与 openapi 链首修复同一契约）；把 GraphQL SDL
+                # 等任意文本标 failed 会在链上截断后继解析器。真实 postman JSON
+                # 必能载入，其结构异常由 legacy 路径与本解析器 item 校验兜底。
+                diag.status = "skipped"
+                diag.error_type = "not_postman_document"
                 return ParseResult(parser=self.parser_name, diagnostics=diag)
         if not isinstance(doc, dict) or not isinstance(doc.get("item"), list):
             diag.status = "skipped"
@@ -670,6 +690,15 @@ class UnifiedPostmanParser:
             nonlocal unresolved
             key = match.group(1)
             if key in variables:
+                if is_sensitive_key(key):
+                    # Review P0-02：敏感键名是唯一安全依据，命中即永不产出真实值——
+                    # URL 的 raw 文本、protocol/host/path 拼装、query 段、path 变量段
+                    # 都经由本替换函数，统一保留 {{key}} 模板并标 unresolved，
+                    # 走既有"不可解析变量→模板保留、置信度 30、桥接抑制 urlfinder"
+                    # 链路，而不是静默替换成原值。models 的 sanitize_url_secrets 只
+                    # 兜敏感 query 键位，挡不住 path/host 位原值，不能依赖它补救。
+                    unresolved = True
+                    return "{{" + key + "}}"
                 return variables[key]
             unresolved = True
             return "{" + key + "}"
@@ -857,28 +886,41 @@ class _GraphQLParseError(Exception):
 
 
 class UnifiedGraphqlParser:
-    """GraphQL 文档统一解析（第 6 批，G5 闭环）。
+    """GraphQL 文档统一解析（第 6 批 G5 闭环；T2+T3：P1-06/P1-07/P0-03）。
 
     三个形态：请求文档（`{query, operationName, variables}`，可嵌套在
     `{url, method, request}` 外壳里）、introspection 响应（`data.__schema`）、
     SDL 文本。Schema 面（introspection/SDL）受 `graphql_schema_enable`
-    开关与大小/类型/字段预算约束，默认关闭 → skipped 回 legacy 现状路径。
-    operation 拆解只用词法头 + 花括号配平（不做完整 grammar），variables
-    仅记名称与声明类型；`variables` 对象的取值在本结构下无落点（G4/脱敏）。
+    开关与 bytes/type/field/argument/depth 预算约束（P0-03：任何预算命中
+    结果不得为 ok——degraded + 具体预算名进 diagnostics；结构性错误 failed；
+    默认关闭 → skipped 回 legacy 现状路径）。
+    operation 拆解（T2/P1-06、P1-07）：轻量 tokenizer——掩码跳过 `#` 行注释、
+    `"..."` 行字符串与 `\"\"\"...\"\"\"` 块字符串（含转义），只在文档级花括号
+    深度 0 识别 operation header（query/mutation/subscription + 可选 name +
+    可选 variables 声明/指令），不做完整 grammar。variables 仅记名称与声明
+    类型；`variables` 对象的取值在本结构下无落点（G4/脱敏）。
     """
 
     parser_name = "graphql_unified"
     parser_version = "v1"
 
-    _OP_RE = re.compile(
-        r"(?:^|[\s}])(query|mutation|subscription)\s*([A-Za-z_][A-Za-z0-9_]*)?"
-        r"\s*(?:\(([^)]*)\))?\s*\{")
+    # T2 冻结（P1-06/P1-07）：operation header 只在掩码文本深度 0 识别，
+    # 替换旧 `_OP_RE` 全文搜索（嵌套 selection 字段名/注释/字符串关键字误报根因）。
+    _OP_KEYWORD_RE = re.compile(
+        r"(?<![A-Za-z0-9_])(query|mutation|subscription)(?![A-Za-z0-9_])")
     _VAR_DEF_RE = re.compile(r"\$\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_\[\]! ]*?)\s*(?=,|$|\))")
-    _SDL_DEF_RE = re.compile(
-        r"^(?:extend\s+)?(schema|type|input|enum|union|scalar|interface|directive)\s*([A-Za-z_][A-Za-z0-9_]*)?")
+    _REF_VAR_RE = re.compile(r"\$\s*([A-Za-z_][A-Za-z0-9_]*)")
+    _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+    _SDL_HEAD_RE = re.compile(
+        r"^(?:extend\s+)?(schema|type|input|enum|union|scalar|interface|directive)(?![A-Za-z0-9_])")
+    _FIELD_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\s*[(!:]")
+    _FIELD_SIG_RE = re.compile(
+        r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\((?P<args>[^()]*)\))?\s*:\s*(?P<ret>[^#=]*)")
     _MAX_OPERATIONS = 50
     _MAX_TYPES = 500
     _MAX_FIELDS_PER_TYPE = 100
+    _MAX_ARGS_PER_FIELD = 100
+    _MAX_OF_TYPE_CHAIN = 1000
     _MAX_QUERY_BYTES = 65536
 
     def __init__(self, task_id: str, doc_url: str, allowed_hosts=None, allowed_flds=None,
@@ -908,7 +950,7 @@ class UnifiedGraphqlParser:
         if isinstance(doc, dict):
             if self._looks_like_sdl_request(doc):
                 return self._parse_request_document(doc, diag)
-            if self._looks_like_introspection(doc):
+            if self._looks_like_introspection(doc) or self._has_schema_key(doc):
                 if not options.graphql_schema_enable:
                     diag.status = "skipped"
                     diag.error_type = "graphql_schema_disabled"
@@ -917,7 +959,7 @@ class UnifiedGraphqlParser:
                     diag.status = "failed"
                     diag.error_type = "document_too_large"
                     return ParseResult(parser=self.parser_name, diagnostics=diag)
-                return self._parse_introspection(doc, diag)
+                return self._parse_introspection(doc, diag, options)
             diag.status = "skipped"
             diag.error_type = "not_graphql_document"
             return ParseResult(parser=self.parser_name, diagnostics=diag)
@@ -931,11 +973,15 @@ class UnifiedGraphqlParser:
             diag.status = "failed"
             diag.error_type = "document_too_large"
             return ParseResult(parser=self.parser_name, diagnostics=diag)
+        # P0-03 结构性错误：带 `__schema` 痕迹的断裂 JSON 是"坏掉的 introspection"，
+        # 不得当成 SDL 文本静默 skipped。
+        if text.lstrip().startswith("{") and '"__schema"' in text:
+            return self._schema_failed(diag, "introspection", "introspection_json_broken")
         if not self._looks_like_sdl_text(text):
             diag.status = "skipped"
             diag.error_type = "not_graphql_document"
             return ParseResult(parser=self.parser_name, diagnostics=diag)
-        return self._parse_sdl(text, diag)
+        return self._parse_sdl(text, diag, options)
 
     # -- 形态识别 -----------------------------------------------------------
 
@@ -951,10 +997,18 @@ class UnifiedGraphqlParser:
             return True
         return isinstance(doc.get("__schema"), dict)
 
+    def _has_schema_key(self, doc: Dict[str, Any]) -> bool:
+        """`__schema` 键在场但值畸形（缺失/被篡改）：按坏 introspection 判 failed，
+        不当成任意 JSON 静默 skipped（P0-03 结构性错误显式化）。"""
+        if "__schema" in doc:
+            return True
+        data = doc.get("data")
+        return isinstance(data, dict) and "__schema" in data
+
     def _looks_like_sdl_text(self, text: str) -> bool:
         matched = 0
         for line in text.splitlines()[:400]:
-            if self._SDL_DEF_RE.match(line.strip()):
+            if self._SDL_HEAD_RE.match(line.strip()):
                 matched += 1
         return matched >= 1
 
@@ -969,9 +1023,11 @@ class UnifiedGraphqlParser:
             diag.status = "skipped"
             diag.error_type = "not_graphql_document"
             return ParseResult(parser=self.parser_name, diagnostics=diag)
+        query_truncated = False
         if len(query_text.encode("utf-8", "ignore")) > self._MAX_QUERY_BYTES:
-            diag.status = "degraded"
-            diag.error_type = "query_truncated"
+            # query 字节预算：截断事实先记录，诊断在 operation 拆解后统一收口
+            # （截断导致的未闭合不得升级为结构 failed，见下方 note 优先级）。
+            query_truncated = True
             query_text = query_text[:self._MAX_QUERY_BYTES]
 
         base_url = str(doc.get("url") or "").strip() or self.doc_url
@@ -989,10 +1045,19 @@ class UnifiedGraphqlParser:
         normalized = normalize_in_scope_url(base_url, base_url, self.allowed_hosts, allow_js=False) \
             or base_url
 
-        operations = self._extract_operations(query_text)
+        operations, unclosed, limit_hit = self._extract_operations(query_text)
+        variables_obj = request.get("variables") \
+            if isinstance(request.get("variables"), dict) else {}
+        for op in operations:
+            if op["name"] == "" and not op["variables"]:
+                # 匿名 operation 变量兜底（T2 冻结语义）：名称集合 =
+                # 查询文本 `$name` 引用 ∪ 请求体 variables 对象键名。
+                # 只取名称——ParameterSpec 结构上无取值通道，值绝不外流（G4/脱敏）。
+                names = sorted(set(op["refs"]) | {str(key) for key in variables_obj})
+                op["variables"] = [(name, "") for name in names]
         requested_name = str(request.get("operationName") or "")
         endpoints: List[UnifiedApiEndpoint] = []
-        for op in operations[: self._MAX_OPERATIONS]:
+        for op in operations:
             variable_specs: List[ParameterSpec] = []
             for var_name, var_type in op["variables"]:
                 variable_specs.append(ParameterSpec(
@@ -1024,10 +1089,22 @@ class UnifiedGraphqlParser:
                 graphql_operation="unknown", graphql_operation_name=requested_name[:128],
                 confidence=40,
                 input_signature=compute_input_signature(normalized, method, "unknown", requested_name)))
+        # T2 诊断收口（error_type 先记优先）：
+        # - query 字节预算命中 → degraded + query_truncated（既有语义保留）；
+        # - 未闭合：截断致因的未闭合只 degraded；无任何完整 operation 且非截断
+        #   致因 → 结构性 malformed_query（failed），不得用剩余文本静默产出；
+        # - operation 超上限：degraded + operation_limit_exceeded，禁止静默切片。
         diag.input_count = 1
         diag.output_count = len(endpoints)
-        if diag.status == "ok" and diag.error_type == "":
-            diag.status = "degraded" if query_text[:self._MAX_QUERY_BYTES] != str(request.get("query") or "") else "ok"
+        if query_truncated:
+            self._note_diagnostic(diag, "degraded", "query_truncated")
+        if unclosed and not operations and not query_truncated:
+            diag.status = "failed"
+            diag.error_type = "malformed_query"
+        elif unclosed:
+            self._note_diagnostic(diag, "degraded", "unclosed_operation")
+        if limit_hit:
+            self._note_diagnostic(diag, "degraded", "operation_limit_exceeded")
         candidate = ApiDocumentCandidate(
             task_id=self.task_id, url=self.doc_url, type_hint="graphql",
             source=self.doc_url, parser_version=self.parser_version,
@@ -1038,87 +1115,295 @@ class UnifiedGraphqlParser:
         return ParseResult(parser=self.parser_name, endpoints=endpoints,
                            documents=[candidate], diagnostics=diag)
 
-    def _extract_operations(self, query_text: str) -> List[Dict[str, Any]]:
-        operations: List[Dict[str, Any]] = []
-        matches = list(self._OP_RE.finditer(query_text))
-        for index, match in enumerate(matches):
-            body_start = match.end() - 1
-            end = self._match_brace(query_text, body_start)
-            op_text = query_text[match.start(): end if end > 0 else len(query_text)].strip()
-            variables = [(name, type_text.strip())
-                         for name, type_text in self._VAR_DEF_RE.findall(match.group(3) or "")]
-            operations.append({
-                "type": match.group(1),
-                "name": match.group(2) or "",
-                "variables": variables,
-                "text": op_text,
-                "hash_source": graphql_query_hash(op_text),
-            })
-        if not operations:
-            stripped = query_text.strip()
-            if stripped.startswith("{"):
-                operations.append({
-                    "type": "query", "name": "", "variables": [],
-                    "text": stripped, "hash_source": graphql_query_hash(stripped)})
-        # 匿名 `query {}` 无变量声明时，从 variables 对象键兜底补名称（仅名称）。
-        return operations[: self._MAX_OPERATIONS]
+    def _extract_operations(self, query_text: str) -> Tuple[List[Dict[str, Any]], bool, bool]:
+        """T2（P1-06/P1-07）operation tokenizer，返回 (operations, unclosed, limit_hit)。
 
-    @staticmethod
-    def _match_brace(text: str, start: int) -> int:
+        - 先把 `#` 行注释、`"..."` 行字符串、`\"\"\"...\"\"\"` 块字符串（含转义）
+          掩码为空白，再只在掩码文本的花括号深度 0 识别 operation header +
+          花括号配平：嵌套 selection 字段名、注释/字符串里的关键字与花括号
+          不再可能成 operation（Review 判定的旧 `_OP_RE` 全文搜索误报根因）；
+        - 匿名 operation 仅当文档首个非空白字符是 `{` 时成立；
+        - 发现 operation 起点但配平失败 → unclosed=True 并停止：绝不用剩余
+          文本静默产出 operation；
+        - 已产出 _MAX_OPERATIONS 个后仍见新 header → limit_hit=True
+          （operations 已封顶 50，调用方必须标 degraded，禁止静默切片）。
+        """
+        mask = self._mask_literals(query_text)
+        total = len(mask)
+        first_body = 0
+        while first_body < total and mask[first_body].isspace():
+            first_body += 1
+        operations: List[Dict[str, Any]] = []
+        unclosed = False
+        limit_hit = False
+        index = 0
         depth = 0
-        limit = len(text)
-        index = start
-        budget = 200000
-        while index < limit and budget > 0:
-            budget -= 1
-            char = text[index]
+        while index < total:
+            char = mask[index]
             if char == "{":
+                if depth == 0 and index == first_body:
+                    end = self._match_brace(mask, index)
+                    if end < 0:
+                        unclosed = True
+                        break
+                    operations.append(self._make_operation(
+                        mask, query_text, "query", "", "", index, end))
+                    index = end
+                    continue
                 depth += 1
             elif char == "}":
+                depth = max(0, depth - 1)
+            elif depth == 0 and char != '"':
+                keyword = self._OP_KEYWORD_RE.match(mask, index)
+                if keyword:
+                    if len(operations) >= self._MAX_OPERATIONS:
+                        limit_hit = True
+                        break
+                    header = self._read_operation_header(mask, keyword.end())
+                    if header is None:
+                        unclosed = True
+                        break
+                    name, decl, body_open = header
+                    end = self._match_brace(mask, body_open)
+                    if end < 0:
+                        unclosed = True
+                        break
+                    operations.append(self._make_operation(
+                        mask, query_text, keyword.group(1), name, decl, index, end))
+                    index = end
+                    continue
+            index += 1
+        return operations, unclosed, limit_hit
+
+    def _make_operation(self, mask: str, query_text: str, op_type: str,
+                        name: str, decl: str, start: int, end: int) -> Dict[str, Any]:
+        """单个 operation 记录：text 为原文完整切片（起点含 header，终点含闭合花括号）。
+
+        query hash 继续走 models `graphql_query_hash`（语义冻结：仅折叠空白）
+        对规范化前的完整 operation 文本；hash_source 供端点幂等签名复用。
+        """
+        text = query_text[start:end].strip()
+        variables = [(var_name, var_type.strip())
+                     for var_name, var_type in self._VAR_DEF_RE.findall(decl)]
+        return {
+            "type": op_type,
+            "name": name,
+            "variables": variables,
+            "text": text,
+            "hash_source": graphql_query_hash(text),
+            # `$name` 引用集合取自掩码切片（注释/字符串内不计）：匿名兜底名称来源一。
+            "refs": self._REF_VAR_RE.findall(mask[start:end]),
+        }
+
+    def _read_operation_header(self, mask: str, pos: int):
+        """深度 0 keyword 之后：可选 name、可选 variables 声明、可选指令，直到 body 开 `{`。
+
+        返回 (name, decl_text, body_open_index)；未达 body 开括号 → None（上层收口
+        unclosed）。变量默认值可含花括号（如 `= {a:1}` 在括号内），故括号配平先于
+        body 识别；指令括号参数不得混入 variables 声明。
+        """
+        total = len(mask)
+        ident = self._IDENT_RE.match(mask, self._skip_space(mask, pos))
+        name = ident.group(0) if ident else ""
+        index = ident.end() if ident else pos
+        decl = ""
+        in_directive = False
+        while True:
+            index = self._skip_space(mask, index)
+            if index >= total:
+                return None
+            char = mask[index]
+            if char == "(":
+                close = self._match_paren(mask, index)
+                if close < 0:
+                    return None
+                if not decl and not in_directive:
+                    decl = mask[index + 1:close]
+                in_directive = False
+                index = close + 1
+                continue
+            if char == "@":
+                directive = self._IDENT_RE.match(mask, index + 1)
+                index = directive.end() if directive else index + 1
+                in_directive = True
+                continue
+            if char == "{":
+                return name, decl, index
+            return None
+
+    @staticmethod
+    def _skip_space(text: str, pos: int) -> int:
+        index = pos
+        while index < len(text) and text[index].isspace():
+            index += 1
+        return index
+
+    @staticmethod
+    def _match_paren(mask: str, start: int) -> int:
+        depth = 0
+        for index in range(start, len(mask)):
+            if mask[index] == "(":
+                depth += 1
+            elif mask[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return -1
+
+    @staticmethod
+    def _match_brace(mask: str, start: int) -> int:
+        """掩码文本上的花括号配平（注释/字符串内容已空白，无绕过风险），线性一次扫描。"""
+        depth = 0
+        for index in range(start, len(mask)):
+            if mask[index] == "{":
+                depth += 1
+            elif mask[index] == "}":
                 depth -= 1
                 if depth == 0:
                     return index + 1
-            index += 1
         return -1
+
+    @staticmethod
+    def _mask_literals(text: str) -> str:
+        """把 `#` 行注释、`"..."` 行字符串、`\"\"\"...\"\"\"` 块字符串内容替换为空格。
+
+        返回与原文逐位等长的掩码文本：定界符与空白原样保留（花括号/引号计数
+        与切片偏移直接可用），被掩码区间内的一切结构字符（含 `{}`、`(`/`)`、
+        operation 关键字）对 tokenizer 不可见。块字符串按 GraphQL 规范处理
+        `\\` 转义（`\\"\"\"` 不作终止符）；未闭合字面量一律掩码到文档末尾/行尾。
+        """
+        chars = list(text)
+        index = 0
+        total = len(chars)
+        while index < total:
+            char = chars[index]
+            if char == "#":
+                cursor = index
+                while cursor < total and text[cursor] != "\n":
+                    chars[cursor] = " "
+                    cursor += 1
+                index = cursor
+                continue
+            if char != '"':
+                index += 1
+                continue
+            if text.startswith('"""', index):
+                cursor = index + 3
+                close = total
+                terminated = False
+                while cursor + 3 <= total:
+                    if text[cursor] == "\\":
+                        cursor += 2
+                        continue
+                    if text.startswith('"""', cursor):
+                        close = cursor
+                        terminated = True
+                        break
+                    cursor += 1
+                for pos in range(index + 3, close):
+                    chars[pos] = " "
+                index = close + 3 if terminated else total
+                continue
+            cursor = index + 1
+            while cursor < total:
+                ch = text[cursor]
+                if ch == "\\":
+                    cursor += 2
+                    continue
+                if ch in ('"', "\n"):
+                    break
+                cursor += 1
+            for pos in range(index + 1, min(cursor, total)):
+                chars[pos] = " "
+            if cursor < total and text[cursor] == '"':
+                index = cursor + 1
+            else:
+                index = min(cursor, total)
+        return "".join(chars)
+
+    @staticmethod
+    def _note_diagnostic(diag: ParseDiagnostics, status: str, error_type: str) -> None:
+        """请求文档诊断注记：error_type 先记优先（query_truncated 等致因先行，
+        后续 degraded 注记只升状态不覆盖收口名）；failed 由结构性分支单独设置。"""
+        if not diag.error_type:
+            diag.error_type = error_type
+        if diag.status == "ok":
+            diag.status = status
 
     # -- SDL / introspection --------------------------------------------------
 
-    def _parse_sdl(self, text: str, diag: ParseDiagnostics) -> ParseResult:
+    def _parse_sdl(self, text: str, diag: ParseDiagnostics, options: ParseOptions) -> ParseResult:
         summary = self._empty_sdl_summary()
+        hits: List[str] = []
+        structural = ""
+        field_count = 0
         current_kind = ""
         current_fields = 0
+        brace_level = 0
+        max_depth = options.graphql_schema_max_depth
         for line in text.splitlines():
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
-            match = self._SDL_DEF_RE.match(stripped)
-            if match:
-                if len(summary["types"]) + len(summary["enums"]) + len(summary["inputs"]) \
-                        + len(summary["scalars"]) >= self._MAX_TYPES:
-                    summary["truncated"] = True
-                    break
-                current_kind, name = match.group(1), str(match.group(2) or "")
-                current_fields = 0
-                if current_kind in ("type", "interface"):
-                    summary["types"].append(name)
-                elif current_kind == "enum":
-                    summary["enums"].append(name)
-                elif current_kind == "input":
-                    summary["inputs"].append(name)
-                elif current_kind == "scalar":
-                    summary["scalars"].append(name)
-                continue
+            if brace_level == 0:
+                head = self._SDL_HEAD_RE.match(stripped)
+                if head:
+                    kind = head.group(1)
+                    name_match = self._IDENT_RE.match(stripped[head.end():].lstrip(" \t"))
+                    name = name_match.group(0) if name_match else ""
+                    # P0-03 结构性错误：需要名字的 definition 缺名（如 `type {`）→ failed。
+                    if kind not in ("schema", "directive") and not name:
+                        structural = "sdl_invalid_header"
+                        break
+                    if len(summary["types"]) + len(summary["enums"]) \
+                            + len(summary["inputs"]) + len(summary["scalars"]) >= self._MAX_TYPES:
+                        hits.append("schema_type_limit")
+                        break
+                    if kind in ("type", "interface"):
+                        summary["types"].append(name)
+                    elif kind == "enum":
+                        summary["enums"].append(name)
+                    elif kind == "input":
+                        summary["inputs"].append(name)
+                    elif kind == "scalar":
+                        summary["scalars"].append(name)
+                    current_kind = kind
+                    current_fields = 0
+                    brace_level += stripped.count("{") - stripped.count("}")
+                    if brace_level <= 0:
+                        brace_level = 0
+                        current_kind = ""
+                    continue
             if current_kind in ("type", "input", "interface", "enum"):
-                field_match = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s*[(!:]", stripped)
-                if field_match:
+                if self._FIELD_NAME_RE.match(stripped):
                     current_fields += 1
+                    field_count += 1
                     if current_fields > self._MAX_FIELDS_PER_TYPE:
-                        summary["truncated"] = True
-            elif current_kind == "union":
+                        hits.append("schema_field_limit")
+                    sig = self._FIELD_SIG_RE.match(stripped)
+                    if sig:
+                        if self._wrapper_depth(sig.group("ret") or "") > max_depth:
+                            hits.append("schema_depth_exceeded")
+                        args_text = sig.group("args") or ""
+                        arg_items = [piece for piece in args_text[1:-1].split(",")
+                                     if piece.strip()] if args_text else []
+                        if len(arg_items) > self._MAX_ARGS_PER_FIELD:
+                            hits.append("schema_argument_limit")
+                        for piece in arg_items:
+                            _, _, type_part = piece.partition(":")
+                            if self._wrapper_depth(type_part) > max_depth:
+                                hits.append("schema_depth_exceeded")
+            brace_level += stripped.count("{") - stripped.count("}")
+            if brace_level <= 0:
+                brace_level = 0
                 current_kind = ""
         diag.input_count = len(text.splitlines())
         diag.output_count = 0
-        diag.status = "ok"
+        status, error_type = self._schema_status(hits, structural)
+        summary["truncated"] = bool(hits)
+        contract = self._schema_summary_contract("sdl", summary, field_count, status, error_type)
+        diag.status = status
+        diag.error_type = error_type
         candidate = ApiDocumentCandidate(
             task_id=self.task_id, url=self.doc_url, type_hint="graphql",
             source=self.doc_url, parser_version=self.parser_version,
@@ -1127,16 +1412,26 @@ class UnifiedGraphqlParser:
         )
         return ParseResult(
             parser=self.parser_name, documents=[candidate],
-            candidates=[{"record_type": "graphql_schema_summary", "kind": "sdl", **summary}],
-            diagnostics=diag,
+            candidates=[contract], diagnostics=diag,
         )
 
-    def _parse_introspection(self, doc: Dict[str, Any], diag: ParseDiagnostics) -> ParseResult:
+    def _parse_introspection(self, doc: Dict[str, Any], diag: ParseDiagnostics,
+                             options: ParseOptions) -> ParseResult:
         data = doc.get("data") if isinstance(doc.get("data"), dict) else doc
-        schema = data.get("__schema") if isinstance(data.get("__schema"), dict) else {}
-        types = schema.get("types") if isinstance(schema.get("types"), list) else []
+        schema = data.get("__schema")
+        if not isinstance(schema, dict):
+            return self._schema_failed(diag, "introspection", "introspection_schema_missing")
+        types = schema.get("types")
+        if not isinstance(types, list):
+            return self._schema_failed(diag, "introspection", "introspection_types_invalid")
         summary = self._empty_sdl_summary()
-        for item in types[: self._MAX_TYPES]:
+        hits: List[str] = []
+        field_count = 0
+        max_depth = options.graphql_schema_max_depth
+        for pos, item in enumerate(types):
+            if pos >= self._MAX_TYPES:
+                hits.append("schema_type_limit")
+                break
             if not isinstance(item, dict):
                 continue
             name = str(item.get("name") or "")
@@ -1149,19 +1444,126 @@ class UnifiedGraphqlParser:
                 summary["scalars"].append(name)
             elif kind in ("OBJECT", "INTERFACE"):
                 summary["types"].append(name)
-        if len(types) > self._MAX_TYPES:
-            summary["truncated"] = True
+            fields = item.get("fields")
+            if not isinstance(fields, list):
+                fields = item.get("inputFields")
+            if not isinstance(fields, list):
+                continue
+            per_type = 0
+            for field in fields:
+                per_type += 1
+                field_count += 1
+                if per_type > self._MAX_FIELDS_PER_TYPE:
+                    hits.append("schema_field_limit")
+                    break
+                if not isinstance(field, dict):
+                    continue
+                if self._of_type_depth(field.get("type")) > max_depth:
+                    hits.append("schema_depth_exceeded")
+                args = field.get("args")
+                if isinstance(args, list):
+                    if len(args) > self._MAX_ARGS_PER_FIELD:
+                        hits.append("schema_argument_limit")
+                    for arg in args:
+                        if isinstance(arg, dict) \
+                                and self._of_type_depth(arg.get("type")) > max_depth:
+                            hits.append("schema_depth_exceeded")
         diag.input_count = len(types)
-        diag.status = "ok"
+        diag.output_count = 0
+        status, error_type = self._schema_status(hits, "")
+        summary["truncated"] = bool(hits)
+        contract = self._schema_summary_contract(
+            "introspection", summary, field_count, status, error_type)
+        diag.status = status
+        diag.error_type = error_type
         return ParseResult(
-            parser=self.parser_name,
-            candidates=[{"record_type": "graphql_schema_summary", "kind": "introspection", **summary}],
-            diagnostics=diag,
+            parser=self.parser_name, candidates=[contract], diagnostics=diag,
         )
 
     @staticmethod
     def _empty_sdl_summary() -> Dict[str, Any]:
         return {"types": [], "enums": [], "inputs": [], "scalars": [], "truncated": False}
+
+    @staticmethod
+    def _schema_status(hits: List[str], structural: str) -> Tuple[str, str]:
+        """P0-03 状态收口：结构性错误 failed > 预算命中 degraded（error_type 为
+        首个命中预算名）> ok。预算命中永不产出 ok。"""
+        if structural:
+            return "failed", structural
+        if hits:
+            return "degraded", hits[0]
+        return "ok", ""
+
+    def _schema_failed(self, diag: ParseDiagnostics, kind: str, error_type: str) -> ParseResult:
+        """结构性 Schema 错误：显式 failed + failed 形态契约候选（registry 消费侧
+        按 §4.13 状态枚举处理），绝不静默 skipped。"""
+        contract = self._schema_summary_contract(
+            kind, self._empty_sdl_summary(), 0, "failed", error_type)
+        diag.status = "failed"
+        diag.error_type = error_type
+        return ParseResult(parser=self.parser_name, candidates=[contract], diagnostics=diag)
+
+    def _schema_summary_contract(self, kind: str, summary: Dict[str, Any],
+                                 field_count: int, status: str, error_type: str) -> Dict[str, Any]:
+        """P0-03 冻结契约（附录A §4.13）：键名/取值域与 registry 消费投影一字不差。
+
+        depth 定义冻结：类型引用包装链展开深度——SDL 字段类型 `!`/`[...]` 嵌套
+        层数（_wrapper_depth）、introspection `ofType` 链层数（_of_type_depth），
+        超过 `graphql_schema_max_depth` 即预算命中（schema_depth_exceeded）。
+
+        schema_hash = sha256(canonical json of types/enums/inputs/scalars)[:16]：
+        canonical = sort_keys、紧凑分隔符、ensure_ascii=False、名单保发现序，
+        同一输入两次解析必得同一 hash（确定性）。summary_bytes = 契约 json
+        （按同一 canonical 规则、不含 `summary_bytes` 键自身）的 UTF-8 字节数。
+        契约只含类型名单与计数：Schema 原文、变量值、Token、Header 无落点。
+        """
+        lists = {
+            "types": list(summary.get("types") or []),
+            "enums": list(summary.get("enums") or []),
+            "inputs": list(summary.get("inputs") or []),
+            "scalars": list(summary.get("scalars") or []),
+        }
+        canonical = json.dumps(lists, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":"))
+        contract: Dict[str, Any] = {
+            "record_type": "graphql_schema_summary",
+            "kind": kind,
+            "status": status,
+            "error_type": str(error_type or ""),
+            "schema_hash": hashlib.sha256(canonical.encode("utf-8", "ignore")).hexdigest()[:16],
+            "types": lists["types"],
+            "enums": lists["enums"],
+            "inputs": lists["inputs"],
+            "scalars": lists["scalars"],
+            "type_count": sum(len(items) for items in lists.values()),
+            "field_count": int(field_count),
+            "truncated": bool(summary.get("truncated")),
+        }
+        body = json.dumps(contract, ensure_ascii=False, sort_keys=True,
+                          separators=(",", ":"))
+        contract["summary_bytes"] = len(body.encode("utf-8"))
+        return contract
+
+    @staticmethod
+    def _wrapper_depth(type_text: Any) -> int:
+        """P0-03 冻结 depth 定义（SDL 侧）：字段/参数类型文本的 `[` 与 `!`
+        包装层数之和（`String!`=1、`[[Int!]!]`=3、`[[[[[Int!]!]!]!]!]!`=11）。"""
+        text = str(type_text or "")
+        return text.count("[") + text.count("!")
+
+    def _of_type_depth(self, node: Any) -> int:
+        """P0-03 冻结 depth 定义（introspection 侧）：`ofType` 包装链上的
+        NON_NULL/LIST 节点数，与 SDL 侧同一口径；_MAX_OF_TYPE_CHAIN 守卫
+        被篡改数据里的伪造环（触顶即视为超预算命中）。"""
+        depth = 0
+        while isinstance(node, dict):
+            if str(node.get("kind") or "").upper() not in ("NON_NULL", "LIST"):
+                break
+            node = node.get("ofType")
+            depth += 1
+            if depth > self._MAX_OF_TYPE_CHAIN:
+                break
+        return depth
 
 
 _DTD_FORBIDDEN_RE = re.compile(r"<!\s*(DOCTYPE|ENTITY)", re.IGNORECASE)

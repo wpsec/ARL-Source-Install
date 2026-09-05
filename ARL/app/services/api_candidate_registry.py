@@ -14,13 +14,19 @@
 
 回滚面：`API_UNIFIED_ENABLE` 默认 False，False 时 `run_api_document_pipeline`
 直接委托 legacy `run_api_doc_scan`，行为与第 2 批完全一致。
-`API_UNIFIED_FALLBACK_ENABLE`（默认 True）下统一层整体异常时回退 legacy
-并计数，单文档失败只影响当前文档（§7.2），不触发回退。
+`API_UNIFIED_FALLBACK_ENABLE`（默认 True）作用域（Review P1-09 冻结，两处同名
+同一语义）：True 时 stage 级整体异常与单文档统一 Parser 崩溃都回退 legacy 并计
+`api_unified_fallback_total`；False 时两处都不回退（stage 异常上抛，Parser 崩溃
+文档标 failed、计入统一失败收口，不产生 fallback 事件）。非崩溃的单文档失败
+（fetch 异常 / 空响应 / Parser 显式 failed）只影响当前文档（§7.2），一律计入
+`parse_failed_count` + `api_document_parse_failed_total`（Review P1-08 统一收口，
+含 error_type=empty_response），不触发回退。
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 import time
 from collections import OrderedDict
@@ -69,6 +75,34 @@ _TYPE_HINT_KEYWORDS: Tuple[Tuple[str, str], ...] = (
 
 _DOC_PRIORITY_SEED = 10
 _DOC_PRIORITY_EVIDENCE = 20  # 来自记录/候选图的真实发现证据优先于路径猜测
+
+# graphql_schema_summary 生产侧冻结契约（附录A §4.13，2026-09-06 用户决策）。
+# 消费侧校验枚举 + 白名单投影：契约外键（Schema 原文、变量值等夹带形态）
+# 一律不进诊断面，违规候选不回显任何候选字段值。
+_SCHEMA_SUMMARY_KINDS = ("sdl", "introspection")
+_SCHEMA_SUMMARY_STATUSES = ("ok", "degraded", "failed")
+_SCHEMA_SUMMARY_INT_KEYS = ("type_count", "field_count", "summary_bytes")
+_SCHEMA_SUMMARY_PROJECTION_KEYS = (
+    "record_type", "kind", "status", "error_type", "schema_hash",
+    "types", "enums", "inputs", "scalars",
+    "type_count", "field_count", "truncated", "summary_bytes",
+)
+_SCHEMA_SUMMARY_STATUS_METRICS = {
+    "ok": "graphql_schema_success_total",
+    "degraded": "graphql_schema_degraded_total",
+    "failed": "graphql_schema_failed_total",
+}
+# 诊断面驻留总条数上限：满则丢最旧（摘要可重解析，非持久化事实源）。
+SCHEMA_DIAGNOSTICS_MAX_ENTRIES = 16
+
+
+def _schema_summary_entry_size(entry: Dict[str, Any]) -> int:
+    try:
+        payload = json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        # 不可序列化即不可存储：按超限处理，宁可裁剪不可越界。
+        return 1 << 62
+    return len(payload.encode("utf-8"))
 
 
 def unified_api_config(name: str) -> Any:
@@ -122,6 +156,10 @@ class ApiCandidateRegistry:
         self.merged_source_count = 0
         self.endpoint_created_count = 0
         self.endpoint_deduplicated_count = 0
+        # P0-04 双通道的诊断面（有界、非持久化事实源——摘要丢失可重新解析，
+        # 不落 Mongo、不进 legacy 记录面）；stage metrics 只放整数计数。
+        # 消费方经 context.api_candidate_registry 挂载点读取本清单。
+        self.schema_diagnostics: List[Dict[str, Any]] = []
 
     # -- 文档候选 ---------------------------------------------------------
 
@@ -260,6 +298,22 @@ class ApiCandidateRegistry:
     def snapshot_endpoints(self) -> List[Dict[str, Any]]:
         with self._lock:
             return [item.to_dict() for item in self._endpoints.values()]
+
+    # -- Schema 摘要诊断面（P0-04，附录A §4.13） ---------------------------
+
+    def add_schema_diagnostic(self, entry: Dict[str, Any]) -> bool:
+        """追加一条 Schema 摘要诊断；返回 True 表示发生了"满则丢最旧"。
+
+        非持久化事实源：条目丢失可重新解析获得，本清单不落 Mongo、不进
+        记录面，只经 context.api_candidate_registry 挂载点供诊断消费。
+        """
+        dropped = False
+        with self._lock:
+            self.schema_diagnostics.append(entry)
+            while len(self.schema_diagnostics) > SCHEMA_DIAGNOSTICS_MAX_ENTRIES:
+                self.schema_diagnostics.pop(0)
+                dropped = True
+        return dropped
 
     def __len__(self) -> int:
         with self._lock:
@@ -468,7 +522,8 @@ class ApiDocumentQueue:
                 logger.debug(
                     "api endpoint register failed error_type:%s", type(exc).__name__)
 
-    # -- 解析分发（第 4 批：统一 Parser 优先，格式外/崩溃回退 legacy）----
+    # -- 解析分发（第 4 批：统一 Parser 优先，格式外回退 legacy；
+    #    崩溃回退受 API_UNIFIED_FALLBACK_ENABLE 约束，P1-09）----
 
     def _parse_options(self):
         from .api_unified_models import ParseOptions
@@ -479,12 +534,19 @@ class ApiDocumentQueue:
             max_ref_count=int(cfg.get("API_DOCUMENT_MAX_REF_COUNT", 500) or 500),
             external_ref_enable=bool(cfg.get("API_EXTERNAL_REF_ENABLE", False)),
             graphql_schema_enable=bool(cfg.get("GRAPHQL_SCHEMA_ENABLE", False)),
+            # P0-03 运行时半边：解析链真正消费该预算（缺配置走代码默认 20）。
+            graphql_schema_max_depth=int(cfg.get("GRAPHQL_SCHEMA_MAX_DEPTH", 20) or 20),
             wsdl_parse_enable=bool(cfg.get("WSDL_PARSE_ENABLE", True)),
             max_document_bytes=max(1024, int(cfg.get("API_DOCUMENT_MAX_SIZE_BYTES", 5242880) or 5242880)),
         )
 
     def _parse_one(self, doc: ApiDocumentCandidate, text: str, signature: str) -> bool:
-        """统一→legacy 两级解析；返回 True=已解析。单文档失败隔离（§7.2）。"""
+        """统一→legacy 两级解析；返回 True=已解析。单文档失败隔离（§7.2）。
+
+        返回 False 的文档终态必已标 failed（error_type 区分失败路径），由
+        run() 计 parse_failed_count + api_document_parse_failed_total；Parser
+        崩溃是否回退 legacy 取决于 API_UNIFIED_FALLBACK_ENABLE（P1-09）。
+        """
 
         if bool(self.config.get("API_UNIFIED_ENABLE")) and "<html" not in text[:2048].lower():
             result = None
@@ -514,8 +576,31 @@ class ApiDocumentQueue:
                     if result is None or result.diagnostics is None \
                             or result.diagnostics.status != "skipped":
                         break
+                else:
+                    # P1-11 skipped 观测（best-effort）：schema 开关关闭、全链
+                    # skipped 且文档形态证据指向 graphql 才计数。type_hint 来自
+                    # URL 关键词分类，是弱证据——真值语义以第 8 批运行时事件
+                    # 接入补强；漏计/多计只影响观测面，不影响解析与记录。
+                    if not options.graphql_schema_enable \
+                            and "graphql" in str(doc.type_hint or ""):
+                        self._record_metric("graphql_schema_skipped_total")
             except Exception as exc:
-                # 统一层崩溃回退 legacy（§十三.3）；异常类型上指标。
+                # P1-09：崩溃回退与 stage 级整体异常同受 API_UNIFIED_FALLBACK_ENABLE
+                # 约束（同名单一语义）。开关 False 时不回退、不产生 fallback 事件：
+                # 文档标 failed 后返回 False，由 run() 的失败收口统一计
+                # parse_failed_count + api_document_parse_failed_total（计数只此一处，
+                # 与 fetch 异常路径同口径，避免双重计量）。error_type 取异常类名，
+                # 沿用 fetch 异常/legacy 解析崩溃的既有词表，不新造 parser_crash 枚举。
+                if not bool(self.config.get("API_UNIFIED_FALLBACK_ENABLE", True)):
+                    logger.warning(
+                        "unified parser crashed url:%s error_type:%s fallback disabled",
+                        str(doc.url)[:160], type(exc).__name__)
+                    self.registry.mark_document(
+                        doc.url, "fetched", input_signature=signature)
+                    self.registry.mark_document(
+                        doc.url, "failed", error_type=type(exc).__name__)
+                    return False
+                # 开关 True：维持原语义，回退 legacy（§十三.3）；异常类型上指标。
                 logger.warning(
                     "unified parser crashed url:%s error_type:%s fallback to legacy",
                     str(doc.url)[:160], type(exc).__name__)
@@ -586,6 +671,10 @@ class ApiDocumentQueue:
             self.scanner._append_record(  # noqa: SLF001  (复用冻结的记录格式与 fnv 去重)
                 "api_doc_url", candidate.url, candidate.url, safe_site(candidate.url))
         for endpoint in result.endpoints:
+            if endpoint.api_type == "graphql":
+                # P1-11：一次桥接端点 = 一次可重放的 graphql 请求文档观察，
+                # 逐条计数（与资产去重无关，度量的是解析产出面）。
+                self._record_metric("graphql_request_total")
             # 富资产直接登记（含参数/auth/追溯）；桥接记录不再经字符串反解。
             self.registry.register_endpoint(endpoint)
             for item in endpoint.to_legacy_records():
@@ -619,8 +708,62 @@ class ApiDocumentQueue:
             # §6.4：XSD 引用只登记观测、不获取；桥接层计数保证可观测。
             self._record_metric("api_document_wsdl_xsd_import_total")
             return
-        # graphql_schema_summary 等尚未接线的类型显式计数（P0-04 接管存储面）。
+        if record_type == "graphql_schema_summary":
+            # P0-04 已接管存储面：双通道落位后本类型绝不再进 unbridged 观测锚
+            # （轮 1 登记的归零口径）。
+            self._bridge_graphql_schema_summary(candidate)
+            return
+        # 尚未接线的类型显式计数：桥接不得静默丢弃任何未知 candidate。
         self._record_metric("api_document_unbridged_candidate_total")
+
+    def _bridge_graphql_schema_summary(self, candidate: Dict[str, Any]) -> None:
+        """P0-04 双通道：摘要进 registry 有界诊断面；metrics 只记录状态计数。
+
+        生产侧冻结契约（附录A §4.13）：kind ∈ sdl/introspection、
+        status ∈ ok/degraded/failed、type_count/field_count/summary_bytes 为真
+        整数。非法 candidate → 计 graphql_schema_failed_total +
+        schema_contract_violation 最小诊断，不回显任何候选字段（防契约外键如
+        Schema 原文、变量值经诊断面外流），绝不静默成功。
+        合法 candidate → 白名单投影 + 逐条字节上限裁剪（超限只留安全头部
+        字段并置 summary_dropped），追加进有界诊断面；诊断面是非持久化事实源
+        （丢失可重新解析），不落 Mongo、不进 legacy 记录面。
+        """
+        kind = candidate.get("kind")
+        status = candidate.get("status")
+        counts_valid = all(
+            isinstance(candidate.get(key), int) and not isinstance(candidate.get(key), bool)
+            for key in _SCHEMA_SUMMARY_INT_KEYS)
+        if kind not in _SCHEMA_SUMMARY_KINDS or status not in _SCHEMA_SUMMARY_STATUSES \
+                or not counts_valid:
+            self._record_metric("graphql_schema_failed_total")
+            self.registry.add_schema_diagnostic({
+                "record_type": "graphql_schema_summary",
+                "status": "failed",
+                "error_type": "schema_contract_violation",
+                "truncated": True,
+                "summary_dropped": True,
+            })
+            return
+        entry = {key: candidate[key] for key in _SCHEMA_SUMMARY_PROJECTION_KEYS
+                 if key in candidate}
+        max_bytes = int(self.config.get("GRAPHQL_SCHEMA_SUMMARY_MAX_BYTES", 8192) or 8192)
+        if _schema_summary_entry_size(entry) > max_bytes:
+            # 字节预算优先于条目完整性：正文（类型/枚举/输入/标量名单）整体
+            # 丢弃，只保留可归因的安全头部字段；截断必须显式标记，不得伪装完整。
+            entry = {
+                "record_type": "graphql_schema_summary",
+                "kind": entry.get("kind"),
+                "status": entry.get("status"),
+                "error_type": entry.get("error_type"),
+                "schema_hash": entry.get("schema_hash"),
+                "type_count": entry.get("type_count"),
+                "field_count": entry.get("field_count"),
+                "truncated": True,
+                "summary_dropped": True,
+            }
+        self._record_metric(_SCHEMA_SUMMARY_STATUS_METRICS[status])
+        if self.registry.add_schema_diagnostic(entry):
+            self._record_metric("api_document_schema_diagnostics_dropped_total")
 
     def _bridge_out_of_scope_domain(self, doc: ApiDocumentCandidate, candidate: Dict[str, Any]) -> None:
         """越界 host 只作证据计数，绝不写入 in-scope domain 记录（Review P0-01）。
@@ -722,7 +865,16 @@ class ApiDocumentQueue:
                 continue
 
             if not text:
+                # P1-08：空响应与 fetch 异常、Parser 显式 failed 同属统一失败收口。
+                # 两处都要计数（counter + 指标）的原因：parse_failed_count 是队列
+                # 局部运行事实（stage 完成日志的 failed 分母），api_document_parse_failed_total
+                # 是跨进程观测面（context 指标），二者消费方不同、缺一即失真；
+                # 此前只标态不计数（Review 探针：fetch_count=1 而 parse_failed_count=0），
+                # 消费文档数与 success+failed 分母出现无法归因缺口。error_type 保持
+                # empty_response 以区分失败性质；状态机迁移与账本收口不变。
                 self.registry.mark_document(doc.url, "failed", error_type="empty_response")
+                self.parse_failed_count += 1
+                self._record_metric("api_document_parse_failed_total")
                 self._ledger_finish(doc, "failed")
                 continue
 
@@ -752,6 +904,10 @@ class ApiDocumentQueue:
                 self.context.record_metric("api_endpoint_deduplicated_total", self.registry.endpoint_deduplicated_count)
                 self.context.record_metric("api_document_budget_skipped_total", self.skipped_budget_count)
                 self.context.record_metric("api_document_resumed_skip_total", self.resumed_skip_count)
+                # P0-04 透出：诊断面驻留条数（整数计数；摘要本体不进 metrics）。
+                self.context.record_metric(
+                    "api_document_schema_diagnostics_total",
+                    len(self.registry.schema_diagnostics))
             except Exception:
                 pass
         return list(self.scanner.records)

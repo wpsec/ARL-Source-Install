@@ -10,7 +10,6 @@
 import contextlib
 import json
 import sys
-import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -21,26 +20,20 @@ FIXTURES = ARL_ROOT / "test" / "fixtures" / "api_unified"
 if str(ARL_ROOT) not in sys.path:
     sys.path.insert(0, str(ARL_ROOT))
 
-
-def _stub_packages():
-    app = sys.modules.get("app")
-    if app is None or not hasattr(app, "__path__"):
-        app = types.ModuleType("app")
-        app.__path__ = [str(ARL_ROOT / "app")]
-        sys.modules["app"] = app
-    # 不桩 app.services:空壳包会跳过真实 __init__,污染后续
-    # `from app.services import X` 的既有用例(task_orchestrator 等)。
-
-
-_stub_packages()
+from test._api_unified_bootstrap import load_unified_modules  # noqa: E402
 
 # 模块级(收集期)捕获真实引用:部分既有用例在 collection 期注入 fake app.utils 且不还原,
 # 测试方法运行期再 import 会取到被污染的模块。
-from app import utils  # noqa: E402
-from app.services import api_doc_scan as _api_doc_module  # noqa: E402
-from app.services import api_unified_shadow as shadow  # noqa: E402
-from app.services import wih_endpoint_probe as _probe_module  # noqa: E402
-from app.services.discovery_context import DiscoveryContext  # noqa: E402
+# bootstrap 在临时桩窗口内加载子模块(绕过 app.services 真实 __init__ 的 NPoC 等
+# 重依赖),完成后还原 app / app.services 槽位,不留空壳桩污染
+# `from app.services import X` 的既有用例(task_orchestrator 等)。
+_captured = load_unified_modules()
+
+utils = _captured["app.utils"]
+_api_doc_module = _captured["app.services.api_doc_scan"]
+shadow = _captured["app.services.api_unified_shadow"]
+_probe_module = _captured["app.services.wih_endpoint_probe"]
+DiscoveryContext = _captured["app.services.discovery_context"].DiscoveryContext
 
 @contextlib.contextmanager
 def _safe_domain_fns():

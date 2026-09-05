@@ -10,13 +10,19 @@
   html_get 已有响应不再发第二次网络请求；
 - 兼容面：flag 开/关记录集合与 legacy 一致（§十三.2 双写）、整体异常回退 legacy；
 - 安全面（Review P0-01）：不可信文档越界 host 只作 out_of_scope_domain 证据
-  计数（api_document_out_of_scope_domain_total），绝不触发 in-scope domain 记录。
+  计数（api_document_out_of_scope_domain_total），绝不触发 in-scope domain 记录；
+- 计量面（Review P1-08）：fetch 异常 / 空响应 / Parser 显式 failed 三条失败路径
+  全部计入 parse_failed_count + api_document_parse_failed_total；
+- 回退开关（Review P1-09）：API_UNIFIED_FALLBACK_ENABLE 同时覆盖 stage 级整体
+  异常与单文档 Parser 崩溃，False 时 Parser 崩溃不回退 legacy、文档标 failed；
+- Schema 摘要双通道（Review P0-04 / P1-11，附录A §4.13 冻结契约）：
+  graphql_schema_summary 进 registry 有界诊断面（逐条字节上限 + 总条数上限），
+  metrics 只放整数计数；该类型不再触发 api_document_unbridged_candidate_total。
 """
 
 import contextlib
 import json
 import sys
-import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -27,45 +33,41 @@ FIXTURES = ARL_ROOT / "test" / "fixtures" / "api_unified"
 if str(ARL_ROOT) not in sys.path:
     sys.path.insert(0, str(ARL_ROOT))
 
-
-def _ensure_app_package():
-    """仅防御 app 被既有用例换成无 __path__ 的 fake。
-
-    不得桩 app.services：空壳包会让 __init__ 不执行，后续
-    `from app.services import X` 全部失败（unknown location）。
-    """
-    app = sys.modules.get("app")
-    if app is None or not hasattr(app, "__path__"):
-        app = types.ModuleType("app")
-        app.__path__ = [str(ARL_ROOT / "app")]
-        sys.modules["app"] = app
-
-
-_ensure_app_package()
+from test._api_unified_bootstrap import load_unified_modules  # noqa: E402
 
 # 收集期捕获真实模块引用，免疫既有用例注入 fake app.utils 不还原的污染。
-from app import utils  # noqa: E402
-from app.services import api_candidate_registry as reg  # noqa: E402
-from app.services import api_doc_scan as _api_doc_module  # noqa: E402
-from app.services import web_info_intel_utils as _intel_utils  # noqa: E402
-from app.services.api_doc_scan import ApiDocScanner  # noqa: E402
-from app.services.api_unified_models import (  # noqa: E402
-    UNIFIED_API_CONFIG_DEFAULTS,
-    ApiDocumentCandidate,
-    ParseDiagnostics,
-    ParseResult,
-    UnifiedApiEndpoint,
-)
-from app.services.api_unified_shadow import shadow_document_fetch_start  # noqa: E402
-from app.services.discovery_context import (  # noqa: E402
-    DiscoveryContext,
-    LedgerEntry,
-    normalize_url,
-)
+# bootstrap 在临时桩窗口内加载子模块（绕过 app.services 真实 __init__ 的 NPoC 等
+# 重依赖），完成后还原 app / app.services 槽位，不留空壳桩。app.modules 由
+# api_doc_scan 顶层导入链在桩窗口内自动带入缓存：运行期用例
+# `from app.modules import WihRecord` 命中缓存条目，不再触发包 __init__。
+_captured = load_unified_modules()
+
+utils = _captured["app.utils"]
+reg = _captured["app.services.api_candidate_registry"]
+_api_doc_module = _captured["app.services.api_doc_scan"]
+_parser_module = _captured["app.services.api_unified_parser"]
+_intel_utils = _captured["app.services.web_info_intel_utils"]
+ApiDocScanner = _api_doc_module.ApiDocScanner
+_models = _captured["app.services.api_unified_models"]
+UNIFIED_API_CONFIG_DEFAULTS = _models.UNIFIED_API_CONFIG_DEFAULTS
+ApiDocumentCandidate = _models.ApiDocumentCandidate
+ParseDiagnostics = _models.ParseDiagnostics
+ParseResult = _models.ParseResult
+UnifiedApiEndpoint = _models.UnifiedApiEndpoint
+shadow_document_fetch_start = _captured[
+    "app.services.api_unified_shadow"
+].shadow_document_fetch_start
+_discovery_context = _captured["app.services.discovery_context"]
+DiscoveryContext = _discovery_context.DiscoveryContext
+LedgerEntry = _discovery_context.LedgerEntry
+normalize_url = _discovery_context.normalize_url
 
 DOC_URL = "https://api.example.com/v3/api-docs"
 SITE = "https://api.example.com"
 OPENAPI_TEXT = (FIXTURES / "openapi3_petstore.json").read_text(encoding="utf-8")
+# 含 "<html" 的正文在 _parse_one 入口即绕过统一 Parser 链（格式面判定冻结于
+# registry 本身），用作"非目标种子文档"的正文可让计量用例不依赖 Parser 实现。
+HTML_OK_TEXT = "<html><body>api docs placeholder</body></html>"
 # 跨-Fld 越界文档：server 指向任务范围（example.com）之外的 host。
 EVIL_OPENAPI_TEXT = json.dumps({
     "openapi": "3.0.0",
@@ -134,6 +136,36 @@ def _record_tuple(record):
         str(getattr(record, "recordType", "") or getattr(record, "record_type", "")),
         str(getattr(record, "content", "") or ""),
     )
+
+
+@contextlib.contextmanager
+def _fake_unified_parsers(factory):
+    """整链替换统一 Parser 为 fake 工厂。
+
+    P1-08/P1-09 用例只依赖 registry 侧冻结的四个导入名与 ParseResult 形态，
+    与被并行演进的 parser 具体实现解耦。
+    """
+
+    with contextlib.ExitStack() as stack:
+        for name in ("UnifiedOpenApiParser", "UnifiedPostmanParser",
+                     "UnifiedGraphqlParser", "UnifiedWsdlParser"):
+            stack.enter_context(mock.patch.object(_parser_module, name, factory))
+        yield
+
+
+def _make_queue_fn(fetch_fn, context=None, config=None):
+    """单目标计量用例的队列构造：fetch_fn 全权决定各文档正文/异常。"""
+
+    scanner = ApiDocScanner(sites=[SITE], wih_records=[], discovery_context=context)
+    registry = reg.ApiCandidateRegistry(task_id="t4", context=context)
+    queue = reg.ApiDocumentQueue(
+        scanner=scanner,
+        registry=registry,
+        context=context,
+        config=_full_config(**(config or {})),
+        fetch_fn=fetch_fn,
+    )
+    return queue
 
 
 class RegistryTest(unittest.TestCase):
@@ -256,9 +288,18 @@ class QueueTest(unittest.TestCase):
         )
         with _safe_domain_fns():
             records = queue.run()
-        self.assertEqual(queue.parse_failed_count, 1)
+        # 旧口径（本用例修复前）断言 parse_failed_count == 1，把"非目标 seed
+        # 空响应不计量"当成了预期行为——与 Review P1-08 探针（fetch_count=1 而
+        # parse_failed_count=0）矛盾，属被证伪的旧口径而非有效基线。P1-08 收口
+        # 后：被消费文档终态必落 success 或 failed 之一，异常与空响应都计入。
         self.assertEqual(queue.parse_success_count, 1)
+        self.assertEqual(
+            queue.parse_failed_count, queue.fetch_count - queue.parse_success_count,
+            "每个被消费文档必须收敛到 success/failed 之一（统一失败收口）")
+        self.assertGreater(
+            queue.parse_failed_count, 1, "异常文档之外，空响应 seed 同样计入失败收口")
         self.assertEqual(registry.document(bad_url).status, "failed")
+        self.assertEqual(registry.document(bad_url).error_type, "RuntimeError")
         self.assertEqual(registry.document(good_url).status, "parsed")
         self.assertTrue(any(_record_tuple(item)[0] == "api_doc_endpoint" for item in records))
 
@@ -419,6 +460,9 @@ class OutOfScopeDomainBridgeTest(unittest.TestCase):
     def test_bridge_counts_every_candidate_and_never_appends_domain(self):
         # 直接驱动桥接层：out_of_scope_domain、防御性 domain、wsdl_xsd_import
         # 与未接线类型全部必须计数（P0-04：桥接不得静默丢弃未知 candidate）。
+        # P0-04 接线后 graphql_schema_summary 改走诊断面（见
+        # GraphqlSchemaSummaryBridgeTest），本用例以真正未知类型守住
+        # unbridged 观测锚"其余未接线类型仍计数"的语义。
         context = DiscoveryContext(task_id="p001-c")
         queue, _calls = _make_queue(context=context, fetch_map={})
         doc = ApiDocumentCandidate(task_id="t3", url=DOC_URL, source="seed")
@@ -429,7 +473,7 @@ class OutOfScopeDomainBridgeTest(unittest.TestCase):
                 # 防御分支：旧形态 domain 候选必须走同一证据出口。
                 {"record_type": "domain", "content": "blue.example.com", "source": DOC_URL},
                 {"record_type": "wsdl_xsd_import", "content": "types.xsd", "source": DOC_URL},
-                {"record_type": "graphql_schema_summary", "kind": "sdl"},
+                {"record_type": "future_unwired_type", "content": "placeholder", "source": DOC_URL},
             ],
             diagnostics=ParseDiagnostics(parser="openapi_unified"),
         )
@@ -469,6 +513,449 @@ class OutOfScopeDomainBridgeTest(unittest.TestCase):
         append.assert_not_called()
         self.assertEqual(
             int(context.metrics.get("api_document_out_of_scope_domain_total", 0) or 0), 3)
+
+
+class GraphqlSchemaSummaryBridgeTest(unittest.TestCase):
+    """Review P0-04 双通道 + P1-11 GraphQL 计数（附录A §4.13 冻结契约）。
+
+    全部用合成 candidate 与 fake parser 驱动，不依赖 graphql parser 生产侧
+    实现完成态：消费侧只按冻结的字段形态校验。措辞口径（用户决策）：
+    "Schema 摘要进入当前任务 context 的有界诊断面；stage metrics 仅记录状态与
+    计数；第 8 批再决定是否纳入 Endpoint Registry 资产面。"
+    """
+
+    @staticmethod
+    def _summary_candidate(**overrides):
+        """生产侧冻结契约形态（附录A §4.13）的合成样本。"""
+
+        candidate = {
+            "record_type": "graphql_schema_summary",
+            "kind": "sdl",
+            "status": "ok",
+            "error_type": "",
+            "schema_hash": "ab" * 16,
+            "types": ["Query", "Mutation"],
+            "enums": ["Role"],
+            "inputs": ["PetInput"],
+            "scalars": ["JSON"],
+            "type_count": 5,
+            "field_count": 12,
+            "truncated": False,
+            "summary_bytes": 256,
+        }
+        candidate.update(overrides)
+        return candidate
+
+    def _bridge(self, queue, candidate):
+        doc = ApiDocumentCandidate(task_id="t3", url=DOC_URL, source="seed")
+        queue._bridge_candidate(doc, candidate)
+
+    def test_three_statuses_counted_and_diagnosed(self):
+        context = DiscoveryContext(task_id="t3-schema-1")
+        queue, _calls = _make_queue(context=context, fetch_map={})
+        self._bridge(queue, self._summary_candidate())
+        self._bridge(queue, self._summary_candidate(
+            kind="introspection", status="degraded", truncated=True))
+        self._bridge(queue, self._summary_candidate(
+            status="failed", error_type="schema_invalid"))
+        metrics = context.metrics
+        self.assertEqual(int(metrics.get("graphql_schema_success_total", 0) or 0), 1)
+        self.assertEqual(int(metrics.get("graphql_schema_degraded_total", 0) or 0), 1)
+        self.assertEqual(int(metrics.get("graphql_schema_failed_total", 0) or 0), 1)
+        self.assertEqual(
+            int(metrics.get("api_document_unbridged_candidate_total", 0) or 0), 0,
+            "轮 1 观测锚归零：schema summary 已接线，不再进 unbridged")
+        diags = queue.registry.schema_diagnostics
+        self.assertEqual(len(diags), 3)
+        first = diags[0]
+        for key in ("record_type", "kind", "status", "error_type", "schema_hash",
+                    "types", "enums", "inputs", "scalars",
+                    "type_count", "field_count", "truncated", "summary_bytes"):
+            self.assertIn(key, first, "合法摘要契约字段必须完整落位诊断面")
+        self.assertEqual(first["kind"], "sdl")
+        self.assertEqual(first["type_count"], 5)
+        self.assertFalse(first["truncated"])
+        self.assertTrue(diags[1]["truncated"])
+        self.assertEqual(diags[2]["error_type"], "schema_invalid",
+                         "failed 态保留生产侧 error_type 供归因（不得伪装成功）")
+
+    def test_contract_violation_counted_failed_never_silent(self):
+        context = DiscoveryContext(task_id="t3-schema-2")
+        queue, _calls = _make_queue(context=context, fetch_map={})
+        missing_status = self._summary_candidate()
+        del missing_status["status"]
+        invalids = [
+            missing_status,
+            self._summary_candidate(kind="sdl_v2"),
+            # skipped 属队列链状态语义，不在 schema 摘要生产侧枚举内。
+            self._summary_candidate(status="skipped"),
+            self._summary_candidate(type_count="5"),
+            # bool 是 int 子类，但计数语义必须真整数。
+            self._summary_candidate(field_count=True),
+        ]
+        for candidate in invalids:
+            self._bridge(queue, candidate)
+        metrics = context.metrics
+        self.assertEqual(
+            int(metrics.get("graphql_schema_failed_total", 0) or 0), len(invalids),
+            "非法 candidate 一律计 failed，绝不静默成功")
+        self.assertEqual(int(metrics.get("graphql_schema_success_total", 0) or 0), 0)
+        self.assertEqual(
+            int(metrics.get("api_document_unbridged_candidate_total", 0) or 0), 0,
+            "已接线类型绝不再进 unbridged")
+        diags = queue.registry.schema_diagnostics
+        self.assertEqual(len(diags), len(invalids))
+        for entry in diags:
+            self.assertEqual(entry["error_type"], "schema_contract_violation")
+            self.assertEqual(entry["status"], "failed")
+            self.assertTrue(entry["summary_dropped"])
+            for body_key in ("schema_hash", "types", "enums", "inputs", "scalars"):
+                self.assertNotIn(
+                    body_key, entry, "非法候选不得落诊断正文（防夹带原文外流）")
+
+    def test_byte_cap_trims_entry_to_safe_header(self):
+        context = DiscoveryContext(task_id="t3-schema-3")
+        queue, _calls = _make_queue(
+            context=context, fetch_map={},
+            config={"GRAPHQL_SCHEMA_SUMMARY_MAX_BYTES": 512})
+        huge = self._summary_candidate(
+            types=["Type%04d" % i for i in range(120)],
+            type_count=120, field_count=900, summary_bytes=99999, truncated=True)
+        self._bridge(queue, huge)
+        # 同配置下的小条目不得被误裁（证明按字节而非条目数判定）。
+        self._bridge(queue, self._summary_candidate())
+        diags = queue.registry.schema_diagnostics
+        self.assertEqual(len(diags), 2)
+        trimmed = diags[0]
+        self.assertTrue(trimmed["summary_dropped"])
+        self.assertTrue(trimmed["truncated"])
+        self.assertNotIn("types", trimmed, "超限条目正文（类型名单）必须丢弃")
+        self.assertNotIn("summary_bytes", trimmed)
+        self.assertEqual(trimmed["kind"], "sdl")
+        self.assertEqual(trimmed["status"], "ok")
+        self.assertEqual(trimmed["schema_hash"], "ab" * 16)
+        self.assertEqual(trimmed["type_count"], 120)
+        self.assertEqual(trimmed["field_count"], 900)
+        kept = diags[1]
+        self.assertNotIn("summary_dropped", kept)
+        self.assertIn("types", kept)
+        self.assertEqual(
+            int(context.metrics.get("graphql_schema_success_total", 0) or 0), 2,
+            "裁剪只影响诊断正文，状态计数按契约 status 归属不变")
+
+    def test_entry_count_cap_drops_oldest_and_counts(self):
+        context = DiscoveryContext(task_id="t3-schema-4")
+        queue, _calls = _make_queue(context=context, fetch_map={})
+        for i in range(18):
+            self._bridge(queue, self._summary_candidate(schema_hash="h%02d" % i))
+        diags = queue.registry.schema_diagnostics
+        self.assertEqual(len(diags), 16, "总条数上限 16")
+        self.assertEqual(diags[0]["schema_hash"], "h02", "满则丢最旧")
+        hashes = {entry["schema_hash"] for entry in diags}
+        self.assertNotIn("h00", hashes)
+        self.assertNotIn("h01", hashes)
+        self.assertEqual(
+            int(context.metrics.get("api_document_schema_diagnostics_dropped_total", 0) or 0),
+            2, "丢最旧必须可观测")
+        self.assertEqual(
+            int(context.metrics.get("graphql_schema_success_total", 0) or 0), 18,
+            "驻留裁剪不改变到达计数")
+
+    def test_unbridged_zero_for_summary_nonzero_for_unknown(self):
+        context = DiscoveryContext(task_id="t3-schema-5")
+        queue, _calls = _make_queue(context=context, fetch_map={})
+        self._bridge(queue, self._summary_candidate())
+        self._bridge(queue, {"record_type": "future_unwired_type", "content": "x"})
+        metrics = context.metrics
+        self.assertEqual(
+            int(metrics.get("api_document_unbridged_candidate_total", 0) or 0), 1,
+            "其余未接线类型行为不变")
+        self.assertEqual(
+            int(metrics.get("graphql_schema_success_total", 0) or 0), 1)
+
+    def test_graphql_request_total_counted_per_endpoint(self):
+        context = DiscoveryContext(task_id="t3-schema-6")
+        queue, _calls = _make_queue(context=context, fetch_map={})
+        doc = ApiDocumentCandidate(task_id="t3", url=DOC_URL, source="seed")
+        endpoints = [
+            UnifiedApiEndpoint(
+                url="https://api.example.com/graphql", method="POST",
+                api_type="graphql", source=DOC_URL, parent_document=DOC_URL),
+            UnifiedApiEndpoint(
+                url="https://api.example.com/gql/second", method="POST",
+                api_type="graphql", source=DOC_URL, parent_document=DOC_URL),
+            UnifiedApiEndpoint(
+                url=DOC_URL, method="GET",
+                api_type="rest", source=DOC_URL, parent_document=DOC_URL),
+        ]
+        result = ParseResult(
+            parser="graphql_unified",
+            endpoints=endpoints,
+            diagnostics=ParseDiagnostics(parser="graphql_unified", status="ok"),
+        )
+        with _fld_domain_fns(), mock.patch.object(queue.scanner, "_append_record"):
+            queue._bridge_parse_result(doc, result)
+        self.assertEqual(
+            int(context.metrics.get("graphql_request_total", 0) or 0), 2,
+            "端点桥接循环内按 api_type==graphql 逐条计数")
+
+    def _run_all_skipped_chain(self, task_id, type_hint, schema_enable):
+        """全链 skipped 的 _parse_one 直驱：验证 skipped 计数的 best-effort 边界。"""
+
+        class _AllSkippedParser:
+            def __init__(self, **kwargs):
+                pass
+
+            def parse(self, text, options):
+                return ParseResult(
+                    parser="fake",
+                    diagnostics=ParseDiagnostics(parser="fake", status="skipped"),
+                )
+
+        context = DiscoveryContext(task_id=task_id)
+        queue = _make_queue_fn(
+            lambda doc: "", context=context,
+            config={"GRAPHQL_SCHEMA_ENABLE": schema_enable})
+        url = "https://api.example.com/graphql"
+        doc, _created = queue.registry.register_document(
+            url, source="seed", type_hint=type_hint)
+        queue.registry.mark_document(url, "queued")
+        queue.registry.mark_document(url, "fetching")
+        with _safe_domain_fns(), _fake_unified_parsers(_AllSkippedParser), \
+                mock.patch.object(queue.scanner, "parse_document", lambda *a: None):
+            self.assertTrue(queue._parse_one(doc, '{"query":"{__typename}"}', "sig"))
+        return int(context.metrics.get("graphql_schema_skipped_total", 0) or 0)
+
+    def test_graphql_schema_skipped_best_effort(self):
+        self.assertEqual(
+            self._run_all_skipped_chain("t3-schema-7a", "graphql", False), 1,
+            "schema 关闭 + 全链 skipped + graphql 弱证据 → 计 skipped")
+        self.assertEqual(
+            self._run_all_skipped_chain("t3-schema-7b", "unknown", False), 0,
+            "type_hint 无 graphql 证据不得计数")
+        self.assertEqual(
+            self._run_all_skipped_chain("t3-schema-7c", "graphql", True), 0,
+            "schema 开关开启时不走 skipped 观测（预算/失败语义归生产侧诊断）")
+
+    def test_parse_options_carries_injected_depth(self):
+        queue = _make_queue_fn(lambda doc: "", config={"GRAPHQL_SCHEMA_MAX_DEPTH": 7})
+        self.assertEqual(queue._parse_options().graphql_schema_max_depth, 7,
+                         "P0-03：GRAPHQL_SCHEMA_MAX_DEPTH 必须经 _parse_options 接线")
+        default_queue = _make_queue_fn(lambda doc: "")
+        self.assertEqual(
+            default_queue._parse_options().graphql_schema_max_depth,
+            UNIFIED_API_CONFIG_DEFAULTS["GRAPHQL_SCHEMA_MAX_DEPTH"])
+
+    def test_diagnostics_never_carry_raw_schema_or_variables(self):
+        # 白名单投影 + 违规不回显：契约外键（原文/变量值形态）与非法候选的
+        # 字段值一律不得进入诊断面序列化（合成 marker 验证）。
+        context = DiscoveryContext(task_id="t3-schema-8")
+        queue, _calls = _make_queue(context=context, fetch_map={})
+        self._bridge(queue, self._summary_candidate(
+            raw_schema="type Query { leaked: String } # SECRET_RAW_SDL_MARKER",
+            variables={"api_key": "SECRET_VAR_VALUE"},
+            description="SECRET_DESC_MARKER"))
+        violation = self._summary_candidate(kind="SECRET_KIND_MARKER")
+        del violation["type_count"]
+        self._bridge(queue, violation)
+        context2 = DiscoveryContext(task_id="t3-schema-9")
+        queue2, _calls2 = _make_queue(
+            context=context2, fetch_map={},
+            config={"GRAPHQL_SCHEMA_SUMMARY_MAX_BYTES": 256})
+        self._bridge(queue2, self._summary_candidate(
+            types=["SECRET_TYPE_" + str(i) for i in range(120)],
+            type_count=120, field_count=900, summary_bytes=99999))
+        self.assertTrue(queue2.registry.schema_diagnostics[0]["summary_dropped"])
+        blob = json.dumps(queue.registry.schema_diagnostics, ensure_ascii=False)
+        blob2 = json.dumps(queue2.registry.schema_diagnostics, ensure_ascii=False)
+        for marker in ("SECRET_RAW_SDL_MARKER", "SECRET_VAR_VALUE",
+                       "SECRET_DESC_MARKER", "SECRET_KIND_MARKER"):
+            self.assertNotIn(marker, blob)
+        self.assertNotIn("SECRET_TYPE_", blob2)
+        self.assertEqual(
+            blob.count("schema_contract_violation"), 1,
+            "violation 诊断只留归因键，不留正文")
+
+    def test_run_exposes_schema_diagnostics_count_metric(self):
+        # 端到端最小闭环：ok 解析结果携带 schema candidate → 诊断驻留计数经
+        # context 指标透出（metrics 只放整数计数，摘要本体不进 metrics）。
+        class _SchemaEmittingParser:
+            def __init__(self, **kwargs):
+                self.doc_url = str(kwargs.get("doc_url") or "")
+
+            def parse(self, text, options):
+                if normalize_url(self.doc_url) == normalize_url(DOC_URL):
+                    return ParseResult(
+                        parser="fake",
+                        candidates=[GraphqlSchemaSummaryBridgeTest._summary_candidate()],
+                        diagnostics=ParseDiagnostics(
+                            parser="fake", status="ok"),
+                    )
+                return ParseResult(
+                    parser="fake",
+                    diagnostics=ParseDiagnostics(parser="fake", status="skipped"),
+                )
+
+        context = DiscoveryContext(task_id="t3-schema-10")
+        queue = _make_queue_fn(
+            UnifiedFailureAccountingTest._fetch_for(
+                DOC_URL, target_text=json.dumps({"openapi": "3.0.0", "paths": {}})),
+            context=context)
+        with _safe_domain_fns(), _fake_unified_parsers(_SchemaEmittingParser):
+            queue.run()
+        self.assertEqual(queue.registry.document(DOC_URL).status, "parsed")
+        self.assertEqual(
+            int(context.metrics.get("graphql_schema_success_total", 0) or 0), 1)
+        self.assertEqual(
+            int(context.metrics.get("api_document_schema_diagnostics_total", 0) or 0), 1,
+            "诊断面驻留条数以整数计数透出")
+
+
+class UnifiedFailureAccountingTest(unittest.TestCase):
+    """Review P1-08：三条文档失败路径统一收口到同一 counter + 指标。
+
+    旧口径只计 fetch 异常与 Parser failed，空响应（fetch 返回 ""）被
+    `mark_document(failed/empty_response)` 后静默放行——Review 探针实证
+    fetch_count=1 而 parse_failed_count=0，分母与获取数出现无法归因缺口。
+    冻结口径：凡被消费（fetch_count +1）的文档，终态必落
+    parse_success_count 或 parse_failed_count 之一，且 failed 侧同步计
+    api_document_parse_failed_total。三条路径 error_type 词表保持区分
+    （异常类名 / empty_response / Parser 显式 error_type）便于归因。
+    """
+
+    @staticmethod
+    def _fetch_for(target, target_text=None, target_raises=False):
+        target_key = normalize_url(target)
+
+        def fetch_fn(doc):
+            if normalize_url(doc.url) == target_key:
+                if target_raises:
+                    raise RuntimeError("fetch boom")
+                return target_text
+            return HTML_OK_TEXT
+
+        return fetch_fn
+
+    def _assert_single_unified_failure(self, context, queue, error_type):
+        self.assertEqual(queue.parse_failed_count, 1, "目标文档失败必须计入统一失败计数")
+        self.assertEqual(
+            int(context.metrics.get("api_document_parse_failed_total", 0) or 0), 1,
+            "统一失败计数必须同步上指标")
+        doc = queue.registry.document(DOC_URL)
+        self.assertEqual(doc.status, "failed")
+        self.assertEqual(doc.error_type, error_type, "error_type 词表用于区分失败路径")
+        self.assertEqual(queue.parse_success_count, queue.fetch_count - 1)
+        self.assertEqual(
+            int(context.metrics.get("api_unified_fallback_total", 0) or 0), 0,
+            "单文档失败收口不得混入回退指标（P1-09 冻结语义）")
+
+    def test_fetch_exception_counts_unified_failure(self):
+        context = DiscoveryContext(task_id="p108-exc")
+        queue = _make_queue_fn(
+            self._fetch_for(DOC_URL, target_raises=True), context=context)
+        with _safe_domain_fns():
+            queue.run()
+        self._assert_single_unified_failure(context, queue, "RuntimeError")
+
+    def test_empty_response_counts_unified_failure(self):
+        context = DiscoveryContext(task_id="p108-empty")
+        queue = _make_queue_fn(
+            self._fetch_for(DOC_URL, target_text=""), context=context)
+        with _safe_domain_fns():
+            queue.run()
+        self._assert_single_unified_failure(context, queue, "empty_response")
+
+    def test_parser_failed_status_counts_unified_failure(self):
+        context = DiscoveryContext(task_id="p108-failed")
+        target_key = normalize_url(DOC_URL)
+
+        class _FailedParser:
+            def __init__(self, **kwargs):
+                self.doc_url = str(kwargs.get("doc_url") or "")
+
+            def parse(self, text, options):
+                if normalize_url(self.doc_url) == target_key:
+                    return ParseResult(
+                        parser="fake",
+                        diagnostics=ParseDiagnostics(
+                            parser="fake", status="failed", error_type="schema_invalid"),
+                    )
+                return ParseResult(
+                    parser="fake",
+                    diagnostics=ParseDiagnostics(parser="fake", status="skipped"),
+                )
+
+        # 目标文档正文非 html 才进统一链；failed 态按 G4 不回退 legacy。
+        queue = _make_queue_fn(
+            self._fetch_for(
+                DOC_URL, target_text=json.dumps({"openapi": "3.0.0", "paths": {}})),
+            context=context)
+        with _safe_domain_fns(), _fake_unified_parsers(_FailedParser), \
+                mock.patch.object(queue.scanner, "parse_document") as legacy_parse:
+            queue.run()
+        self._assert_single_unified_failure(context, queue, "schema_invalid")
+        self.assertNotIn(
+            target_key,
+            {normalize_url(str(call.args[0])) for call in legacy_parse.call_args_list},
+            "Parser 显式 failed 不得回退 legacy（G4 口径不变）")
+
+
+class ParserCrashFallbackSwitchTest(unittest.TestCase):
+    """Review P1-09：API_UNIFIED_FALLBACK_ENABLE 作用域覆盖单文档 Parser 崩溃。
+
+    修复前该开关只被 stage 级整体异常检查（run_api_document_pipeline），
+    _parse_one 的 Parser 崩溃却无条件回退 legacy + 计 fallback，同名两套
+    语义。冻结口径：True 维持崩溃回退 legacy + api_unified_fallback_total；
+    False 时不回退，文档标 failed（error_type 取异常类名，与 fetch 异常/
+    legacy 解析崩溃的既有词表一致）并计入统一失败收口。
+    """
+
+    def _run_crash(self, fallback_enable, task_id):
+        context = DiscoveryContext(task_id=task_id)
+
+        class _CrashParser:
+            def __init__(self, **kwargs):
+                pass
+
+            def parse(self, text, options):
+                raise ValueError("parser boom")
+
+        queue = _make_queue_fn(
+            UnifiedFailureAccountingTest._fetch_for(
+                DOC_URL, target_text=OPENAPI_TEXT),
+            context=context,
+            config={"API_UNIFIED_FALLBACK_ENABLE": fallback_enable},
+        )
+        with _safe_domain_fns(), _fake_unified_parsers(_CrashParser), \
+                mock.patch.object(queue.scanner, "parse_document") as legacy_parse:
+            records = queue.run()
+        target_key = normalize_url(DOC_URL)
+        legacy_target_called = any(
+            normalize_url(str(call.args[0])) == target_key
+            for call in legacy_parse.call_args_list)
+        return queue, context, records, legacy_target_called
+
+    def test_crash_with_fallback_enabled_still_falls_back(self):
+        queue, context, _records, legacy_target_called = self._run_crash(True, "p109-on")
+        self.assertTrue(legacy_target_called, "开关 True 时 Parser 崩溃维持回退 legacy")
+        self.assertEqual(queue.registry.document(DOC_URL).status, "parsed")
+        self.assertEqual(queue.parse_failed_count, 0)
+        self.assertEqual(
+            int(context.metrics.get("api_unified_fallback_total", 0) or 0), 1)
+
+    def test_crash_with_fallback_disabled_no_legacy_and_failed(self):
+        queue, context, _records, legacy_target_called = self._run_crash(False, "p109-off")
+        self.assertFalse(legacy_target_called, "开关 False 时崩溃文档不得产出 legacy 记录")
+        doc = queue.registry.document(DOC_URL)
+        self.assertEqual(doc.status, "failed")
+        self.assertEqual(doc.error_type, "ValueError", "异常类名口径（与 715/549 一致）")
+        self.assertEqual(queue.parse_failed_count, 1)
+        self.assertEqual(queue.parse_success_count, queue.fetch_count - 1)
+        self.assertEqual(
+            int(context.metrics.get("api_document_parse_failed_total", 0) or 0), 1)
+        self.assertEqual(
+            int(context.metrics.get("api_unified_fallback_total", 0) or 0), 0,
+            "不回退即不产生 fallback 事件，指标不得重复计")
 
 
 class FetchProfileTest(unittest.TestCase):

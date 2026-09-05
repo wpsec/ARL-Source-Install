@@ -10,7 +10,6 @@
 import contextlib
 import json
 import sys
-import types
 import unittest
 import xml.etree.ElementTree as ET
 from collections import deque
@@ -25,32 +24,21 @@ EXPECTED = FIXTURES / "expected"
 if str(ARL_ROOT) not in sys.path:
     sys.path.insert(0, str(ARL_ROOT))
 
-
-def _stub_packages():
-    """绕过 app.services 包级 __init__（NPoC 等重依赖），只加载纯 stdlib 子模块。
-
-    已有真实包时保持不动；桩包的 __path__ 指向真实目录，后续子模块导入可正常解析。
-    """
-
-    app = sys.modules.get("app")
-    if app is None or not hasattr(app, "__path__"):
-        app = types.ModuleType("app")
-        app.__path__ = [str(ARL_ROOT / "app")]
-        sys.modules["app"] = app
-    services = sys.modules.get("app.services")
-    if services is None:
-        services = types.ModuleType("app.services")
-        services.__path__ = [str(ARL_ROOT / "app" / "services")]
-        sys.modules["app.services"] = services
-
-
-_stub_packages()
+from test._api_unified_bootstrap import (  # noqa: E402
+    assert_no_shell_pollution,
+    load_unified_modules,
+)
 
 # 模块级捕获真实引用:既有用例可能在 collection/运行期注入 fake app.utils/app.services
 # 且不还原(本地环境尤为明显),运行期再 import 会取到被污染的模块。
-from app import utils as _app_utils  # noqa: E402
-from app.services import api_doc_scan as _api_doc_module  # noqa: E402
-from app.services import api_unified_models as m  # noqa: E402
+# bootstrap 在临时桩窗口内完成子模块加载,随后还原 app / app.services 槽位,
+# 不留空壳桩污染同进程既有用例(Review P2-13)。
+_captured = load_unified_modules()
+assert_no_shell_pollution()
+
+_app_utils = _captured["app.utils"]
+_api_doc_module = _captured["app.services.api_doc_scan"]
+m = _captured["app.services.api_unified_models"]
 
 
 @contextlib.contextmanager
