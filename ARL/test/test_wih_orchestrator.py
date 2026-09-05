@@ -214,14 +214,19 @@ class _FakeApiRegistry(object):
         self.expired += 1
         return 0
 
-    def claim_endpoints_for_probe(self, limit, min_confidence=0):
-        return self._claimable[:max(0, int(limit or 0))]
+    def claim_endpoints_for_probe(self, limit, min_confidence=0, with_tokens=False):
+        picked = self._claimable[:max(0, int(limit or 0))]
+        if with_tokens:
+            return [(ep, idx + 1) for idx, ep in enumerate(picked)]
+        return picked
 
-    def probe_report(self, endpoint, verification_status):
+    def probe_report(self, endpoint, verification_status, *, claim_token=None):
         self.reported.append((endpoint.url, endpoint.method, verification_status))
         return endpoint
 
-    def requeue_unreported(self, endpoints):
+    def requeue_unreported(self, claims):
+        # claims 为 (endpoint, token) 列表（R6-P1-01）
+        endpoints = [c[0] if isinstance(c, tuple) else c for c in (claims or [])]
         self.requeued.append(list(endpoints))
         return len(endpoints)
 

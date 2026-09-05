@@ -360,6 +360,17 @@ class UrlSourceBoundaryTest(unittest.TestCase):
         self.assertEqual(ep.observed_url, "https://api.example.com/x?a=1&from=scan")
         self.assertIn("a=1", ep.url)
 
+    def test_positional_construction_keeps_legacy_slots(self):
+        # R6-P2-01：observed_url 为表尾增量字段，旧位置参数语义不漂移。
+        doc = m.ApiDocumentCandidate("t1", "https://api.example.com/x", "swagger")
+        self.assertEqual(doc.type_hint, "swagger")
+        self.assertEqual(doc.observed_url, "https://api.example.com/x")
+        ep = m.UnifiedApiEndpoint("https://api.example.com/x", "POST", "graphql")
+        self.assertEqual(ep.method, "POST")
+        self.assertEqual(ep.api_type, "graphql")
+        self.assertEqual(ep.observed_url, "https://api.example.com/x")
+        self.assertTrue(ep.endpoint_id)  # 第 4 位仍是 endpoint_id（空串走派生）
+
 
 class LegacyCompatTest(unittest.TestCase):
     def test_rest_record_shape_matches_api_doc_scan(self):

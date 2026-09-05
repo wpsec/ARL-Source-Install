@@ -140,28 +140,24 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
                     type(exc).__name__))
 
     max_probe = max(0, int(getattr(Config, "API_ENDPOINT_PROBE_MAX_TARGETS", 500) or 500))
-    claimed = registry.claim_endpoints_for_probe(limit=max_probe)
+    claimed = registry.claim_endpoints_for_probe(limit=max_probe, with_tokens=True)
     items = []
-    pairs = []
+    pairs = []  # (endpoint, claim_token)——token 用于回报/回收的代际校验
     seen_probe_keys = set()
     skipped_count = 0
-    for endpoint in claimed:
+    for endpoint, claim_token in claimed:
         pair = (endpoint.url, endpoint.method)
-        if pair in probed_pairs:
-            registry.probe_report(endpoint, "observed")
-            continue
-        if pair in seen_probe_keys:
-            # 同 (url, method) 不同 api_type/signature 的多资产只探一次，
-            # 其余资产回报 observed 复用同一次请求观察。
+        if pair in probed_pairs or pair in seen_probe_keys:
+            # 首轮/同 (url,method) 已观察：走无代际的 observed 收口。
             registry.probe_report(endpoint, "observed")
             continue
         if endpoint.method not in ("GET", "HEAD"):
-            registry.probe_report(endpoint, "skipped")
+            registry.probe_report(endpoint, "skipped", claim_token=claim_token)
             skipped_count += 1
             continue
         seen_probe_keys.add(pair)
         items.append({"url": endpoint.url, "method": endpoint.method})
-        pairs.append(endpoint)
+        pairs.append((endpoint, claim_token))
 
     try:
         discovery_context.record_metric("api_probe_total", len(items))
@@ -197,7 +193,7 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
                 str(record_item.get("method") or "GET").strip().upper() or "GET",
             )
             by_pair.setdefault(pair_key, record_item)
-        for endpoint in pairs:
+        for endpoint, claim_token in pairs:
             record_item = by_pair.get((endpoint.url, endpoint.method))
             if record_item is None:
                 continue
@@ -205,7 +201,7 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
             if status == "error":
                 error_count += 1
             try:
-                registry.probe_report(endpoint, status)
+                registry.probe_report(endpoint, status, claim_token=claim_token)
             except Exception as exc:
                 logger.debug(
                     "wih registry endpoint report failed error_type:{}".format(
@@ -216,9 +212,10 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
         except Exception as exc:
             logger.debug("api probe metric failed error_type:{}".format(type(exc).__name__))
     finally:
-        # 领取未回报回收（Review 第 8 批复审 P1-04）：阶段异常或结果缺项时，
-        # 仍在 queued 的资产回 pending（queued 不在领取视野内，不回收即成
-        # 既不重探也不显影的状态机死角）。已回报项被合法边表拒绝，为 no-op。
+        # 领取未回报回收（Review P1-04 + R6-P1-01 fencing）：阶段异常或结果缺项时，
+        # 本 owner 仍在 queued 的资产带各自 claim_token 回 pending。已回报项 token
+        # 已清除、被新 claim 取代的项 token 已换代，二者经 token 校验变 no-op——
+        # 过期 worker 的 finally 不再能把新 owner 的 queued 资产改回 pending。
         try:
             requeued = registry.requeue_unreported(pairs)
             if requeued:

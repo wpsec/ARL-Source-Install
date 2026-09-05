@@ -399,7 +399,6 @@ _API_DOCUMENT_FIELDS: Tuple[str, ...] = (
 class ApiDocumentCandidate:
     task_id: str
     url: str
-    observed_url: str = ""
     type_hint: str = "unknown"
     source: str = ""
     sources: Set[str] = field(default_factory=set)
@@ -414,6 +413,9 @@ class ApiDocumentCandidate:
     parser_version: str = ""
     error_type: str = ""
     created_at: float = 0.0
+    # R6-P2-01：增量字段一律追加在旧字段之后，保持既有位置参数语义
+    # （`ApiDocumentCandidate(task_id, url, type_hint, ...)` 不漂移）。
+    observed_url: str = ""
 
     def __post_init__(self) -> None:
         self.task_id = str(self.task_id or "").strip()
@@ -537,7 +539,6 @@ class UnifiedApiEndpoint:
     url: str
     method: str = "GET"
     api_type: str = "rest"
-    observed_url: str = ""
     endpoint_id: str = ""
     path_template: str = ""
     source: str = ""
@@ -564,6 +565,9 @@ class UnifiedApiEndpoint:
     confidence: int = 50
     status: str = "discovered"
     input_signature: str = ""
+    # R6-P2-01：增量字段追加在旧字段之后，保持 `UnifiedApiEndpoint(url, method,
+    # api_type, endpoint_id, ...)` 旧位置参数语义不漂移。
+    observed_url: str = ""
 
     def __post_init__(self) -> None:
         # 三层数据契约（附录A §4.16）：url 为非破坏性规范化值（供 endpoint_id/去重键

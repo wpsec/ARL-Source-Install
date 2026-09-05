@@ -1326,6 +1326,119 @@ class ScopeGateReviewTest(unittest.TestCase):
         blob = json.dumps(registry.snapshot_endpoints(), ensure_ascii=False)
         self.assertNotIn("<value>", blob, "签名/资产面不含取值")
 
+    def test_bridge_out_of_scope_writes_no_legacy_records(self):
+        # R6-P0-01：解析器范围比 Registry 闸宽时，越界端点三态判定必须收口——
+        # 不写旧记录面、不发候选图事件、不计请求观察，只计越界总数。
+        class _EvilParser:
+            def __init__(self, **_kwargs):
+                pass
+
+            def parse(self, _text, _options):
+                eps = [
+                    UnifiedApiEndpoint(
+                        url="https://evil-external.com/x{}".format(i), method="GET",
+                        api_type=t, source="https://api.example.com/doc",
+                        input_signature="s{}".format(i))
+                    for i, t in enumerate(("rest", "graphql", "soap"))
+                ]
+                return ParseResult(
+                    parser="fake", endpoints=eps,
+                    diagnostics=ParseDiagnostics(parser="fake", status="ok"))
+
+        context = DiscoveryContext(task_id="r6p0")
+        queue = _make_queue_fn(
+            lambda doc: '{"openapi":"3.0.0"}' if DOC_URL in doc.url else "",
+            context=context)
+        queue.registry.register_document(DOC_URL, source="seed", type_hint="openapi")
+        with _safe_domain_fns(), _fake_unified_parsers(_EvilParser):
+            records = queue.run()
+        self.assertEqual(
+            [r for r in records
+             if "evil-external" in str(getattr(r, "content", "") or "")], [],
+            "越界端点不得生成 api_doc_endpoint/urlfinder_url/graphql 记录")
+        self.assertEqual(queue.registry.snapshot_endpoints(), [])
+        self.assertEqual(
+            [c for c in context.candidate_registry.values()
+             if "evil-external" in str(getattr(c, "candidate", "") or "")], [],
+            "越界端点不发候选图事件")
+        self.assertEqual(
+            int(context.metrics.get("api_endpoint_out_of_scope_total", 0) or 0), 3)
+        self.assertEqual(int(context.metrics.get("graphql_request_total", 0) or 0), 0,
+                         "越界不计请求观察")
+
+    def test_register_endpoint_with_status_three_outcomes(self):
+        context = DiscoveryContext(task_id="r6p0b", allowed_hosts={"api.example.com"})
+        registry = reg.ApiCandidateRegistry(task_id="r6p0b", context=context)
+        ep = UnifiedApiEndpoint(url="https://api.example.com/a", method="GET",
+                                input_signature="s1", source="doc1")
+        _stored, outcome = registry.register_endpoint_with_status(ep)
+        self.assertEqual(outcome, reg.ApiCandidateRegistry.ENDPOINT_REGISTER_CREATED)
+        twin = UnifiedApiEndpoint(url="https://api.example.com/a", method="GET",
+                                  input_signature="s1", source="doc2")
+        _stored, outcome = registry.register_endpoint_with_status(twin)
+        self.assertEqual(outcome, reg.ApiCandidateRegistry.ENDPOINT_REGISTER_MERGED)
+        evil = UnifiedApiEndpoint(url="https://evil-external.com/a", method="GET",
+                                  input_signature="s2")
+        _stored, outcome = registry.register_endpoint_with_status(evil)
+        self.assertEqual(outcome, reg.ApiCandidateRegistry.ENDPOINT_REGISTER_OUT_OF_SCOPE)
+        # 兼容签名：out_of_scope 与 merged 都返回 False，created 才 True
+        _e, created = registry.register_endpoint(UnifiedApiEndpoint(
+            url="https://api.example.com/c", method="GET", input_signature="s3"))
+        self.assertTrue(created)
+
+    def test_browser_shape_digest_distinguishes_truncated_tails(self):
+        # R6-P1-02：差异落在截断区（第 33 键 / 超 64 字符长名尾部 / 大集合尾部）
+        # 必须产生不同 input_signature，不再前缀折叠合并；取值仍禁入签名。
+        context = DiscoveryContext(task_id="r6shape", allowed_hosts={"api.example.com"})
+        registry = reg.ApiCandidateRegistry(task_id="r6shape", context=context)
+        url = "https://api.example.com/api/f"
+
+        def call(keys):
+            return {"https://api.example.com": {"runtime_api_calls": [
+                {"method": "POST", "url": url, "content_type": "application/json",
+                 "body_kind": "json",
+                 "json_data": {k: "<value>" for k in keys}}]}}
+
+        base = ["k%03d" % i for i in range(32)]
+        created_a = reg.ingest_browser_runtime_events(registry, call(base + ["zz_a"]))
+        created_b = reg.ingest_browser_runtime_events(registry, call(base + ["zz_b"]))
+        self.assertEqual((created_a, created_b), (1, 1),
+                         "第 33 键差异落在截断区仍必须是不同资产")
+        long_a = ["L" * 200 + "tail-a"]
+        long_b = ["L" * 200 + "tail-b"]
+        self.assertEqual(reg.ingest_browser_runtime_events(registry, call(long_a)), 1)
+        self.assertEqual(reg.ingest_browser_runtime_events(registry, call(long_b)), 1,
+                         "超 64 字符长名只有尾部差异仍必须可区分")
+        self.assertEqual(reg.ingest_browser_runtime_events(registry, call(long_a)), 0,
+                         "同形态重复观察仍合一")
+        blob = json.dumps(registry.snapshot_endpoints(), ensure_ascii=False)
+        self.assertNotIn("<value>", blob)
+        self.assertNotIn("tail-a\x22", blob, "digest 承载身份，明文长名不整段落入快照")
+
+    def test_claim_fencing_rejects_stale_owner(self):
+        # R6-P1-01：worker A claim → lease 到期回收 → worker B 再 claim →
+        # A 的回报/finally 必须被代际校验拒绝，不得触碰 B 的资产状态。
+        now = [1000.0]
+        registry = reg.ApiCandidateRegistry(task_id="fence", clock=lambda: now[0])
+        endpoint, _ = registry.register_endpoint(self._ep("https://api.example.com/a"))
+        ((_, token_a),) = registry.claim_endpoints_for_probe(limit=1, with_tokens=True)
+        now[0] += reg.ENDPOINT_CLAIM_LEASE_SEC + 1
+        self.assertEqual(registry.expire_stale_claims(), 1)
+        self.assertEqual(endpoint.status, "pending")
+        ((_, token_b),) = registry.claim_endpoints_for_probe(limit=1, with_tokens=True)
+        self.assertNotEqual(token_a, token_b)
+        self.assertEqual(endpoint.status, "queued")
+        # A 的旧回报与旧 finally 全 no-op + stale 计数
+        self.assertIsNone(registry.probe_report(endpoint, "probed", claim_token=token_a))
+        self.assertEqual(registry.requeue_unreported([(endpoint, token_a)]), 0)
+        self.assertEqual(endpoint.status, "queued", "旧 owner 不得改新 claim 状态")
+        self.assertEqual(registry.stale_report_count, 2)
+        # B 的当前回报正常生效
+        registry.probe_report(endpoint, "probed", claim_token=token_b)
+        self.assertEqual(endpoint.status, "covered")
+        self.assertEqual(registry.requeue_unreported([(endpoint, token_b)]), 0,
+                         "已回报资产不被同轮 finally 误回收")
+
     def test_claim_lease_expires_and_reclaims(self):
         # 执行版 P1-2：worker 异常绕过 finally 的兜底——lease 到期 queued→pending
         # 可被下一轮重新领取；已回报终态不被 lease 触碰。
