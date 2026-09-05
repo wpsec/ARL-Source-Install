@@ -1116,5 +1116,119 @@ class PipelineTest(unittest.TestCase):
         self.assertIsNotNone(getattr(context, "api_candidate_registry", None))
 
 
+class EndpointConsumerSurfaceTest(unittest.TestCase):
+    """第 8 批 T8-1：Endpoint 领取/状态机、候选图回流、P1-12 不吞并、观测计数。"""
+
+    @staticmethod
+    def _ep(url="https://api.example.com/pets", method="GET", api_type="rest",
+            signature="sig-1", confidence=50, source="seed"):
+        return UnifiedApiEndpoint(
+            url=url, method=method, api_type=api_type,
+            input_signature=signature, confidence=confidence,
+            source=source, parent_document="https://api.example.com/openapi.json")
+
+    def test_p1_12_api_type_assets_not_swallowed(self):
+        registry = reg.ApiCandidateRegistry(task_id="t8a")
+        results = [registry.register_endpoint(self._ep(api_type=t))
+                   for t in ("rest", "graphql", "soap")]
+        self.assertTrue(all(created for _e, created in results))
+        self.assertEqual(registry.endpoint_created_count, 3)
+        self.assertEqual(registry.endpoint_deduplicated_count, 0)
+        self.assertEqual(
+            registry.endpoint_by_type, {"rest": 1, "graphql": 1, "soap": 1})
+        # method 维度计数同步（P1-12 后键含 url+method+api_type+signature）
+        self.assertEqual(registry.endpoint_by_method, {"GET": 3})
+
+    def test_three_sources_same_endpoint_merges_once(self):
+        # P0-05 门禁资产面：js/page/browser 来源的同一 Endpoint 只保留一条资产、
+        # 按 sources 合并，不改探测状态（§7.2）。
+        registry = reg.ApiCandidateRegistry(task_id="t8b")
+        first, created = registry.register_endpoint(self._ep(source="js_intel"))
+        self.assertTrue(created)
+        first.status = "probed"  # 模拟消费方领取后回报，再验合并不改态
+        second, created2 = registry.register_endpoint(self._ep(source="page_intel"))
+        third, created3 = registry.register_endpoint(self._ep(source="browser"))
+        self.assertFalse(created2 or created3)
+        self.assertIs(second, first)
+        self.assertEqual(third.status, "probed", "新来源合并不得重置探测态")
+        self.assertEqual(registry.endpoint_created_count, 1)
+        self.assertEqual(registry.endpoint_deduplicated_count, 2)
+        self.assertEqual(registry.endpoint_sources_merged_count, 2)
+        self.assertTrue(
+            {"js_intel", "page_intel", "browser"} <= first.sources)
+
+    def test_state_machine_claim_and_pending(self):
+        registry = reg.ApiCandidateRegistry(task_id="t8c")
+        high = self._ep(url="https://api.example.com/a", signature="s-a", confidence=90)
+        low = self._ep(url="https://api.example.com/b", signature="s-b", confidence=10)
+        registry.register_endpoint(high)
+        registry.register_endpoint(low)
+        claimed = registry.claim_endpoints_for_probe(limit=5, min_confidence=50)
+        self.assertEqual([item.url for item in claimed],
+                         ["https://api.example.com/a"], "confidence 降序领取")
+        self.assertEqual(high.status, "queued")
+        self.assertEqual(
+            registry.endpoint(low.scoped_idempotency_key("t8c")).status, "pending",
+            "低优先级不得丢弃，显影为 pending（§9.2）")
+        # 非法边拒绝：queued→covered、probed→queued
+        self.assertIsNone(registry.mark_endpoint(high, "covered"))
+        self.assertIsNotNone(registry.mark_endpoint(high, "probed"))
+        self.assertIsNone(registry.mark_endpoint(high, "queued"))
+        self.assertEqual(registry.mark_endpoint(high, "covered").status, "covered")
+        # pending 资产下一轮（阈值回落）可再领取
+        again = registry.claim_endpoints_for_probe(limit=5)
+        self.assertEqual([item.url for item in again], ["https://api.example.com/b"])
+        self.assertEqual(low.status, "queued")
+
+    def test_probe_report_word_mapping(self):
+        registry = reg.ApiCandidateRegistry(task_id="t8d")
+        for url, status_in, status_out in (
+                ("https://api.example.com/r", "probed", "covered"),
+                ("https://api.example.com/o", "observed", "covered"),
+                ("https://api.example.com/e", "error", "failed"),
+                ("https://api.example.com/s", "skipped", "skipped")):
+            ep, _ = registry.register_endpoint(
+                self._ep(url=url, signature="sig-" + url[-1]))
+            registry.claim_endpoints_for_probe(limit=1)
+            reported = registry.probe_report(ep, status_in)
+            self.assertEqual(reported.status, status_out, status_in)
+        unknown = registry.register_endpoint(
+            self._ep(url="https://api.example.com/u", signature="sig-u"))
+        self.assertIsNone(registry.probe_report(unknown[0], "weird"))
+
+    def test_register_publishes_endpoint_candidate_to_graph(self):
+        context = DiscoveryContext(task_id="t8e")
+        registry = reg.ApiCandidateRegistry(task_id="t8e", context=context)
+        registry.register_endpoint(self._ep(api_type="graphql"))
+        graph_entries = [
+            item for item in context.candidate_registry.values()
+            if getattr(item, "candidate_type", "") == "endpoint"
+        ]
+        self.assertEqual(len(graph_entries), 1)
+        self.assertEqual(graph_entries[0].candidate, "https://api.example.com/pets")
+        self.assertEqual(
+            getattr(graph_entries[0], "request_profile", ""), "api_endpoint_probe",
+            "与 wih 来源(default profile)图条目分离，不互相吞并")
+        registry.register_endpoint(self._ep(source="page_intel"))
+        self.assertEqual(len([
+            item for item in context.candidate_registry.values()
+            if getattr(item, "candidate_type", "") == "endpoint"]), 1,
+            "重复来源不产生第二条图条目")
+
+    def test_queue_run_flushes_endpoint_observability(self):
+        context = DiscoveryContext(task_id="t8f")
+        queue = _make_queue_fn(
+            lambda doc: OPENAPI_TEXT if DOC_URL in doc.url else HTML_OK_TEXT,
+            context=context)
+        with _safe_domain_fns():
+            queue.run()
+        created = int(context.metrics.get("api_endpoint_discovered_total", 0) or 0)
+        self.assertGreater(created, 0, "OPENAPI_TEXT 端点资产已直登")
+        by_type = context.metrics.get("api_endpoint_by_type.rest")
+        self.assertEqual(int(by_type or 0), created, "REST 面类型计数与创建数一致")
+        self.assertIsNotNone(context.metrics.get("api_endpoint_by_method.GET"))
+        self.assertIsNotNone(context.metrics.get("api_endpoint_sources_merged_total"))
+
+
 if __name__ == "__main__":
     unittest.main()

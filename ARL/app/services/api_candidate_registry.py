@@ -38,6 +38,7 @@ from app.config import Config
 from .api_doc_scan import ApiDocScanner
 from .api_unified_models import (
     API_DOCUMENT_TYPE_HINTS,
+    API_ENDPOINT_STATUSES,
     UNIFIED_API_CONFIG_DEFAULTS,
     ApiDocumentCandidate,
     UnifiedApiEndpoint,
@@ -59,6 +60,20 @@ _DOC_TRANSITIONS: Dict[str, set] = {
     "fetching": {"fetched", "failed", "skipped"},
     "fetched": {"parsed", "failed"},
     "parsed": set(),
+    "failed": set(),
+    "skipped": set(),
+}
+
+# Endpoint 资产状态机（§4.1 枚举 discovered/queued/probed/covered/failed/
+# degraded/pending/skipped；第 8 批消费方领取/回报用，越边拒绝改态）。
+# pending 是低优先级显式降级态而非丢弃（§9.2：不因排序删除低优先级 Endpoint）。
+_ENDPOINT_TRANSITIONS: Dict[str, set] = {
+    "discovered": {"queued", "pending", "skipped"},
+    "pending": {"queued", "skipped"},
+    "queued": {"probed", "failed", "skipped", "pending"},
+    "probed": {"covered", "degraded", "failed"},
+    "covered": set(),
+    "degraded": set(),
     "failed": set(),
     "skipped": set(),
 }
@@ -156,6 +171,10 @@ class ApiCandidateRegistry:
         self.merged_source_count = 0
         self.endpoint_created_count = 0
         self.endpoint_deduplicated_count = 0
+        # §十二 Endpoint 观测计数（消费方接入后由队列收口 flush 进 context metrics）。
+        self.endpoint_by_type: Dict[str, int] = {}
+        self.endpoint_by_method: Dict[str, int] = {}
+        self.endpoint_sources_merged_count = 0
         # P0-04 双通道的诊断面（有界、非持久化事实源——摘要丢失可重新解析，
         # 不落 Mongo、不进 legacy 记录面）；stage metrics 只放整数计数。
         # 消费方经 context.api_candidate_registry 挂载点读取本清单。
@@ -283,21 +302,145 @@ class ApiCandidateRegistry:
     # -- Endpoint 资产（第 8 批消费方的登记面） ----------------------------
 
     def register_endpoint(self, endpoint: UnifiedApiEndpoint) -> Tuple[UnifiedApiEndpoint, bool]:
+        """登记 Endpoint 资产（键含 api_type，P1-12）。
+
+        新建计 `endpoint_by_type/by_method` 并向候选图发布
+        `EndpointCandidateDiscovered`（request_profile=api_endpoint_probe，与
+        wih 来源的 default profile 图条目互不吞并）；重复合并 sources、不改探测
+        状态（§7.2）。候选图发布失败不影响资产登记（与文档镜像同容错口径）。
+        """
+
         key = endpoint.scoped_idempotency_key(self.task_id)
         with self._lock:
             existing = self._endpoints.get(key)
             if existing is None:
                 self._endpoints[key] = endpoint
                 self.endpoint_created_count += 1
-                return endpoint, True
-            existing.add_source(endpoint.parent_document or endpoint.source)
-            existing.add_source(endpoint.source)
-            self.endpoint_deduplicated_count += 1
-            return existing, False
+                self.endpoint_by_type[endpoint.api_type] = \
+                    self.endpoint_by_type.get(endpoint.api_type, 0) + 1
+                self.endpoint_by_method[endpoint.method] = \
+                    self.endpoint_by_method.get(endpoint.method, 0) + 1
+                created = True
+            else:
+                merged = False
+                for source in (endpoint.parent_document or endpoint.source, endpoint.source):
+                    merged = existing.add_source(source) or merged
+                # 去重命中数与来源合并数分别口径：命中即计 dedup（与第 3 批一致），
+                # 证据实际新增才计 sources_merged（消费方判断"多来源聚合"生效）。
+                self.endpoint_deduplicated_count += 1
+                if merged:
+                    self.endpoint_sources_merged_count += 1
+                endpoint, created = existing, False
+        if created and self._context is not None:
+            try:
+                self._context.register_candidate(
+                    event_type="EndpointCandidateDiscovered",
+                    candidate=endpoint.url,
+                    candidate_type="endpoint",
+                    source="api_unified",
+                    request_profile="api_endpoint_probe",
+                    parent_target=str(endpoint.parent_target or ""),
+                    metadata={"api_type": endpoint.api_type, "method": endpoint.method},
+                )
+            except Exception as exc:
+                logger.debug(
+                    "api endpoint candidate publish failed error_type:%s",
+                    type(exc).__name__)
+        return endpoint, created
 
     def snapshot_endpoints(self) -> List[Dict[str, Any]]:
         with self._lock:
             return [item.to_dict() for item in self._endpoints.values()]
+
+    def endpoint(self, scoped_key: str) -> Optional[UnifiedApiEndpoint]:
+        with self._lock:
+            return self._endpoints.get(str(scoped_key or ""))
+
+    def mark_endpoint(
+        self, endpoint: UnifiedApiEndpoint, status: str,
+    ) -> Optional[UnifiedApiEndpoint]:
+        """按 `_ENDPOINT_TRANSITIONS` 合法边改态；非法边返回 None 不改态不抛错。
+
+        消费方（probe/URL Probe）领取后回报终态的唯一入口；`UnifiedApiEndpoint`
+        的 status 枚举校验在此重复执行（direct 赋值不经 __post_init__）。
+        """
+
+        key = endpoint.scoped_idempotency_key(self.task_id)
+        with self._lock:
+            stored = self._endpoints.get(key)
+            if stored is None or stored is not endpoint:
+                return None
+            if status not in _ENDPOINT_TRANSITIONS.get(stored.status, set()):
+                return None
+            if status not in API_ENDPOINT_STATUSES:
+                return None
+            stored.status = status
+            return stored
+
+    def pending_endpoints(self, limit: int = 0) -> List[UnifiedApiEndpoint]:
+        """discovered/pending 资产按 confidence 降序排队（§9.2 不因排序删除低优先级）。"""
+
+        with self._lock:
+            items = [
+                item for item in self._endpoints.values()
+                if item.status in ("discovered", "pending")
+            ]
+        items.sort(key=lambda item: -int(item.confidence or 0))
+        if limit and limit > 0:
+            return items[:limit]
+        return items
+
+    def claim_endpoints_for_probe(
+        self, limit: int, min_confidence: int = 0,
+    ) -> List[UnifiedApiEndpoint]:
+        """领取待探测 Endpoint：discovered/pending→queued；低置信度显影为 pending。
+
+        预算（limit）内领取的条目改态 queued 交给探测消费方；confidence 低于
+        阈值的不动作 skip——它们进入（或停留）pending 态保留资产，等下一轮预算
+        或阈值下调再被领取，符合"不因排序直接删除低优先级 Endpoint"（§9.2）。
+        pending 与 discovered 同为可领取态：pending→queued 是合法边。
+        """
+
+        limit = max(0, int(limit or 0))
+        claimed: List[UnifiedApiEndpoint] = []
+        with self._lock:
+            items = sorted(
+                (item for item in self._endpoints.values()
+                 if item.status in ("discovered", "pending")),
+                key=lambda item: -int(item.confidence or 0))
+            for item in items:
+                if len(claimed) >= limit:
+                    break
+                if int(item.confidence or 0) < int(min_confidence or 0):
+                    item.status = "pending"
+                    continue
+                item.status = "queued"
+                claimed.append(item)
+        return claimed
+
+    def probe_report(
+        self, endpoint: UnifiedApiEndpoint, verification_status: str,
+    ) -> Optional[UnifiedApiEndpoint]:
+        """探测回报词表映射：probe 结果(probed/error/skipped/observed)→资产终态。
+
+        probed→covered 的"是否真算 covered"由消费方决定：轻量探测成功即视为
+        该 Endpoint 已被观察（covered）；error→failed；skipped→skipped；
+        observed（运行期已捕获响应）→covered。
+        """
+
+        mapping = {
+            "probed": "probed", "observed": "probed",
+            "error": "failed", "skipped": "skipped",
+        }
+        target = mapping.get(str(verification_status or "").strip().lower())
+        if target is None:
+            return None
+        updated = self.mark_endpoint(endpoint, target)
+        if updated is not None and target == "probed":
+            # probed 后直接收口 covered：Registry 不再区分"发了请求"与"结果被消费"，
+            # 请求观察证据在 probe 侧 verification_* 字段与旧记录面上。
+            self.mark_endpoint(updated, "covered")
+        return updated
 
     # -- Schema 摘要诊断面（P0-04，附录A §4.13） ---------------------------
 
@@ -908,6 +1051,16 @@ class ApiDocumentQueue:
                 self.context.record_metric(
                     "api_document_schema_diagnostics_total",
                     len(self.registry.schema_diagnostics))
+                # §十二 Endpoint 观测面（第 8 批）：类型/方法分布与来源合并数。
+                for api_type, count in sorted(self.registry.endpoint_by_type.items()):
+                    self.context.record_metric(
+                        "api_endpoint_by_type.{}".format(api_type), count)
+                for method, count in sorted(self.registry.endpoint_by_method.items()):
+                    self.context.record_metric(
+                        "api_endpoint_by_method.{}".format(method), count)
+                self.context.record_metric(
+                    "api_endpoint_sources_merged_total",
+                    self.registry.endpoint_sources_merged_count)
             except Exception:
                 pass
         return list(self.scanner.records)

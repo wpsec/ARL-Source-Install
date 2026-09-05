@@ -589,8 +589,11 @@ class UnifiedApiEndpoint:
     def idempotency_key(self) -> str:
         """task_id 由 Registry 拼接（同一资产跨任务不复用），此处冻结资产面键。
 
-        task_id + api_endpoint + canonical_url + method + request_signature
-        中 request_signature 取 input_signature；不同 method 保留为不同端点。
+        冻结形态（2026-09-06 用户决策 P1-12，附录A §4.13/§4.2）：
+        task_id + api_endpoint + canonical_url + method + api_type + input_signature。
+        api_type 纳入后，同 URL+method 的 rest/graphql/soap 不再互相吞并；
+        operation identity 由 input_signature 承载（GraphQL=op type+name+query hash、
+        SOAP=operation/soapAction、REST=参数/operation_id 摘要），不单列。
         """
 
         return "|".join(
@@ -598,6 +601,7 @@ class UnifiedApiEndpoint:
                 API_ENDPOINT_KEY_PREFIX,
                 self.url,
                 self.method,
+                self.api_type,
                 self.input_signature,
             )
         )

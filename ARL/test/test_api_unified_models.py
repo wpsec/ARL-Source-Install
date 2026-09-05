@@ -167,6 +167,28 @@ class IdempotencyKeyTest(unittest.TestCase):
             get_ep.scoped_idempotency_key("task-a"), get_ep.scoped_idempotency_key("task-b")
         )
 
+    def test_endpoint_key_includes_api_type(self):
+        # P1-12（附录A §4.13/§4.14，T8 实施）：同 URL+method+signature 的
+        # rest/graphql/soap 资产不得互相吞并；api_type 真实进入键拼接形态。
+        same = "a" * 32
+        rest = m.UnifiedApiEndpoint(
+            url="https://api.example.com/gql", method="POST",
+            api_type="rest", input_signature=same)
+        graphql = m.UnifiedApiEndpoint(
+            url="https://api.example.com/gql", method="POST",
+            api_type="graphql", input_signature=same)
+        soap = m.UnifiedApiEndpoint(
+            url="https://api.example.com/gql", method="POST",
+            api_type="soap", input_signature=same)
+        self.assertNotEqual(rest.idempotency_key, graphql.idempotency_key)
+        self.assertNotEqual(graphql.idempotency_key, soap.idempotency_key)
+        self.assertIn("|graphql|", graphql.idempotency_key)
+        twin = m.UnifiedApiEndpoint(
+            url="https://api.example.com/gql", method="POST",
+            api_type="graphql", input_signature=same)
+        self.assertEqual(
+            graphql.scoped_idempotency_key("t1"), twin.scoped_idempotency_key("t1"))
+
     def test_auth_context_not_merged_in_observation(self):
         ep = m.UnifiedApiEndpoint(url="https://api.example.com/pets", method="GET")
         first = ep.probe_observation_key(auth_profile="user-a")
