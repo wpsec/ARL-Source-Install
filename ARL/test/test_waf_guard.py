@@ -44,47 +44,39 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         self.assertEqual(1, summary["request_count"])
         self.assertEqual("Cloudflare", summary["detected_hosts"][0]["waf_name"])
 
-    def test_bypass_allows_penetration_module_before_skip(self):
-        """
-        开启试探绕过后，主动渗透模块应先获得有限放行机会。
+    def test_penetration_bypass_semantics_removed(self):
+        """计划 1 收口：penetration_test 试探绕过语义删除后的行为钉。
+
+        旧语义下该模块可对已封锁主机获得有限放行并注入伪造 Header；
+        现在所有模块统一保守跳过，prepare_request 为无副作用直通。
         """
         guard = WAFSmartSkipGuard(
             enabled=True,
             smart_skip_enabled=True,
-            bypass_enabled=True,
             task_id="task-demo",
             scope_sites=["https://example.com"],
-            bypass_attempt_limit=2,
         )
         blocked_response = SimpleNamespace(
             status_code=403,
             headers={"X-Safedog": "deny"},
             content=b"\xe8\xae\xbf\xe9\x97\xae\xe6\x8b\xa6\xe6\x88\xaa",
         )
-        allowed_response = SimpleNamespace(
-            status_code=200,
-            headers={"Content-Type": "text/html"},
-            content=b"<html>ok</html>",
-        )
 
         guard.observe_response("https://example.com/admin", blocked_response, module="fetch_site")
-        should_skip_fetch, _ = guard.should_skip("https://example.com/admin", module="fetch_site")
-        should_skip_pen_test, _ = guard.should_skip("https://example.com/admin", module="penetration_test")
-        headers, delay, detail = guard.prepare_request(
+        should_skip_pen_test, detail = guard.should_skip("https://example.com/admin", module="penetration_test")
+        headers, delay, prepared_detail = guard.prepare_request(
             "https://example.com/admin",
             module="penetration_test",
             method="GET",
             headers={},
         )
-        guard.observe_response("https://example.com/admin", allowed_response, module="penetration_test")
-        summary = guard.summary()
 
-        self.assertTrue(should_skip_fetch)
-        self.assertFalse(should_skip_pen_test)
-        self.assertGreater(delay, 0.0)
-        self.assertEqual("127.0.0.1", headers["X-Forwarded-For"])
-        self.assertEqual("penetration_test", detail["module"])
-        self.assertEqual(1, summary["bypass_success_host_count"])
+        self.assertTrue(should_skip_pen_test)
+        self.assertEqual("host", detail["scope"])
+        self.assertEqual({}, headers)
+        self.assertEqual(0.0, delay)
+        self.assertEqual({}, prepared_detail)
+        self.assertNotIn("bypass_enabled", guard.summary())
 
     def test_filter_targets_records_site_and_request_units(self):
         guard = WAFSmartSkipGuard(
@@ -116,12 +108,11 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
 
     def test_filter_targets_respects_smart_skip_flag(self):
         """
-        仅开启观测或试探绕过时，不应让被动链路提前过滤目标。
+        仅开启观测（smart_skip 关闭）时，不应让被动链路提前过滤目标。
         """
         guard = WAFSmartSkipGuard(
             enabled=True,
             smart_skip_enabled=False,
-            bypass_enabled=True,
             task_id="task-demo",
             scope_sites=["https://example.com"],
         )

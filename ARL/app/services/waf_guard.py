@@ -23,7 +23,7 @@ logger = utils.get_logger()
 
 class WAFSmartSkipGuard(object):
     """
-    按任务维度执行 WAF 观测、智能跳过与有限试探绕过。
+    按任务维度执行 WAF 观测与保守智能跳过。
     """
 
     # 常见被拦截状态码（弱信号）
@@ -66,13 +66,6 @@ class WAFSmartSkipGuard(object):
         "您的请求已被拦截",
         "safeline",
         "yundun waf",
-    )
-    # 仅允许主动渗透链路做有限试探绕过，其余链路继续以保守跳过为主。
-    ACTIVE_BYPASS_MODULES = {"penetration_test"}
-    BOT_USER_AGENTS = (
-        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-        "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
-        "Mozilla/5.0 (compatible; DuckDuckBot/1.0; +http://duckduckgo.com/duckduckbot.html)",
     )
     # 厂商画像按“通用安全知识 + 项目自有观测”组织，只保留可解释 token，不直接引入外部规则文件。
     WAF_VENDOR_PROFILES = {
@@ -163,17 +156,13 @@ class WAFSmartSkipGuard(object):
         scope_sites: Optional[List[str]] = None,
         weak_block_threshold: int = 3,
         smart_skip_enabled: Optional[bool] = None,
-        bypass_enabled: bool = False,
-        bypass_attempt_limit: int = 3,
         signal_sink=None,
     ):
         self.enabled = bool(enabled)
         self.smart_skip_enabled = bool(enabled if smart_skip_enabled is None else smart_skip_enabled)
-        self.bypass_enabled = bool(bypass_enabled)
         self.task_id = str(task_id or "").strip()
         self.scope_hosts = self._build_scope_hosts(scope_sites or [])
         self.weak_block_threshold = max(2, int(weak_block_threshold or 3))
-        self.bypass_attempt_limit = max(1, int(bypass_attempt_limit or 3))
         # signal_sink(url, module, reason)：确认阻断时把证据回流给任务级发现上下文，
         # 由 DiscoveryContext 做流量类别隔离；回调异常不得影响守卫本身。
         self._signal_sink = signal_sink if callable(signal_sink) else None
@@ -245,8 +234,6 @@ class WAFSmartSkipGuard(object):
                 "waf_confidence": "",
                 "waf_evidence": [],
                 "dns_evidence": [],
-                "bypass_attempts": 0,
-                "bypass_success_count": 0,
                 "blocked_classes": set(),
             }
             self._host_state[host] = state
@@ -429,29 +416,6 @@ class WAFSmartSkipGuard(object):
                 "evidence": list(state.get("dns_evidence", []) or []),
             }
 
-    def _module_allows_bypass(self, module: str) -> bool:
-        if not self.bypass_enabled:
-            return False
-        module_name = str(module or "").strip()
-        return module_name in self.ACTIVE_BYPASS_MODULES
-
-    def _can_apply_bypass(self, state: Dict, module: str) -> bool:
-        if not self._module_allows_bypass(module):
-            return False
-        if not state.get("blocked"):
-            return False
-        if int(state.get("bypass_success_count", 0) or 0) > 0:
-            return True
-        return int(state.get("bypass_attempts", 0) or 0) < self.bypass_attempt_limit
-
-    @staticmethod
-    def _pick_user_agent(host: str) -> str:
-        host_text = str(host or "").strip().lower()
-        if not host_text:
-            return WAFSmartSkipGuard.BOT_USER_AGENTS[0]
-        index = sum(ord(ch) for ch in host_text) % len(WAFSmartSkipGuard.BOT_USER_AGENTS)
-        return WAFSmartSkipGuard.BOT_USER_AGENTS[index]
-
     def should_skip(self, url: str, module: str = "") -> Tuple[bool, Dict]:
         if not self.enabled:
             return False, {}
@@ -465,9 +429,6 @@ class WAFSmartSkipGuard(object):
             module_class = traffic_class_for_module(module)
             class_only_block = module_class in state.get("blocked_classes", set())
             if not state.get("blocked") and not class_only_block:
-                return False, {}
-
-            if self._can_apply_bypass(state, module):
                 return False, {}
 
             if not self.smart_skip_enabled:
@@ -495,45 +456,13 @@ class WAFSmartSkipGuard(object):
         method: str = "GET",
         headers: Optional[Dict] = None,
     ) -> Tuple[Dict, float, Dict]:
+        """兼容既有调用点的直通实现。
+
+        旧 `penetration_test` 试探绕过语义已随计划 1 收口删除；
+        守卫只做保守跳过，不再改写请求 Header 或注入节流延迟。
         """
-        为允许试探绕过的主动模块补充轻量 Header 与节流参数。
-        """
-        prepared_headers = dict(headers or {})
-        if not self.enabled:
-            return prepared_headers, 0.0, {}
 
-        host = self._extract_host(url)
-        if not self._in_scope(host):
-            return prepared_headers, 0.0, {}
-
-        with self._lock:
-            state = self._get_state(host)
-            if not self._can_apply_bypass(state, module):
-                return prepared_headers, 0.0, {}
-
-            if int(state.get("bypass_success_count", 0) or 0) <= 0:
-                state["bypass_attempts"] = int(state.get("bypass_attempts", 0) or 0) + 1
-
-            prepared_headers.setdefault("X-Forwarded-For", "127.0.0.1")
-            prepared_headers.setdefault("X-Real-IP", "127.0.0.1")
-            prepared_headers.setdefault("X-Client-IP", "127.0.0.1")
-            prepared_headers.setdefault("X-Forwarded-Host", host)
-            prepared_headers.setdefault("User-Agent", self._pick_user_agent(host))
-
-            parsed = urlparse(str(url or "").strip())
-            if parsed.path:
-                prepared_headers.setdefault("X-Original-URL", parsed.path)
-                prepared_headers.setdefault("X-Rewrite-URL", parsed.path)
-
-            delay = min(1.0, 0.2 * max(1, int(state.get("hit_count", 1) or 1)))
-            detail = {
-                "host": host,
-                "module": str(module or "").strip(),
-                "waf_name": state.get("waf_name", ""),
-                "attempt": int(state.get("bypass_attempts", 0) or 0),
-                "method": str(method or "GET").strip().upper(),
-            }
-            return prepared_headers, delay, detail
+        return dict(headers or {}), 0.0, {}
 
     @staticmethod
     def build_skip_response(url: str, detail: Optional[Dict] = None) -> Response:
@@ -596,13 +525,6 @@ class WAFSmartSkipGuard(object):
                 state["hit_count"] += 1
                 state["signals"] = signals[-4:]
                 state["module"] = module_name
-
-            # 当主动渗透链路上的轻量绕过请求不再触发拦截信号时，允许继续沿用该模式。
-            if state.get("blocked") and self._module_allows_bypass(module_name):
-                if weak_hit or strong_hit:
-                    state["bypass_success_count"] = 0
-                elif int(state.get("bypass_attempts", 0) or 0) > 0:
-                    state["bypass_success_count"] = int(state.get("bypass_success_count", 0) or 0) + 1
 
             module_class = traffic_class_for_module(module_name)
             if state.get("blocked") or module_class in state.get("blocked_classes", set()):
@@ -717,13 +639,10 @@ class WAFSmartSkipGuard(object):
             class_blocked_hosts = []
             skip_request_count = 0
             request_count = 0
-            bypass_success_host_count = 0
 
             for host, state in self._host_state.items():
                 request_count += int(state.get("request_count", 0) or 0)
                 skip_request_count += int(state.get("skip_count", 0) or 0)
-                if int(state.get("bypass_success_count", 0) or 0) > 0:
-                    bypass_success_host_count += 1
 
                 blocked_classes = sorted(str(cls) for cls in (state.get("blocked_classes") or set()))
                 has_detection = bool(
@@ -746,8 +665,6 @@ class WAFSmartSkipGuard(object):
                     "waf_confidence": state.get("waf_confidence", ""),
                     "waf_evidence": list(state.get("waf_evidence", []) or []),
                     "dns_evidence": list(state.get("dns_evidence", []) or []),
-                    "bypass_attempts": int(state.get("bypass_attempts", 0) or 0),
-                    "bypass_success_count": int(state.get("bypass_success_count", 0) or 0),
                 }
                 detected_hosts.append(host_item)
                 if not self.smart_skip_enabled:
@@ -760,7 +677,6 @@ class WAFSmartSkipGuard(object):
 
             detected_hosts.sort(
                 key=lambda item: (
-                    item.get("bypass_success_count", 0),
                     item.get("hit_count", 0),
                     item.get("skip_count", 0),
                 ),
@@ -773,11 +689,9 @@ class WAFSmartSkipGuard(object):
             return {
                 "enabled": self.enabled,
                 "smart_skip_enabled": self.smart_skip_enabled,
-                "bypass_enabled": self.bypass_enabled,
                 "detected_host_count": len(detected_hosts),
                 "blocked_host_count": len(blocked_hosts),
                 "class_blocked_host_count": len(class_blocked_hosts),
-                "bypass_success_host_count": int(bypass_success_host_count),
                 "request_count": int(request_count),
                 "skip_request_count": int(skip_request_count),
                 "observed_site_count": len(self._observed_sites),
@@ -799,7 +713,6 @@ class WAFSmartSkipGuard(object):
         skipped = int(data.get("skip_request_count", 0) or 0)
         observed_sites = int(data.get("observed_site_count", 0) or 0)
         skipped_sites = int(data.get("skip_site_count", 0) or 0)
-        bypass_success = int(data.get("bypass_success_host_count", 0) or 0)
         observation_elapsed = float(data.get("observation_elapsed_sec", 0.0) or 0.0)
 
         if detected_count <= 0:
@@ -818,8 +731,6 @@ class WAFSmartSkipGuard(object):
             parts.append("跳过主机:{}".format(blocked_count))
             parts.append("跳过站点:{}".format(skipped_sites))
             parts.append("跳过请求:{}".format(skipped))
-        if self.bypass_enabled:
-            parts.append("绕过放行:{}".format(bypass_success))
 
         host_preview = []
         for item in data.get("detected_hosts", [])[:3]:

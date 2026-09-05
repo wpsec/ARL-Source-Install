@@ -229,7 +229,6 @@ class WebSiteFetch(CommonTask):
         self.waf_guard = WAFSmartSkipGuard(
             enabled=self.smart_skip_waf,
             smart_skip_enabled=self.smart_skip_waf,
-            bypass_enabled=False,
             task_id=self.task_id,
             scope_sites=self.sites,
             signal_sink=self._on_waf_guard_block,

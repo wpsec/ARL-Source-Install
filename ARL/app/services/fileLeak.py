@@ -814,11 +814,9 @@ def _build_waf_guard_context(waf_guard) -> dict:
     return {
         "enabled": bool(getattr(waf_guard, "enabled", False)),
         "smart_skip_enabled": bool(getattr(waf_guard, "smart_skip_enabled", False)),
-        "bypass_enabled": bool(getattr(waf_guard, "bypass_enabled", False)),
         "task_id": str(getattr(waf_guard, "task_id", "") or ""),
         "scope_sites": sorted(getattr(waf_guard, "scope_hosts", set()) or []),
         "weak_block_threshold": int(getattr(waf_guard, "weak_block_threshold", 3) or 3),
-        "bypass_attempt_limit": int(getattr(waf_guard, "bypass_attempt_limit", 3) or 3),
     }
 
 
@@ -831,11 +829,9 @@ def _build_waf_guard_from_context(waf_guard_context):
     return WAFSmartSkipGuard(
         enabled=bool(waf_guard_context.get("enabled")),
         smart_skip_enabled=bool(waf_guard_context.get("smart_skip_enabled", waf_guard_context.get("enabled"))),
-        bypass_enabled=bool(waf_guard_context.get("bypass_enabled", False)),
         task_id=str(waf_guard_context.get("task_id", "") or ""),
         scope_sites=list(waf_guard_context.get("scope_sites") or []),
         weak_block_threshold=int(waf_guard_context.get("weak_block_threshold", 3) or 3),
-        bypass_attempt_limit=int(waf_guard_context.get("bypass_attempt_limit", 3) or 3),
     )
 
 
