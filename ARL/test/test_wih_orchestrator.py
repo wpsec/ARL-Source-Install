@@ -7,7 +7,22 @@ import unittest
 from pathlib import Path
 
 
-_MODULE_PATH = Path(__file__).resolve().parents[1] / "app" / "services" / "wih_orchestrator.py"
+ARL_ROOT = Path(__file__).resolve().parents[1]
+if str(ARL_ROOT) not in sys.path:
+    sys.path.insert(0, str(ARL_ROOT))
+
+from test._api_unified_bootstrap import load_modules  # noqa: E402
+
+# 收集期预载真实 discovery_context 子模块（bootstrap 临时桩窗口，槽位还原、
+# 缓存条目保留）：wih_orchestrator 顶层 `from app.services.discovery_context
+# import register_intel_candidate, url_host` 在下方 fake app.services（非包）
+# 注入后只能命中 sys.modules 缓存条目——Review P2-13 前本文件因缺该预载而
+# 收集期 ImportError，属既有 bootstrap 缺陷而非环境问题。
+_REAL_MODULES = load_modules(
+    "app.services.discovery_context", "app.services.api_unified_models")
+_REAL_DISCOVERY_CONTEXT = _REAL_MODULES["app.services.discovery_context"]
+
+_MODULE_PATH = ARL_ROOT / "app" / "services" / "wih_orchestrator.py"
 _SPEC = importlib.util.spec_from_file_location("wih_orchestrator_test_module", _MODULE_PATH)
 _MODULE = importlib.util.module_from_spec(_SPEC)
 assert _SPEC and _SPEC.loader
@@ -94,6 +109,10 @@ try:
     fake_services.run_urlfinder_extract = lambda *_args, **_kwargs: []
     fake_services.run_page_intel_scan = lambda *_args, **_kwargs: []
     fake_services.run_api_doc_scan = lambda *_args, **_kwargs: []
+    # 第 3 批统一层开关面：默认桩保持 flag-off 语义（wih_api_doc legacy 阶段位）；
+    # 用例可用 patch.object(services, "api_unified_enabled", ...) 切到统一分支。
+    fake_services.api_unified_enabled = lambda: False
+    fake_services.run_api_document_pipeline = lambda *_args, **_kwargs: []
     fake_services.run_js_intel_scan = lambda *_args, **_kwargs: []
     fake_services.run_urlfinder_sensitive_scan = lambda *_args, **_kwargs: []
     fake_services.run_trufflehog_js = lambda *_args, **_kwargs: []
@@ -113,6 +132,7 @@ try:
         "app.utils": fake_utils,
         "app.config": fake_config,
         "app.services.infoHunter": fake_info_hunter,
+        "app.services.discovery_context": _REAL_DISCOVERY_CONTEXT,
     })
     _SPEC.loader.exec_module(_MODULE)
 finally:
@@ -163,6 +183,34 @@ class _EndpointTask(_Task):
 
     def _save_wih_endpoints(self, endpoints):
         self.saved_endpoint_batches.append(list(endpoints))
+
+
+class _FakeEndpoint(object):
+    def __init__(self, url, method):
+        self.url = url
+        self.method = method
+        self.api_type = "rest"
+        self.status = "queued"
+
+
+class _FakeApiRegistry(object):
+    """第 8 批 T8-3 编排消费面桩：只实现 followup 用到的三个方法。"""
+
+    def __init__(self, claimable=()):
+        self._claimable = list(claimable)
+        self.registered = []
+        self.reported = []
+
+    def register_endpoint(self, endpoint):
+        self.registered.append(endpoint)
+        return endpoint, True
+
+    def claim_endpoints_for_probe(self, limit, min_confidence=0):
+        return self._claimable[:max(0, int(limit or 0))]
+
+    def probe_report(self, endpoint, verification_status):
+        self.reported.append((endpoint.url, endpoint.method, verification_status))
+        return endpoint
 
 
 class TestWihOrchestratorEndpointOrder(unittest.TestCase):
@@ -223,6 +271,83 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
         self.assertEqual(2, len(task.saved_endpoint_batches))
         self.assertEqual(("https://api.example.test/pet/list", "fetched"),
                          ctx.marked[-1])
+
+    def test_registry_channel_replaces_graph_scan_when_attached(self):
+        # 第 8 批 T8-3：context 挂载统一 Registry 后补探只消费 Registry，
+        # 不再扫候选图（§7.3）；POST/已探测资产不外发请求。
+        ctx = _FakeDiscoveryContext([
+            _FakeCandidate("https://should-not-probe.test/x"),  # 图条目须被忽略
+        ])
+        registry = _FakeApiRegistry([
+            _FakeEndpoint("https://api.example.test/g", "GET"),
+            _FakeEndpoint("https://api.example.test/p", "POST"),
+            _FakeEndpoint("https://example.test/api/v1", "GET"),  # 首轮已探测
+        ])
+        ctx.api_candidate_registry = registry
+        task = _EndpointTask(ctx)
+        task.assertEqual = self.assertEqual
+        probed_batches = []
+
+        def probe_spy(endpoints, **_kwargs):
+            probed_batches.append([dict(e) for e in endpoints])
+            for e in endpoints:
+                e["verification_status"] = "probed"
+            return endpoints
+
+        original_wih = fake_services.run_wih
+        original_probe = fake_services.run_wih_endpoint_probe
+        try:
+            fake_services.run_wih = lambda *_a, **_k: (
+                ["raw-record"],
+                [{"url": "https://example.test/api/v1", "method": "GET"}],
+            )
+            fake_services.run_wih_endpoint_probe = probe_spy
+            WihOrchestrator(task).run()
+        finally:
+            fake_services.run_wih = original_wih
+            fake_services.run_wih_endpoint_probe = original_probe
+
+        # 候选图 fallback 不应触发：mark 未被调用。
+        self.assertEqual([], ctx.marked)
+        # probed_batches[0] 为首轮 Go 结果探测，[1] 为 Registry 补探。
+        self.assertEqual(2, len(probed_batches))
+        self.assertEqual(
+            [{"url": "https://api.example.test/g", "method": "GET"}],
+            probed_batches[1])
+        # probe_report 记录的是编排层传入的回报词表（真实 Registry 的
+        # 状态机映射由 test_api_candidate_registry 锁定）：POST→skipped、
+        # 探测成功→probed、首轮已观察→observed。
+        reported = {(url, method, status) for url, method, status in registry.reported}
+        self.assertIn(("https://api.example.test/p", "POST", "skipped"), reported)
+        self.assertIn(("https://api.example.test/g", "GET", "probed"), reported)
+        self.assertIn(("https://example.test/api/v1", "GET", "observed"), reported)
+        # 首轮结果双写为 covered 资产（§7.3 映射）。
+        self.assertTrue(any(
+            getattr(e, "url", "") == "https://example.test/api/v1"
+            and getattr(e, "status", "") == "covered"
+            for e in registry.registered))
+
+    def test_legacy_channel_used_when_no_registry(self):
+        # 未挂载统一 Registry（flag 关/管线回退）→ 走候选图 fallback，行为不变。
+        ctx = _FakeDiscoveryContext([
+            _FakeCandidate("https://api.example.test/pet/list"),
+        ])
+        task = _EndpointTask(ctx)
+        task.assertEqual = self.assertEqual
+        seen = []
+
+        def probe_spy(endpoints, **_kwargs):
+            seen.append(list(endpoints))
+            return endpoints
+
+        original_probe = fake_services.run_wih_endpoint_probe
+        try:
+            fake_services.run_wih_endpoint_probe = probe_spy
+            WihOrchestrator(task).run()
+        finally:
+            fake_services.run_wih_endpoint_probe = original_probe
+        self.assertTrue(seen, "fallback 通道应补探")
+        self.assertTrue(ctx.marked, "候选图状态回写")
 
     def test_wih_records_reach_candidate_registry_with_recordType_attr(self):
         # WihRecord 属性名是 recordType，读成 record_type 不会抛错而是

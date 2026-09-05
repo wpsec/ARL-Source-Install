@@ -12,6 +12,8 @@ import uuid
 from app.helpers import asset_site, asset_wih
 from app.helpers.scope import get_scope_by_scope_id
 from app.services import (
+    api_unified_enabled,
+    run_api_document_pipeline,
     run_api_doc_scan,
     run_js_intel_scan,
     run_page_intel_scan,
@@ -119,17 +121,33 @@ class AssetWihMonitor(object):
         if page_intel_results:
             wih_results.extend(page_intel_results)
 
-        api_doc_results = list(
-            run_api_doc_scan(self.sites, wih_results, discovery_context=discovery_context) or []
-        )
-        if api_doc_results:
-            wih_results.extend(api_doc_results)
-
-        js_intel_results = list(
-            run_js_intel_scan(self.sites, wih_results, discovery_context=discovery_context) or []
-        )
-        if js_intel_results:
-            wih_results.extend(js_intel_results)
+        # 计划 6 第 8 批消费方接入：flag 关闭时保持 legacy 顺序（api_doc 先于 js_intel，
+        # 与第 3 批前行为一致）；flag 开启时先跑 js_intel，再走统一文档管线，使 JS 发现
+        # 的 API 文档在当前监控周期内回流解析（§7.1），与 wih_orchestrator 同口径。
+        api_unified_on = bool(api_unified_enabled())
+        if not api_unified_on:
+            api_doc_results = list(
+                run_api_doc_scan(self.sites, wih_results, discovery_context=discovery_context) or []
+            )
+            if api_doc_results:
+                wih_results.extend(api_doc_results)
+            js_intel_results = list(
+                run_js_intel_scan(self.sites, wih_results, discovery_context=discovery_context) or []
+            )
+            if js_intel_results:
+                wih_results.extend(js_intel_results)
+        else:
+            js_intel_results = list(
+                run_js_intel_scan(self.sites, wih_results, discovery_context=discovery_context) or []
+            )
+            if js_intel_results:
+                wih_results.extend(js_intel_results)
+            api_doc_results = list(
+                run_api_document_pipeline(
+                    self.sites, wih_results, discovery_context=discovery_context) or []
+            )
+            if api_doc_results:
+                wih_results.extend(api_doc_results)
 
         urlfinder_sensitive_results = list(
             run_urlfinder_sensitive_scan(self.sites, wih_results, discovery_context=discovery_context) or []

@@ -9,6 +9,10 @@ from app import services, utils
 from app.config import Config
 from app.services.infoHunter import InfoHunter
 from app.services.discovery_context import register_intel_candidate, url_host
+from app.services.api_unified_models import (
+    UnifiedApiEndpoint,
+    compute_input_signature,
+)
 
 
 logger = utils.get_logger()
@@ -23,6 +27,177 @@ def _wih_primary_fully_succeeded(stage_metrics) -> bool:
         if int(stage_metrics.get(key, 0) or 0):
             return False
     return True
+
+
+def _legacy_endpoint_followup(task, wih_endpoints, discovery_context):
+    """第 3 批前既有补探通道：候选图 endpoint/discovered → GET-only 探测。
+
+    flag 关闭与统一通道异常时的显式 fallback（计划 6 §十三.5），行为逐字保持。
+    """
+
+    followup_items = []
+    try:
+        probed_urls = {
+            str(item.get("url") or "").strip()
+            for item in list(wih_endpoints or [])
+            if isinstance(item, dict)
+        }
+        for record in discovery_context.candidate_registry.values():
+            if str(getattr(record, "candidate_type", "") or "") != "endpoint":
+                continue
+            if str(getattr(record, "status", "") or "") != "discovered":
+                continue
+            candidate_url = str(getattr(record, "candidate", "") or "").strip()
+            if (not candidate_url
+                    or candidate_url in probed_urls
+                    or not candidate_url.lower().startswith(("http://", "https://"))):
+                continue
+            probed_urls.add(candidate_url)
+            followup_items.append({"url": candidate_url, "method": "GET"})
+    except Exception as exc:
+        # 候选图读取失败只放弃补探，不影响主链路。
+        logger.debug(
+            "wih endpoint followup collect failed error_type:{}".format(
+                type(exc).__name__))
+    if not followup_items:
+        return
+    logger.info(
+        "task_id:{} wih endpoint followup probe candidates:{}".format(
+            task.task_id, len(followup_items)))
+    followup_results = task._run_substage(
+        "wih_endpoint_followup_probe",
+        lambda: services.run_wih_endpoint_probe(
+            followup_items,
+            waf_guard=task.waf_guard,
+            discovery_context=discovery_context,
+        ),
+        detail="endpoints={}".format(len(followup_items)),
+        input_count=len(followup_items),
+    ) or []
+    task._save_wih_endpoints(followup_results)
+    for endpoint_item in followup_results:
+        if not isinstance(endpoint_item, dict):
+            continue
+        try:
+            discovery_context.mark_candidate_status(
+                str(endpoint_item.get("url") or ""),
+                "endpoint",
+                "fetched",
+            )
+        except Exception as exc:
+            logger.debug(
+                "wih endpoint followup mark status failed error_type:{}".format(
+                    type(exc).__name__))
+
+
+def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context):
+    """计划 6 第 8 批：统一 Registry 作为 Endpoint 探测的唯一候选入口（§7.3）。
+
+    首轮 Go 引擎探测结果双写为 covered 的 `api_type=rest` 资产（§7.3 映射，
+    只并证据不重复探测）；claimed 资产中 GET/HEAD 走轻量探测，POST/SOAP/
+    GraphQL 等无法从文档摘要重建请求体的资产显式标 skipped——不发无 body 的
+    POST（§2.2 不构造业务请求体），首轮已观察到的 (url, method) 直接回报
+    observed。探测回报经 probe_report 词表映射收口状态机。
+    """
+
+    probed_pairs = set()
+    for item in list(wih_endpoints or []):
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        method = str(item.get("method") or "GET").strip().upper() or "GET"
+        probed_pairs.add((url, method))
+        try:
+            registry.register_endpoint(UnifiedApiEndpoint(
+                url=url, method=method, api_type="rest",
+                source="wih",
+                parent_target=str(item.get("page_url") or item.get("target") or ""),
+                status="covered",
+                input_signature=compute_input_signature("wih", url, method),
+            ))
+        except Exception as exc:
+            # 首轮观察证据登记失败只丢观测面，不影响补探。
+            logger.debug(
+                "wih endpoint asset register failed error_type:{}".format(
+                    type(exc).__name__))
+
+    max_probe = max(0, int(getattr(Config, "API_ENDPOINT_PROBE_MAX_TARGETS", 500) or 500))
+    claimed = registry.claim_endpoints_for_probe(limit=max_probe)
+    items = []
+    pairs = []
+    seen_probe_keys = set()
+    skipped_count = 0
+    for endpoint in claimed:
+        pair = (endpoint.url, endpoint.method)
+        if pair in probed_pairs:
+            registry.probe_report(endpoint, "observed")
+            continue
+        if pair in seen_probe_keys:
+            # 同 (url, method) 不同 api_type/signature 的多资产只探一次，
+            # 其余资产回报 observed 复用同一次请求观察。
+            registry.probe_report(endpoint, "observed")
+            continue
+        if endpoint.method not in ("GET", "HEAD"):
+            registry.probe_report(endpoint, "skipped")
+            skipped_count += 1
+            continue
+        seen_probe_keys.add(pair)
+        items.append({"url": endpoint.url, "method": endpoint.method})
+        pairs.append(endpoint)
+
+    try:
+        discovery_context.record_metric("api_probe_total", len(items))
+        if skipped_count:
+            discovery_context.record_metric("api_probe_skipped_total", skipped_count)
+    except Exception as exc:
+        logger.debug("api probe metric failed error_type:{}".format(type(exc).__name__))
+
+    if not items:
+        return
+    logger.info(
+        "task_id:{} wih registry endpoint followup probe candidates:{}".format(
+            task.task_id, len(items)))
+
+    def _probe():
+        return services.run_wih_endpoint_probe(
+            items, waf_guard=task.waf_guard, discovery_context=discovery_context)
+
+    results = task._run_substage(
+        "wih_endpoint_followup_probe", _probe,
+        detail="endpoints={}".format(len(items)),
+        input_count=len(items),
+    ) or []
+    task._save_wih_endpoints(results)
+    by_pair = {}
+    error_count = 0
+    for record_item in results:
+        if not isinstance(record_item, dict):
+            continue
+        pair_key = (
+            str(record_item.get("url") or "").strip(),
+            str(record_item.get("method") or "GET").strip().upper() or "GET",
+        )
+        by_pair.setdefault(pair_key, record_item)
+    for endpoint in pairs:
+        record_item = by_pair.get((endpoint.url, endpoint.method))
+        if record_item is None:
+            continue
+        status = str(record_item.get("verification_status") or "")
+        if status == "error":
+            error_count += 1
+        try:
+            registry.probe_report(endpoint, status)
+        except Exception as exc:
+            logger.debug(
+                "wih registry endpoint report failed error_type:{}".format(
+                    type(exc).__name__))
+    try:
+        if error_count:
+            discovery_context.record_metric("api_probe_failed_total", error_count)
+    except Exception as exc:
+        logger.debug("api probe metric failed error_type:{}".format(type(exc).__name__))
 
 
 
@@ -342,60 +517,23 @@ class WihOrchestrator(object):
         # endpoint 队列二次消费：API 文档/JS 情报等非主扫描链路登记的
         # endpoint 候选补一轮 GET-only 探测；缓存优先、探测上限沿用
         # WIH_ENDPOINT_PROBE_MAX_TARGETS，不重复首轮已探测过的 URL。
+        # 计划 6 第 8 批：统一管线已挂载 Registry 时，补探改由 Registry 通道
+        # 接管（§7.3 "WIH endpoint probe 只消费 Registry 待探测 Endpoint"）；
+        # 未挂载（flag 关/管线回退）保留下方候选图扫描作为显式 fallback。
         discovery_context = getattr(task, "discovery_context", None)
         if discovery_context is not None:
-            followup_items = []
-            try:
-                probed_urls = {
-                    str(item.get("url") or "").strip()
-                    for item in list(wih_endpoints or [])
-                    if isinstance(item, dict)
-                }
-                for record in discovery_context.candidate_registry.values():
-                    if str(getattr(record, "candidate_type", "") or "") != "endpoint":
-                        continue
-                    if str(getattr(record, "status", "") or "") != "discovered":
-                        continue
-                    candidate_url = str(getattr(record, "candidate", "") or "").strip()
-                    if (not candidate_url
-                            or candidate_url in probed_urls
-                            or not candidate_url.lower().startswith(("http://", "https://"))):
-                        continue
-                    probed_urls.add(candidate_url)
-                    followup_items.append({"url": candidate_url, "method": "GET"})
-            except Exception as exc:
-                # 候选图读取失败只放弃补探，不影响主链路。
-                logger.debug(
-                    "wih endpoint followup collect failed error_type:{}".format(
-                        type(exc).__name__))
-            if followup_items:
-                logger.info(
-                    "task_id:{} wih endpoint followup probe candidates:{}".format(
-                        task.task_id, len(followup_items)))
-                followup_results = task._run_substage(
-                    "wih_endpoint_followup_probe",
-                    lambda: services.run_wih_endpoint_probe(
-                        followup_items,
-                        waf_guard=task.waf_guard,
-                        discovery_context=discovery_context,
-                    ),
-                    detail="endpoints={}".format(len(followup_items)),
-                    input_count=len(followup_items),
-                ) or []
-                task._save_wih_endpoints(followup_results)
-                for endpoint_item in followup_results:
-                    if not isinstance(endpoint_item, dict):
-                        continue
-                    try:
-                        discovery_context.mark_candidate_status(
-                            str(endpoint_item.get("url") or ""),
-                            "endpoint",
-                            "fetched",
-                        )
-                    except Exception as exc:
-                        logger.debug(
-                            "wih endpoint followup mark status failed error_type:{}".format(
-                                type(exc).__name__))
+            api_registry = getattr(discovery_context, "api_candidate_registry", None)
+            if api_registry is not None:
+                try:
+                    _registry_endpoint_followup(
+                        task, api_registry, wih_endpoints, discovery_context)
+                except Exception as exc:
+                    # 统一通道消费失败只回退候选图扫描，不影响主链路。
+                    logger.debug(
+                        "wih registry endpoint followup failed error_type:{}".format(
+                            type(exc).__name__))
+            else:
+                _legacy_endpoint_followup(task, wih_endpoints, discovery_context)
 
         if records:
             urlfinder_sensitive_records = set(
