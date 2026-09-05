@@ -514,6 +514,33 @@ class WihOrchestrator(object):
             if api_doc_records:
                 records |= api_doc_records
 
+        # 计划 6 第 8 批（P0-05）：浏览器运行时采集接入统一 Registry 消费面。
+        # flag 关闭不新增子阶段（legacy 行为面不变）；管线回退导致 Registry 未
+        # 挂载时整段跳过；采集/摄取任何异常只隔离本阶段，不影响 WIH 主链路。
+        if scan_sites and api_unified_enabled and bool(
+                getattr(Config, "BROWSER_INTEL_ENABLE", False)):
+            browser_registry = getattr(
+                getattr(task, "discovery_context", None),
+                "api_candidate_registry", None)
+            if browser_registry is not None:
+                try:
+                    browser_results = task._run_substage(
+                        "wih_browser_intel",
+                        lambda: services.run_browser_intel_scan(scan_sites),
+                        detail="sites={}".format(len(scan_sites)),
+                        input_count=len(scan_sites),
+                    ) or {}
+                    ingested = services.ingest_browser_runtime_events(
+                        browser_registry, browser_results)
+                    if ingested:
+                        logger.info(
+                            "task_id:{} browser runtime endpoints ingested:{}".format(
+                                task.task_id, ingested))
+                except Exception as exc:
+                    logger.warning(
+                        "wih browser intel stage failed task_id:{} error_type:{}".format(
+                            task.task_id, type(exc).__name__))
+
         # endpoint 队列二次消费：API 文档/JS 情报等非主扫描链路登记的
         # endpoint 候选补一轮 GET-only 探测；缓存优先、探测上限沿用
         # WIH_ENDPOINT_PROBE_MAX_TARGETS，不重复首轮已探测过的 URL。

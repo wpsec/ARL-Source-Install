@@ -78,6 +78,11 @@ _ENDPOINT_TRANSITIONS: Dict[str, set] = {
     "skipped": set(),
 }
 
+# 运行时观察收口（第 8 批）：响应已被浏览器/首轮引擎在运行期捕获，
+# 不经探测边表直接 covered（"相同 Endpoint 的后续来源不重复探测"§7.2）。
+# 只对非终态开放；terminal 状态（probed/covered/failed/…）不被观察事件改写。
+_ENDPOINT_OBSERVABLE_FROM = frozenset({"discovered", "queued", "pending"})
+
 # type_hint 判定关键词（顺序即优先级；与 ApiDocScanner._DOC_KEYWORDS 的语义交集冻结）。
 _TYPE_HINT_KEYWORDS: Tuple[Tuple[str, str], ...] = (
     ("postman", "postman"),
@@ -323,7 +328,10 @@ class ApiCandidateRegistry:
                 created = True
             else:
                 merged = False
-                for source in (endpoint.parent_document or endpoint.source, endpoint.source):
+                # §7.2 "后续来源只追加 sources 和证据"：入参对象的完整来源集合
+                # （含消费方预打的来源标记，如 browser）都要并入既有资产。
+                for source in ([endpoint.parent_document or endpoint.source,
+                                endpoint.source] + sorted(endpoint.sources)):
                     merged = existing.add_source(source) or merged
                 # 去重命中数与来源合并数分别口径：命中即计 dedup（与第 3 批一致），
                 # 证据实际新增才计 sources_merged（消费方判断"多来源聚合"生效）。
@@ -418,6 +426,26 @@ class ApiCandidateRegistry:
                 claimed.append(item)
         return claimed
 
+    def mark_endpoint_observed(
+        self, endpoint: UnifiedApiEndpoint,
+    ) -> Optional[UnifiedApiEndpoint]:
+        """运行时观察收口：discovered/queued/pending → covered。
+
+        与探测边表分离——浏览器/首轮引擎已在运行期捕获该 URL 响应时，资产
+        直接 covered，不再进入补探（§7.2 后续来源不重复探测）；已终态的
+        资产不被观察事件回写。
+        """
+
+        key = endpoint.scoped_idempotency_key(self.task_id)
+        with self._lock:
+            stored = self._endpoints.get(key)
+            if stored is None or stored is not endpoint:
+                return None
+            if stored.status not in _ENDPOINT_OBSERVABLE_FROM:
+                return None
+            stored.status = "covered"
+            return stored
+
     def probe_report(
         self, endpoint: UnifiedApiEndpoint, verification_status: str,
     ) -> Optional[UnifiedApiEndpoint]:
@@ -425,14 +453,14 @@ class ApiCandidateRegistry:
 
         probed→covered 的"是否真算 covered"由消费方决定：轻量探测成功即视为
         该 Endpoint 已被观察（covered）；error→failed；skipped→skipped；
-        observed（运行期已捕获响应）→covered。
+        observed（运行期已捕获响应）走观察收口直达 covered。
         """
 
-        mapping = {
-            "probed": "probed", "observed": "probed",
-            "error": "failed", "skipped": "skipped",
-        }
-        target = mapping.get(str(verification_status or "").strip().lower())
+        word = str(verification_status or "").strip().lower()
+        if word == "observed":
+            return self.mark_endpoint_observed(endpoint)
+        mapping = {"probed": "probed", "error": "failed", "skipped": "skipped"}
+        target = mapping.get(word)
         if target is None:
             return None
         updated = self.mark_endpoint(endpoint, target)
@@ -1072,6 +1100,85 @@ class ApiDocumentQueue:
             self.context.record_metric(name, amount)
         except Exception:
             pass
+
+
+def ingest_browser_runtime_events(registry: ApiCandidateRegistry, results: Any) -> int:
+    """计划 6 第 8 批（P0-05）：浏览器运行时事件进统一 Endpoint Registry。
+
+    输入 `run_browser_intel_scan` 的 `site -> {...runtime_api_calls:[...]}` 结果。
+    - GraphQL 事件消费就地拆解出的 `_graphql_endpoints`（operation 级资产，
+      与文档通道同键合并 sources）；
+    - 其余运行时请求登记为 `api_type=rest`、`source=browser` 的资产；
+    - 浏览器已在运行期捕获响应，全部经观察收口直接 covered——后续补探
+      不再对这些 URL 发第二遍请求（§7.2）；
+    - 事件的 request_body/json_data/form_data 等模板字段一律不读取，
+      raw query、变量取值、敏感 header 值因此没有进入 Registry 的通道。
+    返回新建资产数。整体异常由调用方隔离，本函数内部逐条容错。
+    """
+
+    from .discovery_context import url_host
+
+    created = 0
+    out_of_scope = 0
+    context = getattr(registry, "_context", None)
+    allowed_hosts = {str(h or "").strip().lower() for h in
+                     (getattr(context, "allowed_hosts", None) or set()) if h}
+    if not isinstance(results, dict):
+        return 0
+    for site, payload in results.items():
+        if not isinstance(payload, dict):
+            continue
+        calls = payload.get("runtime_api_calls") or []
+        for call in calls if isinstance(calls, list) else []:
+            if not isinstance(call, dict):
+                continue
+            endpoints = call.get("_graphql_endpoints")
+            if isinstance(endpoints, list) and endpoints:
+                for endpoint in endpoints:
+                    try:
+                        # 浏览器来源证据先行并入对象（register 时随 sources 合并），
+                        # 否则解析器产物只带 doc_url，无法与文档通道资产区分观察来源。
+                        endpoint.add_source("browser")
+                        merged, was_created = registry.register_endpoint(endpoint)
+                        registry.mark_endpoint_observed(merged)
+                        created += 1 if was_created else 0
+                    except Exception as exc:
+                        logger.debug(
+                            "browser graphql endpoint register failed error_type:%s",
+                            type(exc).__name__)
+                continue
+            url = str(call.get("url") or "").strip()
+            if not url.lower().startswith(("http://", "https://")):
+                continue
+            if allowed_hosts and url_host(url) not in allowed_hosts:
+                # 浏览器跨域请求只作证据不入资产面（与文档解析器同一边界）。
+                out_of_scope += 1
+                continue
+            method = str(call.get("method") or "GET").strip().upper() or "GET"
+            try:
+                endpoint = UnifiedApiEndpoint(
+                    url=url, method=method, api_type="rest",
+                    source="browser", parent_target=str(site or ""),
+                    confidence=75,
+                    input_signature=compute_input_signature("browser", url, method))
+                merged, was_created = registry.register_endpoint(endpoint)
+                registry.mark_endpoint_observed(merged)
+                created += 1 if was_created else 0
+            except Exception as exc:
+                logger.debug(
+                    "browser rest endpoint register failed error_type:%s",
+                    type(exc).__name__)
+    try:
+        if context is not None and out_of_scope:
+            context.record_metric("api_endpoint_browser_out_of_scope_total", out_of_scope)
+    except Exception:
+        pass
+    try:
+        if context is not None:
+            context.record_metric("api_endpoint_browser_ingested_total", created)
+    except Exception:
+        pass
+    return created
 
 
 def run_api_document_pipeline(

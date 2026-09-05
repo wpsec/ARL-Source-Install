@@ -29,6 +29,7 @@ from .api_candidate_registry import (
     ApiCandidateRegistry,
     ApiDocumentQueue,
     api_unified_enabled,
+    ingest_browser_runtime_events,
     run_api_document_pipeline,
 )
 from .js_intel_scan import run_js_intel_scan

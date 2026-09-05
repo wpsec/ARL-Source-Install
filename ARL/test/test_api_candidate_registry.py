@@ -1230,5 +1230,90 @@ class EndpointConsumerSurfaceTest(unittest.TestCase):
         self.assertIsNotNone(context.metrics.get("api_endpoint_sources_merged_total"))
 
 
+class BrowserIngestGateTest(unittest.TestCase):
+    """第 8 批 T8-4 / P0-05 门禁：浏览器运行时事件进统一 Registry、多来源合一。"""
+
+    GQL_URL = "https://api.example.com/graphql"
+    QUERY = "query GetPet($petId: ID!) { pet(id: $petId) { name } }"
+
+    def _request_json(self):
+        return json.dumps({
+            "url": self.GQL_URL, "method": "POST",
+            "request": {"query": self.QUERY, "operationName": "GetPet",
+                        "variables": {"petId": "SECRET-PET-9527"}},
+        })
+
+    def _browser_graphql_endpoints(self):
+        # 与浏览器运行时通道同一拆解路径（UnifiedGraphqlParser 请求文档形态）。
+        parser = _parser_module.UnifiedGraphqlParser(
+            task_id="browser-intel", doc_url=self.GQL_URL,
+            allowed_hosts={"api.example.com"})
+        result = parser.parse(self._request_json(), _models.ParseOptions())
+        self.assertEqual(result.diagnostics.status, "ok")
+        return result.endpoints
+
+    def test_doc_and_browser_and_page_merge_into_single_asset(self):
+        context = DiscoveryContext(task_id="t8g1", allowed_hosts={"api.example.com"})
+        queue, _calls = _make_queue(
+            context=context, fetch_map={self.GQL_URL: self._request_json()})
+        queue.registry.register_document(
+            self.GQL_URL, source="js_intel", type_hint="graphql")
+        with _safe_domain_fns():
+            queue.run()
+        gql_assets = [e for e in queue.registry.snapshot_endpoints()
+                      if e["api_type"] == "graphql"]
+        self.assertEqual(1, len(gql_assets), "文档通道应产出 graphql 资产")
+        self.assertEqual(gql_assets[0]["status"], "discovered")
+
+        results = {"https://api.example.com": {"runtime_api_calls": [
+            {"method": "POST", "url": self.GQL_URL, "body_kind": "graphql",
+             "_graphql_endpoints": self._browser_graphql_endpoints()},
+        ]}}
+        created = reg.ingest_browser_runtime_events(queue.registry, results)
+        self.assertEqual(0, created, "浏览器与文档同 operation 同键：不重复建资产")
+        # 页面来源证据再合一（直接 register 同键资产）。
+        queue.registry.register_endpoint(UnifiedApiEndpoint(
+            url=self.GQL_URL, method="POST", api_type="graphql",
+            source="page_intel",
+            input_signature=gql_assets[0]["input_signature"]))
+        assets = [e for e in queue.registry.snapshot_endpoints()
+                  if e["api_type"] == "graphql"]
+        self.assertEqual(1, len(assets), "三来源仍只有一条资产")
+        asset = assets[0]
+        self.assertIn("browser", asset["sources"])
+        self.assertEqual(
+            asset["status"], "covered", "运行期已捕获响应：观察收口，不再补探")
+        blob = json.dumps(asset, ensure_ascii=False)
+        self.assertNotIn("SECRET-PET-9527", blob, "P0-05：变量取值不得进资产面")
+
+    def test_browser_rest_calls_ingested_as_covered_assets(self):
+        context = DiscoveryContext(task_id="t8g2", allowed_hosts={"api.example.com"})
+        registry = reg.ApiCandidateRegistry(task_id="t8g2", context=context)
+        results = {"https://api.example.com": {"runtime_api_calls": [
+            {"method": "GET", "url": "https://api.example.com/api/items"},
+            {"method": "GET", "url": "https://evil.example.org/track"},  # 越界
+            {"method": "GET", "url": "javascript:void(0)"},              # 非 HTTP
+        ]}}
+        created = reg.ingest_browser_runtime_events(registry, results)
+        self.assertEqual(1, created)
+        urls = {e["url"] for e in registry.snapshot_endpoints()}
+        self.assertEqual(urls, {"https://api.example.com/api/items"})
+        for e in registry.snapshot_endpoints():
+            self.assertEqual(e["status"], "covered",
+                             "浏览器观察过的请求不得再进补探领取")
+        self.assertEqual(
+            int(context.metrics.get("api_endpoint_browser_out_of_scope_total", 0) or 0), 1)
+
+    def test_observed_shortcut_only_for_non_terminal(self):
+        registry = reg.ApiCandidateRegistry(task_id="t8g3")
+        ep, _ = registry.register_endpoint(UnifiedApiEndpoint(
+            url="https://api.example.com/x", method="GET",
+            input_signature="sig-x"))
+        self.assertIs(registry.mark_endpoint_observed(ep), ep)
+        self.assertEqual(ep.status, "covered")
+        again = registry.mark_endpoint_observed(ep)
+        self.assertIsNone(again, "终态不被观察事件回写")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@
 import json
 import re
 from typing import Dict, List
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, urlencode  # urlencode: form_urlencoded 模板拼装（Review 轮2 发现原缺导入）
 
 from app import utils
 from app.config import Config
@@ -111,6 +111,18 @@ class BrowserIntelScan(BaseThread):
         return str(value or "")
 
     @staticmethod
+    def _open_playwright():
+        """playwright 为可选重依赖：只在真实采集时延迟导入。
+
+        独立成静态钩子还为了测试可注入 fake——原实现的 `from playwright.sync_api
+        import sync_playwright` 藏在函数体内，`@patch("....browser_intel_scan.
+        sync_playwright")` 目标属性根本不存在（Review 轮 2 发现的既有脆弱点）。
+        """
+
+        from playwright.sync_api import sync_playwright
+        return sync_playwright()
+
+    @staticmethod
     def _build_template_object(payload_obj, depth=0):
         if depth >= 3:
             return "<value>"
@@ -145,6 +157,50 @@ class BrowserIntelScan(BaseThread):
             if file_name:
                 files.append(file_name)
         return fields[:12], files[:4]
+
+    @staticmethod
+    def _parse_graphql_endpoints(url: str, method: str, raw_payload):
+        """浏览器运行时 GraphQL 请求的 operation 级拆解（计划 6 第 8 批 P0-05）。
+
+        query 原文只在事件构造的瞬间可用（下游字段一律模板化），拆解必须就地
+        完成。复用第 6 批 `UnifiedGraphqlParser` 保证与文档通道同一 operation/
+        name/hash/变量名称语义，端点直接进统一 Endpoint Registry（P1-12 键）。
+        返回 `(端点列表, 诊断摘要)`；诊断摘要仅含 status/error_type/计数整数。
+        原始事件字典不得携带 query 文本、变量取值或敏感 header 值——端点对象
+        本身由 models 脱敏守卫约束（ParameterSpec 无取值通道）。
+        """
+
+        try:
+            from .api_unified_models import ParseOptions
+            from .api_unified_parser import UnifiedGraphqlParser
+
+            document = {"url": url, "method": method, "request": raw_payload}
+            # 范围以请求 URL 自身 host 为界喂解析器（否则 in-scope 判定永远
+            # out_of_scope_base 丢端点）；任务级范围过滤在 Registry 摄取面
+            # （ingest_browser_runtime_events 按 context.allowed_hosts）执行。
+            from .discovery_context import url_host as _url_host
+            host = _url_host(url)
+            parser = UnifiedGraphqlParser(
+                task_id="browser-intel", doc_url=url,
+                allowed_hosts={host} if host else None, allowed_flds=None)
+            # 解析器文本入口以 json.loads 识别请求文档形态，必须传 JSON 串
+            # （Python dict 的 str() 表示不是合法 JSON）。
+            result = parser.parse(
+                json.dumps(document, ensure_ascii=False, default=str), ParseOptions())
+            diag = result.diagnostics
+            if diag is None or diag.status not in ("ok", "degraded"):
+                return [], {"status": (diag.status if diag else "none"),
+                            "error_type": (diag.error_type if diag else "no_diagnostics")}
+            return list(result.endpoints or []), {
+                "status": diag.status, "error_type": diag.error_type or "",
+                "operation_count": len(result.endpoints or []),
+            }
+        except Exception as exc:
+            # 拆解失败只丢 operation 面，请求事件本身保留（body_kind 分类点不变）。
+            logger.debug(
+                "browser graphql operation parse failed error_type:{}".format(
+                    type(exc).__name__))
+            return [], {"status": "failed", "error_type": type(exc).__name__}
 
     @classmethod
     def _analyze_runtime_request_payload(cls, headers, raw_post_data: str, raw_post_json):
@@ -304,7 +360,22 @@ class BrowserIntelScan(BaseThread):
                 normalized["json_data"] = json_data
             if form_data:
                 normalized["form_data"] = form_data
-            cache_key = json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+            # 第 8 批内存通道：`_graphql_endpoints` 是 UnifiedApiEndpoint 对象列表
+            # （models 脱敏守卫约束、无 query 原文/变量值落点），只供统一 Registry
+            # 消费，不参与 JSON 序列化与去重键；本结果集因此不得整体入库/落 JSON。
+            endpoints = item.get("_graphql_endpoints")
+            if isinstance(endpoints, list) and endpoints:
+                normalized["_graphql_endpoints"] = list(endpoints)
+            diagnostics = item.get("graphql_diagnostics")
+            if isinstance(diagnostics, dict):
+                normalized["graphql_diagnostics"] = {
+                    "status": str(diagnostics.get("status") or "")[:32],
+                    "error_type": str(diagnostics.get("error_type") or "")[:64],
+                    "operation_count": int(diagnostics.get("operation_count") or 0),
+                }
+            cache_key = json.dumps(
+                {k: v for k, v in normalized.items() if k != "_graphql_endpoints"},
+                ensure_ascii=False, sort_keys=True)
             if cache_key in seen:
                 continue
             seen.add(cache_key)
@@ -417,15 +488,13 @@ class BrowserIntelScan(BaseThread):
         if chromium_bin:
             launch_kwargs["executable_path"] = chromium_bin
 
-        from playwright.sync_api import sync_playwright
-
         runtime_api_calls = []
         browser_surface_summary = {}
         dom_form_summary = []
         browser = None
         context = None
         try:
-            with sync_playwright() as p:
+            with self._open_playwright() as p:
                 browser = p.chromium.launch(**launch_kwargs)
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 960},
@@ -457,24 +526,39 @@ class BrowserIntelScan(BaseThread):
                             raw_post_data,
                             raw_post_json,
                         )
-                        runtime_api_calls.append(
-                            {
-                                "method": str(req.method or "").strip().upper(),
-                                "url": str(resp.url or "").strip(),
-                                "status": str(resp.status or "").strip(),
-                                "request_headers": request_headers,
-                                "content_type": str(payload_summary.get("content_type") or ""),
-                                "mode": str(payload_summary.get("mode") or ""),
-                                "body_kind": str(payload_summary.get("body_kind") or ""),
-                                "param_names": list(payload_summary.get("param_names", []) or []),
-                                "query_params": list(payload_summary.get("query_params", []) or []),
-                                "json_data": dict(payload_summary.get("json_data") or {}) if isinstance(payload_summary.get("json_data"), dict) else {},
-                                "form_data": dict(payload_summary.get("form_data") or {}) if isinstance(payload_summary.get("form_data"), dict) else {},
-                                "request_body": str(payload_summary.get("request_body") or ""),
-                                "request_body_template": str(payload_summary.get("request_body_template") or ""),
-                                "contains_file": str(payload_summary.get("contains_file") or ""),
-                            }
-                        )
+                        call_event = {
+                            "method": str(req.method or "").strip().upper(),
+                            "url": str(resp.url or "").strip(),
+                            "status": str(resp.status or "").strip(),
+                            "request_headers": request_headers,
+                            "content_type": str(payload_summary.get("content_type") or ""),
+                            "mode": str(payload_summary.get("mode") or ""),
+                            "body_kind": str(payload_summary.get("body_kind") or ""),
+                            "param_names": list(payload_summary.get("param_names", []) or []),
+                            "query_params": list(payload_summary.get("query_params", []) or []),
+                            "json_data": dict(payload_summary.get("json_data") or {}) if isinstance(payload_summary.get("json_data"), dict) else {},
+                            "form_data": dict(payload_summary.get("form_data") or {}) if isinstance(payload_summary.get("form_data"), dict) else {},
+                            "request_body": str(payload_summary.get("request_body") or ""),
+                            "request_body_template": str(payload_summary.get("request_body_template") or ""),
+                            "contains_file": str(payload_summary.get("contains_file") or ""),
+                        }
+                        if call_event["body_kind"] == "graphql":
+                            # operation 级拆解就地完成（P0-05）：raw query 只进
+                            # 解析器，不进事件序列化面；端点走内存通道。
+                            raw_graphql = raw_post_json
+                            if not isinstance(raw_graphql, dict) and raw_post_data:
+                                try:
+                                    raw_graphql = json.loads(raw_post_data)
+                                except Exception:
+                                    raw_graphql = None
+                            if isinstance(raw_graphql, dict):
+                                endpoints, diagnostics = self._parse_graphql_endpoints(
+                                    call_event["url"], call_event["method"] or "POST",
+                                    raw_graphql)
+                                if endpoints:
+                                    call_event["_graphql_endpoints"] = endpoints
+                                call_event["graphql_diagnostics"] = diagnostics
+                        runtime_api_calls.append(call_event)
                     except Exception:
                         return
 

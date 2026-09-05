@@ -113,6 +113,8 @@ try:
     # 用例可用 patch.object(services, "api_unified_enabled", ...) 切到统一分支。
     fake_services.api_unified_enabled = lambda: False
     fake_services.run_api_document_pipeline = lambda *_args, **_kwargs: []
+    fake_services.run_browser_intel_scan = lambda *_args, **_kwargs: {}
+    fake_services.ingest_browser_runtime_events = lambda _registry, _results: 0
     fake_services.run_js_intel_scan = lambda *_args, **_kwargs: []
     fake_services.run_urlfinder_sensitive_scan = lambda *_args, **_kwargs: []
     fake_services.run_trufflehog_js = lambda *_args, **_kwargs: []
@@ -326,6 +328,69 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
             getattr(e, "url", "") == "https://example.test/api/v1"
             and getattr(e, "status", "") == "covered"
             for e in registry.registered))
+
+    def test_browser_stage_ingests_registry_only_when_all_gates_on(self):
+        # P0-05 接线：API_UNIFIED_ENABLE 且 BROWSER_INTEL_ENABLE 且 Registry 已
+        # 挂载 → wih_browser_intel 在 wih_api_doc_unified 之后运行并摄取事件。
+        ctx = _FakeDiscoveryContext([])
+        registry = _FakeApiRegistry([])
+        ctx.api_candidate_registry = registry
+        task = _EndpointTask(ctx)
+        task.assertEqual = self.assertEqual
+        seen = {}
+        originals = (fake_services.api_unified_enabled,
+                     fake_services.run_api_document_pipeline,
+                     fake_services.run_browser_intel_scan,
+                     fake_services.ingest_browser_runtime_events)
+        try:
+            fake_services.api_unified_enabled = lambda: True
+            fake_services.run_api_document_pipeline = lambda *_a, **_k: []
+            fake_services.run_browser_intel_scan = lambda sites, **_k: {
+                str(sites[0]): {"runtime_api_calls": [{"method": "GET", "url": "https://example.test/x"}]}}
+
+            def fake_ingest(registry_arg, results):
+                seen["registry"] = registry_arg
+                seen["results"] = results
+                return 1
+            fake_services.ingest_browser_runtime_events = fake_ingest
+            fake_config.Config.BROWSER_INTEL_ENABLE = True
+            WihOrchestrator(task).run()
+        finally:
+            (fake_services.api_unified_enabled,
+             fake_services.run_api_document_pipeline,
+             fake_services.run_browser_intel_scan,
+             fake_services.ingest_browser_runtime_events) = originals
+            try:
+                del fake_config.Config.BROWSER_INTEL_ENABLE
+            except AttributeError:
+                pass
+
+        self.assertIn("wih_api_doc_unified", task.stage_names)
+        self.assertIn("wih_browser_intel", task.stage_names)
+        self.assertLess(
+            task.stage_names.index("wih_api_doc_unified"),
+            task.stage_names.index("wih_browser_intel"),
+            "浏览器摄取必须发生在统一管线挂载 Registry 之后")
+        self.assertIs(seen.get("registry"), registry)
+        self.assertIn("https://example.test", seen.get("results", {}))
+
+    def test_browser_stage_skipped_when_gates_off(self):
+        # 任一开关关闭（BROWSER_INTEL_ENABLE 缺省 False）→ 不新增子阶段。
+        ctx = _FakeDiscoveryContext([])
+        ctx.api_candidate_registry = _FakeApiRegistry([])
+        task = _EndpointTask(ctx)
+        task.assertEqual = self.assertEqual
+        originals = (fake_services.api_unified_enabled,
+                     fake_services.run_api_document_pipeline)
+        try:
+            fake_services.api_unified_enabled = lambda: True
+            fake_services.run_api_document_pipeline = lambda *_a, **_k: []
+            WihOrchestrator(task).run()
+        finally:
+            (fake_services.api_unified_enabled,
+             fake_services.run_api_document_pipeline) = originals
+        self.assertIn("wih_api_doc_unified", task.stage_names)
+        self.assertNotIn("wih_browser_intel", task.stage_names)
 
     def test_legacy_channel_used_when_no_registry(self):
         # 未挂载统一 Registry（flag 关/管线回退）→ 走候选图 fallback，行为不变。
