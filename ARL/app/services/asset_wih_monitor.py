@@ -104,6 +104,9 @@ class AssetWihMonitor(object):
 
         # 先执行原生 WIH，再进行 URL/JS 提取增强、同目标二次敏感扫描，最后执行 TruffleHog 二次扫描
         wih_results = list(run_wih(self.sites) or [])
+        # 外部边界显式记账：Go WIH 自带网络栈，请求不经过统一响应缓存，
+        # 不计入"全链路一次请求"门禁（Review 20260905 §4 一般项）。
+        discovery_context.record_metric("external_network_wih_go", len(self.sites))
         urlfinder_results = list(
             run_urlfinder_extract(self.sites, wih_results, discovery_context=discovery_context) or []
         )
@@ -139,6 +142,8 @@ class AssetWihMonitor(object):
 
         if wih_results:
             trufflehog_results = list(run_trufflehog_js(self.sites, wih_results) or [])
+            # 外部边界显式记账：TruffleHog 外部进程按 JS URL 二次抓取，不在共享缓存内。
+            discovery_context.record_metric("external_network_trufflehog", len(self.sites))
             if trufflehog_results:
                 wih_results.extend(trufflehog_results)
 

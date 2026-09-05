@@ -71,6 +71,11 @@ class NewHostQueue(object):
 
         return any(host not in self._wih_taken for host in self._hosts)
 
+    def is_queued(self, host: str) -> bool:
+        """主机是否曾进入本队列（含已取用）；容量丢弃/范围外主机不在其中。"""
+
+        return str(host or "").strip().lower() in self._seen
+
     def untaken_hosts(self):
         """尚未被 WIH 取用的主机列表；deque 本身是观测镜像不收缩。"""
 

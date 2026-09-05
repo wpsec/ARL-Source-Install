@@ -1427,6 +1427,17 @@ def file_leak(targets, dicts, gen_dict=True, waf_guard=None, discovery_context=N
     total = len(target_items)
     dict_signature = _file_leak_dict_signature(dicts)
     target_concurrency = max(1, int(Config.FILE_LEAK_TARGET_CONCURRENCY or 1))
+    # 外部边界显式记账：目录字典请求由子进程直接发起，未经统一响应缓存/
+    # scheduler 租约（仅命中页响应回登）；不计入"全链路一次请求"门禁。
+    if discovery_context is not None:
+        try:
+            discovery_context.record_metric("external_network_file_leak_directory", total)
+        except Exception as exc:
+            logger.debug(
+                "fileleak external boundary metric failed error_type:{}".format(
+                    type(exc).__name__
+                )
+            )
 
     def _scan_one_target(index: int, item):
         target, target_urls = item

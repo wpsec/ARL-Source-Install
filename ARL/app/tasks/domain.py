@@ -2534,11 +2534,43 @@ class DomainTask(CommonTask):
 
         # 构建Page 信息
         if len(urls) > 0:
-            page_map = services.page_fetch(urls)
+            # Review 20260905 P0.2：搜索引擎页面获取必须携带任务上下文（响应登记、
+            # 流量类别调度与 WAF 隔离），不再走 context 盲区；结果登记为统一候选。
+            page_map = services.page_fetch(
+                urls,
+                discovery_context=getattr(self, "discovery_context", None),
+                traffic_class="crawler",
+            )
+            self._register_search_page_candidates(urls, page_map)
             for url in page_map:
                 item = build_url_item(url, self.task_id, source=CollectSource.SEARCHENGINE)
                 item.update(page_map[url])
                 utils.conn_db('url').insert_one(item)
+
+    def _register_search_page_candidates(self, urls, page_map):
+        """搜索结果 URL 登记进共享候选图（P0.2）。
+
+        获取成功记 fetched：页面证据已在响应缓存与 url 集合，不再作为晚到候选
+        显影；获取失败保持 discovered：由后续 url_probe 阶段按统一候选协议领取。
+        登记异常只降级观测，不打断搜索引擎主链路。
+        """
+        context = getattr(self, "discovery_context", None)
+        if context is None:
+            return
+        fetched = set(page_map or {})
+        for url in urls:
+            try:
+                context.register_candidate(
+                    event_type="UrlCandidateDiscovered",
+                    candidate=url,
+                    candidate_type="page",
+                    source="search_engine",
+                    status="fetched" if url in fetched else "discovered",
+                    metadata={"collect_source": str(CollectSource.SEARCHENGINE)},
+                )
+            except Exception as exc:
+                logger.debug(
+                    "search page candidate register failed error_type:{}".format(type(exc).__name__))
 
     def start_wih_domain_update(self):
         if self.wih_domain_set:

@@ -326,6 +326,9 @@ class WebSiteFileLeakStageService(object):
         discovery_context = getattr(task, "discovery_context", None)
         if discovery_context is not None and self.services is services:
             leak_kwargs["discovery_context"] = discovery_context
+        # 策略级消费协议（Review 20260905 §4 重要项2）：目录扫描的按目标
+        # 完成证据由 file_leak 的 `file_leak|<target>` covered 账本落账；
+        # 晚到/超上限候选由收尾器读取同一账本后显影 pending。
         pages = self.services.file_leak(
             poc_sites,
             file_leak_dict_words,

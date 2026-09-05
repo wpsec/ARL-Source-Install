@@ -170,18 +170,63 @@ def fetch_text(
     waf_module: str = "web_info_intel",
     discovery_context=None,
     traffic_class: str = "wih",
+    request_profile: str = "html_get",
+    mirror_html_get: bool = False,
 ):
+    """统一响应缓存感知的 GET 工具。
+
+    `request_profile` 默认 `html_get`（既有调用零变化）；第 3 批起 API 文档
+    以 `api_doc` profile 获取：先查统一桶，miss 再复用 `html_get` 桶（不重复
+    发网络请求），真实抓取后按需镜像登记 `html_get` 桶保持旧消费者复用面。
+    """
+    profile = str(request_profile or "html_get")
+
+    def _mirror(registry_context, target_profile: str, status_code, headers, content_type, body_bytes):
+        """直写 registry：不发 PageFetched、不计 actual_duplicate（非第二次网络请求）。
+
+        调用方保证 target_profile 是本次主路径未写过的另一个桶。
+        """
+        if registry_context is None:
+            return
+        try:
+            registry_context.response_registry.put(
+                url=url,
+                method="GET",
+                request_profile=target_profile,
+                status_code=status_code,
+                headers=headers,
+                content_type=content_type,
+                body=body_bytes,
+                source=waf_module,
+                consumer=waf_module,
+            )
+        except Exception:
+            utils.get_logger().debug(
+                "fetch_text mirror put failed url:{} profile:{}".format(url[:160], target_profile))
+
     inflight_owner = False
     if discovery_context is not None:
         cached_response = discovery_context.get_response(
             url,
-            request_profile="html_get",
+            request_profile=profile,
             consumer=waf_module,
         )
+        if cached_response is None and profile != "html_get":
+            cached_response = discovery_context.get_response(
+                url,
+                request_profile="html_get",
+                consumer=waf_module,
+            )
+            if cached_response is not None:
+                _mirror(discovery_context, profile,
+                        int(getattr(cached_response, "status_code", 0) or 0),
+                        dict(getattr(cached_response, "headers", {}) or {}),
+                        str(getattr(cached_response, "content_type", "") or ""),
+                        bytes(getattr(cached_response, "body", b"") or b""))
         if cached_response is None:
             # 并发 miss 合并：等待先行者结果，拿不到才自己抓。
             cached_response, follower = discovery_context.await_singleflight_leader(
-                url, request_profile="html_get", consumer=waf_module)
+                url, request_profile=profile, consumer=waf_module)
             inflight_owner = not follower
         if cached_response is not None:
             status_code = int(getattr(cached_response, "status_code", 0) or 0)
@@ -201,7 +246,7 @@ def fetch_text(
         if not inflight_owner or discovery_context is None:
             return
         try:
-            discovery_context.release_fetch_slot(url, request_profile="html_get")
+            discovery_context.release_fetch_slot(url, request_profile=profile)
         except Exception:
             pass
 
@@ -256,17 +301,22 @@ def fetch_text(
     status_code = int(getattr(conn, "status_code", 0) or 0)
     if status_code >= 400:
         if discovery_context is not None:
+            error_body = getattr(conn, "content", b"") or b""
+            error_headers = getattr(conn, "headers", {}) or {}
             discovery_context.put_response(
                 url=url,
                 method="GET",
-                request_profile="html_get",
+                request_profile=profile,
                 status_code=status_code,
-                headers=getattr(conn, "headers", {}) or {},
-                content_type=(getattr(conn, "headers", {}) or {}).get("Content-Type", ""),
-                body=getattr(conn, "content", b"") or b"",
+                headers=error_headers,
+                content_type=error_headers.get("Content-Type", ""),
+                body=error_body,
                 source=waf_module,
                 consumer=waf_module,
             )
+            if mirror_html_get and profile != "html_get":
+                _mirror(discovery_context, "html_get", status_code,
+                        dict(error_headers), str(error_headers.get("Content-Type", "") or ""), error_body)
         return "", conn
 
     body = bytes(getattr(conn, "content", b"") or b"")
@@ -276,17 +326,21 @@ def fetch_text(
 
     body = body[: max(1024, int(max_bytes or 1024))]
     if discovery_context is not None:
+        ok_headers = getattr(conn, "headers", {}) or {}
         discovery_context.put_response(
             url=url,
             method="GET",
-            request_profile="html_get",
+            request_profile=profile,
             status_code=status_code,
-            headers=getattr(conn, "headers", {}) or {},
-            content_type=(getattr(conn, "headers", {}) or {}).get("Content-Type", ""),
+            headers=ok_headers,
+            content_type=ok_headers.get("Content-Type", ""),
             body=body,
             source=waf_module,
             consumer=waf_module,
         )
+        if mirror_html_get and profile != "html_get":
+            _mirror(discovery_context, "html_get", status_code,
+                    dict(ok_headers), str(ok_headers.get("Content-Type", "") or ""), body)
     return body.decode("utf-8", errors="ignore"), conn
 
 
