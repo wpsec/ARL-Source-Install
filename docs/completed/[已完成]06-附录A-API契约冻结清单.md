@@ -148,12 +148,72 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
   `ApiDocumentCandidateDiscovered` 事件,不与 `endpoint` 型候选混用;finalizer
   `pending_backlog|api|*` 显影只消费 `endpoint` 型,语义不变(残余开放候选仍按下一轮周期显影)。
 
+### 4.1a AUTH_SCHEME_TYPE_TO_HINT 第 4 批扩展
+
+- 增加顶层 `"basic"→basic` 映射(swagger2 `securityDefinitions.type: basic` 无
+  `http:` 前缀形态);其余值集合不变(§4.1 冻结枚举的既有语义未改)。
+
 ### 4.6 兼容映射(§7.3 的 adapter 语义)
 
 `UnifiedApiEndpoint.to_legacy_records()`:
 - `rest`/`soap` → `api_doc_endpoint "{METHOD} {url}"` + `urlfinder_url {url}`,source=`parent_document`(缺失回退 source/url)——与第二节现行格式逐字节一致;
 - `graphql` → `graphql "{METHOD} {url}"` 单条。
 文档候选回写旧记录时 `api_doc_url content=url, source=url`。
+
+### 4.8 第 4 批统一 OpenAPI/Swagger 解析面(2026-09-05 登记)
+
+- 模块:`ARL/app/services/api_unified_parser.py` · `UnifiedOpenApiParser`
+  (`parse(document_artifact, ParseOptions) → ParseResult`,实现 §4.3 契约)。
+- **输出口径变更(取代 §4.7"逐字节一致"表述)**:`API_UNIFIED_ENABLE=True` 且文档
+  为 openapi/swagger 形态时,统一 Parser 输出为 legacy 记录面**超集**(只增不减):
+  增量面仅允许模板端点类补充记录;非 openapi 形态(skipped)与崩溃回退时仍为
+  legacy 同一实现、逐字节一致。`test_output_floor_and_format_vs_legacy` 锁定。
+- G1 模板端点:`{petId}` 类 URL 原样进入 `api_doc_endpoint` 与 Endpoint 资产面;
+  **模板 URL 抑制 `urlfinder_url` 记录**(不可直接请求,不污染 URL 资产/探测链)。
+- G4 失败可见:非法/超限/深嵌套文档 diagnostics `failed`+error_type,文档状态
+  `failed`、计 `api_document_parse_failed_total`,不回退 legacy 静默成功。
+- 引用解析:仅本地 `#/` ref;外部 ref 一律 `unresolved_ref` 标记并计数
+  (`api_document_unresolved_ref_total`),零网络;预算 `max_ref_count` 耗尽→
+  `degraded`;循环 `cycle_ref` 标记计入 `rejected_count` 不算 unresolved。
+- Schema 摘要深度 3、属性 50、超限 `truncated:true`;`schema_available` 仅在
+  摘要含有效解析结构时为 True(未解析引用不得伪装完整)。
+- 鉴权:`operation.security` 覆盖 doc 级;`security:[]`→`auth_hint=none`;
+  未识别 scheme→`unknown`。
+
+### 4.9 第 5 批 Postman 统一解析面(2026-09-05 登记)
+
+- 解析器:`api_unified_parser.UnifiedPostmanParser`(`postman_unified`);队列
+  `_parse_one` 为解析器链(openapi→postman),任一非 skipped 即接管,全 skipped
+  才回 legacy。识别口径:`item` 为 list(与 legacy `_parse_doc` 判定一致)。
+- 变量策略(expectations 冻结):集合变量解析成功→候选 URL、confidence 70
+  (字面 URL 80);不可解析→`{var}` 模板保留、confidence 30、不猜值。
+  示例值(`variable[].value`)一律不进任何输出面。
+- URL 形态:query 参数化为 `path_template` 的 `?{key}` 尾串,`url` 去 query
+  (期望 content 为资源 URL);`raw` 缺失时由 `protocol/host[]/path[]` 组装。
+- 冒号路径变量 `:id` 与花括号模板同口径:`url_has_template` 增加冒号段判定,
+  桥接层同样抑制其 `urlfinder_url`,端点与资产面保留(§4.8 扩展)。
+- 脱敏:header/query/path/formData 参数只记名称+位置;raw body 摘要仅键名+
+  类型且 `is_sensitive_key` 命中键名整体剔除;urlencoded/formdata 条目仅名称。
+  body 类型期望为 Postman mode 名(`raw/urlencoded/formdata`),非 MIME。
+- 新增指标语义:`postman_unified` 诊断的 `unresolved_ref_count` 复用为
+  未解析模板变量计数,`rejected_count` 为畸形请求条目数。
+
+### 4.10 第 6 批 GraphQL 解析面(2026-09-05 登记)
+
+- 解析器:`UnifiedGraphqlParser`(`graphql_unified`),队列链 openapi→postman→graphql。
+- 请求文档双形态:`{url,method,request:{query,operationName,variables}}` 外壳与裸
+  `{query,...}`;端点 base 取文档 `url`(缺失回退发现 URL),越界→`domain` 候选。
+- §二 `graphql` 行更新:自第 6 批起唯一生产者为统一层(经队列桥接,
+  content=`"POST {url}"`);legacy 通道继续无生产者,`urlfinder_url`/`api_doc_endpoint`
+  不为 graphql 产生。
+- variables 面:仅 operation 声明的 名称+类型(`ParameterSpec(location=body)`);
+  请求体 `variables` 对象取值与嵌套键一律不进任何输出面(守卫测试双向断言)。
+- Schema 面默认关闭(`GRAPHQL_SCHEMA_ENABLE=False`→`skipped` 回 legacy);开启时
+  SDL/introspection 摘要进 `ParseResult.candidates`
+  (`record_type=graphql_schema_summary`,含 `truncated`),不落 Mongo;预算
+  `GRAPHQL_SCHEMA_MAX_SIZE_BYTES`(超限 failed)、类型 500、字段/类型 100。
+- 范围说明:浏览器运行时 body 的 operation 级拆解归第 8 批消费面(复用本解析器);
+  匿名/裸 body 查询产单条 `query` 端点。
 
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 
@@ -166,7 +226,7 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
 | G2 | Postman `{{baseUrl}}` 模板整体跳过、`:id` 冒号变量端点被丢弃 | postman 基线无 ListUsers/GetUserById |
 | G3 | 参数、requestBody、响应 Schema、securitySchemes、$ref 全不解析 | 基线无任何 parameter 痕迹 |
 | G4 | 非法/异常文档静默零记录,无 failed/degraded 语义(解析失败伪装成"无 API") | invalid_json 无记录、无 diagnostics |
-| G5 | GraphQL 无统一记录形态(浏览器仅 body_kind、URLFinder 仅关键字) | 第二节 `graphql` 行 |
+| G5 | GraphQL 无统一记录形态(浏览器仅 body_kind、URLFinder 仅关键字)——**第 6 批闭环**,见 §4.10 | 第二节 `graphql` 行 |
 | G6 | WSDL/SOAP 完全不支持 | 基线无 soap 记录 |
 | G7 | 越界 server 只产 `domain` 候选、范围内多 server 全展开(行为本身保留,但无父子文档/置信度追溯) | openapi3 `blue.example.com` |
 | G8 | 文档来源(source)不参与去重,多来源证据丢失 | 第一节 fnv_hash 语义 |
@@ -204,3 +264,13 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
   输出 parity 与 `cross_bucket_hit` 转正锚(2026-09-05 本地通过;golden `--check` 无漂移)。
 - 第 2 批起不得修改本清单第一、二节冻结面(旧记录兼容);§4 契约扩展须同批更新本文件并过 corpus 回归。
 - 第 4-7 批 Parser 验收下限 = `current_parser_baseline.json` 记录集合;目标上限 = `unified_target_expectations.json`。
+- 第 4 批完成判据:`api_unified_parser.py` + 队列三级分发 + §4.8 契约登记 +
+  `test/test_api_unified_parser.py` 22 项 + registry parity 口径改超集(2026-09-05
+  本地全组 122 项通过;golden `--check` 无漂移)。G1/G3/G4/G7 就此闭环。
+- 第 5 批完成判据:`UnifiedPostmanParser` + §4.9 契约登记 +
+  `test/test_api_unified_parser.py` Postman 面 8 项(2026-09-05 api 四件 87 项、
+  全组 130 项通过;golden 无漂移)。G2 闭环。
+- 第 6 批完成判据:`UnifiedGraphqlParser` + §4.10 契约登记 +
+  `test/test_api_unified_parser.py` GraphQL 面 9 项(2026-09-05 全组 139 项通过;
+  golden 无漂移)。G5 闭环;G6 由第 7 批接管,G8 已由第 3 批注册表聚合替代
+  (旧记录面不改)。
