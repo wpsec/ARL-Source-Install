@@ -3,7 +3,7 @@
 ## 1. Review 信息
 
 - Review 状态：**Request Changes（整改后再验收）**
-- 整改状态：进行中（轮 1 已完成 P0-01、P1-10，与第 7 批 WSDL 合并整改提交，见 §9；P0-02~P0-05、P1-06~P1-12、P2 仍待后续轮次，故文件名 `整改待处理` 标签维持）。
+- 整改状态：进行中（轮 1 已完成 P0-01、P1-10，与第 7 批 WSDL 合并整改提交，见 §9；轮 2 已完成 P0-02~P0-04（P0-05 按选项二采范围裁定：口径修正落地、事件接入归第 8 批门禁）、P1-06~P1-09、P1-11（GraphQL metrics 面，`wsdl_operation_total` 范围修正移出）、P2-13、P2-14，见 §9 轮 2；余 P0-05 事件接入与 P1-12（T8/第 8 批）、P2-15（后续评估）未闭环，故文件名 `整改待处理` 标签维持）。
 - 审查范围：计划 6 第 4 批 OpenAPI/Swagger、第 5 批 Postman、第 6 批 GraphQL 的当前实现、测试、冻结契约和计划文档；代码基线为 `e81f0d36`，进度文档基线为 `02072a9d`。第 7 批 WSDL/SOAP 在本报告形成后实施，继承并同轮修复了 P0-01。
 - 重点链路：`ApiDocumentQueue` → Parser chain → `ParseResult` → legacy adapter / Endpoint Registry；同时检查 JS、页面、浏览器事件是否真的进入统一链路。
 - 审查方式：只读代码审查、CodeGraph 依赖/调用关系检查、边界探针、定向测试和 golden 校验。
@@ -230,3 +230,29 @@
 行为收窄登记：统一路径现对同-Fld 越界 host 也不再产 domain 记录（legacy 会产）——这是 P0-01 的有意安全收窄；若产品需同-Fld host 回流资产面，必须走独立的、经范围校验的显影通道，而非解析器桥接。`unified_target_expectations.json` 的"legacy 超集"口径据此修订为"越界 domain 证据化是唯一允许缺失面"（`test_output_floor_and_format_vs_legacy` 已锁定该唯一差异）。
 
 仍待后续轮次：P0-02（Postman 敏感变量替换进 URL）、P0-03（GraphQL Schema 深度预算接线）、P0-04（Schema 摘要队列存储面）、P0-05（JS/页面/浏览器事件接入 + G5 验收口径）、P1-06~P1-12、P2-13~P2-15。新增指标 `api_document_out_of_scope_domain_total`/`api_document_wsdl_xsd_import_total`/`api_document_unbridged_candidate_total` 待纳入看板；`unbridged` 计数在 P0-04 接线 `graphql_schema_summary` 存储面后应归零，可作该整改观测锚。
+
+### 轮 2（2026-09-06，P0-02~P0-04 + P1-06~P1-09 + P1-11 + P2-13/P2-14；P0-05 采选项二范围裁定）
+
+用户就轮 2 三项阻断拍板（计划 6 决策节 + 附录A §4.13），同日完成代码实施（契约细则登记附录A §4.14）。P0-01/P1-10 维持轮 1 记录不改写。
+
+| 问题项 | 处置 | 证据 |
+|---|---|---|
+| P0-02 Postman 敏感变量替换进 URL | `_substitute` 命中 `is_sensitive_key` 键名永不解析真实值：保留 `{{key}}` 模板并标 unresolved，走既有置信度 30/桥接抑制链路；敏感键名是唯一安全依据，不依赖 `sanitize_url_secrets` 兜 path/host 位 | `PostmanSensitiveVariableTest`（raw path/结构化 host/query 段/结构化 path 四位置 + 非敏感解析不回归 + 仅集合定义不泄露 + 桥接输出零原值，共 7 项） |
+| P0-03 Schema 深度预算未接线、截断假 ok | `GRAPHQL_SCHEMA_MAX_DEPTH` 经 `_parse_options` 注入；depth 冻结为类型引用包装链层数（SDL `[`/`!` 计数、introspection `ofType` 链）；bytes/type/field/argument/depth 任一命中→`degraded+预算名`，结构错误→`failed`，永不假 ok；坏 introspection 显式 failed（missing/invalid/broken json） | `GraphqlSchemaBudgetTest` 10 项（depth=1/20 差异、ofType 链、type/field/argument 上限、非法 SDL 头、非法 introspection、默认 disabled 仍 skip、契约键/哈希确定性、原文与变量值禁持久化） |
+| P0-04 Schema 摘要队列桥接丢弃 | 双通道落地：生产侧 `_schema_summary_contract`；消费侧 `_bridge_graphql_schema_summary` 白名单投影 + 逐条字节预算（`GRAPHQL_SCHEMA_SUMMARY_MAX_BYTES`=8192）裁剪 + 驻留 16 条满丢最旧 + 契约违规 failed 不回显；metrics 整数计数；`unbridged` 观测锚对本类型归零；不落 Mongo、不进记录面 | `GraphqlSchemaSummaryBridgeTest` 10 项 + 本轮新增 `QueueGraphqlSchemaChainTest` 3 项（真实 SDL/introspection 文档经真实 `ApiDocumentQueue` 成功闭环 + 断裂 SDL 文档 failed 不标 parsed/covered、诊断面零驻留、失败收口计数） |
+| P0-05 事件接入 + G5 验收口径 | 采选项二：口径修正全量落地（计划 6 第 6 批标题/正文/状态索引/当前判定、附录A §五 G5 行、§4.10/§七/§4.13），"G5 闭环"表述删除；JS、页面、浏览器事件接入与三来源合并门禁归第 8 批（T8），同步登记 §4.13/§七 | 文档面（计划 6、附录A §4.13/§4.14/§五/§七） |
+| P1-06 嵌套字段误报、匿名变量兜底未实现 | 掩码 tokenizer：`#` 注释/行字符串/块字符串（含转义）等长空白化，operation header 只在深度 0 识别（可选 name/变量声明/指令括号配平）；匿名兜底 = `$name` 引用 ∪ variables 键名（仅名称） | `GraphqlOperationTokenizerTest` 10 项（嵌套关键字、注释/字符串关键字与花括号、块字符串、多 operation、匿名变量兜底且值禁外流、未闭合两类收口、上限 degraded、截断 degraded） |
+| P1-07 配平非安全 tokenizer | `_match_brace`/`_match_paren` 只在掩码文本上配平；未停配平→`unclosed` 显式收口（degraded 或 malformed failed），禁剩余文本静默产出；超上限禁切片 | 同上（`test_unclosed_*`/`test_operation_limit_degrades_not_silent`） |
+| P1-08 空响应不计失败 | 空响应纳入统一收口：`parse_failed_count` + `api_document_parse_failed_total`；不变式"被消费文档必收敛 success/failed 之一" | `UnifiedFailureAccountingTest` 3 项（fetch 异常/空响应/Parser failed 三路径分别断言 + fallback 指标不混入） |
+| P1-09 Parser 崩溃回退不遵守开关 | `API_UNIFIED_FALLBACK_ENABLE` 单一语义覆盖 stage 级与单文档崩溃：False 时不回退、文档 failed、无 fallback 事件 | `ParserCrashFallbackSwitchTest` 2 项 |
+| P1-11 GraphQL metrics 缺口 | `graphql_request_total`（端点桥接逐条）、`graphql_schema_success/degraded/failed/skipped_total`（skipped 为 type_hint 弱证据 best-effort，真值语义待 T8）；`wsdl_operation_total` 按范围修正移出本票 | `test_graphql_request_total_counted_per_endpoint`、`test_graphql_schema_skipped_best_effort`、`test_run_exposes_schema_diagnostics_count_metric` |
+| P1-12 幂等键 api_type | 用户决策采纳（纳入 api_type、operation identity 由 `input_signature` 承载）；契约冻结 §4.13/计划 6 §4.3，代码待 T8 实施 | 决策记录（不属轮 2 实施面） |
+| P2-13 测试不能独立运行 | `test/_api_unified_bootstrap.py` 临时桩加载（带 `__path__`、finally 还原、防 `assert_no_shell_pollution` 空壳残留）；四件测试独立进程全绿 | `PYTHONPATH=. python3 -m unittest test.test_api_unified_parser`（86 项）等四件独立运行通过 |
+| P2-14 文档计数冲突 | 本文件 §7.4 与计划 6 验证节只登记可复现命令 + 实际计数：四件 86/39/38/8、合跑 171、邻接六件 212 | 本节验证段 |
+| P2-15 文件职责混杂 | 本轮不拆分；tokenizer/掩码/契约辅助收敛为类内静态函数，链分发修复使格式互斥判定更清晰。分文件评估留第 8 批前 | 代码面（未登记为完成事项） |
+
+附带修复（超出 Review 原列表，轮 2 真实队列端到端测试暴露）：openapi 对无 openapi/swagger 痕迹的 YAML 载入失败与非 dict 载入结果由 `failed` 改 `skipped(not_openapi_document)`，postman（JSON-only）载入失败一律 `skipped(not_postman_document)`——否则解析器链链首截断，GraphQL SDL 等任意文本经真实队列永不可达（与第 7 批"XML→skip"同一契约方向）；`RecursionError`/`document_too_large`/带痕迹断裂文档维持显式 failed。登记附录A §4.14。
+
+轮 2 验证：四件独立进程 86/39/38/8 全绿；api 四件合跑 **171 项全绿**（轮 1 基线 126 → +45）；六件邻接合跑（+`test_task_finalizer`、`test_discovery_context`）212 项全绿；`scripts/api-unified-golden.py --check` exit 0；`git diff --check`、`py_compile` 通过。
+
+§7.4 验收门禁复判：7.1 安全与范围（轮 1+轮 2 闭环）、7.2 GraphQL 直接解析（轮 2 闭环）、7.3 队列与跨来源（Schema/队列面轮 2 闭环；三来源合并归第 8 批门禁）、7.4 测试与发布前置（独立进程 + 实际计数闭环）。`API_UNIFIED_ENABLE` 切换默认的前置门禁余：P0-05 三来源合并（第 8 批）与 P1-12（T8）。

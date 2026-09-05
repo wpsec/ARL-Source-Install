@@ -73,6 +73,13 @@ URL 规范化与 `ResponseRegistry` 共用 `discovery_context.normalize_url`,口
 `input_signature` 由生产方用 `compute_input_signature(*parts)`(sha256 前 32 位)生成,
 文档正文 hash、请求上下文摘要都走该函数。
 
+> **Endpoint 资产层键冻结变更(2026-09-06 用户决策,P1-12;契约冻结,代码待 T8 实施)**:
+> Endpoint 幂等键纳入 `api_type`,冻结为
+> `task_id + canonical_url + method + api_type + input_signature`,`input_signature`
+> 必须已含协议内部 operation identity(细则见 §4.13);Registry 尚未切生产
+> (`API_UNIFIED_ENABLE` 默认 False),改 key 无需历史数据迁移。T8 实施前上表保留现行
+> 代码拼接形态,不改写数值形态。
+
 ### 4.3 Parser 契约
 
 `parse(document_artifact, parse_options) → ParseResult{documents, endpoints, candidates, diagnostics}`,
@@ -214,6 +221,9 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
   `GRAPHQL_SCHEMA_MAX_SIZE_BYTES`(超限 failed)、类型 500、字段/类型 100。
 - 范围说明:浏览器运行时 body 的 operation 级拆解归第 8 批消费面(复用本解析器);
   匿名/裸 body 查询产单条 `query` 端点。
+- 状态口径(2026-09-06 用户决策 P0-05 选项二):第 6 批为"GraphQL 文档 Parser 完成,
+  运行时事件接入未完成"。Schema 摘要存储面契约(双通道)按 §4.13 登记,已于整改轮 2
+  实施(消费面形态见 §4.14)。
 
 ### 4.11 第 7 批 WSDL/SOAP 解析面(2026-09-05 登记)
 
@@ -276,7 +286,102 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
   可作观测锚)。
 - 仍待后续轮次:P0-02(Postman 敏感变量替换进 URL)、P0-03(GraphQL Schema 深度预算接线)、
   P0-04(Schema 摘要队列存储面)、P0-05(JS/页面/浏览器事件接入 + G5 验收口径)、P1-06~P1-12、
-  P2-13~P2-15。
+  P2-13~P2-15。(本节为轮 1 历史登记,保留原问题不改写;其中 P0-04/P0-05/P1-12 的轮 2
+  决策见 §4.13。)
+
+### 4.13 第 4-6 批 Review 整改轮 2 决策(2026-09-06 用户决策,登记;P0-04/P0-05 口径已实施,实施面见 §4.14)
+
+针对 `docs/review/[Review已完成][整改待处理]计划6第4-6批API统一解析Review-20260905.md`
+整改轮 2 的阻断决策,用户于 2026-09-06 拍板,本节登记为后续 T1-T8 代码实施的冻结依据。
+§4.12 保留轮 1 原问题,不改写为已修复。轮 2 实施(同日)落地 P0-02/P0-03/P0-04 +
+P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P1-12 幂等键改形
+仍待 T8(第 8 批),本节相应措辞按实施状态修正。
+
+- **P0-05(采纳选项二)**:第 6 批只交付 GraphQL 文档解析器,JS、页面、浏览器事件接入
+  顺延第 8 批;第 6 批状态表述改为"GraphQL 文档 Parser 完成,运行时事件接入未完成";
+  全文"G5 闭环"类表述删除/修正(计划 6 第 6 批节标题与正文、当前状态索引第 6 批行、
+  当前判定段,以及本清单 §五 G5 行、§七第 6 批完成判据)。第 8 批新增独立门禁(同步登记
+  §七):JS、页面、浏览器三来源进入同一 Endpoint Registry 并按 sources 合并,不重复建
+  资产;浏览器 query 值、变量值、敏感 header 不得外流。
+- **P1-12(采纳)**:Endpoint 幂等键纳入 api_type,冻结为
+  `task_id + canonical_url + method + api_type + input_signature`。`input_signature`
+  必须已含协议内部 operation identity:GraphQL = operation type + operation name +
+  query hash;SOAP = operation/soapAction;REST = 请求参数或 operation_id 摘要;无需再
+  单独拼接 operation_id,由测试证明其稳定进入 `input_signature`。Registry 尚未切生产
+  (`API_UNIFIED_ENABLE` 默认 False),本次改 key 无需历史数据迁移。同步面:计划 6 §4.3、
+  §9.2 与本清单 §4.2(§4.2 表在 T8 实施前不改写数值形态,以本节为冻结形态)。**契约
+  冻结,代码待 T8 实施**。
+- **P0-04 GraphQL Schema 存储面(采纳"当前批不落 Mongo、Registry 延后第 8 批",并将
+  "metrics 承载摘要"表述修正为双通道)**:
+  - `context.metrics` 只放整数计数:`graphql_schema_success_total`、
+    `graphql_schema_degraded_total`、`graphql_schema_failed_total`、
+    `graphql_schema_skipped_total`、`graphql_request_total`;
+  - context 内临时诊断摘要承载:`schema_hash`、`kind`、`types/enums/inputs/scalars`、
+    `type_count/field_count`、`truncated`、`status`、`error_type`;摘要必须有明确字节
+    上限(不得只依赖类型数/字段数上限);
+  - 约束:不保存 Schema 原文、变量值、Token、Header;Schema 结构错误必须 failed、预算
+    截断必须 degraded,不得标完整成功;`graphql_schema_summary` 经队列后进入 context
+    诊断摘要,`api_document_unbridged_candidate_total` 对该类型归零;摘要丢失可重新解析,
+    不作为持久化事实源;
+  - 规范措辞:"Schema 摘要进入当前任务 context 的有界诊断面;stage metrics 仅记录状态与
+    计数;第 8 批再决定是否纳入 Endpoint Registry 资产面。"**已实施(整改轮 2,消费面形态见 §4.14;
+    诊断面挂载点为 `context.api_candidate_registry.schema_diagnostics`,属"当前任务 context 的
+    有界诊断面"的具体承载)**。
+- **范围修正**:`wsdl_operation_total` 移出 GraphQL 整改票(T3 只负责 GraphQL metrics),
+  登记为"第 8 批或独立 WSDL 可观测性票"事项。
+
+### 4.14 第 4-6 批 Review 整改轮 2 实施面(2026-09-06 登记,已实施)
+
+实施 P0-02/P0-03/P0-04 + P1-06~P1-09/P1-11 + P2-13 后的新增冻结面。
+
+- **P0-02 敏感变量 URL 替换禁令**(parser):`UnifiedPostmanParser._substitute` 命中
+  `is_sensitive_key` 键名时永不解析真实值,保留 `{{key}}` 模板并标 unresolved,复用
+  "不可解析变量→置信度 30、`url_has_template` 抑制 urlfinder"既有链路。敏感键名是唯一
+  安全依据;`sanitize_url_secrets` 只兜 query 键位,path/host 位原值由本禁令在源头拦截。
+- **P0-03 depth 定义与状态收口**(parser):`graphql_schema_max_depth` 冻结为**类型引用
+  包装链展开深度**——SDL 字段/参数类型的 `[` 与 `!` 层数之和(`[[Int!]!]`=4)、
+  introspection `ofType` 链上 NON_NULL/LIST 节点数(`_MAX_OF_TYPE_CHAIN`=1000 守卫伪造环)。
+  预算命中(bytes/type/field/argument/depth)→`degraded + 首个命中预算名`,结构性错误→
+  `failed`,**预算命中永不产出 ok**;配置经 `_parse_options` 注入,缺省走代码常量 20。
+- **P1-06/P1-07 operation tokenizer**(parser):`_mask_literals` 将 `#` 行注释、`"..."`
+  行字符串、`"""..."""` 块字符串(含 `\` 转义)替换为等长空白;operation header 只在
+  掩码文本花括号深度 0 识别;匿名 operation 仅当首个非空白字符为 `{`。诊断语义:截断
+  致因的未闭合 degraded(`query_truncated`/`unclosed_operation`),非截断且无任何完整
+  operation→`failed(malformed_query)`;超 50 operation→`degraded(operation_limit_exceeded)`,
+  禁止静默切片。匿名 operation 变量兜底 = 掩码文本 `$name` 引用 ∪ 请求体 variables 键名
+  (仅名称,值无落点)。`hash_source` 取规范化前完整 operation 原文切片。
+- **P0-04 Schema 摘要双通道消费面**(registry):生产侧契约键
+  `{record_type,kind,status,error_type,schema_hash,types,enums,inputs,scalars,
+  type_count,field_count,truncated,summary_bytes}`;`schema_hash` = sha256(canonical json
+  of types/enums/inputs/scalars)[:16](sort_keys、紧凑分隔符、名单保发现序,确定性);
+  `summary_bytes` = 契约 canonical json(不含自身键)UTF-8 字节数。消费侧白名单投影
+  (契约外键一律不进诊断面,违规候选不回显任何字段值,只留 `error_type=
+  schema_contract_violation` 归因);诊断面驻留 `SCHEMA_DIAGNOSTICS_MAX_ENTRIES`=16 条、
+  满则丢最旧;单条超 `GRAPHQL_SCHEMA_SUMMARY_MAX_BYTES`(代码常量默认 8192,新增配置键,
+  未写入 Config、读取口径同 §三)裁剪为安全头部 + `summary_dropped=true` + `truncated=true`。
+  指标键新增:`graphql_schema_success/degraded/failed/skipped_total`、`graphql_request_total`
+  (端点桥接逐条计数)、`api_document_schema_diagnostics_total`、
+  `api_document_schema_diagnostics_dropped_total`;`graphql_schema_skipped_total` 为
+  best-effort 弱证据(type_hint 关键词),真值语义待 T8 运行时事件接入补强。
+  `api_document_unbridged_candidate_total` 对 `graphql_schema_summary` 归零(观测锚)。
+- **链分发前置修复**(parser,轮 2 真实队列端到端测试暴露):openapi 对无
+  openapi/swagger 痕迹文本的 YAML 载入失败、以及载入结果非 dict(YAML scalar/JSON 数组),
+  由 `failed` 改 `skipped(not_openapi_document)`;postman(JSON-only)载入失败一律
+  `skipped(not_postman_document)`。理由:解析器链"非本格式一律 skip"契约下,任意文本
+  (GraphQL SDL 等)不得在链首被截断为 failed。`RecursionError`、`document_too_large`、
+  带痕迹断裂文档(invalid_json→`load_error`)维持显式 failed(G4 与成本边界不受痕迹门控)。
+- **P1-08 统一失败收口**(registry):凡被消费(fetch_count+1)的文档终态必落
+  `parse_success_count` 或 `parse_failed_count` 之一;空响应(`error_type=empty_response`)
+  与 fetch 异常、Parser 显式 failed 同计 `api_document_parse_failed_total`。三条失败路径
+  error_type 词表保持区分。
+- **P1-09 fallback 开关单一语义**(registry):`API_UNIFIED_FALLBACK_ENABLE` 同时覆盖
+  stage 级整体异常与单文档统一 Parser 崩溃:True 两处都回退 legacy 并计
+  `api_unified_fallback_total`;False 两处都不回退(stage 异常上抛;Parser 崩溃文档标
+  failed、入统一收口、不产生 fallback 事件)。非崩溃单文档失败与回退开关无关。
+- **P2-13 测试 bootstrap**(test):`test/_api_unified_bootstrap.py` 提供临时桩加载
+  (桩包必须带 `__path__`;finally 还原 `app`/`app.services` 槽位;子模块缓存条目保留供
+  运行期懒导入命中);`assert_no_shell_pollution` 回归空壳残留。四件 api 统一测试各自
+  独立进程可运行,禁止依赖其它测试提前修改 `sys.modules`。
 
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 
@@ -289,7 +394,7 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
 | G2 | Postman `{{baseUrl}}` 模板整体跳过、`:id` 冒号变量端点被丢弃 | postman 基线无 ListUsers/GetUserById |
 | G3 | 参数、requestBody、响应 Schema、securitySchemes、$ref 全不解析 | 基线无任何 parameter 痕迹 |
 | G4 | 非法/异常文档静默零记录,无 failed/degraded 语义(解析失败伪装成"无 API") | invalid_json 无记录、无 diagnostics |
-| G5 | GraphQL 无统一记录形态(浏览器仅 body_kind、URLFinder 仅关键字)——**第 6 批闭环**,见 §4.10 | 第二节 `graphql` 行 |
+| G5 | GraphQL 无统一记录形态(浏览器仅 body_kind、URLFinder 仅关键字)——**第 6 批 GraphQL 文档 Parser 完成,运行时事件接入未完成**(2026-09-06 用户决策 P0-05 选项二,顺延第 8 批),见 §4.10/§4.13 | 第二节 `graphql` 行 |
 | G6 | WSDL/SOAP 完全不支持——**第 7 批闭环**,见 §4.11 | 基线无 soap 记录 |
 | G7 | 越界 server 只产 `domain` 候选、范围内多 server 全展开(行为本身保留,但无父子文档/置信度追溯) | openapi3 `blue.example.com` |
 | G8 | 文档来源(source)不参与去重,多来源证据丢失 | 第一节 fnv_hash 语义 |
@@ -335,7 +440,8 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
   全组 130 项通过;golden 无漂移)。G2 闭环。
 - 第 6 批完成判据:`UnifiedGraphqlParser` + §4.10 契约登记 +
   `test/test_api_unified_parser.py` GraphQL 面 9 项(2026-09-05 全组 139 项通过;
-  golden 无漂移)。G5 闭环;G6 由第 7 批接管,G8 已由第 3 批注册表聚合替代
+  golden 无漂移)。G5 文档 Parser 面就此闭环,运行时事件接入未完成、顺延第 8 批
+  (2026-09-06 用户决策 P0-05 选项二,见 §4.13);G6 由第 7 批接管,G8 已由第 3 批注册表聚合替代
   (旧记录面不改)。
 - 第 7 批完成判据:`UnifiedWsdlParser` + openapi XML skip 链前置修复 + 队列链
   openapi→postman→graphql→wsdl + §4.11 契约登记 + `test/test_api_unified_parser.py`
@@ -345,3 +451,16 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
   110 项通过;golden `--check` 无漂移)。G6 闭环。`unified_target_expectations.json`
   的 wsdl_service/wsdl_xxe 面全部满足;`WSDL_PARSE_ENABLE` 默认 True 但仅
   `API_UNIFIED_ENABLE=True` 时经统一链生效,生产默认行为未切换。
+- 第 8 批独立门禁(2026-09-06 用户决策,P0-05 选项二,见 §4.13):JS、页面、浏览器三来源
+  进入同一 Endpoint Registry 并按 sources 合并,不重复建资产;浏览器 query 值、变量值、
+  敏感 header 不得外流。第 6 批只交付文档 Parser 面,本门禁不向前追溯判定第 6 批。
+- 整改轮 2 完成判据(2026-09-06,§4.14):P0-02 敏感变量替换禁令 + P0-03 预算/深度收口 +
+  P0-04 摘要双通道(含 `QueueGraphqlSchemaChainTest` 真实队列端到端:SDL/introspection
+  成功落诊断面与计数、failed 文档不标 parsed/covered)+ P1-06/P1-07 tokenizer +
+  P1-08 失败收口 + P1-09 开关单一语义 + P1-11 GraphQL metrics + P2-13 bootstrap +
+  openapi/postman 链分发前置修复。可复现证据:四件独立进程
+  `PYTHONPATH=. python3 -m unittest test.test_api_unified_{parser,candidate_registry,models,shadow}`
+  = 86/39/38/8;api 四件合跑 171 项全绿;六件邻接合跑(+finalizer/discovery_context)
+  212 项全绿;golden `--check` exit 0。P1-11 的 `wsdl_operation_total` 按 §4.13 范围修正
+  移出本判据(归第 8 批或独立 WSDL 可观测性票);P2-15 分文件重构不属本判据。
+  `API_UNIFIED_ENABLE` 切换默认的前置门禁余 P0-05 三来源合并(第 8 批)与 P1-12(T8)。
