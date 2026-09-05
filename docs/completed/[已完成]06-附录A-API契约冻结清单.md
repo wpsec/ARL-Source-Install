@@ -73,12 +73,12 @@ URL 规范化与 `ResponseRegistry` 共用 `discovery_context.normalize_url`,口
 `input_signature` 由生产方用 `compute_input_signature(*parts)`(sha256 前 32 位)生成,
 文档正文 hash、请求上下文摘要都走该函数。
 
-> **Endpoint 资产层键冻结变更(2026-09-06 用户决策,P1-12;契约冻结,代码待 T8 实施)**:
+> **Endpoint 资产层键冻结变更(2026-09-06 用户决策,P1-12;已于第 8 批 T8-1 实施)**:
 > Endpoint 幂等键纳入 `api_type`,冻结为
 > `task_id + canonical_url + method + api_type + input_signature`,`input_signature`
 > 必须已含协议内部 operation identity(细则见 §4.13);Registry 尚未切生产
-> (`API_UNIFIED_ENABLE` 默认 False),改 key 无需历史数据迁移。T8 实施前上表保留现行
-> 代码拼接形态,不改写数值形态。
+> (`API_UNIFIED_ENABLE` 默认 False),改 key 无需历史数据迁移。上表保留的现行
+> 代码拼接形态自 T8-1 起为历史形态,现实现见 §4.15。
 
 ### 4.3 Parser 契约
 
@@ -257,7 +257,7 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
 
 ### 4.12 第 4-6 批 Review 整改轮 1(2026-09-06 登记,P0-01 + P1-10)
 
-针对 `docs/review/[Review已完成][整改待处理]计划6第4-6批API统一解析Review-20260905.md`
+针对 `docs/review/[Review已完成][整改已完成]计划6第4-6批API统一解析Review-20260905.md`
 的两个安全/范围阻断项,与第 7 批 WSDL 合并整改(详见该 Review §9 轮 1)。
 
 - **P0-01 越界 host 证据化(取代 §4.8/§4.10/§4.11 的 `domain` 候选口径)**:四解析器
@@ -289,9 +289,9 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
   P2-13~P2-15。(本节为轮 1 历史登记,保留原问题不改写;其中 P0-04/P0-05/P1-12 的轮 2
   决策见 §4.13。)
 
-### 4.13 第 4-6 批 Review 整改轮 2 决策(2026-09-06 用户决策,登记;P0-04/P0-05 口径已实施,实施面见 §4.14)
+### 4.13 第 4-6 批 Review 整改轮 2 决策(2026-09-06 用户决策,登记;P0-04/P0-05 口径已实施,实施面见 §4.14/§4.15)
 
-针对 `docs/review/[Review已完成][整改待处理]计划6第4-6批API统一解析Review-20260905.md`
+针对 `docs/review/[Review已完成][整改已完成]计划6第4-6批API统一解析Review-20260905.md`
 整改轮 2 的阻断决策,用户于 2026-09-06 拍板,本节登记为后续 T1-T8 代码实施的冻结依据。
 §4.12 保留轮 1 原问题,不改写为已修复。轮 2 实施(同日)落地 P0-02/P0-03/P0-04 +
 P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P1-12 幂等键改形
@@ -309,8 +309,7 @@ P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P
   query hash;SOAP = operation/soapAction;REST = 请求参数或 operation_id 摘要;无需再
   单独拼接 operation_id,由测试证明其稳定进入 `input_signature`。Registry 尚未切生产
   (`API_UNIFIED_ENABLE` 默认 False),本次改 key 无需历史数据迁移。同步面:计划 6 §4.3、
-  §9.2 与本清单 §4.2(§4.2 表在 T8 实施前不改写数值形态,以本节为冻结形态)。**契约
-  冻结,代码待 T8 实施**。
+  §9.2 与本清单 §4.2。**已实施(第 8 批 T8-1,2026-09-06;实施面见 §4.15)**。
 - **P0-04 GraphQL Schema 存储面(采纳"当前批不落 Mongo、Registry 延后第 8 批",并将
   "metrics 承载摘要"表述修正为双通道)**:
   - `context.metrics` 只放整数计数:`graphql_schema_success_total`、
@@ -383,6 +382,54 @@ P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P
   运行期懒导入命中);`assert_no_shell_pollution` 回归空壳残留。四件 api 统一测试各自
   独立进程可运行,禁止依赖其它测试提前修改 `sys.modules`。
 
+### 4.15 第 8 批消费方接入实施面(2026-09-06 登记,已实施;T8-1~T8-6)
+
+- **P1-12 现形态**:`UnifiedApiEndpoint.idempotency_key` =
+  `api_endpoint|url|method|api_type|input_signature`(`task_id` 由 Registry
+  `scoped_idempotency_key` 前缀拼接);operation identity 进入 `input_signature`
+  由 parser 测试与 `EndpointConsumerSurfaceTest.test_p1_12_api_type_assets_not_swallowed`
+  证成。§4.2 表中形态为 T8-1 前历史形态。
+- **Endpoint 状态机**:`_ENDPOINT_TRANSITIONS`(discovered→queued/pending/skipped,
+  queued→probed/failed/skipped/pending,probed→covered/degraded/failed,终态不再迁移);
+  `claim_endpoints_for_probe` 按 confidence 降序领取(低置信度显影 pending,不丢弃),
+  `probe_report` 词表映射(probed/observed/error/skipped→资产终态,probed 链式收口
+  covered);`mark_endpoint_observed` 非终态观察收口(discovered/queued/pending→
+  covered),供浏览器/首轮运行期证据收口,终态不被回写。
+- **Registry→候选图回流**:`register_endpoint` 新建时发布
+  `EndpointCandidateDiscovered`(candidate=url, candidate_type=endpoint,
+  `request_profile=api_endpoint_probe`,metadata 含 api_type/method)——与 wih
+  来源(request_profile=default)图条目分离,不互相吞并;发布失败不阻断资产登记。
+- **§7.3 消费协议**:统一管线挂载 `context.api_candidate_registry` 后,
+  WIH endpoint 补探只消费 Registry(`_registry_endpoint_followup`:GET/HEAD 探测、
+  POST/SOAP/GraphQL 标 skipped 不发无 body 请求、首轮已观察 (url,method) 回报
+  observed、首轮结果双写 covered rest 资产);未挂载/异常回退
+  `_legacy_endpoint_followup`(原候选图扫描逐字保留=显式 fallback)。URL Probe
+  在 Registry 挂载时排除 Endpoint 资产 URL(同 URL 不在 html_get/page_fetch
+  双桶各打一次)。`asset_wih_monitor` flag-on 走 `run_api_document_pipeline`
+  且 js_intel 先于文档阶段(与 orchestrator 同序),flag-off 原顺序逐字不变。
+- **P0-05 浏览器事件面**:GraphQL 请求在 `handle_response` 就地经
+  `UnifiedGraphqlParser` 拆解(解析器 allowed_hosts 以请求 URL 自身 host 为界,
+  任务范围过滤在摄取面按 `context.allowed_hosts`),端点对象走事件
+  `_graphql_endpoints` 内存通道(不参与 JSON 序列化与去重键;本结果集因此不得
+  整体入库),诊断字段 `graphql_diagnostics` 只含 status/error_type/operation_count;
+  `ingest_browser_runtime_events` 逐条 register+observed 收口,越界 host 只计
+  `api_endpoint_browser_out_of_scope_total`。三来源(js/page 经文档队列、browser
+  经摄取面)同 operation 命中同一 `scoped_idempotency_key`,sources 合并
+  (`register_endpoint` 合并面含入参完整 sources 集),不重复建资产。
+  `browser_intel_scan._open_playwright` 为测试注入钩子(原 `@patch(sync_playwright)`
+  目标属性不存在的脆弱点一并修复)。
+- **文档候选分类扩展**:统一面 `_TYPE_HINT_KEYWORDS` 增 graphql/graphiql;
+  `_collect_backflow` 通道 2 接受 urlfinder_url/page_link 记录按 URL 形态命中文档
+  关键词升级为候选(证据优先级)。js `_is_api_doc_candidate`、
+  `ApiDocScanner._DOC_KEYWORDS/_DOC_PATHS` 与 Rust 原生
+  (`lib.rs is_api_doc_candidate`)维持不含 graphql 的历史口径——flag-off
+  请求面零变化;Rust 对齐归第 10 批。
+- **新指标**:`wsdl_operation_total`(桥接面逐 soap operation,§4.13 范围修正
+  落地)、`api_endpoint_browser_ingested_total`、`api_endpoint_browser_out_of_scope_total`、
+  `api_probe_total/api_probe_skipped_total/api_probe_failed_total`、
+  `api_endpoint_by_type.<t>`、`api_endpoint_by_method.<m>`、
+  `api_endpoint_sources_merged_total`。
+
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 
 golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9、swagger2 8、postman 9)
@@ -454,6 +501,7 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
 - 第 8 批独立门禁(2026-09-06 用户决策,P0-05 选项二,见 §4.13):JS、页面、浏览器三来源
   进入同一 Endpoint Registry 并按 sources 合并,不重复建资产;浏览器 query 值、变量值、
   敏感 header 不得外流。第 6 批只交付文档 Parser 面,本门禁不向前追溯判定第 6 批。
+  **已实施(第 8 批 T8-1~T8-6,门禁证据见下方完成判据)。**
 - 整改轮 2 完成判据(2026-09-06,§4.14):P0-02 敏感变量替换禁令 + P0-03 预算/深度收口 +
   P0-04 摘要双通道(含 `QueueGraphqlSchemaChainTest` 真实队列端到端:SDL/introspection
   成功落诊断面与计数、failed 文档不标 parsed/covered)+ P1-06/P1-07 tokenizer +
@@ -464,3 +512,14 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
   212 项全绿;golden `--check` exit 0。P1-11 的 `wsdl_operation_total` 按 §4.13 范围修正
   移出本判据(归第 8 批或独立 WSDL 可观测性票);P2-15 分文件重构不属本判据。
   `API_UNIFIED_ENABLE` 切换默认的前置门禁余 P0-05 三来源合并(第 8 批)与 P1-12(T8)。
+- 第 8 批完成判据(2026-09-06,§4.15):P1-12 键改形 + Registry Endpoint 状态机/
+  领取/回报/观察收口 + 候选图回流;`asset_wih_monitor` 统一层切换;
+  `_registry_endpoint_followup`/`_legacy_endpoint_followup` 双通道;浏览器
+  operation 级拆解与 `ingest_browser_runtime_events`(P0-05 三来源合一 +
+  零泄露门禁);urlfinder_url/page_link 文档形态回流;URL Probe 统一候选排除;
+  `wsdl_operation_total` 落地。可复现证据:九件独立进程 parser 86/registry 51/
+  models 39/shadow 8/browser 5/orchestrator 10/finalizer 26/url_probe 8 全绿,
+  九件合跑(含 discovery_context)248 项;golden `--check` exit 0。
+  `test_wih_orchestrator`/`test_browser_intel_scan`/`test_urlfinder_url_probe`
+  由既有收集错误恢复为可运行(P2-13 口径扩展)。切换默认的代码前置门禁就此全部
+  闭环,余为发布流程决策。

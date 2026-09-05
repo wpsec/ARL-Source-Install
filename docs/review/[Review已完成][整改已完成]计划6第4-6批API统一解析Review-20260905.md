@@ -3,7 +3,7 @@
 ## 1. Review 信息
 
 - Review 状态：**Request Changes（整改后再验收）**
-- 整改状态：进行中（轮 1 已完成 P0-01、P1-10，与第 7 批 WSDL 合并整改提交，见 §9；轮 2 已完成 P0-02~P0-04（P0-05 按选项二采范围裁定：口径修正落地、事件接入归第 8 批门禁）、P1-06~P1-09、P1-11（GraphQL metrics 面，`wsdl_operation_total` 范围修正移出）、P2-13、P2-14，见 §9 轮 2；余 P0-05 事件接入与 P1-12（T8/第 8 批）、P2-15（后续评估）未闭环，故文件名 `整改待处理` 标签维持）。
+- 整改状态：基本完成（轮 1：P0-01、P1-10，与第 7 批合并提交；轮 2：P0-02~P0-04 口径与代码、P1-06~P1-09、P1-11（GraphQL metrics 面）、P2-13、P2-14，见 §9；**第 8 批 T8-1~T8-6：P0-05 事件接入（浏览器 operation 拆解 + JS/页面回流 + 三来源合并门禁）与 P1-12（幂等键纳入 api_type）已闭环，`wsdl_operation_total` 范围修正项同步落地**，见 §9 第 8 批实施记录）。仅余 P2-15（parser 分文件重构，非阻断、Review 原文即"本轮不要求立即拆分"，建议第 9/10 批前评估）；本 Review 的阻断项与验收门禁（§7.1~§7.3）全部闭环，文件名已随第 8 批收口改标 `[整改已完成]`（引用同步更新）。
 - 审查范围：计划 6 第 4 批 OpenAPI/Swagger、第 5 批 Postman、第 6 批 GraphQL 的当前实现、测试、冻结契约和计划文档；代码基线为 `e81f0d36`，进度文档基线为 `02072a9d`。第 7 批 WSDL/SOAP 在本报告形成后实施，继承并同轮修复了 P0-01。
 - 重点链路：`ApiDocumentQueue` → Parser chain → `ParseResult` → legacy adapter / Endpoint Registry；同时检查 JS、页面、浏览器事件是否真的进入统一链路。
 - 审查方式：只读代码审查、CodeGraph 依赖/调用关系检查、边界探针、定向测试和 golden 校验。
@@ -256,3 +256,18 @@
 轮 2 验证：四件独立进程 86/39/38/8 全绿；api 四件合跑 **171 项全绿**（轮 1 基线 126 → +45）；六件邻接合跑（+`test_task_finalizer`、`test_discovery_context`）212 项全绿；`scripts/api-unified-golden.py --check` exit 0；`git diff --check`、`py_compile` 通过。
 
 §7.4 验收门禁复判：7.1 安全与范围（轮 1+轮 2 闭环）、7.2 GraphQL 直接解析（轮 2 闭环）、7.3 队列与跨来源（Schema/队列面轮 2 闭环；三来源合并归第 8 批门禁）、7.4 测试与发布前置（独立进程 + 实际计数闭环）。`API_UNIFIED_ENABLE` 切换默认的前置门禁余：P0-05 三来源合并（第 8 批）与 P1-12（T8）。
+
+### 第 8 批实施记录（2026-09-06，T8-1~T8-6；P0-05/P1-12 闭环）
+
+轮 2 决策落盘后同日完成第 8 批消费方接入，本 Review 全部阻断项闭环。实施契约登记附录A §4.15，交付明细登记计划 6 §十五"第 8 批"节，此处只记门禁复判。
+
+| 问题项 | 处置 | 证据 |
+|---|---|---|
+| P0-05 事件接入 + 三来源合并门禁（选项二，第 8 批） | 浏览器 GraphQL 请求在 `handle_response` 就地经 `UnifiedGraphqlParser` 做 operation 级拆解，端点走 `_graphql_endpoints` 内存通道、诊断只带整数计数；`ingest_browser_runtime_events` 把运行时事件送统一 Registry（graphql 端点与文档通道同键合并 sources、rest 请求 source=browser、越界 host 不入资产、观察收口 covered 不重复探测）；JS/页面 GraphQL/WSDL 入口经 `_collect_backflow` 记录面升级进当前任务文档队列；`wih_browser_intel` 子阶段双开关接线、异常只隔离本阶段 | `TestBrowserGraphqlOperationIngest`（序列化面 marker 零泄露 + Authorization `<redacted>` + 变量值禁入资产/端点 to_dict）、`BrowserIngestGateTest.test_doc_and_browser_and_page_merge_into_single_asset`（三来源一资产、sources 含 browser、不重复建）、`UrlRecordDocHintBackflowTest`（graphql 形态 URL 升级、双记录一次获取、非文档 URL 不进队） |
+| P1-12 幂等键纳入 api_type | `idempotency_key` 冻结形态实施（url+method+api_type+input_signature），operation identity 稳定进入 signature 由 parser 三协议调用点与测试证成 | `test_endpoint_key_includes_api_type`（models）、`test_p1_12_api_type_assets_not_swallowed`（registry 三资产并列） |
+| §7.3 队列与跨来源复判 | WIH 补探只消费 Registry（GET/HEAD 探测、POST/SOAP/graphql skipped 不发无 body 请求、已观察 (url,method) 回报 observed、首轮双写）；URL Probe 排除 Endpoint 资产 URL（同 URL 不双桶各打一次）；空响应/异常/failed/probed/observed 分路计数不变式保持 | `TestWihRegistryEndpointFollowup`（通道接管/回退/fallback 三态）、`test_registry_endpoint_urls_excluded_when_attached`、`UnifiedFailureAccountingTest`（回归保持） |
+| §7.4 测试与发布前置 | `test_wih_orchestrator`/`test_browser_intel_scan`/`test_urlfinder_url_probe` bootstrap 化后从收集错误恢复为可运行；九件独立进程 + 合跑 248 项、golden `--check` 无漂移、`git diff --check` 通过 | 提交 `e6e9ac29`/`882fa0b8`/`bcf0c210`/`9670d741` |
+
+附带修复（实施中发现）：`browser_intel_scan` `urlencode` 缺失导入（form_urlencoded 事件曾被 NameError 整条吞掉）；`_open_playwright` 钩子修复既有 `@patch(sync_playwright)` 目标属性不存在的脆弱点（两个既有 browser 用例就此复活）；`test_wih_orchestrator` 缺 `app.services.discovery_context` 预载的收集期缺陷。
+
+状态复判：**Accept（阻断项全闭环）**。余 P2-15（parser 分文件，Review 原文即"本轮不要求立即拆分"）为非阻断改进项，随第 9/10 批评估。`API_UNIFIED_ENABLE` 切换默认的代码前置门禁（本 Review P0 项 + 计划 6 轮 2 门禁）已全部闭环，切换与否属 §十三 发布流程决策。容器、40/64 目标、双架构门禁仍为独立事项，不以本组测试替代。
