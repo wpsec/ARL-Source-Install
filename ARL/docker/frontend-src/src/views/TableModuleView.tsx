@@ -234,7 +234,11 @@ export function TableModuleView({
       return String(value).trim() !== '';
     });
   }, [hasAdvancedSearch, hasExternalFilters, module.searchFields, quickFilter, searchForm]);
-  const isTaskTerminalStatus = (status: any) => ['done', 'stop', 'error'].includes(String(status || '').toLowerCase());
+  const isTaskTerminalStatus = (status: any) => {
+    const raw = String(status || '').toLowerCase();
+    // done 家族(done/done_pending/done_degraded)均为终态(后端收尾器兼容映射)。
+    return raw.startsWith('done') || raw === 'stop' || raw === 'error';
+  };
   const markTaskRowActionPending = (taskId: string, action: string) => {
     setTaskRowPendingActionMap((prev) => ({ ...prev, [taskId]: action }));
   };

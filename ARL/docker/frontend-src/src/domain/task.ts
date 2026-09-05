@@ -459,7 +459,9 @@ export function buildTaskExecutionDurationInfo(row: any, nowMs: number): {
 
 export function getTaskProgressPercent(row: any): number {
   const status = String(row?.status || '').toLowerCase();
-  if (status === 'done') return 100;
+  // done 家族(done/done_pending/done_degraded)统一按完成计进度；
+  // 积压与降级证据在阶段指标中展示，进度条不重复表达。
+  if (normalizeTaskStatus(row?.status) === 'done') return 100;
   if (status === 'waiting') return 0;
   if (status === 'error' || status === 'stop') return 100;
 
