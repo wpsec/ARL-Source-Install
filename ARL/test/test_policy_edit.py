@@ -26,7 +26,6 @@ class TestWebInfoHunter(unittest.TestCase):
             "nuclei_scan",
             "afrog_scan",
             "web_info_hunter",
-            "waf_bypass",
             "smart_skip_waf",
             "file_leak",
         }
@@ -127,7 +126,9 @@ class TestWebInfoHunter(unittest.TestCase):
         self.assertTrue(item["site_config"]["nuclei_scan"])
         self.assertTrue(item["site_config"]["afrog_scan"])
         self.assertTrue(item["site_config"]["smart_skip_waf"])
-        self.assertTrue(item["site_config"]["waf_bypass"])
+        # 计划1收口:waf_bypass 旧策略键已随渗透链路删除,不再被模型接受——
+        # 请求里携带的 True 值必须被丢弃,原 item 的 False 保持不变。
+        self.assertFalse(item["site_config"].get("waf_bypass", False))
         self.assertTrue(item["domain_config"]["arl_search"])
         self.assertTrue(item["ip_config"]["service_detection"])
         self.assertTrue(item["ip_config"]["os_detection"])
