@@ -67,8 +67,6 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
-      - ARL_PORT_SCAN_ALL_TARGET_BATCH_SIZE=1
-      - ARL_PORT_SCAN_BATCH_CONCURRENCY=4
 
   worker_1:
     # 与 web/scheduler 使用同一镜像标签，确保任务进程和 API 运行环境一致
@@ -120,8 +118,6 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
-      - ARL_PORT_SCAN_ALL_TARGET_BATCH_SIZE=1
-      - ARL_PORT_SCAN_BATCH_CONCURRENCY=4
 
   worker_2:
     # 第二个 worker 实例：与 worker_1 共用镜像和队列，承担横向扩展分流
@@ -166,8 +162,6 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
-      - ARL_PORT_SCAN_ALL_TARGET_BATCH_SIZE=1
-      - ARL_PORT_SCAN_BATCH_CONCURRENCY=4
 
   scheduler:
     # 与 build.sh 保持一致，统一使用本地构建镜像标签

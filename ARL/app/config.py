@@ -17,6 +17,7 @@
 1. 默认配置（Config类中的默认值）
 2. config.yaml文件覆盖（实际部署时使用）
 """
+import json
 import os
 import yaml
 import sys
@@ -2621,6 +2622,29 @@ try:
     dns_resolvers_env = env_str("ARL_DNS_RESOLVERS", "")
     if dns_resolvers_env:
         Config.DNS_RESOLVERS = [x.strip() for x in dns_resolvers_env.split(",") if x.strip()]
+
+    # 启动即输出扫描/性能相关 effective config（仅白名单非敏感键）。
+    # 目的：端口批次等参数在 compose env、runtime YAML、Python 默认三层中实际生效值必须可见，
+    # 性能门禁与故障复现不再依赖"猜测加载优先级"。敏感配置不在此输出。
+    _effective_scan_config = {
+        _key: getattr(Config, _key, None)
+        for _key in (
+            "PORT_SCAN_TARGET_BATCH_SIZE",
+            "PORT_SCAN_HEAVY_TARGET_BATCH_SIZE",
+            "PORT_SCAN_ALL_TARGET_BATCH_SIZE",
+            "PORT_SCAN_BATCH_CONCURRENCY",
+            "PORT_SCAN_BATCH_TIMEOUT_SEC",
+            "PORT_SCAN_STAGE_TIMEOUT_SEC",
+            "TASK_FINALIZER_ENABLE",
+            "TASK_FINALIZER_DRAIN_ROUNDS",
+            "WIH_TOTAL_BUDGET_SEC",
+            "NUCLEI_STAGE_MAX_TARGETS",
+            "AFROG_STAGE_MAX_TARGETS",
+            "PROGRESSIVE_SCAN_ENABLE",
+        )
+    }
+    print("EFFECTIVE_SCAN_CONFIG {}".format(
+        json.dumps(_effective_scan_config, ensure_ascii=False, sort_keys=True, default=str)))
 
 except Exception as e:
     print("Parse config.yaml error {}".format(e))
