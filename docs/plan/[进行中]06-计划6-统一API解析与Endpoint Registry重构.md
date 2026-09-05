@@ -1,6 +1,6 @@
 # 计划 6：统一 API 解析与 Endpoint Registry 重构
 
-状态：第 1-7 批解析器面已实施（2026-09-05，见文末实施进度；第 6 批为"GraphQL 文档 Parser 完成，运行时事件接入未完成"——2026-09-06 用户决策 P0-05，事件接入随第 8 批完成）；第 4-6 批 Review 整改轮 2 代码已实施（2026-09-06：T1/T2/T3 + P1-08/P1-09 + P2-13）；**第 8 批 Endpoint Registry 消费方接入已实施（2026-09-06，T8-1~T8-6：P1-12 幂等键纳入 api_type、监控入口切换、WIH endpoint probe/URL Probe 消费统一候选、浏览器 GraphQL 事件 operation 级拆解、JS/页面 GraphQL 记录面回流、P0-05 三来源合并门禁；第 9 批起未开始）**。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)。
+状态：第 1-7 批解析器面已实施（2026-09-05，见文末实施进度；第 6 批为"GraphQL 文档 Parser 完成，运行时事件接入未完成"——2026-09-06 用户决策 P0-05，事件接入随第 8 批完成）；第 4-6 批 Review 整改轮 2 代码已实施（2026-09-06：T1/T2/T3 + P1-08/P1-09 + P2-13）；**第 8 批 Endpoint Registry 消费方接入已实施（2026-09-06，T8-1~T8-6：P1-12 幂等键纳入 api_type、监控入口切换、WIH endpoint probe/URL Probe 消费统一候选、浏览器 GraphQL 事件 operation 级拆解、JS/页面 GraphQL 记录面回流、P0-05 三来源合并门禁）。**第 8 批经独立复审发现 2 P0（范围越界）+2 P1（REST 形态签名、queued 恢复）+1 项设计改判（公开资产观测值不得脱敏，原 P1-05 撤销），第 9 批暂停，先执行 [紧急修复：统一发现系统数据与状态边界收口](<紧急修复-统一发现系统数据与状态边界收口.md>)（T0 契约冻结→T1-T4→T5 边界复判→T6 集成复核）**。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)（URL 观测语义以 §4.16 三层数据契约为准）。
 
 ## 一、总体结论
 
@@ -58,7 +58,10 @@
 - 不默认执行任意 SOAP 操作或构造业务请求体。
 - 不把 API Parser 改造成新的网络扫描器；文档和 Endpoint 获取统一由 Python `RequestScheduler` 管理。
 - 不在本阶段重写浏览器、Nmap、WIH Go 工具或整个 Rust WIH。
-- 不把完整参数值、Cookie、Authorization、API Key 或密钥写入日志、Mongo 或统一 Endpoint 记录。
+- 不把 Cookie、Authorization 头、私有变量值、完整私有请求体写入资产记录（2026-09-06
+  紧急修复裁定改判，原文"不把完整参数值……或密钥写入统一 Endpoint 记录"过宽）：
+  公开资产 URL 观测值（含 query 参数值）原样保留，凭据保护属请求上下文层，不通过
+  改写资产 URL 实现；参数取值禁通道与 schema/内容守卫保留。细则见附录A §4.16。
 
 ## 三、现有能力和问题冻结
 
@@ -127,11 +130,12 @@ API Parser 只消费 `ResponseRegistry` 中的响应和事件，不自行重复�
 
 ```text
 task_id
-url
+url                   # 非破坏性规范化 URL（比较/去重用；不得改写 query 值，§4.16）
+observed_url          # 原始观测 URL（展示/溯源，增量字段；缺省=url）
 type_hint             # openapi/swagger/postman/graphql/wsdl/unknown
 source
 sources
-parent_target
+parent_target         # 来源关系字段，原样保留（§4.16，非脱敏对象）
 parent_url
 depth
 priority
@@ -156,14 +160,15 @@ task_id + api_doc + canonical_url + request_profile + input_signature
 
 ```text
 endpoint_id
-url
+url                   # 非破坏性规范化 URL（去重键派生面；不得改写 query 值，§4.16）
+observed_url          # 原始观测 URL（展示/溯源，增量字段；缺省=url）
 path_template
 method
 api_type              # rest/graphql/soap
 source
 sources
 parent_document
-parent_target
+parent_target         # 来源关系字段，原样保留（§4.16，非脱敏对象）
 base_url
 api_version
 operation_id
@@ -188,6 +193,8 @@ input_signature
 
 字段规则：
 
+- 公开观测值（url 的 query/path、source、parent_target）原样保留；规范化只服务
+  比较与去重，凭据保护属请求上下文层——三层契约见附录A §4.16（2026-09-06 裁定）。
 - `parameters` 只记录名称、位置、类型摘要、是否必需，不保存实际敏感值。
 - `request_body_schema` 和 `response_schema` 保存规范化摘要或引用，不无限复制大型文档。
 - `auth_hint` 只记录 `none/basic/bearer/api_key/cookie/oauth2/mTLS/unknown` 等类型。
@@ -874,6 +881,17 @@ graphql）归第 10 批；浏览器事件端点观察收口以"任务内单一 t
 finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切换默认的前置
 门禁（轮 1/轮 2 P0 项 + 第 8 批 P0-05/P1-12）已全部闭环，是否切换属发布决策，
 按 §十三 shadow→双写→小范围→全量流程另行执行。
+
+### 数据与状态边界收口（2026-09-06，第 8 批后紧急修复轮）
+
+第 8 批代码提交后独立复审与用户裁定产生本专项，执行依据为
+`docs/plan/[进行中]紧急修复-统一发现系统数据与状态边界收口.md`（T0-T6），要点：
+
+- T0（本节所属提交）：契约冻结——附录A §4.16 三层数据契约生效，§4.4/§4.12 URL 语义
+  加改判指针，本计划 §2.2/§4.2/§4.3 同步；原 Review 的"parent_target 脱敏"项撤销。
+- T1-T4（同文档 §五，实施与验收记录追加于该文档，不在本计划展开）：公开观测值
+  无损改造、共享 scope gate（fail-closed）、REST 请求形态签名、queued lease/恢复。
+- 第 9 批放行条件见紧急修复文档 §八，满足前本计划第 9 批保持暂停。
 
 ## 当前状态（2026-09-06 第 7 批 + 整改轮 1/轮 2 + 第 8 批后）
 

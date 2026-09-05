@@ -95,6 +95,10 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
   自由文本字段(`.value/.raw/.content`)含 `key: value` 赋值形态也命中。
 - `redact_assignment_text`:把敏感赋值整段替换为 `key=<redacted>`(值段到 `,;` 或行尾,覆盖 `Bearer xxx` 双词形态)。
 - 外部引用默认关闭(`ParseOptions.external_ref_enable=False`)、GraphQL Schema/introspection 默认关闭(`graphql_schema_enable=False`)、WSDL 解析默认开启——与 §8.3 默认一致。
+- **改判指针(2026-09-06)**:本节把"URL query 凭据"列为脱敏对象的语义已被 §4.16 三层
+  数据契约改判——URL 观测字段(含 query 值)原样保留,守卫仅作用于内容面字段;
+  `sanitize_url_secrets`/`sanitize_source_text` 用途收窄至私有请求上下文字段。
+  schema 示例/参数取值/赋值形态的守卫不受影响。
 
 ### 4.5 shadow 请求复用观测(第 2 批,只计数不改输出)
 
@@ -280,6 +284,8 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
   `ParseResult.to_dict()` 抛错;registry merge 入口 `existing.parent_url=` 改经
   `sanitize_source_text`。**merge 语义变化**:`add_source` 现脱敏,仅密钥不同的同形 source
   (`?token=A` 与 `?token=B`)清洗后折叠为同一证据,`merged_source_count` 计数口径随之变化。
+  (本条为轮 1 历史记录,不改写;其 URL/source 观测字段清洗与守卫语义已于 2026-09-06
+  被 §4.16 三层数据契约改判撤销,merge 折叠口径同步恢复原文去重。)
 - **新增指标(纳入 §4.5 观测面,待看板登记)**:`api_document_out_of_scope_domain_total`
   (越界 host 证据计数)、`api_document_wsdl_xsd_import_total`(XSD 引用登记不获取)、
   `api_document_unbridged_candidate_total`(未接线候选类型计数,P0-04 接线后应归零,
@@ -429,6 +435,38 @@ P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P
   `api_probe_total/api_probe_skipped_total/api_probe_failed_total`、
   `api_endpoint_by_type.<t>`、`api_endpoint_by_method.<m>`、
   `api_endpoint_sources_merged_total`。
+
+### 4.16 三层数据契约(2026-09-06 用户裁定,紧急修复轮 T0 冻结;改判 §4.4/§4.12/§4.15 的 URL 脱敏语义)
+
+依据 `docs/plan/[进行中]紧急修复-统一发现系统数据与状态边界收口.md` §二。历史小节(§4.4
+脱敏策略、§4.12 P1-10、§4.15 相关行)保留原文不重写,其 **URL 观测字段语义以本节为准**;
+内容面守卫(参数取值、schema 示例、自由文本赋值形态)不受本改判影响。
+
+- **公开观测面**:`observed_url`、URL path/query(含 `token=` 类参数值)、页面来源、
+  `source`/`sources`/`parent_url`/`parent_target`/`parent_document` 一律原样保存。
+  `token=abc123` 是业务参数还是凭据不由资产层判定,不得偷偷修改用户看到的资产;
+  可选的 query 参数 classification 标记(`unknown|business|credential_like`)为展示/
+  请求策略辅助,登记为后续增强,不构成对观测值的改写。
+- **规范资产面**:`url` 字段语义收窄为**非破坏性规范化 URL**(scheme/host 小写、默认
+  端口折叠等,`discovery_context.normalize_url` 现口径,不删除/不替换 query 值),用于
+  比较、排序、去重;`endpoint_key`(`scoped_idempotency_key`,§4.2/§4.15)与
+  `input_signature` 独立推导。合并资产关系时只并 `sources`/证据,不得覆盖或丢弃
+  原始观测值(快照必须同时可见 observed 与 normalized)。
+- **请求上下文层**:Cookie/Authorization/浏览器登录态/Postman 私有变量/重放配置不进入
+  普通 Endpoint Registry;是否保存与是否用于主动验证由独立的权限、生命周期、审计规则
+  决定,**不通过篡改资产 URL 实现凭据保护**。P0-02 的 Postman 敏感变量模板禁令
+  (§4.14)不在此改判范围:变量展开是把凭据存储的值"生成"进 URL,不是公开观测值。
+- **`sanitize_url_secrets`/`sanitize_source_text` 用途收窄**:仅可用于明确标记为私有
+  凭据的字段(请求上下文层),对观测/资产/证据面的 URL 与来源字段不得调用;
+  `find_sensitive_keys` 守卫的字段范围=内容面(`.value/.raw/.content` 与
+  `{name:敏感名, value:非空}` 参数形态),URL 观测字段不属于守卫对象。
+- **生产方规则**(§2.3 冻结):URLFinder/公开页面/公开 JS/公开 API 文档发现的 URL
+  原样进入观测面;GraphQL operation 身份与请求 URL 进 Registry,完整 query 是否保存
+  按观测/认证分层另行处理;`parent_target` 是来源关系字段,不列为脱敏问题
+  (第 8 批独立复审 P1-05 撤销)。
+- **legacy 兼容口径**:旧记录面 content/source 本就承载未脱敏的规范化 URL(legacy 无
+  sanitize),统一层观测面改造后与 legacy 口径一致而非收紧,`current_parser_baseline`
+  与 `--check` 不受影响;`to_legacy_records` 继续输出 normalized `url`。
 
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 
