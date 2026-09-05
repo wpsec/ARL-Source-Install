@@ -1,6 +1,6 @@
 # 计划 6：统一 API 解析与 Endpoint Registry 重构
 
-状态：第 1-6 批已实施（2026-09-05，见文末实施进度；第 7 批起未开始）。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)。
+状态：第 1-7 批已实施（2026-09-05，见文末实施进度；第 8 批起未开始）。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)。
 
 ## 一、总体结论
 
@@ -747,7 +747,49 @@ GraphQL URL 现状经 endpoint 候选→探测链消费，行为不变。
 下一步为第 7 批：WSDL/SOAP 支持（安全 XML 解析：禁 XXE/外部实体/默认外部引用；
 service/port/binding/portType/operation/message/soapAction 摘要；`api_type=soap`）。
 
-## 当前状态（2026-09-05 第 6 批后）
+### 第 7 批：WSDL/SOAP 支持（2026-09-05 完成）
+
+| 交付 | 位置 | 说明 |
+|---|---|---|
+| WSDL 解析器 | `api_unified_parser.UnifiedWsdlParser`（`wsdl_unified`） | WSDL 1.1 `definitions/service/port/binding/portType/operation/message`（含 WSDL2.0 `endpoint/interface` 本地名兼容）；`soap:address@location`→URL、`soap:operation@soapAction`→`soap_action`、`wsdl:http@verb`→method（默认 POST）；端点携 `api_type=soap`/`wsdl_service`/`wsdl_port`/`operation_id`，input message part 名称摘要为 `ParameterSpec(body)` |
+| G6 闭环 | 同上 | 基线无 soap 记录→统一层产出 2 个 soap 端点（getPet/listPets 同 location 不同 soapAction，富资产面并列、legacy 面 fnv 去重合一，超集语义）；`schema_available=False`（XSD 未解析不伪装完整） |
+| XXE/SSRF 硬守卫 | 同上 `_looks_like_wsdl`/`_safe_fromstring` + `_DTD_FORBIDDEN_RE` | 含 `<!DOCTYPE`/`<!ENTITY` 文档**解析前**整体 `failed(dtd_forbidden)`、零网络（根除 XXE/billion-laughs 唯一载体）；过守卫后 expat 再关参数实体解析+拒外部实体引用兜底；大小受 `WSDL_MAX_SIZE_BYTES`（5MB）、operation/import/part 各 200/50/50 上限 |
+| XSD 引用不获取 | 同上 `_collect_imports` | `xsd:import`/`include` 外部与同源引用只登记 `record_type=wsdl_xsd_import`（`content`/`resolved_url`/`namespace`/`same_origin`/`fetched=False`），计 `unresolved_ref_count`、状态 `degraded`（§6.4 外部引用默认不请求） |
+| 链前置修复 | `UnifiedOpenApiParser.parse` | openapi 对 XML 标记形态由 `failed(not_object)` 改 `skipped(not_openapi_document)`，兑现"非 openapi/swagger 一律 skip"契约，避免 XML 在链首截断 wsdl 解析（postman/graphql 对 XML 本就 skip） |
+| 队列分发 | `api_candidate_registry.ApiDocumentQueue._parse_one` | 解析器链扩为 openapi→postman→graphql→wsdl，全 skipped 才回 legacy；`_TYPE_HINT_KEYWORDS` 增 `wsdl` 分类（`.wsdl`/`?wsdl`）；越界 `soap:address`→`domain` 候选（端点为空仍保留候选与文档） |
+| 回归 | `test/test_api_unified_parser.py` WSDL 面 14 项 | 2 soap 端点/soapAction/service/port、part 摘要、同源 XSD 登记不获取、越界 domain 候选、disabled/size skip、XXE dtd_forbidden 零端点+`xxe-probe`/`pe-probe` 零泄露、xsd 非 wsdl skip、openapi 对 XML skip、队列分发桥接 soap 记录、队列 XXE failed |
+
+验证：`test_api_unified_parser.py` 53 项（WSDL 面 14 项）、api 四件合跑 110 项全绿；
+`api-unified-golden.py --check` 无漂移（WSDL 为 legacy 之外新增面，基线不含 soap 记录，
+验收下限为空、上限＝`unified_target_expectations.json` 的 wsdl_service/wsdl_xxe 面，全部满足）。
+`WSDL_PARSE_ENABLE` 默认 True 但仅 `API_UNIFIED_ENABLE=True` 时经统一链生效，生产默认行为未切换。
+
+下一步为第 8 批：Endpoint Registry 消费方接入（WIH endpoint probe / URL Probe 以 Registry
+为唯一候选入口、浏览器运行时 operation 级拆解复用第 6 批 GraphQL 解析器、`asset_wih_monitor`
+监控入口从 legacy 切换统一层、js/path/site 候选消费协议收口、新来源自动合并 `sources`）。
+
+### 第 4-6 批 Review 整改轮 1（2026-09-06，P0-01 + P1-10，与第 7 批合并提交）
+
+第 4-6 批提交后（commits `e81f0d36`/`02072a9d`）经独立 Review 判 **Request Changes**
+（见 `docs/review/[Review已完成][整改待处理]计划6第4-6批API统一解析Review-20260905.md`）。
+第 7 批 WSDL 继承了其中 P0-01，故按用户决策（Option A）先修第 7 批直接关联的两个安全/范围
+阻断项，再与第 7 批合并为整改提交。两个并行整改子代理严格文件所有权隔离（P0-01 改
+parser+registry，P1-10 改 models），编排者集成复跑。
+
+| 项 | 处置 | 契约登记 |
+|---|---|---|
+| P0-01 越界 host 入 in-scope domain 资产 | 四解析器越界 host 候选 `domain`→`out_of_scope_domain` 证据类型；桥接 `_bridge_candidate`/`_bridge_out_of_scope_domain` 统一安全出口复用既有 host/Fld 校验，只计 `api_document_out_of_scope_domain_total`、绝不落 domain 记录；`wsdl_xsd_import`/未接线类型各自计数不静默丢弃 | 附录A §4.12 |
+| P1-10 URL/source 自由文本脱敏盲区 | models 新增 `sanitize_url_secrets`/`sanitize_source_text`，构造与 `add_source`/merge 入口统一清洗 url/source/parent_url/parent_document/base_url/sources；`find_sensitive_keys` 守卫扩展检出敏感 query、残留令 `to_dict()` 抛错；干净 URL 逐字节 no-op | 附录A §4.12 |
+
+验证：api 四件集成合跑 **126 项全绿**（parser 56 / registry 24 / models 38 / shadow 8）；
+`api-unified-golden.py --check` exit 0（legacy 基线无漂移）；`py_compile` 与 `git diff --check` 通过。
+**行为收窄**：统一路径对同-Fld 越界 host 也不再产 domain 记录（legacy 会产），"legacy 超集"
+口径修订为"越界 domain 证据化是唯一允许缺失面"。**仍待后续整改轮**：P0-02（Postman 敏感变量
+进 URL）、P0-03（GraphQL Schema 深度预算接线）、P0-04（Schema 摘要队列存储面）、P0-05（JS/页面/
+浏览器事件接入 + G5 验收口径）、P1-06~P1-12、P2-13~P2-15——`API_UNIFIED_ENABLE` 在这些项
+（尤其 P0-02 安全阻断）闭环前不得切换默认。
+
+## 当前状态（2026-09-06 第 7 批 + 整改轮 1 后）
 
 - [已完成] 第 1 批接口/结果契约冻结、golden corpus、legacy adapter、脱敏约束和幂等键定义已完成。
 - [已完成] 第 2 批 shadow metrics、ResponseRegistry 无副作用读取和 API 文档/Endpoint 探测观测接线已完成；该批不改变运行时输出。
@@ -755,9 +797,12 @@ service/port/binding/portType/operation/message/soapAction 摘要；`api_type=so
 - [已完成] 第 4 批 OpenAPI/Swagger 统一解析：G1 模板端点、G3 参数/schema/security、G4 显式失败、G7 追溯字段落地，输出为 legacy 超集；外部 `$ref` 不获取、预算有界。
 - [已完成] 第 5 批 Postman 统一解析：递归 item、变量解析策略（候选 URL 降置信度/模板保留不猜值）、`:id` 冒号变量、body 三模式摘要、敏感键名剔除与值禁外流双向断言（G2 闭环）。
 - [已完成] 第 6 批 GraphQL 请求/SDL/introspection 统一解析（G5 闭环：operation、variables 名称、query hash、Schema 开关与预算；`graphql` 记录获得唯一生产者）。
-- [未完成] WSDL/SOAP Operation 解析（第 7 批）、Endpoint Registry 消费方接入含浏览器运行时 operation 拆解（第 8 批）尚未完成。
+- [已完成] 第 7 批 WSDL/SOAP 统一解析（G6 闭环：definitions/service/port/binding/portType/operation/message/soapAction，`api_type=soap` 端点；XXE/DTD 解析前硬拒+expat 兜底、XSD 引用登记不获取、越界 address→`out_of_scope_domain` 证据候选；openapi 对 XML 改 skip 修复链首截断；队列链 openapi→postman→graphql→wsdl）。
+- [已完成] 第 4-6 批 Review 整改轮 1（P0-01 越界 host 证据化不入 in-scope domain 资产 + P1-10 URL/source 脱敏边界，与第 7 批合并提交；api 四件 126 项、golden 无漂移）。
+- [未完成] 第 4-6 批 Review 余留项 P0-02~P0-05、P1-06~P1-12、P2-13~P2-15 仍待后续整改轮；`API_UNIFIED_ENABLE` 在 P0-02（Postman 敏感变量进 URL，安全阻断）等闭环前不得切换默认。
+- [未完成] Endpoint Registry 消费方接入含浏览器运行时 operation 拆解（第 8 批）、阶段调度与 WAF 隔离（第 9 批）、Rust 纯数据层（第 10 批）、全量回归与发布验收（第 11 批）尚未完成。
 - [已完成] `api_document_cross_bucket_hit_total` 转正：单测锁定 api_doc 桶命中计数路径；真实环境的转正观测并入第 4 批起的容器联调口径。
 - [未完成] `asset_wih_monitor` 监控入口仍走 legacy `run_api_doc_scan`，待第 8 批消费方接入时统一切换。
 - [未完成] Rust 解析层、40/64 目标协同回归和双架构发布验收不得提前宣称完成。
 
-当前判定：计划 6 第 1–3 批 [已完成]；第 4 批及后续运行时接入 [未完成]。第 2/3 批 Review 的终态与候选 drain 前置已在 2026-09-05 终态修复轮闭环，第 3 批未新增绕过统一收尾的消费通道（残余候选保持开放态，finalizer 显影语义不变）。
+当前判定：计划 6 第 1–7 批 [已完成]（解析器面 OpenAPI/Postman/GraphQL/WSDL 全部接管，golden 无漂移）；第 4-6 批 Review 整改轮 1（P0-01/P1-10）[已完成]，余留 P0-02~P0-05 等 [未完成]；第 8 批起运行时消费方接入与最终验收 [未完成]。`API_UNIFIED_ENABLE` 默认 False，生产默认行为未切换——"代码具备入口"与"默认生效"仍分别记账，且**切换默认的前置门禁现追加 Review 余留 P0 项（尤其 P0-02 安全阻断）闭环**。第 2/3 批 Review 的终态与候选 drain 前置已在 2026-09-05 终态修复轮闭环，第 3–7 批未新增绕过统一收尾的消费通道（残余候选保持开放态，finalizer 显影语义不变）。

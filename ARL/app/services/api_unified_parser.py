@@ -11,7 +11,8 @@
 - G4：非法/异常文档产生显式 `failed` diagnostics（error_type 可见），
   不再伪装成"无 API"；
 - G7：端点携带 parent_document/base_url/api_version 追溯字段，越界 server
-  仍产 `domain` 候选（行为保留），范围内多 server 全展开。
+  产 `out_of_scope_domain` 证据候选（Review P0-01：不可信文档 host 不得进入
+  in-scope domain 资产面），范围内多 server 全展开。
 
 安全边界（§11.3）：外部 `$ref` 不获取（标 unresolved 并计数）、Schema 摘要
 深度有界（内部 3 层、属性 50 个）、引用总预算 `ParseOptions.max_ref_count`、
@@ -54,6 +55,11 @@ _SCHEMA_SUMMARY_MAX_DEPTH = 3
 _SCHEMA_SUMMARY_MAX_PROPERTIES = 50
 _PARAM_LOCATIONS = ("path", "query", "header", "cookie", "formData", "body")
 
+# Review P0-01：不可信文档（server/base/soap:address）里的越界 host 只是发现
+# 证据，不是可消费的 in-scope domain 资产。解析器对越界候选统一冻结为该
+# record_type；桥接层（api_candidate_registry）只计数、绝不落 domain 记录。
+OUT_OF_SCOPE_DOMAIN_RECORD_TYPE = "out_of_scope_domain"
+
 
 def url_has_template(url: Any) -> bool:
     text = str(url or "")
@@ -65,6 +71,22 @@ def _host_of(url: Any) -> str:
         return str(urlsplit(str(url or "")).hostname or "").strip().lower().rstrip(".")
     except ValueError:
         return ""
+
+
+_XML_MARKUP_RE = re.compile(r"^<[A-Za-z_]")
+
+
+def _looks_like_xml(text: Any) -> bool:
+    """XML/HTML 标记形态判定：`<?xml` 声明或以 `<标签名` 起始。
+
+    JSON（`{`/`[`）与 YAML（`openapi:`/`#`）均不以 `<` 起始，故本判定不会
+    误伤 openapi/postman 正常形态。
+    """
+
+    head = str(text or "").lstrip()[:64]
+    if head.startswith("<?xml"):
+        return True
+    return bool(_XML_MARKUP_RE.match(head))
 
 
 class _RefBudget:
@@ -134,6 +156,13 @@ class UnifiedOpenApiParser:
         if not isinstance(doc, dict):
             text = document_artifact.decode("utf-8", "ignore") if isinstance(document_artifact, bytes) \
                 else str(document_artifact or "")
+            if _looks_like_xml(text):
+                # XML/WSDL 形态交 wsdl_unified 接管：本解析器契约为"非
+                # openapi/swagger 形态一律 skipped"，不得把 XML 误判成 failed
+                # 而截断解析器链（第 7 批链式分发前置修复）。
+                diag.status = "skipped"
+                diag.error_type = "not_openapi_document"
+                return ParseResult(parser=self.parser_name, diagnostics=diag)
             if len(text.encode("utf-8", "ignore")) > options.max_document_bytes:
                 diag.status = "failed"
                 diag.error_type = "document_too_large"
@@ -259,7 +288,10 @@ class UnifiedOpenApiParser:
             endpoints=endpoints,
             documents=[document_candidate],
             candidates=[
-                {"record_type": "domain", "content": host, "source": self.doc_url}
+                # P0-01：越界 host 只作证据出口，防止不可信文档把范围外
+                # host 注入任务 domain 资产面。
+                {"record_type": OUT_OF_SCOPE_DOMAIN_RECORD_TYPE,
+                 "content": host, "source": self.doc_url}
                 for host in sorted(domains)
             ],
             diagnostics=diag,
@@ -348,7 +380,7 @@ class UnifiedOpenApiParser:
         raw_url = urljoin(str(base_url or "").rstrip("/") + "/", str(path_text or "").lstrip("/"))
         host = _host_of(raw_url) or base_host
         if not host or host not in self.allowed_hosts:
-            # 越界 server/path：域候选替代端点（§二 冻结行为）。
+            # 越界 server/path：越界证据候选替代端点（§二 冻结行为 + P0-01）。
             return None, (host or "")
 
         if url_has_template(raw_url):
@@ -609,7 +641,8 @@ class UnifiedPostmanParser:
             endpoints=endpoints,
             documents=[document_candidate],
             candidates=[
-                {"record_type": "domain", "content": host, "source": self.doc_url}
+                {"record_type": OUT_OF_SCOPE_DOMAIN_RECORD_TYPE,
+                 "content": host, "source": self.doc_url}
                 for host in sorted(domains)
             ],
             diagnostics=diag,
@@ -947,7 +980,9 @@ class UnifiedGraphqlParser:
         if host and host not in self.allowed_hosts:
             return ParseResult(
                 parser=self.parser_name,
-                candidates=[{"record_type": "domain", "content": host, "source": self.doc_url}],
+                # P0-01：越界 base 只作证据出口，不落 in-scope domain 资产。
+                candidates=[{"record_type": OUT_OF_SCOPE_DOMAIN_RECORD_TYPE,
+                             "content": host, "source": self.doc_url}],
                 diagnostics=ParseDiagnostics(
                     parser=self.parser_name, status="ok", error_type="out_of_scope_base"),
             )
@@ -1129,6 +1164,339 @@ class UnifiedGraphqlParser:
         return {"types": [], "enums": [], "inputs": [], "scalars": [], "truncated": False}
 
 
+_DTD_FORBIDDEN_RE = re.compile(r"<!\s*(DOCTYPE|ENTITY)", re.IGNORECASE)
+_WSDL_ROOT_RE = re.compile(r"<[\w.:-]*(definitions|description)[\s>]", re.IGNORECASE)
+_WSDL_MAX_OPERATIONS = 200
+_WSDL_MAX_IMPORTS = 50
+_WSDL_MAX_PARTS = 50
+
+
+def _xml_local(tag: Any) -> str:
+    """去命名空间：`{ns}local` → `local`（对前缀不敏感，兼容任意 xmlns 前缀）。"""
+
+    text = str(tag or "")
+    return text.rsplit("}", 1)[-1] if text.startswith("{") else text
+
+
+def _qname_local(value: Any) -> str:
+    """去前缀：`tns:PetBinding` → `PetBinding`（QName 引用按本地名解析）。"""
+
+    text = str(value or "").strip()
+    return text.rsplit(":", 1)[-1] if ":" in text else text
+
+
+class UnifiedWsdlParser:
+    """WSDL 1.1 / SOAP 统一解析（第 7 批，G6 闭环）。
+
+    解析 definitions/service/port/binding/portType/operation/message 与
+    `soap:operation@soapAction`、`soap:address@location`，产出
+    `api_type=soap` 端点（method 语义默认 POST，wsdl:http verb 可覆盖），
+    仅生成 Endpoint 资产、绝不调用真实 SOAP Operation（§6.4）。
+
+    安全边界（§6.4/§11.3）：含 `<!DOCTYPE`/`<!ENTITY` 的文档整体判 `failed`
+    且零解析零网络（防 XXE/SSRF/billion-laughs，DTD 是这些攻击的唯一载体）；
+    即便通过守卫，expat 亦关闭参数实体解析并拒绝外部实体引用（belt-and-
+    suspenders）；文件大小受 `max_document_bytes` 约束；`xsd:import`/`include`
+    的外部与同源引用只登记为观测候选、**不获取**（计 unresolved、状态
+    degraded，不伪装完整 Schema）。非 WSDL 形态返回 `skipped` 交回队列。
+    """
+
+    parser_name = "wsdl_unified"
+    parser_version = "v1"
+
+    def __init__(self, task_id: str, doc_url: str, allowed_hosts=None, allowed_flds=None):
+        self.task_id = str(task_id or "")
+        self.doc_url = str(doc_url or "")
+        self.allowed_hosts = {str(h or "").strip().lower() for h in (allowed_hosts or set()) if str(h or "").strip()}
+        self.allowed_flds = {str(f or "").strip().lower() for f in (allowed_flds or set()) if str(f or "").strip()}
+
+    def parse(self, document_artifact: Any, parse_options: Optional[ParseOptions] = None) -> ParseResult:
+        options = parse_options or ParseOptions()
+        diag = ParseDiagnostics(parser=self.parser_name)
+        text = document_artifact.decode("utf-8", "ignore") if isinstance(document_artifact, bytes) \
+            else str(document_artifact or "")
+        if not text.strip():
+            diag.status = "skipped"
+            diag.error_type = "empty_document"
+            return ParseResult(parser=self.parser_name, diagnostics=diag)
+        if not options.wsdl_parse_enable:
+            diag.status = "skipped"
+            diag.error_type = "wsdl_disabled"
+            return ParseResult(parser=self.parser_name, diagnostics=diag)
+        if not self._looks_like_wsdl(text):
+            diag.status = "skipped"
+            diag.error_type = "not_wsdl_document"
+            return ParseResult(parser=self.parser_name, diagnostics=diag)
+        if len(text.encode("utf-8", "ignore")) > options.max_document_bytes:
+            diag.status = "failed"
+            diag.error_type = "document_too_large"
+            return ParseResult(parser=self.parser_name, diagnostics=diag)
+        # XXE/DTD 硬守卫：解析前判定，任何 DTD/实体声明直接失败（不进入解析器）。
+        if _DTD_FORBIDDEN_RE.search(text):
+            diag.status = "failed"
+            diag.error_type = "dtd_forbidden"
+            return ParseResult(parser=self.parser_name, diagnostics=diag)
+        root = self._safe_fromstring(text)
+        if root is None:
+            diag.status = "failed"
+            diag.error_type = "xml_parse_error"
+            return ParseResult(parser=self.parser_name, diagnostics=diag)
+        return self._parse_document(root, text, diag)
+
+    # -- 识别与安全载入 ----------------------------------------------------
+
+    @staticmethod
+    def _looks_like_wsdl(text: Any) -> bool:
+        head = str(text or "").lstrip()[:8192]
+        if not _looks_like_xml(head):
+            return False
+        lowered = head.lower()
+        if "schemas.xmlsoap.org/wsdl" in lowered or "www.w3.org/ns/wsdl" in lowered:
+            return True
+        return bool(_WSDL_ROOT_RE.search(head))
+
+    @staticmethod
+    def _safe_fromstring(text: str):
+        """DTD 已在调用前拒绝；此处再关闭 expat 外部/参数实体作为兜底。"""
+
+        import xml.etree.ElementTree as ET
+
+        parser = ET.XMLParser()
+        expat_parser = getattr(parser, "parser", None)
+        if expat_parser is not None:
+            try:
+                import xml.parsers.expat as expat
+
+                expat_parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
+                expat_parser.ExternalEntityRefHandler = lambda *a: False
+            except Exception:  # pragma: no cover - 硬化失败不阻断（DTD 已拒）
+                pass
+        try:
+            return ET.fromstring(text, parser=parser)
+        except Exception:
+            return None
+
+    # -- 主解析 ------------------------------------------------------------
+
+    def _parse_document(self, root, text: str, diag: ParseDiagnostics) -> ParseResult:
+        from .web_info_intel_utils import normalize_in_scope_url, safe_site
+
+        bindings: Dict[str, Any] = {}
+        port_types: Dict[str, Any] = {}
+        messages: Dict[str, Any] = {}
+        for child in root:
+            name = child.get("name")
+            if not name:
+                continue
+            local = _xml_local(child.tag)
+            if local == "binding":
+                bindings[name] = child
+            elif local in ("portType", "interface"):
+                port_types[name] = child
+            elif local == "message":
+                messages[name] = child
+
+        imports = self._collect_imports(root)
+
+        endpoints: List[UnifiedApiEndpoint] = []
+        domains: Set[str] = set()
+        seen: Set[str] = set()
+        rejected = 0
+        op_count = 0
+        truncated = False
+        for service in root:
+            if _xml_local(service.tag) != "service":
+                continue
+            service_name = str(service.get("name") or "")[:128]
+            for port in service:
+                if _xml_local(port.tag) not in ("port", "endpoint"):
+                    continue
+                port_name = str(port.get("name") or "")[:128]
+                location = ""
+                for addr in port:
+                    if _xml_local(addr.tag) == "address":
+                        location = str(addr.get("location") or "") or location
+                binding = bindings.get(_qname_local(port.get("binding")))
+                soap_actions, verb = self._binding_operations(binding)
+                port_type = port_types.get(_qname_local(binding.get("type"))) if binding is not None else None
+                op_source = port_type if port_type is not None else binding
+                if op_source is None:
+                    continue
+                for op in op_source:
+                    if _xml_local(op.tag) != "operation":
+                        continue
+                    if op_count >= _WSDL_MAX_OPERATIONS:
+                        truncated = True
+                        break
+                    op_count += 1
+                    op_name = str(op.get("name") or "")[:128]
+                    endpoint, domain_out = self._build_endpoint(
+                        op, op_name, service_name, port_name, location,
+                        soap_actions.get(op_name, ""), verb, messages,
+                        normalize_in_scope_url, safe_site)
+                    if domain_out:
+                        domains.add(domain_out)
+                        if endpoint is None:
+                            rejected += 1
+                    if endpoint is None:
+                        continue
+                    key = "{} {} {}".format(endpoint.method, endpoint.url, endpoint.soap_action)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    endpoints.append(endpoint)
+
+        diag.input_count = op_count
+        diag.output_count = len(endpoints)
+        diag.rejected_count = rejected
+        diag.unresolved_ref_count = len(imports)
+
+        import_candidates: List[Dict[str, Any]] = []
+        for loc, namespace in imports:
+            resolved = urljoin(self.doc_url, loc) if self.doc_url else loc
+            import_candidates.append({
+                "record_type": "wsdl_xsd_import",
+                "content": loc[:512],
+                "resolved_url": str(resolved)[:512],
+                "namespace": namespace[:256],
+                "same_origin": _host_of(resolved) == _host_of(self.doc_url),
+                "fetched": False,  # §6.4：外部/同源 XSD 默认不请求
+                "source": self.doc_url,
+            })
+
+        # P0-01：越界 soap:address host 只作证据出口，不落 in-scope domain 资产。
+        domain_candidates = [
+            {"record_type": OUT_OF_SCOPE_DOMAIN_RECORD_TYPE,
+             "content": host, "source": self.doc_url}
+            for host in sorted(domains)
+        ]
+        if op_count == 0:
+            # 全文无 operation：skipped 交回队列（legacy 亦不产 WSDL 面）。
+            diag.status = "skipped"
+            diag.error_type = "no_operations"
+            return ParseResult(
+                parser=self.parser_name,
+                candidates=domain_candidates + import_candidates,
+                diagnostics=diag,
+            )
+        # 有 operation：与 openapi 越界 server 同口径——端点即便为空（地址全越界）
+        # 仍保留越界证据候选与文档，不静默丢弃发现证据。
+        diag.status = "degraded" if (imports or rejected or truncated or not endpoints) else "ok"
+        document_candidate = ApiDocumentCandidate(
+            task_id=self.task_id, url=self.doc_url, type_hint="wsdl",
+            source=self.doc_url, parser_version=self.parser_version,
+            input_signature=compute_input_signature(text),
+            status="fetched",
+        )
+        return ParseResult(
+            parser=self.parser_name,
+            endpoints=endpoints,
+            documents=[document_candidate],
+            candidates=domain_candidates + import_candidates,
+            diagnostics=diag,
+        )
+
+    @staticmethod
+    def _collect_imports(root) -> List[Tuple[str, str]]:
+        imports: List[Tuple[str, str]] = []
+        for element in root.iter():
+            if _xml_local(element.tag) in ("import", "include"):
+                location = element.get("schemaLocation") or element.get("location")
+                if location:
+                    imports.append((str(location), str(element.get("namespace") or "")))
+            if len(imports) >= _WSDL_MAX_IMPORTS:
+                break
+        return imports
+
+    @staticmethod
+    def _binding_operations(binding) -> Tuple[Dict[str, str], str]:
+        """从 binding 提取每 operation 的 soapAction 与 HTTP verb（默认 POST）。"""
+
+        soap_actions: Dict[str, str] = {}
+        verb = "POST"
+        if binding is None:
+            return soap_actions, verb
+        for child in binding:
+            local = _xml_local(child.tag)
+            if local != "operation":
+                continue
+            op_name = child.get("name")
+            for sub in child:
+                if _xml_local(sub.tag) != "operation":
+                    continue
+                action = sub.get("soapAction")
+                if action is not None:
+                    soap_actions[op_name] = str(action)
+                http_verb = sub.get("verb")
+                if http_verb:
+                    verb = canonical_method(http_verb)
+        return soap_actions, verb
+
+    def _build_endpoint(self, op, op_name, service_name, port_name, location,
+                        soap_action, verb, messages, normalize_in_scope_url, safe_site):
+        if not location:
+            return None, ""
+        host = _host_of(location)
+        if host and host not in self.allowed_hosts:
+            # 越界 soap:address：越界证据候选替代端点（与 openapi 越界 server 同口径）。
+            return None, host
+        normalized = normalize_in_scope_url(location, location, self.allowed_hosts, allow_js=False) or location
+        if not normalized:
+            return None, ""
+        parameters = self._operation_parameters(op, messages)
+        endpoint = UnifiedApiEndpoint(
+            url=normalized,
+            method=canonical_method(verb or "POST"),
+            api_type="soap",
+            path_template=str(urlsplit(normalized).path or "")[:256],
+            source=self.doc_url,
+            parent_document=self.doc_url,
+            base_url=str(safe_site(normalized) or "")[:512],
+            operation_id=op_name,
+            tags=[t for t in ("soap", service_name) if t][:2],
+            parameters=parameters,
+            request_body_type="text/xml",
+            soap_action=str(soap_action or "")[:256],
+            wsdl_service=service_name,
+            wsdl_port=port_name,
+            auth_hint="unknown",
+            schema_available=False,  # XSD 未获取解析，不伪装完整 Schema（§4.3）
+            confidence=80,
+            input_signature=compute_input_signature(self.doc_url, normalized, op_name, soap_action),
+        )
+        return endpoint, ""
+
+    @staticmethod
+    def _operation_parameters(op, messages) -> List[ParameterSpec]:
+        """input message 的 part 名称摘要（仅名称+类型本地名，无取值通道）。"""
+
+        parameters: List[ParameterSpec] = []
+        input_message = None
+        for child in op:
+            if _xml_local(child.tag) == "input":
+                input_message = child.get("message")
+                break
+        if not input_message:
+            return parameters
+        message = messages.get(_qname_local(input_message))
+        if message is None:
+            return parameters
+        count = 0
+        for part in message:
+            if _xml_local(part.tag) != "part":
+                continue
+            if count >= _WSDL_MAX_PARTS:
+                break
+            count += 1
+            name = str(part.get("name") or "").strip()
+            if not name:
+                continue
+            type_ref = part.get("type") or part.get("element") or ""
+            parameters.append(ParameterSpec(
+                name=name, location="body", type_summary=_qname_local(type_ref)[:128]))
+        return parameters
+
+
 def _scheme_type_key(spec: Dict[str, Any]) -> str:
     scheme_type = str(spec.get("type") or "").strip().lower()
     if scheme_type == "http":
@@ -1145,4 +1513,4 @@ def _stable_dump(doc: Dict[str, Any]) -> str:
 
 
 __all__ = ["UnifiedOpenApiParser", "UnifiedPostmanParser", "UnifiedGraphqlParser",
-           "url_has_template"]
+           "UnifiedWsdlParser", "url_has_template", "OUT_OF_SCOPE_DOMAIN_RECORD_TYPE"]

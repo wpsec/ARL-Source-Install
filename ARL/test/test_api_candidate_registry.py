@@ -8,10 +8,13 @@
   开放态供 finalizer 下一轮周期显影；
 - 获取面：api_doc profile 桶 + html_get 镜像、*_cross_bucket_hit 转正、
   html_get 已有响应不再发第二次网络请求；
-- 兼容面：flag 开/关记录集合与 legacy 一致（§十三.2 双写）、整体异常回退 legacy。
+- 兼容面：flag 开/关记录集合与 legacy 一致（§十三.2 双写）、整体异常回退 legacy；
+- 安全面（Review P0-01）：不可信文档越界 host 只作 out_of_scope_domain 证据
+  计数（api_document_out_of_scope_domain_total），绝不触发 in-scope domain 记录。
 """
 
 import contextlib
+import json
 import sys
 import types
 import unittest
@@ -48,6 +51,9 @@ from app.services import web_info_intel_utils as _intel_utils  # noqa: E402
 from app.services.api_doc_scan import ApiDocScanner  # noqa: E402
 from app.services.api_unified_models import (  # noqa: E402
     UNIFIED_API_CONFIG_DEFAULTS,
+    ApiDocumentCandidate,
+    ParseDiagnostics,
+    ParseResult,
     UnifiedApiEndpoint,
 )
 from app.services.api_unified_shadow import shadow_document_fetch_start  # noqa: E402
@@ -60,6 +66,13 @@ from app.services.discovery_context import (  # noqa: E402
 DOC_URL = "https://api.example.com/v3/api-docs"
 SITE = "https://api.example.com"
 OPENAPI_TEXT = (FIXTURES / "openapi3_petstore.json").read_text(encoding="utf-8")
+# 跨-Fld 越界文档：server 指向任务范围（example.com）之外的 host。
+EVIL_OPENAPI_TEXT = json.dumps({
+    "openapi": "3.0.0",
+    "info": {"title": "scope", "version": "1.0"},
+    "servers": [{"url": "https://evil.com/v1"}],
+    "paths": {"/pets": {"get": {"responses": {"200": {"description": "ok"}}}}},
+})
 
 
 def _full_config(**overrides):
@@ -75,6 +88,18 @@ def _safe_domain_fns():
     with mock.patch.object(
         utils, "is_valid_domain", lambda value: "." in str(value or "")
     ), mock.patch.object(utils, "get_fld", lambda host: "example.com"):
+        yield
+
+
+@contextlib.contextmanager
+def _fld_domain_fns():
+    """get_fld 取末两段：区分同-Fld（example.com）与跨-Fld（evil.com）越界。"""
+
+    with mock.patch.object(
+        utils, "is_valid_domain", lambda value: "." in str(value or "")
+    ), mock.patch.object(
+        utils, "get_fld", lambda host: ".".join(str(host or "").split(".")[-2:])
+    ):
         yield
 
 
@@ -341,10 +366,16 @@ class QueueTest(unittest.TestCase):
             unified = queue.run()
         legacy_set = {_record_tuple(item) for item in legacy}
         unified_set = {_record_tuple(item) for item in unified}
+        missing = legacy_set - unified_set
+        # Review P0-01 安全收窄（唯一允许的 legacy>unified 差异面）：legacy 会把
+        # 不可信文档里的同-Fld 越界 host 写入 domain 资产；统一层降级为
+        # out_of_scope_domain 证据只计数、不落记录。
         self.assertTrue(
-            legacy_set.issubset(unified_set),
-            "统一输出不得低于 legacy 基线: 缺 {}".format(sorted(legacy_set - unified_set)),
+            all(record_type == "domain" for record_type, _ in missing),
+            "除越界 domain 证据化外，统一输出不得低于 legacy 基线: 缺 {}".format(
+                sorted(missing)),
         )
+        self.assertEqual(missing, {("domain", "blue.example.com")})
         extra = unified_set - legacy_set
         self.assertTrue(all("{" in content for _, content in extra),
                         "增量面只允许 G1 模板端点补充")
@@ -352,6 +383,92 @@ class QueueTest(unittest.TestCase):
             [c for t, c in unified_set if t == "urlfinder_url" and "{" in c],
             "模板 URL 不得流入 urlfinder_url",
         )
+
+
+class OutOfScopeDomainBridgeTest(unittest.TestCase):
+    """Review P0-01：越界 host 只作证据计数，绝不触发 _append_record("domain",...)。"""
+
+    def test_same_fld_out_of_scope_domain_is_evidence_only(self):
+        # legacy 会把 blue.example.com（同-Fld 越界）写入 domain 记录；
+        # 统一层必须证据化：无记录、只计 api_document_out_of_scope_domain_total。
+        context = DiscoveryContext(task_id="p001-a")
+        queue, _calls = _make_queue(context=context, fetch_map={DOC_URL: OPENAPI_TEXT})
+        with _fld_domain_fns():
+            records = queue.run()
+        self.assertEqual(
+            [p for p in map(_record_tuple, records) if p[0] == "domain"], [],
+            "同-Fld 越界 host 不得进入 in-scope domain 资产面")
+        self.assertGreaterEqual(
+            int(context.metrics.get("api_document_out_of_scope_domain_total", 0) or 0), 1,
+            "证据必须计数可观测，不得静默丢弃")
+
+    def test_cross_fld_out_of_scope_domain_is_evidence_only(self):
+        context = DiscoveryContext(task_id="p001-b")
+        queue, _calls = _make_queue(context=context, fetch_map={DOC_URL: EVIL_OPENAPI_TEXT})
+        with _fld_domain_fns():
+            records = queue.run()
+        self.assertEqual(
+            [p for p in map(_record_tuple, records) if p[0] == "domain"], [],
+            "跨-Fld 越界 host 不得进入 in-scope domain 资产面")
+        self.assertEqual(
+            queue.registry.snapshot_endpoints(), [],
+            "跨-Fld 越界文档不得产生任何端点资产")
+        self.assertGreaterEqual(
+            int(context.metrics.get("api_document_out_of_scope_domain_total", 0) or 0), 1)
+
+    def test_bridge_counts_every_candidate_and_never_appends_domain(self):
+        # 直接驱动桥接层：out_of_scope_domain、防御性 domain、wsdl_xsd_import
+        # 与未接线类型全部必须计数（P0-04：桥接不得静默丢弃未知 candidate）。
+        context = DiscoveryContext(task_id="p001-c")
+        queue, _calls = _make_queue(context=context, fetch_map={})
+        doc = ApiDocumentCandidate(task_id="t3", url=DOC_URL, source="seed")
+        result = ParseResult(
+            parser="openapi_unified",
+            candidates=[
+                {"record_type": "out_of_scope_domain", "content": "evil.com", "source": DOC_URL},
+                # 防御分支：旧形态 domain 候选必须走同一证据出口。
+                {"record_type": "domain", "content": "blue.example.com", "source": DOC_URL},
+                {"record_type": "wsdl_xsd_import", "content": "types.xsd", "source": DOC_URL},
+                {"record_type": "graphql_schema_summary", "kind": "sdl"},
+            ],
+            diagnostics=ParseDiagnostics(parser="openapi_unified"),
+        )
+        with _fld_domain_fns(), \
+                mock.patch.object(queue.scanner, "_append_record") as append:
+            queue._bridge_parse_result(doc, result)
+        self.assertEqual(
+            [call for call in append.call_args_list if call[0] and call[0][0] == "domain"],
+            [], "任何 domain 形态候选都不得触发 in-scope domain 记录")
+        metrics = context.metrics
+        self.assertEqual(int(metrics.get("api_document_out_of_scope_domain_total", 0) or 0), 2)
+        self.assertEqual(int(metrics.get("api_document_wsdl_xsd_import_total", 0) or 0), 1)
+        self.assertEqual(
+            int(metrics.get("api_document_unbridged_candidate_total", 0) or 0), 1,
+            "未接线候选类型必须显式计数，不得静默丢弃")
+
+    def test_invalid_and_template_host_candidates_never_bridged(self):
+        # 非法 host / 模板 host / URL 形态 content：一律只计数，绝不落记录。
+        context = DiscoveryContext(task_id="p001-d")
+        queue, _calls = _make_queue(context=context, fetch_map={})
+        doc = ApiDocumentCandidate(task_id="t3", url=DOC_URL, source="seed")
+        result = ParseResult(
+            parser="openapi_unified",
+            candidates=[
+                {"record_type": "out_of_scope_domain", "content": "{env}.example.com",
+                 "source": DOC_URL},
+                {"record_type": "out_of_scope_domain", "content": "in valid.example.com",
+                 "source": DOC_URL},
+                {"record_type": "out_of_scope_domain", "content": "https://evil.com/soap",
+                 "source": DOC_URL},
+            ],
+            diagnostics=ParseDiagnostics(parser="openapi_unified"),
+        )
+        with _fld_domain_fns(), \
+                mock.patch.object(queue.scanner, "_append_record") as append:
+            queue._bridge_parse_result(doc, result)
+        append.assert_not_called()
+        self.assertEqual(
+            int(context.metrics.get("api_document_out_of_scope_domain_total", 0) or 0), 3)
 
 
 class FetchProfileTest(unittest.TestCase):

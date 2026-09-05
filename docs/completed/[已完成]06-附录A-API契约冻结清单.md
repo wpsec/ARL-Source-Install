@@ -215,6 +215,69 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
 - 范围说明:浏览器运行时 body 的 operation 级拆解归第 8 批消费面(复用本解析器);
   匿名/裸 body 查询产单条 `query` 端点。
 
+### 4.11 第 7 批 WSDL/SOAP 解析面(2026-09-05 登记)
+
+- 解析器:`UnifiedWsdlParser`(`wsdl_unified`),队列链扩为 openapi→postman→graphql→wsdl,
+  全 skipped 才回 legacy。**链前置修复**:`UnifiedOpenApiParser` 对 XML 标记形态
+  (`<?xml`/`<标签`)由原 `failed(not_object)` 改为 `skipped(not_openapi_document)`,
+  以兑现"非 openapi/swagger 形态一律 skipped"契约,避免 XML 在链首被误判 failed
+  而截断后续 wsdl 解析(postman/graphql 对 XML 本就 skip,无需改)。
+- WSDL 1.1 解析面:`definitions/service/port(+WSDL2.0 endpoint)/binding/portType
+  (+interface)/operation/message`;`soap:address@location`→端点 URL、
+  `soap:operation@soapAction`→`soap_action`、`wsdl:http@verb`→method(默认 POST);
+  端点携 `api_type=soap`/`wsdl_service`/`wsdl_port`/`operation_id`,input message
+  的 part 名称摘要为 `ParameterSpec(location=body, type=element/type 本地名)`。
+- 安全边界(§6.4/§11.3,验收硬约束):含 `<!DOCTYPE`/`<!ENTITY` 的文档在**解析前**
+  整体判 `failed(dtd_forbidden)`、零解析零网络(XXE/SSRF/billion-laughs 的唯一载体
+  即 DTD,拒绝 DTD 即根除);通过守卫后再以 expat 关闭参数实体解析
+  (`XML_PARAM_ENTITY_PARSING_NEVER`)并拒绝外部实体引用(`ExternalEntityRefHandler→False`)
+  作兜底;大小受 `max_document_bytes`(`WSDL_MAX_SIZE_BYTES` 默认 5MB)约束;
+  operation/import/part 各有上限(200/50/50);越界 `soap:address`→`domain` 候选(与
+  openapi 越界 server 同口径,端点为空仍保留候选与文档,不静默丢弃)。
+- `xsd:import`/`include` 的外部与同源 XSD **只登记观测候选、不获取**
+  (`record_type=wsdl_xsd_import`,含 `content`/`resolved_url`/`namespace`/`same_origin`/
+  `fetched=False`),计 `unresolved_ref_count` 且状态 `degraded`——不伪装完整 Schema
+  (§4.3 未解析 WSDL 类型必须显式标记)。`schema_available=False`。
+- 记录面(§4.6 映射):soap 端点经 `to_legacy_records()` 产 `api_doc_endpoint "{POST} {url}"`
+  + `urlfinder_url {url}`(SOAP location 为可请求 URL,无模板抑制);同 location 多
+  operation 的 legacy 面按 fnv 去重合一,统一层富资产面按 `soap_action`/`input_signature`
+  保留为并列端点(超集语义)。`type_hint` 分类新增 `wsdl` 关键词(`.wsdl`/`?wsdl`)。
+- 默认开启(`WSDL_PARSE_ENABLE=True`),但仅在 `API_UNIFIED_ENABLE=True` 时经统一链生效;
+  关闭时 `skipped(wsdl_disabled)` 回 legacy(legacy 无 WSDL 面,等价零产出)。
+
+### 4.12 第 4-6 批 Review 整改轮 1(2026-09-06 登记,P0-01 + P1-10)
+
+针对 `docs/review/[Review已完成][整改待处理]计划6第4-6批API统一解析Review-20260905.md`
+的两个安全/范围阻断项,与第 7 批 WSDL 合并整改(详见该 Review §9 轮 1)。
+
+- **P0-01 越界 host 证据化(取代 §4.8/§4.10/§4.11 的 `domain` 候选口径)**:四解析器
+  (openapi/postman/graphql/wsdl)对越界 host 不再产 `record_type=domain`,改产
+  `out_of_scope_domain`(模块常量 `api_unified_parser.OUT_OF_SCOPE_DOMAIN_RECORD_TYPE`)。
+  桥接层 `ApiDocumentQueue._bridge_candidate` 为统一安全出口:`out_of_scope_domain`
+  (及防御性 `domain`)经 `_bridge_out_of_scope_domain` 复用 `extract_host`+`is_valid_domain`
+  /`get_fld`+scanner `allowed_hosts/allowed_flds` 二次核验,**只计指标、绝不落 in-scope
+  domain 记录**;`wsdl_xsd_import` 与未接线类型(`graphql_schema_summary`)各自计数,不静默
+  丢弃。**契约变更**:统一路径对同-Fld 越界 host 也不再产 domain 资产(legacy 会产),
+  `unified_target_expectations.json` 的"legacy 超集"口径据此修订为"越界 domain 证据化
+  是唯一允许缺失面"(`test_output_floor_and_format_vs_legacy` 锁定唯一差异
+  `{("domain","blue.example.com")}`)。
+- **P1-10 URL/source 脱敏边界(扩展 §4.4 脱敏策略)**:models 新增 `sanitize_url_secrets`
+  (敏感 query 值→`<redacted>`,不删 URL,干净 URL 逐字节 no-op、幂等)与 `sanitize_source_text`
+  (赋值形态 + query 键互补);`ApiDocumentCandidate`/`UnifiedApiEndpoint` 的 `__post_init__`
+  (url/source/parent_url/parent_document/base_url/sources)与 `add_source` 入口统一清洗,
+  url 在 `endpoint_id` 派生前清洗(密钥不进任何键面);`find_sensitive_keys` 守卫扩展检出
+  url/source/sources/parent_url/base_url/parent_document 的敏感 query,残留令
+  `ParseResult.to_dict()` 抛错;registry merge 入口 `existing.parent_url=` 改经
+  `sanitize_source_text`。**merge 语义变化**:`add_source` 现脱敏,仅密钥不同的同形 source
+  (`?token=A` 与 `?token=B`)清洗后折叠为同一证据,`merged_source_count` 计数口径随之变化。
+- **新增指标(纳入 §4.5 观测面,待看板登记)**:`api_document_out_of_scope_domain_total`
+  (越界 host 证据计数)、`api_document_wsdl_xsd_import_total`(XSD 引用登记不获取)、
+  `api_document_unbridged_candidate_total`(未接线候选类型计数,P0-04 接线后应归零,
+  可作观测锚)。
+- 仍待后续轮次:P0-02(Postman 敏感变量替换进 URL)、P0-03(GraphQL Schema 深度预算接线)、
+  P0-04(Schema 摘要队列存储面)、P0-05(JS/页面/浏览器事件接入 + G5 验收口径)、P1-06~P1-12、
+  P2-13~P2-15。
+
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 
 golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9、swagger2 8、postman 9)
@@ -227,7 +290,7 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
 | G3 | 参数、requestBody、响应 Schema、securitySchemes、$ref 全不解析 | 基线无任何 parameter 痕迹 |
 | G4 | 非法/异常文档静默零记录,无 failed/degraded 语义(解析失败伪装成"无 API") | invalid_json 无记录、无 diagnostics |
 | G5 | GraphQL 无统一记录形态(浏览器仅 body_kind、URLFinder 仅关键字)——**第 6 批闭环**,见 §4.10 | 第二节 `graphql` 行 |
-| G6 | WSDL/SOAP 完全不支持 | 基线无 soap 记录 |
+| G6 | WSDL/SOAP 完全不支持——**第 7 批闭环**,见 §4.11 | 基线无 soap 记录 |
 | G7 | 越界 server 只产 `domain` 候选、范围内多 server 全展开(行为本身保留,但无父子文档/置信度追溯) | openapi3 `blue.example.com` |
 | G8 | 文档来源(source)不参与去重,多来源证据丢失 | 第一节 fnv_hash 语义 |
 
@@ -274,3 +337,11 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
   `test/test_api_unified_parser.py` GraphQL 面 9 项(2026-09-05 全组 139 项通过;
   golden 无漂移)。G5 闭环;G6 由第 7 批接管,G8 已由第 3 批注册表聚合替代
   (旧记录面不改)。
+- 第 7 批完成判据:`UnifiedWsdlParser` + openapi XML skip 链前置修复 + 队列链
+  openapi→postman→graphql→wsdl + §4.11 契约登记 + `test/test_api_unified_parser.py`
+  WSDL 面 14 项(2 soap 端点/soapAction/service/port、part 摘要、同源 XSD 登记不获取、
+  越界 domain 候选、disabled/size skip、XXE dtd_forbidden 零端点零泄露、xsd 非 wsdl skip、
+  openapi 对 XML skip、队列分发 wsdl 桥接 soap 记录与 XXE failed;2026-09-05 api 四件
+  110 项通过;golden `--check` 无漂移)。G6 闭环。`unified_target_expectations.json`
+  的 wsdl_service/wsdl_xxe 面全部满足;`WSDL_PARSE_ENABLE` 默认 True 但仅
+  `API_UNIFIED_ENABLE=True` 时经统一链生效,生产默认行为未切换。

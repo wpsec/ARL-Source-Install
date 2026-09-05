@@ -153,6 +153,61 @@ def is_sensitive_key(name: Any) -> bool:
     return bool(_SENSITIVE_KEY_RE.match(str(name or "").strip()))
 
 
+# 脱敏后的敏感 query 参数值占位符；守卫把该值视为“已清洗”，不再判为泄露。
+_REDACTED = "<redacted>"
+
+# URL query 中单个键值对：键不含 & 与 =，值不含 &（允许含 =，如 base64 尾缀）。
+_QUERY_PAIR_RE = re.compile(r"(?P<key>[^&=]+)(?:=(?P<value>[^&]*))?")
+
+# 作为独立安全边界的 URL/source 字段名（叶子键）：守卫对这些字符串额外查敏感 query。
+_URL_SOURCE_FIELDS = frozenset(
+    {"url", "source", "sources", "parent_url", "base_url", "parent_document"}
+)
+
+
+def _split_query(text: str) -> Tuple[str, str, str]:
+    """把文本拆成 (含 ? 的前缀, query, 含 # 的 fragment)；无 ? 时原样返回前缀。
+
+    手工拆分而非 urlsplit：保证干净 URL 逐字节不变，且只对 query 段脱敏，
+    避免误伤 path 段中恰名为 token 的资产（如 /token/refresh）。
+    """
+
+    qmark = text.find("?")
+    if qmark < 0:
+        return text, "", ""
+    base = text[: qmark + 1]
+    rest = text[qmark + 1 :]
+    hash_pos = rest.find("#")
+    if hash_pos < 0:
+        return base, rest, ""
+    return base, rest[:hash_pos], rest[hash_pos:]
+
+
+def _iter_sensitive_query_keys(query: str) -> List[str]:
+    """找出 query 中携带非空、非占位值的敏感键（token/api_key/authorization 等）。"""
+
+    hits: List[str] = []
+    for match in _QUERY_PAIR_RE.finditer(query):
+        value = match.group("value")
+        # 空值与 <redacted> 占位不算泄露，与 find_sensitive_keys 的空值容忍一致。
+        if value in (None, "", _REDACTED):
+            continue
+        if is_sensitive_key(match.group("key")):
+            hits.append(match.group("key"))
+    return hits
+
+
+def _has_sensitive_url_query(text: str) -> bool:
+    base, query, _ = _split_query(str(text or ""))
+    return bool(query) and bool(_iter_sensitive_query_keys(query))
+
+
+def _leaf_field(path: str) -> str:
+    """取守卫路径的叶子字段名，剥离列表下标后缀（如 $.sources[0] -> sources）。"""
+
+    return path.rsplit(".", 1)[-1].split("[", 1)[0]
+
+
 def find_sensitive_keys(obj: Any, _path: str = "$") -> List[str]:
     """递归找出携带非空值的敏感键路径；空值与占位符允许存在。
 
@@ -172,9 +227,13 @@ def find_sensitive_keys(obj: Any, _path: str = "$") -> List[str]:
     elif isinstance(obj, (list, tuple, set)):
         for index, item in enumerate(obj):
             hits.extend(find_sensitive_keys(item, "{}[{}]".format(_path, index)))
-    elif isinstance(obj, str) and _path.endswith((".value", ".raw", ".content")):
+    elif isinstance(obj, str):
+        # URL/source 是独立安全边界：即便绕过构造期清洗（如直接赋值 parent_url），
+        # 残留的敏感 query 参数也必须被最终守卫检出，不放行到 Registry/Mongo/导出。
+        if _leaf_field(_path) in _URL_SOURCE_FIELDS and _has_sensitive_url_query(obj):
+            hits.append(_path)
         # 自由文本字段里的赋值形态（如 header 值原文）也按泄露处理。
-        if _SENSITIVE_ASSIGNMENT_RE.search(obj):
+        elif _path.endswith((".value", ".raw", ".content")) and _SENSITIVE_ASSIGNMENT_RE.search(obj):
             hits.append(_path)
     return hits
 
@@ -186,6 +245,45 @@ def redact_assignment_text(text: Any) -> str:
     return _SENSITIVE_ASSIGNMENT_RE.sub(
         lambda m: "{}=<redacted>".format(m.group(1)), value
     )
+
+
+def sanitize_url_secrets(url: Any) -> str:
+    """把 URL query 中敏感参数的值替换为 <redacted>，绝不整条删除 URL。
+
+    干净 URL 必须逐字节返回（提前短路，不经 parse_qsl/urlencode 重编码），
+    只有真实出现敏感 query 值时才重写命中参数，非敏感参数原样保留。
+    """
+
+    text = str(url or "")
+    base, query, fragment = _split_query(text)
+    if not query or not _iter_sensitive_query_keys(query):
+        return text
+
+    def _replace(match: "re.Match[str]") -> str:
+        value = match.group("value")
+        if value in (None, "", _REDACTED):
+            return match.group(0)
+        if is_sensitive_key(match.group("key")):
+            return "{}={}".format(match.group("key"), _REDACTED)
+        return match.group(0)
+
+    return base + _QUERY_PAIR_RE.sub(_replace, query) + fragment
+
+
+def sanitize_source_text(text: Any) -> str:
+    """source 自由文本统一脱敏：先清赋值形态密钥，再清 URL query 形态。
+
+    两步互补：redact_assignment_text 覆盖 _SENSITIVE_ASSIGNMENT_RE 的键集合
+    （authorization/api_key/token/password/secret/cookie），sanitize_url_secrets
+    覆盖更广的 _SENSITIVE_KEY_RE 键集合（access_key/client_secret/x-auth-token
+    等 query 形态）。对干净文本（page_intel、无 query 的文档 URL）两步均为
+    no-op，保证逐字节不变。
+    """
+
+    value = str(text or "")
+    if not value:
+        return value
+    return sanitize_url_secrets(redact_assignment_text(value))
 
 
 def _digest(*parts: Any) -> str:
@@ -314,7 +412,9 @@ class ApiDocumentCandidate:
 
     def __post_init__(self) -> None:
         self.task_id = str(self.task_id or "").strip()
-        self.url = normalize_url(self.url)
+        # 构造即清洗：发现 URL 的 query 可能直接携带凭据（?token=... 形态），
+        # 必须在进入 Registry/Mongo/日志前脱敏，而不是依赖最终守卫兜底。
+        self.url = sanitize_url_secrets(normalize_url(self.url))
         if not self.url:
             raise ValueError("api document candidate url must not be empty")
         type_hint = str(self.type_hint or "unknown").strip().lower()
@@ -327,8 +427,11 @@ class ApiDocumentCandidate:
         self.depth = max(0, int(self.depth or 0))
         self.priority = int(self.priority or 0)
         self.confidence = min(100, max(0, int(self.confidence or 0)))
+        self.source = sanitize_source_text(self.source)
+        self.parent_url = sanitize_url_secrets(self.parent_url)
+        self.sources = {sanitize_source_text(item) for item in self.sources}
         if self.source:
-            self.sources.add(str(self.source))
+            self.sources.add(self.source)
 
     @property
     def idempotency_key(self) -> str:
@@ -345,7 +448,8 @@ class ApiDocumentCandidate:
         )
 
     def add_source(self, source: str, source_detail: str = "") -> bool:
-        text = redact_assignment_text(source)
+        # merge 入口与构造入口同一清洗口径：追加来源不得引入 query/赋值形态密钥。
+        text = sanitize_source_text(source)
         if not text or text in self.sources:
             return False
         self.sources.add(text)
@@ -359,7 +463,11 @@ class ApiDocumentCandidate:
             "source": self.source,
             "sources": sorted(self.sources),
             "parent_target": self.parent_target,
-            "parent_url": normalize_url(self.parent_url) if self.parent_url else "",
+            # 序列化前再清洗一次 parent_url：Registry merge 会直接赋值该字段，
+            # 绕过 __post_init__，此处是进入快照/导出前的最后一道 URL 边界。
+            "parent_url": sanitize_url_secrets(normalize_url(self.parent_url))
+            if self.parent_url
+            else "",
             "depth": self.depth,
             "priority": self.priority,
             "status": self.status,
@@ -449,7 +557,8 @@ class UnifiedApiEndpoint:
     input_signature: str = ""
 
     def __post_init__(self) -> None:
-        self.url = normalize_url(self.url)
+        # 构造即清洗：endpoint_id/幂等键都派生自 url，先脱敏可保证密钥不进入任何键面。
+        self.url = sanitize_url_secrets(normalize_url(self.url))
         if not self.url:
             raise ValueError("endpoint url must not be empty")
         self.method = canonical_method(self.method)
@@ -462,8 +571,14 @@ class UnifiedApiEndpoint:
         if self.graphql_operation not in GRAPHQL_OPERATIONS:
             raise ValueError("unsupported graphql_operation: {}".format(self.graphql_operation))
         self.confidence = min(100, max(0, int(self.confidence or 0)))
+        self.source = sanitize_source_text(self.source)
+        # parent_document/base_url 是 URL 形态证据，与 url 同一 query 清洗边界；
+        # to_legacy_records 会把它们写进 legacy record 的 source，不能带原值。
+        self.parent_document = sanitize_url_secrets(self.parent_document)
+        self.base_url = sanitize_url_secrets(self.base_url)
+        self.sources = {sanitize_source_text(item) for item in self.sources}
         if self.source:
-            self.sources.add(str(self.source))
+            self.sources.add(self.source)
         if not self.endpoint_id:
             self.endpoint_id = _digest(self.url, self.method, self.api_type, self.path_template)
 
@@ -505,7 +620,9 @@ class UnifiedApiEndpoint:
     def add_source(self, source: str) -> bool:
         """新来源只追加证据，不改变探测状态（§7.2）。"""
 
-        text = str(source or "").strip()
+        # merge 入口与构造入口同一清洗口径：跨来源合并（js/page/browser）时，
+        # 来源串里的 URL query 凭据与赋值形态密钥都不得进入 sources 证据面。
+        text = sanitize_source_text(str(source or "").strip())
         if not text or text in self.sources:
             return False
         self.sources.add(text)
@@ -691,6 +808,8 @@ __all__ = [
     "is_sensitive_key",
     "find_sensitive_keys",
     "redact_assignment_text",
+    "sanitize_url_secrets",
+    "sanitize_source_text",
     "compute_input_signature",
     "graphql_query_hash",
     "canonical_method",

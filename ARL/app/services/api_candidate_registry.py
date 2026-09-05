@@ -36,6 +36,7 @@ from .api_unified_models import (
     ApiDocumentCandidate,
     UnifiedApiEndpoint,
     compute_input_signature,
+    sanitize_source_text,
 )
 from .discovery_context import LedgerEntry, normalize_url
 from .api_unified_shadow import (
@@ -62,6 +63,8 @@ _TYPE_HINT_KEYWORDS: Tuple[Tuple[str, str], ...] = (
     ("openapi", "openapi"),
     ("swagger", "swagger"),
     ("api-docs", "swagger"),
+    # 第 7 批：WSDL/SOAP 文档分类（.wsdl / ?wsdl / /wsdl 路径均含 "wsdl"）。
+    ("wsdl", "wsdl"),
 )
 
 _DOC_PRIORITY_SEED = 10
@@ -158,7 +161,9 @@ class ApiCandidateRegistry:
                 existing.depth = min(existing.depth, depth)
                 existing.priority = max(existing.priority, priority)
                 if parent_url and not existing.parent_url:
-                    existing.parent_url = parent_url
+                    # merge 入口同样过脱敏（P1-10）：直接字段赋值不经 __post_init__，
+                    # 此处显式清洗，避免 parent_url 携带敏感 query 绕过构造期守卫。
+                    existing.parent_url = sanitize_source_text(parent_url)
                 candidate = existing
         if created and self._context is not None:
             try:
@@ -488,12 +493,13 @@ class ApiDocumentQueue:
                     UnifiedGraphqlParser,
                     UnifiedOpenApiParser,
                     UnifiedPostmanParser,
+                    UnifiedWsdlParser,
                 )
 
                 # 解析器链分发：格式互斥由各类 skip 判定，全部 skipped 才回 legacy。
                 options = self._parse_options()
                 for parser_cls in (UnifiedOpenApiParser, UnifiedPostmanParser,
-                                   UnifiedGraphqlParser):
+                                   UnifiedGraphqlParser, UnifiedWsdlParser):
                     kwargs = dict(
                         task_id=self.registry.task_id,
                         doc_url=doc.url,
@@ -567,7 +573,11 @@ class ApiDocumentQueue:
             )
 
     def _bridge_parse_result(self, doc: ApiDocumentCandidate, result) -> None:
-        """ParseResult → 旧 WihRecord 面 + Endpoint 富资产（附录A §4.6 格式）。"""
+        """ParseResult → 旧 WihRecord 面 + Endpoint 富资产（附录A §4.6 格式）。
+
+        candidates 走统一安全出口 `_bridge_candidate`（Review P0-01/P0-04）：
+        越界 host 只作证据计数，任何候选类型不得被静默丢弃。
+        """
 
         from .api_unified_parser import url_has_template
         from .web_info_intel_utils import safe_site
@@ -592,10 +602,56 @@ class ApiDocumentQueue:
                 self.scanner._append_record(
                     record_type, content, str(item.get("source") or ""), safe_site(url_part))
         for candidate in result.candidates:
-            if str(candidate.get("record_type") or "") == "domain":
-                source = str(candidate.get("source") or doc.url)
-                self.scanner._append_record(
-                    "domain", str(candidate.get("content") or ""), source, safe_site(source))
+            self._bridge_candidate(doc, candidate)
+
+    # -- 候选统一安全出口（Review P0-01/P0-04） -----------------------------
+
+    def _bridge_candidate(self, doc: ApiDocumentCandidate, candidate: Dict[str, Any]) -> None:
+        """按 record_type 分发候选；任何类型必须计数可观测，不得静默丢弃。"""
+
+        record_type = str(candidate.get("record_type") or "")
+        if record_type in ("out_of_scope_domain", "domain"):
+            # "domain" 是防御分支：P0-01 后解析器契约只产 out_of_scope_domain，
+            # 但旧形态候选（如 postman 解析器）必须走同一证据出口，绝不回灌资产面。
+            self._bridge_out_of_scope_domain(doc, candidate)
+            return
+        if record_type == "wsdl_xsd_import":
+            # §6.4：XSD 引用只登记观测、不获取；桥接层计数保证可观测。
+            self._record_metric("api_document_wsdl_xsd_import_total")
+            return
+        # graphql_schema_summary 等尚未接线的类型显式计数（P0-04 接管存储面）。
+        self._record_metric("api_document_unbridged_candidate_total")
+
+    def _bridge_out_of_scope_domain(self, doc: ApiDocumentCandidate, candidate: Dict[str, Any]) -> None:
+        """越界 host 只作证据计数，绝不写入 in-scope domain 记录（Review P0-01）。
+
+        不可信 API 文档（server/base/soap:address）可指向任意 host；旧桥接
+        直接落 `domain` 记录，等于允许文档作者把范围外 host 注入任务资产面，
+        被候选图/站点发现/探测消费方当作任务资产。这里复用既有 host/Fld
+        校验做二次核验（与 legacy `_emit_domain_records` 同一判定口径）：
+        这些候选构造上即范围外（解析器仅在 host 不属于 allowed_hosts 时产出），
+        因此一律作为证据；即便二次核验意外通过也不落记录，只留痕供审计
+        解析器范围面与队列范围面的不一致。
+        """
+
+        from .web_info_intel_utils import extract_host
+
+        host = extract_host(str(candidate.get("content") or ""))
+        allowed_hosts = set(getattr(self.scanner, "allowed_hosts", None) or set())
+        allowed_flds = set(getattr(self.scanner, "allowed_flds", None) or set())
+        try:
+            fld = str(utils.get_fld(host) or "") if host and utils.is_valid_domain(host) else ""
+        except Exception as exc:
+            # 校验异常不改变出口（证据面本就与核验结果无关），只留痕。
+            logger.debug(
+                "api doc out-of-scope domain validation failed error_type:%s",
+                type(exc).__name__)
+            fld = ""
+        if host and (host in allowed_hosts or (fld and fld in allowed_flds)):
+            logger.debug(
+                "api doc domain candidate unexpectedly in scope url:%s host:%s",
+                str(doc.url)[:160], host[:128])
+        self._record_metric("api_document_out_of_scope_domain_total")
 
     def _harvest_records(self) -> List[Any]:
         records = self.scanner.records

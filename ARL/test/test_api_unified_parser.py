@@ -2,7 +2,8 @@
 
 验收面（unified_target_expectations.json + 附录A §五）：
 - openapi3：G1 模板端点保留、参数四位置、auth_hint、循环/未解析引用标记、
-  越界 server → domain 候选、诊断 degraded≠failed；
+  越界 server → out_of_scope_domain 证据候选（Review P0-01：绝不落 in-scope
+  domain 资产）、诊断 degraded≠failed；
 - swagger2：同范围内端点集合与 openapi3 一致、formData、basic auth；
 - external_ref：外部 $ref 不获取、unresolved 计数、状态非 ok；
 - invalid/deep_nesting：显式 failed 且零端点（G4 不伪装"无 API"）；
@@ -65,6 +66,38 @@ def _baseline_endpoints(name):
         for item in BASELINE[name]["records"]
         if item.get("record_type") == "api_doc_endpoint"
     }
+
+
+def _record_pair(record):
+    return (
+        str(getattr(record, "recordType", "") or getattr(record, "record_type", "")),
+        str(getattr(record, "content", "") or ""),
+    )
+
+
+def _bridge_via_queue(text, task_id, sites, match="api-docs"):
+    """经真实 ApiDocumentQueue 跑解析器链 + 桥接层，返回旧记录面。
+
+    P0-01 桥接断言入口：验证越界 host 候选在桥接后不落 in-scope domain 记录
+    （指标计数断言在 test_api_candidate_registry.py，需要 DiscoveryContext）。
+    """
+
+    from app.services.api_doc_scan import ApiDocScanner
+    from app.services.api_candidate_registry import (
+        ApiCandidateRegistry,
+        ApiDocumentQueue,
+    )
+    from app.services.api_unified_models import UNIFIED_API_CONFIG_DEFAULTS
+
+    config = dict(UNIFIED_API_CONFIG_DEFAULTS)
+    config["API_UNIFIED_ENABLE"] = True
+    scanner = ApiDocScanner(sites=list(sites), wih_records=[])
+    registry = ApiCandidateRegistry(task_id=task_id)
+    queue = ApiDocumentQueue(
+        scanner=scanner, registry=registry, context=None, config=config,
+        fetch_fn=lambda doc: text if (match is None or match in doc.url) else "",
+    )
+    return queue.run()
 
 
 class OpenApi3Test(unittest.TestCase):
@@ -135,14 +168,26 @@ class OpenApi3Test(unittest.TestCase):
         self.assertFalse(broken.schema_available, "Missing $ref 不得伪装 Schema 完整")
         self.assertGreaterEqual(self.result.diagnostics.unresolved_ref_count, 1)
 
-    def test_out_of_scope_server_yields_domain_candidate(self):
-        domains = {
+    def test_out_of_scope_server_yields_evidence_not_domain(self):
+        # Review P0-01：同-Fld 越界 server 只产 out_of_scope_domain 证据候选，
+        # 桥接后绝不落 in-scope domain 记录。
+        evidence = {
             item.get("content") for item in self.result.candidates
-            if item.get("record_type") == "domain"
+            if item.get("record_type") == "out_of_scope_domain"
         }
-        self.assertIn("blue.example.com", domains)
+        self.assertIn("blue.example.com", evidence)
+        self.assertFalse(
+            [c for c in self.result.candidates if c.get("record_type") == "domain"],
+            "解析器不得再产出可消费的 domain 候选")
         self.assertTrue(all(
-            e.url.startswith("https://api.example.com") for e in self.result.endpoints))
+            e.url.startswith("https://api.example.com") for e in self.result.endpoints),
+            "endpoints 必须排除越界 host")
+        text = (FIXTURES / "openapi3_petstore.json").read_text(encoding="utf-8")
+        records = _bridge_via_queue(text, "b4p01", ["https://api.example.com"],
+                                    match="v3/api-docs")
+        self.assertFalse(
+            [p for p in map(_record_pair, records) if p[0] == "domain"],
+            "桥接后越界 host 不得落 in-scope domain 记录")
 
     def test_diagnostics_and_document(self):
         self.assertIn(self.result.diagnostics.status, ("ok", "degraded"))
@@ -471,12 +516,21 @@ class GraphqlRequestTest(unittest.TestCase):
         for token in ("GRAPHQLLEAKPASS789", "pet-1", "Rex", "password"):
             self.assertNotIn(token, payload, "variables 取值/嵌套键禁止外流")
 
-    def test_out_of_scope_base_yields_domain_candidate(self):
+    def test_out_of_scope_base_yields_evidence_not_domain(self):
+        # Review P0-01：越界 base 只产 out_of_scope_domain 证据候选。
         result = _parse_graphql("graphql_request.json", allowed={"other.example.com"})
-        self.assertEqual(result.endpoints, [])
-        domains = {c.get("content") for c in result.candidates
-                   if c.get("record_type") == "domain"}
-        self.assertIn("api.example.com", domains)
+        self.assertEqual(result.endpoints, [], "endpoints 必须排除越界 host")
+        evidence = {c.get("content") for c in result.candidates
+                    if c.get("record_type") == "out_of_scope_domain"}
+        self.assertIn("api.example.com", evidence)
+        self.assertFalse(
+            [c for c in result.candidates if c.get("record_type") == "domain"],
+            "解析器不得再产出可消费的 domain 候选")
+        text = (FIXTURES / "graphql_request.json").read_text(encoding="utf-8")
+        records = _bridge_via_queue(text, "b6p01", ["https://other.example.com"])
+        self.assertFalse(
+            [p for p in map(_record_pair, records) if p[0] == "domain"],
+            "桥接后越界 host 不得落 in-scope domain 记录")
 
     def test_queue_bridge_graphql_record_first_producer(self):
         from app.services.api_doc_scan import ApiDocScanner
@@ -565,6 +619,284 @@ class GraphqlSchemaTest(unittest.TestCase):
         result = parser.parse(big, ParseOptions(graphql_schema_enable=True))
         summary = result.candidates[0]
         self.assertTrue(summary["truncated"])
+
+
+def _parse_wsdl(name, enabled=True, **kw):
+    from app.services.api_unified_parser import UnifiedWsdlParser
+
+    text = (FIXTURES / name).read_text(encoding="utf-8")
+    doc_url = kw.pop("doc_url", "https://api.example.com/soap/PetService.wsdl")
+    allowed = kw.pop("allowed", ALLOWED)
+    option_kw = kw.pop("options", {})
+    parser = UnifiedWsdlParser(
+        task_id="b7", doc_url=doc_url,
+        allowed_hosts=set(allowed), allowed_flds={"example.com"}, **kw,
+    )
+    return parser.parse(text, ParseOptions(wsdl_parse_enable=enabled, **option_kw))
+
+
+class WsdlTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.result = _parse_wsdl("wsdl_service.wsdl")
+        cls.by_action = {e.soap_action: e for e in cls.result.endpoints}
+
+    def test_soap_endpoints_match_expectations(self):
+        # expectations.wsdl_service.wsdl.soap_endpoints 两个 operation 全命中。
+        self.assertEqual(len(self.result.endpoints), 2)
+        for e in self.result.endpoints:
+            self.assertEqual(e.api_type, "soap")
+            self.assertEqual(e.method, "POST")
+            self.assertEqual(e.url, "https://api.example.com/soap/PetService")
+            self.assertEqual(e.wsdl_service, "PetService")
+            self.assertEqual(e.wsdl_port, "PetPort")
+            self.assertFalse(e.schema_available, "XSD 未获取，不得伪装完整 Schema")
+        get_pet = self.by_action["http://api.example.com/soap/pet/getPet"]
+        self.assertEqual(get_pet.operation_id, "getPet")
+        list_pets = self.by_action["http://api.example.com/soap/pet/listPets"]
+        self.assertEqual(list_pets.operation_id, "listPets")
+
+    def test_input_message_part_summary(self):
+        get_pet = self.by_action["http://api.example.com/soap/pet/getPet"]
+        params = {(p.name, p.location) for p in get_pet.parameters}
+        self.assertIn(("parameters", "body"), params, "input message part 名称摘要")
+
+    def test_same_origin_xsd_import_recorded_not_fetched(self):
+        imports = [c for c in self.result.candidates
+                   if c.get("record_type") == "wsdl_xsd_import"]
+        self.assertTrue(imports, "xsd:import 必须登记为观测候选")
+        types_import = next(c for c in imports if c.get("content") == "types.xsd")
+        self.assertTrue(types_import["same_origin"])
+        self.assertFalse(types_import["fetched"], "§6.4：外部/同源 XSD 默认不请求")
+        self.assertGreaterEqual(self.result.diagnostics.unresolved_ref_count, 1)
+
+    def test_diagnostics_degraded_and_document(self):
+        self.assertEqual(self.result.diagnostics.status, "degraded")
+        self.assertEqual(len(self.result.documents), 1)
+        self.assertEqual(self.result.documents[0].type_hint, "wsdl")
+        self.assertTrue(self.result.documents[0].input_signature)
+
+    def test_out_of_scope_address_yields_evidence_not_domain(self):
+        # Review P0-01：越界 soap:address 只产 out_of_scope_domain 证据候选。
+        result = _parse_wsdl("wsdl_service.wsdl", allowed={"other.example.com"})
+        self.assertEqual(result.endpoints, [], "endpoints 必须排除越界 host")
+        evidence = {c.get("content") for c in result.candidates
+                    if c.get("record_type") == "out_of_scope_domain"}
+        self.assertIn("api.example.com", evidence)
+        self.assertFalse(
+            [c for c in result.candidates if c.get("record_type") == "domain"],
+            "解析器不得再产出可消费的 domain 候选")
+        text = (FIXTURES / "wsdl_service.wsdl").read_text(encoding="utf-8")
+        records = _bridge_via_queue(text, "b7p01", ["https://other.example.com"])
+        self.assertFalse(
+            [p for p in map(_record_pair, records) if p[0] == "domain"],
+            "桥接后越界 host 不得落 in-scope domain 记录")
+
+    def test_disabled_returns_skipped(self):
+        result = _parse_wsdl("wsdl_service.wsdl", enabled=False)
+        self.assertEqual(result.diagnostics.status, "skipped")
+        self.assertEqual(result.diagnostics.error_type, "wsdl_disabled")
+
+    def test_size_budget_rejects(self):
+        result = _parse_wsdl("wsdl_service.wsdl", options={"max_document_bytes": 1024})
+        self.assertEqual(result.diagnostics.status, "failed")
+        self.assertEqual(result.diagnostics.error_type, "document_too_large")
+
+    def test_leak_guard(self):
+        payload = json.dumps(self.result.to_dict(), ensure_ascii=False)
+        for token in FORBIDDEN:
+            self.assertNotIn(token, payload)
+
+
+class WsdlXxeTest(unittest.TestCase):
+    def test_dtd_forbidden_no_endpoints_no_network(self):
+        result = _parse_wsdl("wsdl_xxe.xml")
+        self.assertIn(result.diagnostics.status, ("failed", "degraded"))
+        self.assertEqual(result.diagnostics.error_type, "dtd_forbidden")
+        self.assertEqual(len(result.endpoints), 0)
+
+    def test_xxe_entity_content_never_leaks(self):
+        result = _parse_wsdl("wsdl_xxe.xml")
+        payload = json.dumps(result.to_dict(), ensure_ascii=False)
+        # 外部实体探测串绝不进入输出（DTD 在解析前即被拒，实体从未展开）。
+        self.assertNotIn("xxe-probe", payload)
+        self.assertNotIn("pe-probe", payload)
+
+
+class WsdlHandoffTest(unittest.TestCase):
+    def test_xsd_is_not_wsdl_skipped(self):
+        result = _parse_wsdl("types.xsd")
+        self.assertEqual(result.diagnostics.status, "skipped")
+        self.assertEqual(result.diagnostics.error_type, "not_wsdl_document")
+
+    def test_openapi_parser_skips_xml_for_wsdl_chain(self):
+        # 链式分发前置修复：openapi 解析器对 XML 必须 skip（不得 failed 截断链）。
+        from app.services.api_unified_parser import UnifiedOpenApiParser
+
+        text = (FIXTURES / "wsdl_service.wsdl").read_text(encoding="utf-8")
+        result = UnifiedOpenApiParser(
+            task_id="b7", doc_url="https://api.example.com/soap/PetService.wsdl",
+            allowed_hosts=set(ALLOWED)).parse(text)
+        self.assertEqual(result.diagnostics.status, "skipped")
+
+
+class QueueWsdlChainTest(unittest.TestCase):
+    def test_queue_dispatches_wsdl_and_bridges_soap_records(self):
+        from app.services.api_doc_scan import ApiDocScanner
+        from app.services.api_candidate_registry import (
+            ApiCandidateRegistry,
+            ApiDocumentQueue,
+        )
+        from app.services.api_unified_models import UNIFIED_API_CONFIG_DEFAULTS
+
+        text = (FIXTURES / "wsdl_service.wsdl").read_text(encoding="utf-8")
+        config = dict(UNIFIED_API_CONFIG_DEFAULTS)
+        config["API_UNIFIED_ENABLE"] = True
+        scanner = ApiDocScanner(sites=["https://api.example.com"], wih_records=[])
+        registry = ApiCandidateRegistry(task_id="b7q")
+        wsdl_url = "https://api.example.com/soap/PetService.wsdl"
+        registry.register_document(wsdl_url, source="seed", type_hint="wsdl")
+        queue = ApiDocumentQueue(
+            scanner=scanner, registry=registry, context=None, config=config,
+            fetch_fn=lambda doc: text if "PetService.wsdl" in doc.url else "",
+        )
+        queue.run()
+        soap = [e for e in registry.snapshot_endpoints() if e["api_type"] == "soap"]
+        self.assertEqual(len(soap), 2)
+        self.assertEqual(
+            {e["soap_action"] for e in soap},
+            {"http://api.example.com/soap/pet/getPet",
+             "http://api.example.com/soap/pet/listPets"})
+        contents = {str(getattr(r, "content", "") or "") for r in scanner.records}
+        self.assertIn("POST https://api.example.com/soap/PetService", contents)
+        self.assertEqual(queue.parse_failed_count, 0)
+
+    def test_queue_marks_xxe_document_failed(self):
+        from app.services.api_doc_scan import ApiDocScanner
+        from app.services.api_candidate_registry import (
+            ApiCandidateRegistry,
+            ApiDocumentQueue,
+        )
+        from app.services.api_unified_models import UNIFIED_API_CONFIG_DEFAULTS
+
+        text = (FIXTURES / "wsdl_xxe.xml").read_text(encoding="utf-8")
+        config = dict(UNIFIED_API_CONFIG_DEFAULTS)
+        config["API_UNIFIED_ENABLE"] = True
+        scanner = ApiDocScanner(sites=["https://api.example.com"], wih_records=[])
+        registry = ApiCandidateRegistry(task_id="b7x")
+        xxe_url = "https://api.example.com/soap/Xxe.wsdl"
+        registry.register_document(xxe_url, source="seed", type_hint="wsdl")
+        queue = ApiDocumentQueue(
+            scanner=scanner, registry=registry, context=None, config=config,
+            fetch_fn=lambda doc: text if "Xxe.wsdl" in doc.url else "",
+        )
+        queue.run()
+        doc = registry.document(xxe_url)
+        self.assertEqual(doc.status, "failed")
+        self.assertEqual(doc.error_type, "dtd_forbidden")
+        self.assertEqual([e for e in registry.snapshot_endpoints()], [])
+        for record in scanner.records:
+            self.assertNotIn("xxe-probe", str(getattr(record, "content", "") or ""))
+
+
+def _evidence_openapi_doc(server_url):
+    return json.dumps({
+        "openapi": "3.0.0",
+        "info": {"title": "scope", "version": "1.0"},
+        "servers": [{"url": server_url}],
+        "paths": {"/pets": {"get": {"responses": {"200": {"description": "ok"}}}}},
+    })
+
+
+def _evidence_graphql_doc(base_url):
+    return json.dumps({"url": base_url, "query": "query GetPet { pet { id } }"})
+
+
+_EVIDENCE_WSDL_TMPL = """<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="Svc" xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="http://api.example.com/tns"
+             targetNamespace="http://api.example.com/tns">
+  <portType name="SvcPortType"><operation name="ping"/></portType>
+  <binding name="SvcBinding" type="tns:SvcPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="ping"><soap:operation soapAction="urn:ping"/></operation>
+  </binding>
+  <service name="SvcService">
+    <port name="SvcPort" binding="tns:SvcBinding">
+      <soap:address location="{location}"/>
+    </port>
+  </service>
+</definitions>"""
+
+
+class OutOfScopeEvidenceTest(unittest.TestCase):
+    """Review P0-01 必补测试：越界 host 有证据但不入 in-scope domain 资产。
+
+    同-Fld（blue.example.com）/ 跨-Fld（evil.com）/ 非法 host / 模板 host
+    四种形态分别过 openapi + graphql + wsdl 三条解析路径；统一断言口径：
+    - 仅产 out_of_scope_domain 证据候选（content=host、source=doc_url 追溯）；
+    - 绝不产 record_type=domain 候选；
+    - endpoints 为零（越界 host 不产生任何端点资产）。
+    桥接后"无 in-scope domain 记录 + 指标计数"由三个 *_yields_evidence_not_domain
+    用例与 test_api_candidate_registry.py 的 OutOfScopeDomainBridgeTest 覆盖。
+    """
+
+    CASES = (
+        ("same_fld", "https://blue.example.com", "blue.example.com"),
+        ("cross_fld", "https://evil.com", "evil.com"),
+        ("invalid_host", "https://in valid.example.com", "in valid.example.com"),
+        ("template_host", "https://{env}.example.com", "{env}.example.com"),
+    )
+
+    def _assert_evidence_only(self, result, expected_host):
+        evidence = [c for c in result.candidates
+                    if c.get("record_type") == "out_of_scope_domain"]
+        self.assertEqual({c.get("content") for c in evidence}, {expected_host},
+                         "越界 host 必须保留为证据（不静默丢弃发现线索）")
+        for item in evidence:
+            self.assertTrue(item.get("source"), "证据候选必须带 source=doc_url 追溯")
+        self.assertFalse(
+            [c for c in result.candidates if c.get("record_type") == "domain"],
+            "不得产出可消费的 domain 候选（P0-01）")
+        self.assertEqual(result.endpoints, [], "越界 host 不得产生端点资产")
+
+    def test_openapi_out_of_scope_evidence(self):
+        from app.services.api_unified_parser import UnifiedOpenApiParser
+
+        for name, base, expected_host in self.CASES:
+            with self.subTest(case=name):
+                parser = UnifiedOpenApiParser(
+                    task_id="p01", doc_url=DOC_URL,
+                    allowed_hosts=set(ALLOWED), allowed_flds={"example.com"})
+                result = parser.parse(
+                    _evidence_openapi_doc(base + "/v1"), ParseOptions())
+                self._assert_evidence_only(result, expected_host)
+
+    def test_graphql_out_of_scope_evidence(self):
+        from app.services.api_unified_parser import UnifiedGraphqlParser
+
+        for name, base, expected_host in self.CASES:
+            with self.subTest(case=name):
+                parser = UnifiedGraphqlParser(
+                    task_id="p01", doc_url=DOC_URL,
+                    allowed_hosts=set(ALLOWED), allowed_flds={"example.com"})
+                result = parser.parse(
+                    _evidence_graphql_doc(base + "/graphql"), ParseOptions())
+                self._assert_evidence_only(result, expected_host)
+
+    def test_wsdl_out_of_scope_evidence(self):
+        from app.services.api_unified_parser import UnifiedWsdlParser
+
+        for name, base, expected_host in self.CASES:
+            with self.subTest(case=name):
+                parser = UnifiedWsdlParser(
+                    task_id="p01", doc_url="https://api.example.com/soap/Svc.wsdl",
+                    allowed_hosts=set(ALLOWED), allowed_flds={"example.com"})
+                result = parser.parse(
+                    _EVIDENCE_WSDL_TMPL.format(location=base + "/soap"),
+                    ParseOptions(wsdl_parse_enable=True))
+                self._assert_evidence_only(result, expected_host)
 
 
 if __name__ == "__main__":
