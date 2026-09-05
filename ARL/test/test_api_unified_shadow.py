@@ -28,11 +28,8 @@ def _stub_packages():
         app = types.ModuleType("app")
         app.__path__ = [str(ARL_ROOT / "app")]
         sys.modules["app"] = app
-    services = sys.modules.get("app.services")
-    if services is None:
-        services = types.ModuleType("app.services")
-        services.__path__ = [str(ARL_ROOT / "app" / "services")]
-        sys.modules["app.services"] = services
+    # 不桩 app.services:空壳包会跳过真实 __init__,污染后续
+    # `from app.services import X` 的既有用例(task_orchestrator 等)。
 
 
 _stub_packages()
