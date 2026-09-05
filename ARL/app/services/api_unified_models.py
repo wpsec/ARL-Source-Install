@@ -87,6 +87,9 @@ AUTH_SCHEME_TYPE_TO_HINT: Dict[str, str] = {
     "openidconnect": "oauth2",
     "mutualtls": "mtls",
     "cookie": "cookie",
+    # 第 4 批扩展（附录A §4.1 同步登记）：swagger2 securityDefinitions 的
+    # `type: basic` 顶层形态（无 http 前缀）。
+    "basic": "basic",
 }
 
 GRAPHQL_OPERATIONS: Tuple[str, ...] = ("query", "mutation", "subscription", "unknown")

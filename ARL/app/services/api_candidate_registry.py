@@ -463,6 +463,140 @@ class ApiDocumentQueue:
                 logger.debug(
                     "api endpoint register failed error_type:%s", type(exc).__name__)
 
+    # -- 解析分发（第 4 批：统一 Parser 优先，格式外/崩溃回退 legacy）----
+
+    def _parse_options(self):
+        from .api_unified_models import ParseOptions
+
+        cfg = self.config
+        return ParseOptions(
+            max_depth=int(cfg.get("API_DOCUMENT_MAX_DEPTH", 3) or 3),
+            max_ref_count=int(cfg.get("API_DOCUMENT_MAX_REF_COUNT", 500) or 500),
+            external_ref_enable=bool(cfg.get("API_EXTERNAL_REF_ENABLE", False)),
+            graphql_schema_enable=bool(cfg.get("GRAPHQL_SCHEMA_ENABLE", False)),
+            wsdl_parse_enable=bool(cfg.get("WSDL_PARSE_ENABLE", True)),
+            max_document_bytes=max(1024, int(cfg.get("API_DOCUMENT_MAX_SIZE_BYTES", 5242880) or 5242880)),
+        )
+
+    def _parse_one(self, doc: ApiDocumentCandidate, text: str, signature: str) -> bool:
+        """统一→legacy 两级解析；返回 True=已解析。单文档失败隔离（§7.2）。"""
+
+        if bool(self.config.get("API_UNIFIED_ENABLE")) and "<html" not in text[:2048].lower():
+            result = None
+            try:
+                from .api_unified_parser import (
+                    UnifiedGraphqlParser,
+                    UnifiedOpenApiParser,
+                    UnifiedPostmanParser,
+                )
+
+                # 解析器链分发：格式互斥由各类 skip 判定，全部 skipped 才回 legacy。
+                options = self._parse_options()
+                for parser_cls in (UnifiedOpenApiParser, UnifiedPostmanParser,
+                                   UnifiedGraphqlParser):
+                    kwargs = dict(
+                        task_id=self.registry.task_id,
+                        doc_url=doc.url,
+                        allowed_hosts=self.scanner.allowed_hosts,
+                        allowed_flds=self.scanner.allowed_flds,
+                    )
+                    if parser_cls is UnifiedGraphqlParser:
+                        kwargs["schema_max_bytes"] = int(
+                            self.config.get("GRAPHQL_SCHEMA_MAX_SIZE_BYTES", 2097152) or 2097152)
+                    parser = parser_cls(**kwargs)
+                    result = parser.parse(text, options)
+                    if result is None or result.diagnostics is None \
+                            or result.diagnostics.status != "skipped":
+                        break
+            except Exception as exc:
+                # 统一层崩溃回退 legacy（§十三.3）；异常类型上指标。
+                logger.warning(
+                    "unified parser crashed url:%s error_type:%s fallback to legacy",
+                    str(doc.url)[:160], type(exc).__name__)
+                self._record_metric("api_unified_fallback_total")
+                result = None
+            if result is not None and result.diagnostics is not None:
+                status = result.diagnostics.status
+                if status in ("ok", "degraded"):
+                    self._bridge_parse_result(doc, result)
+                    self.registry.mark_document(doc.url, "fetched", input_signature=signature)
+                    self.registry.mark_document(doc.url, "parsed")
+                    unresolved = int(result.diagnostics.unresolved_ref_count or 0)
+                    if unresolved:
+                        self._record_metric("api_document_unresolved_ref_total", unresolved)
+                    return True
+                if status == "failed":
+                    # G4：显式失败语义，不回退 legacy（legacy 同样零产出且静默）。
+                    self.registry.mark_document(
+                        doc.url, "fetched", input_signature=signature)
+                    self.registry.mark_document(
+                        doc.url, "failed",
+                        error_type=result.diagnostics.error_type or "parse_failed")
+                    return False
+                # skipped：postman/graphql/wsdl 等未接管格式，走 legacy
+
+        new_refs: List[str] = []
+        try:
+            self.scanner.parse_document(doc.url, text, new_refs)
+        except Exception as exc:
+            self.registry.mark_document(doc.url, "fetched", input_signature=signature)
+            self.registry.mark_document(doc.url, "failed", error_type=type(exc).__name__)
+            return False
+        self.registry.mark_document(doc.url, "fetched", input_signature=signature)
+        self.registry.mark_document(doc.url, "parsed")
+        self._register_parsed_endpoints(self._harvest_records())
+        self._enqueue_refs(doc, new_refs)
+        return True
+
+    def _enqueue_refs(self, doc: ApiDocumentCandidate, refs: List[str]) -> None:
+        max_depth = max(1, int(self.config.get("API_DOCUMENT_MAX_DEPTH", 3) or 3))
+        max_targets = max(1, int(self.config.get("API_DOCUMENT_MAX_TARGETS", 200) or 200))
+        for ref in refs:
+            if doc.depth + 1 > max_depth:
+                self.skipped_budget_count += 1
+                self._record_metric("api_document_skipped_budget_total")
+                continue
+            self._register_within_budget(
+                ref,
+                source="parser",
+                parent_url=doc.url,
+                parent_target=doc.parent_target,
+                depth=doc.depth + 1,
+                priority=_DOC_PRIORITY_SEED,
+                max_targets=max_targets,
+            )
+
+    def _bridge_parse_result(self, doc: ApiDocumentCandidate, result) -> None:
+        """ParseResult → 旧 WihRecord 面 + Endpoint 富资产（附录A §4.6 格式）。"""
+
+        from .api_unified_parser import url_has_template
+        from .web_info_intel_utils import safe_site
+
+        for candidate in result.documents:
+            self.scanner._append_record(  # noqa: SLF001  (复用冻结的记录格式与 fnv 去重)
+                "api_doc_url", candidate.url, candidate.url, safe_site(candidate.url))
+        for endpoint in result.endpoints:
+            # 富资产直接登记（含参数/auth/追溯）；桥接记录不再经字符串反解。
+            self.registry.register_endpoint(endpoint)
+            for item in endpoint.to_legacy_records():
+                record_type = str(item.get("record_type") or "")
+                content = str(item.get("content") or "")
+                if record_type == "urlfinder_url" and url_has_template(content):
+                    # G1 模板 URL 不可直接请求：只进端点/资产面，不落 URL 资产。
+                    continue
+                url_part = content
+                head_method, _, head_url = content.partition(" ")
+                if head_url.lower().startswith(("http://", "https://")):
+                    # "METHOD url" 形态（api_doc_endpoint 与 graphql 共用 §二 格式）
+                    url_part = head_url
+                self.scanner._append_record(
+                    record_type, content, str(item.get("source") or ""), safe_site(url_part))
+        for candidate in result.candidates:
+            if str(candidate.get("record_type") or "") == "domain":
+                source = str(candidate.get("source") or doc.url)
+                self.scanner._append_record(
+                    "domain", str(candidate.get("content") or ""), source, safe_site(source))
+
     def _harvest_records(self) -> List[Any]:
         records = self.scanner.records
         delta = records[self._harvested_index:]
@@ -473,7 +607,6 @@ class ApiDocumentQueue:
         """有界消费循环：任何单文档失败只标记该文档，循环继续（§7.2）。"""
 
         max_targets = max(1, int(self.config.get("API_DOCUMENT_MAX_TARGETS", 200) or 200))
-        max_depth = max(1, int(self.config.get("API_DOCUMENT_MAX_DEPTH", 3) or 3))
 
         if not self.scanner.allowed_hosts:
             logger.info("api doc unified skip, no allowed hosts")
@@ -539,45 +672,15 @@ class ApiDocumentQueue:
 
             signature = compute_input_signature(
                 hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest())
-            new_refs: List[str] = []
-            try:
-                self.scanner.parse_document(doc.url, text, new_refs)
-            except Exception as exc:
-                self.registry.mark_document(
-                    doc.url, "fetched", input_signature=signature)
-                self.registry.mark_document(
-                    doc.url, "failed", error_type=type(exc).__name__)
+            parsed = self._parse_one(doc, text, signature)
+            if parsed:
+                self.parse_success_count += 1
+                self._record_metric("api_document_parse_success_total")
+                self._ledger_finish(doc, "covered")
+            else:
                 self.parse_failed_count += 1
-                self._ledger_finish(doc, "failed")
                 self._record_metric("api_document_parse_failed_total")
-                logger.debug(
-                    "api doc unified parse failed url:%s error_type:%s",
-                    str(doc.url)[:160], type(exc).__name__)
-                continue
-
-            self.registry.mark_document(doc.url, "fetched", input_signature=signature)
-            self.registry.mark_document(doc.url, "parsed")
-            self.parse_success_count += 1
-            self._record_metric("api_document_parse_success_total")
-            self._ledger_finish(doc, "covered")
-
-            delta = self._harvest_records()
-            self._register_parsed_endpoints(delta)
-
-            for ref in new_refs:
-                if doc.depth + 1 > max_depth:
-                    self.skipped_budget_count += 1
-                    self._record_metric("api_document_skipped_budget_total")
-                    continue
-                self._register_within_budget(
-                    ref,
-                    source="parser",
-                    parent_url=doc.url,
-                    parent_target=doc.parent_target,
-                    depth=doc.depth + 1,
-                    priority=_DOC_PRIORITY_SEED,
-                    max_targets=max_targets,
-                )
+                self._ledger_finish(doc, "failed")
 
         open_docs = self.registry.open_documents()
         if open_docs:

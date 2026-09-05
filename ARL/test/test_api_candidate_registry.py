@@ -323,7 +323,12 @@ class QueueTest(unittest.TestCase):
             "同 task_id 重投轮次不得因正文变化重验（契约边界，漂移由新任务周期覆盖）",
         )
 
-    def test_output_parity_with_legacy_stage(self):
+    def test_output_floor_and_format_vs_legacy(self):
+        """第 4 批口径：统一输出为 legacy 记录面超集（G1 只增不减），格式逐字段一致。
+
+        第 3 批（legacy 解析复用）时两者严格相等；统一 Parser 接管后，
+        新增面只允许是模板端点类补充记录（附录A §4.8）。
+        """
         fetch_map = {DOC_URL: OPENAPI_TEXT}
 
         def fake_fetch_text(url, **_kwargs):
@@ -334,10 +339,18 @@ class QueueTest(unittest.TestCase):
                 legacy = ApiDocScanner(sites=[SITE], wih_records=[]).run()
             queue, _calls = _make_queue(fetch_map=fetch_map)
             unified = queue.run()
-        self.assertEqual(
-            {_record_tuple(item) for item in legacy},
-            {_record_tuple(item) for item in unified},
-            "flag 开启后旧记录面输出必须与 legacy 逐字节一致",
+        legacy_set = {_record_tuple(item) for item in legacy}
+        unified_set = {_record_tuple(item) for item in unified}
+        self.assertTrue(
+            legacy_set.issubset(unified_set),
+            "统一输出不得低于 legacy 基线: 缺 {}".format(sorted(legacy_set - unified_set)),
+        )
+        extra = unified_set - legacy_set
+        self.assertTrue(all("{" in content for _, content in extra),
+                        "增量面只允许 G1 模板端点补充")
+        self.assertFalse(
+            [c for t, c in unified_set if t == "urlfinder_url" and "{" in c],
+            "模板 URL 不得流入 urlfinder_url",
         )
 
 
