@@ -2,7 +2,7 @@
 
 项目：ARL-Source-Install
 报告状态：已完成（本轮 Review 已完成）
-整改状态：待处理（第 4 节问题清单和 P0/P1/P2 项尚未全部修复）
+整改状态：进行中（第 8 节整改记录：轮 1 已完成 P0.2、P0.4 与 §4 一般项"API 账本 key 契约"处置；P0.1、P0.3 及其余项待后续轮次）
 说明：文件名中的“Review已完成”仅表示报告完成，不表示 Review 发现的问题已经完成整改。
 日期：2026-09-05
 范围：当前工作区代码、运行时配置模板、任务编排、发现上下文、API 解析、指纹体系、Docker/Rust 边界和前端骨架。
@@ -261,3 +261,24 @@ Rust 不应直接访问 Mongo、Redis、Celery、HTTP、DNS、Playwright、LLM �
 **架构设计：通过。** 分层、阶段服务、发现上下文、候选图、WAF 分类和 Rust 边界均有明确实现方向。
 **当前实现：部分通过。** 核心能力已落地，但跨 Celery 的上下文复用、统一网络入口、终态 owner、结果写入边界和默认 API/fingerprint 运行路径仍未完全闭环。
 **发布建议：暂缓架构收口声明，先完成 P0；P0 通过后再进行 P1 和最终性能部署门禁。**
+
+## 11. 整改记录
+
+### 轮 1（2026-09-05）
+
+| 问题项 | 处置 | 证据 |
+|---|---|---|
+| P0.4 终态 owner 多头 | 唯一宿主标记 `terminal_finalize_host_owned`：`DomainSiteStageService`/`IPTaskOrchestrator` 在嵌套 `WebSiteFetch.run()` 前置位，`WebSiteFetchOrchestrator` 置位时整体跳过 TaskFinalizer（不 drain、不记 pending）；独立宿主（预览消息/PoC/资产监控）默认位不变、仍为唯一收尾点 | `test_web_site_fetch_orchestrator.py::test_host_owned_nested_flow_skips_site_finalizer`、`test_task_orchestrator.py` IP 置位断言、`test_domain_stage_services.py::test_site_service_marks_host_owned_terminal_finalize` |
+| P0.2 search_engines 绕过统一层 | `services.page_fetch` 注入 `discovery_context` + 显式 `traffic_class="crawler"`（不扩 TRAFFIC_CLASSES 枚举，沿用爬虫类节流口径）；结果登记共享候选图——获取成功 `fetched`（不晚到显影）、失败保持 `discovered`（由 url_probe 阶段按既有协议领取） | `test_domain_search_candidates.py` 4 项 |
+| §4 一般项：API 文档账本空 signature / URL 唯一 | 采纳 Review 第二口径显式契约化：文档获取固定单 profile、GET、无认证差异，任务窗口内 URL 唯一、正文变化不重验（漂移由新 task_id 周期覆盖）；键形态与跳过行为由测试锁定；语义变更须改 (profile, body-hash) 组合键并同步修订 06-附录A §4.7 | `test_api_candidate_registry.py::test_ledger_url_unique_contract_locked`、附录A §4.7 契约条款、`api_candidate_registry.py` 契约注释 |
+
+轮 1 验证：api 三件 57 项、编排/收尾四组 39 项、search 候选 4 项全绿；golden `--check` 无漂移。
+
+### 待处置（登记，未开工）
+
+- **P0.1** 预览/深度跨 Celery 消息上下文共享：需要受限、脱敏、带 TTL 的持久化响应摘要设计，属独立批次（03 第四轮 (c) 项已决策 Mongo 全量落 body 不可行，摘要面方案未定）。
+- **P0.3** fileLeak 子进程正式边界：候选领取/响应回流/请求计数中前两项已有实现，缺子进程请求计数回流与重复抑制门禁的可验证口径，需 fileLeak IPC 协议专项。
+- **高风险 5/6**（God Object 迁移、逐 collection 写入 owner）：按计划 2/3 既有路线分批推进。
+- **高风险 7**（`API_UNIFIED_ENABLE` 默认切换）：按计划 6 第 4-11 批门禁推进，第 3 批完成记录已区分"代码具备入口"与"默认生效"。
+- **一般项：fail-open 强制告警/阈值降级**、**指纹默认路径/构建脚本耦合**、**run_deep 阶段队列化**：建议轮 2 打包处理。
+- **建议项**（browser intel 策略节点、全链路重复请求门禁）：随计划 6 第 8-9 批与 64 目标基线验收落地。

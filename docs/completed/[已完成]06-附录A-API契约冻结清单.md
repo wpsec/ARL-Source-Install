@@ -127,6 +127,13 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
 - 文档候选消费单元 = 规范化 URL;账本幂等键 = `context.idempotency_key("api_doc", url,
   "api_doc", "")`,`covered` 重投跳过(与 WIH 主扫描先例同窗口取舍);预算键读取口径 =
   `getattr(Config, name, UNIFIED_API_CONFIG_DEFAULTS[name])`,非正值回退默认。
+- **URL 唯一契约(Review 20260905 一般项处置,2026-09-05 显式化)**:文档获取固定
+  单一 profile=`api_doc`、GET、无认证上下文差异,任务窗口内以 URL 唯一、正文变化
+  不强制重验为设计语义;正文漂移由新 task_id 的下一周期覆盖。该语义变更必须改用
+  (profile, body-hash) 组合键并同步修订本节;由
+  `test_api_candidate_registry.py::test_ledger_url_unique_contract_locked` 锁定。
+  同 URL 不同 profile 的并列实例需求(如认证文档)属第 8 批 Endpoint 消费面,不改变
+  文档获取面。
 - 新增计数指标(随 `metrics_snapshot` 进诊断日志,不落 Mongo):
   `api_document_candidates_total`、`api_document_sources_merged_total`、
   `api_document_parse_success_total`、`api_document_parse_failed_total`、
