@@ -196,16 +196,23 @@ class _FakeEndpoint(object):
 
 
 class _FakeApiRegistry(object):
-    """第 8 批 T8-3 编排消费面桩：只实现 followup 用到的三个方法。"""
+    """第 8 批 T8-3 编排消费面桩：只实现 followup 用到的四个方法。"""
 
     def __init__(self, claimable=()):
         self._claimable = list(claimable)
         self.registered = []
         self.reported = []
+        self.requeued = []
+        self.expired = 0
 
     def register_endpoint(self, endpoint):
         self.registered.append(endpoint)
         return endpoint, True
+
+    def expire_stale_claims(self):
+        # 执行版 P1-2 契约：领取前必须先回收 lease 超时项。
+        self.expired += 1
+        return 0
 
     def claim_endpoints_for_probe(self, limit, min_confidence=0):
         return self._claimable[:max(0, int(limit or 0))]
@@ -213,6 +220,10 @@ class _FakeApiRegistry(object):
     def probe_report(self, endpoint, verification_status):
         self.reported.append((endpoint.url, endpoint.method, verification_status))
         return endpoint
+
+    def requeue_unreported(self, endpoints):
+        self.requeued.append(list(endpoints))
+        return len(endpoints)
 
 
 class TestWihOrchestratorEndpointOrder(unittest.TestCase):
@@ -311,6 +322,8 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
 
         # 候选图 fallback 不应触发：mark 未被调用。
         self.assertEqual([], ctx.marked)
+        self.assertGreaterEqual(registry.expired, 1,
+                                "领取前必须先回收 lease 超时项（执行版 P1-2）")
         # probed_batches[0] 为首轮 Go 结果探测，[1] 为 Registry 补探。
         self.assertEqual(2, len(probed_batches))
         self.assertEqual(

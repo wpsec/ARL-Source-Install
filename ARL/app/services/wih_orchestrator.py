@@ -123,6 +123,22 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
                 "wih endpoint asset register failed error_type:{}".format(
                     type(exc).__name__))
 
+    # lease 过期回收先行（执行版 P1-2）：上一轮 worker 异常/缺报留下的 queued
+    # 超时项回到 pending 视野，本轮才能重新领取。
+    expire = getattr(registry, "expire_stale_claims", None)
+    if callable(expire):
+        try:
+            expired = expire()
+            if expired:
+                discovery_context.record_metric("api_endpoint_lease_expired_total", expired)
+                logger.info(
+                    "task_id:{} endpoint lease expired requeued:{}".format(
+                        task.task_id, expired))
+        except Exception as exc:
+            logger.debug(
+                "endpoint lease expire failed error_type:{}".format(
+                    type(exc).__name__))
+
     max_probe = max(0, int(getattr(Config, "API_ENDPOINT_PROBE_MAX_TARGETS", 500) or 500))
     claimed = registry.claim_endpoints_for_probe(limit=max_probe)
     items = []
@@ -164,40 +180,56 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
         return services.run_wih_endpoint_probe(
             items, waf_guard=task.waf_guard, discovery_context=discovery_context)
 
-    results = task._run_substage(
-        "wih_endpoint_followup_probe", _probe,
-        detail="endpoints={}".format(len(items)),
-        input_count=len(items),
-    ) or []
-    task._save_wih_endpoints(results)
-    by_pair = {}
-    error_count = 0
-    for record_item in results:
-        if not isinstance(record_item, dict):
-            continue
-        pair_key = (
-            str(record_item.get("url") or "").strip(),
-            str(record_item.get("method") or "GET").strip().upper() or "GET",
-        )
-        by_pair.setdefault(pair_key, record_item)
-    for endpoint in pairs:
-        record_item = by_pair.get((endpoint.url, endpoint.method))
-        if record_item is None:
-            continue
-        status = str(record_item.get("verification_status") or "")
-        if status == "error":
-            error_count += 1
+    try:
+        results = task._run_substage(
+            "wih_endpoint_followup_probe", _probe,
+            detail="endpoints={}".format(len(items)),
+            input_count=len(items),
+        ) or []
+        task._save_wih_endpoints(results)
+        by_pair = {}
+        error_count = 0
+        for record_item in results:
+            if not isinstance(record_item, dict):
+                continue
+            pair_key = (
+                str(record_item.get("url") or "").strip(),
+                str(record_item.get("method") or "GET").strip().upper() or "GET",
+            )
+            by_pair.setdefault(pair_key, record_item)
+        for endpoint in pairs:
+            record_item = by_pair.get((endpoint.url, endpoint.method))
+            if record_item is None:
+                continue
+            status = str(record_item.get("verification_status") or "")
+            if status == "error":
+                error_count += 1
+            try:
+                registry.probe_report(endpoint, status)
+            except Exception as exc:
+                logger.debug(
+                    "wih registry endpoint report failed error_type:{}".format(
+                        type(exc).__name__))
         try:
-            registry.probe_report(endpoint, status)
+            if error_count:
+                discovery_context.record_metric("api_probe_failed_total", error_count)
+        except Exception as exc:
+            logger.debug("api probe metric failed error_type:{}".format(type(exc).__name__))
+    finally:
+        # 领取未回报回收（Review 第 8 批复审 P1-04）：阶段异常或结果缺项时，
+        # 仍在 queued 的资产回 pending（queued 不在领取视野内，不回收即成
+        # 既不重探也不显影的状态机死角）。已回报项被合法边表拒绝，为 no-op。
+        try:
+            requeued = registry.requeue_unreported(pairs)
+            if requeued:
+                discovery_context.record_metric("api_endpoint_requeued_total", requeued)
+                logger.info(
+                    "task_id:{} wih registry endpoint followup requeued unreported:{}".format(
+                        task.task_id, requeued))
         except Exception as exc:
             logger.debug(
-                "wih registry endpoint report failed error_type:{}".format(
+                "wih registry endpoint requeue failed error_type:{}".format(
                     type(exc).__name__))
-    try:
-        if error_count:
-            discovery_context.record_metric("api_probe_failed_total", error_count)
-    except Exception as exc:
-        logger.debug("api probe metric failed error_type:{}".format(type(exc).__name__))
 
 
 

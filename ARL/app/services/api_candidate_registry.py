@@ -43,9 +43,8 @@ from .api_unified_models import (
     ApiDocumentCandidate,
     UnifiedApiEndpoint,
     compute_input_signature,
-    sanitize_source_text,
 )
-from .discovery_context import LedgerEntry, normalize_url
+from .discovery_context import LedgerEntry, normalize_url, url_host
 from .api_unified_shadow import (
     shadow_document_fetch_result,
     shadow_document_fetch_start,
@@ -82,6 +81,11 @@ _ENDPOINT_TRANSITIONS: Dict[str, set] = {
 # 不经探测边表直接 covered（"相同 Endpoint 的后续来源不重复探测"§7.2）。
 # 只对非终态开放；terminal 状态（probed/covered/failed/…）不被观察事件改写。
 _ENDPOINT_OBSERVABLE_FROM = frozenset({"discovered", "queued", "pending"})
+
+# Endpoint 领取 lease（执行版 P1-2）：claim 后超过 lease 仍未回报的 queued 资产
+# 自动过期回 pending，覆盖"stage 异常绕过 finally、worker 中途退出、结果缺项"
+# 三类恢复路径；默认值与 WIH endpoint 探测阶段墙钟同量级，Config 未定义时走常量。
+ENDPOINT_CLAIM_LEASE_SEC = 900
 
 # type_hint 判定关键词（顺序即优先级；与 ApiDocScanner._DOC_KEYWORDS 的语义交集冻结）。
 _TYPE_HINT_KEYWORDS: Tuple[Tuple[str, str], ...] = (
@@ -136,6 +140,28 @@ def _schema_summary_entry_size(entry: Dict[str, Any]) -> int:
     return len(payload.encode("utf-8"))
 
 
+def host_in_scope(url: str, allowed_hosts) -> bool:
+    """统一范围闸（紧急修复执行版 P0-1/P0-2；文档候选、Endpoint 资产、浏览器
+    运行时事件、首轮 WIH 双写共用同一实现）。
+
+    - `allowed_hosts=None`：调用方**显式声明无范围**（无任务上下文的采集/测试
+      场景），放行；
+    - 空集合：**fail-closed** 全部拒绝——空范围不再隐式放行（执行版 P0-1 要求，
+      原"未配置范围放行"注释语义废弃）；
+    - 非空：host 精确匹配（小写比较）。不做 Fld 展开：跨子域发现走
+      NewHostDiscovered→站点发现通道，文档/Endpoint 资产不开旁路；
+      `url_host` 解析失败按越界处理。
+    """
+
+    if allowed_hosts is None:
+        return True
+    allowed = {str(h or "").strip().lower() for h in allowed_hosts if str(h or "").strip()}
+    if not allowed:
+        return False
+    host = str(url_host(url) or "").strip().lower()
+    return bool(host) and host in allowed
+
+
 def unified_api_config(name: str) -> Any:
     """§8.3 键的唯一读取口径：Config 未定义时回退代码常量默认（附录A §三）。"""
 
@@ -177,16 +203,24 @@ class ApiCandidateRegistry:
     注册表是消费调度与证据聚合结构，不是结果事实源：落库仍是旧记录面。
     """
 
-    def __init__(self, task_id: str, context: Any = None):
+    def __init__(self, task_id: str, context: Any = None, clock=time.monotonic):
         self.task_id = str(task_id or "").strip()
         self._context = context
+        self._clock = clock
         self._lock = threading.RLock()
         self._documents: "OrderedDict[str, ApiDocumentCandidate]" = OrderedDict()
         self._endpoints: "OrderedDict[str, UnifiedApiEndpoint]" = OrderedDict()
+        # claim lease（执行版 P1-2）：scoped_key -> 到期时刻；任何改离 queued 的
+        # 回报路径清除条目，到期未回报项在下次 claim/expire 调用时回 pending。
+        self._claim_deadlines: "Dict[str, float]" = {}
+        # Endpoint 范围闸数据源（None=未显式注入，回退 context.allowed_hosts）。
+        self._endpoint_scope = None
         self.created_document_count = 0
         self.merged_source_count = 0
         self.endpoint_created_count = 0
         self.endpoint_deduplicated_count = 0
+        # 统一 scope gate 的越界计数（执行版 P0-1：证据留在 metric，不伪装资产）。
+        self.out_of_scope_endpoint_count = 0
         # §十二 Endpoint 观测计数（消费方接入后由队列收口 flush 进 context metrics）。
         self.endpoint_by_type: Dict[str, int] = {}
         self.endpoint_by_method: Dict[str, int] = {}
@@ -234,9 +268,8 @@ class ApiCandidateRegistry:
                 existing.depth = min(existing.depth, depth)
                 existing.priority = max(existing.priority, priority)
                 if parent_url and not existing.parent_url:
-                    # merge 入口同样过脱敏（P1-10）：直接字段赋值不经 __post_init__，
-                    # 此处显式清洗，避免 parent_url 携带敏感 query 绕过构造期守卫。
-                    existing.parent_url = sanitize_source_text(parent_url)
+                    # §4.16：merge 入口原样补写（观测值不改写；仅首次空值填充）。
+                    existing.parent_url = str(parent_url or "").strip()
                 candidate = existing
         if created and self._context is not None:
             try:
@@ -317,15 +350,49 @@ class ApiCandidateRegistry:
 
     # -- Endpoint 资产（第 8 批消费方的登记面） ----------------------------
 
-    def register_endpoint(self, endpoint: UnifiedApiEndpoint) -> Tuple[UnifiedApiEndpoint, bool]:
-        """登记 Endpoint 资产（键含 api_type，P1-12）。
+    def set_endpoint_scope(self, allowed_hosts) -> None:
+        """显式注入 Endpoint 范围闸数据源（执行版 P0-1 统一闸接线口）。
 
+        统一队列用 `scanner.allowed_hosts` 注入，与文档闸/解析器闸同源；
+        未注入时回退 `context.allowed_hosts`；两者皆无（context=None）=
+        调用方显式无范围声明。注入空集合 = 显式全拒（fail-closed）。
+        """
+
+        if allowed_hosts is None:
+            self._endpoint_scope = None
+            return
+        self._endpoint_scope = {str(h or "").strip().lower() for h in allowed_hosts if str(h or "").strip()}
+
+    def _endpoint_scope_hosts(self):
+        """Endpoint 范围闸的 scope 来源（执行版 P0-1 语义分层）。"""
+
+        if self._endpoint_scope is not None:
+            return self._endpoint_scope
+        if self._context is None:
+            return None
+        return {str(h or "").strip().lower() for h in
+                (getattr(self._context, "allowed_hosts", None) or set()) if h}
+
+    def register_endpoint(self, endpoint: UnifiedApiEndpoint) -> Tuple[UnifiedApiEndpoint, bool]:
+        """登记 Endpoint 资产（键含 api_type，P1-12；闸后唯一注册入口）。
+
+        统一 scope gate（执行版 P0-1）：GraphQL/REST/首轮 WIH 双写/文档 Parser
+        桥接/浏览器摄取全部经本方法，越界 host 不建资产、不发图事件，只计
+        `api_endpoint_out_of_scope_total`（越界证据留在 metric，不伪装任务资产）。
         新建计 `endpoint_by_type/by_method` 并向候选图发布
         `EndpointCandidateDiscovered`（request_profile=api_endpoint_probe，与
         wih 来源的 default profile 图条目互不吞并）；重复合并 sources、不改探测
         状态（§7.2）。候选图发布失败不影响资产登记（与文档镜像同容错口径）。
         """
 
+        if not host_in_scope(endpoint.url, self._endpoint_scope_hosts()):
+            self.out_of_scope_endpoint_count += 1
+            if self._context is not None:
+                try:
+                    self._context.record_metric("api_endpoint_out_of_scope_total")
+                except Exception:
+                    pass
+            return endpoint, False
         key = endpoint.scoped_idempotency_key(self.task_id)
         with self._lock:
             existing = self._endpoints.get(key)
@@ -382,6 +449,7 @@ class ApiCandidateRegistry:
 
         消费方（probe/URL Probe）领取后回报终态的唯一入口；`UnifiedApiEndpoint`
         的 status 枚举校验在此重复执行（direct 赋值不经 __post_init__）。
+        任何改离 queued 的回报清除该资产 claim lease（不再需要超时回收）。
         """
 
         key = endpoint.scoped_idempotency_key(self.task_id)
@@ -394,7 +462,28 @@ class ApiCandidateRegistry:
             if status not in API_ENDPOINT_STATUSES:
                 return None
             stored.status = status
+            if status != "queued":
+                self._claim_deadlines.pop(key, None)
             return stored
+
+    def requeue_unreported(self, endpoints: List[UnifiedApiEndpoint]) -> int:
+        """领取未回报回收（Review 第 8 批复审 P1-04）：queued→pending。
+
+        探测阶段异常或部分端点缺报时，仍在 queued 的资产回到 pending——
+        queued 不在领取视野内，不回收即成状态机死角（既不重探也不显影）。
+        已回报资产（covered/skipped/failed 等非 queued 态）被合法边表自然
+        拒绝，本方法对其为 no-op；调用方在 finally 无条件执行。
+        """
+
+        count = 0
+        for endpoint in endpoints or []:
+            try:
+                if self.mark_endpoint(endpoint, "pending") is not None:
+                    count += 1
+            except Exception as exc:
+                logger.debug(
+                    "api endpoint requeue failed error_type:%s", type(exc).__name__)
+        return count
 
     def pending_endpoints(self, limit: int = 0) -> List[UnifiedApiEndpoint]:
         """discovered/pending 资产按 confidence 降序排队（§9.2 不因排序删除低优先级）。"""
@@ -422,6 +511,8 @@ class ApiCandidateRegistry:
 
         limit = max(0, int(limit or 0))
         claimed: List[UnifiedApiEndpoint] = []
+        now = self._clock()
+        lease_sec = max(1.0, float(self.config_lease_sec()))
         with self._lock:
             items = sorted(
                 (item for item in self._endpoints.values()
@@ -432,10 +523,55 @@ class ApiCandidateRegistry:
                     break
                 if int(item.confidence or 0) < int(min_confidence or 0):
                     item.status = "pending"
+                    self._claim_deadlines.pop(
+                        item.scoped_idempotency_key(self.task_id), None)
                     continue
                 item.status = "queued"
+                self._claim_deadlines[item.scoped_idempotency_key(self.task_id)] = now + lease_sec
                 claimed.append(item)
         return claimed
+
+    def config_lease_sec(self) -> float:
+        """claim lease 时长：优先 context 配置/Config，缺省走代码常量（fail-safe）。"""
+
+        cfg = getattr(self._context, "config", None) if self._context is not None else None
+        try:
+            raw = (cfg or {}).get("API_ENDPOINT_CLAIM_LEASE_SEC") if isinstance(cfg, dict) else None
+            if raw is None:
+                from app.config import Config as _Config
+                raw = getattr(_Config, "API_ENDPOINT_CLAIM_LEASE_SEC", None)
+            return float(raw) if raw else float(ENDPOINT_CLAIM_LEASE_SEC)
+        except (TypeError, ValueError, AttributeError):
+            return float(ENDPOINT_CLAIM_LEASE_SEC)
+
+    def expire_stale_claims(self) -> int:
+        """把 lease 到期仍处 queued 的资产回退 pending，返回回收数。
+
+        worker 中途退出/结果缺项的兜底：任何后续 claim/finalizer 显影调用前先跑
+        本方法，queued 超时项即可被下一轮重新领取（终态资产无 deadline，不受影响）。
+        """
+
+        now = self._clock()
+        recovered = 0
+        with self._lock:
+            for key in list(self._claim_deadlines.keys()):
+                if self._claim_deadlines[key] > now:
+                    continue
+                endpoint = self._endpoints.get(key)
+                del self._claim_deadlines[key]
+                if endpoint is not None and endpoint.status == "queued":
+                    endpoint.status = "pending"
+                    recovered += 1
+        return recovered
+
+    def open_endpoint_keys(self) -> List[str]:
+        """非终态 queued 资产 scoped_key 清单（finalizer 显影 queued 超时项用）。"""
+
+        with self._lock:
+            return [
+                key for key, endpoint in self._endpoints.items()
+                if endpoint.status == "queued"
+            ]
 
     def mark_endpoint_observed(
         self, endpoint: UnifiedApiEndpoint,
@@ -455,6 +591,7 @@ class ApiCandidateRegistry:
             if stored.status not in _ENDPOINT_OBSERVABLE_FROM:
                 return None
             stored.status = "covered"
+            self._claim_deadlines.pop(key, None)
             return stored
 
     def probe_report(
@@ -522,12 +659,20 @@ class ApiDocumentQueue:
         self.registry = registry
         self.context = context
         self.config = dict(config or resolve_unified_api_config())
+        # Endpoint 范围闸与文档闸同源：队列用 scanner.allowed_hosts 显式注入
+        # （执行版 P0-1 统一闸）。scanner 无范围（监控/直测构造）时不注入，
+        # registry 回退 context.allowed_hosts，避免把 in-scope 资产 fail-closed 误拒。
+        scanner_hosts = {str(h or "").strip().lower() for h in
+                         (getattr(scanner, "allowed_hosts", None) or set()) if h}
+        if scanner_hosts:
+            registry.set_endpoint_scope(scanner_hosts)
         self._fetch_fn = fetch_fn
         self._clock = clock
         self.fetch_count = 0
         self.parse_success_count = 0
         self.parse_failed_count = 0
         self.skipped_budget_count = 0
+        self.skipped_scope_count = 0
         self.resumed_skip_count = 0
         self.stage_timeout_stopped = False
         self._harvested_index = 0
@@ -574,6 +719,17 @@ class ApiDocumentQueue:
     # 覆盖）。键的 input_signature 段恒为空即该契约的形态表达；若未来引入
     # 多认证 profile 的文档获取，必须改为"先定 profile 再领取"并以
     # (profile, body-hash) 组合键重定义本方法对，同步修订 06-附录A §4.7。
+    def _url_in_scope(self, url: str) -> bool:
+        """文档候选范围闸（Review 第 8 批复审 P0-02）。
+
+        host 必须命中 scanner.allowed_hosts（与 legacy `normalize_in_scope_url`
+        的文档种子口径一致）；空集合视为未配置范围、放行交由既有行为兜底。
+        """
+
+        allowed = {str(h or "").strip().lower() for h in
+                   (getattr(self.scanner, "allowed_hosts", None) or set()) if h}
+        return host_in_scope(url, allowed)
+
     def _ledger_entry(self, doc: ApiDocumentCandidate) -> Optional[Any]:
         ledger = getattr(self.context, "ledger", None) if self.context is not None else None
         if ledger is None:
@@ -667,6 +823,17 @@ class ApiDocumentQueue:
         priority: int = _DOC_PRIORITY_SEED,
         max_targets: int = 200,
     ) -> Tuple[ApiDocumentCandidate, bool]:
+        # 范围门禁（Review 第 8 批复审 P0-02）：seed/记录/候选图/解析新引用
+        # 四条入队通道都汇流到本方法，越界 URL 一律不登记、不消费、不发请求
+        # （外域文档入口默认 fetch 是范围污染与 SSRF 面，flag-off 不经此路）。
+        if not self._url_in_scope(url):
+            self.skipped_scope_count += 1
+            self._record_metric("api_document_out_of_scope_total")
+            placeholder = ApiDocumentCandidate(
+                task_id=self.registry.task_id, url=url, type_hint=document_type_hint(url),
+                source=source, depth=depth, priority=priority, status="skipped",
+            )
+            return placeholder, False
         over_budget = (
             self.registry.document_count() >= max_targets
             and not self.registry.has_document(url)
@@ -1043,6 +1210,13 @@ class ApiDocumentQueue:
                 self.registry.mark_document(doc.url, "skipped")
                 self.resumed_skip_count += 1
                 continue
+            # 发起请求前的最后一道范围闸（执行版 P0-2：不能只在注册/解析侧校验，
+            # 真正 fetch 前必须再过同一 gate——防未来新增注册通道绕过入队闸）。
+            if not self._url_in_scope(doc.url):
+                self.registry.mark_document(doc.url, "skipped")
+                self.skipped_scope_count += 1
+                self._record_metric("api_document_out_of_scope_total")
+                continue
             if self.registry.mark_document(doc.url, "fetching") is None:
                 continue
 
@@ -1099,6 +1273,7 @@ class ApiDocumentQueue:
                 self.context.record_metric("api_endpoint_deduplicated_total", self.registry.endpoint_deduplicated_count)
                 self.context.record_metric("api_document_budget_skipped_total", self.skipped_budget_count)
                 self.context.record_metric("api_document_resumed_skip_total", self.resumed_skip_count)
+                self.context.record_metric("api_document_skipped_scope_total", self.skipped_scope_count)
                 # P0-04 透出：诊断面驻留条数（整数计数；摘要本体不进 metrics）。
                 self.context.record_metric(
                     "api_document_schema_diagnostics_total",
@@ -1126,6 +1301,30 @@ class ApiDocumentQueue:
             pass
 
 
+def _browser_request_shape(call: Dict[str, Any]) -> str:
+    """浏览器 REST 请求的参数形态摘要（Review 复审 P1-03）。
+
+    只纳入名称/键结构（param_names、query 名、body_kind、json/form 键、
+    content-type 主类型），取值一律不进签名——同一 URL+method 不同参数形态
+    因此是不同 Endpoint 资产，形态相同则合并。字典序稳定，跨运行可复现。
+    """
+
+    json_data = call.get("json_data") if isinstance(call.get("json_data"), dict) else {}
+    form_data = call.get("form_data") if isinstance(call.get("form_data"), dict) else {}
+    shape = {
+        "param_names": sorted({str(n)[:64] for n in (call.get("param_names") or []) if str(n).strip()})[:32],
+        "query_names": sorted({str(q).split("=", 1)[0][:64] for q in (call.get("query_params") or []) if str(q).strip()})[:32],
+        "body_kind": str(call.get("body_kind") or "")[:32],
+        "json_keys": sorted(str(k)[:64] for k in json_data)[:32],
+        "form_keys": sorted(str(k)[:64] for k in form_data)[:32],
+        "content_type": str(call.get("content_type") or "")[:120].split(";", 1)[0].strip().lower(),
+    }
+    # 总长封顶防签名输入膨胀（键数/键长已各自受限，这里是第四道冗余闸；
+    # 哈希前缀稳定即可，摘要语义不受截断影响）。
+    return json.dumps(shape, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":"))[:4096]
+
+
 def ingest_browser_runtime_events(registry: ApiCandidateRegistry, results: Any) -> int:
     """计划 6 第 8 批（P0-05）：浏览器运行时事件进统一 Endpoint Registry。
 
@@ -1138,15 +1337,23 @@ def ingest_browser_runtime_events(registry: ApiCandidateRegistry, results: Any) 
     - 事件的 request_body/json_data/form_data 等模板字段一律不读取，
       raw query、变量取值、敏感 header 值因此没有进入 Registry 的通道。
     返回新建资产数。整体异常由调用方隔离，本函数内部逐条容错。
-    """
 
-    from .discovery_context import url_host
+    范围闸（Review 第 8 批复审 P0-01）：graphql 与 rest 两分支统一过
+    `host_in_scope`——越界端点只计 `api_endpoint_browser_out_of_scope_total`，
+    绝不注册资产（拆解产物的 url 来自响应事件，可能跨域）。
+    请求形态摘要（复审 P1-03）：REST 资产签名纳入 param/query/body-kind/
+    json/form 键结构，同 URL+method 不同参数形态不再错误合并；只取名称
+    与键，取值永不入签名。
+    """
 
     created = 0
     out_of_scope = 0
     context = getattr(registry, "_context", None)
-    allowed_hosts = {str(h or "").strip().lower() for h in
-                     (getattr(context, "allowed_hosts", None) or set()) if h}
+    # None=无任务上下文的显式无范围声明（放行）；context 在场但集合为空 =
+    # fail-closed 全拒（执行版 P0-1，与 host_in_scope/Registry 闸同一语义分层）。
+    allowed_hosts = None if context is None else {
+        str(h or "").strip().lower()
+        for h in (getattr(context, "allowed_hosts", None) or set()) if h}
     if not isinstance(results, dict):
         return 0
     for site, payload in results.items():
@@ -1160,6 +1367,9 @@ def ingest_browser_runtime_events(registry: ApiCandidateRegistry, results: Any) 
             if isinstance(endpoints, list) and endpoints:
                 for endpoint in endpoints:
                     try:
+                        if not host_in_scope(endpoint.url, allowed_hosts):
+                            out_of_scope += 1
+                            continue
                         # 浏览器来源证据先行并入对象（register 时随 sources 合并），
                         # 否则解析器产物只带 doc_url，无法与文档通道资产区分观察来源。
                         endpoint.add_source("browser")
@@ -1174,8 +1384,8 @@ def ingest_browser_runtime_events(registry: ApiCandidateRegistry, results: Any) 
             url = str(call.get("url") or "").strip()
             if not url.lower().startswith(("http://", "https://")):
                 continue
-            if allowed_hosts and url_host(url) not in allowed_hosts:
-                # 浏览器跨域请求只作证据不入资产面（与文档解析器同一边界）。
+            if not host_in_scope(url, allowed_hosts):
+                # 越界运行时请求只作证据不入资产面（与文档闸同一实现）。
                 out_of_scope += 1
                 continue
             method = str(call.get("method") or "GET").strip().upper() or "GET"
@@ -1184,7 +1394,8 @@ def ingest_browser_runtime_events(registry: ApiCandidateRegistry, results: Any) 
                     url=url, method=method, api_type="rest",
                     source="browser", parent_target=str(site or ""),
                     confidence=75,
-                    input_signature=compute_input_signature("browser", url, method))
+                    input_signature=compute_input_signature(
+                        "browser", url, method, _browser_request_shape(call)))
                 merged, was_created = registry.register_endpoint(endpoint)
                 registry.mark_endpoint_observed(merged)
                 created += 1 if was_created else 0

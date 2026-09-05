@@ -1197,7 +1197,8 @@ class EndpointConsumerSurfaceTest(unittest.TestCase):
         self.assertIsNone(registry.probe_report(unknown[0], "weird"))
 
     def test_register_publishes_endpoint_candidate_to_graph(self):
-        context = DiscoveryContext(task_id="t8e")
+        # fail-closed 新契约（执行版 P0-1）：context 在场必须携带范围。
+        context = DiscoveryContext(task_id="t8e", allowed_hosts={"api.example.com"})
         registry = reg.ApiCandidateRegistry(task_id="t8e", context=context)
         registry.register_endpoint(self._ep(api_type="graphql"))
         graph_entries = [
@@ -1228,6 +1229,172 @@ class EndpointConsumerSurfaceTest(unittest.TestCase):
         self.assertEqual(int(by_type or 0), created, "REST 面类型计数与创建数一致")
         self.assertIsNotNone(context.metrics.get("api_endpoint_by_method.GET"))
         self.assertIsNotNone(context.metrics.get("api_endpoint_sources_merged_total"))
+
+
+class ScopeGateReviewTest(unittest.TestCase):
+    """第 8 批独立复审整改回归：统一范围闸(P0-01/P0-02)、签名形态(P1-03)、
+    queued 回收(P1-04)。"""
+
+    def test_out_of_scope_doc_backflow_not_registered_nor_fetched(self):
+        # P0-02：记录通道（urlfinder_url 升级 + api_doc_url 直通）越界一律
+        # 不入队、不 fetch；in-scope 通道不受影响。闸在 _register_within_budget，
+        # seed/graph/refs 通道同函数共用（graph 通道单列一条断言）。
+        from app.modules import WihRecord
+
+        evil_hint = "https://evil-external.com/openapi.json"
+        evil_direct = "https://evil-external.com/v3/api-docs"
+        evil_graph = "https://evil-external.com/graphql"
+        context = DiscoveryContext(task_id="gate1")
+        context.register_candidate(
+            "EndpointCandidateDiscovered", evil_graph, "endpoint",
+            source="page_intel", metadata={"intel_record_type": "api_doc_url"},
+        )
+        records = [
+            WihRecord(record_type="urlfinder_url", content=evil_hint,
+                      source="https://api.example.com/a.js",
+                      site="api.example.com", fnv_hash=0),
+            WihRecord(record_type="api_doc_url", content=evil_direct,
+                      source=evil_direct, site="evil-external.com", fnv_hash=0),
+        ]
+        queue, calls = _make_queue(
+            context=context, fetch_map={DOC_URL: OPENAPI_TEXT}, records=records)
+        with _safe_domain_fns():
+            queue.run(wih_records=records)  # 生产口径：orchestrator 把记录面传入
+        self.assertEqual(
+            [u for u in calls if "evil-external" in u], [],
+            "越界文档候选不得进入获取（范围污染/SSRF 面）")
+        self.assertIsNone(queue.registry.document(evil_hint))
+        self.assertIsNone(queue.registry.document(evil_direct))
+        self.assertIsNone(queue.registry.document(evil_graph))
+        self.assertEqual(
+            int(context.metrics.get("api_document_out_of_scope_total", 0) or 0), 3,
+            "记录升级/api_doc_url 直通/图通道都过同一闸")
+        self.assertIsNotNone(
+            queue.registry.document(DOC_URL), "in-scope 通道不受闸影响")
+
+    def test_browser_graphql_out_of_scope_not_registered(self):
+        # P0-01：graphql 分支与 rest 分支共用 host_in_scope，越界拆解产物
+        # 只计诊断、绝不注册资产。
+        context = DiscoveryContext(task_id="gate2", allowed_hosts={"api.example.com"})
+        registry = reg.ApiCandidateRegistry(task_id="gate2", context=context)
+        evil_ep = UnifiedApiEndpoint(
+            url="https://evil-external.com/graphql", method="POST",
+            api_type="graphql", source="browser", input_signature="sig-e",
+            graphql_operation="query", graphql_operation_name="Evil",
+            graphql_query_hash="0" * 64)
+        good_ep = UnifiedApiEndpoint(
+            url="https://api.example.com/graphql", method="POST",
+            api_type="graphql", source="browser", input_signature="sig-g",
+            graphql_operation="query", graphql_operation_name="Ok",
+            graphql_query_hash="1" * 64)
+        results = {"https://api.example.com": {"runtime_api_calls": [
+            {"method": "POST", "url": evil_ep.url, "body_kind": "graphql",
+             "_graphql_endpoints": [evil_ep]},
+            {"method": "POST", "url": good_ep.url, "body_kind": "graphql",
+             "_graphql_endpoints": [good_ep]},
+        ]}}
+        created = reg.ingest_browser_runtime_events(registry, results)
+        self.assertEqual(created, 1)
+        urls = {e["url"] for e in registry.snapshot_endpoints()}
+        self.assertEqual(urls, {"https://api.example.com/graphql"})
+        self.assertEqual(
+            int(context.metrics.get("api_endpoint_browser_out_of_scope_total", 0) or 0), 1)
+
+    def test_browser_rest_signature_separates_param_shapes(self):
+        # P1-03：同 URL+method 不同参数形态是不同资产；形态相同取值不同
+        # （事件层已模板化，此处直接构造 name/key shape 一致）仍合一。
+        context = DiscoveryContext(task_id="gate3", allowed_hosts={"api.example.com"})
+        registry = reg.ApiCandidateRegistry(task_id="gate3", context=context)
+        url = "https://api.example.com/api/search"
+
+        def call(json_keys_shape, tag):
+            return {"method": "POST", "url": url, "content_type": "application/json",
+                    "body_kind": "json",
+                    "json_data": {k: "<value>" for k in json_keys_shape}}
+
+        results_a = {"https://api.example.com": {"runtime_api_calls": [
+            call(["q", "limit"], "a"), call(["userId"], "b")]}}
+        created = reg.ingest_browser_runtime_events(registry, results_a)
+        self.assertEqual(created, 2, "不同参数形态不得合并")
+        signatures = {e["input_signature"] for e in registry.snapshot_endpoints()}
+        self.assertEqual(len(signatures), 2)
+        results_b = {"https://api.example.com": {"runtime_api_calls": [
+            call(["q", "limit"], "a2")]}}
+        created_b = reg.ingest_browser_runtime_events(registry, results_b)
+        self.assertEqual(created_b, 0, "同形态重复观察只并 sources")
+        self.assertEqual(registry.endpoint_deduplicated_count, 1)
+        blob = json.dumps(registry.snapshot_endpoints(), ensure_ascii=False)
+        self.assertNotIn("<value>", blob, "签名/资产面不含取值")
+
+    def test_claim_lease_expires_and_reclaims(self):
+        # 执行版 P1-2：worker 异常绕过 finally 的兜底——lease 到期 queued→pending
+        # 可被下一轮重新领取；已回报终态不被 lease 触碰。
+        now = [1000.0]
+        registry = reg.ApiCandidateRegistry(
+            task_id="gate5", clock=lambda: now[0])
+        ep, _ = registry.register_endpoint(self._ep("https://api.example.com/a"))
+        registry.claim_endpoints_for_probe(limit=1)
+        self.assertEqual(ep.status, "queued")
+        self.assertEqual(registry.expire_stale_claims(), 0, "lease 未到期不动")
+        now[0] += reg.ENDPOINT_CLAIM_LEASE_SEC + 1
+        self.assertEqual(registry.expire_stale_claims(), 1)
+        self.assertEqual(ep.status, "pending")
+        again = registry.claim_endpoints_for_probe(limit=1)
+        self.assertEqual([item.url for item in again],
+                         ["https://api.example.com/a"], "回收项可再领取")
+        # 回报清 lease：covered 不被过期拉回。
+        registry.probe_report(again[0], "probed")
+        self.assertEqual(ep.status, "covered")
+        self.assertEqual(registry.open_endpoint_keys(), [])
+        now[0] += reg.ENDPOINT_CLAIM_LEASE_SEC + 10
+        self.assertEqual(registry.expire_stale_claims(), 0)
+        self.assertEqual(ep.status, "covered")
+
+    def test_out_of_scope_endpoint_never_registered_by_any_channel(self):
+        # 执行版 P0-1：统一闸收进 register_endpoint，bridge/首轮双写/ingest 全部
+        # 注册通道越界即拒，只计 api_endpoint_out_of_scope_total。
+        context = DiscoveryContext(task_id="gate6", allowed_hosts={"api.example.com"})
+        registry = reg.ApiCandidateRegistry(task_id="gate6", context=context)
+        _ep, created = registry.register_endpoint(UnifiedApiEndpoint(
+            url="https://evil-external.com/api/x", method="GET",
+            input_signature="s1"))
+        self.assertFalse(created)
+        self.assertEqual(registry.snapshot_endpoints(), [])
+        self.assertEqual(registry.out_of_scope_endpoint_count, 1)
+        self.assertEqual(
+            int(context.metrics.get("api_endpoint_out_of_scope_total", 0) or 0), 1)
+        # 空 allowed_hosts + 有 context = fail-closed（显式无范围只认 context=None）
+        empty_ctx = DiscoveryContext(task_id="gate7")
+        registry2 = reg.ApiCandidateRegistry(task_id="gate7", context=empty_ctx)
+        _ep2, created2 = registry2.register_endpoint(UnifiedApiEndpoint(
+            url="https://api.example.com/y", method="GET", input_signature="s2"))
+        self.assertFalse(created2, "空集合必须 fail-closed，不得隐式放行")
+        no_ctx = reg.ApiCandidateRegistry(task_id="gate8")
+        _ep3, created3 = no_ctx.register_endpoint(UnifiedApiEndpoint(
+            url="https://anything.example/z", method="GET", input_signature="s3"))
+        self.assertTrue(created3, "无 context=调用方显式无范围声明")
+
+    def test_requeue_unreported_returns_queued_to_pending(self):
+        # P1-04：领取未回报 queued→pending 可再领；已终态 no-op。
+        registry = reg.ApiCandidateRegistry(task_id="gate4")
+        stuck, _ = registry.register_endpoint(self._ep("https://api.example.com/a"))
+        done, _ = registry.register_endpoint(self._ep("https://api.example.com/b"))
+        skipped, _ = registry.register_endpoint(self._ep("https://api.example.com/c"))
+        claimed = registry.claim_endpoints_for_probe(limit=3)
+        self.assertEqual(len(claimed), 3)
+        registry.probe_report(done, "probed")      # →covered
+        registry.probe_report(skipped, "skipped")  # →skipped
+        requeued = registry.requeue_unreported(claimed)
+        self.assertEqual(requeued, 1, "只有未回报项被回收")
+        self.assertEqual(stuck.status, "pending")
+        again = registry.claim_endpoints_for_probe(limit=5)
+        self.assertEqual([e.url for e in again], ["https://api.example.com/a"],
+                         "回收项可被下一轮领取")
+
+    @staticmethod
+    def _ep(url, signature=None):
+        return UnifiedApiEndpoint(
+            url=url, method="GET", input_signature=signature or "sig-" + url[-1])
 
 
 class BrowserIngestGateTest(unittest.TestCase):
