@@ -66,6 +66,16 @@ class NewHostQueue(object):
     def pending_hosts(self):
         return list(self._hosts)
 
+    def has_untaken(self):
+        """队列中是否还有未被 WIH 取用的主机（收尾 drain 的触发判据）。"""
+
+        return any(host not in self._wih_taken for host in self._hosts)
+
+    def untaken_hosts(self):
+        """尚未被 WIH 取用的主机列表；deque 本身是观测镜像不收缩。"""
+
+        return [host for host in self._hosts if host not in self._wih_taken]
+
     def take_for_wih(self):
         """为 WIH 主扫描取用尚未注入的 https 目标；每个主机只取一次。"""
         targets = []

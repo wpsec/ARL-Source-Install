@@ -867,6 +867,10 @@ class Config(object):
     WIH_MINIMAL_TIMEOUT_SEC = 2 * 60
     # minimal 回退阶段是否保留 runtime（默认关闭，避免重试时再次进入高成本动态链路）
     WIH_MINIMAL_RUNTIME_ENABLE = False
+    # 统一任务收尾器：DONE 前有界 drain 动态候选，残余显式记 pending（报告§4 前置2）
+    TASK_FINALIZER_ENABLE = True
+    # 同任务内 drain 轮数上限（每轮复用 WIH 编排幂等入口）
+    TASK_FINALIZER_DRAIN_ROUNDS = 1
     # WIH 接口 AI 填充单次最多处理目标数（0=不限制）
     WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 0
     # WIH 接口 AI 填充并发
@@ -1543,6 +1547,8 @@ try:
         )
     if y["ARL"].get("WIH_MINIMAL_RUNTIME_ENABLE") is not None:
         Config.WIH_MINIMAL_RUNTIME_ENABLE = bool(y["ARL"]["WIH_MINIMAL_RUNTIME_ENABLE"])
+    if y["ARL"].get("TASK_FINALIZER_ENABLE") is not None:
+        Config.TASK_FINALIZER_ENABLE = bool(y["ARL"]["TASK_FINALIZER_ENABLE"])
     if y["ARL"].get("WIH_ENDPOINT_AI_FILL_MAX_TARGETS") is not None:
         Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_int(
             y["ARL"]["WIH_ENDPOINT_AI_FILL_MAX_TARGETS"], Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS
@@ -1980,6 +1986,7 @@ try:
         "SEARCH_PROVIDER_CIRCUIT_BREAKER_THRESHOLD",
         "PORT_SCAN_BATCH_CONCURRENCY",
         "PORT_SCAN_BATCH_TIMEOUT_SEC",
+        "TASK_FINALIZER_DRAIN_ROUNDS",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
@@ -2267,6 +2274,13 @@ try:
     )
     Config.WIH_MINIMAL_RUNTIME_ENABLE = env_bool(
         "ARL_WIH_MINIMAL_RUNTIME_ENABLE", Config.WIH_MINIMAL_RUNTIME_ENABLE
+    )
+    Config.TASK_FINALIZER_ENABLE = env_bool(
+        "ARL_TASK_FINALIZER_ENABLE", Config.TASK_FINALIZER_ENABLE
+    )
+    Config.TASK_FINALIZER_DRAIN_ROUNDS = safe_int(
+        env_int("ARL_TASK_FINALIZER_DRAIN_ROUNDS", Config.TASK_FINALIZER_DRAIN_ROUNDS),
+        Config.TASK_FINALIZER_DRAIN_ROUNDS,
     )
     Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_int(
         env_int("ARL_WIH_ENDPOINT_AI_FILL_MAX_TARGETS", Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS),

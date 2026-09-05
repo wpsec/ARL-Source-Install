@@ -9,6 +9,7 @@ from app.config import Config
 from app.modules import TaskStatus
 from app.services.commonTask import WebSiteFetch
 from app.services.ip_stage_services import IPNetworkStageService, IPPostProcessStageService
+from app.services.task_finalizer import TaskFinalizer
 from app.services.task_lifecycle_service import TaskLifecycleService
 from app.helpers.message_notify import push_task_finish_notify
 import time
@@ -49,6 +50,8 @@ class DomainTaskOrchestrator(object):
         task.start_find_vhost()
         task.start_poc_run()
         task.start_wih_domain_update()
+        # 统一收尾：有界 drain 动态候选 + 残余显式记 pending，先于统计与 DONE。
+        TaskFinalizer(task).run()
         task.common_run()
 
         task.update_task_field("status", TaskStatus.DONE)
@@ -78,9 +81,12 @@ class IPTaskOrchestrator(object):
             options=task.options,
         )
         web_site_fetch.run()
+        # 收尾器按 holder 解析发现上下文，IP 任务同样挂到站点实例上。
+        task.web_site_fetch = web_site_fetch
 
         IPPostProcessStageService(task, web_site_fetch).run()
 
+        TaskFinalizer(task).run()
         TaskLifecycleService(task).run_finalize(sync_asset=task.task_tag == "task")
 
         base_update.update_task_field("status", TaskStatus.DONE)

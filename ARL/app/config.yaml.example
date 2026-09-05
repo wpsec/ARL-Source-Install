@@ -539,6 +539,9 @@ ARL:
   WIH_MINIMAL_TIMEOUT_SEC: 120
   # WIH minimal 回退是否保留 runtime（默认关闭，避免 fallback 继续重扫动态链路）
   WIH_MINIMAL_RUNTIME_ENABLE: false
+  # 统一任务收尾：DONE 前有界 drain 动态候选，残余主机显式记 pending
+  TASK_FINALIZER_ENABLE: true
+  TASK_FINALIZER_DRAIN_ROUNDS: 1
   # WIH 接口 AI 填充单次最多处理接口数
   WIH_ENDPOINT_AI_FILL_MAX_TARGETS: 0
   # WIH 接口 AI 填充并发

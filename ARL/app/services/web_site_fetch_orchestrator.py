@@ -4,6 +4,7 @@
 和延迟重试，避免 CommonTask 同时承担任务生命周期和站点流程编排。
 """
 
+from app.services.task_finalizer import TaskFinalizer
 from app.services.web_site_stage_services import (
     WebSiteDiscoveryStageService,
     WebSiteExternalScanStageService,
@@ -27,6 +28,9 @@ class WebSiteFetchOrchestrator(object):
         WebSiteExternalScanStageService(task).run()
         WebSiteIntelStageService(task).run()
         WebSitePostProcessStageService(task).run()
+
+        # 统一收尾：站点任务/资产监控路径同样有界 drain + 残余记 pending。
+        TaskFinalizer(task).run()
 
         # 共享发现上下文观测收口：只输出诊断日志，供请求去重/候选传播/WAF 类别回归核对。
         observation_hook = getattr(task, "_log_discovery_observation", None)

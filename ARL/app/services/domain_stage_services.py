@@ -10,6 +10,34 @@ from app.config import Config
 from app.modules import CollectSource
 from app.services.task_pipeline import TaskPipeline
 
+def _run_measured_stage(task, name, func):
+    """阶段统一经执行器产出独立 metrics（报告§4：禁止手工稀疏指标）。
+
+    轻量测试任务可能没有 StageExecutor，回退为原手工语义。
+    """
+
+    runner = getattr(task, "_run_internal_stage", None)
+    if callable(runner):
+        return runner(name, func)
+    task.update_task_field("status", name)
+    started_at = time.time()
+    func()
+    task.update_services(name, time.time() - started_at)
+    return None
+
+
+def _domain_count_stage(task, func):
+    """闭包工厂：以 domain_info_list 增量作为 output_count。"""
+
+    def _run():
+        before = len(getattr(task, "domain_info_list", []) or [])
+        func()
+        after = len(getattr(task, "domain_info_list", []) or [])
+        return {"output_count": max(0, after - before), "metrics": {"status": "ok", "domain_total": after}}
+
+    return _run
+
+
 class DomainDiscoveryStageService(object):
     """执行域名爆破、插件发现和智能 DNS 生成。"""
 
@@ -19,10 +47,7 @@ class DomainDiscoveryStageService(object):
     def run(self):
         task = self.task
         if task.options.get("domain_brute"):
-            task.update_task_field("status", "domain_brute")
-            started_at = time.time()
-            task.domain_brute()
-            task.update_services("domain_brute", time.time() - started_at)
+            _run_measured_stage(task, "domain_brute", _domain_count_stage(task, task.domain_brute))
 
             # 用户输入的根域名始终作为后续阶段的保底种子。
             base_domain_info = task.build_single_domain_info(task.base_domain)
@@ -55,16 +80,10 @@ class DomainDiscoveryStageService(object):
             )
 
         if task.options.get("arl_search"):
-            task.update_task_field("status", "arl_search")
-            started_at = time.time()
-            task.arl_search()
-            task.update_services("arl_search", time.time() - started_at)
+            _run_measured_stage(task, "arl_search", _domain_count_stage(task, task.arl_search))
 
         if task.options.get("alt_dns"):
-            task.update_task_field("status", "alt_dns")
-            started_at = time.time()
-            task.alt_dns()
-            task.update_services("alt_dns", time.time() - started_at)
+            _run_measured_stage(task, "alt_dns", _domain_count_stage(task, task.alt_dns))
 
 
 class DomainNetworkStageService(object):
