@@ -1,0 +1,33 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "ExternalRefProbe", "version": "0.0.1"},
+  "servers": [{"url": "https://api.example.com/xref"}],
+  "paths": {
+    "/probe": {
+      "get": {
+        "operationId": "probe",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "https://ref.evil.example.com/pet.schema.json#/components/schemas/Pet"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/local": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Local"}}}
+          }
+        }
+      }
+    }
+  },
+  "components": {"schemas": {"Local": {"type": "object"}}}
+}

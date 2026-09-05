@@ -1,0 +1,45 @@
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+scalar DateTime
+
+enum PetStatus {
+  AVAILABLE
+  PENDING
+  ADOPTED
+}
+
+input PetInput {
+  name: String!
+  tag: String
+}
+
+type Owner {
+  id: ID!
+  name: String
+  pets: [Pet!]
+}
+
+type Pet {
+  id: ID!
+  name: String!
+  status: PetStatus
+  owner: Owner
+  adoptedAt: DateTime
+}
+
+type Query {
+  pet(id: ID!): Pet
+  pets(limit: Int = 20, status: PetStatus): [Pet!]
+}
+
+type Mutation {
+  adoptPet(input: PetInput!): Pet
+}
+
+type Subscription {
+  petAdopted: Pet
+}

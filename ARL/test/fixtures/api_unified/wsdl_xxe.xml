@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE definitions [
+  <!ENTITY xxe SYSTEM "http://127.0.0.1:9/xxe-probe.txt">
+  <!ENTITY % pe SYSTEM "http://127.0.0.1:9/pe-probe.dtd">
+  %pe;
+]>
+<definitions name="XxeProbe"
+             targetNamespace="http://api.example.com/soap/xxe"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/">
+  <!-- 本文件用于验证 XML 解析器禁用 DTD/外部实体：
+       解析结果必须为 failed/degraded，且绝不发起对 127.0.0.1 的探测请求。 -->
+  <service name="XxeService&xxe;">
+    <port name="XxePort" binding="tns:XxeBinding">
+      <soap:address location="https://api.example.com/soap/Xxe"/>
+    </port>
+  </service>
+</definitions>

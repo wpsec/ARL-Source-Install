@@ -1,0 +1,100 @@
+{
+  "info": {
+    "_postman_id": "0b1a2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
+    "name": "Petstore Sample",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "https://api.example.com/v1"},
+    {"key": "apiToken", "value": "POSTMANLEAKTOKEN123"}
+  ],
+  "item": [
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "CRUD",
+          "item": [
+            {
+              "name": "ListUsers",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer POSTMANLEAKTOKEN123"}
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/users?limit=10",
+                  "host": ["api", "example", "com"],
+                  "path": ["v1", "users"],
+                  "query": [{"key": "limit", "value": "10"}],
+                  "variable": []
+                }
+              }
+            },
+            {
+              "name": "GetUserById",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "https://api.example.com/v1/users/:id",
+                  "protocol": "https",
+                  "host": ["api", "example", "com"],
+                  "path": ["v1", "users", ":id"],
+                  "variable": [{"key": "id", "value": "42"}]
+                }
+              }
+            },
+            {
+              "name": "CreateUser",
+              "request": {
+                "method": "POST",
+                "header": [{"key": "Content-Type", "value": "application/json"}],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"name\": \"petsit\", \"token\": \"POSTMANLEAKTOKEN123\"}"
+                },
+                "url": "https://api.example.com/v1/users"
+              }
+            },
+            {
+              "name": "UpdateUserForm",
+              "request": {
+                "method": "PUT",
+                "body": {
+                  "mode": "urlencoded",
+                  "urlencoded": [
+                    {"key": "name", "value": "petsit"},
+                    {"key": "password", "value": "POSTMANLEAKPASS456", "secret": true}
+                  ]
+                },
+                "url": "https://api.example.com/v1/users/7"
+              }
+            },
+            {
+              "name": "UploadAvatar",
+              "request": {
+                "method": "POST",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [{"key": "file", "type": "file", "src": []}]
+                },
+                "url": "https://api.example.com/v1/users/7/avatar"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Healthcheck",
+      "request": {
+        "method": "HEAD",
+        "url": {
+          "protocol": "https",
+          "host": ["api", "example", "com"],
+          "path": ["v1", "health"]
+        }
+      }
+    }
+  ]
+}

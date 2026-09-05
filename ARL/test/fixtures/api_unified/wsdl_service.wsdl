@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="PetService"
+             targetNamespace="http://api.example.com/soap/pet"
+             xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="http://api.example.com/soap/pet"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xsd:import namespace="http://api.example.com/soap/types" schemaLocation="types.xsd"/>
+    <xsd:schema targetNamespace="http://api.example.com/soap/pet">
+      <xsd:complexType name="GetPetRequest">
+        <xsd:sequence><xsd:element name="petId" type="xsd:string"/></xsd:sequence>
+      </xsd:complexType>
+      <xsd:complexType name="GetPetResponse">
+        <xsd:sequence><xsd:element name="name" type="xsd:string"/></xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+
+  <message name="GetPetInput">
+    <part name="parameters" element="tns:GetPetRequest"/>
+  </message>
+  <message name="GetPetOutput">
+    <part name="parameters" element="tns:GetPetResponse"/>
+  </message>
+  <message name="ListPetsInput"/>
+
+  <portType name="PetPortType">
+    <operation name="getPet">
+      <input message="tns:GetPetInput"/>
+      <output message="tns:GetPetOutput"/>
+    </operation>
+    <operation name="listPets">
+      <input message="tns:ListPetsInput"/>
+    </operation>
+  </portType>
+
+  <binding name="PetBinding" type="tns:PetPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="getPet">
+      <soap:operation soapAction="http://api.example.com/soap/pet/getPet"/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+    <operation name="listPets">
+      <soap:operation soapAction="http://api.example.com/soap/pet/listPets"/>
+      <input><soap:body use="literal"/></input>
+    </operation>
+  </binding>
+
+  <service name="PetService">
+    <port name="PetPort" binding="tns:PetBinding">
+      <soap:address location="https://api.example.com/soap/PetService"/>
+    </port>
+  </service>
+</definitions>

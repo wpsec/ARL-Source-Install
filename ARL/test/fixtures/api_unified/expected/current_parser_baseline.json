@@ -1,0 +1,271 @@
+{
+  "fixtures": {
+    "openapi3_petstore.json": {
+      "doc_url": "https://api.example.com/v3/api-docs",
+      "records": [
+        {
+          "content": "GET https://api.example.com/v1/broken/ref",
+          "fnv_hash": "8247118256601639370",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        },
+        {
+          "content": "GET https://api.example.com/v1/legacy/only-parameters",
+          "fnv_hash": "5470936139445054904",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        },
+        {
+          "content": "GET https://api.example.com/v1/pets",
+          "fnv_hash": "10690665912994996243",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        },
+        {
+          "content": "POST https://api.example.com/v1/pets",
+          "fnv_hash": "9460530907892938390",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        },
+        {
+          "content": "https://api.example.com/v3/api-docs",
+          "fnv_hash": "12425209678450324728",
+          "record_type": "api_doc_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        },
+        {
+          "content": "blue.example.com",
+          "fnv_hash": "11013999086027535352",
+          "record_type": "domain",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        },
+        {
+          "content": "https://api.example.com/v1/broken/ref",
+          "fnv_hash": "5204494995953072957",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        },
+        {
+          "content": "https://api.example.com/v1/legacy/only-parameters",
+          "fnv_hash": "8158583736978480813",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        },
+        {
+          "content": "https://api.example.com/v1/pets",
+          "fnv_hash": "13099442295651473473",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v3/api-docs"
+        }
+      ]
+    },
+    "openapi3_petstore.yaml": {
+      "doc_url": "https://api.example.com/openapi3_petstore.yaml",
+      "records": [
+        {
+          "content": "GET https://api.example.com/v1/broken/ref",
+          "fnv_hash": "8247118256601639370",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        },
+        {
+          "content": "GET https://api.example.com/v1/legacy/only-parameters",
+          "fnv_hash": "5470936139445054904",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        },
+        {
+          "content": "GET https://api.example.com/v1/pets",
+          "fnv_hash": "10690665912994996243",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        },
+        {
+          "content": "POST https://api.example.com/v1/pets",
+          "fnv_hash": "9460530907892938390",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        },
+        {
+          "content": "https://api.example.com/openapi3_petstore.yaml",
+          "fnv_hash": "13570475242536294598",
+          "record_type": "api_doc_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        },
+        {
+          "content": "blue.example.com",
+          "fnv_hash": "11013999086027535352",
+          "record_type": "domain",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        },
+        {
+          "content": "https://api.example.com/v1/broken/ref",
+          "fnv_hash": "5204494995953072957",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        },
+        {
+          "content": "https://api.example.com/v1/legacy/only-parameters",
+          "fnv_hash": "8158583736978480813",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        },
+        {
+          "content": "https://api.example.com/v1/pets",
+          "fnv_hash": "13099442295651473473",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/openapi3_petstore.yaml"
+        }
+      ]
+    },
+    "postman_collection.json": {
+      "doc_url": "https://api.example.com/postman.json",
+      "records": [
+        {
+          "content": "HEAD https://api.example.com/v1/health",
+          "fnv_hash": "202886661284325986",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        },
+        {
+          "content": "POST https://api.example.com/v1/users",
+          "fnv_hash": "16124009701253625559",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        },
+        {
+          "content": "POST https://api.example.com/v1/users/7/avatar",
+          "fnv_hash": "10338628758011753482",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        },
+        {
+          "content": "PUT https://api.example.com/v1/users/7",
+          "fnv_hash": "4226654612985388852",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        },
+        {
+          "content": "https://api.example.com/postman.json",
+          "fnv_hash": "16461290600486679428",
+          "record_type": "api_doc_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        },
+        {
+          "content": "https://api.example.com/v1/health",
+          "fnv_hash": "5026771272224086590",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        },
+        {
+          "content": "https://api.example.com/v1/users",
+          "fnv_hash": "10978595303023104965",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        },
+        {
+          "content": "https://api.example.com/v1/users/7",
+          "fnv_hash": "5490998092703256746",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        },
+        {
+          "content": "https://api.example.com/v1/users/7/avatar",
+          "fnv_hash": "9697061074110690773",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/postman.json"
+        }
+      ]
+    },
+    "swagger2_petstore.json": {
+      "doc_url": "https://api.example.com/v2/api-docs",
+      "records": [
+        {
+          "content": "GET https://api.example.com/v1/broken/ref",
+          "fnv_hash": "8247118256601639370",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v2/api-docs"
+        },
+        {
+          "content": "GET https://api.example.com/v1/legacy/only-parameters",
+          "fnv_hash": "5470936139445054904",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v2/api-docs"
+        },
+        {
+          "content": "GET https://api.example.com/v1/pets",
+          "fnv_hash": "10690665912994996243",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v2/api-docs"
+        },
+        {
+          "content": "POST https://api.example.com/v1/pets",
+          "fnv_hash": "9460530907892938390",
+          "record_type": "api_doc_endpoint",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v2/api-docs"
+        },
+        {
+          "content": "https://api.example.com/v2/api-docs",
+          "fnv_hash": "11888160028944526673",
+          "record_type": "api_doc_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v2/api-docs"
+        },
+        {
+          "content": "https://api.example.com/v1/broken/ref",
+          "fnv_hash": "5204494995953072957",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v2/api-docs"
+        },
+        {
+          "content": "https://api.example.com/v1/legacy/only-parameters",
+          "fnv_hash": "8158583736978480813",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v2/api-docs"
+        },
+        {
+          "content": "https://api.example.com/v1/pets",
+          "fnv_hash": "13099442295651473473",
+          "record_type": "urlfinder_url",
+          "site": "https://api.example.com",
+          "source": "https://api.example.com/v2/api-docs"
+        }
+      ]
+    }
+  },
+  "generator": "scripts/api-unified-golden.py",
+  "note": "现行 ApiDocScanner 的 golden 基线；统一 Parser 输出集合不得低于本基线（计划6 §十二）。"
+}

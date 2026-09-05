@@ -1,0 +1,12 @@
+{
+  "url": "https://api.example.com/graphql",
+  "method": "POST",
+  "request": {
+    "query": "query GetPet($petId: ID!) { pet(id: $petId) { name owner { pets { name } } } }\n\nmutation AdoptPet($input: PetInput!) { adoptPet(input: $input) { id status } }\n\nsubscription OnPetAdopted { petAdopted { id owner { name } } }",
+    "operationName": "GetPet",
+    "variables": {
+      "petId": "pet-1",
+      "input": {"name": "Rex", "password": "GRAPHQLLEAKPASS789"}
+    }
+  }
+}

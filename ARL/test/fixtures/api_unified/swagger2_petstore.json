@@ -1,0 +1,76 @@
+{
+  "swagger": "2.0",
+  "info": {"title": "Petstore", "version": "1.2.3"},
+  "host": "api.example.com",
+  "basePath": "/v1",
+  "schemes": ["https"],
+  "securityDefinitions": {
+    "ApiKeyAuth": {"type": "apiKey", "name": "X-API-Key", "in": "header"},
+    "BasicAuth": {"type": "basic"}
+  },
+  "security": [{"ApiKeyAuth": []}],
+  "tags": [{"name": "pets"}],
+  "paths": {
+    "/pets": {
+      "parameters": [{"name": "X-Tenant", "in": "header", "type": "string"}],
+      "get": {
+        "operationId": "listPets",
+        "tags": ["pets"],
+        "parameters": [
+          {"name": "limit", "in": "query", "required": false, "type": "integer"},
+          {"name": "sessionId", "in": "cookie", "type": "string"}
+        ],
+        "responses": {"200": {"$ref": "#/responses/PetList"}}
+      },
+      "post": {
+        "operationId": "createPet",
+        "consumes": ["application/x-www-form-urlencoded"],
+        "parameters": [
+          {"name": "name", "in": "formData", "required": true, "type": "string"}
+        ],
+        "responses": {"201": {"description": "created"}},
+        "security": [{"BasicAuth": []}]
+      }
+    },
+    "/pets/{petId}": {
+      "get": {
+        "operationId": "showPetById",
+        "parameters": [{"$ref": "#/parameters/PetId"}],
+        "responses": {
+          "200": {"description": "ok", "schema": {"$ref": "#/definitions/Pet"}},
+          "404": {"$ref": "#/responses/NotFound"}
+        }
+      },
+      "delete": {"operationId": "deletePet", "responses": {"204": {"description": "deleted"}}}
+    },
+    "/legacy/only-parameters": {
+      "parameters": [{"name": "q", "in": "query", "type": "string"}]
+    },
+    "/broken/ref": {
+      "get": {
+        "responses": {"200": {"description": "ok", "schema": {"$ref": "#/definitions/Missing"}}}
+      }
+    }
+  },
+  "parameters": {
+    "PetId": {"name": "petId", "in": "path", "required": true, "type": "string"}
+  },
+  "responses": {
+    "PetList": {"description": "list", "schema": {"type": "array", "items": {"$ref": "#/definitions/Pet"}}},
+    "NotFound": {"description": "not found"}
+  },
+  "definitions": {
+    "Pet": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "owner": {"$ref": "#/definitions/Owner"},
+        "friends": {"type": "array", "items": {"$ref": "#/definitions/Pet"}}
+      }
+    },
+    "Owner": {
+      "type": "object",
+      "properties": {"pets": {"type": "array", "items": {"$ref": "#/definitions/Pet"}}}
+    }
+  }
+}

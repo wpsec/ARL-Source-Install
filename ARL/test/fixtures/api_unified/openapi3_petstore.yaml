@@ -1,0 +1,127 @@
+openapi: 3.0.3
+info:
+  title: Petstore
+  version: "1.2.3"
+servers:
+  - url: https://api.example.com/v1
+  - url: https://blue.example.com/v1
+security:
+  - ApiKeyAuth: []
+tags:
+  - name: pets
+paths:
+  /pets:
+    parameters:
+      - name: X-Tenant
+        in: header
+        schema:
+          type: string
+    get:
+      operationId: listPets
+      tags: [pets]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: sessionId
+          in: cookie
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/PetList"
+    post:
+      operationId: createPet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Pet"
+      responses:
+        "201":
+          description: created
+      security:
+        - BearerAuth: []
+  /pets/{petId}:
+    get:
+      operationId: showPetById
+      parameters:
+        - $ref: "#/components/parameters/PetId"
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deletePet
+      responses:
+        "204":
+          description: deleted
+  /legacy/only-parameters:
+    parameters:
+      - name: q
+        in: query
+        schema:
+          type: string
+  /broken/ref:
+    get:
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Missing"
+components:
+  parameters:
+    PetId:
+      name: petId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    PetList:
+      description: list
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/Pet"
+    NotFound:
+      description: not found
+  schemas:
+    Pet:
+      type: object
+      properties:
+        name:
+          type: string
+        owner:
+          $ref: "#/components/schemas/Owner"
+        friends:
+          type: array
+          items:
+            $ref: "#/components/schemas/Pet"
+    Owner:
+      type: object
+      properties:
+        pets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Pet"
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      name: X-API-Key
+      in: header
+    BearerAuth:
+      type: http
+      scheme: bearer

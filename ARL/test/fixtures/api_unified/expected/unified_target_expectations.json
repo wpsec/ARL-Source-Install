@@ -1,0 +1,125 @@
+{
+  "note": "统一 Parser（计划6 第4-7批）的目标结果语义冻结：覆盖现行 ApiDocScanner 不支持或无语义的面。验收为下限（不得低于），差异面见 06-附录A 第五节。",
+  "forbidden_substrings": [
+    "POSTMANLEAKTOKEN123",
+    "POSTMANLEAKPASS456",
+    "GRAPHQLLEAKPASS789",
+    "xxe-probe",
+    "pe-probe"
+  ],
+  "fixtures": {
+    "openapi3_petstore.json": {
+      "must_include_endpoints": [
+        "GET https://api.example.com/v1/pets",
+        "POST https://api.example.com/v1/pets",
+        "GET https://api.example.com/v1/pets/{petId}",
+        "DELETE https://api.example.com/v1/pets/{petId}",
+        "GET https://api.example.com/v1/legacy/only-parameters",
+        "GET https://api.example.com/v1/broken/ref"
+      ],
+      "multi_base_servers": ["https://api.example.com/v1", "https://blue.example.com/v1"],
+      "out_of_scope_server_yields_domain_candidate": "blue.example.com",
+      "diagnostics": {"status_not": "failed"},
+      "parameter_expectations": {
+        "GET https://api.example.com/v1/pets": {
+          "names": ["X-Tenant", "limit", "sessionId"],
+          "locations": {"X-Tenant": "header", "limit": "query", "sessionId": "cookie"}
+        }
+      },
+      "auth_expectations": {
+        "POST https://api.example.com/v1/pets": {"auth_hint": "bearer"},
+        "GET https://api.example.com/v1/pets": {"auth_hint": "api_key"}
+      },
+      "circular_ref_expected": true,
+      "unresolved_ref_expected": true,
+      "schema_available_false_when_unresolved": true
+    },
+    "swagger2_petstore.json": {
+      "endpoint_set_equals_openapi3_on_in_scope_host": true,
+      "formdata_parameter_location": "formData",
+      "auth_expectations": {
+        "POST https://api.example.com/v1/pets": {"auth_hint": "basic"}
+      }
+    },
+    "postman_collection.json": {
+      "must_include_endpoints": [
+        "HEAD https://api.example.com/v1/health",
+        "POST https://api.example.com/v1/users",
+        "PUT https://api.example.com/v1/users/7",
+        "POST https://api.example.com/v1/users/7/avatar"
+      ],
+      "template_variables_as_path_templates": [
+        {"content": "GET https://api.example.com/v1/users", "path_template_contains": "{limit}"},
+        {"content": "GET https://api.example.com/v1/users/:id", "path_template_expected": true}
+      ],
+      "variable_resolution_policy": "{{baseUrl}} 模板解析为候选 URL 且置信度降级；解析不了的保留模板、标 unknown，不猜测具体值",
+      "body_type_expectations": {
+        "POST https://api.example.com/v1/users": "raw",
+        "PUT https://api.example.com/v1/users/7": "urlencoded",
+        "POST https://api.example.com/v1/users/7/avatar": "formdata"
+      }
+    },
+    "graphql_request.json": {
+      "endpoint_base": {"api_type": "graphql", "method": "POST", "url": "https://api.example.com/graphql"},
+      "operations": [
+        {"name": "GetPet", "type": "query"},
+        {"name": "AdoptPet", "type": "mutation"},
+        {"name": "OnPetAdopted", "type": "subscription"}
+      ],
+      "variable_names_only": ["petId", "input"],
+      "schema_available": false
+    },
+    "graphql_schema.sdl": {
+      "schema_available": true,
+      "types": ["Pet", "Owner", "Query", "Mutation", "Subscription"],
+      "enums": ["PetStatus"],
+      "inputs": ["PetInput"],
+      "scalars": ["DateTime"]
+    },
+    "wsdl_service.wsdl": {
+      "soap_endpoints": [
+        {
+          "api_type": "soap",
+          "method": "POST",
+          "url": "https://api.example.com/soap/PetService",
+          "soap_action": "http://api.example.com/soap/pet/getPet",
+          "operation_id": "getPet",
+          "wsdl_service": "PetService",
+          "wsdl_port": "PetPort"
+        },
+        {
+          "api_type": "soap",
+          "method": "POST",
+          "url": "https://api.example.com/soap/PetService",
+          "soap_action": "http://api.example.com/soap/pet/listPets",
+          "operation_id": "listPets"
+        }
+      ],
+      "same_origin_xsd_include": "types.xsd",
+      "external_include_fetch": false
+    },
+    "wsdl_xxe.xml": {
+      "diagnostics_status_in": ["failed", "degraded"],
+      "endpoint_count_max": 0,
+      "network_probe_must_not_happen": true
+    },
+    "external_ref_openapi.json": {
+      "must_include_endpoints": [
+        "GET https://api.example.com/xref/probe",
+        "GET https://api.example.com/xref/local"
+      ],
+      "external_ref_fetch": false,
+      "unresolved_ref_count_min": 1,
+      "diagnostics_status_not": "ok"
+    },
+    "invalid_json.json": {
+      "diagnostics_status_in": ["failed", "degraded"],
+      "endpoint_count_max": 0,
+      "must_not_be_reported_as_no_api": true
+    },
+    "deep_nesting.json": {
+      "diagnostics_status_in": ["skipped", "failed", "degraded"],
+      "endpoint_count_max": 0
+    }
+  }
+}
