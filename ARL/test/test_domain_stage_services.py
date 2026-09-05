@@ -8,6 +8,7 @@ from app.services.domain_stage_services import (
     DomainDiscoveryStageService,
     DomainNetworkStageService,
     DomainPostProcessStageService,
+    DomainSiteStageService,
 )
 
 
@@ -113,6 +114,37 @@ class TestDomainStageServices(unittest.TestCase):
 
         self.assertEqual([], task.calls)
         self.assertEqual([], task.executor.names)
+
+    def test_site_service_marks_host_owned_terminal_finalize(self):
+        # Review P0.4：域名深度流程的站点实例由宿主统一收尾，嵌套层不得二次执行。
+        task = _Task()
+        task.task_id = "65f0000000000000000000aa"
+        task.site_list = ["https://www.example.com"]
+        task.find_site = lambda: task.calls.append("find_site")
+
+        class _FakeSiteFetch(object):
+            instances = []
+
+            def __init__(self, task_id=None, sites=None, options=None, scope_domain=None):
+                self.scope_domain = scope_domain
+                self.wih_domain_set = set()
+                self.flag_at_run = None
+                _FakeSiteFetch.instances.append(self)
+
+            def run(self):
+                self.flag_at_run = getattr(self, "terminal_finalize_host_owned", False)
+
+        try:
+            with patch("app.services.commonTask.WebSiteFetch", _FakeSiteFetch):
+                DomainSiteStageService(task).run()
+            self.assertEqual(1, len(_FakeSiteFetch.instances))
+            self.assertTrue(
+                _FakeSiteFetch.instances[0].flag_at_run,
+                "WebSiteFetch.run 之前必须已置位终态归属",
+            )
+            self.assertEqual([task.base_domain], _FakeSiteFetch.instances[0].scope_domain)
+        finally:
+            _FakeSiteFetch.instances = []
 
 
 if __name__ == "__main__":

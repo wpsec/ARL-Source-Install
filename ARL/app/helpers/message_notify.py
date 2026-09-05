@@ -246,6 +246,8 @@ def build_task_finish_markdown(task_data):
     }
     status_map = {
         "done": "已完成",
+        "done_pending": "已完成(存在待处理积压)",
+        "done_degraded": "已完成(收尾证据降级)",
         "error": "执行异常",
         "stop": "已停止",
         "waiting": "等待中",
@@ -953,7 +955,8 @@ def push_task_finish_notify(task_id):
         if not task_data:
             return
 
-        if task_data.get("status") != TaskStatus.DONE:
+        if not TaskStatus.is_done_like(task_data.get("status", "")):
+            # done 家族终态均推送完成通知：任务已跑完，积压证据随任务详情可见。
             return
 
         task_tag = task_data.get("task_tag", "")

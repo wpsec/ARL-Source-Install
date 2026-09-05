@@ -52,7 +52,7 @@ base_query_fields = {
 # 只能用等号进行 MongoDB 查询的字段
 # 这些字段不支持模糊匹配，只支持精确匹配
 EQUAL_FIELDS = ["task_id", "task_tag", "ip_type", "scope_id", "type"]
-TASK_STATUS_RUNNING_EXCLUDE = ["waiting", "done", "stop", "error"]
+TASK_STATUS_RUNNING_EXCLUDE = ["waiting", "done", "done_pending", "done_degraded", "stop", "error"]
 TASK_STATUS_COLLECTIONS = {"task", "github_task"}
 TASK_SERVICE_PARENT_PREFIXES = {
     "web_info_hunter": ("wih_",),

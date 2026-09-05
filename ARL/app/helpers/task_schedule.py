@@ -256,7 +256,8 @@ def build_schedule_run_summary(task_ids, prefer_export_summary=False):
 
     for item in items:
         status = item.get("status", "")
-        if status == TaskStatus.DONE:
+        if TaskStatus.is_done_like(status):
+            # done 家族统一计入完成桶，避免 done_pending 任务被当成一直运行中。
             summary["done"] += 1
         elif status == TaskStatus.ERROR:
             summary["error"] += 1

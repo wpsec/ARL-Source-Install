@@ -542,6 +542,8 @@ ARL:
   # 统一任务收尾：DONE 前有界 drain 动态候选，残余主机显式记 pending
   TASK_FINALIZER_ENABLE: true
   TASK_FINALIZER_DRAIN_ROUNDS: 1
+  # 每策略收尾 pending 账本写入上限（计数不设限，只限写账本）
+  TASK_FINALIZER_PENDING_MAX: 200
   # WIH 接口 AI 填充单次最多处理接口数
   WIH_ENDPOINT_AI_FILL_MAX_TARGETS: 0
   # WIH 接口 AI 填充并发

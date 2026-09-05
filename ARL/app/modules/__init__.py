@@ -38,6 +38,28 @@ class TaskStatus:
     DONE = "done"
     ERROR = "error"
     STOP = "stop"
+    # done 家族终态兼容映射(Review 20260905 §4 重要项1):
+    # DONE 只允许在收尾器证明 WIH 队列残余为 0 后写入;有积压写
+    # done_pending,收尾证据本身不可证明写 done_degraded。
+    # 三者都属于终态,消费方以 DONE_FAMILY/TERMINAL 判定;前端
+    # normalizeTaskStatus 按 "done" 子串命中,无需新增映射即可归类完成。
+    DONE_PENDING = "done_pending"
+    DONE_DEGRADED = "done_degraded"
+
+    DONE_FAMILY = (DONE, DONE_PENDING, DONE_DEGRADED)
+    TERMINAL = DONE_FAMILY + (ERROR, STOP)
+
+    @classmethod
+    def is_done_like(cls, status) -> bool:
+        return str(status or "").strip().lower() in cls.DONE_FAMILY
+
+    @classmethod
+    def is_terminal(cls, status) -> bool:
+        return str(status or "").strip().lower() in cls.TERMINAL
+
+    @classmethod
+    def is_clean_done(cls, status) -> bool:
+        return str(status or "").strip().lower() == cls.DONE
 
 
 class TaskScheduleStatus:

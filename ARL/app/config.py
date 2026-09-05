@@ -872,6 +872,8 @@ class Config(object):
     TASK_FINALIZER_ENABLE = True
     # 同任务内 drain 轮数上限（每轮复用 WIH 编排幂等入口）
     TASK_FINALIZER_DRAIN_ROUNDS = 1
+    # 每个策略收尾时最多落账的 pending 条目数（计数不受限，仅限制写账本）
+    TASK_FINALIZER_PENDING_MAX = 200
     # WIH 接口 AI 填充单次最多处理目标数（0=不限制）
     WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 0
     # WIH 接口 AI 填充并发
@@ -1988,6 +1990,7 @@ try:
         "PORT_SCAN_BATCH_CONCURRENCY",
         "PORT_SCAN_BATCH_TIMEOUT_SEC",
         "TASK_FINALIZER_DRAIN_ROUNDS",
+        "TASK_FINALIZER_PENDING_MAX",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
@@ -2282,6 +2285,10 @@ try:
     Config.TASK_FINALIZER_DRAIN_ROUNDS = safe_int(
         env_int("ARL_TASK_FINALIZER_DRAIN_ROUNDS", Config.TASK_FINALIZER_DRAIN_ROUNDS),
         Config.TASK_FINALIZER_DRAIN_ROUNDS,
+    )
+    Config.TASK_FINALIZER_PENDING_MAX = safe_int(
+        env_int("ARL_TASK_FINALIZER_PENDING_MAX", Config.TASK_FINALIZER_PENDING_MAX),
+        Config.TASK_FINALIZER_PENDING_MAX,
     )
     Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_int(
         env_int("ARL_WIH_ENDPOINT_AI_FILL_MAX_TARGETS", Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS),
@@ -2637,6 +2644,7 @@ try:
             "PORT_SCAN_STAGE_TIMEOUT_SEC",
             "TASK_FINALIZER_ENABLE",
             "TASK_FINALIZER_DRAIN_ROUNDS",
+            "TASK_FINALIZER_PENDING_MAX",
             "WIH_TOTAL_BUDGET_SEC",
             "NUCLEI_STAGE_MAX_TARGETS",
             "AFROG_STAGE_MAX_TARGETS",

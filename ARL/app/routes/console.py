@@ -52,6 +52,8 @@ TASK_STATUS_TEXT_MAP = {
     "waiting": "等待中",
     "running": "运行中",
     "done": "已完成",
+    "done_pending": "已完成(存在待处理积压)",
+    "done_degraded": "已完成(收尾证据降级)",
     "stop": "已停止",
     "error": "执行异常",
 }
@@ -406,7 +408,7 @@ def _get_task_log_level(status):
         return "ERROR"
     if value in ["stop", "stopped"]:
         return "WARN"
-    if value in ["done", "success", "finished"]:
+    if value in ["done", "success", "finished"] or value.startswith("done"):
         return "INFO"
     if value in ["waiting"]:
         return "WARN"
@@ -467,7 +469,7 @@ def _build_recent_task_summary_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
             stage_text = _human_task_stage(task_status)
             target_preview = _truncate_text(task.get("target", "-"), max_len=56)
 
-            if task_status_lower in ["done", "stop", "error"]:
+            if task_status_lower in ["done", "done_pending", "done_degraded", "stop", "error"]:
                 time_value = task.get("end_time") or task.get("save_date") or task.get("start_time")
             else:
                 time_value = task.get("start_time") or task.get("save_date") or task.get("end_time")
@@ -480,9 +482,17 @@ def _build_recent_task_summary_logs(limit=DEFAULT_RECENT_LOG_LIMIT):
             display_time, ts_value = _parse_time_value(time_value)
             level = _get_task_log_level(task_status)
 
-            if task_status_lower == "done":
+            if task_status_lower in ["done", "done_pending", "done_degraded"]:
                 stat = task.get("statistic") or {}
-                msg = "任务[{}]({}) 扫描完成，站点:{} 域名:{} IP:{} 漏洞:{}".format(
+                done_suffix = ""
+                if task_status_lower == "done_pending":
+                    done_suffix = "(存在待处理积压)"
+                elif task_status_lower == "done_degraded":
+                    done_suffix = "(收尾证据降级)"
+                msg = "任务[{}]({}) 扫描完成{}，站点:{} 域名:{} IP:{} 漏洞:{}".format(
+                    task_name,
+                    task_type_text,
+                    done_suffix,
                     task_name,
                     task_type_text,
                     int(stat.get("site_cnt", 0) or 0),

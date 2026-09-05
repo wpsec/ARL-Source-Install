@@ -17,7 +17,7 @@ from app.utils.cache import build_cache_key, cached_call
 
 DEFAULT_QUERY_FIELD_NAMES = {"page", "size", "order", "_refresh"}
 EQUAL_FIELDS = {"task_id", "task_tag", "ip_type", "scope_id", "type"}
-TASK_STATUS_RUNNING_EXCLUDE = ["waiting", "done", "stop", "error"]
+TASK_STATUS_RUNNING_EXCLUDE = ["waiting", "done", "done_pending", "done_degraded", "stop", "error"]
 TASK_STATUS_COLLECTIONS = {"task", "github_task"}
 
 
@@ -47,7 +47,11 @@ def normalize_task_status_query(collection, args, query):
         }
         return query
 
-    if status_text in TASK_STATUS_RUNNING_EXCLUDE:
+    if status_text == "done":
+        # done 过滤覆盖 done 家族终态：done_pending/done_degraded 都是"已结束
+        # 但非干净完成"，在任务列表中仍属于已完成桶。
+        query["status"] = {"$in": ["done", "done_pending", "done_degraded"]}
+    elif status_text in TASK_STATUS_RUNNING_EXCLUDE:
         query["status"] = status_text
 
     return query

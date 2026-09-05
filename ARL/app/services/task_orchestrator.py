@@ -6,7 +6,6 @@
 
 from app import utils
 from app.config import Config
-from app.modules import TaskStatus
 from app.services.commonTask import WebSiteFetch
 from app.services.ip_stage_services import IPNetworkStageService, IPPostProcessStageService
 from app.services.task_finalizer import TaskFinalizer
@@ -50,11 +49,14 @@ class DomainTaskOrchestrator(object):
         task.start_find_vhost()
         task.start_poc_run()
         task.start_wih_domain_update()
-        # 统一收尾：有界 drain 动态候选 + 残余显式记 pending，先于统计与 DONE。
-        TaskFinalizer(task).run()
+        # 统一收尾：有界 drain 动态候选 + 残余显式记 pending，先于统计与终态。
+        # 终态由收尾器决策决定（Review 20260905 §4 重要项1）：队列证明清空才写
+        # done；有残余写 done_pending；收尾证据不可证明写 done_degraded。
+        finalizer = TaskFinalizer(task)
+        finalizer.run()
         task.common_run()
 
-        task.update_task_field("status", TaskStatus.DONE)
+        task.update_task_field("status", finalizer.terminal_status())
         task.update_task_field("end_time", utils.curr_date())
         push_task_finish_notify(task.task_id)
 
@@ -80,15 +82,19 @@ class IPTaskOrchestrator(object):
             sites=task.site_list,
             options=task.options,
         )
+        # 终态唯一 owner 是本 IP 宿主（下方 TaskFinalizer）：嵌套站点层跳过收尾。
+        web_site_fetch.terminal_finalize_host_owned = True
         web_site_fetch.run()
         # 收尾器按 holder 解析发现上下文，IP 任务同样挂到站点实例上。
         task.web_site_fetch = web_site_fetch
 
         IPPostProcessStageService(task, web_site_fetch).run()
 
-        TaskFinalizer(task).run()
+        # 同域名任务：终态以收尾器决策为准，残余未清不写裸 done。
+        finalizer = TaskFinalizer(task)
+        finalizer.run()
         TaskLifecycleService(task).run_finalize(sync_asset=task.task_tag == "task")
 
-        base_update.update_task_field("status", TaskStatus.DONE)
+        base_update.update_task_field("status", finalizer.terminal_status())
         base_update.update_task_field("end_time", utils.curr_date())
         push_task_finish_notify(task.task_id)

@@ -232,6 +232,8 @@ class WihPeriodicReuseService(object):
             return ""
 
         query = {
+            # 基线必须来自"干净完成"的任务：done_pending/done_degraded 存在
+            # 未消费积压证据，不得作为周期复用基线。
             "status": TaskStatus.DONE,
             "target": current_target,
             "options.from_task_schedule": True,

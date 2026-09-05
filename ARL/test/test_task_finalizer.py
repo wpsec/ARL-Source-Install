@@ -93,6 +93,53 @@ class NewHostQueueUntakenTest(unittest.TestCase):
         self.assertFalse(holder.new_host_queue.has_untaken())
 
 
+class DrainEntryResolutionTest(unittest.TestCase):
+    """收尾 drain 必须重入生产入口 run_web_info_hunter(Review 20260905 修复轮)。"""
+
+    class _ProductionHolder(object):
+        task_id = "entry-prod"
+
+        def __init__(self, context):
+            self.discovery_context = context
+            self.new_host_queue = NewHostQueue(
+                context, waf_guard=None, max_hosts=10, allowed_hosts={"example.com"}
+            )
+            self.hunter_calls = 0
+
+        def run_web_info_hunter(self):
+            self.hunter_calls += 1
+            self.new_host_queue.take_for_wih()
+
+    def test_production_entry_name_is_used(self):
+        context = DiscoveryContext(task_id="e-1")
+        holder = self._ProductionHolder(context)
+        _publish_host(context, "a.example.com")
+        result = TaskFinalizer(holder).drain_new_hosts(holder)
+        self.assertEqual(result["drain_rounds"], 1)
+        self.assertEqual(holder.hunter_calls, 1)
+        self.assertEqual(result["hosts_after"], 0)
+
+    def test_missing_hunter_entry_degrades_to_residual(self):
+        context = DiscoveryContext(task_id="e-2")
+
+        class _NoHunter(object):
+            task_id = "e-2"
+
+            def __init__(self):
+                self.discovery_context = context
+                self.new_host_queue = NewHostQueue(
+                    context, waf_guard=None, max_hosts=10, allowed_hosts={"example.com"}
+                )
+
+        holder = _NoHunter()
+        _publish_host(context, "a.example.com")
+        finalizer = TaskFinalizer(holder)
+        finalizer.run()
+        # 无法 drain 时残余必须显影并把终态降级为 done_pending，绝不伪装干净完成
+        self.assertEqual(finalizer.decision["terminal_status"], "done_pending")
+        self.assertEqual(finalizer.decision["blocking_residual"], 1)
+
+
 class DrainTest(unittest.TestCase):
     def test_drain_consumes_pending_hosts_once_per_round(self):
         context = DiscoveryContext(task_id="d-1")
@@ -146,6 +193,113 @@ class PendingEvidenceTest(unittest.TestCase):
         self.assertEqual(TaskFinalizer(holder).persist_pending_hosts(holder), 0)
 
 
+class PolicyPendingLedgerTest(unittest.TestCase):
+    """策略级 pending 显影账本(Review 20260905 §4 重要项2)。"""
+
+    def test_directory_policy_inactive_without_option(self):
+        context = DiscoveryContext(task_id="pd-1")
+        holder = _make_holder(context)
+        holder.options = {}
+        _publish_host(context, "late.example.com")
+        result = TaskFinalizer(holder).run()
+        metrics = result["metrics"]
+        self.assertEqual(metrics["pending_directory"], 0)
+
+    def test_url_api_and_other_policy_buckets(self):
+        context = DiscoveryContext(task_id="pd-2")
+        holder = _make_holder(context)
+        holder.options = {}
+        context.register_candidate(
+            event_type="UrlCandidateDiscovered",
+            candidate="https://u.example.com/api",
+            candidate_type="url",
+            source="urlfinder",
+        )
+        context.register_candidate(
+            event_type="EndpointCandidateDiscovered",
+            candidate="https://u.example.com/swagger",
+            candidate_type="endpoint",
+            source="api_doc",
+        )
+        context.register_candidate(
+            event_type="UrlCandidateDiscovered",
+            candidate="https://u.example.com/a.js",
+            candidate_type="js",
+            source="urlfinder",
+        )
+        result = TaskFinalizer(holder).run()
+        metrics = result["metrics"]
+        self.assertEqual(metrics["pending_url_probe"], 1)
+        self.assertEqual(metrics["pending_api"], 1)
+        self.assertEqual(metrics["open_other_candidates"], 1)
+        # 非阻断策略不改变 done 终态(Review §4 重要项1：只有 WIH 队列残余阻断)
+        self.assertEqual(metrics["terminal_status"], "done")
+        entry = context.ledger.get(
+            "pending_backlog|url_probe|https://u.example.com/api"
+        )
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.status, "pending")
+        self.assertEqual(entry.payload.get("policy"), "url_probe")
+        self.assertIsNone(
+            context.ledger.get("pending_backlog|url_probe|https://u.example.com/a.js")
+        )
+
+    def test_queue_overflow_host_shown_as_wih_overflow(self):
+        """容量丢弃且目录契约未激活的主机必须显影 wih_overflow（自查轮补口径）。"""
+
+        context = DiscoveryContext(task_id="pd-4")
+        queue = NewHostQueue(
+            context, waf_guard=None, max_hosts=1, allowed_hosts={"example.com"}
+        )
+
+        class _Holder(object):
+            task_id = "pd-4"
+
+            def __init__(self):
+                self.discovery_context = context
+                self.new_host_queue = queue
+                self.options = {}
+
+            def run_web_info_hunter(self):
+                queue.take_for_wih()
+
+        holder = _Holder()
+        _publish_host(context, "first.example.com")
+        _publish_host(context, "dropped.example.com")
+        self.assertTrue(queue.is_queued("first.example.com"))
+        self.assertFalse(queue.is_queued("DROPPED.example.com"))
+
+        finalizer = TaskFinalizer(holder)
+        result = finalizer.run()
+        metrics = result["metrics"]
+        # 队列主机被 drain 消费；容量丢弃主机不阻断终态但必须显影
+        self.assertEqual(metrics["pending_wih"], 0)
+        self.assertEqual(metrics["pending_wih_overflow"], 1)
+        self.assertEqual(metrics["status"], "partial")
+        self.assertEqual(finalizer.terminal_status(), "done")
+        entry = context.ledger.get("pending_backlog|wih_overflow|dropped.example.com")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.status, "pending")
+
+    def test_directory_pending_with_consumed_ledger_skip(self):
+        context = DiscoveryContext(task_id="pd-3")
+        holder = _make_holder(context)
+        holder.options = {"file_leak": True}
+        _publish_host(context, "a.example.com")
+        _publish_host(context, "b.example.com")
+        context.ledger.finish(
+            context.idempotency_key("file_leak", "https://a.example.com"),
+            "covered",
+        )
+        result = TaskFinalizer(holder).run()
+        metrics = result["metrics"]
+        # a 已被目录消费账本证明消费；b 是晚到候选显影为 pending
+        self.assertEqual(metrics["pending_directory"], 1)
+        entry = context.ledger.get("pending_backlog|directory|b.example.com")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.payload.get("reason"), "finalizer_next_cycle")
+
+
 class FinalizerRunTest(unittest.TestCase):
     def test_run_ok_when_no_backlog(self):
         context = DiscoveryContext(task_id="r-1")
@@ -194,6 +348,18 @@ class FinalizerRunTest(unittest.TestCase):
         result = TaskFinalizer(_Outer()).run()
         self.assertEqual(result["metrics"]["status"], "ok")
 
+    def test_run_marks_external_boundary_metrics(self):
+        context = DiscoveryContext(task_id="r-7")
+        holder = _make_holder(context)
+        context.record_metric("external_network_wih_go", 3)
+        context.record_metric("external_network_trufflehog", 2)
+        result = TaskFinalizer(holder).run()
+        metrics = result["metrics"]
+        self.assertEqual(metrics["external_network_wih_go"], 3)
+        self.assertEqual(metrics["external_network_trufflehog"], 2)
+        # 零计数/无关指标不得混入
+        self.assertNotIn("cache_miss_count", metrics)
+
     def test_executor_route_used_when_available(self):
         context = DiscoveryContext(task_id="r-6")
         holder = _make_holder(context)
@@ -207,6 +373,71 @@ class FinalizerRunTest(unittest.TestCase):
         result = TaskFinalizer(holder).run()
         self.assertEqual(seen["name"], "task_finalization")
         self.assertEqual(result["metrics"]["status"], "ok")
+
+
+class FinalizerDecisionTest(unittest.TestCase):
+    """终态决策与兼容映射(Review 20260905 §4 重要项1)。"""
+
+    def test_clean_decision_maps_to_done(self):
+        context = DiscoveryContext(task_id="fd-1")
+        holder = _make_holder(context)
+        finalizer = TaskFinalizer(holder)
+        finalizer.run()
+        self.assertEqual(finalizer.terminal_status(), "done")
+        self.assertEqual(finalizer.decision["verdict"], "clean")
+
+    def test_queue_residual_maps_to_done_pending(self):
+        context = DiscoveryContext(task_id="fd-2")
+        holder = _make_holder(context)
+        _publish_host(context, "residual.example.com")
+        finalizer = TaskFinalizer(holder)
+        with mock.patch.object(_tf.Config, "TASK_FINALIZER_DRAIN_ROUNDS", 0, create=True):
+            result = finalizer.run()
+        self.assertEqual(finalizer.terminal_status(), "done_pending")
+        self.assertEqual(result["metrics"]["terminal_status"], "done_pending")
+        self.assertEqual(result["metrics"]["status"], "partial")
+        self.assertEqual(result["metrics"]["pending_wih"], 1)
+        self.assertEqual(result["metrics"]["blocking_residual"], 1)
+
+    def test_nonblocking_pending_keeps_done_but_records_partial(self):
+        context = DiscoveryContext(task_id="fd-3")
+        holder = _make_holder(context)
+        context.register_candidate(
+            event_type="UrlCandidateDiscovered",
+            candidate="https://late.example.com/next",
+            candidate_type="url",
+            source="urlfinder",
+        )
+        finalizer = TaskFinalizer(holder)
+        result = finalizer.run()
+        # 晚到 URL 候选按下一轮周期语义显影 pending，不阻断 done（契约只承诺队列清空）
+        self.assertEqual(finalizer.terminal_status(), "done")
+        self.assertEqual(result["metrics"]["status"], "partial")
+        self.assertEqual(result["metrics"]["pending_url_probe"], 1)
+        self.assertEqual(result["metrics"]["blocking_residual"], 0)
+
+    def test_degraded_run_maps_to_done_degraded(self):
+        context = DiscoveryContext(task_id="fd-4")
+        holder = _make_holder(context)
+        finalizer = TaskFinalizer(holder)
+        with mock.patch.object(
+            TaskFinalizer, "_core", side_effect=RuntimeError("boom")
+        ):
+            result = finalizer.run()
+        self.assertEqual(finalizer.terminal_status(), "done_degraded")
+        self.assertEqual(result["terminal_status"], "done_degraded")
+
+    def test_external_boundary_metrics_surfaced(self):
+        context = DiscoveryContext(task_id="fd-5")
+        holder = _make_holder(context)
+        context.record_metric("external_network_wih_go", 7)
+        context.record_metric("external_network_trufflehog", 2)
+        context.record_metric("cache_hit_count", 99)
+        result = TaskFinalizer(holder).run()
+        metrics = result["metrics"]
+        self.assertEqual(metrics["external_network_wih_go"], 7)
+        self.assertEqual(metrics["external_network_trufflehog"], 2)
+        self.assertNotIn("cache_hit_count", metrics)
 
 
 class MeasuredStageTest(unittest.TestCase):

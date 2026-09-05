@@ -145,6 +145,9 @@ class DomainSiteStageService(object):
             options=task.options,
             scope_domain=[task.base_domain],
         )
+        # 终态唯一 owner 是 DomainTaskOrchestrator.run_deep 的 TaskFinalizer：
+        # 嵌套站点层跳过收尾，避免 drain/显影双执行。
+        web_site_fetch.terminal_finalize_host_owned = True
         web_site_fetch.run()
         task.wih_domain_set = web_site_fetch.wih_domain_set
         task.web_site_fetch = web_site_fetch

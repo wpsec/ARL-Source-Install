@@ -86,7 +86,7 @@ def collect_task_compat_warnings(task_data_list):
 base_search_task_fields = {
     'name': fields.String(required=False, description="任务名称"),
     'target': fields.String(description="任务目标（域名或IP）"),
-    'status': fields.String(description="任务状态（waiting/running/done/stop/error）"),
+    'status': fields.String(description="任务状态（waiting/运行中阶段名/done/done_pending/done_degraded/stop/error；done_* 为收尾器终态家族）"),
     'type': fields.String(description="任务类型（domain/ip/risk_cruising/fofa/asset_site_add）"),
     '_id': fields.String(description="任务ID"),
     'task_tag': fields.String(description="任务标签（task/monitor/risk_cruising）"),
@@ -398,7 +398,7 @@ def stop_task(task_id):
         6. 记录结束时间
     """
     # 终态状态列表（这些状态的任务无法停止）
-    done_status = [TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR]
+    done_status = list(TaskStatus.TERMINAL)
 
     # 查询任务信息
     task_data = TaskRepository.find_by_id(task_id)
@@ -463,7 +463,7 @@ class DeleteTask(ARLResource):
         - 删除操作不可逆，请谨慎使用
         """
         # 终态状态列表（只有这些状态的任务可以删除）
-        done_status = [TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR]
+        done_status = list(TaskStatus.TERMINAL)
         args = self.parse_args(delete_task_fields)
         task_id_list = args.pop('task_id')
         del_task_data_flag = args.pop('del_task_data')
@@ -528,7 +528,7 @@ class SyncTask(ARLResource):
         - 将外部任务结果导入到资产组
         """
         # 终态状态列表
-        done_status = [TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR]
+        done_status = list(TaskStatus.TERMINAL)
         args = self.parse_args(sync_task_fields)
         task_id = args.pop('task_id')
         scope_id = args.pop('scope_id')
@@ -804,7 +804,7 @@ class TaskRestart(ARLResource):
         - 对比不同时间的扫描结果
         """
         # 终态状态列表
-        done_status = [TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR]
+        done_status = list(TaskStatus.TERMINAL)
         args = self.parse_args(restart_task_fields)
         task_id_list = args.pop('task_id')
 

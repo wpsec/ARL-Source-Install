@@ -207,8 +207,8 @@ def append_task_error(task_id: str, error: Exception = None, stage: str = "", tr
 
     query = {"_id": ObjectId(task_id)}
     task_item = conn_db('task').find_one(query, {"status": 1})
-    current_stage = str((task_item or {}).get("status", "") or "").strip()
-    if current_stage and current_stage not in {"error", "done", "stop"}:
+    current_stage = str((task_item or {}).get("status", "") or "").strip().lower()
+    if current_stage and current_stage not in {"error", "stop"} and not current_stage.startswith("done"):
         stage = "{} / {}".format(stage, current_stage) if stage else current_stage
 
     detail = {
@@ -251,6 +251,13 @@ def init_logger():
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
     logger.propagate = False
+
+
+
+# 任务终态字面量镜像：app.utils 不能反向 import app.modules(ipInfo->utils 成环)，
+# 此处与 app.modules.TaskStatus 保持一致，由 test_task_terminal_status_mapping 锁定。
+TASK_DONE_FAMILY = ("done", "done_pending", "done_degraded")
+TASK_TERMINAL_STATUSES = TASK_DONE_FAMILY + ("error", "stop")
 
 
 def get_logger():
@@ -889,7 +896,10 @@ def mark_task_interrupted(signum):
             }
         }
 
-        query = {"celery_id": celery_id, "status": {"$nin": ["done", "stop", "error"]}}
+        query = {
+            "celery_id": celery_id,
+            "status": {"$nin": list(TASK_TERMINAL_STATUSES)},
+        }
         task_result = conn_db("task").update_one(query, update)
         github_result = conn_db("github_task").update_one(query, update)
 
@@ -944,7 +954,7 @@ def recover_interrupted_tasks_on_worker_start(
         }
     }
     query = {
-        "status": {"$nin": ["waiting", "done", "stop", "error"]},
+        "status": {"$nin": ["waiting"] + list(TASK_TERMINAL_STATUSES)},
         "start_time": {"$nin": ["", "-"]},
     }
     if live_ids:

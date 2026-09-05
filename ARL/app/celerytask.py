@@ -498,7 +498,7 @@ def _mark_domain_deep_dispatch_ready(task_id, target, task_options):
         logger.warning("prepare domain deep task skipped task_id:%s reason:not_found", task_id)
         return False, False
     status = str(item.get("status", "") or "").strip().lower()
-    if status in {TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR}:
+    if TaskStatus.is_terminal(status):
         return False, False
 
     deep_scan = item.get("deep_scan") if isinstance(item.get("deep_scan"), dict) else {}
@@ -531,7 +531,7 @@ def _mark_domain_deep_dispatch_ready(task_id, target, task_options):
     result = utils.conn_db("task").update_one(
         {
             "_id": query_id,
-            "status": {"$nin": [TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR]},
+            "status": {"$nin": list(TaskStatus.TERMINAL)},
             "$or": [
                 {"deep_scan.status": {"$exists": False}},
                 {"deep_scan.status": {"$in": ["", "pending", "failed"]}},
@@ -1134,7 +1134,7 @@ def _should_skip_stale_task_message(action, data):
             return True
         return False
 
-    if status in {TaskStatus.DONE, TaskStatus.STOP, TaskStatus.ERROR}:
+    if TaskStatus.is_terminal(status):
         logger.warning(
             "skip stale queued task message collection:{} task_id:{} action:{} status:{}".format(
                 collection, task_id, action, status
@@ -1367,7 +1367,7 @@ def domain_deep_task(options):
         return
 
     status = str(item.get("status", "") or "").strip().lower()
-    if status in {TaskStatus.STOP, TaskStatus.DONE, TaskStatus.ERROR}:
+    if TaskStatus.is_terminal(status):
         logger.info("skip domain deep task task_id:{} status:{}".format(task_id, status))
         return
 
