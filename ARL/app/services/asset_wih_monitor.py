@@ -1,6 +1,14 @@
 """
 Web指纹信息监控
+
+每次监控运行创建 `monitor|<scope_id>|<run_id>` 的任务级发现上下文：
+WIH 之后的可编排阶段(URLFinder/页面情报/API文档/JS情报/敏感二次)共享
+响应缓存、候选图与流量类别准入，避免周期监控重复请求同一资源。
+run_wih(Go 子进程自带网络栈)与 trufflehog(外部进程)不在共享面内。
 """
+import json
+import uuid
+
 from app.helpers import asset_site, asset_wih
 from app.helpers.scope import get_scope_by_scope_id
 from app.services import (
@@ -15,6 +23,7 @@ from app.services import (
 from app.utils import get_logger, check_domain_black
 from app.modules import WihRecord
 from app import utils
+from app.services.discovery_context import DiscoveryContext, url_host
 from app.services.infoHunter import InfoHunter
 
 logger = get_logger()
@@ -87,25 +96,41 @@ class AssetWihMonitor(object):
         if len(self.sites) == 0:
             return results
 
+        run_id = uuid.uuid4().hex[:12]
+        discovery_context = DiscoveryContext(
+            task_id="monitor|{}|{}".format(self.scope_id, run_id),
+            allowed_hosts={url_host(site) for site in self.sites if url_host(site)},
+        )
+
         # 先执行原生 WIH，再进行 URL/JS 提取增强、同目标二次敏感扫描，最后执行 TruffleHog 二次扫描
         wih_results = list(run_wih(self.sites) or [])
-        urlfinder_results = list(run_urlfinder_extract(self.sites, wih_results) or [])
+        urlfinder_results = list(
+            run_urlfinder_extract(self.sites, wih_results, discovery_context=discovery_context) or []
+        )
         if urlfinder_results:
             wih_results.extend(urlfinder_results)
 
-        page_intel_results = list(run_page_intel_scan(self.sites, wih_results) or [])
+        page_intel_results = list(
+            run_page_intel_scan(self.sites, wih_results, discovery_context=discovery_context) or []
+        )
         if page_intel_results:
             wih_results.extend(page_intel_results)
 
-        api_doc_results = list(run_api_doc_scan(self.sites, wih_results) or [])
+        api_doc_results = list(
+            run_api_doc_scan(self.sites, wih_results, discovery_context=discovery_context) or []
+        )
         if api_doc_results:
             wih_results.extend(api_doc_results)
 
-        js_intel_results = list(run_js_intel_scan(self.sites, wih_results) or [])
+        js_intel_results = list(
+            run_js_intel_scan(self.sites, wih_results, discovery_context=discovery_context) or []
+        )
         if js_intel_results:
             wih_results.extend(js_intel_results)
 
-        urlfinder_sensitive_results = list(run_urlfinder_sensitive_scan(self.sites, wih_results) or [])
+        urlfinder_sensitive_results = list(
+            run_urlfinder_sensitive_scan(self.sites, wih_results, discovery_context=discovery_context) or []
+        )
         if urlfinder_sensitive_results:
             wih_results.extend(urlfinder_sensitive_results)
 
@@ -146,6 +171,20 @@ class AssetWihMonitor(object):
             fnv_hash_set.add(item_fnv_hash)
 
         logger.info("AssetWihMonitor, scope_id: {} results: {}".format(self.scope_id, len(results)))
+
+        # 观测收口：只进诊断日志，供监控路径的请求去重/候选传播回归核对。
+        try:
+            logger.info(
+                "AssetWihMonitor discovery observation scope_id:{} run_id:{} metrics:{}".format(
+                    self.scope_id,
+                    run_id,
+                    json.dumps(discovery_context.metrics_snapshot(), ensure_ascii=False),
+                )
+            )
+        except Exception as exc:
+            logger.debug(
+                "AssetWihMonitor observation log failed error_type:{}".format(type(exc).__name__)
+            )
 
         # 后面这个用不到了，清空，省内存
         self._wih_record_fnv_hash = None

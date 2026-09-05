@@ -1,7 +1,13 @@
 """
 资产站点变化监控
+
+每轮状态/标题比对创建 `monitor|<scope_id>|<run_id>` 的任务级发现上下文，
+站点抓取统一走 fetch_text：共享响应缓存、流量类别准入与失败分类，
+不再对资产组站点直接裸发 HTTP。
 """
+import json
 import threading
+import uuid
 from app.helpers import asset_site, asset_domain
 from app import utils
 from app.helpers.scope import get_scope_by_scope_id
@@ -9,7 +15,9 @@ from app.helpers.message_notify import push_email, push_dingding
 from app.helpers.asset_site_monitor import is_black_asset_site
 from app.config import Config
 from .baseThread import BaseThread
+from .discovery_context import DiscoveryContext, url_host
 from .fetchSite import fetch_site
+from .web_info_intel_utils import fetch_text
 
 
 logger = utils.get_logger()
@@ -21,6 +29,11 @@ class AssetSiteCompare(BaseThread):
         sites = asset_site.find_site_by_scope_id(scope_id)
         logger.info("load {}  site from {}".format(len(sites), self._scope_id))
         super(AssetSiteCompare, self).__init__(targets=sites, concurrency=Config.ASSET_SITE_MONITOR_CONCURRENCY)
+        self._run_id = uuid.uuid4().hex[:12]
+        self.discovery_context = DiscoveryContext(
+            task_id="monitor|{}|{}".format(self._scope_id, self._run_id),
+            allowed_hosts={url_host(site) for site in sites if url_host(site)},
+        )
         self.new_site_info_map = {}
         self.mutex = threading.Lock()
         self.site_change_map = {}
@@ -43,10 +56,17 @@ class AssetSiteCompare(BaseThread):
             )
             return
 
-        conn = utils.http_req(site)
+        text, response = fetch_text(
+            site,
+            timeout=(5, 15),
+            waf_module="asset_site_monitor",
+            discovery_context=self.discovery_context,
+        )
+        if response is None:
+            return
         item = {
-            "title": utils.get_title(conn.content),
-            "status": conn.status_code
+            "title": utils.get_title((text or "").encode("utf-8", "ignore")),
+            "status": int(getattr(response, "status_code", 0) or 0),
         }
         with self.mutex:
             self.new_site_info_map[site] = item
@@ -76,6 +96,20 @@ class AssetSiteCompare(BaseThread):
     def run(self):
         self._run()
         self.compare()
+
+        # 观测收口：诊断日志供监控路径请求去重/失败分类回归核对。
+        try:
+            logger.info(
+                "AssetSiteCompare discovery observation scope_id:{} run_id:{} metrics:{}".format(
+                    self._scope_id,
+                    self._run_id,
+                    json.dumps(self.discovery_context.metrics_snapshot(), ensure_ascii=False),
+                )
+            )
+        except Exception as exc:
+            logger.debug(
+                "AssetSiteCompare observation log failed error_type:{}".format(type(exc).__name__)
+            )
 
         # 已经用完了省一点空间。
         self.new_site_info_map.clear()
