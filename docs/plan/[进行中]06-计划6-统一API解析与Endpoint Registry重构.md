@@ -1,6 +1,6 @@
 # 计划 6：统一 API 解析与 Endpoint Registry 重构
 
-状态：第 1-2 批已实施（2026-09-05，见文末实施进度；第 3 批起未开始）。契约冻结面见 [06-附录A](./06-附录A-API契约冻结清单.md)。
+状态：第 1-3 批已实施（2026-09-05，见文末实施进度；第 4 批起未开始）。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)。
 
 ## 一、总体结论
 
@@ -651,7 +651,7 @@ rust_fallback_total
 | golden corpus | `ARL/test/fixtures/api_unified/`（12 文件 + `expected/` 2 文件） | OpenAPI2/3 JSON+YAML 镜像、循环/未解析/外部引用、Postman 模板与泄露样本、GraphQL 三操作+SDL、WSDL+同源 XSD+XXE、非法/深嵌套边界 |
 | 基线生成器 | `scripts/api-unified-golden.py` | 现行 `ApiDocScanner` 网络无关基线；`--check` 漂移检测 |
 | 契约回归 | `ARL/test/test_api_unified_models.py` | 29 项：字段面/枚举/幂等键/脱敏/legacy 格式/基线漂移/目标期望下界 |
-| 冻结清单 | `docs/plan/06-附录A-API契约冻结清单.md` | 旧记录面、§4 契约、脱敏策略、G1-G8 现状缺口（即第 4-7 批验收差异面） |
+| 冻结清单 | `docs/completed/[已完成]06-附录A-API契约冻结清单.md` | 旧记录面、§4 契约、脱敏策略、G1-G8 现状缺口（即第 4-7 批验收差异面） |
 
 本批不改任何运行时行为：无新 Config 键、无阶段接线、`app.services.__init__` 不导出新模块。
 下一步为第 2 批（观测与响应复用 shadow metrics），前置依赖 `discovery_context`（已在库）的
@@ -674,3 +674,36 @@ collection-error 集合与改动前基线完全一致（34 项均为既有本地
 下一步为第 3 批：`ApiCandidateRegistry` + `ApiDocumentQueue`（候选注册、状态机、幂等键、
 JS 发现文档回流当前任务、深度/数量/大小/阶段预算），并将获取路径切换到统一 profile（届时 §4.5
 `cross_bucket_hit` 应转正）。
+
+### 第 3 批：ApiCandidateRegistry 和 ApiDocumentQueue（2026-09-05 完成）
+
+| 交付 | 位置 | 说明 |
+|---|---|---|
+| 候选注册表 | `ARL/app/services/api_candidate_registry.py` · `ApiCandidateRegistry` | 文档候选以规范化 URL 唯一、`sources` 聚合（G8 替代面）；状态机按 `_DOC_TRANSITIONS` 合法边强制，非法迁移拒绝改态；Endpoint 资产 `scoped_idempotency_key` 唯一，同 URL 不同 method 不合并、新来源只追加 `sources` |
+| 有界消费队列 | 同模块 · `ApiDocumentQueue.run()` | 回流通道三条：`_collect_seed_candidates` 种子、输入记录 `api_doc_url`（page_intel/js_intel 产物）、候选图 `endpoint`+`intel_record_type=api_doc_url`；解析新引用以 depth+1 再入队；预算闸＝深度/数量/大小/阶段时限（时限与 `provider_http` 剩余预算取小）；单文档失败隔离为 `failed`，残余候选保持开放态供 finalizer 下一轮周期显影；账本 `covered` 重投跳过（WIH 主扫描先例同窗口口径） |
+| 统一获取 profile | `web_info_intel_utils.fetch_text` 新增 `request_profile`/`mirror_html_get` | 默认 `html_get` 既有调用零变化；`api_doc` 桶 miss→复用 `html_get` 桶并回填统一桶（不二次请求）→miss 才真实抓取；真实抓取按需镜像 `html_get`（直写 registry，不发 PageFetched、不计 actual_duplicate）保持旧消费者复用面 |
+| 解析复用 | `api_doc_scan.ApiDocScanner` 新增 `collect_seed_candidates()`/`parse_document()` 公开入口 | 第 3 批不改解析实现（第 4 批统一 Parser 接管）；旧记录面输出与 legacy 逐字节一致由测试锁定 |
+| 编排接线 | `wih_orchestrator` | `API_UNIFIED_ENABLE=False`（默认）保持 `wih_api_doc` 阶段位不变；True 时该阶段让位、在 `wih_js_intel` 之后运行 `wih_api_doc_unified` 子阶段——JS 发现文档当前任务内回流（§7.1 顺序） |
+| 兼容/回滚 | `run_api_document_pipeline` | flag 关闭原样委托 legacy；True 时统一层整体异常回退 legacy 并计 `api_unified_fallback_total`（`API_UNIFIED_FALLBACK_ENABLE`）；Registry 挂载 `context.api_candidate_registry` 供第 8 批消费方取用 |
+| 回归 | `ARL/test/test_api_candidate_registry.py` 19 项 | 注册表去重/聚合/状态机/Endpoint 资产、三通道回流各只获取一次、失败隔离、四预算闸、重投跳过、flag 开关输出 parity、profile 桶+镜像、`cross_bucket_hit` 转正锚、回退语义 |
+
+验证：api 三件合跑 56 项全绿；`scripts/api-unified-golden.py --check` 无漂移；`test_task_finalizer` 26 项绿；
+`test_discovery_context/test_wih_orchestrator/test_asset_wih_monitor/test_urlfinder_url_probe` 收集错误与
+`shadow+web_info_intel` 配对污染均经 stash 基线对照确认与改动前一致（既有环境/污染问题，非本批引入）。
+`asset_wih_monitor` 入口本批保持 legacy 调用（监控链路单站点，待第 8 批消费方接入统一切换）。
+
+下一步为第 4 批：OpenAPI/Swagger 统一解析（JSON/YAML、servers/basePath、参数四位置、本地 `$ref`
+有界解析与 unresolved 状态；验收下限＝`current_parser_baseline.json` 记录集合，上限＝
+`unified_target_expectations.json`，补齐 G1/G3/G4/G7）。
+
+## 当前状态（2026-09-05 第 3 批后）
+
+- [已完成] 第 1 批接口/结果契约冻结、golden corpus、legacy adapter、脱敏约束和幂等键定义已完成。
+- [已完成] 第 2 批 shadow metrics、ResponseRegistry 无副作用读取和 API 文档/Endpoint 探测观测接线已完成；该批不改变运行时输出。
+- [已完成] 第 3 批候选注册表、文档队列、状态机、来源聚合、幂等领取（重投 covered 跳过）、四道预算闸与 JS 发现文档当前任务回流已实现；`API_UNIFIED_ENABLE` 默认 False，生产行为面未切换。
+- [未完成] OpenAPI/Postman 的参数/schema/auth 完整统一、GraphQL Schema、WSDL/SOAP Operation 解析和统一 Endpoint 消费链路尚未完成。
+- [已完成] `api_document_cross_bucket_hit_total` 转正：单测锁定 api_doc 桶命中计数路径；真实环境的转正观测并入第 4 批起的容器联调口径。
+- [未完成] `asset_wih_monitor` 监控入口仍走 legacy `run_api_doc_scan`，待第 8 批消费方接入时统一切换。
+- [未完成] Rust 解析层、40/64 目标协同回归和双架构发布验收不得提前宣称完成。
+
+当前判定：计划 6 第 1–3 批 [已完成]；第 4 批及后续运行时接入 [未完成]。第 2/3 批 Review 的终态与候选 drain 前置已在 2026-09-05 终态修复轮闭环，第 3 批未新增绕过统一收尾的消费通道（残余候选保持开放态，finalizer 显影语义不变）。

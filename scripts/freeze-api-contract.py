@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""API 契约静态冻结取证（docs/04 Step 1；重构期间契约只读的基准文档）。
+"""API 契约静态冻结取证（计划 4 Step 1；重构期间契约只读的基准文档，输出见 docs/completed/）。
 
 为什么脚本生成而不是手抄：路由 40+ 文件、端点 200+，手抄必漏；
 AST 提取保证与代码同源。输出 markdown 表供 UI 重构逐项对照。
@@ -214,7 +214,7 @@ def export_module_hints():
     return hints
 
 
-OUT_DOC = ROOT / "docs" / "plan" / "04-附录A-API契约冻结清单.md"
+OUT_DOC = ROOT / "docs" / "completed" / "[已完成]04-附录A-API契约冻结清单.md"
 
 
 def render():

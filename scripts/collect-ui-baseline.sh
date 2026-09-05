@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 采集前端重构基线指标（docs/04 第四节数据唯一来源；重构各阶段前后各跑一次对照）
+# 采集前端重构基线指标（计划 4 第四节数据唯一来源；重构各阶段前后各跑一次对照）
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FE="$ROOT_DIR/ARL/docker/frontend-src"

@@ -114,6 +114,33 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
 `cache_hit_count`、`actual_duplicate_request_count`、`cross_strategy_reuse_count`)口径不变,
 本表是 API 类别的分解视图。WAF blocked/pending 分类计数按计划留待第 9 批。
 
+### 4.7 第 3 批运行时接界面(2026-09-05 登记)
+
+- 模块:`ARL/app/services/api_candidate_registry.py`(`ApiCandidateRegistry`/`ApiDocumentQueue`/
+  `run_api_document_pipeline`)。`API_UNIFIED_ENABLE`(默认 False)关闭时委托 legacy
+  `run_api_doc_scan`,行为与 §4.5 完全一致;开启时 `wih_api_doc` 阶段位让位,
+  `wih_js_intel` 之后运行 `wih_api_doc_unified`(JS 回流当前任务)。
+- 获取 profile:`fetch_text` 新增 `request_profile`(默认 `html_get`,既有调用零变化)与
+  `mirror_html_get`。统一 `api_doc` 桶查询顺序:api_doc 桶→`html_get` 桶(命中回填
+  api_doc 桶,不发请求)→真实抓取;真实抓取镜像登记 `html_get` 桶(直写 registry,
+  不发布 `PageFetched`、不计 `actual_duplicate`),保持旧消费者复用面。
+- 文档候选消费单元 = 规范化 URL;账本幂等键 = `context.idempotency_key("api_doc", url,
+  "api_doc", "")`,`covered` 重投跳过(与 WIH 主扫描先例同窗口取舍);预算键读取口径 =
+  `getattr(Config, name, UNIFIED_API_CONFIG_DEFAULTS[name])`,非正值回退默认。
+- 新增计数指标(随 `metrics_snapshot` 进诊断日志,不落 Mongo):
+  `api_document_candidates_total`、`api_document_sources_merged_total`、
+  `api_document_parse_success_total`、`api_document_parse_failed_total`、
+  `api_document_pending_residual_total`、`api_document_budget_skipped_total`、
+  `api_document_resumed_skip_total`、`api_endpoint_discovered_total`、
+  `api_endpoint_deduplicated_total`、`api_unified_fallback_total`。
+- 输出不变性:`API_UNIFIED_ENABLE` 开启时记录面集合与 legacy 逐字节一致(同一解析实现、
+  同一 `_append_record` 去重),由 `test_api_candidate_registry.py` parity 用例锁定;
+  Endpoint 资产登记面(`context.api_candidate_registry.snapshot_endpoints()`)为第 8 批
+  消费方预留,本批不改变任何下游消费行为。
+- 候选图镜像:统一注册表按 `candidate_type="api_doc"`、`request_profile="api_doc"` 镜像
+  `ApiDocumentCandidateDiscovered` 事件,不与 `endpoint` 型候选混用;finalizer
+  `pending_backlog|api|*` 显影只消费 `endpoint` 型,语义不变(残余开放候选仍按下一轮周期显影)。
+
 ### 4.6 兼容映射(§7.3 的 adapter 语义)
 
 `UnifiedApiEndpoint.to_legacy_records()`:
@@ -165,5 +192,8 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
 - 第 2 批完成判据:`api_unified_shadow.py` + `peek_response` + 两接线点 + `test/test_api_unified_shadow.py` 8 项,
   含"同一文档跨 Scanner 实例只发一次网络请求、记录集合与单次运行一致"的输出不变性验证;
   全量本地套件下 `test_api_unified*` 零失败(collection-error 集合与改动前基线一致)。
+- 第 3 批完成判据:`api_candidate_registry.py` + `fetch_text` profile/镜像改造 +
+  `wih_orchestrator` 接线 + `test/test_api_candidate_registry.py` 19 项,含 flag 开关
+  输出 parity 与 `cross_bucket_hit` 转正锚(2026-09-05 本地通过;golden `--check` 无漂移)。
 - 第 2 批起不得修改本清单第一、二节冻结面(旧记录兼容);§4 契约扩展须同批更新本文件并过 corpus 回归。
 - 第 4-7 批 Parser 验收下限 = `current_parser_baseline.json` 记录集合;目标上限 = `unified_target_expectations.json`。

@@ -2,7 +2,7 @@
 
 状态：**执行中——Step1/2 与 Phase 0-4 代码面完成（2026-09-04），容器构建与视觉走查待联调**。启动前提：**x86 构建与基础 smoke 验证完成后即允许启动 UI 开发**；64 目标性能门禁与生产部署验收不前置，仍按总计划排在全部重构最后执行。
 
-> 执行期勘误（2026-09-04）：①"现状诊断"节的 *frontend-src 无 package-lock.json* 表述过期——lock 一直存在于磁盘但被 `ARL/.gitignore` 屏蔽，现已加例外纳入 git，Dockerfile `有 lock 即走 npm ci` 分支自动生效；②可切换主题实际为 5 套（sandstone 默认/midnight/slate/nord/titanium，见 ThemeContext），不止 brand/midnight 两套，daisy 主题注册按 5+1（brand 兜底 :root）落地，AA 验收覆盖全部 6 套；③docs/03 路径已迁至 `docs/plan/03-...`。执行记录与指标对照见文末"执行记录"节。
+> 执行期勘误（2026-09-04）：①"现状诊断"节的 *frontend-src 无 package-lock.json* 表述过期——lock 一直存在于磁盘但被 `ARL/.gitignore` 屏蔽，现已加例外纳入 git，Dockerfile `有 lock 即走 npm ci` 分支自动生效；②可切换主题实际为 5 套（sandstone 默认/midnight/slate/nord/titanium，见 ThemeContext），不止 brand/midnight 两套，daisy 主题注册按 5+1（brand 兜底 :root）落地，AA 验收覆盖全部 6 套；③docs/03 路径已迁至 `docs/plan/[进行中]03-计划3-实施批次与验收回归.md`。执行记录与指标对照见文末"执行记录"节。
 
 ## 决策结论（TL;DR）
 
@@ -182,4 +182,15 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 - Phase3 尚未完成全量 `useEffect → react-query` 迁移，DataTable 也尚未接入所有页面级主列表。
 - 首行冻结功能下线是用户可见行为变化，不应仅作为滚动模型实现细节；需要在发布说明和回归清单中单独确认。
 
-详细报告：[计划 1–5 前置复核报告](../review/计划1-5前置复核报告-20260905.md)。
+详细报告：[计划 1–5 前置复核报告](<../review/[已完成]计划1-5前置复核报告-20260905.md>)。
+
+## 当前状态（2026-09-05 Review 后）
+
+- [已完成] UI 契约冻结、daisyUI 主题与组件层、页面骨架拆分、模块化路由、列表缓存、懒加载、主 chunk 压缩和 TypeScript/Vite 构建门禁已完成。
+- [已完成] 两轮 Review 修复已落地：敏感 define 注入移除、列表失效/轮询、ErrorBoundary、Modal 无障碍标题、稳定行键和全局新建任务刷新。
+- [已完成]（2026-09-05 终态修复轮）done 家族（done/done_pending/done_degraded）前端源码兼容：`normalizeTaskStatus` 既有 "done" 子串规则天然归类完成，另修正 `getTaskProgressPercent` 与 `TableModuleView.isTaskTerminalStatus`/终态展示对家族值的判定；`tsc --noEmit` 通过。`docker/frontend` dist 重建未执行，纳入双架构 smoke 联调门禁一并验证。
+- [未完成] ARM64/amd64 容器 smoke、Safari `<dialog>` 键盘行为、视觉走查、Lighthouse TTI/INP 尚未形成验收证据。
+- [未完成] Phase 3 尚未完成全量 `useEffect → react-query` 迁移，DataTable 尚未接入所有页面级主列表，UI 测试基建尚未完成选型和落地。
+- [未完成] 首行冻结下线属于用户可见行为变化，需在发布说明和回归清单中单独确认。
+
+当前判定：UI 代码重构 [已完成]；联调、兼容性和用户体验验收 [未完成]。计划 4 不影响计划 6 的 API 契约实现，但不能从总计划最终完成项中移除。

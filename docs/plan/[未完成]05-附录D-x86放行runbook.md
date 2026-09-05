@@ -114,5 +114,5 @@ docker restart arl_web arl_worker_1 arl_worker_2 arl_scheduler
   会 upsert 回 Mongo（legacy 既有语义，本次未改）。要"删了不复活"是独立需求（墓碑机制），另立项。
 - **第 7 阶段（删旧文件/旧加载路径）不在本 runbook**：只有门禁 1-3 全绿且稳定运行一个观测周期后才评估，
   且删除前须 `grep` 全仓确认无 `web_app_rule`/`finger.json`/`kscan_fingerprint` 运行时引用。
-- 放行通过后，把门禁 1 的 `/tmp/fpdiff.out` 与门禁 3 采样片段归档进 docs/plan/03 对应批次，作为
+- 放行通过后，把门禁 1 的 `/tmp/fpdiff.out` 与门禁 3 采样片段归档进 `docs/plan/[进行中]03-计划3-实施批次与验收回归.md` 对应批次，作为
   "有效结果不减少、低证据不再直接确认"的验收证据（05 §九）。

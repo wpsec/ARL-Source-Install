@@ -3,7 +3,7 @@
 
 决策背景（05 主文档决策1）：local 9673 进生产以本审计通过为前置。
 增量严格定义 = 名字新增（local 有 kscan 无）+ 同名 human_rule 内容差异（bundle 合并强化）。
-输出 docs/plan/05-附录B-local增量审计报告.md（重跑刷新）。
+输出 docs/completed/[已完成]05-附录B-local增量审计报告.md（重跑刷新）。
 """
 import importlib.util
 import json
@@ -19,7 +19,7 @@ LOCAL = ROOT / "ARL/app/dicts/kscan_fingerprint.local.json"
 WEBAPP = ROOT / "ARL/app/dicts/webapp.json"
 FINGER = ROOT / "tools/finger.json"
 GOLDEN_SAMPLES = ROOT / "ARL/test/fixtures/fingerprints/responses.json"
-OUT = ROOT / "docs" / "plan" / "05-附录B-local增量审计报告.md"
+OUT = ROOT / "docs" / "completed" / "[已完成]05-附录B-local增量审计报告.md"
 
 
 def norm_name(name):

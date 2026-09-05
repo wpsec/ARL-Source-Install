@@ -2,7 +2,7 @@
 
 ## 1. 验收范围
 
-- 计划文档：[docs/plan/04-计划4-UI体系重构-daisyUI与骨架拆分.md](../plan/04-计划4-UI体系重构-daisyUI与骨架拆分.md)
+- 计划文档：[docs/plan/[进行中]04-计划4-UI体系重构-daisyUI与骨架拆分.md](<../plan/[进行中]04-计划4-UI体系重构-daisyUI与骨架拆分.md>)
 - 修复提交：`bd6a299e`（Review 修复轮 1）、`c8b9a537`（Review 修复轮 2）
 - 记录补充：`77cbc126`（同步更新 docs/03 执行记录）
 - 验收日期：2026-09-04

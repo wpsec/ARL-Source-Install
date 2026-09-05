@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""计划5 第1阶段：指纹现状冻结取证（输出 docs/plan/05-附录A-指纹现状冻结清单.md）。
+"""计划5 第1阶段：指纹现状冻结取证（输出 docs/completed/[已完成]05-附录A-指纹现状冻结清单.md）。
 
 为什么脚本取证：四文件 4.6MB/近 4 万条规则，手工统计必漏；交叉对比与
 weak-rule 计数是后续生成脚本（第2阶段）的 golden 基线。规则语义变化时重跑本脚本刷新清单。
@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "docs" / "plan" / "05-附录A-指纹现状冻结清单.md"
+OUT = ROOT / "docs" / "completed" / "[已完成]05-附录A-指纹现状冻结清单.md"
 
 FILES = {
     "webapp": ROOT / "ARL/app/dicts/webapp.json",
@@ -249,7 +249,7 @@ def main():
     L.append("# 05 附录A · 指纹现状冻结清单（第1阶段取证）\n")
     L.append(f"- 生成命令：`python3 scripts/fingerprint-baseline.py`（本文件即脚本输出，禁止手改；规则文件/代码变更后重跑刷新）")
     L.append(f"- 基线 rev：`{rev}`，生成时间：{datetime.now():%F %T}")
-    L.append(f"- API 端点面冻结复用 [04-附录A](./04-附录A-API契约冻结清单.md)（`/api/fingerprint` CRUD/上传/导出、`/api/site`、`/api/service` 均在其中），本清单只覆盖指纹文件、调用条件与结果字段面。\n")
+    L.append(f"- API 端点面冻结复用 [04-附录A](<./[已完成]04-附录A-API契约冻结清单.md>)（`/api/fingerprint` CRUD/上传/导出、`/api/site`、`/api/service` 均在其中），本清单只覆盖指纹文件、调用条件与结果字段面。\n")
 
     L.append("## 一、规则文件基线（sha256 前 16 位）\n")
     L.append("| 文件 | 大小(B) | sha256 | 规则条目 | 说明 |")
