@@ -261,134 +261,104 @@ class RedactionTest(unittest.TestCase):
 
 
 class UrlSourceBoundaryTest(unittest.TestCase):
-    """P1-10：URL/source 是独立安全边界，构造与 merge 入口清洗、最终守卫兜底。"""
+    """三层数据契约（附录A §4.16，2026-09-06 用户裁定，替代原 P1-10 语义）：
 
-    def test_document_url_sensitive_query_redacted_at_construction(self):
+    公开观测值（url 的 query/path、source、parent_url/parent_target/
+    parent_document/base_url）原样保留，资产层不改写；normalize 只做非破坏性
+    规范化供比较去重；守卫仅作用于内容面（参数取值/schema/赋值形态自由文本）。
+    """
+
+    def test_document_url_query_preserved_as_observed(self):
         candidate = m.ApiDocumentCandidate(
-            task_id="t1", url="https://api.example.com/x?token=SECRET"
-        )
-        self.assertNotIn("SECRET", candidate.url)
-        self.assertIn("token=<redacted>", candidate.url)
-        # 脱敏后守卫必须放行（<redacted> 占位不算泄露），ParseResult 序列化不抛错。
+            task_id="t1", url="https://api.example.com/x?token=abc123")
+        # 观测值原样：query 参数与值不删、不改写、不折叠。
+        self.assertEqual(candidate.observed_url, "https://api.example.com/x?token=abc123")
+        self.assertIn("token=abc123", candidate.url)
         self.assertEqual(m.find_sensitive_keys(candidate.to_dict()), [])
         payload = json.dumps(m.ParseResult(parser="openapi", documents=[candidate]).to_dict())
-        self.assertNotIn("SECRET", payload)
+        self.assertIn("token=abc123", payload)
 
-    def test_endpoint_url_sensitive_query_redacted_at_construction(self):
-        endpoint = m.UnifiedApiEndpoint(url="https://api.example.com/x?api_key=KEY")
-        self.assertNotIn("KEY", endpoint.url)
-        self.assertIn("api_key=<redacted>", endpoint.url)
+    def test_endpoint_url_query_preserved_key_from_normalized(self):
+        endpoint = m.UnifiedApiEndpoint(url="https://api.example.com/x?api_key=K1")
+        self.assertIn("api_key=K1", endpoint.url)
+        self.assertEqual(endpoint.observed_url, "https://api.example.com/x?api_key=K1")
         self.assertEqual(m.find_sensitive_keys(endpoint.to_dict()), [])
-        # endpoint_id/幂等键派生自已脱敏 url，键面同样不含原值。
-        self.assertNotIn("KEY", endpoint.endpoint_id)
-        self.assertNotIn("KEY", endpoint.idempotency_key)
+        # 去重键派生自 normalized url：不同 query 值是两个资产（不折叠、不改写）。
+        twin = m.UnifiedApiEndpoint(url="https://api.example.com/x?api_key=K2")
+        self.assertNotEqual(endpoint.idempotency_key, twin.idempotency_key)
+        same = m.UnifiedApiEndpoint(url="https://api.example.com/x?api_key=K1")
+        self.assertEqual(endpoint.idempotency_key, same.idempotency_key)
 
-    def test_document_initial_source_query_and_assignment_redacted(self):
-        from_query = m.ApiDocumentCandidate(
-            task_id="t1",
-            url="https://api.example.com/x",
-            source="https://ref.example.com/openapi.json?api_key=KEY",
-        )
-        self.assertNotIn("KEY", from_query.source)
-        self.assertNotIn("KEY", " ".join(from_query.sources))
-        from_header = m.ApiDocumentCandidate(
-            task_id="t1",
-            url="https://api.example.com/x",
-            source="Authorization: Bearer XYZ",
-        )
-        self.assertNotIn("XYZ", from_header.source)
-        self.assertIn("<redacted>", from_header.source)
-        self.assertEqual(m.find_sensitive_keys(from_header.to_dict()), [])
-
-    def test_endpoint_initial_source_query_and_assignment_redacted(self):
-        from_query = m.UnifiedApiEndpoint(
-            url="https://api.example.com/x",
-            source="https://ref.example.com/postman.json?api_key=KEY",
-        )
-        self.assertNotIn("KEY", from_query.source)
-        self.assertNotIn("KEY", " ".join(from_query.sources))
-        from_header = m.UnifiedApiEndpoint(
-            url="https://api.example.com/x",
-            source="Authorization: Bearer XYZ",
-        )
-        self.assertNotIn("XYZ", from_header.source)
-        self.assertIn("<redacted>", from_header.source)
-        self.assertEqual(m.find_sensitive_keys(from_header.to_dict()), [])
-
-    def test_add_source_redacts_on_both_models(self):
-        candidate = m.ApiDocumentCandidate(task_id="t1", url="https://api.example.com/x")
-        self.assertTrue(candidate.add_source("https://ref.example.com/d?token=SECRET"))
-        self.assertFalse(candidate.add_source("https://ref.example.com/d?token=OTHER"))
-        self.assertEqual(len(candidate.sources), 1)
-        self.assertNotIn("SECRET", " ".join(candidate.sources))
-        self.assertNotIn("OTHER", " ".join(candidate.sources))
-
-        endpoint = m.UnifiedApiEndpoint(url="https://api.example.com/x")
-        self.assertTrue(endpoint.add_source("Authorization: Bearer XYZ"))
-        self.assertNotIn("XYZ", " ".join(endpoint.sources))
-        self.assertIn("<redacted>", " ".join(endpoint.sources))
-        self.assertEqual(m.find_sensitive_keys(endpoint.to_dict()), [])
-
-    def test_parent_url_and_base_url_and_parent_document_redacted(self):
-        candidate = m.ApiDocumentCandidate(
-            task_id="t1",
-            url="https://api.example.com/x",
-            parent_url="https://ref.example.com/page?token=SECRET",
-        )
-        self.assertNotIn("SECRET", candidate.to_dict()["parent_url"])
+    def test_parent_target_and_source_fields_preserved_verbatim(self):
         endpoint = m.UnifiedApiEndpoint(
             url="https://api.example.com/x",
-            base_url="https://api.example.com?access_key=AK",
-            parent_document="https://ref.example.com/d?api_key=KEY",
-        )
+            parent_target="https://portal.example.com/page?token=PT",
+            parent_document="https://ref.example.com/d?api_key=PD",
+            base_url="https://api.example.com?access_key=BU")
         payload = endpoint.to_dict()
-        self.assertNotIn("AK", payload["base_url"])
-        self.assertNotIn("KEY", payload["parent_document"])
-        # to_legacy_records 的 source 取 parent_document，同样不得带原值。
-        self.assertNotIn("KEY", json.dumps(endpoint.to_legacy_records()))
+        self.assertIn("token=PT", payload["parent_target"])
+        self.assertIn("api_key=PD", payload["parent_document"])
+        self.assertIn("access_key=BU", payload["base_url"])
         self.assertEqual(m.find_sensitive_keys(payload), [])
+        doc = m.ApiDocumentCandidate(
+            task_id="t1", url="https://api.example.com/v3/api-docs",
+            parent_url="https://app.example.com/home?api_key=PURL",
+            source="https://ref.example.com/openapi.json?api_key=KEY")
+        self.assertIn("api_key=PURL", doc.to_dict()["parent_url"])
+        self.assertIn("api_key=KEY", doc.source)
+        self.assertEqual(m.find_sensitive_keys(doc.to_dict()), [])
 
-    def test_clean_urls_and_sources_are_byte_identical(self):
+    def test_add_source_dedupes_verbatim_without_folding(self):
+        # §4.16 撤销 P1-10 的 merge 折叠口径：仅键值不同的两个来源串是不同证据。
+        candidate = m.ApiDocumentCandidate(task_id="t1", url="https://api.example.com/x")
+        self.assertTrue(candidate.add_source("https://ref.example.com/d?token=A"))
+        self.assertTrue(candidate.add_source("https://ref.example.com/d?token=B"))
+        self.assertFalse(candidate.add_source("https://ref.example.com/d?token=A"))
+        self.assertEqual(len(candidate.sources), 2)
+        self.assertIn("token=A", " ".join(candidate.sources))
+
+    def test_clean_urls_and_normalized_still_byte_identical(self):
+        # 非破坏性规范化的 no-op 面：干净 URL、path 段名为 token、含参 query。
         for url in (
             "https://api.example.com/v1/pets",
-            # path 段恰名为 token：不是 query，不得误脱敏。
             "https://api.example.com/token/refresh",
             "https://api.example.com/v3/api-docs?x=1",
         ):
             with self.subTest(url=url):
-                self.assertEqual(m.sanitize_url_secrets(url), url)
-                self.assertEqual(m.sanitize_source_text(url), url)
                 self.assertEqual(
-                    m.ApiDocumentCandidate(task_id="t1", url=url).url, url
-                )
+                    m.ApiDocumentCandidate(task_id="t1", url=url).url, url)
                 self.assertEqual(m.UnifiedApiEndpoint(url=url).url, url)
-        for source in ("page_intel", "js_intel", "openapi_parser"):
-            with self.subTest(source=source):
-                self.assertEqual(m.sanitize_source_text(source), source)
+        # 大小写 host/scheme 的非破坏性归一仍生效（比较面），observed 保留原样。
+        mixed = m.UnifiedApiEndpoint(url="HTTPS://API.Example.COM/V1?a=B")
+        self.assertEqual(mixed.url, "https://api.example.com/V1?a=B")
+        self.assertEqual(mixed.observed_url, "HTTPS://API.Example.COM/V1?a=B")
 
-    def test_guard_catches_residual_query_secret_bypassing_construction(self):
-        # 直接赋值绕过构造期清洗时，最终守卫必须检出并让 ParseResult.to_dict 抛错。
-        endpoint = m.UnifiedApiEndpoint(url="https://api.example.com/x")
-        endpoint.url = "https://api.example.com/x?token=LEAK"
-        with self.assertRaises(ValueError):
-            m.ParseResult(parser="openapi", endpoints=[endpoint]).to_dict()
-
-        candidate = m.ApiDocumentCandidate(task_id="t1", url="https://api.example.com/x")
-        candidate.sources.add("https://ref.example.com/d?api_key=LEAK2")
-        with self.assertRaises(ValueError):
-            m.ParseResult(parser="openapi", documents=[candidate]).to_dict()
-
-    def test_find_sensitive_keys_url_query_detection_scope(self):
-        self.assertTrue(m.find_sensitive_keys({"url": "https://x/y?token=SECRET"}))
-        self.assertTrue(m.find_sensitive_keys({"sources": ["https://x/d?api_key=KEY"]}))
-        self.assertTrue(m.find_sensitive_keys({"parent_url": "https://x/y?Authorization=a"}))
-        # 干净 URL、path 段含 token、query 已脱敏/空值：均不算泄露。
-        self.assertEqual(m.find_sensitive_keys({"url": "https://x/token/refresh"}), [])
-        self.assertEqual(m.find_sensitive_keys({"url": "https://x/y?q=1"}), [])
+    def test_guard_covers_content_fields_not_url_observations(self):
+        # 守卫范围=内容面：参数取值、schema 赋值形态仍 raise；URL 观测字段放行。
         self.assertEqual(
-            m.find_sensitive_keys({"url": "https://x/y?token=<redacted>"}), []
-        )
-        self.assertEqual(m.find_sensitive_keys({"url": "https://x/y?token="}), [])
+            m.find_sensitive_keys({"url": "https://x/y?token=SECRET"}), [])
+        self.assertEqual(
+            m.find_sensitive_keys({"sources": ["https://x/d?api_key=KEY"]}), [])
+        self.assertEqual(
+            m.find_sensitive_keys({"parent_url": "https://x/y?Authorization=a"}), [])
+        leaked = m.UnifiedApiEndpoint(
+            url="https://api.example.com/x",
+            response_schema={"example": {"Authorization": "Bearer leak"}})
+        self.assertTrue(m.find_sensitive_keys(leaked.to_dict()))
+        with self.assertRaises(ValueError):
+            m.ParseResult(parser="openapi", endpoints=[leaked]).to_dict()
+        param_shape = m.UnifiedApiEndpoint(
+            url="https://api.example.com/x",
+            parameters=[m.ParameterSpec(name="token", type_summary="string")])
+        # ParameterSpec 无取值通道：仅名称命中不构成泄露。
+        self.assertEqual(m.find_sensitive_keys(param_shape.to_dict()), [])
+
+    def test_observed_url_explicit_input_wins(self):
+        ep = m.UnifiedApiEndpoint(
+            url="https://api.example.com/x?a=1",
+            observed_url="https://api.example.com/x?a=1&from=scan")
+        self.assertEqual(ep.observed_url, "https://api.example.com/x?a=1&from=scan")
+        self.assertIn("a=1", ep.url)
 
 
 class LegacyCompatTest(unittest.TestCase):

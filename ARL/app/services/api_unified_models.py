@@ -231,12 +231,12 @@ def find_sensitive_keys(obj: Any, _path: str = "$") -> List[str]:
         for index, item in enumerate(obj):
             hits.extend(find_sensitive_keys(item, "{}[{}]".format(_path, index)))
     elif isinstance(obj, str):
-        # URL/source 是独立安全边界：即便绕过构造期清洗（如直接赋值 parent_url），
-        # 残留的敏感 query 参数也必须被最终守卫检出，不放行到 Registry/Mongo/导出。
-        if _leaf_field(_path) in _URL_SOURCE_FIELDS and _has_sensitive_url_query(obj):
-            hits.append(_path)
-        # 自由文本字段里的赋值形态（如 header 值原文）也按泄露处理。
-        elif _path.endswith((".value", ".raw", ".content")) and _SENSITIVE_ASSIGNMENT_RE.search(obj):
+        # 守卫只作用于内容面字段（参数取值、schema 示例、自由文本赋值形态）。
+        # URL 观测字段（url/observed_url/source/sources/parent_*）不在守卫范围：
+        # 公开资产观测值原样保留（2026-09-06 用户裁定，附录A §4.16），
+        # token=... 之类 query 值是业务参数还是凭据不由资产层改写判定，
+        # 凭据保护属请求上下文层（受控验证层）职责。
+        if _path.endswith((".value", ".raw", ".content")) and _SENSITIVE_ASSIGNMENT_RE.search(obj):
             hits.append(_path)
     return hits
 
@@ -377,6 +377,7 @@ class SecurityRequirementSummary:
 _API_DOCUMENT_FIELDS: Tuple[str, ...] = (
     "task_id",
     "url",
+    "observed_url",
     "type_hint",
     "source",
     "sources",
@@ -398,6 +399,7 @@ _API_DOCUMENT_FIELDS: Tuple[str, ...] = (
 class ApiDocumentCandidate:
     task_id: str
     url: str
+    observed_url: str = ""
     type_hint: str = "unknown"
     source: str = ""
     sources: Set[str] = field(default_factory=set)
@@ -415,9 +417,12 @@ class ApiDocumentCandidate:
 
     def __post_init__(self) -> None:
         self.task_id = str(self.task_id or "").strip()
-        # 构造即清洗：发现 URL 的 query 可能直接携带凭据（?token=... 形态），
-        # 必须在进入 Registry/Mongo/日志前脱敏，而不是依赖最终守卫兜底。
-        self.url = sanitize_url_secrets(normalize_url(self.url))
+        # 三层数据契约（附录A §4.16，2026-09-06 用户裁定）：公开观测值原样保留，
+        # normalize 只做非破坏性规范化（scheme/host 大小写、默认端口），不改写/
+        # 不删除 query 与 path；凭据保护属请求上下文层，不由资产层改写 URL 实现。
+        raw_url = str(self.url or "").strip()
+        self.observed_url = str(self.observed_url or "").strip() or raw_url
+        self.url = normalize_url(self.observed_url)
         if not self.url:
             raise ValueError("api document candidate url must not be empty")
         type_hint = str(self.type_hint or "unknown").strip().lower()
@@ -430,9 +435,10 @@ class ApiDocumentCandidate:
         self.depth = max(0, int(self.depth or 0))
         self.priority = int(self.priority or 0)
         self.confidence = min(100, max(0, int(self.confidence or 0)))
-        self.source = sanitize_source_text(self.source)
-        self.parent_url = sanitize_url_secrets(self.parent_url)
-        self.sources = {sanitize_source_text(item) for item in self.sources}
+        self.source = str(self.source or "").strip()
+        self.parent_url = str(self.parent_url or "").strip()
+        self.parent_target = str(self.parent_target or "").strip()
+        self.sources = {str(item or "").strip() for item in self.sources if str(item or "").strip()}
         if self.source:
             self.sources.add(self.source)
 
@@ -451,8 +457,8 @@ class ApiDocumentCandidate:
         )
 
     def add_source(self, source: str, source_detail: str = "") -> bool:
-        # merge 入口与构造入口同一清洗口径：追加来源不得引入 query/赋值形态密钥。
-        text = sanitize_source_text(source)
+        # merge 入口与构造入口同口径（§4.16）：来源观测值原样，仅去空与去重。
+        text = str(source or "").strip()
         if not text or text in self.sources:
             return False
         self.sources.add(text)
@@ -462,15 +468,13 @@ class ApiDocumentCandidate:
         return {
             "task_id": self.task_id,
             "url": self.url,
+            # 观测值与规范化值双列（§4.16）：url 供比较去重，observed_url 供展示溯源。
+            "observed_url": self.observed_url,
             "type_hint": self.type_hint,
             "source": self.source,
             "sources": sorted(self.sources),
             "parent_target": self.parent_target,
-            # 序列化前再清洗一次 parent_url：Registry merge 会直接赋值该字段，
-            # 绕过 __post_init__，此处是进入快照/导出前的最后一道 URL 边界。
-            "parent_url": sanitize_url_secrets(normalize_url(self.parent_url))
-            if self.parent_url
-            else "",
+            "parent_url": self.parent_url,
             "depth": self.depth,
             "priority": self.priority,
             "status": self.status,
@@ -497,6 +501,7 @@ def _validated_status(value: Any, allowed: Tuple[str, ...], label: str) -> str:
 _UNIFIED_ENDPOINT_FIELDS: Tuple[str, ...] = (
     "endpoint_id",
     "url",
+    "observed_url",
     "path_template",
     "method",
     "api_type",
@@ -532,6 +537,7 @@ class UnifiedApiEndpoint:
     url: str
     method: str = "GET"
     api_type: str = "rest"
+    observed_url: str = ""
     endpoint_id: str = ""
     path_template: str = ""
     source: str = ""
@@ -560,8 +566,12 @@ class UnifiedApiEndpoint:
     input_signature: str = ""
 
     def __post_init__(self) -> None:
-        # 构造即清洗：endpoint_id/幂等键都派生自 url，先脱敏可保证密钥不进入任何键面。
-        self.url = sanitize_url_secrets(normalize_url(self.url))
+        # 三层数据契约（附录A §4.16）：url 为非破坏性规范化值（供 endpoint_id/去重键
+        # 派生），observed_url 为原始观测值（供展示/溯源）；query/path 一律不改写、
+        # 不删除。凭据保护属请求上下文层，不由资产模型改写 URL 实现。
+        raw_url = str(self.url or "").strip()
+        self.observed_url = str(self.observed_url or "").strip() or raw_url
+        self.url = normalize_url(self.observed_url)
         if not self.url:
             raise ValueError("endpoint url must not be empty")
         self.method = canonical_method(self.method)
@@ -574,12 +584,11 @@ class UnifiedApiEndpoint:
         if self.graphql_operation not in GRAPHQL_OPERATIONS:
             raise ValueError("unsupported graphql_operation: {}".format(self.graphql_operation))
         self.confidence = min(100, max(0, int(self.confidence or 0)))
-        self.source = sanitize_source_text(self.source)
-        # parent_document/base_url 是 URL 形态证据，与 url 同一 query 清洗边界；
-        # to_legacy_records 会把它们写进 legacy record 的 source，不能带原值。
-        self.parent_document = sanitize_url_secrets(self.parent_document)
-        self.base_url = sanitize_url_secrets(self.base_url)
-        self.sources = {sanitize_source_text(item) for item in self.sources}
+        self.source = str(self.source or "").strip()
+        self.parent_document = str(self.parent_document or "").strip()
+        self.parent_target = str(self.parent_target or "").strip()
+        self.base_url = str(self.base_url or "").strip()
+        self.sources = {str(item or "").strip() for item in self.sources if str(item or "").strip()}
         if self.source:
             self.sources.add(self.source)
         if not self.endpoint_id:
@@ -625,11 +634,12 @@ class UnifiedApiEndpoint:
         )
 
     def add_source(self, source: str) -> bool:
-        """新来源只追加证据，不改变探测状态（§7.2）。"""
+        """新来源只追加证据，不改变探测状态（§7.2）。
 
-        # merge 入口与构造入口同一清洗口径：跨来源合并（js/page/browser）时，
-        # 来源串里的 URL query 凭据与赋值形态密钥都不得进入 sources 证据面。
-        text = sanitize_source_text(str(source or "").strip())
+        §4.16：来源观测值原样并入（仅去空/去重），跨来源合并不改写任何 URL。
+        """
+
+        text = str(source or "").strip()
         if not text or text in self.sources:
             return False
         self.sources.add(text)
@@ -639,6 +649,8 @@ class UnifiedApiEndpoint:
         return {
             "endpoint_id": self.endpoint_id,
             "url": self.url,
+            # §4.16：url=非破坏性规范化值（键派生面），observed_url=原始观测值（展示/溯源）。
+            "observed_url": self.observed_url,
             "path_template": self.path_template,
             "method": self.method,
             "api_type": self.api_type,
