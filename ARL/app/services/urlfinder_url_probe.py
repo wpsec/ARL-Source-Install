@@ -152,6 +152,27 @@ class UrlfinderUrlProbeService:
                 logger.debug(
                     "url probe candidate graph read failed error_type:{}".format(
                         type(exc).__name__))
+
+        # 计划 6 第 8 批 §7.3：统一 Endpoint Registry 挂载后（flag-on），已登记
+        # 的 Endpoint 资产 URL 不再进入本阶段自建收集——同一 URL 在 endpoint
+        # 通道（html_get 桶）与本阶段（page_fetch 桶）会各打一次请求，Registry
+        # 即"不再自行维护重复列表"的唯一事实源；flag-off 无挂载点，行为不变。
+        api_registry = getattr(self.discovery_context, "api_candidate_registry", None)
+        if api_registry is not None:
+            try:
+                excluded = 0
+                for snapshot in api_registry.snapshot_endpoints():
+                    endpoint_url = self._normalize_url(
+                        str((snapshot or {}).get("url") or ""))
+                    if endpoint_url and endpoint_url in urls:
+                        urls.discard(endpoint_url)
+                        excluded += 1
+                if excluded:
+                    self.record_type_counter["endpoint_registry_excluded"] = excluded
+            except Exception as exc:
+                logger.debug(
+                    "url probe endpoint registry read failed error_type:{}".format(
+                        type(exc).__name__))
         return sorted(urls)
 
     @staticmethod

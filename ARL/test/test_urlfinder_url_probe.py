@@ -1,9 +1,26 @@
+import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from app.config import Config
-from app.modules import CollectSource, WihRecord
-from app.services.urlfinder_url_probe import run_urlfinder_url_probe
+ARL_ROOT = Path(__file__).resolve().parents[1]
+if str(ARL_ROOT) not in sys.path:
+    sys.path.insert(0, str(ARL_ROOT))
+
+from test._api_unified_bootstrap import load_modules  # noqa: E402
+
+# P2-13 口径：真实子模块经 bootstrap 临时桩窗口加载（绕开 app.services.__init__
+# 的 npoc→xing 重依赖链），槽位还原后缓存条目保留、运行期懒导入可用。
+_BUNDLE = load_modules(
+    "app.services.urlfinder_url_probe",
+    "app.services.pageFetch",
+    "app.services.url_candidate_filter",
+)
+Config = _BUNDLE["app.services.urlfinder_url_probe"].Config
+WihRecord = _BUNDLE["app.services.urlfinder_url_probe"].WihRecord
+CollectSource = _BUNDLE["app.services.urlfinder_url_probe"].CollectSource
+run_urlfinder_url_probe = _BUNDLE["app.services.urlfinder_url_probe"].run_urlfinder_url_probe
+_PROBE_MOD = _BUNDLE["app.services.urlfinder_url_probe"]
 
 
 class _FakeUrlCollection:
@@ -39,9 +56,9 @@ class _FakeDb:
 
 
 class TestUrlfinderUrlProbe(unittest.TestCase):
-    @patch("app.services.urlfinder_url_probe.page_fetch")
-    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
-    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    @patch.object(_PROBE_MOD, "page_fetch")
+    @patch.object(_PROBE_MOD.utils, "check_dns_policy_for_url")
+    @patch.object(_PROBE_MOD.utils, "conn_db")
     def test_probe_insert_and_filter(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
         fake_db = _FakeDb(existing_url_assets=["https://example.com/already"])
         mock_conn_db.side_effect = fake_db.collection
@@ -89,9 +106,9 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             waf_module="urlfinder_url_probe",
         )
 
-    @patch("app.services.urlfinder_url_probe.page_fetch")
-    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
-    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    @patch.object(_PROBE_MOD, "page_fetch")
+    @patch.object(_PROBE_MOD.utils, "check_dns_policy_for_url")
+    @patch.object(_PROBE_MOD.utils, "conn_db")
     def test_probe_filters_template_static_and_annotation_noise(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
         fake_db = _FakeDb()
         mock_conn_db.side_effect = fake_db.collection
@@ -128,9 +145,9 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             waf_module="urlfinder_url_probe",
         )
 
-    @patch("app.services.urlfinder_url_probe.page_fetch")
-    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
-    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    @patch.object(_PROBE_MOD, "page_fetch")
+    @patch.object(_PROBE_MOD.utils, "check_dns_policy_for_url")
+    @patch.object(_PROBE_MOD.utils, "conn_db")
     def test_probe_supports_page_url_hidden_candidates(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
         fake_db = _FakeDb()
         mock_conn_db.side_effect = fake_db.collection
@@ -163,9 +180,9 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
             waf_module="urlfinder_url_probe",
         )
 
-    @patch("app.services.urlfinder_url_probe.page_fetch")
-    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
-    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    @patch.object(_PROBE_MOD, "page_fetch")
+    @patch.object(_PROBE_MOD.utils, "check_dns_policy_for_url")
+    @patch.object(_PROBE_MOD.utils, "conn_db")
     def test_probe_skips_when_url_asset_exists(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
         fake_db = _FakeDb(existing_url_assets=["https://example.com/api/user"])
         mock_conn_db.side_effect = fake_db.collection
@@ -192,9 +209,9 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertEqual(len(fake_db.url.inserted), 0)
         self.assertEqual(len(fake_db.fileleak.inserted), 0)
 
-    @patch("app.services.urlfinder_url_probe.page_fetch")
-    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
-    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    @patch.object(_PROBE_MOD, "page_fetch")
+    @patch.object(_PROBE_MOD.utils, "check_dns_policy_for_url")
+    @patch.object(_PROBE_MOD.utils, "conn_db")
     def test_probe_skips_when_fileleak_asset_exists(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
         fake_db = _FakeDb(existing_fileleak_urls=["https://example.com/api/user"])
         mock_conn_db.side_effect = fake_db.collection
@@ -213,13 +230,13 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertEqual(len(fake_db.fileleak.inserted), 0)
         mock_page_fetch.assert_not_called()
 
-    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    @patch.object(_PROBE_MOD.utils, "conn_db")
     def test_probe_skip_when_disabled(self, mock_conn_db):
         records = [
             WihRecord("urlfinder_url", "https://example.com/api/user", "https://example.com", "https://example.com", 100)
         ]
 
-        with patch("app.services.urlfinder_url_probe.Config.URLFINDER_URL_PROBE_ENABLE", False):
+        with patch.object(_PROBE_MOD.Config, "URLFINDER_URL_PROBE_ENABLE", False):
             inserted_count = run_urlfinder_url_probe(
                 task_id="task_2",
                 sites=["https://example.com"],
@@ -229,9 +246,9 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertEqual(inserted_count, 0)
         mock_conn_db.assert_not_called()
 
-    @patch("app.services.urlfinder_url_probe.page_fetch")
-    @patch("app.services.urlfinder_url_probe.utils.check_dns_policy_for_url")
-    @patch("app.services.urlfinder_url_probe.utils.conn_db")
+    @patch.object(_PROBE_MOD, "page_fetch")
+    @patch.object(_PROBE_MOD.utils, "check_dns_policy_for_url")
+    @patch.object(_PROBE_MOD.utils, "conn_db")
     def test_candidate_graph_urls_feed_probe(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
         # "发布了却无人消费"的断链修复：url/page 候选进入探测源，探后状态迁移。
         import types
@@ -279,6 +296,58 @@ class TestUrlfinderUrlProbe(unittest.TestCase):
         self.assertIn("https://example.com/from/graph", probed)
         self.assertNotIn("https://example.com/covered", probed)
         self.assertIn(("https://example.com/from/graph", "covered"), ctx.marked)
+
+    @patch.object(_PROBE_MOD, "page_fetch")
+    @patch.object(_PROBE_MOD.utils, "check_dns_policy_for_url")
+    @patch.object(_PROBE_MOD.utils, "conn_db")
+    def test_registry_endpoint_urls_excluded_when_attached(self, mock_conn_db, mock_dns_policy, mock_page_fetch):
+        # 计划 6 第 8 批 §7.3：统一 Endpoint Registry 挂载后（flag-on），
+        # 已登记 Endpoint 的 URL 不再进 URL Probe 自建列表（同 URL 不在
+        # html_get 与 page_fetch 两个桶各打一次）。
+        import types
+
+        fake_db = _FakeDb()
+        mock_conn_db.side_effect = fake_db.collection
+        mock_dns_policy.return_value = (
+            True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
+        mock_page_fetch.return_value = {
+            "https://example.com/from/graph": {
+                "url": "https://example.com/from/graph",
+                "title": "ok", "content_length": 9, "status_code": 200,
+            }
+        }
+
+        class _Registry:
+            def snapshot_endpoints(self):
+                return [
+                    {"url": "https://example.com/endpoint/known", "method": "GET"},
+                    {"url": "https://example.com/graphql", "method": "POST"},
+                ]
+
+        candidates = [
+            types.SimpleNamespace(candidate="https://example.com/from/graph",
+                                  candidate_type="url", status="discovered"),
+            types.SimpleNamespace(candidate="https://example.com/endpoint/known",
+                                  candidate_type="url", status="discovered"),
+        ]
+
+        class _Ctx:
+            def __init__(self):
+                self.candidate_registry = types.SimpleNamespace(
+                    values=lambda: list(candidates))
+                self.api_candidate_registry = _Registry()
+
+            def mark_candidate_status(self, *_a, **_k):
+                return None
+
+        run_urlfinder_url_probe(
+            task_id="task_1",
+            sites=["https://example.com"],
+            wih_records=[],
+            discovery_context=_Ctx(),
+        )
+        probed = mock_page_fetch.call_args[0][0]
+        self.assertEqual(["https://example.com/from/graph"], probed)
 
 
 if __name__ == "__main__":

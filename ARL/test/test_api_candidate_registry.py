@@ -1315,5 +1315,74 @@ class BrowserIngestGateTest(unittest.TestCase):
         self.assertIsNone(again, "终态不被观察事件回写")
 
 
+class UrlRecordDocHintBackflowTest(unittest.TestCase):
+    """第 8 批：页面/JS 的 urlfinder_url/page_link 记录按 URL 形态升级文档候选。
+
+    GraphQL/WSDL 入口不再依赖 api_doc_url 记录生产者（js 关键字表与 Rust 面
+    不改），统一队列按 document_type_hint 分类回流；非文档形态 URL 不进队。
+    """
+
+    GQL_URL = "https://api.example.com/graphql"
+    GQL_TEXT = json.dumps({
+        "url": "https://api.example.com/graphql", "method": "POST",
+        "request": {"query": "query Ping { ping }"},
+    })
+
+    def _record(self, record_type, content):
+        from app.modules import WihRecord
+        return WihRecord(
+            record_type=record_type, content=content,
+            source="https://api.example.com/", site="api.example.com", fnv_hash=0)
+
+    def test_page_link_and_urlfinder_graphql_backflow_fetch_once(self):
+        context = DiscoveryContext(task_id="t85a")
+        records = [
+            self._record("urlfinder_url", self.GQL_URL),
+            self._record("page_link", self.GQL_URL),
+            self._record("urlfinder_url", "https://api.example.com/pet.png"),
+            self._record("page_link", "https://api.example.com/soap/PetService.wsdl"),
+        ]
+        queue, calls = _make_queue(
+            context=context, fetch_map={self.GQL_URL: self.GQL_TEXT}, records=records)
+        with _safe_domain_fns():
+            queue.run(wih_records=records)
+        self.assertEqual(
+            calls.count(self.GQL_URL), 1, "双记录同 URL 也只获取一次")
+        doc = queue.registry.document(self.GQL_URL)
+        self.assertIsNotNone(doc, "graphql 形态 URL 必须升级为文档候选")
+        self.assertEqual(doc.type_hint, "graphql")
+        self.assertEqual(doc.status, "parsed")
+        assets = [e for e in queue.registry.snapshot_endpoints()
+                  if e["api_type"] == "graphql"]
+        self.assertEqual(len(assets), 1, "JS/页面来源经队列产出 graphql 资产")
+        self.assertIsNone(
+            queue.registry.document("https://api.example.com/pet.png"),
+            "非文档形态 URL 不进队")
+
+    def test_wsdl_bridge_counts_operation_metric(self):
+        # 范围修正项（附录A §4.13）：wsdl_operation_total 在统一桥接面逐
+        # operation 计数（第 7 批 fixture 的 getPet/listPets 两个 soap 端点）。
+        context = DiscoveryContext(task_id="wsdlm")
+        text = (FIXTURES / "wsdl_service.wsdl").read_text(encoding="utf-8")
+        wsdl_url = "https://api.example.com/soap/PetService.wsdl"
+        queue, _calls = _make_queue(context=context, fetch_map={wsdl_url: text})
+        queue.registry.register_document(wsdl_url, source="seed", type_hint="wsdl")
+        with _safe_domain_fns():
+            queue.run()
+        self.assertEqual(
+            int(context.metrics.get("wsdl_operation_total", 0) or 0), 2)
+
+    def test_api_doc_url_passthrough_unchanged(self):
+        # 直通语义回归：api_doc_url 记录不依赖 URL 形态。
+        odd_doc = "https://api.example.com/portal/doc.json"
+        context = DiscoveryContext(task_id="t85b")
+        rec = self._record("api_doc_url", odd_doc)
+        queue, _calls = _make_queue(
+            context=context, fetch_map={odd_doc: self.GQL_TEXT}, records=[rec])
+        with _safe_domain_fns():
+            queue.run(wih_records=[rec])
+        self.assertIsNotNone(queue.registry.document(odd_doc))
+
+
 if __name__ == "__main__":
     unittest.main()

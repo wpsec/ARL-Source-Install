@@ -91,7 +91,18 @@ _TYPE_HINT_KEYWORDS: Tuple[Tuple[str, str], ...] = (
     ("api-docs", "swagger"),
     # 第 7 批：WSDL/SOAP 文档分类（.wsdl / ?wsdl / /wsdl 路径均含 "wsdl"）。
     ("wsdl", "wsdl"),
+    # 第 8 批（P0-05 事件面）：JS/页面发现的 GraphQL 入口经 urlfinder_url/page_link
+    # 记录回流（见 _collect_backflow），此处补分类。GraphQL 关键词只进统一面，
+    # 不回填 ApiDocScanner._DOC_KEYWORDS/js 静态关键字表——那会改变 flag-off 的
+    # legacy 请求面；Rust 原生路径（lib.rs is_api_doc_candidate）的同口径扩展
+    # 属第 10 批 Rust 面。
+    ("graphql", "graphql"),
+    ("graphiql", "graphql"),
 )
+
+# 第 8 批回流扩展记录面：这些记录本身是通用 URL 记录，只有 URL 形态命中
+# 文档关键词时才升级为文档候选（api_doc_url 记录维持既有直通语义）。
+_BACKFLOW_HINT_RECORD_TYPES = ("urlfinder_url", "page_link")
 
 _DOC_PRIORITY_SEED = 10
 _DOC_PRIORITY_EVIDENCE = 20  # 来自记录/候选图的真实发现证据优先于路径猜测
@@ -588,16 +599,25 @@ class ApiDocumentQueue:
     # -- 回流与消费 --------------------------------------------------------
 
     def _collect_backflow(self, wih_records: List[Any]) -> int:
-        """把记录面与候选图里已发现的 api_doc_url 回流进注册表（JS 回流核心通道）。"""
+        """把记录面与候选图里已发现的 API 文档回流进注册表（JS/页面回流核心通道）。
+
+        第 8 批扩展：api_doc_url 记录维持直通；urlfinder_url/page_link 记录只在
+        URL 形态命中文档关键词（含第 8 批新增的 graphql 分类）时升级为文档候选，
+        使页面链接与 JS 字符串里的 GraphQL/WSDL/Swagger 入口在当前任务内进队。
+        """
 
         registered = 0
         max_targets = max(1, int(self.config.get("API_DOCUMENT_MAX_TARGETS", 200) or 200))
         for record in wih_records or []:
             try:
-                if str(getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip() != "api_doc_url":
-                    continue
+                record_type = str(
+                    getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip()
                 content = str(getattr(record, "content", "") or "").strip()
                 if not content:
+                    continue
+                if record_type != "api_doc_url" and not (
+                        record_type in _BACKFLOW_HINT_RECORD_TYPES
+                        and document_type_hint(content) != "unknown"):
                     continue
                 _doc, created = self._register_within_budget(
                     content,
@@ -846,6 +866,10 @@ class ApiDocumentQueue:
                 # P1-11：一次桥接端点 = 一次可重放的 graphql 请求文档观察，
                 # 逐条计数（与资产去重无关，度量的是解析产出面）。
                 self._record_metric("graphql_request_total")
+            elif endpoint.api_type == "soap":
+                # 范围修正项（§4.13）：wsdl_operation_total 从 GraphQL 票移出，
+                # 在此 WSDL 可观测性面逐 operation 计数（解析产出面，非资产去重）。
+                self._record_metric("wsdl_operation_total")
             # 富资产直接登记（含参数/auth/追溯）；桥接记录不再经字符串反解。
             self.registry.register_endpoint(endpoint)
             for item in endpoint.to_legacy_records():
