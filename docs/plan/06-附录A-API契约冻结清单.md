@@ -89,7 +89,32 @@ diagnostics 字段:`parser, input_count, output_count, deduplicated_count, unres
 - `redact_assignment_text`:把敏感赋值整段替换为 `key=<redacted>`(值段到 `,;` 或行尾,覆盖 `Bearer xxx` 双词形态)。
 - 外部引用默认关闭(`ParseOptions.external_ref_enable=False`)、GraphQL Schema/introspection 默认关闭(`graphql_schema_enable=False`)、WSDL 解析默认开启——与 §8.3 默认一致。
 
-### 4.5 兼容映射(§7.3 的 adapter 语义)
+### 4.5 shadow 请求复用观测(第 2 批,只计数不改输出)
+
+模块:`ARL/app/services/api_unified_shadow.py`;观测原语:
+`ResponseRegistry.peek` / `DiscoveryContext.peek_response`(无副作用:不登记 consumer、
+不动 LRU、不产生 cache_hit/miss 指标,返回不含 body 的快照)。指标随
+`DiscoveryContext.metrics` 进入 `commonTask.observation_snapshot()` 诊断日志,不落 Mongo。
+
+| 指标键(冻结) | 语义 |
+|---|---|
+| `api_document_fetch_total` / `_unique_total` / `_repeat_total` | 文档获取尝试总数/唯一 URL 数/重复尝试数(task 作用域) |
+| `api_document_cache_hit_total` | 尝试前 `html_get` 桶已存在响应(现行真实复用面) |
+| `api_document_cross_strategy_reuse_total` | 命中响应且 consumers 含非 `api_doc_scan` 来源 |
+| `api_document_cross_bucket_hit_total` | 尝试前统一 `api_doc` 桶已有响应——**现状恒为 0**,第 3 批接管获取后应转正,作为切换生效证据锚 |
+| `api_document_expected_network_total` | 两桶皆无、即将真实请求的尝试数 |
+| `api_document_fetch_empty_total` | 获取返回空的尝试数 |
+| `api_probe_total` / `_unique_total` / `_repeat_total` | Endpoint 探测尝试(键=URL+method+profile) |
+| `api_probe_cache_hit_total` / `_cross_strategy_reuse_total` / `_expected_network_total` | 探测前对应 profile 桶状态 |
+| `api_probe_failed_total` | 探测异常路径 |
+| `api_shadow_error_total` | 观测自身异常(伴随既有 `degraded_count`);观测失败绝不阻断扫描 |
+
+接线点:`api_doc_scan.run()` 文档 fetch 前后;`wih_endpoint_probe._probe_one()` profile
+确定后、缓存解析前,及 except 路径。既有全局指标(`network_request_count`、
+`cache_hit_count`、`actual_duplicate_request_count`、`cross_strategy_reuse_count`)口径不变,
+本表是 API 类别的分解视图。WAF blocked/pending 分类计数按计划留待第 9 批。
+
+### 4.6 兼容映射(§7.3 的 adapter 语义)
 
 `UnifiedApiEndpoint.to_legacy_records()`:
 - `rest`/`soap` → `api_doc_endpoint "{METHOD} {url}"` + `urlfinder_url {url}`,source=`parent_document`(缺失回退 source/url)——与第二节现行格式逐字节一致;
@@ -137,5 +162,8 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
 ## 七、验收挂点
 
 - 第 1 批完成判据:本文件 + `api_unified_models.py` + corpus + `test/test_api_unified_models.py` 29 项全绿(2026-09-05 本地通过)。
+- 第 2 批完成判据:`api_unified_shadow.py` + `peek_response` + 两接线点 + `test/test_api_unified_shadow.py` 8 项,
+  含"同一文档跨 Scanner 实例只发一次网络请求、记录集合与单次运行一致"的输出不变性验证;
+  全量本地套件下 `test_api_unified*` 零失败(collection-error 集合与改动前基线一致)。
 - 第 2 批起不得修改本清单第一、二节冻结面(旧记录兼容);§4 契约扩展须同批更新本文件并过 corpus 回归。
 - 第 4-7 批 Parser 验收下限 = `current_parser_baseline.json` 记录集合;目标上限 = `unified_target_expectations.json`。

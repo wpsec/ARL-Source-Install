@@ -14,6 +14,7 @@ import requests
 from app import utils
 from app.config import Config
 
+from .api_unified_shadow import shadow_probe_failed, shadow_probe_start
 
 logger = utils.get_logger()
 
@@ -316,6 +317,7 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_cont
         )
 
     profile = _probe_request_profile(method, item)
+    shadow_probe_start(discovery_context, url, method, profile)
     inflight_owner = False
     if discovery_context is not None:
         cached, inflight_owner = _resolve_cached_response(
@@ -382,6 +384,7 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_cont
             item["response_packet"] = item["verification_response_packet"]
         return _mark_probe_state(item, "probed", "已按 {} 方法轻量验证".format(method), method)
     except Exception as exc:
+        shadow_probe_failed(discovery_context)
         logger.debug("wih endpoint probe failed url:{} method:{} err:{}".format(url, method, exc))
         return _mark_probe_state(item, "error", "轻量验证失败: {}".format(exc.__class__.__name__), method)
     finally:

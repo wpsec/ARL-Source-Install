@@ -17,6 +17,10 @@ import yaml
 from app import utils
 from app.config import Config
 from app.modules import WihRecord
+from .api_unified_shadow import (
+    shadow_document_fetch_result,
+    shadow_document_fetch_start,
+)
 from .web_info_intel_utils import (
     collect_allowed_flds,
     collect_allowed_hosts,
@@ -368,6 +372,7 @@ class ApiDocScanner:
                 continue
 
             self.visited_docs.add(doc_url)
+            shadow_document_fetch_start(self.discovery_context, doc_url)
             raw_text, _ = fetch_text(
                 doc_url,
                 waf_guard=self.waf_guard,
@@ -376,6 +381,7 @@ class ApiDocScanner:
                 waf_module="api_doc_scan",
                 discovery_context=self.discovery_context,
             )
+            shadow_document_fetch_result(self.discovery_context, doc_url, bool(raw_text))
             if not raw_text:
                 continue
 

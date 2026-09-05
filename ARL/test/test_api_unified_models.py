@@ -7,6 +7,7 @@
 - golden corpus 结构与现行 ApiDocScanner 基线不漂移。
 """
 
+import contextlib
 import json
 import sys
 import types
@@ -15,6 +16,7 @@ import xml.etree.ElementTree as ET
 from collections import deque
 from dataclasses import fields
 from pathlib import Path
+from unittest import mock
 
 ARL_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ARL_ROOT / "test" / "fixtures" / "api_unified"
@@ -44,7 +46,24 @@ def _stub_packages():
 
 _stub_packages()
 
+# 模块级捕获真实引用:既有用例可能在 collection/运行期注入 fake app.utils/app.services
+# 且不还原(本地环境尤为明显),运行期再 import 会取到被污染的模块。
+from app import utils as _app_utils  # noqa: E402
+from app.services import api_doc_scan as _api_doc_module  # noqa: E402
 from app.services import api_unified_models as m  # noqa: E402
+
+
+@contextlib.contextmanager
+def _safe_domain_fns():
+    """app.utils.is_valid_domain/get_fld 内部按模块名重导入,受他用例假模块污染。
+
+    这里在被污染的函数被调用前,直接在真实模块对象上替换实现,与网络无关、可还原。
+    """
+
+    with mock.patch.object(
+        _app_utils, "is_valid_domain", lambda value: "." in str(value or "")
+    ), mock.patch.object(_app_utils, "get_fld", lambda host: "example.com"):
+        yield
 
 
 def _fixture_text(name: str) -> str:
@@ -52,14 +71,13 @@ def _fixture_text(name: str) -> str:
 
 
 def _make_scanner():
-    from app.services.api_doc_scan import ApiDocScanner
-
-    scanner = ApiDocScanner(
-        sites=["https://api.example.com"],
-        wih_records=[],
-        waf_guard=None,
-        discovery_context=None,
-    )
+    with _safe_domain_fns():
+        scanner = _api_doc_module.ApiDocScanner(
+            sites=["https://api.example.com"],
+            wih_records=[],
+            waf_guard=None,
+            discovery_context=None,
+        )
     scanner.allowed_hosts = {"api.example.com"}
     scanner.allowed_flds = {"example.com"}
     return scanner
@@ -327,7 +345,8 @@ class CurrentParserBaselineTest(unittest.TestCase):
         committed = json.loads(_fixture_text("expected/current_parser_baseline.json"))
         for name, doc_url in self.DOC_URLS.items():
             scanner = _make_scanner()
-            scanner._parse_doc(doc_url, _fixture_text(name), deque())
+            with _safe_domain_fns():
+                scanner._parse_doc(doc_url, _fixture_text(name), deque())
             with self.subTest(fixture=name):
                 self.assertEqual(
                     _scanner_records(scanner),

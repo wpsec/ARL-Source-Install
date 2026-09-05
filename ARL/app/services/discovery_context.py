@@ -301,6 +301,38 @@ class ResponseRegistry:
         with self._lock:
             return len(self._items)
 
+    def peek(
+        self,
+        url: Any,
+        method: Any = "GET",
+        request_profile: Any = "default",
+    ) -> Optional[ResponseRecord]:
+        """只读命中：不登记 consumer、不移动 LRU、不产生任何指标。
+
+        shadow 观测专用——观测本身不允许改变被观测系统的行为。
+        返回不含 body 的轻量快照，consumers 为快照集合。
+        """
+
+        cache_key = self.key(url, method, request_profile)
+        with self._lock:
+            item = self._items.get(cache_key)
+            if item is None:
+                return None
+            return ResponseRecord(
+                normalized_url=item.normalized_url,
+                method=item.method,
+                request_profile=item.request_profile,
+                status_code=item.status_code,
+                headers=dict(item.headers),
+                content_type=item.content_type,
+                body=b"",
+                body_hash=item.body_hash,
+                body_truncated=item.body_truncated,
+                source=item.source,
+                fetched_at=item.fetched_at,
+                consumers=frozenset(item.consumers),
+            )
+
 
 @dataclass
 class CandidateRecord:
@@ -1027,6 +1059,16 @@ class DiscoveryContext:
             if had_other_consumers:
                 self.record_metric("cross_strategy_reuse_count")
         return item
+
+    def peek_response(
+        self,
+        url: Any,
+        method: Any = "GET",
+        request_profile: Any = "default",
+    ) -> Optional[ResponseRecord]:
+        """shadow 观测用只读查询，语义见 ResponseRegistry.peek。"""
+
+        return self.response_registry.peek(url, method, request_profile)
 
     def put_response(
         self,

@@ -1,6 +1,6 @@
 # 计划 6：统一 API 解析与 Endpoint Registry 重构
 
-状态：第 1 批已实施（2026-09-05，见文末实施进度；第 2 批起未开始）。契约冻结面见 [06-附录A](./06-附录A-API契约冻结清单.md)。
+状态：第 1-2 批已实施（2026-09-05，见文末实施进度；第 3 批起未开始）。契约冻结面见 [06-附录A](./06-附录A-API契约冻结清单.md)。
 
 ## 一、总体结论
 
@@ -656,3 +656,21 @@ rust_fallback_total
 本批不改任何运行时行为：无新 Config 键、无阶段接线、`app.services.__init__` 不导出新模块。
 下一步为第 2 批（观测与响应复用 shadow metrics），前置依赖 `discovery_context`（已在库）的
 `ResponseRegistry`/请求 profile 对照统计。
+
+### 第 2 批：观测和响应复用（2026-09-05 完成）
+
+| 交付 | 位置 | 说明 |
+|---|---|---|
+| 无副作用读取原语 | `discovery_context.ResponseRegistry.peek` / `DiscoveryContext.peek_response` | 不登记 consumer、不动 LRU、不产生 hit/miss 指标；返回不含 body 的快照 |
+| shadow 观测 | `ARL/app/services/api_unified_shadow.py` | 文档/探测的 总请求、唯一、重复、缓存命中、跨策略复用、期望网络、空响应、失败 计数；`api_doc` 桶命中数恒 0 作为第 3 批切换生效证据锚；观测异常计数且绝不阻断扫描 |
+| 接线 | `api_doc_scan.run()` fetch 前后、`wih_endpoint_probe._probe_one()` profile 后与异常路径 | 只加观测，不改任何记录输出 |
+| 回归 | `test/test_api_unified_shadow.py` 8 项 | 含输出不变性验证：同一文档跨 Scanner 实例仅一次网络请求、两次运行记录集合一致 |
+| 冻结登记 | 06-附录A §4.5 | 全部指标键与口径入冻结清单 |
+
+验证：全量本地套件（`--continue-on-collection-errors`）下 `test_api_unified*` 零失败，
+collection-error 集合与改动前基线完全一致（34 项均为既有本地依赖缺失）。
+本批发现并规避一处既有测试污染：部分既有用例注入 fake `app.utils` 后不还原，
+新测试改为收集期捕获真实模块引用 + `_safe_domain_fns()` 局部替换域函数，免疫顺序。
+下一步为第 3 批：`ApiCandidateRegistry` + `ApiDocumentQueue`（候选注册、状态机、幂等键、
+JS 发现文档回流当前任务、深度/数量/大小/阶段预算），并将获取路径切换到统一 profile（届时 §4.5
+`cross_bucket_hit` 应转正）。
