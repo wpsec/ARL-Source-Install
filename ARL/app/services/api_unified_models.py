@@ -3,7 +3,7 @@
 本模块只承载 schema、状态机、幂等键与脱敏不变量：
 - 不发起 HTTP、不读写 Mongo/Redis/Celery、不做 AI 判断；
 - Parser、Queue、Registry 在后续批次基于本契约实现，字段与键的
-  任何变更必须同步更新 docs/plan/06-附录A-API契约冻结清单.md，
+任何变更必须同步更新 docs/completed/[已完成]06-附录A-API契约冻结清单.md，
   并保证 ARL/test/fixtures/api_unified/ 的 golden corpus 回归通过。
 
 与 discovery_context 的关系：URL 规范化复用 ResponseRegistry 同一

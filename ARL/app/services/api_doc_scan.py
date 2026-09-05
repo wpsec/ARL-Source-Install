@@ -145,6 +145,17 @@ class ApiDocScanner:
             candidate_list = candidate_list[: self.max_docs]
         return candidate_list
 
+    def collect_seed_candidates(self) -> List[str]:
+        """统一队列入口（计划 6 第 3 批）：复用种子采集语义，格式面冻结于附录A §二。"""
+        return self._collect_seed_candidates()
+
+    def parse_document(self, doc_url: str, raw_text: str, sink: List[str]) -> None:
+        """解析单文档并把新发现的文档引用写入 sink，不启动内部获取循环。"""
+        bridge: Deque[str] = deque()
+        self._parse_doc(doc_url, raw_text, bridge)
+        for item in bridge:
+            sink.append(item)
+
     def _queue_doc(self, queue: Deque[str], doc_url: str):
         if not doc_url or doc_url in self.visited_docs or doc_url in self.queued_docs:
             return

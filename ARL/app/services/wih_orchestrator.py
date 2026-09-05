@@ -135,6 +135,14 @@ class WihOrchestrator(object):
                             "external_network": "wih_go",
                         }
                     )
+                if discovery_context is not None:
+                    # 上下文级外部边界计数：收尾指标/全链路一次请求门禁的排除口径。
+                    try:
+                        discovery_context.record_metric(
+                            "external_network_wih_go", len(scan_sites)
+                        )
+                    except Exception:
+                        pass
                 return result
 
             wih_result = task._run_substage(
@@ -274,7 +282,10 @@ class WihOrchestrator(object):
             if page_intel_records:
                 records |= page_intel_records
 
-        if scan_sites:
+        # 计划 6 第 3 批开关：启用时文档获取让位给统一队列（js_intel 之后运行，
+        # 使 JS 发现的文档在当前任务内回流）；关闭时保持 legacy 阶段位不变。
+        api_unified_enabled = bool(services.api_unified_enabled())
+        if scan_sites and not api_unified_enabled:
             api_doc_records = set(
                 task._run_substage(
                     "wih_api_doc",
@@ -309,6 +320,24 @@ class WihOrchestrator(object):
             )
             if js_intel_records:
                 records |= js_intel_records
+
+        if scan_sites and api_unified_enabled:
+            api_doc_records = set(
+                task._run_substage(
+                    "wih_api_doc_unified",
+                    lambda: services.run_api_document_pipeline(
+                        scan_sites,
+                        list(records),
+                        waf_guard=task.waf_guard,
+                        discovery_context=getattr(task, "discovery_context", None),
+                    ),
+                    detail="records={}".format(len(records)),
+                    input_count=len(records),
+                )
+                or []
+            )
+            if api_doc_records:
+                records |= api_doc_records
 
         # endpoint 队列二次消费：API 文档/JS 情报等非主扫描链路登记的
         # endpoint 候选补一轮 GET-only 探测；缓存优先、探测上限沿用
@@ -392,6 +421,15 @@ class WihOrchestrator(object):
                 records |= urlfinder_sensitive_records
 
         if records:
+            if discovery_context is not None:
+                # 外部边界显式记账：TruffleHog 外部进程按 JS URL 二次抓取，
+                # 不在统一响应缓存共享面内。
+                try:
+                    discovery_context.record_metric(
+                        "external_network_trufflehog", len(scan_sites)
+                    )
+                except Exception:
+                    pass
             trufflehog_records = set(
                 task._run_substage(
                     "wih_trufflehog_js",

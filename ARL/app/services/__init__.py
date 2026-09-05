@@ -25,6 +25,12 @@ from .infoHunter import run_wih
 from .page_intel_scan import run_page_intel_scan
 from .browser_intel_scan import run_browser_intel_scan
 from .api_doc_scan import run_api_doc_scan
+from .api_candidate_registry import (
+    ApiCandidateRegistry,
+    ApiDocumentQueue,
+    api_unified_enabled,
+    run_api_document_pipeline,
+)
 from .js_intel_scan import run_js_intel_scan
 from .urlfinder_extract import run_urlfinder_extract
 from .urlfinder_sensitive_scan import run_urlfinder_sensitive_scan
