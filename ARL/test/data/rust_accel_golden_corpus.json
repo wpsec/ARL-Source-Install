@@ -129,6 +129,74 @@
         ["api_doc_url", "https://example.test/v3/api-docs", "https://example.test/static/app.js", "https://example.test"],
         ["urlfinder_url", "https://example.test/v3/api-docs", "https://example.test/static/app.js", "https://example.test"]
       ]
+    },
+    {
+      "id": "rank-control-char-record-type",
+      "kind": "rank",
+      "input": {
+        "records": [
+          [
+            "\u001curlfinder_url",
+            "https://example.test/api/users",
+            "https://example.test/list.html",
+            "https://example.test"
+          ],
+          [
+            "urlfinder_url",
+            "https://example.test/admin/export?token=abc",
+            "https://example.test/list.html",
+            "https://example.test"
+          ],
+          [
+            "urlfinder_js\u001e",
+            "https://example.test/static/app.js",
+            "https://example.test/page.html",
+            "https://example.test"
+          ]
+        ],
+        "sites": [
+          "https://example.test"
+        ],
+        "blocked_hosts": [],
+        "include_js": false,
+        "max_targets": 10
+      },
+      "python": [
+        [
+          "https://example.test/admin/export?token=abc",
+          38
+        ],
+        [
+          "https://example.test/api/users",
+          27
+        ],
+        [
+          "https://example.test/list.html",
+          21
+        ],
+        [
+          "https://example.test/page.html",
+          20
+        ]
+      ],
+      "rust": [
+        [
+          "https://example.test/admin/export?token=abc",
+          38
+        ],
+        [
+          "https://example.test/api/users",
+          27
+        ],
+        [
+          "https://example.test/list.html",
+          21
+        ],
+        [
+          "https://example.test/page.html",
+          20
+        ]
+      ]
     }
   ]
 }

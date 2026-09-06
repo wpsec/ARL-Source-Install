@@ -39,8 +39,16 @@ class _FakeNativeModule:
         ]
 
     @staticmethod
-    def rank_sensitive_targets(*args):
-        return json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))["cases"][1]["rust"]
+    def rank_sensitive_targets(records, sites, blocked_hosts, include_js, max_targets):
+        # 两个 rank case 共用 kind：按输入记录集回查对应 golden，避免跨 case 串扰。
+        corpus = json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))
+        normalized_input = [list(record) for record in records]
+        for case in corpus["cases"]:
+            if case["kind"] != "rank":
+                continue
+            if [list(record) for record in case["input"]["records"]] == normalized_input:
+                return case["rust"]
+        return corpus["cases"][1]["rust"]
 
 
 class TestCompareRustPythonCorpus(unittest.TestCase):
@@ -52,7 +60,9 @@ class TestCompareRustPythonCorpus(unittest.TestCase):
         report = compare_corpus(self._load_fixture())
 
         self.assertTrue(report["ok"])
-        self.assertEqual(4, report["case_count"])
+        # 第 11 批 F6：新增 rank-control-char-record-type（legacy 面 Python
+        # strip 语义分歧样本；对齐前旧 .so 在本 case 上实锤 missing）。
+        self.assertEqual(5, report["case_count"])
         self.assertTrue(all(case["order_equal"] for case in report["cases"]))
 
     def test_order_difference_is_reported_but_not_semantic_failure(self):

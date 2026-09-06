@@ -115,8 +115,10 @@ const CRITICAL_PATH_KEYWORDS: &[&str] = &[
 ];
 
 fn clean_candidate(value: &str) -> String {
-    let mut text = value
-        .trim()
+    // F6（第 11 批）：legacy 提取面 trim 语义与 Python 基线 `.strip()` 对齐——
+    // Python 把 U+001C-001F 当空白而 Rust `trim()` 不是（对抗审查 P2-1 实证），
+    // 凡镜像 Python `.strip()` 的判定点一律走 py_strip。
+    let mut text = py_strip(value)
         .trim_matches(|character: char| "\"'`;,()[]{}".contains(character))
         .to_string();
     if text.is_empty() {
@@ -129,19 +131,17 @@ fn clean_candidate(value: &str) -> String {
         .replace("%2F", "/")
         .replace("%3a", ":")
         .replace("%2f", "/");
-    percent_decode_str(&text)
-        .decode_utf8_lossy()
-        .trim()
-        .to_string()
+    let decoded = percent_decode_str(&text).decode_utf8_lossy();
+    py_strip(&decoded).to_string()
 }
 
 fn extract_host(value: &str) -> Option<String> {
     let parsed = Url::parse(value)
-        .or_else(|_| Url::parse(&format!("https://{}", value.trim())))
+        .or_else(|_| Url::parse(&format!("https://{}", py_strip(value))))
         .ok()?;
     parsed
         .host_str()
-        .map(|host| host.trim().to_lowercase().trim_end_matches('.').to_string())
+        .map(|host| py_strip(host).to_lowercase().trim_end_matches('.').to_string())
 }
 
 fn allowed_host_set(sites: &[String]) -> HashSet<String> {
@@ -149,7 +149,7 @@ fn allowed_host_set(sites: &[String]) -> HashSet<String> {
 }
 
 fn strip_route_method_suffix(path: &str) -> String {
-    ROUTE_METHOD_SUFFIX.replace(path.trim(), "").to_string()
+    ROUTE_METHOD_SUFFIX.replace(py_strip(path), "").to_string()
 }
 
 fn has_route_template_markers(path: &str) -> bool {
@@ -166,13 +166,13 @@ fn has_route_template_markers(path: &str) -> bool {
     }
 
     path.split('/').any(|segment| {
-        let segment = segment.trim();
+        let segment = py_strip(segment);
         segment.starts_with(':') || segment.contains('*')
     })
 }
 
 fn is_noise_single_segment_path(path: &str) -> bool {
-    let normalized = path.trim().trim_matches('/');
+    let normalized = py_strip(path).trim_matches('/');
     if normalized.is_empty() || normalized.contains('/') || normalized.contains('.') {
         return false;
     }
@@ -180,27 +180,27 @@ fn is_noise_single_segment_path(path: &str) -> bool {
 }
 
 fn is_js_resource_path(path: &str) -> bool {
-    let lower_path = path.trim().to_lowercase();
+    let lower_path = py_strip(path).to_lowercase();
     JS_SUFFIXES
         .iter()
         .any(|suffix| lower_path.ends_with(suffix))
 }
 
 fn is_non_js_static_resource_path(path: &str) -> bool {
-    let lower_path = path.trim().to_lowercase();
+    let lower_path = py_strip(path).to_lowercase();
     STATIC_SUFFIXES
         .iter()
         .any(|suffix| lower_path.ends_with(suffix))
 }
 
 fn strip_url_annotation(value: &str) -> String {
-    let text = value.trim();
+    let text = py_strip(value);
     if !text.contains(" (") || !text.ends_with(')') {
         return text.to_string();
     }
     let prefix = text
         .rsplit_once(" (")
-        .map(|item| item.0.trim())
+        .map(|item| py_strip(item.0))
         .unwrap_or(text);
     if Url::parse(prefix)
         .ok()
@@ -215,7 +215,7 @@ fn strip_url_annotation(value: &str) -> String {
 }
 
 fn is_js_url(value: &str) -> bool {
-    let lower = value.trim().to_lowercase();
+    let lower = py_strip(value).to_lowercase();
     if lower.is_empty() {
         return false;
     }
@@ -252,11 +252,9 @@ fn normalize_url(base_url: &str, value: &str, allowed_hosts: &HashSet<String>) -
         return None;
     }
     let host = parsed
-        .host_str()?
-        .trim()
-        .to_lowercase()
-        .trim_end_matches('.')
-        .to_string();
+        .host_str()
+        .map(|host| py_strip(host).to_lowercase().trim_end_matches('.').to_string())
+        .unwrap_or_default();
     if host.is_empty() || (!allowed_hosts.is_empty() && !allowed_hosts.contains(&host)) {
         return None;
     }
@@ -338,7 +336,7 @@ fn append_page_record(
     site: &str,
     next_depth: usize,
 ) {
-    if content.trim().is_empty() || site.trim().is_empty() {
+    if py_strip(content).is_empty() || py_strip(site).is_empty() {
         return;
     }
     append_record(
@@ -364,8 +362,7 @@ fn extract_scope_domains_core(
     let mut candidates = HashSet::new();
     for item in DOMAIN_RE.find_iter(text) {
         candidates.insert(
-            item.as_str()
-                .trim()
+            py_strip(item.as_str())
                 .to_lowercase()
                 .trim_end_matches('.')
                 .to_string(),
@@ -401,7 +398,7 @@ fn pattern_tokens(text: &str, pattern: &Regex) -> Vec<String> {
     pattern
         .captures_iter(text)
         .filter_map(|captures| captures.get(1).or_else(|| captures.get(0)))
-        .map(|capture| capture.as_str().trim().to_string())
+        .map(|capture| py_strip(capture.as_str()).to_string())
         .filter(|token| !token.is_empty())
         .collect()
 }
@@ -564,24 +561,24 @@ fn extract_html_candidates_core(
 ) -> Vec<ExtractedRecord> {
     let allowed_hosts: HashSet<String> = allowed_hosts
         .into_iter()
-        .map(|host| host.trim().to_lowercase())
+        .map(|host| py_strip(&host).to_lowercase())
         .filter(|host| !host.is_empty())
         .collect();
     let allowed_flds: HashSet<String> = allowed_flds
         .into_iter()
-        .map(|fld| fld.trim().to_lowercase())
+        .map(|fld| py_strip(&fld).to_lowercase())
         .filter(|fld| !fld.is_empty())
         .collect();
     let exclude_hosts: HashSet<String> = exclude_hosts
         .into_iter()
-        .map(|host| host.trim().to_lowercase())
+        .map(|host| py_strip(&host).to_lowercase())
         .filter(|host| !host.is_empty())
         .collect();
     let mut records = Vec::new();
     let mut record_seen = HashSet::new();
 
     for (base_url, text, _source_url, depth, _is_js_page) in pages {
-        if text.trim().is_empty() {
+        if py_strip(&text).is_empty() {
             continue;
         }
         let source_site = safe_site(&base_url);
@@ -638,13 +635,13 @@ fn extract_html_candidates_core(
             let method = HTML_METHOD_RE
                 .captures(attrs)
                 .and_then(|item| item.get(1))
-                .map(|item| item.as_str().trim().to_uppercase())
+                .map(|item| py_strip(item.as_str()).to_uppercase())
                 .filter(|item| !item.is_empty())
                 .unwrap_or_else(|| "GET".to_string());
             let mut field_names = HashSet::new();
             for field in HTML_FIELD_RE.captures_iter(body) {
                 if let Some(name) = field.get(1) {
-                    let name = name.as_str().trim();
+                    let name = py_strip(name.as_str());
                     if !name.is_empty() {
                         field_names.insert(name.to_string());
                     }
@@ -747,7 +744,7 @@ fn extract_js_endpoint_candidates_core(
 ) -> Vec<ExtractedRecord> {
     let allowed_hosts: HashSet<String> = allowed_hosts
         .into_iter()
-        .map(|host| host.trim().to_lowercase())
+        .map(|host| py_strip(&host).to_lowercase())
         .filter(|host| !host.is_empty())
         .collect();
     let mut records = Vec::new();
@@ -755,7 +752,7 @@ fn extract_js_endpoint_candidates_core(
     let max_records = max_records.max(1);
 
     for (base_url, text, _source_url, _depth, _is_js_page) in pages {
-        if text.trim().is_empty() {
+        if py_strip(&text).is_empty() {
             continue;
         }
         for pattern in JS_ENDPOINT_PATTERNS.iter() {
@@ -876,7 +873,7 @@ fn rank_sensitive_targets_core(
     let mut target_scores: HashMap<String, i32> = HashMap::new();
 
     for (record_type, content, source, _site) in records {
-        let record_type = record_type.trim().to_lowercase();
+        let record_type = py_strip(&record_type).to_lowercase();
         if !record_type.starts_with("urlfinder_") {
             continue;
         }
@@ -1520,6 +1517,80 @@ mod tests {
         let merged = dedupe_endpoint_records_core(&records);
         // \u{1c}abc 归一为 "abc"（与 Python strip 一致），纯 \u{1c} 剔除。
         assert_eq!(merged, vec![(0, vec!["abc".to_string()])]);
+    }
+
+    // F6（第 11 批）：legacy 提取面 trim 语义钉——以下行为点对齐 Python
+    // `str.strip()`（U+001C-001F 为空白），防再引入 Rust `trim()` 偏差。
+
+    #[test]
+    fn legacy_clean_candidate_follows_python_whitespace() {
+        assert_eq!(clean_candidate("\u{1c}/api/users\u{1d}"), "/api/users");
+        assert_eq!(clean_candidate("\u{1c}\u{1e}"), "");
+        // 先空白后引号的次序与 Python `_clean_candidate`（strip→strip(chars)→unquote→strip）一致：
+        // 引号内的控制字符由末次 strip 收敛。
+        assert_eq!(clean_candidate("\"\u{1c}foo\""), "foo");
+    }
+
+    #[test]
+    fn legacy_host_and_js_url_helpers_follow_python_whitespace() {
+        assert_eq!(
+            extract_host("\u{1c}https://example.test/\u{1d}").as_deref(),
+            Some("example.test")
+        );
+        assert!(is_js_url("https://example.test/a.js\u{1c}"));
+        assert!(!is_js_url("\u{1c}\u{1d}"));
+        assert_eq!(strip_route_method_suffix("\u{1c}/a|GET\u{1d}"), "/a");
+    }
+
+    #[test]
+    fn legacy_pattern_tokens_follow_python_whitespace() {
+        // 捕获组字符类不排除 C0 控制符：token 内含尾随 \u{1d} 时，
+        // Python `_extract_by_patterns` 的 strip() 会收敛，Rust trim() 不会——
+        // 该分歧会沿 normalize_url 固化成 percent-encoded 路径差异（F6 实证面）。
+        assert_eq!(
+            pattern_tokens("fetch('/api/v1/users\u{1d}');", &URL_PATTERNS[1]),
+            vec!["/api/v1/users".to_string()]
+        );
+    }
+
+    #[test]
+    fn legacy_empty_control_only_records_are_dropped() {
+        let mut records: Vec<ExtractedRecord> = Vec::new();
+        let mut seen = HashSet::new();
+        append_page_record(
+            &mut records,
+            &mut seen,
+            "page_link",
+            "\u{1c}",
+            "https://example.test/src",
+            "https://example.test",
+            0,
+        );
+        // Python 基线在 token 层 strip 后为空即不产出；Rust 面同判。
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn legacy_rank_record_type_follows_python_whitespace() {
+        let records = vec![(
+            "\u{1c}urlfinder_url".to_string(),
+            "https://example.test/api/users\u{1d}".to_string(),
+            "https://example.test/page.html".to_string(),
+            "https://example.test".to_string(),
+        )];
+        let targets = rank_sensitive_targets_core(
+            records,
+            vec!["https://example.test".to_string()],
+            vec![],
+            false,
+            10,
+        );
+        assert!(
+            targets
+                .iter()
+                .any(|(target, _)| target == "https://example.test/api/users"),
+            "record_type 前导 \\u{{1c}} 不得吞掉排序输入（Python recordType.strip() 语义）: {targets:?}"
+        );
     }
 
     #[test]

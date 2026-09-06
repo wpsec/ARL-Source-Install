@@ -44,6 +44,8 @@ _STATS = {
     "rank_fallbacks": 0,
     "last_fallback_reason": "",
     "last_extract_fallback_reason": "",
+    "last_html_fallback_reason": "",
+    "last_js_endpoint_fallback_reason": "",
     "last_rank_fallback_reason": "",
     # 第 10 批统一 API 面批量入口（引擎动态键的静态声明，便于观测口径盘点）。
     "unified_normalize_calls": 0,
