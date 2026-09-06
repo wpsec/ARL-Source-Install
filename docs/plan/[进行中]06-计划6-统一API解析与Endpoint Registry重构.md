@@ -1,6 +1,6 @@
 # 计划 6：统一 API 解析与 Endpoint Registry 重构
 
-状态：第 1-7 批解析器面已实施（2026-09-05，见文末实施进度；第 6 批为"GraphQL 文档 Parser 完成，运行时事件接入未完成"——2026-09-06 用户决策 P0-05，事件接入随第 8 批完成）；第 4-6 批 Review 整改轮 2 代码已实施（2026-09-06：T1/T2/T3 + P1-08/P1-09 + P2-13）；**第 8 批 Endpoint Registry 消费方接入已实施（2026-09-06，T8-1~T8-6：P1-12 幂等键纳入 api_type、监控入口切换、WIH endpoint probe/URL Probe 消费统一候选、浏览器 GraphQL 事件 operation 级拆解、JS/页面 GraphQL 记录面回流、P0-05 三来源合并门禁）。**第 8 批经独立复审发现 2 P0（范围越界）+2 P1（REST 形态签名、queued 恢复）+1 项设计改判（公开资产观测值不得脱敏，原 P1-05 撤销），第 9 批暂停，先执行 [紧急修复：统一发现系统数据与状态边界收口](<紧急修复-统一发现系统数据与状态边界收口.md>)（T0 契约冻结→T1-T4→T5 边界复判→T6 集成复核）；T1-T6 提交后经 R6 提交复核（1 P0 桥接绕过范围闸 + 2 P1 lease fencing/形态摘要碰撞 + 2 P2 兼容项）再次纠偏，**修复于 2026-09-06 全部完成（九件合跑 257 项，见紧急修复文档 §九 R6 节），第 9 批代码可恢复开工，默认切换仍禁止**。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)（URL 观测语义以 §4.16 三层数据契约为准）。
+状态：第 1-7 批解析器面已实施（2026-09-05，见文末实施进度；第 6 批为"GraphQL 文档 Parser 完成，运行时事件接入未完成"——2026-09-06 用户决策 P0-05，事件接入随第 8 批完成）；第 4-6 批 Review 整改轮 2 代码已实施（2026-09-06：T1/T2/T3 + P1-08/P1-09 + P2-13）；**第 8 批 Endpoint Registry 消费方接入已实施（2026-09-06，T8-1~T8-6：P1-12 幂等键纳入 api_type、监控入口切换、WIH endpoint probe/URL Probe 消费统一候选、浏览器 GraphQL 事件 operation 级拆解、JS/页面 GraphQL 记录面回流、P0-05 三来源合并门禁）。**第 8 批经独立复审发现 2 P0（范围越界）+2 P1（REST 形态签名、queued 恢复）+1 项设计改判（公开资产观测值不得脱敏，原 P1-05 撤销），第 9 批暂停，先执行 [紧急修复：统一发现系统数据与状态边界收口](<紧急修复-统一发现系统数据与状态边界收口.md>)（T0 契约冻结→T1-T4→T5 边界复判→T6 集成复核）；T1-T6 提交后经 R6 提交复核（1 P0 桥接绕过范围闸 + 2 P1 lease fencing/形态摘要碰撞 + 2 P2 兼容项）再次纠偏，**修复于 2026-09-06 全部完成（九件合跑 257 项，见紧急修复文档 §九 R6 节）；第 9 批阶段调度与 WAF 隔离已实施（2026-09-06，`d8ce750a`，合跑 261 项），第 10 批起未开始，默认切换仍禁止**。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)（URL 观测语义以 §4.16 三层数据契约为准）。
 
 ## 一、总体结论
 
@@ -893,7 +893,20 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
   无损改造、共享 scope gate（fail-closed）、REST 请求形态签名、queued lease/恢复。
 - 第 9 批放行条件见紧急修复文档 §八与 §九 R6 节：R6 复核曾将"可恢复开工"修正为"修复后恢复"，2026-09-06 全部修复完成（桥接三态收口、claim fencing、shape overflow digest、位置参数兼容、注释/状态口径统一），第 9 批代码专项解除暂停；容器/40-64 验收补齐前 `API_UNIFIED_ENABLE` 默认切换保持禁止。
 
-## 当前状态（2026-09-06 第 7 批 + 整改轮 1/轮 2 + 第 8 批后）
+### 第 9 批：阶段调度与 WAF 隔离（2026-09-06 完成，提交 `d8ce750a`）
+
+| 交付 | 说明 |
+|---|---|
+| 独立流量类别 | `TRAFFIC_CLASSES` +`api_doc`(并发 6)/`endpoint_probe`(8)；`traffic_class_for_module` 把 `api_doc_scan`、`wih_endpoint_probe` 从 wih 词根拆出（先于泛 wih 判定）；`WafPolicy.is_host_blocked` 主机级封禁查询 |
+| 互不连坐 | 文档获取走 `api_doc` 类，`fetch_text` 新 `block_signal` 出参（默认 None 既有调用零变化）：类别熔断空结果标 `failed/waf_blocked`，与 `empty_response` 分开归因、不伪装"无 API"、照常入 P1-08 收口；探测走 `endpoint_probe` 类：类别熔断只停 probe（skipped），主机级封禁才整站暂停并标 `degraded/host_waf_blocked`（legacy 面保持 skipped 词汇，Registry 资产经 `queued→degraded` 新合法边收口，`probe_report` 词表 +degraded） |
+| 阶段/批次 metrics | `api_stage_wall_time`/`api_stage_cpu_time`/`api_stage_network_wait_time`（毫秒，queue 收口 flush；network_wait 只计真实 fetch 挂钟）；`api_probe_pending_total`；`api_probe_waf_blocked_total`/`api_probe_host_waf_blocked_total`；`api_document_waf_blocked_total`；`external_network_browser_intel`（Playwright 外部边界，T5/A8 口径）；配置新增 `API_ENDPOINT_CLAIM_LEASE_SEC`（900s，R6 fencing 配套），登记附录A §4.17 |
+| 预算联动 | `API_DOCUMENT_STAGE_TIMEOUT_SEC` 与 provider_http 剩余预算取小的机制自第 3 批即在，本批未改；"文档解析不拖垮普通爬虫"进程面保障=类别独立并发闸+阶段预算，端到端度量归第 11 批 |
+
+验证：九件合跑 **261 项**全绿（R6 后 257 + 本批 4）；独立进程 parser 86/registry 62/models 38/shadow 8/browser 5/orchestrator 11/finalizer 26/url_probe 8；golden `--check` 无漂移；compileall、`git diff --check` 干净；probe_cache/web_info_intel 的合跑顺序污染经 stash 基线对照确认既有。`API_UNIFIED_ENABLE` 默认 False 不变。
+
+未完成项（如实登记）：provider 级细分耗时（Nuclei/AfroG 等属计划 3 风险阶段面）；WAF"不发第二请求"端到端度量随第 11 批容器验收；P2-15 parser 分文件仍未拆（本批 parser 文件零改动，继续挂起评估）。
+
+## 当前状态（2026-09-06 第 7 批 + 整改轮 1/轮 2 + 第 8/9 批后）
 
 - [已完成] 第 1 批接口/结果契约冻结、golden corpus、legacy adapter、脱敏约束和幂等键定义已完成。
 - [已完成] 第 2 批 shadow metrics、ResponseRegistry 无副作用读取和 API 文档/Endpoint 探测观测接线已完成；该批不改变运行时输出。
@@ -908,9 +921,10 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 - [已完成] 第 4-6 批 Review 整改轮 2 代码实施（2026-09-06：P0-02 敏感变量 URL 替换禁令、P0-03 Schema 预算/状态收口、P0-04 摘要双通道 + 真实队列端到端闭环、P1-06/P1-07 operation tokenizer、P1-08 统一失败收口、P1-09 fallback 开关单一语义、P1-11 GraphQL metrics、P2-13 测试 bootstrap 独立进程；附带链分发前置修复 openapi/postman 对非本格式文本 skip 不截断链；api 四件 171 项全绿）。
 - [已完成] 第 8 批 Endpoint Registry 消费方接入（2026-09-06，T8-1~T8-6）：P1-12 幂等键纳入 api_type 闭环、Registry Endpoint 状态机与领取/回报面、监控入口切换统一层、WIH endpoint probe 只消费 Registry 待探测集（保留显式 fallback）、URL Probe 统一候选排除、浏览器运行时 GraphQL operation 级拆解入同一 Registry（P0-05 事件接入完成）、JS/页面 GraphQL/WSDL 记录面回流、`wsdl_operation_total` 范围修正项落地；九件合跑 248 项全绿。
 - [未完成] 第 4-6 批 Review 余留项：P2-15 解析器分文件重构（建议第 9/10 批前评估）；Rust 原生面 graphql 关键字对齐归第 10 批。
-- [未完成] 阶段调度与 WAF 隔离（第 9 批）、Rust 纯数据层（第 10 批）、全量回归与发布验收（第 11 批）尚未开始。
+- [已完成] 第 9 批阶段调度与 WAF 隔离（2026-09-06，`d8ce750a`）：api_doc/endpoint_probe 独立流量类别与并发额度、文档与探测互不连坐、主机级封禁 degraded/host_waf_blocked 收口、api_stage_wall/cpu/network_wait 计时与 pending/waf-blocked/外部边界观测；九件合跑 261 项全绿。
+- [未完成] Rust 纯数据层（第 10 批）、全量回归与发布验收（第 11 批）尚未开始。
 - [已完成] `api_document_cross_bucket_hit_total` 转正：单测锁定 api_doc 桶命中计数路径；真实环境的转正观测并入第 4 批起的容器联调口径。
 - [已完成] `asset_wih_monitor` 监控入口已切换 `run_api_document_pipeline`（第 8 批 T8-2，2026-09-06）；flag-off 保持 legacy 顺序，flag-on 走统一管线。
 - [未完成] Rust 解析层、40/64 目标协同回归和双架构发布验收不得提前宣称完成。
 
-当前判定：计划 6 第 1–7 批解析器面 [已完成]（OpenAPI/Postman/GraphQL/WSDL 文档解析全部接管，golden 无漂移）；第 4-6 批 Review 整改轮 1（P0-01/P1-10）与轮 2（P0-02/P0-03/P0-04 + P1-06~P1-09/P1-11 + P2-13）[已完成]；**第 8 批 Endpoint Registry 消费方接入 [已完成]（T8-1~T8-6：P1-12/P0-05 闭环，probe/URL Probe/监控入口消费统一层，三来源合并与泄露门禁测试过，九件合跑 248 项全绿）**；第 9 批（阶段调度与 WAF 隔离）、第 10 批（Rust 纯数据层）、第 11 批（全量回归与发布验收）[未完成]。`API_UNIFIED_ENABLE` 默认 False，生产默认行为未切换——"代码具备入口"与"默认生效"分别记账；**切换默认的全部代码前置门禁（轮 1/轮 2 P0 项 + P0-05/P1-12）已闭环，剩余是发布流程决策（§十三 shadow→双写→小范围→全量）而非代码阻断项**。第 2/3 批 Review 的终态与候选 drain 前置已在 2026-09-05 终态修复轮闭环，第 3–8 批未新增绕过统一收尾的消费通道（残余候选保持开放态，finalizer 显影语义不变）。
+当前判定：计划 6 第 1–7 批解析器面 [已完成]（OpenAPI/Postman/GraphQL/WSDL 文档解析全部接管，golden 无漂移）；第 4-6 批 Review 整改轮 1（P0-01/P1-10）与轮 2（P0-02/P0-03/P0-04 + P1-06~P1-09/P1-11 + P2-13）[已完成]；**第 8 批 Endpoint Registry 消费方接入 [已完成]（T8-1~T8-6：P1-12/P0-05 闭环，probe/URL Probe/监控入口消费统一层，三来源合并与泄露门禁测试过，九件合跑 248 项全绿，R6 提交复核纠偏后 261 项）**；第 9 批（阶段调度与 WAF 隔离）[已完成]（`d8ce750a`，类别隔离+互不连坐+阶段计时）；第 10 批（Rust 纯数据层）、第 11 批（全量回归与发布验收）[未完成]。`API_UNIFIED_ENABLE` 默认 False，生产默认行为未切换——"代码具备入口"与"默认生效"分别记账；**切换默认的全部代码前置门禁（轮 1/轮 2 P0 项 + P0-05/P1-12）已闭环，剩余是发布流程决策（§十三 shadow→双写→小范围→全量）而非代码阻断项**。第 2/3 批 Review 的终态与候选 drain 前置已在 2026-09-05 终态修复轮闭环，第 3–9 批未新增绕过统一收尾的消费通道（残余候选保持开放态，finalizer 显影语义不变）。

@@ -45,6 +45,8 @@
 - 计划 6 §8.3 的 14 个 `API_UNIFIED_*`/`API_DOCUMENT_*`/`GRAPHQL_SCHEMA_*`/`WSDL_*` 键:
   第 1 批仅冻结于代码常量 `api_unified_models.UNIFIED_API_CONFIG_DEFAULTS`,**未写入 Config**;
   接线批次(第 3 批起)用 `getattr(Config, name, 常量默认)` 读取,默认值语义与本表一致。
+- 后续批次增补的常量键(同一读取口径):`GRAPHQL_SCHEMA_SUMMARY_MAX_BYTES`(轮 2 P0-04)、
+  `API_ENDPOINT_CLAIM_LEASE_SEC`(R6/T9 claim lease),见 §4.14/§4.17。
 
 ## 四、统一数据契约(第 1 批代码落地面)
 
@@ -468,6 +470,34 @@ P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P
   sanitize),统一层观测面改造后与 legacy 口径一致而非收紧,`current_parser_baseline`
   与 `--check` 不受影响;`to_legacy_records` 继续输出 normalized `url`。
 
+### 4.17 第 9 批阶段调度与 WAF 隔离实施面(2026-09-06 登记,已实施;提交 `d8ce750a`)
+
+- **流量类别扩展**:`TRAFFIC_CLASSES = normal/crawler/wih/directory/browser/
+  **api_doc**(并发 6)/**endpoint_probe**(并发 8)`;§8.1 请求 profile→类别映射
+  冻结:`api_doc`/`graphql_schema_optional`→api_doc,`api_endpoint_probe`/
+  `soap_endpoint_observe`→endpoint_probe,`browser`→browser(Playwright 自有
+  网络栈=外部边界,单列 `external_network_browser_intel`,不经调度器)。
+  `traffic_class_for_module` 判定顺序:directory/crawler/browser 词根→
+  `endpoint`→endpoint_probe→`api_doc`→api_doc→泛 wih 词根→wih→normal;
+  `wih_endpoint_probe`/`api_doc_scan` 不再归 wih 类。
+- **互不连坐契约(§8.2)**:类别熔断只暂停对应流量类别(`WafPolicy` 本就按
+  (host,class) 隔离,本批接入新类别);`WafPolicy.is_host_blocked` 为查询接口,
+  类别信号不得升级为主机级。熔断归因词表:文档=`failed/waf_blocked` +
+  `api_document_waf_blocked_total`;探测 legacy 面 `verification_status=skipped`
+  (词汇不变,UI/入库兼容)+ item 携带 `degraded_reason=host_waf_blocked` 时
+  Registry 资产经 `queued→degraded` 合法边收口 `degraded`(终态,本任务内不再探)。
+- **fetch_text `block_signal` 出参**:调用方传 dict 时 blocked 路径写
+  `waf_blocked=True`;默认 None 既有调用零变化;空串返回不再把"被熔断"与
+  "抓到空"混同(§8.2"解析失败不能伪装无 API"的 WAF 维度延伸)。
+- **阶段计时指标(§十二)**:`api_stage_wall_time`/`api_stage_cpu_time`/
+  `api_stage_network_wait_time`(毫秒 int,queue run 收口 flush,record_metric
+  加法跨多次 run 累计;network_wait 只计真实 fetch 挂钟,不含解析/排队);
+  `api_probe_pending_total`(低置信度 pending 队列)、`api_probe_waf_blocked_total`、
+  `api_probe_host_waf_blocked_total`。
+- **配置键增补(§三 14 键之外)**:`API_ENDPOINT_CLAIM_LEASE_SEC`(默认 900s,
+  R6 claim lease 回收;`config_lease_sec` 读取口径同 §三);Endpoint 状态机
+  `queued→degraded` 新合法边(R6 前枚举 frozen 于 §4.1,本条为增量修订)。
+
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 
 golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9、swagger2 8、postman 9)
@@ -561,3 +591,12 @@ golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9
   `test_wih_orchestrator`/`test_browser_intel_scan`/`test_urlfinder_url_probe`
   由既有收集错误恢复为可运行(P2-13 口径扩展)。切换默认的代码前置门禁就此全部
   闭环,余为发布流程决策。
+- 第 9 批完成判据(2026-09-06,§4.17,提交 `d8ce750a`):api_doc/endpoint_probe
+  独立流量类别与并发额度、`traffic_class_for_module` 词根拆分、文档
+  `failed/waf_blocked` 归因(与 empty_response 区分、仍入 P1-08 收口)、探测
+  主机级 `degraded/host_waf_blocked` 资产收口(legacy 词汇不变)、
+  `api_stage_wall/cpu/network_wait_time` 与 pending/外部边界指标。可复现证据:
+  九件合跑 **261 项**全绿、独立进程 parser 86/registry 62/models 38/shadow 8/
+  browser 5/orchestrator 11/finalizer 26/url_probe 8、golden `--check` exit 0、
+  隔离 pycache compileall、`git diff --check` 干净;probe_cache/web_info_intel
+  合跑顺序污染经 stash 基线对照确认既有(probe_cache 单跑 skip 属环境依赖)。
