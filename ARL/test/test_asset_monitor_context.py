@@ -22,6 +22,25 @@ if str(ARL_ROOT) not in sys.path:
     sys.path.insert(0, str(ARL_ROOT))
 
 
+
+# 测试卫生（计划 1 收敛项）：本文件在模块顶层向 sys.modules 注入 fake 包槽位且
+# 旧版无还原，单文件独立运行后会把 fake 留给同进程后续用例（合跑顺序敏感）。
+# 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
+# 理念保留。
+_HYGIENE_SHARED_SLOTS = (
+    "app", "app.utils", "app.config", "app.modules",
+    "app.services", "app.services.fingerprints", "app.tools",
+)
+_HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
+
+
+def tearDownModule():
+    for _name, _original in _HYGIENE_PRE.items():
+        if _original is None:
+            sys.modules.pop(_name, None)
+        else:
+            sys.modules[_name] = _original
+
 def _bootstrap_packages():
     """__path__ 桩包:绕开 app.services/__init__ 的重依赖链,只加载纯 stdlib 子模块。"""
 
@@ -133,6 +152,9 @@ class AssetWihMonitorContextTest(unittest.TestCase):
         services_pkg.run_js_intel_scan = _stage("js_intel")
         services_pkg.run_urlfinder_sensitive_scan = _stage("urlfinder_sensitive")
         services_pkg.run_trufflehog_js = lambda sites, records, waf_guard=None: []
+        # 第 8 批统一入口两符号（flag-off 默认：监控走 legacy 顺序）。
+        services_pkg.api_unified_enabled = lambda: False
+        services_pkg.run_api_document_pipeline = _stage("api_doc_unified")
 
         info_hunter = types.ModuleType("app.services.infoHunter")
 
@@ -142,6 +164,24 @@ class AssetWihMonitorContextTest(unittest.TestCase):
                 return value
 
         info_hunter.InfoHunter = _InfoHunter
+        # asset_wih_monitor 现为子模块直导（第 10 批 hygiene 修复：包级 re-export
+        # 直绑在轻环境/收集期交错下必炸）：为每个被直导的子模块建 stub 并复用
+        # services_pkg 上已定义的 stage 桩，_swap 统一登记还原。
+        info_hunter.run_wih = services_pkg.run_wih
+        _stage_stubs = {
+            "app.services.api_candidate_registry": ("api_unified_enabled", "run_api_document_pipeline"),
+            "app.services.api_doc_scan": ("run_api_doc_scan",),
+            "app.services.js_intel_scan": ("run_js_intel_scan",),
+            "app.services.page_intel_scan": ("run_page_intel_scan",),
+            "app.services.trufflehog_scan": ("run_trufflehog_js",),
+            "app.services.urlfinder_extract": ("run_urlfinder_extract",),
+            "app.services.urlfinder_sensitive_scan": ("run_urlfinder_sensitive_scan",),
+        }
+        for _mod_name, _attrs in _stage_stubs.items():
+            _stub = types.ModuleType(_mod_name)
+            for _attr in _attrs:
+                setattr(_stub, _attr, getattr(services_pkg, _attr))
+            self._swap({_mod_name: _stub})
         services_pkg.infoHunter = info_hunter
 
         wih_record_mod = types.ModuleType("app.modules")
@@ -321,6 +361,8 @@ class AssetSiteCompareFetchTest(unittest.TestCase):
         metrics = compare.discovery_context.metrics_snapshot()
         self.assertGreaterEqual(metrics["network_request_count"], 1)
         self.assertGreaterEqual(metrics["cache_hit_count"], 1)
+
+
 
 
 if __name__ == "__main__":

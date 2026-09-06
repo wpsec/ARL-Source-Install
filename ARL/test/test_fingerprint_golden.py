@@ -47,6 +47,25 @@ class _DummyCollection:
         return 0
 
 
+
+# 测试卫生（计划 1 收敛项）：本文件在模块顶层向 sys.modules 注入 fake 包槽位且
+# 旧版无还原，单文件独立运行后会把 fake 留给同进程后续用例（合跑顺序敏感）。
+# 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
+# 理念保留。
+_HYGIENE_SHARED_SLOTS = (
+    "app", "app.utils", "app.config", "app.modules",
+    "app.services", "app.services.fingerprints", "app.tools",
+)
+_HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
+
+
+def tearDownModule():
+    for _name, _original in _HYGIENE_PRE.items():
+        if _original is None:
+            sys.modules.pop(_name, None)
+        else:
+            sys.modules[_name] = _original
+
 def _load_module(module_name, file_path):
     spec = importlib.util.spec_from_file_location(module_name, str(file_path))
     module = importlib.util.module_from_spec(spec)
@@ -193,6 +212,8 @@ class FingerprintGoldenTest(unittest.TestCase):
             json.dumps(expected, sort_keys=True, ensure_ascii=False),
             "指纹双路径输出与 golden 快照不一致：计划5 第2/3阶段要求行为等价，差异必须显式复核后更新快照",
         )
+
+
 
 
 if __name__ == "__main__":

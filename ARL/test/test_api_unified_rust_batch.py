@@ -131,6 +131,7 @@ class TestUnifiedSafeSubset(unittest.TestCase):
             "https://user:pw@a.b/x",
             "https://a.b/中文路径?q=1",
             "https://a.b/x?a=b c",
+            "https://a/x",  # 单字符 host（F8 off-by-one 回归钉）
         ]
         rejects = [
             "",
@@ -142,6 +143,13 @@ class TestUnifiedSafeSubset(unittest.TestCase):
             "https://Éxample.test/x",  # 非 ASCII host case mapping
             "https://a.b/x\x01y",      # 控制字符
             "https:///x",              # 空 host
+            # 对抗审查 P1-1 回归钉：全点号 host（Python 空 netloc 重拼
+            # `https:///x`，Rust 语义分支不同——恒走 Python 基线）。
+            "https://./x",
+            "https://../x",
+            "https://.:8080/x",
+            "https://u@./x",
+            "https://a.b/x\udcff",     # surrogate 码元（pyo3 整批编码失败源）
         ]
         for item in accepts:
             self.assertTrue(rust_accel.unified_url_is_safe(item), item)
@@ -269,6 +277,15 @@ class TestMergeEndpointRecordsBaseline(unittest.TestCase):
 
     def test_empty_batch(self):
         self.assertEqual([], self.merge([]))
+
+    def test_source_strip_follows_cpython_whitespace(self):
+        # P2-1：Python strip 把 U+001C-001F 当空白（Rust 需 py_strip 对齐）。
+        records = [
+            ("u", "GET", "rest", "", "\u001cmulti"),
+            ("u", "GET", "rest", "", "multi"),
+            ("u", "GET", "rest", "", "\u001c"),
+        ]
+        self.assertEqual([(0, ["multi"])], self.merge(records))
 
     def test_sources_sorted_by_codepoint(self):
         records = [
@@ -401,48 +418,48 @@ class TestBackflowHintWhitelist(unittest.TestCase):
         fake_self = TestBackflowHintBatch._FakeSelf()
         return fake_self
 
+    def setUp(self):
+        # 强制替换槽位（setdefault 在全量 discover 下会被先前用例缓存的真实
+        # app.services.rust_accel 击穿——patch 必须命中被测副本才有效）。
+        self._slot = "app.services.rust_accel"
+        self._saved_slot = sys.modules.get(self._slot)
+        sys.modules[self._slot] = rust_accel
+        self._saved_native = rust_accel._NATIVE_MODULE
+        self._saved_mode = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
+        self._saved_fallback = Config.RUST_ACCEL_FALLBACK_ENABLE
+
+    def tearDown(self):
+        rust_accel._NATIVE_MODULE = self._saved_native
+        if self._saved_mode is None:
+            if hasattr(Config, "RUST_ACCEL_API_UNIFIED_MODE"):
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_MODE")
+        else:
+            Config.RUST_ACCEL_API_UNIFIED_MODE = self._saved_mode
+        Config.RUST_ACCEL_FALLBACK_ENABLE = self._saved_fallback
+        if self._saved_slot is None:
+            sys.modules.pop(self._slot, None)
+        else:
+            sys.modules[self._slot] = self._saved_slot
+
     def test_non_enum_hint_collapses_to_unknown(self):
-        original_native = rust_accel._NATIVE_MODULE
-        original_mode = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
-        # 生产函数内的懒导入命中的是 app.services.rust_accel 槽位，桩注入同位。
-        sys.modules.setdefault("app.services.rust_accel", rust_accel)
         Config.RUST_ACCEL_API_UNIFIED_MODE = "rust"
         rust_accel._NATIVE_MODULE = self._GarbageNative()
-        try:
-            fake_self = self._queue_self()
-            hint_map = _registry.ApiDocumentQueue._batch_document_hints(
-                fake_self, ["https://a.b/api/users"])
-        finally:
-            rust_accel._NATIVE_MODULE = original_native
-            if original_mode is None:
-                delattr(Config, "RUST_ACCEL_API_UNIFIED_MODE")
-            else:
-                Config.RUST_ACCEL_API_UNIFIED_MODE = original_mode
+        fake_self = self._queue_self()
+        hint_map = _registry.ApiDocumentQueue._batch_document_hints(
+            fake_self, ["https://a.b/api/users"])
         self.assertEqual(
             {"unknown"}, set(hint_map.values()),
             "枚举外 hint 必须收敛为 unknown，不得参与入队判定")
 
     def test_hard_fail_propagates_rust_acceleration_error(self):
         """E1 钉：rust 模式 + FALLBACK_ENABLE=False 的 hard-fail 不被接线层吞掉。"""
-        original_native = rust_accel._NATIVE_MODULE
-        original_mode = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
-        original_fallback = Config.RUST_ACCEL_FALLBACK_ENABLE
-        sys.modules.setdefault("app.services.rust_accel", rust_accel)
         Config.RUST_ACCEL_API_UNIFIED_MODE = "rust"
         Config.RUST_ACCEL_FALLBACK_ENABLE = False
         rust_accel._NATIVE_MODULE = _FakeUnifiedNative(fail=True)
-        try:
-            fake_self = self._queue_self()
-            with self.assertRaises(rust_accel.RustAccelerationError):
-                _registry.ApiDocumentQueue._batch_document_hints(
-                    fake_self, ["https://a.b/swagger"])
-        finally:
-            rust_accel._NATIVE_MODULE = original_native
-            Config.RUST_ACCEL_FALLBACK_ENABLE = original_fallback
-            if original_mode is None:
-                delattr(Config, "RUST_ACCEL_API_UNIFIED_MODE")
-            else:
-                Config.RUST_ACCEL_API_UNIFIED_MODE = original_mode
+        fake_self = self._queue_self()
+        with self.assertRaises(rust_accel.RustAccelerationError):
+            _registry.ApiDocumentQueue._batch_document_hints(
+                fake_self, ["https://a.b/swagger"])
 
 
 class TestBenchBaselinePins(unittest.TestCase):

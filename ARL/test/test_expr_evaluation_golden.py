@@ -17,6 +17,25 @@ class _Quiet:
         return lambda *a, **k: None
 
 
+
+# 测试卫生（计划 1 收敛项）：本文件在模块顶层向 sys.modules 注入 fake 包槽位且
+# 旧版无还原，单文件独立运行后会把 fake 留给同进程后续用例（合跑顺序敏感）。
+# 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
+# 理念保留。
+_HYGIENE_SHARED_SLOTS = (
+    "app", "app.utils", "app.config", "app.modules",
+    "app.services", "app.services.fingerprints", "app.tools",
+)
+_HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
+
+
+def tearDownModule():
+    for _name, _original in _HYGIENE_PRE.items():
+        if _original is None:
+            sys.modules.pop(_name, None)
+        else:
+            sys.modules[_name] = _original
+
 def _load_expr():
     app_pkg = types.ModuleType("app")
     app_pkg.__path__ = [str(ROOT_DIR / "app")]
@@ -73,6 +92,8 @@ class ExprEvaluationTest(unittest.TestCase):
     def test_malformed_even_tree_raises(self):
         with self.assertRaises(ValueError):
             EXPR.evaluate_expression(["a", "||"], dict(VARS))
+
+
 
 
 if __name__ == "__main__":

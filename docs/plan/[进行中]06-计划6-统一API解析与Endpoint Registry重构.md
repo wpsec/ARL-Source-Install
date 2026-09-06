@@ -945,6 +945,20 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 | P2 | dedupe Rust 12 次/条 String clone（Efficiency-6） | 借用键重写，基准 0.998→0.752（仍不过闸，结论不变，cargo test 14 项 + 双 corpus strict 复验） |
 | 挂起 | pyo3 逐 stage 6 处登记成本（Altitude-5）、`_unified_metrics` 与旧 4 处内联 metrics 未合并（R6）、graph 快照窗口并发注释（B2）、bootstrap 分层（A-altitude-6） | 登记为第 11 批/后续整改项，不在本批扩大改动面 |
 
+### 第 10 批 对抗审查补充整改轮（2026-09-06，独立 agent 274k 条差分 fuzz + 双架构复验）
+
+| 级 | 发现 | 处置 |
+|---|---|---|
+| P1-1 | 全点号 host（`https://./x`→Python 重拼 `https:///x`）在预检放行面内与 Rust 分歧 | 已由整改轮预检结构复核排除（host 无字母数字即拒→恒走 Python 基线）；本轮补预检 rejects 回归钉 4 例 + surrogate 例，防再引入 |
+| P1-2 | js 关键词扩展未门控 flag-off，改变记录/图/事件发射面——需计划批准依据 | 依据登记：第 8 批 T8-5 行明文"Rust 原生路径同口径扩展属第 10 批"，且镜像/原生不可单侧改（golden 一致性强制）；影响面精确化已在整改轮 T10-A 行（B1 口径）：请求面零变化，记录/pending 显影为既有同类增大。**维持批准，不再门控**；第 11 批 40 目标验收实测 `api_doc_url` 增量数 |
+| P2-1 | `str.strip()` 把 U+001C-001F 当空白而 Rust `trim()` 不是——dedupe source trim 分组分歧（fuzz 实证） | lib.rs 新增 `py_strip` 并统一 normalize/method/hint/dedupe 四通道 trim；Rust 单测 2 项（whitespace 集合钉 + dedupe  行为钉）；corpus dedupe 输入补  样本 3 条 |
+| P2-2/4 | runner 截断、mode 无接线——独立 agent 审查基线为 c9444847，两缺陷已由 fixup `11dfc145` 修复 | 确认无需追加 |
+| P2-3 | `unified_shadow_mismatches` 逐元素按条/聚合按批单位混用；`last_unified_*_fallback_reason` 动态键未声明 | 引擎注释单位口径；`_STATS` 静态声明补齐 4 键 |
+| **新实锤** | 双架构复验过程暴露**两个复合缺陷**：(a) `--fill-rust` 按模块常量重算而非文件 inputs（reviewer A8 预警失效模式真实发生）；(b) `--check` 用 `zip` 逐条比对，长度不等被截断洗成假绿——仓库 rust 字段一度代错到旧 10 输入集（4 组 vs python 5 组）而全链"绿" | (a) `_rust_outputs` 改按文件 `case.input.values` 事实输入 + 回填前长度预校验拒绝落盘；(b) `--check` 长度不等显式 fail；重放后修复验证：aarch64/amd64 两架构独立 fill-rust 输出**逐字节一致**（`CROSS-ARCH-IDENTICAL`），双 corpus `--run-native --strict-order` ok |
+| 双架构基准 | qemu x86_64 仿真下四项 ratio 全部过闸（normalize 0.050/hint 0.297/method 0.497/dedupe 0.656）——**该数据不可采信**：仿真对 CPython 的减速远大于对 native 码，ratio 系统性乐观 | 本轮 amd64 证据仅确认"编译+16 单测+golden 跨架构一致+基准可执行"；**CPU 闸判定只认 x86 真机（第 11 批附录 D runbook 窗口）复跑 `bench_api_unified_rust.py` 的数据**，aarch64 第二轮（native 环境）过闸结论维持为当前唯一有效门禁证据 |
+
+验证（追加）：`cargo test --locked` aarch64/amd64 各 16 项全绿；corpus 重放后 `--check`（修复版）通过、两架构 fill-rust diff 零（F7 返原值改动后 `GOLDEN-STABLE` cmp 复验）、双 corpus amd64 `--run-native --strict-order` ok；受影响五件合跑 140 项全绿。hygiene 工具经二次 Review 修 P0（裸模块名假绿）后以三态口径全量重扫：**149 文件 polluted=0 / clean=84 / load-fail=65（宿主缺 xing 类环境性不可导入，容器重扫挂第 11 批）**；修复过程检出 6 个真实污染测试文件（注入不还原）+ `asset_wih_monitor.py` 包级 re-export 轻环境断裂（第 8 批遗留，改子模块直导）——六文件独立进程复跑全绿，6 文件互相合跑的干扰为既有共享进程问题不属本批（逐文件独立是工具口径）。F5/F8 工具小修与 `https://a/x` 预检回归钉随批落地；F4（legacy html/js_endpoint fallback 动态键未静态声明）、F6（legacy WIH 提取面 trim 语义差，golden 无样本面）登记第 11 批。
+
 验证：十三件合跑 **308 项全绿**（291 + 整改轮净增 17：结构校验 3 + 白名单/hard-fail 2 + bench 钉 3 + 聚合 mismatch/指标一致性等；skip=8 为宿主轻依赖既有口径）；Rust 侧 cargo test --locked 14 项、双 corpus `--run-native --strict-order`、`freeze --check` 全绿（borrow 重写后 golden 逐字节不变）；第二轮基准见 T10-E 行刷新。`test_web_info_intel` 新增 graphql/WSDL 发射行为 case 落盘（宿主 skip、容器回归承接，预期值为镜像逻辑手推——容器首跑若与推演不符按实测修断言并记因）；Rust 容器 `cargo test --locked` 14 项全绿、双 corpus `--run-native --strict-order` 全绿。`API_UNIFIED_ENABLE` 默认 False、`RUST_ACCEL_API_UNIFIED_MODE` 默认 shadow 不变。
 
 未完成项（如实登记）：(1) amd64 侧编译与 corpus 复验、`test_web_info_intel` 容器执行归第 11 批双架构验收（本批 native 证据仅 aarch64 Linux）；(2) js_intel `api_doc_url` 记录面扩大的**真实任务观测**（新记录数、统一图入队量、legacy 面无请求变化）随第 11 批 40 目标联通验收出数；(3) normalize/method 生产升级（rust 模式）与 `RUST_ACCEL_API_UNIFIED_MODE` 的容器联调挂默认切换决策；(4) 基准确定性受 CPU 型号影响，跨机复跑数字会漂移——门禁结论以本批 aarch64 Linux 记录为准，第 11 批 amd64 需复跑同脚本确认闸向不变。

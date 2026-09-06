@@ -908,6 +908,16 @@ fn rank_sensitive_targets_core(
 
 // ---------------------------------------------------------------------------
 // 第 10 批：统一 API 面纯数据批量函数（计划 6 §9.3 第三阶段）。
+//
+// py_strip：对齐 CPython `str.strip()` 的空白集——Python 把 U+001C-001F
+// （FS/GS/RS/US）当空白而 Rust `char::is_whitespace`（White_Space 属性）不是
+// （对抗审查 P2-1 差分 fuzz 实证）。凡参与"与 Python 基线逐字节相等"契约的
+// trim 必须走本函数；U+0085/U+00A0 两侧同判（is_whitespace 覆盖）。
+// ---------------------------------------------------------------------------
+
+fn py_strip(text: &str) -> &str {
+    text.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
+}
 // 语义事实源 = CPython 3.10 urllib.parse.urlsplit + discovery_context.normalize_url，
 // 仅覆盖 Python 适配器预检放行的"安全子集"；子集外输入原样返回（与 Python
 // 基线不可解析分支一致），跨版本行为漂移由 adapter shadow 双跑与 golden 门禁拦截。
@@ -933,19 +943,19 @@ fn parse_safe_port(port: &str) -> Option<u32> {
 /// - 全串不含 \t \r \n（CPython urlsplit 会先整串删除它们）。
 /// 子集外返回原文；行为分歧由 shadow 双跑计数暴露。
 fn normalize_url_unified(value: &str) -> String {
-    let text = value.trim();
+    let text = py_strip(value);
     if text.is_empty() {
         return String::new();
     }
     if text.contains(['\t', '\r', '\n']) {
-        return value.to_string();
+        return py_strip(value).to_string();
     }
     let (scheme, tail) = if let Some(rest) = text.strip_prefix("http://") {
         ("http", rest)
     } else if let Some(rest) = text.strip_prefix("https://") {
         ("https", rest)
     } else {
-        return value.to_string();
+        return py_strip(value).to_string();
     };
     // _splitnetloc：netloc 结束于最早的 '/' '?' '#'。
     let netloc_end = tail
@@ -959,7 +969,7 @@ fn normalize_url_unified(value: &str) -> String {
             .chars()
             .any(|c| (c as u32) < 0x20 || c as u32 == 0x7f)
     {
-        return value.to_string();
+        return py_strip(value).to_string();
     }
     // _hostinfo：rpartition('@') 去 userinfo；首个 ':' 分 host/port。
     let hostinfo = match netloc.rsplit_once('@') {
@@ -972,7 +982,7 @@ fn normalize_url_unified(value: &str) -> String {
     };
     let host = ascii_lowercase_host(host);
     if host.is_empty() {
-        return value.to_string();
+        return py_strip(value).to_string();
     }
     // port 属性语义：空串→None；纯数字且 0-65535；0 为 falsy→不保留；
     // http:80 / https:443 为默认端口→去除；其余以十进制整数重渲染。
@@ -981,7 +991,7 @@ fn normalize_url_unified(value: &str) -> String {
         Some("") => 0,
         Some(raw) => match parse_safe_port(raw) {
             Some(parsed) => parsed,
-            None => return value.to_string(),
+            None => return py_strip(value).to_string(),
         },
     };
     let mut netloc_out = host;
@@ -1012,7 +1022,8 @@ fn normalize_url_unified(value: &str) -> String {
 }
 
 fn canonical_method_unified(method: &str) -> String {
-    let text = method.trim().to_ascii_uppercase();
+    // py_strip 对齐 Python str.strip()（\x1c-\x1f 亦为空白，P2-1）。
+    let text = py_strip(method).to_ascii_uppercase();
     const METHODS: [&str; 7] = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"];
     if METHODS.contains(&text.as_str()) {
         text
@@ -1032,7 +1043,7 @@ fn document_type_hint_unified(url: &str) -> &'static str {
         ("graphql", "graphql"),
         ("graphiql", "graphql"),
     ];
-    let lowered = url.trim().to_lowercase();
+    let lowered = py_strip(url).to_lowercase();
     for (keyword, hint) in HINTS {
         if lowered.contains(keyword) {
             return hint;
@@ -1065,7 +1076,7 @@ fn dedupe_endpoint_records_core(
             order.push(key);
             (index, HashSet::new())
         });
-        let cleaned = source.trim();
+        let cleaned = py_strip(source);
         if !cleaned.is_empty() {
             entry.1.insert(cleaned);
         }
@@ -1487,6 +1498,28 @@ mod tests {
         assert_eq!(merged[2].0, 3);
         assert!(merged[2].1.is_empty());
         assert_eq!(merged[3].0, 4);
+    }
+
+    #[test]
+    fn py_strip_matches_cpython_whitespace_set() {
+        // CPython str.strip() 把 U+001C-001F 当空白，Rust trim() 不是（P2-1）。
+        assert_eq!(py_strip("\u{1c}abc\u{1d}"), "abc");
+        assert_eq!(py_strip(" \t\n\u{1c}\u{1f}x\u{85}\u{a0}"), "x");
+        assert_eq!(py_strip("\u{1c}"), "");
+        assert_eq!(py_strip("a\u{200b}b"), "a\u{200b}b"); // ZWSP 两侧都非空白
+    }
+
+    #[test]
+    fn dedupe_source_trim_follows_python_whitespace() {
+        let records = vec![
+            ("u".to_string(), "GET".to_string(), "rest".to_string(), String::new(),
+             "\u{1c}abc".to_string()),
+            ("u".to_string(), "GET".to_string(), "rest".to_string(), String::new(),
+             "\u{1c}".to_string()),
+        ];
+        let merged = dedupe_endpoint_records_core(&records);
+        // \u{1c}abc 归一为 "abc"（与 Python strip 一致），纯 \u{1c} 剔除。
+        assert_eq!(merged, vec![(0, vec!["abc".to_string()])]);
     }
 
     #[test]

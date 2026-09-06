@@ -55,6 +55,10 @@ _STATS = {
     "unified_dedupe_calls": 0,
     "unified_dedupe_fallbacks": 0,
     "unified_shadow_mismatches": 0,
+    "last_unified_normalize_fallback_reason": "",
+    "last_unified_hint_fallback_reason": "",
+    "last_unified_method_fallback_reason": "",
+    "last_unified_dedupe_fallback_reason": "",
 }
 _FALLBACK_WARNED = set()
 _STATS_LOCK = threading.Lock()
@@ -399,7 +403,7 @@ _UNIFIED_SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 
 
 def _netloc_of_https_subset(text: str) -> str:
-    after = text[9:] if text.startswith("https://") else text[7:]
+    after = text[8:] if text.startswith("https://") else text[7:]
     end = len(after)
     for delim in "/?#":
         pos = after.find(delim)
@@ -556,6 +560,8 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
     if mode == "shadow":
         baseline = list(python_batch_fn(items))
         if aggregate:
+            # 单位口径（P2-3）：逐元素 kind 按"条"计 mismatch；聚合 kind 整批
+            # 二值（一组不一致=整批不可信）计 1。盘点时不可把两类相加解读。
             mismatch = 0 if list(native_result) == baseline else 1
         else:
             mismatch = sum(

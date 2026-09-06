@@ -81,6 +81,11 @@ DEDUPE_INPUTS = [
     ["https://a.b/u", "GET", "rest", "/v1", "page"],
     ["https://a.b/u", "GET", "rest", "", "中文"],
     ["https://a.b/u", "GET", "rest", "", "abc"],
+    # P2-1：U+001C-001F 是 CPython 空白而 Rust trim 不是，dedupe source 的
+    # trim 语义必须由 py_strip 对齐（差分 fuzz 实证）。
+    ["https://a.b/v", "GET", "rest", "", "\u001cmulti"],
+    ["https://a.b/v", "GET", "rest", "", "multi"],
+    ["https://a.b/v", "GET", "rest", "", "\u001c"],
 ]
 
 
@@ -109,22 +114,39 @@ def _python_outputs(modules):
     }
 
 
+def _rust_output_for_kind(kind, values):
+    import arl_accel  # noqa: WPS433
+
+    if kind == "unified_normalize":
+        return [str(x) for x in arl_accel.unified_normalize_urls(list(values))]
+    if kind == "unified_hint":
+        return [str(x) for x in arl_accel.unified_document_type_hints(list(values))]
+    if kind == "unified_method":
+        return [str(x) for x in arl_accel.unified_canonical_methods(list(values))]
+    if kind == "unified_dedupe":
+        return [
+            [int(item[0]), [str(source) for source in item[1]]]
+            for item in arl_accel.unified_dedupe_endpoints(
+                [tuple(record) for record in values]
+            )
+        ]
+    raise ValueError("不支持的 kind: {}".format(kind))
+
+
 def _rust_outputs(payload):
     try:
         import arl_accel  # noqa: WPS433
     except Exception as exc:  # pragma: no cover - 容器内路径
         raise SystemExit("需要已安装的 arl_accel：{}".format(exc))
-    results = {
-        "unified_normalize": [str(x) for x in arl_accel.unified_normalize_urls(NORMALIZE_INPUTS)],
-        "unified_hint": [str(x) for x in arl_accel.unified_document_type_hints(HINT_INPUTS)],
-        "unified_method": [str(x) for x in arl_accel.unified_canonical_methods(METHOD_INPUTS)],
-        "unified_dedupe": [
-            [int(item[0]), [str(source) for source in item[1]]]
-            for item in arl_accel.unified_dedupe_endpoints(
-                [tuple(record) for record in DEDUPE_INPUTS]
-            )
-        ],
-    }
+    # A8 根修：以文件内 case.input.values 为事实输入（常量换代而文件未同步时，
+    # 按常量重算会把 rust 字段代错到不存在的输入集上并静默通过长度截断的 check）。
+    results = {}
+    for case in payload.get("cases", []):
+        kind = case.get("kind")
+        values = (case.get("input") or {}).get("values")
+        if kind is None or values is None:
+            raise SystemExit("corpus case 缺少 kind/input.values，拒绝回填")
+        results[kind] = _rust_output_for_kind(kind, values)
     return results
 
 
@@ -186,7 +208,14 @@ def main(argv=None):
         payload = json.loads(output.read_text(encoding="utf-8"))
         results = _rust_outputs(payload)
         for case in payload["cases"]:
-            case["rust"] = results[case["kind"]]
+            rust = results[case["kind"]]
+            if case.get("python") is None:
+                raise SystemExit("{}: 缺 python golden，先 --fill-python".format(case.get("id")))
+            if len(rust) != len(case["python"]):
+                raise SystemExit(
+                    "拒绝回填：{} rust 输出 {} 条 != python golden {} 条".format(
+                        case["id"], len(rust), len(case["python"])))
+            case["rust"] = rust
         output.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print("rust 输出回填 {}".format(output))
@@ -200,6 +229,10 @@ def main(argv=None):
                 failures.append("{}: rust 输出未回填".format(case["id"]))
                 continue
             if case["python"] != case["rust"]:
+                if len(case["python"]) != len(case["rust"]):
+                    # zip 截断会把"长度不等"洗成假绿（聚合 kind 组数差异必须显式失败）。
+                    failures.append("{}: python_count={} rust_count={}".format(
+                        case["id"], len(case["python"]), len(case["rust"])))
                 for index, (left, right) in enumerate(zip(case["python"], case["rust"])):
                     if left != right:
                         failures.append("{}[{}]: python={!r} rust={!r}".format(

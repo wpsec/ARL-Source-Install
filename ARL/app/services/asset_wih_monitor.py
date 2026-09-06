@@ -11,17 +11,17 @@ import uuid
 
 from app.helpers import asset_site, asset_wih
 from app.helpers.scope import get_scope_by_scope_id
-from app.services import (
-    api_unified_enabled,
-    run_api_document_pipeline,
-    run_api_doc_scan,
-    run_js_intel_scan,
-    run_page_intel_scan,
-    run_trufflehog_js,
-    run_urlfinder_extract,
-    run_urlfinder_sensitive_scan,
-    run_wih,
-)
+# 子模块直导（第 10 批 hygiene 修复）：`from app.services import (...)` 依赖包级
+# re-export，在轻测试环境（app.services 槽位为带 __path__ 桩）必炸且把生产模块
+# 绑到重 `__init__` 导入链上；asset_site_monitor 等姊妹入口同为子模块直导口径。
+from .api_candidate_registry import api_unified_enabled, run_api_document_pipeline
+from .api_doc_scan import run_api_doc_scan
+from .infoHunter import run_wih
+from .js_intel_scan import run_js_intel_scan
+from .page_intel_scan import run_page_intel_scan
+from .trufflehog_scan import run_trufflehog_js
+from .urlfinder_extract import run_urlfinder_extract
+from .urlfinder_sensitive_scan import run_urlfinder_sensitive_scan
 from app.utils import get_logger, check_domain_black
 from app.modules import WihRecord
 from app import utils

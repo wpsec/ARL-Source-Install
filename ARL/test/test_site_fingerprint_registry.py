@@ -45,6 +45,25 @@ class _DummyCollection:
         return 0
 
 
+
+# 测试卫生（计划 1 收敛项）：本文件在模块顶层向 sys.modules 注入 fake 包槽位且
+# 旧版无还原，单文件独立运行后会把 fake 留给同进程后续用例（合跑顺序敏感）。
+# 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
+# 理念保留。
+_HYGIENE_SHARED_SLOTS = (
+    "app", "app.utils", "app.config", "app.modules",
+    "app.services", "app.services.fingerprints", "app.tools",
+)
+_HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
+
+
+def tearDownModule():
+    for _name, _original in _HYGIENE_PRE.items():
+        if _original is None:
+            sys.modules.pop(_name, None)
+        else:
+            sys.modules[_name] = _original
+
 def _load(name, path):
     spec = importlib.util.spec_from_file_location(name, str(path))
     module = importlib.util.module_from_spec(spec)
@@ -294,6 +313,8 @@ class SiteFingerprintOverlayTest(unittest.TestCase):
         self.assertEqual(len(reg._base_rules[0]["match"]["any"]), base_branches_before, "_base_rules 被 overlay 污染")
         rule = [r for r in reg.rules if r["id"] == "site:baseapp"][0]
         self.assertEqual(len(rule["match"]["any"]), 2, "重复 rebuild 后分支被叠加膨胀")
+
+
 
 
 if __name__ == "__main__":

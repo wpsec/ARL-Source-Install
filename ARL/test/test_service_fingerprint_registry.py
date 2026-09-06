@@ -16,6 +16,25 @@ ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 SERVICE_GZ = ROOT_DIR / "app" / "dicts" / "service_fingerprints.json.gz"
 
 
+
+# 测试卫生（计划 1 收敛项）：本文件在模块顶层向 sys.modules 注入 fake 包槽位且
+# 旧版无还原，单文件独立运行后会把 fake 留给同进程后续用例（合跑顺序敏感）。
+# 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
+# 理念保留。
+_HYGIENE_SHARED_SLOTS = (
+    "app", "app.utils", "app.config", "app.modules",
+    "app.services", "app.services.fingerprints", "app.tools",
+)
+_HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
+
+
+def tearDownModule():
+    for _name, _original in _HYGIENE_PRE.items():
+        if _original is None:
+            sys.modules.pop(_name, None)
+        else:
+            sys.modules[_name] = _original
+
 def bootstrap():
     app_pkg = types.ModuleType("app")
     app_pkg.__path__ = [str(ROOT_DIR / "app")]
@@ -112,6 +131,8 @@ class ServiceFingerprintRegistryTest(unittest.TestCase):
             reg = MOD.ServiceFingerprintRegistry(path)
             self.assertFalse(reg.ok)
             self.assertIn("unsupported format", reg.load_error)
+
+
 
 
 if __name__ == "__main__":
