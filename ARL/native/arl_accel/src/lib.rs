@@ -1049,32 +1049,37 @@ fn document_type_hint_unified(url: &str) -> &'static str {
 fn dedupe_endpoint_records_core(
     records: &[(String, String, String, String, String)],
 ) -> Vec<(usize, Vec<String>)> {
-    let mut order: Vec<(String, String, String, String)> = Vec::new();
-    let mut groups: HashMap<(String, String, String, String), (usize, HashSet<String>)> =
-        HashMap::new();
+    // 借用键（Review efficiency-6）：records 生命周期覆盖全函数，键与来源
+    // 集合只存 &str，逐条 12 次 String clone 归零；输出序 = 首现序（order
+    // 记录键引用），sources 码点序 = UTF-8 字节序 = CPython sorted() 口径。
+    let mut order: Vec<(&str, &str, &str, &str)> = Vec::new();
+    let mut groups: HashMap<(&str, &str, &str, &str), (usize, HashSet<&str>)> = HashMap::new();
     for (index, (url, method, api_type, path_template, source)) in records.iter().enumerate() {
         let key = (
-            url.clone(),
-            method.clone(),
-            api_type.clone(),
-            path_template.clone(),
+            url.as_str(),
+            method.as_str(),
+            api_type.as_str(),
+            path_template.as_str(),
         );
-        let entry = groups.entry(key.clone()).or_insert_with(|| {
-            order.push(key.clone());
+        let entry = groups.entry(key).or_insert_with(|| {
+            order.push(key);
             (index, HashSet::new())
         });
         let cleaned = source.trim();
         if !cleaned.is_empty() {
-            entry.1.insert(cleaned.to_string());
+            entry.1.insert(cleaned);
         }
     }
     order
         .into_iter()
         .map(|key| {
-            let (first_index, sources) = groups.remove(&key).expect("group present");
-            let mut merged: Vec<String> = sources.into_iter().collect();
+            let (first_index, sources) = &groups[&key];
+            let mut merged: Vec<String> = sources
+                .iter()
+                .map(|source| (*source).to_string())
+                .collect();
             merged.sort();
-            (first_index, merged)
+            (*first_index, merged)
         })
         .collect()
 }

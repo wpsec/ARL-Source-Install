@@ -2,6 +2,7 @@
 
 适配器只负责边界转换、开关和按批次降级；业务状态、网络策略和记录对象仍由 Python 管理。
 """
+import re
 import threading
 import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -384,29 +385,53 @@ def rank_sensitive_targets(
 # ---------------------------------------------------------------------------
 
 _UNIFIED_MODES = ("off", "shadow", "rust")
-_UNIFIED_SAFE_URL_RE = None
-_UNIFIED_ASCII_SAFE_RE = None
+# 小写 http(s) + 纯 ASCII netloc（无方括号，控制字符禁入 path/query）。
+_UNIFIED_SAFE_URL_RE = re.compile(
+    r"^https?://[A-Za-z0-9.\-_~%!$&'()*+,;=:@]+"
+    r"(?:[/?#][^\x00-\x1f\x7f]*)?\Z"
+)
+# method/hint 基线只做 strip+lower/upper；限定纯可打印 ASCII 即与 CPython
+# 行为逐字节一致（非 ASCII case mapping 差异交回 Python）。
+_UNIFIED_ASCII_SAFE_RE = re.compile(r"^[\x20-\x7e]*\Z")
 
 
-def _unified_patterns():
-    global _UNIFIED_SAFE_URL_RE, _UNIFIED_ASCII_SAFE_RE
-    if _UNIFIED_SAFE_URL_RE is None:
-        import re
+_UNIFIED_SURROGATE_RE = re.compile(r"[\ud800-\udfff]")
 
-        # 小写 http(s) + 纯 ASCII netloc（无方括号，控制字符禁入 path/query）。
-        _UNIFIED_SAFE_URL_RE = re.compile(
-            r"^https?://[A-Za-z0-9.\-_~%!$&'()*+,;=:@]+"
-            r"(?:[/?#][^\x00-\x1f\x7f]*)?\Z"
-        )
-        # method/hint 基线只做 strip+lower/upper；限定纯可打印 ASCII 即与
-        # CPython 行为逐字节一致（非 ASCII case mapping 差异交回 Python）。
-        _UNIFIED_ASCII_SAFE_RE = re.compile(r"^[\x20-\x7e]*\Z")
-    return _UNIFIED_SAFE_URL_RE, _UNIFIED_ASCII_SAFE_RE
+
+def _netloc_of_https_subset(text: str) -> str:
+    after = text[9:] if text.startswith("https://") else text[7:]
+    end = len(after)
+    for delim in "/?#":
+        pos = after.find(delim)
+        if 0 <= pos < end:
+            end = pos
+    return after[:end]
 
 
 def unified_url_is_safe(text: str) -> bool:
-    safe_re, _ = _unified_patterns()
-    return bool(safe_re.match(str(text or "")))
+    """normalize 批量通道安全子集判定（附录A §4.18）。
+
+    正则粗筛后做结构复核，排除 CPython 补丁版本间行为漂移的形态：
+    - port 含 '+'/'_'/字母（≤3.10.0 的 int(port,10) 接受并规范化，≥3.10.13
+      的安全回移拒绝——恒走 Python 基线，不赌版本）；
+    - host 无字母数字（纯点 host：`.` 过 hostname truthy 检查但 rstrip 后
+      为空，urlunsplit 产出 `https:///x`，Rust 语义分支不同）；
+    - surrogate 码元（pyo3 Vec<String> 整批编码失败会拖垮正常条目）。
+    """
+
+    text = str(text or "")
+    if not _UNIFIED_SAFE_URL_RE.match(text):
+        return False
+    if _UNIFIED_SURROGATE_RE.search(text):
+        return False
+    netloc = _netloc_of_https_subset(text)
+    host, _, port = netloc.rpartition("@")[2].partition(":")
+    if port and not (port.isascii() and port.isdigit()):
+        return False
+    if not any(("a" <= c <= "z") or ("A" <= c <= "Z") or ("0" <= c <= "9")
+               for c in host):
+        return False
+    return True
 
 
 def _unified_mode() -> str:
@@ -414,18 +439,28 @@ def _unified_mode() -> str:
         return "off"
     mode = str(getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "shadow") or "shadow").strip().lower()
     if mode not in _UNIFIED_MODES:
+        # 配置层（config._safe_runtime_choice）已拦一道并告警；这里兜底
+        # setattr 直改 Config 的旁路误配置——每种非法值告警一次，收敛 shadow。
+        warn_key = "mode:{}".format(mode)
+        if warn_key not in _FALLBACK_WARNED:
+            _FALLBACK_WARNED.add(warn_key)
+            logger.warning(
+                "invalid RUST_ACCEL_API_UNIFIED_MODE %r, coerce to shadow", mode)
         return "shadow"
     return mode
 
 
-def _unified_metrics(stage, mode, batch_size, safe_count, mismatch, elapsed, used_native):
+def _unified_metrics(stage, mode, batch_size, safe_count, mismatch, elapsed,
+                     used_native, is_fallback=False):
     return {
         "stage": stage,
         "backend": "rust" if used_native else "python",
         "mode": mode,
         "used_native": bool(used_native),
-        "fallback_count": 1 if used_native is False and mode != "off" and safe_count else 0,
-        "fallback_reason": "",
+        # fallback 只在 native 调用失败路径显式置位——shadow 成功批（输出取基线、
+        # used_native=False）不是 fallback，不得污染第 11 批门禁证据流。
+        "fallback_count": 1 if is_fallback else 0,
+        "fallback_reason": "native_failure" if is_fallback else "",
         "batch_size": int(batch_size or 0),
         "safe_count": int(safe_count or 0),
         "mismatch_count": int(mismatch or 0),
@@ -447,20 +482,23 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
     - items/safe_flags 等长；python_batch_fn(items)->等长列表；
     - 逐元素函数（normalize/hint/method）：native_fn 接收安全子集并返回等长
       列表（同长校验在各自 wrapper 内），子集外条目恒取基线；
-    - 聚合函数（dedupe）：输出为分组结果（长度不等于输入数），安全子集判定
-      按"部分不安全即整批走基线"处理，shadow 比对用整批相等判定；
-    - shadow 恒输出 Python 基线；rust 输出 native；
-    - native 异常：shadow 计 fallback 静默降级、rust 按 RUST_ACCEL_FALLBACK_ENABLE。
+    - 聚合函数（aggregate=True）：输出为分组结果（长度不等于输入数），调用方
+      必须全批同一子集判定（部分不安全=整批走基线），shadow 比对用整批相等；
+    - shadow 恒输出 Python 基线（metrics.used_native=False：输出未采纳 native，
+      mode 字段即"native 已双跑"的证据位）；rust 输出 native；
+    - native 异常：shadow 计 fallback 静默降级、rust 按 RUST_ACCEL_FALLBACK_ENABLE
+      上抛 RustAccelerationError（hard-fail 配置由调用链顶层感知，不得局部吞掉）。
     """
 
     started_at = time.monotonic()
     _increment_stat("{}_calls".format(stats_prefix))
     mode = _unified_mode()
     count = len(items)
-    safe_flags = [bool(flag) for flag in safe_flags]
-    if aggregate and count and not all(safe_flags):
-        safe_flags = [False] * count  # 聚合语义下部分安全即整批走基线
-    safe_count = sum(safe_flags)
+    native_indices = [index for index, flag in enumerate(safe_flags) if flag]
+    safe_count = len(native_indices)
+    if aggregate and safe_count != count:
+        native_indices = []  # 聚合语义下部分不安全=整批走基线
+        safe_count = 0
 
     if mode == "off" or not safe_count:
         values = list(python_batch_fn(items))
@@ -471,13 +509,29 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
             ),
         )
 
-    native_indices = [i for i, flag in enumerate(safe_flags) if flag]
+    native_values = [items[i] for i in native_indices]
     try:
-        native_values = [items[i] for i in native_indices]
         native_result = native_fn(native_values)
         if not isinstance(native_result, list):
             raise ValueError("invalid Rust {} output".format(stage))
-        rust_by_index = dict(zip(native_indices, native_result))
+        if not aggregate and len(native_result) != safe_count:
+            raise ValueError("invalid Rust {} output length".format(stage))
+        if aggregate:
+            # rust/shadow 共用的最小结构校验（分组下标严格递增、越界拒绝、
+            # 非空批不得零组）：native 回归丢组/乱序 fail-closed 回退。
+            group_indices = [int(item[0]) for item in native_result]
+            if not group_indices:
+                raise ValueError("empty Rust {} output for non-empty batch".format(stage))
+            if any(prev >= cur for prev, cur in zip(group_indices, group_indices[1:])):
+                raise ValueError("non-increasing Rust {} group order".format(stage))
+            if group_indices[0] != 0:
+                raise ValueError("Rust {} first group must start at 0".format(stage))
+            if group_indices[-1] >= count:
+                raise ValueError("Rust {} group index out of range".format(stage))
+            if any(not isinstance(item[1], (list, tuple)) for item in native_result):
+                raise ValueError("Rust {} group sources malformed".format(stage))
+    except RustAccelerationError:
+        raise
     except Exception as exc:
         _increment_stat("{}_fallbacks".format(stats_prefix))
         with _STATS_LOCK:
@@ -495,6 +549,7 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
             values,
             metrics=_unified_metrics(
                 stage, mode, count, safe_count, 0, time.monotonic() - started_at, False,
+                is_fallback=True,
             ),
         )
 
@@ -504,7 +559,8 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
             mismatch = 0 if list(native_result) == baseline else 1
         else:
             mismatch = sum(
-                1 for index in native_indices if baseline[index] != rust_by_index[index]
+                1 for position, index in enumerate(native_indices)
+                if baseline[index] != native_result[position]
             )
         if mismatch:
             _increment_stat("unified_shadow_mismatches", mismatch)
@@ -516,20 +572,22 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
             baseline,
             metrics=_unified_metrics(
                 stage, mode, count, safe_count, mismatch,
-                time.monotonic() - started_at, True,
+                time.monotonic() - started_at, False,
             ),
         )
 
-    # mode == "rust"：聚合函数直接取整批 native；逐元素函数安全子集取
-    # native、子集外按基线补齐。
-    if aggregate or all(safe_flags):
+    # mode == "rust"：聚合与全安全批直接取 native；混合批只为子集外条目计算
+    # 基线（rust 模式的加速收益不应被全量二重计算吃净）。
+    if aggregate or safe_count == count:
         values = list(native_result)
     else:
-        baseline = list(python_batch_fn(items))
-        values = [
-            rust_by_index[index] if index in rust_by_index else baseline[index]
-            for index in range(count)
-        ]
+        unsafe_indices = [i for i in range(count) if not safe_flags[i]]
+        unsafe_values = list(python_batch_fn([items[i] for i in unsafe_indices]))
+        values = [None] * count
+        for position, index in enumerate(native_indices):
+            values[index] = native_result[position]
+        for position, index in enumerate(unsafe_indices):
+            values[index] = unsafe_values[position]
     return RustBatchResult(
         values,
         metrics=_unified_metrics(
@@ -565,10 +623,9 @@ def unified_document_type_hints(values):
     from app.services.api_candidate_registry import document_type_hint as _py_hint
 
     items = [str(value or "") for value in (values or [])]
-    _, ascii_re = _unified_patterns()
     return _unified_batch(
         "api_unified_hint", items,
-        [bool(ascii_re.match(item)) for item in items],
+        [bool(_UNIFIED_ASCII_SAFE_RE.match(item)) for item in items],
         lambda batch: [_py_hint(item) for item in batch],
         lambda safe_items: [
             str(item)
@@ -590,10 +647,9 @@ def unified_canonical_methods(values):
     from app.services.api_unified_models import canonical_method as _py_method
 
     items = [str(value or "") for value in (values or [])]
-    _, ascii_re = _unified_patterns()
     return _unified_batch(
         "api_unified_method", items,
-        [bool(ascii_re.match(item)) for item in items],
+        [bool(_UNIFIED_ASCII_SAFE_RE.match(item)) for item in items],
         lambda batch: [_py_method(item) for item in batch],
         lambda safe_items: [
             str(item)

@@ -536,6 +536,31 @@ P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P
   unified_method`(逐元素,重复输出值合法)、`unified_dedupe`(聚合分组);
   既有 extract/html/js_endpoint/rank kind 的去重语义门禁不变。
 
+### 4.18 第 10 批 Review 整改轮契约增量(2026-09-06 登记,已实施)
+
+- **配置键接线补全**:`RUST_ACCEL_API_UNIFIED_MODE` 不再仅 getattr 软读——
+  config.py 四路径接线(类默认 "shadow"/runtime yaml ARL 节两处/env 两处
+  `ARL_RUST_ACCEL_API_UNIFIED_MODE`),经 `_safe_runtime_choice` 枚举校验,
+  非法值 warning 后回退默认(adapter 层对 setattr 旁路同口径告警)。
+- **安全子集结构复核**:`unified_url_is_safe` 在正则粗筛后追加 port=纯 ASCII
+  数字、host 含字母数字、surrogate 码元三项拒绝——消除 CPython 补丁版本间
+  `int(port,10)` 语义漂移(`+80`/`8_0`)、纯点 host(空 netloc 重拼
+  `https:///x`)、pyo3 整批编码失败三类子集内分歧;被拒条目恒走 Python 基线。
+- **hint 白名单闸**:批量通道输出经 `API_DOCUMENT_TYPE_HINTS` 成员校验后才
+  参与 backflow"是否升级入队"控制流,枚举外值收敛 unknown(native 回归不得
+  扩大获取面,P0-02 SSRF 口径延伸)。
+- **聚合输出结构校验**:dedupe native 输出在 shadow/rust 共用 fail-closed
+  断言(非空批非零组、组下标严格递增且首组=0 末组<批长、sources 列表形态),
+  违反=当前批回退基线计 fallback。
+- **指标口径钉**:shadow 成功批 `used_native=False`、`backend="python"`
+  (输出未采纳 native;mode 字段为双跑证据位);`fallback_count` 仅 native
+  失败/结构拒绝路径置位。逐元素 kind 的 golden 判定升级为 **Counter 多重集
+  相等**(防"同值顶替缺失条"逃逸重复豁免)。
+- **关键词表单一事实源(Python)**:`api_unified_models.API_DOC_TYPE_HINT_KEYWORDS`
+  (+派生 `API_DOC_CANDIDATE_KEYWORDS`);registry `_TYPE_HINT_KEYWORDS`、
+  js_intel `_is_api_doc_candidate` 改引用(名称保留为兼容入口),钉测试断言
+  引用关系与 Rust 两数组的**有序对**一致(顺序=优先级)。
+
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 
 golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9、swagger2 8、postman 9)

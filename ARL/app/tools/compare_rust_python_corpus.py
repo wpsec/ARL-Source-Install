@@ -71,9 +71,11 @@ def _canonical_dedupe_item(item):
         index = int(index)
     except (TypeError, ValueError) as exc:
         raise ValueError("dedupe 输出下标无效") from exc
-    if not isinstance(sources, list):
+    if not isinstance(sources, (list, tuple)):
         raise ValueError("dedupe 输出 sources 必须是列表")
-    return [index, [str(source) for source in sources]]
+    # 返回可哈希嵌套 tuple：与 extract/rank kind 同走 set/Counter 代码路径，
+    # JSON 报告序列化时 tuple→list，展示结构与输入一致。
+    return (index, tuple(str(source) for source in sources))
 
 
 def _canonicalize(kind, value):
@@ -89,29 +91,8 @@ def _canonicalize(kind, value):
     raise ValueError("不支持的 corpus 类型: {}".format(kind))
 
 
-def _hashable(item):
-    # 聚合类 kind（unified_dedupe）条目是嵌套列表，需序列化后才能进 set/Counter。
-    if isinstance(item, (list, dict)):
-        return json.dumps(item, ensure_ascii=False, sort_keys=True)
-    return item
-
-
-def _parse_hashable(item):
-    # _hashable 序列化的嵌套条目还原为可展示结构（报告可读性）。
-    if isinstance(item, str):
-        try:
-            return json.loads(item)
-        except ValueError:
-            return item
-    return item
-
-
 def _duplicates(items):
-    return [
-        item
-        for item, count in Counter(_hashable(item) for item in items).items()
-        if count > 1
-    ]
+    return [list(item) for item, count in Counter(items).items() if count > 1]
 
 
 def _case_id(case, index):
@@ -143,8 +124,8 @@ def compare_corpus(payload, strict_order=False):
             errors.append("{}: {}".format(case_id, exc))
             continue
 
-        python_set = {_hashable(item) for item in python_output}
-        rust_set = {_hashable(item) for item in rust_output}
+        python_set = set(python_output)
+        rust_set = set(rust_output)
         missing = sorted(python_set - rust_set)
         unexpected = sorted(rust_set - python_set)
         python_duplicates = _duplicates(python_output)
@@ -153,11 +134,14 @@ def compare_corpus(payload, strict_order=False):
         # 统一面逐元素 kind 输出是"每条输入一个输出"，重复值合法（两个输入可
         # 规范化为同一 URL）；重复门禁只对提取类 kind（记录面去重语义）生效。
         duplicates_allowed = kind in UNIFIED_ELEMENT_KINDS
-        semantic_equal = not (
-            missing
-            or unexpected
-            or (python_duplicates or rust_duplicates) and not duplicates_allowed
-        )
+        if duplicates_allowed:
+            # B4 补强：以多重集相等替代"集合相等+重复豁免"，防"同值顶替缺失
+            # 条"（等长、集合相同、计数不同）的聚合错误形态逃逸。
+            semantic_equal = Counter(python_output) == Counter(rust_output)
+        else:
+            semantic_equal = not (
+                missing or unexpected or python_duplicates or rust_duplicates
+            )
         results.append(
             {
                 "id": case_id,
@@ -165,13 +149,13 @@ def compare_corpus(payload, strict_order=False):
                 "ok": semantic_equal and (not strict_order or order_equal),
                 "python_count": len(python_output),
                 "rust_count": len(rust_output),
+                # B3 钉：str 条目直接呈现（list("swagger") 会拆成单字符列表），
+                # tuple 条目（dedupe）转 list 供 JSON 展示。
                 "missing_from_rust": [
-                    item if isinstance(item, str) else _parse_hashable(item)
-                    for item in missing
+                    item if isinstance(item, str) else list(item) for item in missing
                 ],
                 "unexpected_in_rust": [
-                    item if isinstance(item, str) else _parse_hashable(item)
-                    for item in unexpected
+                    item if isinstance(item, str) else list(item) for item in unexpected
                 ],
                 "python_duplicates": python_duplicates,
                 "rust_duplicates": rust_duplicates,

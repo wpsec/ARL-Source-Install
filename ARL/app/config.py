@@ -210,6 +210,29 @@ def _safe_runtime_bool(value, default=False):
     return bool(default)
 
 
+
+def _safe_runtime_choice(value, allowed, default):
+    """运行配置枚举值：非法输入回退默认并可观测（不静默改语义）。"""
+    import logging
+
+    candidate = str(value or "").strip().lower()
+    if candidate in allowed:
+        return candidate
+    logging.getLogger(__name__).warning(
+        "invalid runtime config value %r not in %s, keep %r",
+        value, allowed, default,
+    )
+    return default
+
+
+def env_choice(env_name, allowed, default):
+    import os
+
+    raw = os.getenv(env_name)
+    if raw is None:
+        return default
+    return _safe_runtime_choice(raw, allowed, default)
+
 def refresh_runtime_config_best_effort(force=False):
     """
     最佳努力热刷新运行时配置（扫描配置 + API配置）。
@@ -497,6 +520,11 @@ def refresh_runtime_config_best_effort(force=False):
             Config.RUST_ACCEL_FALLBACK_ENABLE = _safe_runtime_bool(
                 arl_conf.get("RUST_ACCEL_FALLBACK_ENABLE"), Config.RUST_ACCEL_FALLBACK_ENABLE
             )
+        if arl_conf.get("RUST_ACCEL_API_UNIFIED_MODE") is not None:
+            Config.RUST_ACCEL_API_UNIFIED_MODE = _safe_runtime_choice(
+                arl_conf.get("RUST_ACCEL_API_UNIFIED_MODE"),
+                ("off", "shadow", "rust"), Config.RUST_ACCEL_API_UNIFIED_MODE,
+            )
         if arl_conf.get("PROGRESSIVE_SCAN_ENABLE") is not None:
             Config.PROGRESSIVE_SCAN_ENABLE = _safe_runtime_bool(
                 arl_conf.get("PROGRESSIVE_SCAN_ENABLE"), Config.PROGRESSIVE_SCAN_ENABLE
@@ -568,6 +596,10 @@ def refresh_runtime_config_best_effort(force=False):
         )
         Config.RUST_ACCEL_FALLBACK_ENABLE = env_bool(
             "ARL_RUST_ACCEL_FALLBACK_ENABLE", Config.RUST_ACCEL_FALLBACK_ENABLE
+        )
+        Config.RUST_ACCEL_API_UNIFIED_MODE = env_choice(
+            "ARL_RUST_ACCEL_API_UNIFIED_MODE",
+            ("off", "shadow", "rust"), Config.RUST_ACCEL_API_UNIFIED_MODE,
         )
         Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
             "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE
@@ -753,6 +785,10 @@ class Config(object):
     RUST_ACCEL_ENABLE = True
     # Rust 加速不可用时是否按当前批次回退 Python
     RUST_ACCEL_FALLBACK_ENABLE = True
+    # 统一 API 面 Rust 批量通道模式（off|shadow|rust，计划 6 §9.3/附录A §4.18）：
+    # shadow=双跑比对输出恒取 Python 基线（默认观察态）；rust 需过 CPU 闸后经
+    # 发布流程启用；off=kill-switch（native 在场也零开销）。非法值回退默认。
+    RUST_ACCEL_API_UNIFIED_MODE = "shadow"
     # URLFinder URL 可达性探测单次最多目标数
     URLFINDER_URL_PROBE_MAX_TARGETS = 800
     # URLFinder URL 可达性探测并发
@@ -1670,6 +1706,11 @@ try:
 
     if y["ARL"].get("RUST_ACCEL_FALLBACK_ENABLE") is not None:
         Config.RUST_ACCEL_FALLBACK_ENABLE = bool(y["ARL"]["RUST_ACCEL_FALLBACK_ENABLE"])
+    if y["ARL"].get("RUST_ACCEL_API_UNIFIED_MODE") is not None:
+        Config.RUST_ACCEL_API_UNIFIED_MODE = _safe_runtime_choice(
+            y["ARL"]["RUST_ACCEL_API_UNIFIED_MODE"],
+            ("off", "shadow", "rust"), Config.RUST_ACCEL_API_UNIFIED_MODE,
+        )
     if y["ARL"].get("PROGRESSIVE_SCAN_ENABLE") is not None:
         Config.PROGRESSIVE_SCAN_ENABLE = bool(y["ARL"]["PROGRESSIVE_SCAN_ENABLE"])
 
@@ -2384,6 +2425,10 @@ try:
     )
     Config.RUST_ACCEL_FALLBACK_ENABLE = env_bool(
         "ARL_RUST_ACCEL_FALLBACK_ENABLE", Config.RUST_ACCEL_FALLBACK_ENABLE
+    )
+    Config.RUST_ACCEL_API_UNIFIED_MODE = env_choice(
+        "ARL_RUST_ACCEL_API_UNIFIED_MODE",
+        ("off", "shadow", "rust"), Config.RUST_ACCEL_API_UNIFIED_MODE,
     )
     Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
         "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE

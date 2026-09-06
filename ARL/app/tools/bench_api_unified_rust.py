@@ -6,8 +6,10 @@
 
 基线函数为生产实现的逐字副本（discovery_context.normalize_url、
 api_candidate_registry.document_type_hint、api_unified_models.canonical_method /
-merge_endpoint_records）；副本一致性由 ARL/test/test_api_unified_rust_batch.py
-钉住，漂移会导致 corpus/单测失败，基准数据即作废。
+merge_endpoint_records，及预检正则与关键词/方法常量表）——基准必须在装有
+release .so 的容器内运行（无 app 重依赖），故以副本替代导入；一致性由
+ARL/test/test_api_unified_rust_batch.py::TestBenchBaselinePins 在宿主逐函数
+AST 源文本钉住，漂移会导致该测试失败、基准数据作废需重跑。
 
 用法：
 - 任意环境（无 arl_accel 时只跑 Python 半边）：
@@ -21,6 +23,7 @@ import re
 import statistics
 import sys
 import time
+from typing import Dict, List, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 BATCH_NORMALIZE = 20000
@@ -86,9 +89,9 @@ def py_canonical_method(method):
 
 
 def py_merge_endpoint_records(records):
-    order = []
-    groups = {}
-    for index, record in enumerate(records):
+    order: List[Tuple[str, str, str, str]] = []
+    groups: Dict[Tuple[str, str, str, str], Tuple[int, set]] = {}
+    for index, record in enumerate(records or []):
         url, method, api_type, path_template, source = record
         key = (str(url or ""), str(method or ""), str(api_type or ""), str(path_template or ""))
         entry = groups.get(key)
@@ -197,11 +200,13 @@ def main():
             py_median = python_side[key]["median_sec"]
             rs_median = rust_side[key]["median_sec"]
             ratio = rs_median / py_median if py_median else None
+            cpu_gate = ratio is not None and ratio <= 0.70
+            throughput_gate = ratio is not None and ratio <= 2 / 3
             gates[key] = {
                 "rust_vs_python_median": round(ratio, 4) if ratio is not None else None,
-                "cpu_reduction_gate_30pct": ratio is not None and ratio <= 0.70,
-                "throughput_gate_1_5x": ratio is not None and ratio <= (1 / 1.5 + 1e-9),
-                "gate_passed": ratio is not None and (ratio <= 0.70 or ratio <= 2 / 3),
+                "cpu_reduction_gate_30pct": cpu_gate,
+                "throughput_gate_1_5x": throughput_gate,
+                "gate_passed": bool(cpu_gate or throughput_gate),
             }
         report["rust"] = rust_side
         report["gates"] = gates

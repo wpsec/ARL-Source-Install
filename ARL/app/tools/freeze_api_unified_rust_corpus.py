@@ -30,7 +30,7 @@ NORMALIZE_INPUTS = [
     "https://example.test",
     "https://example.test?a=b",
     "http://example.test:8080/a?b=2#z",
-    "https://user:pw@example.test/x",
+    "https://user:pw@example.test/x",  # RFC 保留域占位凭据：钉 userinfo 剥离行为，非真实凭据
     "https://a@b@example.test/x",
     "https://a.b:080/x",
     "https://a.b:0/x",
@@ -164,10 +164,15 @@ def main(argv=None):
                 existing = {c["kind"]: c for c in json.loads(output.read_text(encoding="utf-8"))["cases"]}
                 for case in payload["cases"]:
                     old = existing.get(case["kind"])
-                    if old and old.get("rust"):
+                    # 只在输入表逐字节未变时继承 rust 字段：输入换代后旧 rust 输出
+                    # 对应的是不存在的输入集，继承会造成 --check 假绿/错位（A8）。
+                    if old and old.get("rust") and old.get("input") == case.get("input"):
                         case["rust"] = old["rust"]
-            except (ValueError, KeyError):
-                pass
+            except (ValueError, KeyError, TypeError) as exc:
+                # 旧文件不可解析=与不存在同等处理（rust 字段随后由 --fill-rust 重建），
+                # 但必须可见：静默覆盖会掩盖 corpus 损坏。
+                print("既有 corpus 无法复用（将重建 rust 字段）: {}".format(exc),
+                      file=sys.stderr)
         for case in payload["cases"]:
             case.setdefault("rust", [])
         output.write_text(

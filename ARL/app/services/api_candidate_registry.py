@@ -38,6 +38,7 @@ from app.config import Config
 from .api_doc_scan import ApiDocScanner
 from .api_unified_models import (
     API_DOCUMENT_TYPE_HINTS,
+    API_DOC_TYPE_HINT_KEYWORDS,
     API_ENDPOINT_STATUSES,
     UNIFIED_API_CONFIG_DEFAULTS,
     ApiDocumentCandidate,
@@ -89,22 +90,10 @@ _ENDPOINT_OBSERVABLE_FROM = frozenset({"discovered", "queued", "pending"})
 # 三类恢复路径；默认值与 WIH endpoint 探测阶段墙钟同量级，Config 未定义时走常量。
 ENDPOINT_CLAIM_LEASE_SEC = 900
 
-# type_hint 判定关键词（顺序即优先级；与 ApiDocScanner._DOC_KEYWORDS 的语义交集冻结）。
-_TYPE_HINT_KEYWORDS: Tuple[Tuple[str, str], ...] = (
-    ("postman", "postman"),
-    ("openapi", "openapi"),
-    ("swagger", "swagger"),
-    ("api-docs", "swagger"),
-    # 第 7 批：WSDL/SOAP 文档分类（.wsdl / ?wsdl / /wsdl 路径均含 "wsdl"）。
-    ("wsdl", "wsdl"),
-    # 第 8 批（P0-05 事件面）：JS/页面发现的 GraphQL 入口经 urlfinder_url/page_link
-    # 记录回流（见 _collect_backflow），此处补分类。GraphQL 关键词只进统一面，
-    # 不回填 ApiDocScanner._DOC_KEYWORDS/js 静态关键字表——那会改变 flag-off 的
-    # legacy 请求面；Rust 原生路径（lib.rs is_api_doc_candidate）的同口径扩展
-    # 属第 10 批 Rust 面。
-    ("graphql", "graphql"),
-    ("graphiql", "graphql"),
-)
+# type_hint 判定关键词（顺序即优先级；与 ApiDocScanner._DOC_KEYWORDS 的语义交集
+# 冻结）。第 10 批起表体收口到 api_unified_models.API_DOC_TYPE_HINT_KEYWORDS
+# （js_intel 镜像同表引用），本名保留为模块内既有引用点与钉测试的稳定入口。
+_TYPE_HINT_KEYWORDS: Tuple[Tuple[str, str], ...] = API_DOC_TYPE_HINT_KEYWORDS
 
 # 第 8 批回流扩展记录面：这些记录本身是通用 URL 记录，只有 URL 形态命中
 # 文档关键词时才升级为文档候选（api_doc_url 记录维持既有直通语义）。
@@ -746,6 +735,9 @@ class ApiDocumentQueue:
         self.resumed_skip_count = 0
         self.stage_timeout_stopped = False
         # 第 10 批：统一面 hint 批量通道观测计数（rust 门禁与 shadow 观察期证据面）。
+        # 注意：mismatch/fallback 两项仅为进程内聚合视图，run 收口只 flush
+        # batch/input 两项——per-event 增量已经由 _record_metric 记入
+        # api_unified_hint_{mismatch,fallback}_total，运行末尾再 flush 会双计。
         self.backflow_hint_batch_count = 0
         self.backflow_hint_input_count = 0
         self.backflow_hint_mismatch_count = 0
@@ -855,53 +847,64 @@ class ApiDocumentQueue:
         基线恒为 `document_type_hint`：Rust 缺席时 adapter 输出即基线（mode off），
         shadow 模式双跑比对、rust 模式取安全子集 native 结果——三个模式下本方法
         返回值与逐条基线一致，行为零变化；mismatch/fallback 经 debug 日志与
-        context metric 显影，不静默。任何异常返回空 map，调用方逐条回退基线。
+        context metric 显影，不静默。普通异常返回空 map（调用方逐条回退基线）；
+        `RustAccelerationError`（rust 模式 + FALLBACK_ENABLE=False 的 hard-fail
+        配置意图）不在本层吞掉——由统一管线顶层 fallback 语义显式承接。
+        观测计数只在批结果被采纳时累加，丢弃批不冒充健康覆盖率（E5）。
         """
 
-        unique = list(dict.fromkeys(str(url or "") for url in urls if str(url or "")))
+        cleaned = [text for text in (str(url or "") for url in urls) if text]
+        unique = list(dict.fromkeys(cleaned))
         if not unique:
             return {}
         try:
-            from .rust_accel import unified_document_type_hints
+            from .rust_accel import RustAccelerationError, unified_document_type_hints
         except Exception as exc:
             logger.debug(
                 "api unified hint adapter unavailable error_type:%s", type(exc).__name__)
             return {}
         try:
             result = unified_document_type_hints(unique)
+        except RustAccelerationError:
+            raise
         except Exception as exc:
             logger.debug(
                 "api unified hint batch failed error_type:%s", type(exc).__name__)
             return {}
+        values = list(result)
+        if len(values) != len(unique):
+            # 长度破损的批被丢弃（逐条基线兜底）：计 fallback 证据并告警，
+            # 不得静默把"批量通道失效"洗成"批量健康"。
+            self.backflow_hint_fallback_count += 1
+            self._record_metric("api_unified_hint_discarded_total")
+            logger.warning(
+                "api unified hint batch discarded input:%s output:%s",
+                len(unique), len(values))
+            return {}
         metrics = getattr(result, "metrics", {}) or {}
         self.backflow_hint_batch_count += 1
         self.backflow_hint_input_count += len(unique)
-        if int(metrics.get("mismatch_count", 0) or 0):
-            self.backflow_hint_mismatch_count += int(metrics["mismatch_count"])
-            if self.context is not None:
-                try:
-                    self._record_metric(
-                        "api_unified_hint_mismatch_total", int(metrics["mismatch_count"]))
-                except Exception:
-                    pass
-        if int(metrics.get("fallback_count", 0) or 0):
-            self.backflow_hint_fallback_count += int(metrics["fallback_count"])
-            if self.context is not None:
-                try:
-                    self._record_metric(
-                        "api_unified_hint_fallback_total", int(metrics["fallback_count"]))
-                except Exception:
-                    pass
+        for key, attr, metric in (
+            ("mismatch_count", "backflow_hint_mismatch_count", "api_unified_hint_mismatch_total"),
+            ("fallback_count", "backflow_hint_fallback_count", "api_unified_hint_fallback_total"),
+        ):
+            value = int(metrics.get(key, 0) or 0)
+            if value:
+                setattr(self, attr, getattr(self, attr) + value)
+                # _record_metric 内置 context None 守卫与故障容错，不重复包裹。
+                self._record_metric(metric, value)
         logger.debug(
             "api unified hint batch mode:%s backend:%s input:%s mismatch:%s fallback:%s elapsed:%.4f",
             metrics.get("mode"), metrics.get("backend"), len(unique),
             metrics.get("mismatch_count"), metrics.get("fallback_count"),
             float(metrics.get("elapsed", 0.0) or 0.0),
         )
-        values = list(result)
-        if len(values) != len(unique):
-            return {}
-        return dict(zip(unique, values))
+        # 白名单收紧（E4）：批通道输出参与"是否入队文档"的控制流判定，
+        # 枚举外值一律按 unknown 处理——native 回归不得扩大获取面（P0-02 SSRF 口径）。
+        return {
+            url: (value if value in API_DOCUMENT_TYPE_HINTS else "unknown")
+            for url, value in zip(unique, values)
+        }
 
     def _collect_backflow(self, wih_records: List[Any]) -> int:
         """把记录面与候选图里已发现的 API 文档回流进注册表（JS/页面回流核心通道）。
@@ -914,17 +917,29 @@ class ApiDocumentQueue:
 
         registered = 0
         max_targets = max(1, int(self.config.get("API_DOCUMENT_MAX_TARGETS", 200) or 200))
-        record_list = list(wih_records or [])
+        record_candidates: List[Tuple[str, str, str, str]] = []
         graph_candidates: List[Tuple[str, str, str]] = []
         pending_hints: List[str] = []
-        for record in record_list:
-            record_type = str(
-                getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip()
-            content = str(getattr(record, "content", "") or "").strip()
-            if not content:
+        for record in wih_records or []:
+            try:
+                record_type = str(
+                    getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip()
+                content = str(getattr(record, "content", "") or "").strip()
+                if not content:
+                    continue
+                if record_type == "api_doc_url" or record_type in _BACKFLOW_HINT_RECORD_TYPES:
+                    record_candidates.append((
+                        record_type,
+                        content,
+                        str(getattr(record, "source", "") or "intel"),
+                        str(getattr(record, "site", "") or ""),
+                    ))
+                    pending_hints.append(content)
+            except Exception as exc:
+                # §7.2 容错口径：任何单条记录异常只跳过该条，不外溢中断阶段。
+                logger.debug(
+                    "api doc backflow record skipped error_type:%s", type(exc).__name__)
                 continue
-            if record_type == "api_doc_url" or record_type in _BACKFLOW_HINT_RECORD_TYPES:
-                pending_hints.append(content)
         if self.context is not None:
             try:
                 for graph_item in self.context.candidate_registry.values():
@@ -951,25 +966,17 @@ class ApiDocumentQueue:
         def _hint_of(url: str) -> str:
             return hint_map.get(url, "")
 
-        for record in record_list:
+        for record_type, content, record_source, record_site in record_candidates:
             try:
-                record_type = str(
-                    getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip()
-                content = str(getattr(record, "content", "") or "").strip()
-                if not content:
-                    continue
-                hint = _hint_of(content) or (
-                    document_type_hint(content)
-                    if record_type in _BACKFLOW_HINT_RECORD_TYPES else ""
-                )
-                if record_type != "api_doc_url" and not (
-                        record_type in _BACKFLOW_HINT_RECORD_TYPES
-                        and hint != "unknown"):
+                # 批未覆盖（batch 失败/丢弃）时逐条基线补算，api_doc_url 直通
+                # 记录同样需要 hint 供登记透传——与旧逐条语义一致。
+                hint = _hint_of(content) or document_type_hint(content)
+                if record_type != "api_doc_url" and hint == "unknown":
                     continue
                 _doc, created = self._register_within_budget(
                     content,
-                    source=str(getattr(record, "source", "") or "intel"),
-                    parent_target=str(getattr(record, "site", "") or ""),
+                    source=record_source,
+                    parent_target=record_site,
                     priority=_DOC_PRIORITY_EVIDENCE,
                     max_targets=max_targets,
                     type_hint=hint,

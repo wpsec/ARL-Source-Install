@@ -910,16 +910,42 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 
 | 交付 | 说明 |
 |---|---|
-| T10-A 关键字同口径 | `lib.rs::is_api_doc_candidate` 与 Python 镜像 `js_intel_scan._is_api_doc_candidate` 扩至统一面 `_TYPE_HINT_KEYWORDS` 全集（+`wsdl`/`graphql`/`graphiql`，第 7/8 批只进统一面的余留对齐）；`_DOC_KEYWORDS` 保持四 token——**legacy 请求面零变化**（flag-off 不扫 graphql/wsdl 形态 URL），变化面为 `api_doc_url` **记录发射面**（JS 发现文档入口进统一候选图的证据完整化）；三面（Rust/镜像/统一面）集合相等 + legacy 窄集合由 `test_rust_accel.TestApiDocKeywordAlignment` 源码钉锁定，Rust 侧行为钉 `api_doc_keywords_align_with_unified_type_hints` |
+| T10-A 关键字同口径 | `lib.rs::is_api_doc_candidate` 与 Python 镜像 `js_intel_scan._is_api_doc_candidate` 扩至统一面 `_TYPE_HINT_KEYWORDS` 全集（+`wsdl`/`graphql`/`graphiql`，第 7/8 批只进统一面的余留对齐）；`_DOC_KEYWORDS` 保持四 token——**legacy 请求面零变化**（flag-off 不扫 graphql/wsdl 形态 URL），变化面为 `api_doc_url` **记录发射面**（JS 发现文档入口进统一候选图的证据完整化）；三面（Rust/镜像/统一面）口径钉重设计为"共享表引用 + Rust 有序对/集合比较"（评审 A7/D8：registry/js_intel 收口到 `api_unified_models.API_DOC_TYPE_HINT_KEYWORDS` 单一事实源，钉顺序即优先级值映射，Rust HINTS 数组括号配平提取防注释误伤）；Rust 侧行为钉 `api_doc_keywords_align_with_unified_type_hints`。**影响面精确化（评审 B1）**："flag-off 零变化"限定为**请求面**；`api_doc_url` 记录与 `endpoint` 图候选在 flag-off 下按既有多 token 形态同类增大——wih_api_doc 阶段先于 js_intel 运行，这批记录本就由**下一轮任务**消费（第 9 批前即如此），flag-off 时 `task_finalizer` 的 `pending_backlog|api` 显影面对 graphql/wsdl URL 出现存量同类增长（非新类别），随第 11 批 40 目标验收出真实增量数 |
 | T10-B 批量纯数据函数 | `unified_normalize_urls`（CPython 3.10 `urlsplit`+`normalize_url` 安全子集逐字节移植：ASCII netloc、port 十进制重渲染、默认端口/0 端口剔除、trailing-dot、userinfo 剥离、fragment 丢弃、query 原样；IPv6/非 ASCII/控制字符/大写 scheme 一律返回原文并被子集预检排除）；`unified_canonical_methods`；`unified_document_type_hints`（顺序=优先级冻结）；`unified_dedupe_endpoints`（键分组首现序 + sources strip/去重/码点排序，对齐 `add_source`+`sorted`）。Rust 单测 5 项容器内 `cargo test --locked` 全绿（14 项总计） |
 | T10-C adapter 三模式 | `rust_accel.py` 新增 `_unified_batch` 引擎 + 4 入口：`RUST_ACCEL_API_UNIFIED_MODE`（off/shadow/rust，Config 未定义默认 **shadow**）；shadow 双跑恒输出 Python 基线并计 `mismatch_count`（`unified_shadow_mismatches` 静态计数 + warning 日志）；rust 模式安全子集取 native、子集外取基线；native 异常当前批回退（`*_fallbacks`、FALLBACK_ENABLE=False 时显式抛错）；metrics 含 stage/mode/backend/safe_count/mismatch/elapsed。Python 基线 `api_unified_models.merge_endpoint_records` 落地（Rust 聚合语义事实源）；`_STATS` 静态声明统一面计数键 |
 | 生产接线（唯一一处） | `ApiDocumentQueue._collect_backflow`：回流扫描的 `document_type_hint` 逐条调用收口为 `_batch_document_hints` 批量预取（含 api_doc_url 直通记录与候选图通道的复用，消除同 URL 二重分类）；`_register_within_budget` 增可选 `type_hint` 透传（旧调用零变化）；观测计数 `backflow_hint_batch/input/mismatch/fallback_count` + stage metrics `api_unified_hint_batch_total`/`api_unified_hint_input_total`/`api_unified_hint_mismatch_total`/`api_unified_hint_fallback_total`。**默认 shadow：输出恒为基线，flag-on 行为零变化**；adapter 不可导入环境（宿主轻依赖）返回空 map 逐条回退基线，fail-safe 不静默。**顺带行为修复（超出纯重构口径，如实登记）**：原候选图通道"边迭代 `candidate_registry.values()` 边 register"——首个 created 文档 publish 图事件即触发 dict 变异迭代中断（该通道实际半失效）；本批改两步"先快照收集、后登记"，迭代中断根除、图通道候选登记更完整（预算闸 `API_DOCUMENT_MAX_TARGETS` 逐条判定语义不变、上限不放大；`test_graph_backflow_channel` 既有用例覆盖且通过） |
 | T10-D golden 严格一致 | 新 corpus `test/data/api_unified_rust_corpus.json`（59 条逐元素/聚合输出，python 字段=生产基线实测、rust 字段=release `.so` 实测）；比较器扩展 4 kind + 聚合 kind 的重复值合法豁免（逐元素批输出重复是语义正确，WIH 提取 kind 去重门禁不变）；`freeze_api_unified_rust_corpus.py` 三段工具（--fill-python/--fill-rust/--check）；容器内（python:3.10.20-slim=生产版本）`--run-native --strict-order`：**新 corpus 4 case 与既有 WIH corpus 4 case 全部 ok**（T10-A 扩展后旧 js_endpoint golden 零漂移） |
-| T10-E CPU 基准与接入决策 | `bench_api_unified_rust.py`（确定性种子，20k/40k 批量，5 次重复 median/p95）。Linux aarch64/py3.10.20 实测：normalize 比 **0.065（15.4x，含预检 7.4x）过闸**；method 0.597 过闸；hint 0.905 **不过闸**（预检 4.1ms 反噬：rust 模式总耗时 > 基线）；dedupe 0.998 **不过闸**（FFI tuple 序列化吃净收益）。按 §9.3"指标满足门禁后才扩大范围"：hint/dedupe 保持 shadow/入口不升级；normalize 过闸但统一面暂无整批调用形态（对象构造在契约面内），**升级 rust 模式留待第 11 批随默认切换决策**；端到端 ≤5% 恶化验证归第 11 批 40/64 目标容器验收（本批进程面：backflow shadow 增量 <10ms/20k 记录，占 api_doc 阶段预算 <0.01%） |
+| T10-E CPU 基准与接入决策 | `bench_api_unified_rust.py`（确定性种子，20k/40k 批量，5 次重复 median/p95）。Linux aarch64/py3.10.20 第二轮实测（评审后：dedupe clone 消除 + gate 逻辑修正）：normalize 比 **0.066（15.2x，含预检 7.4x）过闸**；method 0.601 过闸；hint 0.875 **不过闸**（预检 4.1ms 反噬：rust 模式总耗时 ≈ 8.5ms > 基线 5.0ms，负期望）；dedupe 0.752 **不过闸**（首轮 0.998→clone 消除后 0.752，仍高于 0.70/0.667 双阈值；FFI tuple 序列化是主要残留成本）。按 §9.3"指标满足门禁后才扩大范围"：hint/dedupe 保持 shadow/入口不升级（若第 11 批接线形态改变需重跑基准，禁止沿用本表）；normalize 过闸但统一面暂无整批调用形态（对象构造在契约面内），**升级 rust 模式留待第 11 批随默认切换决策**；端到端 ≤5% 恶化验证归第 11 批 40/64 目标容器验收（本批进程面：backflow shadow 增量 <10ms/20k 记录，占 api_doc 阶段预算 <0.01%） |
 | T10-F P2-15 评估结论 | **缓拆，登记触发条件**。理由：(1) 第 10 批 parser 文件零改动，拆分纯搬迁无功能耦合；(2) golden/模块路径/import 链（`_api_unified_bootstrap` 模块清单、shadow 桥接）的重验成本应并入第 11 批默认切换前的统一回归窗口，避免二次重做；(3) 1918 行内 4 Parser 类 + 桥接 helper 边界清晰暂无维护事故。触发条件：第 11 批整改若需同时改动 ≥2 个 parser 逻辑块，或默认切换后 parser 面出现新缺陷需要热修时，随批拆分 |
 | 测试卫生顺带修复（计划 1 余留项增量） | `test_task_finalizer.py` 旧实现注入 `app.services` 空壳桩不还原，引爆后续 `assert_no_shell_pollution`（合跑顺序敏感）——改用 `_api_unified_bootstrap.load_modules` 临时桩窗口 + finally 还原，独立进程 26 项通过；计划 1"fake 注入未完全恢复"项部分收敛（其余文件盘点继续挂计划 1） |
 
-验证：十三件合跑 **291 项全绿**（九件 261 + rust_batch 16 + corpus 门禁 2 + registry/独立件净增 12；skip=1）；`test_web_info_intel` 新增 graphql/WSDL 发射行为 case 落盘（宿主 skip、容器回归承接，预期值为镜像逻辑手推——容器首跑若与推演不符按实测修断言并记因）；Rust 容器 `cargo test --locked` 14 项全绿、双 corpus `--run-native --strict-order` 全绿。`API_UNIFIED_ENABLE` 默认 False、`RUST_ACCEL_API_UNIFIED_MODE` 默认 shadow 不变。
+### 第 10 批 Review 整改轮（2026-09-06，code-review 10 角度 + 独立对抗审查后修，提交 `c9444847` 之 fixup）
+
+| 级 | 发现（角度） | 处置 |
+|---|---|---|
+| P1 | 聚合结构校验 `and` 连接致乱序/重复/丢组全放行，注释与实现相反（Angle A/C） | 重写为 fail-closed 四断言：非空批非零组、严格递增、首组=0、末组<批长；sources 形态检查 |
+| P1 | shadow 成功批被计 `fallback_count=1`（used_native=False 判据被 E2 修复反噬，Angle C） | `_unified_metrics` 改显式 `is_fallback` 参数，仅 native 失败路径置位——fallback 证据流去噪 |
+| P1 | shadow 指标 `used_native`/`backend` 与输出语义矛盾（"输出=基线却标 rust"，E2）：shadow 成功批标 False/python，`mode` 字段即双跑证据位；测试钉属性-metrics 一致 |
+| P1 | hint 批输出未做枚举白名单即参与"是否入队 fetch"控制流（E4，SSRF 面） | `_batch_document_hints` 返回前枚举外值收敛 "unknown"；控制流只消费白名单值 |
+| P1 | backflow 记录通道 source/site getattr 逃逸 per-record try（C6） | 回纳入单条 try，§7.2"单条失败只跳该条"恢复 |
+| P1 | flag-off 记录/pending 显影面口径（B1） | 影响面精确化（见 T10-A 行修订），不改行为 |
+| P1 | bench"副本由测试钉"为假（R1/S1/A7） | 新增 `TestBenchBaselinePins`（函数体+符号别名映射比较、常量表、预检正则文本钉）；**当场抓到 bench merge 副本真实漂移**（局部注解与 `or []` 缺失）已对齐 |
+| P1 | `test_web_info_intel` 新 case 缺 mock 形参，容器内必 ERROR（A6） | 补形参 |
+| P2 | 直跑文件时末类被 `unittest.main()` 截断（E7/D3） | runner 移到 EOF |
+| P2 | hard-fail RustAccelerationError 被接线层吞掉（E1）、长度破损批静默丢弃且计数健康（E5） | 接线层放行 RustAccelerationError（由统一管线顶层 fallback 语义承接）；丢弃批计 `api_unified_hint_discarded_total` + warning，采纳后才累加 batch/input |
+| P2 | normalize 安全子集内三处分歧：纯点 host（D1/A5）、`+80`/`8_0` port 的 CPython 补丁版本漂移（D2）、surrogate 整批 pyo3 编码失败（D7） | `unified_url_is_safe` 正则粗筛后结构复核：port 纯 ASCII 数字、host 含字母数字、surrogate 拒绝——三类恒走 Python，跨版本零赌注 |
+| P2 | rust 模式全批二重计算 Python 基线（Efficiency-5，抵消加速目的） | rust 分支只对子集外条目算基线 |
+| P2 | 引擎冗余扫描/dict(zip)/`_unified_patterns` lazy 工厂/聚合死分支（Efficiency-2/3/4、S-H3/H9） | 单扫索引、zip 比对、regex 顶层编译、`aggregate and safe_count != count` 一行契约 |
+| P2 | 关键词表 4 处字面量副本 + 钉脆弱（S3/D8/A7） | Python 面收口共享表（引用关系钉）；Rust 面括号配平提取 + HINTS **有序对**逐项钉（补上"顺序即优先级"无钉缺口） |
+| P2 | dedupe fake 用基线自证（E6） | 桩默认输出结构合法但 sources 带桩标记（驱动 shadow mismatch 可测）；采纳性测试显式 `match_baseline` |
+| P2 | 空 catch×3（C1/C2/C3 规范）与 `_record_metric` 双重守卫复制（R5） | 接线层改调 helper（内置守卫）；freeze 工具旧 corpus 解析失败打印原因；helper 内 per-metric except 保留（best-effort 观测既有模式，非静默——`logger.debug` 由 helper 承担） |
+| P2 | 比较器：str 条目 `list()` 拆字符（B3）、逐元素 kind 重复豁免可被"同值顶替缺失条"利用（B4）、`_parse_hashable` no-op（S4/H8）、dedupe 字段 tuple 化重设计（R7） | 报告条目 str/tuple 分支修复；逐元素 kind 改 **Counter 多重集相等**判定；删 no-op 层；`_canonical_dedupe_item` 返回可哈希 tuple |
+| P2 | mode 键无配置接线面，off kill-switch 不可达（Altitude-1） | `config.py` 四路径接线（类默认 + runtime yaml 两处 + env 两处）+ `_safe_runtime_choice` 非法值告警回退；adapter 兜底 `setattr` 旁路告警 |
+| P2 | bench gate 死析取（S2/D5） | `gate_passed = cpu_gate or throughput_gate`，阈值单写 |
+| P2 | dedupe Rust 12 次/条 String clone（Efficiency-6） | 借用键重写，基准 0.998→0.752（仍不过闸，结论不变，cargo test 14 项 + 双 corpus strict 复验） |
+| 挂起 | pyo3 逐 stage 6 处登记成本（Altitude-5）、`_unified_metrics` 与旧 4 处内联 metrics 未合并（R6）、graph 快照窗口并发注释（B2）、bootstrap 分层（A-altitude-6） | 登记为第 11 批/后续整改项，不在本批扩大改动面 |
+
+验证：十三件合跑 **308 项全绿**（291 + 整改轮净增 17：结构校验 3 + 白名单/hard-fail 2 + bench 钉 3 + 聚合 mismatch/指标一致性等；skip=8 为宿主轻依赖既有口径）；Rust 侧 cargo test --locked 14 项、双 corpus `--run-native --strict-order`、`freeze --check` 全绿（borrow 重写后 golden 逐字节不变）；第二轮基准见 T10-E 行刷新。`test_web_info_intel` 新增 graphql/WSDL 发射行为 case 落盘（宿主 skip、容器回归承接，预期值为镜像逻辑手推——容器首跑若与推演不符按实测修断言并记因）；Rust 容器 `cargo test --locked` 14 项全绿、双 corpus `--run-native --strict-order` 全绿。`API_UNIFIED_ENABLE` 默认 False、`RUST_ACCEL_API_UNIFIED_MODE` 默认 shadow 不变。
 
 未完成项（如实登记）：(1) amd64 侧编译与 corpus 复验、`test_web_info_intel` 容器执行归第 11 批双架构验收（本批 native 证据仅 aarch64 Linux）；(2) js_intel `api_doc_url` 记录面扩大的**真实任务观测**（新记录数、统一图入队量、legacy 面无请求变化）随第 11 批 40 目标联通验收出数；(3) normalize/method 生产升级（rust 模式）与 `RUST_ACCEL_API_UNIFIED_MODE` 的容器联调挂默认切换决策；(4) 基准确定性受 CPU 型号影响，跨机复跑数字会漂移——门禁结论以本批 aarch64 Linux 记录为准，第 11 批 amd64 需复跑同脚本确认闸向不变。
 

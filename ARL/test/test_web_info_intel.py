@@ -134,7 +134,7 @@ class TestWebInfoIntel(unittest.TestCase):
 
     @patch("app.services.js_intel_scan.utils.check_dns_policy_for_url")
     @patch("app.services.js_intel_scan.utils.http_req")
-    def test_js_intel_graphql_wsdl_urls_emit_api_doc_records(self):
+    def test_js_intel_graphql_wsdl_urls_emit_api_doc_records(self, mock_http_req, mock_dns_policy):
         """第 10 批口径：JS 发现 GraphQL/WSDL 文档入口发射 api_doc_url 记录。
 
         行为与 native/Python 两侧一致（三面关键词钉 + golden 门禁），故不断言

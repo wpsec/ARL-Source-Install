@@ -317,6 +317,26 @@ def graphql_query_hash(query_text: Any) -> str:
     return hashlib.sha256(collapsed.encode("utf-8", "ignore")).hexdigest()
 
 
+# 文档入口关键词表（第 10 批收敛为单一 Python 事实源，计划 6 附录A §4.18）：
+# 顺序即优先级；Rust 面（lib.rs::document_type_hint_unified 与
+# is_api_doc_candidate）的序与值由 test_rust_accel 源码钉对齐。
+API_DOC_TYPE_HINT_KEYWORDS: Tuple[Tuple[str, str], ...] = (
+    ("postman", "postman"),
+    ("openapi", "openapi"),
+    ("swagger", "swagger"),
+    ("api-docs", "swagger"),
+    # 第 7 批：WSDL/SOAP 文档分类；第 8 批（P0-05）：graphql/graphiql 只进
+    # 统一面分类，不回填 legacy 请求面（ApiDocScanner._DOC_KEYWORDS）。
+    ("wsdl", "wsdl"),
+    ("graphql", "graphql"),
+    ("graphiql", "graphql"),
+)
+
+API_DOC_CANDIDATE_KEYWORDS: Tuple[str, ...] = tuple(
+    keyword for keyword, _ in API_DOC_TYPE_HINT_KEYWORDS
+)
+
+
 def canonical_method(method: Any) -> str:
     text = str(method or "GET").strip().upper()
     return text if text in HTTP_METHODS else "GET"
@@ -328,9 +348,9 @@ def merge_endpoint_records(
     """Endpoint 记录分组去重的 Python 基线（Rust `unified_dedupe_endpoints` 事实源）。
 
     键 = (url, method, api_type, path_template) 规范化字段全等——与
-    `UnifiedApiEndpoint.__post_init__` 的 digest 输入面及
-    `ApiCandidateRegistry.register_endpoint_with_status` 的
-    `scoped_idempotency_key` 分组语义一致；组按首现顺序（OrderedDict 语义），
+    `UnifiedApiEndpoint.__post_init__` 的 endpoint_id digest 输入面同型
+    （注意：`idempotency_key` 另含 input_signature、不含 path_template，
+    分组等价性仅在 input_signature 相同的同源批次内成立）；组按首现顺序，
     sources = 组内非空 strip 去重集合按 codepoint 序（对齐 add_source +
     to_dict 的 sorted(sources)）。第 10 批 golden 门禁与 adapter fallback 共用。
     """

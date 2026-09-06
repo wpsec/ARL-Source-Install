@@ -23,6 +23,7 @@ from .web_info_intel_utils import (
     safe_site,
     stable_hash,
 )
+from .api_unified_models import API_DOC_CANDIDATE_KEYWORDS
 from .discovery_context import register_intel_candidate
 
 logger = utils.get_logger()
@@ -165,19 +166,14 @@ class JsIntelScanner:
 
     @staticmethod
     def _is_api_doc_candidate(url: str) -> bool:
-        # 与 Rust 原生面 lib.rs::is_api_doc_candidate 及统一面 `_TYPE_HINT_KEYWORDS`
-        # 关键词集合同口径（第 10 批对齐，计划 6 §9.3）；两侧漂移会被
-        # rust_accel_golden_corpus 门禁拦截。legacy 请求面 `_DOC_KEYWORDS` 不变。
+        # 关键词表引用统一面单一事实源（第 10 批）；Rust 原生面
+        # lib.rs::is_api_doc_candidate 的同口径由 test_rust_accel 三面钉 +
+        # golden corpus --run-native 编译钉双重拦截。legacy 请求面
+        # ApiDocScanner._DOC_KEYWORDS 维持窄集合不变。
         lowered = str(url or "").lower()
         if not lowered:
             return False
-        return any(
-            token in lowered
-            for token in (
-                "swagger", "openapi", "api-docs", "postman",
-                "wsdl", "graphql", "graphiql",
-            )
-        )
+        return any(token in lowered for token in API_DOC_CANDIDATE_KEYWORDS)
 
     def _extract_endpoint_records(self, js_url: str, text: str):
         for pattern in self._ENDPOINT_PATTERNS:

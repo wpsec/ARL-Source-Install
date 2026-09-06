@@ -81,9 +81,10 @@ Config = rust_accel.Config
 class _FakeUnifiedNative:
     """协议桩：输出可识别标记值（与任何 Python 基线都不同），驱动分支覆盖。"""
 
-    def __init__(self, fail=False, short_output=False):
+    def __init__(self, fail=False, short_output=False, match_baseline=False):
         self.fail = fail
         self.short_output = short_output
+        self.match_baseline = match_baseline
         self.calls = []
 
     def _run(self, name, items):
@@ -105,12 +106,20 @@ class _FakeUnifiedNative:
         return self._run("methods", items)
 
     def unified_dedupe_endpoints(self, items):
+        # 桩不模拟 Rust 语义（文件头红线）：默认输出刻意偏离基线（首组下标+1），
+        # shadow mismatch/结构校验路径可测；与基线相等的采纳性测试显式开
+        # match_baseline，验证的是 wrapper 形态转换而非分组语义。
         self.calls.append(("dedupe", [tuple(item) for item in items]))
         if self.fail:
             raise RuntimeError("fake native failure")
-        return [list(item) for item in _models.merge_endpoint_records(
+        merged = [list(item) for item in _models.merge_endpoint_records(
             [tuple(item) for item in items]
         )]
+        if not self.match_baseline and merged:
+            # 结构合法但内容偏离：sources 加桩标记（下标+1 会被引擎结构校验
+            # fail-closed 拦成 fallback，覆盖的是另一条路径）。
+            merged[0][1] = merged[0][1] + ["zz-stub-marker"]
+        return merged
 
 
 class TestUnifiedSafeSubset(unittest.TestCase):
@@ -170,6 +179,10 @@ class TestUnifiedBatchModes(unittest.TestCase):
         self.assertEqual(["swagger"], list(result))  # 基线为准
         self.assertEqual(1, result.metrics["mismatch_count"])  # 桩值必然不一致
         self.assertEqual("shadow", result.metrics["mode"])
+        # E2 钉：shadow 输出未采纳 native——attribute 与 metrics 必须同一口径。
+        self.assertFalse(result.used_native)
+        self.assertFalse(result.metrics["used_native"])
+        self.assertEqual("python", result.metrics["backend"])
         after = rust_accel.get_stats()["unified_shadow_mismatches"]
         self.assertEqual(before + 1, after)
 
@@ -224,7 +237,7 @@ class TestUnifiedBatchModes(unittest.TestCase):
 
     def test_dedupe_rust_mode_output_matches_baseline(self):
         setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
-        fake = _FakeUnifiedNative()
+        fake = _FakeUnifiedNative(match_baseline=True)
         records = [
             ("https://a.b/u", "GET", "rest", "", "js"),
             ("https://a.b/u", "GET", "rest", "", "browser"),
@@ -280,10 +293,6 @@ class TestUnifiedBaselinesAreProductionFunctions(unittest.TestCase):
         self.assertEqual("GET", _models.canonical_method("weird"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestBackflowHintBatch(unittest.TestCase):
     """queue._batch_document_hints 语义钉：输出恒等于逐条基线（native 缺席路径）。"""
 
@@ -330,3 +339,195 @@ class TestBackflowHintBatch(unittest.TestCase):
         self.assertEqual(
             {}, _registry.ApiDocumentQueue._batch_document_hints(fake_self, ["", None]))
         self.assertEqual(0, fake_self.backflow_hint_batch_count)
+
+
+class TestUnifiedAggregateValidation(unittest.TestCase):
+    """rust 模式聚合输出的最小结构校验（native 回归丢组/乱序 fail-closed）。"""
+
+    def setUp(self):
+        self.saved = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
+
+    def tearDown(self):
+        if self.saved is None:
+            if hasattr(Config, "RUST_ACCEL_API_UNIFIED_MODE"):
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_MODE")
+        else:
+            setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", self.saved)
+
+    def test_rust_mode_rejects_out_of_range_group_index(self):
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
+
+        class _BadIndex(_FakeUnifiedNative):
+            def unified_dedupe_endpoints(self, items):
+                return [[99, ["x"]]]
+
+        with patch.object(rust_accel, "_NATIVE_MODULE", _BadIndex()):
+            result = rust_accel.unified_dedupe_endpoints(
+                [("u", "GET", "rest", "", "js")])
+        self.assertFalse(result.used_native)  # 结构非法 → 当前批回退基线
+        self.assertEqual(1, result.metrics["fallback_count"])
+
+    def test_rust_mode_rejects_disordered_group_indices(self):
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
+
+        class _Disordered(_FakeUnifiedNative):
+            def unified_dedupe_endpoints(self, items):
+                return [[1, ["b"]], [0, ["a"]]]
+
+        records = [("u", "GET", "rest", "", "a"), ("u", "POST", "rest", "", "b")]
+        with patch.object(rust_accel, "_NATIVE_MODULE", _Disordered()):
+            result = rust_accel.unified_dedupe_endpoints(records)
+        self.assertFalse(result.used_native)
+
+    def test_shadow_aggregate_counts_mismatch_with_deviant_stub(self):
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "shadow")
+        fake = _FakeUnifiedNative()  # 默认桩：首组下标+1，与基线不同
+        with patch.object(rust_accel, "_NATIVE_MODULE", fake):
+            result = rust_accel.unified_dedupe_endpoints(
+                [("u", "GET", "rest", "", "js"), ("u", "POST", "rest", "", "doc")])
+        self.assertEqual(1, result.metrics["mismatch_count"])
+        self.assertEqual(_models.merge_endpoint_records(
+            [("u", "GET", "rest", "", "js"), ("u", "POST", "rest", "", "doc")]), list(result))
+
+
+class TestBackflowHintWhitelist(unittest.TestCase):
+    """E4 钉：批通道输出的枚举外值按 unknown 处理（控制流不得被 native 回归扩大）。"""
+
+    class _GarbageNative:
+        def unified_document_type_hints(self, items):
+            return ["fetch-me-please"] * len(items)
+
+    def _queue_self(self):
+        fake_self = TestBackflowHintBatch._FakeSelf()
+        return fake_self
+
+    def test_non_enum_hint_collapses_to_unknown(self):
+        original_native = rust_accel._NATIVE_MODULE
+        original_mode = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
+        # 生产函数内的懒导入命中的是 app.services.rust_accel 槽位，桩注入同位。
+        sys.modules.setdefault("app.services.rust_accel", rust_accel)
+        Config.RUST_ACCEL_API_UNIFIED_MODE = "rust"
+        rust_accel._NATIVE_MODULE = self._GarbageNative()
+        try:
+            fake_self = self._queue_self()
+            hint_map = _registry.ApiDocumentQueue._batch_document_hints(
+                fake_self, ["https://a.b/api/users"])
+        finally:
+            rust_accel._NATIVE_MODULE = original_native
+            if original_mode is None:
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_MODE")
+            else:
+                Config.RUST_ACCEL_API_UNIFIED_MODE = original_mode
+        self.assertEqual(
+            {"unknown"}, set(hint_map.values()),
+            "枚举外 hint 必须收敛为 unknown，不得参与入队判定")
+
+    def test_hard_fail_propagates_rust_acceleration_error(self):
+        """E1 钉：rust 模式 + FALLBACK_ENABLE=False 的 hard-fail 不被接线层吞掉。"""
+        original_native = rust_accel._NATIVE_MODULE
+        original_mode = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
+        original_fallback = Config.RUST_ACCEL_FALLBACK_ENABLE
+        sys.modules.setdefault("app.services.rust_accel", rust_accel)
+        Config.RUST_ACCEL_API_UNIFIED_MODE = "rust"
+        Config.RUST_ACCEL_FALLBACK_ENABLE = False
+        rust_accel._NATIVE_MODULE = _FakeUnifiedNative(fail=True)
+        try:
+            fake_self = self._queue_self()
+            with self.assertRaises(rust_accel.RustAccelerationError):
+                _registry.ApiDocumentQueue._batch_document_hints(
+                    fake_self, ["https://a.b/swagger"])
+        finally:
+            rust_accel._NATIVE_MODULE = original_native
+            Config.RUST_ACCEL_FALLBACK_ENABLE = original_fallback
+            if original_mode is None:
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_MODE")
+            else:
+                Config.RUST_ACCEL_API_UNIFIED_MODE = original_mode
+
+
+class TestBenchBaselinePins(unittest.TestCase):
+    """钉住 bench 副本=生产语义一致（A7 重设计：比函数体+符号别名映射）。
+
+    bench 必须在无 app 重依赖的 native 容器运行，故以逐字副本替代导入；
+    副本函数名/签名允许带 py_ 前缀差异，比较对象是去 docstring 的函数体
+    AST unparse，且把已知别名符号（bench 常量表名）映射到生产名后比对。
+    """
+
+    _SYMBOL_ALIASES = {
+        "_HINT_KEYWORDS": "_TYPE_HINT_KEYWORDS",
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        module_path = ARL_ROOT / "app" / "tools" / "bench_api_unified_rust.py"
+        spec = importlib.util.spec_from_file_location("bench_api_unified_pin", module_path)
+        cls.bench = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(cls.bench)
+        cls.bench_text = module_path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _body_src(fn):
+        import ast
+        import textwrap
+
+        tree = ast.parse(textwrap.dedent(fn))
+        body = tree.body[0].body
+        if body and isinstance(body[0], ast.Expr) \
+                and isinstance(body[0].value, ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            body = body[1:]
+        return "\n".join(ast.unparse(node) for node in body)
+
+    def _assert_body_equal(self, copy_fn, prod_fn):
+        import re
+
+        copy_src = self._body_src(inspect_getsource(copy_fn))
+        prod_src = self._body_src(inspect_getsource(prod_fn))
+        for alias, target in self._SYMBOL_ALIASES.items():
+            copy_src = re.sub(r"\b{}\b".format(alias), target, copy_src)
+        self.assertEqual(
+            prod_src, copy_src,
+            "{} 函数体与生产 {} 漂移：基准数据作废，需同步副本并重跑".format(
+                copy_fn.__name__, prod_fn.__name__),
+        )
+
+    def test_function_bodies_match_production(self):
+        pairs = [
+            (self.bench.py_normalize_url, _discovery.normalize_url),
+            (self.bench.py_document_type_hint, _registry.document_type_hint),
+            (self.bench.py_canonical_method, _models.canonical_method),
+            (self.bench.py_merge_endpoint_records, _models.merge_endpoint_records),
+        ]
+        for copy_fn, prod_fn in pairs:
+            self._assert_body_equal(copy_fn, prod_fn)
+
+    def test_constant_tables_match_production(self):
+        self.assertEqual(
+            tuple(self.bench._HINT_KEYWORDS),
+            _models.API_DOC_TYPE_HINT_KEYWORDS,
+        )
+        self.assertEqual(self.bench.HTTP_METHODS, _models.HTTP_METHODS)
+
+    def test_preflight_regex_text_matches_adapter(self):
+        bench_patterns = set(re_findall_strings(self.bench_text))
+        self.assertIn(
+            rust_accel._UNIFIED_SAFE_URL_RE.pattern, bench_patterns,
+            "bench 预检正则与 adapter 不一致：预检开销测的是不存在的守门人",
+        )
+
+
+def inspect_getsource(fn):
+    import inspect
+
+    return inspect.getsource(fn)
+
+
+def re_findall_strings(bench_text):
+    import re
+
+    return re.findall(r'r"((?:[^"\\]|\\.)*)"', bench_text)
+
+
+if __name__ == "__main__":
+    unittest.main()
