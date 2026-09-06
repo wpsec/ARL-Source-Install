@@ -331,7 +331,9 @@ class QueueTest(unittest.TestCase):
         self.assertGreaterEqual(queue.skipped_budget_count, 1, "16 个种子路径只放行 2 个")
 
     def test_stage_timeout_leaves_residual_open(self):
-        ticks = iter([0.0, 10 ** 9, 10 ** 9, 10 ** 9])
+        # 首位 0.0 供 run 入口 wall 起点与 deadline 基线，其后恒超时；
+        # 第 9 批新增阶段计时消费一次 _clock， ticks 预留充足。
+        ticks = iter([0.0, 0.0] + [10 ** 9] * 8)
         scanner = ApiDocScanner(sites=[SITE], wih_records=[])
         registry = reg.ApiCandidateRegistry(task_id="q-5")
         queue = reg.ApiDocumentQueue(
@@ -1438,6 +1440,35 @@ class ScopeGateReviewTest(unittest.TestCase):
         self.assertEqual(endpoint.status, "covered")
         self.assertEqual(registry.requeue_unreported([(endpoint, token_b)]), 0,
                          "已回报资产不被同轮 finally 误回收")
+
+    def test_queue_waf_blocked_attributed_separately(self):
+        # 第 9 批 §8.2：类别熔断造成的空结果与"抓到空"分开归因——
+        # failed/waf_blocked（不伪装无 API），仍入统一失败收口；stage 计时键 flush。
+        context = DiscoveryContext(task_id="b9a")
+        state = {"queue": None}
+
+        def fetch(doc):
+            if DOC_URL in doc.url:
+                state["queue"]._fetch_blocked = True  # 模拟 _default_fetch 的 block 信号
+                return ""
+            return HTML_OK_TEXT
+
+        queue = _make_queue_fn(fetch, context=context)
+        state["queue"] = queue
+        queue.registry.register_document(DOC_URL, source="seed", type_hint="swagger")
+        with _safe_domain_fns():
+            queue.run()
+        doc = queue.registry.document(DOC_URL)
+        self.assertEqual(doc.status, "failed")
+        self.assertEqual(doc.error_type, "waf_blocked")
+        self.assertGreaterEqual(queue.parse_failed_count, 1, "P1-08 收口口径不变")
+        self.assertEqual(
+            int(context.metrics.get("api_document_waf_blocked_total", 0) or 0), 1)
+        self.assertGreaterEqual(
+            int(context.metrics.get("api_document_parse_failed_total", 0) or 0), 1)
+        for key in ("api_stage_wall_time", "api_stage_cpu_time",
+                    "api_stage_network_wait_time"):
+            self.assertIsNotNone(context.metrics.get(key), "%s 必须随 run 收口 flush" % key)
 
     def test_claim_lease_expires_and_reclaims(self):
         # 执行版 P1-2：worker 异常绕过 finally 的兜底——lease 到期 queued→pending

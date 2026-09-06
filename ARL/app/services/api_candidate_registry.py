@@ -69,7 +69,9 @@ _DOC_TRANSITIONS: Dict[str, set] = {
 _ENDPOINT_TRANSITIONS: Dict[str, set] = {
     "discovered": {"queued", "pending", "skipped"},
     "pending": {"queued", "skipped"},
-    "queued": {"probed", "failed", "skipped", "pending"},
+    # queued→degraded（第 9 批 §8.2）：主机级封禁确认时资产收口 degraded，
+    # 与"可探测但被类别熔断 skip"区分；degraded 为终态（本任务内不再探）。
+    "queued": {"probed", "failed", "skipped", "pending", "degraded"},
     "probed": {"covered", "degraded", "failed"},
     "covered": set(),
     "degraded": set(),
@@ -673,7 +675,8 @@ class ApiCandidateRegistry:
         word = str(verification_status or "").strip().lower()
         if word == "observed":
             return self.mark_endpoint_observed(endpoint)
-        mapping = {"probed": "probed", "error": "failed", "skipped": "skipped"}
+        mapping = {"probed": "probed", "error": "failed", "skipped": "skipped",
+                   "degraded": "degraded"}
         target = mapping.get(word)
         if target is None:
             return None
@@ -743,6 +746,12 @@ class ApiDocumentQueue:
         self.resumed_skip_count = 0
         self.stage_timeout_stopped = False
         self._harvested_index = 0
+        # 第 9 批 §8.2/§十二：WAF 熔断归因信号（默认 fetch 写、run 循环读）与
+        # 阶段计时（wall/cpu/network_wait，flush 单位毫秒）。
+        self._fetch_blocked = False
+        self.network_wait_sec = 0.0
+        self._stage_wall_started = None
+        self._stage_cpu_started = None
 
     # -- 预算与获取 --------------------------------------------------------
 
@@ -765,17 +774,29 @@ class ApiDocumentQueue:
         from .web_info_intel_utils import fetch_text
 
         shadow_document_fetch_start(self.context, doc.url)
+        self._fetch_blocked = False
+        block_signal: Dict[str, Any] = {}
         max_bytes = max(1024, int(self.config.get("API_DOCUMENT_MAX_SIZE_BYTES", 5242880) or 5242880))
-        text, _resp = fetch_text(
-            doc.url,
-            waf_guard=self.scanner.waf_guard,
-            timeout=self.scanner.timeout,
-            max_bytes=max_bytes,
-            waf_module="api_doc_scan",
-            discovery_context=self.context,
-            request_profile="api_doc",
-            mirror_html_get=True,
-        )
+        wait_started = self._clock()
+        try:
+            text, _resp = fetch_text(
+                doc.url,
+                waf_guard=self.scanner.waf_guard,
+                timeout=self.scanner.timeout,
+                max_bytes=max_bytes,
+                waf_module="api_doc_scan",
+                discovery_context=self.context,
+                request_profile="api_doc",
+                mirror_html_get=True,
+                # 第 9 批 §8.2：文档获取独立流量类别——endpoint 探测类的 WAF
+                # 熔断不暂停文档获取，反之亦然；主机级封禁仍整站暂停。
+                traffic_class="api_doc",
+                block_signal=block_signal,
+            )
+        finally:
+            self.network_wait_sec += max(0.0, self._clock() - wait_started)
+        if block_signal.get("waf_blocked"):
+            self._fetch_blocked = True
         shadow_document_fetch_result(self.context, doc.url, bool(text))
         return text or ""
 
@@ -1241,6 +1262,8 @@ class ApiDocumentQueue:
         """有界消费循环：任何单文档失败只标记该文档，循环继续（§7.2）。"""
 
         max_targets = max(1, int(self.config.get("API_DOCUMENT_MAX_TARGETS", 200) or 200))
+        self._stage_wall_started = self._clock()
+        self._stage_cpu_started = time.process_time()
 
         if not self.scanner.allowed_hosts:
             logger.info("api doc unified skip, no allowed hosts")
@@ -1294,6 +1317,7 @@ class ApiDocumentQueue:
                 continue
 
             self.fetch_count += 1
+            self._fetch_blocked = False
             try:
                 text = fetch_fn(doc) or ""
             except Exception as exc:
@@ -1314,6 +1338,16 @@ class ApiDocumentQueue:
                 # 此前只标态不计数（Review 探针：fetch_count=1 而 parse_failed_count=0），
                 # 消费文档数与 success+failed 分母出现无法归因缺口。error_type 保持
                 # empty_response 以区分失败性质；状态机迁移与账本收口不变。
+                if self._fetch_blocked:
+                    # 第 9 批 §8.2：WAF 类别熔断与"抓到空"分开归因——文档标
+                    # failed/waf_blocked（不伪装"无 API"），且不因请求未发出而
+                    # 影响其他类别；api_document_parse_failed_total 照常双计。
+                    self.registry.mark_document(doc.url, "failed", error_type="waf_blocked")
+                    self.parse_failed_count += 1
+                    self._record_metric("api_document_waf_blocked_total")
+                    self._record_metric("api_document_parse_failed_total")
+                    self._ledger_finish(doc, "failed")
+                    continue
                 self.registry.mark_document(doc.url, "failed", error_type="empty_response")
                 self.parse_failed_count += 1
                 self._record_metric("api_document_parse_failed_total")
@@ -1342,6 +1376,17 @@ class ApiDocumentQueue:
                 self.registry.task_id, len(open_docs), self.stage_timeout_stopped)
         if self.context is not None:
             try:
+                # 第 9 批 §十二：api_doc 阶段 wall/cpu/network_wait 时长（毫秒，
+                # 跨多次 run 累加）；网络等待只计真实 fetch 挂钟，不含解析/队列等待。
+                if self._stage_wall_started is not None:
+                    self.context.record_metric(
+                        "api_stage_wall_time",
+                        int(max(0.0, self._clock() - self._stage_wall_started) * 1000))
+                    self.context.record_metric(
+                        "api_stage_cpu_time",
+                        int(max(0.0, time.process_time() - (self._stage_cpu_started or 0.0)) * 1000))
+                    self.context.record_metric(
+                        "api_stage_network_wait_time", int(self.network_wait_sec * 1000))
                 self.context.record_metric("api_endpoint_discovered_total", self.registry.endpoint_created_count)
                 self.context.record_metric("api_endpoint_deduplicated_total", self.registry.endpoint_deduplicated_count)
                 self.context.record_metric("api_document_budget_skipped_total", self.skipped_budget_count)

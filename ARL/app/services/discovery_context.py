@@ -19,7 +19,14 @@ from urllib.parse import urlsplit, urlunsplit
 logger = logging.getLogger(__name__)
 
 
-TRAFFIC_CLASSES = ("normal", "crawler", "wih", "directory", "browser")
+# 计划 6 §8.2（第 9 批）：API 文档获取与 Endpoint 探测各自独立流量类别，
+# WAF 类别熔断互不连坐（文档失败不停探测、探测熔断不停文档）；主机级
+# （host_wide）信号仍跨类别暂停该站点全部 API 请求。
+# §8.1 请求 profile → 流量类别映射：api_doc→api_doc、graphql_schema_optional→api_doc
+# （同一文档获取通道）；api_endpoint_probe/soap_endpoint_observe→endpoint_probe；
+# browser→browser（Playwright 自有网络栈=外部边界，不经过本枚举的调度面）。
+TRAFFIC_CLASSES = ("normal", "crawler", "wih", "directory", "browser",
+                   "api_doc", "endpoint_probe")
 
 # 与各 stage 既有线程并发对齐，只削跨策略叠加峰值，不做低于单 stage 并发的大限。
 DEFAULT_TRAFFIC_LIMITS = {
@@ -28,6 +35,11 @@ DEFAULT_TRAFFIC_LIMITS = {
     "wih": 12,
     "directory": 12,
     "browser": 4,
+    # 第 9 批 §8.2：API 文档获取与 Endpoint 探测独立额度——文档批量抓取
+    # 不挤占探测并发、探测风暴不吃文档预算（预算另有 API_DOCUMENT_* /
+    # API_ENDPOINT_PROBE_MAX_TARGETS 层，此处是进程内并发闸）。
+    "api_doc": 6,
+    "endpoint_probe": 8,
 }
 DEFAULT_PER_HOST_LIMIT = 8
 DEFAULT_ACQUIRE_WAIT_SEC = 15.0
@@ -37,7 +49,12 @@ DEFAULT_CANDIDATE_MAX_ENTRIES = 20000
 
 
 def traffic_class_for_module(module: Any) -> str:
-    """把 waf_module 归入流量类别；与各 stage 传入的模块名保持既有词根约定。"""
+    """把 waf_module 归入流量类别；与各 stage 传入的模块名保持既有词根约定。
+
+    第 9 批（§8.2）：`api_doc*` 与 `*endpoint_probe*` 从 wih 词根中拆出为独立
+    类别——判定顺序必须先于泛 wih 匹配（`wih_endpoint_probe` 同时含两个词根，
+    归 endpoint_probe；`api_doc_scan` 归 api_doc）。
+    """
 
     module_name = str(module or "").strip().lower()
     if "file_leak" in module_name or "vhost" in module_name:
@@ -46,9 +63,13 @@ def traffic_class_for_module(module: Any) -> str:
         return "crawler"
     if "screenshot" in module_name:
         return "browser"
+    if "endpoint" in module_name:
+        return "endpoint_probe"
+    if "api_doc" in module_name:
+        return "api_doc"
     if any(
         token in module_name
-        for token in ("wih", "urlfinder", "page_intel", "js_intel", "api_doc", "trufflehog", "endpoint", "ai_fill")
+        for token in ("wih", "urlfinder", "page_intel", "js_intel", "trufflehog", "ai_fill")
     ):
         return "wih"
     return "normal"
@@ -652,6 +673,18 @@ class WafPolicy:
                 return False
             state = self._class_blocks.get((host, category))
             return not bool(state and state.get("blocked"))
+
+    def is_host_blocked(self, target: Any) -> bool:
+        """主机级封禁确认查询（第 9 批 §8.2）。
+
+        消费方（endpoint 探测/文档获取）在 blocked 回报时区分"类别熔断"与
+        "主机级封禁"：后者才标 `degraded/host_waf_blocked` 并暂停该站点全部
+        API 请求；类别阻断只暂停对应流量类别，不得升级为主机级结论。
+        """
+
+        host = url_host(target)
+        with self._lock:
+            return host in self._host_blocks
 
     def record_signal(
         self,

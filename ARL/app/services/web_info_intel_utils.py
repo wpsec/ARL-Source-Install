@@ -7,7 +7,7 @@ Web 信息增强辅助函数。
 """
 import hashlib
 import re
-from typing import Iterable, Optional, Set, Tuple
+from typing import Dict, Iterable, Optional, Set, Tuple
 from urllib.parse import unquote, urljoin, urlparse
 
 from app import utils
@@ -172,12 +172,17 @@ def fetch_text(
     traffic_class: str = "wih",
     request_profile: str = "html_get",
     mirror_html_get: bool = False,
+    block_signal: Optional[Dict] = None,
 ):
     """统一响应缓存感知的 GET 工具。
 
     `request_profile` 默认 `html_get`（既有调用零变化）；第 3 批起 API 文档
     以 `api_doc` profile 获取：先查统一桶，miss 再复用 `html_get` 桶（不重复
     发网络请求），真实抓取后按需镜像登记 `html_get` 桶保持旧消费者复用面。
+
+    `block_signal`（第 9 批 §8.2）：调用方传入空 dict 时，WAF 流量类别熔断
+    导致跳过请求的路径会写 `block_signal["waf_blocked"]=True`——返回空串与
+    "被熔断"不再混同（文档队列据此把 waf_blocked 与 empty_response 分开归因）。
     """
     profile = str(request_profile or "html_get")
 
@@ -271,6 +276,11 @@ def fetch_text(
             utils.get_logger().info(
                 "{} skipped by waf traffic policy url:{}".format(waf_module, url)
             )
+            if block_signal is not None:
+                try:
+                    block_signal["waf_blocked"] = True
+                except Exception:
+                    pass
             _release_inflight()
             return "", None
         if lease is None:

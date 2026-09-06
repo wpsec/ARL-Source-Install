@@ -169,12 +169,16 @@ class _FakeDiscoveryContext(object):
         self.candidate_registry = _FakeRegistry(candidates)
         self.registered = []
         self.marked = []
+        self.metrics = {}
 
     def register_candidate(self, **kwargs):
         self.registered.append(kwargs)
 
     def mark_candidate_status(self, candidate, candidate_type, status, **_kwargs):
         self.marked.append((candidate, status))
+
+    def record_metric(self, name, amount=1):
+        self.metrics[name] = int(self.metrics.get(name, 0) or 0) + int(amount or 0)
 
 
 class _EndpointTask(_Task):
@@ -229,6 +233,9 @@ class _FakeApiRegistry(object):
         endpoints = [c[0] if isinstance(c, tuple) else c for c in (claims or [])]
         self.requeued.append(list(endpoints))
         return len(endpoints)
+
+    def pending_endpoints(self, limit=0):
+        return list(self._claimable)[1:2]  # 模拟 1 个低置信度 pending 资产
 
 
 class TestWihOrchestratorEndpointOrder(unittest.TestCase):
@@ -346,6 +353,39 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
             getattr(e, "url", "") == "https://example.test/api/v1"
             and getattr(e, "status", "") == "covered"
             for e in registry.registered))
+        # §十二 pending 观测 + 第 9 批 api_probe_total 收口。
+        self.assertGreaterEqual(
+            ctx.metrics.get("api_probe_pending_total", 0), 1,
+            "低置信度 pending 资产数进观测面")
+        self.assertEqual(ctx.metrics.get("api_probe_total"), 1)
+
+    def test_registry_followup_reports_host_waf_degraded(self):
+        # 第 9 批 §8.2：主机级封禁的探测回报把资产收口为 degraded（非普通 skip）。
+        ctx = _FakeDiscoveryContext([])
+        registry = _FakeApiRegistry([_FakeEndpoint("https://api.example.test/g", "GET")])
+        ctx.api_candidate_registry = registry
+        task = _EndpointTask(ctx)
+        task.assertEqual = self.assertEqual
+
+        def probe_spy(endpoints, **_kwargs):
+            out = []
+            for e in endpoints:
+                e = dict(e)
+                e["verification_status"] = "skipped"
+                e["degraded_reason"] = "host_waf_blocked"
+                out.append(e)
+            return out
+
+        original_probe = fake_services.run_wih_endpoint_probe
+        try:
+            fake_services.run_wih_endpoint_probe = probe_spy
+            WihOrchestrator(task).run()
+        finally:
+            fake_services.run_wih_endpoint_probe = original_probe
+        self.assertIn(
+            ("https://api.example.test/g", "GET", "degraded"),
+            {(u, m, s) for u, m, s in registry.reported},
+            "host_waf_blocked 回报映射为 degraded 终态")
 
     def test_browser_stage_ingests_registry_only_when_all_gates_on(self):
         # P0-05 接线：API_UNIFIED_ENABLE 且 BROWSER_INTEL_ENABLE 且 Registry 已
@@ -391,6 +431,8 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
             "浏览器摄取必须发生在统一管线挂载 Registry 之后")
         self.assertIs(seen.get("registry"), registry)
         self.assertIn("https://example.test", seen.get("results", {}))
+        # §8.2/T5 外部边界记账：Playwright 网络栈不经 RequestScheduler，单列计数。
+        self.assertEqual(ctx.metrics.get("external_network_browser_intel"), 1)
 
     def test_browser_stage_skipped_when_gates_off(self):
         # 任一开关关闭（BROWSER_INTEL_ENABLE 缺省 False）→ 不新增子阶段。

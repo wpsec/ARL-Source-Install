@@ -191,6 +191,7 @@ class TestDiscoveryContext(unittest.TestCase):
         self.assertIsNotNone(registry.get("https://example.com/page4"))
 
     def test_traffic_class_for_module_mapping(self):
+        # 第 9 批 §8.2：api_doc 与 endpoint_probe 从 wih 词根拆为独立类别。
         cases = {
             "file_leak": "directory",
             "site_spider": "crawler",
@@ -198,13 +199,53 @@ class TestDiscoveryContext(unittest.TestCase):
             "urlfinder_extract": "wih",
             "page_intel_scan": "wih",
             "js_intel_scan": "wih",
-            "wih_endpoint_probe": "wih",
+            "wih_endpoint_probe": "endpoint_probe",
+            "api_doc_scan": "api_doc",
             "site_screenshot": "browser",
             "fetch_site": "normal",
             "": "normal",
         }
         for module_name, expected in cases.items():
             self.assertEqual(expected, traffic_class_for_module(module_name), msg=module_name)
+
+    def test_waf_class_blocks_isolate_api_doc_and_endpoint_probe(self):
+        # 文档与探测互不连坐；主机级信号才跨类别暂停（§8.2）。
+        context = DiscoveryContext("task-waf-iso")
+        url_doc = "https://target.example.com/openapi.json"
+        context.record_waf_signal(url_doc, "api_doc", "blocked", force=True)
+        self.assertFalse(context.waf_policy.allow(url_doc, "api_doc"),
+                         "api_doc 类别熔断暂停本类")
+        self.assertTrue(context.waf_policy.allow(url_doc, "endpoint_probe"),
+                        "探测类不受文档熔断连坐")
+        self.assertTrue(context.waf_policy.allow(url_doc, "crawler"),
+                        "爬虫类不受 API 类别熔断影响")
+        self.assertTrue(context.waf_policy.allow(url_doc, "wih"))
+        self.assertFalse(context.waf_policy.is_host_blocked(url_doc),
+                         "类别信号不得升级为主机级")
+        context.record_waf_signal(url_doc, "endpoint_probe", "host proof",
+                                  host_wide=True, force=True)
+        self.assertTrue(context.waf_policy.is_host_blocked(url_doc))
+        for category in ("api_doc", "endpoint_probe", "crawler", "wih", "browser"):
+            self.assertFalse(context.waf_policy.allow(url_doc, category),
+                             "主机级封禁暂停该站点全部请求类别")
+
+    def test_scheduler_capacity_per_class_independent_for_new_classes(self):
+        # RequestScheduler 的每类并发上限覆盖新增类别（browser/endpoint_probe
+        # 等走各自语义类，不再与 wih 共担额度）。
+        context = DiscoveryContext("task-cap-iso")
+        leases = []
+        for index in range(3):
+            lease, reason = context.acquire_request(
+                "https://cap.example.com/{}".format(index), "api_doc")
+            self.assertEqual("granted", reason)
+            leases.append(lease)
+        probe_lease, probe_reason = context.acquire_request(
+            "https://cap.example.com/probe", "endpoint_probe")
+        self.assertIsNotNone(probe_lease, "endpoint_probe 独立额度，不被 api_doc 占用")
+        for lease in leases:
+            lease.release()
+        if probe_lease is not None:
+            probe_lease.release()
 
     def test_candidate_registry_evicts_oldest_over_cap(self):
         context = DiscoveryContext("task-1", candidate_max_entries=150)

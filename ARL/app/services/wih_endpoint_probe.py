@@ -329,10 +329,34 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_cont
     headers = _safe_headers(item)
     try:
         if discovery_context is not None:
-            lease, lease_reason = discovery_context.acquire_request(url, "wih")
+            # 第 9 批 §8.2：endpoint 探测独立流量类别（endpoint_probe）——探测类
+            # WAF 熔断只暂停 probe 请求，不与文档获取/爬虫共担；主机级封禁经
+            # is_host_blocked 区分，标 degraded/host_waf_blocked（不伪装"无 API"）。
+            lease, lease_reason = discovery_context.acquire_request(url, "endpoint_probe")
             if lease is None and lease_reason == "blocked":
+                host_blocked = False
+                policy = getattr(discovery_context, "waf_policy", None)
+                if policy is not None:
+                    try:
+                        host_blocked = bool(policy.is_host_blocked(url))
+                    except Exception as exc:
+                        logger.debug(
+                            "probe host-block query failed error_type:{}".format(
+                                type(exc).__name__))
+                try:
+                    discovery_context.record_metric("api_probe_waf_blocked_total")
+                    if host_blocked:
+                        discovery_context.record_metric("api_probe_host_waf_blocked_total")
+                except Exception:
+                    pass
+                if host_blocked:
+                    item["degraded_reason"] = "host_waf_blocked"
+                    return _mark_probe_state(
+                        item, "skipped",
+                        "主机级封禁确认，该站点 API 请求整体暂停（degraded/host_waf_blocked）",
+                        method)
                 return _mark_probe_state(
-                    item, "skipped", "WAF 流量策略暂停 wih 类别，未主动验证", method)
+                    item, "skipped", "WAF 流量策略暂停 endpoint_probe 类别，未主动验证", method)
             if lease is None:
                 logger.debug("endpoint probe over capacity, continue url:{}".format(url[:200]))
 

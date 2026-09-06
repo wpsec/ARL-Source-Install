@@ -163,6 +163,13 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
         discovery_context.record_metric("api_probe_total", len(items))
         if skipped_count:
             discovery_context.record_metric("api_probe_skipped_total", skipped_count)
+        # §十二 api_probe_pending_total：低置信度显影 pending 的待处理队列
+        # （不因排序丢弃，等预算/阈值变化再领——第 9 批观测面收口）。
+        pending_assets = getattr(registry, "pending_endpoints", None)
+        if callable(pending_assets):
+            pending_count = len(pending_assets())
+            if pending_count:
+                discovery_context.record_metric("api_probe_pending_total", pending_count)
     except Exception as exc:
         logger.debug("api probe metric failed error_type:{}".format(type(exc).__name__))
 
@@ -198,6 +205,9 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
             if record_item is None:
                 continue
             status = str(record_item.get("verification_status") or "")
+            if str(record_item.get("degraded_reason") or "") == "host_waf_blocked":
+                # 第 9 批 §8.2：主机级封禁资产收口 degraded（区别于普通 skip）。
+                status = "degraded"
             if status == "error":
                 error_count += 1
             try:
@@ -561,6 +571,18 @@ class WihOrchestrator(object):
                     ) or {}
                     ingested = services.ingest_browser_runtime_events(
                         browser_registry, browser_results)
+                    # 外部边界记账（T5/A8 同口径）：Playwright 自带网络栈，
+                    # 浏览器真实请求不经过 RequestScheduler，单列不计入
+                    # 统一请求总量；类别 browser 仅约束共用调度面的请求。
+                    try:
+                        discovery_ctx = getattr(task, "discovery_context", None)
+                        if discovery_ctx is not None:
+                            discovery_ctx.record_metric(
+                                "external_network_browser_intel", len(scan_sites))
+                    except Exception as exc:
+                        logger.debug(
+                            "browser external metric failed error_type:{}".format(
+                                type(exc).__name__))
                     if ingested:
                         logger.info(
                             "task_id:{} browser runtime endpoints ingested:{}".format(
