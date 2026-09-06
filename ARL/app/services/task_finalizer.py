@@ -70,6 +70,8 @@ _BACKLOG_METRIC_KEYS = (
     # A5：账本 fail-open 累计计数（阈值判定与降级见 _core/_ledger_degraded）。
     "ledger_unavailable_total",
     "ledger_dedup_degraded_total",
+    # Review 轮 2：unified 站点指纹规则判定异常（registry 侧另有 rule-id warning）。
+    "site_fingerprint_rule_error_count",
 )
 
 _EXTERNAL_METRIC_PREFIX = "external_network_"

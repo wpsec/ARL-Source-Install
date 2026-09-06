@@ -19,12 +19,18 @@ import os
 import threading
 
 from app.config import Config
-from app.fp_common import estimate_human_rule_confidence
+from app.fp_common import (
+    estimate_human_rule_confidence,
+    merge_key,
+    parse_human_rule,
+    to_human_rule,
+)
 from app.services.fingerprint import FingerPrint
 from app.services.fingerprint_cache import split_fingerprint_result_items
 
-# 编译端函数复用（build 工具只依赖 fp_common，零扫描器依赖）
-from app.tools.build_unified_fingerprints import merge_key, parse_human_rule, to_human_rule
+# 架构 Review 轮 2：解析函数在 fp_common 零依赖公共层（单一实现，05 §零.1）。
+# 运行时不得 import app.tools.build_unified_fingerprints——构建脚本层变化/依赖
+# 缺失不应能打断生产指纹链。
 
 FINGERPRINT_VERSION_KEY = "arl:fingerprint:unified:ver"
 _OVERLAY_CHECK_INTERVAL = 60.0
@@ -54,6 +60,10 @@ class SiteFingerprintRegistry:
         self._version = None
         self._last_version_check = 0.0
         self._redis_client = None
+        # 规则判定异常观测（Review 轮 2）：跳过可以，静默不行——计数带 rule id。
+        self.rule_error_total = 0
+        self._rule_error_counts = {}
+        self._rule_error_lock = threading.Lock()
 
     # ---------- 加载 ----------
 
@@ -264,10 +274,47 @@ class SiteFingerprintRegistry:
     def _rule_hits(self, rule, variables):
         try:
             return bool(rule["fp"].identify(variables))
-        except Exception:
+        except Exception as exc:
             # pyparsing 偶发解析失败：与运行时旧链一致跳过该规则（identify_detail 同款 except 语义），
-            # 但不静默——低频计数留给观测阶段补 metrics（05 §2.6）。
+            # 但必须计数带 rule id（Review 轮 2 闭环 05 §2.6 观测预留）。
+            self._record_rule_error(rule, exc)
             return False
+
+    def _record_rule_error(self, rule, exc):
+        rid = str(rule.get("id") or rule.get("name") or "?")[:120]
+        with self._rule_error_lock:
+            self.rule_error_total += 1
+            total = self.rule_error_total
+            first_seen = rid not in self._rule_error_counts
+            self._rule_error_counts[rid] = self._rule_error_counts.get(rid, 0) + 1
+            distinct = len(self._rule_error_counts)
+        if first_seen:
+            logger.warning(
+                "site fingerprint rule evaluate failed stage:site_identify rule_id:%s "
+                "error_type:%s (first occurrence per rule)",
+                rid, type(exc).__name__,
+            )
+        elif total % 1000 == 0:
+            logger.warning(
+                "site fingerprint rule errors ongoing stage:site_identify total:%d distinct_rules:%d",
+                total, distinct,
+            )
+
+    def rule_error_snapshot(self):
+        """累计异常计数快照：消费方（fetchSite）按差值汇入任务 metrics。"""
+        with self._rule_error_lock:
+            return self.rule_error_total
+
+    def stats(self):
+        with self._rule_error_lock:
+            return {
+                "ok": self.ok,
+                "rule_count": len(self.rules),
+                "rule_error_total": self.rule_error_total,
+                "rule_error_distinct_rules": len(self._rule_error_counts),
+                "load_error": self.load_error,
+                "overlay_error": self._overlay_error,
+            }
 
     def _to_item(self, rule, variables):
         fields = []

@@ -28,11 +28,24 @@ import tempfile
 from datetime import datetime, timezone
 
 from app.fp_common import (
+    COND_RE,
+    SUPPORTED_FIELDS,
+    SUPPORTED_OPS,
     estimate_human_rule_confidence,
     extract_literal_from_regex,
+    has_boolean_parentheses,
+    human_rule_quote as quote,
+    human_rule_unquote as unquote,
+    merge_key,
+    parse_human_rule,
     safe_int,
     split_logic_expression,
+    to_human_rule,
 )
+
+# 架构 Review 轮 2：human_rule 解析/序列化/合并键下沉 fp_common（运行时
+# site_fingerprint_registry 不再 import 构建脚本模块）。上方 import 即兼容
+# re-export：审计工具与测试的 BUILD.<attr> 访问面保持不变。
 
 # 泛化噪声拒绝表：小且可述（附录B 实证词 + 通用 UI 词），宁窄勿宽——宽表本身就是误报源
 GENERIC_STOPWORDS = {
@@ -42,100 +55,6 @@ GENERIC_STOPWORDS = {
 GENERIC_SINGLE_COND_MAX_LEN = 8          # 单条件字面量短于此 → 封顶候选
 DEMOTED_CONFIDENCE_CAP = 75
 MIN_LITERAL_LEN = 3                      # 超短字面量 → 所在分支拒绝
-SUPPORTED_FIELDS = {"body", "header", "title", "response", "url", "icon_hash"}
-SUPPORTED_OPS = {"contains", "equals", "not_equals", "regex"}
-
-COND_RE = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)\s*(~=|==|!=|=)\s*("([^"\\]|\\.)*"|-?\d+)\s*$')
-
-
-def unquote(raw: str) -> str:
-    if raw.startswith('"') and raw.endswith('"'):
-        inner = raw[1:-1]
-        return inner.replace('\\\\', '\x00').replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r').replace('\x00', '\\')
-    return raw
-
-
-def quote(text: str) -> str:
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + '"'
-
-
-# != 保留生产布尔语义（整串不等）——not-contains 意图升级属行为变更，第3阶段带对照决策。
-OP_TO_CANON = {"=": "contains", "==": "equals", "!=": "not_equals", "~=": "regex"}
-CANON_TO_OP = {v: k for k, v in OP_TO_CANON.items()}
-
-
-def has_boolean_parentheses(expression: str) -> bool:
-    """引号外出现 ( ) 即判不可解析（现行源 0 处；防御未来源引入歧义语法）。"""
-    in_quotes = False
-    escaped = False
-    for ch in expression:
-        if in_quotes:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_quotes = False
-            continue
-        if ch == '"':
-            in_quotes = True
-        elif ch in "()":
-            return True
-    return False
-
-
-def parse_human_rule(expression: str):
-    """human_rule → ({"any":[{"all":[cond]}], "excludes":[]}, problems)。
-
-    problems 非空即整条拒绝（括号语法/非法条件/不支持字段一律不猜语义）。
-    """
-    if has_boolean_parentheses(expression):
-        return None, ["parentheses_not_supported"]
-    tokens, operators = split_logic_expression(expression)
-    groups = [[]]
-    for index, token in enumerate(tokens):
-        if index > 0 and operators[index - 1] == "||":
-            groups.append([])
-        groups[-1].append(token)
-
-    any_branches, problems = [], []
-    for group in groups:
-        conds = []
-        for part in group:
-            m = COND_RE.match(part.strip())
-            if not m:
-                problems.append("unparsable_condition")
-                continue
-            field, op, raw = m.group(1), m.group(2), m.group(3)
-            field = field.lower()
-            if field not in SUPPORTED_FIELDS:
-                problems.append("unsupported_field:" + field)
-                continue
-            conds.append({"field": field, "operator": OP_TO_CANON[op], "value": unquote(raw)})
-        if conds:
-            any_branches.append({"all": conds})
-    if problems:
-        return None, problems
-    if not any_branches:
-        return None, ["no_valid_condition"]
-    return {"any": any_branches, "excludes": []}, []
-
-
-def to_human_rule(match: dict) -> str:
-    """canonical match → 确定性 human_rule 文本（分支/条件稳定序）。"""
-    def ser_cond(c):
-        return "{}{}{}".format(c["field"], CANON_TO_OP[c["operator"]], quote(c["value"]))
-
-    branches = []
-    for branch in match.get("any", []):
-        conds = sorted(ser_cond(c) for c in branch.get("all", []))
-        if conds:
-            branches.append(" && ".join(conds))
-    branches = sorted(set(branches))
-    text = " || ".join(branches)
-    for ex in sorted(ser_cond(c) for c in match.get("excludes", [])):
-        text = "{} || {}".format(text, ex) if text else ex
-    return text
 
 
 def branch_is_rejected(branch: dict, stats: dict) -> bool:
@@ -175,11 +94,6 @@ def collect_anchors(match: dict):
         if not positive:
             anchors.append({"field": "*", "kind": "no-anchor", "value": None})
     return anchors
-
-
-def merge_key(name: str) -> str:
-    """合并键：casefold + 去首尾空白 + 内部连续空白并一。标点不清理（A-B 与 AB 是不同产品）。"""
-    return re.sub(r"\s+", " ", str(name).strip()).casefold()
 
 
 class Merger:

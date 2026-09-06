@@ -317,5 +317,63 @@ class SiteFingerprintOverlayTest(unittest.TestCase):
 
 
 
+class RuntimeBuildDecouplingTest(unittest.TestCase):
+    """架构 Review 轮 2：运行时指纹链与构建脚本模块解耦。"""
+
+    def test_registry_source_has_no_app_tools_import(self):
+        source = (ROOT_DIR / "app" / "services" / "site_fingerprint_registry.py").read_text(
+            encoding="utf-8")
+        self.assertIsNone(
+            re.search(r"^\s*(from|import)\s+app\.tools", source, re.M),
+            "运行时模块不得再 import 构建脚本层（耦合会使生产导入链受构建面牵动）",
+        )
+
+    def test_parse_functions_single_implementation(self):
+        fp = sys.modules.get("app.fp_common")
+        if fp is None:
+            fp = _load("app.fp_common", ROOT_DIR / "app" / "fp_common.py")
+        # 零新轮子：registry 与 fp_common 必须是同一函数对象（单一实现钉）。
+        self.assertIs(REGISTRY.parse_human_rule, fp.parse_human_rule)
+        self.assertIs(REGISTRY.to_human_rule, fp.to_human_rule)
+        self.assertIs(REGISTRY.merge_key, fp.merge_key)
+        match, problems = fp.parse_human_rule('body="decouple-marker-x" && title="T"')
+        self.assertEqual([], problems)
+        self.assertEqual('body="decouple-marker-x" && title="T"', fp.to_human_rule(match))
+
+
+class SiteFingerprintRuleErrorObservabilityTest(unittest.TestCase):
+    """规则判定异常：跳过合法，静默非法（计数 + rule id + 不新增轮子）。"""
+
+    def _registry_with_broken_rule(self):
+        reg = REGISTRY.SiteFingerprintRegistry(path=str(SITE_GZ))
+        match, _problems = REGISTRY.parse_human_rule('body="nginx"')
+
+        class _Boom:
+            def identify(self, _variables):
+                raise RuntimeError("pyparsing boom")
+
+        reg.rules = [{
+            "id": "site:broken-rule", "name": "Broken", "confidence": 90,
+            "sources": [], "match": match, "fp": _Boom(),
+        }]
+        reg.icon_index = {}
+        reg.ok = True
+        return reg
+
+    def test_broken_rule_counted_not_silent(self):
+        reg = self._registry_with_broken_rule()
+        base = reg.rule_error_snapshot()
+        items = reg.match({"body": "anything", "title": "", "icon_hash": "0"})
+        self.assertEqual([], items)  # 行为不变：跳过该规则
+        self.assertEqual(1, reg.rule_error_snapshot() - base)
+        stats = reg.stats()
+        self.assertEqual(1, stats["rule_error_total"])
+        self.assertEqual(1, stats["rule_error_distinct_rules"])
+        # 同规则再异常：total 增长但 distinct id 不膨胀（first-per-id 告警节流前提）
+        reg.match({"body": "again", "title": "", "icon_hash": "0"})
+        self.assertEqual(2, reg.rule_error_snapshot() - base)
+        self.assertEqual(1, len(reg._rule_error_counts))
+
+
 if __name__ == "__main__":
     unittest.main()

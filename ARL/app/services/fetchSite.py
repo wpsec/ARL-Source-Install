@@ -92,7 +92,21 @@ class FetchSite(BaseThread):
             return False
         variables = build_identify_variables(
             content, item["headers"], item["title"], str(favicon_hash), item["site"])
+        errors_before = registry.rule_error_snapshot()
         items = registry.match(variables)
+        errors_delta = registry.rule_error_snapshot() - errors_before
+        discovery_context = getattr(self, "discovery_context", None)
+        if errors_delta > 0 and discovery_context is not None:
+            # 规则判定异常汇入任务指标（收尾 ctx_site_fingerprint_rule_error_count
+            # 可见；registry 侧另有 per-rule-id 的 warning 证据）。
+            try:
+                discovery_context.record_metric(
+                    "site_fingerprint_rule_error_count", errors_delta)
+            except Exception as exc:
+                logger.debug(
+                    "site fingerprint rule error metric failed error_type:%s",
+                    type(exc).__name__,
+                )
         finger, finger_candidates = split_unified_items(items)
         if finger:
             item["finger"] = finger
