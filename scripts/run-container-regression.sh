@@ -58,6 +58,24 @@ docker rm -f "${APP}" >/dev/null 2>&1 || true
 docker create --name "${APP}" --platform "${PLATFORM}" --network "${NETWORK}" \
     "${IMAGE}" sleep 7200 >/dev/null
 docker start "${APP}" >/dev/null
+# 镜像内 /code/app/config.yaml 是 config.yaml.example（MONGO/CELERY 指 localhost）；
+# 生产 compose 由 config-runtime.yaml 挂载覆盖，回归环境等价重写三个主机键
+# （值取仓库模板 config-docker.yaml 的占位凭据，非真实秘密）。
+docker exec -i "${APP}" python3 - <<'PYEOF'
+import yaml
+
+path = "/code/app/config.yaml"
+with open(path) as stream:
+    doc = yaml.safe_load(stream) or {}
+doc.setdefault("MONGO", {})["URI"] = "mongodb://admin:admin@mongodb:27017/"
+doc.setdefault("CELERY", {})["BROKER_URL"] = "amqp://arl:arlpassword@rabbitmq:5672/arlv2host"
+redis = doc.setdefault("REDIS", {})
+redis["ENABLE"] = True
+redis["HOST"] = "redis"
+with open(path, "w") as stream:
+    yaml.safe_dump(doc, stream, allow_unicode=True, sort_keys=False)
+print("[OK] regression runtime config rewritten (mongodb/redis/rabbitmq aliases)")
+PYEOF
 
 echo "[4/6] full unittest discover (image source == repo HEAD at build time)"
 docker exec -w /code -e PYTHONPATH=. "${APP}" \
@@ -66,11 +84,13 @@ docker cp "${APP}:/tmp/discover.log" "/tmp/arlreg-${TAG}-discover.log"
 grep -cE "^(FAIL|ERROR):" "/tmp/arlreg-${TAG}-discover.log" || true
 
 echo "[5/6] test hygiene rescan + native smoke"
-docker cp scripts/check-test-hygiene.py "${APP}:/tmp/check-test-hygiene.py"
-# hygiene 工具镜像内路径：ARL 布局为 /code/{app,test}，工具按 repo-root 推导，
-# 用软链构造期望布局再跑（全量三态：polluted/clean/load-fail）。
-docker exec "${APP}" sh -c 'mkdir -p /tmp/hyg/ARL && ln -sfn /code/app /tmp/hyg/ARL/app && ln -sfn /code/test /tmp/hyg/ARL/test && ln -sfn /tmp/check-test-hygiene.py /tmp/hyg/check-test-hygiene.py'
-docker exec "${APP}" python3 /tmp/hyg/check-test-hygiene.py > "/tmp/arlreg-${TAG}-hygiene.log" 2>&1 || true
+# hygiene 工具按 `Path(__file__).resolve().parents[1]` 推导 repo root（期望
+# <root>/scripts/check-test-hygiene.py 布局），并 glob <root>/ARL/test/。容器内
+# 镜像布局为 /code/{app,test}，构造 /tmp/hyg/{scripts,ARL} 等价布局：工具真身
+# 放 scripts/（不能用软链，resolve 会跟随链接丢布局），ARL 子项用软链。
+docker exec "${APP}" sh -c 'rm -rf /tmp/hyg && mkdir -p /tmp/hyg/scripts /tmp/hyg/ARL && ln -sfn /code/app /tmp/hyg/ARL/app && ln -sfn /code/test /tmp/hyg/ARL/test'
+docker cp scripts/check-test-hygiene.py "${APP}:/tmp/hyg/scripts/check-test-hygiene.py"
+docker exec "${APP}" python3 /tmp/hyg/scripts/check-test-hygiene.py > "/tmp/arlreg-${TAG}-hygiene.log" 2>&1 || true
 tail -4 "/tmp/arlreg-${TAG}-hygiene.log"
 docker exec "${APP}" python3 /usr/local/share/arl/arl_accel_smoke_test.py \
     && echo "[OK] native smoke passed"

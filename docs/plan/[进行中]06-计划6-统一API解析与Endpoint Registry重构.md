@@ -972,7 +972,7 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 | F6 样本区分度双向验证 | 新 .so（对齐后）对全部 5 case `--run-native --strict-order` 全 ok；**旧 .so（arm64 发布镜像内批 10 前 wheel）在同 case 实锤 `missing_from_rust=[/api/users score 27]`**——record_type 前导 U+001C 在旧 Rust 面被 `starts_with("urlfinder_")` 误拒，即"Rust 结果不得减少 Python 有效结果"红线的真实触达面 | 两向报告均留档于本次执行记录；`test_compare_rust_python_corpus.py` case_count 4→5、`_FakeNativeModule.rank` 按输入回查 golden 防双 rank case 串扰 |
 | 范围修正（诚实登记） | extract-kind 控制符样本**不采**入 corpus：实证旧 .so 也通过——url crate 对 `Url::parse`/`join` 输入做 C0 剥离，吸收了 URL 路径上的 strip 差；URL 面 py_strip 改动为语义对齐（防未来变更再引入），legacy 面**可观测**分歧点收敛为 rank record_type 一处 | 探测记录（旧 wheel 直调 `extract_urlfinder_candidates` 输出与 Python 一致） |
 
-统一面 corpus 4 case 与 `api-unified-golden.py --check` 在新 lib.rs 下零漂移（`arl-py310` 容器复验 ok=True）；`compileall`、`git diff --check`、hygiene（两改动测试文件 clean）通过。第 11 批余留：40/64 目标、`RUST_ACCEL_API_UNIFIED_MODE` 升级决策、端到端 ≤5%、amd64 真机基准（附录 D）、compose 全栈容器回归（arm64 首轮已登记于计划 3）。
+统一面 corpus 4 case 与 `api-unified-golden.py --check` 在新 lib.rs 下零漂移（`arl-py310` 容器复验 ok=True）；`compileall`、`git diff --check`、hygiene（两改动测试文件 clean）通过。第 11 批余留：40/64 目标、`RUST_ACCEL_API_UNIFIED_MODE` 升级决策、端到端 ≤5%、amd64 真机基准（附录 D；qemu 构建经用户决策暂不跑，`bash scripts/run-container-regression.sh linux/amd64 amd64` 可重放）。**compose 全栈容器回归（arm64）已完成**（2026-09-06 第二轮，计划 3 登记：Ran 848、74 例 Mongo 环境项清零、hygiene 容器 149/149 clean、发布链镜像内双 corpus `--run-native --strict-order` 全绿含 F6 判别 case；剩余 FAIL/ERROR 归网络依赖与既有合跑交错两类存量）。
 
 ## 当前状态（2026-09-06 第 7 批 + 整改轮 1/轮 2 + 第 8/9/10 批后）
 
