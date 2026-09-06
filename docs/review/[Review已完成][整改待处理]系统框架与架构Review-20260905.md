@@ -2,7 +2,7 @@
 
 项目：ARL-Source-Install
 报告状态：已完成（本轮 Review 已完成）
-整改状态：进行中（第 8 节整改记录：轮 1 已完成 P0.2、P0.4 与 §4 一般项"API 账本 key 契约"处置；P0.1、P0.3 及其余项待后续轮次）
+整改状态：进行中（第 8 节整改记录：轮 1 已完成 P0.2、P0.4 与 §4 一般项"API 账本 key 契约"处置；轮 2 第一批已完成 fail-open 阈值降级门禁（A5）；P0.1、P0.3 及其余项按待处置表推进）
 说明：文件名中的“Review已完成”仅表示报告完成，不表示 Review 发现的问题已经完成整改。
 日期：2026-09-05
 范围：当前工作区代码、运行时配置模板、任务编排、发现上下文、API 解析、指纹体系、Docker/Rust 边界和前端骨架。
@@ -280,8 +280,14 @@ Rust 不应直接访问 Mongo、Redis、Celery、HTTP、DNS、Playwright、LLM �
 - **P0.3** fileLeak 子进程正式边界：候选领取/响应回流/请求计数中前两项已有实现，缺子进程请求计数回流与重复抑制门禁的可验证口径，需 fileLeak IPC 协议专项。
 - **高风险 5/6**（God Object 迁移、逐 collection 写入 owner）：按计划 2/3 既有路线分批推进。
 - **高风险 7**（`API_UNIFIED_ENABLE` 默认切换）：按计划 6 第 4-11 批门禁推进，第 3 批完成记录已区分"代码具备入口"与"默认生效"。
-- **一般项：fail-open 强制告警/阈值降级**、**指纹默认路径/构建脚本耦合**、**run_deep 阶段队列化**：建议轮 2 打包处理。
+- **一般项：fail-open 强制告警/阈值降级**：**已完成（轮 2 第一批，见上方轮 2 表）**。**指纹默认路径/构建脚本耦合**、**run_deep 阶段队列化**：轮 2 后续批处理/专项评估。
 - **建议项**（browser intel 策略节点、全链路重复请求门禁）：随计划 6 第 8-9 批与 64 目标基线验收落地。
+
+### 轮 2（2026-09-06，一般项打包第一批）
+
+| 问题项 | 处置 | 证据 |
+|---|---|---|
+| 一般项：账本/调度 fail-open 无强制告警与阈值降级（待处置节 A5） | `MongoLedgerBackend` 全部 fail-open 路径接入观测：per-op 计数（`ledger_get/upsert/claim/finish/confirm/list/owner_probe/status_probe_failed`）+ 两总量（`ledger_unavailable_total`、`ledger_dedup_degraded_total`=covered 不可确认仍执行的重复扫描证据；`ledger_finish_rejected_total` fencing 单列不计 unavailable）；sink 由 `DiscoveryContext.__init__` 晚绑定 `record_metric`，观测汇故障不得反噬主路径。`TaskFinalizer` 新增阈值门禁：`unavailable+dedup_degraded ≥ LEDGER_DEGRADED_THRESHOLD`（Config 默认 10，类默认 + yaml positive-int + env `ARL_LEDGER_DEGRADED_THRESHOLD` 三处接线）时收尾阶段标 `degraded`、非阻断场景终态升 `done_degraded`（WIH 残余仍优先 `done_pending`，阻断口径不变）、恢复证据落 `pending_backlog|ledger|<task_id>` 账本（每任务一条幂等，payload 带计数与阈值）。`over_limit_request_count`/`actual_duplicate_request_count` 保持既有单列（限流压力面，不并入账本阈值） | `test_discovery_ledger_store.py::LedgerFailOpenObservabilityTests` 6 项（sink 一致性、dedup 判定、covered 仍跳过不加码、坏 sink 反噬防护、多 op 计数、context 绑汇）+ `test_task_finalizer.py::LedgerDegradedFinalizerTest` 5 项（升级/未达阈不变/阻断优先/backend 兜底/阈值 0 禁用）；两文件合跑 52 项全绿；config 相关 5 项、`test_discovery_context` 合跑 69 项全绿。顺带按 P2-13 把 `test_discovery_ledger_store` bootstrap 化（宿主 load-fail 集合 -1） |
 
 ### 状态指针（2026-09-06 计划 6 第 8 批后紧急修复轮）
 

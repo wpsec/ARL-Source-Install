@@ -45,11 +45,46 @@ class MongoLedgerBackend(object):
     过期 claiming 视为可重入，由新 owner 原子接管。
     """
 
-    def __init__(self, task_id, utils_module=None):
+    def __init__(self, task_id, utils_module=None, metrics_sink=None):
         self.task_id = str(task_id or "").strip()
         self.utils = utils_module or utils
         # 每个实例（进程/任务）唯一，用于 CAS 归属确认与抢占仲裁。
         self.owner = "{}-{}".format(os.getpid(), uuid.uuid4().hex[:12])
+        # A5（系统框架 Review 轮 2）：fail-open 必须可观测。metrics_sink 为
+        # callable(name, amount)，由宿主在 DiscoveryContext 构造后绑定
+        # （attach_metrics_sink）；观测失败绝不反向影响账本主路径。
+        self._metrics_sink = metrics_sink
+        self._unavailable_total = 0
+        self._dedup_degraded_total = 0
+
+    def attach_metrics_sink(self, sink):
+        """晚绑定观测汇（DiscoveryContext 构造完成后注入 record_metric）。"""
+        if callable(sink):
+            self._metrics_sink = sink
+
+    def _record_failure(self, name, dedup_degraded=False):
+        # unavailable=后端操作异常；dedup_degraded=在 covered 状态不可确认时
+        # 仍放行执行（宁可重扫不漏扫的代价面），是重复请求/重复扫描的直接证据。
+        self._unavailable_total += 1
+        if dedup_degraded:
+            self._dedup_degraded_total += 1
+        sink = self._metrics_sink
+        if sink is None:
+            return
+        try:
+            sink(name, 1)
+            sink("ledger_unavailable_total", 1)
+            if dedup_degraded:
+                sink("ledger_dedup_degraded_total", 1)
+        except Exception:
+            # 观测汇故障不得成为扫描的新失败源（降级为本地计数已足够定阈）。
+            pass
+
+    def failure_totals(self):
+        return {
+            "ledger_unavailable_total": self._unavailable_total,
+            "ledger_dedup_degraded_total": self._dedup_degraded_total,
+        }
 
     def _db(self):
         return self.utils.conn_db(LEDGER_COLLECTION)
@@ -61,6 +96,7 @@ class MongoLedgerBackend(object):
         try:
             doc = self._db().find_one({"key": key})
         except Exception as exc:
+            self._record_failure("ledger_get_failed")
             logger.warning(
                 "ledger get failed task_id:{} error_type:{}".format(
                     self.task_id, type(exc).__name__)
@@ -104,6 +140,7 @@ class MongoLedgerBackend(object):
                 upsert=True,
             )
         except Exception as exc:
+            self._record_failure("ledger_upsert_failed")
             logger.warning(
                 "ledger upsert failed task_id:{} key:{} error_type:{}".format(
                     self.task_id, str(entry.idempotency_key)[:120],
@@ -168,9 +205,10 @@ class MongoLedgerBackend(object):
                 "ledger claim degraded task_id:{} key:{} error_type:{}".format(
                     self.task_id, key[:120], type(exc).__name__))
             existing = self.get(key)
-            if existing is not None and existing.status == "covered":
-                return False
-            return True
+            proceed = not (existing is not None and existing.status == "covered")
+            # 放行即"covered 不可确认仍执行"：dedup 降级证据（重复扫描面）。
+            self._record_failure("ledger_claim_failed", dedup_degraded=proceed)
+            return proceed
         if not isinstance(doc, dict):
             return False
         # CAS 回执核验：必须是本 owner 的 claiming 才算真正拿到。
@@ -184,6 +222,7 @@ class MongoLedgerBackend(object):
             entry_doc = self._db().find_one(
                 {"key": key}, {"owner": 1})
         except Exception:
+            self._record_failure("ledger_owner_probe_failed")
             return ""
         if isinstance(entry_doc, dict):
             return str(entry_doc.get("owner") or "")
@@ -202,6 +241,7 @@ class MongoLedgerBackend(object):
             entry_doc = self._db().find_one(
                 {"key": key}, {"status": 1})
         except Exception:
+            self._record_failure("ledger_status_probe_failed")
             return ""
         if isinstance(entry_doc, dict):
             return str(entry_doc.get("status") or "")
@@ -260,6 +300,7 @@ class MongoLedgerBackend(object):
             if int(getattr(result, "matched_count", 0) or 0) > 0:
                 return entry
         except Exception as exc:
+            self._record_failure("ledger_finish_failed")
             logger.warning(
                 "ledger finish degraded task_id:{} key:{} error_type:{}".format(
                     self.task_id, key[:120], type(exc).__name__))
@@ -268,6 +309,7 @@ class MongoLedgerBackend(object):
         try:
             existing = self._db().find_one({"key": key})
         except Exception as exc:
+            self._record_failure("ledger_confirm_failed")
             # 确认查询与更新分离容错：fencing 已判负或归属未知时，
             # 确认失败不得升级为无条件覆盖写。
             logger.warning(
@@ -299,6 +341,14 @@ class MongoLedgerBackend(object):
 
     def record_finish_rejected(self):
         type(self)._finish_rejected_count = getattr(type(self), "_finish_rejected_count", 0) + 1
+        # fencing 拒写是并发仲裁的正常结果，不计 unavailable，但必须可见
+        # （连续大量 rejected 提示租约/接管异常）。
+        sink = self._metrics_sink
+        if sink is not None:
+            try:
+                sink("ledger_finish_rejected_total", 1)
+            except Exception:
+                pass
 
     def list_by_prefix(self, key_prefix, statuses=("pending",), limit=2000):
         """按前缀+状态读取 [(key, payload)]，不改变状态（overflow 回读/WAF 回灌共用）。"""
@@ -324,6 +374,7 @@ class MongoLedgerBackend(object):
                 items.append((str(doc.get("key") or ""), dict(doc.get("payload") or {})))
             return items
         except Exception as exc:
+            self._record_failure("ledger_list_failed")
             logger.warning(
                 "ledger list_pending degraded task_id:{} prefix:{} error_type:{}".format(
                     self.task_id, prefix[:64], type(exc).__name__))

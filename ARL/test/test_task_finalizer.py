@@ -441,6 +441,80 @@ class FinalizerDecisionTest(unittest.TestCase):
         self.assertNotIn("cache_hit_count", metrics)
 
 
+class LedgerDegradedFinalizerTest(unittest.TestCase):
+    """A5（Review 轮 2）：账本 fail-open 超阈值必须显影为 degraded，不得裸 done。"""
+
+    def test_threshold_breached_upgrades_bare_done(self):
+        context = DiscoveryContext(task_id="a5-1")
+        context.record_metric("ledger_unavailable_total", 10)
+        holder = _make_holder(context)
+        finalizer = TaskFinalizer(holder)
+        result = finalizer.run()
+        metrics = result["metrics"]
+        self.assertEqual(finalizer.terminal_status(), "done_degraded")
+        self.assertEqual(metrics["status"], "degraded")
+        self.assertEqual(metrics["ledger_degraded"], 1)
+        self.assertEqual(metrics["ctx_ledger_unavailable_total"], 10)
+        self.assertEqual(finalizer.decision["reason"], "ledger_degraded")
+        # 恢复范围证据落账本（pending_backlog|ledger|<task_id>，下一轮周期语义）。
+        entry = context.ledger.get("pending_backlog|ledger|finalizer-test")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.status, "pending")
+        self.assertEqual(entry.payload.get("reason"), "ledger_degraded")
+        self.assertEqual(entry.payload.get("ledger_unavailable_total"), 10)
+
+    def test_below_threshold_keeps_clean_done(self):
+        context = DiscoveryContext(task_id="a5-2")
+        context.record_metric("ledger_unavailable_total", 9)
+        holder = _make_holder(context)
+        finalizer = TaskFinalizer(holder)
+        result = finalizer.run()
+        self.assertEqual(finalizer.terminal_status(), "done")
+        self.assertEqual(result["metrics"]["status"], "ok")
+        self.assertEqual(result["metrics"]["ledger_degraded"], 0)
+        self.assertIsNone(context.ledger.get("pending_backlog|ledger|finalizer-test"))
+
+    def test_blocking_residual_wins_over_ledger_degraded(self):
+        context = DiscoveryContext(task_id="a5-3")
+        context.record_metric("ledger_dedup_degraded_total", 10)
+        holder = _make_holder(context)
+        _publish_host(context, "residual.example.com")
+        finalizer = TaskFinalizer(holder)
+        with mock.patch.object(_tf.Config, "TASK_FINALIZER_DRAIN_ROUNDS", 0, create=True):
+            result = finalizer.run()
+        # 阻断口径不变：WIH 残余优先决定 done_pending；降级证据仍显影。
+        self.assertEqual(finalizer.terminal_status(), "done_pending")
+        self.assertEqual(result["metrics"]["ledger_degraded"], 1)
+        self.assertEqual(result["metrics"]["blocking_residual"], 1)
+
+    def test_backend_fallback_when_context_not_counted(self):
+        # 未绑 sink 的旧接线（backend 直构）：failure_totals 兜底仍可定阈。
+        class _Backend(object):
+            def failure_totals(self):
+                return {
+                    "ledger_unavailable_total": 4,
+                    "ledger_dedup_degraded_total": 6,
+                }
+
+        context = DiscoveryContext(task_id="a5-4")
+        context.ledger.backend = _Backend()
+        holder = _make_holder(context)
+        finalizer = TaskFinalizer(holder)
+        result = finalizer.run()
+        self.assertEqual(finalizer.terminal_status(), "done_degraded")
+        self.assertEqual(result["metrics"]["ledger_degraded"], 1)
+
+    def test_threshold_zero_disables_gate(self):
+        context = DiscoveryContext(task_id="a5-5")
+        context.record_metric("ledger_unavailable_total", 500)
+        holder = _make_holder(context)
+        finalizer = TaskFinalizer(holder)
+        with mock.patch.object(_tf.Config, "LEDGER_DEGRADED_THRESHOLD", 0, create=True):
+            result = finalizer.run()
+        self.assertEqual(finalizer.terminal_status(), "done")
+        self.assertEqual(result["metrics"]["ledger_degraded"], 0)
+
+
 class MeasuredStageTest(unittest.TestCase):
     """阶段统一经执行器产出独立指标;无执行器的轻量任务回退手工语义。"""
 

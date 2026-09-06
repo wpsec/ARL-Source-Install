@@ -67,6 +67,9 @@ _BACKLOG_METRIC_KEYS = (
     "new_host_queue_dropped_count",
     "candidate_evicted_count",
     "api_shadow_error_total",
+    # A5：账本 fail-open 累计计数（阈值判定与降级见 _core/_ledger_degraded）。
+    "ledger_unavailable_total",
+    "ledger_dedup_degraded_total",
 )
 
 _EXTERNAL_METRIC_PREFIX = "external_network_"
@@ -403,6 +406,85 @@ class TaskFinalizer(object):
                 )
         return written
 
+    # -- A5 账本 fail-open 阈值门禁 ------------------------------------------
+
+    def _ledger_degraded(self, holder: Any) -> Dict[str, Any]:
+        """账本降级判定：unavailable+dedup_degraded 累计达到阈值即数据一致性降级。
+
+        计数首选 context.metrics（后端经 attach_metrics_sink 汇入）；context
+        缺失或未绑汇时回退读 backend.failure_totals()。
+        """
+        try:
+            threshold = int(getattr(Config, "LEDGER_DEGRADED_THRESHOLD", 10) or 0)
+        except (TypeError, ValueError):
+            threshold = 10
+        threshold = max(0, threshold)
+        unavailable = 0
+        dedup = 0
+        context = getattr(holder, "discovery_context", None)
+        snapshot: Dict[str, Any] = {}
+        try:
+            snapshot = dict(context.metrics_snapshot() or {}) if context is not None else {}
+        except Exception as exc:
+            logger.debug(
+                "task_id:{} ledger metrics read failed error_type:{}".format(
+                    getattr(self.task, "task_id", ""), type(exc).__name__)
+            )
+        unavailable = int(snapshot.get("ledger_unavailable_total") or 0)
+        dedup = int(snapshot.get("ledger_dedup_degraded_total") or 0)
+        if unavailable == 0 and dedup == 0:
+            backend = getattr(getattr(context, "ledger", None), "backend", None)
+            totals_getter = getattr(backend, "failure_totals", None)
+            if callable(totals_getter):
+                try:
+                    totals = totals_getter() or {}
+                    unavailable = int(totals.get("ledger_unavailable_total") or 0)
+                    dedup = int(totals.get("ledger_dedup_degraded_total") or 0)
+                except Exception as exc:
+                    logger.debug(
+                        "task_id:{} ledger failure_totals failed error_type:{}".format(
+                            getattr(self.task, "task_id", ""), type(exc).__name__)
+                    )
+        degraded = threshold > 0 and (unavailable + dedup) >= threshold
+        return {
+            "degraded": degraded,
+            "unavailable": unavailable,
+            "dedup_degraded": dedup,
+            "threshold": threshold,
+        }
+
+    def _persist_ledger_degradation(self, holder: Any, health: Dict[str, Any]) -> int:
+        """恢复范围证据：降级任务落 pending_backlog|ledger 账本（每任务一条，幂等）。"""
+        context = getattr(holder, "discovery_context", None)
+        ledger = getattr(context, "ledger", None)
+        if ledger is None:
+            return 0
+        task_id = str(getattr(self.task, "task_id", "") or "")
+        key = "pending_backlog|ledger|{}".format(task_id)
+        try:
+            if getattr(ledger, "get", lambda _k: None)(key) is not None:
+                return 0
+            ledger.upsert(
+                LedgerEntry(
+                    idempotency_key=key,
+                    status="pending",
+                    payload={
+                        "task_id": task_id,
+                        "reason": "ledger_degraded",
+                        "ledger_unavailable_total": health["unavailable"],
+                        "ledger_dedup_degraded_total": health["dedup_degraded"],
+                        "ledger_degraded_threshold": health["threshold"],
+                    },
+                )
+            )
+            return 1
+        except Exception as exc:
+            logger.debug(
+                "task_id:{} ledger degradation persist failed error_type:{}".format(
+                    task_id, type(exc).__name__)
+            )
+            return 0
+
     # -- entry ------------------------------------------------------------
 
     def _core(self) -> Dict[str, Any]:
@@ -454,12 +536,31 @@ class TaskFinalizer(object):
             + pending_wih_overflow
         )
 
+        # A5：账本 fail-open 超阈值 = 数据一致性降级。阻断口径不变
+        # （WIH 残余仍优先决定 done_pending），降级只把"裸 done"升为
+        # done_degraded，并把恢复证据落 pending_backlog|ledger 账本。
+        ledger_health = self._ledger_degraded(holder)
+        ledger_degraded_written = 0
+        if ledger_health["degraded"]:
+            ledger_degraded_written = self._persist_ledger_degradation(holder, ledger_health)
+            logger.warning(
+                "task_id:{} ledger fail-open degraded unavailable:{} dedup_degraded:{} threshold:{}".format(
+                    getattr(self.task, "task_id", ""),
+                    ledger_health["unavailable"],
+                    ledger_health["dedup_degraded"],
+                    ledger_health["threshold"],
+                )
+            )
+
         terminal_status = TERMINAL_DONE_PENDING if blocking_residual > 0 else TERMINAL_DONE
+        if ledger_health["degraded"] and blocking_residual == 0:
+            terminal_status = TERMINAL_DONE_DEGRADED
         self.decision = {
             "terminal_status": terminal_status,
-            "verdict": "pending" if residual_total > 0 else "clean",
+            "verdict": "pending" if residual_total > 0 else ("degraded" if ledger_health["degraded"] else "clean"),
             "blocking_residual": blocking_residual,
             "residual_total": residual_total,
+            "ledger_degraded": bool(ledger_health["degraded"]),
             "pending_by_policy": {
                 "wih": pending_wih,
                 "directory": pending_directory,
@@ -468,12 +569,18 @@ class TaskFinalizer(object):
                 "wih_overflow": pending_wih_overflow,
             },
             "other_open_candidates": pending_by_policy["other_open"],
-            "reason": "queue_residual" if blocking_residual > 0 else "",
+            "reason": "queue_residual" if blocking_residual > 0 else (
+                "ledger_degraded" if ledger_health["degraded"] else ""),
         }
 
         metrics = {
             # StageExecutor 的 result provider 只认嵌套 metrics 键作为状态来源。
-            "status": "partial" if residual_total > 0 else "ok",
+            # A5：账本一致性降级优先于 partial——收尾阶段本身标 degraded。
+            "status": (
+                "degraded"
+                if ledger_health["degraded"]
+                else ("partial" if residual_total > 0 else "ok")
+            ),
             "terminal_status": terminal_status,
             "drain_rounds": drain["drain_rounds"],
             "drain_hosts_before": drain["hosts_before"],
@@ -486,8 +593,15 @@ class TaskFinalizer(object):
             "pending_url_probe": pending_url_probe,
             "pending_api": pending_api,
             "pending_wih_overflow": pending_wih_overflow,
-            "pending_recorded": pending_written + sum(pending_written_other.values()),
+            "pending_recorded": (
+                pending_written
+                + sum(pending_written_other.values())
+                + ledger_degraded_written
+            ),
             "pending_recorded_wih": pending_written,
+            # 计数单一事实源为 ctx_ledger_*（context 透传），此处只落判定结果。
+            "ledger_degraded": 1 if ledger_health["degraded"] else 0,
+            "ledger_degraded_threshold": ledger_health["threshold"],
             "open_other_candidates": pending_by_policy["other_open"],
             "residual_total": residual_total,
             "blocking_residual": blocking_residual,

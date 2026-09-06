@@ -874,6 +874,11 @@ class DiscoveryContext:
             on_evict=self._on_candidates_evicted,
         )
         self.ledger = ledger or DiscoveryLedger()
+        # A5：账本后端 fail-open 计数汇入本任务 metrics（阈值判定在 TaskFinalizer）。
+        backend = getattr(self.ledger, "backend", None)
+        attach = getattr(backend, "attach_metrics_sink", None)
+        if callable(attach):
+            attach(self.record_metric)
         self.waf_policy = WafPolicy(waf_threshold)
         self.request_scheduler = RequestScheduler(
             self,

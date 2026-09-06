@@ -910,6 +910,10 @@ class Config(object):
     TASK_FINALIZER_DRAIN_ROUNDS = 1
     # 每个策略收尾时最多落账的 pending 条目数（计数不受限，仅限制写账本）
     TASK_FINALIZER_PENDING_MAX = 200
+    # A5：账本 fail-open 累计（unavailable+dedup_degraded）达到该阈值时，
+    # 收尾阶段标 degraded、终态升为 done_degraded 并写 pending_backlog|ledger
+    # 证据（数据一致性降级须可复核，不得伪装干净 done）。
+    LEDGER_DEGRADED_THRESHOLD = 10
     # WIH 接口 AI 填充单次最多处理目标数（0=不限制）
     WIH_ENDPOINT_AI_FILL_MAX_TARGETS = 0
     # WIH 接口 AI 填充并发
@@ -2032,6 +2036,7 @@ try:
         "PORT_SCAN_BATCH_TIMEOUT_SEC",
         "TASK_FINALIZER_DRAIN_ROUNDS",
         "TASK_FINALIZER_PENDING_MAX",
+        "LEDGER_DEGRADED_THRESHOLD",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
@@ -2330,6 +2335,10 @@ try:
     Config.TASK_FINALIZER_PENDING_MAX = safe_int(
         env_int("ARL_TASK_FINALIZER_PENDING_MAX", Config.TASK_FINALIZER_PENDING_MAX),
         Config.TASK_FINALIZER_PENDING_MAX,
+    )
+    Config.LEDGER_DEGRADED_THRESHOLD = safe_positive_int(
+        env_int("ARL_LEDGER_DEGRADED_THRESHOLD", Config.LEDGER_DEGRADED_THRESHOLD),
+        Config.LEDGER_DEGRADED_THRESHOLD,
     )
     Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS = safe_int(
         env_int("ARL_WIH_ENDPOINT_AI_FILL_MAX_TARGETS", Config.WIH_ENDPOINT_AI_FILL_MAX_TARGETS),

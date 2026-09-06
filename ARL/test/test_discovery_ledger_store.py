@@ -4,10 +4,33 @@ created by arrows:
 - original-file: test_discovery_ledger_store.py
 """
 
+import sys
 import time
 import unittest
+from pathlib import Path
+from unittest import mock
 
-from app.services.discovery_ledger_store import MongoLedgerBackend
+ARL_ROOT = Path(__file__).resolve().parents[1]
+if str(ARL_ROOT) not in sys.path:
+    sys.path.insert(0, str(ARL_ROOT))
+
+# 测试卫生（P2-13 规范）：顶层 `from app.services.X import` 在轻依赖宿主触发
+# 包级 __init__（xing）必炸；改 bootstrap 临时桩窗口捕获真实模块引用。
+from test._api_unified_bootstrap import (  # noqa: E402
+    assert_no_shell_pollution,
+    load_modules,
+)
+
+_captured = load_modules(
+    "app.services.discovery_ledger_store",
+    "app.services.discovery_context",
+)
+assert_no_shell_pollution()
+
+MongoLedgerBackend = _captured["app.services.discovery_ledger_store"].MongoLedgerBackend
+LedgerEntry = _captured["app.services.discovery_context"].LedgerEntry
+DiscoveryContext = _captured["app.services.discovery_context"].DiscoveryContext
+DiscoveryLedger = _captured["app.services.discovery_context"].DiscoveryLedger
 
 
 class DuplicateKeyError(Exception):
@@ -286,7 +309,6 @@ class LedgerBackendTests(unittest.TestCase):
         self.assertFalse(backend.is_covered("job-1"))
 
     def test_overflow_persist_and_list_pending(self):
-        from app.services.discovery_context import DiscoveryContext, DiscoveryLedger
         backend = MongoLedgerBackend("task-1")
         backend._db = lambda: self.col
         context = DiscoveryContext("task-1", ledger=DiscoveryLedger(backend), candidate_max_entries=120)
@@ -302,6 +324,92 @@ class LedgerBackendTests(unittest.TestCase):
         # 恢复后再次注册同源候选应为幂等合并（不新增条目数超界恶化）
         self.assertGreater(len(context.candidate_registry), 100)
 
+
+
+class LedgerFailOpenObservabilityTests(unittest.TestCase):
+    """A5（Review 轮 2）：fail-open 不再只留 warning——计数入 sink 并可本地定阈。"""
+
+    class _Broken(object):
+        def find_one(self, query, projection=None):
+            raise RuntimeError("db down")
+
+        def find_one_and_update(self, *args, **kwargs):
+            raise RuntimeError("db down")
+
+        def replace_one(self, *args, **kwargs):
+            raise RuntimeError("db down")
+
+        def update_one(self, *args, **kwargs):
+            raise RuntimeError("db down")
+
+        def find(self, *args, **kwargs):
+            raise RuntimeError("db down")
+
+    class _PrimaryDownReplicaOk(object):
+        def find_one_and_update(self, *args, **kwargs):
+            raise RuntimeError("primary down")
+
+        def find_one(self, query, projection=None):
+            return {"key": (query or {}).get("key"), "status": "covered"}
+
+    def _broken_backend(self, sink=None):
+        backend = MongoLedgerBackend("task-a5", metrics_sink=sink)
+        backend._db = lambda: self._Broken()
+        return backend
+
+    def test_failures_flow_to_sink_and_local_totals(self):
+        events = []
+        backend = self._broken_backend(sink=lambda name, amount=1: events.append(name))
+        self.assertIsNone(backend.get("k"))
+        self.assertIn("ledger_get_failed", events)
+        self.assertIn("ledger_unavailable_total", events)
+        self.assertEqual(
+            backend.failure_totals()["ledger_unavailable_total"],
+            events.count("ledger_unavailable_total"),
+        )
+
+    def test_claim_fail_open_proceed_counts_dedup_degraded(self):
+        events = []
+        backend = self._broken_backend(sink=lambda name, amount=1: events.append(name))
+        self.assertTrue(backend.claim("job-x"))
+        self.assertIn("ledger_claim_failed", events)
+        self.assertEqual(backend.failure_totals()["ledger_dedup_degraded_total"], 1)
+
+    def test_claim_fail_open_covered_skips_without_dedup_count(self):
+        backend = MongoLedgerBackend("task-a5b")
+        backend._db = lambda: self._PrimaryDownReplicaOk()
+        self.assertFalse(backend.claim("job-c"))
+        self.assertEqual(backend.failure_totals()["ledger_dedup_degraded_total"], 0)
+        self.assertGreaterEqual(backend.failure_totals()["ledger_unavailable_total"], 1)
+
+    def test_sink_exception_never_breaks_ledger_path(self):
+        def bad_sink(name, amount=1):
+            raise ValueError("sink boom")
+
+        backend = self._broken_backend(sink=bad_sink)
+        self.assertIsNone(backend.get("k"))
+        backend.record_finish_rejected()
+        self.assertEqual(backend.failure_totals()["ledger_unavailable_total"], 1)
+
+    def test_upsert_and_list_failures_counted(self):
+        events = []
+        backend = self._broken_backend(sink=lambda name, amount=1: events.append(name))
+        backend.upsert(LedgerEntry(idempotency_key="u1", status="covered"))
+        backend.list_by_prefix("pending_backlog|")
+        self.assertIn("ledger_upsert_failed", events)
+        self.assertIn("ledger_list_failed", events)
+
+    def test_context_binds_backend_sink(self):
+        backend = MongoLedgerBackend("task-bind")
+        backend._db = lambda: self._Broken()
+        context = DiscoveryContext("task-bind", ledger=DiscoveryLedger(backend))
+        backend.get("k")
+        self.assertEqual(
+            context.metrics_snapshot().get("ledger_get_failed", 0), 1
+        )
+        self.assertEqual(
+            context.metrics_snapshot().get("ledger_unavailable_total", 0), 1
+        )
 
 
 if __name__ == "__main__":
