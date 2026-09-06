@@ -6,7 +6,6 @@ holder 解析与配置开关;不依赖 xing/Mongo/Celery。
 """
 
 import sys
-import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -16,26 +15,28 @@ if str(ARL_ROOT) not in sys.path:
     sys.path.insert(0, str(ARL_ROOT))
 
 
-def _stub_packages():
-    app = sys.modules.get("app")
-    if app is None or not hasattr(app, "__path__"):
-        app = types.ModuleType("app")
-        app.__path__ = [str(ARL_ROOT / "app")]
-        sys.modules["app"] = app
-    services = sys.modules.get("app.services")
-    if services is None:
-        services = types.ModuleType("app.services")
-        services.__path__ = [str(ARL_ROOT / "app" / "services")]
-        sys.modules["app.services"] = services
+# 测试卫生（计划 1 未完成项收敛，Review P2-13 规范）：旧实现注入 app.services
+# 空壳桩后不还原，同进程后续 bootstrap 红线断言（assert_no_shell_pollution）
+# 被引爆。改用共用 bootstrap 的"临时桩窗口 + finally 还原"模式，模块级常量
+# 持有真实引用，免疫其它用例的槽位污染。
+from test._api_unified_bootstrap import (  # noqa: E402
+    assert_no_shell_pollution,
+    load_modules,
+)
 
+_captured = load_modules(
+    "app.services.task_finalizer",
+    "app.services.discovery_context",
+    "app.services.discovery_queue",
+    "app.services.domain_stage_services",
+)
+assert_no_shell_pollution()
 
-_stub_packages()
-
-from app.services import task_finalizer as _tf  # noqa: E402
-from app.services.discovery_context import DiscoveryContext  # noqa: E402
-from app.services.discovery_queue import NewHostQueue  # noqa: E402
-from app.services.domain_stage_services import _run_measured_stage  # noqa: E402
-from app.services.task_finalizer import TaskFinalizer  # noqa: E402
+_tf = _captured["app.services.task_finalizer"]
+DiscoveryContext = _captured["app.services.discovery_context"].DiscoveryContext
+NewHostQueue = _captured["app.services.discovery_queue"].NewHostQueue
+_run_measured_stage = _captured["app.services.domain_stage_services"]._run_measured_stage
+TaskFinalizer = _tf.TaskFinalizer
 
 # Config 引用必须取自生产模块本身:全量收集期 app.config 可能被其他用例替换为 fake,
 # patch 自己捕获的副本不会作用于被测代码的读取路径。

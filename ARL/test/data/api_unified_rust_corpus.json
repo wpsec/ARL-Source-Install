@@ -1,0 +1,324 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "api-unified-unified_normalize",
+      "kind": "unified_normalize",
+      "input": {
+        "values": [
+          "https://example.test/Path?x=1#frag",
+          "http://example.test:80/a",
+          "https://example.test:443",
+          "https://example.test",
+          "https://example.test?a=b",
+          "http://example.test:8080/a?b=2#z",
+          "https://user:pw@example.test/x",
+          "https://a@b@example.test/x",
+          "https://a.b:080/x",
+          "https://a.b:0/x",
+          "https://a.b:/x",
+          "https://a.b:99999/x",
+          "https://a.b:abc/x",
+          "https://example.test./x",
+          "https://example.test../x",
+          "https://a.b/a%2Fb?c=%3Cd#e",
+          "https://a.b/a?b=1#?c",
+          "https://a.b//double//slash",
+          "https://a.b/中文路径?q=中文",
+          "https://a.b/x?a=b c",
+          "https://a.b/x?#empty-query",
+          "https://a.b/;p=1",
+          "https://a.b/%7Euser",
+          "https://a.b:8080",
+          "HTTP%41://a.b"
+        ]
+      },
+      "python": [
+        "https://example.test/Path?x=1",
+        "http://example.test/a",
+        "https://example.test/",
+        "https://example.test/",
+        "https://example.test/?a=b",
+        "http://example.test:8080/a?b=2",
+        "https://example.test/x",
+        "https://example.test/x",
+        "https://a.b:80/x",
+        "https://a.b/x",
+        "https://a.b/x",
+        "https://a.b:99999/x",
+        "https://a.b:abc/x",
+        "https://example.test/x",
+        "https://example.test/x",
+        "https://a.b/a%2Fb?c=%3Cd",
+        "https://a.b/a?b=1",
+        "https://a.b//double//slash",
+        "https://a.b/中文路径?q=中文",
+        "https://a.b/x?a=b c",
+        "https://a.b/x",
+        "https://a.b/;p=1",
+        "https://a.b/%7Euser",
+        "https://a.b:8080/",
+        "HTTP%41://a.b"
+      ],
+      "rust": [
+        "https://example.test/Path?x=1",
+        "http://example.test/a",
+        "https://example.test/",
+        "https://example.test/",
+        "https://example.test/?a=b",
+        "http://example.test:8080/a?b=2",
+        "https://example.test/x",
+        "https://example.test/x",
+        "https://a.b:80/x",
+        "https://a.b/x",
+        "https://a.b/x",
+        "https://a.b:99999/x",
+        "https://a.b:abc/x",
+        "https://example.test/x",
+        "https://example.test/x",
+        "https://a.b/a%2Fb?c=%3Cd",
+        "https://a.b/a?b=1",
+        "https://a.b//double//slash",
+        "https://a.b/中文路径?q=中文",
+        "https://a.b/x?a=b c",
+        "https://a.b/x",
+        "https://a.b/;p=1",
+        "https://a.b/%7Euser",
+        "https://a.b:8080/",
+        "HTTP%41://a.b"
+      ]
+    },
+    {
+      "id": "api-unified-unified_hint",
+      "kind": "unified_hint",
+      "input": {
+        "values": [
+          "https://a.b/v3/api-docs",
+          "https://a.b/SWAGGER.json",
+          "https://a.b/openapi.yaml",
+          "https://a.b/collection.postman.json",
+          "https://a.b/service?singleWsdl",
+          "https://a.b/graphql",
+          "https://a.b/GraphiQL",
+          "https://a.b/openapi.postman.json",
+          "https://a.b/api/users",
+          "https://a.b/swagger-wsdl-x",
+          "",
+          "not a url at all SWAGGER"
+        ]
+      },
+      "python": [
+        "swagger",
+        "swagger",
+        "openapi",
+        "postman",
+        "wsdl",
+        "graphql",
+        "graphql",
+        "postman",
+        "unknown",
+        "swagger",
+        "unknown",
+        "swagger"
+      ],
+      "rust": [
+        "swagger",
+        "swagger",
+        "openapi",
+        "postman",
+        "wsdl",
+        "graphql",
+        "graphql",
+        "postman",
+        "unknown",
+        "swagger",
+        "unknown",
+        "swagger"
+      ]
+    },
+    {
+      "id": "api-unified-unified_method",
+      "kind": "unified_method",
+      "input": {
+        "values": [
+          "get",
+          " GET ",
+          "POST",
+          "post",
+          "put",
+          "DELETE",
+          "patch",
+          "options",
+          "head",
+          "HEAD",
+          "connect",
+          "trace",
+          "weird",
+          "",
+          "   ",
+          "ＧＥＴ",
+          "get|post",
+          "GET;"
+        ]
+      },
+      "python": [
+        "GET",
+        "GET",
+        "POST",
+        "POST",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "OPTIONS",
+        "HEAD",
+        "HEAD",
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "GET"
+      ],
+      "rust": [
+        "GET",
+        "GET",
+        "POST",
+        "POST",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "OPTIONS",
+        "HEAD",
+        "HEAD",
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "GET",
+        "GET"
+      ]
+    },
+    {
+      "id": "api-unified-unified_dedupe",
+      "kind": "unified_dedupe",
+      "input": {
+        "values": [
+          [
+            "https://a.b/u",
+            "GET",
+            "rest",
+            "",
+            "js"
+          ],
+          [
+            "https://a.b/u",
+            "POST",
+            "rest",
+            "",
+            "doc"
+          ],
+          [
+            "https://a.b/u",
+            "GET",
+            "rest",
+            "",
+            "browser"
+          ],
+          [
+            "https://a.b/u",
+            "GET",
+            "rest",
+            "",
+            "js"
+          ],
+          [
+            "https://a.b/u",
+            "GET",
+            "graphql",
+            "",
+            "   "
+          ],
+          [
+            "https://a.b/u",
+            "GET",
+            "rest",
+            "/v1",
+            "page"
+          ],
+          [
+            "https://a.b/u",
+            "GET",
+            "rest",
+            "",
+            "中文"
+          ],
+          [
+            "https://a.b/u",
+            "GET",
+            "rest",
+            "",
+            "abc"
+          ]
+        ]
+      },
+      "python": [
+        [
+          0,
+          [
+            "abc",
+            "browser",
+            "js",
+            "中文"
+          ]
+        ],
+        [
+          1,
+          [
+            "doc"
+          ]
+        ],
+        [
+          4,
+          []
+        ],
+        [
+          5,
+          [
+            "page"
+          ]
+        ]
+      ],
+      "rust": [
+        [
+          0,
+          [
+            "abc",
+            "browser",
+            "js",
+            "中文"
+          ]
+        ],
+        [
+          1,
+          [
+            "doc"
+          ]
+        ],
+        [
+          4,
+          []
+        ],
+        [
+          5,
+          [
+            "page"
+          ]
+        ]
+      ]
+    }
+  ]
+}

@@ -17,7 +17,7 @@ def _unwrap_output(value, kind):
     if isinstance(value, list):
         return value
     if isinstance(value, dict):
-        keys = ("records", "results") if kind in ("extract", "html", "js_endpoint") else ("targets", "results")
+        keys = ("records", "results") if kind in ("extract", "html", "js_endpoint") else ("targets", "results", "values", "groups")
         for key in keys:
             nested = value.get(key)
             if isinstance(nested, list):
@@ -52,17 +52,66 @@ def _canonical_rank_item(item):
     return str(target).strip(), score
 
 
+UNIFIED_ELEMENT_KINDS = ("unified_normalize", "unified_hint", "unified_method")
+
+
+def _canonical_unified_element(item):
+    return str(item if item is not None else "")
+
+
+def _canonical_dedupe_item(item):
+    if isinstance(item, dict):
+        index = item.get("first_index", item.get("index"))
+        sources = item.get("sources", [])
+    elif isinstance(item, (tuple, list)) and len(item) == 2:
+        index, sources = item
+    else:
+        raise ValueError("dedupe 输出记录格式无效")
+    try:
+        index = int(index)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("dedupe 输出下标无效") from exc
+    if not isinstance(sources, list):
+        raise ValueError("dedupe 输出 sources 必须是列表")
+    return [index, [str(source) for source in sources]]
+
+
 def _canonicalize(kind, value):
     raw_items = _unwrap_output(value, kind)
     if kind in ("extract", "html", "js_endpoint"):
         return [_canonical_extract_item(item) for item in raw_items]
     if kind == "rank":
         return [_canonical_rank_item(item) for item in raw_items]
+    if kind in UNIFIED_ELEMENT_KINDS:
+        return [_canonical_unified_element(item) for item in raw_items]
+    if kind == "unified_dedupe":
+        return [_canonical_dedupe_item(item) for item in raw_items]
     raise ValueError("不支持的 corpus 类型: {}".format(kind))
 
 
+def _hashable(item):
+    # 聚合类 kind（unified_dedupe）条目是嵌套列表，需序列化后才能进 set/Counter。
+    if isinstance(item, (list, dict)):
+        return json.dumps(item, ensure_ascii=False, sort_keys=True)
+    return item
+
+
+def _parse_hashable(item):
+    # _hashable 序列化的嵌套条目还原为可展示结构（报告可读性）。
+    if isinstance(item, str):
+        try:
+            return json.loads(item)
+        except ValueError:
+            return item
+    return item
+
+
 def _duplicates(items):
-    return [list(item) for item, count in Counter(items).items() if count > 1]
+    return [
+        item
+        for item, count in Counter(_hashable(item) for item in items).items()
+        if count > 1
+    ]
 
 
 def _case_id(case, index):
@@ -94,15 +143,20 @@ def compare_corpus(payload, strict_order=False):
             errors.append("{}: {}".format(case_id, exc))
             continue
 
-        python_set = set(python_output)
-        rust_set = set(rust_output)
+        python_set = {_hashable(item) for item in python_output}
+        rust_set = {_hashable(item) for item in rust_output}
         missing = sorted(python_set - rust_set)
         unexpected = sorted(rust_set - python_set)
         python_duplicates = _duplicates(python_output)
         rust_duplicates = _duplicates(rust_output)
         order_equal = python_output == rust_output
+        # 统一面逐元素 kind 输出是"每条输入一个输出"，重复值合法（两个输入可
+        # 规范化为同一 URL）；重复门禁只对提取类 kind（记录面去重语义）生效。
+        duplicates_allowed = kind in UNIFIED_ELEMENT_KINDS
         semantic_equal = not (
-            missing or unexpected or python_duplicates or rust_duplicates
+            missing
+            or unexpected
+            or (python_duplicates or rust_duplicates) and not duplicates_allowed
         )
         results.append(
             {
@@ -111,8 +165,14 @@ def compare_corpus(payload, strict_order=False):
                 "ok": semantic_equal and (not strict_order or order_equal),
                 "python_count": len(python_output),
                 "rust_count": len(rust_output),
-                "missing_from_rust": [list(item) for item in missing],
-                "unexpected_in_rust": [list(item) for item in unexpected],
+                "missing_from_rust": [
+                    item if isinstance(item, str) else _parse_hashable(item)
+                    for item in missing
+                ],
+                "unexpected_in_rust": [
+                    item if isinstance(item, str) else _parse_hashable(item)
+                    for item in unexpected
+                ],
                 "python_duplicates": python_duplicates,
                 "rust_duplicates": rust_duplicates,
                 "order_equal": order_equal,
@@ -178,6 +238,23 @@ def _native_case_output(case, native_module):
             [str(host or "") for host in inputs.get("allowed_hosts", [])],
             max(1, int(inputs.get("max_records", 1) or 1)),
         )
+
+    if kind in UNIFIED_ELEMENT_KINDS + ("unified_dedupe",):
+        values = inputs.get("values")
+        if not isinstance(values, list):
+            raise ValueError("{} input.values 必须是列表".format(kind))
+        if kind == "unified_normalize":
+            return native_module.unified_normalize_urls([str(v) for v in values])
+        if kind == "unified_hint":
+            return native_module.unified_document_type_hints([str(v) for v in values])
+        if kind == "unified_method":
+            return native_module.unified_canonical_methods([str(v) for v in values])
+        native_records = []
+        for record in values:
+            if not isinstance(record, (list, tuple)) or len(record) != 5:
+                raise ValueError("unified_dedupe input.values 包含无效记录")
+            native_records.append(tuple(str(field or "") for field in record))
+        return native_module.unified_dedupe_endpoints(native_records)
 
     if kind == "rank":
         records = inputs.get("records")

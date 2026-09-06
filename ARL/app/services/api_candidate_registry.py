@@ -745,6 +745,11 @@ class ApiDocumentQueue:
         self.skipped_scope_count = 0
         self.resumed_skip_count = 0
         self.stage_timeout_stopped = False
+        # 第 10 批：统一面 hint 批量通道观测计数（rust 门禁与 shadow 观察期证据面）。
+        self.backflow_hint_batch_count = 0
+        self.backflow_hint_input_count = 0
+        self.backflow_hint_mismatch_count = 0
+        self.backflow_hint_fallback_count = 0
         self._harvested_index = 0
         # 第 9 批 §8.2/§十二：WAF 熔断归因信号（默认 fetch 写、run 循环读）与
         # 阶段计时（wall/cpu/network_wait，flush 单位毫秒）。
@@ -844,39 +849,82 @@ class ApiDocumentQueue:
 
     # -- 回流与消费 --------------------------------------------------------
 
+    def _batch_document_hints(self, urls: List[str]) -> Dict[str, str]:
+        """批量文档类型分类（第 10 批 Rust 纯数据面接线，计划 6 §9.3）。
+
+        基线恒为 `document_type_hint`：Rust 缺席时 adapter 输出即基线（mode off），
+        shadow 模式双跑比对、rust 模式取安全子集 native 结果——三个模式下本方法
+        返回值与逐条基线一致，行为零变化；mismatch/fallback 经 debug 日志与
+        context metric 显影，不静默。任何异常返回空 map，调用方逐条回退基线。
+        """
+
+        unique = list(dict.fromkeys(str(url or "") for url in urls if str(url or "")))
+        if not unique:
+            return {}
+        try:
+            from .rust_accel import unified_document_type_hints
+        except Exception as exc:
+            logger.debug(
+                "api unified hint adapter unavailable error_type:%s", type(exc).__name__)
+            return {}
+        try:
+            result = unified_document_type_hints(unique)
+        except Exception as exc:
+            logger.debug(
+                "api unified hint batch failed error_type:%s", type(exc).__name__)
+            return {}
+        metrics = getattr(result, "metrics", {}) or {}
+        self.backflow_hint_batch_count += 1
+        self.backflow_hint_input_count += len(unique)
+        if int(metrics.get("mismatch_count", 0) or 0):
+            self.backflow_hint_mismatch_count += int(metrics["mismatch_count"])
+            if self.context is not None:
+                try:
+                    self._record_metric(
+                        "api_unified_hint_mismatch_total", int(metrics["mismatch_count"]))
+                except Exception:
+                    pass
+        if int(metrics.get("fallback_count", 0) or 0):
+            self.backflow_hint_fallback_count += int(metrics["fallback_count"])
+            if self.context is not None:
+                try:
+                    self._record_metric(
+                        "api_unified_hint_fallback_total", int(metrics["fallback_count"]))
+                except Exception:
+                    pass
+        logger.debug(
+            "api unified hint batch mode:%s backend:%s input:%s mismatch:%s fallback:%s elapsed:%.4f",
+            metrics.get("mode"), metrics.get("backend"), len(unique),
+            metrics.get("mismatch_count"), metrics.get("fallback_count"),
+            float(metrics.get("elapsed", 0.0) or 0.0),
+        )
+        values = list(result)
+        if len(values) != len(unique):
+            return {}
+        return dict(zip(unique, values))
+
     def _collect_backflow(self, wih_records: List[Any]) -> int:
         """把记录面与候选图里已发现的 API 文档回流进注册表（JS/页面回流核心通道）。
 
         第 8 批扩展：api_doc_url 记录维持直通；urlfinder_url/page_link 记录只在
         URL 形态命中文档关键词（含第 8 批新增的 graphql 分类）时升级为文档候选，
         使页面链接与 JS 字符串里的 GraphQL/WSDL/Swagger 入口在当前任务内进队。
+        第 10 批：分类判定与登记前的 hint 预取批量化（语义与逐条基线一致）。
         """
 
         registered = 0
         max_targets = max(1, int(self.config.get("API_DOCUMENT_MAX_TARGETS", 200) or 200))
-        for record in wih_records or []:
-            try:
-                record_type = str(
-                    getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip()
-                content = str(getattr(record, "content", "") or "").strip()
-                if not content:
-                    continue
-                if record_type != "api_doc_url" and not (
-                        record_type in _BACKFLOW_HINT_RECORD_TYPES
-                        and document_type_hint(content) != "unknown"):
-                    continue
-                _doc, created = self._register_within_budget(
-                    content,
-                    source=str(getattr(record, "source", "") or "intel"),
-                    parent_target=str(getattr(record, "site", "") or ""),
-                    priority=_DOC_PRIORITY_EVIDENCE,
-                    max_targets=max_targets,
-                )
-                if created:
-                    registered += 1
-            except Exception as exc:
-                logger.debug(
-                    "api doc backflow record skipped error_type:%s", type(exc).__name__)
+        record_list = list(wih_records or [])
+        graph_candidates: List[Tuple[str, str, str]] = []
+        pending_hints: List[str] = []
+        for record in record_list:
+            record_type = str(
+                getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip()
+            content = str(getattr(record, "content", "") or "").strip()
+            if not content:
+                continue
+            if record_type == "api_doc_url" or record_type in _BACKFLOW_HINT_RECORD_TYPES:
+                pending_hints.append(content)
         if self.context is not None:
             try:
                 for graph_item in self.context.candidate_registry.values():
@@ -889,12 +937,58 @@ class ApiDocumentQueue:
                     candidate = str(getattr(graph_item, "candidate", "") or "").strip()
                     if not candidate:
                         continue
+                    graph_candidates.append((
+                        candidate,
+                        sorted(getattr(graph_item, "sources", set()) or {"graph"})[0],
+                        str(getattr(graph_item, "parent_target", "") or ""),
+                    ))
+                    pending_hints.append(candidate)
+            except Exception as exc:
+                logger.debug(
+                    "api doc backflow graph scan failed error_type:%s", type(exc).__name__)
+        hint_map = self._batch_document_hints(pending_hints)
+
+        def _hint_of(url: str) -> str:
+            return hint_map.get(url, "")
+
+        for record in record_list:
+            try:
+                record_type = str(
+                    getattr(record, "recordType", "") or getattr(record, "record_type", "") or "").strip()
+                content = str(getattr(record, "content", "") or "").strip()
+                if not content:
+                    continue
+                hint = _hint_of(content) or (
+                    document_type_hint(content)
+                    if record_type in _BACKFLOW_HINT_RECORD_TYPES else ""
+                )
+                if record_type != "api_doc_url" and not (
+                        record_type in _BACKFLOW_HINT_RECORD_TYPES
+                        and hint != "unknown"):
+                    continue
+                _doc, created = self._register_within_budget(
+                    content,
+                    source=str(getattr(record, "source", "") or "intel"),
+                    parent_target=str(getattr(record, "site", "") or ""),
+                    priority=_DOC_PRIORITY_EVIDENCE,
+                    max_targets=max_targets,
+                    type_hint=hint,
+                )
+                if created:
+                    registered += 1
+            except Exception as exc:
+                logger.debug(
+                    "api doc backflow record skipped error_type:%s", type(exc).__name__)
+        if self.context is not None:
+            try:
+                for candidate, graph_source, graph_parent in graph_candidates:
                     _doc, created = self._register_within_budget(
                         candidate,
-                        source=sorted(getattr(graph_item, "sources", set()) or {"graph"})[0],
-                        parent_target=str(getattr(graph_item, "parent_target", "") or ""),
+                        source=graph_source,
+                        parent_target=graph_parent,
                         priority=_DOC_PRIORITY_EVIDENCE,
                         max_targets=max_targets,
+                        type_hint=_hint_of(candidate),
                     )
                     if created:
                         registered += 1
@@ -912,15 +1006,18 @@ class ApiDocumentQueue:
         depth: int = 0,
         priority: int = _DOC_PRIORITY_SEED,
         max_targets: int = 200,
+        type_hint: str = "",
     ) -> Tuple[ApiDocumentCandidate, bool]:
         # 范围门禁（Review 第 8 批复审 P0-02）：seed/记录/候选图/解析新引用
         # 四条入队通道都汇流到本方法，越界 URL 一律不登记、不消费、不发请求
         # （外域文档入口默认 fetch 是范围污染与 SSRF 面，flag-off 不经此路）。
+        # type_hint（第 10 批）：批量预取分类透传；空值即逐条基线计算，语义不变。
+        hint = type_hint if type_hint in API_DOCUMENT_TYPE_HINTS else document_type_hint(url)
         if not self._url_in_scope(url):
             self.skipped_scope_count += 1
             self._record_metric("api_document_out_of_scope_total")
             placeholder = ApiDocumentCandidate(
-                task_id=self.registry.task_id, url=url, type_hint=document_type_hint(url),
+                task_id=self.registry.task_id, url=url, type_hint=hint,
                 source=source, depth=depth, priority=priority, status="skipped",
             )
             return placeholder, False
@@ -931,14 +1028,14 @@ class ApiDocumentQueue:
         if over_budget:
             self.skipped_budget_count += 1
             placeholder = ApiDocumentCandidate(
-                task_id=self.registry.task_id, url=url, type_hint=document_type_hint(url),
+                task_id=self.registry.task_id, url=url, type_hint=hint,
                 source=source, depth=depth, priority=priority, status="skipped",
             )
             return placeholder, False
         return self.registry.register_document(
             url,
             source=source,
-            type_hint=document_type_hint(url),
+            type_hint=hint,
             parent_url=parent_url,
             parent_target=parent_target,
             depth=depth,
@@ -1392,6 +1489,11 @@ class ApiDocumentQueue:
                 self.context.record_metric("api_document_budget_skipped_total", self.skipped_budget_count)
                 self.context.record_metric("api_document_resumed_skip_total", self.resumed_skip_count)
                 self.context.record_metric("api_document_skipped_scope_total", self.skipped_scope_count)
+                # 第 10 批 Rust 门禁观测面：hint 批量通道调用量与输入量。
+                self.context.record_metric(
+                    "api_unified_hint_batch_total", self.backflow_hint_batch_count)
+                self.context.record_metric(
+                    "api_unified_hint_input_total", self.backflow_hint_input_count)
                 # P0-04 透出：诊断面驻留条数（整数计数；摘要本体不进 metrics）。
                 self.context.record_metric(
                     "api_document_schema_diagnostics_total",

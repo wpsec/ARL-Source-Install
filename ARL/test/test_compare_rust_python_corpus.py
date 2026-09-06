@@ -85,5 +85,57 @@ class TestCompareRustPythonCorpus(unittest.TestCase):
         self.assertEqual("native_vs_python_golden", report["execution_mode"])
 
 
+_UNIFIED_CORPUS_PATH = Path(__file__).resolve().parent / "data" / "api_unified_rust_corpus.json"
+
+
+class TestApiUnifiedRustCorpus(unittest.TestCase):
+    """第 10 批统一面 golden corpus 门禁（python=生产基线实测，rust=编译 .so 实测）。
+
+    本测试用冻结的 rust 字段验证 corpus 自洽；真机 .so 逐条复验由容器内
+    `compare_rust_python_corpus.py --run-native --strict-order` 执行（构建证据
+    记录于计划 6 第 10 批实施节）。rust 字段为空的 corpus 视为未回填，失败。
+    """
+
+    def _load(self):
+        with _UNIFIED_CORPUS_PATH.open("r", encoding="utf-8") as stream:
+            return json.load(stream)
+
+    def test_unified_corpus_strict_equal(self):
+        report = compare_corpus(self._load(), strict_order=True)
+
+        self.assertEqual([], report["errors"])
+        self.assertEqual(4, report["case_count"])
+        self.assertTrue(report["ok"], json.dumps(report["cases"], ensure_ascii=False)[:800])
+
+    def test_unified_kinds_dispatch_to_native_functions(self):
+        class _Recorder:
+            def __init__(self):
+                self.calls = []
+
+            def unified_normalize_urls(self, values):
+                self.calls.append(("normalize", values))
+                return list(values)
+
+            def unified_document_type_hints(self, values):
+                self.calls.append(("hint", values))
+                return ["unknown"] * len(values)
+
+            def unified_canonical_methods(self, values):
+                self.calls.append(("method", values))
+                return ["GET"] * len(values)
+
+            def unified_dedupe_endpoints(self, records):
+                self.calls.append(("dedupe", records))
+                return []
+
+        native = _Recorder()
+        report = compare_native_corpus(self._load(), native_module=native)
+
+        self.assertEqual(
+            ["normalize", "hint", "method", "dedupe"], [call[0] for call in native.calls]
+        )
+        self.assertFalse(report["ok"])  # 桩输出必然与 golden 不一致
+
+
 if __name__ == "__main__":
     unittest.main()

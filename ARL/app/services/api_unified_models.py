@@ -322,6 +322,35 @@ def canonical_method(method: Any) -> str:
     return text if text in HTTP_METHODS else "GET"
 
 
+def merge_endpoint_records(
+    records: List[Tuple[str, str, str, str, str]],
+) -> List[Tuple[int, List[str]]]:
+    """Endpoint 记录分组去重的 Python 基线（Rust `unified_dedupe_endpoints` 事实源）。
+
+    键 = (url, method, api_type, path_template) 规范化字段全等——与
+    `UnifiedApiEndpoint.__post_init__` 的 digest 输入面及
+    `ApiCandidateRegistry.register_endpoint_with_status` 的
+    `scoped_idempotency_key` 分组语义一致；组按首现顺序（OrderedDict 语义），
+    sources = 组内非空 strip 去重集合按 codepoint 序（对齐 add_source +
+    to_dict 的 sorted(sources)）。第 10 批 golden 门禁与 adapter fallback 共用。
+    """
+
+    order: List[Tuple[str, str, str, str]] = []
+    groups: Dict[Tuple[str, str, str, str], Tuple[int, set]] = {}
+    for index, record in enumerate(records or []):
+        url, method, api_type, path_template, source = record
+        key = (str(url or ""), str(method or ""), str(api_type or ""), str(path_template or ""))
+        entry = groups.get(key)
+        if entry is None:
+            entry = (index, set())
+            groups[key] = entry
+            order.append(key)
+        text = str(source or "").strip()
+        if text:
+            entry[1].add(text)
+    return [(groups[key][0], sorted(groups[key][1])) for key in order]
+
+
 # ---------------------------------------------------------------------------
 # 参数与鉴权摘要
 # ---------------------------------------------------------------------------

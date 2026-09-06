@@ -132,6 +132,46 @@ class TestWebInfoIntel(unittest.TestCase):
         self.assertEqual(1, results.metrics["network_request_count"])
         self.assertGreaterEqual(results.metrics["network_wait_sec"], 0)
 
+    @patch("app.services.js_intel_scan.utils.check_dns_policy_for_url")
+    @patch("app.services.js_intel_scan.utils.http_req")
+    def test_js_intel_graphql_wsdl_urls_emit_api_doc_records(self):
+        """第 10 批口径：JS 发现 GraphQL/WSDL 文档入口发射 api_doc_url 记录。
+
+        行为与 native/Python 两侧一致（三面关键词钉 + golden 门禁），故不断言
+        backend；legacy 请求面不因此扩大（`_DOC_KEYWORDS` 不扫 graphql 形态）。
+        """
+        mock_dns_policy.return_value = (True, {"reason": "pass", "resolver_ips": ["1.1.1.1"], "system_ips": ["1.1.1.1"]})
+        mock_http_req.return_value = _FakeResponse(
+            """
+            const gql = "/graphql";
+            const ide = "/graphiql";
+            const ws = "/service?singleWsdl";
+            fetch("/api/v1/orders");
+            """,
+            content_type="application/javascript",
+        )
+        records = [
+            WihRecord(
+                "urlfinder_js",
+                "https://example.com/static/app.js",
+                "https://example.com",
+                "https://example.com",
+                1,
+            )
+        ]
+        results = run_js_intel_scan(["https://example.com"], records)
+        result_map = {(item.recordType, item.content) for item in results}
+
+        for url in (
+            "https://example.com/graphql",
+            "https://example.com/graphiql",
+            "https://example.com/service?singleWsdl",
+        ):
+            self.assertIn(("api_doc_url", url), result_map)
+            self.assertIn(("urlfinder_url", url), result_map)
+        self.assertIn(("urlfinder_url", "https://example.com/api/v1/orders"), result_map)
+        self.assertNotIn(("api_doc_url", "https://example.com/api/v1/orders"), result_map)
+
     @patch("app.services.api_doc_scan.utils.check_dns_policy_for_url")
     @patch("app.services.api_doc_scan.utils.http_req")
     def test_api_doc_scan_parses_openapi(self, mock_http_req, mock_dns_policy):

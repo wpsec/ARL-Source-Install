@@ -722,10 +722,22 @@ fn extract_html_candidates_core(
 }
 
 fn is_api_doc_candidate(value: &str) -> bool {
+    // 第 10 批（计划 6 §9.3/余留项）：与 Python 统一面 `_TYPE_HINT_KEYWORDS`
+    // 的关键词集合同口径（含第 7 批 wsdl、第 8 批 graphql/graphiql）。
+    // 只影响 api_doc_url 记录发射面；legacy 请求面（ApiDocScanner._DOC_KEYWORDS）
+    // 维持四 token 不变，flag-off 的文档扫描行为零变化。
     let lower = value.to_lowercase();
-    ["swagger", "openapi", "api-docs", "postman"]
-        .iter()
-        .any(|token| lower.contains(token))
+    [
+        "swagger",
+        "openapi",
+        "api-docs",
+        "postman",
+        "wsdl",
+        "graphql",
+        "graphiql",
+    ]
+    .iter()
+    .any(|token| lower.contains(token))
 }
 
 fn extract_js_endpoint_candidates_core(
@@ -894,6 +906,211 @@ fn rank_sensitive_targets_core(
     targets
 }
 
+// ---------------------------------------------------------------------------
+// 第 10 批：统一 API 面纯数据批量函数（计划 6 §9.3 第三阶段）。
+// 语义事实源 = CPython 3.10 urllib.parse.urlsplit + discovery_context.normalize_url，
+// 仅覆盖 Python 适配器预检放行的"安全子集"；子集外输入原样返回（与 Python
+// 基线不可解析分支一致），跨版本行为漂移由 adapter shadow 双跑与 golden 门禁拦截。
+// ---------------------------------------------------------------------------
+
+fn ascii_lowercase_host(host: &str) -> String {
+    host.to_ascii_lowercase().trim_end_matches('.').to_string()
+}
+
+/// 与 Python `int(port, 10)` 在"纯数字"输入下等价；越界/溢出返回 None。
+fn parse_safe_port(port: &str) -> Option<u32> {
+    if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    port.parse::<u32>().ok().filter(|value| *value <= 65535)
+}
+
+/// `normalize_url`（discovery_context）的安全子集移植。
+///
+/// 前置假设（由 Python adapter 预检保证，Rust 侧防御性复检）：
+/// - 调用方已做 `str.strip()`；
+/// - scheme 为小写 `http`/`https`，netloc 为纯 ASCII 且无方括号；
+/// - 全串不含 \t \r \n（CPython urlsplit 会先整串删除它们）。
+/// 子集外返回原文；行为分歧由 shadow 双跑计数暴露。
+fn normalize_url_unified(value: &str) -> String {
+    let text = value.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+    if text.contains(['\t', '\r', '\n']) {
+        return value.to_string();
+    }
+    let (scheme, tail) = if let Some(rest) = text.strip_prefix("http://") {
+        ("http", rest)
+    } else if let Some(rest) = text.strip_prefix("https://") {
+        ("https", rest)
+    } else {
+        return value.to_string();
+    };
+    // _splitnetloc：netloc 结束于最早的 '/' '?' '#'。
+    let netloc_end = tail
+        .find(['/', '?', '#'])
+        .unwrap_or(tail.len());
+    let (netloc, rest) = (&tail[..netloc_end], &tail[netloc_end..]);
+    if netloc.is_empty()
+        || !netloc.is_ascii()
+        || netloc.contains(['[', ']'])
+        || netloc
+            .chars()
+            .any(|c| (c as u32) < 0x20 || c as u32 == 0x7f)
+    {
+        return value.to_string();
+    }
+    // _hostinfo：rpartition('@') 去 userinfo；首个 ':' 分 host/port。
+    let hostinfo = match netloc.rsplit_once('@') {
+        Some((_, after)) => after,
+        None => netloc,
+    };
+    let (host, port_part) = match hostinfo.split_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (hostinfo, None),
+    };
+    let host = ascii_lowercase_host(host);
+    if host.is_empty() {
+        return value.to_string();
+    }
+    // port 属性语义：空串→None；纯数字且 0-65535；0 为 falsy→不保留；
+    // http:80 / https:443 为默认端口→去除；其余以十进制整数重渲染。
+    let port: u32 = match port_part {
+        None => 0,
+        Some("") => 0,
+        Some(raw) => match parse_safe_port(raw) {
+            Some(parsed) => parsed,
+            None => return value.to_string(),
+        },
+    };
+    let mut netloc_out = host;
+    if port != 0 && !((scheme == "http" && port == 80) || (scheme == "https" && port == 443)) {
+        netloc_out.push(':');
+        netloc_out.push_str(&port.to_string());
+    }
+    // rest：先切 fragment（丢弃），再切 query（原样保留）。
+    let (before_frag, _fragment) = match rest.split_once('#') {
+        Some((left, frag)) => (left, frag),
+        None => (rest, ""),
+    };
+    let (path, query) = match before_frag.split_once('?') {
+        Some((path, query)) => (path, query),
+        None => (before_frag, ""),
+    };
+    let path_out = if path.is_empty() { "/" } else { path };
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push_str(scheme);
+    out.push_str("://");
+    out.push_str(&netloc_out);
+    out.push_str(path_out);
+    if !query.is_empty() {
+        out.push('?');
+        out.push_str(query);
+    }
+    out
+}
+
+fn canonical_method_unified(method: &str) -> String {
+    let text = method.trim().to_ascii_uppercase();
+    const METHODS: [&str; 7] = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"];
+    if METHODS.contains(&text.as_str()) {
+        text
+    } else {
+        "GET".to_string()
+    }
+}
+
+/// 与 Python `_TYPE_HINT_KEYWORDS`（api_candidate_registry）顺序与映射冻结一致。
+fn document_type_hint_unified(url: &str) -> &'static str {
+    const HINTS: [(&str, &str); 7] = [
+        ("postman", "postman"),
+        ("openapi", "openapi"),
+        ("swagger", "swagger"),
+        ("api-docs", "swagger"),
+        ("wsdl", "wsdl"),
+        ("graphql", "graphql"),
+        ("graphiql", "graphql"),
+    ];
+    let lowered = url.trim().to_lowercase();
+    for (keyword, hint) in HINTS {
+        if lowered.contains(keyword) {
+            return hint;
+        }
+    }
+    "unknown"
+}
+
+/// Endpoint 记录按键分组 + sources 合并（§9.3 第 3/4 条的纯数据面）。
+///
+/// 键 = (url, method, api_type, path_template)（digest 前的规范化字段全等，
+/// 与 Registry `scoped_idempotency_key` 分组语义一致）；组按首现顺序输出，
+/// sources = 组内非空 strip 后的去重集合按字典序（对齐 `add_source`+`sorted`）。
+fn dedupe_endpoint_records_core(
+    records: &[(String, String, String, String, String)],
+) -> Vec<(usize, Vec<String>)> {
+    let mut order: Vec<(String, String, String, String)> = Vec::new();
+    let mut groups: HashMap<(String, String, String, String), (usize, HashSet<String>)> =
+        HashMap::new();
+    for (index, (url, method, api_type, path_template, source)) in records.iter().enumerate() {
+        let key = (
+            url.clone(),
+            method.clone(),
+            api_type.clone(),
+            path_template.clone(),
+        );
+        let entry = groups.entry(key.clone()).or_insert_with(|| {
+            order.push(key.clone());
+            (index, HashSet::new())
+        });
+        let cleaned = source.trim();
+        if !cleaned.is_empty() {
+            entry.1.insert(cleaned.to_string());
+        }
+    }
+    order
+        .into_iter()
+        .map(|key| {
+            let (first_index, sources) = groups.remove(&key).expect("group present");
+            let mut merged: Vec<String> = sources.into_iter().collect();
+            merged.sort();
+            (first_index, merged)
+        })
+        .collect()
+}
+
+#[cfg(not(test))]
+#[pyfunction]
+fn unified_normalize_urls(values: Vec<String>) -> PyResult<Vec<String>> {
+    Ok(values.iter().map(|item| normalize_url_unified(item)).collect())
+}
+
+#[cfg(not(test))]
+#[pyfunction]
+fn unified_canonical_methods(values: Vec<String>) -> PyResult<Vec<String>> {
+    Ok(values
+        .iter()
+        .map(|item| canonical_method_unified(item))
+        .collect())
+}
+
+#[cfg(not(test))]
+#[pyfunction]
+fn unified_document_type_hints(values: Vec<String>) -> PyResult<Vec<String>> {
+    Ok(values
+        .iter()
+        .map(|item| document_type_hint_unified(item).to_string())
+        .collect())
+}
+
+#[cfg(not(test))]
+#[pyfunction]
+fn unified_dedupe_endpoints(
+    records: Vec<(String, String, String, String, String)>,
+) -> PyResult<Vec<(usize, Vec<String>)>> {
+    Ok(dedupe_endpoint_records_core(&records))
+}
+
 #[cfg(not(test))]
 #[pyfunction]
 fn extract_urlfinder_candidates(
@@ -969,6 +1186,10 @@ fn arl_accel(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rank_sensitive_targets, m)?)?;
     m.add_function(wrap_pyfunction!(extract_html_candidates, m)?)?;
     m.add_function(wrap_pyfunction!(extract_js_endpoint_candidates, m)?)?;
+    m.add_function(wrap_pyfunction!(unified_normalize_urls, m)?)?;
+    m.add_function(wrap_pyfunction!(unified_canonical_methods, m)?)?;
+    m.add_function(wrap_pyfunction!(unified_document_type_hints, m)?)?;
+    m.add_function(wrap_pyfunction!(unified_dedupe_endpoints, m)?)?;
     Ok(())
 }
 
@@ -1175,6 +1396,111 @@ mod tests {
             .iter()
             .any(|record| record.0 == "domain" && record.1 == "api.example.test"));
         assert!(!records.iter().any(|record| record.1 == "other.test"));
+    }
+
+    #[test]
+    fn unified_normalize_matches_python_safe_subset() {
+        // 期望值全部来自 CPython 3.10 normalize_url 实测（golden 见 corpus fixture）。
+        let cases = [
+            ("https://Example.test/Path?x=1#frag", "https://example.test/Path?x=1"),
+            ("http://example.test:80/a", "http://example.test/a"),
+            ("https://example.test:443", "https://example.test/"),
+            ("http://example.test:8080/a?b=2#z", "http://example.test:8080/a?b=2"),
+            ("https://example.test", "https://example.test/"),
+            ("https://example.test?a=b", "https://example.test/?a=b"),
+            ("https://user:pw@example.test/x", "https://example.test/x"),
+            ("https://a.b:080/x", "https://a.b:80/x"),
+            ("https://a.b:0/x", "https://a.b/x"),
+            ("https://a.b:/x", "https://a.b/x"),
+            ("https://a.b:99999/x", "https://a.b:99999/x"),
+            ("https://a.b:abc/x", "https://a.b:abc/x"),
+            ("https://example.test./x", "https://example.test/x"),
+            ("https://a.b/a%2Fb?c=%3Cd#e", "https://a.b/a%2Fb?c=%3Cd"),
+            ("https://a.b/a?b=1#?c", "https://a.b/a?b=1"),
+            ("", ""),
+            ("HTTPS://a.b/x", "HTTPS://a.b/x"),
+            ("ftp://a.b/x", "ftp://a.b/x"),
+            ("/rel/path", "/rel/path"),
+            ("https://a.b\tc/x", "https://a.b\tc/x"),
+            ("https://[::1]:8080/x", "https://[::1]:8080/x"),
+            ("https://:8080/x", "https://:8080/x"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(normalize_url_unified(input), expected, "input: {}", input);
+        }
+    }
+
+    #[test]
+    fn unified_canonical_methods_align() {
+        assert_eq!(canonical_method_unified(" get "), "GET");
+        assert_eq!(canonical_method_unified("POST"), "POST");
+        assert_eq!(canonical_method_unified("weird"), "GET");
+        assert_eq!(canonical_method_unified(""), "GET");
+        assert_eq!(canonical_method_unified("TRACE"), "GET");
+    }
+
+    #[test]
+    fn unified_document_type_hints_align() {
+        assert_eq!(document_type_hint_unified("https://a.b/v3/API-DOCS"), "swagger");
+        assert_eq!(document_type_hint_unified("https://a.b/openapi.json"), "openapi");
+        assert_eq!(document_type_hint_unified("https://a.b/x?y=postman"), "postman");
+        assert_eq!(document_type_hint_unified("https://a.b/s?singleWsdl"), "wsdl");
+        assert_eq!(document_type_hint_unified("https://a.b/GraphiQL"), "graphql");
+        // 顺序即优先级：postman 先于 openapi。
+        assert_eq!(
+            document_type_hint_unified("https://a.b/openapi.postman.json"),
+            "postman"
+        );
+        assert_eq!(document_type_hint_unified("https://a.b/api/users"), "unknown");
+    }
+
+    #[test]
+    fn unified_dedupe_merges_sources_in_first_seen_order() {
+        let records: Vec<(String, String, String, String, String)> = [
+            ("https://a.b/u", "GET", "rest", "", "js"),
+            ("https://a.b/u", "POST", "rest", "", "doc"),
+            ("https://a.b/u", "GET", "rest", "", "browser"),
+            ("https://a.b/u", "GET", "graphql", "", ""),
+            ("https://a.b/u", "GET", "rest", "/v1", "page"),
+        ]
+        .into_iter()
+        .map(|(a, b, c, d, e)| {
+            (
+                a.to_string(),
+                b.to_string(),
+                c.to_string(),
+                d.to_string(),
+                e.to_string(),
+            )
+        })
+        .collect();
+        let merged = dedupe_endpoint_records_core(&records);
+        assert_eq!(merged.len(), 4);
+        assert_eq!(merged[0].0, 0);
+        assert_eq!(merged[0].1, vec!["browser".to_string(), "js".to_string()]);
+        assert_eq!(merged[1].0, 1);
+        assert_eq!(merged[2].0, 3);
+        assert!(merged[2].1.is_empty());
+        assert_eq!(merged[3].0, 4);
+    }
+
+    #[test]
+    fn api_doc_keywords_align_with_unified_type_hints() {
+        // 第 10 批口径钉：Rust 面必须覆盖统一面 _TYPE_HINT_KEYWORDS 全部关键词；
+        // 非文档形态不误报。Python 镜像钉见 ARL/test/test_rust_accel.py。
+        for url in [
+            "https://example.test/swagger.json",
+            "https://example.test/openapi.yaml",
+            "https://example.test/v3/api-docs",
+            "https://example.test/collection.postman.json",
+            "https://example.test/service?singleWsdl",
+            "https://example.test/graphql",
+            "https://example.test/graphiql",
+        ] {
+            assert!(is_api_doc_candidate(url), "{} should be doc candidate", url);
+        }
+        assert!(!is_api_doc_candidate("https://example.test/api/users"));
+        assert!(!is_api_doc_candidate("https://example.test/static/app.js"));
     }
 
     #[test]

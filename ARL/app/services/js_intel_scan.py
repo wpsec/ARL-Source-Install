@@ -28,6 +28,8 @@ from .discovery_context import register_intel_candidate
 logger = utils.get_logger()
 
 try:
+    # 直接绑定可接受：三面口径一致性由 test_rust_accel.TestApiDocKeywordAlignment
+    # （源码钉）+ golden corpus --run-native（编译钉）双重门禁防漂移。
     from .rust_accel import extract_js_endpoint_candidates as rust_extract_js_endpoint_candidates
 except Exception as exc:
     logger.warning(
@@ -163,10 +165,19 @@ class JsIntelScanner:
 
     @staticmethod
     def _is_api_doc_candidate(url: str) -> bool:
+        # 与 Rust 原生面 lib.rs::is_api_doc_candidate 及统一面 `_TYPE_HINT_KEYWORDS`
+        # 关键词集合同口径（第 10 批对齐，计划 6 §9.3）；两侧漂移会被
+        # rust_accel_golden_corpus 门禁拦截。legacy 请求面 `_DOC_KEYWORDS` 不变。
         lowered = str(url or "").lower()
         if not lowered:
             return False
-        return any(token in lowered for token in ("swagger", "openapi", "api-docs", "postman"))
+        return any(
+            token in lowered
+            for token in (
+                "swagger", "openapi", "api-docs", "postman",
+                "wsdl", "graphql", "graphiql",
+            )
+        )
 
     def _extract_endpoint_records(self, js_url: str, text: str):
         for pattern in self._ENDPOINT_PATTERNS:

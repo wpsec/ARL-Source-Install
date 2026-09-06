@@ -498,6 +498,44 @@ P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P
   R6 claim lease 回收;`config_lease_sec` 读取口径同 §三);Endpoint 状态机
   `queued→degraded` 新合法边(R6 前枚举 frozen 于 §4.1,本条为增量修订)。
 
+### 4.18 第 10 批 Rust 纯数据层实施面(2026-09-06 登记,已实施)
+
+- **文档关键词三面同口径**:`lib.rs::is_api_doc_candidate` 与
+  `js_intel_scan._is_api_doc_candidate` 关键词集合 = `_TYPE_HINT_KEYWORDS`
+  keywords 全集 `{postman, openapi, swagger, api-docs, wsdl, graphql,
+  graphiql}`(源码钉 `test_rust_accel.TestApiDocKeywordAlignment` 断言三面
+  集合相等)。变化面 = `api_doc_url` 记录发射(JS/页面发现的 graphql/wsdl
+  形态 URL 双记录 api_doc_url+urlfinder_url);**不变面** =
+  `ApiDocScanner._DOC_KEYWORDS`(四 token,legacy 文档扫描请求面)与 js 静态
+  关键字表(第 8 批 P0-05 决策维持)。`urlfinder_url` 等既有 record_type 的
+  WihRecord 字段结构与 source 聚合语义不变(§一/§二口径)。
+- **Rust unified 批量函数语义契约**:native 四函数仅在 Python adapter
+  安全子集内被生产消费(`unified_normalize_urls` 输入 = 小写 http(s)+纯 ASCII
+  netloc、无方括号、无 \t\r\n、无 C0 控制字符;hint/method = 纯可打印
+  ASCII;IPv6/非 ASCII/大写 scheme/控制字符恒走 Python 基线)——跨 CPython
+  版本 urlsplit 边缘行为(控制字符剥离、WHATWG lstrip、bracketed IPv6 校验、
+  Unicode case mapping)不在 Rust 复刻范围,子集外 native 直调属测试面。
+  输出逐字节等于 `discovery_context.normalize_url` /
+  `api_candidate_registry.document_type_hint` /
+  `api_unified_models.canonical_method` / `merge_endpoint_records`,golden
+  事实源 `test/data/api_unified_rust_corpus.json`(`--run-native
+  --strict-order` 编译钉,python:3.10.20=生产版本实测)。
+- **配置键(§三 14 键之外的性能层键,getattr 软读)**:
+  `RUST_ACCEL_API_UNIFIED_MODE`(off|shadow|rust,默认 shadow;非法值收敛
+  shadow)。shadow=双跑、输出恒为 Python 基线、mismatch 显影;rust 模式
+  启用前置条件:shadow 观察 mismatch 恒 0 + corpus 编译钉过 + 本函数 CPU
+  闸达标(normalize/method 达标,hint/dedupe 按 2026-09-06 aarch64 基准
+  **不达标不得升级**)。
+- **观测指标(§十二增补)**:`api_unified_hint_batch_total`/
+  `api_unified_hint_input_total`(queue 收口 flush)、
+  `api_unified_hint_mismatch_total`/`api_unified_hint_fallback_total`
+  (逐批事件计数);进程内 `rust_accel.get_stats()` 新增
+  `unified_{normalize,hint,method,dedupe}_calls/_fallbacks` 与
+  `unified_shadow_mismatches`。
+- **比较器契约扩展(corpus kind)**:`unified_normalize/unified_hint/
+  unified_method`(逐元素,重复输出值合法)、`unified_dedupe`(聚合分组);
+  既有 extract/html/js_endpoint/rank kind 的去重语义门禁不变。
+
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 
 golden 基线(`current_parser_baseline.json`,record 数:openapi3 json/yaml 各 9、swagger2 8、postman 9)

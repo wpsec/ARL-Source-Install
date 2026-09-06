@@ -174,3 +174,90 @@ class TestRustAccelerationAdapter(unittest.TestCase):
             after["rank_fallbacks"],
         )
         self.assertTrue(after["last_rank_fallback_reason"])
+
+
+class TestApiDocKeywordAlignment(unittest.TestCase):
+    """第 10 批口径钉：Rust 原生面、Python 镜像、统一面关键词集合保持一致。
+
+    三面漂移会让 golden corpus 静默失去意义，且本机通常无 arl_accel，
+    只能以源码文本为事实源做结构校验（ast/定位解析，不做行为模拟）。
+    """
+
+    _ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+    def _python_mirror_tokens(self):
+        import ast
+
+        tree = ast.parse(
+            (self._ROOT / "app" / "services" / "js_intel_scan.py").read_text(encoding="utf-8")
+        )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "_is_api_doc_candidate":
+                return {
+                    item.value
+                    for item in ast.walk(node)
+                    if isinstance(item, ast.Constant)
+                    and isinstance(item.value, str)
+                    and item.value  # 排除 str(url or "") 的空串常量
+                }
+        raise AssertionError("js_intel_scan._is_api_doc_candidate not found")
+
+    def _rust_tokens(self):
+        text = (self._ROOT / "native" / "arl_accel" / "src" / "lib.rs").read_text(encoding="utf-8")
+        start = text.index("fn is_api_doc_candidate")
+        body = text[start : text.index("\nfn ", start + 10)]
+        return set(__import__("re").findall(r'"([a-z0-9-]+)"', body))
+
+    def _unified_hint_keywords(self):
+        import ast
+
+        tree = ast.parse(
+            (self._ROOT / "app" / "services" / "api_candidate_registry.py").read_text(
+                encoding="utf-8"
+            )
+        )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                value = node.value
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names = [node.target.id]
+                value = node.value
+            else:
+                continue
+            if "_TYPE_HINT_KEYWORDS" in names and isinstance(value, ast.Tuple):
+                return {
+                    pair.elts[0].value
+                    for pair in value.elts
+                    if isinstance(pair, ast.Tuple) and len(pair.elts) == 2
+                }
+        raise AssertionError("_TYPE_HINT_KEYWORDS not found")
+
+    def test_three_faces_share_same_doc_keyword_set(self):
+        expected = {
+            "swagger", "openapi", "api-docs", "postman",
+            "wsdl", "graphql", "graphiql",
+        }
+        self.assertEqual(expected, self._unified_hint_keywords())
+        self.assertEqual(expected, self._python_mirror_tokens())
+        self.assertEqual(expected, self._rust_tokens())
+
+    def test_legacy_doc_keywords_stay_narrow(self):
+        """flag-off 请求面不变钉：ApiDocScanner._DOC_KEYWORDS 维持第 1 批四 token。"""
+        import ast
+
+        tree = ast.parse(
+            (self._ROOT / "app" / "services" / "api_doc_scan.py").read_text(encoding="utf-8")
+        )
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "_DOC_KEYWORDS"
+                    for target in node.targets
+                )
+            ):
+                tokens = {item.value for item in node.value.elts}
+                self.assertEqual({"swagger", "openapi", "api-docs", "postman"}, tokens)
+                return
+        raise AssertionError("_DOC_KEYWORDS not found")
