@@ -57,7 +57,12 @@ class TestKscanFingerprintJson(unittest.TestCase):
                 kscan_module._CACHE = old_cache
                 kscan_module._MISSING_LOGGED = old_missing_logged
 
-            rule_map = {item["name"]: item["human_rule"] for item in rules}
+            # loader 设计=同名多条目（fingerprint_cache 按名合并消费）；
+            # 聚合全部条目再断言，避免同名后写覆盖假失败。
+            rule_map = {}
+            for item in rules:
+                rule_map[item["name"]] = "{} || {}".format(
+                    rule_map.get(item["name"], ""), item["human_rule"]).strip(" |")
             self.assertIn('url="/zentao/user"', rule_map["禅道"])
             self.assertIn('icon_hash=="116323821"', rule_map["禅道"])
             self.assertEqual(rule_map["Nginx"], 'header="Server: nginx"')

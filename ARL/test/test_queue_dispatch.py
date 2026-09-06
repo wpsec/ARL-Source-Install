@@ -37,9 +37,9 @@ class TestQueueDispatch(unittest.TestCase):
 
         with patch("app.helpers.task.utils.conn_db", return_value=task_collection), \
                 patch("app.helpers.task.is_dispatch_queue_available", side_effect=lambda name: name == "arlweb"), \
-                patch("app.helpers.task.celerytask.arl_task") as mock_main_task, \
-                patch("app.helpers.task.celerytask.arl_task_heavy") as mock_heavy_task, \
-                patch("app.helpers.task.celerytask.arl_task_web") as mock_web_task:
+                patch("app.celerytask.arl_task") as mock_main_task, \
+                patch("app.celerytask.arl_task_heavy") as mock_heavy_task, \
+                patch("app.celerytask.arl_task_web") as mock_web_task:
             mock_web_task.delay.return_value = "web-celery-id"
 
             result = submit_task(self._build_task_data(options={"file_leak": True}))
@@ -59,9 +59,9 @@ class TestQueueDispatch(unittest.TestCase):
 
         with patch("app.helpers.task.utils.conn_db", return_value=task_collection), \
                 patch("app.helpers.task.is_dispatch_queue_available", side_effect=lambda name: name in {"arlheavy", "arlweb"}), \
-                patch("app.helpers.task.celerytask.arl_task") as mock_main_task, \
-                patch("app.helpers.task.celerytask.arl_task_heavy") as mock_heavy_task, \
-                patch("app.helpers.task.celerytask.arl_task_web") as mock_web_task:
+                patch("app.celerytask.arl_task") as mock_main_task, \
+                patch("app.celerytask.arl_task_heavy") as mock_heavy_task, \
+                patch("app.celerytask.arl_task_web") as mock_web_task:
             mock_heavy_task.delay.return_value = "heavy-celery-id"
 
             result = submit_task(
@@ -81,8 +81,8 @@ class TestQueueDispatch(unittest.TestCase):
 
         with patch("app.helpers.task.utils.conn_db", return_value=task_collection), \
                 patch("app.helpers.task.is_dispatch_queue_available", return_value=False), \
-                patch("app.helpers.task.celerytask.arl_task") as mock_main_task, \
-                patch("app.helpers.task.celerytask.arl_task_web") as mock_web_task:
+                patch("app.celerytask.arl_task") as mock_main_task, \
+                patch("app.celerytask.arl_task_web") as mock_web_task:
             mock_main_task.delay.return_value = "main-celery-id"
 
             result = submit_task(self._build_task_data(options={"nuclei_scan": True}))
@@ -97,8 +97,8 @@ class TestQueueDispatch(unittest.TestCase):
 
         with patch("app.helpers.task.utils.conn_db", return_value=task_collection), \
                 patch("app.helpers.task.is_dispatch_queue_available", side_effect=lambda name: name == "arlweb"), \
-                patch("app.helpers.task.celerytask.arl_task") as mock_main_task, \
-                patch("app.helpers.task.celerytask.arl_task_web") as mock_web_task:
+                patch("app.celerytask.arl_task") as mock_main_task, \
+                patch("app.celerytask.arl_task_web") as mock_web_task:
             mock_web_task.delay.return_value = "asset-web-celery-id"
 
             result = submit_task(

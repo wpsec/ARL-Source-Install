@@ -961,7 +961,14 @@ def _probe_with_filled_request(item: Dict, waf_guard=None, dns_policy_cache=None
             result["content_type"] = result.get("ai_fill_response_content_type")
         if status_code > 0:
             result["ai_fill_status"] = "tested"
-            result["ai_fill_note"] = "已使用填充参数完成低副作用测试"
+            success_note = "已使用填充参数完成低副作用测试"
+            prior_note = str(result.get("ai_fill_note") or "").strip()
+            if "已回退启发式补全" in prior_note:
+                # 回退原因必须留在证据链（开发指南 §4：fallback 记录异常类型），
+                # 不得被成功文案覆盖成"看起来一切正常"。
+                result["ai_fill_note"] = "{}；{}".format(success_note, prior_note)
+            else:
+                result["ai_fill_note"] = success_note
         response.close()
     except Exception as exc:
         logger.debug("wih endpoint ai fill probe failed url:%s method:%s err:%s", url, method, exc)

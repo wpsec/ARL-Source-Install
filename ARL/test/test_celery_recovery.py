@@ -579,7 +579,10 @@ class TestCeleryRecovery(unittest.TestCase):
         result = recover_interrupted_tasks_on_worker_start(reason="worker restarted")
 
         expected_query = {
-            "status": {"$nin": ["waiting", "done", "stop", "error"]},
+            # 生产守卫为 ["waiting"] + TASK_TERMINAL_STATUSES（done 家族含
+            # done_pending/done_degraded，计划 2 终态修复轮契约）。
+            "status": {"$nin": ["waiting", "done", "done_pending",
+                               "done_degraded", "error", "stop"]},
             "start_time": {"$nin": ["", "-"]},
         }
 

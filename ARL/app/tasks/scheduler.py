@@ -38,7 +38,9 @@ from app.services.wildcardDomain import (
 )
 import time
 import traceback
-from app.scheduler import update_job_run
+# update_job_run 延迟到调用点导入：app.scheduler 模块体内会经 helpers/celerytask
+# 拉回 app.tasks，顶层 `from app.scheduler import ...` 在 `import app.scheduler`
+# 先行入口下触发 partial-initialization 循环（容器实测直接 ImportError）。
 from app.services import webhook
 
 logger = utils.get_logger()
@@ -146,6 +148,7 @@ def wrap_domain_executors(base_domain=None, job_id=None, scope_id=None, options=
     domain_executor = DomainExecutor(base_domain, task_id, task_data["options"])
     try:
         # 更新调度器运行时间
+        from app.scheduler import update_job_run
         update_job_run(job_id)
         
         # 执行扫描，返回是否有新域名
@@ -527,6 +530,7 @@ def ip_executor(target, scope_id, task_name, job_id, options):
             logger.info("stop  ip_executors {}  job_id {} is stop ".format(target, job_id))
             return
 
+        from app.scheduler import update_job_run
         update_job_run(job_id)
     except Exception as e:
         logger.exception(e)

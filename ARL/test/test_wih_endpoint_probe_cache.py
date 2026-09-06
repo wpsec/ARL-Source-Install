@@ -91,7 +91,9 @@ class TestProbeCache(unittest.TestCase):
         # 拒发，槽位必须随 finally 释放，否则同 key 等待方要干等超时。
         ctx = DiscoveryContext("task-1")
         url = "http://blocked.example.com/api"
-        ctx.record_waf_signal(url, "wih", reason="unit", force=True)
+        # 第 9 批类别拆分：probe 领取 endpoint_probe 类租约（不再连坐 wih 类），
+        # blocked 拒发路径必须用本类信号构造。
+        ctx.record_waf_signal(url, "endpoint_probe", reason="unit", force=True)
         out = self.probe_mod._probe_one(
             {"url": url, "method": "GET"},
             dns_policy_cache={}, discovery_context=ctx)

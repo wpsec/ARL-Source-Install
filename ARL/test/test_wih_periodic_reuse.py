@@ -142,6 +142,15 @@ def _load_module():
     utils_module.get_logger = _build_logger
     utils_module.curr_date = lambda: "2026-04-13 12:00:00"
     utils_module.conn_db = lambda name: None
+    # 生产 wih_periodic_reuse 现引入 app.utils.log_safety.safe_error_text；
+    # fake app.utils 无包语义，桩窗口内按路径加载真实子模块（纯 stdlib）。
+    _log_safety_spec = importlib.util.spec_from_file_location(
+        "app.utils.log_safety",
+        pathlib.Path(__file__).resolve().parents[1] / "app" / "utils" / "log_safety.py",
+    )
+    _log_safety_module = importlib.util.module_from_spec(_log_safety_spec)
+    _log_safety_spec.loader.exec_module(_log_safety_module)
+    utils_module.log_safety = _log_safety_module
 
     config_module = types.ModuleType("app.config")
     config_module.Config = type(
@@ -201,6 +210,7 @@ def _load_module():
             "app.services",
             "app.services.infoHunter",
             "app.services.wih_endpoint_probe",
+            "app.utils.log_safety",
         )
     }
     try:
@@ -212,6 +222,7 @@ def _load_module():
         sys.modules["app.services"] = services_pkg
         sys.modules["app.services.infoHunter"] = info_hunter_module
         sys.modules["app.services.wih_endpoint_probe"] = wih_endpoint_probe_module
+        sys.modules["app.utils.log_safety"] = _log_safety_module
 
         app_module.utils = utils_module
 

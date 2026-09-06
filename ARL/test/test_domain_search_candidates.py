@@ -6,7 +6,6 @@
 """
 
 import sys
-import types
 import unittest
 from pathlib import Path
 
@@ -16,16 +15,18 @@ if str(ARL_ROOT) not in sys.path:
 
 
 def _ensure_app_package():
-    """仅防御 app 被既有用例换成无 __path__ 的 fake；子包必须走真实 __init__。
+    """真实 app 包优先：app/__init__ 轻量（仅 warnings 配置），独立进程直接
+    真实导入即可——旧实现注入 ModuleType 假包且 py3.10 该路径下 tearDownModule
+    不会执行（hygiene 容器重扫实锤 polluted=app=fake-file）。
 
-    app.tasks.domain 通过 `from app.services import ...` 取绝对导出符号，
-    桩掉 app.services 会让真实 __init__ 不执行（unknown location 报错）。
+    槽位被既有用例换成无 __path__ 的 fake 时，只补路径防御、不换对象——
+    真污染归因回肇事文件，不在本文件兜底还原他人不还原的桩。
     """
     app = sys.modules.get("app")
-    if app is None or not hasattr(app, "__path__"):
-        app = types.ModuleType("app")
+    if app is None:
+        import app  # noqa: F401  真实轻量 __init__
+    elif not hasattr(app, "__path__"):
         app.__path__ = [str(ARL_ROOT / "app")]
-        sys.modules["app"] = app
 
 
 _ensure_app_package()
