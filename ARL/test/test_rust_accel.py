@@ -177,6 +177,10 @@ class TestRustAccelerationAdapter(unittest.TestCase):
         self.assertTrue(after["last_rank_fallback_reason"])
 
 
+def _LIBRS_EXISTS() -> bool:
+    return (pathlib.Path(__file__).resolve().parents[1] / "native" / "arl_accel" / "src" / "lib.rs").exists()
+
+
 class TestApiDocKeywordAlignment(unittest.TestCase):
     """第 10 批口径钉（Review A7/D8/S3 重设计）。
 
@@ -188,6 +192,7 @@ class TestApiDocKeywordAlignment(unittest.TestCase):
     """
 
     _ROOT = pathlib.Path(__file__).resolve().parents[1]
+    _LIB_RS = _ROOT / "native" / "arl_accel" / "src" / "lib.rs"
     _EXPECTED = (
         ("postman", "postman"),
         ("openapi", "openapi"),
@@ -287,6 +292,8 @@ class TestApiDocKeywordAlignment(unittest.TestCase):
             "js 镜像必须引用共享表而非字面量副本",
         )
 
+    @unittest.skipUnless(_LIBRS_EXISTS(), "lib.rs 不在运行镜像内（native 构建层），"
+                              "钉在源码仓 CI 执行；镜像侧由 --run-native golden 门禁覆盖")
     def test_rust_faces_align_with_models_table(self):
         expected_keywords = {keyword for keyword, _ in self._EXPECTED}
         self.assertEqual(expected_keywords, self._rust_doc_tokens())

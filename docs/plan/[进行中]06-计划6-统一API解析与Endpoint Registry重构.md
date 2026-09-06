@@ -961,7 +961,7 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 
 验证：十三件合跑 **308 项全绿**（291 + 整改轮净增 17：结构校验 3 + 白名单/hard-fail 2 + bench 钉 3 + 聚合 mismatch/指标一致性等；skip=8 为宿主轻依赖既有口径）；Rust 侧 cargo test --locked 14 项、双 corpus `--run-native --strict-order`、`freeze --check` 全绿（borrow 重写后 golden 逐字节不变）；第二轮基准见 T10-E 行刷新。`test_web_info_intel` 新增 graphql/WSDL 发射行为 case 落盘（宿主 skip、容器回归承接，预期值为镜像逻辑手推——容器首跑若与推演不符按实测修断言并记因）；Rust 容器 `cargo test --locked` 14 项全绿、双 corpus `--run-native --strict-order` 全绿。`API_UNIFIED_ENABLE` 默认 False、`RUST_ACCEL_API_UNIFIED_MODE` 默认 shadow 不变。
 
-未完成项（如实登记）：(1) amd64 侧编译与 corpus 复验、`test_web_info_intel` 容器执行归第 11 批双架构验收（本批 native 证据仅 aarch64 Linux）；(2) js_intel `api_doc_url` 记录面扩大的**真实任务观测**（新记录数、统一图入队量、legacy 面无请求变化）随第 11 批 40 目标联通验收出数；(3) normalize/method 生产升级（rust 模式）与 `RUST_ACCEL_API_UNIFIED_MODE` 的容器联调挂默认切换决策；(4) 基准确定性受 CPU 型号影响，跨机复跑数字会漂移——门禁结论以本批 aarch64 Linux 记录为准，第 11 批 amd64 需复跑同脚本确认闸向不变。
+未完成项（如实登记）：(1) ~~`test_web_info_intel` 容器执行~~ **已完成（2026-09-06 arm64 标准容器首轮：该文件独立 7/7 通过，新 graphql/WSDL 行为 case 手推期望值与实测一致；amd64 侧编译与 corpus 复验、compose 全栈回归仍归第 11 批，qemu 基准数据不采信的口径不变）**；(2) js_intel `api_doc_url` 记录面扩大的**真实任务观测**（新记录数、统一图入队量、legacy 面无请求变化）随第 11 批 40 目标联通验收出数；(3) normalize/method 生产升级（rust 模式）与 `RUST_ACCEL_API_UNIFIED_MODE` 的容器联调挂默认切换决策；(4) 基准确定性受 CPU 型号影响，跨机复跑数字会漂移——门禁结论以本批 aarch64 Linux 记录为准，第 11 批 amd64 需复跑同脚本确认闸向不变。
 
 ## 当前状态（2026-09-06 第 7 批 + 整改轮 1/轮 2 + 第 8/9/10 批后）
 
