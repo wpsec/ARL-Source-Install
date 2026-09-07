@@ -35,6 +35,13 @@ from app import services
 from app import modules
 from app.modules import ScanPortType, CollectSource
 from app.services import fetchCert, run_risk_cruising, run_sniffer, BaseUpdateTask
+from app.services.service_detection import (
+    apply_npoc_service_result,
+    build_sniffer_targets,
+    extract_detected_service,
+    is_low_conf_service,
+    normalize_scheme,
+)
 from app.services.commonTask import CommonTask, WebSiteFetch
 from app.services.wildcardDomain import (
     collect_wildcard_records_from_domains,
@@ -463,50 +470,15 @@ class DomainTask(CommonTask):
 
     @staticmethod
     def _is_low_conf_service(port_info):
-        """
-        判断端口服务识别是否低置信度。
-        低置信度端口优先走协议识别（sniffer）。
-        """
-        service_name = str(getattr(port_info, "service_name", "")).strip().lower()
-        if not service_name:
-            return True
-
-        low_conf_names = {
-            "unknown",
-            "tcpwrapped",
-            "wrapped",
-            "ssl/unknown",
-            "unrecognized",
-        }
-        return service_name in low_conf_names
+        return is_low_conf_service(port_info)
 
     @staticmethod
     def _normalize_scheme(value):
-        value = str(value or "").strip().lower()
-        if not value:
-            return ""
-        alias_map = {
-            "ssl/http": "https",
-            "http/ssl": "https",
-            "www": "http",
-        }
-        return alias_map.get(value, value)
+        return normalize_scheme(value, use_registry=False)
 
     @staticmethod
     def _extract_detected_service(service_name, product=""):
-        """
-        仅从已有识别结果提取服务名，不做端口号猜测。
-        """
-        name = str(service_name or "").strip().lower()
-        if name:
-            return name
-
-        product_name = str(product or "").strip().lower()
-        # 仅处理明确协议别名，避免把产品名/端口映射当成服务名
-        if product_name in {"https-alt", "ssl/http", "http/ssl", "www"}:
-            return product_name
-
-        return ""
+        return extract_detected_service(service_name, product)
 
     def _enable_protocol_detection(self):
         """
@@ -517,95 +489,10 @@ class DomainTask(CommonTask):
         return bool(self.options.get("service_detection") or self.options.get("npoc_service_detection"))
 
     def _build_sniffer_targets(self, full_port=False):
-        """
-        构建协议识别目标。
-        - full_port=True: 全端口识别（更慢、更全面）
-        - full_port=False: 智能模式，仅识别低置信度端口（更快）
-        """
-        all_targets = []
-        low_conf_targets = []
-        target_set = set()
-
-        for ip_info in self.ip_info_list:
-            ip = str(getattr(ip_info, "ip", "")).strip()
-            if not ip:
-                continue
-
-            for port_info in getattr(ip_info, "port_info_list", []):
-                port_id = getattr(port_info, "port_id", None)
-                if port_id is None:
-                    continue
-
-                target = "{}:{}".format(ip, port_id)
-                if target in target_set:
-                    continue
-                target_set.add(target)
-                all_targets.append(target)
-
-                if self._is_low_conf_service(port_info):
-                    low_conf_targets.append(target)
-
-        if full_port:
-            return all_targets, len(all_targets), len(low_conf_targets), "full"
-
-        # 智能模式：优先低置信度端口
-        selected = list(low_conf_targets)
-
-        # 若低置信度目标为空，补充少量非80/443端口，避免完全不执行识别
-        if not selected and all_targets:
-            for target in all_targets:
-                port = target.rsplit(":", 1)[-1]
-                if port in {"80", "443"}:
-                    continue
-                selected.append(target)
-                if len(selected) >= 300:
-                    break
-
-        if not selected and all_targets:
-            selected = all_targets[:100]
-
-        return selected, len(all_targets), len(low_conf_targets), "smart"
+        return build_sniffer_targets(self, full_port=full_port)
 
     def _apply_npoc_service_result(self, sniffer_items):
-        """
-        将 NPoC 协议识别结果回填到端口信息，提升 service 结果质量。
-        """
-        if not sniffer_items:
-            return 0
-
-        scheme_map = {}
-        for item in sniffer_items:
-            host = str(item.get("host", "")).strip()
-            port = str(item.get("port", "")).strip()
-            scheme = self._normalize_scheme(item.get("scheme"))
-            if not host or not port or not scheme:
-                continue
-            scheme_map["{}:{}".format(host, port)] = scheme
-
-        if not scheme_map:
-            return 0
-
-        updated = 0
-        for ip_info in self.ip_info_list:
-            ip = str(ip_info.ip).strip()
-            if not ip:
-                continue
-
-            for port_info in ip_info.port_info_list:
-                key = "{}:{}".format(ip, port_info.port_id)
-                if key not in scheme_map:
-                    continue
-
-                scheme = scheme_map[key]
-                curr_service = str(port_info.service_name or "").strip().lower()
-                # 服务识别以 sniffer 为准，nmap 结果作为回退
-                if curr_service != scheme:
-                    updated += 1
-                port_info.service_name = scheme
-                if not str(port_info.product or "").strip() or self._is_low_conf_service(port_info):
-                    port_info.product = scheme
-
-        return updated
+        return apply_npoc_service_result(self, sniffer_items, use_registry=False)
 
     @property
     def domain_word_file(self) -> str:
