@@ -12,7 +12,7 @@ import {
   RefreshCw,
   Settings,
 } from 'lucide-react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { USERNAME_KEY, requestApi } from '../api/client';
 import { SensitiveRevealVerifyModal } from '../components/domain/SensitiveRevealVerifyModal';
 import { PageHeader } from '../layout/PageHeader';
@@ -80,8 +80,6 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
   const [updatedAt, setUpdatedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
-  const [loadingNodes, setLoadingNodes] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [debugResult, setDebugResult] = useState('');
@@ -161,7 +159,24 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
     queryFn: () => requestApi(token, '/dingtalk_api/config/', { method: 'GET' }),
     retry: 0,
   });
+  const workspacesMutation = useMutation({
+    mutationFn: (operatorId: string) => requestApi(token, '/dingtalk_api/workspaces/', {
+      method: 'POST',
+      body: { operator_id: operatorId },
+    }),
+  });
+  const nodesMutation = useMutation({
+    mutationFn: ({ operatorId, parentNodeId }: { operatorId: string; parentNodeId: string }) => requestApi(token, '/dingtalk_api/nodes/', {
+      method: 'POST',
+      body: {
+        operator_id: operatorId,
+        parent_node_id: parentNodeId,
+      },
+    }),
+  });
   const loading = dingtalkConfigQuery.isPending;
+  const loadingWorkspaces = workspacesMutation.isPending;
+  const loadingNodes = nodesMutation.isPending;
 
   useEffect(() => {
     if (dingtalkConfigQuery.isPending) {
@@ -356,41 +371,29 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
   };
 
   const loadWorkspaces = async () => {
-    setLoadingWorkspaces(true);
     setError('');
     setSuccess('');
     try {
-      const result = await requestApi(token, '/dingtalk_api/workspaces/', {
-        method: 'POST',
-        body: { operator_id: form.operator_id.trim() },
-      });
+      const result = await workspacesMutation.mutateAsync(form.operator_id.trim());
       setDebugResult(JSON.stringify(result?.data || {}, null, 2));
       setSuccess('空间列表获取成功');
     } catch (err: any) {
       setError(err?.message || '获取空间列表失败');
-    } finally {
-      setLoadingWorkspaces(false);
     }
   };
 
   const loadNodes = async () => {
-    setLoadingNodes(true);
     setError('');
     setSuccess('');
     try {
-      const result = await requestApi(token, '/dingtalk_api/nodes/', {
-        method: 'POST',
-        body: {
-          operator_id: form.operator_id.trim(),
-          parent_node_id: form.parent_node_id.trim(),
-        },
+      const result = await nodesMutation.mutateAsync({
+        operatorId: form.operator_id.trim(),
+        parentNodeId: form.parent_node_id.trim(),
       });
       setDebugResult(JSON.stringify(result?.data || {}, null, 2));
       setSuccess('节点列表获取成功');
     } catch (err: any) {
       setError(err?.message || '获取节点列表失败');
-    } finally {
-      setLoadingNodes(false);
     }
   };
 
