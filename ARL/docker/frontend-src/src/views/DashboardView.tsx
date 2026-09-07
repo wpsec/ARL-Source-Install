@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
   AlertTriangle,
@@ -45,7 +46,6 @@ export function DashboardView({
   onOpenModule: OpenModuleHandler;
   onQuickCreateTask: () => void;
 }) {
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState('');
   const [stats, setStats] = useState({
@@ -106,7 +106,8 @@ export function DashboardView({
     };
   }, [token]);
 
-  const loadFallback = useCallback(async () => {
+  // 回退快照：主聚合接口不可用时并行拉明细（原 loadFallback 的纯数据版，setState 移到水合 effect）。
+  const fetchFallbackSnapshot = useCallback(async () => {
     const targets = [
       { key: 'task', path: '/task/' },
       { key: 'scheduler_recurrent', path: '/task_schedule/', query: { status: 'scheduled', schedule_type: 'recurrent_scan' } },
@@ -141,117 +142,150 @@ export function DashboardView({
       return Boolean(status) && !['done', 'stop', 'error'].includes(status);
     }).length;
 
-    setStats((prev) => ({
-      ...prev,
-      task: Number(nextStats.task || 0),
-      scheduler: Number(nextStats.scheduler_recurrent || 0) + Number(nextStats.scheduler_future_pending || 0),
-      asset_scope: Number(nextStats.asset_scope || 0),
-      asset_site: Number(nextStats.asset_site || 0),
-      domain_total: Number(assetOverview.domain_total || 0),
-      ip_total: Number(assetOverview.ip_total || 0),
-      service_total: Number(assetOverview.service_total || 0),
-      url_total: Number(assetOverview.url_total || 0),
-      vuln: Number(nextStats.vuln || 0),
-      github_task: Number(nextStats.github_task || 0),
-      running_task: Number(prev.running_task || 0) > 0 ? Number(prev.running_task || 0) : activeRecentTaskCount,
-    }));
-    setDeviceInfo(consoleInfo?.data?.device_info || {});
-    setRecentTasks(recentTaskItems);
-    setRecentLogs((prev) => (prev.length > 0 ? prev : [{ level: 'INFO', source: 'SCAN', msg: '当前为兼容模式，扫描日志接口不可用', time: '' }]));
-    setLastUpdatedAt(new Date().toLocaleString('zh-CN', { hour12: false }));
-  }, [token, loadAssetOverviewCounts]);
-
-  const loadRecentLogs = useCallback(async (force = false) => {
-    if (isLogPaused && !force) {
-      return;
-    }
-    try {
-      const response = await requestApi(token, '/console/recent_logs', { method: 'GET', query: { limit: 120 } });
-      const logs = Array.isArray(response?.data?.recent_logs) ? response.data.recent_logs : [];
-      if (logs.length > 0) {
-        setRecentLogs(logs);
-      }
-    } catch {
-      // 日志轮询失败时不打断仪表盘其他内容
-    }
-  }, [token, isLogPaused]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const dashboardInfo = await requestApi(token, '/console/dashboard', { method: 'GET' });
-      const dashboardData = dashboardInfo?.data || {};
-      if (!dashboardData?.stats) {
-        throw new Error('仪表盘聚合数据为空');
-      }
-
-      const nextStats = dashboardData.stats || {};
-      const hasActiveTasksField = Object.prototype.hasOwnProperty.call(nextStats, 'active_tasks');
-      const activeTaskCount = hasActiveTasksField
-        ? Number(nextStats.active_tasks || 0)
-        : Number(nextStats.running_tasks || 0) + Number(nextStats.waiting_tasks || 0);
-      const hasAssetOverviewFields = ['domain_total', 'ip_total', 'service_total', 'url_total']
-        .some((key) => Object.prototype.hasOwnProperty.call(nextStats, key));
-      const assetOverview = hasAssetOverviewFields
-        ? {
-            domain_total: Number(nextStats.domain_total || 0),
-            ip_total: Number(nextStats.ip_total || 0),
-            service_total: Number(nextStats.service_total || 0),
-            url_total: Number(nextStats.url_total || 0),
-          }
-        : await loadAssetOverviewCounts();
-      setStats({
-        task: Number(nextStats.task_total || 0),
-        scheduler: Number(nextStats.task_schedule_total ?? nextStats.scheduler_total ?? 0),
-        asset_scope: Number(nextStats.asset_scope_total || 0),
-        asset_site: Number(nextStats.asset_site_total || 0),
+    return {
+      source: 'fallback' as const,
+      stats: {
+        task: Number(nextStats.task || 0),
+        scheduler: Number(nextStats.scheduler_recurrent || 0) + Number(nextStats.scheduler_future_pending || 0),
+        asset_scope: Number(nextStats.asset_scope || 0),
+        asset_site: Number(nextStats.asset_site || 0),
         domain_total: Number(assetOverview.domain_total || 0),
         ip_total: Number(assetOverview.ip_total || 0),
         service_total: Number(assetOverview.service_total || 0),
         url_total: Number(assetOverview.url_total || 0),
-        vuln: Number(nextStats.vuln_total || 0),
-        github_task: Number(nextStats.github_task_total || 0),
-        running_task: Number(activeTaskCount || 0),
-        new_assets_today: Number(nextStats.new_assets_today || 0),
-      });
-      setDeviceInfo(dashboardData.device_info || {});
-      setAssetTrend(Array.isArray(dashboardData.asset_trend_7d) ? dashboardData.asset_trend_7d : []);
-      setRiskDistribution(Array.isArray(dashboardData.risk_distribution) ? dashboardData.risk_distribution : []);
-      setNetworkTrend(Array.isArray(dashboardData.network_trend) ? dashboardData.network_trend : []);
-      const dashboardRecentLogs = Array.isArray(dashboardData.recent_logs) ? dashboardData.recent_logs : [];
-      if (!isLogPaused) {
-        setRecentLogs(dashboardRecentLogs);
-      }
-      setLastUpdatedAt(dashboardData.last_updated ? normalizeValue(dashboardData.last_updated) : new Date().toLocaleString('zh-CN', { hour12: false }));
+        vuln: Number(nextStats.vuln || 0),
+        github_task: Number(nextStats.github_task || 0),
+        // 回退模式没有权威 running 计数；水合时保留现值、仅在无值时用近期任务估算。
+        runningTaskFallback: activeRecentTaskCount,
+      },
+      deviceInfo: consoleInfo?.data?.device_info || {},
+      recentTasks: recentTaskItems,
+      lastUpdatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+    };
+  }, [token, loadAssetOverviewCounts]);
 
-      const recentTaskResponse = await requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } });
-      setRecentTasks(normalizeListData(recentTaskResponse).items.slice(0, 6));
-    } catch (err: any) {
+  // 数据层迁移（计划 4 工作台批次）：
+  // - 聚合快照 = dashboardQuery（主接口失败时 queryFn 内回退明细聚合，双败才报错）；
+  // - 扫描日志 = logsQuery 10s refetchInterval，暂停即 interval=false、继续时立即 refetch
+  //   （对齐原 loadRecentLogs(force) 语义）；日志失败不打断聚合（原静默 catch 语义）。
+  const dashboardQuery = useQuery({
+    queryKey: ['dashboard-console', token],
+    queryFn: async () => {
       try {
-        await loadFallback();
-      } catch (fallbackErr: any) {
-        setError(fallbackErr?.message || err?.message || '加载仪表盘失败');
+        const dashboardInfo = await requestApi(token, '/console/dashboard', { method: 'GET' });
+        const dashboardData = dashboardInfo?.data || {};
+        if (!dashboardData?.stats) {
+          throw new Error('仪表盘聚合数据为空');
+        }
+        const nextStats = dashboardData.stats || {};
+        const hasActiveTasksField = Object.prototype.hasOwnProperty.call(nextStats, 'active_tasks');
+        const activeTaskCount = hasActiveTasksField
+          ? Number(nextStats.active_tasks || 0)
+          : Number(nextStats.running_tasks || 0) + Number(nextStats.waiting_tasks || 0);
+        const hasAssetOverviewFields = ['domain_total', 'ip_total', 'service_total', 'url_total']
+          .some((key) => Object.prototype.hasOwnProperty.call(nextStats, key));
+        const assetOverview = hasAssetOverviewFields
+          ? {
+              domain_total: Number(nextStats.domain_total || 0),
+              ip_total: Number(nextStats.ip_total || 0),
+              service_total: Number(nextStats.service_total || 0),
+              url_total: Number(nextStats.url_total || 0),
+            }
+          : await loadAssetOverviewCounts();
+        const recentTaskResponse = await requestApi(token, '/task/', { method: 'GET', query: { page: 1, size: 6, order: '-_id' } });
+        return {
+          source: 'primary' as const,
+          stats: {
+            task: Number(nextStats.task_total || 0),
+            scheduler: Number(nextStats.task_schedule_total ?? nextStats.scheduler_total ?? 0),
+            asset_scope: Number(nextStats.asset_scope_total || 0),
+            asset_site: Number(nextStats.asset_site_total || 0),
+            domain_total: Number(assetOverview.domain_total || 0),
+            ip_total: Number(assetOverview.ip_total || 0),
+            service_total: Number(assetOverview.service_total || 0),
+            url_total: Number(assetOverview.url_total || 0),
+            vuln: Number(nextStats.vuln_total || 0),
+            github_task: Number(nextStats.github_task_total || 0),
+            running_task: Number(activeTaskCount || 0),
+            new_assets_today: Number(nextStats.new_assets_today || 0),
+          },
+          deviceInfo: dashboardData.device_info || {},
+          assetTrend: Array.isArray(dashboardData.asset_trend_7d) ? dashboardData.asset_trend_7d : [],
+          riskDistribution: Array.isArray(dashboardData.risk_distribution) ? dashboardData.risk_distribution : [],
+          networkTrend: Array.isArray(dashboardData.network_trend) ? dashboardData.network_trend : [],
+          recentLogs: Array.isArray(dashboardData.recent_logs) ? dashboardData.recent_logs : [],
+          recentTasks: normalizeListData(recentTaskResponse).items.slice(0, 6),
+          lastUpdatedAt: dashboardData.last_updated
+            ? normalizeValue(dashboardData.last_updated)
+            : new Date().toLocaleString('zh-CN', { hour12: false }),
+        };
+      } catch (err: any) {
+        // 主接口失败：回退明细聚合；回退也失败则带上原始消息抛出（双败才呈现错误）。
+        try {
+          return await fetchFallbackSnapshot();
+        } catch (fallbackErr: any) {
+          throw new Error(fallbackErr?.message || err?.message || '加载仪表盘失败');
+        }
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [token, loadFallback, isLogPaused, loadAssetOverviewCounts]);
+    },
+    retry: 0,
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const logsQuery = useQuery({
+    queryKey: ['dashboard-recent-logs', token],
+    queryFn: async () => {
+      const response = await requestApi(token, '/console/recent_logs', { method: 'GET', query: { limit: 120 } });
+      return Array.isArray(response?.data?.recent_logs) ? response.data.recent_logs : [];
+    },
+    refetchInterval: isLogPaused ? false : 10000,
+    retry: 0,
+  });
 
+  const loading = dashboardQuery.isFetching;
+
+  // 快照 → 展示状态水合（与迁移前 load/loadFallback 的 setState 语义逐行对齐）。
   useEffect(() => {
-    if (isLogPaused) {
+    if (dashboardQuery.isPending) {
+      setError('');
       return;
     }
-    void loadRecentLogs();
-    const timer = window.setInterval(() => {
-      void loadRecentLogs();
-    }, 10000);
-    return () => window.clearInterval(timer);
-  }, [loadRecentLogs, isLogPaused]);
+    if (dashboardQuery.isError) {
+      const message = (dashboardQuery.error as Error)?.message || '';
+      setError(message || '加载仪表盘失败');
+      return;
+    }
+    const snapshot = dashboardQuery.data;
+    if (!snapshot) return;
+    if (snapshot.source === 'primary') {
+      setStats(snapshot.stats);
+      setDeviceInfo(snapshot.deviceInfo);
+      setAssetTrend(snapshot.assetTrend);
+      setRiskDistribution(snapshot.riskDistribution);
+      setNetworkTrend(snapshot.networkTrend);
+      if (!isLogPaused) {
+        setRecentLogs(snapshot.recentLogs);
+      }
+    } else {
+      const { runningTaskFallback, ...statsPatch } = snapshot.stats;
+      setStats((prev) => ({
+        ...prev,
+        ...statsPatch,
+        running_task: Number(prev.running_task || 0) > 0 ? Number(prev.running_task || 0) : runningTaskFallback,
+      }));
+      setDeviceInfo(snapshot.deviceInfo);
+      setRecentTasks(snapshot.recentTasks);
+      setRecentLogs((prev) => (prev.length > 0 ? prev : [{ level: 'INFO', source: 'SCAN', msg: '当前为兼容模式，扫描日志接口不可用', time: '' }]));
+    }
+    setLastUpdatedAt(snapshot.lastUpdatedAt);
+  }, [dashboardQuery.isPending, dashboardQuery.isError, dashboardQuery.data, isLogPaused]);
+
+  useEffect(() => {
+    const logs = logsQuery.data;
+    if (Array.isArray(logs) && logs.length > 0) {
+      setRecentLogs(logs);
+    }
+    // 轮询失败静默（原 loadRecentLogs catch 语义）：不覆盖聚合快照的日志区。
+  }, [logsQuery.data]);
 
   // 兼容后端不同版本的字段命名
   const memoryInfo = deviceInfo?.memory || deviceInfo?.virtual_memory;
@@ -351,7 +385,10 @@ export function DashboardView({
               新建任务
             </button>
             <button
-              onClick={() => void load()}
+              onClick={() => {
+                setError('');
+                void dashboardQuery.refetch();
+              }}
               className="px-5 py-2.5 border border-base-300 rounded-xl text-sm font-semibold hover:bg-base-200/60 transition flex items-center gap-2"
             >
               <RefreshCw className={`w-[18px] h-[18px] ${loading ? 'animate-spin' : ''}`} />
@@ -461,13 +498,20 @@ export function DashboardView({
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setIsLogPaused((prev) => !prev)}
+                onClick={() => {
+                const next = !isLogPaused;
+                setIsLogPaused(next);
+                // 继续时立即补一帧（对齐原 loadRecentLogs(force) 语义）。
+                if (!next) {
+                  void logsQuery.refetch();
+                }
+              }}
                 className={`text-xs font-black uppercase tracking-wider px-2 hover:underline ${isLogPaused ? 'text-warning' : 'text-secondary'}`}
               >
                 {isLogPaused ? '继续' : '暂停'}
               </button>
               <button
-                onClick={() => void loadRecentLogs(true)}
+                onClick={() => void logsQuery.refetch()}
                 className="text-xs font-black text-accent uppercase tracking-wider hover:underline px-2"
               >
                 刷新日志

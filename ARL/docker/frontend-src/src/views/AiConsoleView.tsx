@@ -17,6 +17,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { USERNAME_KEY, requestApi } from '../api/client';
 import { SensitiveRevealVerifyModal } from '../components/domain/SensitiveRevealVerifyModal';
 import { Modal } from '../components/ui/Modal';
@@ -532,7 +533,6 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   const [providerPresets, setProviderPresets] = useState<AiProviderPreset[]>(defaultProviderPresets);
   const [configPath, setConfigPath] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
@@ -573,7 +573,6 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   });
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [aiTestDialogOpen, setAiTestDialogOpen] = useState(false);
-  const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState('');
   const [usageStats, setUsageStats] = useState<AiUsageStatsPayload | null>(null);
   const [usageLogs, setUsageLogs] = useState<AiUsageLogItem[]>([]);
@@ -730,7 +729,6 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
     return result;
   }, [aiSopModuleConfigs, form.ai_denoise_prompt_ids, form.prompt_templates]);
 
-  const isActionBusy = loading || saving || testing;
   const aiInputClass = CONSOLE_INPUT_CLASS;
   const aiInputMonoClass = CONSOLE_INPUT_MONO_CLASS;
   const aiSelectWrapClass = 'relative w-full';
@@ -953,10 +951,9 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
     return `${normalized.slice(0, maxLength)}...`;
   }, []);
 
-  const loadAiUsageDashboard = useCallback(async () => {
-    setUsageLoading(true);
-    setUsageError('');
-    try {
+  // 数据层迁移（计划 4 工作台批次）：用量快照 = 纯取数函数 + useQuery（key 含筛选参数，
+  // 筛选变化自动重取，等价原 deps 重建）。AI 测试产生用量后由调用方 invalidate usage 前缀。
+  const fetchAiUsageSnapshot = useCallback(async () => {
       const parsedLimit = Number(usageLogLimit);
       const logLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.floor(parsedLimit) : 10;
       const logsQuery: Record<string, any> = { limit: logLimit };
@@ -1003,17 +1000,13 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         window_days: Number(statsData?.window_days || 7) || 7,
         updated_at: String(statsData?.updated_at || ''),
       };
-      setUsageStats(normalizedStats);
-
       const sceneItems = Array.isArray(logsData?.available_scenes) ? logsData.available_scenes : [];
-      setUsageSceneOptions(
-        sceneItems
-          .map((item: any) => ({
-            scene: String(item?.scene || ''),
-            scene_label: String(item?.scene_label || item?.scene || ''),
-          }))
-          .filter((item: { scene: string }) => Boolean(item.scene))
-      );
+      const sceneOptions = sceneItems
+        .map((item: any) => ({
+          scene: String(item?.scene || ''),
+          scene_label: String(item?.scene_label || item?.scene || ''),
+        }))
+        .filter((item: { scene: string }) => Boolean(item.scene));
 
       const logItems = Array.isArray(logsData?.items) ? logsData.items : [];
       const normalizedLogs: AiUsageLogItem[] = logItems.map((item: any) => {
@@ -1036,63 +1029,90 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           total_tokens: normalizeAiUsageStatsValue({ total_tokens: item?.total_tokens }).total_tokens,
         };
       });
-      setUsageLogs(normalizedLogs);
-      setUsageLogsTotal(Number(logsData?.total || 0) || 0);
-      setUsageLogsUpdatedAt(String(logsData?.updated_at || statsData?.updated_at || ''));
-    } catch (err: any) {
-      setUsageError(err?.message || '加载 AI 用量统计失败');
-    } finally {
-      setUsageLoading(false);
-    }
+      return {
+        stats: normalizedStats,
+        sceneOptions,
+        logs: normalizedLogs,
+        total: Number(logsData?.total || 0) || 0,
+        updatedAt: String(logsData?.updated_at || statsData?.updated_at || ''),
+      };
   }, [normalizeAiUsageStatsValue, token, usageLogLimit, usageLogScene, usageLogStatus]);
 
-  const loadAiConfig = useCallback(async () => {
-    resetSensitiveState();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    setTestResult(null);
-    setAiTestDialogOpen(false);
-    setShowRestartModal(false);
-    try {
-      const result = await requestApi(token, '/api_console/ai_config/', { method: 'GET' });
-      const data = result?.data || {};
-      const remotePresets = Array.isArray(data?.provider_presets) ? data.provider_presets : [];
-      const normalizedPresets = remotePresets
-        .map((item: any) => {
-          const id = String(item?.id || '').trim();
-          if (!id) return null;
-          return {
-            id,
-            label: String(item?.label || id),
-            base_url: String(item?.base_url || ''),
-            default_model: String(item?.default_model || ''),
-          };
-        })
-        .filter((item: AiProviderPreset | null): item is AiProviderPreset => Boolean(item));
+  const queryClient = useQueryClient();
+  const aiConfigQueryKey = ['ai-console-config', token] as const;
+  const aiUsageQueryKey = ['ai-console-usage', token, usageLogLimit, usageLogStatus, usageLogScene] as const;
 
-      setProviderPresets(normalizedPresets.length > 0 ? normalizedPresets : defaultProviderPresets);
-      const normalizedForm = normalizeForm(data?.ai_config || {});
-      setForm(normalizedForm);
-      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedForm));
-      setModelDraft((prev) => ({ ...prev, provider: normalizedForm.provider || 'openai' }));
-      setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
-      setConfigPath(String(data?.config_path || ''));
-      setUpdatedAt(String(data?.updated_at || ''));
-    } catch (err: any) {
-      setError(err?.message || '加载 AI 管理配置失败');
-    } finally {
-      setLoading(false);
+  // 配置查询只负责“数据字段”水合；测试弹窗/重启 Modal 的收敛属于显式“重新加载”
+  // 与脱敏切换语义，保留在调用点——避免保存后后台 invalidate 冲掉刚打开的弹窗。
+  const aiConfigQuery = useQuery({
+    queryKey: aiConfigQueryKey,
+    queryFn: () => requestApi(token, '/api_console/ai_config/', { method: 'GET' }),
+    retry: 0,
+  });
+  const usageQuery = useQuery({
+    queryKey: aiUsageQueryKey,
+    queryFn: fetchAiUsageSnapshot,
+    retry: 0,
+  });
+  const loading = aiConfigQuery.isFetching;
+  const usageLoading = usageQuery.isFetching;
+  const isActionBusy = loading || saving || testing;
+
+  useEffect(() => {
+    if (aiConfigQuery.isPending) {
+      setError('');
+      setSuccess('');
+      return;
     }
-  }, [token, normalizeSensitiveConfigured, resetSensitiveState]);
+    if (aiConfigQuery.isError) {
+      setError((aiConfigQuery.error as Error)?.message || '加载 AI 管理配置失败');
+      return;
+    }
+    resetSensitiveState();
+    const data = aiConfigQuery.data?.data || {};
+    const remotePresets = Array.isArray(data?.provider_presets) ? data.provider_presets : [];
+    const normalizedPresets = remotePresets
+      .map((item: any) => {
+        const id = String(item?.id || '').trim();
+        if (!id) return null;
+        return {
+          id,
+          label: String(item?.label || id),
+          base_url: String(item?.base_url || ''),
+          default_model: String(item?.default_model || ''),
+        };
+      })
+      .filter((item: AiProviderPreset | null): item is AiProviderPreset => Boolean(item));
+
+    setProviderPresets(normalizedPresets.length > 0 ? normalizedPresets : defaultProviderPresets);
+    const normalizedForm = normalizeForm(data?.ai_config || {});
+    setForm(normalizedForm);
+    setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedForm));
+    setModelDraft((prev) => ({ ...prev, provider: normalizedForm.provider || 'openai' }));
+    setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
+    setConfigPath(String(data?.config_path || ''));
+    setUpdatedAt(String(data?.updated_at || ''));
+    // normalizeForm 每轮重建（非稳定引用），放入 deps 会形成水合死循环——按原 loadAiConfig 口径省略。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiConfigQuery.isPending, aiConfigQuery.isError, aiConfigQuery.data, normalizeSensitiveConfigured, resetSensitiveState]);
 
   useEffect(() => {
-    void loadAiConfig();
-  }, [loadAiConfig]);
-
-  useEffect(() => {
-    void loadAiUsageDashboard();
-  }, [loadAiUsageDashboard]);
+    if (usageQuery.isPending) {
+      setUsageError('');
+      return;
+    }
+    if (usageQuery.isError) {
+      setUsageError((usageQuery.error as Error)?.message || '加载 AI 用量统计失败');
+      return;
+    }
+    const snapshot = usageQuery.data;
+    if (!snapshot) return;
+    setUsageStats(snapshot.stats);
+    setUsageSceneOptions(snapshot.sceneOptions);
+    setUsageLogs(snapshot.logs);
+    setUsageLogsTotal(snapshot.total);
+    setUsageLogsUpdatedAt(snapshot.updatedAt);
+  }, [usageQuery.isPending, usageQuery.isError, usageQuery.data]);
 
   useEffect(() => {
     if (!compatDialogOpen && !providerConfigDialogOpen && !showRestartModal && !aiTestDialogOpen && !usageLogDetail) return;
@@ -1488,6 +1508,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       setShowRestartModal(data?.runtime_refreshed === false);
 
       clearSopUploadSelection();
+      void queryClient.invalidateQueries({ queryKey: aiConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || 'SOP 上传失败');
     } finally {
@@ -1501,7 +1522,13 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
       setSensitiveEditingModelProfileIds(new Set());
-      void loadAiConfig();
+      // 与迁移前 loadAiConfig 开头一致：重取脱敏快照前收敛测试/重启弹窗态。
+      setTestResult(null);
+      setAiTestDialogOpen(false);
+      setShowRestartModal(false);
+      setError('');
+      setSuccess('');
+      void aiConfigQuery.refetch();
       return;
     }
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
@@ -1589,6 +1616,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
       setSensitiveEditingModelProfileIds(new Set());
+      void queryClient.invalidateQueries({ queryKey: aiConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '保存 AI 管理配置失败');
     } finally {
@@ -1638,7 +1666,8 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       setError(err?.message || 'AI 连通性测试失败');
     } finally {
       setTesting(false);
-      void loadAiUsageDashboard();
+      // 测试会产生用量记录：invalidate usage 前缀（含全部筛选 key）重取快照。
+      void queryClient.invalidateQueries({ queryKey: ['ai-console-usage', token] });
     }
   };
 
@@ -1680,7 +1709,15 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => void loadAiConfig()}
+            onClick={() => {
+              // 显式“重新加载”保留迁移前的 UI 收敛语义（水合 effect 只管数据字段）。
+              setTestResult(null);
+              setAiTestDialogOpen(false);
+              setShowRestartModal(false);
+              setError('');
+              setSuccess('');
+              void aiConfigQuery.refetch();
+            }}
             className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
             disabled={isActionBusy}
           >
@@ -2254,7 +2291,10 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
             </div>
             <button
               type="button"
-              onClick={() => void loadAiUsageDashboard()}
+              onClick={() => {
+                setUsageError('');
+                void usageQuery.refetch();
+              }}
               className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
               disabled={usageLoading}
             >
