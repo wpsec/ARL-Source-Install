@@ -441,27 +441,7 @@ class WebSiteFetch(CommonTask):
         return WebSiteNucleiScanStageService(self).run(deferred_retry=deferred_retry)
 
     def run_deferred_nuclei_scan(self):
-        """
-        首次 nuclei 阶段因 Mongo 读取超时时，延后到其它阶段后补跑一次。
-        """
-        self._nuclei_deferred_retry_needed = False
-        deferred_status = "nuclei_scan_retry"
-        logger.info(
-            "start deferred nuclei_scan task_id:{}".format(self.task_id)
-        )
-        self.base_update_task.update_task_field("status", deferred_status)
-        t1 = time.time()
-        scan_results = self.nuclei_scan(deferred_retry=True)
-        elapse = time.time() - t1
-        self.base_update_task.update_services(
-            deferred_status,
-            elapse,
-            metrics=getattr(scan_results, "metrics", None),
-        )
-        if self._nuclei_final_skip:
-            logger.warning(
-                "deferred nuclei_scan still failed and skipped task_id:{}".format(self.task_id)
-            )
+        return WebSiteNucleiScanStageService(self).run_deferred_retry()
 
     @staticmethod
     def _build_afrog_detail_text(result, target, poc_id):

@@ -231,6 +231,31 @@ class WebSiteNucleiScanStageService(object):
         logger.info("end nuclei_scan， result:{}".format(len(scan_results)))
         return scan_results
 
+    def run_deferred_retry(self):
+        """在后续阶段完成后补跑一次首次超时的 Nuclei 构建。"""
+        task = self.task
+        task._nuclei_deferred_retry_needed = False
+        deferred_status = "nuclei_scan_retry"
+        logger.info(
+            "start deferred nuclei_scan task_id:{}".format(task.task_id)
+        )
+        task.base_update_task.update_task_field("status", deferred_status)
+        t1 = time.time()
+        scan_results = self.run(deferred_retry=True)
+        elapse = time.time() - t1
+        task.base_update_task.update_services(
+            deferred_status,
+            elapse,
+            metrics=getattr(scan_results, "metrics", None),
+        )
+        if task._nuclei_final_skip:
+            logger.warning(
+                "deferred nuclei_scan still failed and skipped task_id:{}".format(
+                    task.task_id
+                )
+            )
+        return scan_results
+
 class WebSiteAfrogScanStageService(object):
     """Afrog 扫描与 vuln 写回。"""
 
