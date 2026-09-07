@@ -987,6 +987,10 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 
 宿主门禁：api 九件合跑 **309 项全绿**（261→+48：registry 74/models 41/parser 86/shadow 8/rust_batch 33/finalizer 31/discovery 15/orchestrator 11/url_probe 8 口径合并）；golden `--check` 无漂移；compileall/diff-check/hygiene(4 改动测试文件 clean) 通过。容器面复核完成（2026-09-07 arm64 compose 全栈第三轮）：Ran 871、T11-0 新增测试全量 discover 0 失败、hygiene 149/149 clean、镜像内双 corpus strict exit=0，登记于计划 3 第三轮条目。`API_UNIFIED_ENABLE` 默认 False、Rust 默认 shadow 不变——T11-0 修复的是"未来切 rust 也不会误升级"与观测口径，不触碰生产默认路径。
 
+### 第 11 批 T11-1：WIH 补探 identity 收口（2026-09-07 实施，提交 `616cce02`；来源 复核轮 2 P1）
+
+`_registry_endpoint_followup` 的候选去重、结果回填、observed 免探三处 (url,method) 合并全部改完整 Endpoint identity（`idempotency_key`=P1-12 冻结键）；探测 item 透传 `endpoint_key`、结果缺键拒绝猜测归因（warning + lease 回收兜底）；observed 仅限同 identity（首轮多来源合并场景）。模型补构造期不变量（degraded_reason 仅 degraded 保留）、`fetch_text` timing 观测失败 debug 留痕（P2）。测试：`EndpointProbeIdentityT111Test` 3 场景 + 不变量 1 项；orchestrator 14、models 42 全绿；合跑与 stash 基线差分确认无新引入失败。arm64 compose 全栈复跑（第四轮，2026-09-07）：Ran 875、T11-1 新增测试全量 discover 0 失败、hygiene 149/149 clean、双 corpus strict exit=0——登记复核文档 §9 与计划 3 第四轮条目。
+
 ## 当前状态（2026-09-07 第 7 批 + 整改轮 1/轮 2 + 第 8/9/10 批 + 第 11 批 T11-0/11-1 后）
 
 - [已完成] 第 1 批接口/结果契约冻结、golden corpus、legacy adapter、脱敏约束和幂等键定义已完成。
