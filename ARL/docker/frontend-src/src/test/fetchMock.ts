@@ -5,16 +5,17 @@ import { vi } from 'vitest';
 export type FetchCall = { url: string; method: string; token: string };
 
 export type FetchMockOptions = {
-  // key 为 URL 片段（includes 匹配，先匹配先中），value 返回 [status, body]
-  routes?: Record<string, [number, unknown]>;
+  // key 为 URL 片段（includes 匹配，先匹配先中），value 返回 [status, body, headers?]；
+  // headers 用于 download 类响应覆盖 content-type（默认 application/json）。
+  routes?: Record<string, [number, unknown] | [number, unknown, Record<string, string>]>;
 };
 
-export function makeHttpResponse(status: number, body: unknown) {
+export function makeHttpResponse(status: number, body: unknown, headers?: Record<string, string>) {
   const text = JSON.stringify(body);
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: new Headers({ 'content-type': 'application/json' }),
+    headers: new Headers({ 'content-type': 'application/json', ...(headers ?? {}) }),
     async text() {
       return text;
     },
@@ -35,7 +36,7 @@ export function installFetchMock(options: FetchMockOptions = {}) {
     calls.push({ url, method: init?.method ?? 'GET', token: headers.Token ?? '' });
     for (const [fragment, pair] of Object.entries(routes)) {
       if (url.includes(fragment)) {
-        return makeHttpResponse(pair[0], pair[1]);
+        return makeHttpResponse(pair[0], pair[1], (pair as [number, unknown, Record<string, string>?])[2]);
       }
     }
     return makeHttpResponse(200, { code: 200, data: { items: [], total: 0, page: 1, size: 20 } });
