@@ -19,6 +19,7 @@
 退出码：0=全部干净且全部可执行；1=存在污染或加载失败。
 """
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -87,8 +88,35 @@ def run_one(name, env):
         [sys.executable, "-c", CHECKER, name],
         cwd=str(ARL_ROOT), stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, text=True, env=env,
+        start_new_session=(os.name == "posix"),
     )
     return proc
+
+
+def terminate_process_tree(proc):
+    """终止超时测试及其子进程，避免残留进程继续占用资源。"""
+    try:
+        if os.name == "posix":
+            os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            proc.terminate()
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name == "posix":
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+            proc.wait(timeout=5)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            pass
+    except ProcessLookupError:
+        pass
+    finally:
+        try:
+            proc.communicate(timeout=1)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            pass
 
 
 def main(argv):
@@ -113,7 +141,7 @@ def main(argv):
         for name, proc, started in pending:
             if proc.poll() is None:
                 if time.monotonic() - started > timeout_sec:
-                    proc.kill()
+                    terminate_process_tree(proc)
                     dirty.append("%s\ttimeout\t?" % name)
                     print(dirty[-1])
                     continue
