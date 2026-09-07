@@ -4,7 +4,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ChevronDown,
@@ -365,8 +365,10 @@ export function ConfigConsoleView({ token }: { token: string }) {
   // 初始化配置读取迁移 React Query（计划 4）：快照数据源唯一、同 key 挂载去重、
   // 手动“重新加载”显式 refetch。保存/上传/PoC 更新仍按自身响应回写表单且不失效
   // 本查询——避免后台重取覆盖用户刚提交的结果（mutation 行为与迁移前一致）。
+  const queryClient = useQueryClient();
+  const scanConfigQueryKey = ['config-console-scan-config', token] as const;
   const scanConfigQuery = useQuery({
-    queryKey: ['config-console-scan-config', token],
+    queryKey: scanConfigQueryKey,
     queryFn: () => requestApi(token, '/api_console/scan_config/', { method: 'GET' }),
     retry: 0,
   });
@@ -617,6 +619,9 @@ export function ConfigConsoleView({ token }: { token: string }) {
       setUpdatedAt(String(data.saved_at || updatedAt));
       setSuccess(`扫描配置已保存${backupPath}`);
       setShowRestartModal(true);
+      // 读副作用收口：查询缓存为唯一数据源，写成功后以服务端权威快照失效重取
+      // （水合 effect 不触碰 success/restart Modal，展示结果不被覆盖）。
+      void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '保存扫描配置失败');
     } finally {
@@ -655,6 +660,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
       if (domainUploadInputRef.current) {
         domainUploadInputRef.current.value = '';
       }
+      void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '字典上传失败');
     } finally {
@@ -693,6 +699,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
       if (fileLeakUploadInputRef.current) {
         fileLeakUploadInputRef.current.value = '';
       }
+      void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '字典上传失败');
     } finally {
@@ -737,6 +744,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
 
       setUpdatedAt(String(data?.updated_at || updatedAt));
       setSuccess(`${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新成功（${summary}）`);
+      void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
     } catch (err: any) {
       const baseMsg = err?.message || `${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新失败`;
       const proxyHint = String(pocUpdateProxy || '').trim()

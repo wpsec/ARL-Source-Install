@@ -85,7 +85,7 @@ describe('ConfigConsoleView 初始化读取（React Query）', () => {
     );
   });
 
-  it('保存 mutation 保留：POST 提交 + 成功反馈 + 重启提示 Modal', async () => {
+  it('保存 mutation：POST 提交 + 成功反馈 + 重启 Modal 不被失效重取冲掉 + 缓存失效重取', async () => {
     const calls = installFetchMock({
       // GET 与 POST 同路径共用快照响应（saveScanConfig 消费 data.scan_config 回写）。
       routes: {
@@ -100,6 +100,32 @@ describe('ConfigConsoleView 初始化读取（React Query）', () => {
     );
     await waitFor(() => expect(screen.getByText(/扫描配置已保存/)).toBeTruthy());
     await waitFor(() => expect(screen.getByText('需要重启容器')).toBeTruthy());
+    // 读副作用收口：写成功后查询缓存 invalidate 重取（水合不覆盖 success/Modal）。
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === 'GET' && c.url.includes('/scan_config/'))).toHaveLength(2),
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+    expect(screen.getByText('需要重启容器')).toBeTruthy();
+    expect(screen.getByText(/扫描配置已保存/)).toBeTruthy();
+  });
+
+  it('PoC 仓库更新成功后失效 scan_config 查询缓存', async () => {
+    const calls = installFetchMock({
+      routes: {
+        '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD],
+        '/nuclei_poc/update/': [200, { code: 200, data: { branch: 'main', commit: 'abc123def456' } }],
+      },
+    });
+    renderView();
+    await screen.findByDisplayValue('1408');
+    fireEvent.click(screen.getByRole('button', { name: '更新 Nuclei PoC' }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.includes('/nuclei_poc/update/'))).toBe(true),
+    );
+    await waitFor(() => expect(screen.getByText(/Nuclei PoC 更新成功/)).toBeTruthy());
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === 'GET' && c.url.includes('/scan_config/'))).toHaveLength(2),
+    );
   });
 
   it('上传 mutation 保留：未选文件时给校验错误且不发请求', async () => {
