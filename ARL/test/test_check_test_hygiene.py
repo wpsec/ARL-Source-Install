@@ -69,6 +69,18 @@ class CheckTestHygieneTest(unittest.TestCase):
         proc.wait.assert_has_calls([mock.call(timeout=5), mock.call(timeout=5)])
         proc.communicate.assert_called_once_with(timeout=1)
 
+    def test_main_classifies_direct_timeout_as_load_failure(self):
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        fake_time = mock.Mock()
+        fake_time.monotonic.side_effect = [0.0, 1000.0]
+        with mock.patch.object(MODULE, "run_one", return_value=proc), \
+                mock.patch.object(MODULE, "terminate_process_tree", return_value=True), \
+                mock.patch.object(MODULE, "time", fake_time):
+            exit_code = MODULE.main(["check-test-hygiene", "test.example"])
+
+        self.assertEqual(1, exit_code)
+
 
 if __name__ == "__main__":
     unittest.main()

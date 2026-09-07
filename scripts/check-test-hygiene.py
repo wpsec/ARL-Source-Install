@@ -192,9 +192,11 @@ def main(argv):
         for name, proc, started in pending:
             if proc.poll() is None:
                 if time.monotonic() - started > timeout_sec:
-                    terminate_process_tree(proc)
-                    dirty.append("%s\ttimeout\t?" % name)
-                    print(dirty[-1])
+                    cleaned = terminate_process_tree(proc)
+                    marker = "timeout" if cleaned else "timeout-cleanup-failed"
+                    record = "%s\t%s\t?" % (name, marker)
+                    dirty.append(record)
+                    load_fails.append(record)
                     continue
                 still.append((name, proc, started))
                 continue
