@@ -13,7 +13,7 @@ from app import modules, services, utils
 from app.config import Config
 from app.modules import CollectSource
 from app.services import fetchCert
-from app.services.dns_query import run_query_plugin
+from app.services.dns_query import run_query_plugin, run_query_plugin_by_cert
 from app.services.searchEngines import search_engines
 from app.services.task_pipeline import TaskPipeline
 from app.utils.log_safety import safe_error_text
@@ -1149,6 +1149,134 @@ class DomainNetworkStageService(object):
             )
         )
 
+    def run_incremental_port_scan_for_new_ips(self):
+        task = self.task
+        scanned_ip_set = {ip_info.ip for ip_info in task.ip_info_list}
+        new_ips = [ip for ip in sorted(task.ipv4_map) if ip not in scanned_ip_set]
+        if not new_ips:
+            return 0
+
+        domain_ip_map = {}
+        for ip in new_ips:
+            for domain in task.ipv4_map.get(ip, set()):
+                domain_ip_map.setdefault(domain, set()).add(ip)
+
+        new_domain_info_list = []
+        for domain, ip_set in domain_ip_map.items():
+            ips = sorted(ip_set)
+            if ips:
+                new_domain_info_list.append(modules.DomainInfo(
+                    domain=domain,
+                    type="A",
+                    record=ips,
+                    ips=ips,
+                ))
+
+        if not new_domain_info_list:
+            return 0
+
+        ip_info_list = scan_port(new_domain_info_list, task.scan_port_option)
+        for ip_info_obj in ip_info_list:
+            ip_info = ip_info_obj.dump_json(flag=False)
+            ip_info["task_id"] = task.task_id
+            utils.conn_db("ip").update_one(
+                {"task_id": task.task_id, "ip": ip_info_obj.ip},
+                {"$set": ip_info},
+                upsert=True,
+            )
+
+        task.ip_info_list.extend(ip_info_list)
+        logger.info(
+            "cert pivot incremental port_scan new_ip:{} result:{}".format(
+                len(new_ips), len(ip_info_list)
+            )
+        )
+        return len(ip_info_list)
+
+    def run_sync_ip_domain_from_ipv4_map(self):
+        task = self.task
+        for ip_info_obj in task.ip_info_list:
+            domain_set = task.ipv4_map.get(ip_info_obj.ip, set())
+            if not domain_set:
+                continue
+
+            merged_domain = sorted(set(ip_info_obj.domain) | set(domain_set))
+            if merged_domain == ip_info_obj.domain:
+                continue
+
+            ip_info_obj.domain = merged_domain
+            utils.conn_db("ip").update_one(
+                {"task_id": task.task_id, "ip": ip_info_obj.ip},
+                {"$set": {"domain": merged_domain}},
+            )
+
+    def run_cert_query_plugin_enhance(self):
+        task = self.task
+        if not Config.CERT_PIVOT_QUERY_ENABLE:
+            return 0
+        if not task.options.get("ssl_cert"):
+            logger.info("skip cert_query_plugin_enhance because ssl_cert=false")
+            return 0
+        if not task.options.get("dns_query_plugin"):
+            logger.info("skip cert_query_plugin_enhance because dns_query_plugin=false")
+            return 0
+        if "{fuzz}" in task.base_domain:
+            return 0
+
+        cert_candidates = task.get_cert_pivot_candidates()
+        if not cert_candidates:
+            logger.info("skip cert_query_plugin_enhance because no candidate cert")
+            return 0
+
+        target_domain = task.base_domain if Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE else ""
+        max_domains = int(Config.CERT_PIVOT_QUERY_MAX_DOMAINS or 0)
+        logger.info(
+            "start run cert_query_plugin_enhance base_domain:{} cert:{} source_mode:auto-enabled require_scope:{} max_domains:{}".format(
+                task.base_domain,
+                len(cert_candidates),
+                bool(Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE),
+                max_domains,
+            )
+        )
+        results = run_query_plugin_by_cert(
+            cert_list=cert_candidates,
+            target_domain=target_domain,
+            max_domains=max_domains,
+        )
+        if not results:
+            logger.info("end run cert_query_plugin_enhance {} result 0".format(task.base_domain))
+            return 0
+
+        sources_map = {}
+        for result in results:
+            sources_map.setdefault(result["source"], set()).add(result["domain"])
+
+        count = 0
+        for source, source_domains in sources_map.items():
+            source_domains = list(source_domains)
+            if not source_domains:
+                continue
+
+            source_name = "{}_cert_pivot".format(source)
+            task.add_domain_source_names(source_domains, source_name)
+            logger.info("start build domain info, source:{}".format(source_name))
+            domain_info_list = task.build_domain_info(source_domains)
+            if task.task_tag == "task":
+                domain_info_list = task.clear_domain_info_by_record(domain_info_list)
+                if domain_info_list:
+                    task.save_domain_info_list(domain_info_list, source=source_name)
+
+            task.add_domain_source_map(domain_info_list, source_name)
+            count += len(domain_info_list)
+            task.domain_info_list.extend(domain_info_list)
+
+        logger.info(
+            "end run cert_query_plugin_enhance {}, source_result:{}, real_result:{}".format(
+                task.base_domain, len(results), count
+            )
+        )
+        return count
+
     def run(self):
         task = self.task
         self.run_gen_ipv4_map()
@@ -1168,12 +1296,12 @@ class DomainNetworkStageService(object):
 
         if Config.CERT_PIVOT_QUERY_ENABLE and task.options.get("ssl_cert"):
             def run_cert_query_plugin():
-                cert_new_domain_count = task.cert_query_plugin_enhance()
+                cert_new_domain_count = self.run_cert_query_plugin_enhance()
                 if cert_new_domain_count > 0:
-                    task.gen_ipv4_map()
+                    self.run_gen_ipv4_map()
                     if task.options.get("port_scan"):
-                        task.incremental_port_scan_for_new_ips()
-                    task.sync_ip_domain_from_ipv4_map()
+                        self.run_incremental_port_scan_for_new_ips()
+                    self.run_sync_ip_domain_from_ipv4_map()
                 return cert_new_domain_count
 
             pipeline.run_stage("cert_query_plugin", run_cert_query_plugin)
