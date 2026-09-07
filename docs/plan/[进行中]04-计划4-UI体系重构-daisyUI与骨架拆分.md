@@ -192,6 +192,7 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 - [已完成]（2026-09-06）`docker/frontend` 产物快照重建：`npm run lint`+`build` 通过后同步（主 chunk gzip 142.2KB < 180KB 预算），并清除旧 Vue 时代与历次累积的陈旧 hashed 产物（67 文件删除、快照 21MB→1.4MB）；镜像构建链（Dockerfile frontend_builder 由源码独立产 dist）不受影响，双架构 smoke 仍按镜像面验收。
 - [未完成] UI 级 ARM64/amd64 容器 smoke、Safari `<dialog>` 键盘行为、视觉走查、Lighthouse TTI/INP 尚未形成验收证据；镜像构建链已在标准容器回归中验证。
 - [已完成]（2026-09-07）UI 测试基建已落地：Vitest + Testing Library 冒烟 14 项通过。
+- [已完成]（2026-09-07）配置控制台读写边界继续收口：保存、字典上传和 PoC 更新成功后统一失效 `scan_config` 查询缓存，并覆盖重取不冲掉成功提示/重启 Modal 的回归用例；提交 `656f0cd3`。
 - [未完成] Phase 3 尚未完成全量 `useEffect → react-query` 迁移，DataTable 尚未接入所有页面级主列表。
 - [未完成] 首行冻结下线属于用户可见行为变化，需在发布说明和回归清单中单独确认。
 
