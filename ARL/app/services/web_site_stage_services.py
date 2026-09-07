@@ -102,6 +102,80 @@ class WebSiteIntelStageService(object):
             )
 
 
+class WebSiteResultPersistStageService(object):
+    """承载站点结果和 PoC 风险的统一落库边界。"""
+
+    def __init__(self, task):
+        self.task = task
+
+    def save_site_info(self):
+        from pymongo import UpdateOne
+
+        task = self.task
+        for site_info in task.site_info_list:
+            task._result_item_service.build_site_document(
+                site_info,
+                web_analyze_map=task.web_analyze_map,
+            )
+
+        logger.info(
+            "save_site_info site:{}, {}".format(
+                len(task.site_info_list),
+                task,
+            )
+        )
+        if not task.site_info_list:
+            return
+
+        site_operations = []
+        for site_info in task.site_info_list:
+            site = str(site_info.get("site", "") or "").strip()
+            if not site:
+                continue
+            replacement = {
+                key: value
+                for key, value in site_info.items()
+                if key != "_id"
+            }
+            site_operations.append(
+                UpdateOne(
+                    {"task_id": task.task_id, "site": site},
+                    {"$set": replacement},
+                    upsert=True,
+                )
+            )
+        if site_operations:
+            task._result_writer.bulk_write("site", site_operations, ordered=False)
+        # 站点信息落库完成后，触发“站点”模块 AI 去噪增量分析。
+        task.base_update_task.trigger_ai_denoise_stage(
+            stage_name="site_saved",
+            task_options=task.options,
+        )
+
+    def risk_cruising(self, npoc_service_target_set: set):
+        from app.services import run_risk_cruising
+
+        task = self.task
+        poc_config = task.options.get("poc_config", [])
+        plugins = []
+        for info in poc_config:
+            if not info.get("enable"):
+                continue
+            plugins.append(info["plugin_name"])
+
+        poc_targets = task.poc_sites
+        if npoc_service_target_set is not None:
+            poc_targets = task.poc_sites | npoc_service_target_set
+
+        result = run_risk_cruising(plugins=plugins, targets=poc_targets)
+        for item in result:
+            if not task._scan_result_in_task_scope(item, target_keys=("target", "url")):
+                continue
+            result_item = task._result_item_service.build_risk_document(item)
+            if result_item:
+                task._result_writer.insert_one("vuln", result_item)
+
+
 class WebSitePostProcessStageService(object):
     """执行兼容的 Web 专项阶段和 WAF 观测收尾。"""
 

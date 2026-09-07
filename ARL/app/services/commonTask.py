@@ -43,7 +43,8 @@ from app.services.web_site_scan_stage_services import (
     WebSiteScreenshotStageService,
     WebSiteSpiderStageService,
 )
-from app.services import run_risk_cruising, BaseUpdateTask
+from app.services import BaseUpdateTask
+from app.services.web_site_stage_services import WebSiteResultPersistStageService
 from app.utils.log_safety import safe_error_text
 logger = utils.get_logger()
 
@@ -481,40 +482,7 @@ class WebSiteFetch(CommonTask):
         return host_in_scope(value, context.get("allowed_hosts", []), context.get("allowed_flds", []))
 
     def save_site_info(self):
-        from pymongo import UpdateOne
-
-        for site_info in self.site_info_list:
-            self._result_item_service.build_site_document(
-                site_info,
-                web_analyze_map=self.web_analyze_map,
-            )
-
-        logger.info("save_site_info site:{}, {}".format(len(self.site_info_list), self.__str__()))
-        if self.site_info_list:
-            site_operations = []
-            for site_info in self.site_info_list:
-                site = str(site_info.get("site", "") or "").strip()
-                if not site:
-                    continue
-                replacement = {
-                    key: value
-                    for key, value in site_info.items()
-                    if key != "_id"
-                }
-                site_operations.append(
-                    UpdateOne(
-                        {"task_id": self.task_id, "site": site},
-                        {"$set": replacement},
-                        upsert=True,
-                    )
-                )
-            if site_operations:
-                self._result_writer.bulk_write("site", site_operations, ordered=False)
-            # 站点信息落库完成后，触发“站点”模块 AI 去噪增量分析。
-            self.base_update_task.trigger_ai_denoise_stage(
-                stage_name="site_saved",
-                task_options=self.options,
-            )
+        return WebSiteResultPersistStageService(self).save_site_info()
 
     def site_screenshot(self):
         return WebSiteScreenshotStageService(self).run()
@@ -543,26 +511,9 @@ class WebSiteFetch(CommonTask):
         return self._poc_sites
 
     def risk_cruising(self, npoc_service_target_set: set):
-        # *** 运行PoC任务, 需要自己在外层手动调用
-        poc_config = self.options.get("poc_config", [])
-        plugins = []
-        for info in poc_config:
-            if not info.get("enable"):
-                continue
-            plugins.append(info["plugin_name"])
-
-        poc_targets = self.poc_sites
-
-        if npoc_service_target_set is not None:
-            poc_targets = self.poc_sites | npoc_service_target_set
-
-        result = run_risk_cruising(plugins=plugins, targets=poc_targets)
-        for item in result:
-            if not self._scan_result_in_task_scope(item, target_keys=("target", "url")):
-                continue
-            result_item = self._result_item_service.build_risk_document(item)
-            if result_item:
-                self._result_writer.insert_one("vuln", result_item)
+        return WebSiteResultPersistStageService(self).risk_cruising(
+            npoc_service_target_set
+        )
 
     def build_nuclei_targets(self):
         """组装 nuclei 扫描目标（兼容入口，实现见 WebSiteNucleiScanStageService）。"""
