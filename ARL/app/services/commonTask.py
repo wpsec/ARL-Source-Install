@@ -13,7 +13,6 @@ import hmac
 import requests
 from types import SimpleNamespace
 from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit, urljoin, quote
-from bson import ObjectId
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
 from app import utils
 from app import services
@@ -44,7 +43,10 @@ from app.services.web_site_scan_stage_services import (
     WebSiteSpiderStageService,
 )
 from app.services import BaseUpdateTask
-from app.services.web_site_stage_services import WebSiteResultPersistStageService
+from app.services.web_site_stage_services import (
+    WebSitePostProcessStageService,
+    WebSiteResultPersistStageService,
+)
 from app.utils.log_safety import safe_error_text
 logger = utils.get_logger()
 
@@ -383,65 +385,7 @@ class WebSiteFetch(CommonTask):
         return keep_targets
 
     def _save_waf_skip_summary(self):
-        if not self.waf_guard or not getattr(self.waf_guard, "enabled", False):
-            return
-
-        summary = self.waf_guard.summary()
-        summary["updated_at"] = utils.curr_date()
-        summary["stage_stats"] = dict(self._waf_stage_stats)
-        summary_text = self.waf_guard.summary_text()
-
-        query = {"_id": ObjectId(self.task_id)}
-        self._result_writer.update_one(
-            "task", query, {"$set": {"waf_skip_summary": summary}}
-        )
-        service_name = "waf_smart_skip" if self.smart_skip_waf else "waf_observe"
-        service_metadata = {
-            "started_at": max(
-                0.0,
-                time.time() - float(summary.get("observation_elapsed_sec", 0.0) or 0.0),
-            ),
-            "finished_at": time.time(),
-            "status": "success",
-            "end_reason": "observed" if summary.get("request_count", 0) else "no_requests",
-            "input_count": summary.get("request_count", 0),
-            "output_count": summary.get("skip_request_count", 0),
-            "stage_kind": "observation",
-            "metrics": {
-                "detected_host_count": summary.get("detected_host_count", 0),
-                "blocked_host_count": summary.get("blocked_host_count", 0),
-                "observed_site_count": summary.get("observed_site_count", 0),
-                "skip_site_count": summary.get("skip_site_count", 0),
-                "skip_request_count": summary.get("skip_request_count", 0),
-                "observation_elapsed_sec": summary.get("observation_elapsed_sec", 0.0),
-                "stage_stats": summary.get("stage_stats", {}),
-            },
-        }
-        observation_elapsed = float(summary.get("observation_elapsed_sec", 0.0) or 0.0)
-        if getattr(self, "base_update_task", None):
-            self.base_update_task.append_service(
-                service_name,
-                observation_elapsed,
-                detail=summary_text,
-                metadata=service_metadata,
-                trigger_ai=False,
-            )
-        else:
-            self._result_writer.update_one(
-                "task",
-                query,
-                {
-                    "$push": {
-                        "service": {
-                            "name": service_name,
-                            "elapsed": round(observation_elapsed, 3),
-                            "detail": summary_text,
-                            **service_metadata,
-                        }
-                    }
-                },
-            )
-        logger.info("task_id:{} waf smart skip summary {}".format(self.task_id, summary_text))
+        return WebSitePostProcessStageService(self).save_waf_skip_summary()
 
     @property
     def task_domain_set(self):
@@ -703,17 +647,9 @@ class WebSiteFetch(CommonTask):
             return fallback_result
 
     def update_page_url_set(self):
-        from app.helpers import get_url_by_task_id
-        # page_url_set 从数据库读取搜索引擎爬取到的URL
-        urls = [url for url in get_url_by_task_id(self.task_id) if self._url_in_task_scope(url)]
-        self.page_url_set |= set(urls)
+        from app.services.web_site_stage_services import WebSiteDiscoveryStageService
 
-        for u in self.page_url_set:
-            o = urlparse(u)
-            ret_url = "{}://{}".format(o.scheme, o.netloc)
-            entry_urls = self.search_engines_result.get(ret_url, [])
-            entry_urls.append(u)
-            self.search_engines_result[ret_url] = entry_urls
+        return WebSiteDiscoveryStageService(self).update_page_url_set()
 
     def _wih_persist_service(self):
         return WihResultPersistService(self)

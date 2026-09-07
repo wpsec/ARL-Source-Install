@@ -4,6 +4,10 @@
 不改变站点任务入口和结果语义的情况下，逐步把 CommonTask 的业务边界移出。
 """
 
+import time
+from urllib.parse import urlparse
+
+from bson import ObjectId
 from app import utils
 from app.modules import WebSiteFetchOption, WebSiteFetchStatus
 from app.services.single_scan_stage_services import WebSiteSingleStageService
@@ -17,6 +21,25 @@ class WebSiteDiscoveryStageService(object):
 
     def __init__(self, task):
         self.task = task
+
+    def update_page_url_set(self):
+        from app.helpers import get_url_by_task_id
+
+        task = self.task
+        # 回灌历史 URL，避免搜索引擎结果只在当前 worker 内可见。
+        urls = [
+            url
+            for url in get_url_by_task_id(task.task_id)
+            if task._url_in_task_scope(url)
+        ]
+        task.page_url_set |= set(urls)
+
+        for url in task.page_url_set:
+            parsed_url = urlparse(url)
+            ret_url = "{}://{}".format(parsed_url.scheme, parsed_url.netloc)
+            entry_urls = task.search_engines_result.get(ret_url, [])
+            entry_urls.append(url)
+            task.search_engines_result[ret_url] = entry_urls
 
     def run(self):
         task = self.task
@@ -189,3 +212,71 @@ class WebSitePostProcessStageService(object):
             task.run_deferred_nuclei_scan()
 
         task._save_waf_skip_summary()
+
+    def save_waf_skip_summary(self):
+        task = self.task
+        if not task.waf_guard or not getattr(task.waf_guard, "enabled", False):
+            return
+
+        summary = task.waf_guard.summary()
+        summary["updated_at"] = utils.curr_date()
+        summary["stage_stats"] = dict(task._waf_stage_stats)
+        summary_text = task.waf_guard.summary_text()
+
+        query = {"_id": ObjectId(task.task_id)}
+        task._result_writer.update_one(
+            "task", query, {"$set": {"waf_skip_summary": summary}}
+        )
+        service_name = "waf_smart_skip" if task.smart_skip_waf else "waf_observe"
+        service_metadata = {
+            "started_at": max(
+                0.0,
+                time.time()
+                - float(summary.get("observation_elapsed_sec", 0.0) or 0.0),
+            ),
+            "finished_at": time.time(),
+            "status": "success",
+            "end_reason": "observed" if summary.get("request_count", 0) else "no_requests",
+            "input_count": summary.get("request_count", 0),
+            "output_count": summary.get("skip_request_count", 0),
+            "stage_kind": "observation",
+            "metrics": {
+                "detected_host_count": summary.get("detected_host_count", 0),
+                "blocked_host_count": summary.get("blocked_host_count", 0),
+                "observed_site_count": summary.get("observed_site_count", 0),
+                "skip_site_count": summary.get("skip_site_count", 0),
+                "skip_request_count": summary.get("skip_request_count", 0),
+                "observation_elapsed_sec": summary.get("observation_elapsed_sec", 0.0),
+                "stage_stats": summary.get("stage_stats", {}),
+            },
+        }
+        observation_elapsed = float(summary.get("observation_elapsed_sec", 0.0) or 0.0)
+        if getattr(task, "base_update_task", None):
+            task.base_update_task.append_service(
+                service_name,
+                observation_elapsed,
+                detail=summary_text,
+                metadata=service_metadata,
+                trigger_ai=False,
+            )
+        else:
+            task._result_writer.update_one(
+                "task",
+                query,
+                {
+                    "$push": {
+                        "service": {
+                            "name": service_name,
+                            "elapsed": round(observation_elapsed, 3),
+                            "detail": summary_text,
+                            **service_metadata,
+                        }
+                    }
+                },
+            )
+        logger.info(
+            "task_id:{} waf smart skip summary {}".format(
+                task.task_id,
+                summary_text,
+            )
+        )
