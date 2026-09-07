@@ -57,6 +57,20 @@ describe('TableModuleView(task) 页面级', () => {
     // setError 文案经 StatusPill 呈现（HTTP 500: 数据库超时）。
     await waitFor(() => expect(screen.getByText(/HTTP 500/)).toBeTruthy());
   });
+
+  it('主列表在同一 QueryClient 内复用短期缓存，不因页面重挂载重复请求', async () => {
+    const calls = installFetchMock();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = renderViewWithClient(client, 'domain');
+    const mainListCalls = () => calls.filter(
+      (call) => call.url.includes('/api/domain/') && call.url.includes('size=50'),
+    );
+    await waitFor(() => expect(mainListCalls().length).toBe(1));
+    first.unmount();
+    renderViewWithClient(client, 'domain');
+    await new Promise((resolve) => window.setTimeout(resolve, 60));
+    expect(mainListCalls().length).toBe(1);
+  });
 });
 
 describe('TableModuleView Phase 3 选项/共享读取（React Query）', () => {

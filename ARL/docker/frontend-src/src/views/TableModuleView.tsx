@@ -851,6 +851,90 @@ export function TableModuleView({
     setPage(1);
   }, [hasAdvancedSearch, module.searchFields]);
 
+  // 主列表由 React Query 负责生命周期；旧 loadRows 仍作为动作/分页的兼容命令式入口。
+  const hasLiveTaskRows = useMemo(
+    () =>
+      module.id === 'task' &&
+      rows.some((row: any) => {
+        const status = normalizeTaskStatus(row?.status);
+        return status === 'running' || status === 'waiting';
+      }),
+    [module.id, rows],
+  );
+  const listFilters = useMemo(() => buildFilters(), [buildFilters]);
+  const listOrderValue = String(order || '').trim();
+  const listFilterSignature = buildFilterSignature(listFilters);
+  const listQueryKey = [
+    'module-list',
+    token,
+    module.id,
+    page,
+    size,
+    listOrderValue,
+    listFilterSignature,
+  ] as const;
+  const moduleListQuery = useQuery({
+    queryKey: listQueryKey,
+    enabled: Boolean(hasList && (shouldInitialLoad || hasLiveTaskRows)),
+    staleTime: LIVE_STATUS_MODULE_IDS.has(module.id) ? 0 : 30_000,
+    refetchInterval: hasLiveTaskRows ? 15_000 : false,
+    retry: 0,
+    queryFn: async () => {
+      const query: JsonValue = {
+        page,
+        size,
+        ...listFilters,
+      };
+      if (listOrderValue) {
+        query.order = listOrderValue;
+      } else if (module.defaultOrder && !('order' in query)) {
+        query.order = module.defaultOrder;
+      }
+      return normalizeListData(await requestApi(token, module.listPath!, {
+        method: 'GET',
+        query,
+      }));
+    },
+  });
+
+  useEffect(() => {
+    if (!hasList || (!shouldInitialLoad && !hasLiveTaskRows)) return;
+    if (moduleListQuery.isFetching) {
+      setLoading(true);
+      return;
+    }
+
+    if (moduleListQuery.error) {
+      setError(moduleListQuery.error instanceof Error ? moduleListQuery.error.message : '加载失败');
+      setRows([]);
+      setTotal(0);
+    } else if (moduleListQuery.data) {
+      setError('');
+      setRows(moduleListQuery.data.items);
+      setTotal(moduleListQuery.data.total);
+      setSelectedIds([]);
+      if (isTaskDetailModule) {
+        taskDetailCountOverridesRef.current[taskDetailCountCacheKey] = {
+          ...(taskDetailCountOverridesRef.current[taskDetailCountCacheKey] || {}),
+          [module.id]: Number(moduleListQuery.data.total || 0),
+        };
+      }
+    }
+
+    setLoading(false);
+    setShouldInitialLoad(false);
+  }, [
+    hasList,
+    hasLiveTaskRows,
+    isTaskDetailModule,
+    module.id,
+    moduleListQuery.data,
+    moduleListQuery.error,
+    moduleListQuery.isFetching,
+    shouldInitialLoad,
+    taskDetailCountCacheKey,
+  ]);
+
   const loadRows = useCallback(async (loadOptions: LoadRowsOptions = {}) => {
     if (!module.listPath) return;
     const nextPage = Number.isFinite(Number(loadOptions.page))
@@ -943,31 +1027,6 @@ export function TableModuleView({
     taskDetailCountCacheKey,
     token,
   ]);
-
-  useEffect(() => {
-    if (!shouldInitialLoad || !hasList) return;
-    setShouldInitialLoad(false);
-    void loadRows();
-  }, [hasList, loadRows, shouldInitialLoad]);
-
-  // 任务列表存在 running/waiting 行时轮询刷新（15s，与系统监控既有节奏一致；
-  // task 属 LIVE_STATUS 模块 staleTime=0，loadRows 必然打网络）。无运行行即停表。
-  const hasLiveTaskRows = useMemo(
-    () =>
-      module.id === 'task' &&
-      rows.some((row: any) => {
-        const status = normalizeTaskStatus(row?.status);
-        return status === 'running' || status === 'waiting';
-      }),
-    [module.id, rows],
-  );
-  useEffect(() => {
-    if (!hasLiveTaskRows || !hasList || loading) return;
-    const timer = window.setInterval(() => {
-      void loadRows();
-    }, 15000);
-    return () => window.clearInterval(timer);
-  }, [hasLiveTaskRows, hasList, loading, loadRows]);
 
   const totalPages = Math.max(1, Math.ceil(total / size));
   const pageOptions = useMemo(
