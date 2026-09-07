@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { installFetchMock } from '../test/fetchMock';
+import { installFetchMock, makeHttpResponse } from '../test/fetchMock';
 import { SystemMonitorView } from './SystemMonitorView';
 
 const MONITOR_PAYLOAD = {
@@ -36,8 +36,11 @@ const DASHBOARD_FALLBACK_PAYLOAD = {
   },
 };
 
-function renderView() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function newClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+function renderView(client = newClient()) {
   return render(
     <QueryClientProvider client={client}>
       <SystemMonitorView token="tk-mon" />
@@ -113,5 +116,45 @@ describe('SystemMonitorView（React Query 轮询）', () => {
     fireEvent.click(screen.getByRole('button', { name: /刷新/ }));
     await vi.advanceTimersByTimeAsync(200);
     expect(calls.filter((c) => c.url.includes('system_monitor')).length).toBe(2);
+  });
+});
+
+describe('SystemMonitorView 失效与恢复覆盖', () => {
+  const monitorGets = (calls: Array<{ url: string }>) =>
+    calls.filter((c) => c.url.includes('/console/system_monitor/')).length;
+
+  it('外部 invalidate 触发主查询重取', async () => {
+    const calls = installFetchMock({
+      routes: { '/console/system_monitor/': [200, MONITOR_PAYLOAD] },
+    });
+    const client = newClient();
+    renderView(client);
+    // 必须等首轮数据落地（fetching 中的 invalidate 会被进行中的请求合并吞掉）。
+    await vi.waitFor(() => expect(screen.getByText('2026-09-07 12:00:00')).toBeTruthy());
+    expect(monitorGets(calls)).toBe(1);
+    void client.invalidateQueries({ queryKey: ['system-monitor', 'tk-mon'] });
+    await vi.waitFor(() => expect(monitorGets(calls)).toBe(2));
+  });
+
+  it('主接口故障恢复后，快照优先级自动切回主数据（让位于回退的正确性）', async () => {
+    let monitorOk = false;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/console/system_monitor/')) {
+        return makeHttpResponse(monitorOk ? 200 : 500, monitorOk ? MONITOR_PAYLOAD : { message: '不可用' });
+      }
+      if (url.includes('/console/dashboard')) {
+        return makeHttpResponse(200, DASHBOARD_FALLBACK_PAYLOAD);
+      }
+      return makeHttpResponse(200, { code: 200, data: {} });
+    }));
+    const client = newClient();
+    renderView(client);
+    await vi.waitFor(() => expect(screen.getByText('FB-2026-09-07')).toBeTruthy());
+
+    monitorOk = true;
+    await client.invalidateQueries({ queryKey: ['system-monitor', 'tk-mon'] });
+    await vi.waitFor(() => expect(screen.getByText('2026-09-07 12:00:00')).toBeTruthy());
+    expect(screen.queryByText('FB-2026-09-07')).toBeNull();
+    expect(screen.queryByText(/HTTP 500/)).toBeNull();
   });
 });

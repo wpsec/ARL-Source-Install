@@ -36,14 +36,20 @@ const RECENT_LOGS_PAYLOAD = {
   data: { recent_logs: [{ level: 'INFO', source: 'SCAN', msg: '轮询日志帧', time: '' }] },
 };
 
-function renderView() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function newClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+function renderView(client = newClient()) {
   return render(
     <QueryClientProvider client={client}>
       <DashboardView token="tk-dash" onOpenModule={vi.fn()} onQuickCreateTask={vi.fn()} />
     </QueryClientProvider>,
   );
 }
+
+const dashboardGets = (calls: Array<{ url: string }>) =>
+  calls.filter((c) => c.url.includes('/console/dashboard')).length;
 
 const logsCount = (calls: Array<{ url: string }>) =>
   calls.filter((c) => c.url.includes('/console/recent_logs')).length;
@@ -121,5 +127,67 @@ describe('DashboardView（React Query）', () => {
     });
     renderView();
     await vi.waitFor(() => expect(screen.getByText(/HTTP 500/)).toBeTruthy());
+  });
+});
+
+describe('DashboardView 刷新与缓存失效覆盖', () => {
+  it('“刷新”按钮只重取聚合快照，不触碰日志轮询 key', async () => {
+    const calls = installFetchMock({
+      routes: {
+        '/console/dashboard': [200, DASHBOARD_PAYLOAD],
+        '/console/recent_logs': [200, RECENT_LOGS_PAYLOAD],
+      },
+    });
+    renderView();
+    await vi.waitFor(() => expect(screen.getByText('DS-T-10:00')).toBeTruthy());
+    const beforeLogs = logsCount(calls);
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    await vi.waitFor(() => expect(dashboardGets(calls)).toBe(2));
+    expect(logsCount(calls)).toBe(beforeLogs);
+  });
+
+  it('聚合与日志 key 相互独立：invalidate 各自生效', async () => {
+    const calls = installFetchMock({
+      routes: {
+        '/console/dashboard': [200, DASHBOARD_PAYLOAD],
+        '/console/recent_logs': [200, RECENT_LOGS_PAYLOAD],
+      },
+    });
+    const client = newClient();
+    renderView(client);
+    // 等聚合首轮落地再失效：fetching 中的 invalidate 会被进行中的请求合并吞掉。
+    await vi.waitFor(() => expect(screen.getByText('DS-T-10:00')).toBeTruthy());
+    const logs0 = logsCount(calls);
+
+    void client.invalidateQueries({ queryKey: ['dashboard-recent-logs', 'tk-dash'] });
+    await vi.waitFor(() => {
+      expect(logsCount(calls)).toBe(logs0 + 1);
+      expect(dashboardGets(calls)).toBe(1);
+    });
+
+    void client.invalidateQueries({ queryKey: ['dashboard-console', 'tk-dash'] });
+    await vi.waitFor(() => {
+      expect(dashboardGets(calls)).toBe(2);
+      expect(logsCount(calls)).toBe(logs0 + 1);
+    });
+  });
+
+  it('日志暂停只停 interval，显式失效仍可重取', async () => {
+    const calls = installFetchMock({
+      routes: {
+        '/console/dashboard': [200, DASHBOARD_PAYLOAD],
+        '/console/recent_logs': [200, RECENT_LOGS_PAYLOAD],
+      },
+    });
+    const client = newClient();
+    renderView(client);
+    await vi.waitFor(() => expect(screen.getByText('DS-T-10:00')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '暂停' }));
+    const paused = logsCount(calls);
+    await vi.advanceTimersByTimeAsync(12000);
+    expect(logsCount(calls)).toBe(paused);
+
+    void client.invalidateQueries({ queryKey: ['dashboard-recent-logs', 'tk-dash'] });
+    await vi.waitFor(() => expect(logsCount(calls)).toBe(paused + 1));
   });
 });
